@@ -3,9 +3,9 @@ type: is
 id: is-01m0wqh3ydkn7yztpt80t9d857
 title: Make live one-filesystem admission fail open portably
 kind: bug
-status: open
+status: closed
 priority: 2
-version: 5
+version: 7
 spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
 refs:
   - kind: pr
@@ -20,11 +20,18 @@ refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#issuecomment-5413222445
     at: 2026-08-25T16:06:42.802Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5021788526
+    at: 2026-08-25T17:13:14.659Z
 labels:
   - pr47-review
 dependencies: []
 parent_id: is-01kzqn502680awzhvddzntq32d
 created_at: 2026-08-25T15:09:57.581Z
-updated_at: 2026-08-25T16:06:54.621Z
+updated_at: 2026-08-25T17:13:14.660Z
+closed_at: 2026-08-25T17:12:18.238Z
+close_reason: "Verified complete at PR #47 exact head e9af881a31243c5c763eff09b2e21ece3a7f5aab. watch::admitted preserves an unavailable root device as None; on_root_filesystem fails open only for that absence or a failed parent stat; the production regression separates missing-root identity from a real parent; the device-comparison test is Unix-gated; and all 19 exact-head CI checks, including Windows, are green."
+resolution: null
+duplicate_of: null
 ---
 At PR 47 exact head 5eb25743f9b7b1a8626bfd1998a5f5ae5bea0e10, watch::admitted maps an unavailable root device to 0, then on_root_filesystem rejects any successfully statted nonzero-device parent. This contradicts the documented fail-open behavior on transient root stat failure. Preserve absence as Option and bypass only this axis when root identity is unavailable. Exact-head CI has 18 green checks and one Windows failure at https://github.com/jlevy/fdu/actions/runs/32865588065/job/97860038258: scan::tests::the_filesystem_boundary_is_asked_of_the_parent_not_the_entry asserts a real-device distinction on Windows, where device is always 0 and one_filesystem is unsupported. Platform-gate the real-filesystem test or inject a portable device probe, while retaining a separate production test for missing-root-device fail-open behavior.

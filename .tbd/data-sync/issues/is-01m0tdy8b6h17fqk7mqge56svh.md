@@ -5,7 +5,7 @@ title: Complete the coherent read envelope and version-pinned paging
 kind: bug
 status: open
 priority: 1
-version: 31
+version: 33
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
@@ -17,6 +17,9 @@ refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#issuecomment-5412701379
     at: 2026-08-25T15:25:11.905Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5021788526
+    at: 2026-08-25T17:13:14.420Z
 labels:
   - pr47-review
   - metabrowser
@@ -27,13 +30,13 @@ dependencies:
     target: is-01m0tdy9ceep2byvbtyvwc2vky
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.445Z
-updated_at: 2026-08-25T16:24:25.950Z
+updated_at: 2026-08-25T17:13:14.420Z
 closed_at: null
 close_reason: null
 resolution: null
 duplicate_of: null
 ---
-At PR 47 exact head b5035e4924ee6ebeb2f0fb64784600da386e4d95, version-pinned and request-bound flat paging is present, but the claimed engine-issued continuation is still caller-forgeable. EntryCursor::encode serializes trusted total, totals, delivered, after, version, and shape and protects them only with token_checksum, an unkeyed FNV-1a checksum whose implementation and comment explicitly allow recomputation. EntryCursor::decode_inner accepts a recomputed token, and entry_page then trusts the decoded denominator, aggregates, delivered count, and resume path after only version and 64-bit request-shape checks. A caller can alter those claims, recompute the checksum, and produce a wrong remainder, terminal page, aggregate, or suffix; the current nibble-flip test proves only accidental corruption detection. Give each opened index a private continuation authority and authenticate under the same guarded read that checks version and request shape, or retain bounded engine-side cursor state. Add forged-but-well-checksummed, cross-index/session, and oversized-token rejection tests while preserving later-page cost proportional to seek plus page.
+At PR #47 exact head e9af881a31243c5c763eff09b2e21ece3a7f5aab, the per-index keyed continuation tag correctly fixes caller-forged counts and the version/shape/error behavior remains good, but the continuation envelope is not yet total. First, EntryCursor::decode refuses token strings longer than 64 KiB while EntryCursor::encode has no matching issuance check and the repository admits longer path encodings (snapshot MAX_PATH_BYTES is 1 MiB; Windows extended paths can exceed the token ceiling after UTF-16 plus hex expansion). The engine can therefore issue a next token it will not accept on the next page. Derive one shared bound from an enforced retained-path limit, or refuse the row/page before issuing; add a maximum-boundary self-roundtrip test and one byte over. Second, public Index derives Clone, copying session and ContinuationAuthority. Two clones can receive different one-commit mutations, reach the same clock with divergent trees, and accept one another’s token because version, shape, session, and MAC all match. Remove raw Index cloning or mint a new session and authority at every independently mutable owner boundary, and test two same-clock divergent clones. Keep this bead open for the broader coherent read envelope as already recorded.
 
 ## Notes
 

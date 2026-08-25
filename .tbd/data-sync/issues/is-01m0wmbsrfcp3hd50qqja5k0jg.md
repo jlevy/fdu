@@ -3,9 +3,9 @@ type: is
 id: is-01m0wmbsrfcp3hd50qqja5k0jg
 title: Implement exact MetaBrowser catalog predicate semantics
 kind: bug
-status: closed
+status: open
 priority: 1
-version: 5
+version: 8
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
@@ -14,19 +14,22 @@ refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#issuecomment-5412701379
     at: 2026-08-25T15:25:13.550Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5021788526
+    at: 2026-08-25T17:13:14.178Z
 labels:
   - pr47-review
   - metabrowser
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-25T14:14:37.582Z
-updated_at: 2026-08-25T16:24:25.976Z
-closed_at: 2026-08-25T15:57:00.203Z
+updated_at: 2026-08-25T17:13:14.179Z
+closed_at: null
 close_reason: null
 resolution: null
 duplicate_of: null
 ---
-At PR 47 exact head 1e9b85d4ce6b4c01fa800f8a25eb607ebb9675a0, the reference catalog_page proves only an unconstrained all-files page. MetaBrowser CatalogQuery also requires case-insensitive terminal-extension matching, exact case-sensitive ancestor-component matching, include_ignored, and an exclusive size upper bound. FDU Selection can exactly translate the ignored tag and exclusive size bound, but its generic case-sensitive path/name globs are not equivalent to the two remaining predicates. Add closed native predicate fields or another demonstrably exact engine-side translation, expose them through Python, and run them through resumable paging and a shared provider/conformance fixture. Do not filter rows in Python or create a mirror index.
+At PR #47 exact head e9af881a31243c5c763eff09b2e21ece3a7f5aab, native catalog predicates exist but are not exact with MetaBrowser #74 at 0577bb125c4a607719befa3f213362f5522d5724. MetaBrowser matches terminal extensions with PurePosixPath(entry.name).suffix.lower(); PurePosixPath("..foo").suffix is empty, while query_selection::terminal_suffix returns Some(".foo") and its unit test requires that, so .foo admits a row the Python provider excludes. CatalogQuery rejects every ancestor containing slash or backslash and rejects duplicate terminal_extensions/ancestor_names; admit_ancestor_name uses native Path components and admits backslash on POSIX, and both FDU admit methods append duplicates. The generated fixture explicitly records accepted asymmetries and omits a ..foo file and a real POSIX backslash directory, so it cannot establish exactness. Align the public contract deliberately on both sides (rejecting . and .. in MetaBrowser is reasonable), but make answer semantics and validation identical: use the consumer suffix rule, reject both separators and duplicates, and turn every former asymmetry into a shared acceptance/refusal case. Add paging and Python-boundary regressions for ..foo/.foo, a POSIX directory named with backslash, duplicates, dot components, and cross-platform behavior; no adapter-side filtering or mirror state.
 
 ## Notes
 
@@ -93,3 +96,5 @@ Mutations: 14 against the engine and 6 against the translation, all caught, no
 survivors. The six on the translation are the ones worth naming -- allocated instead
 of apparent, an inclusive instead of exclusive bound, include_ignored ignored, the
 kind clause dropped, and each predicate not passed through.
+
+Reopened: Reopened after exact-head review of e9af881: the shipped predicate and fixture claim exact MetaBrowser agreement but retain observable answer and validation differences. PurePosixPath("..foo").suffix is empty while FDU terminal_suffix("..foo") returns .foo; FDU accepts a backslash-containing ancestor on POSIX although CatalogQuery rejects it and such a directory can exist; and FDU accepts duplicate terminal/ancestor entries that CatalogQuery rejects. The fixture omits the answer-changing cases and explicitly blesses asymmetries.
