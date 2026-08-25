@@ -3,9 +3,9 @@ type: is
 id: is-01m0tdy9ceep2byvbtyvwc2vky
 title: Release the GIL and measure the full Python read boundary
 kind: task
-status: open
+status: closed
 priority: 1
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels:
   - pr47-review
@@ -16,9 +16,63 @@ dependencies:
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:54.508Z
-updated_at: 2026-08-24T23:45:59.098Z
-closed_at: null
-close_reason: null
+updated_at: 2026-08-25T00:13:37.667Z
+closed_at: 2026-08-25T00:13:37.667Z
+close_reason: |
+  Closed. `make check` green. All three follow-up findings addressed.
+
+  P1-A, ONE END-TO-END WALL. `conversion_ns` was stamped before the projection dicts were
+  built, so it excluded part of the conversion it claimed to measure; it is stamped last
+  now. More importantly the public `Index.read` builds dataclasses from the extension's
+  dict, and none of that was measured at all -- so publishing native `wall_ns` as the call's
+  duration omitted a provider-specific phase and understated this path against a
+  pure-Python provider that has no such phase.
+
+  `Work` now names every phase: `native_ns` (engine, GIL released), `conversion_ns`
+  (building the extension's dict), `model_ns` (dict to dataclasses), and `wall_ns` as the
+  end-to-end public call, measured in `_api.read`. The adapter maps `wall_time_ns` from
+  `wall_ns`. `wall_ns`'s docstring said "entering the call to returning" while ending before
+  both conversion phases; it says what it is now.
+
+  P1-B, BYTES COUNTED RATHER THAN ESTIMATED. `materialized_bytes` is gone. It described
+  itself as rough, re-walked the finished bundle, and counted names plus six assumed scalars
+  per row while omitting tags, classifications, provenance, extension and group tallies, and
+  envelope errors -- so a result could grow substantially without the counter following.
+
+  One rule, stated once on the `payload` module: every string and path *value* contributes
+  its own bytes, every fixed-width leaf contributes eight, and dict keys are excluded as
+  fixed schema rather than payload. Accumulated at each conversion site -- rollups and their
+  tallies, child rows with names, tags and classifications, provenance, tree nodes, report
+  sections, scope, cursor, envelope errors -- so there is no second traversal of the hot
+  boundary. A thread-local rather than a threaded parameter, because the conversion runs
+  through a dozen nested helpers that other paths also call and passing an accumulator would
+  change every signature to serve one caller; `read` clears before it starts, and the GIL
+  makes it single-threaded by construction.
+
+  The test pins an exact delta rather than `> 0`: adding one roll-up must cost exactly six
+  scalars plus each extension and group key with three scalars, computed from the roll-up
+  the test itself reads back. A counter that only has to be positive can omit whole field
+  families and still pass -- which is precisely how the first version drifted.
+
+  P2, A GIL TEST THAT ACTUALLY DISCRIMINATES. The old one started four readers and checked
+  they finished, which the review correctly called vacuous: serialized reads finish too.
+  Getting a real one took three attempts, and the first two failed the mutation check --
+  worth recording, because both looked convincing:
+    1. Release a probe thread, then read; assert its timestamp precedes the return. The
+       probe fired *before* the read even began.
+    2. Same, with 400k `rollups` to lengthen the call. `_api.read` builds that list in
+       Python bytecode, so the probe got its turn during argument construction rather than
+       during the native span.
+  The version that works is sized from measurement rather than guessed: 20k files make a
+  filtered summary take ~10ms of which ~99% is native. The probe sleeps 2ms (releasing the
+  GIL, so it always wakes on time) and timestamps (which needs the GIL back), and the
+  assertion is that it got its turn in the *first half* of the call -- not merely before the
+  return, which is nearly true even when the GIL is held, since the thread runs the instant
+  the call gives it back. Removing `py.detach` fails it deterministically: "the probe waited
+  0.0118s of a 0.0120s call".
+
+  CPU stays `None`, confirmed by the owner as exact-or-absent with no sentinel and no
+  adapter shim.
 resolution: null
 duplicate_of: null
 ---
