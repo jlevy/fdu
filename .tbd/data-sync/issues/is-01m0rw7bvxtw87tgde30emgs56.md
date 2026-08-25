@@ -5,13 +5,13 @@ title: "Invalidation vocabulary: dirty query kinds, all-dirty, and reset as dist
 kind: feature
 status: open
 priority: 1
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T03:15:03.165Z
-updated_at: 2026-08-25T01:59:54.748Z
+updated_at: 2026-08-25T03:17:53.646Z
 ---
 MetaBrowser's changes() contract emits "bounded dirty paths or query kinds", "`all_dirty`
 when individual dirtiness exceeds its bound", "`reset` when the requested cursor or
@@ -41,10 +41,47 @@ Depends on fdu-jxs0 for the state-only member.
 
 ## Notes
 
-METABROWSER DECISION LANDED at 68eeaac (2026-08-24). Reset and provider observation-gap recovery are distinct. reset means the requested consumer cursor/session cannot resume coherently and requires checkpoint+reread. A primary watcher overflow instead marks freshness stale, emits a typed watcher-gap issue, reconciles the affected scope when possible, and publishes bounded dirty/all_dirty or state transitions on the provider clock; it is not itself reset. The current WatchBatch carrier sets reset for WatchOverflow/UnpairedRename/WatchSetupRace, so this bead must split those meanings and pin them with separate tests. Unrecoverable observer failure remains stale with a typed issue rather than masquerading as reset recovery failure.
+The reset half is shipped. `make check` green, parity holds. The bead stays open for the
+dirty-query-kinds half.
 
-EXACT CODE STATE at 558461a (2026-08-24). The newly landed carrier sets reset for WatchOverflow, UnpairedRename, and WatchSetupRace in Session.next_batch. This is the concrete site to change under the settled MetaBrowser rule: provider observation loss drives stale state, typed issue, reconciliation, and dirty/all_dirty; reset is only for an unresumable consumer cursor/session. Add separate overflow-recovery and stale-consumer-cursor tests so the two signals cannot collapse again.
+RESET WAS TWO FACTS ABOUT TWO PARTIES WEARING ONE FLAG. A dropped event, an unpaired
+rename, or a watch registered after its directory already had contents means the *provider*
+stopped observing precisely; it re-scans, so the index is right, the batch's rows are
+complete, and the consumer's own position is perfectly resumable. A truncated journal means
+the *consumer's* history has expired: nothing can be replayed to it. Reporting the first as
+the second costs a full re-read on every kernel queue overflow, and teaches a consumer that
+reset does not mean what it says.
 
-EXACT-HEAD REVIEW at PR #47 278457a (2026-08-25). The new stepped-over-commit reset is conceptually the consumer-reset case and is aligned, but the provider-gap collapse remains unchanged at watch_session.rs:271-300: WatchOverflow, UnpairedRename, and WatchSetupRace still set reset rather than stale freshness plus a typed issue and reconciliation. A reset batch also retains dirty_rollups/all_dirty, whereas MetaBrowser's ChangeBatch requires reset to replace dirtiness. Fix and test the two paths separately: an omitted producer/expired consumer position yields reset with no dirty suffix; provider observation loss yields stale state plus typed watcher-gap issue and bounded dirty/all_dirty after reconciliation, never reset merely because the provider reconciled.
+Now: `reset` is journal truncation and nothing else. Provider observation loss becomes a
+typed `IssueKind::ObservationGap` on the batch, beside the re-scan's own `Invalidate`
+changes and the dirty set it moved -- which is what the consumer contract asks for.
 
-EXACT-HEAD UPDATE at PR #47 fad3d2f (2026-08-25). Recovery::of at watch_session.rs:198-201 still maps provider observation escalation to reset, contrary to MetaBrowser's provider-gap stale-state/typed-issue/reconcile path. It also maps a truncated consumer journal to reset + all_dirty; Session copies both into Batch at 320-331. MetaBrowser ChangeBatch explicitly requires reset to replace all dirtiness (inventory_engine/contract.py:776-779). Pin separate tests: an expired consumer position yields reset with no dirty suffix; watcher loss yields state/issues plus bounded dirty or all_dirty after reconciliation and is not reset merely because the provider reconciled.
+RESET REPLACES EVERY OTHER SIGNAL, as the contract's own validation requires
+(`reset and (all_dirty or dirty_paths or dirty_queries)` is rejected there). `Batch::reset_at`
+is a constructor rather than a struct literal, because the shape *is* the contract: a batch
+saying "re-read everything, and also here are the changes" gets its second half applied to
+state the consumer just discarded. `Recovery` is gone -- it existed to combine two things
+that turned out not to combine.
+
+`ObservationGap` is an issue, not a coverage reason, and that distinction is the same one
+that kept `CoverageReason::WatcherGap` out earlier: coverage is how much of the tree an
+answer accounts for, and after the re-scan it accounts for all of it. What moved is how far
+the stream between then and now can be trusted.
+
+TESTS. `losing_watch_precision_is_an_issue_rather_than_a_reset` applies a `WatchOverflow`
+escalation directly and asserts not-reset, the typed issue naming its subtree, the re-scan's
+change still delivered, and the aggregates still named. Mutation-checked. And
+`a_reset_batch_carries_nothing_a_consumer_could_apply` pins both invariants, with the two
+ways of getting them wrong spelled out so the checker has teeth.
+
+A DRIFT THIS EXPOSED, now checked rather than remembered. `IssueKind::ObservationGap` was
+added to the engine and not to the Python `StrEnum`, so the first batch carrying it raised
+`ValueError` from inside `_operation_error`. The parity harness caught it -- but only
+because a watch capture happens to provoke a `WatchSetupRace`, and only after a ten-minute
+gate. `scripts/check-vocabularies.mjs` now compares the two declarations of `IssueKind` and
+`Phase` directly and fails in a second; it is in `make test`. Mutation-checked in both
+directions.
+
+STILL OPEN: dirty query kinds. fdu can say which *paths* moved but not which of the
+contract's nine *projections* are stale, so a consumer holding a `recent` list re-derives
+whether its own view is affected.
