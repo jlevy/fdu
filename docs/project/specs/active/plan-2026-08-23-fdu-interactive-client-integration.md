@@ -1181,6 +1181,25 @@ from emitting millions of provenance-only entry changes into the feed it serves.
   kind-changing removal reach the delta and the clock rather than the index alone
   (`fdu-a7cl`).
 
+- [ ] **Open at head `d58d9c5`, six findings from two exact-head reviews.** Verified
+  against the code rather than accepted, and one does not survive that check: the claim
+  that the consuming contract’s `PurePosixPath("..foo").suffix` is empty is wrong — it
+  is `.foo` on 3.11, 3.12 and 3.13, matching fdu, so there is nothing to change there.
+  The rest are real. Two are narrow validation differences in the catalog predicates
+  (`fdu-8w5k`: duplicate entries, and a backslash ancestor name POSIX allows and the
+  contract does not), and closing them means deciding which contract moves.
+  Two are in the continuation (`fdu-91ru`): an issuance bound the decoder does not
+  share, so on Windows the engine can issue a token and refuse it unchanged; and `Index`
+  deriving `Clone`, which clones the per-open signing authority.
+  Two are in the live path (`fdu-0778`): a retag that clears every tag with no clock
+  when the last control file is deleted, and a monotonic control-directory registry with
+  no bound shared across live mutation, save and load.
+  And one is a regression this branch introduced (`fdu-a7cl`): the effective delta
+  carries the refused upsert — a file that does not exist — instead of the placeholder
+  directories that were really created.
+  Full detail on each bead; the implementation spec’s *Open Review Findings* section
+  carries the reasoning.
+
 ## Testing Strategy
 
 Two properties are load-bearing and both are cheap to state.

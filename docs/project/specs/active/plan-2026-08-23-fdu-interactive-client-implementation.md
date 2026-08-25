@@ -1145,6 +1145,59 @@ session. **Track B** (tags) is `fdu-mvt3` → `fdu-brt0` / `fdu-pxfz` → `fdu-7
 `fdu-xyvu`, `fdu-vrwy`. The session chain stays behind the progressive-results epic.
 Ready today: `fdu-5yqb`, `fdu-mvt3`, and Track C.
 
+## Open Review Findings, At Head `d58d9c5`
+
+Six findings from two exact-head reviews are open.
+Each was checked against the code rather than accepted, and one of them does not survive
+that check — recorded here because a finding taken on trust is how correct code gets
+changed.
+
+**Not a defect: the terminal suffix of `..foo`.** The `e9af881` review holds that the
+consuming contract’s `PurePosixPath("..foo").suffix` is empty while fdu returns `.foo`,
+and reopened `fdu-8w5k` partly on that basis.
+It is `.foo` on CPython 3.11, 3.12 and 3.13, which is what fdu returns and what the unit
+test asserts. The two engines agree on this name, and making fdu return empty would
+*introduce* the disagreement the finding describes.
+
+**Real, and narrow** (`fdu-8w5k`). Duplicate entries in either predicate list: the
+contract’s constructor rejects them, `admit_terminal_extension` and
+`admit_ancestor_name` append them.
+A backslash in an ancestor name: the contract rejects it everywhere, `Component::Normal`
+admits it on POSIX where it is a legal directory name.
+Neither changes an answer for a query both engines accept — but the fixture asserted the
+second over a corpus containing no such directory, which is a weaker check than the PR
+comment claimed for it.
+Closing this properly means deciding which contract moves, and that is a cross-repo
+decision.
+
+**Real, in the continuation** (`fdu-91ru`, keyed tag accepted).
+`encode` emits whatever path a cursor retains while `decode` refuses more than a chosen
+64 KiB of hex, so on Windows — where UTF-16 and hex each double the bytes — the engine
+can issue a token and then refuse it unchanged.
+And `Index` derives `Clone`, so the per-open authority clones with it: two independently
+mutable clones can reach one clock with divergent trees and accept each other’s tokens.
+The type’s own comment argues per-open keying is unobservable because the version check
+separates two opens; that holds for two *constructed* indexes and is precisely what
+fails for two clones.
+
+**Real, in the retag** (`fdu-0778`). `rebind_tag_rules` retags through `adopt_tag_rules`
+and *then* returns `None` when the newly bound rules govern nothing, so deleting the
+last `.gitignore` clears every tag with no clock and no `Retagged` transition.
+The shipped test polls `tags_of` directly, so it verifies the effect and never the
+notification — which is why the defect survived a test written for it.
+The control-directory registry is also monotonic; “bounded by the directories that ever
+held one” is not a bound for a long-lived watcher, and the review reports a save/load
+asymmetry that can write a snapshot fdu refuses on its own next open.
+
+**A regression this branch introduced** (`fdu-a7cl`). `apply_validated_with` turns the
+changed-flag into `effective.push(op.clone())`, and that op is the leaf `Upsert` the cap
+refused — a file that does not exist — while the placeholder directories that were
+really created never reach the delta.
+The fix that made the boolean honest left the content wrong, and the two failures are
+not equivalent: before, a consumer under-reported; now, one replaying the delta creates
+a phantom row. Reverting that half is a defensible interim position; the proper fix is a
+result carrying refusal independently of the effective ops.
+
 ## What Did Not Land, And Why
 
 Seven beads under the epic are open, and none of them is open because the work was
