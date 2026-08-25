@@ -5,7 +5,7 @@ title: Complete the coherent read envelope and version-pinned paging
 kind: bug
 status: open
 priority: 1
-version: 28
+version: 29
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
@@ -24,7 +24,7 @@ dependencies:
     target: is-01m0tdy9ceep2byvbtyvwc2vky
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.445Z
-updated_at: 2026-08-25T14:15:45.660Z
+updated_at: 2026-08-25T15:56:36.154Z
 closed_at: null
 close_reason: null
 resolution: null
@@ -34,51 +34,39 @@ At PR 47 head e658915, the core ReadBundle captures clock, scope, freshness, and
 
 ## Notes
 
-FDU47-D1 addressed at 051e7cc: continuation cost is proportional to the page, not
-to the index.
+Answered, at branch head after the token change (F1/F2 of the fourth review round).
 
-The regression was real and was mine. entry_page began at the root on every call,
-filtered the whole subtree, recomputed the selection-wide denominator, and
-counted every match at or before the cursor -- so assembling P pages cost P
-passes. Bounded and lossless and quadratic is still unusable at catalog sizes.
+EntryCursor has private fields and no constructor. A caller cannot write one, so
+the counts it carries can only be counts the engine established by walking. It
+crosses a language boundary as EntryCursor::encode / EntryCursor::decode -- hex,
+with an FNV checksum over a magic-tagged payload -- because the accident that a
+public struct invites is a value round-tripped through a wire format that dropped
+or reordered a field, arriving as an honest-looking claim about an answer nobody
+computed. The Python facade emits `next` as that opaque string and takes it back
+unchanged; there is no adapter state and no second cursor.
 
-Two costs, two answers:
+The continuation is bound to the question it was issued for. EntryPageRequest::shape
+mixes the root, the depth bound, the plane and Selection::shape -- an explicit FNV
+over every result-shaping field rather than a derive, so adding a field and
+forgetting the shape is a compile-visible omission rather than a silent collision.
+Resuming under a different question is Error::InvalidValue{kind: "page continuation"},
+never an answer carrying the first question's denominator. Two fields are
+deliberately outside the shape and say so: the page `limit`, so a caller may change
+page size mid-assembly, and Selection::size, which chooses which number a report
+renders rather than which entries a page admits.
 
-- The seek. A bare path cursor identifies where to resume and gives no way to
-  get there except forward from the top. seek_after descends the cursor path
-  instead: at each level it pushes the siblings *after* the component it came
-  through (a range over an ordered map, not a scan that discards what it passes),
-  then the cursor's own children on top -- exactly the stack the walk would have
-  left. No entry before the cursor is looked at.
-- The denominator. An arbitrary predicate over a tree has no ordered index to
-  count through, so the first page walks the selection to learn its size. That
-  one is unavoidable; recomputing it per page is not. EntryCursor carries the
-  total, the aggregates and the delivered count forward, so a continuation stops
-  as soon as it has its rows.
+entry_page now returns crate::Result<Option<EntryPage>>. A version mismatch is
+Error::VersionUnavailable whether or not the caller also pinned with
+ReadRequest::expected -- the None-through-Option path is gone -- and impossible
+arithmetic is an error rather than a saturating subtraction that would report a
+plausible remainder.
 
-Measured on a 660-entry fixture at limit 5: 666 entries visited for the first
-page, then a flat 14 for every page after it -- page 2 and page 25 alike. The
-test asserts that flatness rather than a ratio, because flatness *is* the
-property: a continuation that crossed the prefix would cost more with every page.
+Tests: a_continuation_belongs_to_one_question_and_is_refused_by_any_other (six
+edits, now including a terminal suffix and an ancestor name),
+a_tampered_token_is_refused, a_continuation_from_another_version_is_refused, and
+the existing flat-continuation and one-denominator tests unchanged. The Python
+smoke asserts the same across the binding, including that a path, an empty string,
+a truncated token and a single flipped character are all refused as continuations.
 
-The cursor is version-bound, and that is not belt-and-braces beside
-ReadRequest::expected: its counts were established against one image, so a
-continuation replayed against another would report a denominator for a tree that
-is no longer there. Refused whether or not the caller also pinned the read.
-
-No Python mirror, no duplicate adapter cursor, no retained result set, no second
-watcher. EntryCursor crosses as a value with the same fields; a bare path is
-refused at the facade with a sentence rather than an attribute error out of an
-encoder, since entries_after took a path before it took a value.
-
-Tests: the eight lossless-assembly cases are unchanged and still pass, plus
-continuing_an_assembly_costs_a_page_rather_than_a_pass,
-every_page_reports_the_denominator_the_first_one_established, and
-a_continuation_from_another_version_is_refused. Mutations checked: making
-continuations recount (664 against 666, exactly the regression), and seeking by
-scanning from the top. Both fail named tests. The Python smoke test asserts the
-same cost property across the binding.
-
-make check and make cross-lint pass; parity holds at 21 recorded deviations.
-
-Reopened: Reopened against PR 47 exact head 1e9b85d4ce6b4c01fa800f8a25eb607ebb9675a0. The new EntryCursor is a public caller-constructible claim, not an opaque continuation: entry_page validates only version, does not bind root, max_depth, selection, or plane, trusts total/totals/delivered, and uses saturating arithmetic. Reusing a cursor across same-version requests or tampering fields can report false denominators, remainders, aggregates, or terminality. A stale cursor without ReadRequest.expected also returns None through the Option projection rather than VersionUnavailable despite the documented refusal. Require an engine-issued bounded continuation bound to the canonical request and version, validate its integrity and invariants without adapter state, return a typed continuation/version error, and add cross-request, tampering, and stale-without-expected tests while retaining flat continuation work.
+Left open deliberately: this bead also carries the envelope work, and the reviewer
+reopened it. Not re-closing.
