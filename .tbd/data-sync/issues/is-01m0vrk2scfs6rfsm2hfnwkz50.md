@@ -5,13 +5,13 @@ title: "Two-engine agreement oracle: conformance packet and recorded-observation
 kind: task
 status: open
 priority: 1
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-25T06:09:16.076Z
-updated_at: 2026-08-25T06:09:16.076Z
+updated_at: 2026-08-25T09:54:54.724Z
 ---
 Split out of fdu-vfyw, which shipped fdu's side of the contract: the reference embedder
 example (crates/fdu-py/examples/browser_provider.py), the semantic_fingerprint recipe,
@@ -36,3 +36,9 @@ live engines against one changing tree compares incomparable observation moments
 dual walk perturbs what is being measured.
 
 Any difference the replay finds is documented or eliminated, not averaged.
+
+## Notes
+
+null
+
+EXACT-HEAD AGREEMENT ADDITIONS from FDU d19b0ce / MetaBrowser 0577bb1 (2026-08-25): the fixture must now pin (1) the exact scope digest bytes for hidden_allowlist, max_depth, and max_files, including a non-ASCII allowed hidden component; (2) the observable max_files stop at a directory boundary case that distinguishes FDU whole-directory overshoot from the Python strict cap; and (3) FIFO/socket/special-object boot and live replacement, where the MetaBrowser provider view exposes only file, directory, and symlink. These cases decide design across both repositories; do not normalize the answers in an adapter-side mirror. Implementation owners are fdu-vfyw, reopened fdu-97dd, and fdu-bjhy.

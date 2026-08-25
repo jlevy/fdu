@@ -5,7 +5,7 @@ title: "Spec: fdu for interactive clients — the metabrowser contract"
 kind: epic
 status: open
 priority: 1
-version: 64
+version: 67
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
 dependencies: []
@@ -59,8 +59,10 @@ child_order_hints:
   - is-01m0vrk2scfs6rfsm2hfnwkz50
   - is-01m0vx6h8tfjyqjaxmt67nabrp
   - is-01m0vx6yw0f8bddcwggvk2ha0p
+  - is-01kzqn502680awzhvddzntq32d
+  - is-01m0w5fbs0n1xv9rxrmrp79mda
 created_at: 2026-08-23T07:31:34.794Z
-updated_at: 2026-08-25T07:30:01.728Z
+updated_at: 2026-08-25T09:54:55.212Z
 ---
 Root epic for the interactive-client integration spec: partitioned tallies (tag planes), the embedder watch contract, the session integration shape, and the adoption proof. Each capability lands engine-first and clears the parity harness. The measured basis and the requirement-by-requirement contract map are in the spec.
 
@@ -111,3 +113,7 @@ MONITOR UPDATE: PR #47 advanced from 278457a to exact head fad3d2f (2026-08-25; 
 MONITOR UPDATE: PR #47 advanced from fad3d2f to exact reviewed head 7aaaf84 (2026-08-25; all 19 checks green and mergeability clean). The review accepts caller-pinned as_of, the typed coherent read envelope, exact state-transition clocks, journal-only delivery, bounded retagging, reset-versus-recovery semantics, dirty query kinds, read-side GIL release, async teardown, and the promoted-plane equivalence work; fdu-jxs0 and fdu-fltq stay closed. Exact-head formal review https://github.com/jlevy/fdu/pull/47#pullrequestreview-5015288678 reopened fdu-vfx7 because WatchBatch still lacks the complete resulting provider state at its cursor, the v1 invalidation path still materializes entry rows across PyO3, and public watch work omits binding/model conversion cost. It also reopened fdu-91ru because only child listings have native continuation: filtered-tree and catalog pages cannot satisfy MetaBrowser's mandatory bounds, advancing cursors, and lossless remainders without an unbounded FFI result or Python mirror. These are Phase 2 adoption blockers; no parallel beads were created.
 
 MONITOR UPDATE: PR #47 advanced from 7aaaf84 through exact reviewed head b8ead94 (2026-08-25). Review https://github.com/jlevy/fdu/pull/47#pullrequestreview-5015624718 reopened fdu-xyvu because every macOS bulk scan/reconcile path bypasses hidden admission; current macOS engine and wheel CI fail on retained hidden paths. It reopened fdu-vfyw because the reference embedder uses an incompatible identity encoding and scope/semantic partition, discards directory continuation/remainder, labels child paging as recent-row paging without expected-version pinning, and materializes watch entry rows while dropping terminal state/work. fdu-91ru and fdu-vfx7 carry those underlying gates. Follow-up https://github.com/jlevy/fdu/pull/47#pullrequestreview-5015634122 accepts the unrelated b8ead94 pure-path vendored/documentation tag fold; fdu-n7mv stays closed. fdu-jxs0 and fdu-fltq remain correctly closed.
+
+MONITOR UPDATE: PR #47 advanced from b8ead94 to exact reviewed head d19b0ce (2026-08-25; all 19 checks green and mergeability clean) against MetaBrowser #74 exact head 0577bb1 (all 5 checks green). Accepted: ff210d0 closes the macOS hidden-admission defect; eaae030 now carries terminal engine state coherently on delta ranges and WatchBatch; d19b0ce supplies a bounded native multi-path refresh whose binding samples the terminal clock after run-facts/analysis, which satisfies the revised completion-boundary contract even though one commit is only an optimization. Remaining A3 watch carrier work stays on fdu-vfx7, and native flat filtered-tree/catalog paging stays on fdu-91ru.
+
+New exact-head adoption drift is deduplicated as follows. fdu-vfyw remains open because ff210d0 still hashes a different scope component set and ASCII encoding than MetaBrowser 0577bb1. fdu-97dd is reopened because whole-directory budget overshoot produces a different inventory for the same max_files than the strict Python stop. fdu-7sou is reopened and moved under this epic because FDU rejects watching with max_depth/max_files, while every normal MetaBrowser handle supplies both and requires one provider-owned observer. fdu-bjhy owns three-kind special-object exclusion across native projections/rollups/watch. fdu-kl7r carries the shared fixtures. These are design seams to reconcile on both owned sides, not compatibility shims.
