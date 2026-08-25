@@ -5,8 +5,45 @@ title: "Spec: fdu for interactive clients — the metabrowser contract"
 kind: epic
 status: open
 priority: 1
-version: 40
+version: 84
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+refs:
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5017522830
+    at: 2026-08-25T09:57:38.755Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/44#issuecomment-5408704238
+    at: 2026-08-25T09:57:38.756Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5018121437
+    at: 2026-08-25T11:04:22.778Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5018663775
+    at: 2026-08-25T12:07:06.705Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5019372007
+    at: 2026-08-25T13:21:13.562Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#issuecomment-5411017628
+    at: 2026-08-25T13:22:59.547Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5019981640
+    at: 2026-08-25T14:15:46.307Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5020603690
+    at: 2026-08-25T15:10:57.592Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#issuecomment-5412701379
+    at: 2026-08-25T15:25:14.109Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#issuecomment-5413222445
+    at: 2026-08-25T16:06:43.534Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5021788526
+    at: 2026-08-25T17:13:13.937Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5021835489
+    at: 2026-08-25T17:17:54.331Z
 labels: []
 dependencies: []
 child_order_hints:
@@ -45,83 +82,84 @@ child_order_hints:
   - is-01m0t5t249szzrfqrng85e36me
   - is-01m0t5t2sa2rn3qm3m4dycv7hv
   - is-01m0xns5sa6dgxxa5y4a1ts8xv
+  - is-01m0tdy6k1kfkywsy4f8kga870
+  - is-01m0tdy76e3ndzcsdwf8m6j8sq
+  - is-01m0tdy7tfq528ftppqfpteypv
+  - is-01m0tdy8b6h17fqk7mqge56svh
+  - is-01m0tdy8swsdre8d15s96wx4km
+  - is-01m0tdy9ceep2byvbtyvwc2vky
+  - is-01m0tdy9tx76dachmfcgrq5r3a
+  - is-01m0te8vfk0w5tp9337vkth4wy
+  - is-01m0tf9pw281n7hsaenyp0aq3e
+  - is-01m0tfbt0djry86tn8bd03ydr9
+  - is-01m0tra5gw0ap6nbbzgt7egvr4
+  - is-01m0tra6d42b6r8vsecjnh36e8
+  - is-01m0vrk2scfs6rfsm2hfnwkz50
+  - is-01m0vx6h8tfjyqjaxmt67nabrp
+  - is-01m0vx6yw0f8bddcwggvk2ha0p
+  - is-01kzqn502680awzhvddzntq32d
+  - is-01m0w5fbs0n1xv9rxrmrp79mda
+  - is-01m0wj8d112n578avkfs9137ba
+  - is-01m0wmbsrfcp3hd50qqja5k0jg
 created_at: 2026-08-23T07:31:34.794Z
-updated_at: 2026-08-25T23:58:38.889Z
+updated_at: 2026-08-25T23:59:33.915Z
 ---
 Root epic for the interactive-client integration spec: partitioned tallies (tag planes), the embedder watch contract, the session integration shape, and the adoption proof. Each capability lands engine-first and clears the parity harness. The measured basis and the requirement-by-requirement contract map are in the spec.
 
 ## Notes
 
-Delivery is two independent tracks. Metabrowser Phase 1 extracts its Python stack behind
-the final sealed InventoryBackend/InventoryHandle contract with NO fdu dependency; Phase 2
-implements the same contract against fdu, opening with a small real PyO3 spike (shared
-handle, one bundled directory+rollup read returning one version/cursor/state/work record,
-convergence after one live mutation, no mirror index). A bad seam there revises both
-designs before either surface expands. So fdu sequences its own phases independently.
-The conformance packet gates verification of the classification work, not the work
-itself. Full record: docs/project/research/research-2026-08-23-interactive-contract-reconciliation.md
+EXECUTION QUEUE (2026-08-24 design review; supersedes prior orderings; no counts by
+policy -- `tbd list --parent fdu-u7vo --all` is the map).
 
-## Progress as of 2026-08-24
+The review verified all eight open findings against the code, found two new issues
+(fdu-0778 gitignore bind-walk, fdu-g0n4 max_size), and settled a design on each bead's
+notes. Cross-cutting decisions:
+- `Cursor { session, clock }` is one type (fdu-325q) reused by reads (fdu-91ru) and
+  watch batches (fdu-vfx7): land 325q before both.
+- fdu-ycyy's load ordering and fdu-0778's bind-from-index are one ordering: header ->
+  validate -> install types -> materialize -> bind Path-tier from index -> tag.
+- fdu-kbir follows fdu-91ru (same function body; avoid double churn).
+- fdu-xyvu is elevated from nice-to-have: MetaBrowser's contract REQUIRES hidden
+  pruning with an exact-name allowlist, so it gates adoption.
 
-TWENTY of twenty-six children closed, on PR #47 (stacked on #44). Four of six phases are
-substantially complete; two have not started and both are blocked rather than deferred.
+Queue, one bead per commit, gate green each time:
+1. fdu-ycyy  2. fdu-0778  3. fdu-37dv  4. fdu-325q       (P0 authority/data-loss)
+5. fdu-91ru  6. fdu-vfx7                                  (observation boundary)
+7. fdu-662n                                               (bounded results; bpp9 done)
+8. fdu-kbir  9. fdu-hfdw                                  (binding evidence)
+10. fdu-g0n4  11. fdu-xyvu                                (contract-required selection/scope)
+then the mapped chain: fdu-jxs0 -> fdu-fltq, fdu-4o0m -> fdu-sgp7, fdu-pxfz (note:
+`unignored` population = total minus plane, so conservation per dimension is the test),
+fdu-7rwf, fdu-n7mv; then fdu-vfyw as the acceptance slice; fdu-m893/fdu-ey9q ride where
+their deps clear; fdu-n4gn/fdu-2ig2 on the quiet host.
 
-DONE. Phase 0 (shared reads, order/threads knobs). Phase 2 (runtime registry, browsing
-groups, two extension levels, bounded extension rows). Phase 3 (bundled coherent read,
-scalar paged child rows, per-result work counters, roll-up leaf counts). Phase 4 (dirty
-roll-up sets, scoped refresh, poll backend, asyncio adapter). Phase 6's classification
-identity, walk telemetry and TreeNode remainders. Plus the test machinery the
-implementation spec introduced: a scripted watch backend, and counter relations as a
-golden-visible cost oracle.
+Consumer-side issues found in the same review (stale bd1dcf8 doc pins; mandatory-CPU
+vs exact-or-absent; watcher-gap axis ambiguity; singular registry fingerprint; reset vs
+gap recovery cost) are consolidated in a comment on metabrowser PR #74 rather than
+tracked as fdu beads.
 
-Every one of the reconciliation's "new work" items is built: the batched multi-projection
-read under one guard returning clock, cursor, state and fingerprints; per-result work
-counters; roll-up leaf counts. Both flipped readiness verdicts are addressed on the
-children() side.
+ALIGNMENT UPDATE at exact PR #47 head a3960fb / MetaBrowser 68eeaac (2026-08-24; all 19 FDU checks green). MetaBrowser resolved the five consumer-side ambiguities and hardened the as_of requirement. Existing beads now carry the implementation consequences: fdu-5yqb reopened to remove watcher_gap from coverage vocabulary; fdu-91ru remains open for the structured envelope, state-clock atomicity, and caller-pinned as_of; fdu-kbir has the final exact-or-absent CPU contract; fdu-fltq distinguishes consumer reset from provider gap recovery; fdu-vfyw pins canonical combination of type/tag/reducer fingerprints and cross-engine acceptance. Do not create parallel alignment beads; update these owners as #47 advances.
 
-NOT STARTED, AND WHY.
-- Phase 1 (fdu-mvt3, fdu-7rwf). Scope is now settled smaller than the bead text: hidden
-  prunes at scope, gitignore is the sole tag rule. The only real blocker left is the
-  `ignore` crate owing the 14-day cool-off.
-- Phase 5 (fdu-4o0m and the progress mode fdu-m893 behind it). Blocked on the
-  progressive-results epic, which owns the session type these present.
-- fdu-vfyw, fdu-ey9q. Blocked on the two above.
-- fdu-n4gn. Cannot price a union whose members do not exist, and needs a quiet host.
+MONITOR UPDATE: PR #47 advanced to 558461a (2026-08-24; all 19 checks green). The lossless WatchBatch direction is correct and fixes removed-directory and filtered-dirty loss, but exact-head review reopened fdu-vfx7: terminal cursor is sampled after apply_next under a separate guard and can skip a concurrent commit; asyncio teardown blocks the event loop while the worker can be waiting on that same loop, then does not assert termination; state/work remain absent. fdu-jxs0 and fdu-fltq notes now record the retag-clock and reset-vs-gap interactions. Review the delta before treating the green carrier commit as adoption-ready.
 
-CARRIED AS EXPLICIT DEBT, not as silence.
-- fdu-2ig2: leaf counts shipped on the ancestor-merge path unmeasured. The reconciliation
-  warns that a cost acceptable for each member alone can be wrong in combination, and one
-  member is now in the hot path ahead of the measurement meant to choose the
-  representation.
-- fdu-gy3g: the conformance packet cannot usefully be vendored until its cases can tell
-  the two extension levels apart.
-- fdu-or38: report views still cannot distinguish a symlink-only directory from an empty
-  one.
-- fdu-plwq closed without per-row tags, which need Phase 1's planes; fdu-7rwf owns
-  adding them.
-- The resume cursor carries data changes but not trust transitions (fdu-jxs0, raised to
-  P1 per the reconciliation). The SSE example says so rather than implying currency it
-  does not have.
+MONITOR UPDATE: PR #47 advanced from 558461a to exact head 56dcf56 (2026-08-24; all 19 checks green). fdu-662n and fdu-g0n4 correctly landed positive child-page limits and inclusive max_size for adapter translation; fdu-hfdw now charges filtered report index visits. fdu-kbir was reopened after exact-head review: the GIL detach is correct and CPU absence aligns, but conversion_ns stops before projection conversion and omits the public Python Bundle/model conversion, materialized_bytes is an incomplete second O(output) estimate rather than a documented binding-payload count, and the public threading test would pass under GIL serialization. Existing fdu-vfx7, fdu-91ru, fdu-jxs0, fdu-fltq, and the remaining adoption gates stay open.
 
-## Restructure and decisions, 2026-08-24 (late)
+MONITOR UPDATE: PR #47 advanced from 56dcf56 to exact head 715f748 (2026-08-25). Removing WatcherGap from coverage is aligned and fdu-5yqb is correctly closed; py.detach on the actual read and exact-or-absent CPU are also aligned. Adoption is still blocked: fdu-vfx7 remains open because a direct producer commit can interleave between multiple watcher/reconcile deltas and be skipped by the returned terminal cursor, and long watch intervals let asyncio teardown return with its worker still alive. fdu-kbir was reopened again because model_ns double-counts extension conversion, one Work type now has conflicting total-versus-projection semantics, binding-payload accounting is non-exhaustive, and the timing-based GIL proof fails the macOS/Python 3.14 CI job. fdu-91ru, fdu-jxs0, and fdu-fltq remain open for the coherent envelope/data clock and recovery distinction.
 
-The owner directed the tag model be generic -- gitignore one rule among several -- and
-delegated the approach. Decisions taken, recorded on the beads and in both specs:
+MONITOR UPDATE: PR #47 advanced from 715f748 to exact head 278457a (2026-08-25; all 19 checks green). The 278457a performance follow-up fully resolves the reviewed fdu-kbir remainder: direct non-overlapping phase timings, distinct ProjectionCost, structural payload charging with an independent oracle, and a forced GIL-progress test; fdu-kbir stays closed. ac38584 correctly makes answer-affecting state a clocked journal commit, but its live delivery is incomplete, so fdu-jxs0 was reopened: reconcile begin/finish commits do not reach the sink used by WatchBatch, and PyWatch replaces actual state clocks with the terminal batch clock. fdu-vfx7 remains open because Retagged's unbounded directory vector bypasses all_dirty and journal retention, async teardown can still return with a live worker, and resulting provider state/work are absent. fdu-fltq remains open for provider-gap versus consumer-reset semantics; fdu-91ru remains open for typed issues/lifecycle and caller-pinned as_of. Remaining adoption gates are unchanged.
 
-1. `ignore` crate: feature-gated `gitignore`, default-on, notify's precedent. MSRV trap
-   found by checking: ignore 0.4.31+ needs Rust 1.88 > MSRV 1.85, so pin =0.4.30 with
-   globset held at 0.4.19 (both clear the cool-off). Evidence and pins on fdu-brt0.
-2. Genericity applied: fdu-mvt3 re-scoped to the model foundation (tiers, bits,
-   tag_rules_fingerprint rename, dotfile reference rule); gitignore -> fdu-brt0;
-   promotion/planes -> fdu-pxfz; hidden admission as scope -> fdu-xyvu; flags fold-in
-   -> fdu-n7mv (P3); surfaces remain fdu-7rwf, re-scoped.
-3. fdu-2ig2: keep `others` (the implemented contract requires leaf counts); measure on
-   any quiet host, or ride fdu-n4gn's run.
-4. fdu-vrwy: its own change, not PR #47.
+MONITOR UPDATE: PR #47 advanced from 278457a to exact head fad3d2f (2026-08-25; all 19 checks green). The complete journal slice fixes the prior concurrent-producer cursor omission and makes reconcile state visible through Session; the short internal async pull plus liveness check and typed teardown error close the teardown finding. Adoption remains blocked on mapped owners: fdu-vfx7 now records that a journal-only producer commit cannot wake an idle Session, plus the unbounded Retagged carrier and missing resulting state/work; fdu-jxs0 remains open for the public reconcile sink and exact per-transition clocks; fdu-fltq remains open because provider gaps still become reset and consumer truncation emits the MetaBrowser-invalid reset + all_dirty combination. fdu-91ru remains open for typed lifecycle/issues and caller-pinned as_of.
 
-Epic now has 34 children: 19 closed, 15 open. Build order: Track A (contract) fdu-5yqb
--> fdu-samw, with fdu-fltq behind fdu-jxs0 and fdu-sgp7 behind fdu-4o0m. Track B (tags)
-fdu-mvt3 -> {fdu-brt0, fdu-pxfz} -> fdu-7rwf -> {fdu-vfyw, fdu-n4gn}. Track C
-(independent smalls): fdu-or38, fdu-xyvu, fdu-vrwy. The session chain stays behind the
-progressive-results epic. Ready right now: fdu-5yqb, fdu-mvt3, fdu-or38, fdu-xyvu,
-fdu-vrwy.
+MONITOR UPDATE: PR #47 advanced from fad3d2f to exact reviewed head 7aaaf84 (2026-08-25; all 19 checks green and mergeability clean). The review accepts caller-pinned as_of, the typed coherent read envelope, exact state-transition clocks, journal-only delivery, bounded retagging, reset-versus-recovery semantics, dirty query kinds, read-side GIL release, async teardown, and the promoted-plane equivalence work; fdu-jxs0 and fdu-fltq stay closed. Exact-head formal review https://github.com/jlevy/fdu/pull/47#pullrequestreview-5015288678 reopened fdu-vfx7 because WatchBatch still lacks the complete resulting provider state at its cursor, the v1 invalidation path still materializes entry rows across PyO3, and public watch work omits binding/model conversion cost. It also reopened fdu-91ru because only child listings have native continuation: filtered-tree and catalog pages cannot satisfy MetaBrowser's mandatory bounds, advancing cursors, and lossless remainders without an unbounded FFI result or Python mirror. These are Phase 2 adoption blockers; no parallel beads were created.
+
+MONITOR UPDATE: PR #47 advanced from 7aaaf84 through exact reviewed head b8ead94 (2026-08-25). Review https://github.com/jlevy/fdu/pull/47#pullrequestreview-5015624718 reopened fdu-xyvu because every macOS bulk scan/reconcile path bypasses hidden admission; current macOS engine and wheel CI fail on retained hidden paths. It reopened fdu-vfyw because the reference embedder uses an incompatible identity encoding and scope/semantic partition, discards directory continuation/remainder, labels child paging as recent-row paging without expected-version pinning, and materializes watch entry rows while dropping terminal state/work. fdu-91ru and fdu-vfx7 carry those underlying gates. Follow-up https://github.com/jlevy/fdu/pull/47#pullrequestreview-5015634122 accepts the unrelated b8ead94 pure-path vendored/documentation tag fold; fdu-n7mv stays closed. fdu-jxs0 and fdu-fltq remain correctly closed.
+
+MONITOR UPDATE: PR #47 advanced from b8ead94 to exact reviewed head d19b0ce (2026-08-25; all 19 checks green and mergeability clean) against MetaBrowser #74 exact head 0577bb1 (all 5 checks green). Accepted: ff210d0 closes the macOS hidden-admission defect; eaae030 now carries terminal engine state coherently on delta ranges and WatchBatch; d19b0ce supplies a bounded native multi-path refresh whose binding samples the terminal clock after run-facts/analysis, which satisfies the revised completion-boundary contract even though one commit is only an optimization. Remaining A3 watch carrier work stays on fdu-vfx7, and native flat filtered-tree/catalog paging stays on fdu-91ru.
+
+New exact-head adoption drift is deduplicated as follows. fdu-vfyw remains open because ff210d0 still hashes a different scope component set and ASCII encoding than MetaBrowser 0577bb1. fdu-97dd is reopened because whole-directory budget overshoot produces a different inventory for the same max_files than the strict Python stop. fdu-7sou is reopened and moved under this epic because FDU rejects watching with max_depth/max_files, while every normal MetaBrowser handle supplies both and requires one provider-owned observer. fdu-bjhy owns three-kind special-object exclusion across native projections/rollups/watch. fdu-kl7r carries the shared fixtures. These are design seams to reconcile on both owned sides, not compatibility shims.
+
+EXACT-HEAD ADOPTION REVIEW at PR #47 9f9bd3d (2026-08-25): accepted invalidations-only WatchBatch delivery/work (`515d52c`) and strict concurrent max_files (`1b76062`). Reopened fdu-91ru: EntryPage is functionally bounded/lossless but starts from root and performs a full selection pass on every continuation (`index.rs:4040-4123`), making P-page assembly O(index × P) and violating MetaBrowser #74’s explicit no-repeat-projection gate. Formal review: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5018121437. Open adoption gates: fdu-91ru, fdu-7sou, fdu-97dd, fdu-vfyw, fdu-bjhy, fdu-kl7r.
+
+EXACT-HEAD ADOPTION REVIEW at PR #47 d0a6a6a (2026-08-25): accepted native special-object exclusion across scan, snapshot, reconciliation, refresh, watch, Python, and tally conservation; fdu-bjhy stays closed. The exact shared identity remains open on fdu-vfyw because browser_provider.scope_fingerprint adds internal `exclude_special` to the MetaBrowser digest, whose authoritative component set is exactly hidden_allowlist/max_depth/max_files. Keep the internal ScanScope bit but do not expose it as an application scope axis. Review: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5018663775. Open adoption gates remain fdu-91ru, fdu-7sou, fdu-97dd, fdu-vfyw, and fdu-kl7r.
+
+EXACT-HEAD ADOPTION REVIEW at PR #47 71772fc38d2efb555ed5b383a2dbe1709bcd6b42 / MetaBrowser #74 0577bb125c4a607719befa3f213362f5522d5724 (2026-08-25). Accepted the exact MetaBrowser scope-digest bytes, the shared bounded open builder, native special-object pruning, and the direction of an index-owned global file cap. Formal review https://github.com/jlevy/fdu/pull/47#pullrequestreview-5019372007 found live hidden-path admission bypass on fdu-xyvu; reopened fdu-7sou for retained one_filesystem boundary drift, fdu-97dd for refusal state/report/typed-issue drift, and fdu-vfx7 for a state-only-batch acceptance-test race; fdu-vfyw remains open for the stale row-carrying reference adapter, and fdu-kl7r for the deliberate global-cap agreement change on the MetaBrowser side. fdu-91ru remains open because continuations still repeat the full selection pass. Exact-head CI is red only on the new Windows max-files golden: its non-portable fixture setup creates one 3-byte file even in the uncapped control; actionable follow-up https://github.com/jlevy/fdu/pull/47#issuecomment-5411017628. Open adoption/review gates are fdu-91ru, fdu-7sou, fdu-97dd, fdu-vfx7, fdu-xyvu, fdu-vfyw, and fdu-kl7r.
