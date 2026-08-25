@@ -82,6 +82,25 @@ pub struct TagRule {
     pub tier: TagTier,
 }
 
+/// A promoted rule, for which every directory roll-up maintains a plane.
+///
+/// The distinction promotion draws is between an *observation* and a *maintained
+/// aggregate*. A tag is a bit on an entry: cheap to set, cheap to carry, and answering a
+/// question about it means re-aggregating. A plane is roll-up state kept correct on every
+/// mutation, so the same question is a read -- paid for on the ancestor-merge path, per
+/// promoted rule, on every insert and removal in the tree.
+///
+/// That is why promotion is a declared subset rather than a property every tag has. Tags
+/// are cheap bits; planes are the cost.
+///
+/// **A plane holds the entries *without* the tag.** For `gitignore` that is the unignored
+/// side, which is what a browser shows. The complement derives as all-minus-plane for
+/// every field that subtracts -- and `newest_mtime_ns` does not, so the derived side
+/// reports it absent rather than wrong. The same choice `ChildRemainder` makes, for the
+/// same reason: a maximum cannot be un-merged.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+pub struct Promoted(pub TagId);
+
 /// Decides a [`TagTier::Name`] rule from a basename.
 type NameMatcher = fn(&OsStr) -> bool;
 
@@ -135,6 +154,11 @@ impl PathMatcher {
 pub struct TagRules {
     rules: Vec<TagRule>,
     matchers: Vec<Matcher>,
+    /// Rules whose planes every roll-up maintains, sorted and deduplicated.
+    ///
+    /// Small by construction -- a handful at most -- so a sorted `Vec` scanned linearly
+    /// beats anything with a node per entry, the same reasoning `by_group` records.
+    promoted: Vec<Promoted>,
     fingerprint: u64,
 }
 
@@ -318,8 +342,44 @@ impl TagRules {
         if rules.len() > MAX_TAG_RULES {
             return Err(TagRuleError::TooMany(rules.len()));
         }
-        let fingerprint = fingerprint_of(&rules);
-        Ok(Self { rules, matchers, fingerprint })
+        let fingerprint = fingerprint_of(&rules, &[]);
+        Ok(Self { rules, matchers, promoted: Vec::new(), fingerprint })
+    }
+
+    /// The same enabled set, with these rules promoted to maintained planes.
+    ///
+    /// Promotion changes what a stored roll-up *contains*, so it moves the fingerprint: a
+    /// snapshot written without a plane cannot be reinterpreted as one with an empty
+    /// plane, because those say different things -- "nothing was outside the tag" and
+    /// "nobody was counting". Rebinding control files does not move it, and that
+    /// difference is the whole distinction between what a rule reads and what it is.
+    ///
+    /// Naming a rule that is not enabled is refused rather than ignored: a caller that
+    /// promoted a typo would get every plane silently empty and no way to tell that from
+    /// a tree where the tag matched nothing.
+    pub fn with_promoted<I, S>(mut self, names: I) -> Result<Self, TagRuleError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let mut promoted = Vec::new();
+        for name in names {
+            let name = name.as_ref();
+            let id = self.id_of(name).ok_or_else(|| TagRuleError::Unknown(name.to_string()))?;
+            if promoted.contains(&Promoted(id)) {
+                return Err(TagRuleError::Duplicate(name.to_string()));
+            }
+            promoted.push(Promoted(id));
+        }
+        promoted.sort_unstable();
+        self.fingerprint = fingerprint_of(&self.rules, &promoted);
+        self.promoted = promoted;
+        Ok(self)
+    }
+
+    /// Rules whose planes every roll-up maintains, sorted.
+    pub fn promoted(&self) -> &[Promoted] {
+        &self.promoted
     }
 
     /// The same enabled set, bound to the control files at these directories.
@@ -361,7 +421,12 @@ impl TagRules {
                 }
             })
             .collect();
-        Self { rules: self.rules.clone(), matchers, fingerprint: self.fingerprint }
+        Self {
+            rules: self.rules.clone(),
+            matchers,
+            promoted: self.promoted.clone(),
+            fingerprint: self.fingerprint,
+        }
     }
 
     /// Whether a Path-tier rule is enabled but not yet bound to a tree.
@@ -588,7 +653,7 @@ fn bind(name: &str, decides: Decides) -> Result<Matcher, TagRuleError> {
 }
 
 /// FNV-1a over the enabled names and tiers, in order.
-fn fingerprint_of(rules: &[TagRule]) -> u64 {
+fn fingerprint_of(rules: &[TagRule], promoted: &[Promoted]) -> u64 {
     if rules.is_empty() {
         return 0;
     }
@@ -603,6 +668,14 @@ fn fingerprint_of(rules: &[TagRule]) -> u64 {
         mix(rule.id.as_bytes());
         mix(&[rule.tier as u8]);
         mix(b"\x1f");
+    }
+    // Only when something is promoted, so an unpromoted set fingerprints exactly as it did
+    // before planes existed and no cache written under it is discarded.
+    if !promoted.is_empty() {
+        mix(b"planes\x1f");
+        for Promoted(id) in promoted {
+            mix(&[*id]);
+        }
     }
     hash
 }

@@ -216,6 +216,31 @@ struct InternedRollUp {
     /// six beats a tree node per key. Empty, and therefore unallocated, when the registry
     /// declares no groups or the subtree holds nothing classified.
     by_group: Vec<(crate::classify::GroupId, ExtTally)>,
+    /// Maintained planes, one per promoted rule, sorted by tag.
+    ///
+    /// Each holds the same reducers restricted to the entries *without* that tag. Empty,
+    /// and therefore unallocated, when nothing is promoted -- which is the default and the
+    /// only shape the hot path had before planes existed.
+    planes: Vec<(crate::tags::Promoted, Plane)>,
+}
+
+/// One maintained plane: the reducers restricted to entries without a promoted tag.
+///
+/// The untagged side is stored rather than the tagged one because it is the side a
+/// consumer reads -- for `gitignore`, what a browser shows -- and because only the stored
+/// side can report a `newest_mtime_ns`. The complement derives by subtraction for every
+/// field that subtracts, and a maximum does not: `ChildRemainder` omits its mtime for the
+/// same reason, and a figure that is sometimes wrong is worse than one that is absent.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct Plane {
+    files: u64,
+    dirs: u64,
+    others: u64,
+    bytes: u64,
+    allocated: u64,
+    newest_mtime_ns: i64,
+    by_ext: BTreeMap<ExtId, ExtTally>,
+    by_group: Vec<(crate::classify::GroupId, ExtTally)>,
 }
 
 /// The scalar half of a roll-up: subtree totals with no per-extension breakdown.
@@ -257,6 +282,103 @@ impl From<&InternedRollUp> for RollUpScalars {
     }
 }
 
+impl Plane {
+    /// Fold another plane in. The same arithmetic the totals use, on the same fields.
+    fn merge(&mut self, other: &Plane) {
+        let had_files = self.files > 0;
+        self.files += other.files;
+        self.dirs += other.dirs;
+        self.others += other.others;
+        self.bytes += other.bytes;
+        self.allocated += other.allocated;
+        if other.files > 0 {
+            self.newest_mtime_ns = if had_files {
+                self.newest_mtime_ns.max(other.newest_mtime_ns)
+            } else {
+                other.newest_mtime_ns
+            };
+        }
+        merge_tallies(&mut self.by_ext, &other.by_ext);
+        merge_group_tallies(&mut self.by_group, &other.by_group);
+    }
+
+    /// Remove another plane's contribution, leaving `newest_mtime_ns` to be recomputed.
+    fn unmerge(&mut self, other: &Plane) {
+        self.files = self.files.saturating_sub(other.files);
+        self.dirs = self.dirs.saturating_sub(other.dirs);
+        self.others = self.others.saturating_sub(other.others);
+        self.bytes = self.bytes.saturating_sub(other.bytes);
+        self.allocated = self.allocated.saturating_sub(other.allocated);
+        unmerge_tallies(&mut self.by_ext, &other.by_ext);
+        unmerge_group_tallies(&mut self.by_group, &other.by_group);
+    }
+
+    /// Whether this plane accounts for nothing, and so need not be stored.
+    fn is_empty(&self) -> bool {
+        self.files == 0 && self.dirs == 0 && self.others == 0 && self.bytes == 0
+    }
+}
+
+/// Fold per-extension tallies from `other` into `into`.
+fn merge_tallies(into: &mut BTreeMap<ExtId, ExtTally>, other: &BTreeMap<ExtId, ExtTally>) {
+    for (ext, tally) in other {
+        let slot = into.entry(*ext).or_default();
+        slot.files += tally.files;
+        slot.bytes += tally.bytes;
+        slot.allocated += tally.allocated;
+    }
+}
+
+/// Remove `other`'s per-extension tallies from `into`, dropping keys that reach zero.
+fn unmerge_tallies(into: &mut BTreeMap<ExtId, ExtTally>, other: &BTreeMap<ExtId, ExtTally>) {
+    for (ext, tally) in other {
+        if let Some(slot) = into.get_mut(ext) {
+            slot.files = slot.files.saturating_sub(tally.files);
+            slot.bytes = slot.bytes.saturating_sub(tally.bytes);
+            slot.allocated = slot.allocated.saturating_sub(tally.allocated);
+            if slot.files == 0 && slot.bytes == 0 && slot.allocated == 0 {
+                into.remove(ext);
+            }
+        }
+    }
+}
+
+/// Fold per-group tallies from `other` into the sorted association list `into`.
+fn merge_group_tallies(
+    into: &mut Vec<(crate::classify::GroupId, ExtTally)>,
+    other: &[(crate::classify::GroupId, ExtTally)],
+) {
+    for (group, tally) in other {
+        match into.binary_search_by_key(group, |(id, _)| *id) {
+            Ok(position) => {
+                let slot = &mut into[position].1;
+                slot.files += tally.files;
+                slot.bytes += tally.bytes;
+                slot.allocated += tally.allocated;
+            }
+            Err(position) => into.insert(position, (*group, *tally)),
+        }
+    }
+}
+
+/// Remove `other`'s per-group tallies, dropping entries that reach zero.
+fn unmerge_group_tallies(
+    into: &mut Vec<(crate::classify::GroupId, ExtTally)>,
+    other: &[(crate::classify::GroupId, ExtTally)],
+) {
+    for (group, tally) in other {
+        if let Ok(position) = into.binary_search_by_key(group, |(id, _)| *id) {
+            let slot = &mut into[position].1;
+            slot.files = slot.files.saturating_sub(tally.files);
+            slot.bytes = slot.bytes.saturating_sub(tally.bytes);
+            slot.allocated = slot.allocated.saturating_sub(tally.allocated);
+            if slot.files == 0 && slot.bytes == 0 && slot.allocated == 0 {
+                into.remove(position);
+            }
+        }
+    }
+}
+
 impl InternedRollUp {
     /// Fold another roll-up into this one. Commutative and associative, which is what
     /// lets the walk merge subtrees in whatever order threads finish them.
@@ -274,21 +396,12 @@ impl InternedRollUp {
                 other.newest_mtime_ns
             };
         }
-        for (ext, tally) in &other.by_ext {
-            let slot = self.by_ext.entry(*ext).or_default();
-            slot.files += tally.files;
-            slot.bytes += tally.bytes;
-            slot.allocated += tally.allocated;
-        }
-        for (group, tally) in &other.by_group {
-            match self.by_group.binary_search_by_key(group, |(id, _)| *id) {
-                Ok(position) => {
-                    let slot = &mut self.by_group[position].1;
-                    slot.files += tally.files;
-                    slot.bytes += tally.bytes;
-                    slot.allocated += tally.allocated;
-                }
-                Err(position) => self.by_group.insert(position, (*group, *tally)),
+        merge_tallies(&mut self.by_ext, &other.by_ext);
+        merge_group_tallies(&mut self.by_group, &other.by_group);
+        for (tag, plane) in &other.planes {
+            match self.planes.binary_search_by_key(tag, |(id, _)| *id) {
+                Ok(position) => self.planes[position].1.merge(plane),
+                Err(position) => self.planes.insert(position, (*tag, plane.clone())),
             }
         }
     }
@@ -304,27 +417,24 @@ impl InternedRollUp {
         self.others = self.others.saturating_sub(other.others);
         self.bytes = self.bytes.saturating_sub(other.bytes);
         self.allocated = self.allocated.saturating_sub(other.allocated);
-        for (ext, tally) in &other.by_ext {
-            if let Some(slot) = self.by_ext.get_mut(ext) {
-                slot.files = slot.files.saturating_sub(tally.files);
-                slot.bytes = slot.bytes.saturating_sub(tally.bytes);
-                slot.allocated = slot.allocated.saturating_sub(tally.allocated);
-                if slot.files == 0 && slot.bytes == 0 && slot.allocated == 0 {
-                    self.by_ext.remove(ext);
+        unmerge_tallies(&mut self.by_ext, &other.by_ext);
+        unmerge_group_tallies(&mut self.by_group, &other.by_group);
+        for (tag, plane) in &other.planes {
+            if let Ok(position) = self.planes.binary_search_by_key(tag, |(id, _)| *id) {
+                self.planes[position].1.unmerge(plane);
+                if self.planes[position].1.is_empty() {
+                    self.planes.remove(position);
                 }
             }
         }
-        for (group, tally) in &other.by_group {
-            if let Ok(position) = self.by_group.binary_search_by_key(group, |(id, _)| *id) {
-                let slot = &mut self.by_group[position].1;
-                slot.files = slot.files.saturating_sub(tally.files);
-                slot.bytes = slot.bytes.saturating_sub(tally.bytes);
-                slot.allocated = slot.allocated.saturating_sub(tally.allocated);
-                if slot.files == 0 && slot.bytes == 0 && slot.allocated == 0 {
-                    self.by_group.remove(position);
-                }
-            }
-        }
+    }
+
+    /// The maintained plane for one promoted rule, when this subtree has one.
+    fn plane(&self, tag: crate::tags::Promoted) -> Option<&Plane> {
+        self.planes
+            .binary_search_by_key(&tag, |(id, _)| *id)
+            .ok()
+            .map(|position| &self.planes[position].1)
     }
 }
 
@@ -2807,6 +2917,19 @@ impl Index {
             EntryKind::Dir => {
                 let mut roll = entry.rollup.clone();
                 roll.dirs += 1;
+                // The directory counts itself into every plane it is not excluded from,
+                // beside the subtree state its own roll-up already carries.
+                for promoted in self.tag_rules.promoted() {
+                    if entry.tag_bits & (1 << promoted.0) != 0 {
+                        continue;
+                    }
+                    match roll.planes.binary_search_by_key(promoted, |(id, _)| *id) {
+                        Ok(position) => roll.planes[position].1.dirs += 1,
+                        Err(position) => roll
+                            .planes
+                            .insert(position, (*promoted, Plane { dirs: 1, ..Plane::default() })),
+                    }
+                }
                 roll
             }
             EntryKind::File => {
@@ -2819,6 +2942,7 @@ impl Index {
                     newest_mtime_ns: entry.attrs.mtime_ns,
                     by_ext: BTreeMap::new(),
                     by_group: Vec::new(),
+                    planes: Vec::new(),
                 };
                 if let Some(group_id) = entry.group_id {
                     roll.by_group.push((
@@ -2840,13 +2964,39 @@ impl Index {
                         },
                     );
                 }
+                // A plane holds the entries *without* its tag, so this file joins the
+                // planes of every promoted rule that did not match it. Nothing is
+                // allocated when nothing is promoted, which is the default.
+                for promoted in self.tag_rules.promoted() {
+                    if entry.tag_bits & (1 << promoted.0) == 0 {
+                        roll.planes.push((
+                            *promoted,
+                            Plane {
+                                files: 1,
+                                dirs: 0,
+                                others: 0,
+                                bytes: entry.attrs.size,
+                                allocated: entry.attrs.allocated,
+                                newest_mtime_ns: entry.attrs.mtime_ns,
+                                by_ext: roll.by_ext.clone(),
+                                by_group: roll.by_group.clone(),
+                            },
+                        ));
+                    }
+                }
                 roll
             }
             // Zero bytes, and one entry. A default here made a subtree of symlinks
             // arithmetically identical to an empty one, so nothing downstream could tell
             // "nothing is here" from "nothing here has a size".
             EntryKind::Symlink | EntryKind::Other => {
-                InternedRollUp { others: 1, ..InternedRollUp::default() }
+                let mut roll = InternedRollUp { others: 1, ..InternedRollUp::default() };
+                for promoted in self.tag_rules.promoted() {
+                    if entry.tag_bits & (1 << promoted.0) == 0 {
+                        roll.planes.push((*promoted, Plane { others: 1, ..Plane::default() }));
+                    }
+                }
+                roll
             }
         }
     }
@@ -2878,9 +3028,14 @@ impl Index {
     /// change either. That early exit is what keeps the common removal O(depth) instead
     /// of O(depth x children).
     fn recompute_newest_upward(&mut self, from: Option<EntryId>) {
+        // Every promoted plane keeps its own maximum, and a maximum cannot be un-merged --
+        // so each is repaired here beside the whole-subtree one, from the same pass over
+        // the same children. Empty and unallocated when nothing is promoted.
+        let promoted: Vec<crate::tags::Promoted> = self.tag_rules.promoted().to_vec();
         let mut current = from;
         while let Some(id) = current {
             let mut newest: Option<i64> = None;
+            let mut plane_newest: Vec<Option<i64>> = vec![None; promoted.len()];
             for child in self.entry(id).children.values() {
                 let child_entry = self.entry(*child);
                 let candidate = if child_entry.kind.is_dir() {
@@ -2891,13 +3046,39 @@ impl Index {
                 if let Some(candidate) = candidate {
                     newest = Some(newest.map_or(candidate, |current| current.max(candidate)));
                 }
+                for (slot, tag) in plane_newest.iter_mut().zip(&promoted) {
+                    let candidate = if child_entry.kind.is_dir() {
+                        child_entry
+                            .rollup
+                            .plane(*tag)
+                            .filter(|plane| plane.files > 0)
+                            .map(|plane| plane.newest_mtime_ns)
+                    } else if child_entry.tag_bits & (1 << tag.0) == 0 {
+                        Some(child_entry.attrs.mtime_ns)
+                    } else {
+                        None
+                    };
+                    if let Some(candidate) = candidate {
+                        *slot = Some(slot.map_or(candidate, |held: i64| held.max(candidate)));
+                    }
+                }
             }
             let newest = newest.unwrap_or(0);
             let entry = self.entry_mut(id);
-            if entry.rollup.newest_mtime_ns == newest {
+            let mut moved = entry.rollup.newest_mtime_ns != newest;
+            entry.rollup.newest_mtime_ns = newest;
+            for (slot, tag) in plane_newest.iter().zip(&promoted) {
+                let value = slot.unwrap_or(0);
+                if let Ok(position) = entry.rollup.planes.binary_search_by_key(tag, |(id, _)| *id) {
+                    moved |= entry.rollup.planes[position].1.newest_mtime_ns != value;
+                    entry.rollup.planes[position].1.newest_mtime_ns = value;
+                }
+            }
+            // Stops early only when nothing at this level moved: with planes there are
+            // several maxima, and one of them settling says nothing about the others.
+            if !moved {
                 return;
             }
-            entry.rollup.newest_mtime_ns = newest;
             current = entry.parent;
         }
     }
@@ -4501,6 +4682,128 @@ mod tests {
     /// Retention is bounded by operations, and a transition that cost nothing would let a
     /// producer fill the journal with entries the bound never sees -- which is the one
     /// thing the bound exists to prevent in a long-lived server.
+    /// A promoted plane and its derived complement account for the whole subtree.
+    ///
+    /// The partition property, over every mutation a live index takes: insert, modify,
+    /// remove, and the re-insert that a kind change becomes. Every field that subtracts
+    /// must satisfy `plane + (all - plane) == all` at every directory -- which is trivially
+    /// true of the arithmetic and not at all true of the bookkeeping, since a plane is
+    /// merged and un-merged along the same ancestor chain as the totals and can drift from
+    /// them at any level.
+    ///
+    /// `newest_mtime_ns` is excluded on purpose and checked separately below: it is the one
+    /// reducer that does not subtract.
+    #[test]
+    fn a_plane_and_its_complement_account_for_everything() {
+        let rules = std::sync::Arc::new(
+            crate::tags::TagRules::from_names(["dotfile"])
+                .expect("enables")
+                .with_promoted(["dotfile"])
+                .expect("promotes"),
+        );
+        let mut index = Index::new("/root").with_tag_rules(rules);
+        let tag = *index.tag_rules().promoted().first().expect("one promoted rule");
+
+        // A tree with tagged and untagged entries at several depths, so a plane that
+        // drifted at one level could not hide behind a correct total at another.
+        index.apply_ok(&Observation::new(vec![
+            upsert("src", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("src/main.rs", EntryKind::File, file_attrs(10, 5)),
+            upsert("src/.hidden", EntryKind::File, file_attrs(20, 9)),
+            upsert("src/deep", EntryKind::Dir, file_attrs(0, 2)),
+            upsert("src/deep/.cache", EntryKind::File, file_attrs(40, 1)),
+            upsert("src/deep/kept.txt", EntryKind::File, file_attrs(80, 7)),
+        ]));
+        assert_partitioned(&index, tag);
+
+        // Modify, which un-merges the old contribution and merges a new one.
+        index.apply_ok(&Observation::new(vec![upsert(
+            "src/deep/kept.txt",
+            EntryKind::File,
+            file_attrs(160, 11),
+        )]));
+        assert_partitioned(&index, tag);
+
+        // Remove a tagged entry, then an untagged one: the plane must move for exactly one
+        // of them, and the totals for both.
+        index.apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("src/.hidden") }]));
+        assert_partitioned(&index, tag);
+        index.apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("src/main.rs") }]));
+        assert_partitioned(&index, tag);
+
+        // A kind change, which the index applies as a removal and a re-insert.
+        index.apply_ok(&Observation::new(vec![upsert(
+            "src/deep",
+            EntryKind::File,
+            file_attrs(5, 1),
+        )]));
+        assert_partitioned(&index, tag);
+    }
+
+    /// Every directory's plane is a subset of its totals, field by field.
+    #[track_caller]
+    fn assert_partitioned(index: &Index, tag: crate::tags::Promoted) {
+        let mut pending = vec![EntryId::ROOT];
+        while let Some(id) = pending.pop() {
+            pending.extend(index.entry(id).children.values().copied());
+            if !index.entry(id).kind.is_dir() {
+                continue;
+            }
+            let roll = &index.entry(id).rollup;
+            let Some(plane) = roll.plane(tag) else {
+                continue;
+            };
+            let name = index.entry(id).name.to_string_lossy().into_owned();
+            assert!(plane.files <= roll.files, "{name}: plane files exceed the total");
+            assert!(plane.dirs <= roll.dirs, "{name}: plane dirs exceed the total");
+            assert!(plane.others <= roll.others, "{name}: plane others exceed the total");
+            assert!(plane.bytes <= roll.bytes, "{name}: plane bytes exceed the total");
+            assert!(plane.allocated <= roll.allocated, "{name}: plane allocated exceeds the total");
+            for (ext, tally) in &plane.by_ext {
+                let whole = roll.by_ext.get(ext).copied().unwrap_or_default();
+                assert!(tally.files <= whole.files, "{name}: plane extension rows exceed");
+                assert!(tally.bytes <= whole.bytes, "{name}: plane extension bytes exceed");
+            }
+        }
+    }
+
+    /// The tagged side derives by subtraction -- except its newest mtime, which cannot.
+    ///
+    /// A maximum does not un-merge: knowing the newest file in a subtree and the newest
+    /// untagged file in it says nothing about the newest tagged one. The complement
+    /// therefore reports it absent, which is the same choice `ChildRemainder` makes and for
+    /// the same reason -- a figure that is sometimes wrong is worse than one that is not
+    /// there.
+    #[test]
+    fn the_derived_side_reports_no_mtime_because_a_maximum_cannot_be_subtracted() {
+        let rules = std::sync::Arc::new(
+            crate::tags::TagRules::from_names(["dotfile"])
+                .expect("enables")
+                .with_promoted(["dotfile"])
+                .expect("promotes"),
+        );
+        let mut index = Index::new("/root").with_tag_rules(rules);
+        let tag = *index.tag_rules().promoted().first().expect("one promoted rule");
+
+        // The tagged file is the newest thing in the tree.
+        index.apply_ok(&Observation::new(vec![
+            upsert("kept.txt", EntryKind::File, file_attrs(10, 100)),
+            upsert(".hidden", EntryKind::File, file_attrs(20, 900)),
+        ]));
+
+        let roll = &index.entry(EntryId::ROOT).rollup;
+        let plane = roll.plane(tag).expect("the promoted plane");
+        assert_eq!(roll.newest_mtime_ns, 900, "the whole tree's newest is the tagged file");
+        assert_eq!(plane.newest_mtime_ns, 100, "the plane's newest is the untagged one");
+        // And 900 is unreachable from 100 and 900 by any subtraction, which is the point:
+        // a consumer wanting the tagged side's mtime must re-aggregate for it.
+        assert_ne!(
+            roll.newest_mtime_ns - plane.newest_mtime_ns,
+            900,
+            "if this ever subtracted correctly the test would be asserting a coincidence"
+        );
+    }
+
     /// A transition's embedded paths are charged, not just the transition itself.
     ///
     /// The bound exists to cap the memory a long-lived session's change history can hold.
