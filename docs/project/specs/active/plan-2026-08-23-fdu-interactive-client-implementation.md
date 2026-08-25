@@ -380,6 +380,39 @@ exactly like one that passes.
 A new check went unrun for three mutation attempts before that was noticed, so the file
 now parses its own source and asserts that every `check_` it defines is called.
 
+### `fdu-xyvu` — admission, and the record a pruned tree has to keep
+
+Shipped as `crates/fdu-core/src/admission.rs`. `HiddenPolicy` is asked once, by name,
+before the `stat` — an entry outside scope costs one `bool` and nothing else, which is
+the point of pruning at admission rather than filtering afterwards.
+It is called from every listing loop the engine has: the serial walk, the parallel walk,
+and both reconciliation paths.
+That is four call sites and one predicate, because a rule spelled out at each site is a
+rule that diverges at one of them, and a scan and a refresh disagreeing about which
+entries exist reads as corruption rather than as a rule.
+
+**The snapshot has to record where the pruned control files were, and the test to prove
+it has to use `CachePolicy::Only`.** `Index::control_file_directories` finds
+`.gitignore` files by reading the index, which is exactly the wrong instrument once
+pruning has removed them; the walk therefore reports what it saw into
+`ScanReport::control_dirs` and the index adopts it.
+Persisting that costs a `FORMAT_VERSION` bump, which `ScanScope`’s new field required
+anyway.
+The trap is that under `Auto` a revalidation re-walks and re-records them, so the
+whole section could be deleted with every assertion still passing — the warm-start test
+only says what it means under `Only`, which is contractually forbidden to touch the
+tree.
+
+**Two copies of one rule is two messages.** The command line validated `--hidden` itself
+and the Python dataclass validated `hidden` again, which produced `--hidden` against
+`hidden` and double quotes against single for the same mistake; the parity harness
+recorded the pair as a difference between the surfaces, and it was a difference between
+two copies of a rule.
+`admission::parse_policy` is now the only judge and both surfaces print its sentence.
+The one check that stays in Python is `isinstance(hidden_allow, str)`, because a bare
+string where a tuple belongs is a Python shape mistake with no command-line spelling to
+disagree with.
+
 ### `fdu-b2vy` / `fdu-ctp5` / `fdu-e2p7` — the taxonomy
 
 **Groups.** `ContentFamily` (`classify.rs:19`) is a closed five-value enum answering an

@@ -1064,6 +1064,14 @@ impl ProjectionWork {
 pub struct Index {
     root_path: PathBuf,
     scope: ScanScope,
+    /// Directories holding a control file the walk saw and did not retain.
+    ///
+    /// Empty unless a hidden-path rule pruned one. [`Index::control_file_directories`]
+    /// reads the index to find `.gitignore` files, which is exactly the wrong instrument
+    /// once pruning has removed them, so the walk hands over what it saw and this is where
+    /// that lands. Sorted and deduplicated on adoption, because a parallel walk records
+    /// them per worker in whatever order the workers finished.
+    pruned_control_dirs: Vec<PathBuf>,
     arena: Vec<Slot>,
     free_head: Option<u32>,
     live: u64,
@@ -1475,6 +1483,19 @@ impl IndexHandle {
         Ok(crate::content::analyze_index(&mut index, request))
     }
 
+    /// Adopt directories a reconciliation saw a pruned control file in.
+    ///
+    /// Takes the write guard, so the caller checks for the empty case first: a shared index
+    /// serves readers throughout a reconciliation and this must not become the one thing
+    /// that stalls them per pass.
+    pub fn adopt_pruned_control_dirs<I: IntoIterator<Item = PathBuf>>(
+        &self,
+        dirs: I,
+    ) -> crate::Result<()> {
+        self.write_index()?.adopt_pruned_control_dirs(dirs);
+        Ok(())
+    }
+
     /// Read the held index in place, without copying it.
     ///
     /// For a pure reader such as `report`, which needs `&Index` but neither retains it
@@ -1601,6 +1622,7 @@ impl Index {
         Self {
             root_path: root_path.into(),
             scope,
+            pruned_control_dirs: Vec::new(),
             arena: vec![Slot::Occupied { generation: 0, entry: Box::new(root) }],
             free_head: None,
             run: crate::query::RunFacts::default(),
@@ -1786,6 +1808,22 @@ impl Index {
         }
     }
 
+    /// Adopt the directories a walk saw a control file in but did not retain.
+    ///
+    /// Additive across reconciliations rather than replacing: a scoped refresh reads one
+    /// subtree, so what it reports is what that subtree holds, and taking it as the whole
+    /// answer would forget every control file outside it.
+    pub fn adopt_pruned_control_dirs<I: IntoIterator<Item = PathBuf>>(&mut self, dirs: I) {
+        self.pruned_control_dirs.extend(dirs);
+        self.pruned_control_dirs.sort();
+        self.pruned_control_dirs.dedup();
+    }
+
+    /// Directories holding a control file this index saw pruned, sorted.
+    pub fn pruned_control_dirs(&self) -> &[PathBuf] {
+        &self.pruned_control_dirs
+    }
+
     /// The tag rules this index evaluates.
     pub fn tag_rules(&self) -> &Arc<crate::tags::TagRules> {
         &self.tag_rules
@@ -1830,7 +1868,11 @@ impl Index {
         if !self.tag_rules.needs_path() {
             return Vec::new();
         }
-        let mut directories = Vec::new();
+        // What a hidden-path rule pruned, first: those directories hold a control file the
+        // walk read the name of and did not retain, so no amount of looking at the index
+        // will find them. Without this a pruned tree binds against nothing and answers
+        // "nothing is ignored", which is a wrong answer rather than a missing one.
+        let mut directories = self.pruned_control_dirs.clone();
         let mut stack = vec![EntryId::ROOT];
         while let Some(id) = stack.pop() {
             let Some(entry) = self.try_entry(id) else {

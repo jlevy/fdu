@@ -377,6 +377,77 @@ def check_a_promoted_plane_serves_a_dual_value_listing_from_one_call() -> None:
     fdu.clear_cache(root)
 
 
+def check_pruned_hidden_paths_are_absent_rather_than_filtered() -> None:
+    """Pruning changes what the index holds; a tag changes what a query returns.
+
+    The axis test, from the surface that makes it easiest to state wrongly. A caller who
+    reaches for `not_tags=("dotfile",)` gets the same rows and pays for the whole tree to be
+    walked; one who sets `hidden="prune"` gets an index that never held them. So the
+    assertion is absence -- `children()` has no row, `rollup()` has no path -- rather than a
+    smaller number coming back from a report.
+    """
+
+    root = Path(tempfile.mkdtemp(prefix="fdu-hidden-"))
+    (root / "src").mkdir()
+    (root / ".git").mkdir()
+    (root / ".github").mkdir()
+    (root / "src" / "main.rs").write_text("fn main() {}", encoding="utf-8")
+    (root / "src" / ".env").write_text("SECRET=1", encoding="utf-8")
+    (root / ".git" / "HEAD").write_text("ref: refs/heads/main", encoding="utf-8")
+    (root / ".github" / "ci.yml").write_text("on: push", encoding="utf-8")
+
+    kept = fdu.open(root, cache=fdu.CachePolicy.OFF)
+    kept_page = kept.children()
+    assert kept_page is not None
+    assert {child.name for child in kept_page.rows} == {"src", ".git", ".github"}
+
+    pruned = fdu.open(root, cache=fdu.CachePolicy.OFF, scan=fdu.ScanOptions(hidden="prune"))
+    page = pruned.children()
+    assert page is not None
+    assert {child.name for child in page.rows} == {"src"}, [c.name for c in page.rows]
+    assert pruned.rollup(".git") is None, "not a path this index has"
+    assert pruned.total().files < kept.total().files
+
+    # A hidden entry inside a kept directory goes too, and one hidden directory can be
+    # named back in without admitting the rest.
+    inner = pruned.children("src")
+    assert inner is not None
+    assert {child.name for child in inner.rows} == {"main.rs"}
+
+    allowed = fdu.open(
+        root,
+        cache=fdu.CachePolicy.OFF,
+        scan=fdu.ScanOptions(hidden="prune", hidden_allow=(".github",)),
+    )
+    allowed_page = allowed.children()
+    assert allowed_page is not None
+    assert {child.name for child in allowed_page.rows} == {"src", ".github"}
+
+    # Refused by the engine, which is the point: the command line and this package reject
+    # the same input with the same sentence, because one rule judges it rather than two
+    # copies of it. Validating again in `ScanOptions.__post_init__` would fail earlier and
+    # say something slightly different, which is how a surface drifts.
+    for options, expected in [
+        ({"hidden_allow": (".github",)}, "needs hidden pruning"),
+        ({"hidden": "sometimes"}, "expected one of keep, prune"),
+    ]:
+        try:
+            fdu.open(root, cache=fdu.CachePolicy.OFF, scan=fdu.ScanOptions(**options))
+        except fdu.InvalidArgumentError as error:
+            assert expected in str(error), (options, str(error))
+        else:  # pragma: no cover - the failure this guards is a silent one
+            raise AssertionError(f"{options} must be refused")
+
+    # A bare string where a tuple belongs stays a Python-shape error, because there is no
+    # command line spelling of that mistake for it to disagree with.
+    try:
+        fdu.ScanOptions(hidden_allow=".github")
+    except TypeError as error:
+        assert "wrap the single value in a tuple" in str(error), error
+    else:  # pragma: no cover - the failure this guards is a silent one
+        raise AssertionError("a bare string allowlist must be refused")
+
+
 def check_a_bundle_answers_a_query_at_the_same_instant_as_its_rows() -> None:
     """A composed page is one read, not several that happen to agree.
 
@@ -1822,6 +1893,7 @@ def main() -> None:
     check_partial_coverage_says_why()
     check_tags_are_a_named_fact_per_entry()
     check_a_promoted_plane_serves_a_dual_value_listing_from_one_call()
+    check_pruned_hidden_paths_are_absent_rather_than_filtered()
     check_a_bundle_answers_a_query_at_the_same_instant_as_its_rows()
     check_empty_is_decidable_from_the_aggregate()
     check_the_envelope_is_typed_and_its_facts_are_independent()

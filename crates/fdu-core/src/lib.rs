@@ -50,6 +50,7 @@
 //! - `watch` *(default)* — the OS-native watch layer. Strictly additive: without it
 //!   everything else works, just without live updates.
 
+pub mod admission;
 pub mod cache;
 pub mod classify;
 pub mod content;
@@ -97,6 +98,7 @@ pub use crate::index::{
 // Ungated with report_format, for the same reason: one-shot planning is an execution
 // strategy, not a front end. A caller wanting one report without retaining an index was
 // previously required to compile the command line to get it (fdu-z7sp).
+pub use crate::admission::HiddenPolicy;
 pub use crate::execution::{
     PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics,
 };

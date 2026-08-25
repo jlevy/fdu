@@ -42,6 +42,22 @@ class UsageError(Exception):
 
 
 def _scan_options(args: Args) -> fdu.ScanOptions:
+    """Build the scope axis, presenting a rejected value the way the binary presents it.
+
+    `ScanOptions` validates in `__post_init__` and raises the library's own `ValueError`,
+    which is a real usage error and reaches the top as a traceback unless it is named here.
+    The binary validates the same values in clap and exits 2, so this is the shim doing its
+    one job -- speaking the library's answer in the command line's voice -- rather than a
+    difference between the surfaces.
+    """
+
+    try:
+        return _scan_options_inner(args)
+    except (ValueError, TypeError) as error:
+        raise UsageError(str(error)) from error
+
+
+def _scan_options_inner(args: Args) -> fdu.ScanOptions:
     """The scope axis as one typed value, matching the flags the command line takes."""
     order = parse_order(args.order) if args.order is not None else fdu.ScanOrder.BREADTH_FIRST
     return fdu.ScanOptions(
@@ -52,6 +68,8 @@ def _scan_options(args: Args) -> fdu.ScanOptions:
         type_rules=load_type_rules(args.type_rules),
         tag_rules=tuple(args.tag_rules),
         promote=tuple(args.promote),
+        hidden=args.hidden,
+        hidden_allow=tuple(args.hidden_allow),
     )
 
 
@@ -174,6 +192,8 @@ class Args:
         self.type_rules: str | None = None
         self.tag_rules: list[str] = []
         self.promote: list[str] = []
+        self.hidden = "keep"
+        self.hidden_allow: list[str] = []
         self.tags: list[str] = []
         self.not_tags: list[str] = []
         self.plane: str | None = None
@@ -249,6 +269,10 @@ def parse_args(argv: list[str]) -> Args:
             args.tag_rules = [name.strip() for name in take().split(",") if name.strip()]
         elif flag == "--promote":
             args.promote = [name.strip() for name in take().split(",") if name.strip()]
+        elif flag == "--hidden":
+            args.hidden = take()
+        elif flag == "--hidden-allow":
+            args.hidden_allow = [name.strip() for name in take().split(",") if name.strip()]
         elif flag == "--tag":
             args.tags.append(take())
         elif flag == "--not-tag":

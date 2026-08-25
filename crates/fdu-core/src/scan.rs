@@ -15,7 +15,7 @@
 //! Every backend produces the same [`Observation`] contract.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -169,6 +169,14 @@ pub struct ScanConfig {
     /// The default is the empty set, which fingerprints to zero and costs one branch per
     /// insert: a caller who asks for no tags pays for no tags.
     pub tags: Option<std::sync::Arc<crate::tags::TagRules>>,
+    /// Which entries are inside the scan scope at all, or `None` to admit every one.
+    ///
+    /// Semantic in the strongest sense the word has here: a depth bound and a filesystem
+    /// bound also decide what is retained, and like them this is fingerprinted into
+    /// [`ScanScope`] so a snapshot recorded under one rule is never read under another.
+    /// The default admits everything, fingerprints to zero, and costs one `bool` per entry
+    /// -- fdu's own command line counts what is there, and pruning is opt-in.
+    pub hidden: Option<std::sync::Arc<crate::admission::HiddenPolicy>>,
 }
 
 impl Default for ScanConfig {
@@ -182,6 +190,7 @@ impl Default for ScanConfig {
             order: ScanOrder::default(),
             types: None,
             tags: None,
+            hidden: None,
         }
     }
 }
@@ -230,7 +239,13 @@ impl ScanConfig {
             tag_rules_fingerprint: self.tags().fingerprint(),
             type_rules_fingerprint: self.types().fingerprint(),
             reducers_fingerprint: REDUCERS_FINGERPRINT,
+            hidden_fingerprint: self.hidden().fingerprint(),
         }
+    }
+
+    /// The admission rule this scan applies, or the one that admits everything.
+    pub fn hidden(&self) -> &crate::admission::HiddenPolicy {
+        self.hidden.as_deref().unwrap_or_else(|| crate::admission::HiddenPolicy::keep_all())
     }
 
     /// Resolve [`Self::threads`] to the workers active when a scan begins.
@@ -327,6 +342,17 @@ pub struct ScanReport {
     pub errors: Vec<Error>,
     /// Where the walk's time went, summed across workers.
     pub attribution: WalkAttribution,
+    /// Directories where the walk saw a control file it pruned rather than retained.
+    ///
+    /// Empty unless a hidden-path rule pruned one, which needs an enabled Path-tier rule to
+    /// be interesting at all. It exists because binding a `gitignore` rule asks the index
+    /// where the `.gitignore` files are, and the whole point of pruning is that they are
+    /// not in the index. Directories rather than paths: binding takes a directory, and one
+    /// directory holds at most one control file per rule.
+    ///
+    /// Unsorted and possibly repeated, because a walk has many workers and ordering it here
+    /// would mean coordinating them; the index sorts and dedupes when it adopts them.
+    pub control_dirs: Vec<PathBuf>,
 }
 
 impl ScanReport {
@@ -356,6 +382,7 @@ impl ScanReport {
         self.files_walked += other.files_walked;
         self.bytes_walked += other.bytes_walked;
         self.errors.extend(other.errors);
+        self.control_dirs.extend(other.control_dirs);
         self.attribution.absorb(other.attribution);
     }
 
@@ -811,6 +838,24 @@ impl ReconcileTarget<'_> {
         }
     }
 
+    /// Hand over the directories this pass saw a pruned control file in.
+    ///
+    /// A no-op for the overwhelmingly common empty case, which is checked before the write
+    /// guard is taken: a shared index serves readers throughout a reconciliation, and
+    /// taking the write lock to add nothing would stall them for no reason.
+    fn adopt_pruned_control_dirs(&mut self, dirs: &[PathBuf]) -> Result<()> {
+        if dirs.is_empty() {
+            return Ok(());
+        }
+        match self {
+            Self::Direct(index) => index.adopt_pruned_control_dirs(dirs.iter().cloned()),
+            Self::Shared(handle) => {
+                handle.adopt_pruned_control_dirs(dirs.iter().cloned())?;
+            }
+        }
+        Ok(())
+    }
+
     fn root_path(&self) -> Result<PathBuf> {
         match self {
             Self::Direct(index) => Ok(index.root_path().to_path_buf()),
@@ -1010,6 +1055,10 @@ fn scan_internal(
             };
             crate::counters::bump(|c| c.dir_entries += 1);
             let name = item.file_name();
+            if !admits(&name, config) {
+                note_pruned_control_file(&name, &rel_dir, config, &mut report);
+                continue;
+            }
             let rel_path = rel_dir.join(&name);
             let meta = match metadata_for_fingerprint(&item) {
                 Ok(meta) => meta,
@@ -1991,6 +2040,10 @@ fn walk_worker(
                 };
                 crate::counters::bump(|c| c.dir_entries += 1);
                 let name = item.file_name();
+                if !admits(&name, config) {
+                    note_pruned_control_file(&name, &rel_dir, config, &mut report);
+                    continue;
+                }
                 let meta = match metadata_for_fingerprint(&item) {
                     Ok(meta) => meta,
                     Err(e) => {
@@ -2695,6 +2748,7 @@ pub fn scan_into_index(root: &Path, config: &ScanConfig) -> Result<(Index, ScanR
     if let Some(error) = apply_error {
         return Err(error);
     }
+    index.adopt_pruned_control_dirs(report.control_dirs.iter().cloned());
     index.set_initial_coverage(report.coverage());
     Ok((index, report))
 }
@@ -2739,6 +2793,7 @@ pub fn scan_into_index_with_policy_diagnostics(
     if let Some(error) = apply_error {
         return Err(error);
     }
+    index.adopt_pruned_control_dirs(report.control_dirs.iter().cloned());
     index.set_initial_coverage(report.coverage());
     Ok((index, report, diagnostics))
 }
@@ -2827,6 +2882,13 @@ pub fn revalidate(
                 }
             };
             let name = item.file_name();
+            if !admits(&name, config) {
+                // Before `seen`, deliberately: an index that somehow holds a name the rule
+                // now excludes should have it removed, and leaving it in `seen` would say
+                // it is still there.
+                note_pruned_control_file(&name, &rel_dir, config, &mut report);
+                continue;
+            }
             seen.insert(name.clone());
             let rel_path = rel_dir.join(&name);
             let baseline = index.relaxed_expectation(&rel_path);
@@ -2951,6 +3013,10 @@ fn reconcile_target(
     sink(&opened);
     match reconcile_target_inner(target, &subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
         Ok(report) => {
+            // Before the close, so a consumer woken by the finish delta sees an index that
+            // can already bind. Additive on the index side, because a scoped refresh speaks
+            // only for the subtree it read.
+            target.adopt_pruned_control_dirs(&report.scan.control_dirs)?;
             let closed = target.finish_reconcile(&subtree, started_at, report.coverage())?;
             sink(&closed);
             Ok(report)
@@ -3151,6 +3217,12 @@ fn reconcile_target_inner(
                     }
                 };
                 let name = item.file_name();
+                if !admits(&name, config) {
+                    // Before `known.remove`, so an entry the rule now excludes stays in
+                    // the missing set and is removed rather than silently retained.
+                    note_pruned_control_file(&name, rel_dir.as_path(), config, &mut report.scan);
+                    continue;
+                }
                 // Seeing the name proves it is not absent even if the following
                 // metadata lookup fails. Remove it from the missing set before that
                 // fallible lookup so an operational error cannot turn an existing
@@ -3385,6 +3457,10 @@ fn reconcile_wave_worker(
             let mut known = collect_child_expectations(index, rel_dir);
             let abs_dir = root.join(rel_dir);
             let mut listing_complete = true;
+            // Collected beside the closure rather than through it: `process_entry` holds a
+            // mutable borrow of `result.scan` for the whole block, and a control file the
+            // rule pruned never reaches it anyway.
+            let mut pruned_controls: Vec<PathBuf> = Vec::new();
 
             {
                 let mut process_entry =
@@ -3460,6 +3536,12 @@ fn reconcile_wave_worker(
                             }
                         };
                         let name = item.file_name();
+                        if !admits(&name, config) {
+                            if config.tags().is_control_file(Path::new(&name)) {
+                                pruned_controls.push(rel_dir.clone());
+                            }
+                            continue;
+                        }
                         // Match the serial path: an entry whose name was enumerated is
                         // not missing merely because its metadata could not be read.
                         let baseline = known
@@ -3476,6 +3558,7 @@ fn reconcile_wave_worker(
                     }
                 }
             }
+            result.scan.control_dirs.append(&mut pruned_controls);
             if listing_complete {
                 for (name, _) in known {
                     defer_reconcile_op(
@@ -3660,7 +3743,39 @@ fn merge_reconcile_report(total: &mut ReconcileReport, addition: ReconcileReport
     total.scan.files_walked += addition.scan.files_walked;
     total.scan.bytes_walked += addition.scan.bytes_walked;
     total.scan.errors.extend(addition.scan.errors);
+    total.scan.control_dirs.extend(addition.scan.control_dirs);
     merge_apply_stats(&mut total.apply, addition.apply);
+}
+
+/// Whether one directory entry is inside the scan scope, by name alone.
+///
+/// The one place the admission rule is asked, called from every listing loop the engine
+/// has -- the serial walk, the parallel walk, and both reconciliation paths. A rule spelled
+/// out at each site is a rule that diverges at one of them, and a scan and a refresh
+/// disagreeing about which entries exist reads as corruption rather than as a rule.
+///
+/// By name, before the `stat`. An entry outside scope costs one `bool` and nothing else:
+/// no metadata read, no path join, no observation. That ordering is the point of pruning at
+/// admission rather than filtering afterwards.
+fn admits(name: &OsStr, config: &ScanConfig) -> bool {
+    config.hidden().admits(name)
+}
+
+/// Note where the walk saw a governing control file it is not going to retain.
+///
+/// A `.gitignore` is hidden and governs entries that are not, so pruning it silently would
+/// answer a gitignore question with "nothing is ignored" -- a wrong answer rather than a
+/// missing one. Recording the directory is enough: binding reads the file from disk by
+/// path, and the index never holds a row for it.
+fn note_pruned_control_file(
+    name: &OsStr,
+    rel_dir: &Path,
+    config: &ScanConfig,
+    report: &mut ScanReport,
+) {
+    if config.tags().is_control_file(Path::new(name)) {
+        report.control_dirs.push(rel_dir.to_path_buf());
+    }
 }
 
 fn should_descend(

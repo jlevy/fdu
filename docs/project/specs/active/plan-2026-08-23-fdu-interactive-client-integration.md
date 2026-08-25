@@ -812,10 +812,37 @@ The model that results, stated once here and in detail on the beads:
   What found them was running the walking tier over the same restriction and requiring
   the two to agree, which is now `crates/fdu-core/tests/plane_equivalence.rs`.
 
-- [ ] Hidden-path admission as scope: prune hidden components except an exact-name
+- [x] Hidden-path admission as scope: prune hidden components except an exact-name
   allowlist, fingerprinted into snapshot identity — a scope rule, deliberately not a
   tag, and distinct from the `dotfile` tag, which filters with both numbers visible
   where this excludes from the index entirely (`fdu-xyvu`)
+
+  Shipped as `crates/fdu-core/src/admission.rs` plus wiring, with `--hidden keep|prune`
+  and `--hidden-allow LIST` on the Scope axis and `ScanOptions(hidden=, hidden_allow=)`
+  in Python. The snapshot format moved to 3: `ScanScope` gained the rule’s fingerprint,
+  which is positional and cannot be added without one.
+
+  Two things about it were decided against this plan as written.
+
+  **The admission rule and the `dotfile` tag share one predicate, deliberately.** They
+  are distinguished by what they do with an entry, never by which entries they mean — a
+  second definition of hidden would make `--hidden prune` and `--not-tag dotfile`
+  disagree about one file, and the disagreement would read as a bug in whichever surface
+  was consulted second.
+  Windows’ `FILE_ATTRIBUTE_HIDDEN` bit is deliberately not read for the same reason: it
+  would make the same tree admit different entries on different platforms, and the
+  parity corpus would carry that as a permanent deviation.
+
+  **The snapshot has to record where the pruned control files were.** “Governing control
+  files stay readable without being retained” is satisfied during a walk by noticing the
+  name, but a warm start has no walk: `Index::control_file_directories` finds
+  `.gitignore` files by reading the index, and pruning is exactly what removes them from
+  it. Under `CachePolicy::Only`, which is contractually forbidden to touch the tree, the
+  file is the only record there is — so the walk hands its sightings to the index and
+  the index writes them.
+  The test that proves this had to use `Only` to say so: under `Auto` a revalidation
+  re-walks and re-records them, so the section could be deleted and every assertion
+  still passed.
 
 - [ ] Later fold-in: `Classification.flags` (generated, vendored, documentation) become
   Name-tier rules instead of per-query recomputation (`fdu-n7mv`, P3)

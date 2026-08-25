@@ -355,6 +355,77 @@ $ fdu --cache off --view files --tag-rules dotfile,gitignore --tag dotfile --for
 ? 0
 ```
 
+### Hidden Paths Are Scope: `--hidden prune` Removes Them From the Index
+
+The axis test again, and this side of it is the one that costs.
+`--not-tag dotfile` leaves both numbers visible and walks `.git` in order to report it;
+`--hidden prune` decides what is scanned at all, so the entry has no row, no tally, and
+its subtree is never read.
+That is why it could not be a tag: a maintained plane for hidden entries would have to
+walk the caches and virtualenvs it exists to exclude.
+
+fdu counts what is there by default.
+A `du` replacement that quietly omitted half a working tree would be answering a
+question nobody asked.
+
+```console
+$ node -e "const fs = require('node:fs'); fs.mkdirSync('hidden/src', {recursive: true}); fs.mkdirSync('hidden/.git', {recursive: true}); fs.mkdirSync('hidden/.github', {recursive: true}); fs.writeFileSync('hidden/src/main.rs', 'x'); fs.writeFileSync('hidden/src/.env', 'y'); fs.writeFileSync('hidden/.git/HEAD', 'z'); fs.writeFileSync('hidden/.github/ci.yml', 'w')"
+? 0
+```
+
+```console
+$ fdu --cache off --view files --size apparent hidden
+.git
+.git[SEP]HEAD
+.github
+.github[SEP]ci.yml
+src
+src[SEP].env
+src[SEP]main.rs
+Performance: walked 4 files / 4 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+Pruned, the walk reads fewer directories rather than reporting fewer rows.
+
+```console
+$ fdu --cache off --view files --size apparent --hidden prune hidden
+src
+src[SEP]main.rs
+Performance: walked 1 file / 1 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+An exact name is admitted back, along with what is under it — and nothing else hidden.
+
+```console
+$ fdu --cache off --view files --size apparent --hidden prune --hidden-allow .github hidden
+.github
+.github[SEP]ci.yml
+src
+src[SEP]main.rs
+Performance: walked 2 files / 2 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+An allowlist with nothing to admit is refused rather than ignored: it can only have been
+written by someone who believed pruning was on.
+Both messages come from the engine rather than from either surface, so the command line
+and the Python package reject the same input with the same sentence — the lesson
+`--tag-rules` learned when the parity harness recorded two spellings of one rule.
+
+```console
+$ fdu --cache off --hidden-allow .github hidden
+! fdu: a hidden allowlist needs hidden pruning: with hidden entries kept there is nothing for an allowlist to admit
+? 2
+```
+
+```console
+$ fdu --cache off --hidden sometimes hidden
+! fdu: invalid hidden mode "sometimes": expected one of keep, prune
+? 2
+```
+
 ### A Promoted Rule Maintains a Plane, and `--plane` Reads It
 
 Promotion is Scope and the plane is Selection, which is the same line `--tag-rules` and

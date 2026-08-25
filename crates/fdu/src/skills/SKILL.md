@@ -51,7 +51,7 @@ There are no subcommands: the grammar is always “report on a path”.
 
 | Axis | Question | Options |
 | --- | --- | --- |
-| Scope | What is scanned and cached? | `PATH`, `--scan-depth N`, `--order`, `--threads`, `--type-rules FILE`, `--tag-rules LIST`, `--promote LIST` |
+| Scope | What is scanned and cached? | `PATH`, `--scan-depth N`, `--order`, `--threads`, `--type-rules FILE`, `--tag-rules LIST`, `--promote LIST`, `--hidden`, `--hidden-allow LIST` |
 | Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--tag`, `--not-tag`, `--plane TAG`, `--depth`, `-n/--limit`, `--sort`, `--reverse`, `--size` |
 | View | Which roll-up is reported? | `--view tree,groups,families,types,extensions,languages,documents,files,summary` |
 | Format | How is it serialized? | `--format text\|json\|jsonl\|yaml`, `--color` |
@@ -93,6 +93,23 @@ narrows the answer without invalidating the cache, while `--not-tag gitignore` g
 same numbers by re-aggregating the whole index.
 Naming a plane that was not promoted is refused, listing what was — a plane served from
 the totals would look right on exactly the trees that cannot tell the difference.
+
+`--hidden prune` is the strongest scope flag fdu has, and the axis test again from the
+other side. `--not-tag dotfile` leaves both numbers visible and still walks `.git` in
+order to report it; pruning decides what is scanned at all, so a hidden entry has no
+row, no tally, and its subtree is never read.
+That is why visibility is not a tag: a maintained plane for hidden entries would have to
+walk the caches and virtualenvs it exists to exclude.
+`--hidden-allow LIST` names exact entries to admit anyway — `.github`, `.cargo` — and is
+refused where nothing is being pruned, because it can only have been written by someone
+who believed it was.
+Governing control files stay readable without being retained, so a `.gitignore` still
+decides what `gitignore` tags even where the file itself is outside the index.
+
+fdu counts what is there by default.
+A `du` replacement that quietly omitted half a working tree would be answering a
+question nobody asked, so pruning is opt-in and, like every scope rule, fingerprinted
+into snapshot identity.
 
 Cost has three layers.
 A single unfiltered `--view summary PATH` is the one exact composition that retains only

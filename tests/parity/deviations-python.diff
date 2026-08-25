@@ -122,6 +122,12 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Gitignore Is One Rule Among Several, and Negation Is Why It Needs a Real Matcher
   ✓ Gitignore Is One Rule Among Several, and Negation Is Why It Needs a Real Matcher
   ✓ Gitignore Is One Rule Among Several, and Negation Is Why It Needs a Real Matcher
+  ✓ Hidden Paths Are Scope: `--hidden prune` Removes Them From the Index
+  ✓ Hidden Paths Are Scope: `--hidden prune` Removes Them From the Index
+  ✓ Hidden Paths Are Scope: `--hidden prune` Removes Them From the Index
+  ✓ Hidden Paths Are Scope: `--hidden prune` Removes Them From the Index
+  ✓ Hidden Paths Are Scope: `--hidden prune` Removes Them From the Index
+  ✓ Hidden Paths Are Scope: `--hidden prune` Removes Them From the Index
   ✓ A Promoted Rule Maintains a Plane, and `--plane` Reads It
   ✓ A Promoted Rule Maintains a Plane, and `--plane` Reads It
   ✓ A Promoted Rule Maintains a Plane, and `--plane` Reads It

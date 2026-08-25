@@ -377,6 +377,25 @@ pub struct Cli {
     #[arg(long, value_name = "LIST", help_heading = "SCOPE")]
     pub promote: Option<String>,
 
+    /// Whether hidden entries are scanned at all: keep (default) or prune.
+    ///
+    /// Scope, and the strong kind: a pruned entry is not in the index, has no row and no
+    /// tally, and its subtree is never read. That is the difference from --not-tag
+    /// dotfile, which leaves both numbers visible and still walks `.git` to report it.
+    ///
+    /// fdu counts what is there by default, because a du replacement that quietly omitted
+    /// half a working tree would be answering a different question than it was asked.
+    #[arg(long, value_name = "MODE", default_value = "keep", help_heading = "SCOPE")]
+    pub hidden: String,
+
+    /// Hidden names to scan anyway, comma-separated. Only meaningful with --hidden prune.
+    ///
+    /// Exact names, not globs: an allowlist says which specific things a tree needs kept,
+    /// and a second pattern dialect here would interact with --include and the tag rules
+    /// in ways nobody could predict from reading one line.
+    #[arg(long, value_name = "LIST", help_heading = "SCOPE")]
+    pub hidden_allow: Option<String>,
+
     // ---- selection: which retained entries this query considers ----
     /// Report only entries matching this glob; repeatable.
     #[arg(long, value_name = "GLOB", help_heading = "SELECTION")]
@@ -615,6 +634,7 @@ impl Cli {
             .map_err(|message| usage(&anyhow::anyhow!(message)))?;
         let order = self.parse_order()?;
         let types = self.load_type_rules()?;
+        let hidden = self.load_hidden_policy().map_err(|error| usage(&error))?;
         let config = OpenConfig {
             scan: ScanConfig {
                 max_depth: self.scan_depth,
@@ -623,6 +643,7 @@ impl Cli {
                 threads: self.threads,
                 types,
                 tags: Some(tags),
+                hidden,
                 ..ScanConfig::default()
             },
             cache_path: default_cache_path(path),
@@ -1099,6 +1120,25 @@ impl Cli {
         let rules =
             rules.with_promoted(names).map_err(|error| usage(&anyhow::anyhow!("{error}")))?;
         Ok(std::sync::Arc::new(rules))
+    }
+
+    /// Build the admission rule from --hidden and --hidden-allow.
+    ///
+    /// An allowlist without pruning is refused rather than ignored: it can only have been
+    /// written by someone who believed pruning was on, and silently admitting everything
+    /// would answer their question with a number they had asked not to receive.
+    fn load_hidden_policy(&self) -> anyhow::Result<Option<std::sync::Arc<fdu_core::HiddenPolicy>>> {
+        let allow = match self.hidden_allow.as_deref() {
+            None => Vec::new(),
+            Some(list) => parse_list(list, "--hidden-allow", |token, _| Ok(token.to_string()))?,
+        };
+        // Reported as the library words it, with no `invalid --hidden:` framing on top --
+        // the same choice `--tag-rules` made, and for the reason the parity harness found
+        // there: a prefix adds only the one thing the Python surface cannot say the same
+        // way, and the flag the reader typed is already on their screen.
+        let policy = fdu_core::admission::parse_policy(self.hidden.trim(), allow)
+            .map_err(|error| usage(&anyhow::anyhow!("{error}")))?;
+        Ok(policy.map(std::sync::Arc::new))
     }
 
     fn parse_cache_policy(&self) -> anyhow::Result<CachePolicy> {
@@ -1951,6 +1991,8 @@ mod tests {
             type_rules: None,
             tag_rules: None,
             promote: None,
+            hidden: "keep".to_string(),
+            hidden_allow: None,
             tag: Vec::new(),
             not_tag: Vec::new(),
             plane: None,

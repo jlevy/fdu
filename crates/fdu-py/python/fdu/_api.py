@@ -792,6 +792,8 @@ def open(
         type_rules=_native_rules(scan_options.type_rules),
         tag_rules=list(scan_options.tag_rules),
         promote=list(scan_options.promote),
+        hidden=scan_options.hidden,
+        hidden_allow=list(scan_options.hidden_allow),
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
@@ -818,6 +820,8 @@ def scan(
         type_rules=_native_rules(scan_options.type_rules),
         tag_rules=list(scan_options.tag_rules),
         promote=list(scan_options.promote),
+        hidden=scan_options.hidden,
+        hidden_allow=list(scan_options.hidden_allow),
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
@@ -859,6 +863,8 @@ def report(
         type_rules=_native_rules(scan_options.type_rules),
         tag_rules=list(scan_options.tag_rules),
         promote=list(scan_options.promote),
+        hidden=scan_options.hidden,
+        hidden_allow=list(scan_options.hidden_allow),
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
         **_query_kwargs(selected),

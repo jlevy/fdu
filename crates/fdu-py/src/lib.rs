@@ -2180,6 +2180,22 @@ impl PyWatch {
 ///
 /// `None` and an empty list are the same request -- no rules -- and both fingerprint to
 /// zero, so a caller who does not ask for tags keeps every snapshot they already have.
+/// Resolve the hidden-path admission rule a caller asked for.
+///
+/// `None` and `"keep"` are the same request -- admit everything -- and both fingerprint to
+/// zero, so a caller who does not ask keeps every snapshot they already have. An allowlist
+/// without pruning is refused rather than ignored: it can only have been written by someone
+/// who believed pruning was on.
+fn admission_policy(
+    hidden: Option<&str>,
+    hidden_allow: Option<Vec<String>>,
+) -> PyResult<Option<Arc<fdu_core::HiddenPolicy>>> {
+    let allow = hidden_allow.unwrap_or_default();
+    let policy = fdu_core::admission::parse_policy(hidden.unwrap_or("keep"), allow)
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
+    Ok(policy.map(Arc::new))
+}
+
 fn enabled_tag_rules(
     names: Option<Vec<String>>,
     promote: Option<Vec<String>>,
@@ -2376,6 +2392,8 @@ impl PyOneShot {
     type_rules = None,
     tag_rules = None,
     promote = None,
+    hidden = None,
+    hidden_allow = None,
     analyze = "none",
     analysis_workers = 0,
     views = None,
@@ -2413,6 +2431,8 @@ fn report_once(
     type_rules: Option<&PyTypeRegistry>,
     tag_rules: Option<Vec<String>>,
     promote: Option<Vec<String>>,
+    hidden: Option<&str>,
+    hidden_allow: Option<Vec<String>>,
     analyze: &str,
     analysis_workers: usize,
     views: Option<Vec<String>>,
@@ -2435,6 +2455,7 @@ fn report_once(
     as_of_ns: Option<i64>,
 ) -> PyResult<PyOneShot> {
     let rules = enabled_tag_rules(tag_rules, promote)?;
+    let hidden = admission_policy(hidden, hidden_allow)?;
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
         scan: ScanConfig {
@@ -2444,6 +2465,7 @@ fn report_once(
             threads,
             types: type_rules.map(|registry| Arc::clone(&registry.inner)),
             tags: Some(Arc::clone(&rules)),
+            hidden: hidden.clone(),
             ..ScanConfig::default()
         },
         cache_path: fdu_core::default_cache_path(&root),
@@ -2660,6 +2682,8 @@ fn clear_all_caches(root: PathBuf) -> PyResult<usize> {
     type_rules = None,
     tag_rules = None,
     promote = None,
+    hidden = None,
+    hidden_allow = None,
     analyze = "none",
     analysis_workers = 0
 ))]
@@ -2675,12 +2699,15 @@ fn open(
     type_rules: Option<&PyTypeRegistry>,
     tag_rules: Option<Vec<String>>,
     promote: Option<Vec<String>>,
+    hidden: Option<&str>,
+    hidden_allow: Option<Vec<String>>,
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
     let operation_started_at = SystemTime::now();
     let policy = parse_cache_policy(cache)?;
     let tags = enabled_tag_rules(tag_rules, promote)?;
+    let hidden = admission_policy(hidden, hidden_allow)?;
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
         scan: ScanConfig {
@@ -2690,6 +2717,7 @@ fn open(
             threads,
             types: type_rules.map(|rules| Arc::clone(&rules.inner)),
             tags: Some(Arc::clone(&tags)),
+            hidden: hidden.clone(),
             ..ScanConfig::default()
         },
         cache_path: fdu_core::default_cache_path(&root),
@@ -2742,6 +2770,8 @@ fn open(
     type_rules = None,
     tag_rules = None,
     promote = None,
+    hidden = None,
+    hidden_allow = None,
     analyze = "none",
     analysis_workers = 0
 ))]
@@ -2756,11 +2786,14 @@ fn scan(
     type_rules: Option<&PyTypeRegistry>,
     tag_rules: Option<Vec<String>>,
     promote: Option<Vec<String>>,
+    hidden: Option<&str>,
+    hidden_allow: Option<Vec<String>>,
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
     let scan_started_at = Some(SystemTime::now());
     let tags = enabled_tag_rules(tag_rules, promote)?;
+    let hidden = admission_policy(hidden, hidden_allow)?;
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
         scan: ScanConfig {
@@ -2770,6 +2803,7 @@ fn scan(
             threads,
             types: type_rules.map(|rules| Arc::clone(&rules.inner)),
             tags: Some(Arc::clone(&tags)),
+            hidden: hidden.clone(),
             ..ScanConfig::default()
         },
         cache_path: None,

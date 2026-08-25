@@ -57,7 +57,17 @@ const CRC32C_TABLES: [[u32; 256]; 8] = make_crc32c_tables();
 
 /// On-disk format version. Bump on any layout change; old snapshots are then discarded
 /// rather than misread.
-const FORMAT_VERSION: u32 = 2;
+///
+/// 2: the layout this file's sections describe. 3: [`ScanScope`] carries the hidden-path
+/// admission fingerprint, and a section records the directories where the walk saw a
+/// governing control file it did not retain.
+///
+/// The scope record is positional and unlength-prefixed, so a field added to it moves every
+/// byte after -- there is no reading a v2 file as a v3 one, and no wanting to. Unlike the
+/// leaf-count change, which recompute-at-load absorbed, an admission rule cannot be
+/// re-derived from a recording made without it: the entries it would have kept are absent
+/// from the file, not from the tree.
+const FORMAT_VERSION: u32 = 3;
 
 /// Version of the rules that decide which bucket an entry's bytes are tallied under.
 ///
@@ -98,8 +108,11 @@ const SCOPE_ONE_FILESYSTEM: u8 = 1 << 1;
 const SCOPE_KNOWN_FLAGS: u8 = SCOPE_FOLLOW_SYMLINKS | SCOPE_ONE_FILESYSTEM;
 
 /// Encoded byte width of the fixed scan-scope header.
+///
+/// Depth, the flag byte, and four fingerprints: tag rules, type rules, reducers, and the
+/// hidden-path admission rule.
 #[cfg(test)]
-const SERIALIZED_SCOPE_BYTES: usize = 8 + 1 + 8 * 3;
+const SERIALIZED_SCOPE_BYTES: usize = 8 + 1 + 8 * 4;
 
 /// Smallest possible on-disk record: parent slot, kind, name length, and six 8-byte
 /// attribute fields, with a zero-length name. Used to sanity-check a declared entry
@@ -159,6 +172,14 @@ const MAX_PATH_BYTES: u32 = 1024 * 1024;
 /// Upper bound on records accepted even when a sparse file could physically hold more.
 const MAX_SNAPSHOT_ENTRIES: u64 = 100_000_000;
 
+/// Upper bound on recorded pruned-control-file directories.
+///
+/// One per directory holding a `.gitignore` that a hidden-path rule pruned, so a real tree
+/// produces tens to hundreds. The bound is here because this count is read before anything
+/// is allocated against it, and a hostile file should not be able to ask for a gigabyte of
+/// paths before a single one is validated.
+const MAX_CONTROL_DIRS: u64 = 1_000_000;
+
 /// A fingerprint of everything that would change how the engine interprets a tree.
 ///
 /// When this does not match, the whole snapshot is discarded. That is the cheap,
@@ -197,6 +218,19 @@ pub fn save(index: &Index, path: &Path) -> Result<()> {
     put_scope(&mut buf, index.scope())?;
 
     put_os_str(&mut buf, index.root_path().as_os_str())?;
+
+    // Directories where the walk saw a control file it pruned rather than retained. They
+    // are not entries, so nothing else in this file records them, and without them a warm
+    // start of a pruned tree binds a `gitignore` rule against nothing and answers "nothing
+    // is ignored" -- a wrong answer rather than a missing one. Empty for every index that
+    // prunes nothing, which is the default, and then this costs eight bytes.
+    let control_dirs = index.pruned_control_dirs();
+    let control_count = u64::try_from(control_dirs.len())
+        .map_err(|_| Error::Snapshot("control directory count overflow".into()))?;
+    buf.extend_from_slice(&control_count.to_le_bytes());
+    for directory in control_dirs {
+        put_os_str(&mut buf, directory.as_os_str())?;
+    }
 
     // Pre-order, so a parent's record always precedes its children's and the loader can
     // rebuild the tree in one forward pass with no fixups.
@@ -516,6 +550,12 @@ fn parse_header(reader: &mut impl Read) -> ParseResult<crate::cache::SnapshotInf
     }
     let scope = read_scope(reader)?;
     let root = PathBuf::from(read_os_string(reader)?);
+    // Stepped over rather than kept: this peek answers "which tree, what scope, how big",
+    // and none of those depend on where the control files were. It still has to be read,
+    // because the entry count is behind it.
+    for _ in 0..read_bounded_count(reader, MAX_CONTROL_DIRS)? {
+        read_os_string(reader)?;
+    }
     let entries = read_u64(reader)?;
     if entries == 0 || entries > MAX_SNAPSHOT_ENTRIES {
         return Err(ParseError::Invalid);
@@ -542,6 +582,10 @@ fn parse_stream(
     }
     let scope = read_scope(reader)?;
     let root_path = PathBuf::from(read_os_string(reader)?);
+    let mut control_dirs: Vec<PathBuf> = Vec::new();
+    for _ in 0..read_bounded_count(reader, MAX_CONTROL_DIRS)? {
+        control_dirs.push(PathBuf::from(read_os_string(reader)?));
+    }
     let count = read_u64(reader)?;
     if count == 0 || count > MAX_SNAPSHOT_ENTRIES {
         return Err(ParseError::Invalid);
@@ -564,6 +608,10 @@ fn parse_stream(
     }
 
     let mut index = Index::new_with_scope(&root_path, scope);
+    // Where the walk that wrote this file saw a control file it pruned. The entries are
+    // gone -- that is what pruning means -- so this is the only record, and binding a
+    // Path-tier rule after a warm start has nothing else to go on.
+    index.adopt_pruned_control_dirs(control_dirs);
     // Install the caller's semantics before the first entry exists, so every canonical
     // extension, group and tag bit below is derived under the rules the scope claims.
     // Swapping the pointers afterwards left the derived state built by whatever the
@@ -722,6 +770,19 @@ fn read_bytes(reader: &mut impl Read) -> ParseResult<Vec<u8>> {
     }
 }
 
+/// Read a count that a caller is about to allocate against, refusing an absurd one.
+///
+/// Checked before the allocation rather than after, which is the same discipline the entry
+/// count follows: a file claiming four billion of anything should cost one comparison to
+/// reject, not a reservation.
+fn read_bounded_count(reader: &mut impl Read, maximum: u64) -> ParseResult<u64> {
+    let count = read_u64(reader)?;
+    if count > maximum {
+        return Err(ParseError::Invalid);
+    }
+    Ok(count)
+}
+
 #[cfg(unix)]
 fn read_os_string(reader: &mut impl Read) -> ParseResult<OsString> {
     Ok(os_string_from_bytes(&read_bytes(reader)?))
@@ -764,6 +825,7 @@ fn put_scope(buf: &mut Vec<u8>, scope: ScanScope) -> Result<()> {
     buf.extend_from_slice(&scope.tag_rules_fingerprint.to_le_bytes());
     buf.extend_from_slice(&scope.type_rules_fingerprint.to_le_bytes());
     buf.extend_from_slice(&scope.reducers_fingerprint.to_le_bytes());
+    buf.extend_from_slice(&scope.hidden_fingerprint.to_le_bytes());
     Ok(())
 }
 
@@ -785,6 +847,7 @@ fn read_scope(reader: &mut impl Read) -> ParseResult<ScanScope> {
         tag_rules_fingerprint: read_u64(reader)?,
         type_rules_fingerprint: read_u64(reader)?,
         reducers_fingerprint: read_u64(reader)?,
+        hidden_fingerprint: read_u64(reader)?,
     })
 }
 
@@ -1921,6 +1984,7 @@ mod tests {
             tag_rules_fingerprint: 11,
             type_rules_fingerprint: 22,
             reducers_fingerprint: 33,
+            hidden_fingerprint: 44,
         };
         let index = Index::new_with_scope("/some/root", scope);
 

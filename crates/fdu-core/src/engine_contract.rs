@@ -226,6 +226,15 @@ pub struct ScanScope {
     pub type_rules_fingerprint: u64,
     /// Identity of the enabled reducer set.
     pub reducers_fingerprint: u64,
+    /// Identity of the hidden-path admission rule and its allowlist.
+    ///
+    /// Zero exactly when nothing is pruned, which is the default and what every snapshot
+    /// recorded before the rule existed means. A pruned entry is absent from the recording
+    /// rather than from the tree, and nothing in the file distinguishes those -- so a
+    /// snapshot taken under one allowlist cannot be reinterpreted under another, and this
+    /// is what stops it being tried. See
+    /// [`HiddenPolicy`](crate::admission::HiddenPolicy).
+    pub hidden_fingerprint: u64,
 }
 
 /// Where a value came from, so a consumer can trade speed for certainty knowingly.

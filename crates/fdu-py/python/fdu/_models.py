@@ -229,6 +229,22 @@ class ScanOptions:
     #: cannot be reinterpreted as one with an empty plane, because "nothing was outside the
     #: tag" and "nobody was counting" are different facts.
     promote: tuple[str, ...] = ()
+    #: Whether hidden entries are scanned at all: ``"keep"`` (the default) or ``"prune"``.
+    #:
+    #: Scope in the strongest sense: a pruned entry is not in the index, has no row and no
+    #: tally, and its subtree is never read. That is what separates it from
+    #: `Selection(not_tags=("dotfile",))`, which leaves both numbers visible and still walks
+    #: `.git` in order to report it.
+    #:
+    #: The default counts what is there, because a tool that quietly omitted half a working
+    #: tree would be answering a question nobody asked.
+    hidden: str = "keep"
+    #: Hidden names to scan anyway. Only meaningful with ``hidden="prune"``.
+    #:
+    #: Exact names rather than patterns: an allowlist says which specific things a tree
+    #: needs kept -- `.github`, `.cargo` -- and a second glob dialect here would interact
+    #: with `Selection.include` and the tag rules in ways nobody could predict.
+    hidden_allow: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.max_depth is not None and self.max_depth < 0:
@@ -239,6 +255,14 @@ class ScanOptions:
             raise TypeError("tag_rules takes a tuple of names; wrap the single value in a tuple")
         if isinstance(self.promote, str):
             raise TypeError("promote takes a tuple of names; wrap the single value in a tuple")
+        if isinstance(self.hidden_allow, str):
+            raise TypeError("hidden_allow takes a tuple of names; wrap the single value in a tuple")
+        # `hidden` and `hidden_allow` are judged by the engine rather than here, and the
+        # difference is not laziness. Both surfaces have to reject the same input with the
+        # same words, and validating a second time in Python is how one rule becomes two
+        # messages -- `hidden` against `--hidden`, single quotes against double. The
+        # `isinstance` check above stays because a bare string where a tuple belongs is a
+        # Python shape mistake with no command-line counterpart.
 
 
 @dataclass(frozen=True, slots=True)
