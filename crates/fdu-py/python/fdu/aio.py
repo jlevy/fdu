@@ -23,10 +23,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import threading
 from collections.abc import AsyncIterator
 
-from ._api import Index
+from ._api import Index, WatchTeardownError
 from ._models import WatchBatch, WatchOptions
 
 __all__ = ["watch_batches"]
@@ -41,6 +42,19 @@ _WORKER_JOIN_TIMEOUT = 5.0
 
 #: How often teardown gives the loop a turn while waiting for the worker to exit.
 _TEARDOWN_POLL = 0.005
+
+#: The longest one native pull may block, whatever interval the caller asked for.
+#:
+#: The two are different questions that shared an answer, and that was the defect. A
+#: caller's `interval` is about how often it wants to hear from an idle tree; this is how
+#: long a stop can go unnoticed, because a worker inside the native wait is not checking
+#: anything. With `interval=60` a cancelled consumer waited out the join timeout and was
+#: told teardown had succeeded while the worker was still parked in that wait.
+#:
+#: Capping it costs nothing a consumer can observe: an idle pull returns an empty batch,
+#: and empty batches are filtered here anyway. Detection stays event-driven, so this is
+#: not a poll rate -- it is the ceiling on how long the worker can be unreachable.
+_PULL_INTERVAL = 0.25
 
 #: Batches held for a slow consumer before the worker stops pulling.
 #:
@@ -67,14 +81,20 @@ async def watch_batches(
     consumer has no such need, and forwarding them would make every caller filter them.
 
     Cancelling the iterating task, or leaving the `async for` early, stops the worker,
-    which closes the watch. Both happen within one `interval` -- the time an outstanding
-    pull can still be blocked.
+    which closes the watch. How long that takes does not depend on `interval`: the worker
+    pulls with its own short bound, so a consumer asking to hear from an idle tree once a
+    minute still tears down promptly. If the worker somehow does not exit,
+    :class:`WatchTeardownError` is raised rather than reporting a clean teardown over a
+    registration that is still held.
 
     An exception from the underlying watch is re-raised here, on the consumer's task,
     rather than lost on a background thread.
     """
 
     selected = options if options is not None else WatchOptions()
+    # The pull the worker actually makes, which is the caller's request bounded by how long
+    # this adapter is willing to be unable to hear a stop.
+    pulled = dataclasses.replace(selected, interval=min(selected.interval, _PULL_INTERVAL))
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[WatchBatch | BaseException | None] = asyncio.Queue(
         maxsize=max(1, queue_size)
@@ -108,7 +128,7 @@ async def watch_batches(
                 pending.close()
 
         try:
-            with index.watch(selected) as watch:
+            with index.watch(pulled) as watch:
                 for batch in watch:
                     if stop.is_set():
                         break
@@ -159,3 +179,12 @@ async def watch_batches(
                 await asyncio.sleep(_TEARDOWN_POLL)
         with contextlib.suppress(asyncio.CancelledError):
             await joined
+        # `Thread.join` reports nothing: it returns whether the thread died or the timeout
+        # expired, so the call above cannot distinguish "stopped" from "gave up waiting".
+        # Asking the thread is the only way to tell, and not asking was how a teardown
+        # could return normally with a live registration behind it.
+        if worker.is_alive():
+            raise WatchTeardownError(
+                f"the watch worker was still running {_WORKER_JOIN_TIMEOUT}s after being "
+                "told to stop; its registration is still held"
+            )

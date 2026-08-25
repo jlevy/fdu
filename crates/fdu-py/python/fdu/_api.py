@@ -71,6 +71,17 @@ class InvalidArgumentError(FduError, ValueError):
     """A public option or query is invalid."""
 
 
+class WatchTeardownError(FduError, RuntimeError):
+    """A watch's worker thread outlived the teardown that was supposed to end it.
+
+    Raised rather than swallowed because the alternative is worse than an exception: a
+    teardown that returns normally says the registration is released, and a caller that
+    believes it goes on to open the next watch, close the index, or exit the process while
+    a thread is still pulling from the old one. A stuck worker is a bug somewhere; saying
+    so is the only thing that makes it findable.
+    """
+
+
 class FilesystemError(OSError, FduError):
     """A filesystem failure that prevented an operation from producing a result.
 

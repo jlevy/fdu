@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::engine_contract::{AppliedDelta, Clock, EntryKind, Op, Result, StateChange};
+use crate::engine_contract::{AppliedDelta, EntryKind, Op, Result, StateChange};
 use crate::index::IndexHandle;
 use crate::query::{Provenance, Query, Report, ReportSource, Selection, report};
 use crate::scan::ScanConfig;
@@ -177,6 +177,30 @@ fn dirty_rollups(applied: &[AppliedDelta]) -> Vec<PathBuf> {
     dirty.into_iter().collect()
 }
 
+/// What an incomplete slice means for a consumer's cached state.
+///
+/// Two different incompletenesses reach the same conclusion by different routes, and
+/// keeping them apart is why this is named rather than inlined.
+///
+/// An escalation says the *engine* lost precision and re-scanned: the index is right, but
+/// a consumer replaying `changes` alone would be applying a suffix to state that no longer
+/// matches. A truncated journal says the *consumer* fell further behind than retention
+/// allows: the changes it missed are unnamed and unnameable, so enumerating what survived
+/// would hand it a list it reads as complete -- the same failure `all_dirty` exists to
+/// prevent one bound up. Only the second discards the dirty set, because only the second
+/// makes that set a lie.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct Recovery {
+    reset: bool,
+    all_dirty: bool,
+}
+
+impl Recovery {
+    const fn of(escalated: bool, truncated: bool) -> Self {
+        Self { reset: escalated || truncated, all_dirty: truncated }
+    }
+}
+
 /// An index paired with a watcher, answering one query continuously.
 pub struct Session {
     index: IndexHandle,
@@ -185,14 +209,12 @@ pub struct Session {
     query: Query,
     /// The position the last batch reported, or where the session started.
     ///
-    /// A batch may only name a position it can prove it reached without stepping over a
-    /// commit. This stream is not the index's only writer -- a caller can refresh, or
-    /// ingest its own hints, against the same handle while a watch runs -- so a clock
-    /// between two carried deltas belongs to a commit this batch does not deliver.
-    /// Comparing against this is how the batch tells the difference between "here is
-    /// everything since your last position" and "something happened that I cannot hand
-    /// you".
-    resume: Clock,
+    /// The consumer's resume state, and the thing each batch is built *from*: the journal
+    /// since this position is everything the consumer has not seen, whoever committed it.
+    /// This stream is not the index's only writer -- a caller can refresh, or ingest its
+    /// own hints, against the same handle while a watch runs -- and a batch assembled from
+    /// what the watcher delivered would omit those commits while advancing past them.
+    resume: crate::Cursor,
 }
 
 impl Session {
@@ -208,7 +230,7 @@ impl Session {
         // never leaves a watcher registered on the tree.
         scan.validate_for_watch_scope(index.scope()?)?;
         let watcher = Watcher::new(&root, watch)?;
-        let resume = index.clock()?;
+        let resume = index.cursor()?;
         Ok(Self { index, watcher, scan, query, resume })
     }
 
@@ -244,13 +266,13 @@ impl Session {
     /// Takes `&mut self` because consuming from the event queue is a mutation: two
     /// callers draining one session would each see an arbitrary half of the stream.
     pub fn next_batch(&mut self, timeout: Duration) -> Result<Option<Batch>> {
-        let mut applied: Vec<AppliedDelta> = Vec::new();
+        let mut delivered: Vec<AppliedDelta> = Vec::new();
         let outcome = self.watcher.apply_next(
             &self.index,
             &self.scan,
             timeout,
             &mut |delta: &AppliedDelta| {
-                applied.push(delta.clone());
+                delivered.push(delta.clone());
             },
         )?;
 
@@ -259,14 +281,23 @@ impl Session {
         };
 
         // A control file that moved changes what the tag rules decide about entries this
-        // batch never touched, so it is rebound before anything is derived from the batch.
-        // Two reasons, and the second is the one that bites: the tags reported below must
-        // be the ones the new file produces, and the rebind is itself a commit -- so a
-        // cursor captured before it would name a position past a transition the batch does
-        // not carry, and resuming from it would skip the re-tag permanently.
-        if let Some(retag) = self.rebind_tags_for(&applied)? {
-            applied.push(retag);
-        }
+        // batch never touched, so it is rebound before the slice below is taken -- both so
+        // the tags reported are the ones the new file produces, and so the rebind's own
+        // commit is inside the slice rather than after it.
+        self.rebind_tags_for(&delivered)?;
+
+        // The batch is the journal since the consumer's last position, not the deltas this
+        // watcher happened to hand back. Those are not the same set, and the difference is
+        // a silent loss: `apply_next` reconciles through several separately locked
+        // flushes, so a direct producer -- a caller refreshing, or ingesting its own hints,
+        // against the same handle -- can commit between two of them. Building from the
+        // sink omitted that commit while advancing the cursor past it, and resuming from
+        // the cursor skipped it for good with nothing reporting the loss.
+        //
+        // One guard covers the slice and its terminal position, so the cursor cannot name
+        // a commit the slice does not carry.
+        let since = self.index.since(self.resume)?;
+        let applied = since.deltas;
 
         // A dropped event, an unpaired rename, or a watch registered after its
         // directory already had contents: in each case the engine re-scans and the index
@@ -286,9 +317,9 @@ impl Session {
                 )
             })
         });
-        let session = self.index.session()?;
+        let recovery = Recovery::of(escalated, since.truncated);
         let dirty_rollups = dirty_rollups(&applied);
-        let all_dirty = dirty_rollups.len() > MAX_DIRTY_ROLLUPS;
+        let all_dirty = recovery.all_dirty || dirty_rollups.len() > MAX_DIRTY_ROLLUPS;
         let mut batch = Batch {
             changes: Vec::new(),
             dirty: !applied.is_empty(),
@@ -297,14 +328,15 @@ impl Session {
             // stale row survives an invalidation that named it.
             dirty_rollups: if all_dirty { Vec::new() } else { dirty_rollups },
             all_dirty,
-            reset: escalated || self.stepped_over_a_commit(&applied),
-            // The last delta's own clock. `SessionId` is fixed for the life of an index,
-            // so only the clock ever needed capturing, and the delta already carries it.
-            cursor: applied.last().map(|delta| crate::Cursor { session, clock: delta.clock }),
+            reset: recovery.reset,
+            // Taken with the slice rather than from its last delta, so it is the index's
+            // own terminal position under the same guard. `None` only when the slice is
+            // empty: a batch that carried nothing names no new place to resume from.
+            cursor: (!applied.is_empty()).then_some(since.cursor),
             state: applied.iter().flat_map(|delta| delta.state.iter().cloned()).collect(),
         };
-        if let Some(last) = applied.last() {
-            self.resume = last.clock;
+        if !applied.is_empty() {
+            self.resume = since.cursor;
         }
 
         // Tags are read from the index, which is where they were computed, so this needs a
@@ -351,46 +383,27 @@ impl Session {
         Ok(Some(batch))
     }
 
-    /// Whether a commit landed between this session's position and the deltas it carries.
-    ///
-    /// The index has one writer at a time but not one *producer*: a caller can refresh a
-    /// subtree, ingest hints, or rebind rules against the same handle while a watch runs.
-    /// Those commits are real and this stream does not deliver them, so a batch that
-    /// stepped over one cannot honestly hand back a position past it -- resuming there
-    /// would drop the commit for good, and nothing would report the loss.
-    ///
-    /// A gap is `reset`, which is exactly what it means: the consumer's position cannot be
-    /// advanced by replay and it has to re-read. Clocks are minted strictly increasing
-    /// under the write guard, so contiguity is the whole test.
-    fn stepped_over_a_commit(&self, applied: &[AppliedDelta]) -> bool {
-        let mut expected = self.resume.0.saturating_add(1);
-        for delta in applied {
-            if delta.clock.0 != expected {
-                return true;
-            }
-            expected = delta.clock.0.saturating_add(1);
-        }
-        false
-    }
-
     /// Re-read the tag rules' control files when this batch moved one.
     ///
     /// Returns the directories whose tags may have changed, or nothing at all -- the
     /// common case, and one cheap `any` over the batch -- when no control file was
     /// touched or no enabled rule reads one.
-    fn rebind_tags_for(&self, applied: &[AppliedDelta]) -> Result<Option<AppliedDelta>> {
+    fn rebind_tags_for(&self, delivered: &[AppliedDelta]) -> Result<()> {
         let moved = self.index.with_index(|index| {
             let rules = index.tag_rules();
             !rules.is_empty()
-                && applied
+                && delivered
                     .iter()
                     .flat_map(|delta| &delta.ops)
                     .any(|op| rules.is_control_file(op.path()))
         })?;
         if !moved {
-            return Ok(None);
+            return Ok(());
         }
-        self.index.rebind_tag_rules()
+        // The commit it mints is picked up by the journal slice like any other, which is
+        // why this returns nothing: there is one place a batch's contents come from.
+        self.index.rebind_tag_rules()?;
+        Ok(())
     }
 
     /// Translate one applied op into a change, when the selection admits it.
@@ -505,6 +518,28 @@ mod tests {
         );
         assert!(dirty.contains(&PathBuf::from("src")), "and its ancestors: {dirty:?}");
         assert!(dirty.contains(&PathBuf::new()), "including the root: {dirty:?}");
+    }
+
+    /// A truncated journal is a reset *and* discards the dirty set; an escalation is not.
+    ///
+    /// The distinction is the whole reason this is a named decision. Both are "your view
+    /// may have gaps", but only one of them makes the enumerated dirty list wrong: an
+    /// escalation names the subtree it re-scanned, while a truncated journal cannot name
+    /// what it dropped, so a list of what survived reads as complete and is not.
+    #[test]
+    fn only_a_truncated_journal_discards_the_dirty_set() {
+        assert_eq!(Recovery::of(false, false), Recovery { reset: false, all_dirty: false });
+        assert_eq!(
+            Recovery::of(true, false),
+            Recovery { reset: true, all_dirty: false },
+            "an escalation names the subtree it re-scanned, so the list still means something"
+        );
+        assert_eq!(
+            Recovery::of(false, true),
+            Recovery { reset: true, all_dirty: true },
+            "a truncated journal cannot name what it dropped"
+        );
+        assert_eq!(Recovery::of(true, true), Recovery { reset: true, all_dirty: true });
     }
 
     /// A re-tag dirties the directories it governs, though no path event names them.

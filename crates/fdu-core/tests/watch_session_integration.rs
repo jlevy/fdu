@@ -306,18 +306,24 @@ fn a_batch_cursor_never_runs_ahead_of_the_deltas_it_carried() {
     assert!(checked > 0, "at least one batch must have been examined");
 }
 
-/// A batch that stepped over another producer's commit says so, rather than skipping it.
+/// Another producer's commit is delivered by this stream, not stepped over by it.
 ///
 /// An index has one writer at a time but not one producer: a caller can refresh a subtree,
 /// ingest its own hints, or rebind tag rules against the same handle while a watch runs.
-/// Those commits are real and this stream does not deliver them, so a batch naming a
-/// position past one would drop it permanently -- and nothing in the batch would report
-/// the loss. A gap is exactly what `reset` means, so that is what it is called.
+/// `apply_next` also reconciles through several separately locked flushes, so such a
+/// commit can land *between* two watcher deltas.
 ///
-/// The control matters as much as the case: a stream with no second producer must *not*
-/// report a reset, or the signal would mean nothing and a consumer would re-read forever.
+/// A batch assembled from what the watcher handed back omitted that commit while advancing
+/// its cursor past it, and resuming from the cursor skipped it permanently with nothing
+/// reporting the loss. Building the batch from the journal since the consumer's own
+/// position makes the omission unrepresentable: whoever committed it, it is in the slice.
+///
+/// The earlier version of this test asserted that such a batch reported `reset`. That was
+/// the weaker contract -- telling a consumer to throw everything away is not the same as
+/// handing it what it missed -- and it would have passed on a stream that simply never
+/// delivered the commit.
 #[test]
-fn a_commit_this_stream_did_not_deliver_makes_the_batch_a_reset() {
+fn a_commit_from_another_producer_is_delivered_rather_than_skipped() {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(dir.path().join("a.txt"), b"12345").expect("seed");
 
@@ -346,16 +352,24 @@ fn a_commit_this_stream_did_not_deliver_makes_the_batch_a_reset() {
         .expect("apply");
 
     fs::write(dir.path().join("b.txt"), b"678").expect("create");
-    assert!(
-        next_applied_batch(&mut session).expect("the created file should arrive").reset,
-        "a batch whose deltas do not continue from this session's position is a reset"
-    );
 
-    fs::write(dir.path().join("c.txt"), b"9").expect("create");
+    let mut seen: Vec<std::path::PathBuf> = Vec::new();
+    let mut resets = 0_u32;
+    let deadline = Instant::now() + SETTLE;
+    while Instant::now() < deadline && !seen.iter().any(|path| path.ends_with("b.txt")) {
+        let Some(batch) = next_applied_batch(&mut session) else {
+            break;
+        };
+        resets += u32::from(batch.reset);
+        seen.extend(batch.changes.into_iter().map(|change| change.path));
+    }
+
+    assert!(seen.iter().any(|path| path.ends_with("b.txt")), "the watched change: {seen:?}");
     assert!(
-        !next_applied_batch(&mut session).expect("the second file should arrive").reset,
-        "and an uninterrupted stream is not"
+        seen.iter().any(|path| path.ends_with("elsewhere.txt")),
+        "the other producer's commit must be delivered, not skipped: {seen:?}"
     );
+    assert_eq!(resets, 0, "and delivering it is not a reset -- nothing was lost");
 }
 
 /// The next batch that actually applied something, or nothing within the settle window.

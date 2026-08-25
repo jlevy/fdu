@@ -823,7 +823,13 @@ def check_the_event_loop_adapter_delivers_the_same_batches() -> None:
                 await asyncio.sleep(0.01)
 
         async def follow() -> None:
-            async for _ in fdu.aio.watch_batches(index, fdu.WatchOptions(interval=0.1)):
+            # A minute, deliberately. The interval is what the caller wants to hear from an
+            # idle tree, and it used to become the native wait the worker parked in -- so
+            # cancellation waited out the join timeout and then reported success over a
+            # worker that was still inside that wait. An `interval=0.1` test cannot see
+            # that at all, because the two bounds are indistinguishable when both are
+            # small.
+            async for _ in fdu.aio.watch_batches(index, fdu.WatchOptions(interval=60.0)):
                 pass
 
         def watchers() -> int:
@@ -854,6 +860,10 @@ def check_the_event_loop_adapter_delivers_the_same_batches() -> None:
     assert elapsed < 3.0, f"cancellation must not stall the loop: {elapsed:.2f}s"
     assert beats > 0, "the loop must keep running its other tasks while the watch tears down"
     assert leaked == 0, f"the worker thread must be gone, not merely told to stop: {leaked}"
+    # Teardown returned normally, which is a claim: `Thread.join` cannot tell "stopped"
+    # from "gave up waiting", so a clean return over a live worker was representable and
+    # `WatchTeardownError` is what makes it not.
+    assert issubclass(fdu.WatchTeardownError, fdu.FduError)
 
     fdu.clear_cache(root)
 
