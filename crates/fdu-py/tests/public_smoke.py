@@ -834,6 +834,53 @@ def check_a_batch_names_which_projections_went_stale() -> None:
         )
 
 
+def check_a_batch_reports_what_it_cost_and_not_what_it_waited() -> None:
+    """A batch's wall time is its work, not the interval it sat in.
+
+    The interval is how long a pull may block before returning empty-handed. Folding that
+    into the cost would make an idle tree with a long interval report a minute of "work"
+    for a batch that did nothing -- and the one figure an embedder compares providers on
+    would be measuring its own patience instead of the engine.
+    """
+
+    with tempfile.TemporaryDirectory(prefix="fdu-batchwork-") as raw:
+        root = Path(raw)
+        (root / "seed.txt").write_text("seed", encoding="utf-8")
+        index = fdu.open(root, cache=fdu.CachePolicy.OFF)
+
+        # The change has to land *during* the wait, or there is no wait to confuse the work
+        # with: writing the file first makes the pull return immediately and a naive
+        # whole-call measurement would look correct. A timer puts it a second and a half
+        # into a three-second interval.
+        interval = 3.0
+        delay = 1.5
+        writer = threading.Timer(
+            delay, lambda: (root / "added.rs").write_text("fn main() {}", encoding="utf-8")
+        )
+        writer.start()
+        try:
+            with index.watch(fdu.WatchOptions(interval=interval)) as watch:
+                deadline = time.monotonic() + 30
+                applied = None
+                for batch in watch:
+                    if batch.dirty:
+                        applied = batch
+                        break
+                    if time.monotonic() > deadline:
+                        break
+        finally:
+            writer.cancel()
+
+        assert applied is not None, "the created file should have arrived"
+        assert applied.work is not None
+        assert applied.work.wall_ns < delay * 1_000_000_000 / 3, (
+            "a batch reports what it did, not how long it waited to do it: "
+            f"{applied.work.wall_ns / 1e9:.3f}s, having waited about {delay}s for the change"
+        )
+        assert applied.work.rows == len(applied.changes), applied.work
+        assert applied.work.name_bytes > 0, "the rows it carries cost something to hold"
+
+
 def check_a_pinned_assembly_pins_its_clock_too() -> None:
     """A version pin fixes the tree. It does not fix a relative recency cutoff.
 
@@ -1688,6 +1735,7 @@ def main() -> None:
     check_the_envelope_is_typed_and_its_facts_are_independent()
     check_state_and_operations_interleave_at_their_own_clocks()
     check_a_batch_names_which_projections_went_stale()
+    check_a_batch_reports_what_it_cost_and_not_what_it_waited()
     check_a_pinned_assembly_pins_its_clock_too()
     check_a_state_transition_advances_the_version_and_reaches_the_feed()
     check_the_event_loop_adapter_delivers_the_same_batches()

@@ -614,6 +614,7 @@ def _watch_batch(value: dict[str, Any]) -> WatchBatch:
         state=tuple(_state_change(item) for item in value["state"]),
         issues=tuple(_operation_error(item) for item in value["issues"]),
         dirty_queries=tuple(QueryKind(str(kind)) for kind in value["dirty_queries"]),
+        work=_work(value["work"]),
     )
 
 

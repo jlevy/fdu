@@ -22,6 +22,7 @@ use crate::engine_contract::{
     AppliedDelta, CommittedState, EntryKind, Op, QueryKind, Result, StateChange,
 };
 use crate::index::IndexHandle;
+use crate::index::Work;
 use crate::query::{Provenance, Query, Report, ReportSource, Selection, report};
 use crate::scan::ScanConfig;
 use crate::watch::{WatchConfig, Watcher};
@@ -113,6 +114,17 @@ pub struct Batch {
     /// beside `reset`, which replaces every other signal; unaffected by `all_dirty`, which
     /// drops the path list and leaves the question of *which projections* untouched.
     pub dirty_queries: Vec<QueryKind>,
+    /// What producing this batch cost.
+    ///
+    /// `wall_ns` measures the work, not the wait: an idle tree with a one-minute interval
+    /// would otherwise report a minute of cost for a batch that did nothing, and the one
+    /// figure an embedder compares providers on would be measuring its own patience.
+    ///
+    /// `entries_visited` and `dirs_visited` are the filesystem the batch actually touched
+    /// -- a coalesced event costs a stat, and an escalation costs the subtree it re-scanned,
+    /// which is the difference a serving loop needs to see. `rows` is what the consumer
+    /// receives after the selection, and `name_bytes` what those rows cost it to hold.
+    pub work: Work,
     /// Typed conditions this batch observed.
     ///
     /// An observation gap is the one that matters today: the engine lost precision, re-
@@ -387,6 +399,15 @@ impl Session {
         if outcome.is_none() && self.index.clock()? == self.resume.clock {
             return Ok(None);
         }
+        // From here on is assembly, which is work. What came before was mostly waiting,
+        // and the watcher reports its own applying time apart from that.
+        let assembling = std::time::Instant::now();
+        let mut work = Work::default();
+        if let Some(report) = &outcome {
+            work.entries_visited = report.reconciliation.scan.entries;
+            work.dirs_visited = report.reconciliation.scan.dirs_read;
+            work.wall_ns = report.applied_ns;
+        }
 
         // A control file that moved changes what the tag rules decide about entries this
         // batch never touched, so it is rebound before the slice below is taken -- both so
@@ -412,7 +433,13 @@ impl Session {
             // every other signal, because the changes it missed are unnamed and unnameable.
             // A partial list beside it would read as complete and be applied as one.
             self.resume = since.cursor;
-            return Ok(Some(Batch::reset_at(since.cursor)));
+            let mut reset = Batch::reset_at(since.cursor);
+            reset.work = work;
+            reset.work.wall_ns = reset
+                .work
+                .wall_ns
+                .saturating_add(u64::try_from(assembling.elapsed().as_nanos()).unwrap_or(u64::MAX));
+            return Ok(Some(reset));
         }
         let applied = since.deltas;
 
@@ -457,6 +484,7 @@ impl Session {
         let mut batch = Batch {
             changes: Vec::new(),
             dirty_queries: dirty_queries(&applied),
+            work,
             issues,
             dirty: !applied.is_empty(),
             // Past the bound the list is dropped rather than truncated. A truncated list
@@ -527,6 +555,13 @@ impl Session {
                 }
             }
         }
+        batch.work.rows = batch.changes.len() as u64;
+        batch.work.name_bytes =
+            batch.changes.iter().map(|change| change.path.as_os_str().len() as u64).sum();
+        batch.work.wall_ns = batch
+            .work
+            .wall_ns
+            .saturating_add(u64::try_from(assembling.elapsed().as_nanos()).unwrap_or(u64::MAX));
         Ok(Some(batch))
     }
 

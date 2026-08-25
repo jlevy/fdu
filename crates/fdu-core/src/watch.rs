@@ -221,6 +221,12 @@ pub struct WatchApplyReport {
     pub apply: ApplyOutcome,
     /// Effect of closing any invalidation loop opened by the intent.
     pub reconciliation: scan::ReconcileReport,
+    /// Nanoseconds spent applying, excluding the wait for an event to arrive.
+    ///
+    /// Separated because the wait is not work. An idle tree with a one-minute interval
+    /// would otherwise report a minute of "cost" for a batch that did nothing, and the one
+    /// number an embedder compares providers on would be measuring its own patience.
+    pub applied_ns: u64,
 }
 
 impl Watcher {
@@ -363,13 +369,15 @@ fn apply_intent(
     scan_config: &ScanConfig,
     sink: &mut dyn FnMut(&AppliedDelta),
 ) -> Result<WatchApplyReport> {
+    let started = std::time::Instant::now();
     let mut verifier = |_: &Path, _: &Observation| Ok(verify_intent(root, watch_config, intent));
     let apply = apply_reverified_with(index, &Observation::default(), scan_config, &mut verifier)?;
     if let Some(applied) = &apply.applied {
         sink(applied);
     }
     let reconciliation = scan::reconcile_pending_handle(index, scan_config, sink)?;
-    Ok(WatchApplyReport { apply, reconciliation })
+    let applied_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+    Ok(WatchApplyReport { apply, reconciliation, applied_ns })
 }
 
 /// Test the unrooted observation driver without making it a public apply capability.
@@ -385,12 +393,14 @@ fn apply_observation(
     sink: &mut dyn FnMut(&AppliedDelta),
 ) -> Result<WatchApplyReport> {
     scan_config.validate_for_watch_scope(index.scope()?)?;
+    let started = std::time::Instant::now();
     let apply = apply_reverified(index, observation, scan_config)?;
     if let Some(applied) = &apply.applied {
         sink(applied);
     }
     let reconciliation = scan::reconcile_pending_handle(index, scan_config, sink)?;
-    Ok(WatchApplyReport { apply, reconciliation })
+    let applied_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+    Ok(WatchApplyReport { apply, reconciliation, applied_ns })
 }
 
 /// Re-stat a queued watch sample against a clock-stable index boundary before applying

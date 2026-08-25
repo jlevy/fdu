@@ -1616,6 +1616,14 @@ class WatchBatch:
     :attr:`all_dirty`, which drops the path list and leaves this question untouched.
     """
 
+    work: Work | None = None
+    """What producing this batch cost, or ``None`` for an idle step.
+
+    ``wall_ns`` measures the work, not the wait: an idle tree with a one-minute interval
+    would otherwise report a minute of cost for a batch that did nothing, and the one figure
+    an embedder compares providers on would be measuring its own patience.
+    """
+
     issues: tuple[OperationError, ...] = ()
     """Typed conditions this batch observed.
 

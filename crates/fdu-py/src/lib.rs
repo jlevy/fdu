@@ -2017,6 +2017,7 @@ impl PyWatch {
         let state = PyList::empty(py);
         let mut issues = PyList::empty(py);
         let mut dirty_queries: Vec<&'static str> = Vec::new();
+        let mut batch_work = work_dict(py, fdu_core::Work::default())?;
         let mut dirty = false;
         let mut all_dirty = false;
         let mut reset = false;
@@ -2050,6 +2051,7 @@ impl PyWatch {
             issues = error_list(py, &batch.issues)?;
             dirty_queries =
                 batch.dirty_queries.iter().map(|kind| fdu_core::QueryKind::as_str(*kind)).collect();
+            batch_work = work_dict(py, batch.work)?;
             for committed in &batch.state {
                 // The clock the transition committed at, not the batch's terminal one.
                 // Stamping them all with the end said every transition happened last, which
@@ -2061,6 +2063,7 @@ impl PyWatch {
         out.set_item("state", state)?;
         out.set_item("issues", issues)?;
         out.set_item("dirty_queries", dirty_queries)?;
+        out.set_item("work", batch_work)?;
         out.set_item("dirty", dirty)?;
         out.set_item("dirty_rollups", dirty_rollups)?;
         out.set_item("all_dirty", all_dirty)?;
