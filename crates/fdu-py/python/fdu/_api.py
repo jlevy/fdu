@@ -32,6 +32,7 @@ from ._models import (
     EntryKind,
     Format,
     Freshness,
+    ProjectionCost,
     ProjectionWork,
     Provenance,
     Query,
@@ -388,6 +389,7 @@ class Index:
                 None if expected is None else {"session": expected.session, "clock": expected.clock}
             ),
         )
+        extension_returned = time.perf_counter_ns()
         children = value["children"]
         report = value["report"]
         projections = value["projections"]
@@ -408,10 +410,10 @@ class Index:
             report=None if report is None else report_from_dict(report),
             work=_work(value["work"]),
             projections=ProjectionWork(
-                children=_work(projections["children"]),
-                total=_work(projections["total"]),
-                rollups=_work(projections["rollups"]),
-                report=_work(projections["report"]),
+                children=_projection_cost(projections["children"]),
+                total=_projection_cost(projections["total"]),
+                rollups=_projection_cost(projections["rollups"]),
+                report=_projection_cost(projections["report"]),
             ),
         )
         # The only end-to-end figure, and the one an embedder should compare providers on.
@@ -419,12 +421,18 @@ class Index:
         # the models above are built -- so publishing that as the call's duration would
         # omit a provider-specific part of this path and understate it against a
         # pure-Python provider that has no such phase.
+        #
+        # `model_ns` is timed directly, from the moment the extension handed the dict back.
+        # Deriving it as wall minus native looked equivalent and was not: it swallowed the
+        # extension's own `conversion_ns` as well, so the three phases overlapped and
+        # summing them double-counted a span that had already been reported.
+        built = time.perf_counter_ns()
         return dataclasses.replace(
             bundle,
             work=dataclasses.replace(
                 bundle.work,
-                wall_ns=time.perf_counter_ns() - started,
-                model_ns=time.perf_counter_ns() - started - bundle.work.native_ns,
+                wall_ns=built - started,
+                model_ns=built - extension_returned,
             ),
         )
 
@@ -499,6 +507,19 @@ def _work(value: dict[str, Any]) -> Work:
         binding_bytes=int(value.get("binding_bytes", 0)),
         conversion_ns=int(value.get("conversion_ns", 0)),
         cpu_ns=None if value.get("cpu_ns") is None else int(value["cpu_ns"]),
+    )
+
+
+def _projection_cost(value: dict[str, Any]) -> ProjectionCost:
+    """One projection's engine-local span, parsed apart from the call's own Work."""
+
+    return ProjectionCost(
+        entries_visited=int(value["entries_visited"]),
+        dirs_visited=int(value["dirs_visited"]),
+        rows=int(value["rows"]),
+        tally_rows=int(value["tally_rows"]),
+        name_bytes=int(value["name_bytes"]),
+        engine_ns=int(value["wall_ns"]),
     )
 
 

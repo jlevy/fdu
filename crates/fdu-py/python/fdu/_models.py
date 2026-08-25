@@ -1198,19 +1198,52 @@ class Bundle:
 
 
 @dataclass(frozen=True, slots=True)
+class ProjectionCost:
+    """What one projection of a bundled read cost, inside the engine.
+
+    Deliberately not a :class:`Work`. That record describes a whole public call and its
+    ``wall_ns`` covers every phase of one; a projection is a span *within* the engine read,
+    measured under the guard the whole bundle shares. Reusing one type for both made
+    ``wall_ns`` mean two things, and the smaller of them silently answered questions asked
+    about the larger.
+
+    There is no guard wait here for the same reason: the projections waited together, so
+    attributing one wait to one of them would be inventing a number.
+    """
+
+    entries_visited: int
+    """Index entries this projection examined."""
+
+    dirs_visited: int
+    """Directories among them."""
+
+    rows: int
+    """Rows this projection's result carries."""
+
+    tally_rows: int
+    """Extension and group tallies it examined, which a bound may exceed."""
+
+    name_bytes: int
+    """Bytes of entry and extension names its result carries."""
+
+    engine_ns: int
+    """Nanoseconds this projection ran inside the engine, guard already held."""
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectionWork:
     """What each projection of a bundled read cost on its own."""
 
-    children: Work
+    children: ProjectionCost
     """Listing one directory's children."""
 
-    total: Work
+    total: ProjectionCost
     """The whole-tree totals."""
 
-    rollups: Work
+    rollups: ProjectionCost
     """Every requested per-directory roll-up, summed."""
 
-    report: Work
+    report: ProjectionCost
     """Answering the requested query.
 
     Counts what the result carries -- rows and the bytes of their names -- and how long it

@@ -95,38 +95,37 @@ impl ErrorDetail {
 
 fn rollup_dict<'py>(py: Python<'py>, roll: &RollUp) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new(py);
-    dict.set_item("files", roll.files)?;
-    dict.set_item("dirs", roll.dirs)?;
-    dict.set_item("others", roll.others)?;
-    dict.set_item("bytes", roll.bytes)?;
-    dict.set_item("allocated", roll.allocated)?;
-    dict.set_item("newest_mtime_ns", roll.newest_mtime_ns)?;
-    payload::scalars(6);
+    put_scalar(&dict, "files", roll.files)?;
+    put_scalar(&dict, "dirs", roll.dirs)?;
+    put_scalar(&dict, "others", roll.others)?;
+    put_scalar(&dict, "bytes", roll.bytes)?;
+    put_scalar(&dict, "allocated", roll.allocated)?;
+    put_scalar(&dict, "newest_mtime_ns", roll.newest_mtime_ns)?;
 
+    // These two are keyed by data rather than by schema, so their keys are payload: an
+    // extension name is the answer, not the shape of it.
     let by_ext = PyDict::new(py);
     for (ext, tally) in &roll.by_ext {
         let entry = PyDict::new(py);
-        entry.set_item("files", tally.files)?;
-        entry.set_item("bytes", tally.bytes)?;
-        entry.set_item("allocated", tally.allocated)?;
+        put_scalar(&entry, "files", tally.files)?;
+        put_scalar(&entry, "bytes", tally.bytes)?;
+        put_scalar(&entry, "allocated", tally.allocated)?;
+        ext.as_str().charge();
         by_ext.set_item(ext, entry)?;
-        payload::text(ext.len());
-        payload::scalars(3);
     }
     dict.set_item("by_extension", by_ext)?;
 
     let by_group = PyDict::new(py);
     for (group, tally) in &roll.by_group {
         let entry = PyDict::new(py);
-        entry.set_item("files", tally.files)?;
-        entry.set_item("bytes", tally.bytes)?;
-        entry.set_item("allocated", tally.allocated)?;
+        put_scalar(&entry, "files", tally.files)?;
+        put_scalar(&entry, "bytes", tally.bytes)?;
+        put_scalar(&entry, "allocated", tally.allocated)?;
+        group.as_str().charge();
         by_group.set_item(group, entry)?;
-        payload::text(group.len());
-        payload::scalars(3);
     }
     dict.set_item("by_group", by_group)?;
-    dict.set_item("extension_remainder", ext_remainder_dict(py, roll.ext_remainder)?)?;
+    put_nested(&dict, "extension_remainder", ext_remainder_dict(py, roll.ext_remainder)?)?;
     Ok(dict)
 }
 
@@ -139,11 +138,10 @@ fn ext_remainder_dict(
         return Ok(None);
     };
     let value = PyDict::new(py);
-    value.set_item("extensions", remainder.extensions)?;
-    value.set_item("files", remainder.files)?;
-    value.set_item("bytes", remainder.bytes)?;
-    value.set_item("allocated", remainder.allocated)?;
-    payload::scalars(6);
+    put_scalar(&value, "extensions", remainder.extensions)?;
+    put_scalar(&value, "files", remainder.files)?;
+    put_scalar(&value, "bytes", remainder.bytes)?;
+    put_scalar(&value, "allocated", remainder.allocated)?;
     Ok(Some(value))
 }
 
@@ -285,39 +283,36 @@ fn child_list<'py>(
     let out = PyList::empty(py);
     for child in children {
         let entry = PyDict::new(py);
-        entry.set_item("name", child.name.as_os_str())?;
-        entry.set_item("kind", entry_kind_label(child.kind))?;
+        put_text(&entry, "name", child.name.as_os_str())?;
+        put_text(&entry, "kind", entry_kind_label(child.kind))?;
         entry.set_item("provenance", provenance_dict(py, child.provenance)?)?;
-        entry.set_item("extension", child.extension.as_deref())?;
-        entry.set_item("tags", child.tags.as_slice())?;
-        payload::text(child.name.as_os_str().len());
-        payload::text(entry_kind_label(child.kind).len());
-        payload::text(child.extension.as_deref().map_or(0, str::len));
+        put_text(&entry, "extension", child.extension.as_deref())?;
         for tag in &child.tags {
-            payload::text(tag.len());
+            tag.as_str().charge();
         }
-        entry.set_item(
+        entry.set_item("tags", child.tags.as_slice())?;
+        put_nested(
+            &entry,
             "classification",
             row_classification_dict(py, child.classification.as_ref(), child.group.as_deref())?,
         )?;
         if let Some(totals) = child.totals {
             // Scalars, not a roll-up: the breakdown belongs to the directory being
             // inspected, and one map per row is the cost this listing exists to avoid.
-            entry.set_item("files", totals.files)?;
-            entry.set_item("dirs", totals.dirs)?;
-            entry.set_item("others", totals.others)?;
-            entry.set_item("bytes", totals.bytes)?;
-            entry.set_item("allocated", totals.allocated)?;
-            entry.set_item("newest_mtime_ns", totals.newest_mtime_ns)?;
-            payload::scalars(6);
+            put_scalar(&entry, "files", totals.files)?;
+            put_scalar(&entry, "dirs", totals.dirs)?;
+            put_scalar(&entry, "others", totals.others)?;
+            put_scalar(&entry, "bytes", totals.bytes)?;
+            put_scalar(&entry, "allocated", totals.allocated)?;
+            put_scalar(&entry, "newest_mtime_ns", totals.newest_mtime_ns)?;
             // Decided here rather than in the consumer, because deciding it needs the
             // row's provenance as well as its counts: a partial subtree reporting zero
             // means "nothing found yet".
-            entry.set_item("empty", child.is_empty_subtree())?;
+            put_scalar(&entry, "empty", child.is_empty_subtree())?;
         } else {
-            entry.set_item("bytes", child.attrs.size)?;
-            entry.set_item("allocated", child.attrs.allocated)?;
-            entry.set_item("mtime_ns", child.attrs.mtime_ns)?;
+            put_scalar(&entry, "bytes", child.attrs.size)?;
+            put_scalar(&entry, "allocated", child.attrs.allocated)?;
+            put_scalar(&entry, "mtime_ns", child.attrs.mtime_ns)?;
         }
         out.append(entry)?;
     }
@@ -383,6 +378,85 @@ mod payload {
     }
 }
 
+/// What one value contributes to the payload when it crosses.
+///
+/// Implemented rather than open-coded so the charge cannot be forgotten: every emission on
+/// the read path goes through a setter below, which charges before it sets. The previous
+/// arrangement -- `set_item` calls followed by a separate `payload::scalars(n)` -- drifted
+/// exactly the way an unenforced convention does. A field added beside such a call is
+/// emitted and not charged, and nothing anywhere fails; a count that had been six was
+/// still six when the shape had gone to four, and to seven.
+trait Charge {
+    fn charge(&self);
+}
+
+impl Charge for &str {
+    fn charge(&self) {
+        payload::text(self.len());
+    }
+}
+
+impl Charge for &std::ffi::OsStr {
+    fn charge(&self) {
+        payload::text(self.len());
+    }
+}
+
+impl Charge for String {
+    fn charge(&self) {
+        payload::text(self.len());
+    }
+}
+
+/// An absent value is a fixed-width leaf like any other.
+///
+/// The stated rule already said a null costs `SCALAR_BYTES`; the open-coded charges said
+/// zero, so a result full of absent extensions and unclassified rows under-reported what
+/// a consumer received.
+impl<T: Charge> Charge for Option<T> {
+    fn charge(&self) {
+        match self {
+            Some(value) => value.charge(),
+            None => payload::scalars(1),
+        }
+    }
+}
+
+/// Set one fixed-width field -- an integer, a float, a boolean -- and charge it.
+fn put_scalar<'py, V: IntoPyObject<'py>>(
+    dict: &Bound<'py, PyDict>,
+    key: &str,
+    value: V,
+) -> PyResult<()> {
+    payload::scalars(1);
+    dict.set_item(key, value)
+}
+
+/// Set one text field, charging its own bytes, or a null's fixed width when absent.
+fn put_text<'py, V: Charge + IntoPyObject<'py>>(
+    dict: &Bound<'py, PyDict>,
+    key: &str,
+    value: V,
+) -> PyResult<()> {
+    value.charge();
+    dict.set_item(key, value)
+}
+
+/// Set a nested value that may be absent, charging a null when it is.
+///
+/// A present dict or list charged itself as it was built, so only the absent case is left
+/// to account for here.
+fn put_nested<'py, V: IntoPyObject<'py>>(
+    dict: &Bound<'py, PyDict>,
+    key: &str,
+    value: Option<V>,
+) -> PyResult<()> {
+    if value.is_none() {
+        payload::scalars(1);
+    }
+    dict.set_item(key, value)
+}
+
 fn work_dict(py: Python<'_>, work: fdu_core::Work) -> PyResult<Bound<'_, PyDict>> {
     let out = PyDict::new(py);
     out.set_item("entries_visited", work.entries_visited)?;
@@ -402,9 +476,8 @@ fn child_page_dict<'py>(
 ) -> PyResult<Bound<'py, PyDict>> {
     let out = PyDict::new(py);
     out.set_item("rows", child_list(py, &page.rows)?)?;
-    out.set_item("remainder", child_remainder_dict(py, page.remainder)?)?;
-    out.set_item("next", page.next.as_deref())?;
-    payload::text(page.next.as_deref().map_or(0, std::ffi::OsStr::len));
+    put_nested(&out, "remainder", child_remainder_dict(py, page.remainder)?)?;
+    put_text(&out, "next", page.next.as_deref())?;
     Ok(out)
 }
 
@@ -417,26 +490,24 @@ fn child_remainder_dict(
         return Ok(None);
     };
     let value = PyDict::new(py);
-    value.set_item("rows", rest.rows)?;
-    value.set_item("files", rest.files)?;
-    value.set_item("dirs", rest.dirs)?;
-    value.set_item("others", rest.others)?;
-    value.set_item("bytes", rest.bytes)?;
-    value.set_item("allocated", rest.allocated)?;
-    payload::scalars(6);
+    put_scalar(&value, "rows", rest.rows)?;
+    put_scalar(&value, "files", rest.files)?;
+    put_scalar(&value, "dirs", rest.dirs)?;
+    put_scalar(&value, "others", rest.others)?;
+    put_scalar(&value, "bytes", rest.bytes)?;
+    put_scalar(&value, "allocated", rest.allocated)?;
     Ok(Some(value))
 }
 
 /// The scan scope a read happened under, including the fingerprints a cache key needs.
 fn scope_dict<'py>(py: Python<'py>, scope: &fdu_core::ScanScope) -> PyResult<Bound<'py, PyDict>> {
     let value = PyDict::new(py);
-    value.set_item("max_depth", scope.max_depth)?;
-    value.set_item("follow_symlinks", scope.follow_symlinks)?;
-    value.set_item("one_filesystem", scope.one_filesystem)?;
-    value.set_item("tag_rules_fingerprint", scope.tag_rules_fingerprint)?;
-    value.set_item("type_rules_fingerprint", scope.type_rules_fingerprint)?;
-    value.set_item("reducers_fingerprint", scope.reducers_fingerprint)?;
-    payload::scalars(6);
+    put_scalar(&value, "max_depth", scope.max_depth)?;
+    put_scalar(&value, "follow_symlinks", scope.follow_symlinks)?;
+    put_scalar(&value, "one_filesystem", scope.one_filesystem)?;
+    put_scalar(&value, "tag_rules_fingerprint", scope.tag_rules_fingerprint)?;
+    put_scalar(&value, "type_rules_fingerprint", scope.type_rules_fingerprint)?;
+    put_scalar(&value, "reducers_fingerprint", scope.reducers_fingerprint)?;
     Ok(value)
 }
 
@@ -454,8 +525,7 @@ fn row_classification_dict<'py>(
         return Ok(None);
     };
     let dict = classification_dict(py, classification)?;
-    dict.set_item("group", group)?;
-    payload::text(group.map_or(0, str::len));
+    put_text(&dict, "group", group)?;
     Ok(Some(dict))
 }
 
@@ -465,20 +535,15 @@ fn classification_dict<'py>(
     classification: &fdu_core::classify::Classification,
 ) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new(py);
-    dict.set_item("file_type", classification.file_type.as_str())?;
-    dict.set_item("family", classification.family.as_str())?;
-    dict.set_item("source", classification.source.as_str())?;
-    dict.set_item("confidence", classification.confidence.as_str())?;
+    put_text(&dict, "file_type", classification.file_type.as_str())?;
+    put_text(&dict, "family", classification.family.as_str())?;
+    put_text(&dict, "source", classification.source.as_str())?;
+    put_text(&dict, "confidence", classification.confidence.as_str())?;
     let flags = PyDict::new(py);
-    flags.set_item("generated", classification.flags.generated)?;
-    flags.set_item("vendored", classification.flags.vendored)?;
-    flags.set_item("documentation", classification.flags.documentation)?;
+    put_scalar(&flags, "generated", classification.flags.generated)?;
+    put_scalar(&flags, "vendored", classification.flags.vendored)?;
+    put_scalar(&flags, "documentation", classification.flags.documentation)?;
     dict.set_item("flags", flags)?;
-    payload::text(classification.file_type.as_str().len());
-    payload::text(classification.family.as_str().len());
-    payload::text(classification.source.as_str().len());
-    payload::text(classification.confidence.as_str().len());
-    payload::scalars(3);
     Ok(dict)
 }
 
@@ -934,40 +999,43 @@ impl PyIndex {
         let _ = payload::take();
         let converted = std::time::Instant::now();
         let out = PyDict::new(py);
-        out.set_item("clock", bundle.clock.0)?;
+        put_scalar(&out, "clock", bundle.clock.0)?;
         out.set_item("cursor", cursor_dict(py, bundle.cursor)?)?;
-        out.set_item("root", bundle.root.as_os_str())?;
-        out.set_item("entries", bundle.entries)?;
-        out.set_item("freshness", freshness_label(bundle.freshness))?;
+        put_text(&out, "root", bundle.root.as_os_str())?;
+        put_scalar(&out, "entries", bundle.entries)?;
+        put_text(&out, "freshness", freshness_label(bundle.freshness))?;
         out.set_item("scope", scope_dict(py, &bundle.scope)?)?;
         // From the bundle, so every field below describes the instant the rows were read.
-        out.set_item("complete", bundle.run.complete)?;
-        out.set_item("source", source_label(bundle.run.source))?;
+        put_scalar(&out, "complete", bundle.run.complete)?;
+        put_text(&out, "source", source_label(bundle.run.source))?;
+        for error in &bundle.run.errors {
+            error.as_str().charge();
+        }
         out.set_item("errors", PyList::new(py, bundle.run.errors.iter())?)?;
-        out.set_item(
+        put_nested(
+            &out,
             "total",
             bundle.total.as_ref().map(|roll| rollup_dict(py, roll)).transpose()?,
         )?;
         let rollups = PyList::empty(py);
         for roll in &bundle.rollups {
-            rollups.append(roll.as_ref().map(|roll| rollup_dict(py, roll)).transpose()?)?;
+            let converted = roll.as_ref().map(|roll| rollup_dict(py, roll)).transpose()?;
+            if converted.is_none() {
+                payload::scalars(1);
+            }
+            rollups.append(converted)?;
         }
         out.set_item("rollups", rollups)?;
-        out.set_item(
+        put_nested(
+            &out,
             "children",
             bundle.children.as_ref().map(|page| child_page_dict(py, page)).transpose()?,
         )?;
-        out.set_item(
+        put_nested(
+            &out,
             "report",
             bundle.report.as_ref().map(|rendered| report_dict(py, rendered)).transpose()?,
         )?;
-        payload::text(bundle.root.as_os_str().len());
-        payload::text(source_label(bundle.run.source).len());
-        payload::text(freshness_label(bundle.freshness).len());
-        for error in &bundle.run.errors {
-            payload::text(error.len());
-        }
-        payload::scalars(2);
 
         let work = work_dict(py, bundle.work)?;
         // The work record itself is telemetry about the call rather than payload, so it is
@@ -1187,9 +1255,8 @@ impl PyIndex {
 /// One resume position, as the dict `since` returns and accepts.
 fn cursor_dict(py: Python<'_>, cursor: fdu_core::Cursor) -> PyResult<Bound<'_, PyDict>> {
     let out = PyDict::new(py);
-    out.set_item("session", cursor.session.0)?;
-    out.set_item("clock", cursor.clock.0)?;
-    payload::scalars(2);
+    put_scalar(&out, "session", cursor.session.0)?;
+    put_scalar(&out, "clock", cursor.clock.0)?;
     Ok(out)
 }
 
@@ -1432,14 +1499,13 @@ fn state_change_dict<'py>(
         fdu_core::StateChange::RunFacts => ("run_facts", None, None),
         fdu_core::StateChange::Retagged { .. } => ("retagged", None, None),
     };
-    item.set_item("transition", transition)?;
-    item.set_item("freshness", freshness)?;
-    item.set_item("reason", reason)?;
+    put_text(&item, "transition", transition)?;
+    put_text(&item, "freshness", freshness)?;
+    put_text(&item, "reason", reason)?;
     let paths: Vec<OsString> =
         change.paths().iter().map(|path| path.as_os_str().to_os_string()).collect();
-    payload::scalars(3);
     for path in &paths {
-        payload::text(path.len());
+        path.as_os_str().charge();
     }
     item.set_item("paths", paths)?;
     Ok(item)
@@ -1450,14 +1516,10 @@ fn provenance_dict(
     provenance: fdu_core::Provenance,
 ) -> PyResult<Bound<'_, PyDict>> {
     let value = PyDict::new(py);
-    value.set_item("source", value_source_label(provenance.source))?;
-    value.set_item("observed_at_ns", provenance.observed_at_ns)?;
-    value.set_item("status", coverage_label_value(provenance.status))?;
-    value.set_item("reason", coverage_reason_label(provenance.status))?;
-    payload::text(value_source_label(provenance.source).len());
-    payload::text(coverage_label_value(provenance.status).len());
-    payload::text(coverage_reason_label(provenance.status).map_or(0, str::len));
-    payload::scalars(1);
+    put_text(&value, "source", value_source_label(provenance.source))?;
+    put_scalar(&value, "observed_at_ns", provenance.observed_at_ns)?;
+    put_text(&value, "status", coverage_label_value(provenance.status))?;
+    put_text(&value, "reason", coverage_reason_label(provenance.status))?;
     Ok(value)
 }
 
@@ -1505,28 +1567,43 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
     let dict = PyDict::new(py);
     // The envelope identity, from the same two functions the serializers use, so a dict
     // and a rendered document cannot claim different schemas or different producers.
-    dict.set_item("schema", fdu_core::report_format::report_schema(report))?;
-    dict.set_item("generator", fdu_core::report_format::generator())?;
-    dict.set_item("root", report.root.as_os_str())?;
-    dict.set_item("complete", report.complete)?;
+    put_text(&dict, "schema", fdu_core::report_format::report_schema(report))?;
+    put_text(&dict, "generator", fdu_core::report_format::generator())?;
+    put_text(&dict, "root", report.root.as_os_str())?;
+    put_scalar(&dict, "complete", report.complete)?;
+    for error in &report.errors {
+        error.as_str().charge();
+    }
     dict.set_item("errors", report.errors.clone())?;
-    dict.set_item("source", source_label(report.source))?;
-    dict.set_item("freshness", freshness_label(report.freshness))?;
-    dict.set_item("generated_at", fdu_core::query::format_rfc3339(report.generated_at))?;
-    dict.set_item("scan_started_at", report.scan_started_at.map(fdu_core::query::format_rfc3339))?;
+    put_text(&dict, "source", source_label(report.source))?;
+    put_text(&dict, "freshness", freshness_label(report.freshness))?;
+    put_text(&dict, "generated_at", fdu_core::query::format_rfc3339(report.generated_at).as_str())?;
+    let scan_started_at = report.scan_started_at.map(fdu_core::query::format_rfc3339);
+    put_text(&dict, "scan_started_at", scan_started_at.as_deref())?;
     match report.analysis.as_ref() {
-        None => dict.set_item("analysis", py.None())?,
+        None => put_scalar(&dict, "analysis", py.None())?,
         Some(analysis) => {
             let metadata = PyDict::new(py);
-            metadata.set_item("analyze", analysis_set_labels(analysis.profile))?;
-            metadata
-                .set_item("type_rules_fingerprint", analysis.provenance.type_rules_fingerprint)?;
-            metadata.set_item("options_fingerprint", analysis.provenance.options_fingerprint.0)?;
+            let profile = analysis_set_labels(analysis.profile);
+            for label in &profile {
+                (*label).charge();
+            }
+            metadata.set_item("analyze", profile)?;
+            put_scalar(
+                &metadata,
+                "type_rules_fingerprint",
+                analysis.provenance.type_rules_fingerprint,
+            )?;
+            put_scalar(
+                &metadata,
+                "options_fingerprint",
+                analysis.provenance.options_fingerprint.0,
+            )?;
             let analyzers = PyList::empty(py);
             for (id, version) in &analysis.provenance.analyzers {
                 let analyzer = PyDict::new(py);
-                analyzer.set_item("id", id.0)?;
-                analyzer.set_item("version", version.0)?;
+                put_text(&analyzer, "id", id.0)?;
+                put_scalar(&analyzer, "version", version.0)?;
                 analyzers.append(analyzer)?;
             }
             metadata.set_item("analyzers", analyzers)?;
@@ -1539,68 +1616,60 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
         let entry = PyDict::new(py);
         match section {
             Section::Summary(row) => {
-                entry.set_item("view", "summary")?;
+                put_text(&entry, "view", "summary")?;
                 entry.set_item("summary", summary_dict(py, row)?)?;
             }
             Section::Extensions { rows, total } => {
-                entry.set_item("view", "extensions")?;
-                entry.set_item("bound", bound_dict(py, rows.len(), *total)?)?;
+                put_text(&entry, "view", "extensions")?;
+                put_nested(&entry, "bound", bound_dict(py, rows.len(), *total)?)?;
                 let list = PyList::empty(py);
                 for row in rows {
                     let item = PyDict::new(py);
-                    item.set_item("extension", &row.extension)?;
-                    item.set_item("files", row.files)?;
-                    item.set_item("bytes", row.bytes)?;
-                    item.set_item("allocated", row.allocated)?;
-                    payload::text(row.extension.len());
-                    payload::scalars(3);
+                    put_text(&item, "extension", row.extension.as_str())?;
+                    put_scalar(&item, "files", row.files)?;
+                    put_scalar(&item, "bytes", row.bytes)?;
+                    put_scalar(&item, "allocated", row.allocated)?;
                     list.append(item)?;
                 }
                 entry.set_item("extensions", list)?;
             }
             Section::Groups { rows, total } => {
-                entry.set_item("view", "groups")?;
-                entry.set_item("bound", bound_dict(py, rows.len(), *total)?)?;
+                put_text(&entry, "view", "groups")?;
+                put_nested(&entry, "bound", bound_dict(py, rows.len(), *total)?)?;
                 let list = PyList::empty(py);
                 for row in rows {
                     let item = PyDict::new(py);
-                    item.set_item("id", &row.id)?;
-                    item.set_item("label", &row.label)?;
-                    item.set_item("files", row.files)?;
-                    item.set_item("bytes", row.bytes)?;
-                    item.set_item("allocated", row.allocated)?;
-                    payload::text(row.id.len());
-                    payload::text(row.label.len());
-                    payload::scalars(3);
+                    put_text(&item, "id", row.id.as_str())?;
+                    put_text(&item, "label", row.label.as_str())?;
+                    put_scalar(&item, "files", row.files)?;
+                    put_scalar(&item, "bytes", row.bytes)?;
+                    put_scalar(&item, "allocated", row.allocated)?;
                     list.append(item)?;
                 }
                 entry.set_item("groups", list)?;
             }
             Section::Metrics { view, summary } => {
-                entry.set_item("view", view.label())?;
+                put_text(&entry, "view", view.label())?;
                 entry.set_item("metrics", metric_summary_dict(py, summary)?)?;
             }
             Section::Files { view, rows, total } => {
-                entry.set_item("view", view.label())?;
-                entry.set_item("bound", bound_dict(py, rows.len(), *total)?)?;
+                put_text(&entry, "view", view.label())?;
+                put_nested(&entry, "bound", bound_dict(py, rows.len(), *total)?)?;
                 let list = PyList::empty(py);
                 for row in rows {
                     let item = PyDict::new(py);
-                    item.set_item("path", row.path.as_os_str())?;
-                    item.set_item("kind", entry_kind_label(row.kind))?;
-                    item.set_item("bytes", row.bytes)?;
-                    item.set_item("allocated", row.allocated)?;
-                    item.set_item("mtime_ns", row.mtime_ns)?;
-                    item.set_item("tags", row.tags.as_slice())?;
-                    item.set_item("extension", row.extension.as_deref())?;
-                    payload::text(row.path.as_os_str().len());
-                    payload::text(entry_kind_label(row.kind).len());
-                    payload::text(row.extension.as_deref().map_or(0, str::len));
+                    put_text(&item, "path", row.path.as_os_str())?;
+                    put_text(&item, "kind", entry_kind_label(row.kind))?;
+                    put_scalar(&item, "bytes", row.bytes)?;
+                    put_scalar(&item, "allocated", row.allocated)?;
+                    put_scalar(&item, "mtime_ns", row.mtime_ns)?;
                     for tag in &row.tags {
-                        payload::text(tag.len());
+                        tag.as_str().charge();
                     }
-                    payload::scalars(3);
-                    item.set_item(
+                    item.set_item("tags", row.tags.as_slice())?;
+                    put_text(&item, "extension", row.extension.as_deref())?;
+                    put_nested(
+                        &item,
                         "classification",
                         row_classification_dict(
                             py,
@@ -1613,7 +1682,7 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
                 entry.set_item("files", list)?;
             }
             Section::Tree(root) => {
-                entry.set_item("view", "tree")?;
+                put_text(&entry, "view", "tree")?;
                 entry.set_item("tree", tree_dict(py, root)?)?;
             }
         }
@@ -1628,15 +1697,16 @@ fn metric_summary_dict<'py>(
     summary: &MetricSummary,
 ) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new(py);
-    dict.set_item(
+    put_text(
+        &dict,
         "group",
         match summary.group {
             fdu_core::query::MetricGroup::Type => "type",
             fdu_core::query::MetricGroup::Family => "family",
         },
     )?;
-    dict.set_item("share_metric", summary.share_metric.as_str())?;
-    dict.set_item("words_per_page", summary.words_per_page)?;
+    put_text(&dict, "share_metric", summary.share_metric.as_str())?;
+    put_scalar(&dict, "words_per_page", summary.words_per_page)?;
     dict.set_item("total", metric_row_dict(py, &summary.total, summary.words_per_page)?)?;
     let rows = PyList::empty(py);
     for row in &summary.rows {
@@ -1652,48 +1722,57 @@ fn metric_row_dict<'py>(
     words_per_page: u64,
 ) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new(py);
-    dict.set_item("id", &row.id)?;
-    dict.set_item("family", row.family.as_str())?;
-    dict.set_item("files", row.files)?;
-    dict.set_item("bytes", row.bytes)?;
-    dict.set_item("allocated", row.allocated)?;
-    dict.set_item("analyzed_files", row.analyzed_files)?;
-    dict.set_item("share_numerator", row.share.numerator)?;
-    dict.set_item("share_denominator", row.share.denominator)?;
-    dict.set_item("physical_lines", row.metrics.physical_lines)?;
-    dict.set_item("blank_lines", row.metrics.blank_lines)?;
-    dict.set_item("nonblank_lines", row.metrics.nonblank_lines)?;
-    dict.set_item("code_lines", row.metrics.code_lines)?;
-    dict.set_item("comment_lines", row.metrics.comment_lines)?;
-    dict.set_item("code_blank_lines", row.metrics.code_blank_lines)?;
-    dict.set_item("raw_words", row.metrics.raw_words)?;
-    dict.set_item("logical_words", row.metrics.logical_word_stats.logical_words())?;
-    dict.set_item("paragraphs", row.metrics.paragraphs)?;
-    dict.set_item("visible_words", row.metrics.visible_words)?;
-    dict.set_item("visible_logical_words", row.metrics.visible_logical_word_stats.logical_words())?;
-    dict.set_item("document_words", document_words(row))?;
-    dict.set_item("page_words", document_words(row))?;
-    dict.set_item("words_per_page", words_per_page)?;
+    put_text(&dict, "id", row.id.as_str())?;
+    put_text(&dict, "family", row.family.as_str())?;
+    put_scalar(&dict, "files", row.files)?;
+    put_scalar(&dict, "bytes", row.bytes)?;
+    put_scalar(&dict, "allocated", row.allocated)?;
+    put_scalar(&dict, "analyzed_files", row.analyzed_files)?;
+    put_scalar(&dict, "share_numerator", row.share.numerator)?;
+    put_scalar(&dict, "share_denominator", row.share.denominator)?;
+    put_scalar(&dict, "physical_lines", row.metrics.physical_lines)?;
+    put_scalar(&dict, "blank_lines", row.metrics.blank_lines)?;
+    put_scalar(&dict, "nonblank_lines", row.metrics.nonblank_lines)?;
+    put_scalar(&dict, "code_lines", row.metrics.code_lines)?;
+    put_scalar(&dict, "comment_lines", row.metrics.comment_lines)?;
+    put_scalar(&dict, "code_blank_lines", row.metrics.code_blank_lines)?;
+    put_scalar(&dict, "raw_words", row.metrics.raw_words)?;
+    put_scalar(&dict, "logical_words", row.metrics.logical_word_stats.logical_words())?;
+    put_scalar(&dict, "paragraphs", row.metrics.paragraphs)?;
+    put_scalar(&dict, "visible_words", row.metrics.visible_words)?;
+    put_scalar(
+        &dict,
+        "visible_logical_words",
+        row.metrics.visible_logical_word_stats.logical_words(),
+    )?;
+    put_scalar(&dict, "document_words", document_words(row))?;
+    put_scalar(&dict, "page_words", document_words(row))?;
+    put_scalar(&dict, "words_per_page", words_per_page)?;
+    // Three maps keyed by which verdicts this row actually saw, so their keys vary with
+    // the answer and are payload like any other value.
     let coverage = PyDict::new(py);
     for (reason, count) in &row.coverage {
-        coverage.set_item(coverage_label(*reason), count)?;
+        coverage_label(*reason).charge();
+        put_scalar(&coverage, coverage_label(*reason), count)?;
     }
     dict.set_item("coverage", coverage)?;
     let detection = PyDict::new(py);
     let sources = PyDict::new(py);
     for (source, count) in &row.detection_sources {
-        sources.set_item(source.as_str(), count)?;
+        source.as_str().charge();
+        put_scalar(&sources, source.as_str(), count)?;
     }
     detection.set_item("sources", sources)?;
     let confidence = PyDict::new(py);
     for (level, count) in &row.detection_confidence {
-        confidence.set_item(level.as_str(), count)?;
+        level.as_str().charge();
+        put_scalar(&confidence, level.as_str(), count)?;
     }
     detection.set_item("confidence", confidence)?;
     let flags = PyDict::new(py);
-    flags.set_item("generated", row.generated_files)?;
-    flags.set_item("vendored", row.vendored_files)?;
-    flags.set_item("documentation", row.documentation_files)?;
+    put_scalar(&flags, "generated", row.generated_files)?;
+    put_scalar(&flags, "vendored", row.vendored_files)?;
+    put_scalar(&flags, "documentation", row.documentation_files)?;
     detection.set_item("flags", flags)?;
     dict.set_item("detection", detection)?;
     Ok(dict)
@@ -1708,8 +1787,8 @@ fn bound_dict(py: Python<'_>, shown: usize, total: usize) -> PyResult<Option<Bou
         return Ok(None);
     }
     let bound = PyDict::new(py);
-    bound.set_item("shown", shown)?;
-    bound.set_item("total", total)?;
+    put_scalar(&bound, "shown", shown)?;
+    put_scalar(&bound, "total", total)?;
     Ok(Some(bound))
 }
 
@@ -1731,13 +1810,12 @@ fn analysis_set_labels(profile: AnalysisSet) -> Vec<&'static str> {
 /// One summary row as a dict.
 fn summary_dict<'py>(py: Python<'py>, row: &SummaryRow) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new(py);
-    dict.set_item("files", row.files)?;
-    dict.set_item("dirs", row.dirs)?;
-    dict.set_item("others", row.others)?;
-    dict.set_item("bytes", row.bytes)?;
-    dict.set_item("allocated", row.allocated)?;
-    dict.set_item("newest_mtime_ns", row.newest_mtime_ns)?;
-    payload::scalars(6);
+    put_scalar(&dict, "files", row.files)?;
+    put_scalar(&dict, "dirs", row.dirs)?;
+    put_scalar(&dict, "others", row.others)?;
+    put_scalar(&dict, "bytes", row.bytes)?;
+    put_scalar(&dict, "allocated", row.allocated)?;
+    put_scalar(&dict, "newest_mtime_ns", row.newest_mtime_ns)?;
     Ok(dict)
 }
 
@@ -1753,13 +1831,12 @@ fn remainder_dict(
         return Ok(None);
     };
     let value = PyDict::new(py);
-    value.set_item("rows", remainder.rows)?;
-    value.set_item("files", remainder.files)?;
-    value.set_item("dirs", remainder.dirs)?;
-    value.set_item("others", remainder.others)?;
-    value.set_item("bytes", remainder.bytes)?;
-    value.set_item("allocated", remainder.allocated)?;
-    payload::scalars(6);
+    put_scalar(&value, "rows", remainder.rows)?;
+    put_scalar(&value, "files", remainder.files)?;
+    put_scalar(&value, "dirs", remainder.dirs)?;
+    put_scalar(&value, "others", remainder.others)?;
+    put_scalar(&value, "bytes", remainder.bytes)?;
+    put_scalar(&value, "allocated", remainder.allocated)?;
     Ok(Some(value))
 }
 
@@ -1770,20 +1847,18 @@ fn remainder_dict(
 fn tree_dict<'py>(py: Python<'py>, root: &TreeNode) -> PyResult<Bound<'py, PyDict>> {
     fn node_dict<'py>(py: Python<'py>, node: &TreeNode) -> PyResult<Bound<'py, PyDict>> {
         let dict = PyDict::new(py);
-        dict.set_item("name", &node.name)?;
-        dict.set_item("path", node.path.as_os_str())?;
-        dict.set_item("bytes", node.bytes)?;
-        dict.set_item("allocated", node.allocated)?;
-        dict.set_item("files", node.files)?;
-        dict.set_item("dirs", node.dirs)?;
-        dict.set_item("others", node.others)?;
-        dict.set_item("newest_mtime_ns", node.newest_mtime_ns)?;
-        dict.set_item("truncated", node.truncated())?;
-        dict.set_item("remainder", remainder_dict(py, node.remainder)?)?;
+        put_text(&dict, "name", node.name.as_str())?;
+        put_text(&dict, "path", node.path.as_os_str())?;
+        put_scalar(&dict, "bytes", node.bytes)?;
+        put_scalar(&dict, "allocated", node.allocated)?;
+        put_scalar(&dict, "files", node.files)?;
+        put_scalar(&dict, "dirs", node.dirs)?;
+        put_scalar(&dict, "others", node.others)?;
+        put_scalar(&dict, "newest_mtime_ns", node.newest_mtime_ns)?;
+        put_scalar(&dict, "truncated", node.truncated())?;
+        put_nested(&dict, "remainder", remainder_dict(py, node.remainder)?)?;
+        // Filled by the caller's traversal; each child charges itself as it is built.
         dict.set_item("children", PyList::empty(py))?;
-        payload::text(node.name.len());
-        payload::text(node.path.as_os_str().len());
-        payload::scalars(7);
         Ok(dict)
     }
 

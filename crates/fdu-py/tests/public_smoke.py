@@ -12,7 +12,6 @@ import asyncio
 import contextlib
 import dataclasses
 import importlib.util
-import itertools
 import json
 import os
 import re
@@ -23,6 +22,7 @@ import threading
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any, cast
 
 import fdu
 from fdu import _native
@@ -328,11 +328,14 @@ def check_a_bundle_answers_a_query_at_the_same_instant_as_its_rows() -> None:
     assert summary.summary.files == standalone.summary.files
 
     # Separable costs. The guard wait is the bundle's alone, because the projections
-    # waited together; everything counted is the parts added up.
+    # waited together -- which the type now says rather than the values: a projection
+    # carries no lock wait to be zero, and its span is named `engine_ns` because it is one
+    # phase of the engine read rather than a public call's total.
     parts = bundle.projections
     assert parts.children.rows > 0, "a listing was asked for and returned rows"
     assert parts.report.rows > 0, "the summary section is one row"
-    assert parts.children.lock_wait_ns == 0 and parts.report.lock_wait_ns == 0
+    assert not hasattr(parts.children, "lock_wait_ns")
+    assert parts.children.engine_ns <= bundle.work.native_ns, (parts, bundle.work)
     counted = parts.children.rows + parts.total.rows + parts.rollups.rows + parts.report.rows
     assert bundle.work.rows == counted, (bundle.work.rows, counted)
 
@@ -414,8 +417,16 @@ def check_one_bundle_answers_a_whole_page() -> None:
     (root / "src" / "main.rs").write_text("fn main() {}", encoding="utf-8")
     (root / "docs").mkdir()
     (root / "docs" / "guide.md").write_text("# guide", encoding="utf-8")
+    # No extension, so the payload oracle below sees the absent-string case too. It sits
+    # under `docs` rather than at the root, where the entries-visited arithmetic is pinned.
+    (root / "docs" / "NOTICE").write_text("terms", encoding="utf-8")
 
     index = fdu.open(root)
+    # A second view of the same tree, with content analysis on: the metric sections exist
+    # only there, and the payload rule has to hold for them too.
+    analyzed = fdu.open(
+        root, cache=fdu.CachePolicy.OFF, analysis=fdu.AnalysisOptions(analyze=fdu.Analysis.ALL)
+    )
     page = index.read(children_of=".", rollups=("src", "missing"), total=True, extensions=1)
 
     assert page.children is not None
@@ -528,15 +539,18 @@ def check_one_bundle_answers_a_whole_page() -> None:
         raise AssertionError("a zero page limit must be refused")
 
     # The GIL is released for the duration of the native read, through the real public
-    # `Index.read`. Threads that merely all finish would prove nothing -- with the GIL
-    # held they run one after another and still finish -- so the oracle is *when* a second
-    # thread gets its turn. The probe sleeps (which releases the GIL, so it always wakes
-    # on time) and then timestamps, which needs the GIL back. If the read holds it, every
-    # such timestamp lands after the read returned, and none inside it.
+    # `Index.read`. Threads that merely all finish would prove nothing -- with the GIL held
+    # they run one after another and still finish -- so the oracle is whether a second
+    # thread runs *during* the call.
     #
-    # Its own tree: 20k files make a filtered summary a span worth timing against, almost
-    # all of it native. The shared fixture is three files and finishes far too fast to
-    # separate the two cases.
+    # Forced rather than timed, and the switch interval is what forces it. Earlier versions
+    # asked whether a probe happened to be scheduled inside the read, which is a claim
+    # about the machine: CI disproved one such threshold on a fast host, where the read
+    # finished before the probe was due. Raising the interval makes the interpreter stop
+    # handing the GIL away *voluntarily*, so between the two `len()` calls below the main
+    # thread cannot yield -- while a GIL the native read actually releases is handed over
+    # immediately, interval or not. The count therefore separates the two cases exactly:
+    # zero if the read held it, positive if it did not, at any speed.
     wide = Path(tempfile.mkdtemp(prefix="fdu-gil-"))
     for group in range(20):
         bucket = wide / f"d{group}"
@@ -549,89 +563,111 @@ def check_one_bundle_answers_a_whole_page() -> None:
         views=(fdu.View.SUMMARY,),
         selection=fdu.Selection(min_size=1, kinds=(fdu.EntryKind.FILE,)),
     )
-
-    def timed_read() -> tuple[float, float, fdu.Bundle]:
-        at = time.monotonic()
-        bundle = wide_index.read(total=True, query=filtered)
-        return at, time.monotonic(), bundle
-
-    # Sized from what this machine actually does, not from a constant. How long a filtered
-    # walk of 20k entries takes varies several-fold across hosts, and the first version of
-    # this fixed the probe delay in advance -- which is a claim about the machine. On a
-    # fast one the read finished before the probe was even due and the assertion failed for
-    # being right. So: warm the caches, measure, and derive the sampling interval from the
-    # measurement.
-    timed_read()
-    warm_started, warm_returned, _ = timed_read()
-    baseline = warm_returned - warm_started
-    tick = max(baseline / 8, 0.0002)
-    assert baseline > tick * 4, (
-        f"a 20k-entry filtered walk finished in {baseline:.4f}s, too short to sample "
-        "against; the fixture needs to grow before this can claim anything"
-    )
-
-    # A repeating sampler rather than one shot. A single probe has to be scheduled at
-    # exactly the right moment, which is what made the first version fragile; a sampler
-    # only has to run *at all* during the read, and how many times it managed to is the
-    # measurement. With the GIL held that count is zero, whatever the machine's speed.
-    samples: list[float] = []
+    turns: list[int] = []
+    running = threading.Event()
     stop = threading.Event()
 
-    def probe() -> None:
+    def contend() -> None:
+        running.set()
         while not stop.is_set():
-            samples.append(time.monotonic())
-            time.sleep(tick)
+            turns.append(1)
+            # Yields the GIL every iteration, so a long switch interval cannot starve the
+            # thread under test while it is still setting up.
+            time.sleep(0)
 
-    prober = threading.Thread(target=probe, name="fdu-gil-probe")
-    prober.start()
-    time.sleep(tick * 8)  # let it reach a steady rhythm, and time that rhythm
-    started_read, returned, measured = timed_read()
-    stop.set()
-    prober.join(timeout=30)
+    contender = threading.Thread(target=contend, name="fdu-gil-contender")
+    contender.start()
+    previous_interval = sys.getswitchinterval()
+    sys.setswitchinterval(5.0)
+    try:
+        assert running.wait(timeout=30), "the contending thread never started"
+        before = len(turns)
+        measured = wide_index.read(total=True, query=filtered)
+        during = len(turns) - before
+    finally:
+        sys.setswitchinterval(previous_interval)
+        stop.set()
+        contender.join(timeout=30)
 
-    elapsed = returned - started_read
-    # What the sampler actually achieves, not what it was asked for: `time.sleep` rounds
-    # up by a platform-dependent amount, so the instrument's real resolution has to be
-    # read off the instrument. Measured *before* the read, and that is the whole trick --
-    # a held GIL slows the sampler down, so timing its cadence during the read would
-    # report "too coarse to measure" for the one condition this test exists to catch.
-    before = [at for at in samples if at < started_read]
-    assert len(before) > 2, "the probe thread never reached a rhythm"
-    gaps = sorted(b - a for a, b in itertools.pairwise(before))
-    cadence = gaps[len(gaps) // 2]
-    assert elapsed > cadence * 4, (
-        f"the sampler ticks every {cadence:.4f}s and the read took {elapsed:.4f}s, too "
-        "close to separate; the fixture needs to grow before this can claim anything"
+    assert measured.work.entries_visited > 1000, (
+        f"the read must do real work for this to mean anything: {measured.work}"
     )
-    inside = [at for at in samples if started_read < at < returned]
-    assert len(inside) >= 3, (
-        "another Python thread must run *while* the native read works, not after it: "
-        f"{len(inside)} of {len(samples)} samples landed inside a {elapsed:.4f}s call "
-        f"sampled every {cadence:.4f}s"
+    assert during > 0, (
+        "another Python thread must run *while* the native read works, not after it: it "
+        f"got {during} turns during a call that visited {measured.work.entries_visited} "
+        "entries"
     )
 
-    # The binding's own cost, which no engine-side counter can see. An exact delta rather
-    # than `> 0`: a counter that only has to be positive can omit whole field families and
-    # still pass, which is how the first version of this measurement drifted.
-    envelope = index.read()
-    with_rollup = index.read(rollups=[str(Path("src"))])
-    grew = with_rollup.work.binding_bytes - envelope.work.binding_bytes
-    roll = index.rollup(Path("src"))
-    assert roll is not None
-    # One roll-up: six scalars, then each extension and group key with three scalars.
-    expected = 8 * 6 + sum(
-        len(name) + 8 * 3 for name in (*roll.by_extension.keys(), *roll.by_group.keys())
+    # The binding's own cost, which no engine-side counter can see. Checked against an
+    # independent implementation of the stated rule rather than against a hand-computed
+    # figure for one field family: a per-family expectation only covers the family it was
+    # written for, and this measurement drifted twice by omitting families nobody had
+    # written an expectation for. The oracle covers every field that crosses, including
+    # ones added later.
+    for shape in (
+        {},
+        {"total": True},
+        {"rollups": [str(Path("src")), str(Path("does-not-exist"))]},
+        # A page that withholds rows, and one that does not: the remainder is a dict in the
+        # first case and a null in the second, and both are payload.
+        {"children_of": "docs", "limit": 1},
+        {"children_of": "docs"},
+        {"children_of": "."},
+        # An extension bound leaves a remainder; without one it is absent. The pair is
+        # deliberate -- the over-charge that shipped here was invisible to any shape that
+        # never produced the dict.
+        {"total": True, "extensions": 1},
+        {"children_of": ".", "rollups": [str(Path("src"))], "total": True, "extensions": 1},
+        {
+            "total": True,
+            "report": True,
+            "views": ["summary", "extensions", "files", "tree", "groups"],
+        },
+        # Bounded sections and a bounded tree, so every `bound` and `remainder` is present
+        # rather than null.
+        {
+            "report": True,
+            "views": ["extensions", "files", "tree", "groups"],
+            "limit_rows": "1",
+            "depth": "1",
+        },
+    ):
+        for reader in (index, analyzed):
+            raw = reader._native.read(**shape)
+            assert _payload_bytes(raw) == raw["work"]["binding_bytes"], (
+                f"payload accounting disagrees for {shape}: rule says "
+                f"{_payload_bytes(raw)}, the binding charged {raw['work']['binding_bytes']}"
+            )
+    # The metric families ride on an analysed index and on nothing else, so a shape list
+    # over a plain one never reaches `metric_row_dict` at all.
+    metrics = analyzed._native.read(report=True, views=["types", "families", "languages"])
+    assert _payload_bytes(metrics) == metrics["work"]["binding_bytes"], (
+        f"payload accounting disagrees for the metric views: rule says "
+        f"{_payload_bytes(metrics)}, the binding charged {metrics['work']['binding_bytes']}"
     )
-    assert grew == expected, f"one roll-up should cost {expected} bytes, not {grew}"
+    # And the shape reached the rows, or the agreement above is about an empty section.
+    assert any(
+        section.get("metrics", {}).get("rows")
+        for section in cast("list[dict[str, Any]]", metrics["report"]["reports"])
+    ), "the metric views produced no rows, so this shape proves nothing about them"
 
     # Every phase is named, and they compose into the one end-to-end figure an embedder
-    # should compare providers on.
+    # should compare providers on -- without overlapping, which is what makes summing them
+    # meaningful.
     assert measured.work.native_ns > 0, measured.work
     assert measured.work.conversion_ns > 0, measured.work
-    assert measured.work.wall_ns >= measured.work.native_ns + measured.work.conversion_ns, (
-        measured.work
-    )
+    assert measured.work.model_ns > 0, measured.work
+    assert (
+        measured.work.wall_ns
+        >= measured.work.native_ns + measured.work.conversion_ns + measured.work.model_ns
+    ), measured.work
     assert measured.work.cpu_ns is None, "CPU is absent rather than inferred"
+
+    # A projection's span is engine-local and says so in its own type. While both were
+    # `Work`, `wall_ns` meant the whole public call on one and a span inside the guard on
+    # the other, and nothing distinguished them at the point of use.
+    assert measured.projections.total.engine_ns <= measured.work.native_ns, measured.projections
+    assert not hasattr(measured.projections.total, "wall_ns")
 
     # An empty request is the constant-work checkpoint: it carries the envelope and reads
     # no entries, which is what lets a caller validate a cached body before paying.
@@ -640,6 +676,42 @@ def check_one_bundle_answers_a_whole_page() -> None:
     assert checkpoint.total is None and checkpoint.children is None
     assert checkpoint.cursor.session == index.cursor().session
     fdu.clear_cache(root)
+
+
+#: Maps whose keys are drawn from the answer rather than from the schema, so their keys
+#: are payload like any other value. A schema key is identical on every result of the same
+#: shape and counting it would make the figure grow with the schema instead of the answer.
+_DATA_KEYED_MAPS = frozenset({"by_extension", "by_group", "coverage", "sources", "confidence"})
+
+#: Telemetry about the call rather than part of the answer, so it is not payload. It is
+#: also built after the count is taken, which is what makes the count self-consistent.
+_NOT_PAYLOAD = frozenset({"work", "projections"})
+
+
+def _payload_bytes(value: object, charge_keys: bool = False) -> int:
+    """The documented binding-payload rule, implemented independently of the binding.
+
+    Every string value contributes its own UTF-8 bytes and every fixed-width leaf -- an
+    integer, a float, a boolean, a null -- contributes eight. This is deliberately a second
+    implementation: agreeing with the binding's own accumulator is the evidence, and a
+    helper shared with it would agree by construction and prove nothing.
+    """
+
+    if isinstance(value, dict):
+        mapping = cast("dict[str, Any]", value)
+        total = 0
+        for key, item in mapping.items():
+            if key in _NOT_PAYLOAD:
+                continue
+            if charge_keys:
+                total += len(str(key).encode())
+            total += _payload_bytes(item, str(key) in _DATA_KEYED_MAPS)
+        return total
+    if isinstance(value, (list, tuple)):
+        return sum(_payload_bytes(item) for item in cast("list[Any]", value))
+    if isinstance(value, str):
+        return len(value.encode())
+    return 8
 
 
 def check_a_state_transition_advances_the_version_and_reaches_the_feed() -> None:
