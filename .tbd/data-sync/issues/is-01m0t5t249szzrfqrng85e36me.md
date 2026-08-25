@@ -5,13 +5,17 @@ title: Hidden-path admission as scope, with an exact-name allowlist
 kind: task
 status: open
 priority: 2
-version: 6
+version: 8
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+refs:
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5019372007
+    at: 2026-08-25T13:21:14.537Z
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T15:21:47.400Z
-updated_at: 2026-08-25T06:57:38.195Z
+updated_at: 2026-08-25T13:21:14.538Z
 closed_at: 2026-08-25T06:35:17.988Z
 close_reason: |
   Shipped as `crates/fdu-core/src/admission.rs` plus wiring across all three surfaces.
@@ -102,3 +106,5 @@ defect makes it name the exact line the review named.
 `make cross-lint` passes again as well; two Windows-gated `is_multiple_of` lints, surfaced
 by the MSRV move to 1.88, had been sitting behind it and blocking the macOS target from
 being reached at all.
+
+EXACT-HEAD WATCHER GAP at PR #47 71772fc38d2efb555ed5b383a2dbe1709bcd6b42 (2026-08-25). The bulk-scan fix remains accepted, but the live watcher is a separate admission producer and does not apply HiddenPolicy at all. watch::admitted checks only kind plus depth/device; its fast path also returns early when those axes are default. A hidden file or hidden directory subtree created after boot under hidden=prune is therefore inserted even though scan and refresh prune it. Apply the exact hidden policy to every relative path component in the single watcher admission funnel, preserving allowlisted hidden components; out-of-scope upserts remove a stale row and out-of-scope invalidations are dropped. Add live tests for a hidden file, hidden subtree, allowlisted hidden path, and visible-to-hidden replacement. Evidence: crates/fdu-core/src/watch.rs:472-510 versus scan.rs:4288-4300.

@@ -3,10 +3,14 @@ type: is
 id: is-01m0tdy8swsdre8d15s96wx4km
 title: Watch invalidation batches lose required dirty information
 kind: bug
-status: closed
+status: open
 priority: 1
-version: 20
+version: 22
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+refs:
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5019372007
+    at: 2026-08-25T13:21:14.300Z
 labels:
   - pr47-review
   - metabrowser
@@ -17,9 +21,9 @@ dependencies:
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.915Z
-updated_at: 2026-08-25T10:26:52.622Z
-closed_at: 2026-08-25T10:26:52.622Z
-close_reason: "Last two items shipped: the invalidations-only interest mode (no entry row built, every invalidation signal still derived in Rust) and full-boundary batch work (the binding conversion and model phases measured, composed from phases rather than end to end so the interval never becomes cost). Work's binding phases are now exact-or-absent rather than defaulting to zero, and an idle step reports no work at all. Engine and Python tests, mutation-checked twice."
+updated_at: 2026-08-25T13:21:14.301Z
+closed_at: null
+close_reason: null
 resolution: null
 duplicate_of: null
 ---
@@ -200,3 +204,5 @@ the first on every signal -- an empty feed would satisfy the first half and none
 second. Plus
 `public_smoke.py:check_an_invalidations_feed_builds_no_rows_and_charges_the_whole_crossing`.
 Mutation-checked: making the mode a no-op, and leaving the conversion span unmeasured.
+
+Reopened: The acceptance test for the invalidations-only carrier is cross-platform flaky. Exact ce8d78b macOS CI failed at watch_session_integration.rs:675 because the test accepts the first dirty batch, while the contract permits a state-only watch-attach batch with no row changes. Exact 71772fc passed without changing this test, confirming timing dependence rather than a production fix. Reopen until the test waits for the target file mutation or uses a deterministic producer and compares equivalent cursor intervals. Red job: https://github.com/jlevy/fdu/actions/runs/32851074631/job/97811987430.
