@@ -115,6 +115,11 @@ def _pair_digest(components: dict[str, str]) -> str:
     components in another order has not asked a different question; and compact separators,
     because a space is a different digest.
 
+    `ensure_ascii=False` is the consumer's setting and is not cosmetic: with it true, a
+    non-ASCII allowlist name escapes to `\\uXXXX` and the payload is byte-different, so
+    every digest is wrong and no test that hashes with the same function can notice. The
+    fixture beside this file carries a non-ASCII case for exactly that reason.
+
     The first version of this hashed objects with integer values and was internally
     consistent, which is exactly what a test comparing a function to itself would have
     accepted. It agreed with nothing.
@@ -122,19 +127,21 @@ def _pair_digest(components: dict[str, str]) -> str:
 
     payload = json.dumps(
         [[name, components[name]] for name in sorted(components)],
-        ensure_ascii=True,
+        ensure_ascii=False,
         separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
 
 def scope_fingerprint(options: fdu.ScanOptions) -> str:
-    """Identity of what was admitted to the index: budgets, visibility, boundaries.
+    """Identity of what was admitted to the index, in the consumer's own recipe.
 
-    `max_files` belongs here for the reason the name implies: it decides which entries the
-    index holds, and *which* ones depends on the order the walk reached them in -- so two
-    caps over one tree are two scopes rather than one scope at two sizes, and an answer
-    cached across the change is wrong in a way no field of the answer reveals.
+    Exactly three components -- the hidden allowlist, the depth bound, and the file cap --
+    because those are the three the consuming contract's own config has, and this digest is
+    worth nothing unless the other engine produces the same bytes for the same scope. The
+    expected bytes for six inputs, including a non-ASCII allowlist name, are in
+    `tests/fixtures/scope-fingerprint.json`, taken by running the consumer's function
+    rather than by reading its spec twice.
 
     Built from the options the adapter opened with rather than from `ScanScope`, and that
     is deliberate. The engine reports its own `hidden_fingerprint` -- a digest it uses as a
@@ -142,28 +149,46 @@ def scope_fingerprint(options: fdu.ScanOptions) -> str:
     canonical JSON string inside the outer array. A digest of a list is not the list, and
     hashing it here would produce a value no second implementation could reproduce.
 
-    `hidden="keep"` has no counterpart on the consuming side, whose model always prunes
-    hidden names except an allowlist. A provider adapter therefore prunes; the mode exists
-    for fdu's own command line, which counts what is there.
+    **What is deliberately not hashed, and why that is not a hole.** fdu has scope axes the
+    consumer's config does not: symlink traversal, filesystem boundaries, walk order, and
+    special-object admission. Two indexes differing in one of those *are* different
+    inventories, so a digest that ignored a free axis would let a consumer cache an answer
+    across a change that invalidated it. The resolution is that within the provider view
+    they are not free: `open_tree` fixes every one of them, and this function refuses
+    options that disagree rather than hashing them. Checked, not hashed -- because hashing
+    an axis the consumer has no name for produces an identity it cannot reproduce, which is
+    the same failure one axis over.
 
-    `special` is the same shape of decision one axis over. The browser's entry model names
-    three kinds -- file, directory, symlink -- so a provider has nothing to call a socket
-    and must exclude it rather than reclassify it, which would make every tally wrong by
-    one in a way no field reveals. It reaches this digest as a boolean rather than as the
-    mode word, because "keep" against "prune" is the surface's spelling and two surfaces
-    spelling one fact differently is how a shared fingerprint stops being shared.
+    `max_depth` and `max_files` are required. The consumer's config has no way to spell an
+    unbounded walk, so "null" would be a component value no second implementation ever
+    emits; a scope the contract cannot express is refused rather than given invented bytes.
+
+    `hidden="keep"` likewise has no counterpart on the consuming side, whose model always
+    prunes hidden names except an allowlist. A provider adapter therefore prunes; the mode
+    exists for fdu's own command line, which counts what is there.
     """
+
+    for name, actual, required in [
+        ("hidden", options.hidden, "prune"),
+        ("special", options.special, "prune"),
+        ("order", options.order, fdu.ScanOrder.BREADTH_FIRST),
+        ("one_filesystem", options.one_filesystem, False),
+    ]:
+        if actual != required:
+            raise ValueError(
+                f"the provider view fixes {name}={required!r}; "
+                f"{actual!r} is a different inventory under the same fingerprint"
+            )
+    if options.max_depth is None or options.max_files is None:
+        raise ValueError("the provider view is bounded: max_depth and max_files are required")
 
     return _pair_digest(
         {
-            "exclude_special": "true" if options.special == "prune" else "false",
-            "follow_symlinks": "false",
             "hidden_allowlist": json.dumps(
-                sorted(options.hidden_allow), ensure_ascii=True, separators=(",", ":")
+                sorted(options.hidden_allow), ensure_ascii=False, separators=(",", ":")
             ),
-            "max_depth": "null" if options.max_depth is None else str(options.max_depth),
-            "max_files": "null" if options.max_files is None else str(options.max_files),
-            "stay_on_filesystem": "true" if options.one_filesystem else "false",
+            "max_depth": str(options.max_depth),
+            "max_files": str(options.max_files),
         }
     )
 
@@ -203,6 +228,14 @@ def open_tree(root: Path) -> fdu.Index:
     engine counted -- making the totals disagree with the listing -- or call a socket a
     file. Excluding at the scope keeps one inventory behind both, and the scope digest above
     records which inventory it is.
+
+    **What is missing here, and it is one thing.** A consumer opens bounded -- a positive
+    depth and a positive file cap, both of which `scope_fingerprint` above requires. This
+    opens unbounded, because a bounded fdu index cannot currently be watched
+    (`ScanConfig::validate_for_watch_scope`), and `main()` below follows the tree. Both
+    cannot be honest until that gap closes, and giving an unbounded scope invented digest
+    bytes would hide it rather than close it -- so `scope_fingerprint` refuses these
+    options today, deliberately. `fdu-7sou`.
     """
 
     return fdu.open(

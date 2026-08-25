@@ -1,0 +1,77 @@
+{
+  "about": [
+    "Expected scope-fingerprint bytes for the consumer contract this repository's",
+    "reference provider adapts to. Each digest was produced by executing the consumer's",
+    "own inventory_scope_fingerprint over the named inputs, not by re-deriving the recipe",
+    "here -- a fixture written from a second reading of the spec agrees with the spec and",
+    "not necessarily with the code, which is the failure this file exists to prevent.",
+    "",
+    "The recipe: exactly three components, as sorted [name, value] string pairs, in",
+    "compact UTF-8 JSON, SHA-256. hidden_allowlist is itself compact canonical JSON of the",
+    "sorted names. ensure_ascii is false throughout, which is why a non-ASCII name is one",
+    "of the cases: with it true the payload is byte-different and every digest below is",
+    "wrong while every same-implementation test still passes.",
+    "",
+    "Not components: symlink traversal, filesystem boundaries, walk order, watch mode, and",
+    "special-object admission. Those are either fixed consumer semantics or provider",
+    "policy, and an adapter that hashed one would produce an identity the consumer cannot",
+    "reproduce. The adapter holds them as constants and refuses options that disagree,",
+    "which is checked rather than hashed."
+  ],
+  "recipe": {
+    "components": ["hidden_allowlist", "max_depth", "max_files"],
+    "pair_encoding": "sorted [name, value] string pairs",
+    "json": { "ensure_ascii": false, "separators": [",", ":"] },
+    "hash": "sha256-hex"
+  },
+  "cases": [
+    {
+      "name": "consumer-defaults",
+      "why": "the config a consumer gets without asking for anything",
+      "hidden_allowlist": [".logs", ".state"],
+      "max_depth": 20,
+      "max_files": 500000,
+      "digest": "b5cae1a2474e08d2d228d6885d64f8190e53fdb9b3bdc6edb44676c8ef1de468"
+    },
+    {
+      "name": "provider-allowlist",
+      "why": "what this repository's reference provider opens with",
+      "hidden_allowlist": [".github", ".cargo"],
+      "max_depth": 20,
+      "max_files": 500000,
+      "digest": "7477d7235c4ef211989fe3a90c5d9792ffbc48445776ac5dc9880ea4ebd70c77"
+    },
+    {
+      "name": "allowlist-order-is-not-identity",
+      "why": "the allowlist is a set, so its written order must not reach the digest",
+      "hidden_allowlist": [".cargo", ".github"],
+      "max_depth": 20,
+      "max_files": 500000,
+      "digest": "7477d7235c4ef211989fe3a90c5d9792ffbc48445776ac5dc9880ea4ebd70c77"
+    },
+    {
+      "name": "empty-allowlist",
+      "why": "an empty structured value still encodes, as [] rather than as absent",
+      "hidden_allowlist": [],
+      "max_depth": 3,
+      "max_files": 1000,
+      "digest": "c2d1b6b1900e6499c67e210685e4f9e9205c64253f8c14c9e33110e43e0069b2"
+    },
+    {
+      "name": "non-ascii-allowlist",
+      "why": "the case that catches ensure_ascii, and the only one that can",
+      "hidden_allowlist": [".café", ".日本"],
+      "max_depth": 20,
+      "max_files": 500000,
+      "digest": "b3db66bcd8269feb807229152fbbf605a9b575485e887893c2e58a44d776099e"
+    },
+    {
+      "name": "narrow-scope",
+      "why": "the smallest legal bounds, so a digest cannot be reading a default",
+      "hidden_allowlist": [".github"],
+      "max_depth": 1,
+      "max_files": 1,
+      "digest": "e99c07f8fd951a312e453b45ecf72932ac8d4ec316e53c419f018e9412c1437c"
+    }
+  ]
+}

@@ -481,11 +481,16 @@ def check_the_browser_provider_example_holds_the_contract_it_documents() -> None
     # SHA-256. A test that compared the function to itself would have accepted the first
     # draft, which hashed objects with integer values -- internally consistent, and agreeing
     # with nothing.
+    #
+    # And for the scope half that is still not enough, which is why the fixture below
+    # exists: a recipe re-read from a spec and re-typed here agrees with the spec, not with
+    # the code. `scope-fingerprint.json` carries digests produced by running the consumer's
+    # own function.
     def pair_digest(components: dict[str, str]) -> str:
         return hashlib.sha256(
             json.dumps(
                 [[name, components[name]] for name in sorted(components)],
-                ensure_ascii=True,
+                ensure_ascii=False,
                 separators=(",", ":"),
             ).encode("utf-8")
         ).hexdigest()
@@ -504,19 +509,62 @@ def check_the_browser_provider_example_holds_the_contract_it_documents() -> None
     expected_semantic = pair_digest({"reducers": "33", "tag_rules": "11", "type_rules": "22"})
     assert example.semantic_fingerprint(base) == expected_semantic
 
-    options = fdu.ScanOptions(hidden="prune", hidden_allow=(".github", ".cargo"))
+    # The scope digest, against bytes the *other* engine produced. Every case in the
+    # fixture is replayed, and the non-ASCII one is the reason it is a fixture at all: with
+    # `ensure_ascii=True` the payload escapes and every digest is wrong, while a test that
+    # hashed with the same helper would pass.
+    fixture = json.loads(
+        (Path(__file__).resolve().parent / "fixtures" / "scope-fingerprint.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert [component for component in fixture["recipe"]["components"]] == [
+        "hidden_allowlist",
+        "max_depth",
+        "max_files",
+    ], "the recipe is three components; a fourth is an identity the consumer cannot reproduce"
+    for case in fixture["cases"]:
+        replayed = fdu.ScanOptions(
+            hidden="prune",
+            special="prune",
+            hidden_allow=tuple(case["hidden_allowlist"]),
+            max_depth=case["max_depth"],
+            max_files=case["max_files"],
+        )
+        assert example.scope_fingerprint(replayed) == case["digest"], case["name"]
+
+    options = fdu.ScanOptions(
+        hidden="prune",
+        special="prune",
+        hidden_allow=(".github", ".cargo"),
+        max_depth=20,
+        max_files=500_000,
+    )
     expected_scope = pair_digest(
         {
-            "exclude_special": "false",
-            "follow_symlinks": "false",
             # A structured value is a compact canonical JSON string inside the outer array.
             "hidden_allowlist": '["' + '","'.join([".cargo", ".github"]) + '"]',
-            "max_depth": "null",
-            "max_files": "null",
-            "stay_on_filesystem": "false",
+            "max_depth": "20",
+            "max_files": "500000",
         }
     )
     assert example.scope_fingerprint(options) == expected_scope
+
+    # The axes the consumer's config has no name for are refused rather than hashed: a
+    # digest that ignored a free axis would let two inventories share one identity, and one
+    # that hashed it would produce bytes the other engine never emits.
+    for fixed in [
+        dataclasses.replace(options, special="keep"),
+        dataclasses.replace(options, one_filesystem=True),
+        dataclasses.replace(options, order=fdu.ScanOrder.DEPTH_FIRST),
+        dataclasses.replace(options, max_depth=None),
+        dataclasses.replace(options, max_files=None),
+    ]:
+        try:
+            example.scope_fingerprint(fixed)
+        except ValueError:
+            continue
+        raise AssertionError(f"the provider view is not free in this axis: {fixed}")
 
     # The two move independently, which is the whole reason there are two. Every component
     # of each reaches its own digest and neither reaches the other's.
@@ -543,8 +591,6 @@ def check_the_browser_provider_example_holds_the_contract_it_documents() -> None
         dataclasses.replace(options, hidden_allow=(".github",)),
         dataclasses.replace(options, max_depth=3),
         dataclasses.replace(options, max_files=1000),
-        dataclasses.replace(options, one_filesystem=True),
-        dataclasses.replace(options, special="prune"),
     ]:
         assert example.scope_fingerprint(changed) != expected_scope, changed
 
@@ -555,6 +601,11 @@ def check_the_browser_provider_example_holds_the_contract_it_documents() -> None
         example.semantic_fingerprint(dataclasses.replace(base, exclude_special=True))
         == expected_semantic
     ), "excluding special objects is scope identity, not semantic identity"
+
+    # And it is not in the scope digest either, which is the one place this reads as a hole
+    # and is not. The consumer's own model has no fourth kind at all, so the axis is a
+    # constant of the provider view rather than a component of it -- held to `prune` by the
+    # check above, where a mismatch is an error rather than a colliding digest.
 
     # The allowlist is a set, so its written order is not part of its identity.
     assert (
