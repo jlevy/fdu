@@ -254,6 +254,21 @@ fn child_list<'py>(
 ) -> PyResult<Bound<'py, PyList>> {
     let out = PyList::empty(py);
     for child in children {
+        out.append(child_entry_dict(py, child)?)?;
+    }
+    Ok(out)
+}
+
+/// One listing row, rendered the same way wherever it is asked for.
+///
+/// Extracted so a flat page and a directory listing cannot describe one entry differently:
+/// a catalog row and a child row for the same file are the same value with a different key,
+/// and the flat page adds only that key.
+fn child_entry_dict<'py>(
+    py: Python<'py>,
+    child: &fdu_core::ChildSnapshot,
+) -> PyResult<Bound<'py, PyDict>> {
+    {
         let entry = PyDict::new(py);
         put_text(&entry, "name", child.name.as_os_str())?;
         put_text(&entry, "kind", entry_kind_label(child.kind))?;
@@ -300,8 +315,36 @@ fn child_list<'py>(
             put_scalar(&entry, "allocated", child.attrs.allocated)?;
             put_scalar(&entry, "mtime_ns", child.attrs.mtime_ns)?;
         }
-        out.append(entry)?;
+        Ok(entry)
     }
+}
+
+/// One bounded flat page: its rows, its denominator, and exactly what it is not.
+fn entry_page_dict<'py>(
+    py: Python<'py>,
+    page: &fdu_core::EntryPage,
+) -> PyResult<Bound<'py, PyDict>> {
+    let out = PyDict::new(py);
+    let rows = PyList::empty(py);
+    for row in &page.rows {
+        let entry = child_entry_dict(py, &row.entry)?;
+        // The key a flat row needs and a listing row does not: a listing is identified
+        // within one directory, and a row drawn from anywhere in the tree is not.
+        put_text(&entry, "path", row.path.as_os_str())?;
+        rows.append(entry)?;
+    }
+    out.set_item("rows", rows)?;
+    put_scalar(&out, "total", page.total)?;
+    put_scalar(&out, "remaining", page.remaining)?;
+    put_text(&out, "next", page.next.as_deref().map(std::path::Path::as_os_str))?;
+    let totals = PyDict::new(py);
+    put_scalar(&totals, "files", page.totals.files)?;
+    put_scalar(&totals, "dirs", page.totals.dirs)?;
+    put_scalar(&totals, "others", page.totals.others)?;
+    put_scalar(&totals, "bytes", page.totals.bytes)?;
+    put_scalar(&totals, "allocated", page.totals.allocated)?;
+    put_scalar(&totals, "newest_mtime_ns", page.totals.newest_mtime_ns)?;
+    out.set_item("totals", totals)?;
     Ok(out)
 }
 
@@ -898,6 +941,11 @@ impl PyIndex {
         extensions = None,
         after = None,
         limit = None,
+        entries = false,
+        entries_of = None,
+        entries_limit = None,
+        entries_after = None,
+        entries_depth = None,
         report = false,
         views = None,
         include = None,
@@ -933,6 +981,11 @@ impl PyIndex {
         extensions: Option<usize>,
         after: Option<std::ffi::OsString>,
         limit: Option<usize>,
+        entries: bool,
+        entries_of: Option<PathBuf>,
+        entries_limit: Option<u32>,
+        entries_after: Option<PathBuf>,
+        entries_depth: Option<usize>,
         report: bool,
         views: Option<Vec<String>>,
         include: Option<Vec<String>>,
@@ -971,15 +1024,18 @@ impl PyIndex {
                 self.analysis.profile,
                 None,
                 views,
-                include,
-                exclude,
+                // Cloned because the flat page below asks the same question with a
+                // different bound, and both halves of one bundle have to be built from one
+                // set of values rather than from two that could drift.
+                include.clone(),
+                exclude.clone(),
                 min_size,
                 max_size,
                 modified_since,
                 modified_before,
-                kind,
-                tags,
-                not_tags,
+                kind.clone(),
+                tags.clone(),
+                not_tags.clone(),
                 plane,
                 &self.config.tags(),
                 depth,
@@ -994,8 +1050,53 @@ impl PyIndex {
         } else {
             None
         };
+        // The flat page draws from the same selection a report would, because it is the
+        // same question asked with a different bound. A second filter vocabulary here
+        // would be a second engine: the two would agree until they did not, and nothing
+        // in either answer would say which had been asked.
+        let entry_page = if entries {
+            let query = build_query(
+                self.analysis.profile,
+                None,
+                None,
+                include,
+                exclude,
+                min_size,
+                max_size,
+                modified_since,
+                modified_before,
+                kind,
+                tags,
+                not_tags,
+                plane,
+                &self.config.tags(),
+                None,
+                None,
+                sort,
+                reverse,
+                size,
+                words_per_page,
+                as_of_ns,
+            )?;
+            Some(fdu_core::EntryPageRequest {
+                root: entries_of.unwrap_or_default(),
+                after: entries_after,
+                // Required rather than defaulted: a page bound a caller did not choose is
+                // a number this surface invented, and every one of them is wrong for
+                // somebody. The engine refuses zero for its own reason.
+                limit: entries_limit.ok_or_else(|| {
+                    PyValueError::new_err("entries_limit is required when entries=True")
+                })?,
+                max_depth: entries_depth,
+                selection: query.selection,
+                plane: rows_plane,
+            })
+        } else {
+            None
+        };
         let request = fdu_core::ReadRequest {
             children_of,
+            entry_page,
             children_page: fdu_core::ChildPageRequest {
                 after,
                 limit: row_bound(limit),
@@ -1056,6 +1157,11 @@ impl PyIndex {
         )?;
         put_nested(
             &out,
+            "entry_page",
+            bundle.entry_page.as_ref().map(|page| entry_page_dict(py, page)).transpose()?,
+        )?;
+        put_nested(
+            &out,
             "report",
             bundle.report.as_ref().map(|rendered| report_dict(py, rendered)).transpose()?,
         )?;
@@ -1079,6 +1185,7 @@ impl PyIndex {
         projections.set_item("total", work_dict(py, bundle.projections.total)?)?;
         projections.set_item("rollups", work_dict(py, bundle.projections.rollups)?)?;
         projections.set_item("report", work_dict(py, bundle.projections.report)?)?;
+        projections.set_item("entry_page", work_dict(py, bundle.projections.entry_page)?)?;
         out.set_item("projections", projections)?;
         work.set_item("conversion_ns", nanos_since(converted))?;
         Ok(out)
@@ -2030,6 +2137,11 @@ fn tree_dict<'py>(py: Python<'py>, root: &TreeNode) -> PyResult<Bound<'py, PyDic
         let dict = PyDict::new(py);
         put_text(&dict, "name", node.name.as_str())?;
         put_text(&dict, "path", node.path.as_os_str())?;
+        // The engine has carried this since `others` arrived, and the binding never
+        // emitted it -- so every tree section the package produced raised on parse, in the
+        // one shape whose rows a browser draws. Nothing caught it because the smoke suite
+        // asked for every view *except* this one.
+        put_text(&dict, "kind", entry_kind_label(node.kind))?;
         put_scalar(&dict, "bytes", node.bytes)?;
         put_scalar(&dict, "allocated", node.allocated)?;
         put_scalar(&dict, "files", node.files)?;

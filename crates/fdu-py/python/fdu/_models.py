@@ -1017,6 +1017,69 @@ class ChildRemainder:
 
 
 @dataclass(frozen=True, slots=True)
+class EntryRow:
+    """One row of a flat page: where it is, and what a listing row already says about it."""
+
+    path: Path
+    """Path relative to the index root.
+
+    The flat page's whole point. A listing row is identified by its name within one
+    directory; a row drawn from anywhere in the tree is not.
+    """
+
+    entry: Child
+    """The same facts a directory listing reports for the same entry.
+
+    Reused rather than restated, so a catalog row and a listing row for one file are the
+    same value with a different key.
+    """
+
+
+@dataclass(frozen=True, slots=True)
+class EntryPage:
+    """A bounded page of matches, and exactly how much of the answer it is not.
+
+    The shape a complete answer can be *assembled* from, which a truncating limit cannot
+    give: it returns a prefix and says how many it dropped, with no way to ask for them.
+    Pin a version with ``expected`` and page until :attr:`next` is ``None``, and the
+    concatenation is the whole answer, in order, with no repeats and no gaps.
+    """
+
+    rows: tuple[EntryRow, ...]
+    """This page's rows, in path order."""
+
+    total: int
+    """Matches in the whole selection, across every page."""
+
+    remaining: int
+    """Matches after this page's last row.
+
+    Exact, and zero **exactly** when :attr:`next` is ``None``. The two come from one count
+    rather than being reported independently, because that is what a consumer assembling a
+    complete answer checks them against each other for: a continuation with nothing
+    remaining, or a remainder with nowhere to continue, is a lost suffix that nothing else
+    would reveal.
+    """
+
+    next: str | None
+    """Cursor to pass as ``entries_after`` for the next page; ``None`` on the last one."""
+
+    totals: DirectoryTotals
+    """Scalar totals over every match, not only this page's rows.
+
+    The denominator a bounded page needs to be honest about itself -- "40 of 12,000, 3.1 GB
+    in all". Deriving the second half from the rows on screen would make it a statement
+    about the page, which is the thing the caller can already see.
+    """
+
+    @property
+    def has_next(self) -> bool:
+        """Whether another page follows this one."""
+
+        return self.next is not None
+
+
+@dataclass(frozen=True, slots=True)
 class ChildPage:
     """One page of a directory's children, with the rest accounted for beside it."""
 
@@ -1440,6 +1503,15 @@ class Bundle:
     rollups: tuple[RollUp | None, ...]
     """One entry per requested path; ``None`` where it is absent or not a directory."""
 
+    entry_page: EntryPage | None
+    """The requested flat page, or ``None`` when none was requested.
+
+    Beside :attr:`children` rather than replacing it, because they bound different things:
+    a listing is bounded by its directory, and a filtered query is bounded by nothing. Both
+    are in one bundle so a consumer drawing a page of results beside its parent's totals
+    reads one instant, and both share the bundle's ``expected`` pin.
+    """
+
     children: ChildPage | None
     """The requested directory's children, or ``None`` when no directory was named or it
     is absent -- distinct from a page with no rows, which means a directory with no
@@ -1521,6 +1593,15 @@ class ProjectionWork:
 
     rollups: ProjectionCost
     """Every requested per-directory roll-up, summed."""
+
+    entry_page: ProjectionCost
+    """Building one bounded flat page.
+
+    Charged apart from ``report`` because their costs scale with different things: a
+    report's is the rows it returns, and a page's is every entry it *considered* to find
+    them. A consumer paging a narrow selection over a wide tree pays the second on every
+    page, and a record folding the two together would hide it.
+    """
 
     report: ProjectionCost
     """Answering the requested query.

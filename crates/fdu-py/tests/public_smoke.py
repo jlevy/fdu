@@ -1172,6 +1172,126 @@ def check_a_batch_names_which_projections_went_stale() -> None:
         )
 
 
+def check_bounded_pages_assemble_into_one_complete_answer() -> None:
+    """A filtered answer paged losslessly: no repeats, no gaps, an exact remainder.
+
+    The property a provider contract needs and a truncating limit cannot give. A limit that
+    returns a prefix and says how many it dropped satisfies every soft assertion here --
+    fewer rows, a count of what was withheld -- and still cannot be assembled into a whole
+    answer, because there is no way to ask for the rest. So the check is the assembly: page
+    the same selection at several sizes and require every concatenation to equal the
+    unpaged one, in order.
+    """
+
+    with tempfile.TemporaryDirectory(prefix="fdu-paging-") as raw:
+        root = Path(raw)
+        for directory in range(4):
+            child = root / f"d{directory}"
+            child.mkdir()
+            for index in range(5):
+                (child / f"f{index}.rs").write_text("x" * (index + 1), encoding="utf-8")
+        (root / "d0z.rs").write_text("tie", encoding="utf-8")
+
+        index = fdu.open(root, cache=fdu.CachePolicy.OFF)
+        query = fdu.Query(selection=fdu.Selection(kinds=(fdu.EntryKind.FILE,)))
+
+        def assemble(limit: int) -> list[Path]:
+            collected: list[Path] = []
+            after: str | None = None
+            pin = index.cursor()
+            while True:
+                page = index.read(
+                    entries=True,
+                    entries_limit=limit,
+                    entries_after=after,
+                    query=query,
+                    expected=pin,
+                ).entry_page
+                assert page is not None
+                assert len(page.rows) <= limit, page
+                assert (page.next is None) == (page.remaining == 0), (
+                    f"a continuation and a remainder are one fact: {page.next!r} / {page.remaining}"
+                )
+                assert page.remaining == 0 or page.rows, (
+                    "a continuation needs a nonempty page to continue from"
+                )
+                assert page.total == 21, page.total
+                collected.extend(row.path for row in page.rows)
+                assert page.remaining == page.total - len(collected), page
+                if page.next is None:
+                    return collected
+                after = page.next
+
+        whole = assemble(100)
+        assert len(whole) == 21, whole
+        assert whole == sorted(whole), "rows come back in path order"
+        # `d0/f0.rs` precedes `d0z.rs`: the separator sorts below every character a name may
+        # start with, which is what makes path order a total order the cursor can seek in.
+        assert whole.index(Path("d0/f0.rs")) < whole.index(Path("d0z.rs")), whole
+
+        for limit in (1, 2, 4, 7, 100):
+            paged = assemble(limit)
+            assert paged == whole, f"assembly at limit {limit} must equal the unpaged answer"
+            assert len(set(paged)) == len(paged), f"no repeats at limit {limit}"
+
+        # The totals describe the selection, not the page on screen.
+        first = index.read(entries=True, entries_limit=3, query=query).entry_page
+        assert first is not None
+        assert first.total == 21 and len(first.rows) == 3
+        assert first.totals.files == 21, first.totals
+        assert first.has_next is True
+
+        # A page bound is required rather than invented.
+        try:
+            index.read(entries=True, query=query)
+        except ValueError as error:
+            assert "entries_limit" in str(error), error
+        else:  # pragma: no cover - the guard above is the point
+            raise AssertionError("a page with no bound must be refused")
+
+        # And it is charged apart from the report, because a narrow selection over a wide
+        # tree costs every entry it rejected on every page.
+        narrow = fdu.Query(selection=fdu.Selection(include=("f0.rs",)))
+        bundle = index.read(entries=True, entries_limit=2, query=narrow)
+        assert bundle.projections.entry_page.entries_visited > 2, bundle.projections.entry_page
+
+
+def _bundled_report(bundle: fdu.Bundle) -> fdu.Report:
+    """The report a bundle was asked for, refusing the `None` that means it was not."""
+
+    report = bundle.report
+    assert report is not None, "a bundle asked for a report must carry one"
+    return report
+
+
+def check_a_tree_report_parses_on_the_python_surface() -> None:
+    """The tree view round-trips, which it did not.
+
+    `TreeNode` has carried a `kind` since `others` arrived, the binding never emitted it,
+    and the model requires it -- so every tree section the package produced raised on parse.
+    Nothing caught it because the suite asked for every view except this one, which is the
+    shape a browser actually draws.
+    """
+
+    with tempfile.TemporaryDirectory(prefix="fdu-tree-") as raw:
+        root = Path(raw)
+        (root / "src").mkdir()
+        (root / "src" / "main.rs").write_text("fn main() {}", encoding="utf-8")
+        (root / "top.txt").write_text("x", encoding="utf-8")
+
+        index = fdu.open(root, cache=fdu.CachePolicy.OFF)
+        for report in (
+            index.report(fdu.Query(views=(fdu.View.TREE,))),
+            # And through the bundled read, which is where it was found.
+            _bundled_report(index.read(query=fdu.Query(views=(fdu.View.TREE,)))),
+        ):
+            section = report.sections[0]
+            assert isinstance(section, fdu.TreeSection), section
+            assert section.tree.kind is fdu.EntryKind.DIR, section.tree
+            named = {child.name: child for child in section.tree.children}
+            assert named["src"].kind is fdu.EntryKind.DIR, named["src"]
+
+
 def check_a_batched_refresh_is_one_operation_not_a_loop() -> None:
     """Many hint paths, one walk per covering ancestor, one receipt, one position.
 
@@ -2270,6 +2390,8 @@ def main() -> None:
     check_a_batch_carries_the_state_at_its_own_cursor()
     check_a_file_cap_stops_the_walk_rather_than_the_answer()
     check_a_batched_refresh_is_one_operation_not_a_loop()
+    check_bounded_pages_assemble_into_one_complete_answer()
+    check_a_tree_report_parses_on_the_python_surface()
     check_a_batch_names_which_projections_went_stale()
     check_a_batch_reports_what_it_cost_and_not_what_it_waited()
     check_a_pinned_assembly_pins_its_clock_too()

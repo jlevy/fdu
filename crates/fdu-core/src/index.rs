@@ -967,6 +967,14 @@ pub struct ReadRequest {
     /// other surface already takes, evaluated under the guard the rest of the bundle is
     /// reading through.
     pub report: Option<ReportRequest>,
+    /// A bounded, resumable flat page of the entries a selection admits.
+    ///
+    /// Beside the child page rather than replacing it, because they bound different
+    /// things: a listing is bounded by its directory, and a filtered query is bounded by
+    /// nothing. Both are in the bundle so a consumer assembling a page of results beside
+    /// its parent's totals reads one instant, and both share this request's `expected`,
+    /// which is what pins a multi-page assembly to one version.
+    pub entry_page: Option<EntryPageRequest>,
     /// The version this read must observe, when the caller is assembling pages.
     ///
     /// A name cursor keeps page two from skipping or repeating a row, but it cannot keep
@@ -980,6 +988,97 @@ pub struct ReadRequest {
     /// images so a stale pin could succeed would trade a cheap restart for unbounded
     /// memory.
     pub expected: Option<Cursor>,
+}
+
+/// A bounded, resumable page over the entries a selection admits.
+///
+/// The flat counterpart of [`ChildPageRequest`], and the shape a consumer's catalog or
+/// filtered-tree query maps onto. A directory listing is bounded by its own directory; a
+/// filtered query is bounded by nothing, so without this a caller either receives every
+/// match or a truncated answer it cannot continue -- and a provider contract that promises
+/// complete answers assembled from bounded requests cannot be satisfied by either.
+#[derive(Clone, Debug, Default)]
+pub struct EntryPageRequest {
+    /// Subtree the page is drawn from; empty for the whole tree.
+    pub root: PathBuf,
+    /// Resume strictly after this path; `None` starts at the first match.
+    ///
+    /// A path rather than an offset, for the reason [`ChildPageRequest::after`] gives: an
+    /// offset silently repeats or skips rows when the set shifts underneath it. Rows are
+    /// emitted in path order, which is a total order over a tree, so the cursor is exactly
+    /// the last row emitted and resuming is "the first match strictly greater".
+    pub after: Option<PathBuf>,
+    /// Rows this page may carry. Must be positive.
+    ///
+    /// Zero is refused for the same reason a zero child page is: it is simultaneously
+    /// truncated and terminal, so the caller is told there is more and given no cursor to
+    /// ask with.
+    pub limit: u32,
+    /// Deepest level below `root` to consider, or `None` for the whole subtree.
+    pub max_depth: Option<usize>,
+    /// Which entries this page is drawn from.
+    ///
+    /// Time bounds are already absolute nanoseconds, which is what pins `as_of` across an
+    /// assembly: the caller resolves a relative window once and hands the same selection to
+    /// every page, so two pages of one answer cannot describe two different windows.
+    pub selection: crate::query::Selection,
+    /// A maintained plane to report beside each row's totals, or `None` for none.
+    pub plane: Option<crate::tags::Promoted>,
+}
+
+impl EntryPageRequest {
+    /// Refuse a bound that would produce a truncated page nobody can continue.
+    pub fn validate(&self) -> crate::Result<()> {
+        if self.limit == 0 {
+            return Err(crate::Error::InvalidValue {
+                kind: "page limit",
+                value: "0".into(),
+                hint: "use a positive row count; a zero-row page has no continuation".into(),
+            });
+        }
+        Ok(())
+    }
+}
+
+/// One row of a flat page: where it is, and everything a listing row already reports.
+#[derive(Clone, Debug)]
+pub struct EntryRow {
+    /// Path relative to the index root.
+    ///
+    /// The flat page's whole point: a listing row is identified by its name within one
+    /// directory, and a row drawn from anywhere in the tree is not.
+    pub path: PathBuf,
+    /// The same facts a directory listing reports for the same entry.
+    ///
+    /// Reused rather than restated so the two surfaces cannot describe one entry
+    /// differently -- a catalog row and a listing row for the same file are the same
+    /// value with a different key.
+    pub entry: ChildSnapshot,
+}
+
+/// A bounded page of matches, and exactly how much of the answer it is not.
+#[derive(Clone, Debug, Default)]
+pub struct EntryPage {
+    /// This page's rows, in path order.
+    pub rows: Vec<EntryRow>,
+    /// Matches in the whole selection, across every page.
+    pub total: u64,
+    /// Matches after this page's last row.
+    ///
+    /// Exact, and zero **exactly** when [`Self::next`] is `None`. The two are derived from
+    /// one count rather than reported independently, because a consumer assembling a
+    /// complete answer from bounded pages checks them against each other: a continuation
+    /// with nothing remaining, or a remainder with nowhere to continue, is a lost suffix
+    /// that nothing else would reveal.
+    pub remaining: u64,
+    /// Cursor for the next page, or `None` on the terminal page.
+    pub next: Option<PathBuf>,
+    /// Scalar totals over every match, not only this page's rows.
+    ///
+    /// The denominator a bounded page needs to be honest about itself: "40 of 12,000,
+    /// 3.1 GB in all" is one answer, and deriving the second half from the rows on screen
+    /// would make it a statement about the page rather than about the selection.
+    pub totals: RollUpScalars,
 }
 
 /// One query, and the run facts its envelope needs.
@@ -1050,6 +1149,11 @@ pub struct ReadBundle {
     ///
     /// Distinct from a page with no rows, which means a directory with no children.
     pub children: Option<ChildPage>,
+    /// The requested flat page, or `None` when none was requested or its root is absent
+    /// or not a directory.
+    ///
+    /// Distinct from a page with no rows, which means a selection that admitted nothing.
+    pub entry_page: Option<EntryPage>,
     /// The report the requested query produced, at the same boundary as everything else.
     pub report: Option<crate::query::Report>,
     /// What producing this bundle cost, in total.
@@ -1090,6 +1194,13 @@ pub struct ProjectionWork {
     /// `Selection::is_unfiltered` is what decides which of those happened, and it is on
     /// the query the caller already holds.
     pub report: Work,
+    /// Building one bounded flat page.
+    ///
+    /// Charged separately from `report` because their costs scale with different things:
+    /// a report's is the rows it returns, and a page's is every entry it *considered* to
+    /// find them. A consumer paging a narrow selection over a wide tree pays the second
+    /// on every page, and a record that folded the two together would hide it.
+    pub entry_page: Work,
 }
 
 impl ProjectionWork {
@@ -1099,7 +1210,7 @@ impl ProjectionWork {
     /// `wall_ns` sums the parts, which is less than the bundle's own wall time by whatever
     /// the guard wait and the assembly around them cost.
     pub fn sum(&self) -> Work {
-        [self.children, self.total, self.rollups, self.report].into_iter().fold(
+        [self.children, self.total, self.rollups, self.report, self.entry_page].into_iter().fold(
             Work::default(),
             |acc, part| Work {
                 entries_visited: acc.entries_visited + part.entries_visited,
@@ -1403,6 +1514,9 @@ impl IndexHandle {
     /// crossing and a lock acquisition; bundled, they are one of each.
     pub fn read(&self, request: &ReadRequest) -> crate::Result<ReadBundle> {
         request.children_page.validate()?;
+        if let Some(page) = &request.entry_page {
+            page.validate()?;
+        }
         let started = std::time::Instant::now();
         let index = self.read_index()?;
         let lock_wait_ns = nanos(started.elapsed());
@@ -1427,6 +1541,10 @@ impl IndexHandle {
             timed(&mut projections.children, |work| {
                 child_page(&index, path, &request.children_page, work)
             })
+        });
+
+        let flat_page = request.entry_page.as_ref().and_then(|wanted| {
+            timed(&mut projections.entry_page, |work| entry_page(&index, wanted, work))
         });
 
         let total = request.total.then(|| {
@@ -1481,6 +1599,7 @@ impl IndexHandle {
             total,
             rollups,
             children,
+            entry_page: flat_page,
             report,
             work: Work { lock_wait_ns, ..projections.sum() },
             projections,
@@ -3882,6 +4001,134 @@ fn nanos(elapsed: std::time::Duration) -> u64 {
 }
 
 /// One child's captured row.
+/// Push `id`'s children onto a pre-order stack so they pop in name order.
+///
+/// Reversed on the way in, because a stack pops what was pushed last.
+fn push_children(
+    index: &Index,
+    id: EntryId,
+    path: &Path,
+    depth: usize,
+    stack: &mut Vec<(EntryId, PathBuf, usize)>,
+) {
+    let Some(children) = index.children_of(id) else {
+        return;
+    };
+    let children: Vec<(PathBuf, EntryId)> =
+        children.map(|(name, child)| (path.join(name), child)).collect();
+    for (child_path, child) in children.into_iter().rev() {
+        stack.push((child, child_path, depth));
+    }
+}
+
+/// One bounded, resumable page of the entries a selection admits, in path order.
+///
+/// One pass, and it has to be: the page needs its own rows *and* the denominator they are
+/// a page of, and a second pass to count matches would be a second answer -- one a write
+/// could land between, in the read this whole surface exists to keep coherent.
+///
+/// Memory is bounded by `limit` rather than by the match count. The report tier
+/// materialises every admitted row before bounding it, which is right for a report that
+/// then sorts them by size; a page in path order needs no sort, so it keeps a window and
+/// counts the rest.
+///
+/// Path order, not size or recency order, and the choice is forced rather than arbitrary:
+/// a resumable cursor has to be a value the walk can seek past, and only the tree's own
+/// key is stable while the set behind it shifts. A page ordered by size would have to
+/// carry the size *and* the path to break ties, and would still repeat a row whose size
+/// changed between pages.
+fn entry_page(index: &Index, request: &EntryPageRequest, work: &mut Work) -> Option<EntryPage> {
+    debug_assert!(request.limit > 0, "a zero page limit is unresumable; reject it at the request");
+    let root_id = index.lookup_visiting(&request.root, work)?;
+    if !index.entry(root_id).kind.is_dir() {
+        return None;
+    }
+
+    let mut page = EntryPage::default();
+    let mut seen_after_cursor: u64 = 0;
+    // Pre-order, one node per stack item: pop it, emit it, then push *its* children on
+    // top, so they are visited before the siblings already waiting below. Pushing a whole
+    // directory's children and emitting them in the same step is the shape that looks
+    // right and is not -- it emits every child of a directory before descending into any
+    // of them, which is breadth-per-directory rather than path order, and a cursor that
+    // seeks in path order then skips whole subtrees.
+    //
+    // Depth-first over name-ordered children *is* lexicographic path order, because the
+    // separator sorts below every character a name may begin with -- so `d0/f0.rs`
+    // precedes `d0z.rs`, and "the first match strictly greater than the cursor" is a
+    // single forward scan.
+    let mut stack: Vec<(EntryId, PathBuf, usize)> = Vec::new();
+    push_children(index, root_id, &request.root, 1, &mut stack);
+    while let Some((id, path, depth)) = stack.pop() {
+        let (Some(kind), Some(attrs)) = (index.kind_of(id), index.attrs_of(id)) else {
+            continue;
+        };
+        if request.max_depth.is_none_or(|maximum| depth < maximum) {
+            push_children(index, id, &path, depth + 1, &mut stack);
+        }
+        if request.max_depth.is_some_and(|maximum| depth > maximum) {
+            continue;
+        }
+        work.visit_entry(kind);
+        let file_name = path.file_name().unwrap_or_default();
+        let name = file_name.to_string_lossy().into_owned();
+        let candidate = crate::query::Candidate {
+            relative: &path,
+            name: &name,
+            kind,
+            bytes: attrs.size,
+            allocated: attrs.allocated,
+            mtime_ns: attrs.mtime_ns,
+            tags: index.tag_bits_of(id),
+        };
+        if !request.selection.admits(&candidate) {
+            continue;
+        }
+
+        page.total += 1;
+        // Per entry, never per subtree. A flat page enumerates every match in its own
+        // right, so folding a matched directory's roll-up in would count its matched
+        // descendants twice -- once as themselves and once inside their ancestor.
+        match kind {
+            EntryKind::File => {
+                page.totals.files += 1;
+                page.totals.bytes += attrs.size;
+                page.totals.allocated += attrs.allocated;
+                page.totals.newest_mtime_ns = page.totals.newest_mtime_ns.max(attrs.mtime_ns);
+            }
+            EntryKind::Dir => page.totals.dirs += 1,
+            EntryKind::Symlink | EntryKind::Other => page.totals.others += 1,
+        }
+        // The cursor is exclusive, and it is compared against every match rather than
+        // seeked to: a tree has no ordered index over paths to seek in, so the scan is the
+        // seek. Counting the skipped matches here is what makes `remaining` exact without
+        // a second pass.
+        if request.after.as_ref().is_some_and(|after| path <= *after) {
+            seen_after_cursor += 1;
+            continue;
+        }
+        if page.rows.len() < request.limit as usize {
+            let entry = child_snapshot(index, file_name, id, request.plane);
+            work.visit(entry.kind);
+            work.rows += 1;
+            work.name_bytes += path.as_os_str().as_encoded_bytes().len() as u64;
+            page.next = Some(path.clone());
+            page.rows.push(EntryRow { path, entry });
+        }
+    }
+
+    // Derived from one count, so the two cannot disagree: everything matched, minus what
+    // the cursor already covered, minus what this page carries.
+    page.remaining =
+        page.total.saturating_sub(seen_after_cursor).saturating_sub(page.rows.len() as u64);
+    if page.remaining == 0 {
+        // Terminal. The last row's path is still a valid cursor, but handing one back
+        // beside a zero remainder is the shape a consumer reads as "there is more".
+        page.next = None;
+    }
+    Some(page)
+}
+
 fn child_snapshot(
     index: &Index,
     name: &std::ffi::OsStr,

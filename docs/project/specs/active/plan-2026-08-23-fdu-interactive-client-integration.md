@@ -993,6 +993,12 @@ from emitting millions of provenance-only entry changes into the feed it serves.
   The bound has to stop the walk rather than truncate an answer: a projection limit
   leaves the tree read anyway, which is the cost the cap exists to avoid.
   This is what finally makes `CoverageReason::Budget` reachable
+- [x] Bounded, resumable flat pages (`fdu-91ru`): a required positive limit, a path
+  cursor, an exact remainder paired with the continuation, selection-wide totals, and
+  the caller’s version pin.
+  Page until the continuation is absent and the concatenation is the whole answer, in
+  order, with no repeats and no gaps -- which a truncating limit cannot give, because it
+  returns a prefix and says how many it dropped with no way to ask for them
 - [x] A batched scoped refresh (`fdu-nlhl`): a bounded set of observed paths, the union
   reconciled under one guard, one commit, one cursor, and per-path acceptance beside the
   counts. Iterating a single-path refresh is not equivalent -- N calls are N commits and

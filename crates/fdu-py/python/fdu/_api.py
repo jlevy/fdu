@@ -30,6 +30,8 @@ from ._models import (
     Cursor,
     DirectoryTotals,
     EntryKind,
+    EntryPage,
+    EntryRow,
     Format,
     Freshness,
     ProjectionCost,
@@ -376,6 +378,11 @@ class Index:
         extensions: int | None = None,
         after: str | None = None,
         limit: int | None = None,
+        entries: bool = False,
+        entries_of: str | Path | None = None,
+        entries_limit: int | None = None,
+        entries_after: str | Path | None = None,
+        entries_depth: int | None = None,
         query: Query | None = None,
         expected: Cursor | None = None,
     ) -> Bundle:
@@ -403,6 +410,20 @@ class Index:
         and the assembly restarts -- which is cheap, unlike holding history so it could
         succeed.
 
+        `entries=True` adds a bounded, resumable flat page of everything `query`'s
+        selection admits, drawn from `entries_of` (the whole tree by default) and bounded
+        by `entries_limit`, which is required rather than defaulted: a page bound the
+        caller did not choose is a number this surface invented, and every one of them is
+        wrong for somebody. Page by passing the previous page's `next` as `entries_after`,
+        with `expected` pinned, until `next` is `None`; the concatenation is the whole
+        answer, in order, with no repeats and no gaps. That is what a truncating limit
+        cannot give -- it returns a prefix and says how many it dropped, with no way to ask
+        for them.
+
+        The page draws from the same `query` selection a report would, because it is the
+        same question asked with a different bound. A second filter vocabulary here would
+        be a second engine.
+
         It is also one crossing of the language boundary and one lock acquisition,
         instead of one of each per call.
         """
@@ -425,6 +446,11 @@ class Index:
             extensions,
             after,
             limit,
+            entries,
+            None if entries_of is None else str(entries_of),
+            entries_limit,
+            None if entries_after is None else str(entries_after),
+            entries_depth,
             **report_kwargs,
             expected=(
                 None if expected is None else {"session": expected.session, "clock": expected.clock}
@@ -432,6 +458,7 @@ class Index:
         )
         extension_returned = time.perf_counter_ns()
         children = value["children"]
+        entry_page = value["entry_page"]
         report = value["report"]
         projections = value["projections"]
         bundle = Bundle(
@@ -446,6 +473,7 @@ class Index:
                 None if roll is None else rollup_from_dict(roll) for roll in value["rollups"]
             ),
             children=None if children is None else _child_page(children),
+            entry_page=None if entry_page is None else _entry_page(entry_page),
             # Parsed by the same function `report()` uses, from the same wire shape, so a
             # bundled report cannot describe the tree differently from a standalone one.
             report=None if report is None else report_from_dict(report),
@@ -455,6 +483,7 @@ class Index:
                 total=_projection_cost(projections["total"]),
                 rollups=_projection_cost(projections["rollups"]),
                 report=_projection_cost(projections["report"]),
+                entry_page=_projection_cost(projections["entry_page"]),
             ),
         )
         # The only end-to-end figure, and the one an embedder should compare providers on.
@@ -612,6 +641,28 @@ def _child_page(value: dict[str, Any]) -> ChildPage:
         rows=tuple(_child(item) for item in rows),
         remainder=None if remainder is None else _child_remainder(remainder),
         next=None if cursor is None else str(cursor),
+    )
+
+
+def _entry_page(value: dict[str, Any]) -> EntryPage:
+    """One bounded flat page, parsed the same way wherever it came from."""
+
+    rows: list[dict[str, Any]] = value["rows"]
+    cursor = value.get("next")
+    totals: dict[str, Any] = value["totals"]
+    return EntryPage(
+        rows=tuple(EntryRow(path=Path(str(item["path"])), entry=_child(item)) for item in rows),
+        total=int(value["total"]),
+        remaining=int(value["remaining"]),
+        next=None if cursor is None else str(cursor),
+        totals=DirectoryTotals(
+            files=int(totals["files"]),
+            dirs=int(totals["dirs"]),
+            others=int(totals["others"]),
+            bytes=int(totals["bytes"]),
+            allocated=int(totals["allocated"]),
+            newest_mtime_ns=int(totals["newest_mtime_ns"]) or None,
+        ),
     )
 
 
