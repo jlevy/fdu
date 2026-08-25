@@ -992,6 +992,10 @@ from emitting millions of provenance-only entry changes into the feed it serves.
   an engine without one returns a different inventory under the same fingerprint.
   The bound has to stop the walk rather than truncate an answer: a projection limit
   leaves the tree read anyway, which is the cost the cap exists to avoid.
+  **Strict**: exactly the cap is retained, never one more, however many workers are
+  reading -- a fingerprinted axis that admits “the cap plus whatever was in flight”
+  makes the identity a claim the engine does not keep.
+  A directory may therefore be listed only partly, which the partial coverage says.
   This is what finally makes `CoverageReason::Budget` reachable
 - [x] Bounded, resumable flat pages (`fdu-91ru`): a required positive limit, a path
   cursor, an exact remainder paired with the continuation, selection-wide totals, and
