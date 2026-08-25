@@ -5,7 +5,7 @@ title: "Spec: fdu for interactive clients — the metabrowser contract"
 kind: epic
 status: open
 priority: 1
-version: 59
+version: 60
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
 dependencies: []
@@ -57,7 +57,7 @@ child_order_hints:
   - is-01m0tra5gw0ap6nbbzgt7egvr4
   - is-01m0tra6d42b6r8vsecjnh36e8
 created_at: 2026-08-23T07:31:34.794Z
-updated_at: 2026-08-25T05:36:08.217Z
+updated_at: 2026-08-25T05:36:51.882Z
 ---
 Root epic for the interactive-client integration spec: partitioned tallies (tag planes), the embedder watch contract, the session integration shape, and the adoption proof. Each capability lands engine-first and clears the parity harness. The measured basis and the requirement-by-requirement contract map are in the spec.
 
@@ -105,4 +105,4 @@ MONITOR UPDATE: PR #47 advanced from 715f748 to exact head 278457a (2026-08-25; 
 
 MONITOR UPDATE: PR #47 advanced from 278457a to exact head fad3d2f (2026-08-25; all 19 checks green). The complete journal slice fixes the prior concurrent-producer cursor omission and makes reconcile state visible through Session; the short internal async pull plus liveness check and typed teardown error close the teardown finding. Adoption remains blocked on mapped owners: fdu-vfx7 now records that a journal-only producer commit cannot wake an idle Session, plus the unbounded Retagged carrier and missing resulting state/work; fdu-jxs0 remains open for the public reconcile sink and exact per-transition clocks; fdu-fltq remains open because provider gaps still become reset and consumer truncation emits the MetaBrowser-invalid reset + all_dirty combination. fdu-91ru remains open for typed lifecycle/issues and caller-pinned as_of.
 
-MONITOR UPDATE: PR #47 advanced from fad3d2f to exact reviewed head 7aaaf84 (2026-08-25; CI still running and GitHub reports UNSTABLE). The review accepts caller-pinned as_of, the typed coherent read envelope, exact state-transition clocks, journal-only delivery, bounded retagging, reset-versus-recovery semantics, dirty query kinds, read-side GIL release, async teardown, and the promoted-plane equivalence work; fdu-jxs0 and fdu-fltq stay closed. Exact-head formal review https://github.com/jlevy/fdu/pull/47#pullrequestreview-5015288678 reopened fdu-vfx7 because WatchBatch still lacks the complete resulting provider state at its cursor, the v1 invalidation path still materializes entry rows across PyO3, and public watch work omits binding/model conversion cost. It also reopened fdu-91ru because only child listings have native continuation: filtered-tree and catalog pages cannot satisfy MetaBrowser's mandatory bounds, advancing cursors, and lossless remainders without an unbounded FFI result or Python mirror. These are Phase 2 adoption blockers; no parallel beads were created.
+MONITOR UPDATE: PR #47 advanced from fad3d2f to exact reviewed head 7aaaf84 (2026-08-25; all 19 checks green and mergeability clean). The review accepts caller-pinned as_of, the typed coherent read envelope, exact state-transition clocks, journal-only delivery, bounded retagging, reset-versus-recovery semantics, dirty query kinds, read-side GIL release, async teardown, and the promoted-plane equivalence work; fdu-jxs0 and fdu-fltq stay closed. Exact-head formal review https://github.com/jlevy/fdu/pull/47#pullrequestreview-5015288678 reopened fdu-vfx7 because WatchBatch still lacks the complete resulting provider state at its cursor, the v1 invalidation path still materializes entry rows across PyO3, and public watch work omits binding/model conversion cost. It also reopened fdu-91ru because only child listings have native continuation: filtered-tree and catalog pages cannot satisfy MetaBrowser's mandatory bounds, advancing cursors, and lossless remainders without an unbounded FFI result or Python mirror. These are Phase 2 adoption blockers; no parallel beads were created.
