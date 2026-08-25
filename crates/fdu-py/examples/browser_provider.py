@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -372,8 +373,12 @@ def catalog_page(
     limit: int,
     after: str | None = None,
     pin: fdu.Cursor | None = None,
+    terminal_extensions: Sequence[str] = (),
+    ancestor_names: Sequence[str] = (),
+    size_less_than: int | None = None,
+    include_ignored: bool = False,
 ) -> fdu.EntryPage:
-    """One bounded, resumable page of the whole tree, in path order.
+    """One bounded, resumable page of a catalog query, in path order.
 
     The shape a catalog query maps onto, and the one a consumer can assemble a complete
     answer from: page until `next` is `None` and the concatenation is every match, in
@@ -390,15 +395,61 @@ def catalog_page(
     A token is bound to the question it was issued for, so an adapter cannot accidentally
     resume one query's assembly under another: that is refused rather than answered with
     the first query's denominator.
+
+    The four predicates are the consuming contract's catalog query, and each is translated
+    into an engine field rather than applied to the rows this returns. That distinction is
+    the whole design: an adapter that filtered afterwards would page the *unfiltered*
+    answer and hand back short pages with a denominator describing something else, and a
+    predicate the engine cannot express is a mirror index waiting to be written.
+
+    Three of the translations are worth reading, because each is a place a plausible
+    version is wrong:
+
+    - `size_less_than` is exclusive and `max_size` is inclusive, so the bound moves by one.
+      The metric moves too: the contract compares a file's apparent size in bytes, and this
+      surface counts allocated blocks unless told otherwise, so a tree of small files would
+      answer a size question with the block size and be wrong by a factor nobody notices.
+    - `include_ignored=False` becomes the promoted rule's *plane*, which is the subtree
+      excluding what the rule tags. `not_tags` gives the same answer by walking; the plane
+      is state the engine already maintains.
+    - The two name predicates go through as themselves. They are not globs: the terminal
+      suffix is case-folded and the ancestor components are not, and no single pattern
+      dialect is both.
     """
 
-    return index.read(
-        entries=True,
-        entries_limit=limit,
-        entries_after=after,
-        expected=pin,
-        query=fdu.Query(selection=fdu.Selection(kinds=(fdu.EntryKind.FILE,))),
-    ).entry_page or fdu.EntryPage(
+    if size_less_than is not None and size_less_than <= 0:
+        # The contract requires a positive bound, and this refuses one for the same reason
+        # rather than answering it. There is no inclusive bound one below zero to translate
+        # into, and the two plausible repairs are both wrong: an empty page invents an
+        # answer to a query the contract does not admit, and a clamp to zero quietly admits
+        # every empty file.
+        raise ValueError("size_less_than must be positive")
+
+    return (
+        index.read(
+            entries=True,
+            entries_limit=limit,
+            entries_after=after,
+            expected=pin,
+            query=fdu.Query(
+                selection=fdu.Selection(
+                    kinds=(fdu.EntryKind.FILE,),
+                    terminal_extensions=tuple(terminal_extensions),
+                    ancestor_names=tuple(ancestor_names),
+                    max_size=None if size_less_than is None else size_less_than - 1,
+                    size=fdu.SizeMetric.APPARENT,
+                    plane=None if include_ignored else PLANE_RULE,
+                )
+            ),
+        ).entry_page
+        or _empty_page()
+    )
+
+
+def _empty_page() -> fdu.EntryPage:
+    """The shape of an answer with no rows, so a caller never special-cases `None`."""
+
+    return fdu.EntryPage(
         rows=(),
         total=0,
         remaining=0,

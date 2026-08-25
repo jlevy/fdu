@@ -229,6 +229,48 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 ? 0
 ```
 
+### The Terminal Suffix Is the Last One, and It Is Case-Folded
+
+A catalog asks about file types, and neither half of that question is a glob.
+`--include '*.md'` matches case-sensitively, so it misses `FAQ.MD`; a case-insensitive
+glob dialect would answer this one and change what every other pattern means.
+And the terminal is the *last* suffix, so `acorn-0.1.0.tar.gz` is `.gz`.
+
+```console
+$ fdu --cache off --view files --terminal-ext .md project
+README.md
+docs[SEP]FAQ.MD
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+```console
+$ fdu --cache off --view files --terminal-ext .gz project
+dist[SEP]acorn-0.1.0.tar.gz
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+### An Ancestor Name Is a Whole Component at Any Depth
+
+Repeatable and any-of, like `--tag` and `--include`. The entry’s own name is never one
+of its ancestors, which is why `src` itself is absent from a listing that names it.
+
+```console
+$ fdu --cache off --view files --ancestor-name src project
+src[SEP]alpha.rs
+src[SEP]omega.rs
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+```console
+$ fdu --cache off --view summary --ancestor-name src --size apparent project
+      36 B  2 files, 0 directories
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
 ### Sort and Limit Compose Into a Top-N, With No Dedicated View
 
 ```console
@@ -594,6 +636,37 @@ fdu: invalid --view "tree,tree": "tree" appears more than once
 ```console
 $ fdu --cache off --view tree,,types project
 fdu: invalid --view "tree,,types": empty entry in the list
+? 2
+```
+
+### A Predicate That Could Only Match Nothing Is Refused Where It Is Written
+
+Each of these is a filter a caller believes will match and that nothing can, so an empty
+report would be read as a fact about the tree.
+The rules live in the library, so every surface refuses the same values with the same
+words.
+
+```console
+$ fdu --cache off --view files --terminal-ext rs project
+fdu: invalid terminal extension "rs": expected a dotted suffix such as ".rs"
+? 2
+```
+
+```console
+$ fdu --cache off --view files --terminal-ext .tar.gz project
+fdu: invalid terminal extension ".tar.gz": expected the terminal suffix alone: ".gz" rather than ".tar.gz"
+? 2
+```
+
+```console
+$ fdu --cache off --view files --terminal-ext .RS project
+fdu: invalid terminal extension ".RS": expected lowercase: ".rs" rather than ".RS"
+? 2
+```
+
+```console
+$ fdu --cache off --view files --ancestor-name src/lib project
+fdu: invalid ancestor name "src/lib": expected one exact directory name, such as "src"
 ? 2
 ```
 

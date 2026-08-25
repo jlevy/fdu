@@ -6,7 +6,8 @@
 //! changing `--include` never invalidates anything. It is the same reasoning as tagging
 //! ignored entries rather than pruning them.
 
-use std::path::Path;
+use std::ffi::OsString;
+use std::path::{Component, Path};
 
 use crate::engine_contract::{Bound, EntryKind};
 use crate::query::query_glob::Pattern;
@@ -122,6 +123,31 @@ pub struct Selection {
     pub max_size: Option<u64>,
     /// Entry kinds to consider; empty means every kind.
     pub kinds: Vec<EntryKind>,
+    /// Terminal suffixes to admit, lowercase and dotted, or empty for every suffix.
+    ///
+    /// A closed predicate rather than a glob, because it is not one. The rule is the *last*
+    /// suffix, case-folded: `NOTES.TXT` and `notes.txt` both have terminal `.txt`, and
+    /// `archive.tar.gz` has `.gz` rather than `.tar.gz`. A case-sensitive whole-name glob
+    /// cannot express either half, and a case-insensitive glob dialect would be a second
+    /// pattern language answering one question.
+    ///
+    /// A name with no suffix -- `Makefile`, or a leading-dot name like `.gitignore` -- has
+    /// terminal `""`, which no entry in this list can equal, so a non-empty list excludes
+    /// them. That is the same answer the consuming contract gives, and it is why the
+    /// entries are required to carry their dot.
+    pub terminal_extensions: Vec<String>,
+    /// Directory names an entry must have among its ancestors, or empty for any.
+    ///
+    /// Exact whole components, case-sensitively, and *any* of them: `["src", "tests"]`
+    /// admits anything under either. Ancestors only -- the entry's own name is never one --
+    /// so a file called `src` does not match `src`.
+    ///
+    /// A glob cannot say this either. `**/src/**` comes close and differs on the cases that
+    /// matter: it is case-sensitive but also substring-free only by accident of the
+    /// separator, and it cannot express "any of these names at any depth" without one
+    /// pattern per name, which changes `include`'s any-of semantics into something a caller
+    /// has to reason about.
+    pub ancestor_names: Vec<OsString>,
     /// Modification-time window.
     pub modified: ModifiedWindow,
     /// Tags an entry must and must not carry.
@@ -216,6 +242,8 @@ impl Selection {
             && self.min_size.is_none()
             && self.max_size.is_none()
             && self.kinds.is_empty()
+            && self.terminal_extensions.is_empty()
+            && self.ancestor_names.is_empty()
             && self.modified.is_unbounded()
             && self.tags.is_unconstrained()
     }
@@ -249,15 +277,118 @@ impl Selection {
         {
             return false;
         }
+        self.admits_by_path(candidate.relative, candidate.name)
+    }
+
+    /// Whether the path-shaped parts of this selection admit a path.
+    ///
+    /// Every axis decidable from a relative path and a name, named in one place. A live
+    /// watcher has only those two when an event arrives -- no `stat`, no index row -- so it
+    /// filters through this, and an axis missing here is one it silently forgets: a change
+    /// row delivered for an entry the same query would never return. That has now happened
+    /// on three separate axes, each time because the second copy of the list was written by
+    /// hand. Size, time, kind and tags are deliberately absent, because they need the entry
+    /// rather than its name.
+    pub fn admits_by_path(&self, relative: &Path, name: &str) -> bool {
+        if !self.terminal_extensions.is_empty() && !self.admits_terminal(name) {
+            return false;
+        }
+        if !self.ancestor_names.is_empty() && !self.admits_ancestry(relative) {
+            return false;
+        }
         // Exclusion wins: a pattern the caller wrote to keep something out should not be
         // overridden by a broader pattern they wrote to let things in.
-        if self.exclude.iter().any(|p| p.matches(candidate.relative, candidate.name)) {
+        if self.exclude.iter().any(|p| p.matches(relative, name)) {
             return false;
         }
         if self.include.is_empty() {
             return true;
         }
-        self.include.iter().any(|p| p.matches(candidate.relative, candidate.name))
+        self.include.iter().any(|p| p.matches(relative, name))
+    }
+
+    /// Add a terminal suffix to admit, refusing one that could never match.
+    ///
+    /// The rule is narrow enough that every way of getting it wrong produces silence
+    /// instead of an error: `rs` matches nothing because a terminal carries its dot,
+    /// `.tar.gz` matches nothing because a terminal is the *last* suffix, and `.RS` matches
+    /// nothing because the comparison lowers only the name. Each is a caller who believes
+    /// they narrowed a catalog and got an empty page back with nothing to read.
+    ///
+    /// So the list is built through this rather than pushed to directly, and it lives here
+    /// rather than in each surface's argument parser, because a rule stated twice is two
+    /// rules that agree until one is edited.
+    pub fn admit_terminal_extension(&mut self, value: impl Into<String>) -> crate::Result<()> {
+        let value = value.into();
+        let hint = match value.strip_prefix('.') {
+            None => Some(r#"expected a dotted suffix such as ".rs""#),
+            Some("") => Some(r#"expected a suffix after the dot, such as ".rs""#),
+            Some(rest) if rest.contains('.') => {
+                Some(r#"expected the terminal suffix alone: ".gz" rather than ".tar.gz""#)
+            }
+            Some(rest) if !rest.chars().flat_map(char::to_lowercase).eq(rest.chars()) => {
+                Some(r#"expected lowercase: ".rs" rather than ".RS""#)
+            }
+            Some(_) => None,
+        };
+        if let Some(hint) = hint {
+            return Err(crate::Error::InvalidValue {
+                kind: "terminal extension",
+                value,
+                hint: hint.to_string(),
+            });
+        }
+        self.terminal_extensions.push(value);
+        Ok(())
+    }
+
+    /// Add an ancestor directory name to admit, refusing anything that is not one component.
+    ///
+    /// [`Component::Normal`] is the whole test, which is why this is not a search for
+    /// separator characters: it refuses `src/lib` and `.` and the empty name on every
+    /// platform, and it refuses `src\lib` on the one platform where that is two names and
+    /// admits it on the ones where it is a legal single name.
+    pub fn admit_ancestor_name(&mut self, value: impl Into<OsString>) -> crate::Result<()> {
+        let value = value.into();
+        let mut components = Path::new(&value).components();
+        let single =
+            matches!((components.next(), components.next()), (Some(Component::Normal(_)), None));
+        if !single {
+            return Err(crate::Error::InvalidValue {
+                kind: "ancestor name",
+                value: value.to_string_lossy().into_owned(),
+                hint: r#"expected one exact directory name, such as "src""#.to_string(),
+            });
+        }
+        self.ancestor_names.push(value);
+        Ok(())
+    }
+
+    /// Whether a name's terminal suffix is one this selection admits.
+    ///
+    /// The name's suffix is lowered and compared for equality; the list is required to be
+    /// lowercase already, which is why this is not a case-insensitive match on both sides.
+    /// Lowering is done by iterator rather than into a fresh `String`, so a catalog page
+    /// over a large tree does not allocate once per row it rejects.
+    fn admits_terminal(&self, name: &str) -> bool {
+        let Some(suffix) = terminal_suffix(name) else {
+            // No terminal suffix, so it is the empty string, which cannot equal a dotted
+            // entry. A list that constrains anything therefore excludes these.
+            return false;
+        };
+        self.terminal_extensions
+            .iter()
+            .any(|wanted| suffix.chars().flat_map(char::to_lowercase).eq(wanted.chars()))
+    }
+
+    /// Whether any ancestor component is one this selection admits.
+    fn admits_ancestry(&self, relative: &Path) -> bool {
+        let Some(ancestors) = relative.parent() else {
+            return false;
+        };
+        ancestors
+            .components()
+            .any(|component| self.ancestor_names.iter().any(|name| component.as_os_str() == *name))
     }
 
     /// The size of an entry in the selected metric.
@@ -311,6 +442,21 @@ impl Selection {
         kinds.sort_unstable();
         mix(hash, &kinds);
         mix(hash, b"\x1e");
+        let mut terminals: Vec<&str> =
+            self.terminal_extensions.iter().map(String::as_str).collect();
+        terminals.sort_unstable();
+        for terminal in terminals {
+            mix(hash, terminal.as_bytes());
+            mix(hash, b"\x1f");
+        }
+        mix(hash, b"\x1e");
+        let mut ancestors: Vec<&OsString> = self.ancestor_names.iter().collect();
+        ancestors.sort_unstable();
+        for ancestor in ancestors {
+            mix(hash, ancestor.as_encoded_bytes());
+            mix(hash, b"\x1f");
+        }
+        mix(hash, b"\x1e");
         optional(hash, self.modified.since.map(i64::cast_unsigned));
         optional(hash, self.modified.before.map(i64::cast_unsigned));
         scalar(hash, u64::from(self.tags.any));
@@ -325,6 +471,22 @@ impl Selection {
         // the same question in different units.
         *hash
     }
+}
+
+/// The terminal suffix of a file name, dot included, or `None` when it has none.
+///
+/// Spelled out rather than delegated to [`Path::extension`], because the two rules are not
+/// the same one and the differences are exactly the names a catalog filter meets: a
+/// leading-dot name (`.gitignore`) has no suffix, a trailing dot (`notes.`) leaves nothing
+/// after it, and a compound tail keeps only its last part (`archive.tar.gz` is `.gz`).
+/// `Path::extension` agrees on those today and returns the suffix *without* its dot, so
+/// depending on it would make an exactness claim rest on a coincidence of two libraries
+/// and a shed dot. This is the consuming contract's own rule, transcribed.
+fn terminal_suffix(name: &str) -> Option<&str> {
+    let dot = name.rfind('.')?;
+    // A dot at the start marks a hidden name rather than a suffix, and a dot at the end
+    // introduces an empty one. Both are "no terminal suffix".
+    if dot == 0 || dot + 1 == name.len() { None } else { Some(&name[dot..]) }
 }
 
 /// Mix one field's bytes into a shape accumulator, FNV-1a.
@@ -541,5 +703,179 @@ mod tests {
         assert!(ModifiedWindow::default().is_unbounded());
         assert!(ModifiedWindow::default().contains(i64::MIN));
         assert!(ModifiedWindow::default().contains(i64::MAX));
+    }
+
+    /// The terminal-suffix rule, spelled out case by case.
+    ///
+    /// These are the names that separate the rule from the several plausible rules next to
+    /// it: the *last* suffix rather than every suffix, a dotted hidden name rather than a
+    /// suffix, and a trailing dot rather than an empty one that matches.
+    #[test]
+    fn the_terminal_suffix_is_the_last_one_and_only_when_there_is_one() {
+        assert_eq!(terminal_suffix("notes.txt"), Some(".txt"));
+        assert_eq!(terminal_suffix("archive.tar.gz"), Some(".gz"));
+        assert_eq!(terminal_suffix("NOTES.TXT"), Some(".TXT"));
+        assert_eq!(terminal_suffix("..foo"), Some(".foo"));
+        assert_eq!(terminal_suffix("Makefile"), None);
+        assert_eq!(terminal_suffix(".gitignore"), None);
+        assert_eq!(terminal_suffix("notes."), None);
+        assert_eq!(terminal_suffix("..."), None);
+        assert_eq!(terminal_suffix(""), None);
+    }
+
+    #[test]
+    fn a_terminal_extension_admits_by_last_suffix_case_folded() {
+        let mut selection = Selection::default();
+        selection.admit_terminal_extension(".txt").expect("dotted lowercase suffix");
+        assert!(admits(&selection, "notes.txt", EntryKind::File, 1, 0));
+        assert!(
+            admits(&selection, "a/NOTES.TXT", EntryKind::File, 1, 0),
+            "the name's own suffix is lowered before comparison"
+        );
+        assert!(
+            !admits(&selection, "archive.txt.gz", EntryKind::File, 1, 0),
+            "the terminal is the last suffix, so a compound tail is judged by its end"
+        );
+        assert!(!admits(&selection, "Makefile", EntryKind::File, 1, 0));
+        assert!(
+            !admits(&selection, ".txt", EntryKind::File, 1, 0),
+            "a leading dot names a hidden file rather than a bare suffix"
+        );
+        assert!(
+            !admits(&selection, "src", EntryKind::Dir, 0, 0),
+            "a directory has no terminal suffix to admit either"
+        );
+
+        // Any-of, like every other repeatable axis.
+        selection.admit_terminal_extension(".rs").expect("dotted lowercase suffix");
+        assert!(admits(&selection, "src/main.rs", EntryKind::File, 1, 0));
+        assert!(admits(&selection, "notes.txt", EntryKind::File, 1, 0));
+    }
+
+    #[test]
+    fn an_ancestor_name_admits_by_whole_component_at_any_depth() {
+        let mut selection = Selection::default();
+        selection.admit_ancestor_name("src").expect("one component");
+        assert!(admits(&selection, "src/main.rs", EntryKind::File, 1, 0));
+        assert!(admits(&selection, "crates/a/src/lib.rs", EntryKind::File, 1, 0));
+        assert!(
+            !admits(&selection, "src", EntryKind::Dir, 0, 0),
+            "the entry's own name is never one of its ancestors"
+        );
+        assert!(
+            !admits(&selection, "srcs/main.rs", EntryKind::File, 1, 0),
+            "whole components, so a longer name is not a match"
+        );
+        assert!(
+            !admits(&selection, "SRC/main.rs", EntryKind::File, 1, 0),
+            "components are compared case-sensitively"
+        );
+        assert!(!admits(&selection, "main.rs", EntryKind::File, 1, 0));
+
+        selection.admit_ancestor_name("tests").expect("one component");
+        assert!(admits(&selection, "tests/a.rs", EntryKind::File, 1, 0));
+        assert!(admits(&selection, "src/main.rs", EntryKind::File, 1, 0));
+    }
+
+    /// Every rejected form is one that would otherwise match nothing in silence.
+    #[test]
+    fn a_predicate_value_that_could_never_match_is_refused_when_it_is_written() {
+        let mut selection = Selection::default();
+        for (value, expected) in [
+            ("rs", "dotted"),
+            (".", "after the dot"),
+            (".tar.gz", "terminal suffix alone"),
+            (".RS", "lowercase"),
+        ] {
+            let error = selection
+                .admit_terminal_extension(value)
+                .expect_err("a value that can never match is refused");
+            let message = error.to_string();
+            assert!(
+                message.contains(expected),
+                "{value:?} should be refused with a hint mentioning {expected:?}, got {message}"
+            );
+        }
+        assert!(selection.terminal_extensions.is_empty(), "a refused value is not half-admitted");
+
+        for value in ["", ".", "..", "src/lib"] {
+            selection
+                .admit_ancestor_name(value)
+                .expect_err("only one exact directory name is a component");
+        }
+        assert!(selection.ancestor_names.is_empty());
+    }
+
+    /// Both axes are decidable from a path and a name, so the live watcher's filter and the
+    /// index's own answer have to be the same function.
+    #[test]
+    fn the_new_axes_are_path_shaped_and_narrow_the_fast_tier() {
+        let mut terminal = Selection::default();
+        terminal.admit_terminal_extension(".rs").expect("suffix");
+        assert!(!terminal.is_unfiltered(), "a roll-up read would ignore this filter entirely");
+        assert!(terminal.admits_by_path(Path::new("src/main.rs"), "main.rs"));
+        assert!(!terminal.admits_by_path(Path::new("src/main.txt"), "main.txt"));
+
+        let mut ancestry = Selection::default();
+        ancestry.admit_ancestor_name("src").expect("component");
+        assert!(!ancestry.is_unfiltered());
+        assert!(ancestry.admits_by_path(Path::new("src/main.rs"), "main.rs"));
+        assert!(!ancestry.admits_by_path(Path::new("docs/main.rs"), "main.rs"));
+    }
+
+    /// A page continuation is only valid against the question it was issued for, so both
+    /// axes have to move the shape -- including the difference between them.
+    #[test]
+    fn each_predicate_changes_the_selection_shape() {
+        let plain = Selection::default().shape();
+
+        let mut terminal = Selection::default();
+        terminal.admit_terminal_extension(".rs").expect("suffix");
+        assert_ne!(terminal.shape(), plain);
+
+        let mut ancestry = Selection::default();
+        ancestry.admit_ancestor_name(".rs").expect("component");
+        assert_ne!(ancestry.shape(), plain);
+        assert_ne!(
+            ancestry.shape(),
+            terminal.shape(),
+            "the two axes are separate questions even when spelled identically"
+        );
+
+        // Order is not part of the question: the same set has to resume the same page.
+        let mut one = Selection::default();
+        one.admit_terminal_extension(".rs").expect("suffix");
+        one.admit_terminal_extension(".txt").expect("suffix");
+        let mut other = Selection::default();
+        other.admit_terminal_extension(".txt").expect("suffix");
+        other.admit_terminal_extension(".rs").expect("suffix");
+        assert_eq!(one.shape(), other.shape());
+
+        // But a *different* set is a different question, and adjacent sets must not
+        // collide -- including two that concatenate to the same bytes.
+        let mut third = Selection::default();
+        third.admit_terminal_extension(".rst").expect("suffix");
+        assert_ne!(third.shape(), terminal.shape());
+        let mut split = Selection::default();
+        split.admit_terminal_extension(".rs").expect("suffix");
+        split.admit_terminal_extension(".t").expect("suffix");
+        assert_ne!(
+            split.shape(),
+            third.shape(),
+            "each value is delimited, so `.rs` + `.t` is not `.rst`"
+        );
+
+        // Ancestor names are arbitrary components rather than dotted suffixes, so nothing
+        // about their spelling separates one from two. The delimiter is the whole of it.
+        let mut joined = Selection::default();
+        joined.admit_ancestor_name("ab").expect("component");
+        let mut apart = Selection::default();
+        apart.admit_ancestor_name("a").expect("component");
+        apart.admit_ancestor_name("b").expect("component");
+        assert_ne!(
+            joined.shape(),
+            apart.shape(),
+            "`ab` and `a` + `b` are different questions and must not share a shape"
+        );
     }
 }

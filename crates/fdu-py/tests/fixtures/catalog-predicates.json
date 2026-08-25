@@ -1,0 +1,500 @@
+{
+  "about": [
+    "Expected catalog-predicate behaviour for the consumer contract this repository's",
+    "reference provider adapts to. Nothing here was transcribed: `admits` comes from",
+    "executing the consumer's own `_catalog_entry_matches`, and `refused` from constructing",
+    "its own `CatalogQuery`, which validates its predicates. Regenerate with",
+    "`generate_catalog_predicates.py` beside this file.",
+    "",
+    "The predicate, in five clauses: an entry must be a file; it must be unignored unless",
+    "include_ignored; its size in bytes must be strictly below size_less_than; its terminal",
+    "suffix -- the last one, lowered -- must appear in terminal_extensions; and one of its",
+    "ancestor components must appear in ancestor_names, matched exactly and",
+    "case-sensitively. An empty list does not constrain.",
+    "",
+    "`refusals` are values both engines refuse where they are written rather than answering",
+    "with an empty page, because each could only ever match nothing. `asymmetries` are the",
+    "values they judge differently: fdu's rule for an ancestor name is one whole path",
+    "component, so it refuses `.` and `..`, which the contract accepts and its own matcher",
+    "then admits nothing for -- recorded in `consumer_admits`, so the claim that nothing is",
+    "lost is checked rather than asserted. The reverse asymmetry is not listed because it",
+    "is platform-dependent: a backslash is a legal directory name on unix and fdu accepts",
+    "one there, while the contract refuses it everywhere.",
+    "",
+    "`admits` is sorted, because the contract's predicate says which entries match and",
+    "nothing about their order. fdu answers in the tree's own path key, where a directory's",
+    "children come before a later sibling file, so the two orders differ while the sets do",
+    "not. Ordering and paging are pinned where they are the subject; here they are not.",
+    "",
+    "`consumer_source` is the matcher as it stood at `consumer.revision`, kept so a reader",
+    "can see what these answers came from. It is a record rather than an input: nothing",
+    "reads it back, and the way to trust it is to regenerate."
+  ],
+  "consumer": {
+    "revision": "0577bb125c4a607719befa3f213362f5522d5724"
+  },
+  "corpus": [
+    {
+      "path": ".gitignore",
+      "type": "file",
+      "content": "*.log\n",
+      "gitignored": false
+    },
+    {
+      "path": "Makefile",
+      "type": "file",
+      "content": "all:\n",
+      "gitignored": false
+    },
+    {
+      "path": "notes.txt",
+      "type": "file",
+      "content": "plain",
+      "gitignored": false
+    },
+    {
+      "path": "link.rs",
+      "type": "symlink",
+      "content": "",
+      "gitignored": false
+    },
+    {
+      "path": "docs",
+      "type": "dir",
+      "content": "",
+      "gitignored": false
+    },
+    {
+      "path": "docs/guide.rs",
+      "type": "file",
+      "content": "fn guide() {}",
+      "gitignored": false
+    },
+    {
+      "path": "docs/readme.md",
+      "type": "file",
+      "content": "hi",
+      "gitignored": false
+    },
+    {
+      "path": "src",
+      "type": "dir",
+      "content": "",
+      "gitignored": false
+    },
+    {
+      "path": "src/NOTES.TXT",
+      "type": "file",
+      "content": "loud!!",
+      "gitignored": false
+    },
+    {
+      "path": "src/archive.tar.gz",
+      "type": "file",
+      "content": "tarball",
+      "gitignored": false
+    },
+    {
+      "path": "src/build.log",
+      "type": "file",
+      "content": "noisy...",
+      "gitignored": true
+    },
+    {
+      "path": "src/main.rs",
+      "type": "file",
+      "content": "fn main() {}",
+      "gitignored": false
+    },
+    {
+      "path": "src/nested",
+      "type": "dir",
+      "content": "",
+      "gitignored": false
+    },
+    {
+      "path": "src/nested/deep.rs",
+      "type": "file",
+      "content": "fn deep() {}",
+      "gitignored": false
+    },
+    {
+      "path": "tests",
+      "type": "dir",
+      "content": "",
+      "gitignored": false
+    },
+    {
+      "path": "tests/case.rs",
+      "type": "file",
+      "content": "x",
+      "gitignored": false
+    }
+  ],
+  "consumer_source": [
+    "def _catalog_entry_matches(entry: FsEntry, query: CatalogQuery) -> bool:",
+    "    \"\"\"Apply catalog predicates before records cross the provider boundary.\"\"\"",
+    "",
+    "    if entry.type != \"file\" or (entry.gitignored and not query.include_ignored):",
+    "        return False",
+    "    if query.size_less_than is not None and entry.size >= query.size_less_than:",
+    "        return False",
+    "    if query.terminal_extensions:",
+    "        terminal = PurePosixPath(entry.name).suffix.lower()",
+    "        if terminal not in query.terminal_extensions:",
+    "            return False",
+    "    if query.ancestor_names:",
+    "        parts = PurePosixPath(entry.path).parts[:-1]",
+    "        if not any(name in parts for name in query.ancestor_names):",
+    "            return False",
+    "    return True"
+  ],
+  "cases": [
+    {
+      "name": "everything-a-file",
+      "query": {
+        "include_ignored": true,
+        "terminal_extensions": [],
+        "ancestor_names": [],
+        "size_less_than": null
+      },
+      "admits": [
+        ".gitignore",
+        "Makefile",
+        "docs/guide.rs",
+        "docs/readme.md",
+        "notes.txt",
+        "src/NOTES.TXT",
+        "src/archive.tar.gz",
+        "src/build.log",
+        "src/main.rs",
+        "src/nested/deep.rs",
+        "tests/case.rs"
+      ]
+    },
+    {
+      "name": "ignored-entries-excluded",
+      "query": {
+        "include_ignored": false,
+        "terminal_extensions": [],
+        "ancestor_names": [],
+        "size_less_than": null
+      },
+      "admits": [
+        ".gitignore",
+        "Makefile",
+        "docs/guide.rs",
+        "docs/readme.md",
+        "notes.txt",
+        "src/NOTES.TXT",
+        "src/archive.tar.gz",
+        "src/main.rs",
+        "src/nested/deep.rs",
+        "tests/case.rs"
+      ]
+    },
+    {
+      "name": "terminal-rs",
+      "query": {
+        "include_ignored": true,
+        "terminal_extensions": [
+          ".rs"
+        ],
+        "ancestor_names": [],
+        "size_less_than": null
+      },
+      "admits": [
+        "docs/guide.rs",
+        "src/main.rs",
+        "src/nested/deep.rs",
+        "tests/case.rs"
+      ]
+    },
+    {
+      "name": "terminal-txt-case-folded",
+      "query": {
+        "include_ignored": true,
+        "terminal_extensions": [
+          ".txt"
+        ],
+        "ancestor_names": [],
+        "size_less_than": null
+      },
+      "admits": [
+        "notes.txt",
+        "src/NOTES.TXT"
+      ]
+    },
+    {
+      "name": "terminal-is-the-last-suffix",
+      "query": {
+        "include_ignored": true,
+        "terminal_extensions": [
+          ".gz"
+        ],
+        "ancestor_names": [],
+        "size_less_than": null
+      },
+      "admits": [
+        "src/archive.tar.gz"
+      ]
+    },
+    {
+      "name": "terminal-any-of",
+      "query": {
+        "include_ignored": true,
+        "terminal_extensions": [
+          ".md",
+          ".rs"
+        ],
+        "ancestor_names": [],
+        "size_less_than": null
+      },
+      "admits": [
+        "docs/guide.rs",
+        "docs/readme.md",
+        "src/main.rs",
+        "src/nested/deep.rs",
+        "tests/case.rs"
+      ]
+    },
+    {
+      "name": "ancestor-src",
+      "query": {
+        "include_ignored": true,
+        "terminal_extensions": [],
+        "ancestor_names": [
+          "src"
+        ],
+        "size_less_than": null
+      },
+      "admits": [
+        "src/NOTES.TXT",
+        "src/archive.tar.gz",
+        "src/build.log",
+        "src/main.rs",
+        "src/nested/deep.rs"
+      ]
+    },
+    {
+      "name": "ancestor-at-depth",
+      "query": {
+        "include_ignored": true,
+        "terminal_extensions": [],
+        "ancestor_names": [
+          "nested"
+        ],
+        "size_less_than": null
+      },
+      "admits": [
+        "src/nested/deep.rs"
+      ]
+    },
+    {
+      "name": "ancestor-any-of",
+      "query": {
+        "include_ignored": true,
+        "terminal_extensions": [],
+        "ancestor_names": [
+          "src",
+          "tests"
+        ],
+        "size_less_than": null
+      },
+      "admits": [
+        "src/NOTES.TXT",
+        "src/archive.tar.gz",
+        "src/build.log",
+        "src/main.rs",
+        "src/nested/deep.rs",
+        "tests/case.rs"
+      ]
+    },
+    {
+      "name": "ancestor-is-case-sensitive",
+      "query": {
+        "include_ignored": true,
+        "terminal_extensions": [],
+        "ancestor_names": [
+          "SRC"
+        ],
+        "size_less_than": null
+      },
+      "admits": []
+    },
+    {
+      "name": "both-predicates",
+      "query": {
+        "include_ignored": true,
+        "terminal_extensions": [
+          ".rs"
+        ],
+        "ancestor_names": [
+          "src"
+        ],
+        "size_less_than": null
+      },
+      "admits": [
+        "src/main.rs",
+        "src/nested/deep.rs"
+      ]
+    },
+    {
+      "name": "size-strictly-below",
+      "query": {
+        "include_ignored": true,
+        "terminal_extensions": [],
+        "ancestor_names": [],
+        "size_less_than": 6
+      },
+      "admits": [
+        "Makefile",
+        "docs/readme.md",
+        "notes.txt",
+        "tests/case.rs"
+      ]
+    },
+    {
+      "name": "size-of-one-admits-nothing-smaller",
+      "query": {
+        "include_ignored": true,
+        "terminal_extensions": [],
+        "ancestor_names": [],
+        "size_less_than": 1
+      },
+      "admits": []
+    },
+    {
+      "name": "every-predicate-at-once",
+      "query": {
+        "include_ignored": false,
+        "terminal_extensions": [
+          ".rs",
+          ".txt"
+        ],
+        "ancestor_names": [
+          "src",
+          "docs"
+        ],
+        "size_less_than": 13
+      },
+      "admits": [
+        "src/NOTES.TXT",
+        "src/main.rs",
+        "src/nested/deep.rs"
+      ]
+    }
+  ],
+  "refusals": [
+    {
+      "name": "terminal-without-its-dot",
+      "query": {
+        "include_ignored": true,
+        "terminal_extensions": [
+          "rs"
+        ],
+        "ancestor_names": [],
+        "size_less_than": null
+      },
+      "refused": "terminal_extensions entries must start with a dot"
+    },
+    {
+      "name": "terminal-uppercase",
+      "query": {
+        "include_ignored": true,
+        "terminal_extensions": [
+          ".RS"
+        ],
+        "ancestor_names": [],
+        "size_less_than": null
+      },
+      "refused": "terminal_extensions entries must be lowercase"
+    },
+    {
+      "name": "terminal-compound-tail",
+      "query": {
+        "include_ignored": true,
+        "terminal_extensions": [
+          ".tar.gz"
+        ],
+        "ancestor_names": [],
+        "size_less_than": null
+      },
+      "refused": "terminal_extensions entries must be canonical terminal suffixes"
+    },
+    {
+      "name": "terminal-bare-dot",
+      "query": {
+        "include_ignored": true,
+        "terminal_extensions": [
+          "."
+        ],
+        "ancestor_names": [],
+        "size_less_than": null
+      },
+      "refused": "terminal_extensions entries must be canonical terminal suffixes"
+    },
+    {
+      "name": "ancestor-empty",
+      "query": {
+        "include_ignored": true,
+        "terminal_extensions": [],
+        "ancestor_names": [
+          ""
+        ],
+        "size_less_than": null
+      },
+      "refused": "ancestor_names entries must be exact path-component names"
+    },
+    {
+      "name": "ancestor-with-a-separator",
+      "query": {
+        "include_ignored": true,
+        "terminal_extensions": [],
+        "ancestor_names": [
+          "src/lib"
+        ],
+        "size_less_than": null
+      },
+      "refused": "ancestor_names entries must be exact path-component names"
+    },
+    {
+      "name": "size-not-positive",
+      "query": {
+        "include_ignored": true,
+        "terminal_extensions": [],
+        "ancestor_names": [],
+        "size_less_than": 0
+      },
+      "refused": "size_less_than must be positive"
+    }
+  ],
+  "asymmetries": [
+    {
+      "name": "ancestor-current-directory",
+      "query": {
+        "include_ignored": true,
+        "terminal_extensions": [],
+        "ancestor_names": [
+          "."
+        ],
+        "size_less_than": null
+      },
+      "fdu_refuses": true,
+      "consumer_admits": []
+    },
+    {
+      "name": "ancestor-parent-directory",
+      "query": {
+        "include_ignored": true,
+        "terminal_extensions": [],
+        "ancestor_names": [
+          ".."
+        ],
+        "size_less_than": null
+      },
+      "fdu_refuses": true,
+      "consumer_admits": []
+    }
+  ]
+}

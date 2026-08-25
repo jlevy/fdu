@@ -446,6 +446,26 @@ pub struct Cli {
     #[arg(long, value_name = "LIST", help_heading = "SELECTION")]
     pub kind: Option<String>,
 
+    /// Report only files whose terminal suffix is this; repeatable, and any one matches.
+    ///
+    /// The terminal suffix, not every suffix: `archive.tar.gz` is `.gz`. Write it dotted
+    /// and lowercase -- `.rs`, not `rs` or `.RS` -- and the name's own suffix is lowered
+    /// before comparison, so `NOTES.TXT` matches `--terminal-ext .txt`. A name with no
+    /// suffix, `Makefile` or `.gitignore` among them, matches no value of this flag.
+    ///
+    /// Not a --include glob, because the two rules are different ones: globs match
+    /// case-sensitively and on the whole path, and neither is what a catalog of file types
+    /// is asking.
+    #[arg(long = "terminal-ext", value_name = "SUFFIX", help_heading = "SELECTION")]
+    pub terminal_ext: Vec<String>,
+
+    /// Report only entries with an ancestor directory of this name; repeatable, any-of.
+    ///
+    /// Exact whole components, case-sensitively, at any depth: `--ancestor-name src`
+    /// admits `src/main.rs` and `crates/a/src/lib.rs` and not a file named `src`.
+    #[arg(long = "ancestor-name", value_name = "NAME", help_heading = "SELECTION")]
+    pub ancestor_name: Vec<String>,
+
     /// Report only entries carrying this tag; repeatable, and any one of them matches.
     ///
     /// Any-of rather than all-of, matching --include: a second --tag widens the report,
@@ -1246,6 +1266,19 @@ impl Cli {
         if let Some(kinds) = &self.kind {
             selection.kinds = parse_list(kinds, "--kind", parse_kind)?;
         }
+        // Validated by the engine rather than here: the rules that make a suffix or a name
+        // matchable belong to the predicate, and a command line that restated them would
+        // be a second copy to keep in step.
+        for value in &self.terminal_ext {
+            selection
+                .admit_terminal_extension(value.clone())
+                .map_err(|error| usage(&anyhow::anyhow!("{error}")))?;
+        }
+        for value in &self.ancestor_name {
+            selection
+                .admit_ancestor_name(value.clone())
+                .map_err(|error| usage(&anyhow::anyhow!("{error}")))?;
+        }
         // Resolved against the enabled set, not the catalogue: a mask only means anything
         // alongside the rules that issued it, and naming a rule that is off is a mistake
         // worth reporting rather than a filter that quietly admits everything.
@@ -1973,6 +2006,8 @@ mod tests {
     fn cli() -> Cli {
         Cli {
             path: Some(PathBuf::from(".")),
+            terminal_ext: Vec::new(),
+            ancestor_name: Vec::new(),
             scan_depth: None,
             max_files: None,
             one_filesystem: false,
@@ -2172,6 +2207,36 @@ mod tests {
         assert_eq!(parsed.selection.sort, Some(SortKey::Mtime));
         assert_eq!(parsed.selection.size, SizeMetric::Apparent);
         assert!(parsed.selection.reverse);
+    }
+
+    /// The catalog predicates reach the library, and a value that cannot match is refused.
+    ///
+    /// The refusals matter more than the translation here: the rules that make a suffix or
+    /// a name matchable live in the engine, so the only thing this side can get wrong is
+    /// failing to consult them -- which looks exactly like success until an empty report
+    /// arrives.
+    #[test]
+    fn the_catalog_predicates_translate_and_refuse_where_the_library_does() {
+        let parsed = Cli {
+            terminal_ext: vec![".rs".to_string(), ".txt".to_string()],
+            ancestor_name: vec!["src".to_string()],
+            ..cli()
+        }
+        .resolved_query()
+        .expect("parses");
+        assert_eq!(parsed.selection.terminal_extensions, vec![".rs", ".txt"]);
+        assert_eq!(parsed.selection.ancestor_names, vec![OsString::from("src")]);
+
+        for value in ["rs", ".RS", ".tar.gz", "."] {
+            Cli { terminal_ext: vec![value.to_string()], ..cli() }
+                .resolved_query()
+                .expect_err(value);
+        }
+        for value in ["", "src/lib", "."] {
+            Cli { ancestor_name: vec![value.to_string()], ..cli() }
+                .resolved_query()
+                .expect_err(value);
+        }
     }
 
     /// Every flag the guide names must exist.

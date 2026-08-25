@@ -106,6 +106,67 @@ fn the_run_selection_filters_the_stream() {
     }
 }
 
+/// A catalog predicate has to hold on the half of the stream that carries no entry.
+///
+/// An upsert brings attributes, so it is judged by the whole selection; a removal brings a
+/// path and nothing else, so it is judged by the path-shaped part alone. That second list
+/// is where an axis goes missing -- it was written out by hand, and a new axis has no
+/// reason to visit it. Removal is therefore the case worth watching, and the case a
+/// pattern-only filter still passes.
+#[test]
+fn a_catalog_predicate_filters_removals_and_not_only_arrivals() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::create_dir_all(dir.path().join("src")).expect("mkdir");
+    fs::create_dir_all(dir.path().join("docs")).expect("mkdir");
+    for (path, body) in [
+        ("src/kept.RS", &b"fn main() {}"[..]),
+        ("src/wrong-suffix.txt", b"no"),
+        ("docs/wrong-ancestor.rs", b"no"),
+        ("src/last.rs", b"sentinel"),
+    ] {
+        fs::write(dir.path().join(path), body).expect("seed");
+    }
+
+    let mut selection = Selection::default();
+    selection.admit_terminal_extension(".rs").expect("suffix");
+    selection.admit_ancestor_name("src").expect("component");
+    let mut session = session(dir.path(), selection, vec![ViewSpec::Files]);
+
+    // The sentinel goes last, so the excluded removals have already been reported by the
+    // backend by the time it arrives: seeing it means the others were seen and dropped
+    // rather than not yet delivered.
+    for path in ["src/wrong-suffix.txt", "docs/wrong-ancestor.rs", "src/kept.RS", "src/last.rs"] {
+        fs::remove_file(dir.path().join(path)).expect("remove");
+    }
+
+    let mut seen: Vec<std::path::PathBuf> = Vec::new();
+    let deadline = Instant::now() + SETTLE;
+    while Instant::now() < deadline && !seen.iter().any(|path| path.ends_with("last.rs")) {
+        if let Some(batch) = session.next_batch(Duration::from_millis(250)).expect("batch") {
+            seen.extend(batch.changes.iter().map(|change| change.path.clone()));
+        }
+    }
+    settle(&mut session);
+    seen.dedup();
+
+    assert!(
+        seen.iter().any(|path| path.ends_with("last.rs")),
+        "the sentinel removal never arrived, so nothing below is evidence: {seen:?}"
+    );
+    assert!(
+        seen.iter().any(|path| path.ends_with("kept.RS")),
+        "an admitted removal must reach the stream, case-folded like any other name: {seen:?}"
+    );
+    assert!(
+        !seen.iter().any(|path| path.ends_with("wrong-suffix.txt")),
+        "the terminal-suffix predicate must filter removals too: {seen:?}"
+    );
+    assert!(
+        !seen.iter().any(|path| path.ends_with("wrong-ancestor.rs")),
+        "the ancestor predicate must filter removals too: {seen:?}"
+    );
+}
+
 #[test]
 fn an_idle_tree_yields_nothing_and_costs_nothing() {
     // The efficiency contract: detection is event-driven, so an unchanging tree produces

@@ -1396,7 +1396,12 @@ def check_bounded_pages_assemble_into_one_complete_answer() -> None:
         assembled: list[Path] = []
         cursor: str | None = None
         while True:
-            catalog = example.catalog_page(index, limit=4, after=cursor, pin=pin)
+            # `include_ignored` because this index promotes no rule, and the default is
+            # the consumer contract's: a catalog hides what git ignores unless asked. The
+            # subject here is the assembly rather than the predicates.
+            catalog = example.catalog_page(
+                index, limit=4, after=cursor, pin=pin, include_ignored=True
+            )
             assembled.extend(row.path for row in catalog.rows)
             assert catalog.remaining == catalog.total - len(assembled), catalog
             if catalog.next is None:
@@ -1417,6 +1422,132 @@ def check_bounded_pages_assemble_into_one_complete_answer() -> None:
                 assert "continuation" in str(error), error
             else:  # pragma: no cover - the guard above is the point
                 raise AssertionError(f"{invented!r} is not a token this engine issued")
+
+
+def check_the_catalog_predicates_answer_what_the_consumer_contract_answers() -> None:
+    """fdu's catalog predicates and the consuming contract's are one predicate.
+
+    Not a claim about the recipe -- a claim about the answers, against a corpus and a set of
+    queries the *other* engine was run over. `catalog-predicates.json` carries what its own
+    `CatalogQuery` refuses and what its own matcher admits; this replays every case through
+    fdu and compares the sets. A test that compared fdu to a re-typed reading of those rules
+    would have accepted the first draft of the terminal rule, which used `Path::extension`
+    and agrees with the contract on this corpus by coincidence rather than by construction.
+
+    The five clauses are translated rather than reimplemented, and the two that are not
+    obvious are the ones this pins hardest. `size_less_than` is exclusive and by *bytes*,
+    where this surface bounds inclusively and counts allocated blocks by default -- a
+    mistranslation that would be wrong by a block size on every small file. And
+    `include_ignored=False` is the promoted rule's plane, which is a roll-up read rather
+    than a second walk.
+    """
+
+    example = _load_example("browser_provider.py")
+    fixture = json.loads(
+        (Path(__file__).resolve().parent / "fixtures" / "catalog-predicates.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    root = Path(tempfile.mkdtemp(prefix="fdu-catalog-"))
+    for row in fixture["corpus"]:
+        target = root / row["path"]
+        if row["type"] == "dir":
+            target.mkdir(parents=True, exist_ok=True)
+        elif row["type"] == "symlink":
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.symlink_to(root / "notes.txt")
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(row["content"], encoding="utf-8")
+
+    # Opened for the corpus rather than through `open_tree`: the provider view prunes hidden
+    # paths, and `.gitignore` is one. The predicates under test are the same either way, and
+    # this way the fixture's own entries all exist to be judged.
+    index = fdu.open(
+        root,
+        scan=fdu.ScanOptions(hidden="keep", tag_rules=("gitignore",), promote=("gitignore",)),
+    )
+
+    def assembled(case_query: dict[str, Any]) -> list[str]:
+        """Every match, paged, so the predicates are pinned across a continuation too."""
+
+        pin = index.cursor()
+        rows: list[str] = []
+        cursor: str | None = None
+        while True:
+            page = example.catalog_page(
+                index,
+                limit=3,
+                after=cursor,
+                pin=pin,
+                terminal_extensions=case_query["terminal_extensions"],
+                ancestor_names=case_query["ancestor_names"],
+                size_less_than=case_query["size_less_than"],
+                include_ignored=case_query["include_ignored"],
+            )
+            rows.extend(row.path.as_posix() for row in page.rows)
+            assert page.remaining == page.total - len(rows), page
+            if page.next is None:
+                break
+            cursor = page.next
+        # Sorted, because the contract's predicate says which entries match and nothing
+        # about their order; fdu answers in the tree's own path key. That ordering, and the
+        # fact that these pages assemble without gaps or repeats, are pinned where they are
+        # the subject -- here the subject is which entries the predicate admits.
+        return sorted(rows)
+
+    for case in fixture["cases"]:
+        assert assembled(case["query"]) == case["admits"], case["name"]
+
+    # A value that could only match nothing is refused where it is written, by both engines.
+    # The contract's own message is recorded beside each; the wording is its own, so what is
+    # compared is that fdu refuses at all.
+    for case in fixture["refusals"]:
+        try:
+            assembled(case["query"])
+        except ValueError:
+            continue
+        raise AssertionError(f"{case['name']} must be refused rather than answered")
+
+    # Where the two rules differ, they differ only in what they refuse. fdu's ancestor name
+    # is one whole path component, so `.` and `..` are not names; the contract accepts them
+    # and admits nothing for them, which the fixture recorded from its own matcher.
+    for case in fixture["asymmetries"]:
+        assert case["consumer_admits"] == [], (
+            f"{case['name']} is only harmless while the other engine admits nothing for it"
+        )
+        try:
+            assembled(case["query"])
+        except ValueError:
+            continue
+        raise AssertionError(f"{case['name']} is not one path component")
+
+    # The reverse asymmetry, on the platforms where it exists: a backslash is a legal
+    # directory name on unix, so fdu takes it as one name and finds no such directory, while
+    # the contract refuses it everywhere. Nothing is lost either way.
+    if os.name == "posix":
+        assert (
+            assembled(
+                {
+                    "terminal_extensions": [],
+                    "ancestor_names": ["src\\lib"],
+                    "size_less_than": None,
+                    "include_ignored": True,
+                }
+            )
+            == []
+        )
+
+    # And the translation is the *engine's* answer rather than a filter over rows: a page
+    # bound of one still walks the whole selection to establish its denominator, and the
+    # denominator counts matches.
+    single = example.catalog_page(
+        index, limit=1, terminal_extensions=[".rs"], ancestor_names=["src"], include_ignored=True
+    )
+    assert len(single.rows) == 1 and single.total == 2, single
+
+    fdu.clear_cache(root)
 
 
 def _bundled_report(bundle: fdu.Bundle) -> fdu.Report:
@@ -2609,6 +2740,7 @@ def main() -> None:
     check_a_promoted_plane_serves_a_dual_value_listing_from_one_call()
     check_pruned_hidden_paths_are_absent_rather_than_filtered()
     check_the_browser_provider_example_holds_the_contract_it_documents()
+    check_the_catalog_predicates_answer_what_the_consumer_contract_answers()
     check_a_bundle_answers_a_query_at_the_same_instant_as_its_rows()
     check_empty_is_decidable_from_the_aggregate()
     check_the_envelope_is_typed_and_its_facts_are_independent()

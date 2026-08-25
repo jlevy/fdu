@@ -208,6 +208,8 @@ class Args:
         self.modified_since: str | None = None
         self.modified_before: str | None = None
         self.kinds: list[fdu.EntryKind] = []
+        self.terminal_extensions: list[str] = []
+        self.ancestor_names: list[str] = []
         self.depth: fdu.Bound | int | None = None
         self.limit: fdu.Bound | int | None = None
         self.sort: fdu.SortKey | None = None
@@ -301,6 +303,10 @@ def parse_args(argv: list[str]) -> Args:
             args.modified_before = take()
         elif flag == "--kind":
             args.kinds = [fdu.EntryKind(k.strip()) for k in take().split(",") if k.strip()]
+        elif flag == "--terminal-ext":
+            args.terminal_extensions.append(take())
+        elif flag == "--ancestor-name":
+            args.ancestor_names.append(take())
         elif flag in ("--depth", "-d"):
             args.depth = parse_bound(take())
         elif flag in ("--limit", "-n"):
@@ -371,6 +377,8 @@ def build_query(args: Args) -> fdu.Query:
         modified_since=args.modified_since,
         modified_before=args.modified_before,
         kinds=tuple(args.kinds),
+        terminal_extensions=tuple(args.terminal_extensions),
+        ancestor_names=tuple(args.ancestor_names),
         tags=tuple(args.tags),
         not_tags=tuple(args.not_tags),
         plane=args.plane,

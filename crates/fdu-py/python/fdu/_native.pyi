@@ -59,6 +59,8 @@ class Index:
         modified_since: str | None = None,
         modified_before: str | None = None,
         kind: str | None = None,
+        terminal_extensions: list[str] | None = None,
+        ancestor_names: list[str] | None = None,
         tags: list[str] | None = None,
         not_tags: list[str] | None = None,
         plane: str | None = None,

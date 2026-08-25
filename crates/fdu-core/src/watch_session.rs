@@ -723,13 +723,12 @@ impl Session {
     }
 
     /// Whether the path-shaped parts of the selection admit a path.
+    ///
+    /// Delegated rather than restated. This used to name `include` and `exclude` itself,
+    /// which was true of the selection as it stood and became false the moment another
+    /// path-shaped axis was added -- a change with no reason to look here at all.
     fn admits_by_path(&self, path: &std::path::Path, name: &str) -> bool {
-        let selection = self.selection();
-        if selection.exclude.iter().any(|pattern| pattern.matches(path, name)) {
-            return false;
-        }
-        selection.include.is_empty()
-            || selection.include.iter().any(|pattern| pattern.matches(path, name))
+        self.selection().admits_by_path(path, name)
     }
 
     fn selection(&self) -> &Selection {

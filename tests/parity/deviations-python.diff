@@ -100,6 +100,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Every Tally Counts Only What the Selection Admits
   ✓ Min-Size Follows the Selected Metric
   ✓ Max-Size Bounds From Above, and the Two Compose a Window
+  ✓ The Terminal Suffix Is the Last One, and It Is Case-Folded
+  ✓ The Terminal Suffix Is the Last One, and It Is Case-Folded
+  ✓ An Ancestor Name Is a Whole Component at Any Depth
+  ✓ An Ancestor Name Is a Whole Component at Any Depth
   ✓ Sort and Limit Compose Into a Top-N, With No Dedicated View
   ✓ Reverse Flips Whatever Order Is in Effect
   ✓ Depth Bounds the Rendered Tree, Not the Scan
@@ -140,6 +144,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
 @@ -1,1 +1,1 @@
 -fdu: invalid --view "tree,,types": empty entry in the list
 +fdu: invalid view "tree,,types": empty entry in the list
+  ✓ A Predicate That Could Only Match Nothing Is Refused Where It Is Written
+  ✓ A Predicate That Could Only Match Nothing Is Refused Where It Is Written
+  ✓ A Predicate That Could Only Match Nothing Is Refused Where It Is Written
+  ✓ A Predicate That Could Only Match Nothing Is Refused Where It Is Written
   ✓ An Unknown Format Lists Every Valid One
   ✓ Fractional Ages Point at the Compound Spelling
   ✓ Calendar Units Point at Days

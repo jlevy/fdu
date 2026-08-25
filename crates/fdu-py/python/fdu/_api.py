@@ -165,6 +165,8 @@ def _query_kwargs(query: Query) -> dict[str, object]:
         "modified_since": _when(selection.modified_since),
         "modified_before": _when(selection.modified_before),
         "kind": [kind.value for kind in selection.kinds],
+        "terminal_extensions": list(selection.terminal_extensions),
+        "ancestor_names": list(selection.ancestor_names),
         "tags": list(selection.tags),
         "not_tags": list(selection.not_tags),
         "plane": selection.plane,

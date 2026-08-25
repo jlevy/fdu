@@ -52,7 +52,7 @@ There are no subcommands: the grammar is always “report on a path”.
 | Axis | Question | Options |
 | --- | --- | --- |
 | Scope | What is scanned and cached? | `PATH`, `--scan-depth N`, `--order`, `--threads`, `--type-rules FILE`, `--tag-rules LIST`, `--promote LIST`, `--hidden`, `--hidden-allow LIST` |
-| Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--tag`, `--not-tag`, `--plane TAG`, `--depth`, `-n/--limit`, `--sort`, `--reverse`, `--size` |
+| Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--terminal-ext`, `--ancestor-name`, `--tag`, `--not-tag`, `--plane TAG`, `--depth`, `-n/--limit`, `--sort`, `--reverse`, `--size` |
 | View | Which roll-up is reported? | `--view tree,groups,families,types,extensions,languages,documents,files,summary` |
 | Format | How is it serialized? | `--format text\|json\|jsonl\|yaml`, `--color` |
 | Mode | How is work performed? | `--cache auto\|refresh\|read-only\|only\|off`, `--analyze none\|basic\|code\|documents\|full` |

@@ -339,6 +339,24 @@ class Selection:
     modified_since: datetime | str | None = None
     modified_before: datetime | str | None = None
     kinds: tuple[EntryKind, ...] = ()
+    #: Terminal suffixes to admit, dotted and lowercase, or empty for every suffix.
+    #:
+    #: The *terminal* suffix and not every suffix: `archive.tar.gz` is `.gz`. The name's own
+    #: suffix is lowered before comparison, so `.txt` admits `NOTES.TXT`; the values here
+    #: are required to be lowercase already, because a value that is not could only ever
+    #: match nothing. A name with no suffix -- `Makefile`, or a leading-dot name like
+    #: `.gitignore` -- is admitted by no value of this field.
+    #:
+    #: Distinct from an `include` glob on purpose. Globs are case-sensitive and match whole
+    #: paths, so neither `*.txt` nor any case-folding dialect of it answers the question a
+    #: catalog of file types is asking.
+    terminal_extensions: tuple[str, ...] = ()
+    #: Directory names an entry must have among its ancestors, or empty for any.
+    #:
+    #: Exact whole components, case-sensitively, at any depth, and any-of: `("src",
+    #: "tests")` admits anything under either. Ancestors only, so a *file* named `src` is
+    #: not admitted by `("src",)`.
+    ancestor_names: tuple[str, ...] = ()
     #: Tags an entry must carry at least one of. Any-of rather than all-of, matching
     #: `include`: naming a second tag widens, and the way to narrow is `not_tags`.
     #: Every name must be enabled on the index via `tag_rules=`; a rule that is off is
@@ -380,6 +398,8 @@ class Selection:
             ("include", self.include),
             ("exclude", self.exclude),
             ("kinds", self.kinds),
+            ("terminal_extensions", self.terminal_extensions),
+            ("ancestor_names", self.ancestor_names),
             ("tags", self.tags),
             ("not_tags", self.not_tags),
         ):

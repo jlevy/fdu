@@ -425,7 +425,7 @@ fn a_continuation_belongs_to_one_question_and_is_refused_by_any_other() {
         edit(wanted.entry_page.as_mut().expect("a page was requested"));
         handle.read(&wanted)
     };
-    let cases: [(&str, Elsewhere); 4] = [
+    let cases: [(&str, Elsewhere); 6] = [
         ("a different subtree", |page| page.root = PathBuf::from("d0")),
         ("a different depth bound", |page| page.max_depth = Some(1)),
         ("a different selection", |page| {
@@ -433,6 +433,12 @@ fn a_continuation_belongs_to_one_question_and_is_refused_by_any_other() {
         }),
         ("a different size bound", |page| {
             page.selection.min_size = Some(4);
+        }),
+        ("a different terminal suffix", |page| {
+            page.selection.admit_terminal_extension(".rs").expect("suffix");
+        }),
+        ("a different ancestor name", |page| {
+            page.selection.admit_ancestor_name("d1").expect("component");
         }),
     ];
     // The request's own `plane` is not exercised here because this fixture promotes none,
@@ -455,6 +461,52 @@ fn a_continuation_belongs_to_one_question_and_is_refused_by_any_other() {
         .entry_page
         .expect("page");
     assert!(!served.rows.is_empty());
+}
+
+/// The catalog predicates page and resume like every other filter.
+///
+/// Worth its own test rather than trusting the shape check alone: these two are the first
+/// axes evaluated from a *name* rather than from an entry, so the page walk has to reach
+/// them at all, and the seek that resumes one has to reach them the same way. A predicate
+/// applied on the first page and not on a continuation is an assembly that silently grows.
+#[test]
+fn a_catalog_predicate_pages_and_resumes_like_any_other_filter() {
+    let dir = fixture();
+    // Uppercase on purpose: the terminal is case-folded, so this is a match, and it is one
+    // only if the fold happens on the real paging path rather than in the unit test.
+    std::fs::write(dir.path().join("d1").join("UPPER.RS"), b"x").expect("write");
+    let handle = opened(dir.path());
+
+    let mut selection = Selection::default();
+    selection.admit_terminal_extension(".rs").expect("suffix");
+    selection.admit_ancestor_name("d1").expect("component");
+
+    let expected = u32::try_from(PER_DIR).expect("a small fixture") + 1;
+    let matches = assemble(&handle, 2, &selection);
+    assert_eq!(
+        matches.len(),
+        expected as usize,
+        "every `.rs` under `d1` and nothing else: {matches:?}"
+    );
+    for path in &matches {
+        assert!(path.starts_with("d1"), "{path:?} has no `d1` ancestor");
+        let name = path.file_name().expect("a name").to_string_lossy();
+        let (_, terminal) = name.rsplit_once('.').expect("a suffix");
+        assert!(terminal.eq_ignore_ascii_case("rs"), "{path:?} is not a terminal `.rs`");
+    }
+
+    // Same answer at every page size, which is what makes a continuation a continuation.
+    for limit in [1, 3, expected, 100] {
+        assert_eq!(
+            assemble(&handle, limit, &selection),
+            matches,
+            "the assembly at limit {limit} differs from the assembly at 2"
+        );
+    }
+
+    let page = handle.read(&request(2, None, selection)).expect("read").entry_page.expect("page");
+    assert_eq!(page.total, u64::from(expected), "the denominator counts matches, not entries");
+    assert_eq!(page.remaining, u64::from(expected - 2));
 }
 
 /// A token is engine-issued: a tampered one is refused rather than believed.
