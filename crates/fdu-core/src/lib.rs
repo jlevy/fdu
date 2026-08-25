@@ -85,8 +85,9 @@ pub use crate::cache::{
 };
 pub use crate::engine_contract::{
     AppliedDelta, Attrs, Bound, Clock, CoverageReason, Cursor, EntryKind, Error, Expectation,
-    Fingerprint, Freshness, InvalidateReason, Observation, ObservationOp, Op, PathExpectation,
-    PathState, Provenance, Result, ScanScope, SessionId, Source, StateChange, Status,
+    Fingerprint, Freshness, InvalidateReason, Issue, IssueKind, Observation, ObservationOp, Op,
+    PathExpectation, PathState, Phase, Provenance, Result, ScanScope, SessionId, Source,
+    StateChange, Status,
 };
 pub use crate::index::{
     ApplyOutcome, ApplyStats, ChildPage, ChildPageRequest, ChildRemainder, ChildSnapshot, EntryId,
@@ -462,7 +463,7 @@ fn record_run(
         scan_started_at: started_at,
         source,
         complete: scan.is_complete(),
-        errors: scan.errors.iter().map(ToString::to_string).collect(),
+        errors: scan.errors.iter().map(crate::Issue::from_error).collect(),
     });
 }
 

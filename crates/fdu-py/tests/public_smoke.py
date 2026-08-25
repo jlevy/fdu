@@ -714,6 +714,45 @@ def _payload_bytes(value: object, charge_keys: bool = False) -> int:
     return 8
 
 
+def check_the_envelope_is_typed_and_its_facts_are_independent() -> None:
+    """Lifecycle, coverage, and issues each answer a different question.
+
+    A consumer that collapses them gets one of them wrong: an index can be complete and
+    fresh while a watch runs beneath it, and partial while nothing runs at all. And an
+    issue is a value to branch on -- deciding whether to retry, to prompt for access, or to
+    drop a subtree is a decision about a kind, not about the wording of a message.
+    """
+
+    with tempfile.TemporaryDirectory(prefix="fdu-envelope-") as raw:
+        root = Path(raw)
+        (root / "a.txt").write_text("x", encoding="utf-8")
+        index = fdu.open(root, cache=fdu.CachePolicy.OFF)
+
+        settled = index.read()
+        assert settled.status.phase is fdu.Phase.READY
+        assert settled.status.complete is True
+        assert settled.status.coverage_reason is None, "complete coverage names no reason"
+        assert settled.status.errors == ()
+
+        # A watch attaching is a lifecycle change and nothing else: the rows, their
+        # coverage, and their freshness are all exactly what they were.
+        before = index.cursor()
+        with index.watch(fdu.WatchOptions(interval=0.1)):
+            watching = index.read()
+            assert watching.status.phase is fdu.Phase.WATCHING
+            assert watching.status.complete is settled.status.complete
+            assert watching.status.freshness is settled.status.freshness
+            # And it reached the change feed, because it changed what a read answers.
+            moved = index.since(before)
+            assert any(change.transition is fdu.Transition.PHASE for change in moved.state), (
+                moved.state
+            )
+
+        # Giving the watch back puts the phase back, so the state is a fact rather than a
+        # latch: an index that once had a watch does not go on claiming one.
+        assert index.read().status.phase is fdu.Phase.READY
+
+
 def check_a_pinned_assembly_pins_its_clock_too() -> None:
     """A version pin fixes the tree. It does not fix a relative recency cutoff.
 
@@ -1565,6 +1604,7 @@ def main() -> None:
     check_tags_are_a_named_fact_per_entry()
     check_a_bundle_answers_a_query_at_the_same_instant_as_its_rows()
     check_empty_is_decidable_from_the_aggregate()
+    check_the_envelope_is_typed_and_its_facts_are_independent()
     check_a_pinned_assembly_pins_its_clock_too()
     check_a_state_transition_advances_the_version_and_reaches_the_feed()
     check_the_event_loop_adapter_delivers_the_same_batches()

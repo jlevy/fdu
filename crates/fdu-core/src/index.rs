@@ -43,7 +43,7 @@ use crate::content::{
 };
 use crate::engine_contract::{
     AppliedDelta, Attrs, Bound, Clock, CoverageReason, Cursor, EntryIdentity, EntryKind,
-    Expectation, Freshness, InvalidateReason, Observation, Op, PathExpectation, PathState,
+    Expectation, Freshness, InvalidateReason, Observation, Op, PathExpectation, PathState, Phase,
     Provenance, ScanScope, SessionId, Source, StateChange, Status,
 };
 
@@ -814,6 +814,17 @@ pub struct ReadBundle {
     pub scope: ScanScope,
     /// Whether the index is fully verified, or holds anything stale or unverified.
     pub freshness: Freshness,
+    /// Whether the whole index accounts for its scope, and why it does not.
+    ///
+    /// Independent of `freshness`: coverage is how *much* of the tree an answer accounts
+    /// for, and freshness is how far what it does account for may be trusted. A complete
+    /// index can be stale, and a fresh one can be missing a directory it could not read.
+    pub coverage: Status,
+    /// Where the index stands in its own lifecycle.
+    ///
+    /// Independent of both again. An index can be complete and fresh while a sweep runs
+    /// beneath it, and partial and stale while nothing is running at all.
+    pub phase: Phase,
     /// What the operation that built this state did, captured with everything else.
     ///
     /// Lifecycle, coverage, source and typed failures from the same boundary as the
@@ -935,6 +946,11 @@ pub struct Index {
     /// When the snapshot this index was loaded from captured the tree. Zero when the
     /// index was never loaded from one.
     captured_at_ns: i64,
+    /// How many live watch sessions are attached to this index.
+    ///
+    /// A count rather than a flag: nothing stops two sessions watching one index, and a
+    /// flag would have the first to close claim the last one had.
+    watchers: usize,
     /// Subtrees a completed reconciliation has verified, with when it finished.
     ///
     /// Kept as intervals rather than per-entry flags because a sweep verifies
@@ -1236,6 +1252,8 @@ impl IndexHandle {
             cursor: index.cursor(),
             scope: index.scope(),
             freshness: index.freshness(),
+            coverage: index.coverage_at(Path::new("")),
+            phase: index.phase(),
             run: index.run_facts().clone(),
             entries: index.len(),
             root: index.root_path().to_path_buf(),
@@ -1356,6 +1374,18 @@ impl IndexHandle {
         self.write_index()?.finish_reconcile(path, started_at, coverage)
     }
 
+    /// Record that a watch session has attached to this index.
+    #[cfg(feature = "watch")]
+    pub(crate) fn attach_watch(&self) -> crate::Result<()> {
+        self.write_index()?.attach_watch()
+    }
+
+    /// Record that a watch session has gone away.
+    #[cfg(feature = "watch")]
+    pub(crate) fn detach_watch(&self) -> crate::Result<()> {
+        self.write_index()?.detach_watch()
+    }
+
     #[cfg(feature = "watch")]
     pub(crate) fn apply_if_clock(
         &self,
@@ -1430,6 +1460,7 @@ impl Index {
             applying_source: Source::Scanned,
             scanned_at_ns: Self::now_unix_nanos(),
             captured_at_ns: 0,
+            watchers: 0,
             verified: Vec::new(),
             ext_names: Vec::new(),
             ext_ids: BTreeMap::new(),
@@ -2058,6 +2089,52 @@ impl Index {
             cursor: self.cursor(),
             truncated: cursor.clock < self.journal_floor,
         })
+    }
+
+    /// Where this index stands in its own lifecycle.
+    ///
+    /// Derived rather than stored, because each part of it is already a fact the index
+    /// holds and a second copy could only agree or be wrong. A sweep in flight outranks an
+    /// attached watch: both are true, and the one a consumer has to act on is that the
+    /// answers are moving under it.
+    pub fn phase(&self) -> Phase {
+        if self.freshness() == Freshness::Reconciling {
+            return Phase::Reconciling;
+        }
+        if self.watchers > 0 {
+            return Phase::Watching;
+        }
+        Phase::Ready
+    }
+
+    /// Record that a watch session has attached, and commit the transition.
+    #[cfg(feature = "watch")]
+    pub(crate) fn attach_watch(&mut self) -> crate::Result<()> {
+        let before = self.phase();
+        self.watchers += 1;
+        self.commit_phase(before)
+    }
+
+    /// Record that a watch session has gone away, and commit the transition.
+    #[cfg(feature = "watch")]
+    pub(crate) fn detach_watch(&mut self) -> crate::Result<()> {
+        let before = self.phase();
+        self.watchers = self.watchers.saturating_sub(1);
+        self.commit_phase(before)
+    }
+
+    /// Commit a phase transition, when the phase actually moved.
+    ///
+    /// A second watch attaching to an index that already has one changes nothing a
+    /// consumer can observe, and a commit for it would be the news that nothing happened.
+    #[cfg(feature = "watch")]
+    fn commit_phase(&mut self, before: Phase) -> crate::Result<()> {
+        let after = self.phase();
+        if before == after {
+            return Ok(());
+        }
+        self.commit_state(vec![StateChange::Phase { phase: after }])?;
+        Ok(())
     }
 
     /// What the operation that built this index's current state did.
@@ -4326,7 +4403,10 @@ mod tests {
                 scan_started_at: None,
                 source: crate::query::ReportSource::CacheOnly,
                 complete: false,
-                errors: vec!["one path could not be read".to_string()],
+                errors: vec![crate::Issue::reported(
+                    crate::IssueKind::Permission,
+                    "one path could not be read".to_string(),
+                )],
             })
             .expect("record");
 
@@ -4334,7 +4414,9 @@ mod tests {
             handle.read(&ReadRequest { total: true, ..ReadRequest::default() }).expect("read");
         assert_eq!(bundle.run.source, crate::query::ReportSource::CacheOnly);
         assert!(!bundle.run.complete);
-        assert_eq!(bundle.run.errors, vec!["one path could not be read".to_string()]);
+        let issue = bundle.run.errors.first().expect("the envelope carries the issue");
+        assert_eq!(issue.kind, crate::IssueKind::Permission, "typed, not prose: {issue:?}");
+        assert_eq!(issue.message, "one path could not be read");
         assert_eq!(bundle.total.expect("total").files, 1, "and the rows are the same read's");
     }
 

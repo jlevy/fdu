@@ -201,6 +201,18 @@ impl Recovery {
     }
 }
 
+impl Drop for Session {
+    /// Give the watch back, so the index stops claiming to be watched.
+    ///
+    /// Errors are swallowed rather than propagated, because a `Drop` has nowhere to put
+    /// them and the alternative -- panicking while unwinding -- aborts the process. The
+    /// only way this fails is a poisoned lock, which already means a panic happened
+    /// inside a write; the count is then the least of it.
+    fn drop(&mut self) {
+        let _ = self.index.detach_watch();
+    }
+}
+
 /// An index paired with a watcher, answering one query continuously.
 pub struct Session {
     index: IndexHandle,
@@ -231,6 +243,11 @@ impl Session {
         scan.validate_for_watch_scope(index.scope()?)?;
         let watcher = Watcher::new(&root, watch)?;
         let resume = index.cursor()?;
+        // The index reports `Phase::Watching` for as long as this session lives, so a
+        // consumer reading the envelope can tell a live root from a static one without
+        // being told out of band. Recorded after the watcher binds: a session that failed
+        // to start never claimed to be watching.
+        index.attach_watch()?;
         Ok(Self { index, watcher, scan, query, resume })
     }
 

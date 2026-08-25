@@ -431,8 +431,13 @@ pub struct RunFacts {
     pub source: ReportSource,
     /// Whether every path in scope was read successfully.
     pub complete: bool,
-    /// Per-path failures that made this result partial, already rendered.
-    pub errors: Vec<String>,
+    /// Per-path conditions that made this result partial.
+    ///
+    /// Typed rather than rendered. A consumer deciding whether to retry, to prompt for
+    /// access, or to drop a subtree needs to make that decision from a value; strings are
+    /// what a person reads, and matching on them makes a consumer depend on the wording.
+    /// [`Provenance`] still carries the rendered form, because a report is text.
+    pub errors: Vec<crate::Issue>,
 }
 
 impl Default for RunFacts {
@@ -460,7 +465,7 @@ impl RunFacts {
             generated_at,
             source: self.source,
             complete: self.complete,
-            errors: self.errors.clone(),
+            errors: self.errors.iter().map(|issue| issue.message.clone()).collect(),
         }
     }
 }

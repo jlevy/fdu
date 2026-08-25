@@ -709,6 +709,15 @@ pub enum StateChange {
     /// from the read it was going to make anyway. Copying it into the journal would
     /// retain a second copy that can only ever agree or be wrong.
     RunFacts,
+    /// The provider's lifecycle phase moved.
+    ///
+    /// Only where the phase is a fact of its own. A sweep starting or ending already
+    /// commits a [`StateChange::Freshness`], and the phase is derived from it -- emitting
+    /// both would report one fact twice and let a consumer see them disagree.
+    Phase {
+        /// The phase it moved to.
+        phase: Phase,
+    },
     /// The tag rules were bound against their control files again.
     ///
     /// Entries beneath these directories may carry different tags without any of them
@@ -728,7 +737,7 @@ impl StateChange {
     pub fn paths(&self) -> &[PathBuf] {
         match self {
             Self::Verified { path } | Self::Freshness { path, .. } => std::slice::from_ref(path),
-            Self::RunFacts => &[],
+            Self::RunFacts | Self::Phase { .. } => &[],
             Self::Retagged { directories } => directories,
         }
     }
@@ -781,6 +790,169 @@ impl AppliedDelta {
     /// precisely so a long-lived server's change history cannot grow without limit.
     pub fn len(&self) -> usize {
         self.ops.len() + self.state.len()
+    }
+}
+
+/// Where a provider stands in its own lifecycle.
+///
+/// Independent of coverage and freshness, which say how much of the tree an answer accounts
+/// for and how far it may be trusted. This says what the provider is *doing*, which is a
+/// different question: an index can be complete and fresh while a sweep runs, and partial
+/// and stale while nothing does.
+///
+/// Declared whole, following [`CoverageReason`], so an adapter maps it once. Three members
+/// are reachable from today's engine; the rest need the session that publishes mid-walk
+/// results and owns a run's start and end, and each says so.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Default)]
+#[non_exhaustive]
+pub enum Phase {
+    /// Open, answering, with nothing running against it.
+    #[default]
+    Ready,
+    /// A sweep is checking known entries against the filesystem.
+    Reconciling,
+    /// A watch is attached, so changes arrive as events rather than by asking.
+    Watching,
+    /// A snapshot is being opened and nothing has been served yet.
+    ///
+    /// **Not reachable yet.** Opening is not observable: the index does not exist until it
+    /// finishes, so there is nothing to ask.
+    OpeningCache,
+    /// A cold walk is still adding entries.
+    ///
+    /// **Not reachable yet.** Same reason, and the fix is the same: a session that
+    /// publishes a partial index while the walk continues.
+    Discovering,
+    /// The provider will serve no further operations.
+    ///
+    /// **Not reachable yet.** An `Index` is dropped rather than stopped; nothing outlives
+    /// it to report that it has.
+    Stopped,
+    /// The last operation failed and the provider cannot continue.
+    ///
+    /// **Not reachable yet.** A failed operation today leaves an index that still answers
+    /// from what it has, which is a partial coverage rather than a lifecycle state.
+    Failed,
+}
+
+impl Phase {
+    /// The stable wire label, shared by every surface.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Ready => "ready",
+            Self::Reconciling => "reconciling",
+            Self::Watching => "watching",
+            Self::OpeningCache => "opening_cache",
+            Self::Discovering => "discovering",
+            Self::Stopped => "stopped",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+/// What kind of thing went wrong, from a vocabulary a consumer can branch on.
+///
+/// Rendered messages are for people. A consumer deciding whether to retry, to prompt for
+/// access, or to drop a subtree from its view needs to make that decision from a value,
+/// and matching on prose is how it ends up depending on the wording of an error.
+///
+/// Declared whole, including the members today's engine cannot produce, so an adapter maps
+/// this once rather than growing a branch each time one becomes reachable. Each says so.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[non_exhaustive]
+pub enum IssueKind {
+    /// The operating system refused access to a path.
+    Permission,
+    /// The path was gone by the time it was read.
+    ///
+    /// Ordinary during a walk of a live tree, and not a failure of the walk: it is
+    /// reported so a consumer can tell "this is not here" from "I could not look".
+    Disappeared,
+    /// Metadata could not be interpreted.
+    InvalidMetadata,
+    /// A filesystem boundary was not crossed, by request.
+    ///
+    /// **Not reachable yet.** `one_filesystem` prunes at the boundary without recording
+    /// where, so nothing today can name the paths it declined to enter.
+    FilesystemBoundary,
+    /// A limit stopped the operation before it finished.
+    ///
+    /// **Not reachable yet.** fdu has no walk budget; the entry exists so the vocabulary
+    /// is the consumer contract's rather than a subset of it.
+    ResourceStop,
+    /// The engine itself failed.
+    ProviderFailure,
+}
+
+impl IssueKind {
+    /// The stable wire label, shared by every surface.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Permission => "permission",
+            Self::Disappeared => "disappeared",
+            Self::InvalidMetadata => "invalid_metadata",
+            Self::FilesystemBoundary => "filesystem_boundary",
+            Self::ResourceStop => "resource_stop",
+            Self::ProviderFailure => "provider_failure",
+        }
+    }
+}
+
+/// One non-fatal condition that made a result partial.
+///
+/// Carries the classification, the path it happened at when it had one, and the rendered
+/// message. All three: the kind is what a consumer branches on, the path is what it acts
+/// on, and the message is what a person reads when neither is enough.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Issue {
+    /// What kind of condition this is.
+    pub kind: IssueKind,
+    /// Where it happened, when it happened somewhere.
+    pub path: Option<PathBuf>,
+    /// The rendered message, for a person.
+    pub message: String,
+    /// The operating system's own error number, when there was one.
+    pub os_error: Option<i32>,
+}
+
+impl Issue {
+    /// Classify one engine error.
+    ///
+    /// I/O failures are classified by the operating system's own error kind, because that
+    /// is the only place the distinction exists: a permission failure and a vanished path
+    /// arrive through the same variant and read the same way to anything matching on the
+    /// enum alone.
+    #[must_use]
+    pub fn from_error(error: &Error) -> Self {
+        match error {
+            Error::Io { path, source } => Self {
+                kind: match source.kind() {
+                    std::io::ErrorKind::PermissionDenied => IssueKind::Permission,
+                    std::io::ErrorKind::NotFound => IssueKind::Disappeared,
+                    std::io::ErrorKind::InvalidData | std::io::ErrorKind::InvalidInput => {
+                        IssueKind::InvalidMetadata
+                    }
+                    _ => IssueKind::ProviderFailure,
+                },
+                path: Some(path.clone()),
+                message: error.to_string(),
+                os_error: source.raw_os_error(),
+            },
+            other => Self {
+                kind: IssueKind::ProviderFailure,
+                path: None,
+                message: other.to_string(),
+                os_error: None,
+            },
+        }
+    }
+
+    /// An issue the engine did not raise, reported by a layer above it.
+    #[must_use]
+    pub fn reported(kind: IssueKind, message: String) -> Self {
+        Self { kind, path: None, message, os_error: None }
     }
 }
 

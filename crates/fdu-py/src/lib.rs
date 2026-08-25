@@ -65,34 +65,6 @@ fn to_py_err(err: fdu_core::Error) -> PyErr {
     }
 }
 
-#[derive(Clone, Debug)]
-struct ErrorDetail {
-    path: Option<PathBuf>,
-    kind: &'static str,
-    message: String,
-    os_error: Option<i32>,
-}
-
-impl ErrorDetail {
-    fn from_engine(error: &fdu_core::Error) -> Self {
-        match error {
-            fdu_core::Error::Io { path, source } => Self {
-                path: Some(path.clone()),
-                kind: "io",
-                message: error.to_string(),
-                os_error: source.raw_os_error(),
-            },
-            other => {
-                Self { path: None, kind: "operation", message: other.to_string(), os_error: None }
-            }
-        }
-    }
-
-    fn analysis(message: String) -> Self {
-        Self { path: None, kind: "analysis", message, os_error: None }
-    }
-}
-
 fn rollup_dict<'py>(py: Python<'py>, roll: &RollUp) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new(py);
     put_scalar(&dict, "files", roll.files)?;
@@ -1016,14 +988,13 @@ impl PyIndex {
         put_text(&out, "root", bundle.root.as_os_str())?;
         put_scalar(&out, "entries", bundle.entries)?;
         put_text(&out, "freshness", freshness_label(bundle.freshness))?;
+        put_text(&out, "phase", bundle.phase.as_str())?;
+        put_text(&out, "coverage_reason", coverage_reason_label(bundle.coverage))?;
         out.set_item("scope", scope_dict(py, &bundle.scope)?)?;
         // From the bundle, so every field below describes the instant the rows were read.
         put_scalar(&out, "complete", bundle.run.complete)?;
         put_text(&out, "source", source_label(bundle.run.source))?;
-        for error in &bundle.run.errors {
-            error.as_str().charge();
-        }
-        out.set_item("errors", PyList::new(py, bundle.run.errors.iter())?)?;
+        out.set_item("errors", error_list(py, &bundle.run.errors)?)?;
         put_nested(
             &out,
             "total",
@@ -1149,8 +1120,8 @@ impl PyIndex {
             })
             .map_err(to_py_err)?;
         let mut complete = report.scan.is_complete();
-        let mut errors: Vec<ErrorDetail> =
-            report.scan.errors.iter().map(ErrorDetail::from_engine).collect();
+        let mut errors: Vec<fdu_core::Issue> =
+            report.scan.errors.iter().map(fdu_core::Issue::from_error).collect();
         let mut analyzed = None;
         if self.analysis.profile.is_enabled() {
             let analysis = py.detach(|| self.inner.analyze(self.analysis)).map_err(to_py_err)?;
@@ -1168,7 +1139,7 @@ impl PyIndex {
                 scan_started_at: started_at,
                 source: ReportSource::WarmRevalidate,
                 complete,
-                errors: errors.iter().map(|error| error.message.clone()).collect(),
+                errors: errors.clone(),
             })
             .map_err(to_py_err)?;
         {
@@ -1308,7 +1279,11 @@ impl PyIndex {
     }
 
     fn error_messages(&self) -> Vec<String> {
-        self.inner.with_index(|index| index.run_facts().errors.clone()).unwrap_or_default()
+        self.inner
+            .with_index(|index| {
+                index.run_facts().errors.iter().map(|issue| issue.message.clone()).collect()
+            })
+            .unwrap_or_default()
     }
 
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
@@ -1414,22 +1389,26 @@ fn parse_analysis_request(profile: &str, workers: usize) -> PyResult<AnalysisReq
 }
 
 fn append_analysis_error(
-    errors: &mut Vec<ErrorDetail>,
+    errors: &mut Vec<fdu_core::Issue>,
     analysis: fdu_core::content::AnalysisReport,
 ) {
     if let Some(message) = analysis.failure_message() {
-        errors.push(ErrorDetail::analysis(message));
+        // Analysis runs above the engine, which therefore has no view of its failures --
+        // but they make a result partial in exactly the same way, so they arrive in the
+        // same vocabulary rather than a second one beside it.
+        errors.push(fdu_core::Issue::reported(fdu_core::IssueKind::ProviderFailure, message));
     }
 }
 
-fn error_list<'py>(py: Python<'py>, errors: &[ErrorDetail]) -> PyResult<Bound<'py, PyList>> {
+/// The typed issues a result carries, rendered for Python.
+fn error_list<'py>(py: Python<'py>, errors: &[fdu_core::Issue]) -> PyResult<Bound<'py, PyList>> {
     let list = PyList::empty(py);
     for error in errors {
         let item = PyDict::new(py);
-        item.set_item("path", error.path.as_deref())?;
-        item.set_item("kind", error.kind)?;
-        item.set_item("message", &error.message)?;
-        item.set_item("os_error", error.os_error)?;
+        put_text(&item, "path", error.path.as_deref().map(std::path::Path::as_os_str))?;
+        put_text(&item, "kind", error.kind.as_str())?;
+        put_text(&item, "message", error.message.as_str())?;
+        put_scalar(&item, "os_error", error.os_error)?;
         list.append(item)?;
     }
     Ok(list)
@@ -1449,7 +1428,7 @@ fn status_dict<'py>(py: Python<'py>, index: &PyIndex) -> PyResult<Bound<'py, PyD
     status.set_item("complete", complete)?;
     status.set_item("freshness", freshness_label(freshness))?;
     status.set_item("source", source_label(source))?;
-    status.set_item("errors", PyList::new(py, errors.iter())?)?;
+    status.set_item("errors", error_list(py, &errors)?)?;
     Ok(status)
 }
 
@@ -1511,6 +1490,7 @@ fn state_change_dict<'py>(
             ("freshness", Some(freshness_label(*freshness)), reason.map(reason_label))
         }
         fdu_core::StateChange::RunFacts => ("run_facts", None, None),
+        fdu_core::StateChange::Phase { .. } => ("phase", None, None),
         fdu_core::StateChange::Retagged { .. } => ("retagged", None, None),
     };
     put_text(&item, "transition", transition)?;
@@ -2604,11 +2584,11 @@ fn open(
     let opened = py.detach(|| fdu_core::open(&root, &config));
     let (index, report) = opened.map_err(to_py_err)?;
     let operation_complete = report.is_complete();
-    let mut errors = report.errors().iter().map(ErrorDetail::from_engine).collect::<Vec<_>>();
+    let mut errors = report.errors().iter().map(fdu_core::Issue::from_error).collect::<Vec<_>>();
     if let Some(message) =
         report.analysis.as_ref().and_then(fdu_core::content::AnalysisReport::failure_message)
     {
-        errors.push(ErrorDetail::analysis(message));
+        errors.push(fdu_core::Issue::reported(fdu_core::IssueKind::ProviderFailure, message));
     }
     let source = match report.path_taken {
         fdu_core::OpenPath::ColdScan => ReportSource::ColdScan,
@@ -2624,7 +2604,7 @@ fn open(
         scan_started_at,
         source,
         complete: operation_complete,
-        errors: errors.iter().map(|error| error.message.clone()).collect(),
+        errors: errors.clone(),
     });
     Ok(PyIndex {
         inner: IndexHandle::new(index),
@@ -2681,11 +2661,11 @@ fn scan(
     let scanned = py.detach(|| fdu_core::open(&root, &config));
     let (index, report) = scanned.map_err(to_py_err)?;
     let operation_complete = report.is_complete();
-    let mut errors = report.errors().iter().map(ErrorDetail::from_engine).collect::<Vec<_>>();
+    let mut errors = report.errors().iter().map(fdu_core::Issue::from_error).collect::<Vec<_>>();
     if let Some(message) =
         report.analysis.as_ref().and_then(fdu_core::content::AnalysisReport::failure_message)
     {
-        errors.push(ErrorDetail::analysis(message));
+        errors.push(fdu_core::Issue::reported(fdu_core::IssueKind::ProviderFailure, message));
     }
     // A bare scan never consults the cache, so it is always cold.
     let telemetry = PerformanceSummary::from_open_report(&report);
@@ -2693,7 +2673,7 @@ fn scan(
         scan_started_at,
         source: ReportSource::ColdScan,
         complete: operation_complete,
-        errors: errors.iter().map(|error| error.message.clone()).collect(),
+        errors: errors.clone(),
     });
     Ok(PyIndex {
         inner: IndexHandle::new(index),

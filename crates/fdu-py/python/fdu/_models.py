@@ -362,24 +362,128 @@ class WatchOptions:
             raise ValueError("poll_interval must be positive")
 
 
+class IssueKind(StrEnum):
+    """What kind of condition made a result partial.
+
+    A vocabulary a consumer branches on, rather than prose it matches. Deciding whether to
+    retry, to prompt for access, or to drop a subtree from a view is a decision about a
+    value; reading it out of a message makes the decision depend on the wording.
+
+    Declared whole, including the members today's engine cannot produce, so an adapter maps
+    this once rather than growing a branch each time one becomes reachable.
+    """
+
+    PERMISSION = "permission"
+    """The operating system refused access to a path."""
+
+    DISAPPEARED = "disappeared"
+    """The path was gone by the time it was read.
+
+    Ordinary during a walk of a live tree, and not a failure of the walk: it is reported so
+    a consumer can tell "this is not here" from "I could not look".
+    """
+
+    INVALID_METADATA = "invalid_metadata"
+    """Metadata could not be interpreted."""
+
+    FILESYSTEM_BOUNDARY = "filesystem_boundary"
+    """A filesystem boundary was not crossed, by request.
+
+    **Not reachable yet.** ``one_filesystem`` prunes at the boundary without recording
+    where, so nothing today can name the paths it declined to enter.
+    """
+
+    RESOURCE_STOP = "resource_stop"
+    """A limit stopped the operation before it finished.
+
+    **Not reachable yet.** fdu has no walk budget; the member exists so the vocabulary is
+    the consumer contract's rather than a subset of it.
+    """
+
+    PROVIDER_FAILURE = "provider_failure"
+    """The engine itself failed, or a layer above it did."""
+
+
 @dataclass(frozen=True, slots=True)
 class OperationError:
     """One non-fatal operational condition that made a result partial."""
 
     path: Path | None
-    kind: str
+    kind: IssueKind
     message: str
     os_error: int | None = None
 
 
+class Phase(StrEnum):
+    """Where a provider stands in its own lifecycle.
+
+    Declared whole, following :class:`CoverageReason`, so an adapter maps it once. Three
+    members are reachable from today's engine; the rest need the session that publishes
+    mid-walk results and owns a run's start and end.
+    """
+
+    READY = "ready"
+    """Open, answering, with nothing running against it."""
+
+    RECONCILING = "reconciling"
+    """A sweep is checking known entries against the filesystem."""
+
+    WATCHING = "watching"
+    """A watch is attached, so changes arrive as events rather than by asking."""
+
+    OPENING_CACHE = "opening_cache"
+    """A snapshot is being opened and nothing has been served yet.
+
+    **Not reachable yet.** Opening is not observable: the index does not exist until it
+    finishes, so there is nothing to ask.
+    """
+
+    DISCOVERING = "discovering"
+    """A cold walk is still adding entries.
+
+    **Not reachable yet**, for the same reason and with the same fix.
+    """
+
+    STOPPED = "stopped"
+    """The provider will serve no further operations.
+
+    **Not reachable yet.** An index is dropped rather than stopped.
+    """
+
+    FAILED = "failed"
+    """The last operation failed and the provider cannot continue.
+
+    **Not reachable yet.** A failed operation leaves an index that still answers from what
+    it has, which is partial coverage rather than a lifecycle state.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class Status:
-    """Independent coverage, currency, origin, and error facts."""
+    """Independent lifecycle, coverage, currency, origin, and issue facts.
+
+    Independent is the load-bearing word: each answers a different question and a consumer
+    that collapses them gets one of them wrong. Coverage is how much of the tree an answer
+    accounts for; freshness is how far what it does account for may be trusted; phase is
+    what the provider is *doing*. An index can be complete and fresh while a sweep runs
+    beneath it, and partial and stale while nothing runs at all.
+    """
 
     complete: bool
     freshness: Freshness
     source: ReportSource
     errors: tuple[OperationError, ...] = ()
+
+    phase: Phase = Phase.READY
+    """What the provider is doing, as distinct from what its answers are worth."""
+
+    coverage_reason: CoverageReason | None = None
+    """Why coverage is partial, when it is; ``None`` when it is complete.
+
+    ``complete`` says *that* an answer is partial and this says why, which is the half a
+    consumer can act on: an inaccessible directory is a prompt, and a still-building index
+    is a wait.
+    """
 
 
 class CoverageReason(StrEnum):
@@ -1451,6 +1555,14 @@ class Transition(StrEnum):
     RUN_FACTS = "run_facts"
     """The envelope describing the operation behind the current state was replaced."""
 
+    PHASE = "phase"
+    """The provider's lifecycle phase moved.
+
+    Only where the phase is a fact of its own: a sweep starting or ending already commits a
+    :attr:`FRESHNESS` transition, and the phase is derived from it, so reporting both would
+    say one thing twice and let a consumer see them disagree.
+    """
+
     RETAGGED = "retagged"
     """Tag rules were bound against their control files again."""
 
@@ -1519,25 +1631,30 @@ def _int_map(value: dict[str, Any]) -> MappingProxyType[str, int]:
 
 def _operation_error(value: object) -> OperationError:
     if isinstance(value, str):
-        return OperationError(None, "operation", value)
+        # A bare string reaches here only from a rendered report, which carries the message
+        # and nothing else. Classifying it would be guessing.
+        return OperationError(None, IssueKind.PROVIDER_FAILURE, value)
     if not isinstance(value, dict):
         raise TypeError("expected an operation error")
     error = cast(dict[str, Any], value)
     path = error.get("path")
     return OperationError(
         Path(str(path)) if path is not None else None,
-        str(error.get("kind", "operation")),
+        IssueKind(str(error.get("kind", IssueKind.PROVIDER_FAILURE))),
         str(error.get("message", "")),
         int(error["os_error"]) if error.get("os_error") is not None else None,
     )
 
 
 def status_from_dict(value: dict[str, Any]) -> Status:
+    reason = value.get("coverage_reason")
     return Status(
         complete=bool(value["complete"]),
         freshness=Freshness(str(value["freshness"])),
         source=ReportSource(str(value["source"])),
         errors=tuple(_operation_error(item) for item in value.get("errors", [])),
+        phase=Phase(str(value.get("phase", Phase.READY))),
+        coverage_reason=None if reason is None else CoverageReason(str(reason)),
     )
 
 
