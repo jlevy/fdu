@@ -1368,6 +1368,14 @@ class ScanScope:
     tag_rules_fingerprint: int
     type_rules_fingerprint: int
     reducers_fingerprint: int
+    hidden_fingerprint: int
+    """Identity of the hidden-path admission rule and its allowlist.
+
+    Zero exactly when nothing is pruned, which is the default and what every index built
+    before the rule existed means. A pruned entry is absent from the *recording* rather
+    than from the tree, so a cache key that ignored this would serve a description of a
+    smaller tree as an answer about the whole one.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -1823,6 +1831,7 @@ def scan_scope_from_dict(value: dict[str, Any]) -> ScanScope:
         tag_rules_fingerprint=int(value["tag_rules_fingerprint"]),
         type_rules_fingerprint=int(value["type_rules_fingerprint"]),
         reducers_fingerprint=int(value["reducers_fingerprint"]),
+        hidden_fingerprint=int(value["hidden_fingerprint"]),
     )
 
 

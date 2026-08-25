@@ -11,6 +11,7 @@ import ast
 import asyncio
 import contextlib
 import dataclasses
+import hashlib
 import importlib.util
 import json
 import os
@@ -446,6 +447,148 @@ def check_pruned_hidden_paths_are_absent_rather_than_filtered() -> None:
         assert "wrap the single value in a tuple" in str(error), error
     else:  # pragma: no cover - the failure this guards is a silent one
         raise AssertionError("a bare string allowlist must be refused")
+
+
+def check_the_browser_provider_example_holds_the_contract_it_documents() -> None:
+    """The shipped embedder example, against the semantics a second engine has to match.
+
+    Four claims, each of which fails silently if it is wrong, and each of which is the
+    reason the example exists rather than a paragraph of prose:
+
+    1. One identity string moves when *any* named fingerprint moves. A consumer keying on a
+       subset caches an answer across a change that invalidated it, and nothing in the
+       answer says so.
+    2. A directory row carries both numbers from one call, and the plane is a real
+       restriction rather than a copy of the totals.
+    3. Symlinks are leaves: counted, never followed, so a cycle is not a hang and a symlink
+       farm is not an empty directory.
+    4. A `.gitignore` negation beats a broader rule above it, and it still does when the
+       control file itself was pruned out of the index.
+
+    The example is loaded from the file that ships, so the tested code and the documented
+    code are the same code.
+    """
+
+    example = _load_example("browser_provider.py")
+
+    # (1) Identity. Built by hand rather than by calling the example twice, so the test
+    # says what the recipe *is* -- a second implementation has to reproduce these bytes,
+    # and a test that only compared the function to itself would accept any recipe.
+    base = fdu.ScanScope(
+        max_depth=None,
+        follow_symlinks=False,
+        one_filesystem=False,
+        tag_rules_fingerprint=11,
+        type_rules_fingerprint=22,
+        reducers_fingerprint=33,
+        hidden_fingerprint=44,
+    )
+    expected = hashlib.sha256(
+        json.dumps(
+            [
+                {"name": "hidden", "value": 44},
+                {"name": "reducers", "value": 33},
+                {"name": "tag_rules", "value": 11},
+                {"name": "type_rules", "value": 22},
+            ],
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    assert example.semantic_fingerprint(base) == expected, example.semantic_fingerprint(base)
+
+    # Stable for identical components, and moved by every one of them. The loop is the
+    # claim: a recipe that dropped `hidden` would pass three of these four.
+    assert example.semantic_fingerprint(dataclasses.replace(base)) == expected
+    for field, value in [
+        ("tag_rules_fingerprint", 99),
+        ("type_rules_fingerprint", 99),
+        ("reducers_fingerprint", 99),
+        ("hidden_fingerprint", 99),
+    ]:
+        moved = example.semantic_fingerprint(dataclasses.replace(base, **{field: value}))
+        assert moved != expected, f"{field} does not reach the combined identity"
+
+    # Fields that are not fingerprints stay out of it: they are already answered by the
+    # fingerprints that cover them, and folding them in would invalidate caches twice.
+    assert example.semantic_fingerprint(dataclasses.replace(base, max_depth=3)) == expected
+
+    root = Path(tempfile.mkdtemp(prefix="fdu-provider-"))
+    (root / "docs").mkdir()
+    (root / ".git").mkdir()
+    (root / ".github").mkdir()
+    (root / ".gitignore").write_text("*.log\n", encoding="utf-8")
+    (root / "docs" / ".gitignore").write_text("!keep.log\n", encoding="utf-8")
+    (root / "docs" / "keep.log").write_text("kept", encoding="utf-8")
+    (root / "docs" / "drop.log").write_text("dropped", encoding="utf-8")
+    (root / "docs" / "guide.md").write_text("# guide", encoding="utf-8")
+    (root / ".git" / "HEAD").write_text("ref: refs/heads/main", encoding="utf-8")
+    (root / ".github" / "ci.yml").write_text("on: push", encoding="utf-8")
+    # A symlink to its own parent: followed, this walk does not terminate.
+    try:
+        (root / "docs" / "loop").symlink_to(root / "docs", target_is_directory=True)
+        symlinks = True
+    except (OSError, NotImplementedError):  # pragma: no cover - Windows without privilege
+        symlinks = False
+
+    index = example.open_tree(root)
+    rows = {row.name: row for row in example.listing(index, Path())}
+
+    # (2) and the hidden allowlist: `.git` is gone, `.github` is named back in.
+    assert set(rows) == {"docs", ".github"}, sorted(rows)
+    docs = rows["docs"]
+    assert docs.is_dir and docs.shown_bytes is not None
+    assert docs.shown_bytes < docs.bytes, "the plane excludes what git ignores"
+
+    # (4) `drop.log` is ignored and `keep.log` is negated back in, decided by a control
+    # file that is not in the index at all -- both `.gitignore` files were pruned.
+    inner = {row.name: row for row in example.listing(index, Path("docs"))}
+    assert ".gitignore" not in inner, "read, never retained"
+    assert inner["drop.log"].tags == ("gitignore",), inner["drop.log"]
+    assert inner["keep.log"].tags == (), "a nested negation beats a broader rule above it"
+    assert inner["guide.md"].tags == ()
+
+    # (3) A symlink is a leaf. The walk returned, which is most of the claim, and the row
+    # is present rather than silently dropped.
+    if symlinks:
+        assert "loop" in inner, sorted(inner)
+        assert not inner["loop"].is_dir, "counted as a leaf, never descended into"
+
+    # (5) The paged recency slice measures its window from the caller's instant, not from
+    # its own. Shown by moving the instant rather than by waiting: `modified_since="1h"`
+    # against a reference two hours ahead puts a file written now *below* the threshold,
+    # which can only happen if the caller's `as_of` is what the window is measured from.
+    # A slice that resolved its own instant per page is how a paged assembly drifts while
+    # its version stands still.
+    def recent_names(as_of: datetime) -> set[str]:
+        bundle = example.recent_page(index, as_of=as_of, limit=50)
+        assert bundle.report is not None
+        section = bundle.report.sections[0]
+        assert isinstance(section, fdu.FilesSection)
+        return {row.path.name for row in section.files}
+
+    now = datetime.now(tz=UTC)
+    assert "guide.md" in recent_names(now), "written moments ago, inside a one-hour window"
+    assert recent_names(now + timedelta(hours=2)) == set(), (
+        "the window follows the caller's instant, so nothing is recent as of two hours hence"
+    )
+
+    fdu.clear_cache(root)
+
+
+def _load_example(name: str) -> Any:
+    """Import one shipped example by path, so the tested code is the code that ships."""
+
+    path = Path(__file__).resolve().parent.parent / "examples" / name
+    spec = importlib.util.spec_from_file_location(f"fdu_example_{path.stem}", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    # Registered before execution: `@dataclass(slots=True)` rebuilds the class and looks its
+    # module up in `sys.modules` to do it, so an unregistered module fails to load.
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def check_a_bundle_answers_a_query_at_the_same_instant_as_its_rows() -> None:
@@ -1894,6 +2037,7 @@ def main() -> None:
     check_tags_are_a_named_fact_per_entry()
     check_a_promoted_plane_serves_a_dual_value_listing_from_one_call()
     check_pruned_hidden_paths_are_absent_rather_than_filtered()
+    check_the_browser_provider_example_holds_the_contract_it_documents()
     check_a_bundle_answers_a_query_at_the_same_instant_as_its_rows()
     check_empty_is_decidable_from_the_aggregate()
     check_the_envelope_is_typed_and_its_facts_are_independent()

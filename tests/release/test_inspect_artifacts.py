@@ -69,6 +69,7 @@ class InspectArtifactsTests(unittest.TestCase):
                 "python/fdu/aio.py",
                 "python/fdu/_native.pyi",
                 "python/fdu/py.typed",
+                "crates/fdu-py/examples/browser_provider.py",
                 "crates/fdu-py/examples/rollup_adapter.py",
                 "crates/fdu-py/examples/sse_resume.py",
                 "crates/fdu-core/src/lib.rs",

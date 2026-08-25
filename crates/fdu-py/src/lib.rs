@@ -494,6 +494,7 @@ fn scope_dict<'py>(py: Python<'py>, scope: &fdu_core::ScanScope) -> PyResult<Bou
     put_scalar(&value, "tag_rules_fingerprint", scope.tag_rules_fingerprint)?;
     put_scalar(&value, "type_rules_fingerprint", scope.type_rules_fingerprint)?;
     put_scalar(&value, "reducers_fingerprint", scope.reducers_fingerprint)?;
+    put_scalar(&value, "hidden_fingerprint", scope.hidden_fingerprint)?;
     Ok(value)
 }
 

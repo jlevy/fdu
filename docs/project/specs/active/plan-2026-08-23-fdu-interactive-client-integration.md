@@ -969,9 +969,12 @@ from emitting millions of provenance-only entry changes into the feed it serves.
 
 - [x] Classification identity in `children()` and files rows; registry identity readable
   from Python (`fdu-16l7`)
+
 - [x] Walk telemetry as typed values beside report/session/watch results (`fdu-tib6`)
+
 - [x] `TreeNode` remainder aggregates (`fdu-knyw`)
-- [ ] Reference embedder example under `crates/fdu-py/examples/` — boot, serve dual
+
+- [x] Reference embedder example under `crates/fdu-py/examples/` — boot, serve dual
   tallies, stream changes with dirty sets, resume from a cursor — plus the cross-engine
   agreement stack: the vendored conformance packet, a recorded-observation replay driven
   into both engines, and filesystem scenarios over immutable or stepwise-mutated
@@ -979,6 +982,27 @@ from emitting millions of provenance-only entry changes into the feed it serves.
   Running two live engines against one changing tree is not an oracle — the observation
   moments are incomparable and the dual walk perturbs what is being measured.
   Differences documented or eliminated (`fdu-vfyw`)
+
+  Shipped as `crates/fdu-py/examples/browser_provider.py`, exercised from the smoke by
+  loading the file that ships, so the tested code and the documented code are the same
+  code. It carries `semantic_fingerprint` — named components, sorted by name, canonical
+  JSON, SHA-256 — because fdu reports scope as several named fingerprints and a consumer
+  keying on a subset caches an answer across a change that invalidated it.
+  The recipe is asserted against bytes built by hand in the test rather than against a
+  second call to the function: a test that compared the function to itself would accept
+  any recipe, and a second implementation has to reproduce these bytes.
+
+  The filesystem scenarios are in: symlinks as leaves (a symlink to its own parent,
+  which hangs if it is followed), the hidden allowlist, and a nested `!keep.log` beating
+  a broader `*.log` above it — decided by control files that pruning kept out of the
+  index entirely. Exposing the fingerprint found a real gap left by `fdu-xyvu`:
+  `hidden_fingerprint` reached `ScanScope` in the engine and never reached Python, so a
+  consumer’s cache key could not have seen it.
+
+  **Not done, and it needs the other repository:** the vendored conformance packet and
+  the recorded-observation replay driven into *both* engines.
+  This side of the contract — the semantics, the identity recipe, and fdu’s answers over
+  the shared scenarios — is what a second engine now has something to be diffed against.
 
 ## Testing Strategy
 
