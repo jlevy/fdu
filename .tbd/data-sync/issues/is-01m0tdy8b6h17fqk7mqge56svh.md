@@ -3,9 +3,9 @@ type: is
 id: is-01m0tdy8b6h17fqk7mqge56svh
 title: Complete the coherent read envelope and version-pinned paging
 kind: bug
-status: closed
+status: open
 priority: 1
-version: 15
+version: 16
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels:
   - pr47-review
@@ -17,72 +17,9 @@ dependencies:
     target: is-01m0tdy9ceep2byvbtyvwc2vky
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.445Z
-updated_at: 2026-08-25T02:27:18.590Z
-closed_at: 2026-08-25T02:27:18.589Z
-close_reason: |
-  Shipped. `make check` green, parity holds (23 recorded deviations matched).
-
-  All three remaining items from the reopen at a3960fb.
-
-  ITEM 2 was resolved by `fdu-jxs0` rather than here: `set_run_facts` is a clocked commit
-  that enters the journal, so one cursor names exactly one envelope. Recorded in this bead's
-  notes at the time, with the reason the "narrow fix" could not be literal -- analysis runs
-  above the engine and contributes issues after reconciliation, so the envelope necessarily
-  commits after the rows. What made that safe is that the interim window is honestly labelled
-  `Reconciling` rather than silently current.
-
-  ITEM 3, `as_of`. `build_query` resolved relative bounds against a fresh `SystemTime::now()`
-  per call, so an expected cursor pinned the tree and not the cutoff: a version-pinned
-  assembly changed membership while its version stood still, and nothing reported it because
-  the version genuinely had not moved. `Query.as_of` is the reference instant a caller carries
-  across the pages of one answer; absent, it is now, which is right for a one-shot. Test: a
-  file half a second inside a one-second window, the wall clock crossing the boundary, and the
-  same question asked again -- unpinned it falls out, pinned it stays, including through a
-  real `read(expected=...)` page two so the two pins are shown to compose. Mutation-checked.
-
-  ITEM 1, THE ENVELOPE. Three parts.
-
-  Typed issues. `RunFacts.errors: Vec<String>` -> `Vec<Issue>`, where `Issue` carries an
-  `IssueKind`, the path, the rendered message, and the OS error number. The kind is what a
-  consumer branches on -- retry, prompt for access, drop a subtree -- and reading that out of
-  prose makes the decision depend on the wording. I/O failures are classified by the operating
-  system's own error kind, because that is the only place the distinction lives: a permission
-  failure and a vanished path arrive through the same `Error::Io` variant.
-
-  The binding's own `ErrorDetail` is gone. It had three coarse kinds and existed only in the
-  Python surface, so the CLI and a library consumer saw different vocabularies for the same
-  condition. One vocabulary, in the engine, shared by every surface. `Provenance.errors` stays
-  rendered strings: a report is text, and goldens are unmoved by this.
-
-  Coverage reason. `ReadBundle.coverage: Status` beside `freshness`. `complete` says *that* an
-  answer is partial; this says why, which is the half a consumer can act on.
-
-  Lifecycle phase. `Phase` declared whole, following the `CoverageReason` precedent, with
-  three members reachable today -- `Ready`, `Reconciling`, `Watching` -- and four documented
-  as needing the session (`fdu-4o0m`). Derived rather than stored, since each part is already
-  a fact the index holds; a sweep in flight outranks an attached watch, because the fact a
-  consumer must act on is that the answers are moving under it.
-
-  `Watching` needed the index to know a watch exists: a counter, attached by `Session::new`
-  after the watcher binds (a session that failed to start never claimed to watch) and given
-  back in `Drop`. That transition commits, per `fdu-jxs0` -- it changes what a read answers.
-  `StateChange::Phase` is emitted only where the phase is a fact of its own: a sweep already
-  commits a `Freshness` transition and the phase derives from it, so emitting both would
-  report one fact twice and let a consumer see them disagree.
-
-  Test: `check_the_envelope_is_typed_and_its_facts_are_independent` pins that a watch
-  attaching moves the phase and *nothing else* -- coverage and freshness are exactly what they
-  were -- that the transition reaches the change feed, and that dropping the watch puts the
-  phase back, so the state is a fact rather than a latch. Mutation-checked both ways: never
-  attaching fails it, and never detaching fails it.
-
-  NOT DONE, and deliberately: progress. Entries-applied-so-far is only meaningful while a walk
-  is publishing, which is `fdu-4o0m`. A progress field that could only ever report a finished
-  run would lie by implication.
-
-  A PROCESS NOTE. I reverted this file's uncommitted work with `git checkout` while undoing a
-  mutation check, and had to redo it. Mutation checks restore from a scratch copy of the file;
-  `git checkout` restores from HEAD, which is everything since the last commit.
+updated_at: 2026-08-25T05:33:17.493Z
+closed_at: null
+close_reason: null
 resolution: null
 duplicate_of: null
 ---
@@ -106,3 +43,26 @@ envelope -- `errors: Vec<String>` is not a vocabulary a consumer can branch on) 
 (`build_query` resolves relative `modified_since`/`modified_before` against a fresh
 `SystemTime::now()` per call, so a version-pinned multi-page recency assembly can change
 membership without the version moving).
+
+Reopened: Exact-head review at PR #47 head `7aaaf84` against MetaBrowser #74 at `1e0f9b5`
+found that version pinning is implemented, but the bounded paging surface is not yet
+complete enough to implement the provider contract.
+
+MetaBrowser requires native, version-pinned continuation for both flat filtered-tree
+pages and catalog pages. `FilteredTreeQuery.after` and `CatalogQuery.after` are contract
+fields, and the shared provider harness requires a positive row bound, an advancing
+cursor, one pinned engine version and `as_of_ns`, no duplicate rows, and exact conserved
+`remaining_rows` through the terminal page.
+
+FDU currently has a native continuation only for `ReadRequest.children_page`.
+`Report` tree and file sections expose an omission count or aggregate remainder, but no
+`after`/`next` cursor; `Query` and `Selection` expose no flat-page offset. A thin adapter
+would therefore have to request `limit=all`, cross an unbounded result through PyO3, and
+slice or retain it in Python. That violates the mandatory bound and the no-mirror/no
+unbounded-FFI adoption rules.
+
+Add native bounded flat-page projections for the filtered-tree and catalog shapes, or a
+single native page algebra that serves both. Each page must take a required positive
+limit and opaque advancing cursor, return exact remaining rows, honor
+`ReadRequest.expected`, and reuse the caller's `as_of` across the assembly. Run the
+MetaBrowser provider-harness scenarios against the FDU binding before closing this gate.
