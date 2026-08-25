@@ -5,7 +5,7 @@ title: Implement exact MetaBrowser catalog predicate semantics
 kind: bug
 status: open
 priority: 1
-version: 8
+version: 9
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
@@ -23,7 +23,7 @@ labels:
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-25T14:14:37.582Z
-updated_at: 2026-08-25T17:13:14.179Z
+updated_at: 2026-08-25T23:47:03.450Z
 closed_at: null
 close_reason: null
 resolution: null
@@ -98,3 +98,31 @@ of apparent, an inclusive instead of exclusive bound, include_ignored ignored, t
 kind clause dropped, and each predicate not passed through.
 
 Reopened: Reopened after exact-head review of e9af881: the shipped predicate and fixture claim exact MetaBrowser agreement but retain observable answer and validation differences. PurePosixPath("..foo").suffix is empty while FDU terminal_suffix("..foo") returns .foo; FDU accepts a backslash-containing ancestor on POSIX although CatalogQuery rejects it and such a directory can exist; and FDU accepts duplicate terminal/ancestor entries that CatalogQuery rejects. The fixture omits the answer-changing cases and explicitly blesses asymmetries.
+
+--- Verified at head d58d9c5, in response to the e9af881 reopen. No code changed. ---
+
+One premise of the reopen does not hold, and it is the headline one.
+PurePosixPath("..foo").suffix is ".foo", not empty -- checked on CPython 3.11, 3.12
+and 3.13. fdu's terminal_suffix("..foo") also returns ".foo", and the unit test
+asserts that. The two engines agree on this name; there is nothing to fix here, and
+changing terminal_suffix to return empty would introduce the disagreement the finding
+describes.
+
+The other two points are real, and one of them corrects an overstatement of mine.
+
+- Duplicate entries. CatalogQuery.__post_init__ rejects duplicates in both lists;
+  admit_terminal_extension and admit_ancestor_name append them. Harmless to the answer
+  (both lists are any-of, so a duplicate narrows nothing) but a validation difference,
+  and cheap to close.
+- A backslash in an ancestor name. CatalogQuery rejects it on every platform;
+  Component::Normal admits it on POSIX, where it is a legal directory name. I called
+  this asymmetry harmless in the PR comment and that was overstated: the fixture only
+  asserted an empty result over a corpus containing no such directory, which is a
+  weaker check than the claim. The consumer refuses the query outright, so no answer
+  either engine returns is wrong -- but a caller can construct the case, and the
+  fixture does not cover it.
+
+The reopen's criticism of the fixture is fair on its own terms: a fixture that records
+tolerated asymmetries cannot by itself close an exactness gate. Closing it means
+deciding which contract moves, and the reviewer suggests tightening the consumer to
+reject "." and ".." -- a cross-repo decision, not one to make from this side.

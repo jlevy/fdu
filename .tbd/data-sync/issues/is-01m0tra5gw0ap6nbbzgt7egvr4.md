@@ -5,7 +5,7 @@ title: "[bug] Gitignore bind walks the whole tree at open, even cache-only"
 kind: bug
 status: open
 priority: 1
-version: 9
+version: 10
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
@@ -23,7 +23,7 @@ labels:
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T20:45:09.518Z
-updated_at: 2026-08-25T17:19:54.029Z
+updated_at: 2026-08-25T23:47:04.729Z
 closed_at: null
 close_reason: null
 resolution: null
@@ -70,3 +70,31 @@ is still outside the index throughout, so the fix is not accidentally admitting 
 Five mutations, all caught: never recording, recording only the rewritten upsert
 (delete), the session ignoring the signal, never depositing the directory, and
 depositing the path instead of its directory.
+
+--- Round-six findings (d58d9c5) verified. No code changed. ---
+
+Two of the three findings in the d58d9c5 review land on this bead, and both are real.
+
+1. Deleting the last pruned control file retags without a clocked delta. Confirmed at
+   index.rs:1688-1728: rebind_tag_rules calls adopt_tag_rules -- which retags every
+   entry and rebuilds the planes -- and only then returns Ok(None) because the newly
+   bound rules govern nothing. Removing the last .gitignore is exactly that shape: the
+   old tags disappear, no clock advances, and no Retagged transition enters the
+   journal. The early return's own comment ("changed nothing a consumer can observe")
+   is true of a rebind that governs nothing and false of one that *stopped* governing
+   something. The fix is the union of old and new governed directories, or an exact
+   moved set, committed whenever tags or planes moved -- including to zero.
+
+2. The test I shipped verifies the effect and not the notification. It polls tags_of
+   through with_index, which reads the retagged state directly, so it passes while a
+   consumer watching batches is told nothing. That is a real weakness and the reason
+   the defect survived: assert the deletion through a WatchBatch at its terminal
+   cursor, not a side read.
+
+3. The live control-directory registry is monotonic. adopt_pruned_control_dirs only
+   extends, sorts and deduplicates, and I documented the deletion path as deliberately
+   retaining the directory forever, calling it "bounded by the directories that ever
+   held one". For a long-lived watcher that is not a bound, and the reviewer is right
+   to reject it. The save/load asymmetry they report -- load caps at one million while
+   save writes any count, so churn can produce a snapshot fdu refuses on its own next
+   open -- I have taken as reported and not independently verified.

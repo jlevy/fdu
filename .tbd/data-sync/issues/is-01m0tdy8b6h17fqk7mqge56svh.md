@@ -5,7 +5,7 @@ title: Complete the coherent read envelope and version-pinned paging
 kind: bug
 status: open
 priority: 1
-version: 33
+version: 34
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
@@ -30,7 +30,7 @@ dependencies:
     target: is-01m0tdy9ceep2byvbtyvwc2vky
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.445Z
-updated_at: 2026-08-25T17:13:14.420Z
+updated_at: 2026-08-25T23:47:04.093Z
 closed_at: null
 close_reason: null
 resolution: null
@@ -76,3 +76,30 @@ a truncated token and a single flipped character are all refused as continuation
 
 Left open deliberately: this bead also carries the envelope work, and the reviewer
 reopened it. Not re-closing.
+
+--- Round-five findings (e9af881) verified at head d58d9c5. No code changed. ---
+
+The reviewer accepted the keyed-tag portion of this bead. Two findings remain, both
+confirmed by reading the code.
+
+1. An issued continuation is not guaranteed to round-trip. encode() emits whatever
+   path the cursor retains; decode_inner() refuses more than TOKEN_MAX_CHARS (64 KiB)
+   of hex, a ceiling I chose rather than derived. It is unreachable on Linux, where
+   PATH_MAX bounds a path well below it, but reachable on Windows: UTF-16 encoding
+   doubles the bytes and hex doubles again, so an extended path can exceed 64 KiB
+   before hitting its own ceiling. The engine can therefore hand back `next` and then
+   refuse that unchanged token. The fix is one bound shared by issuance and decoding,
+   or a typed error before issuing.
+
+2. Cloning an Index clones the continuation authority. Index derives Clone at
+   index.rs:1559 and ContinuationAuthority derives it too, so two independently
+   mutable clones share a key -- and can reach the same clock with divergent trees,
+   at which point session, clock, shape and tag all agree and each accepts the
+   other's token. Either raw Index cloning goes, or session and authority are minted
+   fresh at every independently mutable owner boundary.
+
+Worth recording beside the second: the type's own doc comment says per-open keying is
+a scope choice rather than an observable behaviour, on the grounds that the version
+check separates two opens first. That reasoning holds for two separately *constructed*
+indexes and does not hold for two clones, which is exactly the hole. The comment needs
+correcting along with the code.

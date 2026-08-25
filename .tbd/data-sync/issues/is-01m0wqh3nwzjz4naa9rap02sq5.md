@@ -5,7 +5,7 @@ title: Clock cap-refused upserts that mutate existing index state
 kind: bug
 status: open
 priority: 1
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
@@ -23,7 +23,7 @@ labels:
 dependencies: []
 parent_id: is-01m0vx6yw0f8bddcwggvk2ha0p
 created_at: 2026-08-25T15:09:57.307Z
-updated_at: 2026-08-25T17:17:54.829Z
+updated_at: 2026-08-25T23:47:05.398Z
 ---
 At PR #47 exact head d58d9c5036818f33fe390c31453eb7548ba7abfa, cap-refused mutations now advance the clock, but AppliedDelta is inaccurate. apply_upsert returns true when ensure_dir_chain created ancestors or upsert_beneath removed a kind-changing row; apply_validated_with then appends the original observed Op::Upsert to effective. That leaf file was refused and is absent, while the actual directory insertions or removal are omitted. The public journal therefore claims an effective mutation that did not happen and loses the mutations that did. The new tests assert only that since().deltas is nonempty, so they accept this false delta and do not exercise WatchBatch. Return a structured apply result separating refusal from the exact effective operations (or an explicit dirty/invalidation carrier that is not documented as replayable ops), and preserve the actual created-directory/removal paths under the same clock. Assert the complete delta contents, absence of the refused upsert, exact terminal state clock, WatchBatch dirty/state, and tally conservation for first and later refusals.
 
@@ -64,3 +64,28 @@ under a cap of two, then fills the cap by refresh.
 Four mutations, all caught: refusing reports unchanged again, the kind-change
 removal untracked, the chain's mutations dropped at the caller, and building an
 ancestor not counted as a mutation.
+
+--- Round-six finding (d58d9c5) verified. This one is a regression I introduced. ---
+
+Confirmed at index.rs:2591-2621. apply_validated_with translates the changed-flag into
+`effective.push(op.clone())`, and that op is the original leaf Upsert -- the file the
+cap refused, which does not exist. The mutations that actually happened, the placeholder
+ancestor directories and any kind-changing removal, are not in the AppliedDelta at all.
+
+So the d58d9c5 fix made the boolean honest and left the delta content wrong. The two
+states are not equally bad and the direction matters:
+
+- before: the delta silently omitted rows that existed. A consumer under-reports.
+- after: the delta asserts an upsert for a path that does not exist, while the rows
+  that do exist go unmentioned. A consumer replaying it creates a phantom row.
+
+For a consumer that replays deltas -- which is what the consuming inventory does --
+active misstatement is worse than omission. Reverting the fdu-a7cl half of d58d9c5 is
+therefore a defensible interim position, and better than leaving it as it stands.
+
+The proper fix is what the reviewer describes: a structured result carrying refusal
+independently from the exact effective ops, so the delta names the directory insertions
+and the removed row and not the refused upsert. The tests I shipped assert only that
+since().deltas is non-empty, which an effective-op stream saying the opposite of the
+retained tree passes -- so they need to assert the complete delta, the absence of the
+refused upsert, the actual changed paths, and tally conservation.
