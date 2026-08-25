@@ -154,7 +154,7 @@ fn dirty_rollups(applied: &[AppliedDelta]) -> Vec<PathBuf> {
             // The other transitions move trust rather than values: they are carried in
             // `Batch::state`, and inventing roll-up dirtiness for them would make every
             // reconciliation sweep look like a mutation of the numbers.
-            if let StateChange::Retagged { directories } = change {
+            if let StateChange::Retagged { directories, .. } = change {
                 for directory in directories {
                     dirty_with_ancestors(directory, true);
                 }
@@ -283,6 +283,14 @@ impl Session {
     /// Returns `None` when nothing arrived in the window, which is the idle case and
     /// costs no filesystem work.
     ///
+    /// "Nothing arrived" means the *journal* did not move, not that the watcher stayed
+    /// quiet. Another producer -- a caller refreshing, ingesting hints, or rebinding rules
+    /// against the same handle -- commits without producing a filesystem event, so waiting
+    /// only on the watcher withheld those commits for as long as the tree stayed idle:
+    /// forever, on a tree nobody was touching. The check is one clock comparison against
+    /// the position already held, so an idle tick still costs no filesystem work and no
+    /// journal scan.
+    ///
     /// Takes `&mut self` because consuming from the event queue is a mutation: two
     /// callers draining one session would each see an arbitrary half of the stream.
     pub fn next_batch(&mut self, timeout: Duration) -> Result<Option<Batch>> {
@@ -296,9 +304,9 @@ impl Session {
             },
         )?;
 
-        let Some(_report) = outcome else {
+        if outcome.is_none() && self.index.clock()? == self.resume.clock {
             return Ok(None);
-        };
+        }
 
         // A control file that moved changes what the tag rules decide about entries this
         // batch never touched, so it is rebound before the slice below is taken -- both so
@@ -338,8 +346,17 @@ impl Session {
             })
         });
         let recovery = Recovery::of(escalated, since.truncated);
+        // A rebind that stopped enumerating leaves no list to invalidate from, so the whole
+        // cache is suspect -- the same conclusion the dirty bound reaches by its own route.
+        let retagged_everything = applied.iter().any(|delta| {
+            delta
+                .state
+                .iter()
+                .any(|change| matches!(change, StateChange::Retagged { all: true, .. }))
+        });
         let dirty_rollups = dirty_rollups(&applied);
-        let all_dirty = recovery.all_dirty || dirty_rollups.len() > MAX_DIRTY_ROLLUPS;
+        let all_dirty =
+            recovery.all_dirty || retagged_everything || dirty_rollups.len() > MAX_DIRTY_ROLLUPS;
         let mut batch = Batch {
             changes: Vec::new(),
             dirty: !applied.is_empty(),
@@ -392,7 +409,10 @@ impl Session {
             // view that is wrong without ever having been told so. Emitted in the delta's
             // own place in the sequence, so `changes` stays in commit order.
             for change in &delta.state {
-                let StateChange::Retagged { directories } = change else {
+                // When the rebind gave up enumerating, `directories` is empty and nothing is
+                // emitted here: `all_dirty` already says the whole cache is suspect, and a
+                // second copy of an oversized scope is the cost the bound exists to avoid.
+                let StateChange::Retagged { directories, .. } = change else {
                     continue;
                 };
                 for governed in directories {
@@ -580,7 +600,10 @@ mod tests {
     fn a_retag_dirties_the_directories_it_governs() {
         let dirty = dirty_rollups(&[AppliedDelta::of_state(
             Clock(1),
-            vec![StateChange::Retagged { directories: vec![PathBuf::from("src/deep")] }],
+            vec![StateChange::Retagged {
+                directories: vec![PathBuf::from("src/deep")],
+                all: false,
+            }],
         )]);
 
         assert!(dirty.contains(&PathBuf::from("src/deep")), "the governed directory: {dirty:?}");

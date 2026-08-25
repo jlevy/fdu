@@ -724,12 +724,37 @@ pub enum StateChange {
     /// having been touched -- the one way a cached row goes wrong with no path event
     /// ever naming it.
     Retagged {
-        /// Directories the rebuilt rules govern.
+        /// Directories the rebuilt rules govern, or empty when `all` is set.
         directories: Vec<PathBuf>,
+        /// The governed set exceeded its bound; treat every cached row as re-tagged.
+        ///
+        /// The list is dropped rather than truncated, for the same reason a bounded dirty
+        /// set is: a truncated list is indistinguishable from a complete one at the
+        /// consumer, so a row it no longer names survives an invalidation that should have
+        /// reached it. The bound also keeps this variant from being an unbounded payload
+        /// inside a bounded journal.
+        all: bool,
     },
 }
 
+/// Governed directories a single re-tag enumerates before it says "all of them".
+///
+/// A rule set governing more directories than this is one whose scope is better described
+/// by a bit than by a list: a `PathBuf` each, retained in the journal for as long as the
+/// commit is resumable, to tell a consumer something one flag says as well.
+pub const MAX_RETAGGED_DIRECTORIES: usize = 1024;
+
 impl StateChange {
+    /// What this transition costs against the journal's retention budget.
+    ///
+    /// One for the transition, plus one for each path it embeds. A variant carrying a
+    /// vector charged as a single item is a hole in a bound that exists to cap memory: the
+    /// budget would count one where the journal retained a thousand.
+    #[must_use]
+    pub fn cost(&self) -> usize {
+        1 + self.paths().len()
+    }
+
     /// The subtree roots this transition applies to.
     ///
     /// Empty for a transition about the index as a whole rather than about any part of
@@ -738,7 +763,7 @@ impl StateChange {
         match self {
             Self::Verified { path } | Self::Freshness { path, .. } => std::slice::from_ref(path),
             Self::RunFacts | Self::Phase { .. } => &[],
-            Self::Retagged { directories } => directories,
+            Self::Retagged { directories, .. } => directories,
         }
     }
 }
@@ -804,7 +829,7 @@ impl AppliedDelta {
     /// say -- fill the journal with entries the budget never sees, and the bound exists
     /// precisely so a long-lived server's change history cannot grow without limit.
     pub fn len(&self) -> usize {
-        self.ops.len() + self.state.len()
+        self.ops.len() + self.state.iter().map(StateChange::cost).sum::<usize>()
     }
 }
 

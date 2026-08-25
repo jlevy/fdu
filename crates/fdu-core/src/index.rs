@@ -1055,7 +1055,12 @@ impl IndexHandle {
             // can observe, and a commit for it would be the news that nothing happened.
             return Ok(None);
         }
-        index.commit_state(vec![StateChange::Retagged { directories: governed }]).map(Some)
+        // Past the bound the list is dropped rather than truncated: a truncated list reads
+        // as a complete one, so a directory it no longer names keeps rows the rebind
+        // invalidated. It also keeps an unbounded payload out of a bounded journal.
+        let all = governed.len() > crate::engine_contract::MAX_RETAGGED_DIRECTORIES;
+        let directories = if all { Vec::new() } else { governed };
+        index.commit_state(vec![StateChange::Retagged { directories, all }]).map(Some)
     }
 
     /// Arbitrate and apply one observation under the single-writer lock.
@@ -4496,6 +4501,37 @@ mod tests {
     /// Retention is bounded by operations, and a transition that cost nothing would let a
     /// producer fill the journal with entries the bound never sees -- which is the one
     /// thing the bound exists to prevent in a long-lived server.
+    /// A transition's embedded paths are charged, not just the transition itself.
+    ///
+    /// The bound exists to cap the memory a long-lived session's change history can hold.
+    /// Charging a vector as one item is a hole straight through it: the budget counts one
+    /// where the journal retains a thousand, and the cap it enforces is on a number that
+    /// has stopped describing what is stored.
+    #[test]
+    fn a_transition_is_charged_for_the_paths_it_carries() {
+        let one = StateChange::Retagged { directories: vec![PathBuf::from("a")], all: false };
+        assert_eq!(one.cost(), 2, "the transition, and the path it embeds");
+
+        let many = StateChange::Retagged {
+            directories: (0..8).map(|n| PathBuf::from(format!("d{n}"))).collect(),
+            all: false,
+        };
+        assert_eq!(many.cost(), 9);
+        assert_eq!(
+            StateChange::RunFacts.cost(),
+            1,
+            "a transition embedding nothing costs one, as an op does"
+        );
+
+        // And the budget sees the difference: a delta of eight paths evicts more than one
+        // of a single path.
+        let mut index = Index::with_journal_op_capacity("/root", 4);
+        index.commit_state(vec![one]).expect("commit");
+        assert_eq!(index.journal_ops, 2);
+        index.commit_state(vec![many]).expect("commit");
+        assert_eq!(index.journal_ops, 0, "a delta larger than the budget clears the journal");
+    }
+
     #[test]
     fn state_transitions_are_charged_against_the_journal_budget() {
         let mut index = Index::with_journal_op_capacity("/root", 2);

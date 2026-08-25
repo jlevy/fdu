@@ -351,25 +351,29 @@ fn a_commit_from_another_producer_is_delivered_rather_than_skipped() {
         }]))
         .expect("apply");
 
-    fs::write(dir.path().join("b.txt"), b"678").expect("create");
+    // No filesystem write, deliberately. The first version of this test created a file
+    // after the direct apply, and that unrelated event is what woke the watcher -- so the
+    // test passed over a stream that would have withheld the commit indefinitely on a tree
+    // nobody was touching. A journal that moved is the thing being waited for.
+    let batch = next_applied_batch(&mut session).expect("a journal-only commit must arrive");
+    let seen: Vec<std::path::PathBuf> =
+        batch.changes.iter().map(|change| change.path.clone()).collect();
 
-    let mut seen: Vec<std::path::PathBuf> = Vec::new();
-    let mut resets = 0_u32;
-    let deadline = Instant::now() + SETTLE;
-    while Instant::now() < deadline && !seen.iter().any(|path| path.ends_with("b.txt")) {
-        let Some(batch) = next_applied_batch(&mut session) else {
-            break;
-        };
-        resets += u32::from(batch.reset);
-        seen.extend(batch.changes.into_iter().map(|change| change.path));
-    }
-
-    assert!(seen.iter().any(|path| path.ends_with("b.txt")), "the watched change: {seen:?}");
     assert!(
         seen.iter().any(|path| path.ends_with("elsewhere.txt")),
         "the other producer's commit must be delivered, not skipped: {seen:?}"
     );
-    assert_eq!(resets, 0, "and delivering it is not a reset -- nothing was lost");
+    assert!(!batch.reset, "and delivering it is not a reset -- nothing was lost");
+
+    // And the watcher still works afterwards, so waking on the journal did not consume the
+    // event path it shares.
+    fs::write(dir.path().join("b.txt"), b"678").expect("create");
+    let watched = next_applied_batch(&mut session).expect("the watched change should arrive");
+    assert!(
+        watched.changes.iter().any(|change| change.path.ends_with("b.txt")),
+        "{:?}",
+        watched.changes
+    );
 }
 
 /// The next batch that actually applied something, or nothing within the settle window.
@@ -437,7 +441,7 @@ fn a_re_tag_commits_and_the_batch_cursor_follows_it() {
     assert!(
         batch.state.iter().any(|committed| matches!(
             &committed.change,
-            fdu_core::StateChange::Retagged { directories } if !directories.is_empty()
+            fdu_core::StateChange::Retagged { directories, .. } if !directories.is_empty()
         )),
         "the batch must carry the re-tag it committed: {:?}",
         batch.state
