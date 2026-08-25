@@ -2015,6 +2015,7 @@ impl PyWatch {
         let out = PyDict::new(py);
         let list = PyList::empty(py);
         let state = PyList::empty(py);
+        let mut issues = PyList::empty(py);
         let mut dirty = false;
         let mut all_dirty = false;
         let mut reset = false;
@@ -2045,6 +2046,7 @@ impl PyWatch {
                 dict.set_item("mtime_ns", change.mtime_ns)?;
                 list.append(dict)?;
             }
+            issues = error_list(py, &batch.issues)?;
             for committed in &batch.state {
                 // The clock the transition committed at, not the batch's terminal one.
                 // Stamping them all with the end said every transition happened last, which
@@ -2054,6 +2056,7 @@ impl PyWatch {
         }
         out.set_item("changes", list)?;
         out.set_item("state", state)?;
+        out.set_item("issues", issues)?;
         out.set_item("dirty", dirty)?;
         out.set_item("dirty_rollups", dirty_rollups)?;
         out.set_item("all_dirty", all_dirty)?;

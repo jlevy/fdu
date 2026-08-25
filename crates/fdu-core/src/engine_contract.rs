@@ -921,6 +921,18 @@ pub enum IssueKind {
     /// **Not reachable yet.** fdu has no walk budget; the entry exists so the vocabulary
     /// is the consumer contract's rather than a subset of it.
     ResourceStop,
+    /// The provider's own observation of the tree had a hole, which it then covered.
+    ///
+    /// The kernel dropped events, a rename could not be paired, or a directory's watch was
+    /// registered after something had already been created inside it. The engine re-scans,
+    /// so the index is right -- but the *stream* had a gap, and a consumer that was told
+    /// only "here are some changes" would not know its own view had been incomplete in the
+    /// meantime.
+    ///
+    /// Deliberately an issue rather than a coverage reason: coverage is how much of the
+    /// tree an answer accounts for, and after the re-scan the answer accounts for all of
+    /// it. What moved is how far the stream between then and now can be trusted.
+    ObservationGap,
     /// The engine itself failed.
     ProviderFailure,
 }
@@ -935,6 +947,7 @@ impl IssueKind {
             Self::InvalidMetadata => "invalid_metadata",
             Self::FilesystemBoundary => "filesystem_boundary",
             Self::ResourceStop => "resource_stop",
+            Self::ObservationGap => "observation_gap",
             Self::ProviderFailure => "provider_failure",
         }
     }

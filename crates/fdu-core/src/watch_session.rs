@@ -88,14 +88,26 @@ pub struct Batch {
     /// truncated list as a complete one and keeps rows it should have dropped. This is
     /// that signal, and it is why the list above can be empty while `dirty` is true.
     pub all_dirty: bool,
-    /// The consumer's position is gone; it must re-read rather than apply these changes.
+    /// The consumer's position is gone; it must re-read rather than apply this batch.
     ///
-    /// Set when the kernel dropped events, when a rename could not be paired, or when a
-    /// directory's watch was registered too late to see what was created inside it. The
-    /// engine recovers by re-scanning the affected subtree, so the index is right either
-    /// way -- but a consumer replaying `changes` alone would be applying a suffix to
-    /// state that no longer matches, which is the one recovery it cannot do.
+    /// Set when the consumer fell further behind than the journal retains, and only then.
+    /// It is a fact about *its* history, not about the provider's: the engine losing
+    /// precision and re-scanning leaves the consumer's position perfectly resumable, and
+    /// says so through `issues` and the re-scan's own changes instead.
+    ///
+    /// A reset replaces every other signal in the batch. There is nothing to enumerate --
+    /// the changes it missed are unnamed and unnameable -- so `changes`, `dirty_rollups`
+    /// and `all_dirty` are all empty beside it. A partial list here would read as complete
+    /// and be applied as one.
     pub reset: bool,
+    /// Typed conditions this batch observed.
+    ///
+    /// An observation gap is the one that matters today: the engine lost precision, re-
+    /// scanned, and the index is right -- so the rows are complete and the position is
+    /// resumable, which is exactly why this is not a reset. What a consumer learns here is
+    /// that the stream between its last batch and this one had a hole the engine covered,
+    /// which it may want to report even though it need do nothing about it.
+    pub issues: Vec<crate::Issue>,
     /// The last commit this batch carries, and the position to resume from.
     ///
     /// Derived from the deltas rather than sampled from the index afterwards, which is the
@@ -118,6 +130,32 @@ pub struct Batch {
     /// Each keeps the clock it committed at rather than the batch's terminal position, so
     /// a consumer can order it against `changes` and resume from either side of it.
     pub state: Vec<CommittedState>,
+}
+
+impl Batch {
+    /// The batch a consumer whose position has expired receives.
+    ///
+    /// A constructor rather than a struct literal at the call site, because the shape *is*
+    /// the contract: a reset replaces every other signal, and spelling that out where it is
+    /// built keeps a later field from quietly acquiring a value beside it. A consumer
+    /// reading "re-read everything, and also here are the changes" and acting on the second
+    /// half applies a suffix to state it has just discarded.
+    fn reset_at(cursor: crate::Cursor) -> Self {
+        Self { dirty: true, reset: true, cursor: Some(cursor), ..Self::default() }
+    }
+
+    /// Whether this batch says only things a consumer can act on together.
+    #[cfg(test)]
+    fn is_consistent(&self) -> bool {
+        let reset_is_alone = !self.reset
+            || (self.changes.is_empty()
+                && self.dirty_rollups.is_empty()
+                && !self.all_dirty
+                && self.state.is_empty()
+                && self.issues.is_empty());
+        let all_dirty_replaces_the_list = !self.all_dirty || self.dirty_rollups.is_empty();
+        reset_is_alone && all_dirty_replaces_the_list
+    }
 }
 
 /// How many dirty directories a batch enumerates before it says "all of them".
@@ -178,30 +216,6 @@ fn dirty_rollups(applied: &[AppliedDelta]) -> Vec<PathBuf> {
         }
     }
     dirty.into_iter().collect()
-}
-
-/// What an incomplete slice means for a consumer's cached state.
-///
-/// Two different incompletenesses reach the same conclusion by different routes, and
-/// keeping them apart is why this is named rather than inlined.
-///
-/// An escalation says the *engine* lost precision and re-scanned: the index is right, but
-/// a consumer replaying `changes` alone would be applying a suffix to state that no longer
-/// matches. A truncated journal says the *consumer* fell further behind than retention
-/// allows: the changes it missed are unnamed and unnameable, so enumerating what survived
-/// would hand it a list it reads as complete -- the same failure `all_dirty` exists to
-/// prevent one bound up. Only the second discards the dirty set, because only the second
-/// makes that set a lie.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-struct Recovery {
-    reset: bool,
-    all_dirty: bool,
-}
-
-impl Recovery {
-    const fn of(escalated: bool, truncated: bool) -> Self {
-        Self { reset: escalated || truncated, all_dirty: truncated }
-    }
 }
 
 impl Drop for Session {
@@ -325,27 +339,45 @@ impl Session {
         // One guard covers the slice and its terminal position, so the cursor cannot name
         // a commit the slice does not carry.
         let since = self.index.since(self.resume)?;
+
+        if since.truncated {
+            // The consumer fell further behind than the journal retains. Its position is
+            // unresumable, which is the one thing `reset` means -- and a reset replaces
+            // every other signal, because the changes it missed are unnamed and unnameable.
+            // A partial list beside it would read as complete and be applied as one.
+            self.resume = since.cursor;
+            return Ok(Some(Batch::reset_at(since.cursor)));
+        }
         let applied = since.deltas;
 
-        // A dropped event, an unpaired rename, or a watch registered after its
-        // directory already had contents: in each case the engine re-scans and the index
-        // ends up right, but a consumer replaying `changes` alone would be applying a
-        // suffix to state that no longer matches. It has to re-read, and this is the only
-        // thing that tells it so.
-        let escalated = applied.iter().any(|delta| {
-            delta.ops.iter().any(|op| {
-                matches!(
-                    op,
-                    Op::InvalidateSubtree {
-                        reason: crate::InvalidateReason::WatchOverflow
+        // A dropped event, an unpaired rename, or a watch registered after its directory
+        // already had contents. The engine re-scans, so the index is right and the rows
+        // below are complete -- which is exactly why this is *not* a reset: the consumer's
+        // position is fine and replaying this batch is correct. What it did not have before
+        // is any way to know its view had a hole in the meantime, and that is what this
+        // says.
+        let issues: Vec<crate::Issue> = applied
+            .iter()
+            .flat_map(|delta| &delta.ops)
+            .filter_map(|op| match op {
+                Op::InvalidateSubtree { path, reason }
+                    if matches!(
+                        reason,
+                        crate::InvalidateReason::WatchOverflow
                             | crate::InvalidateReason::UnpairedRename
-                            | crate::InvalidateReason::WatchSetupRace,
-                        ..
-                    }
-                )
+                            | crate::InvalidateReason::WatchSetupRace
+                    ) =>
+                {
+                    Some(crate::Issue {
+                        kind: crate::IssueKind::ObservationGap,
+                        path: Some(path.clone()),
+                        message: format!("watch precision lost at {}: {reason:?}", path.display()),
+                        os_error: None,
+                    })
+                }
+                _ => None,
             })
-        });
-        let recovery = Recovery::of(escalated, since.truncated);
+            .collect();
         // A rebind that stopped enumerating leaves no list to invalidate from, so the whole
         // cache is suspect -- the same conclusion the dirty bound reaches by its own route.
         let retagged_everything = applied.iter().any(|delta| {
@@ -355,17 +387,17 @@ impl Session {
                 .any(|change| matches!(change, StateChange::Retagged { all: true, .. }))
         });
         let dirty_rollups = dirty_rollups(&applied);
-        let all_dirty =
-            recovery.all_dirty || retagged_everything || dirty_rollups.len() > MAX_DIRTY_ROLLUPS;
+        let all_dirty = retagged_everything || dirty_rollups.len() > MAX_DIRTY_ROLLUPS;
         let mut batch = Batch {
             changes: Vec::new(),
+            issues,
             dirty: !applied.is_empty(),
             // Past the bound the list is dropped rather than truncated. A truncated list
             // is indistinguishable from a complete one at the consumer, which is how a
             // stale row survives an invalidation that named it.
             dirty_rollups: if all_dirty { Vec::new() } else { dirty_rollups },
             all_dirty,
-            reset: recovery.reset,
+            reset: false,
             // Taken with the slice rather than from its last delta, so it is the index's
             // own terminal position under the same guard. `None` only when the slice is
             // empty: a batch that carried nothing names no new place to resume from.
@@ -568,26 +600,43 @@ mod tests {
         assert!(dirty.contains(&PathBuf::new()), "including the root: {dirty:?}");
     }
 
-    /// A truncated journal is a reset *and* discards the dirty set; an escalation is not.
+    /// A reset says one thing and nothing else; `all_dirty` replaces the list it bounds.
     ///
-    /// The distinction is the whole reason this is a named decision. Both are "your view
-    /// may have gaps", but only one of them makes the enumerated dirty list wrong: an
-    /// escalation names the subtree it re-scanned, while a truncated journal cannot name
-    /// what it dropped, so a list of what survived reads as complete and is not.
+    /// These are the consumer contract's own invariants, and they are not decoration. A
+    /// batch carrying reset *and* a change list reads as "re-read everything, and also
+    /// here are the changes", and a consumer acting on the second half applies a suffix to
+    /// state it has just discarded. A truncated dirty list beside `all_dirty` is the same
+    /// mistake one bound down.
     #[test]
-    fn only_a_truncated_journal_discards_the_dirty_set() {
-        assert_eq!(Recovery::of(false, false), Recovery { reset: false, all_dirty: false });
-        assert_eq!(
-            Recovery::of(true, false),
-            Recovery { reset: true, all_dirty: false },
-            "an escalation names the subtree it re-scanned, so the list still means something"
-        );
-        assert_eq!(
-            Recovery::of(false, true),
-            Recovery { reset: true, all_dirty: true },
-            "a truncated journal cannot name what it dropped"
-        );
-        assert_eq!(Recovery::of(true, true), Recovery { reset: true, all_dirty: true });
+    fn a_reset_batch_carries_nothing_a_consumer_could_apply() {
+        let cursor = crate::Cursor { session: crate::SessionId(1), clock: Clock(9) };
+        let reset = Batch::reset_at(cursor);
+
+        assert!(reset.reset && reset.dirty, "it happened, and the position is unresumable");
+        assert_eq!(reset.cursor, Some(cursor), "and it still says where the index now is");
+        assert!(reset.is_consistent());
+
+        // The two ways to get this wrong, spelled out so the checker itself has teeth.
+        let with_changes = Batch {
+            changes: vec![Change {
+                path: PathBuf::from("a.txt"),
+                kind: ChangeKind::Upsert,
+                entry_kind: Some(EntryKind::File),
+                bytes: Some(1),
+                allocated: Some(1),
+                mtime_ns: Some(0),
+                clock: 9,
+            }],
+            ..Batch::reset_at(cursor)
+        };
+        assert!(!with_changes.is_consistent(), "a reset cannot also hand over a suffix");
+
+        let truncated_list = Batch {
+            all_dirty: true,
+            dirty_rollups: vec![PathBuf::from("src")],
+            ..Batch::default()
+        };
+        assert!(!truncated_list.is_consistent(), "a partial list beside all-dirty reads as whole");
     }
 
     /// A re-tag dirties the directories it governs, though no path event names them.

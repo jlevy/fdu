@@ -9,7 +9,7 @@ UV ?= uv
 MSRV ?= 1.88.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test test-golden golden-invocations portability parity-venv test-parity parity-check parity-update content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse clean cli perf-help verify-beads
+.PHONY: help build release test rust-test test-golden golden-invocations portability parity-venv test-parity parity-check parity-update content-selfcheck yaml-selfcheck vocabulary-selfcheck vocabulary-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -25,6 +25,7 @@ help:
 	@echo "make golden-update  Regenerate intentional golden changes, then compare"
 	@echo "make check      Handoff gate: tests, audits, docs, and installed-wheel smoke"
 	@echo "make supply-chain  Verify release age, provenance, pins, and CI trust controls"
+	@echo "make vocabulary-selfcheck  Check shared enums agree across surfaces"
 	@echo "make rust-module-names  Check Rust source filenames for ambiguity"
 	@echo "make msrv       Compile all features and test the core contract on Rust $(MSRV)"
 	@echo "make fix        Apply formatting and machine-applicable lint fixes"
@@ -51,7 +52,7 @@ build:
 release:
 	$(CARGO) build --locked --release -p fdu --all-features
 
-test: rust-test test-golden content-selfcheck yaml-selfcheck test-performance
+test: rust-test test-golden content-selfcheck yaml-selfcheck vocabulary-selfcheck test-performance
 
 rust-test:
 	$(CARGO) test --locked --all-features
@@ -61,6 +62,11 @@ test-golden: build $(NODE_INSTALL_STAMP)
 
 yaml-selfcheck: build $(NODE_INSTALL_STAMP)
 	node scripts/check-yaml.mjs
+
+# No build: it reads the two declarations rather than one execution's output, so it can
+# fail in a second rather than after a compile.
+vocabulary-selfcheck:
+	node scripts/check-vocabularies.mjs
 
 content-selfcheck: build
 	$(NODE) scripts/content-selfcheck.mjs

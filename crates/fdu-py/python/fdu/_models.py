@@ -400,6 +400,19 @@ class IssueKind(StrEnum):
     the consumer contract's rather than a subset of it.
     """
 
+    OBSERVATION_GAP = "observation_gap"
+    """The provider's own observation of the tree had a hole, which it then covered.
+
+    The kernel dropped events, a rename could not be paired, or a directory's watch was
+    registered after something had already been created inside it. The engine re-scans, so
+    the index is right -- but the *stream* had a gap, and a consumer told only "here are
+    some changes" would not know its view had been incomplete in the meantime.
+
+    Deliberately an issue rather than a coverage reason: coverage is how much of the tree
+    an answer accounts for, and after the re-scan it accounts for all of it. What moved is
+    how far the stream between then and now can be trusted.
+    """
+
     PROVIDER_FAILURE = "provider_failure"
     """The engine itself failed, or a layer above it did."""
 
@@ -1525,11 +1538,16 @@ class WatchBatch:
     """
 
     reset: bool
-    """The consumer's position is gone; re-read rather than applying ``changes``.
+    """The consumer's position is gone; re-read rather than applying this batch.
 
-    Set when the kernel dropped events, a rename could not be paired, or a directory's
-    watch was registered too late. The engine re-scans and the index ends up right; a
-    consumer applying a suffix to state that no longer matches does not.
+    Set when the consumer fell further behind than the journal retains, and only then. It
+    is a fact about *its* history, not about the provider's: the engine losing precision
+    and re-scanning leaves the position perfectly resumable, and says so through
+    :attr:`issues` instead.
+
+    A reset replaces every other signal here. There is nothing to enumerate -- the changes
+    it missed are unnamed and unnameable -- so ``changes``, ``dirty_rollups`` and
+    ``all_dirty`` are all empty beside it.
     """
 
     cursor: Cursor | None
@@ -1540,6 +1558,15 @@ class WatchBatch:
 
     A batch can carry these and no changes at all: a sweep that verified a subtree without
     finding a single difference still moved what the rows may be trusted to mean.
+    """
+
+    issues: tuple[OperationError, ...] = ()
+    """Typed conditions this batch observed.
+
+    An observation gap is the one that matters today: the engine lost precision,
+    re-scanned, and the index is right -- so the rows are complete and the position is
+    resumable, which is exactly why it is not a reset. What this tells a consumer is that
+    the stream between its last batch and this one had a hole the engine covered.
     """
 
 

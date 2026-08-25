@@ -47,6 +47,7 @@ from ._models import (
     WatchBatch,
     WatchOptions,
     Work,
+    _operation_error,
     classification_from_dict,
     provenance_from_dict,
     report_from_dict,
@@ -610,6 +611,7 @@ def _watch_batch(value: dict[str, Any]) -> WatchBatch:
         reset=bool(value["reset"]),
         cursor=None if raw_cursor is None else _cursor(raw_cursor),
         state=tuple(_state_change(item) for item in value["state"]),
+        issues=tuple(_operation_error(item) for item in value["issues"]),
     )
 
 

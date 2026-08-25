@@ -483,3 +483,63 @@ fn a_re_tag_commits_and_the_batch_cursor_follows_it() {
         "the rebind must have taken effect, or the batch reported a transition that did not happen"
     );
 }
+
+/// Losing watch precision is an issue the engine covered, not a consumer reset.
+///
+/// The two were one flag, and they are different facts about different parties. A dropped
+/// event means the *provider* stopped seeing precisely; it re-scans, so the index is right
+/// and the batch's rows are complete, and the consumer's own position is perfectly
+/// resumable. A reset means the *consumer's* history has expired: nothing can be replayed
+/// to it and everything it holds must be re-read.
+///
+/// Reporting the first as the second costs a consumer a full re-read on every kernel queue
+/// overflow -- and, worse, teaches it that reset does not really mean what it says.
+#[test]
+fn losing_watch_precision_is_an_issue_rather_than_a_reset() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::create_dir_all(dir.path().join("src")).expect("mkdir");
+    fs::write(dir.path().join("src/a.txt"), b"12345").expect("seed");
+
+    let config = OpenConfig { policy: CachePolicy::Off, ..OpenConfig::default() };
+    let (index, _report) = open(dir.path(), &config).expect("open");
+    let handle = IndexHandle::new(index);
+    let mut session = Session::new(
+        handle.clone(),
+        ScanConfig::default(),
+        Query {
+            selection: Selection::default(),
+            views: vec![ViewSpec::Summary],
+            ..Query::default()
+        },
+        WatchConfig::default(),
+    )
+    .expect("session");
+
+    // What a kernel queue overflow leaves behind, applied directly so the test does not
+    // depend on being able to provoke one.
+    handle
+        .apply(&fdu_core::Observation::new(vec![fdu_core::Op::InvalidateSubtree {
+            path: std::path::PathBuf::from("src"),
+            reason: fdu_core::InvalidateReason::WatchOverflow,
+        }]))
+        .expect("apply");
+
+    let batch = next_applied_batch(&mut session).expect("the escalation should arrive");
+
+    assert!(!batch.reset, "the consumer's position is fine: it can replay this batch");
+    let gap = batch
+        .issues
+        .iter()
+        .find(|issue| issue.kind == fdu_core::IssueKind::ObservationGap)
+        .expect("the gap must be reported as a typed issue");
+    assert_eq!(gap.path.as_deref(), Some(Path::new("src")), "and it names where");
+    assert!(
+        batch.changes.iter().any(|change| change.kind == ChangeKind::Invalidate),
+        "the re-scan's own signal still reaches the consumer: {:?}",
+        batch.changes
+    );
+    assert!(
+        !batch.dirty_rollups.is_empty() || batch.all_dirty,
+        "and the aggregates it may have moved are still named"
+    );
+}
