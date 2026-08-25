@@ -3,10 +3,14 @@ type: is
 id: is-01m0tdy8b6h17fqk7mqge56svh
 title: Complete the coherent read envelope and version-pinned paging
 kind: bug
-status: closed
+status: open
 priority: 1
-version: 21
+version: 24
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+refs:
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5018121437
+    at: 2026-08-25T11:04:22.560Z
 labels:
   - pr47-review
   - metabrowser
@@ -17,9 +21,9 @@ dependencies:
     target: is-01m0tdy9ceep2byvbtyvwc2vky
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.445Z
-updated_at: 2026-08-25T10:04:07.063Z
-closed_at: 2026-08-25T10:04:07.063Z
-close_reason: "Native bounded flat-page projections shipped: EntryPageRequest/EntryPage on the bundled read, required positive limit, path cursor, exact remaining paired with next, selection-wide totals, its own projection cost, and the caller's pin honoured. Eight engine tests plus a Python smoke check, mutation-checked twice. Found and fixed a separate defect: tree sections never parsed on the Python surface because the binding omitted TreeNode.kind."
+updated_at: 2026-08-25T11:04:22.561Z
+closed_at: null
+close_reason: null
 resolution: null
 duplicate_of: null
 ---
@@ -129,3 +133,7 @@ standalone report and the bundled read.
 NOT DONE: no CLI form. A flat page with an opaque cursor is not a shape a one-shot command
 line wants, and the repository's rule is one-directional -- nothing may be reachable *only*
 by flag, and a library-only capability is allowed.
+
+EXACT-HEAD REVIEW at PR #47 9f9bd3d (2026-08-25). The new `EntryPage` surface is functionally bounded and lossless, but every continuation repeats a full subtree and selection pass. `entry_page()` starts at the root, visits and filters every entry, recomputes `total` and `totals`, and counts every match at or before `after` (`crates/fdu-core/src/index.rs:4040-4123`). The implementation explicitly says the scan is the seek because no ordered path index exists (4102-4105). This violates MetaBrowser #74’s Phase 2 gate that a continuation must not repeat a full projection pass merely to advance one page, and makes a P-page assembly O(index × P).
+
+Keep the native, version-pinned, exact-remainder API shape, but make continuation work proportional to the requested page plus bounded native seek. A clean implementation could use an opaque version-bound continuation carrying a bounded traversal checkpoint and exact remaining/totals, or an authoritative native ordered index; it must not create a Python mirror, duplicate adapter cursor, or retained full result set. Add a large-fixture work-counter test proving page 2+ does not revisit the whole selection or preceding prefix. The existing `entries_visited` counter makes that acceptance directly assertable.
