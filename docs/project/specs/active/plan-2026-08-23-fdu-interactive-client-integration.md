@@ -1168,6 +1168,19 @@ from emitting millions of provenance-only entry changes into the feed it serves.
   the other engine’s own empty answer beside it, so the claim that neither difference
   can change an answer is a check.
 
+- [x] Four review findings on the live and paging paths, three of them one mistake in
+  different clothes — a value standing for “unknown”, “unauthenticated” or “invisible”
+  that reads as ordinary data.
+  A page continuation is tagged with a key minted per opened index (`fdu-91ru`), so the
+  denominator and aggregates it carries cannot be authored by the caller who carries it;
+  an unreadable root leaves the filesystem boundary undrawn rather than drawn at device
+  zero, which no real device matches (`fdu-4ubw`); a control file the scope prunes still
+  reaches the retag, on create, edit and delete, because a tag rule reads it from disk
+  by path and the missing row was never the obstacle (`fdu-0778`); and a cap refusal
+  reports the rows it changed on the way to refusing, so placeholder ancestors and a
+  kind-changing removal reach the delta and the clock rather than the index alone
+  (`fdu-a7cl`).
+
 ## Testing Strategy
 
 Two properties are load-bearing and both are cheap to state.

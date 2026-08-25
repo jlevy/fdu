@@ -450,6 +450,85 @@ fn next_applied_batch(session: &mut Session) -> Option<fdu_core::session::Batch>
     None
 }
 
+/// A control file the scope prunes still rebinds the tags it governs.
+///
+/// The one case where an answer-affecting change leaves *nothing* in the delta to notice
+/// it by. `.gitignore` is a hidden name, so a pruning scope holds no row for it -- and the
+/// live admission rule turns its upsert into a removal, of a path that was never there,
+/// which commits nothing. A session watching only the delta therefore saw an idle tree
+/// while every `gitignore` tag under it went on describing a file that had changed.
+///
+/// Rebinding does not need the row: the rules read their control files from disk by path.
+/// What was missing was being told, which is what `WatchApplyReport::pruned_control_files`
+/// now carries.
+///
+/// All three lifecycle events, because they fail differently: a create has no prior row to
+/// remove, an edit has no row either but a real prior *effect*, and a delete is the one an
+/// implementation that keyed on "an upsert became a removal" would still miss.
+#[test]
+#[cfg(feature = "gitignore")]
+fn a_pruned_control_file_still_rebinds_the_tags_it_governs() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::create_dir_all(dir.path().join("src")).expect("mkdir");
+    fs::write(dir.path().join("src/keep.rs"), b"fn main() {}").expect("seed");
+    fs::write(dir.path().join("src/notes.txt"), b"notes").expect("seed");
+
+    let tags = std::sync::Arc::new(
+        fdu_core::tags::TagRules::from_names(["gitignore"])
+            .expect("the rule is compiled in")
+            .with_promoted(["gitignore"])
+            .expect("an enabled rule can be promoted"),
+    );
+    let scan = ScanConfig {
+        tags: Some(tags),
+        hidden: Some(std::sync::Arc::new(fdu_core::admission::HiddenPolicy::prune_hidden([""; 0]))),
+        ..ScanConfig::default()
+    };
+    let (handle, mut session) = pruning_session(dir.path(), scan);
+
+    assert!(!holds(&handle, ".gitignore"), "nothing has written one yet");
+    let tagged = |handle: &IndexHandle, path: &str| -> Vec<String> {
+        handle
+            .with_index(|index| {
+                index.tags_of(Path::new(path)).into_iter().map(str::to_owned).collect::<Vec<_>>()
+            })
+            .expect("read")
+    };
+    assert_eq!(tagged(&handle, "src/keep.rs"), Vec::<String>::new());
+
+    // Create: the rule starts governing a file nothing touched.
+    fs::write(dir.path().join(".gitignore"), b"*.rs\n").expect("save a control file");
+    assert!(
+        wait_until(&mut session, &handle, |handle| tagged(handle, "src/keep.rs")
+            == vec!["gitignore".to_string()]),
+        "a created control file must rebind, even with no row of its own"
+    );
+    assert!(!holds(&handle, ".gitignore"), "and it is still outside the index");
+    assert_eq!(tagged(&handle, "src/notes.txt"), Vec::<String>::new(), "it governs `*.rs` only");
+
+    // Edit: the same path, a different rule, and no row either time.
+    fs::write(dir.path().join(".gitignore"), b"*.txt\n").expect("edit the control file");
+    assert!(
+        wait_until(&mut session, &handle, |handle| tagged(handle, "src/notes.txt")
+            == vec!["gitignore".to_string()]),
+        "an edited control file must rebind to what it now says"
+    );
+    assert_eq!(
+        tagged(&handle, "src/keep.rs"),
+        Vec::<String>::new(),
+        "and the rule it stopped saying must stop applying"
+    );
+
+    // Delete: nothing governs anything any more.
+    fs::remove_file(dir.path().join(".gitignore")).expect("remove the control file");
+    assert!(
+        wait_until(&mut session, &handle, |handle| tagged(handle, "src/notes.txt").is_empty()),
+        "a deleted control file must rebind too, which is the case a rewritten-upsert rule misses"
+    );
+    settle(&mut session);
+    assert_eq!(tagged(&handle, "src/keep.rs"), Vec::<String>::new());
+}
+
 /// A re-tag is a commit, and the batch that caused it names a position past it.
 ///
 /// A saved `.gitignore` changes what the rules decide about entries nothing touched, so it

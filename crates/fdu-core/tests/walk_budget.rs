@@ -403,6 +403,128 @@ fn a_refusal_reports_a_count_a_coverage_and_a_typed_issue_together() {
     assert!(issue.message.contains('4'), "naming the cap that refused: {}", issue.message);
 }
 
+/// A refusal that had to mutate to reach its verdict reports the mutation as well.
+///
+/// The cap is consulted at the point a *new file row* would be allocated, which is after
+/// two things have already happened: the ancestors of a deep path have been created, and a
+/// kind-changing entry at the path itself has been removed. Both are real mutations to real
+/// rows and to every roll-up above them, and both are correct -- a directory the tree has
+/// really gained is admitted whatever the cap says, and an object the tree has really lost
+/// is gone whether or not its replacement is admitted.
+///
+/// What was wrong was the report. `upsert_beneath` returned "unchanged" on refusal
+/// regardless, so those mutations reached the index with no delta naming them and no data
+/// clock moving past them: a consumer resuming from its cursor was current on a tree that
+/// had rows it had never been told about.
+///
+/// Both cases here, and the second refusal as well as the first, because a rule that
+/// preflighted only the first arrival would pass a test that stopped at one.
+#[test]
+fn a_refused_upsert_reports_what_it_changed_on_the_way_to_refusing() {
+    let dir = tempfile::tempdir().expect("temp");
+    for index in 0..2 {
+        std::fs::write(dir.path().join(format!("f{index}.txt")), b"seed").expect("write");
+    }
+    let scan = ScanConfig { max_files: Some(2), ..ScanConfig::default() };
+    let config = OpenConfig { scan: scan.clone(), policy: CachePolicy::Off, ..Default::default() };
+    let (index, _) = fdu_core::open(dir.path(), &config).expect("open");
+    let handle = IndexHandle::new(index);
+    let before = handle.cursor().expect("cursor");
+
+    // A file below directories the index has never seen. The ancestors are admitted --
+    // directories are not counted against the cap -- and the file is refused.
+    std::fs::create_dir_all(dir.path().join("deep/nested")).expect("mkdir");
+    std::fs::write(dir.path().join("deep/nested/late.txt"), b"more").expect("write");
+    let report = fdu_core::scan::reconcile_handle(&handle, &scan, &mut |_| {}).expect("refresh");
+    assert!(report.apply.refused > 0, "the file is over the cap");
+
+    let after = handle.cursor().expect("cursor");
+    assert_ne!(
+        after.clock, before.clock,
+        "the ancestors are real rows, so the clock has to move past them"
+    );
+    let root_rollup = |handle: &IndexHandle| {
+        handle.rollup(Path::new("")).expect("read").expect("the root has a roll-up")
+    };
+    let dirs = |handle: &IndexHandle| root_rollup(handle).dirs;
+    assert!(dirs(&handle) >= 2, "and the directories are in the index: {}", dirs(&handle));
+    assert!(
+        !handle.since(before).expect("resume").deltas.is_empty(),
+        "a consumer resuming from before this must be told the rows exist"
+    );
+
+    // A second arrival, refused again, and again after building an ancestor. A preflight
+    // that only held on the first refusal passes everything above and fails here.
+    let second = handle.cursor().expect("cursor");
+    std::fs::create_dir_all(dir.path().join("other")).expect("mkdir");
+    std::fs::write(dir.path().join("other/also.txt"), b"more").expect("write");
+    let again = fdu_core::scan::reconcile_handle(&handle, &scan, &mut |_| {}).expect("refresh");
+    assert!(again.apply.refused > 0, "still over the cap");
+    assert_ne!(
+        handle.cursor().expect("cursor").clock,
+        second.clock,
+        "the second refusal built an ancestor too, and it is a row like any other"
+    );
+
+    // And the cap still holds: the refusals refused.
+    let files = root_rollup(&handle).files;
+    assert_eq!(files, 2, "the bound is a bound however many arrivals it turned away");
+}
+
+/// The other mutation before the verdict: a kind change removes before the cap is asked.
+///
+/// A directory replaced in place by a file is one event on a path that never goes absent.
+/// The old row cannot survive it -- the tree does not hold a directory there any more --
+/// so the removal is right, and it happens before the cap is consulted about the file that
+/// replaces it. Refusing the file is also right. Reporting "unchanged" for the pair is not:
+/// the directory is gone from the index and from every roll-up above it, and a consumer
+/// resuming from its cursor would still be showing it.
+///
+/// The replaced directory is empty on purpose. A directory with files in it frees enough
+/// room under the cap for the replacement to be admitted, which is a different case and not
+/// this one.
+#[test]
+fn a_kind_change_refused_by_the_cap_still_reports_the_row_it_removed() {
+    let dir = tempfile::tempdir().expect("temp");
+    // One file under a cap of two, so the walk has budget left to discover the directory:
+    // a capped walk stops *discovering* at the cap, and a fixture that starts full would
+    // never have read `swap` at all.
+    std::fs::write(dir.path().join("f0.txt"), b"seed").expect("write");
+    std::fs::create_dir(dir.path().join("swap")).expect("mkdir");
+
+    let scan = ScanConfig { max_files: Some(2), ..ScanConfig::default() };
+    let config = OpenConfig { scan: scan.clone(), policy: CachePolicy::Off, ..Default::default() };
+    let (index, _) = fdu_core::open(dir.path(), &config).expect("open");
+    let handle = IndexHandle::new(index);
+    let root_rollup = |handle: &IndexHandle| {
+        handle.rollup(Path::new("")).expect("read").expect("the root has a roll-up")
+    };
+    assert_eq!(root_rollup(&handle).dirs, 1, "the directory is in the index to begin with");
+
+    // Now fill the cap, so the replacement below has nowhere to go.
+    std::fs::write(dir.path().join("f1.txt"), b"seed").expect("write");
+    fdu_core::scan::reconcile_handle(&handle, &scan, &mut |_| {}).expect("refresh");
+    assert_eq!(root_rollup(&handle).files, 2, "the index is at its cap");
+    let before = handle.cursor().expect("cursor");
+
+    std::fs::remove_dir(dir.path().join("swap")).expect("rmdir");
+    std::fs::write(dir.path().join("swap"), b"now a file").expect("write");
+    let report = fdu_core::scan::reconcile_handle(&handle, &scan, &mut |_| {}).expect("refresh");
+    assert!(report.apply.refused > 0, "the replacement file is over the cap");
+
+    assert_eq!(root_rollup(&handle).dirs, 0, "the directory the tree lost is gone from the index");
+    assert_eq!(root_rollup(&handle).files, 2, "and the replacement was refused");
+    assert_ne!(
+        handle.cursor().expect("cursor").clock,
+        before.clock,
+        "a removal is a change, so the clock moves even though the upsert was refused"
+    );
+    assert!(
+        !handle.since(before).expect("resume").deltas.is_empty(),
+        "and a consumer resuming from before it is told the row is gone"
+    );
+}
+
 /// The issue is reported once however many entries the cap refuses.
 ///
 /// A long watch over a full tree refuses on every arrival. One issue per refusal would

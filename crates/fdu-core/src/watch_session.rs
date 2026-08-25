@@ -471,7 +471,13 @@ impl Session {
         // batch never touched, so it is rebound before the slice below is taken -- both so
         // the tags reported are the ones the new file produces, and so the rebind's own
         // commit is inside the slice rather than after it.
-        self.rebind_tags_for(&delivered)?;
+        //
+        // Two sources, because a control file need not be in the index at all. Under hidden
+        // pruning a `.gitignore` has no row, so its own events leave no delta -- the apply
+        // reports them separately, which is the only trace they leave.
+        let pruned =
+            outcome.as_ref().map_or(&[][..], |report| report.pruned_control_files.as_slice());
+        self.rebind_tags_for(&delivered, pruned)?;
 
         // The batch is the journal since the consumer's last position, not the deltas this
         // watcher happened to hand back. Those are not the same set, and the difference is
@@ -649,17 +655,45 @@ impl Session {
     /// Returns the directories whose tags may have changed, or nothing at all -- the
     /// common case, and one cheap `any` over the batch -- when no control file was
     /// touched or no enabled rule reads one.
-    fn rebind_tags_for(&self, delivered: &[AppliedDelta]) -> Result<()> {
-        let moved = self.index.with_index(|index| {
+    ///
+    /// `pruned` is the second source and not a redundant one. A control file the scope
+    /// excludes has no row and produces no delta: its upsert is rewritten to a removal of a
+    /// path the index never held, which commits nothing. Watching the delta alone therefore
+    /// made a pruned `.gitignore` invisible -- every `gitignore` tag in the tree went on
+    /// describing a file that had changed, with no event to blame. The rules read their
+    /// control files from disk by path, so having no row is no obstacle to rebinding; the
+    /// only thing missing was being told.
+    fn rebind_tags_for(&self, delivered: &[AppliedDelta], pruned: &[PathBuf]) -> Result<()> {
+        let (moved, note): (bool, Vec<PathBuf>) = self.index.with_index(|index| {
             let rules = index.tag_rules();
-            !rules.is_empty()
-                && delivered
-                    .iter()
-                    .flat_map(|delta| &delta.ops)
-                    .any(|op| rules.is_control_file(op.path()))
+            if rules.is_empty() {
+                return (false, Vec::new());
+            }
+            let in_delta = delivered
+                .iter()
+                .flat_map(|delta| &delta.ops)
+                .any(|op| rules.is_control_file(op.path()));
+            // The *directories*, because that is the shape binding looks in: a control file
+            // with no row is found by its parent or not at all.
+            let note: Vec<PathBuf> = pruned
+                .iter()
+                .filter(|path| rules.is_control_file(path))
+                .map(|path| path.parent().unwrap_or(std::path::Path::new("")).to_path_buf())
+                .collect();
+            (in_delta || !note.is_empty(), note)
         })?;
         if !moved {
             return Ok(());
+        }
+        // Recorded before the rebind, and by the same door the walk uses. Binding looks in
+        // the index and in the directories a *walk* pruned a control file from -- and a
+        // control file created after that walk is in neither, so the live rule has to
+        // deposit the same fact the walk would have. A directory stays on the list once it
+        // is on it, including after the file is deleted: binding reads from disk by path,
+        // so a stale entry finds nothing, and the list is bounded by the directories that
+        // ever held one, which is the bound the walk's own list has.
+        if !note.is_empty() {
+            self.index.adopt_pruned_control_dirs(note)?;
         }
         // The commit it mints is picked up by the journal slice like any other, which is
         // why this returns nothing: there is one place a batch's contents come from.

@@ -850,6 +850,54 @@ refuses and what it admits — including the two values the two engines judge di
 with the other engine’s own empty answer beside each, so “the difference is harmless” is
 a check rather than a claim.
 
+### `fdu-91ru` / `fdu-4ubw` / `fdu-0778` / `fdu-a7cl` — four ways a value stood for the wrong thing
+
+The fourth review round found four defects, and three of them are one mistake in
+different clothes: something that meant *unknown*, *unauthenticated*, or *invisible* was
+represented by a value that reads as ordinary data, and every rule downstream then
+treated it as ordinary data.
+
+**A checksum is not a signature** (`fdu-91ru`). `token_checksum` is unkeyed and said so
+in its own documentation, which is an admission rather than a defence: a caller who
+edits a token recomputes it.
+Everything the token carries is a number the page *reports* without recomputing, so an
+editable token is a caller-authored claim about an answer nobody walked.
+The version and shape checks do not close it, because both compare against values the
+token itself carries.
+`ContinuationAuthority` is a key minted per opened index, never persisted and never
+serialized; the cursor gains a private tag, filled where the counting pass settles the
+numbers it signs and checked in `entry_page` beside the version and the shape.
+`decode` still cannot check it, which is correct — the key is not there.
+
+**Zero is a device, not an absence** (`fdu-4ubw`). The live `one_filesystem` rule
+flattened a failed root `stat` to `0`, whose comment said it fails open and whose
+behaviour was the exact opposite: no real device is zero, so every successfully `stat`ed
+parent failed the comparison — and an out-of-scope upsert becomes a removal, so a root
+that briefly could not be read would have emptied the index one event at a time.
+The type carries the absence now.
+
+**A scope decides rows, not signals** (`fdu-0778`). Hidden pruning gives `.gitignore` no
+row, so its live upsert is rewritten to a removal of a path that was never there, which
+commits nothing. A session watching the delta alone therefore saw an idle tree while
+every tag the file governs went stale.
+The apply reports what it pruned, and the session deposits the *directory* through the
+same door the walk uses — binding reads control files from disk by path, so the missing
+row was never the obstacle.
+Recorded for every op naming an excluded control file rather than only for the rewritten
+upsert, because a removal is never “outside” and deleting a control file is exactly as
+answer-affecting as creating one.
+
+**A refusal that mutated is not “unchanged”** (`fdu-a7cl`). The cap is consulted where a
+new *file* row would be allocated, which is after the ancestors of a deep path have been
+created and after a kind-changing row at the path itself has been removed.
+Both are correct: a directory the tree really gained is admitted whatever the cap says,
+and an object the tree really lost is gone whether or not its replacement is admitted.
+Reporting them as no change was not — those rows reached the index with no delta naming
+them and no data clock moving past them, so a consumer resuming from its cursor was
+current on a tree it had never been told about.
+`ensure_dir_chain` and `upsert_beneath` now report mutation and refusal as separate
+facts.
+
 ### Surfaces
 
 | Bead | What shipped | Where |
@@ -867,6 +915,10 @@ a check rather than a claim.
 | `fdu-vfx7` | `Interest::{Rows, Invalidations}` and `Session::with_interest`; the batch’s cost measured across the binding, with the phases exact-or-absent rather than defaulting to zero | `watch_session.rs:Interest`, `fdu-py/src/lib.rs:PyWatch::__next__`, `fdu-py/python/fdu/_api.py:Watch.__next__` |
 | `fdu-bjhy` | `ScanConfig::exclude_special` and `ScanScope::exclude_special`: sockets, FIFOs and device nodes pruned at admission rather than filtered afterwards, so the index holds three kinds and the roll-ups count exactly the rows a listing shows | `scan.rs:retains` (both walkers, both reconcilers, the single-path refresh), `watch.rs:retained`, `snapshot.rs:SCOPE_EXCLUDE_SPECIAL`, `cli.rs:--special`, `fdu-py/python/fdu/_models.py:ScanOptions.special` |
 | `fdu-7sou` / `fdu-97dd` | A bounded scope is watchable: `max_depth` and `one_filesystem` as per-event predicates, `max_files` as an index-owned inventory bound the walk, the refresh and the watch all keep | `scan.rs:within_scope`, `index.rs:upsert_beneath`, `engine_contract.rs:AppliedDelta::of_both` |
+| `fdu-91ru` | `ContinuationAuthority`: a per-open key a page continuation is tagged with, checked under the same guarded read as its version and shape, so the counts a token carries are the engine’s own | `index.rs:ContinuationAuthority`, `index.rs:EntryCursor::authenticated`, `index.rs:entry_page` |
+| `fdu-4ubw` | The live filesystem boundary takes `Option<u64>`, so an unreadable root leaves the boundary undrawn rather than drawn at a device nothing matches | `scan.rs:on_root_filesystem`, `watch.rs:admitted` |
+| `fdu-0778` | `WatchApplyReport::pruned_control_files`: a control file the scope excludes still reaches the retag, on create, edit and delete | `watch.rs:admitted`, `watch_session.rs:rebind_tags_for`, `index.rs:adopt_pruned_control_dirs` |
+| `fdu-a7cl` | A cap refusal reports the rows it changed on the way to refusing, so placeholder ancestors and a kind-changing removal reach the delta and the clock | `index.rs:ensure_dir_chain`, `index.rs:upsert_beneath` |
 | `fdu-8w5k` | `Selection::terminal_extensions` and `::ancestor_names` as closed native predicates, with the validating constructors both surfaces refuse through, and one path-shaped admission funnel the live watcher shares | `query/query_selection.rs:admits_by_path`, `query/query_selection.rs:terminal_suffix`, `watch_session.rs:admits_by_path`, `cli.rs:--terminal-ext/--ancestor-name`, `fdu-py/python/fdu/_models.py:Selection` |
 | `fdu-vfyw` | The reference embedder produces the consuming contract’s own scope-digest bytes, from a fixture recorded by running its function rather than re-reading its spec | `fdu-py/examples/browser_provider.py:scope_fingerprint`, `fdu-py/tests/fixtures/scope-fingerprint.json` |
 

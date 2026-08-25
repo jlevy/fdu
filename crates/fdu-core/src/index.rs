@@ -3940,9 +3940,15 @@ impl Index {
     /// a tree may name ancestors the index has never seen. Creating them as directories
     /// with default attributes keeps the delta applicable; a later upsert or the
     /// revalidation sweep fills in their real attributes.
-    fn ensure_dir_chain(&mut self, parts: &[&OsStr], stats: &mut ApplyStats) -> EntryId {
+    fn ensure_dir_chain(&mut self, parts: &[&OsStr], stats: &mut ApplyStats) -> (EntryId, bool) {
         let rules = Arc::clone(&self.tag_rules);
         let mut current = EntryId::ROOT;
+        // Reported rather than inferred. Every ancestor this creates is a row and a set of
+        // roll-up merges, and the operation that asked for them can still be refused
+        // downstream by the file cap -- at which point "nothing changed" would be a false
+        // statement about a tree that had just gained directories, with no delta naming
+        // them and no clock moving past them.
+        let mut mutated = false;
         for part in parts {
             if let Some(existing) = self.entry(current).children.get(*part).copied() {
                 if self.entry(existing).kind.is_dir() {
@@ -3952,6 +3958,8 @@ impl Index {
                 // A path cannot have children beneath a non-directory. Replace the
                 // conflicting record with a placeholder directory; a later observation
                 // for the ancestor fills in its real attributes.
+                // Not flagged here: this branch always falls through to the allocation
+                // below, which flags it. A second assignment would read as a separate case.
                 self.remove_entry(existing, stats);
             }
             // Tagged here rather than left at zero for a later observation to fill in.
@@ -3985,9 +3993,10 @@ impl Index {
             self.count_dir_into_planes(&mut contribution, tag_bits);
             self.merge_upward(Some(current), &contribution);
             stats.inserted += 1;
+            mutated = true;
             current = child;
         }
-        current
+        (current, mutated)
     }
 
     fn apply_upsert(
@@ -4035,11 +4044,16 @@ impl Index {
             stats.updated += 1;
             return true;
         };
-        let parent = self.ensure_dir_chain(ancestors, stats);
+        let (parent, chain_mutated) = self.ensure_dir_chain(ancestors, stats);
         if let Some(dir) = path.parent() {
             parent_memo.set(dir, parent);
         }
-        self.upsert_beneath(parent, name, path, kind, attrs, stats)
+        // Either half is a change. A refused upsert that had to build ancestors to find out
+        // is still an index that moved, and reporting only the refusal left those rows out
+        // of the delta and out of the clock -- so a consumer's next read saw directories no
+        // event had ever mentioned.
+        let upserted = self.upsert_beneath(parent, name, path, kind, attrs, stats);
+        chain_mutated || upserted
     }
 
     /// Apply one upsert beneath a parent whose id is already resolved.
@@ -4060,6 +4074,11 @@ impl Index {
     ) -> bool {
         let source = self.applying_source;
         let existing = self.entry(parent).children.get(name).copied();
+        // Set by the kind-change removal below, which happens before the cap is consulted
+        // and must not be undone by it: the old object is gone from the tree whether or not
+        // the new one is admitted, and a refusal that reported "unchanged" left a removed
+        // row and re-merged roll-ups behind a delta that named neither.
+        let mut mutated = false;
 
         if let Some(id) = existing {
             let entry = self.entry(id);
@@ -4107,6 +4126,7 @@ impl Index {
             // Clearing here would be untestable defensive code, which reads as a hazard
             // that does not exist.
             self.remove_entry(id, stats);
+            mutated = true;
         }
 
         if kind == EntryKind::File
@@ -4130,7 +4150,7 @@ impl Index {
             // no rule bounds the retained set and is history-independent at once. The
             // coverage says the set is short, which is the fact a consumer can act on.
             stats.refused += 1;
-            return false;
+            return mutated;
         }
 
         let ext_id = (kind == EntryKind::File)

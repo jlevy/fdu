@@ -26,7 +26,7 @@
 //! and its overflow signaling are proven, and the information loss that motivates this
 //! module all happens in layers *above* it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -229,6 +229,16 @@ pub struct WatchApplyReport {
     /// would otherwise report a minute of "cost" for a batch that did nothing, and the one
     /// number an embedder compares providers on would be measuring its own patience.
     pub applied_ns: u64,
+    /// Control files this apply saw and did not admit, in path order.
+    ///
+    /// A tag rule reads its control file from disk by path; the index never holds a row
+    /// for one that hidden pruning excluded. So an event on a pruned `.gitignore` leaves no
+    /// trace in the delta -- the upsert becomes a removal of a path that was never there --
+    /// and a session watching only the delta would never rebind. This is that trace.
+    ///
+    /// Bounded by the coalesced intent that produced it, and deduplicated: one edit to one
+    /// control file is one path however many events the backend reported for it.
+    pub pruned_control_files: Vec<PathBuf>,
 }
 
 impl Watcher {
@@ -374,13 +384,25 @@ fn apply_intent(
 ) -> Result<WatchApplyReport> {
     let started = std::time::Instant::now();
     let mut verifier = |_: &Path, _: &Observation| Ok(verify_intent(root, watch_config, intent));
-    let apply = apply_reverified_with(index, &Observation::default(), scan_config, &mut verifier)?;
+    let mut pruned_control_files = BTreeSet::new();
+    let apply = apply_reverified_with(
+        index,
+        &Observation::default(),
+        scan_config,
+        &mut verifier,
+        &mut pruned_control_files,
+    )?;
     if let Some(applied) = &apply.applied {
         sink(applied);
     }
     let reconciliation = scan::reconcile_pending_handle(index, scan_config, sink)?;
     let applied_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
-    Ok(WatchApplyReport { apply, reconciliation, applied_ns })
+    Ok(WatchApplyReport {
+        apply,
+        reconciliation,
+        applied_ns,
+        pruned_control_files: pruned_control_files.into_iter().collect(),
+    })
 }
 
 /// Test the unrooted observation driver without making it a public apply capability.
@@ -397,13 +419,19 @@ fn apply_observation(
 ) -> Result<WatchApplyReport> {
     scan_config.validate_for_watch_scope(index.scope()?)?;
     let started = std::time::Instant::now();
-    let apply = apply_reverified(index, observation, scan_config)?;
+    let mut pruned_control_files = BTreeSet::new();
+    let apply = apply_reverified(index, observation, scan_config, &mut pruned_control_files)?;
     if let Some(applied) = &apply.applied {
         sink(applied);
     }
     let reconciliation = scan::reconcile_pending_handle(index, scan_config, sink)?;
     let applied_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
-    Ok(WatchApplyReport { apply, reconciliation, applied_ns })
+    Ok(WatchApplyReport {
+        apply,
+        reconciliation,
+        applied_ns,
+        pruned_control_files: pruned_control_files.into_iter().collect(),
+    })
 }
 
 /// Re-stat a queued watch sample against a clock-stable index boundary before applying
@@ -418,8 +446,15 @@ fn apply_reverified(
     index: &IndexHandle,
     observation: &Observation,
     scan_config: &ScanConfig,
+    pruned_control_files: &mut BTreeSet<PathBuf>,
 ) -> Result<ApplyOutcome> {
-    apply_reverified_with(index, observation, scan_config, &mut reverify_observation)
+    apply_reverified_with(
+        index,
+        observation,
+        scan_config,
+        &mut reverify_observation,
+        pruned_control_files,
+    )
 }
 
 fn apply_reverified_with(
@@ -427,12 +462,17 @@ fn apply_reverified_with(
     observation: &Observation,
     scan_config: &ScanConfig,
     verifier: &mut impl FnMut(&Path, &Observation) -> Result<Observation>,
+    pruned_control_files: &mut BTreeSet<PathBuf>,
 ) -> Result<ApplyOutcome> {
     let (root, scope, _) = index.watch_boundary()?;
     scan_config.validate_for_watch_scope(scope)?;
     for _ in 0..MAX_OPTIMISTIC_APPLY_ATTEMPTS {
         let clock = index.clock()?;
-        let candidate = admitted(verifier(&root, observation)?, &root, scan_config);
+        // Accumulated across attempts rather than reset per attempt: a retry re-verifies
+        // the same intent, so what it saw the first time is still true, and the set is
+        // deduplicated anyway.
+        let candidate =
+            admitted(verifier(&root, observation)?, &root, scan_config, pruned_control_files);
         if let Some(outcome) = index.apply_if_clock(clock, &candidate)? {
             return Ok(outcome);
         }
@@ -478,7 +518,12 @@ fn apply_reverified_with(
 /// Applied to the candidate rather than inside each verifier, because both verifiers ---
 /// the intent path and the test one --- would otherwise carry the rule separately, which
 /// is the divergence these predicates exist to prevent.
-fn admitted(observation: Observation, root: &Path, config: &ScanConfig) -> Observation {
+fn admitted(
+    observation: Observation,
+    root: &Path,
+    config: &ScanConfig,
+    pruned_control_files: &mut BTreeSet<PathBuf>,
+) -> Observation {
     if !config.narrows_entries() {
         return observation;
     }
@@ -511,6 +556,28 @@ fn admitted(observation: Observation, root: &Path, config: &ScanConfig) -> Obser
         .ops
         .into_iter()
         .filter_map(|observed| {
+            // Recorded for every op naming a control file this scope excludes, whatever the
+            // op is and before anything rewrites it -- afterwards nothing names it.
+            //
+            // A tag rule reads its control file from disk by path, so a pruned `.gitignore`
+            // never has a row: its upsert is rewritten to a removal of a path that was
+            // never there, which commits nothing, and a session watching the delta alone
+            // saw an idle tree while every tag it governs went stale. This is the live half
+            // of what the walk records with `note_pruned_control_file`.
+            //
+            // Deliberately not folded into the `outside` decision below, which is about
+            // whether an op may be applied: a *removal* is never outside -- removing what is
+            // not there is harmless and always allowed -- yet deleting a pruned control file
+            // is exactly as answer-affecting as creating one. Keying on the rewritten upsert
+            // covers create and edit and misses delete.
+            if !scan::within_scope(observed.op.path(), config)
+                && config
+                    .tags
+                    .as_ref()
+                    .is_some_and(|rules| rules.is_control_file(observed.op.path()))
+            {
+                pruned_control_files.insert(observed.op.path().to_path_buf());
+            }
             let outside = match &observed.op {
                 Op::Upsert { path, kind, .. } => {
                     !scan::retains(*kind, config)
@@ -885,7 +952,7 @@ mod tests {
             },
         ]);
 
-        let held = admitted(observation, Path::new("/"), &config);
+        let held = admitted(observation, Path::new("/"), &config, &mut BTreeSet::new());
         assert_eq!(held.len(), 2, "the batch keeps its length: one op in, one op out");
         assert!(
             matches!(&held.ops[0].op, Op::Remove { path } if path == Path::new("sock")),
@@ -927,7 +994,7 @@ mod tests {
             },
         ]);
 
-        let held = admitted(observation, Path::new("/"), &config);
+        let held = admitted(observation, Path::new("/"), &config, &mut BTreeSet::new());
         assert_eq!(held.len(), 2, "the invalidation is gone and the upsert is not: {held:?}");
         assert!(
             matches!(&held.ops[0].op, Op::Remove { path } if path == Path::new("sub/deep.txt")),
@@ -965,7 +1032,12 @@ mod tests {
             kind: EntryKind::Other,
             attrs: Attrs::default(),
         }]);
-        let held = admitted(observation.clone(), Path::new("/"), &ScanConfig::default());
+        let held = admitted(
+            observation.clone(),
+            Path::new("/"),
+            &ScanConfig::default(),
+            &mut BTreeSet::new(),
+        );
         assert_eq!(held, observation, "nothing excludes it, so nothing rewrites it");
     }
 
@@ -998,7 +1070,12 @@ mod tests {
         }]);
         let config = ScanConfig { one_filesystem: true, ..ScanConfig::default() };
 
-        let held = admitted(observation.clone(), Path::new("/fdu-no-such-root-3f1c9e2a"), &config);
+        let held = admitted(
+            observation.clone(),
+            Path::new("/fdu-no-such-root-3f1c9e2a"),
+            &config,
+            &mut BTreeSet::new(),
+        );
         assert_eq!(
             held, observation,
             "with no root device there is no boundary, so the upsert must survive it"
@@ -1030,7 +1107,7 @@ mod tests {
         )]);
 
         let config = ScanConfig { exclude_special: true, ..ScanConfig::default() };
-        let held = admitted(observation, Path::new("/"), &config);
+        let held = admitted(observation, Path::new("/"), &config, &mut BTreeSet::new());
         assert_eq!(
             held.ops[0].expectation,
             Expectation::State(expectation),
@@ -1717,6 +1794,7 @@ mod tests {
                 &queued,
                 &crate::ScanConfig::default(),
                 &mut verifier,
+                &mut BTreeSet::new(),
             );
             done_tx.send(result).expect("report apply result");
         });
@@ -1781,9 +1859,14 @@ mod tests {
             Ok(observation.clone())
         };
 
-        let outcome =
-            apply_reverified_with(&handle, &queued, &crate::ScanConfig::default(), &mut verifier)
-                .expect("contention escalates");
+        let outcome = apply_reverified_with(
+            &handle,
+            &queued,
+            &crate::ScanConfig::default(),
+            &mut verifier,
+            &mut BTreeSet::new(),
+        )
+        .expect("contention escalates");
 
         assert_eq!(attempts, MAX_OPTIMISTIC_APPLY_ATTEMPTS);
         assert_eq!(outcome.invalidated, 1);
@@ -1818,6 +1901,7 @@ mod tests {
             &Observation::default(),
             &crate::ScanConfig::default(),
             &mut verifier,
+            &mut BTreeSet::new(),
         )
         .expect_err("verification error");
 
@@ -1848,6 +1932,7 @@ mod tests {
             }]),
             &crate::ScanConfig::default(),
             &mut verifier,
+            &mut BTreeSet::new(),
         )
         .expect("stable apply");
 
