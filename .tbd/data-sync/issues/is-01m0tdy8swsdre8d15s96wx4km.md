@@ -5,7 +5,7 @@ title: Watch invalidation batches lose required dirty information
 kind: bug
 status: open
 priority: 1
-version: 11
+version: 12
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels:
   - pr47-review
@@ -17,7 +17,7 @@ dependencies:
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.915Z
-updated_at: 2026-08-25T00:52:00.482Z
+updated_at: 2026-08-25T01:54:32.455Z
 closed_at: 2026-08-24T23:31:11.228Z
 close_reason: |
   Shipped. `make check` green, parity holds.
@@ -100,3 +100,9 @@ EXACT-HEAD REVIEW at PR #47 715f748 (2026-08-25): the claimed cursor and teardow
 P1 CURSOR LOSS. Session::next_batch (crates/fdu-core/src/watch_session.rs:214-304) constructs applied only from watcher/reconcile sink deliveries and sets Batch.cursor to applied.last().clock. Watcher::apply_next invokes reconciliation, which can flush several batches under separate write guards (watch.rs:336-372; scan.rs:3620-3634). A direct producer commit C can land between watcher deltas A and B; the returned batch carries A/B and cursor B but omits C, so a consumer resuming at B loses C permanently. The new test at watch_session_integration.rs:242-306 checks only carried clocks <= cursor and would also accept that skipped interleaving. Fix the session against its prior delivered cursor: after applying the intent, read IndexHandle::since(previous_cursor) under one guard and build the batch from that complete journal slice and its terminal cursor; journal truncation must yield explicit reset/all-dirty. This is consumer resume state, not a second provider cursor.
 
 P1 TEARDOWN. asyncio cleanup at crates/fdu-py/python/fdu/aio.py:137-161 runs worker.join(timeout=5) off-loop but never checks worker.is_alive(). The worker may be blocked in PyWatch.__next__ -> session.next_batch(self.timeout) (crates/fdu-py/src/lib.rs:1889-1899); WatchOptions.interval can be any positive value. With interval=60 on an idle tree, cancellation returns after the five-second join timeout while the worker remains alive. The interval=0.1 test cannot detect this. Make the native wait interruptible or pull with a short internal timeout and require termination; if a timeout remains, raise a typed teardown failure instead of returning success with a live worker. Provider state and per-batch work also remain the bead's existing open remainder.
+
+EXACT-HEAD REVIEW at PR #47 278457a (2026-08-25). The new session resume clock is a correct safety improvement: a commit omitted by this producer now causes consumer reset instead of a cursor that silently skips it. The carrier is still not adoption-safe.
+
+First, the state commits made by begin_reconcile/finish_reconcile never reach the reconciliation sink, so Batch.state omits them; this is reopened on fdu-jxs0. Second, Retagged carries an unbounded Vec<PathBuf> (engine_contract.rs:717-720), while AppliedDelta::len charges that entire vector as one transition (782-783). Session all_dirty drops only dirty_rollups: it still copies every governed directory into Batch.state and also emits one synthetic Change per directory (watch_session.rs:290-304, 334-348). A large control-file set therefore bypasses the journal retention budget and the language-boundary bound exactly when all_dirty claims the path list was dropped. Represent retag scope as bounded paths plus an explicit all marker; charge embedded paths against retention (or evict the oversized delta and advance the journal floor), and omit individual state/changes when all_dirty is the lossless answer.
+
+The unchanged P1 teardown remainder also remains: aio.py still joins for five seconds without checking worker.is_alive(), so a watch interval longer than that can return from teardown with a live worker. The existing provider-state and per-batch-work remainder remains too.
