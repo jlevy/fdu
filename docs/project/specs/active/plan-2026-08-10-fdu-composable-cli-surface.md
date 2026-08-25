@@ -660,9 +660,12 @@ work (`fdu-lka2`).
 Streaming machine output uses a new `fdu.stream/1` JSONL schema with tagged record types
 (`report`, `change`, `invalidate`, `status`); one-shot machine output uses
 `fdu.report/1` (below).
-Constraint carried from the engine: watch requires full scope, so `--watch` with
-`--scan-depth` or `--one-filesystem` is a usage error (exit 2) until
-`validate_for_watch_scope` learns otherwise.
+Constraint carried from the engine: `--watch` with `--max-files` is a usage error (exit
+2), because whether a file is inside a cap depends on every other file, including the
+ones the capped walk never read.
+`--scan-depth` and `--one-filesystem` were refused for the same reason until
+`validate_for_watch_scope` learned otherwise: each is a property of the entry an event
+names, so the boundary is redrawn per event rather than per walk.
 
 ### Rust API
 

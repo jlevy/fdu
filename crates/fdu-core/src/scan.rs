@@ -240,10 +240,12 @@ impl Default for ScanConfig {
 /// `max_depth` through the API. Everything else is identical, so the harness can verify
 /// mechanically that both surfaces state the same rule.
 pub const WATCH_SCOPE_GUIDANCE: &str = concat!(
-    "watching requires full scope and cannot be combined with max_depth, max_files or ",
-    "one_filesystem: a watcher cannot filter backend events against a narrowed boundary. ",
-    "Selection such as depth, include, and modified_since does work while watching, because ",
-    "it filters the retained index rather than narrowing the scan"
+    "watching cannot be combined with max_files: a file cap bounds what the index holds, ",
+    "and a watcher would have to decide which of two entries the cap admits without ever ",
+    "having read them. max_depth and one_filesystem do work while watching, because each ",
+    "is a property of the entry an event names rather than of the walk that found it. So ",
+    "does selection such as depth, include, and modified_since, which filters the retained ",
+    "index rather than narrowing the scan"
 );
 
 impl ScanConfig {
@@ -356,12 +358,14 @@ impl ScanConfig {
     #[cfg(feature = "watch")]
     pub(crate) fn validate_for_watch_scope(&self, indexed: ScanScope) -> Result<()> {
         self.validate_for_scope(indexed)?;
-        if self.max_depth.is_some() || self.max_files.is_some() || self.one_filesystem {
-            // A budget belongs here for a reason of its own, beyond the shared one: a
-            // watcher applies events to an index the cap left incomplete, so a creation
-            // inside an unread subtree would be admitted while its siblings stay missing.
-            // The index would then hold a subtree nobody walked, assembled one event at a
-            // time, with nothing recording that it was never discovered.
+        if self.max_files.is_some() {
+            // The one axis that is not a property of an entry. Depth and the filesystem
+            // boundary can be redrawn around a single event, because a path and a `stat`
+            // answer both; a cap cannot, because whether *this* file is inside it depends
+            // on every other file, including the ones the capped walk never read. The
+            // index would end up holding a subtree nobody walked, assembled one event at a
+            // time, and the cap it claims in its own identity would be one it does not
+            // keep.
             return Err(Error::UnsupportedScanConfig(WATCH_SCOPE_GUIDANCE));
         }
         Ok(())
@@ -4267,6 +4271,33 @@ fn merge_reconcile_report(total: &mut ReconcileReport, addition: ReconcileReport
 /// the `stat` the way that one does.
 pub(crate) fn retains(kind: EntryKind, config: &ScanConfig) -> bool {
     !config.exclude_special || kind != EntryKind::Other
+}
+
+/// Whether an entry already observed at `path` is inside the scan's own boundary.
+///
+/// The third admission question, and the one a *watcher* can ask. `admits` needs a listing
+/// to be reading a directory, and the walk's file cap needs to know what has been retained
+/// so far; these two axes need neither, because each is a property of the entry itself.
+/// That is what makes a bounded scope watchable at all: a backend event names a path and a
+/// `stat` gives its device, so the same boundary the walk drew can be redrawn around one
+/// event with nothing else in hand.
+///
+/// Depth counts components rather than tracking a walk, and the two agree by construction:
+/// `should_descend` admits a child at `parent_depth + 1 < max`, so the deepest entry a walk
+/// records has exactly `max` components. Stated as a separate predicate because a watcher
+/// has no parent depth to pass -- it has a path.
+///
+/// A device of zero is treated as the root's, matching `should_descend`: it is what a
+/// platform reports when it does not distinguish filesystems, and refusing every entry
+/// there would empty the index rather than bound it.
+/// Gated with its only caller. The walk asks these two axes through `should_descend`,
+/// which has a parent depth in hand and does not need the path form; only the watcher
+/// needs the boundary restated as a predicate over one entry.
+#[cfg(feature = "watch")]
+pub(crate) fn within_scope(path: &Path, attrs: Attrs, root_dev: u64, config: &ScanConfig) -> bool {
+    let within_depth = config.max_depth.is_none_or(|max| path.components().count() <= max);
+    let same_filesystem = !config.one_filesystem || attrs.dev == root_dev || attrs.dev == 0;
+    within_depth && same_filesystem
 }
 
 /// Whether one directory entry is inside the scan scope, by name alone.

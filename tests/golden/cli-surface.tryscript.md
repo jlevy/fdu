@@ -544,21 +544,19 @@ $ fdu --modified-since 2300-01-01T00:00:00Z .
 ? 2
 ```
 
-## Watching Rejects a Narrowed Scan Scope
+## Watching Rejects a File Cap, and Only a File Cap
 
-Both scope flags are refused under `--watch`, because events can land outside a narrowed
-scan and the index would silently diverge from the tree.
-Selection flags are not refused: they filter what a full index reports.
+One scope flag is refused under `--watch`, and the message says which and why.
+Whether a file is inside a cap depends on every *other* file, including the ones the
+capped walk never read, so a watcher has nothing to decide it with.
 
-```console
-$ fdu --watch --scan-depth 2 .
-! fdu: watching requires full scope and cannot be combined with --scan-depth, --max-files or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --modified-since does work while watching, because it filters the retained index rather than narrowing the scan
-? 2
-```
+`--scan-depth` and `--one-filesystem` are each a property of the entry an event names,
+so the same boundary can be redrawn around one event; they are accepted, as selection
+flags always have been.
 
 ```console
-$ fdu --watch --one-filesystem .
-! fdu: watching requires full scope and cannot be combined with --scan-depth, --max-files or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --modified-since does work while watching, because it filters the retained index rather than narrowing the scan
+$ fdu --watch --max-files 10 .
+! fdu: watching cannot be combined with --max-files: a file cap bounds what the index holds, and a watcher would have to decide which of two entries the cap admits without ever having read them. --scan-depth and --one-filesystem do work while watching, because each is a property of the entry an event names rather than of the walk that found it. So does selection such as --depth, --include, and --modified-since, which filters the retained index rather than narrowing the scan
 ? 2
 ```
 

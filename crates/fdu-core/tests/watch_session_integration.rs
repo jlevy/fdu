@@ -827,3 +827,74 @@ fn holds(handle: &IndexHandle, name: &str) -> bool {
         .iter()
         .any(|row| row.path == Path::new(name))
 }
+
+/// A depth-bounded scope is watchable, and the bound holds against live events.
+///
+/// The scope a consuming provider actually opens. Refusing it made the ordinary
+/// FDU-backed handle unable to watch at all, and dropping the bound to get a watch would
+/// have silently changed which tree the answers are about -- so the boundary is redrawn
+/// around each event instead, which a depth can be because it is a property of the path.
+#[test]
+fn a_depth_bounded_watch_holds_its_bound_against_live_events() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::create_dir_all(dir.path().join("sub/deeper")).expect("mkdir");
+    let scan = ScanConfig { max_depth: Some(2), ..ScanConfig::default() };
+    let (handle, mut session) = pruning_session(dir.path(), scan);
+    assert!(holds(&handle, "sub"), "the bound admits depth one");
+
+    fs::write(dir.path().join("sub/deeper/far.txt"), b"below the bound").expect("write");
+    fs::write(dir.path().join("sub/near.txt"), b"inside").expect("write");
+
+    wait_for(&mut session, |change| change.path.ends_with("near.txt"))
+        .expect("the entry inside the bound should arrive");
+    assert!(holds(&handle, "sub/near.txt"), "depth two is inside a bound of two");
+    assert!(
+        !holds(&handle, "sub/deeper/far.txt"),
+        "and depth three is not, however the event arrived"
+    );
+}
+
+/// The bound also holds when a watched path *becomes* too deep to be in scope.
+///
+/// A directory moved under another gains a component, so the same entry crosses the
+/// boundary without changing. Nothing re-lists it, so unless the admission rule turns that
+/// event into a removal the index keeps a row for a path that is no longer in its scope.
+#[test]
+fn a_row_that_moves_below_the_depth_bound_is_removed() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::create_dir(dir.path().join("sub")).expect("mkdir");
+    fs::write(dir.path().join("top.txt"), b"at depth one").expect("write");
+    let scan = ScanConfig { max_depth: Some(1), ..ScanConfig::default() };
+    let (handle, mut session) = pruning_session(dir.path(), scan);
+    assert!(holds(&handle, "top.txt"), "it starts inside the bound");
+
+    fs::rename(dir.path().join("top.txt"), dir.path().join("sub/top.txt")).expect("rename");
+    fs::write(dir.path().join("after.rs"), b"fn main() {}").expect("create");
+
+    wait_for(&mut session, |change| change.path.ends_with("after.rs"))
+        .expect("the ordinary file should arrive");
+    assert!(!holds(&handle, "top.txt"), "the row describes a path that no longer holds it");
+    assert!(!holds(&handle, "sub/top.txt"), "and its new path is outside the bound");
+}
+
+/// A capped scan still refuses to be watched, and the message says which knob and why.
+#[test]
+fn a_capped_scan_cannot_be_watched_and_says_which_axis() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("a.txt"), b"one").expect("seed");
+    let scan = ScanConfig { max_files: Some(4), ..ScanConfig::default() };
+    let config =
+        OpenConfig { scan: scan.clone(), policy: CachePolicy::Off, ..OpenConfig::default() };
+    let (index, _report) = open(dir.path(), &config).expect("open");
+    let handle = IndexHandle::new(index);
+
+    let error = Session::new(handle, scan, Query::default(), WatchConfig::default())
+        .err()
+        .expect("a cap is not a property of the entry an event names");
+    let message = error.to_string();
+    assert!(message.contains("max_files"), "{message}");
+    assert!(
+        !message.contains("cannot be combined with max_depth"),
+        "the two axes that became watchable must not still be named as refusals: {message}"
+    );
+}

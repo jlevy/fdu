@@ -193,15 +193,20 @@ so even an abrupt kill leaves the next run warm.
 `crates/fdu/tests/watch_persistence.rs` pins this automatically; running it by hand is
 how you confirm it against a real signal.
 
-Scope flags are rejected under `--watch`:
+One scope flag is rejected under `--watch`, and only one:
 
 ```shell
-./target/debug/fdu --watch --scan-depth 2 "$tree"       # exit 2
-./target/debug/fdu --watch --one-filesystem "$tree"     # exit 2
+./target/debug/fdu --watch --max-files 10 "$tree"       # exit 2
 ```
 
-✅ Both fail with a usage error explaining that watching requires full scope.
-A partial tree cannot be kept correct against events that may land outside it.
+✅ It fails with a usage error naming `--max-files` and saying why: whether a file is
+inside a cap depends on every *other* file, including the ones the capped walk never
+read, so a watcher has nothing to decide one event with.
+
+`--scan-depth` and `--one-filesystem` are accepted, because each is a property of the
+entry an event names rather than of the walk that found it — the boundary is redrawn
+around each event. Those two start a live watch rather than exiting, so run them
+interactively rather than as part of a scripted pass.
 
 ## 7. Python wheel
 

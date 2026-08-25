@@ -62,7 +62,9 @@ def _scan_options_inner(args: Args) -> fdu.ScanOptions:
     order = parse_order(args.order) if args.order is not None else fdu.ScanOrder.BREADTH_FIRST
     return fdu.ScanOptions(
         max_depth=args.scan_depth,
+        max_files=args.max_files,
         one_filesystem=args.one_filesystem,
+        special=args.special,
         order=order,
         threads=args.threads,
         type_rules=load_type_rules(args.type_rules),
@@ -186,7 +188,9 @@ class Args:
     def __init__(self) -> None:
         self.root: str | None = None
         self.scan_depth: int | None = None
+        self.max_files: int | None = None
         self.one_filesystem = False
+        self.special = "keep"
         self.order: str | None = None
         self.threads: int | None = None
         self.type_rules: str | None = None
@@ -257,8 +261,12 @@ def parse_args(argv: list[str]) -> Args:
             args.version = True
         elif flag == "--scan-depth":
             args.scan_depth = int(take())
+        elif flag == "--max-files":
+            args.max_files = int(take())
         elif flag == "--one-filesystem":
             args.one_filesystem = True
+        elif flag == "--special":
+            args.special = take()
         elif flag == "--order":
             args.order = take()
         elif flag == "--threads":

@@ -85,4 +85,106 @@ if (problems.length > 0) {
   process.exit(1);
 }
 
-console.log(`admission self-check passed: ${found} listing loops all ask admits()`);
+// -- The second rule, and the second shape it needs ---------------------------------
+//
+// `admits` is asked by name, inside the listing loop, so the loop shape is a good anchor.
+// `retains` cannot be: a kind is only known after the `stat`, so most sites ask it from a
+// closure or helper the loop calls rather than from the loop itself. Anchoring on the loop
+// would report success for a rule the loop delegates and the delegate forgot.
+//
+// So this half pins the *set of functions that ask it*, by name. A new producer of rows
+// has to appear here, which is a decision rather than an omission -- and the list is the
+// documentation of where the rule lives.
+//
+// It has already happened once, in the change that introduced the rule: the guard went
+// into `revalidate`, whose listing loop looks exactly like the reconcilers' and is not on
+// their path. A scan excluded a socket and the first refresh put it back. Tests caught it;
+// this would have caught it before the tests were written.
+const KIND_ADMISSION = {
+  'crates/fdu-core/src/scan.rs': {
+    call: 'retains(',
+    expected: [
+      'scan_internal', // the serial walk
+      'record_walk_entry', // the parallel walk
+      'revalidate', // the warm-start listing sweep
+      'reconcile_target_inner', // the serial reconcile, and the single-path refresh
+      'reconcile_wave_worker', // the parallel reconcile, via `process_entry`
+      'retains', // the predicate's own definition
+    ],
+  },
+  'crates/fdu-core/src/watch.rs': {
+    call: 'scan::retains(',
+    expected: ['admitted'], // the watcher's apply funnel
+  },
+};
+
+/** `text` up to its test module, which is not production code and not a producer. */
+function production(text) {
+  const rows = text.split('\n');
+  const start = rows.findIndex(
+    (row, index) => row === '#[cfg(test)]' && /^mod tests\b/.test(rows[index + 1] ?? ''),
+  );
+  return start === -1 ? text : rows.slice(0, start).join('\n');
+}
+
+/** Names of top-level `fn`s in `text` whose body contains `call`. */
+function callersOf(text, call) {
+  const rows = text.split('\n');
+  const names = new Set();
+  let current = null;
+  let depth = 0;
+  for (const row of rows) {
+    const declared = /^(?:pub(?:\([^)]*\))?\s+)?(?:const\s+)?(?:async\s+)?fn\s+([A-Za-z0-9_]+)/.exec(row);
+    if (depth === 0 && declared) current = declared[1];
+    if (current && row.includes(call)) names.add(current);
+    for (const character of row) {
+      if (character === '{') depth += 1;
+      if (character === '}') depth -= 1;
+    }
+    if (depth <= 0) depth = 0;
+  }
+  return names;
+}
+
+const kindProblems = [];
+for (const [file, rule] of Object.entries(KIND_ADMISSION)) {
+  // Read up to the test module: a test asks the predicate too, and a test is not a
+  // producer of rows. Cut by the module boundary rather than by a naming convention --
+  // the first draft exempted names beginning `a_`, which is how this repository names its
+  // tests and would also have exempted a production function that happened to start that
+  // way. A rule with a hole shaped like its own subject is worse than no rule.
+  const text = production(readFileSync(join(root, file), 'utf8'));
+  const actual = callersOf(text, rule.call);
+  const expected = new Set(rule.expected);
+  for (const name of actual) {
+    if (!expected.has(name)) {
+      kindProblems.push(
+        `${file}: ${name}() asks ${rule.call} and is not a recorded admission site`,
+      );
+    }
+  }
+  for (const name of expected) {
+    if (!actual.has(name)) {
+      kindProblems.push(`${file}: ${name}() no longer asks ${rule.call}`);
+    }
+  }
+}
+
+if (kindProblems.length > 0) {
+  console.error('kind-admission self-check failed:\n');
+  for (const problem of kindProblems) {
+    console.error(`  ${problem}`);
+  }
+  console.error(
+    '\nEvery producer of index rows has to hold the same kind rule. A new one that does\n' +
+      'not is an index whose contents depend on which producer last touched a path; a site\n' +
+      'that stopped asking is the same defect arriving quietly.',
+  );
+  process.exit(1);
+}
+
+const sites = Object.values(KIND_ADMISSION).reduce((total, rule) => total + rule.expected.length, 0);
+console.log(
+  `admission self-check passed: ${found} listing loops all ask admits(), ` +
+    `and ${sites} recorded sites ask the kind rule`,
+);

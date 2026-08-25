@@ -43,7 +43,7 @@ use crate::engine_contract::{
     AppliedDelta, Error, InvalidateReason, Observation, ObservationOp, Op, Result,
 };
 use crate::scan;
-use crate::{ApplyOutcome, IndexHandle, ScanConfig};
+use crate::{ApplyOutcome, Attrs, IndexHandle, ScanConfig};
 
 /// Optimistic re-verification retries before the applying driver guarantees progress
 /// through conservative root invalidation and reconciliation.
@@ -339,8 +339,9 @@ impl Watcher {
 
     /// Apply one verified watch observation and close any invalidation loop it opens.
     ///
-    /// Restricted `max_depth` and `one_filesystem` scopes are rejected until the watch
-    /// adapter can filter raw backend events against those boundaries.
+    /// The scan's own boundary is redrawn around every event before it is applied, so a
+    /// depth-bounded or filesystem-bounded scope is watchable. A file cap is not, and is
+    /// rejected here before the queue is touched.
     pub fn apply_next(
         &self,
         index: &IndexHandle,
@@ -431,7 +432,7 @@ fn apply_reverified_with(
     scan_config.validate_for_watch_scope(scope)?;
     for _ in 0..MAX_OPTIMISTIC_APPLY_ATTEMPTS {
         let clock = index.clock()?;
-        let candidate = retained(verifier(&root, observation)?, scan_config);
+        let candidate = admitted(verifier(&root, observation)?, &root, scan_config);
         if let Some(outcome) = index.apply_if_clock(clock, &candidate)? {
             return Ok(outcome);
         }
@@ -440,37 +441,70 @@ fn apply_reverified_with(
     index.invalidate_root(InvalidateReason::WatchContention)
 }
 
-/// Hold a verified observation to the scan's own kind admission, after the `stat`.
+/// Hold a verified observation to the scan's own boundary, after the `stat`.
 ///
 /// The watcher is the third producer of upserts, beside the walk and reconciliation, and
-/// the only one that learns a kind from an event rather than from a listing it controls.
-/// Without this it would be the hole in the rule: a scope that excludes special objects
-/// would exclude them at boot and at refresh, and then a `mkfifo` under a live watch would
-/// put one back -- an index whose contents depend on whether anyone was watching.
+/// the only one that learns what an entry is from an event rather than from a listing it
+/// controls. Without this it would be the hole in every scope rule at once: a bounded scan
+/// would hold its boundary at boot and at refresh, and then one backend event would put
+/// something outside it back -- an index whose contents depend on whether anyone was
+/// watching.
 ///
-/// An excluded kind becomes a removal rather than a dropped op, for the reason the single-
-/// path reconcile does the same: the path may already hold a row. A file replaced in place
-/// by a socket is exactly one event, and ignoring it would leave the file's row standing
-/// over a socket forever.
+/// Three axes, all answerable from a path and one `stat`, which is exactly what a watcher
+/// has. The kind (a socket in a scope that excludes them), the depth, and the filesystem
+/// boundary. Not the file cap: whether *this* file is inside a cap depends on every other
+/// file, including the ones the capped walk never read, which is why a capped scan still
+/// refuses to be watched and says so.
+///
+/// An out-of-scope upsert becomes a removal rather than a dropped op, for the reason the
+/// single-path reconcile does the same: the path may already hold a row. A file replaced in
+/// place by a socket, or a filesystem mounted over a directory, is exactly one event, and
+/// ignoring it would leave the old row standing over the new object forever. Beyond the
+/// depth bound the removal is a no-op, since nothing there was ever recorded -- correct at
+/// no cost, and cheaper than a second rule saying which of the two it is.
+///
+/// An invalidation outside the boundary is dropped instead. It asks for a subtree to be
+/// reconciled, and there is no subtree: nothing at or below that path is in scope.
 ///
 /// Applied to the candidate rather than inside each verifier, because both verifiers ---
 /// the intent path and the test one --- would otherwise carry the rule separately, which
-/// is the divergence `retains` exists to prevent.
-fn retained(observation: Observation, config: &ScanConfig) -> Observation {
-    if !config.exclude_special {
+/// is the divergence these predicates exist to prevent.
+fn admitted(observation: Observation, root: &Path, config: &ScanConfig) -> Observation {
+    if !config.exclude_special && config.max_depth.is_none() && !config.one_filesystem {
         return observation;
     }
+    // Read once per apply rather than per op, and only for the axis that needs it. A root
+    // that cannot be stat'ed leaves every entry admitted on this axis: the walk that built
+    // the index already drew the boundary, and refusing everything here would empty the
+    // index rather than bound it.
+    let root_dev = config
+        .one_filesystem
+        .then(|| std::fs::symlink_metadata(root).ok().map(|meta| scan::observe(&meta).1.dev))
+        .flatten()
+        .unwrap_or(0);
+
     let ops = observation
         .ops
         .into_iter()
-        .map(|observed| match observed.op {
-            // Rebuilt rather than rebatched through `Observation::new`, which would flatten
-            // every expectation to `Any`: substituting one op must not also decide the
-            // arbitration precondition its producer attached to the path.
-            Op::Upsert { path, kind, .. } if !scan::retains(kind, config) => {
-                ObservationOp { op: Op::Remove { path }, expectation: observed.expectation }
+        .filter_map(|observed| match &observed.op {
+            Op::Upsert { path, kind, attrs }
+                if !scan::retains(*kind, config)
+                    || !scan::within_scope(path, *attrs, root_dev, config) =>
+            {
+                // Rebuilt rather than rebatched through `Observation::new`, which would
+                // flatten every expectation to `Any`: substituting one op must not also
+                // decide the arbitration precondition its producer attached to the path.
+                Some(ObservationOp {
+                    op: Op::Remove { path: path.clone() },
+                    expectation: observed.expectation,
+                })
             }
-            _ => observed,
+            Op::InvalidateSubtree { path, .. }
+                if !scan::within_scope(path, Attrs::default(), root_dev, config) =>
+            {
+                None
+            }
+            _ => Some(observed),
         })
         .collect();
     Observation::from_ops(ops)
@@ -819,7 +853,7 @@ mod tests {
             },
         ]);
 
-        let held = retained(observation, &config);
+        let held = admitted(observation, Path::new("/"), &config);
         assert_eq!(held.len(), 2, "the batch keeps its length: one op in, one op out");
         assert!(
             matches!(&held.ops[0].op, Op::Remove { path } if path == Path::new("sock")),
@@ -833,6 +867,64 @@ mod tests {
         );
     }
 
+    /// Beyond the depth bound an upsert becomes a removal, and an invalidation is dropped.
+    ///
+    /// Asserted here rather than through a live session for the reason the special-object
+    /// case gives: on Linux a rename onto or out of a watched path escalates to a root
+    /// invalidation, so reconciliation sweeps the stale row away and dropping the event
+    /// looks identical from outside. The two ops differ in what they *ask for* -- one
+    /// takes a row away, the other asks for a subtree that is not in scope to be walked --
+    /// so they are checked where that difference is visible.
+    #[test]
+    fn beyond_the_depth_bound_an_upsert_removes_and_an_invalidation_is_dropped() {
+        let config = ScanConfig { max_depth: Some(1), ..ScanConfig::default() };
+        let observation = Observation::new(vec![
+            Op::Upsert {
+                path: PathBuf::from("sub/deep.txt"),
+                kind: EntryKind::File,
+                attrs: Attrs::default(),
+            },
+            Op::InvalidateSubtree {
+                path: PathBuf::from("sub/deeper"),
+                reason: InvalidateReason::WatchSetupRace,
+            },
+            Op::Upsert {
+                path: PathBuf::from("shallow.txt"),
+                kind: EntryKind::File,
+                attrs: Attrs::default(),
+            },
+        ]);
+
+        let held = admitted(observation, Path::new("/"), &config);
+        assert_eq!(held.len(), 2, "the invalidation is gone and the upsert is not: {held:?}");
+        assert!(
+            matches!(&held.ops[0].op, Op::Remove { path } if path == Path::new("sub/deep.txt")),
+            "a row at a path outside the bound is taken away, not left standing: {:?}",
+            held.ops[0].op
+        );
+        assert!(
+            matches!(&held.ops[1].op, Op::Upsert { path, .. } if path == Path::new("shallow.txt")),
+            "and the entry inside the bound is untouched: {:?}",
+            held.ops[1].op
+        );
+    }
+
+    /// Depth counts the same way the walk does: `max` components are inside the bound.
+    ///
+    /// The off-by-one that would otherwise be invisible, because both readings admit the
+    /// root's own children and differ only one level down.
+    #[test]
+    fn the_depth_bound_admits_exactly_the_depth_the_walk_records() {
+        let config = ScanConfig { max_depth: Some(2), ..ScanConfig::default() };
+        for (path, inside) in [("a", true), ("a/b", true), ("a/b/c", false)] {
+            assert_eq!(
+                scan::within_scope(Path::new(path), Attrs::default(), 0, &config),
+                inside,
+                "{path:?} at a bound of two"
+            );
+        }
+    }
+
     /// Keeping is keeping: the default scope hands the batch back unchanged.
     #[test]
     fn a_default_scope_leaves_a_special_object_alone() {
@@ -841,7 +933,7 @@ mod tests {
             kind: EntryKind::Other,
             attrs: Attrs::default(),
         }]);
-        let held = retained(observation.clone(), &ScanConfig::default());
+        let held = admitted(observation.clone(), Path::new("/"), &ScanConfig::default());
         assert_eq!(held, observation, "nothing excludes it, so nothing rewrites it");
     }
 
@@ -870,7 +962,7 @@ mod tests {
         )]);
 
         let config = ScanConfig { exclude_special: true, ..ScanConfig::default() };
-        let held = retained(observation, &config);
+        let held = admitted(observation, Path::new("/"), &config);
         assert_eq!(
             held.ops[0].expectation,
             Expectation::State(expectation),
@@ -1727,37 +1819,73 @@ mod tests {
         assert!(handle.kind(Path::new("deep/nested.txt")).expect("query").is_none());
     }
 
+    /// A depth-bounded watch runs, and the event below the bound does not enter the index.
+    ///
+    /// This used to refuse the whole apply, which got the same final state for a weaker
+    /// reason: nothing entered the index because nothing was applied. The property worth
+    /// having is that the *shallow* half of a batch lands and the deep half does not, so
+    /// the assertion below is paired with one that something did.
     #[test]
-    fn observation_driver_rejects_restricted_scopes_until_events_are_filtered() {
+    fn a_depth_bounded_watch_admits_what_is_inside_the_bound_and_nothing_below_it() {
         let dir = tempfile::tempdir().expect("tempdir");
         let shallow = crate::ScanConfig { max_depth: Some(1), ..crate::ScanConfig::default() };
+        fs::create_dir(dir.path().join("deep")).expect("mkdir");
         let (index, _) = crate::scan::scan_into_index(dir.path(), &shallow).expect("scan");
         let handle = crate::IndexHandle::new(index);
-        let observation = Observation::new(vec![Op::Upsert {
-            path: PathBuf::from("deep/nested.txt"),
-            kind: crate::EntryKind::File,
-            attrs: crate::Attrs { size: 5, allocated: 5, ..crate::Attrs::default() },
-        }]);
 
-        let error = apply_observation(&handle, &observation, &shallow, &mut |_| {})
-            .expect_err("unfiltered bounded watch scope must fail");
+        // Written after the scan, so neither is in the index yet, and written to disk
+        // because the driver re-stats every path it is handed: a path that is not there
+        // verifies as a removal, which would make both halves of this pass for one reason.
+        fs::write(dir.path().join("deep/nested.txt"), b"hello").expect("write");
+        fs::write(dir.path().join("shallow.txt"), b"hello").expect("write");
+        let attrs = crate::Attrs { size: 5, allocated: 5, ..crate::Attrs::default() };
+        let observation = Observation::new(vec![
+            Op::Upsert { path: PathBuf::from("deep/nested.txt"), kind: EntryKind::File, attrs },
+            Op::Upsert { path: PathBuf::from("shallow.txt"), kind: EntryKind::File, attrs },
+        ]);
 
-        assert!(matches!(error, Error::UnsupportedScanConfig(_)));
-        assert!(handle.kind(Path::new("deep/nested.txt")).expect("query").is_none());
+        apply_observation(&handle, &observation, &shallow, &mut |_| {})
+            .expect("a bounded scope is watchable");
+
+        assert!(
+            handle.kind(Path::new("deep/nested.txt")).expect("query").is_none(),
+            "an event below the depth bound is outside the scope the index was built under"
+        );
+        assert_eq!(
+            handle.kind(Path::new("shallow.txt")).expect("query"),
+            Some(EntryKind::File),
+            "and one inside it is applied, or the assertion above is about a refused batch"
+        );
     }
 
+    /// A capped scan is still refused, and that is the axis the refusal is left on.
     #[test]
-    fn apply_next_rejects_restricted_scope_without_consuming_an_observation() {
+    fn a_capped_scan_still_refuses_to_be_watched() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let shallow = crate::ScanConfig { max_depth: Some(1), ..crate::ScanConfig::default() };
-        let (index, _) = crate::scan::scan_into_index(dir.path(), &shallow).expect("scan");
+        let capped = crate::ScanConfig { max_files: Some(4), ..crate::ScanConfig::default() };
+        let (index, _) = crate::scan::scan_into_index(dir.path(), &capped).expect("scan");
+        let handle = crate::IndexHandle::new(index);
+
+        let error = apply_observation(&handle, &Observation::default(), &capped, &mut |_| {})
+            .expect_err("a cap is not a property of the entry an event names");
+        assert!(matches!(error, Error::UnsupportedScanConfig(_)));
+        assert!(error.to_string().contains("max_files"), "{error}");
+    }
+
+    /// A refused scope fails before the queue is touched, so the intent survives to be
+    /// applied once the scope is one the watcher can hold.
+    #[test]
+    fn apply_next_rejects_a_capped_scope_without_consuming_an_observation() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let capped = crate::ScanConfig { max_files: Some(4), ..crate::ScanConfig::default() };
+        let (index, _) = crate::scan::scan_into_index(dir.path(), &capped).expect("scan");
         let handle = crate::IndexHandle::new(index);
         let (sender, watcher) =
             queued_test_watcher(dir.path().canonicalize().expect("canonical root"));
         sender.try_send(CoalescedIntent::default()).expect("queue intent");
 
         let error = watcher
-            .apply_next(&handle, &shallow, Duration::ZERO, &mut |_| {})
+            .apply_next(&handle, &capped, Duration::ZERO, &mut |_| {})
             .expect_err("restricted scope must fail before receive");
 
         assert!(matches!(error, Error::UnsupportedScanConfig(_)));

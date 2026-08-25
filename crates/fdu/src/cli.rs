@@ -675,13 +675,13 @@ impl Cli {
         };
 
         #[cfg(feature = "watch")]
-        if self.watch
-            && (self.scan_depth.is_some() || self.max_files.is_some() || self.one_filesystem)
-        {
-            // Scope narrows what is observed, and a watcher cannot filter raw backend
-            // events against that boundary yet. Selection flags stay legal with --watch
-            // precisely because they filter the retained index instead, and the message
-            // says so rather than only naming the conflict.
+        if self.watch && self.max_files.is_some() {
+            // The one scope axis a watcher cannot redraw around a single event: whether a
+            // file is inside a cap depends on every other file, including the ones the
+            // capped walk never read. --scan-depth and --one-filesystem are each a
+            // property of the entry an event names, so they stay legal here, as selection
+            // always has -- and the message says which is which rather than only naming
+            // the conflict.
             return Err(usage(&anyhow::anyhow!(watch_scope_guidance())));
         }
 
