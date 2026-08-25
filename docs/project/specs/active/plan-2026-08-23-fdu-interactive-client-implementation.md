@@ -451,6 +451,59 @@ The integration tests prove the rule holds end to end; only a unit test on the a
 function separates excluding the object from dropping its event, which is the difference
 that matters on a backend reporting the file without invalidating its parent.
 
+### `fdu-7sou` / `fdu-97dd` — where each scope axis can be kept
+
+Watching used to refuse every narrowed scope, on one rule over three axes.
+Splitting the rule by *what each axis is a property of* is what made a bounded consumer
+handle possible, and the split is the whole design:
+
+- **`max_depth` and `one_filesystem` are properties of the entry an event names.** A
+  path and one `stat` decide both, so the boundary the walk drew can be redrawn around a
+  single event. `scan::within_scope` is that predicate, beside `admits` (by name,
+  mid-listing) and `retains` (by kind, after the `stat`). Depth counts components, which
+  agrees with `should_descend` by construction: it admits a child at
+  `parent_depth + 1 < max`, so the deepest entry a walk records has exactly `max`
+  components.
+- **`max_files` is a property of the whole inventory**, so no per-event predicate can
+  decide it — whether *this* file is inside the cap depends on every other file,
+  including the ones the capped walk never read.
+  The index keeps it instead, in `upsert_beneath`, which is the one place a new row is
+  allocated and the one place the previous state of the path is already in hand.
+
+That second half also closed a gap nobody had connected to watching: reconciliation
+walks from the index and never consulted `scan::Budget`, so **one refresh turned a
+bounded inventory into an unbounded one** while the scan identity went on claiming a
+cap.
+`Budget` keeps its own job — stopping *discovery*, which is what makes a capped scan
+cheap.
+
+**An out-of-scope upsert becomes a removal, not a dropped op.** A directory moved
+deeper, a filesystem mounted over one, a file replaced by a socket: each is one event on
+a path that never goes absent, so anything short of a removal leaves the old row
+standing over the new object forever.
+An out-of-scope *invalidation* is dropped instead — it asks for a subtree to be
+reconciled and there is no subtree.
+
+**Directories are not counted against the cap.** A directory carries no bytes of its
+own, and admitting one keeps the tree navigable to what is already there; counting them
+would lose the shape of the tree as well as its contents.
+
+**The refusal and the coverage loss are one commit.** `AppliedDelta::of_both` exists for
+this: at a cursor between them the index would have dropped an entry and still claimed
+to cover everything, which is a moment that never happened.
+
+**What no rule can give.** Which files a long-lived capped index holds depends on the
+order events arrived, as which files a capped *walk* holds depends on the order it
+reached them. No rule bounds the retained set and is history-independent at once.
+Coverage says the set is short, which is the fact a consumer can act on — and the
+alternative, letting events through, makes the cap a hint that any long session walks
+past.
+
+Worth carrying into the cross-engine fixture: the consuming contract’s own reference
+walker gives each subtree rewalk a fresh `max_files` budget, so its retained set is
+bounded per walk rather than in total.
+One side has to move, and this is the side that keeps the bound a bound.
+
 ### `fdu-b2vy` / `fdu-ctp5` / `fdu-e2p7` — the taxonomy
 
 **Groups.** `ContentFamily` (`classify.rs:19`) is a closed five-value enum answering an
@@ -689,6 +742,8 @@ before and after: `--view types` and `--view extensions` are byte-identical.
 | `fdu-91ru` | `EntryPageRequest` / `EntryPage` on the bundled read: a bounded, resumable page in path order, with an exact remainder paired with its continuation and totals over the whole selection | `index.rs:entry_page`, `index.rs:push_children`, `fdu-py/src/lib.rs:entry_page_dict` |
 | `fdu-vfx7` | `Interest::{Rows, Invalidations}` and `Session::with_interest`; the batch’s cost measured across the binding, with the phases exact-or-absent rather than defaulting to zero | `watch_session.rs:Interest`, `fdu-py/src/lib.rs:PyWatch::__next__`, `fdu-py/python/fdu/_api.py:Watch.__next__` |
 | `fdu-bjhy` | `ScanConfig::exclude_special` and `ScanScope::exclude_special`: sockets, FIFOs and device nodes pruned at admission rather than filtered afterwards, so the index holds three kinds and the roll-ups count exactly the rows a listing shows | `scan.rs:retains` (both walkers, both reconcilers, the single-path refresh), `watch.rs:retained`, `snapshot.rs:SCOPE_EXCLUDE_SPECIAL`, `cli.rs:--special`, `fdu-py/python/fdu/_models.py:ScanOptions.special` |
+| `fdu-7sou` / `fdu-97dd` | A bounded scope is watchable: `max_depth` and `one_filesystem` as per-event predicates, `max_files` as an index-owned inventory bound the walk, the refresh and the watch all keep | `scan.rs:within_scope`, `index.rs:upsert_beneath`, `engine_contract.rs:AppliedDelta::of_both` |
+| `fdu-vfyw` | The reference embedder produces the consuming contract’s own scope-digest bytes, from a fixture recorded by running its function rather than re-reading its spec | `fdu-py/examples/browser_provider.py:scope_fingerprint`, `fdu-py/tests/fixtures/scope-fingerprint.json` |
 
 `WatchConfig` lost `Copy` when the poll interval arrived, which threaded `&WatchConfig`
 through `validate`, `apply_intent`, `verify_intent` and `run_worker`. That is the kind

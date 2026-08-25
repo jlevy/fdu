@@ -979,6 +979,7 @@ from emitting millions of provenance-only entry changes into the feed it serves.
 - [ ] Provenance composed through the reducer path, with the non-invertibility of those
   aggregates under deletion and revalidation given an explicit recompute path
   (`fdu-fka6`, `fdu-b1ts`)
+
 - [x] Trust transitions on the committed delta contract, so `since()` and polling cannot
   disagree about the visible state (`fdu-jxs0`, `fdu-livs`). `AppliedDelta` carries
   `StateChange` beside `Op`; coverage, verification, the run envelope, and re-tagging
@@ -986,6 +987,7 @@ from emitting millions of provenance-only entry changes into the feed it serves.
   them to both surfaces.
   Charged against the journal’s operation budget rather than being free, because a free
   transition is a retention bound a producer can walk past
+
 - [x] A native walk budget as scope (`fdu-97dd`), stopping discovery at the cap and
   reporting partial coverage with reason `budget` plus a typed resource-stop issue.
   The consuming contract fingerprints the cap and its reference provider enforces it, so
@@ -997,16 +999,19 @@ from emitting millions of provenance-only entry changes into the feed it serves.
   makes the identity a claim the engine does not keep.
   A directory may therefore be listed only partly, which the partial coverage says.
   This is what finally makes `CoverageReason::Budget` reachable
+
 - [x] Bounded, resumable flat pages (`fdu-91ru`): a required positive limit, a path
   cursor, an exact remainder paired with the continuation, selection-wide totals, and
   the caller’s version pin.
   Page until the continuation is absent and the concatenation is the whole answer, in
   order, with no repeats and no gaps -- which a truncating limit cannot give, because it
   returns a prefix and says how many it dropped with no way to ask for them
+
 - [x] A batched scoped refresh (`fdu-nlhl`): a bounded set of observed paths, the union
   reconciled under one guard, one commit, one cursor, and per-path acceptance beside the
   counts. Iterating a single-path refresh is not equivalent -- N calls are N commits and
   N cursors, so a receipt covering them describes a range rather than a boundary
+
 - [x] A closed invalidations-only interest mode (`fdu-vfx7`): the feed derives bounded
   dirty paths, query kinds, issues and terminal state in Rust and builds no entry row at
   all, because a consumer that re-reads on dirty never looks at them and materialising
@@ -1014,6 +1019,7 @@ from emitting millions of provenance-only entry changes into the feed it serves.
   Plus the batch’s own cost measured across the whole boundary -- composed from its
   phases rather than taken end to end, since a wall clock around a blocking poll reports
   patience as cost
+
 - [x] The terminal engine state on every batch and delta range (`fdu-vfx7`), captured
   inside the same guarded read as the journal slice and the cursor.
   Transitions are interval events and say what moved; this says where it ended up, which
@@ -1022,6 +1028,7 @@ from emitting millions of provenance-only entry changes into the feed it serves.
   between the two calls, and the index retains only its current image, so there is
   nothing to ask for the state as of a position already passed.
   Folding transitions into a consumer-side copy is the mirror the boundary forbids
+
 - [x] Special filesystem objects excluded as a scope axis (`fdu-bjhy`): the consuming
   contract names three entry kinds and has nothing to call a socket, a FIFO or a device
   node, so a provider must exclude them rather than reclassify them -- a socket counted
@@ -1037,6 +1044,41 @@ from emitting millions of provenance-only entry changes into the feed it serves.
   standing over it for as long as the index lives.
   The reference provider opens with it pruned and folds it into its scope digest, which
   is the case the axis exists for
+
+- [x] The bounded scope a consumer opens is watchable (`fdu-7sou`, `fdu-97dd`): a
+  positive depth and a positive file cap, both surviving a live watch, with no second
+  watcher, no uncapped index, and no adapter-side mirror.
+  The refusal was one rule over three axes, and splitting it by what each axis *is a
+  property of* is the whole design: depth and the filesystem boundary belong to the
+  entry an event names, so the boundary is redrawn per event; the file cap belongs to
+  the whole inventory, so the index keeps it where the previous state of a path is
+  already in hand. That second half also closed a gap nobody had connected to watching --
+  reconciliation walks from the index and never consulted the walk’s budget, so one
+  refresh turned a bounded inventory into an unbounded one.
+  An out-of-scope upsert is a *removal*, since a path that crosses the boundary without
+  going absent would otherwise keep its old row forever; an out-of-scope invalidation is
+  dropped, because there is no subtree to reconcile.
+  Directories are not counted, so a capped index keeps the shape of the tree even where
+  its contents are truncated, and the refusal rides in the same commit as the coverage
+  loss rather than at a later clock.
+  What no rule can give, recorded rather than discovered: which files a long-lived
+  capped index holds depends on the order events arrived, as which files a capped walk
+  holds depends on the order it reached them
+
+- [x] The reference embedder produces the consuming contract’s own scope-digest bytes
+  (`fdu-vfyw`, in part): exactly `hidden_allowlist`, `max_depth` and `max_files`,
+  compact UTF-8 JSON, bounds required rather than defaulted.
+  The axes that dropped out are held as constants of the provider view and *checked*
+  rather than hashed -- two indexes differing in symlink traversal or special-object
+  admission really are different inventories, so ignoring a free axis would let a
+  consumer cache across a change that invalidated it, while hashing an axis the consumer
+  cannot name produces an identity it cannot reproduce.
+  The fixture’s expected bytes come from running the consumer’s function, not from
+  reading its spec twice: a recipe re-typed from prose agrees with the prose, which is
+  exactly what the previous version did while agreeing with nothing.
+  The cross-engine half -- one fixture *both* engines consume, covering the strict-cap
+  boundary case and special-object replacement from a recorded observation stream -- is
+  `fdu-kl7r` and needs the consuming repository
 
 ### Phase 6: Adoption proof
 
