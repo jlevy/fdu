@@ -550,6 +550,152 @@ fn a_tampered_token_is_refused() {
     }
 }
 
+/// A caller who edits a token and repairs its checksum is still refused.
+///
+/// This is the property the checksum alone never had, and the previous test was honest
+/// about not proving: `token_checksum` is unkeyed, so anybody can recompute it, and the
+/// numbers a continuation carries -- the denominator, the aggregates, the delivered count --
+/// are exactly the numbers a page reports without recomputing. An editable token is a
+/// caller-authored claim about an answer nobody walked.
+///
+/// The forgery here is built the way an attacker would: decode the hex, rewrite a field,
+/// recompute the trailing checksum over the new body, re-encode. It has to be assembled by
+/// hand rather than through `EntryCursor`, because the type has no constructor -- which is
+/// the point, and also why the string boundary needs its own answer.
+#[test]
+fn a_token_edited_and_re_checksummed_is_still_refused() {
+    let dir = fixture();
+    let handle = opened(dir.path());
+    let selection = Selection::default();
+    let issued = handle
+        .read(&request(3, None, selection.clone()))
+        .expect("read")
+        .entry_page
+        .expect("page")
+        .next
+        .expect("a continuation");
+
+    let mut bytes = decode_hex(&issued.encode());
+    // The denominator: eight bytes of magic, then `total` first among the scalars.
+    let inflated = u64::from_le_bytes(bytes[8..16].try_into().expect("eight bytes")) + 1_000;
+    bytes[8..16].copy_from_slice(&inflated.to_le_bytes());
+    let repaired = fnv1a(&bytes[..bytes.len() - 8]);
+    let end = bytes.len() - 8;
+    bytes[end..].copy_from_slice(&repaired.to_le_bytes());
+    let forged = encode_hex(&bytes);
+
+    // It decodes: the checksum is repaired, so the encoding says nothing is wrong with it.
+    let cursor = fdu_core::EntryCursor::decode(&forged)
+        .expect("a repaired checksum passes the encoding's own check, which is the problem");
+    assert_ne!(cursor, issued, "the edit has to have changed the value");
+
+    // And the read refuses it, because the tag over those bytes is not one this index made.
+    let refused = handle
+        .read(&request(3, Some(cursor), selection))
+        .expect_err("a forged continuation must not be answered");
+    assert!(
+        refused.to_string().contains("continuation"),
+        "refused as a continuation rather than by accident: {refused}"
+    );
+}
+
+/// A token re-versioned onto another index is refused by the tag, not by the version.
+///
+/// The plain cross-index case is caught before the tag is consulted: an index mints its
+/// session identity per construction, so a token from another open names a version this one
+/// never had. That check is a comparison against a value the token itself carries, though,
+/// and a caller holding the encoding can edit it -- which is what makes the version check
+/// insufficient on its own and this test the one that matters. Session, clock and checksum
+/// are rewritten to what the second index accepts, leaving the version and the shape with
+/// nothing to object to. What refuses it is the tag, over bytes that no longer match it.
+#[test]
+fn a_continuation_re_versioned_onto_another_index_is_still_refused() {
+    let dir = fixture();
+    let origin = opened(dir.path());
+    let elsewhere = opened(dir.path());
+
+    let issued = origin
+        .read(&request(3, None, Selection::default()))
+        .expect("read")
+        .entry_page
+        .expect("page")
+        .next
+        .expect("a continuation");
+
+    // Through the string boundary, which is how a token actually travels between two
+    // handles: a wire format carries the text, not the value.
+    let carried = fdu_core::EntryCursor::decode(&issued.encode()).expect("its own token");
+    assert!(
+        origin.read(&request(3, Some(carried.clone()), Selection::default())).is_ok(),
+        "the index that issued it still honours it, or the refusals below prove nothing"
+    );
+    assert!(
+        elsewhere.read(&request(3, Some(carried), Selection::default())).is_err(),
+        "another index must not answer a continuation it did not issue"
+    );
+
+    // Now re-version it to the second index and repair the checksum, so only the tag is
+    // left to refuse it. Session and clock are the third and fourth scalars after the
+    // magic, which is where `EntryCursor::encode` writes them.
+    let wanted = elsewhere.cursor().expect("cursor");
+    let mut bytes = decode_hex(&issued.encode());
+    bytes[24..32].copy_from_slice(&wanted.session.0.to_le_bytes());
+    bytes[32..40].copy_from_slice(&wanted.clock.0.to_le_bytes());
+    let end = bytes.len() - 8;
+    let repaired = fnv1a(&bytes[..end]);
+    bytes[end..].copy_from_slice(&repaired.to_le_bytes());
+
+    let reversioned = fdu_core::EntryCursor::decode(&encode_hex(&bytes)).expect("well-formed");
+    assert_eq!(reversioned.version(), wanted, "the edit has to actually move the version");
+    let refused = elsewhere
+        .read(&request(3, Some(reversioned), Selection::default()))
+        .expect_err("a re-versioned continuation is still not one this index issued");
+    assert!(
+        refused.to_string().contains("continuation"),
+        "refused as a continuation rather than as a stale version: {refused}"
+    );
+}
+
+/// A token far larger than one this engine could issue is refused without decoding it.
+#[test]
+fn an_oversized_token_is_refused() {
+    let huge = "ab".repeat(200_000);
+    assert!(
+        fdu_core::EntryCursor::decode(&huge).is_err(),
+        "a token with no possible path that long is not one this engine issued"
+    );
+}
+
+/// Hex helpers for the forgery above, kept beside it rather than shared.
+///
+/// A test that reached into the engine's own encoder would be testing it against itself;
+/// these are written out so the forged token is built the way a caller outside the process
+/// would have to build one.
+fn decode_hex(token: &str) -> Vec<u8> {
+    token
+        .as_bytes()
+        .chunks(2)
+        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).expect("ascii"), 16).expect("hex"))
+        .collect()
+}
+
+fn encode_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    bytes.iter().fold(String::new(), |mut hex, byte| {
+        let _ = write!(hex, "{byte:02x}");
+        hex
+    })
+}
+
+fn fnv1a(body: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in body {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
 /// A tree wide and deep enough that a prefix scan and a seek differ by a lot.
 fn wide_fixture() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("temp");

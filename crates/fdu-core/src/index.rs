@@ -1126,6 +1126,16 @@ pub struct EntryCursor {
     version: Cursor,
     /// Identity of every request field that decides which rows the assembly returns.
     shape: u64,
+    /// This continuation's tag under the issuing index's private authority.
+    ///
+    /// The one field a caller cannot compute, and the reason the others can be carried at
+    /// all. Everything above is a claim the engine acts on -- a denominator, aggregates, a
+    /// delivered count -- and the checksum around the encoded form only rules out accident:
+    /// it is unkeyed, so anybody may recompute it after an edit. This is checked against a
+    /// key minted per opened index and never serialized, inside the same guarded read that
+    /// checks the version and the shape, so a token that was not issued by *this* index for
+    /// *this* question is refused before any of its numbers are believed.
+    mac: u64,
 }
 
 impl EntryCursor {
@@ -1158,6 +1168,26 @@ impl EntryCursor {
     /// its paths are.
     #[must_use]
     pub fn encode(&self) -> String {
+        let mut bytes = self.authenticated();
+        bytes.extend_from_slice(&self.mac.to_le_bytes());
+        bytes.extend_from_slice(&token_checksum(&bytes).to_le_bytes());
+        // Hex by hand rather than through `format!` per byte: one allocation, and a token
+        // is on the hot boundary of every continued page.
+        let mut hex = String::with_capacity(bytes.len() * 2);
+        for byte in &bytes {
+            hex.push(char::from(TOKEN_DIGITS[usize::from(byte >> 4)]));
+            hex.push(char::from(TOKEN_DIGITS[usize::from(byte & 0x0f)]));
+        }
+        hex
+    }
+
+    /// Every field this continuation asks to be believed, as bytes.
+    ///
+    /// One function rather than two, because the payload the authority signs and the payload
+    /// the token carries have to be the same bytes or the tag authenticates something other
+    /// than what arrives. Fixed-width little-endian throughout, with the path's length
+    /// written before it, so no two distinct cursors share an encoding.
+    fn authenticated(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(96);
         bytes.extend_from_slice(&TOKEN_MAGIC.to_le_bytes());
         for scalar in [
@@ -1179,15 +1209,7 @@ impl EntryCursor {
         bytes.push(tag);
         bytes.extend_from_slice(&(path.len() as u64).to_le_bytes());
         bytes.extend_from_slice(&path);
-        bytes.extend_from_slice(&token_checksum(&bytes).to_le_bytes());
-        // Hex by hand rather than through `format!` per byte: one allocation, and a token
-        // is on the hot boundary of every continued page.
-        let mut hex = String::with_capacity(bytes.len() * 2);
-        for byte in &bytes {
-            hex.push(char::from(TOKEN_DIGITS[usize::from(byte >> 4)]));
-            hex.push(char::from(TOKEN_DIGITS[usize::from(byte & 0x0f)]));
-        }
-        hex
+        bytes
     }
 
     /// The cursor a token names, or an error naming what is wrong with it.
@@ -1207,7 +1229,11 @@ impl EntryCursor {
     }
 
     fn decode_inner(token: &str) -> Option<Self> {
-        if !token.len().is_multiple_of(2) {
+        // Bounded before anything is allocated. A token's only variable part is one path, so
+        // its length has a ceiling, and a caller handing over a megabyte of hex is not a
+        // continuation this engine could have issued -- decoding it first to discover that
+        // would let the size of a refused input decide the cost of refusing it.
+        if !token.len().is_multiple_of(2) || token.len() > TOKEN_MAX_CHARS {
             return None;
         }
         let bytes: Option<Vec<u8>> = token
@@ -1216,15 +1242,17 @@ impl EntryCursor {
             .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok())
             .collect();
         let bytes = bytes?;
-        // Magic, eleven scalars, the path tag and length, and the trailing checksum.
+        // Magic, eleven scalars, the path tag and length, and the trailing tag and checksum.
         let fixed = 8 + 11 * 8 + 1 + 8;
-        if bytes.len() < fixed + 8 {
+        if bytes.len() < fixed + 16 {
             return None;
         }
-        let (body, tail) = bytes.split_at(bytes.len() - 8);
-        if token_checksum(body) != u64::from_le_bytes(tail.try_into().ok()?) {
+        let (signed, tail) = bytes.split_at(bytes.len() - 8);
+        if token_checksum(signed) != u64::from_le_bytes(tail.try_into().ok()?) {
             return None;
         }
+        let (body, tag) = signed.split_at(signed.len() - 8);
+        let mac = u64::from_le_bytes(tag.try_into().ok()?);
         let mut scalars = body[8..].chunks_exact(8).map(|chunk| {
             u64::from_le_bytes(chunk.try_into().expect("chunks_exact yields eight bytes"))
         });
@@ -1250,7 +1278,49 @@ impl EntryCursor {
         if body.len() != fixed + length {
             return None;
         }
-        Some(Self { after: decode_path(tag, path)?, total, totals, delivered, version, shape })
+        Some(Self { after: decode_path(tag, path)?, total, totals, delivered, version, shape, mac })
+    }
+}
+
+/// The private authority one opened index signs its own continuations with.
+///
+/// A continuation carries numbers the engine acts on -- a denominator, aggregates, a
+/// delivered count -- so a token anybody can mint is a claim anybody can make about an
+/// answer nobody computed. The unkeyed checksum around the encoded form rules out accident
+/// and says so; this is what rules out intent.
+///
+/// The key is `RandomState`, which the standard library seeds from the operating system,
+/// and the tag is the keyed hash it builds. That is not a cryptographic construction and is
+/// not claimed as one: what it establishes is that a caller cannot compute a tag without
+/// the key, and the key is never persisted and never leaves the process.
+///
+/// Per opened index rather than per process, and the reason is scope rather than a
+/// behaviour: two opens already differ by session identity, so the version check separates
+/// them before a tag is consulted, and no test can tell the two keyings apart. Minting one
+/// per index costs nothing and is the narrower claim, which is the one to make when the
+/// wider one buys nothing.
+#[derive(Clone)]
+pub(crate) struct ContinuationAuthority(std::collections::hash_map::RandomState);
+
+impl ContinuationAuthority {
+    /// Mint an authority for a newly constructed index.
+    pub(crate) fn new() -> Self {
+        Self(std::collections::hash_map::RandomState::new())
+    }
+
+    /// This authority's tag over one continuation's authenticated bytes.
+    pub(crate) fn tag(&self, body: &[u8]) -> u64 {
+        use std::hash::{BuildHasher, Hasher};
+        let mut hasher = self.0.build_hasher();
+        hasher.write(body);
+        hasher.finish()
+    }
+}
+
+impl std::fmt::Debug for ContinuationAuthority {
+    /// Named, never shown. A key that reaches a log is a key.
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("ContinuationAuthority(..)")
     }
 }
 
@@ -1259,6 +1329,13 @@ const TOKEN_MAGIC: u64 = 0x6664_755f_7061_6765;
 
 /// Lowercase hex, for a token that has to survive a text field unchanged.
 const TOKEN_DIGITS: &[u8; 16] = b"0123456789abcdef";
+
+/// The longest token this engine could have issued, in hex characters.
+///
+/// A path is the only variable-length part, and no filesystem this runs on accepts one
+/// beyond a few thousand bytes; the ceiling is generous rather than exact because its job
+/// is to bound the work of refusing, not to validate a length.
+const TOKEN_MAX_CHARS: usize = 64 * 1024;
 
 /// FNV-1a over a token's body, so a hand-edited one is refused rather than believed.
 ///
@@ -1508,6 +1585,14 @@ pub struct Index {
     /// Minted per construction and never persisted: a snapshot reload is a new session by
     /// definition, because the journal a cursor resumes against was never on disk.
     session: SessionId,
+    /// The private key this index's page continuations are tagged with.
+    ///
+    /// Beside the session id and deliberately not it: the session is an *identity*, minted
+    /// from a clock and a counter so that two indexes can be told apart, and its own
+    /// documentation says it does not authenticate them. A caller can guess one. This is
+    /// the thing they cannot, and it is what makes the counts a continuation carries
+    /// engine-issued rather than merely engine-shaped.
+    continuations: ContinuationAuthority,
     journal: VecDeque<AppliedDelta>,
     journal_ops: usize,
     journal_op_capacity: usize,
@@ -2073,6 +2158,7 @@ impl Index {
             free_head: None,
             run: crate::query::RunFacts::default(),
             session: SessionId::mint(),
+            continuations: ContinuationAuthority::new(),
             live: 1,
             clock: Clock::ZERO,
             journal: VecDeque::new(),
@@ -4486,6 +4572,21 @@ fn entry_page(
                     .into(),
             });
         }
+        // Last of the three, and the one the other two rest on. A version and a shape are
+        // values a caller can read off a page and write back; this is the tag only the
+        // index that issued the continuation can produce. Checked here rather than in
+        // `decode` because that is where the key is: under the same guarded read, on the
+        // same index whose numbers the cursor is asking to be believed.
+        if cursor.mac != index.continuations.tag(&cursor.authenticated()) {
+            return Err(crate::Error::InvalidValue {
+                kind: "page continuation",
+                value: cursor.after.display().to_string(),
+                hint: "this continuation was not issued by this index: it carries counts an \
+                       engine established by walking, so one that cannot be authenticated is \
+                       refused rather than believed"
+                    .into(),
+            });
+        }
     }
     let Some(root_id) = index.lookup_visiting(&request.root, work) else {
         return Ok(None);
@@ -4594,6 +4695,10 @@ fn entry_page(
                 delivered: 0,
                 version: index.cursor(),
                 shape,
+                // Tagged at the end, once the counting pass has settled the numbers this
+                // signs. A tag over the placeholders above would authenticate a cursor
+                // nobody issued.
+                mac: 0,
             });
             page.rows.push(EntryRow { path, entry });
         }
@@ -4628,6 +4733,10 @@ fn entry_page(
         next.total = page.total;
         next.totals = page.totals;
         next.delivered = page.total - page.remaining;
+        // And tagged last of all, over the finished value. This is the only place a tag is
+        // produced, which is what makes "the engine issued it" a fact about the code path
+        // rather than a convention.
+        next.mac = index.continuations.tag(&next.authenticated());
     }
     Ok(Some(page))
 }

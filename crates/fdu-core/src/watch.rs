@@ -486,11 +486,15 @@ fn admitted(observation: Observation, root: &Path, config: &ScanConfig) -> Obser
     // that cannot be stat'ed leaves every entry admitted on this axis: the walk that built
     // the index already drew the boundary, and refusing everything here would empty the
     // index rather than bound it.
+    //
+    // Carried as `None` rather than flattened to `0`, which is the same sentence and the
+    // opposite behaviour: no real device is zero, so every successfully `stat`ed parent
+    // failed the comparison and a momentarily unreadable root turned into a stream of
+    // removals.
     let root_dev = config
         .one_filesystem
         .then(|| std::fs::symlink_metadata(root).ok().map(|meta| scan::observe(&meta).1.dev))
-        .flatten()
-        .unwrap_or(0);
+        .flatten();
     // One `stat` per distinct parent rather than per op. A coalesced intent is usually one
     // directory's worth of events, so this is one call for the batch in the common case,
     // and never more than one per directory it touched.
@@ -963,6 +967,42 @@ mod tests {
         }]);
         let held = admitted(observation.clone(), Path::new("/"), &ScanConfig::default());
         assert_eq!(held, observation, "nothing excludes it, so nothing rewrites it");
+    }
+
+    /// An unreadable root leaves the filesystem boundary undrawn, not drawn at zero.
+    ///
+    /// This is the production half of the `Option`. The value used to be a `u64` with a
+    /// failed root `stat` flattened to `0`, so a root that momentarily could not be read
+    /// turned every successfully `stat`ed parent into a mismatch -- and an out-of-scope
+    /// upsert becomes a *removal*, so the index would have been emptied one event at a
+    /// time by a transient error whose comment said it fails open.
+    ///
+    /// Two absences meet on this path and only one of them is the subject, so the test has
+    /// to separate them: a root whose `stat` fails, and a *parent* whose `stat` fails.
+    /// Both admit, so a nonexistent root with an ordinary relative path passes whatever the
+    /// missing device is flattened to. The op therefore carries an absolute path, which
+    /// `Path::join` resolves to itself -- the parent is a real directory with a real
+    /// nonzero device while the root is not readable at all, which is the one arrangement
+    /// where the root's absence is the only thing left to decide the answer.
+    #[test]
+    fn an_unreadable_root_admits_rather_than_removing_everything() {
+        let dir = tempfile::tempdir().expect("temp");
+        fs::create_dir(dir.path().join("src")).expect("mkdir");
+        let live = dir.path().join("src").join("main.rs");
+        fs::write(&live, b"fn main() {}").expect("write");
+
+        let observation = Observation::new(vec![Op::Upsert {
+            path: live,
+            kind: EntryKind::File,
+            attrs: Attrs::default(),
+        }]);
+        let config = ScanConfig { one_filesystem: true, ..ScanConfig::default() };
+
+        let held = admitted(observation.clone(), Path::new("/fdu-no-such-root-3f1c9e2a"), &config);
+        assert_eq!(
+            held, observation,
+            "with no root device there is no boundary, so the upsert must survive it"
+        );
     }
 
     /// Substituting an operation must not also rewrite its arbitration precondition.

@@ -4340,16 +4340,31 @@ pub(crate) fn within_scope(path: &Path, config: &ScanConfig) -> bool {
 /// device rejects the mountpoint row the scan deliberately keeps, so a live event on it
 /// would delete that row while a rescan put it back.
 ///
-/// A parent that cannot be `stat`ed admits: the walk that built the index already drew this
-/// boundary, and refusing on a transient error would remove rows the tree still holds.
+/// Absence admits, in both places it can arise, and the type is what says so. A parent that
+/// cannot be `stat`ed and a root whose own device is unknown are the same fact -- there is
+/// no comparison to make -- and the walk that built the index already drew this boundary,
+/// so refusing on a transient error would remove rows the tree still holds.
+///
+/// `root_dev` is therefore an `Option` rather than a sentinel. It was a `u64` with an
+/// unavailable root flattened to `0`, which reads as fail-open and is the exact opposite:
+/// zero matches no real device, so every successfully `stat`ed parent was *rejected* and a
+/// root that briefly could not be read would have emptied the index one event at a time.
+///
+/// A parent whose `stat` *succeeds* and reports device zero used to be admitted here too,
+/// and that clause is gone rather than kept: it can only arise on a platform with no device
+/// identity, where [`ScanConfig::validate`] refuses `one_filesystem` before any of this
+/// runs. Restoring it changes no answer any test or any platform can produce, which is the
+/// argument for not carrying it.
 #[cfg(feature = "watch")]
-pub(crate) fn on_root_filesystem(root: &Path, path: &Path, root_dev: u64) -> bool {
+pub(crate) fn on_root_filesystem(root: &Path, path: &Path, root_dev: Option<u64>) -> bool {
+    let Some(root_dev) = root_dev else {
+        return true;
+    };
     let Some(parent) = path.parent() else {
         // The root itself is always inside its own filesystem.
         return true;
     };
-    fs::symlink_metadata(root.join(parent))
-        .map_or(true, |meta| attrs_from(&meta).dev == root_dev || attrs_from(&meta).dev == 0)
+    fs::symlink_metadata(root.join(parent)).map_or(true, |meta| attrs_from(&meta).dev == root_dev)
 }
 
 /// Whether one directory entry is inside the scan scope, by name alone.
@@ -6333,7 +6348,14 @@ mod tests {
     /// half that is checkable: *whose* device is consulted. Against a `root_dev` nothing
     /// matches, the root is still admitted (it has no parent to disqualify it) and a child
     /// is not (its parent is the root, whose device does not match).
-    #[cfg(feature = "watch")]
+    ///
+    /// Unix only, and not because the code is. `one_filesystem` is refused by
+    /// [`ScanConfig::validate`] on a platform with no device identity, so this rule is
+    /// unreachable there -- and every entry reports device `0`, which makes "whose device
+    /// is consulted" a question the platform cannot answer. On Windows the real-device
+    /// assertions therefore passed or failed on the arithmetic of two zeroes rather than on
+    /// the rule, which is how this test came to be red in CI while the rule was right.
+    #[cfg(all(feature = "watch", unix))]
     #[test]
     fn the_filesystem_boundary_is_asked_of_the_parent_not_the_entry() {
         let dir = tempfile::tempdir().expect("temp");
@@ -6341,23 +6363,37 @@ mod tests {
         fs::write(dir.path().join("sub/file.txt"), b"x").expect("write");
 
         let real = attrs_from(&fs::symlink_metadata(dir.path()).expect("stat")).dev;
+        let elsewhere = Some(real.wrapping_add(1));
         // The root has no parent, so no device can disqualify it.
-        assert!(on_root_filesystem(dir.path(), Path::new(""), real.wrapping_add(1)));
+        assert!(on_root_filesystem(dir.path(), Path::new(""), elsewhere));
         // Everything else is judged by the parent it hangs from.
-        assert!(!on_root_filesystem(dir.path(), Path::new("sub"), real.wrapping_add(1)));
-        assert!(on_root_filesystem(dir.path(), Path::new("sub"), real));
-        assert!(on_root_filesystem(dir.path(), Path::new("sub/file.txt"), real));
+        assert!(!on_root_filesystem(dir.path(), Path::new("sub"), elsewhere));
+        assert!(on_root_filesystem(dir.path(), Path::new("sub"), Some(real)));
+        assert!(on_root_filesystem(dir.path(), Path::new("sub/file.txt"), Some(real)));
+
+        // An unknown root device admits, and that is the whole reason it is an `Option`.
+        // As a `u64` this was `0`, which no real device is, so exactly the entries a
+        // successful `stat` proved were inside the root filesystem were the ones rejected.
+        assert!(
+            on_root_filesystem(dir.path(), Path::new("sub"), None),
+            "with no root device there is no boundary, so nothing is outside it"
+        );
+        assert!(on_root_filesystem(dir.path(), Path::new("sub/file.txt"), None));
+        assert!(
+            !on_root_filesystem(dir.path(), Path::new("sub"), Some(0)),
+            "a root device of zero is a device, not an absence, and must not admit"
+        );
 
         // And `should_descend` agrees about the entry the boundary keeps: a directory on
         // another device is not descended into, which is exactly why it is still recorded.
         let bounded = ScanConfig { one_filesystem: true, ..ScanConfig::default() };
-        let elsewhere = Attrs { dev: real.wrapping_add(1), ..Attrs::default() };
+        let mounted = Attrs { dev: real.wrapping_add(1), ..Attrs::default() };
         assert!(
-            !should_descend(EntryKind::Dir, elsewhere, 0, real, &bounded),
+            !should_descend(EntryKind::Dir, mounted, 0, real, &bounded),
             "the walk stops at the mountpoint"
         );
         assert!(
-            on_root_filesystem(dir.path(), Path::new("sub"), real),
+            on_root_filesystem(dir.path(), Path::new("sub"), Some(real)),
             "and keeps the row for it, which the live rule must not take away"
         );
     }

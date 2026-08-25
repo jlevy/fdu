@@ -1423,6 +1423,26 @@ def check_bounded_pages_assemble_into_one_complete_answer() -> None:
             else:  # pragma: no cover - the guard above is the point
                 raise AssertionError(f"{invented!r} is not a token this engine issued")
 
+        # The one that matters at a string boundary: an edit whose checksum is repaired.
+        # A caller on this side of the binding holds only the text, and the text carries an
+        # unkeyed checksum -- anybody can recompute it, so a token that were protected by
+        # nothing else would let a consumer author its own denominator. The forgery is built
+        # the way a caller would have to build one, from the hex outward.
+        raw = bytearray(bytes.fromhex(page.next))
+        # The denominator: eight bytes of magic, then `total` first among the scalars.
+        inflated = int.from_bytes(raw[8:16], "little") + 1_000
+        raw[8:16] = inflated.to_bytes(8, "little")
+        digest = 0xCBF29CE484222325
+        for byte in raw[:-8]:
+            digest = ((digest ^ byte) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+        raw[-8:] = digest.to_bytes(8, "little")
+        try:
+            index.read(entries=True, entries_limit=2, entries_after=raw.hex(), query=query)
+        except ValueError as error:
+            assert "continuation" in str(error), error
+        else:  # pragma: no cover - the guard above is the point
+            raise AssertionError("a repaired checksum is not an engine's signature")
+
 
 def check_the_catalog_predicates_answer_what_the_consumer_contract_answers() -> None:
     """fdu's catalog predicates and the consuming contract's are one predicate.
