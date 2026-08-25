@@ -36,6 +36,7 @@ from ._models import (
     ProjectionWork,
     Provenance,
     Query,
+    QueryKind,
     RefreshResult,
     Report,
     RollUp,
@@ -612,6 +613,7 @@ def _watch_batch(value: dict[str, Any]) -> WatchBatch:
         cursor=None if raw_cursor is None else _cursor(raw_cursor),
         state=tuple(_state_change(item) for item in value["state"]),
         issues=tuple(_operation_error(item) for item in value["issues"]),
+        dirty_queries=tuple(QueryKind(str(kind)) for kind in value["dirty_queries"]),
     )
 
 

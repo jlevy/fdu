@@ -800,6 +800,40 @@ def check_state_and_operations_interleave_at_their_own_clocks() -> None:
         )
 
 
+def check_a_batch_names_which_projections_went_stale() -> None:
+    """A consumer holding one projection is told whether *it* moved, not just which paths.
+
+    Absence is the guarantee here. A kind named may be stale; a kind missing is not -- so
+    the assertions that matter are the negative ones, because those are what let a consumer
+    keep an answer instead of re-reading it.
+    """
+
+    with tempfile.TemporaryDirectory(prefix="fdu-kinds-") as raw:
+        root = Path(raw)
+        (root / "seed.txt").write_text("seed", encoding="utf-8")
+        index = fdu.open(root, cache=fdu.CachePolicy.OFF)
+
+        with index.watch(fdu.WatchOptions(interval=0.2)) as watch:
+            (root / "added.rs").write_text("fn main() {}", encoding="utf-8")
+            # One loop, with the deadline checked on every iteration. A nested loop that
+            # breaks only on a dirty batch never comes back to the deadline once the tree
+            # goes quiet, so a run that does not see what it is waiting for hangs instead
+            # of failing. Each iteration returns within `interval`, so this cannot.
+            deadline = time.monotonic() + 30
+            kinds: set[fdu.QueryKind] = set()
+            for batch in watch:
+                kinds.update(batch.dirty_queries)
+                if fdu.QueryKind.RECENT in kinds or time.monotonic() > deadline:
+                    break
+
+        assert fdu.QueryKind.RECENT in kinds, f"a file arrived, so recency moved: {kinds}"
+        assert fdu.QueryKind.CATALOG in kinds, kinds
+        assert fdu.QueryKind.ROLLUP in kinds, kinds
+        assert fdu.QueryKind.METADATA not in kinds, (
+            f"identity facts are fixed for an opened index, so they are never named: {kinds}"
+        )
+
+
 def check_a_pinned_assembly_pins_its_clock_too() -> None:
     """A version pin fixes the tree. It does not fix a relative recency cutoff.
 
@@ -1653,6 +1687,7 @@ def main() -> None:
     check_empty_is_decidable_from_the_aggregate()
     check_the_envelope_is_typed_and_its_facts_are_independent()
     check_state_and_operations_interleave_at_their_own_clocks()
+    check_a_batch_names_which_projections_went_stale()
     check_a_pinned_assembly_pins_its_clock_too()
     check_a_state_transition_advances_the_version_and_reaches_the_feed()
     check_the_event_loop_adapter_delivers_the_same_batches()

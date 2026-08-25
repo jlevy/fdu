@@ -30,6 +30,7 @@ const pythonSource = readFileSync(join(root, 'crates/fdu-py/python/fdu/_models.p
 const VOCABULARIES = [
   { rust: 'impl IssueKind', python: 'class IssueKind(StrEnum)', name: 'IssueKind' },
   { rust: 'impl Phase', python: 'class Phase(StrEnum)', name: 'Phase' },
+  { rust: 'impl QueryKind', python: 'class QueryKind(StrEnum)', name: 'QueryKind' },
 ];
 
 /** Wire labels from a Rust `as_str` block: `Self::Member => "label",`. */

@@ -18,7 +18,9 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::engine_contract::{AppliedDelta, CommittedState, EntryKind, Op, Result, StateChange};
+use crate::engine_contract::{
+    AppliedDelta, CommittedState, EntryKind, Op, QueryKind, Result, StateChange,
+};
 use crate::index::IndexHandle;
 use crate::query::{Provenance, Query, Report, ReportSource, Selection, report};
 use crate::scan::ScanConfig;
@@ -100,6 +102,17 @@ pub struct Batch {
     /// and `all_dirty` are all empty beside it. A partial list here would read as complete
     /// and be applied as one.
     pub reset: bool,
+    /// Projections a consumer holding one may need to re-read, sorted.
+    ///
+    /// `dirty_rollups` says which *paths* moved; this says which *answers* those paths were
+    /// part of. A consumer caching a recency list otherwise re-derives from change paths
+    /// whether its own view is affected -- work the engine can do once instead of every
+    /// consumer doing it differently, and differently wrong.
+    ///
+    /// Absence is the guarantee: a kind here may be stale, a kind missing is not. Empty
+    /// beside `reset`, which replaces every other signal; unaffected by `all_dirty`, which
+    /// drops the path list and leaves the question of *which projections* untouched.
+    pub dirty_queries: Vec<QueryKind>,
     /// Typed conditions this batch observed.
     ///
     /// An observation gap is the one that matters today: the engine lost precision, re-
@@ -150,12 +163,65 @@ impl Batch {
         let reset_is_alone = !self.reset
             || (self.changes.is_empty()
                 && self.dirty_rollups.is_empty()
+                && self.dirty_queries.is_empty()
                 && !self.all_dirty
                 && self.state.is_empty()
                 && self.issues.is_empty());
         let all_dirty_replaces_the_list = !self.all_dirty || self.dirty_rollups.is_empty();
         reset_is_alone && all_dirty_replaces_the_list
     }
+}
+
+/// Projections a set of applied deltas may have made stale.
+///
+/// Conservative by construction, and the direction of that is the whole design: naming a
+/// kind that turns out unaffected costs a consumer one re-read, while omitting one that is
+/// affected leaves it serving an answer nothing will ever contradict.
+///
+/// Two asymmetries are worth stating, because both come from what an op does *not* say.
+/// `Remove` does not say what it removed, so a removed directory has to be treated as
+/// having taken files with it -- the same guess `dirty_rollups` makes, for the same reason.
+/// And an `Upsert` does not distinguish a created file from a modified one, so a catalog of
+/// identities is named for both even though only the first can move it.
+fn dirty_queries(applied: &[AppliedDelta]) -> Vec<QueryKind> {
+    let mut dirty: BTreeSet<QueryKind> = BTreeSet::new();
+    for delta in applied {
+        for op in &delta.ops {
+            // Anything at a path moves the path-shaped projections and the tallies that
+            // aggregate over them.
+            dirty.extend([
+                QueryKind::Entry,
+                QueryKind::Directory,
+                QueryKind::Rollup,
+                QueryKind::FilteredTree,
+                QueryKind::Navigation,
+            ]);
+            let touches_files = match op {
+                Op::Upsert { kind, .. } => !kind.is_dir(),
+                // See the asymmetries above: neither of these says what it covered.
+                Op::Remove { .. } | Op::InvalidateSubtree { .. } => true,
+            };
+            if touches_files {
+                dirty.extend([QueryKind::Recent, QueryKind::Catalog]);
+            }
+        }
+        for change in &delta.state {
+            // Every transition is something diagnostics reports.
+            dirty.insert(QueryKind::Diagnostics);
+            if matches!(change, StateChange::Retagged { .. }) {
+                // Tags reach the rows themselves and the tallies partitioned by them, so a
+                // rebind moves answers no path event named.
+                dirty.extend([
+                    QueryKind::Entry,
+                    QueryKind::Directory,
+                    QueryKind::FilteredTree,
+                    QueryKind::Navigation,
+                    QueryKind::Catalog,
+                ]);
+            }
+        }
+    }
+    dirty.into_iter().collect()
 }
 
 /// How many dirty directories a batch enumerates before it says "all of them".
@@ -390,6 +456,7 @@ impl Session {
         let all_dirty = retagged_everything || dirty_rollups.len() > MAX_DIRTY_ROLLUPS;
         let mut batch = Batch {
             changes: Vec::new(),
+            dirty_queries: dirty_queries(&applied),
             issues,
             dirty: !applied.is_empty(),
             // Past the bound the list is dropped rather than truncated. A truncated list
@@ -637,6 +704,70 @@ mod tests {
             ..Batch::default()
         };
         assert!(!truncated_list.is_consistent(), "a partial list beside all-dirty reads as whole");
+    }
+
+    /// A batch says which projections may be stale, and which certainly are not.
+    ///
+    /// The direction of the conservatism is the design: naming a kind that turns out
+    /// unaffected costs one re-read, and omitting one that is affected leaves a consumer
+    /// serving an answer nothing will contradict. So the useful assertions are about what
+    /// is *absent* -- those are the guarantees a consumer can act on.
+    #[test]
+    fn a_batch_names_the_projections_its_changes_could_have_moved() {
+        let one_file = dirty_queries(&[delta(
+            1,
+            vec![Op::Upsert {
+                path: PathBuf::from("src/main.rs"),
+                kind: EntryKind::File,
+                attrs: Attrs::default(),
+            }],
+        )]);
+
+        assert!(one_file.contains(&QueryKind::Recent), "a file moved, so recency did");
+        assert!(one_file.contains(&QueryKind::Catalog));
+        assert!(one_file.contains(&QueryKind::Rollup));
+        assert!(
+            !one_file.contains(&QueryKind::Diagnostics),
+            "no state moved, so nothing diagnostics reports did: {one_file:?}"
+        );
+        assert!(
+            !one_file.contains(&QueryKind::Metadata),
+            "and identity facts are fixed for an opened index: {one_file:?}"
+        );
+
+        // A directory's own attributes do not enter a list of files or a catalog of
+        // identities, and saying so is what makes the answer worth having.
+        let one_directory = dirty_queries(&[delta(
+            1,
+            vec![Op::Upsert {
+                path: PathBuf::from("src"),
+                kind: EntryKind::Dir,
+                attrs: Attrs::default(),
+            }],
+        )]);
+        assert!(!one_directory.contains(&QueryKind::Recent), "{one_directory:?}");
+        assert!(!one_directory.contains(&QueryKind::Catalog), "{one_directory:?}");
+        assert!(one_directory.contains(&QueryKind::Directory), "{one_directory:?}");
+
+        // A removal does not say what it removed, so it is treated as having taken files
+        // with it -- the same guess the dirty set makes, and for the same reason.
+        let removed = dirty_queries(&[delta(1, vec![Op::Remove { path: PathBuf::from("src") }])]);
+        assert!(removed.contains(&QueryKind::Recent), "{removed:?}");
+        assert!(removed.contains(&QueryKind::Catalog), "{removed:?}");
+
+        // A transition with no operation moves only what reports transitions.
+        let state_only =
+            dirty_queries(&[AppliedDelta::of_state(Clock(1), vec![StateChange::RunFacts])]);
+        assert_eq!(state_only, vec![QueryKind::Diagnostics], "{state_only:?}");
+
+        // Except a re-tag, which moves rows nothing touched.
+        let retagged = dirty_queries(&[AppliedDelta::of_state(
+            Clock(1),
+            vec![StateChange::Retagged { directories: vec![PathBuf::from("src")], all: false }],
+        )]);
+        assert!(retagged.contains(&QueryKind::Catalog), "tags reach the rows: {retagged:?}");
+        assert!(retagged.contains(&QueryKind::Navigation), "and the tallies: {retagged:?}");
+        assert!(!retagged.contains(&QueryKind::Recent), "but not mtime order: {retagged:?}");
     }
 
     /// A re-tag dirties the directories it governs, though no path event names them.

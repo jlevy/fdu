@@ -86,8 +86,8 @@ pub use crate::cache::{
 pub use crate::engine_contract::{
     AppliedDelta, Attrs, Bound, Clock, CommittedState, CoverageReason, Cursor, EntryKind, Error,
     Expectation, Fingerprint, Freshness, InvalidateReason, Issue, IssueKind, Observation,
-    ObservationOp, Op, PathExpectation, PathState, Phase, Provenance, Result, ScanScope, SessionId,
-    Source, StateChange, Status,
+    ObservationOp, Op, PathExpectation, PathState, Phase, Provenance, QueryKind, Result, ScanScope,
+    SessionId, Source, StateChange, Status,
 };
 pub use crate::index::{
     ApplyOutcome, ApplyStats, ChildPage, ChildPageRequest, ChildRemainder, ChildSnapshot, EntryId,

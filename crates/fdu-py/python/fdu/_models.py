@@ -427,6 +427,53 @@ class OperationError:
     os_error: int | None = None
 
 
+class QueryKind(StrEnum):
+    """A projection a consumer can be holding, named as a thing that can go stale.
+
+    The consumer contract's nine query kinds. :attr:`WatchBatch.dirty_rollups` says which
+    *paths* moved; :attr:`WatchBatch.dirty_queries` says which *answers* those paths were
+    part of, which is the question a consumer holding one projection actually has.
+
+    Absence is the guarantee, presence is not: a kind named may be stale, a kind missing is
+    not. The asymmetry runs one way on purpose -- naming a kind that turns out unaffected
+    costs a re-read, and omitting one that is affected leaves an answer nothing will ever
+    contradict.
+    """
+
+    ENTRY = "entry"
+    """One path's presence and filesystem facts."""
+
+    DIRECTORY = "directory"
+    """One directory's name-ordered rows."""
+
+    FILTERED_TREE = "filtered_tree"
+    """Matching tree rows and their scalar totals."""
+
+    ROLLUP = "rollup"
+    """One directory's roll-up payload."""
+
+    NAVIGATION = "navigation"
+    """Population, extension, family, preset, and recency tallies."""
+
+    RECENT = "recent"
+    """The newest matching files."""
+
+    CATALOG = "catalog"
+    """File identities and logical extensions from one pinned version."""
+
+    METADATA = "metadata"
+    """Provider, contract, root, and identity facts.
+
+    **Never named by a live batch.** These are fixed for an opened index: a re-tag keeps the
+    tag-rules fingerprint, because rebinding changes what the rules *read* rather than which
+    are enabled. Changing them opens a new session, and a new session is not a change to
+    this one.
+    """
+
+    DIAGNOSTICS = "diagnostics"
+    """Provider state, progress, cache, watch, and queue counters."""
+
+
 class Phase(StrEnum):
     """Where a provider stands in its own lifecycle.
 
@@ -1558,6 +1605,15 @@ class WatchBatch:
 
     A batch can carry these and no changes at all: a sweep that verified a subtree without
     finding a single difference still moved what the rows may be trusted to mean.
+    """
+
+    dirty_queries: tuple[QueryKind, ...] = ()
+    """Projections a consumer holding one may need to re-read, sorted.
+
+    ``dirty_rollups`` says which paths moved; this says which answers those paths were part
+    of. Absence is the guarantee: a kind here may be stale, a kind missing is not. Empty
+    beside :attr:`reset`, which replaces every other signal; unaffected by
+    :attr:`all_dirty`, which drops the path list and leaves this question untouched.
     """
 
     issues: tuple[OperationError, ...] = ()

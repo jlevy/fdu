@@ -768,6 +768,65 @@ impl StateChange {
     }
 }
 
+/// A projection a consumer can be holding, named as a thing that can go stale.
+///
+/// The consumer contract's nine query kinds. A batch says which *paths* moved; this says
+/// which *answers* those paths were part of, which is the question a consumer holding one
+/// projection actually has. Without it, a client caching a recency list re-derives from
+/// change paths whether its own view is affected -- work the engine can do once instead of
+/// every consumer doing it differently.
+///
+/// **Absence is the guarantee, presence is not.** A kind named here may be stale; a kind
+/// absent is certainly not. The asymmetry is deliberate and runs one way: naming a kind
+/// that turns out unaffected costs a re-read, and omitting one that is affected is a
+/// silently wrong answer that nothing later contradicts.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[non_exhaustive]
+pub enum QueryKind {
+    /// One path's presence and filesystem facts.
+    Entry,
+    /// One directory's name-ordered rows.
+    Directory,
+    /// Matching tree rows and their scalar totals.
+    FilteredTree,
+    /// One directory's roll-up payload.
+    Rollup,
+    /// Population, extension, family, preset, and recency tallies.
+    Navigation,
+    /// The newest matching files.
+    Recent,
+    /// File identities and logical extensions from one pinned version.
+    Catalog,
+    /// Provider, contract, root, and identity facts.
+    ///
+    /// **Never named by a live batch.** These are fixed for an opened index: a re-tag keeps
+    /// the tag-rules fingerprint, because rebinding changes what the rules *read*, not
+    /// which rules are enabled or their bit order. Changing them opens a new session, and a
+    /// new session is not a change to this one. Declared so an adapter maps the vocabulary
+    /// whole rather than growing a branch if that ever stops being true.
+    Metadata,
+    /// Provider state, progress, cache, watch, and queue counters.
+    Diagnostics,
+}
+
+impl QueryKind {
+    /// The stable wire label, shared by every surface.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Entry => "entry",
+            Self::Directory => "directory",
+            Self::FilteredTree => "filtered_tree",
+            Self::Rollup => "rollup",
+            Self::Navigation => "navigation",
+            Self::Recent => "recent",
+            Self::Catalog => "catalog",
+            Self::Metadata => "metadata",
+            Self::Diagnostics => "diagnostics",
+        }
+    }
+}
+
 /// One state transition together with the commit it landed at.
 ///
 /// The pair, because a transition without its clock is not placeable: a consumer ordering
