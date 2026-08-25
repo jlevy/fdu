@@ -5,19 +5,22 @@ title: Implement exact MetaBrowser catalog predicate semantics
 kind: bug
 status: closed
 priority: 1
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5019981640
     at: 2026-08-25T14:15:45.882Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#issuecomment-5412701379
+    at: 2026-08-25T15:25:13.550Z
 labels:
   - pr47-review
   - metabrowser
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-25T14:14:37.582Z
-updated_at: 2026-08-25T15:57:00.203Z
+updated_at: 2026-08-25T16:24:25.976Z
 closed_at: 2026-08-25T15:57:00.203Z
 close_reason: null
 resolution: null

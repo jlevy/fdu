@@ -5,7 +5,7 @@ title: Complete the coherent read envelope and version-pinned paging
 kind: bug
 status: open
 priority: 1
-version: 29
+version: 31
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
@@ -14,6 +14,9 @@ refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5019981640
     at: 2026-08-25T14:15:45.660Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#issuecomment-5412701379
+    at: 2026-08-25T15:25:11.905Z
 labels:
   - pr47-review
   - metabrowser
@@ -24,13 +27,13 @@ dependencies:
     target: is-01m0tdy9ceep2byvbtyvwc2vky
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.445Z
-updated_at: 2026-08-25T15:56:36.154Z
+updated_at: 2026-08-25T16:24:25.950Z
 closed_at: null
 close_reason: null
 resolution: null
 duplicate_of: null
 ---
-At PR 47 head e658915, the core ReadBundle captures clock, scope, freshness, and projections under one guard, but PyIndex.read releases that guard and then locks RunState to attach complete, source, and errors. A refresh can therefore pair old data with new status or new data with old status. ReadRequest also has no requested clock or version, so a multi-page catalog can silently mix states after a mutation. Fix: return lifecycle, coverage, freshness, source, progress, and typed issues from the same versioned engine image; add an expected session and clock to a read and return VersionUnavailable on mismatch. A provider may retain only the current version: page two either sees the exact version or fails, never advances silently. Add forced interleaving and mutation-between-pages tests. This is follow-up to closed fdu-2ivi and should precede the wider algebra in fdu-samw. Review finding FDU47-R4.
+At PR 47 exact head b5035e4924ee6ebeb2f0fb64784600da386e4d95, version-pinned and request-bound flat paging is present, but the claimed engine-issued continuation is still caller-forgeable. EntryCursor::encode serializes trusted total, totals, delivered, after, version, and shape and protects them only with token_checksum, an unkeyed FNV-1a checksum whose implementation and comment explicitly allow recomputation. EntryCursor::decode_inner accepts a recomputed token, and entry_page then trusts the decoded denominator, aggregates, delivered count, and resume path after only version and 64-bit request-shape checks. A caller can alter those claims, recompute the checksum, and produce a wrong remainder, terminal page, aggregate, or suffix; the current nibble-flip test proves only accidental corruption detection. Give each opened index a private continuation authority and authenticate under the same guarded read that checks version and request shape, or retain bounded engine-side cursor state. Add forged-but-well-checksummed, cross-index/session, and oversized-token rejection tests while preserving later-page cost proportional to seek plus page.
 
 ## Notes
 
