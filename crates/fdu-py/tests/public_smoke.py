@@ -579,6 +579,9 @@ def check_the_browser_provider_example_holds_the_contract_it_documents() -> None
         symlinks = True
     except (OSError, NotImplementedError):  # pragma: no cover - Windows without privilege
         symlinks = False
+    # A fourth kind in the tree, which the provider's own model has no name for. Held open
+    # so the socket file stays in place independently of when the descriptor closes.
+    listener = _socket_at(root / "docs" / "sock")
 
     index = example.open_tree(root)
     rows = {row.name: row for row in example.listing(index, Path())}
@@ -603,6 +606,17 @@ def check_the_browser_provider_example_holds_the_contract_it_documents() -> None
         assert "loop" in inner, sorted(inner)
         assert not inner["loop"].is_dir, "counted as a leaf, never descended into"
 
+    # (6) The fourth kind never reaches a row, because the index never held it. The
+    # provider excludes at the scope rather than filtering afterwards, which is what keeps
+    # the listing and the roll-up describing one inventory: a row dropped by an adapter
+    # would still be inside `docs.bytes` above.
+    if listener is not None:
+        assert "sock" not in inner, sorted(inner)
+        assert (
+            inner["guide.md"].bytes + inner["keep.log"].bytes + inner["drop.log"].bytes
+            == docs.bytes
+        ), "the roll-up counts exactly the rows the listing shows"
+
     # (5) The bounded recency slice measures its window from the caller's instant, not from
     # its own. Shown by moving the instant rather than by waiting: `modified_since="1h"`
     # against a reference two hours ahead puts a file written now *below* the threshold,
@@ -625,7 +639,40 @@ def check_the_browser_provider_example_holds_the_contract_it_documents() -> None
         "the window follows the caller's instant, so nothing is recent as of two hours hence"
     )
 
+    # (6, continued) The exclusion holds across a refresh, which is the half a boot-time
+    # filter would get wrong: one socket created after the scan, and one replacing a file
+    # in place. Last, because it mutates the tree the checks above describe.
+    if listener is not None:
+        later = _socket_at(root / "docs" / "late")
+        (root / "docs" / "guide.md").unlink()
+        replacement = _socket_at(root / "docs" / "guide.md")
+        index.refresh()
+        after = {row.name: row for row in example.listing(index, Path("docs"))}
+        if later is not None:
+            assert "late" not in after, sorted(after)
+        if replacement is not None:
+            assert "guide.md" not in after, "a row cannot outlive the file it described"
+
     fdu.clear_cache(root)
+
+
+def _socket_at(path: Path) -> Any:
+    """Bind a unix socket, or `None` where the platform will not have one.
+
+    Returned rather than dropped: closing the descriptor leaves the socket file in place on
+    unix, but holding it makes that independent of a detail this check is not about. `bind`
+    fails for reasons unrelated to the rule -- no unix sockets at all, or a path over the
+    104 bytes `sun_path` allows -- so a failure skips the claim rather than failing it.
+    """
+
+    try:
+        import socket
+
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        listener.bind(str(path))
+    except (AttributeError, OSError):  # pragma: no cover - platform without unix sockets
+        return None
+    return listener
 
 
 def _load_example(name: str) -> Any:

@@ -1022,6 +1022,21 @@ from emitting millions of provenance-only entry changes into the feed it serves.
   between the two calls, and the index retains only its current image, so there is
   nothing to ask for the state as of a position already passed.
   Folding transitions into a consumer-side copy is the mirror the boundary forbids
+- [x] Special filesystem objects excluded as a scope axis (`fdu-bjhy`): the consuming
+  contract names three entry kinds and has nothing to call a socket, a FIFO or a device
+  node, so a provider must exclude them rather than reclassify them -- a socket counted
+  as a file makes every tally wrong by one in a way no field of the answer reveals.
+  Scope rather than a projection filter, and that is the whole point: an adapter
+  dropping the rows afterwards leaves them inside the roll-ups the same read returned,
+  so the listing and its own header would describe different inventories.
+  One predicate asked wherever a kind first becomes known -- after the `stat`, since a
+  name does not say whether it belongs to a socket -- which is both walkers, both
+  reconcilers, the single-path refresh, and the watcher’s apply funnel.
+  Excluding is *removing*: a file replaced in place by a socket is one event on a path
+  that never goes absent, so anything short of an explicit removal leaves the old row
+  standing over it for as long as the index lives.
+  The reference provider opens with it pruned and folds it into its scope digest, which
+  is the case the axis exists for
 
 ### Phase 6: Adoption proof
 

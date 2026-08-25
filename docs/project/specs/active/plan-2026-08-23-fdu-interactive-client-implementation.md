@@ -413,6 +413,44 @@ The one check that stays in Python is `isinstance(hidden_allow, str)`, because a
 string where a tuple belongs is a Python shape mistake with no command-line spelling to
 disagree with.
 
+### `fdu-bjhy` — the second admission axis, asked after the `stat` rather than before
+
+`exclude_special` is `fdu-xyvu`’s rule one axis over, and the difference decides where
+it can live. A name says whether it is hidden; nothing about a name says whether it
+belongs to a socket.
+So `scan::retains` is asked wherever a kind first *becomes known* — after the metadata
+read — and that is seven sites rather than four: both walkers, both reconcilers, the
+single-path refresh, and the watcher’s apply funnel, which is the third producer of rows
+and the only one that learns a kind from an event rather than from a listing it
+controls.
+
+**The guard went into the wrong reconcile loop first.** `revalidate` has a listing loop
+that looks exactly like the reconcilers’ and is not on their path; with the rule there,
+a scan excluded a socket and the first refresh put it back.
+The tests were written before the wiring was believed, which is the only reason that was
+found here rather than in a consumer’s cache.
+
+**Excluding is removing, not skipping.** A file replaced in place by a socket is one
+event on a path that never goes absent, and every listing loop takes the name out of its
+missing-set before the kind is known — so a `continue` leaves the old row standing over
+the socket for as long as the index lives, because nothing will look at that path again.
+Each site emits `Op::Remove` instead, and the watcher’s substitution carries the
+producer’s expectation across: rebatching through `Observation::new` would flatten every
+arbitration precondition to `Any`, quietly widening what an excluded kind may overwrite.
+
+**Admission runs before the budget claims a slot.** `fdu-97dd`’s cap is strict, so an
+entry the scope does not hold must not spend a slot a retained one could have used.
+
+**No format bump.** The scope flags byte had a spare bit and a clear bit means “kept”,
+which is what every snapshot written before this change meant.
+
+**What the watcher’s test can and cannot prove.** On Linux a rename onto a watched path
+escalates to a root invalidation, so reconciliation sweeps the stale row away and a
+watcher that merely *ignored* the event looks correct from outside.
+The integration tests prove the rule holds end to end; only a unit test on the admission
+function separates excluding the object from dropping its event, which is the difference
+that matters on a backend reporting the file without invalidating its parent.
+
 ### `fdu-b2vy` / `fdu-ctp5` / `fdu-e2p7` — the taxonomy
 
 **Groups.** `ContentFamily` (`classify.rs:19`) is a closed five-value enum answering an
@@ -650,6 +688,7 @@ before and after: `--view types` and `--view extensions` are byte-identical.
 | `fdu-nlhl` | `scan::reconcile_paths` and a `RefreshReceipt`: many hint paths as one operation, overlapping ones folded into one walk, every subtree announced before any is read, and typed per-path refusals | `scan.rs:reconcile_paths_target`, `scan.rs:covering_roots`, `fdu-py/python/fdu/_api.py:refresh_paths` |
 | `fdu-91ru` | `EntryPageRequest` / `EntryPage` on the bundled read: a bounded, resumable page in path order, with an exact remainder paired with its continuation and totals over the whole selection | `index.rs:entry_page`, `index.rs:push_children`, `fdu-py/src/lib.rs:entry_page_dict` |
 | `fdu-vfx7` | `Interest::{Rows, Invalidations}` and `Session::with_interest`; the batch’s cost measured across the binding, with the phases exact-or-absent rather than defaulting to zero | `watch_session.rs:Interest`, `fdu-py/src/lib.rs:PyWatch::__next__`, `fdu-py/python/fdu/_api.py:Watch.__next__` |
+| `fdu-bjhy` | `ScanConfig::exclude_special` and `ScanScope::exclude_special`: sockets, FIFOs and device nodes pruned at admission rather than filtered afterwards, so the index holds three kinds and the roll-ups count exactly the rows a listing shows | `scan.rs:retains` (both walkers, both reconcilers, the single-path refresh), `watch.rs:retained`, `snapshot.rs:SCOPE_EXCLUDE_SPECIAL`, `cli.rs:--special`, `fdu-py/python/fdu/_models.py:ScanOptions.special` |
 
 `WatchConfig` lost `Copy` when the poll interval arrived, which threaded `&WatchConfig`
 through `validate`, `apply_intent`, `verify_intent` and `run_worker`. That is the kind
