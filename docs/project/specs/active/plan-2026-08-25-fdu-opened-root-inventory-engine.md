@@ -1374,8 +1374,21 @@ their owning producer, budget, and control beads rather than speculative kernel 
 
 Unknown live ancestry has one path: the producer schedules reconciliation from the
 nearest retained ancestor and admits the child only after verified parents exist.
-`ensure_dir_chain` remains legal for a cold parent-first baseline and snapshot load; it
-is not a live-observer shortcut.
+Ancestry is never synthesized.
+Cold producers publish a directory before making its children claimable, and the
+snapshot loader inserts each record beneath the explicit parent recorded in the snapshot
+format.
+
+Implementation status: complete.
+`make check` and `make cross-lint` pass with the exact producer contract in place.
+The parallel cold walker now establishes parent-first causal publication without a
+global level barrier; every reconciliation and watch callback receives the exact commit
+returned by the index, including state-only reconciliation boundaries; watch
+verification turns unknown ancestry into one bounded reconciliation request from the
+nearest known directory; and the transitional watch session derives its legacy change
+view from exact effective changes.
+The independent reference model no longer manufactures ancestry and requires generated
+producers to supply exact parent facts.
 
 Gate `fdu-qzqf` with model/fault/concurrency tests, then gate `fdu-gpls` with scan,
 reconcile, watch, one-shot parity, `make check`, and `make cross-lint`.

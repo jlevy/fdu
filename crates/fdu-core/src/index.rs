@@ -570,7 +570,7 @@ impl IndexHandle {
         Ok(())
     }
 
-    pub(crate) fn begin_reconcile(&self, path: &Path) -> crate::Result<u64> {
+    pub(crate) fn begin_reconcile(&self, path: &Path) -> crate::Result<(u64, Option<Commit>)> {
         self.write_index()?.begin_reconcile(path)
     }
 
@@ -579,7 +579,7 @@ impl IndexHandle {
         path: &Path,
         started_at: u64,
         complete: bool,
-    ) -> crate::Result<()> {
+    ) -> crate::Result<Option<Commit>> {
         self.write_index()?.finish_reconcile(path, started_at, complete)
     }
 
@@ -595,6 +595,17 @@ impl IndexHandle {
             return Ok(None);
         }
         index.commit_prepared(prepared, true).map(Some)
+    }
+
+    #[cfg(feature = "watch")]
+    pub(crate) fn unknown_ancestry(
+        &self,
+        observation: &Observation,
+    ) -> crate::Result<Vec<(PathBuf, PathBuf)>> {
+        let prepared = prepare_observation(observation)?;
+        let index = self.read_index()?;
+        let accepted = index.accepted_operations(&prepared.ops);
+        Ok(index.unknown_ancestry(&prepared.ops, &accepted))
     }
 
     #[cfg(feature = "watch")]
@@ -733,7 +744,7 @@ impl Index {
             .unwrap_or(Freshness::Fresh)
     }
 
-    /// The clock of the most recently applied delta.
+    /// The clock of the most recently applied commit.
     pub fn clock(&self) -> Clock {
         self.clock
     }
@@ -771,7 +782,8 @@ impl Index {
     ///
     /// `journal: false` exists for the bootstrap path, whose history
     /// [`Self::establish_baseline`] clears after every batch: capturing it first
-    /// cost one op clone per changed entry plus one delta clone per batch, all
+    /// cost one effective-change clone per changed entry plus one commit clone per
+    /// batch, all
     /// freed unread. Arbitration, validation, guards, and stats are identical in
     /// both modes; only what is retained afterwards differs.
     fn apply_with(
@@ -816,18 +828,10 @@ impl Index {
         let mut stats = ApplyStats::default();
         let mut effects = MutationEffects::default();
         let mut parent_memo = ParentMemo::default();
-        let mut accepted = Vec::with_capacity(prepared.ops.len());
-        for observed in &prepared.ops {
-            let op = &observed.op;
-            if let Expectation::State(expected) = observed.expectation {
-                if !self.expectation_matches(op, expected) {
-                    stats.stale += 1;
-                    accepted.push(false);
-                    continue;
-                }
-            }
-            accepted.push(true);
-        }
+        let accepted = self.accepted_operations(&prepared.ops);
+        stats.stale = u64::try_from(accepted.iter().filter(|accepted| !**accepted).count())
+            .unwrap_or(u64::MAX);
+        self.validate_known_ancestry(&prepared.ops, &accepted)?;
 
         for (observed, accepted) in prepared.ops.iter().zip(accepted) {
             if !accepted {
@@ -975,20 +979,22 @@ impl Index {
         }
     }
 
-    pub(crate) fn begin_reconcile(&mut self, path: &Path) -> crate::Result<u64> {
+    pub(crate) fn begin_reconcile(&mut self, path: &Path) -> crate::Result<(u64, Option<Commit>)> {
         let path = canonical_relative_path(path)?;
         let next_clock = self.clock.checked_next().ok_or(crate::Error::ClockExhausted)?;
         let previous = self.freshness_at(&path);
         let epoch = self.mark_unfresh(&path, Freshness::Reconciling);
         let current = self.freshness_at(&path);
-        if previous != current {
+        let commit = if previous == current {
+            None
+        } else {
             let effects = MutationEffects {
                 state: vec![StateTransition::Freshness { path, previous, current }],
                 ..MutationEffects::default()
             };
-            self.publish_effects(next_clock, effects, Work::default(), true);
-        }
-        Ok(epoch)
+            Some(self.publish_effects(next_clock, effects, Work::default(), true))
+        };
+        Ok((epoch, commit))
     }
 
     pub(crate) fn finish_reconcile(
@@ -996,7 +1002,7 @@ impl Index {
         path: &Path,
         started_at: u64,
         complete: bool,
-    ) -> crate::Result<()> {
+    ) -> crate::Result<Option<Commit>> {
         let path = canonical_relative_path(path)?;
         let next_clock = self.clock.checked_next().ok_or(crate::Error::ClockExhausted)?;
         let previous = self.freshness_at(&path);
@@ -1025,11 +1031,10 @@ impl Index {
             state.push(StateTransition::Freshness { path: path.clone(), previous, current });
         }
         if state.is_empty() {
-            return Ok(());
+            return Ok(None);
         }
         let effects = MutationEffects { state, ..MutationEffects::default() };
-        self.publish_effects(next_clock, effects, Work::default(), true);
-        Ok(())
+        Ok(Some(self.publish_effects(next_clock, effects, Work::default(), true)))
     }
 
     /// When a completed reconciliation last covered this path, if one did.
@@ -1089,7 +1094,7 @@ impl Index {
     /// Take the subtrees that producers escalated for re-scan.
     ///
     /// The caller is expected to hand these to the scan layer, which turns them back
-    /// into precise deltas. Escalation is closed-loop: draining this list without
+    /// into precise commits. Escalation is closed-loop: draining this list without
     /// re-scanning is what makes an index silently diverge.
     pub fn take_pending_invalidations(&mut self) -> Vec<(PathBuf, InvalidateReason)> {
         std::mem::take(&mut self.pending_invalidations)
@@ -1341,6 +1346,73 @@ impl Index {
             current = child;
         }
         Some(self.identity(current))
+    }
+
+    /// Prove that every accepted live upsert has a verified parent chain.
+    ///
+    /// The overlay follows batch order without touching the real index. That admits
+    /// parent-first discovery batches and rejects a child whose missing or non-directory
+    /// ancestry would otherwise be filled with guessed metadata.
+    fn validate_known_ancestry(
+        &self,
+        ops: &[ObservationOp],
+        accepted: &[bool],
+    ) -> crate::Result<()> {
+        if let Some((path, reconcile_from)) =
+            self.unknown_ancestry(ops, accepted).into_iter().next()
+        {
+            return Err(crate::Error::UnknownAncestry { path, reconcile_from });
+        }
+        Ok(())
+    }
+
+    fn accepted_operations(&self, ops: &[ObservationOp]) -> Vec<bool> {
+        ops.iter()
+            .map(|observed| match observed.expectation {
+                Expectation::Any => true,
+                Expectation::State(expected) => self.expectation_matches(&observed.op, expected),
+            })
+            .collect()
+    }
+
+    fn unknown_ancestry(
+        &self,
+        ops: &[ObservationOp],
+        accepted: &[bool],
+    ) -> Vec<(PathBuf, PathBuf)> {
+        let mut structure = StructuralOverlay::default();
+        let mut unknown = Vec::new();
+        for (observed, accepted) in ops.iter().zip(accepted) {
+            if !accepted {
+                continue;
+            }
+            match &observed.op {
+                Op::Upsert { path, kind, .. } if !path.as_os_str().is_empty() => {
+                    let mut reconcile_from = PathBuf::new();
+                    let mut ancestry_known = true;
+                    let parts = normalize(path).expect("prepared paths are canonical");
+                    let (_, ancestors) = parts.split_last().expect("non-root path has a name");
+                    let mut ancestor = PathBuf::new();
+                    for part in ancestors {
+                        ancestor.push(part);
+                        if structure.kind(self, &ancestor) != Some(EntryKind::Dir) {
+                            unknown.push((path.clone(), reconcile_from));
+                            ancestry_known = false;
+                            break;
+                        }
+                        reconcile_from.clone_from(&ancestor);
+                    }
+                    if ancestry_known {
+                        structure.upsert(self, path, *kind);
+                    }
+                }
+                Op::Remove { path } if !path.as_os_str().is_empty() => {
+                    structure.remove(self, path);
+                }
+                Op::Upsert { .. } | Op::Remove { .. } | Op::InvalidateSubtree { .. } => {}
+            }
+        }
+        unknown
     }
 
     fn entry_identity(&self, path: &Path) -> Option<EntryIdentity> {
@@ -1698,56 +1770,16 @@ impl Index {
         }
     }
 
-    /// Resolve a relative path to a directory id, creating missing ancestors.
-    ///
-    /// Watch events do not arrive parent-first the way a walk does, so an upsert deep in
-    /// a tree may name ancestors the index has never seen. Creating them as directories
-    /// with default attributes keeps the delta applicable; a later upsert or the
-    /// revalidation sweep fills in their real attributes.
-    fn ensure_dir_chain(
-        &mut self,
-        parts: &[&OsStr],
-        stats: &mut ApplyStats,
-        effects: &mut MutationEffects,
-    ) -> EntryId {
+    /// Resolve a parent chain already proved by [`Self::validate_known_ancestry`].
+    fn resolve_dir_chain(&self, parts: &[&OsStr]) -> EntryId {
         let mut current = EntryId::ROOT;
-        let mut current_path = PathBuf::new();
         for part in parts {
-            current_path.push(part);
-            if let Some(existing) = self.entry(current).children.get(*part).copied() {
-                if self.entry(existing).kind.is_dir() {
-                    current = existing;
-                    continue;
-                }
-                // A path cannot have children beneath a non-directory. Replace the
-                // conflicting record with a placeholder directory; a later observation
-                // for the ancestor fills in its real attributes.
-                self.remove_entry(existing, stats, effects);
-            }
-            let attrs = Attrs::default();
-            let child = self.alloc(Entry {
-                parent: Some(current),
-                name: (*part).to_os_string(),
-                ext_id: None,
-                source: self.applying_source,
-                kind: EntryKind::Dir,
-                attrs,
-                children: BTreeMap::new(),
-                rollup: InternedRollUp::default(),
-                revision: 0,
-                children_revision: 0,
-            });
-            self.insert_child(current, (*part).to_os_string(), child);
-            // A new empty directory contributes one to `dirs` all the way up.
-            let contribution = InternedRollUp { dirs: 1, ..InternedRollUp::default() };
-            self.merge_upward(Some(current), &contribution);
-            stats.inserted += 1;
-            effects.changes.push(EffectiveChange::Inserted {
-                path: current_path.clone(),
-                kind: EntryKind::Dir,
-                attrs,
-            });
-            current = child;
+            current = *self
+                .entry(current)
+                .children
+                .get(*part)
+                .expect("validated ancestry remains present under the writer lock");
+            debug_assert!(self.entry(current).kind.is_dir());
         }
         current
     }
@@ -1805,7 +1837,7 @@ impl Index {
             });
             return true;
         };
-        let parent = self.ensure_dir_chain(ancestors, stats, effects);
+        let parent = self.resolve_dir_chain(ancestors);
         if let Some(dir) = path.parent() {
             parent_memo.set(dir, parent);
         }
@@ -2114,6 +2146,41 @@ impl ParentMemo {
     }
 }
 
+/// Structural effects of accepted operations evaluated before the real mutation.
+#[derive(Default)]
+struct StructuralOverlay {
+    entries: BTreeMap<PathBuf, EntryKind>,
+    removed_roots: Vec<PathBuf>,
+}
+
+impl StructuralOverlay {
+    fn kind(&self, index: &Index, path: &Path) -> Option<EntryKind> {
+        self.entries.get(path).copied().or_else(|| {
+            (!self.removed_roots.iter().any(|removed| path.starts_with(removed)))
+                .then(|| index.kind(path))
+                .flatten()
+        })
+    }
+
+    fn upsert(&mut self, index: &Index, path: &Path, kind: EntryKind) {
+        if self.kind(index, path).is_some_and(|current| current != kind) {
+            self.remove(index, path);
+        }
+        self.entries.insert(path.to_path_buf(), kind);
+    }
+
+    fn remove(&mut self, index: &Index, path: &Path) {
+        if self.kind(index, path).is_none() {
+            return;
+        }
+        self.entries.retain(|candidate, _| !candidate.starts_with(path));
+        self.removed_roots.retain(|candidate| !candidate.starts_with(path));
+        if !self.removed_roots.iter().any(|removed| path.starts_with(removed)) {
+            self.removed_roots.push(path.to_path_buf());
+        }
+    }
+}
+
 fn normalize(path: &Path) -> Option<Vec<&OsStr>> {
     let mut parts = Vec::new();
     for component in path.components() {
@@ -2279,12 +2346,13 @@ mod tests {
             upsert("dir/a.txt", EntryKind::File, file_attrs(10, 1)),
         ]));
 
-        // The upsert after the removal must name a path *inside* the removed directory
-        // and must follow it immediately. Rebuilding `dir` first would refill the memo
-        // from the root and hide the bug — the window is exactly one op wide.
+        // Rebuild the directory explicitly after the removal. The following child
+        // must resolve through that new entry rather than a memoized id for the entry
+        // that was just removed.
         index.apply_ok(&Observation::new(vec![
             upsert("dir/b.txt", EntryKind::File, file_attrs(20, 1)),
             Op::Remove { path: PathBuf::from("dir") },
+            upsert("dir", EntryKind::Dir, file_attrs(0, 2)),
             upsert("dir/c.txt", EntryKind::File, file_attrs(30, 2)),
         ]));
 
@@ -2490,15 +2558,16 @@ mod tests {
     fn readers_observe_only_complete_states_around_a_large_batch() {
         let file_count: u64 = 2_048;
         let expected_bytes: u64 = file_count * (file_count + 1) / 2;
-        let operations: Vec<Op> = (1..=file_count)
-            .map(|ordinal| {
-                upsert(
-                    &format!("batch/file-{ordinal}.bin"),
-                    EntryKind::File,
-                    file_attrs(ordinal, i64::try_from(ordinal).expect("small ordinal")),
-                )
-            })
-            .collect();
+        let operations: Vec<Op> =
+            std::iter::once(upsert("batch", EntryKind::Dir, file_attrs(0, 1)))
+                .chain((1..=file_count).map(|ordinal| {
+                    upsert(
+                        &format!("batch/file-{ordinal}.bin"),
+                        EntryKind::File,
+                        file_attrs(ordinal, i64::try_from(ordinal).expect("small ordinal")),
+                    )
+                }))
+                .collect();
         let observation: Observation = Observation::new(operations);
         let handle: IndexHandle = IndexHandle::new(Index::new("/root"));
         let before: Index = handle.snapshot().expect("before snapshot");
@@ -3098,11 +3167,11 @@ mod tests {
     #[test]
     fn exact_commit_records_verified_ancestry_and_kind_replacement() {
         let mut index = Index::new("/root");
-        let inserted = index.apply_ok(&Observation::new(vec![upsert(
-            "unknown/deep/file.txt",
-            EntryKind::File,
-            file_attrs(10, 1),
-        )]));
+        let inserted = index.apply_ok(&Observation::new(vec![
+            upsert("unknown", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("unknown/deep", EntryKind::Dir, file_attrs(0, 2)),
+            upsert("unknown/deep/file.txt", EntryKind::File, file_attrs(10, 3)),
+        ]));
         let inserted = inserted.commit.expect("ancestry commit");
         assert_eq!(
             inserted.changes.iter().map(EffectiveChange::path).collect::<Vec<_>>(),
@@ -3127,17 +3196,17 @@ mod tests {
                 EffectiveChange::Removed {
                     path: "unknown".into(),
                     kind: EntryKind::Dir,
-                    attrs: Attrs::default(),
+                    attrs: file_attrs(0, 1),
                 },
                 EffectiveChange::Removed {
                     path: "unknown/deep".into(),
                     kind: EntryKind::Dir,
-                    attrs: Attrs::default(),
+                    attrs: file_attrs(0, 2),
                 },
                 EffectiveChange::Removed {
                     path: "unknown/deep/file.txt".into(),
                     kind: EntryKind::File,
-                    attrs: file_attrs(10, 1),
+                    attrs: file_attrs(10, 3),
                 },
                 EffectiveChange::Inserted {
                     path: "unknown".into(),
@@ -3195,8 +3264,8 @@ mod tests {
     #[test]
     fn reconciliation_state_moves_through_exact_commits() {
         let mut index = Index::new("/root");
-        let started = index.begin_reconcile(Path::new("src")).expect("begin");
-        let start = index.since(Clock::ZERO).commits.pop().expect("start commit");
+        let (started, start) = index.begin_reconcile(Path::new("src")).expect("begin");
+        let start = start.expect("start commit");
         assert!(start.changes.is_empty());
         assert_eq!(
             start.state,
@@ -3207,8 +3276,10 @@ mod tests {
             }]
         );
 
-        index.finish_reconcile(Path::new("src"), started, true).expect("finish");
-        let finish = index.since(start.clock).commits.pop().expect("finish commit");
+        let finish = index
+            .finish_reconcile(Path::new("src"), started, true)
+            .expect("finish")
+            .expect("finish commit");
         assert!(finish.changes.is_empty());
         assert_eq!(
             finish.state,
@@ -3362,23 +3433,53 @@ mod tests {
     }
 
     #[test]
-    fn missing_ancestors_are_created_for_out_of_order_upserts() {
+    fn parent_first_batch_establishes_exact_ancestry() {
         let mut index = Index::new("/root");
-        // A watch event can name a deep path the index has never seen.
-        index.apply_ok(&Observation::new(vec![upsert(
-            "deep/nested/tree/file.txt",
-            EntryKind::File,
-            file_attrs(42, 7),
-        )]));
+        let deep = file_attrs(0, 1);
+        let nested = file_attrs(0, 2);
+        let tree = file_attrs(0, 3);
+        index.apply_ok(&Observation::new(vec![
+            upsert("deep", EntryKind::Dir, deep),
+            upsert("deep/nested", EntryKind::Dir, nested),
+            upsert("deep/nested/tree", EntryKind::Dir, tree),
+            upsert("deep/nested/tree/file.txt", EntryKind::File, file_attrs(42, 7)),
+        ]));
 
         assert_eq!(index.total().files, 1);
         assert_eq!(index.total().dirs, 3);
         assert_eq!(index.total().bytes, 42);
         assert_eq!(index.rollup(Path::new("deep/nested")).expect("created").files, 1);
+        assert_eq!(index.attrs(Path::new("deep")), Some(&deep));
+        assert_eq!(index.attrs(Path::new("deep/nested")), Some(&nested));
+        assert_eq!(index.attrs(Path::new("deep/nested/tree")), Some(&tree));
     }
 
     #[test]
-    fn non_directory_ancestor_is_replaced_before_attaching_a_child() {
+    fn live_upsert_refuses_unknown_ancestry_without_mutation() {
+        let mut index = Index::new("/root");
+        let before = index.clock();
+
+        let error = index
+            .apply(&Observation::new(vec![upsert(
+                "unknown/deep/file.txt",
+                EntryKind::File,
+                file_attrs(10, 1),
+            )]))
+            .expect_err("live input must not invent parent metadata");
+
+        assert!(matches!(
+            error,
+            crate::Error::UnknownAncestry { path, reconcile_from }
+                if path == Path::new("unknown/deep/file.txt")
+                    && reconcile_from.as_os_str().is_empty()
+        ));
+        assert_eq!(index.clock(), before);
+        assert_eq!(index.len(), 1);
+        assert!(index.since(before).commits.is_empty());
+    }
+
+    #[test]
+    fn explicit_kind_replacement_precedes_attaching_a_child() {
         let mut index = Index::new("/root");
         index.apply_ok(&Observation::new(vec![upsert(
             "conflict",
@@ -3386,11 +3487,10 @@ mod tests {
             file_attrs(9, 1),
         )]));
 
-        let outcome = index.apply_ok(&Observation::new(vec![upsert(
-            "conflict/child.txt",
-            EntryKind::File,
-            file_attrs(4, 2),
-        )]));
+        let outcome = index.apply_ok(&Observation::new(vec![
+            upsert("conflict", EntryKind::Dir, file_attrs(0, 2)),
+            upsert("conflict/child.txt", EntryKind::File, file_attrs(4, 2)),
+        ]));
 
         assert_eq!(index.kind(Path::new("conflict")), Some(EntryKind::Dir));
         assert!(index.lookup(Path::new("conflict/child.txt")).is_some());
@@ -3587,11 +3687,10 @@ mod tests {
         };
 
         let mut index = Index::new("/root");
-        index.apply_ok(&Observation::new(vec![upsert(
-            "src/lib.rs",
-            EntryKind::File,
-            file_attrs(10, 1),
-        )]));
+        index.apply_ok(&Observation::new(vec![
+            upsert("src", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("src/lib.rs", EntryKind::File, file_attrs(10, 1)),
+        ]));
         let candidate = index
             .analysis_candidates(AnalysisSet::NONE.with_lines())
             .into_iter()
@@ -3650,6 +3749,7 @@ mod tests {
         let mut index = Index::new("/root");
         index.set_applying_source(Source::Cached, 1_000);
         index.apply_ok(&Observation::new(vec![
+            Op::Upsert { path: "a".into(), kind: EntryKind::Dir, attrs: file_attrs(0, 1) },
             Op::Upsert {
                 path: "a/kept.txt".into(),
                 kind: EntryKind::File,
@@ -3697,11 +3797,14 @@ mod tests {
         let mut index = Index::new("/root");
         // The entry arrives the way a snapshot load delivers it: unverified.
         index.set_applying_source(Source::Cached, 1_000);
-        index.apply_baseline_ok(&Observation::new(vec![Op::Upsert {
-            path: PathBuf::from("a/file.txt"),
-            kind: EntryKind::File,
-            attrs: Attrs { size: 1, ..Attrs::default() },
-        }]));
+        index.apply_baseline_ok(&Observation::new(vec![
+            Op::Upsert { path: PathBuf::from("a"), kind: EntryKind::Dir, attrs: Attrs::default() },
+            Op::Upsert {
+                path: PathBuf::from("a/file.txt"),
+                kind: EntryKind::File,
+                attrs: Attrs { size: 1, ..Attrs::default() },
+            },
+        ]));
         assert_eq!(
             index.provenance(Path::new("a/file.txt")).expect("present").source,
             Source::Cached,

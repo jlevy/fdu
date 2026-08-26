@@ -336,6 +336,9 @@ pub enum InvalidateReason {
     /// Stat verification failed without proving the path is gone. The known entry must
     /// remain until reconciliation can retry and report the underlying I/O error.
     VerificationFailed,
+    /// A verified child arrived below ancestry the index has not verified. The child is
+    /// withheld while reconciliation starts from the nearest known directory.
+    UnknownAncestry,
     /// Repeated concurrent commits prevented a watch sample from reaching a stable
     /// arbitration boundary. The root is reconciled instead of doing filesystem I/O
     /// under the index lock or allowing an old sample to win.
@@ -762,6 +765,15 @@ pub enum Error {
     /// An observation or subtree path was not relative to the index root.
     #[error("path escapes the index root: {0}")]
     PathEscapesRoot(PathBuf),
+
+    /// A live upsert named a child below ancestry the index has not verified.
+    #[error("upsert {path:?} has unknown ancestry; reconcile from {reconcile_from:?}")]
+    UnknownAncestry {
+        /// Child whose parent chain is not known.
+        path: PathBuf,
+        /// Nearest known directory from which a producer can reconcile safely.
+        reconcile_from: PathBuf,
+    },
 
     /// Snapshot persistence failed after a usable snapshot had been selected.
     #[error("snapshot is not usable: {0}")]

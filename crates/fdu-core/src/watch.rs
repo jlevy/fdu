@@ -37,7 +37,9 @@ use std::time::{Duration, Instant};
 
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher as NotifyWatcher};
 
-use crate::engine_contract::{AppliedDelta, Error, InvalidateReason, Observation, Op, Result};
+use crate::engine_contract::{
+    Commit, Error, InvalidateReason, Observation, ObservationOp, Op, Result,
+};
 use crate::scan;
 use crate::{ApplyOutcome, IndexHandle, ScanConfig};
 
@@ -251,7 +253,7 @@ impl Watcher {
         index: &IndexHandle,
         scan_config: &ScanConfig,
         timeout: Duration,
-        sink: &mut dyn FnMut(&AppliedDelta),
+        sink: &mut dyn FnMut(&Commit),
     ) -> Result<Option<WatchApplyReport>> {
         scan_config.validate_for_watch_scope(index.scope()?)?;
         let indexed_root = index.root_path()?;
@@ -274,12 +276,12 @@ fn apply_intent(
     watch_config: WatchConfig,
     intent: &CoalescedIntent,
     scan_config: &ScanConfig,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
 ) -> Result<WatchApplyReport> {
     let mut verifier = |_: &Path, _: &Observation| Ok(verify_intent(root, watch_config, intent));
     let apply = apply_reverified_with(index, &Observation::default(), scan_config, &mut verifier)?;
-    if let Some(applied) = apply.applied() {
-        sink(applied);
+    if let Some(commit) = apply.commit.as_ref() {
+        sink(commit);
     }
     let reconciliation = scan::reconcile_pending_handle(index, scan_config, sink)?;
     Ok(WatchApplyReport { apply, reconciliation })
@@ -295,12 +297,12 @@ fn apply_observation(
     index: &IndexHandle,
     observation: &Observation,
     scan_config: &ScanConfig,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
 ) -> Result<WatchApplyReport> {
     scan_config.validate_for_watch_scope(index.scope()?)?;
     let apply = apply_reverified(index, observation, scan_config)?;
-    if let Some(applied) = apply.applied() {
-        sink(applied);
+    if let Some(commit) = apply.commit.as_ref() {
+        sink(commit);
     }
     let reconciliation = scan::reconcile_pending_handle(index, scan_config, sink)?;
     Ok(WatchApplyReport { apply, reconciliation })
@@ -333,12 +335,46 @@ fn apply_reverified_with(
     for _ in 0..MAX_OPTIMISTIC_APPLY_ATTEMPTS {
         let clock = index.clock()?;
         let candidate = verifier(&root, observation)?;
+        let candidate = escalate_unknown_ancestry(index, candidate)?;
         if let Some(outcome) = index.apply_if_clock(clock, &candidate)? {
             return Ok(outcome);
         }
     }
 
     index.invalidate_root(InvalidateReason::WatchContention)
+}
+
+/// Replace unverifiable child facts with bounded reconciliation hints.
+fn escalate_unknown_ancestry(index: &IndexHandle, candidate: Observation) -> Result<Observation> {
+    let unknown = index.unknown_ancestry(&candidate)?;
+    if unknown.is_empty() {
+        return Ok(candidate);
+    }
+
+    let mut roots: Vec<PathBuf> = unknown.into_iter().map(|(_, root)| root).collect();
+    roots.sort_by(|left, right| {
+        left.components().count().cmp(&right.components().count()).then_with(|| left.cmp(right))
+    });
+    roots.dedup();
+    let mut covering: Vec<PathBuf> = Vec::with_capacity(roots.len());
+    for root in roots {
+        if !covering.iter().any(|ancestor| root.starts_with(ancestor)) {
+            covering.push(root);
+        }
+    }
+
+    let mut ops: Vec<ObservationOp> = candidate
+        .ops
+        .into_iter()
+        .filter(|observed| !covering.iter().any(|root| observed.op.path().starts_with(root)))
+        .collect();
+    ops.extend(covering.into_iter().map(|path| {
+        ObservationOp::unconditional(Op::InvalidateSubtree {
+            path,
+            reason: InvalidateReason::UnknownAncestry,
+        })
+    }));
+    Ok(Observation::from_ops(ops))
 }
 
 #[cfg(test)]
@@ -832,6 +868,44 @@ mod tests {
                 reason: InvalidateReason::VerificationFailed,
             } if invalidated == path
         ));
+    }
+
+    #[test]
+    fn unknown_watch_ancestry_reconciles_from_the_nearest_known_directory() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (index, _) =
+            crate::scan::scan_into_index(dir.path(), &crate::ScanConfig::default()).expect("scan");
+        let handle = crate::IndexHandle::new(index);
+        let nested = dir.path().join("new/deep");
+        fs::create_dir_all(&nested).expect("nested directories");
+        fs::write(nested.join("file.txt"), b"verified").expect("nested file");
+
+        let report = apply_observation(
+            &handle,
+            &Observation::new(vec![Op::Upsert {
+                path: PathBuf::from("new/deep/file.txt"),
+                kind: crate::EntryKind::File,
+                attrs: crate::Attrs::default(),
+            }]),
+            &crate::ScanConfig::default(),
+            &mut |_| {},
+        )
+        .expect("unknown ancestry schedules reconciliation");
+
+        assert_eq!(report.apply.invalidated, 1);
+        assert!(report.reconciliation.is_complete());
+        assert_eq!(
+            handle.kind(Path::new("new")).expect("new directory"),
+            Some(crate::EntryKind::Dir)
+        );
+        assert_eq!(
+            handle.kind(Path::new("new/deep/file.txt")).expect("nested file"),
+            Some(crate::EntryKind::File)
+        );
+        assert_ne!(
+            handle.attrs(Path::new("new")).expect("verified parent attrs"),
+            Some(crate::Attrs::default())
+        );
     }
 
     #[test]

@@ -22,8 +22,8 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::ApplyStats;
 use crate::engine_contract::{
-    AppliedDelta, Attrs, EntryKind, Error, Observation, ObservationOp, Op, PathExpectation,
-    PathState, Result, ScanScope,
+    Attrs, Commit, EntryKind, Error, Observation, ObservationOp, Op, PathExpectation, PathState,
+    Result, ScanScope,
 };
 use crate::index::{Index, IndexHandle, collect_child_expectations};
 
@@ -853,19 +853,23 @@ impl ReconcileTarget<'_> {
         Ok(())
     }
 
-    fn begin_reconcile(&mut self, path: &Path) -> Result<u64> {
+    fn begin_reconcile(&mut self, path: &Path) -> Result<(u64, Option<Commit>)> {
         match self {
             Self::Direct(index) => index.begin_reconcile(path),
             Self::Shared(handle) => handle.begin_reconcile(path),
         }
     }
 
-    fn finish_reconcile(&mut self, path: &Path, started_at: u64, complete: bool) -> Result<()> {
+    fn finish_reconcile(
+        &mut self,
+        path: &Path,
+        started_at: u64,
+        complete: bool,
+    ) -> Result<Option<Commit>> {
         match self {
-            Self::Direct(index) => index.finish_reconcile(path, started_at, complete)?,
-            Self::Shared(handle) => handle.finish_reconcile(path, started_at, complete)?,
+            Self::Direct(index) => index.finish_reconcile(path, started_at, complete),
+            Self::Shared(handle) => handle.finish_reconcile(path, started_at, complete),
         }
-        Ok(())
     }
 }
 
@@ -1700,14 +1704,14 @@ const DIR_CLAIM: usize = 4;
 /// The shape is deliberate. Workers read directories and *produce* observations; they
 /// never touch an index. A single consumer — the caller's sink, on this thread —
 /// applies them. That keeps the crate's one mutation contract intact: parallelism is a
-/// property of the producer, and the index still sees one ordered stream of deltas.
+/// property of the producer, and the index still sees one ordered stream of observations.
 ///
-/// Ordering across workers is not fixed, so an entry can arrive before its parent
-/// directory does. The index already tolerates that, because watch events have never
-/// arrived parent-first either, and it fills in a synthesized ancestor's real
-/// attributes when the observation for it turns up. The resulting index is
-/// byte-identical to the serial walker's, which the benchmark harness re-proves on
-/// every trial by comparing engine digests against an independent oracle.
+/// Ordering across independent subtrees is not fixed, but a directory observation is
+/// published before that directory becomes claimable. The index therefore sees a
+/// parent-first causal stream without imposing a global level barrier or serializing
+/// filesystem work. The resulting index is byte-identical to the serial walker's,
+/// which the benchmark harness re-proves on every trial by comparing engine digests
+/// against an independent oracle.
 fn scan_concurrent(
     root: &Path,
     config: &ScanConfig,
@@ -2006,11 +2010,31 @@ fn walk_worker(
                 }
             }
         }
+        // The batch contains the directory entries that authorize `discovered` as
+        // known ancestry. Publish it before making those directories claimable: a
+        // different worker may begin reading a child as soon as `extend` returns.
+        if !batch.is_empty() && !discovered.is_empty() {
+            let send_started = std::time::Instant::now();
+            let sent = send_observation(
+                sender,
+                Observation::new(std::mem::take(&mut batch)),
+                diagnostics.map(AsRef::as_ref),
+            );
+            chunk_send_ns += elapsed_ns(send_started);
+            if !sent {
+                report.attribution.send_ns += chunk_send_ns;
+                report.attribution.work_ns +=
+                    elapsed_ns(chunk_started).saturating_sub(chunk_send_ns);
+                consumer_gone = true;
+                break 'walk;
+            }
+        }
         report.attribution.send_ns += chunk_send_ns;
         let chunk_work_ns = elapsed_ns(chunk_started).saturating_sub(chunk_send_ns);
         report.attribution.work_ns += chunk_work_ns;
-        // Publish before releasing the claim so a worker that finds nothing new does
-        // not hold work that others could be doing.
+
+        // Publish new work before releasing the claim so a worker that finds nothing
+        // new does not hold work that others could be doing.
         if !discovered.is_empty() {
             queue.extend(discovered.drain(..), &mut report.attribution);
         }
@@ -2869,11 +2893,11 @@ pub fn revalidate(
     Ok(report)
 }
 
-/// Reconcile the full index and publish each effective committed delta as it lands.
+/// Reconcile the full index and publish each exact commit as it lands.
 pub fn reconcile(
     index: &mut Index,
     config: &ScanConfig,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
 ) -> Result<ReconcileReport> {
     reconcile_subtree(index, Path::new(""), config, sink)
 }
@@ -2886,7 +2910,7 @@ pub fn reconcile_subtree(
     index: &mut Index,
     subtree: &Path,
     config: &ScanConfig,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
 ) -> Result<ReconcileReport> {
     reconcile_target(&mut ReconcileTarget::Direct(index), subtree, config, sink)
 }
@@ -2895,7 +2919,7 @@ pub fn reconcile_subtree(
 pub fn reconcile_handle(
     handle: &IndexHandle,
     config: &ScanConfig,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
 ) -> Result<ReconcileReport> {
     reconcile_subtree_handle(handle, Path::new(""), config, sink)
 }
@@ -2906,7 +2930,7 @@ pub fn reconcile_subtree_handle(
     handle: &IndexHandle,
     subtree: &Path,
     config: &ScanConfig,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
 ) -> Result<ReconcileReport> {
     reconcile_target(&mut ReconcileTarget::Shared(handle), subtree, config, sink)
 }
@@ -2915,7 +2939,7 @@ fn reconcile_target(
     target: &mut ReconcileTarget<'_>,
     subtree: &Path,
     config: &ScanConfig,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
 ) -> Result<ReconcileReport> {
     config.validate_for_scope(target.scope()?)?;
     let subtree = normalize_subtree(subtree)?;
@@ -2923,14 +2947,23 @@ fn reconcile_target(
         return Err(Error::SubtreeOutsideScanScope { path: subtree, scope: config.scope() });
     }
     let subtree = resolve_subtree_root(target, &subtree, config)?;
-    let started_at = target.begin_reconcile(&subtree)?;
+    let (started_at, started) = target.begin_reconcile(&subtree)?;
+    if let Some(commit) = started.as_ref() {
+        sink(commit);
+    }
     match reconcile_target_inner(target, &subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
         Ok(report) => {
-            target.finish_reconcile(&subtree, started_at, report.is_complete())?;
+            let finished = target.finish_reconcile(&subtree, started_at, report.is_complete())?;
+            if let Some(commit) = finished.as_ref() {
+                sink(commit);
+            }
             Ok(report)
         }
         Err(error) => {
-            target.finish_reconcile(&subtree, started_at, false)?;
+            let finished = target.finish_reconcile(&subtree, started_at, false)?;
+            if let Some(commit) = finished.as_ref() {
+                sink(commit);
+            }
             Err(error)
         }
     }
@@ -2941,7 +2974,7 @@ fn reconcile_target_inner(
     subtree: &Path,
     config: &ScanConfig,
     max_deferred_ops: usize,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
 ) -> Result<ReconcileReport> {
     let root = target.root_path()?;
     let root_meta = {
@@ -3043,7 +3076,7 @@ fn reconcile_target_inner(
                              target: &mut ReconcileTarget<'_>,
                              queue: &mut VecDeque<(PathBuf, usize)>,
                              batch: &mut Vec<ObservationOp>,
-                             sink: &mut dyn FnMut(&AppliedDelta),
+                             sink: &mut dyn FnMut(&Commit),
                              report: &mut ReconcileReport|
          -> Result<()> {
             let rel_path = rel_dir.join(&name);
@@ -3199,7 +3232,7 @@ fn reconcile_direct_parallel(
     root_dev: u64,
     config: &ScanConfig,
     max_deferred_ops: usize,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
 ) -> Result<DirectParallelOutcome> {
     let mut frontier = DirectoryQueueState::seeded(
         (PathBuf::new(), 0),
@@ -3292,13 +3325,13 @@ fn apply_deferred_reconcile(
     index: &mut Index,
     operations: &mut Vec<Op>,
     config: &ScanConfig,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
     stats: &mut ApplyStats,
 ) -> Result<()> {
     // Parent upserts establish real directory attributes before children arrive.
     // Removals run deepest first so a parent removal never precedes an independently
-    // observed descendant operation. The index supports out-of-order producers, but a
-    // deterministic causal order also makes emitted deltas stable for callers.
+    // observed descendant operation. Deterministic causal order also makes emitted
+    // commits stable for callers.
     operations.sort_by(|left, right| {
         let left_remove = matches!(left, Op::Remove { .. });
         let right_remove = matches!(right, Op::Remove { .. });
@@ -3476,7 +3509,7 @@ fn defer_reconcile_op(
 fn flush_direct_reconcile_batch(
     index: &mut Index,
     batch: &mut Vec<Op>,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
     stats: &mut ApplyStats,
 ) -> Result<()> {
     if batch.is_empty() {
@@ -3484,8 +3517,8 @@ fn flush_direct_reconcile_batch(
     }
     let outcome = index.apply(&Observation::new(std::mem::take(batch)))?;
     merge_apply_stats(stats, outcome.stats);
-    if let Some(applied) = outcome.applied() {
-        sink(applied);
+    if let Some(commit) = outcome.commit.as_ref() {
+        sink(commit);
     }
     Ok(())
 }
@@ -3494,7 +3527,7 @@ fn flush_direct_reconcile_batch(
 pub fn reconcile_pending(
     index: &mut Index,
     config: &ScanConfig,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
 ) -> Result<ReconcileReport> {
     let mut target = ReconcileTarget::Direct(index);
     reconcile_pending_target(&mut target, config, sink)
@@ -3504,7 +3537,7 @@ pub fn reconcile_pending(
 pub fn reconcile_pending_handle(
     handle: &IndexHandle,
     config: &ScanConfig,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
 ) -> Result<ReconcileReport> {
     let mut target = ReconcileTarget::Shared(handle);
     reconcile_pending_target(&mut target, config, sink)
@@ -3513,7 +3546,7 @@ pub fn reconcile_pending_handle(
 fn reconcile_pending_target(
     target: &mut ReconcileTarget<'_>,
     config: &ScanConfig,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
 ) -> Result<ReconcileReport> {
     config.validate_for_scope(target.scope()?)?;
     let roots = take_invalidation_roots(target)?;
@@ -3558,7 +3591,7 @@ fn remove_known_children(
     path: &Path,
     config: &ScanConfig,
     batch: &mut Vec<ObservationOp>,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
     stats: &mut ApplyStats,
 ) -> Result<()> {
     for (name, baseline) in target.child_states(path)? {
@@ -3597,7 +3630,7 @@ fn push_reconcile_upsert(
 fn flush_reconcile_batch(
     target: &mut ReconcileTarget<'_>,
     batch: &mut Vec<ObservationOp>,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
     stats: &mut ApplyStats,
 ) -> Result<()> {
     if batch.is_empty() {
@@ -3605,8 +3638,8 @@ fn flush_reconcile_batch(
     }
     let outcome = target.apply(&Observation::from_ops(std::mem::take(batch)))?;
     merge_apply_stats(stats, outcome.stats);
-    if let Some(applied) = outcome.applied() {
-        sink(applied);
+    if let Some(commit) = outcome.commit.as_ref() {
+        sink(commit);
     }
     Ok(())
 }
@@ -4203,11 +4236,29 @@ mod tests {
         write_file(&root.join("added-tree/nested/new.md"), b"new nested file");
     }
 
-    fn effective_ops(deltas: &[AppliedDelta]) -> Vec<Op> {
-        let mut operations: Vec<_> =
-            deltas.iter().flat_map(|delta| delta.ops.iter().cloned()).collect();
+    fn effective_ops(commits: &[Commit]) -> Vec<Op> {
+        let mut operations: Vec<_> = commits
+            .iter()
+            .flat_map(|commit| commit.changes.iter())
+            .map(|change| match change {
+                crate::EffectiveChange::Inserted { path, kind, attrs } => {
+                    Op::Upsert { path: path.clone(), kind: *kind, attrs: *attrs }
+                }
+                crate::EffectiveChange::Updated { path, kind, current, .. } => {
+                    Op::Upsert { path: path.clone(), kind: *kind, attrs: *current }
+                }
+                crate::EffectiveChange::Removed { path, .. } => Op::Remove { path: path.clone() },
+                crate::EffectiveChange::Invalidated { path, reason } => {
+                    Op::InvalidateSubtree { path: path.clone(), reason: *reason }
+                }
+            })
+            .collect();
         operations.sort_by(|left, right| left.path().cmp(right.path()));
         operations
+    }
+
+    fn commit_touches(commit: &Commit, path: &Path) -> bool {
+        commit.changes.iter().any(|change| change.path() == path)
     }
 
     #[test]
@@ -5487,21 +5538,22 @@ mod tests {
     }
 
     #[test]
-    fn direct_reconciliation_counts_unchanged_entries_without_publishing_deltas() {
+    fn direct_reconciliation_counts_unchanged_entries_and_publishes_state_commits() {
         let dir = sample_tree();
         let (mut index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
         let before_total = index.total();
         let before_clock = index.clock();
-        let mut deltas = Vec::new();
+        let mut commits = Vec::new();
 
-        let report = reconcile(&mut index, &ScanConfig::default(), &mut |delta| {
-            deltas.push(delta.clone());
+        let report = reconcile(&mut index, &ScanConfig::default(), &mut |commit| {
+            commits.push(commit.clone());
         })
         .expect("reconcile");
 
         assert!(report.is_complete());
         assert_eq!(report.apply.unchanged, 5, "3 files + 2 dirs all already known");
-        assert!(deltas.is_empty());
+        assert_eq!(commits.len(), 2);
+        assert!(commits.iter().all(|commit| commit.changes.is_empty()));
         assert_eq!(
             index.clock(),
             crate::Clock(before_clock.0 + 2),
@@ -5584,9 +5636,9 @@ mod tests {
                 mutate_reconciliation_transition_tree(dir.path());
 
                 let mut serial = baseline.clone();
-                let mut serial_deltas = Vec::new();
-                let serial_report = reconcile(&mut serial, &reference_config, &mut |delta| {
-                    serial_deltas.push(delta.clone());
+                let mut serial_commits = Vec::new();
+                let serial_report = reconcile(&mut serial, &reference_config, &mut |commit| {
+                    serial_commits.push(commit.clone());
                 })
                 .expect("serial reconciliation");
                 let (fresh, fresh_report) =
@@ -5602,9 +5654,9 @@ mod tests {
                 for workers in [2, 4] {
                     let mut parallel = baseline.clone();
                     let config = ScanConfig { threads: Some(workers), ..reference_config.clone() };
-                    let mut parallel_deltas = Vec::new();
-                    let report = reconcile(&mut parallel, &config, &mut |delta| {
-                        parallel_deltas.push(delta.clone());
+                    let mut parallel_commits = Vec::new();
+                    let report = reconcile(&mut parallel, &config, &mut |commit| {
+                        parallel_commits.push(commit.clone());
                     })
                     .expect("parallel reconciliation");
                     let context = format!("{order:?}/{max_depth:?}/{workers} workers");
@@ -5614,8 +5666,8 @@ mod tests {
                     assert_eq!(report.scan.dirs_read, serial_report.scan.dirs_read, "{context}");
                     assert_eq!(report.apply, serial_report.apply, "{context}");
                     assert_eq!(
-                        effective_ops(&parallel_deltas),
-                        effective_ops(&serial_deltas),
+                        effective_ops(&parallel_commits),
+                        effective_ops(&serial_commits),
                         "{context}: effective delta differs"
                     );
                     assert_eq!(
@@ -5711,14 +5763,14 @@ mod tests {
             fs::symlink_metadata(&root)
         }
         .expect("root metadata");
-        let mut deltas = Vec::new();
+        let mut commits = Vec::new();
         let outcome = reconcile_direct_parallel(
             &mut index,
             &root,
             attrs_from(&root_meta).dev,
             &config,
             1,
-            &mut |delta| deltas.push(delta.clone()),
+            &mut |commit| commits.push(commit.clone()),
         )
         .expect("parallel attempt");
         let DirectParallelOutcome::RetrySerial { prefix, remaining } = outcome else {
@@ -5727,7 +5779,7 @@ mod tests {
 
         assert_eq!(prefix.apply, ApplyStats::default());
         assert_eq!(remaining, VecDeque::from([(PathBuf::new(), 0)]));
-        assert!(deltas.is_empty());
+        assert!(commits.is_empty());
         assert_eq!(index_fingerprint(&index), before);
 
         let serial = ScanConfig { threads: Some(1), ..config };
@@ -5789,16 +5841,17 @@ mod tests {
         let (index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
         let handle = crate::IndexHandle::new(index);
         let before_clock = handle.clock().expect("clock");
-        let mut deltas = Vec::new();
+        let mut commits = Vec::new();
 
-        let report = reconcile_handle(&handle, &ScanConfig::default(), &mut |delta| {
-            deltas.push(delta.clone());
+        let report = reconcile_handle(&handle, &ScanConfig::default(), &mut |commit| {
+            commits.push(commit.clone());
         })
         .expect("reconcile");
 
         assert!(report.is_complete());
         assert_eq!(report.apply.unchanged, 5, "3 files + 2 dirs all already known");
-        assert!(deltas.is_empty());
+        assert_eq!(commits.len(), 2);
+        assert!(commits.iter().all(|commit| commit.changes.is_empty()));
         assert_eq!(
             handle.clock().expect("clock"),
             crate::Clock(before_clock.0 + 2),
@@ -5878,11 +5931,7 @@ mod tests {
         assert!(index.lookup(Path::new("src/added.rs")).is_some());
         assert_eq!(index.freshness_at(Path::new("src")), crate::Freshness::Fresh);
         assert!(index.take_pending_invalidations().is_empty());
-        assert!(
-            applied
-                .iter()
-                .any(|delta| { delta.ops.iter().any(|op| op.path() == Path::new("src/added.rs")) })
-        );
+        assert!(applied.iter().any(|commit| commit_touches(commit, Path::new("src/added.rs"))));
     }
 
     #[test]
@@ -5894,8 +5943,8 @@ mod tests {
         write_file(&dir.path().join("added.md"), b"new");
 
         let mut observed_after_apply = false;
-        reconcile_handle(&handle, &ScanConfig::default(), &mut |delta| {
-            if delta.ops.iter().any(|op| op.path() == Path::new("added.md")) {
+        reconcile_handle(&handle, &ScanConfig::default(), &mut |commit| {
+            if commit_touches(commit, Path::new("added.md")) {
                 observed_after_apply =
                     reader.kind(Path::new("added.md")).expect("query index").is_some();
             }
@@ -5914,8 +5963,8 @@ mod tests {
 
         let invalidator = handle.clone();
         let mut saw_reconciling = false;
-        reconcile_handle(&handle, &ScanConfig::default(), &mut |delta| {
-            if delta.ops.iter().any(|op| op.path() == Path::new("added.md")) {
+        reconcile_handle(&handle, &ScanConfig::default(), &mut |commit| {
+            if commit_touches(commit, Path::new("added.md")) {
                 saw_reconciling =
                     invalidator.freshness().expect("query") == crate::Freshness::Reconciling;
                 invalidator

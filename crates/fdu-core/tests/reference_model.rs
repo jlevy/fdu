@@ -253,7 +253,12 @@ impl Model {
             });
             return true;
         }
-        self.ensure_parents(path, stats, changes);
+        let parent = path.parent().unwrap_or(Path::new(""));
+        assert!(
+            self.nodes.get(parent).is_some_and(|node| node.kind.is_dir()),
+            "reference producer must establish exact directory ancestry before {}",
+            path.display()
+        );
         if let Some(node) = self.nodes.get_mut(path) {
             if node.kind == kind && node.attrs == attrs {
                 stats.unchanged += 1;
@@ -278,36 +283,6 @@ impl Model {
         stats.inserted += 1;
         changes.push(EffectiveChange::Inserted { path: path.to_path_buf(), kind, attrs });
         true
-    }
-
-    fn ensure_parents(
-        &mut self,
-        path: &Path,
-        stats: &mut ApplyStats,
-        changes: &mut Vec<EffectiveChange>,
-    ) {
-        let mut current = PathBuf::new();
-        let mut components = path.components().peekable();
-        while let Some(component) = components.next() {
-            if components.peek().is_none() {
-                break;
-            }
-            current.push(component.as_os_str());
-            if self.nodes.get(&current).is_some_and(|node| node.kind.is_dir()) {
-                continue;
-            }
-            if self.nodes.contains_key(&current) {
-                self.remove(&current, stats, changes);
-            }
-            let attrs = Attrs::default();
-            self.insert(&current, EntryKind::Dir, attrs);
-            stats.inserted += 1;
-            changes.push(EffectiveChange::Inserted {
-                path: current.clone(),
-                kind: EntryKind::Dir,
-                attrs,
-            });
-        }
     }
 
     fn insert(&mut self, path: &Path, kind: EntryKind, attrs: Attrs) {
@@ -471,6 +446,13 @@ impl Model {
                 .map(|candidate| candidate.file_name().expect("child").to_os_string())
                 .collect()
         })
+    }
+
+    fn has_known_ancestry(&self, path: &Path) -> bool {
+        path.parent()
+            .unwrap_or(Path::new(""))
+            .ancestors()
+            .all(|ancestor| self.nodes.get(ancestor).is_some_and(|node| node.kind.is_dir()))
     }
 
     fn retain(&mut self, commit: Commit) {
@@ -727,6 +709,34 @@ struct Pending {
     model: ModelExpectation,
 }
 
+fn parent_first_upsert(model: &Model, op: Op, generator: &mut Generator) -> Vec<Op> {
+    let Op::Upsert { path, kind, attrs: entry_attrs } = op else {
+        return vec![op];
+    };
+    let mut operations = Vec::new();
+    let mut established = BTreeSet::new();
+    let mut current = PathBuf::new();
+    let mut components = path.components().peekable();
+    while let Some(component) = components.next() {
+        if components.peek().is_none() {
+            break;
+        }
+        current.push(component.as_os_str());
+        let known = established.contains(&current)
+            || model.nodes.get(&current).is_some_and(|node| node.kind.is_dir());
+        if !known {
+            operations.push(Op::Upsert {
+                path: current.clone(),
+                kind: EntryKind::Dir,
+                attrs: attrs(generator.next()),
+            });
+            established.insert(current.clone());
+        }
+    }
+    operations.push(Op::Upsert { path, kind, attrs: entry_attrs });
+    operations
+}
+
 #[test]
 fn fixed_seed_operation_sequences_match_the_independent_model_after_every_step() {
     const SEEDS: [u64; 6] = [
@@ -769,12 +779,13 @@ fn fixed_seed_operation_sequences_match_the_independent_model_after_every_step()
                         path: path.clone(),
                         reason: InvalidateReason::Requested,
                     },
-                    _ => {
+                    _ if model.has_known_ancestry(&path) => {
                         let kind =
                             [EntryKind::File, EntryKind::Dir, EntryKind::Symlink, EntryKind::Other]
                                 [generator.choose(4)];
                         Op::Upsert { path: path.clone(), kind, attrs: attrs(generator.next()) }
                     }
+                    _ => Op::Remove { path: path.clone() },
                 };
                 pending.push(Pending {
                     engine: index.expectation(&path),
@@ -807,11 +818,9 @@ fn fixed_seed_operation_sequences_match_the_independent_model_after_every_step()
                         let kind =
                             [EntryKind::File, EntryKind::Dir, EntryKind::Symlink, EntryKind::Other]
                                 [generator.choose(4)];
-                        vec![Op::Upsert {
-                            path: path.clone(),
-                            kind,
-                            attrs: attrs(generator.next()),
-                        }]
+                        let op =
+                            Op::Upsert { path: path.clone(), kind, attrs: attrs(generator.next()) };
+                        parent_first_upsert(&model, op, &mut generator)
                     }
                     5 => vec![Op::Remove { path: path.clone() }],
                     6 => vec![Op::InvalidateSubtree {
@@ -836,18 +845,15 @@ fn fixed_seed_operation_sequences_match_the_independent_model_after_every_step()
                             }]
                         },
                     ),
-                    _ => vec![
+                    _ => parent_first_upsert(
+                        &model,
                         Op::Upsert {
-                            path: PathBuf::from("unordered/child/value.txt"),
+                            path: PathBuf::from("ordered/child/value.txt"),
                             kind: EntryKind::File,
                             attrs: attrs(generator.next()),
                         },
-                        Op::Upsert {
-                            path: PathBuf::from("unordered"),
-                            kind: EntryKind::Dir,
-                            attrs: attrs(generator.next()),
-                        },
-                    ],
+                        &mut generator,
+                    ),
                 };
                 (
                     Observation::new(ops.clone()),
@@ -883,16 +889,16 @@ fn reconciliation_state_only_commits_match_the_independent_model() {
     let started_at = model.begin_reconcile(Path::new(""));
     model.finish_reconcile(Path::new(""), started_at, true);
 
-    let mut legacy_deltas = Vec::new();
-    let report = fdu_core::scan::reconcile(&mut index, &config, &mut |delta| {
-        legacy_deltas.push(delta.clone());
+    let mut observed_commits = Vec::new();
+    let report = fdu_core::scan::reconcile(&mut index, &config, &mut |commit| {
+        observed_commits.push(commit.clone());
     })
     .expect("unchanged reconciliation");
 
     assert!(report.is_complete());
-    assert!(legacy_deltas.is_empty(), "state-only commits stay out of the legacy projection");
     let actual = index.since(before);
     let (expected_commits, expected_deltas, expected_truncated) = model.since(Clock::ZERO);
+    assert_eq!(observed_commits, expected_commits);
     assert_eq!(actual.commits, expected_commits);
     assert_eq!(actual.deltas, expected_deltas);
     assert_eq!(actual.truncated, expected_truncated);
@@ -953,6 +959,8 @@ fn lowering_a_nested_max_repairs_ancestors_above_an_already_correct_parent() {
     let mut index = Index::new("/model-root");
     let mut model = Model::new();
     let initial = vec![
+        Op::Upsert { path: "nested".into(), kind: EntryKind::Dir, attrs: attrs(1) },
+        Op::Upsert { path: "nested/only".into(), kind: EntryKind::Dir, attrs: attrs(2) },
         Op::Upsert {
             path: "nested/only/value.txt".into(),
             kind: EntryKind::File,

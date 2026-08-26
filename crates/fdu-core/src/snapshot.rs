@@ -982,6 +982,11 @@ mod tests {
                 attrs: attrs(100, 10),
             },
             Op::Upsert {
+                path: PathBuf::from("src/deep"),
+                kind: EntryKind::Dir,
+                attrs: attrs(0, 2),
+            },
+            Op::Upsert {
                 path: PathBuf::from("src/deep/nested.rs"),
                 kind: EntryKind::File,
                 attrs: attrs(50, 20),

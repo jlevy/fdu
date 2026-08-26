@@ -9,15 +9,16 @@
 //! 1. **The index** ([`Index`]) — the in-memory hierarchical structure: entry
 //!    records plus per-directory roll-up state.
 //! 2. **The snapshot** ([`snapshot`]) — that index, serialized.
-//! 3. **The change contract** ([`Observation`] and [`AppliedDelta`]) —
+//! 3. **The change contract** ([`Observation`] and [`Commit`]) —
 //!    producers submit verified observations; the index commits clocked effective
 //!    changes.
 //!
-//! Everything else is a producer of observations or a consumer of applied deltas. The
+//! Everything else is a producer of observations or a consumer of exact commits. The
 //! walker establishes a baseline from upsert observations; the reconciler submits the
 //! conditional diff between indexed state and reality; the watch layer submits verified,
 //! coalesced observations. The index arbitrates them and re-rolls its reducers; a change
-//! feed consumes the effective committed deltas.
+//! feed consumes exact effective changes and state transitions. [`AppliedDelta`] remains
+//! available as an entry-only compatibility projection.
 //!
 //! A deliberate consequence: **watching is not tied to the roll-up logic.** The index
 //! knows `apply(Observation)` and nothing about filesystem events, so a batch scan, a test
