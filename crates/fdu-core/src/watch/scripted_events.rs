@@ -116,11 +116,16 @@ mod tests {
             ("teleport\ta.txt\n", "unknown directive"),
             ("create\n", "takes 1 path"),
             ("rename-both\tonly.txt\n", "takes 2 path"),
-            ("create\t/absolute.txt\n", "is absolute"),
             ("error\n", "error takes a message"),
         ] {
             let error = parse_script(source, Path::new("/root")).expect_err("script must fail");
             assert!(error.contains(expected), "{error:?} should mention {expected:?}");
         }
+
+        let absolute = std::env::current_dir().expect("current directory").join("absolute.txt");
+        let source = format!("create\t{}\n", absolute.display());
+        let error = parse_script(&source, Path::new("/root"))
+            .expect_err("an absolute script path must fail on this platform");
+        assert!(error.contains("is absolute"));
     }
 }
