@@ -10,7 +10,10 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
 
 use crate::index::{DiscoveryCommit, DiscoveryTransition};
-use crate::{EntryKind, Error, Index, IndexHandle, Observation, Op, Result, ScanConfig};
+use crate::{EntryKind, Error, Index, IndexHandle, Observation, Op, Result, ScanConfig, SessionId};
+
+mod continuation;
+pub(crate) mod read;
 
 /// First ordinal reserved for a minted session; zero never identifies a live owner.
 const FIRST_SESSION_ORDINAL: u64 = 1;
@@ -31,10 +34,7 @@ const TEST_GATE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5)
 /// The value is process-local, opaque, and never persisted. It prevents a future cursor
 /// or continuation from being accepted by another open whose sequence also began at
 /// zero; it is not a credential.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub struct SessionId(u64);
-
-impl SessionId {
+impl crate::SessionId {
     fn mint() -> Result<Self> {
         static NEXT: AtomicU64 = AtomicU64::new(FIRST_SESSION_ORDINAL);
 
@@ -228,6 +228,18 @@ impl OpenedIndex {
         Ok(())
     }
 
+    /// Return requested projections from one committed version and state boundary.
+    pub fn read(&self, request: crate::ReadRequest) -> Result<crate::ReadResponse> {
+        let locked = self.state.lock_lifecycle();
+        if locked.poisoned {
+            return Err(Error::OpenedLifecyclePoisoned);
+        }
+        if locked.guard.phase != OwnerPhase::Open {
+            return Err(Error::OpenedIndexClosed);
+        }
+        read::read(self, request)
+    }
+
     fn start_discovery(&self) -> Result<()> {
         self.state.index.transition_discovery(DiscoveryTransition::Begin)?;
         let root = self.state.root.clone();
@@ -332,6 +344,7 @@ struct OpenedState {
     scan: ScanConfig,
     budget: DiscoveryBudget,
     frontier: Arc<DiscoveryFrontier>,
+    continuations: Mutex<continuation::ContinuationTable>,
     cancellation: Arc<Cancellation>,
     lifecycle: Mutex<Lifecycle>,
     lifecycle_changed: Condvar,
@@ -360,6 +373,7 @@ impl OpenedState {
             scan,
             budget,
             frontier: Arc::new(DiscoveryFrontier::new()),
+            continuations: Mutex::new(continuation::ContinuationTable::default()),
             cancellation: Arc::new(Cancellation::default()),
             lifecycle: Mutex::new(Lifecycle::default()),
             lifecycle_changed: Condvar::new(),
@@ -376,6 +390,7 @@ impl OpenedState {
             scan,
             budget,
             frontier: Arc::new(DiscoveryFrontier::new()),
+            continuations: Mutex::new(continuation::ContinuationTable::default()),
             cancellation: Arc::new(Cancellation::default()),
             lifecycle: Mutex::new(Lifecycle::default()),
             lifecycle_changed: Condvar::new(),
@@ -414,6 +429,10 @@ impl OpenedState {
                     let workers = std::mem::take(&mut lifecycle.workers);
                     drop(lifecycle);
                     self.cancellation.cancel();
+                    match self.continuations.lock() {
+                        Ok(mut continuations) => continuations.clear(),
+                        Err(poisoned) => poisoned.into_inner().clear(),
+                    }
                     self.lifecycle_changed.notify_all();
                     break workers;
                 }
@@ -1316,6 +1335,788 @@ mod tests {
             opened.state.index.directory_complete(Path::new("")).expect("root completeness"),
             Some(true)
         );
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn one_read_returns_lookup_state_and_version_from_one_boundary() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![Op::Upsert {
+                path: PathBuf::from("note.txt"),
+                kind: EntryKind::File,
+                attrs: crate::Attrs { size: 7, ..crate::Attrs::default() },
+            }]))
+            .expect("seed entry");
+
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![
+                    crate::ReadProjection::Lookup { path: PathBuf::from("note.txt") },
+                    crate::ReadProjection::Lookup { path: PathBuf::from("missing.txt") },
+                ],
+                ..crate::ReadRequest::default()
+            })
+            .expect("coherent read");
+
+        assert_eq!(response.version.sequence, opened.state.index.clock().expect("clock"));
+        assert_eq!(response.state, opened.state.index.state().expect("state"));
+        assert_eq!(response.results.len(), 2);
+        assert!(matches!(
+            &response.results[0],
+            crate::ProjectionResult::Lookup(crate::Knowledge::Present(entry))
+                if entry.path == Path::new("note.txt") && entry.attrs.size == 7
+        ));
+        assert!(matches!(
+            response.results[1],
+            crate::ProjectionResult::Lookup(crate::Knowledge::Absent)
+        ));
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn lookup_uses_directory_completeness_before_global_discovery_settles() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .transition_discovery(DiscoveryTransition::Begin)
+            .expect("begin discovery");
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![Op::Upsert {
+                path: PathBuf::from("known"),
+                kind: EntryKind::Dir,
+                attrs: crate::Attrs::default(),
+            }]))
+            .expect("seed directory");
+
+        let lookup = || {
+            opened
+                .read(crate::ReadRequest {
+                    projections: vec![crate::ReadProjection::Lookup {
+                        path: PathBuf::from("known/missing"),
+                    }],
+                    ..crate::ReadRequest::default()
+                })
+                .expect("lookup")
+                .results
+                .into_iter()
+                .next()
+                .expect("lookup result")
+        };
+        assert!(matches!(
+            lookup(),
+            crate::ProjectionResult::Lookup(crate::Knowledge::Unknown {
+                reason: crate::CoverageReason::Building
+            })
+        ));
+
+        opened
+            .state
+            .index
+            .apply_discovery(
+                &Observation::new(Vec::new()),
+                DiscoveryCommit {
+                    directory_complete: Some(PathBuf::from("known")),
+                    transition: None,
+                },
+            )
+            .expect("complete directory");
+        assert!(matches!(lookup(), crate::ProjectionResult::Lookup(crate::Knowledge::Absent)));
+        assert!(matches!(
+            opened.state.index.state().expect("state").coverage,
+            crate::Coverage::Partial(_)
+        ));
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn mixed_read_preserves_projection_order_and_uses_maintained_rollups() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![Op::Upsert {
+                path: PathBuf::from("note.txt"),
+                kind: EntryKind::File,
+                attrs: crate::Attrs { size: 7, ..crate::Attrs::default() },
+            }]))
+            .expect("seed entry");
+
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![
+                    crate::ReadProjection::Diagnostics,
+                    crate::ReadProjection::RollUp { path: PathBuf::new() },
+                ],
+                ..crate::ReadRequest::default()
+            })
+            .expect("coherent read");
+
+        assert!(matches!(
+            &response.results[0],
+            crate::ProjectionResult::Diagnostics(diagnostics)
+                if diagnostics.root == opened.state.root && diagnostics.entries == 2
+        ));
+        assert!(matches!(
+            &response.results[1],
+            crate::ProjectionResult::RollUp(crate::Knowledge::Present(rollup))
+                if rollup.all.files == 1 && rollup.all.bytes == 7
+        ));
+        assert_eq!(response.work.maintained_index_work, 1);
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn tree_pages_are_directory_first_and_resume_at_the_same_version() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("z-dir"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("a.txt"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs { size: 1, ..crate::Attrs::default() },
+                },
+                Op::Upsert {
+                    path: PathBuf::from("b.txt"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs { size: 2, ..crate::Attrs::default() },
+                },
+            ]))
+            .expect("seed entries");
+
+        let first = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Tree {
+                    path: PathBuf::new(),
+                    page: crate::PageRequest { limit: 2, max_work: 4 },
+                }],
+                ..crate::ReadRequest::default()
+            })
+            .expect("first page");
+        let crate::ProjectionResult::Tree(crate::Knowledge::Present(first_page)) =
+            &first.results[0]
+        else {
+            panic!("tree page");
+        };
+        assert_eq!(
+            first_page.rows.iter().map(|row| row.path.as_path()).collect::<Vec<_>>(),
+            vec![Path::new("z-dir"), Path::new("a.txt")]
+        );
+        let continuation = first_page.next.expect("more rows");
+
+        let second = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Continue {
+                    continuation,
+                    page: crate::PageRequest { limit: 2, max_work: 2 },
+                }],
+                expected: Some(first.version),
+            })
+            .expect("second page");
+        let crate::ProjectionResult::Tree(crate::Knowledge::Present(second_page)) =
+            &second.results[0]
+        else {
+            panic!("continued tree page");
+        };
+        assert_eq!(
+            second_page.rows.iter().map(|row| row.path.as_path()).collect::<Vec<_>>(),
+            vec![Path::new("b.txt")]
+        );
+        assert!(second_page.next.is_none());
+        assert_eq!(first.version, second.version);
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn flat_pages_follow_complete_portable_path_order_without_rescanning() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("c.txt"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("a.txt"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("b.txt"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs::default(),
+                },
+            ]))
+            .expect("seed entries");
+
+        let first = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Flat {
+                    selection: crate::query::Selection::default(),
+                    shape: crate::RowShape::Compact,
+                    page: crate::PageRequest { limit: 2, max_work: 3 },
+                }],
+                ..crate::ReadRequest::default()
+            })
+            .expect("first page");
+        let crate::ProjectionResult::Flat(first_page) = &first.results[0] else {
+            panic!("flat page");
+        };
+        assert_eq!(
+            first_page.rows.iter().map(|row| row.portable_path.as_deref()).collect::<Vec<_>>(),
+            vec![Some("a.txt"), Some("b.txt")]
+        );
+        let continuation = first_page.next.expect("more rows");
+
+        let second = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Continue {
+                    continuation,
+                    page: crate::PageRequest { limit: 2, max_work: 2 },
+                }],
+                expected: Some(first.version),
+            })
+            .expect("second page");
+        let crate::ProjectionResult::Flat(second_page) = &second.results[0] else {
+            panic!("continued flat page");
+        };
+        assert_eq!(
+            second_page.rows.iter().map(|row| row.portable_path.as_deref()).collect::<Vec<_>>(),
+            vec![Some("c.txt")]
+        );
+        assert!(second_page.next.is_none());
+        assert!(second.work.rows_visited <= 2, "continuation resumed from retained position");
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn continuations_are_single_use_version_pinned_handle_local_and_bounded() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("a"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("b"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs::default(),
+                },
+            ]))
+            .expect("seed entries");
+        let page = crate::PageRequest { limit: 1, max_work: 2 };
+        let new_token = || {
+            let response = opened
+                .read(crate::ReadRequest {
+                    projections: vec![crate::ReadProjection::Flat {
+                        selection: crate::query::Selection::default(),
+                        shape: crate::RowShape::Compact,
+                        page,
+                    }],
+                    ..crate::ReadRequest::default()
+                })
+                .expect("first page");
+            let crate::ProjectionResult::Flat(result) = &response.results[0] else {
+                panic!("flat page");
+            };
+            result.next.expect("continuation")
+        };
+
+        let replay = new_token();
+        opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Continue { continuation: replay, page }],
+                ..crate::ReadRequest::default()
+            })
+            .expect("first continuation use");
+        assert!(matches!(
+            opened.read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Continue { continuation: replay, page }],
+                ..crate::ReadRequest::default()
+            }),
+            Err(Error::ContinuationUnavailable)
+        ));
+
+        let stale = new_token();
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![Op::Upsert {
+                path: PathBuf::from("c"),
+                kind: EntryKind::File,
+                attrs: crate::Attrs::default(),
+            }]))
+            .expect("advance version");
+        assert!(matches!(
+            opened.read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Continue { continuation: stale, page }],
+                ..crate::ReadRequest::default()
+            }),
+            Err(Error::ContinuationStale { .. })
+        ));
+
+        let retryable = new_token();
+        let limited = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Continue {
+                    continuation: retryable,
+                    page: crate::PageRequest { limit: 1, max_work: 1 },
+                }],
+                ..crate::ReadRequest::default()
+            })
+            .expect("bounded continuation");
+        assert!(matches!(limited.results[0], crate::ProjectionResult::Limit(_)));
+        assert!(matches!(
+            opened
+                .read(crate::ReadRequest {
+                    projections: vec![crate::ReadProjection::Continue {
+                        continuation: retryable,
+                        page: crate::PageRequest { limit: 1, max_work: 2 },
+                    }],
+                    ..crate::ReadRequest::default()
+                })
+                .expect("retry continuation")
+                .results[0],
+            crate::ProjectionResult::Flat(_)
+        ));
+
+        let foreign = new_token();
+        let (_other_root, other) = self::opened(Arc::new(TestControls::default()));
+        assert!(matches!(
+            other.read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Continue { continuation: foreign, page }],
+                ..crate::ReadRequest::default()
+            }),
+            Err(Error::ContinuationUnavailable)
+        ));
+
+        let oldest = new_token();
+        for _ in 0..super::continuation::MAX_CONTINUATIONS {
+            let _ = new_token();
+        }
+        assert!(matches!(
+            opened.read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Continue { continuation: oldest, page }],
+                ..crate::ReadRequest::default()
+            }),
+            Err(Error::ContinuationUnavailable)
+        ));
+        other.close().expect("close other");
+        opened.close().expect("close");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn portable_pages_expose_exact_path_loss_and_fail_closed_on_absence() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        let invalid = PathBuf::from(OsString::from_vec(vec![b'x', 0xff]));
+        let mut long_bytes = vec![b'y'; crate::MAX_PORTABLE_PATH_EXAMPLE_BYTES + 1];
+        *long_bytes.last_mut().expect("nonempty path") = 0xfe;
+        let long_invalid = PathBuf::from(OsString::from_vec(long_bytes));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: invalid.clone(),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs { size: 9, ..crate::Attrs::default() },
+                },
+                Op::Upsert {
+                    path: long_invalid.clone(),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs { size: 1, ..crate::Attrs::default() },
+                },
+            ]))
+            .expect("seed unrepresentable entry");
+
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![
+                    crate::ReadProjection::Lookup { path: PathBuf::from("missing") },
+                    crate::ReadProjection::Tree {
+                        path: PathBuf::new(),
+                        page: crate::PageRequest {
+                            limit: crate::MAX_PAGE_ROWS,
+                            max_work: crate::MAX_PAGE_WORK,
+                        },
+                    },
+                    crate::ReadProjection::Flat {
+                        selection: crate::query::Selection::default(),
+                        shape: crate::RowShape::Compact,
+                        page: crate::PageRequest {
+                            limit: crate::MAX_PAGE_ROWS,
+                            max_work: crate::MAX_PAGE_WORK,
+                        },
+                    },
+                    crate::ReadProjection::RollUp { path: PathBuf::new() },
+                ],
+                ..crate::ReadRequest::default()
+            })
+            .expect("portable read");
+        assert!(matches!(
+            response.results[0],
+            crate::ProjectionResult::Lookup(crate::Knowledge::Unknown { .. })
+        ));
+        let crate::ProjectionResult::Tree(crate::Knowledge::Present(tree)) = &response.results[1]
+        else {
+            panic!("tree page");
+        };
+        assert!(tree.rows.is_empty());
+        assert!(tree.native_complete);
+        assert!(!tree.portable_complete);
+        assert_eq!(tree.portable_issue.as_ref().map(|issue| issue.omitted), Some(2));
+        let example = &tree.portable_issue.as_ref().expect("path issue").examples[0];
+        assert_eq!(example.encoding, crate::PortablePathEncoding::UnixBytes);
+        assert!(example.encoded_hex.ends_with("78ff"));
+        assert!(!example.truncated);
+        let long_example = &tree.portable_issue.as_ref().expect("path issue").examples[1];
+        assert_eq!(long_example.encoded_hex.len(), crate::MAX_PORTABLE_PATH_EXAMPLE_BYTES * 2);
+        assert!(long_example.truncated);
+        let crate::ProjectionResult::Flat(flat) = &response.results[2] else {
+            panic!("flat page");
+        };
+        assert!(flat.rows.is_empty());
+        assert_eq!(flat.portable_issue.as_ref().map(|issue| issue.omitted), Some(2));
+        assert!(matches!(
+            &response.results[3],
+            crate::ProjectionResult::RollUp(crate::Knowledge::Present(rollup))
+                if rollup.all.files == 2 && rollup.all.bytes == 10
+        ));
+
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![
+                Op::Remove { path: invalid },
+                Op::Remove { path: long_invalid },
+            ]))
+            .expect("remove unrepresentable entry");
+        assert!(matches!(
+            opened
+                .read(crate::ReadRequest {
+                    projections: vec![crate::ReadProjection::Lookup {
+                        path: PathBuf::from("missing"),
+                    }],
+                    ..crate::ReadRequest::default()
+                })
+                .expect("known absence")
+                .results[0],
+            crate::ProjectionResult::Lookup(crate::Knowledge::Absent)
+        ));
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn read_bounds_are_validated_before_any_continuation_is_consumed() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("a"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("b"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs::default(),
+                },
+            ]))
+            .expect("seed entries");
+        let first = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Flat {
+                    selection: crate::query::Selection::default(),
+                    shape: crate::RowShape::Compact,
+                    page: crate::PageRequest { limit: 1, max_work: 2 },
+                }],
+                ..crate::ReadRequest::default()
+            })
+            .expect("first page");
+        let crate::ProjectionResult::Flat(page) = &first.results[0] else {
+            panic!("flat page");
+        };
+        let continuation = page.next.expect("continuation");
+
+        assert!(matches!(
+            opened.read(crate::ReadRequest {
+                projections: vec![
+                    crate::ReadProjection::Continue {
+                        continuation,
+                        page: crate::PageRequest { limit: 1, max_work: 2 },
+                    },
+                    crate::ReadProjection::Tree {
+                        path: PathBuf::new(),
+                        page: crate::PageRequest { limit: 0, max_work: 1 },
+                    },
+                ],
+                ..crate::ReadRequest::default()
+            }),
+            Err(Error::PageRowLimit { attempted: 0, .. })
+        ));
+        opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Continue {
+                    continuation,
+                    page: crate::PageRequest { limit: 1, max_work: 2 },
+                }],
+                ..crate::ReadRequest::default()
+            })
+            .expect("validation preserved continuation");
+
+        assert!(matches!(
+            opened.read(crate::ReadRequest {
+                projections: vec![
+                    crate::ReadProjection::Diagnostics;
+                    crate::MAX_READ_PROJECTIONS + 1
+                ],
+                ..crate::ReadRequest::default()
+            }),
+            Err(Error::ReadProjectionLimit { .. })
+        ));
+        assert!(matches!(
+            opened.read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Aggregate {
+                    selection: crate::query::Selection::default(),
+                    count_cap: 0,
+                    max_work: 1,
+                }],
+                ..crate::ReadRequest::default()
+            }),
+            Err(Error::CountCapLimit { attempted: 0, .. })
+        ));
+        let bounded_path = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Tree {
+                    path: PathBuf::from("missing/deep"),
+                    page: crate::PageRequest { limit: 1, max_work: 1 },
+                }],
+                ..crate::ReadRequest::default()
+            })
+            .expect("bounded path traversal");
+        assert!(matches!(
+            bounded_path.results[0],
+            crate::ProjectionResult::Limit(crate::QueryLimit {
+                projection: crate::LimitedProjection::Tree,
+                rows_visited: 1,
+                ..
+            })
+        ));
+        assert!(matches!(
+            opened.read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Report(crate::ReportRequest {
+                    query: crate::query::Query {
+                        views: vec![crate::query::ViewSpec::Summary; crate::MAX_REPORT_VIEWS + 1],
+                        ..crate::query::Query::default()
+                    },
+                    generated_at: std::time::UNIX_EPOCH,
+                    max_work: crate::MAX_PAGE_WORK,
+                })],
+                ..crate::ReadRequest::default()
+            }),
+            Err(Error::ReportViewLimit { .. })
+        ));
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn a_coherent_read_cannot_straddle_a_commit() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        let stop = Arc::new(AtomicBool::new(false));
+        let writer_stop = Arc::clone(&stop);
+        let writer_index = opened.state.index.clone();
+        let writer = std::thread::spawn(move || {
+            for round in 0..400_u64 {
+                if writer_stop.load(Ordering::Relaxed) {
+                    break;
+                }
+                writer_index
+                    .apply(&Observation::new(vec![Op::Upsert {
+                        path: PathBuf::from(format!("file-{round}")),
+                        kind: EntryKind::File,
+                        attrs: crate::Attrs { size: 1, ..crate::Attrs::default() },
+                    }]))
+                    .expect("writer commit");
+            }
+        });
+
+        for _ in 0..500 {
+            let response = opened
+                .read(crate::ReadRequest {
+                    projections: vec![
+                        crate::ReadProjection::Tree {
+                            path: PathBuf::new(),
+                            page: crate::PageRequest {
+                                limit: crate::MAX_PAGE_ROWS,
+                                max_work: crate::MAX_PAGE_WORK,
+                            },
+                        },
+                        crate::ReadProjection::RollUp { path: PathBuf::new() },
+                    ],
+                    ..crate::ReadRequest::default()
+                })
+                .expect("coherent read");
+            let crate::ProjectionResult::Tree(crate::Knowledge::Present(tree)) =
+                &response.results[0]
+            else {
+                panic!("tree page");
+            };
+            let crate::ProjectionResult::RollUp(crate::Knowledge::Present(rollup)) =
+                &response.results[1]
+            else {
+                panic!("root roll-up");
+            };
+            assert!(tree.next.is_none());
+            assert_eq!(
+                tree.rows.iter().filter(|row| row.kind == EntryKind::File).count() as u64,
+                rollup.all.files
+            );
+        }
+        stop.store(true, Ordering::Relaxed);
+        writer.join().expect("writer");
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn aggregates_distinguish_maintained_exact_totals_from_capped_counts() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(
+                ["a", "b", "c"]
+                    .into_iter()
+                    .map(|path| Op::Upsert {
+                        path: PathBuf::from(path),
+                        kind: EntryKind::File,
+                        attrs: crate::Attrs::default(),
+                    })
+                    .collect(),
+            ))
+            .expect("seed entries");
+
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![
+                    crate::ReadProjection::Aggregate {
+                        selection: crate::query::Selection::default(),
+                        count_cap: 1,
+                        max_work: 1,
+                    },
+                    crate::ReadProjection::Aggregate {
+                        selection: crate::query::Selection {
+                            kinds: vec![EntryKind::File],
+                            ..crate::query::Selection::default()
+                        },
+                        count_cap: 2,
+                        max_work: 3,
+                    },
+                ],
+                ..crate::ReadRequest::default()
+            })
+            .expect("aggregate read");
+
+        assert!(matches!(
+            response.results[0],
+            crate::ProjectionResult::Aggregate(crate::CountResult::Exact(3))
+        ));
+        assert!(matches!(
+            response.results[1],
+            crate::ProjectionResult::Aggregate(crate::CountResult::AtLeast(2))
+        ));
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn report_projection_matches_the_existing_query_and_fails_closed_at_its_work_bound() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("a"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs { size: 3, ..crate::Attrs::default() },
+                },
+                Op::Upsert {
+                    path: PathBuf::from("b"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs { size: 5, ..crate::Attrs::default() },
+                },
+            ]))
+            .expect("seed entries");
+        let query = crate::query::Query {
+            views: vec![crate::query::ViewSpec::Summary],
+            ..crate::query::Query::default()
+        };
+
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Report(crate::ReportRequest {
+                    query: query.clone(),
+                    generated_at: std::time::UNIX_EPOCH,
+                    max_work: 1,
+                })],
+                ..crate::ReadRequest::default()
+            })
+            .expect("maintained report");
+        let crate::ProjectionResult::Report(report) = &response.results[0] else {
+            panic!("report projection");
+        };
+        let crate::query::Section::Summary(summary) = &report.sections[0] else {
+            panic!("summary section");
+        };
+        assert_eq!((summary.files, summary.bytes), (2, 8));
+
+        let limited = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Report(crate::ReportRequest {
+                    query: crate::query::Query {
+                        selection: crate::query::Selection {
+                            kinds: vec![EntryKind::File],
+                            ..crate::query::Selection::default()
+                        },
+                        views: vec![crate::query::ViewSpec::Summary],
+                        ..crate::query::Query::default()
+                    },
+                    generated_at: std::time::UNIX_EPOCH,
+                    max_work: 1,
+                })],
+                ..crate::ReadRequest::default()
+            })
+            .expect("bounded report");
+        assert!(matches!(
+            limited.results[0],
+            crate::ProjectionResult::Limit(crate::QueryLimit {
+                projection: crate::LimitedProjection::Report,
+                ..
+            })
+        ));
         opened.close().expect("close");
     }
 

@@ -134,6 +134,30 @@ pub struct PartitionRollUp {
     pub unignored: RollUp,
 }
 
+/// Constant-size directory totals suitable for bounded interactive rows.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct RollUpSummary {
+    /// Descendant regular files.
+    pub files: u64,
+    /// Descendant directories, excluding the directory that owns this summary.
+    pub dirs: u64,
+    /// Apparent bytes across descendant regular files.
+    pub bytes: u64,
+    /// Allocated bytes across descendant regular files.
+    pub allocated: u64,
+    /// Newest descendant-file modification time, or `None` for an empty subtree.
+    pub newest_mtime_ns: Option<i64>,
+}
+
+/// Constant-size totals for the fixed all and unignored partitions.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct PartitionRollUpSummary {
+    /// Every retained descendant.
+    pub all: RollUpSummary,
+    /// Retained descendants outside the effective ignored partition.
+    pub unignored: RollUpSummary,
+}
+
 /// Hot-path aggregate state owned by one index.
 ///
 /// Integer extension keys make ancestor merges cheap, but they are meaningful only
@@ -183,6 +207,23 @@ impl InternedPartitionRollUp {
     fn unmerge(&mut self, other: &Self) {
         self.all.unmerge(&other.all);
         self.unignored.unmerge(&other.unignored);
+    }
+}
+
+fn rollup_summary(rollup: &InternedRollUp) -> RollUpSummary {
+    RollUpSummary {
+        files: rollup.files,
+        dirs: rollup.dirs,
+        bytes: rollup.bytes,
+        allocated: rollup.allocated,
+        newest_mtime_ns: (rollup.files > 0).then_some(rollup.newest_mtime_ns),
+    }
+}
+
+fn partition_summary(rollup: &InternedPartitionRollUp) -> PartitionRollUpSummary {
+    PartitionRollUpSummary {
+        all: rollup_summary(&rollup.all),
+        unignored: rollup_summary(&rollup.unignored),
     }
 }
 
@@ -291,6 +332,15 @@ struct Entry {
     /// Meaningful only for directories. Keeping the bit on the entry makes absence a
     /// local fact instead of forcing readers to reconstruct the discovery frontier.
     children_complete: bool,
+}
+
+/// Portable direct children retained in the order interactive tree pages emit them.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub(crate) struct PortableChildren {
+    pub(crate) directories: BTreeMap<String, EntryId>,
+    pub(crate) nondirectories: BTreeMap<String, EntryId>,
+    pub(crate) omitted: u64,
+    pub(crate) examples: Vec<EntryId>,
 }
 
 #[derive(Clone, Debug)]
@@ -490,6 +540,14 @@ pub struct Index {
     state: IndexState,
     /// Bounded diagnostic details summarized by `state.issues`.
     issues: Vec<Issue>,
+    /// Commit-maintained portable direct-child partitions used by bounded tree pages.
+    portable_children: BTreeMap<PathBuf, PortableChildren>,
+    /// Commit-maintained canonical path order used by flat pages.
+    portable_entries: BTreeMap<String, EntryId>,
+    /// Exact count of retained entries excluded from portable projections.
+    portable_omitted: u64,
+    /// Bounded native examples of retained unrepresentable paths.
+    portable_examples: Vec<EntryId>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -536,6 +594,12 @@ impl IndexHandle {
 
     fn write_index(&self) -> crate::Result<std::sync::RwLockWriteGuard<'_, Index>> {
         self.inner.write().map_err(|_| crate::Error::IndexLockPoisoned)
+    }
+
+    /// Evaluate one owned result while holding exactly one coherent read boundary.
+    pub(crate) fn read_with<T>(&self, read: impl FnOnce(&Index) -> T) -> crate::Result<T> {
+        let index = self.read_index()?;
+        Ok(read(&index))
     }
 
     #[cfg(test)]
@@ -834,6 +898,10 @@ impl Index {
             freshness_marks: BTreeMap::new(),
             state: IndexState::default(),
             issues: Vec::new(),
+            portable_children: BTreeMap::new(),
+            portable_entries: BTreeMap::new(),
+            portable_omitted: 0,
+            portable_examples: Vec::new(),
             applying_source: Source::Scanned,
             scanned_at_ns: Self::now_unix_nanos(),
             captured_at_ns: 0,
@@ -1486,6 +1554,119 @@ impl Index {
     pub fn partition_rollup(&self, path: &Path) -> Option<PartitionRollUp> {
         let entry = self.entry(self.lookup(path)?);
         entry.kind.is_dir().then(|| self.named_partitions(&entry.rollup))
+    }
+
+    /// Both constant-size aggregate partitions for a directory.
+    pub fn partition_rollup_summary(&self, path: &Path) -> Option<PartitionRollUpSummary> {
+        let entry = self.entry(self.lookup(path)?);
+        entry.kind.is_dir().then(|| partition_summary(&entry.rollup))
+    }
+
+    /// Capture one retained entry without repeating path lookup in a consumer.
+    pub(crate) fn entry_value(&self, path: &Path) -> Option<crate::EntryValue> {
+        let id = self.lookup(path)?;
+        Some(self.entry_value_of(id, path))
+    }
+
+    pub(crate) fn entry_value_of(&self, id: EntryId, path: &Path) -> crate::EntryValue {
+        let entry = self.entry(id);
+        crate::EntryValue {
+            path: path.to_path_buf(),
+            portable_path: crate::opened::read::portable_path(path),
+            kind: entry.kind,
+            attrs: entry.attrs,
+            ignored: entry.ignored,
+            rollup: entry.kind.is_dir().then(|| partition_summary(&entry.rollup)),
+            children_complete: entry.kind.is_dir().then_some(entry.children_complete),
+        }
+    }
+
+    pub(crate) fn portable_children(&self, path: &Path) -> Option<&PortableChildren> {
+        self.portable_children.get(path)
+    }
+
+    pub(crate) fn portable_entries(&self) -> &BTreeMap<String, EntryId> {
+        &self.portable_entries
+    }
+
+    pub(crate) fn portable_issue(&self) -> (u64, &[EntryId]) {
+        (self.portable_omitted, &self.portable_examples)
+    }
+
+    fn insert_portable_child(&mut self, path: &Path, kind: EntryKind, id: EntryId) {
+        if path.as_os_str().is_empty() {
+            return;
+        }
+        if let Some(portable) = crate::opened::read::portable_path(path) {
+            self.portable_entries.insert(portable, id);
+        } else {
+            self.portable_omitted = self.portable_omitted.saturating_add(1);
+            if self.portable_examples.len() < crate::MAX_PORTABLE_PATH_EXAMPLES {
+                self.portable_examples.push(id);
+            }
+        }
+        let parent = path.parent().unwrap_or_else(|| Path::new("")).to_path_buf();
+        if crate::opened::read::portable_path(&parent).is_none() {
+            let children = self.portable_children.entry(parent).or_default();
+            children.omitted = children.omitted.saturating_add(1);
+            if children.examples.len() < crate::MAX_PORTABLE_PATH_EXAMPLES {
+                children.examples.push(id);
+            }
+            return;
+        }
+        let Some(name) = path.file_name().and_then(OsStr::to_str) else {
+            let children = self.portable_children.entry(parent).or_default();
+            children.omitted = children.omitted.saturating_add(1);
+            if children.examples.len() < crate::MAX_PORTABLE_PATH_EXAMPLES {
+                children.examples.push(id);
+            }
+            return;
+        };
+        let children = self.portable_children.entry(parent).or_default();
+        if kind.is_dir() {
+            children.directories.insert(name.to_string(), id);
+        } else {
+            children.nondirectories.insert(name.to_string(), id);
+        }
+    }
+
+    fn remove_portable_child(&mut self, path: &Path, kind: EntryKind, id: EntryId) {
+        if path.as_os_str().is_empty() {
+            return;
+        }
+        if let Some(portable) = crate::opened::read::portable_path(path) {
+            self.portable_entries.remove(&portable);
+        } else {
+            self.portable_omitted = self.portable_omitted.saturating_sub(1);
+            self.portable_examples.retain(|example| *example != id);
+        }
+        let parent = path.parent().unwrap_or_else(|| Path::new("")).to_path_buf();
+        let remove_parent = if let Some(children) = self.portable_children.get_mut(&parent) {
+            if crate::opened::read::portable_path(&parent).is_none() {
+                children.omitted = children.omitted.saturating_sub(1);
+                children.examples.retain(|example| *example != id);
+            } else if let Some(name) = path.file_name().and_then(OsStr::to_str) {
+                if kind.is_dir() {
+                    children.directories.remove(name);
+                } else {
+                    children.nondirectories.remove(name);
+                }
+            } else {
+                children.omitted = children.omitted.saturating_sub(1);
+                children.examples.retain(|example| *example != id);
+            }
+            children.directories.is_empty()
+                && children.nondirectories.is_empty()
+                && children.omitted == 0
+        } else {
+            false
+        };
+        if remove_parent {
+            self.portable_children.remove(&parent);
+        }
+        if kind.is_dir() {
+            self.portable_children.remove(path);
+        }
     }
 
     /// Attributes for any entry, by relative path.
@@ -2517,6 +2698,7 @@ impl Index {
         self.merge_upward(Some(parent), &contribution);
         stats.inserted += 1;
         effects.changes.push(EffectiveChange::Inserted { path: path.to_path_buf(), kind, attrs });
+        self.insert_portable_child(path, kind, id);
         true
     }
 
@@ -2572,6 +2754,8 @@ impl Index {
         // in which the index is structurally complete but numerically wrong.
         let contribution = self.contribution(id);
         self.merge_upward(Some(parent), &contribution);
+        let path = self.path_of(id).expect("a newly loaded entry has a path");
+        self.insert_portable_child(&path, kind, id);
         Some(id)
     }
 
@@ -2618,6 +2802,7 @@ impl Index {
             for (name, child) in children {
                 queue.push_back((child, path.join(name)));
             }
+            self.remove_portable_child(&path, kind, node);
             effects.changes.push(EffectiveChange::Removed { path, kind, attrs });
             // Give the extension back before the entry itself goes, so the interner
             // holds only what the tree still contains.
@@ -2859,7 +3044,7 @@ fn derive_impact(changes: &[EffectiveChange], state: &[StateTransition]) -> Impa
 }
 
 fn commit_work(observations: u64, stats: ApplyStats) -> Work {
-    Work { observations, unchanged: stats.unchanged, stale: stats.stale }
+    Work { observations, unchanged: stats.unchanged, stale: stats.stale, ..Work::default() }
 }
 
 fn insert_dirty_ancestors(path: &Path, paths: &mut BTreeSet<PathBuf>, all_dirty: &mut bool) {
@@ -2907,6 +3092,88 @@ mod tests {
 
     fn upsert(path: &str, kind: EntryKind, attrs: Attrs) -> Op {
         Op::Upsert { path: PathBuf::from(path), kind, attrs }
+    }
+
+    fn assert_portable_indexes(index: &Index) {
+        let mut entries = BTreeMap::new();
+        let mut children = BTreeMap::<PathBuf, PortableChildren>::new();
+        let mut omitted = 0_u64;
+        let mut pending = vec![(EntryId::ROOT, PathBuf::new())];
+        while let Some((parent_id, parent_path)) = pending.pop() {
+            let facts: Vec<_> = index
+                .children_of(parent_id)
+                .expect("live directory")
+                .map(|(name, id)| (name.to_os_string(), id))
+                .collect();
+            for (name, id) in facts {
+                let path = parent_path.join(&name);
+                let kind = index.kind_of(id).expect("live child");
+                if let Some(portable) = crate::opened::read::portable_path(&path) {
+                    entries.insert(portable, id);
+                } else {
+                    omitted = omitted.saturating_add(1);
+                }
+                let partition = children.entry(parent_path.clone()).or_default();
+                if crate::opened::read::portable_path(&parent_path).is_none() {
+                    partition.omitted = partition.omitted.saturating_add(1);
+                } else if let Some(name) = name.to_str() {
+                    if kind.is_dir() {
+                        partition.directories.insert(name.to_string(), id);
+                    } else {
+                        partition.nondirectories.insert(name.to_string(), id);
+                    }
+                } else {
+                    partition.omitted = partition.omitted.saturating_add(1);
+                }
+                if kind.is_dir() {
+                    pending.push((id, path));
+                }
+            }
+        }
+
+        assert_eq!(index.portable_entries, entries);
+        for expected in children.values_mut() {
+            expected.examples.clear();
+        }
+        let mut actual = index.portable_children.clone();
+        for retained in actual.values_mut() {
+            assert!(retained.examples.len() <= crate::MAX_PORTABLE_PATH_EXAMPLES);
+            retained.examples.clear();
+        }
+        assert_eq!(actual, children);
+        assert_eq!(index.portable_omitted, omitted);
+        assert!(index.portable_examples.len() <= crate::MAX_PORTABLE_PATH_EXAMPLES);
+        assert!(
+            index
+                .portable_examples
+                .iter()
+                .filter_map(|id| index.path_of(*id))
+                .all(|path| crate::opened::read::portable_path(&path).is_none())
+        );
+    }
+
+    #[test]
+    fn portable_indexes_conserve_insert_kind_change_and_subtree_removal() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("dir", EntryKind::Dir, Attrs::default()),
+            upsert("dir/a", EntryKind::File, file_attrs(1, 1)),
+            upsert("replace", EntryKind::File, file_attrs(2, 2)),
+        ]));
+        assert_portable_indexes(&index);
+
+        index.apply_ok(&Observation::new(vec![
+            upsert("replace", EntryKind::Dir, Attrs::default()),
+            upsert("replace/child", EntryKind::File, file_attrs(3, 3)),
+        ]));
+        assert_portable_indexes(&index);
+
+        index.apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("replace") }]));
+        assert_portable_indexes(&index);
+        assert_eq!(
+            index.portable_entries.keys().cloned().collect::<Vec<_>>(),
+            vec!["dir", "dir/a"]
+        );
     }
 
     #[test]
@@ -4264,6 +4531,25 @@ mod tests {
         assert_eq!(index.total().bytes, 30);
         assert!(index.lookup(&first).is_some());
         assert!(index.lookup(&second).is_some());
+        assert_portable_indexes(&index);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unrepresentable_parent_accounts_for_every_direct_child() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let directory = PathBuf::from(OsString::from_vec(vec![b'd', 0x80]));
+        let child = directory.join("child");
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            Op::Upsert { path: directory.clone(), kind: EntryKind::Dir, attrs: Attrs::default() },
+            Op::Upsert { path: child, kind: EntryKind::File, attrs: file_attrs(1, 1) },
+        ]));
+
+        assert_portable_indexes(&index);
+        assert_eq!(index.portable_children(&directory).map(|children| children.omitted), Some(1));
     }
 
     #[cfg(unix)]

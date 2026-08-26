@@ -1127,7 +1127,7 @@ Acceptance for Phase 1:
 - [x] Add the single-authority `OpenedIndex` with idempotent joined close.
 - [x] Implement cold progressive discovery with parent-first bounded commits,
   per-directory completeness, explicit budget state, and scheduling priority.
-- [ ] Add coherent lookup, depth-one tree, roll-up, state, version, and work projections
+- [x] Add coherent lookup, depth-one tree, roll-up, state, version, and work projections
   in one bounded `read()`.
 - [ ] Add the bounded pull journal and `changes(after, timeout)` with state-only
   commits, cursor validation, timeout, reset, and close wakeup.

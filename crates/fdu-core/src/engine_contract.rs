@@ -183,6 +183,27 @@ pub struct SemanticIdentity {
     pub reducers_fingerprint: u64,
 }
 
+/// Opaque identity of one opened-root lifetime.
+///
+/// This process-local value prevents a cursor or expected version from one open from
+/// being accepted by another whose sequence happens to match. It is not a credential
+/// and is never persisted.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct SessionId(pub(crate) u64);
+
+/// Identity and exact sequence of one committed opened-root state.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct EngineVersion {
+    /// Live owner that minted this version.
+    pub session: SessionId,
+    /// Exact committed index sequence observed by the read.
+    pub sequence: Clock,
+    /// Filesystem-fact identity bound when the root was opened.
+    pub scope: ScopeIdentity,
+    /// Classification and reducer identity bound when the root was opened.
+    pub semantics: SemanticIdentity,
+}
+
 impl ScanScope {
     /// The part of this validated scope that determines retained filesystem facts.
     pub const fn scope_identity(self) -> ScopeIdentity {
@@ -527,6 +548,295 @@ pub struct IndexState {
     pub progress: DiscoveryProgress,
     /// Bounded diagnostic evidence counts at this version.
     pub issues: IssueSummary,
+}
+
+/// Maximum native projections accepted by one coherent read.
+pub const MAX_READ_PROJECTIONS: usize = 16;
+/// Maximum rows returned by one page projection.
+pub const MAX_PAGE_ROWS: usize = 4_096;
+/// Maximum deterministic work allowance accepted by one page projection.
+pub const MAX_PAGE_WORK: u64 = 1_000_000;
+/// Maximum native path examples retained for one portable projection issue.
+pub const MAX_PORTABLE_PATH_EXAMPLES: usize = 8;
+/// Maximum native encoded bytes retained in one escaped portable-path example.
+pub const MAX_PORTABLE_PATH_EXAMPLE_BYTES: usize = 256;
+/// Maximum report sections and reported omissions accepted in one opened read.
+pub const MAX_REPORT_VIEWS: usize = 16;
+/// Default cap for a selection count not backed by an exact maintained aggregate.
+pub const DEFAULT_COUNT_CAP: u64 = 10_000;
+/// Maximum caller-selected cap for an on-demand aggregate.
+pub const MAX_COUNT_CAP: u64 = 1_000_000;
+
+/// Opaque identifier for resumable work retained by one opened root.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct ContinuationId {
+    pub(crate) session: SessionId,
+    pub(crate) ordinal: u64,
+}
+
+/// Output and work bounds for one resumable page.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct PageRequest {
+    /// Maximum variable rows to return, excluding the projection's fixed envelope.
+    pub limit: usize,
+    /// Maximum retained-index rows to inspect.
+    pub max_work: u64,
+}
+
+/// Portable-path loss attached to a portable row projection.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub struct PortablePathIssue {
+    /// Exact native entries omitted because their path is not representable.
+    pub omitted: u64,
+    /// Bounded native examples retained for diagnostics.
+    pub examples: Vec<PortablePathExample>,
+}
+
+/// Stable native encoding used by one unrepresentable path example.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[non_exhaustive]
+pub enum PortablePathEncoding {
+    /// Native Unix path bytes.
+    UnixBytes,
+    /// Native Windows WTF-16 code units encoded little-endian.
+    WindowsWtf16Le,
+    /// Rust's platform-native self-synchronizing byte representation.
+    PlatformBytes,
+}
+
+/// Bounded lossless prefix of one unrepresentable native path.
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+pub struct PortablePathExample {
+    /// Platform encoding represented by `encoded_hex`.
+    pub encoding: PortablePathEncoding,
+    /// Lowercase hexadecimal native bytes, safe for portable serialization.
+    pub encoded_hex: String,
+    /// Whether the native value continued beyond the retained prefix.
+    pub truncated: bool,
+}
+
+/// One immutable retained entry returned by an opened-root read.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct EntryValue {
+    /// Native path relative to the opened root.
+    pub path: PathBuf,
+    /// Canonical POSIX-relative form when every component is representable.
+    pub portable_path: Option<String>,
+    /// Retained filesystem kind.
+    pub kind: EntryKind,
+    /// Retained filesystem attributes.
+    pub attrs: Attrs,
+    /// Effective fixed-control classification.
+    pub ignored: bool,
+    /// Both constant-size maintained aggregate partitions for a directory.
+    pub rollup: Option<crate::index::PartitionRollUpSummary>,
+    /// Whether a directory's complete in-scope child set is known.
+    pub children_complete: Option<bool>,
+}
+
+/// Three-valued knowledge for a path lookup.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum Knowledge<T> {
+    /// The requested value is retained.
+    Present(T),
+    /// Complete relevant coverage proves the path is absent.
+    Absent,
+    /// Current coverage cannot prove presence or absence.
+    Unknown {
+        /// Why the relevant scope is incomplete.
+        reason: CoverageReason,
+    },
+}
+
+/// One fdu-native projection requested under a coherent read boundary.
+#[derive(Clone, Debug)]
+pub enum ReadProjection {
+    /// Look up one relative path with three-valued, portable-safe absence.
+    Lookup {
+        /// Native path relative to the opened root.
+        path: PathBuf,
+    },
+    /// Return both maintained aggregate partitions for one directory.
+    RollUp {
+        /// Directory relative to the opened root.
+        path: PathBuf,
+    },
+    /// Return one directories-first page of direct portable children.
+    Tree {
+        /// Directory relative to the opened root.
+        path: PathBuf,
+        /// Page output and work bounds.
+        page: PageRequest,
+    },
+    /// Return one portable-path-ordered page under an fdu-native selection.
+    Flat {
+        /// Existing pure fdu selection predicates.
+        selection: crate::query::Selection,
+        /// Compact or full retained row shape.
+        shape: RowShape,
+        /// Page output and work bounds.
+        page: PageRequest,
+    },
+    /// Count portable entries under one selection, exactly or to an explicit cap.
+    Aggregate {
+        /// Existing pure fdu selection predicates.
+        selection: crate::query::Selection,
+        /// Maximum matches counted before returning a lower bound.
+        count_cap: u64,
+        /// Maximum portable index rows inspected.
+        max_work: u64,
+    },
+    /// Evaluate the existing pure fdu query/report machinery at this read boundary.
+    Report(ReportRequest),
+    /// Resume a tree or flat page from handle-local retained traversal state.
+    Continue {
+        /// Opaque continuation returned by a prior page.
+        continuation: ContinuationId,
+        /// Bounds for this page; query identity remains in the handle.
+        page: PageRequest,
+    },
+    /// Return fixed-size owner, scope, and retained-issue diagnostics.
+    Diagnostics,
+}
+
+/// Fixed-size diagnostics captured with a coherent read.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ReadDiagnostics {
+    /// Absolute filesystem root owned by this handle.
+    pub root: PathBuf,
+    /// Validated filesystem and semantic scope.
+    pub scope: ScanScope,
+    /// Live retained entries, including the root.
+    pub entries: u64,
+    /// Bounded typed issue details at this version.
+    pub issues: Vec<Issue>,
+}
+
+/// One depth-one structural page.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct TreePage {
+    /// Directory whose direct children are listed.
+    pub directory: EntryValue,
+    /// Portable child rows in directories-first canonical byte order.
+    pub rows: Vec<EntryValue>,
+    /// Opaque continuation when another page exists at this version.
+    pub next: Option<ContinuationId>,
+    /// Whether the native directory child set is authoritative.
+    pub native_complete: bool,
+    /// Whether portable consumers can treat the returned directory as authoritative.
+    pub portable_complete: bool,
+    /// Exact omission count and bounded examples, when any.
+    pub portable_issue: Option<PortablePathIssue>,
+}
+
+/// Retained fields copied into portable page rows.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
+pub enum RowShape {
+    /// Path, kind, attributes, and classification without directory roll-ups.
+    #[default]
+    Compact,
+    /// Compact fields plus maintained directory roll-ups and completeness.
+    Full,
+}
+
+/// One portable flat-entry page.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct FlatPage {
+    /// Rows in complete canonical POSIX-relative UTF-8 byte order.
+    pub rows: Vec<EntryValue>,
+    /// Opaque continuation when another matching row exists at this version.
+    pub next: Option<ContinuationId>,
+    /// Exact omission count and bounded examples, when any.
+    pub portable_issue: Option<PortablePathIssue>,
+}
+
+/// Product count whose exactness is explicit.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CountResult {
+    /// Every matching row was counted.
+    Exact(u64),
+    /// Additional matches exist beyond this proven lower bound.
+    AtLeast(u64),
+}
+
+/// Existing fdu query plus deterministic opened-read inputs and work bound.
+#[derive(Clone, Debug)]
+pub struct ReportRequest {
+    /// Existing selection and view vocabulary shared by one-shot surfaces.
+    pub query: crate::query::Query,
+    /// Caller-supplied render instant, keeping the projection deterministic.
+    pub generated_at: std::time::SystemTime,
+    /// Maximum retained-index and maintained-index rows read by the report.
+    pub max_work: u64,
+}
+
+/// Projection whose deterministic work allowance was exhausted.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum LimitedProjection {
+    /// Depth-one structural page.
+    Tree,
+    /// Portable flat page.
+    Flat,
+    /// Existing query/report projection.
+    Report,
+    /// Selection count outside the maintained aggregate set.
+    Aggregate,
+}
+
+/// Typed bounded-query result; no partial calculation is presented as exact.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct QueryLimit {
+    /// Projection that exhausted its allowance.
+    pub projection: LimitedProjection,
+    /// Work allowance supplied by the caller.
+    pub max_work: u64,
+    /// Rows examined before stopping.
+    pub rows_visited: u64,
+}
+
+/// Input to one coherent opened-root read.
+#[derive(Clone, Debug, Default)]
+pub struct ReadRequest {
+    /// Projections to return, in this exact order.
+    pub projections: Vec<ReadProjection>,
+    /// Exact version required by a caller assembling a multi-read result.
+    pub expected: Option<EngineVersion>,
+}
+
+/// One projection result, in the same position as its request.
+#[derive(Clone, Debug)]
+pub enum ProjectionResult {
+    /// Three-valued retained-entry lookup.
+    Lookup(Knowledge<EntryValue>),
+    /// Three-valued directory roll-up lookup.
+    RollUp(Knowledge<crate::index::PartitionRollUpSummary>),
+    /// Three-valued depth-one structural page.
+    Tree(Knowledge<TreePage>),
+    /// Portable flat entry page.
+    Flat(FlatPage),
+    /// Exact maintained or explicitly capped portable selection count.
+    Aggregate(CountResult),
+    /// Existing fdu query report.
+    Report(crate::query::Report),
+    /// Fixed-size provider and lifecycle diagnostics.
+    Diagnostics(ReadDiagnostics),
+    /// A bounded projection stopped without returning a misleading partial answer.
+    Limit(QueryLimit),
+}
+
+/// One coherent opened-root response.
+#[derive(Clone, Debug)]
+pub struct ReadResponse {
+    /// Exact live-session version observed by every returned field.
+    pub version: EngineVersion,
+    /// State captured at the same commit boundary as every projection.
+    pub state: IndexState,
+    /// Projection results in request order.
+    pub results: Vec<ProjectionResult>,
+    /// Deterministic work charged while assembling the response.
+    pub work: Work,
+    /// Cursor from which a consumer can later resume exact changes.
+    pub change_cursor: EngineVersion,
 }
 
 impl Default for IndexState {
@@ -976,6 +1286,12 @@ pub struct Work {
     pub unchanged: u64,
     /// Conditional observations rejected at the commit boundary.
     pub stale: u64,
+    /// Retained index rows examined by a read projection.
+    pub rows_visited: u64,
+    /// Rows copied into read projection results.
+    pub rows_returned: u64,
+    /// Lookups against commit-maintained projection indexes.
+    pub maintained_index_work: u64,
 }
 
 /// One atomic, exact index transition.
@@ -1137,6 +1453,83 @@ pub enum Error {
         attempted: usize,
         /// Maximum paths accepted by one request.
         limit: usize,
+    },
+
+    /// A coherent read requested more projections than one bounded call accepts.
+    #[error("read request contains {attempted} projections; limit is {limit}")]
+    ReadProjectionLimit {
+        /// Projections supplied by the caller.
+        attempted: usize,
+        /// Maximum projections accepted by one request.
+        limit: usize,
+    },
+
+    /// A pinned coherent read named a foreign or no-longer-current version.
+    #[error("requested opened-index version {requested:?} is unavailable; current is {current:?}")]
+    VersionUnavailable {
+        /// Version required by the caller.
+        requested: Box<EngineVersion>,
+        /// Only version the live image can currently answer.
+        current: Box<EngineVersion>,
+    },
+
+    /// A page output bound was zero or exceeded the public maximum.
+    #[error("page row limit {attempted} is outside 1..={limit}")]
+    PageRowLimit {
+        /// Rejected row limit.
+        attempted: usize,
+        /// Maximum accepted row limit.
+        limit: usize,
+    },
+
+    /// A page work bound was zero or exceeded the public maximum.
+    #[error("page work limit {attempted} is outside 1..={limit}")]
+    PageWorkLimit {
+        /// Rejected work limit.
+        attempted: u64,
+        /// Maximum accepted work limit.
+        limit: u64,
+    },
+
+    /// A flat page attempted to use presentation axes whose ordering is not resumable.
+    #[error(
+        "flat opened-index pages use fixed portable path order; selection cannot set depth, limit, sort, or reverse"
+    )]
+    UnsupportedFlatSelection,
+
+    /// An aggregate cap was zero or exceeded the public maximum.
+    #[error("aggregate count cap {attempted} is outside 1..={limit}")]
+    CountCapLimit {
+        /// Rejected count cap.
+        attempted: u64,
+        /// Maximum accepted count cap.
+        limit: u64,
+    },
+
+    /// A report request exceeded the bounded section vocabulary for one read.
+    #[error("report request contains {attempted} views or omissions; limit is {limit}")]
+    ReportViewLimit {
+        /// Views and omitted-view records supplied by the caller.
+        attempted: usize,
+        /// Maximum accepted combined records.
+        limit: usize,
+    },
+
+    /// A continuation belongs to another handle or is no longer retained.
+    #[error("the page continuation is unavailable for this opened index")]
+    ContinuationUnavailable,
+
+    /// No further handle-local continuation identifier can be represented.
+    #[error("the opened index continuation identity space is exhausted")]
+    ContinuationIdentityExhausted,
+
+    /// A continuation was pinned to an older committed image.
+    #[error("the page continuation version {requested:?} is stale; current is {current:?}")]
+    ContinuationStale {
+        /// Version captured by the continuation.
+        requested: Box<EngineVersion>,
+        /// Current live version.
+        current: Box<EngineVersion>,
     },
 
     /// A producer tried to complete a path that was not a retained directory.

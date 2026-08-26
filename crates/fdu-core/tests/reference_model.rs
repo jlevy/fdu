@@ -536,7 +536,12 @@ fn model_impact(changes: &[EffectiveChange], state: &[StateTransition]) -> Impac
 }
 
 fn model_work(observations: u64, stats: ApplyStats) -> fdu_core::Work {
-    fdu_core::Work { observations, unchanged: stats.unchanged, stale: stats.stale }
+    fdu_core::Work {
+        observations,
+        unchanged: stats.unchanged,
+        stale: stats.stale,
+        ..fdu_core::Work::default()
+    }
 }
 
 fn model_dirty(
