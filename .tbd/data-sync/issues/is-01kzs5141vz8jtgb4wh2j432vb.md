@@ -1,11 +1,11 @@
 ---
 type: is
 id: is-01kzs5141vz8jtgb4wh2j432vb
-title: "Spec: progressive results — order, provenance, sessions, lazy open"
+title: "Warm progressive results: lazy open and per-value provenance"
 kind: epic
 status: open
 priority: 0
-version: 17
+version: 18
 spec_path: docs/project/specs/active/plan-2026-08-11-fdu-progressive-results.md
 labels: []
 dependencies: []
@@ -27,6 +27,10 @@ child_order_hints:
   - is-01kzs6jne1jffaaxcyt67knzxt
   - is-01m03b9adz8y72n0gw98j1f6w6
 created_at: 2026-08-11T19:33:13.914Z
-updated_at: 2026-08-15T18:34:58.366Z
+updated_at: 2026-08-26T02:44:44.755Z
 ---
-Make fdu usable by a consumer that needs answers WHILE the walk runs and INSTANTLY on the second open. Independent of FSEvents: everything here lands on every platform, helps the first scan as much as the second, and is what makes the journal worth having rather than a consequence of it. Motivating measurements on this host: a home folder of 4,366,510 files and 1,016,449 dirs (224 GiB) walks cold in 791 s, and a warm snapshot of that size would take ~11 s just to load at ~2 us/record - neither is compatible with an interactive first paint. Two data-structure principles govern the work: delta-friendly (existing) and partial-friendly (new peer) - a partially walked tree is a valid, useful answer as long as the boundary of incompleteness is knowable, and a delta applied to a partial structure yields another valid partial structure.
+Own warm persisted roll-ups, lazy warm open, prefer-cache policy, and honest per-value mixed-source provenance. Cold progressive discovery, the opened-root lifecycle, coherent mid-discovery reads, and the no-gap observation handoff are owned by fdu-snej and plan-2026-08-25-fdu-opened-root-inventory-engine.md. Traversal-order work from this epic has landed and remains shared background.
+
+## Notes
+
+Narrowed during PR #48 design review R9 so only one active spec owns the live streaming lifecycle.
