@@ -3,9 +3,9 @@ type: is
 id: is-01m0y1sd4tmt95d9tdsynn7v6g
 title: Add the shared OpenedIndex owner and joined lifecycle
 kind: feature
-status: in_progress
+status: closed
 priority: 1
-version: 11
+version: 12
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 delegate: codex@spud10.local
 labels:
@@ -25,8 +25,12 @@ parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 hold: null
 hold_until: null
 created_at: 2026-08-26T03:28:29.336Z
-updated_at: 2026-08-26T11:34:17.155Z
+updated_at: 2026-08-26T12:05:03.188Z
 started_at: 2026-08-26T11:34:17.152Z
+closed_at: 2026-08-26T12:05:03.187Z
+close_reason: Added the direct shared OpenedIndex owner with applicable live OpenOptions, unique session identity, typed closed and worker failures, cancellation, deterministic concurrent and idempotent joined shutdown, final-reference fallback, and per-owner lifecycle test barriers. Existing free open remains unchanged. Focused tests, make check, and make cross-lint pass.
+resolution: null
+duplicate_of: null
 ---
 Add the synchronous OpenedIndex as the direct public API over one shared internal owner. Use the associated OpenedIndex::open constructor so the existing free one-shot open remains source-compatible; do not introduce a facade, service mirror, or second source of truth. Implement shared clone identity, lifecycle state, idempotent concurrent close with one stored terminal outcome, cancellation, joined worker ownership, last-reference defensive shutdown, and typed closed errors without an async runtime. Workers hold Weak owner references or narrower state so they cannot form a final-reference cycle.
 
