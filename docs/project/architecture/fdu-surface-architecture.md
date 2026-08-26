@@ -26,6 +26,18 @@ under *One Engine, and Surfaces That Cannot Disagree With It*. This is the how.
 `fdu-core` is authoritative.
 The other two present it; neither may know something it does not.
 
+The engine has two additive serving lifecycles, not two engines:
+
+- the existing one-shot lifecycle returns a complete `Index` or `Report` after the work
+  needed for that answer finishes;
+- the target opened-root lifecycle returns one shared `OpenedIndex` while cold discovery
+  proceeds and exposes bounded reads, change polling, refresh, prioritization, and
+  joined close.
+
+Both use the same facts, reducers, exact commit path, query vocabulary, and runtime type
+registry. The opened-root ownership and concurrency rules are in
+[the opened-root architecture](arch-2026-08-25-fdu-opened-root.md).
+
 ### Why the packages are shaped this way
 
 `cargo install fdu` has to work, because that is what someone who knows the tool will
@@ -114,10 +126,29 @@ cache-only read can see.
 That was a real defect: a Python run left cache state on a tree that the same command
 would not have.
 
+## Interactive Client Boundary
+
+The Python package mirrors the opened-root engine as five synchronous operations.
+Calls that block or perform substantial native work release the GIL, but the package
+does not add an async runtime or hide long-lived polls in Python’s shared executor.
+
+An async application adapts that synchronous surface at its own boundary.
+That adapter may own an event-loop bridge, root generations, and application cache
+invalidation, but it may not become another inventory engine: it does not walk the
+filesystem, retain an entry replica, rebuild roll-ups, or invent fingerprint and paging
+semantics.
+
+The command line does not need to expose every lifecycle immediately.
+“The command line invents nothing” means a CLI capability must come from the engine; it
+does not require every additive library capability to become a default flag before a
+client has proven it.
+
 ## References
 
 - [Design principles](fdu-design-principles.md) — the rules and why they are
   load-bearing
+- [Opened-root architecture](arch-2026-08-25-fdu-opened-root.md) — the target live
+  owner, commit, read, journal, and client boundaries
 - [Python CLI parity](../specs/done/plan-2026-08-21-fdu-python-cli-parity.md) — the
   harness and what it found
 - [The command line on the public API](../specs/done/plan-2026-08-22-fdu-cli-on-the-public-api.md)
