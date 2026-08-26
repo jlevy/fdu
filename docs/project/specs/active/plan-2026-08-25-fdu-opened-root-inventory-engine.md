@@ -1066,7 +1066,7 @@ described in the reuse protocol so later `index.rs` work does not create conflic
 
 #### Checkpoint 1B: Exact Commit Truth
 
-- [ ] Introduce prepared mutations and one atomic `Commit` containing exact effective
+- [x] Introduce prepared mutations and one atomic `Commit` containing exact effective
   changes, impact, state, and work.
 - [ ] Route scan, reconcile, explicit refresh, control-file updates, and existing watch
   application through that commit path.
@@ -1348,6 +1348,19 @@ reviewed independently.
 | `merge_upward`, `unmerge_upward`, `recompute_newest_upward` | Update reducers through one mutation recorder and derive aggregate impact from the ancestors actually touched. | Independent ancestor oracle from `50e078c`, tally conservation, negative/pre-epoch mtime, extension interner churn. |
 | `IndexHandle::apply`, `apply_if_clock`, `begin_reconcile`, `finish_reconcile`, `invalidate_root` | Delegate to exact commits. A freshness or lifecycle change is a state-only commit rather than an unclocked side mutation. | Simultaneous writers retain contiguous versions; readers observe only whole commits; state-only change polling tests are enabled later by the same values. |
 | `crates/fdu-core/tests/reference_model.rs` | Extend generated traces to cap refusal, unknown ancestry, control updates, state-only transitions, journal floor, and ABA conditional observations. | Engine and model match after every step and on the final journal range. |
+
+Implementation status: the `fdu-qzqf` kernel is complete.
+Producer input is normalized before the shared write guard; `Index` retains one bounded
+exact commit journal; mutation helpers record inserted, updated, removed, invalidated,
+and state-only effects; impact is derived and fail-closed when its path set exceeds the
+bound; and `AppliedDelta` remains a derived compatibility view.
+Detached commits carry the existing process-local clock sequence.
+The opened-root layer binds that sequence to its lifetime, scope, and semantic
+identities without putting live identity into clonable detached `Index` state.
+The independent model compares exact commits, impact, work, journal floor, ABA
+arbitration, and reconciliation state transitions.
+Resource refusal, control changes, and rejection of unknown live ancestry remain with
+their owning producer, budget, and control beads rather than speculative kernel hooks.
 
 #### Producer migration
 

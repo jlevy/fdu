@@ -278,7 +278,7 @@ fn apply_intent(
 ) -> Result<WatchApplyReport> {
     let mut verifier = |_: &Path, _: &Observation| Ok(verify_intent(root, watch_config, intent));
     let apply = apply_reverified_with(index, &Observation::default(), scan_config, &mut verifier)?;
-    if let Some(applied) = &apply.applied {
+    if let Some(applied) = apply.applied() {
         sink(applied);
     }
     let reconciliation = scan::reconcile_pending_handle(index, scan_config, sink)?;
@@ -299,7 +299,7 @@ fn apply_observation(
 ) -> Result<WatchApplyReport> {
     scan_config.validate_for_watch_scope(index.scope()?)?;
     let apply = apply_reverified(index, observation, scan_config)?;
-    if let Some(applied) = &apply.applied {
+    if let Some(applied) = apply.applied() {
         sink(applied);
     }
     let reconciliation = scan::reconcile_pending_handle(index, scan_config, sink)?;

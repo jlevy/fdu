@@ -7,8 +7,8 @@
 //!
 //! Every directory carries pre-computed roll-up state for its whole subtree, so a query
 //! reads a field and never traverses. Applying an [`Observation`] re-merges that state up the
-//! ancestor chain only. Producers submit observations; only effective, arbitrated
-//! mutations become clocked deltas.
+//! ancestor chain only. Producers submit observations; only effective, arbitrated fact
+//! or state changes become exact clocked commits.
 //!
 //! Reducers split into two classes and the split is visible in the code, because it
 //! decides the cost of an update:
@@ -24,13 +24,12 @@
 //! # Concurrency
 //!
 //! This type is a single-writer structure. The intended deployment is one writer
-//! applying deltas behind a `RwLock` with readers taking the read side: writes are short
+//! applying commits behind a `RwLock` with readers taking the read side: writes are short
 //! (O(depth) applies) and reads are field lookups rather than queries that walk. The
 //! delta contract being the only mutation path means escalating later to epoch or
 //! arc-swap snapshots stays contained rather than becoming a rewrite.
 
-use std::collections::BTreeMap;
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::{OsStr, OsString};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -41,8 +40,9 @@ use crate::content::{
     ContentRollUp,
 };
 use crate::engine_contract::{
-    AppliedDelta, Attrs, Clock, EntryIdentity, EntryKind, Expectation, Freshness, InvalidateReason,
-    Observation, Op, PathExpectation, PathState, Provenance, ScanScope, Source, Status,
+    AppliedDelta, Attrs, Clock, Commit, EffectiveChange, EntryIdentity, EntryKind, Expectation,
+    Freshness, Impact, ImpactDomain, InvalidateReason, MAX_DIRTY_PATHS, Observation, ObservationOp,
+    Op, PathExpectation, PathState, Provenance, ScanScope, Source, StateTransition, Status, Work,
 };
 
 /// Verification intervals kept before the oldest are dropped.
@@ -52,12 +52,12 @@ use crate::engine_contract::{
 /// `Cached`, so the bound costs precision, never correctness.
 const MAX_VERIFIED_INTERVALS: usize = 256;
 
-/// Maximum number of effective operations retained for [`Index::since`].
+/// Maximum retained-cost units in the exact commit history used by [`Index::since`].
 ///
 /// Bounded on purpose: an unbounded journal is a memory leak in a long-lived server. A
 /// consumer that falls further behind than this is told so ([`Since::truncated`]) and is
 /// expected to re-read state rather than silently miss changes.
-const DEFAULT_JOURNAL_OP_CAPACITY: usize = 64 * 1024;
+const DEFAULT_JOURNAL_CAPACITY: usize = 64 * 1024;
 
 /// Identifier for an entry within an [`Index`] arena.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
@@ -249,10 +249,14 @@ enum Slot {
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 #[must_use]
 pub struct Since {
+    /// Exact commits applied strictly after the requested clock, oldest first.
+    pub commits: Vec<Commit>,
     /// Deltas applied strictly after the requested clock, oldest first.
+    ///
+    /// This is derived from `commits` for compatibility and excludes state-only commits.
     pub deltas: Vec<AppliedDelta>,
     /// True when the requested clock is older than the retained journal, meaning the
-    /// caller has missed changes and must re-read state rather than trust `deltas`.
+    /// caller has missed commits and must re-read state rather than trust either view.
     pub truncated: bool,
 }
 
@@ -276,11 +280,6 @@ pub struct ApplyStats {
 
 impl ApplyStats {
     /// True when any operation changed indexed state.
-    ///
-    /// `unchanged` and `stale` are decisions not to mutate, so a pass reporting only
-    /// those left the index exactly as it was loaded.  Callers use this to tell a
-    /// reconciliation that found real changes from one that confirmed a tree is still
-    /// what the snapshot already says it is.
     pub const fn mutated(&self) -> bool {
         self.inserted > 0 || self.updated > 0 || self.removed > 0 || self.invalidated > 0
     }
@@ -291,7 +290,9 @@ impl ApplyStats {
 pub struct ApplyOutcome {
     /// Per-operation arbitration and mutation counts.
     pub stats: ApplyStats,
-    /// Present only when at least one effective mutation was committed.
+    /// Present only when at least one exact fact or state transition was committed.
+    pub commit: Option<Commit>,
+    /// Legacy entry-operation projection derived from `commit`.
     pub applied: Option<AppliedDelta>,
 }
 
@@ -321,6 +322,41 @@ impl std::ops::Deref for ApplyOutcome {
     }
 }
 
+impl ApplyOutcome {
+    fn from_commit(stats: ApplyStats, commit: Option<Commit>) -> Self {
+        let applied = commit.as_ref().and_then(Commit::applied_delta);
+        Self { stats, commit, applied }
+    }
+
+    /// Borrow the legacy entry-operation projection derived from the exact commit.
+    ///
+    /// Existing callers may continue to read the public [`Self::applied`] field. This
+    /// method is useful when code wants to make the derivation explicit.
+    pub fn applied(&self) -> Option<&AppliedDelta> {
+        self.applied.as_ref()
+    }
+}
+
+/// Validated, canonical producer input ready for arbitration under the write guard.
+#[derive(Clone, Debug)]
+struct PreparedObservation {
+    ops: Vec<ObservationOp>,
+    #[cfg(test)]
+    reject_before_apply: bool,
+}
+
+#[derive(Default)]
+struct MutationEffects {
+    changes: Vec<EffectiveChange>,
+    state: Vec<StateTransition>,
+}
+
+impl MutationEffects {
+    fn is_empty(&self) -> bool {
+        self.changes.is_empty() && self.state.is_empty()
+    }
+}
+
 /// The in-memory hierarchical index.
 #[derive(Clone, Debug)]
 pub struct Index {
@@ -330,9 +366,9 @@ pub struct Index {
     free_head: Option<u32>,
     live: u64,
     clock: Clock,
-    journal: VecDeque<AppliedDelta>,
-    journal_ops: usize,
-    journal_op_capacity: usize,
+    journal: VecDeque<Commit>,
+    journal_cost: usize,
+    journal_capacity: usize,
     /// Oldest clock still represented in `journal`.
     journal_floor: Clock,
     pending_invalidations: Vec<(PathBuf, InvalidateReason)>,
@@ -410,7 +446,8 @@ impl IndexHandle {
 
     /// Arbitrate and apply one observation under the single-writer lock.
     pub fn apply(&self, observation: &Observation) -> crate::Result<ApplyOutcome> {
-        self.write_index()?.apply(observation)
+        let prepared = prepare_observation(observation)?;
+        self.write_index()?.commit_prepared(prepared, true)
     }
 
     /// Absolute filesystem root, copied without retaining the read lock.
@@ -478,7 +515,7 @@ impl IndexHandle {
         Ok(self.read_index()?.expectation(path))
     }
 
-    /// Owned deltas committed after `clock`.
+    /// Owned exact commits and legacy deltas after `clock`.
     pub fn since(&self, clock: Clock) -> crate::Result<Since> {
         Ok(self.read_index()?.since(clock))
     }
@@ -534,7 +571,7 @@ impl IndexHandle {
     }
 
     pub(crate) fn begin_reconcile(&self, path: &Path) -> crate::Result<u64> {
-        Ok(self.write_index()?.begin_reconcile(path))
+        self.write_index()?.begin_reconcile(path)
     }
 
     pub(crate) fn finish_reconcile(
@@ -543,8 +580,7 @@ impl IndexHandle {
         started_at: u64,
         complete: bool,
     ) -> crate::Result<()> {
-        self.write_index()?.finish_reconcile(path, started_at, complete);
-        Ok(())
+        self.write_index()?.finish_reconcile(path, started_at, complete)
     }
 
     #[cfg(feature = "watch")]
@@ -553,11 +589,12 @@ impl IndexHandle {
         clock: Clock,
         observation: &Observation,
     ) -> crate::Result<Option<ApplyOutcome>> {
+        let prepared = prepare_observation(observation)?;
         let mut index = self.write_index()?;
         if index.clock() != clock {
             return Ok(None);
         }
-        index.apply(observation).map(Some)
+        index.commit_prepared(prepared, true).map(Some)
     }
 
     #[cfg(feature = "watch")]
@@ -598,13 +635,13 @@ impl Index {
             types.fingerprint(),
             "an index's registry must match its semantic scope"
         );
-        Self::new_with_journal_op_capacity(root_path, scope, DEFAULT_JOURNAL_OP_CAPACITY, types)
+        Self::new_with_journal_capacity(root_path, scope, DEFAULT_JOURNAL_CAPACITY, types)
     }
 
-    fn new_with_journal_op_capacity(
+    fn new_with_journal_capacity(
         root_path: impl Into<PathBuf>,
         scope: ScanScope,
-        journal_op_capacity: usize,
+        journal_capacity: usize,
         types: std::sync::Arc<crate::classify::TypeRegistry>,
     ) -> Self {
         let root = Entry {
@@ -627,8 +664,8 @@ impl Index {
             live: 1,
             clock: Clock::ZERO,
             journal: VecDeque::new(),
-            journal_ops: 0,
-            journal_op_capacity,
+            journal_cost: 0,
+            journal_capacity,
             journal_floor: Clock::ZERO,
             pending_invalidations: Vec::new(),
             freshness_epoch: 0,
@@ -662,11 +699,11 @@ impl Index {
     }
 
     #[cfg(test)]
-    fn with_journal_op_capacity(root_path: impl Into<PathBuf>, journal_op_capacity: usize) -> Self {
-        Self::new_with_journal_op_capacity(
+    fn with_journal_capacity(root_path: impl Into<PathBuf>, journal_capacity: usize) -> Self {
+        Self::new_with_journal_capacity(
             root_path,
             ScanScope::default(),
-            journal_op_capacity,
+            journal_capacity,
             crate::classify::TypeRegistry::compiled_shared(),
         )
     }
@@ -726,7 +763,8 @@ impl Index {
     /// Conditional operations are accepted only while their baseline still matches.
     /// No-ops and stale operations do not advance the clock or enter the journal.
     pub fn apply(&mut self, observation: &Observation) -> crate::Result<ApplyOutcome> {
-        self.apply_with(observation, true)
+        let prepared = prepare_observation(observation)?;
+        self.commit_prepared(prepared, true)
     }
 
     /// [`Self::apply`] with the change-history capture optional.
@@ -741,45 +779,45 @@ impl Index {
         observation: &Observation,
         journal: bool,
     ) -> crate::Result<ApplyOutcome> {
-        validate_observation(observation)?;
-        if observation.is_empty() {
+        let prepared = prepare_observation(observation)?;
+        self.commit_prepared(prepared, journal)
+    }
+
+    /// Arbitrate and atomically apply normalized producer input.
+    fn commit_prepared(
+        &mut self,
+        prepared: PreparedObservation,
+        journal: bool,
+    ) -> crate::Result<ApplyOutcome> {
+        if prepared.ops.is_empty() {
             return Ok(ApplyOutcome::default());
         }
+
+        #[cfg(test)]
+        if prepared.reject_before_apply {
+            return Err(crate::Error::CommitRejected("injected reducer preflight"));
+        }
+
         let Some(next_clock) = self.clock.checked_next() else {
-            // Clock exhaustion is relevant only if arbitration would commit a change.
-            // Probe the otherwise infallible mutation phase on a clone so an all-no-op
-            // or all-stale observation still reports its stats at the terminal clock,
-            // while a real change fails before touching shared state. This path is
-            // reachable only after 2^64 committed batches (or by an injected test).
+            // At the terminal clock, an all-no-op or all-stale batch is still a valid
+            // observation. Probe on a detached clone to distinguish it from a real
+            // change without touching the original index.
             let mut probe = self.clone();
-            let outcome = probe.apply_validated(observation, self.clock);
-            return if outcome.applied.is_some() {
+            probe.clock = Clock(self.clock.0 - 1);
+            let outcome = probe.commit_prepared(prepared, false)?;
+            return if outcome.commit.is_some() {
                 Err(crate::Error::ClockExhausted)
             } else {
                 Ok(outcome)
             };
         };
 
-        Ok(self.apply_validated_with(observation, next_clock, journal))
-    }
-
-    /// Apply an already validated observation with a clock known to be available.
-    fn apply_validated(&mut self, observation: &Observation, next_clock: Clock) -> ApplyOutcome {
-        self.apply_validated_with(observation, next_clock, true)
-    }
-
-    fn apply_validated_with(
-        &mut self,
-        observation: &Observation,
-        next_clock: Clock,
-        journal: bool,
-    ) -> ApplyOutcome {
+        let observed = u64::try_from(prepared.ops.len()).unwrap_or(u64::MAX);
         let mut stats = ApplyStats::default();
-        let mut effective = Vec::new();
-        let mut changed_ops = 0usize;
+        let mut effects = MutationEffects::default();
         let mut parent_memo = ParentMemo::default();
-        let mut accepted = Vec::with_capacity(observation.len());
-        for observed in &observation.ops {
+        let mut accepted = Vec::with_capacity(prepared.ops.len());
+        for observed in &prepared.ops {
             let op = &observed.op;
             if let Expectation::State(expected) = observed.expectation {
                 if !self.expectation_matches(op, expected) {
@@ -791,14 +829,21 @@ impl Index {
             accepted.push(true);
         }
 
-        for (observed, accepted) in observation.ops.iter().zip(accepted) {
+        for (observed, accepted) in prepared.ops.iter().zip(accepted) {
             if !accepted {
                 continue;
             }
             let op = &observed.op;
-            let changed = match op {
+            match op {
                 Op::Upsert { path, kind, attrs } => {
-                    self.apply_upsert(path, *kind, *attrs, &mut stats, &mut parent_memo)
+                    self.apply_upsert(
+                        path,
+                        *kind,
+                        *attrs,
+                        &mut stats,
+                        &mut effects,
+                        &mut parent_memo,
+                    );
                 }
                 Op::Remove { path } => {
                     // A removal takes a subtree with it, so a remembered id inside that
@@ -807,51 +852,81 @@ impl Index {
                     // ancestor of it: the memo is refilled by the next upsert, so the
                     // cost of being conservative is one path resolution.
                     parent_memo.clear();
-                    self.apply_remove(path, &mut stats)
+                    self.apply_remove(path, &mut stats, &mut effects);
                 }
                 Op::InvalidateSubtree { path, reason } => {
                     parent_memo.clear();
+                    let previous = self.freshness_at(path);
                     self.pending_invalidations.push((path.clone(), *reason));
                     self.mark_unfresh(path, Freshness::Stale);
+                    let current = self.freshness_at(path);
                     stats.invalidated += 1;
-                    true
-                }
-            };
-            if changed {
-                changed_ops += 1;
-                if journal {
-                    effective.push(op.clone());
+                    effects
+                        .changes
+                        .push(EffectiveChange::Invalidated { path: path.clone(), reason: *reason });
+                    if previous != current {
+                        effects.state.push(StateTransition::Freshness {
+                            path: path.clone(),
+                            previous,
+                            current,
+                        });
+                    }
                 }
             }
         }
 
-        if changed_ops == 0 {
-            return ApplyOutcome { stats, applied: None };
+        if effects.is_empty() {
+            return Ok(ApplyOutcome::from_commit(stats, None));
         }
 
+        let commit =
+            self.publish_effects(next_clock, effects, commit_work(observed, stats), journal);
+        Ok(ApplyOutcome::from_commit(stats, Some(commit)))
+    }
+
+    /// Mint and optionally retain one fully evaluated transition.
+    ///
+    /// Every fact-only, state-only, or combined mutation reaches this function after
+    /// its fallible validation and preflight work is complete.
+    fn publish_effects(
+        &mut self,
+        next_clock: Clock,
+        effects: MutationEffects,
+        work: Work,
+        journal: bool,
+    ) -> Commit {
+        debug_assert!(!effects.is_empty());
+        let commit = Commit {
+            clock: next_clock,
+            impact: derive_impact(&effects.changes, &effects.state),
+            changes: effects.changes,
+            state: effects.state,
+            work,
+        };
         self.clock = next_clock;
-        if !journal {
-            // The caller declared this history unread: no delta is minted and the
-            // journal keeps whatever it held, which `establish_baseline` clears.
-            return ApplyOutcome { stats, applied: None };
+        if journal {
+            self.retain_commit(commit.clone());
         }
-        let applied = AppliedDelta { clock: self.clock, ops: effective };
-        if applied.len() > self.journal_op_capacity {
+        commit
+    }
+
+    fn retain_commit(&mut self, commit: Commit) {
+        let cost = commit.retained_cost();
+        if cost > self.journal_capacity {
             self.journal.clear();
-            self.journal_ops = 0;
-            self.journal_floor = applied.clock;
-            return ApplyOutcome { stats, applied: Some(applied) };
+            self.journal_cost = 0;
+            self.journal_floor = commit.clock;
+            return;
         }
 
-        while self.journal_ops + applied.len() > self.journal_op_capacity {
+        while self.journal_cost + cost > self.journal_capacity {
             if let Some(dropped) = self.journal.pop_front() {
-                self.journal_ops -= dropped.len();
+                self.journal_cost -= dropped.retained_cost();
                 self.journal_floor = dropped.clock;
             }
         }
-        self.journal_ops += applied.len();
-        self.journal.push_back(applied.clone());
-        ApplyOutcome { stats, applied: Some(applied) }
+        self.journal_cost += cost;
+        self.journal.push_back(commit);
     }
 
     /// Apply trusted bootstrap data without exposing it as live change history.
@@ -878,7 +953,7 @@ impl Index {
     pub(crate) fn establish_baseline(&mut self) {
         self.clock = Clock::ZERO;
         self.journal.clear();
-        self.journal_ops = 0;
+        self.journal_cost = 0;
         self.journal_floor = Clock::ZERO;
         self.pending_invalidations.clear();
     }
@@ -900,37 +975,61 @@ impl Index {
         }
     }
 
-    pub(crate) fn begin_reconcile(&mut self, path: &Path) -> u64 {
-        self.mark_unfresh(path, Freshness::Reconciling)
+    pub(crate) fn begin_reconcile(&mut self, path: &Path) -> crate::Result<u64> {
+        let path = canonical_relative_path(path)?;
+        let next_clock = self.clock.checked_next().ok_or(crate::Error::ClockExhausted)?;
+        let previous = self.freshness_at(&path);
+        let epoch = self.mark_unfresh(&path, Freshness::Reconciling);
+        let current = self.freshness_at(&path);
+        if previous != current {
+            let effects = MutationEffects {
+                state: vec![StateTransition::Freshness { path, previous, current }],
+                ..MutationEffects::default()
+            };
+            self.publish_effects(next_clock, effects, Work::default(), true);
+        }
+        Ok(epoch)
     }
 
-    pub(crate) fn finish_reconcile(&mut self, path: &Path, started_at: u64, complete: bool) {
+    pub(crate) fn finish_reconcile(
+        &mut self,
+        path: &Path,
+        started_at: u64,
+        complete: bool,
+    ) -> crate::Result<()> {
+        let path = canonical_relative_path(path)?;
+        let next_clock = self.clock.checked_next().ok_or(crate::Error::ClockExhausted)?;
+        let previous = self.freshness_at(&path);
         self.freshness_marks
-            .retain(|marked, mark| !marked.starts_with(path) || mark.epoch > started_at);
-        if !complete {
-            self.mark_unfresh(path, Freshness::Partial);
-            return;
+            .retain(|marked, mark| !marked.starts_with(&path) || mark.epoch > started_at);
+        let mut state = Vec::new();
+        if complete {
+            // A completed sweep stat'd every entry beneath `path`, including the ones
+            // the producer elided as no-ops. Record that interval as one exact state
+            // transition rather than manufacturing millions of entry updates.
+            let now = Self::now_unix_nanos();
+            self.verified.retain(|(verified_path, _)| !verified_path.starts_with(&path));
+            self.verified.push((path.clone(), now));
+            if self.verified.len() > MAX_VERIFIED_INTERVALS {
+                let excess = self.verified.len() - MAX_VERIFIED_INTERVALS;
+                self.verified.sort_by_key(|(_, at)| *at);
+                self.verified.drain(..excess);
+            }
+            state.push(StateTransition::Verified { path: path.clone() });
+        } else {
+            self.mark_unfresh(&path, Freshness::Partial);
         }
-        // A completed sweep stat'd every entry beneath `path`, including the ones the
-        // producer elided as no-ops before they ever reached a delta. Per-entry
-        // stamping cannot see those, so verification is recorded here as an interval
-        // instead: one record per reconciled subtree rather than a write to each of
-        // millions of entries. This is the same "store where it varies, derive where
-        // it does not" choice as the timestamps, and it keeps the elision — a measured
-        // 18% win on the warm path — intact.
-        let now = Self::now_unix_nanos();
-        self.verified.retain(|(verified_path, _)| !verified_path.starts_with(path));
-        self.verified.push((path.to_path_buf(), now));
-        // Repeated scoped sweeps of sibling subtrees — what a consumer revalidating
-        // per navigation produces — would otherwise grow this list without bound,
-        // since only records *under* the swept path are collapsed. Dropping the oldest
-        // is fail-safe: a path that loses its interval reports `Cached` rather than
-        // `Revalidated`, which under-claims trust rather than over-claiming it.
-        if self.verified.len() > MAX_VERIFIED_INTERVALS {
-            let excess = self.verified.len() - MAX_VERIFIED_INTERVALS;
-            self.verified.sort_by_key(|(_, at)| *at);
-            self.verified.drain(..excess);
+
+        let current = self.freshness_at(&path);
+        if previous != current {
+            state.push(StateTransition::Freshness { path: path.clone(), previous, current });
         }
+        if state.is_empty() {
+            return Ok(());
+        }
+        let effects = MutationEffects { state, ..MutationEffects::default() };
+        self.publish_effects(next_clock, effects, Work::default(), true);
+        Ok(())
     }
 
     /// When a completed reconciliation last covered this path, if one did.
@@ -976,10 +1075,13 @@ impl Index {
         PathExpectation::new(self.path_state(path), self.entry_identity(path), None)
     }
 
-    /// Deltas applied since `clock`, oldest first.
+    /// Exact commits and legacy deltas applied since `clock`, oldest first.
     pub fn since(&self, clock: Clock) -> Since {
+        let commits: Vec<Commit> =
+            self.journal.iter().filter(|commit| commit.clock > clock).cloned().collect();
         Since {
-            deltas: self.journal.iter().filter(|d| d.clock > clock).cloned().collect(),
+            deltas: commits.iter().filter_map(Commit::applied_delta).collect(),
+            commits,
             truncated: clock < self.journal_floor,
         }
     }
@@ -1352,14 +1454,10 @@ impl Index {
     /// O(subtree) walk per query, and it is not implemented yet (`fdu-fka6`,
     /// `fdu-b1ts`). Do not read a directory's provenance as a subtree guarantee.
     ///
-    /// **Provenance transitions are not clocked.** A path moving `Cached` ->
-    /// `Revalidated` is visible by polling here, but it does not advance [`Clock`],
-    /// does not appear in `since()`, and does not reach the `AppliedDelta` sink,
-    /// because the sweep that caused it committed no change. A consumer following the
-    /// change feed therefore sees nothing while a consumer polling this sees a
-    /// transition. Making the two agree needs provenance to travel *on* the committed
-    /// operation, which is a delta-format change and a state machine rather than a
-    /// patch (`fdu-jxs0`, `fdu-livs`). Until then, treat this as a poll-only view.
+    /// A completed reconciliation records one clocked [`StateTransition::Verified`]
+    /// for its subtree, including when every entry was unchanged. Consumers of exact
+    /// commits therefore observe the same provenance movement as readers of this view;
+    /// the legacy [`AppliedDelta`] projection intentionally remains entry-only.
     pub fn provenance(&self, path: &Path) -> Option<Provenance> {
         let id = self.lookup(path)?;
         Some(self.provenance_of(id))
@@ -1606,9 +1704,16 @@ impl Index {
     /// a tree may name ancestors the index has never seen. Creating them as directories
     /// with default attributes keeps the delta applicable; a later upsert or the
     /// revalidation sweep fills in their real attributes.
-    fn ensure_dir_chain(&mut self, parts: &[&OsStr], stats: &mut ApplyStats) -> EntryId {
+    fn ensure_dir_chain(
+        &mut self,
+        parts: &[&OsStr],
+        stats: &mut ApplyStats,
+        effects: &mut MutationEffects,
+    ) -> EntryId {
         let mut current = EntryId::ROOT;
+        let mut current_path = PathBuf::new();
         for part in parts {
+            current_path.push(part);
             if let Some(existing) = self.entry(current).children.get(*part).copied() {
                 if self.entry(existing).kind.is_dir() {
                     current = existing;
@@ -1617,15 +1722,16 @@ impl Index {
                 // A path cannot have children beneath a non-directory. Replace the
                 // conflicting record with a placeholder directory; a later observation
                 // for the ancestor fills in its real attributes.
-                self.remove_entry(existing, stats);
+                self.remove_entry(existing, stats, effects);
             }
+            let attrs = Attrs::default();
             let child = self.alloc(Entry {
                 parent: Some(current),
                 name: (*part).to_os_string(),
                 ext_id: None,
                 source: self.applying_source,
                 kind: EntryKind::Dir,
-                attrs: Attrs::default(),
+                attrs,
                 children: BTreeMap::new(),
                 rollup: InternedRollUp::default(),
                 revision: 0,
@@ -1636,6 +1742,11 @@ impl Index {
             let contribution = InternedRollUp { dirs: 1, ..InternedRollUp::default() };
             self.merge_upward(Some(current), &contribution);
             stats.inserted += 1;
+            effects.changes.push(EffectiveChange::Inserted {
+                path: current_path.clone(),
+                kind: EntryKind::Dir,
+                attrs,
+            });
             current = child;
         }
         current
@@ -1647,6 +1758,7 @@ impl Index {
         kind: EntryKind,
         attrs: Attrs,
         stats: &mut ApplyStats,
+        effects: &mut MutationEffects,
         parent_memo: &mut ParentMemo,
     ) -> bool {
         // A walker reports a directory's children consecutively, because that is the
@@ -1658,7 +1770,7 @@ impl Index {
         if let (Some(dir), Some(name)) = (path.parent(), path.file_name()) {
             if let Some(parent) = parent_memo.get(dir) {
                 crate::counters::bump(|c| c.parent_memo_hits += 1);
-                return self.upsert_beneath(parent, name, path, kind, attrs, stats);
+                return self.upsert_beneath(parent, name, path, kind, attrs, stats, effects);
             }
         }
         crate::counters::bump(|c| c.parent_resolutions += 1);
@@ -1680,17 +1792,24 @@ impl Index {
                 return false;
             }
             let root = self.entry_mut(EntryId::ROOT);
+            let previous = root.attrs;
             root.attrs = attrs;
             root.source = source;
             Self::bump_revision(root);
             stats.updated += 1;
+            effects.changes.push(EffectiveChange::Updated {
+                path: PathBuf::new(),
+                kind: EntryKind::Dir,
+                previous,
+                current: attrs,
+            });
             return true;
         };
-        let parent = self.ensure_dir_chain(ancestors, stats);
+        let parent = self.ensure_dir_chain(ancestors, stats, effects);
         if let Some(dir) = path.parent() {
             parent_memo.set(dir, parent);
         }
-        self.upsert_beneath(parent, name, path, kind, attrs, stats)
+        self.upsert_beneath(parent, name, path, kind, attrs, stats, effects)
     }
 
     /// Apply one upsert beneath a parent whose id is already resolved.
@@ -1708,6 +1827,7 @@ impl Index {
         kind: EntryKind,
         attrs: Attrs,
         stats: &mut ApplyStats,
+        effects: &mut MutationEffects,
     ) -> bool {
         let source = self.applying_source;
         let existing = self.entry(parent).children.get(name).copied();
@@ -1729,16 +1849,24 @@ impl Index {
                     // A directory's own attributes do not reach its ancestors' roll-ups,
                     // so there is nothing to re-merge.
                     let entry = self.entry_mut(id);
+                    let previous = entry.attrs;
                     entry.attrs = attrs;
                     entry.source = source;
                     Self::bump_revision(entry);
                     stats.updated += 1;
+                    effects.changes.push(EffectiveChange::Updated {
+                        path: path.to_path_buf(),
+                        kind,
+                        previous,
+                        current: attrs,
+                    });
                     return true;
                 }
                 self.invalidate_content(path);
                 let old = self.contribution(id);
                 self.unmerge_upward(Some(parent), &old);
                 let entry = self.entry_mut(id);
+                let previous = entry.attrs;
                 entry.attrs = attrs;
                 entry.source = source;
                 Self::bump_revision(entry);
@@ -1748,6 +1876,12 @@ impl Index {
                     self.recompute_newest_upward(Some(parent));
                 }
                 stats.updated += 1;
+                effects.changes.push(EffectiveChange::Updated {
+                    path: path.to_path_buf(),
+                    kind,
+                    previous,
+                    current: attrs,
+                });
                 return true;
             }
             // The kind changed (a file became a directory, say). Remove and re-insert
@@ -1757,7 +1891,7 @@ impl Index {
             // entry's *parent*, and the subtree removed is rooted at the entry itself.
             // Clearing here would be untestable defensive code, which reads as a hazard
             // that does not exist.
-            self.remove_entry(id, stats);
+            self.remove_entry(id, stats, effects);
         }
 
         let ext_id = (kind == EntryKind::File).then(|| self.intern_ext(&ext_bucket(name)));
@@ -1777,6 +1911,7 @@ impl Index {
         let contribution = self.contribution(id);
         self.merge_upward(Some(parent), &contribution);
         stats.inserted += 1;
+        effects.changes.push(EffectiveChange::Inserted { path: path.to_path_buf(), kind, attrs });
         true
     }
 
@@ -1833,7 +1968,12 @@ impl Index {
         Some(id)
     }
 
-    fn apply_remove(&mut self, path: &Path, stats: &mut ApplyStats) -> bool {
+    fn apply_remove(
+        &mut self,
+        path: &Path,
+        stats: &mut ApplyStats,
+        effects: &mut MutationEffects,
+    ) -> bool {
         let Some(id) = self.lookup(path) else {
             stats.unchanged += 1;
             return false;
@@ -1842,14 +1982,13 @@ impl Index {
             stats.unchanged += 1;
             return false;
         }
-        self.remove_entry(id, stats);
+        self.remove_entry(id, stats, effects);
         true
     }
 
-    fn remove_entry(&mut self, id: EntryId, stats: &mut ApplyStats) {
-        if let Some(path) = self.path_of(id) {
-            self.invalidate_content(&path);
-        }
+    fn remove_entry(&mut self, id: EntryId, stats: &mut ApplyStats, effects: &mut MutationEffects) {
+        let removed_root = self.path_of(id).expect("a live entry has a path");
+        self.invalidate_content(&removed_root);
         let parent = self.entry(id).parent;
         let name = self.entry(id).name.clone();
         let contribution = self.contribution(id);
@@ -1861,11 +2000,18 @@ impl Index {
 
         // Free the subtree iteratively; a recursive drop would blow the stack on deep
         // trees, which is exactly the shape this engine is built for.
-        let mut queue = vec![id];
-        while let Some(node) = queue.pop() {
-            let children: Vec<EntryId> = self.entry(node).children.values().copied().collect();
-            let ext_id = self.entry(node).ext_id;
-            queue.extend(children);
+        let mut queue = VecDeque::from([(id, removed_root)]);
+        while let Some((node, path)) = queue.pop_front() {
+            let entry = self.entry(node);
+            let kind = entry.kind;
+            let attrs = entry.attrs;
+            let children: Vec<(OsString, EntryId)> =
+                entry.children.iter().map(|(name, child)| (name.clone(), *child)).collect();
+            let ext_id = entry.ext_id;
+            for (name, child) in children {
+                queue.push_back((child, path.join(name)));
+            }
+            effects.changes.push(EffectiveChange::Removed { path, kind, attrs });
             // Give the extension back before the entry itself goes, so the interner
             // holds only what the tree still contains.
             if let Some(ext_id) = ext_id {
@@ -1989,14 +2135,88 @@ fn path_is_representable(path: &Path) -> bool {
     path.components().all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
 }
 
-fn validate_observation(observation: &Observation) -> crate::Result<()> {
+fn prepare_observation(observation: &Observation) -> crate::Result<PreparedObservation> {
+    let mut ops = Vec::with_capacity(observation.len());
     for observed in &observation.ops {
-        let path = observed.op.path();
-        if !path_is_representable(path) {
-            return Err(crate::Error::PathEscapesRoot(path.to_path_buf()));
+        let path = canonical_relative_path(observed.op.path())?;
+        let op = match &observed.op {
+            Op::Upsert { kind, attrs, .. } => Op::Upsert { path, kind: *kind, attrs: *attrs },
+            Op::Remove { .. } => Op::Remove { path },
+            Op::InvalidateSubtree { reason, .. } => Op::InvalidateSubtree { path, reason: *reason },
+        };
+        ops.push(ObservationOp { op, expectation: observed.expectation });
+    }
+    Ok(PreparedObservation {
+        ops,
+        #[cfg(test)]
+        reject_before_apply: false,
+    })
+}
+
+fn canonical_relative_path(path: &Path) -> crate::Result<PathBuf> {
+    if !path_is_representable(path) {
+        return Err(crate::Error::PathEscapesRoot(path.to_path_buf()));
+    }
+    Ok(normalize(path).expect("representable paths normalize").into_iter().collect::<PathBuf>())
+}
+
+fn derive_impact(changes: &[EffectiveChange], state: &[StateTransition]) -> Impact {
+    let mut domains = BTreeSet::new();
+    let mut paths = BTreeSet::new();
+    let mut all_dirty = false;
+
+    for change in changes {
+        match change {
+            EffectiveChange::Inserted { .. } | EffectiveChange::Removed { .. } => {
+                domains.extend([
+                    ImpactDomain::Topology,
+                    ImpactDomain::Metadata,
+                    ImpactDomain::Classification,
+                    ImpactDomain::Aggregates,
+                    ImpactDomain::Content,
+                ]);
+            }
+            EffectiveChange::Updated { .. } => {
+                domains.extend([
+                    ImpactDomain::Metadata,
+                    ImpactDomain::Aggregates,
+                    ImpactDomain::Content,
+                ]);
+            }
+            EffectiveChange::Invalidated { .. } => {
+                domains.insert(ImpactDomain::State);
+            }
+        }
+        insert_dirty_ancestors(change.path(), &mut paths, &mut all_dirty);
+    }
+    for transition in state {
+        domains.insert(ImpactDomain::State);
+        insert_dirty_ancestors(transition.path(), &mut paths, &mut all_dirty);
+    }
+
+    Impact {
+        domains: domains.into_iter().collect(),
+        dirty_paths: if all_dirty { Vec::new() } else { paths.into_iter().collect() },
+        all_dirty,
+    }
+}
+
+fn commit_work(observations: u64, stats: ApplyStats) -> Work {
+    Work { observations, unchanged: stats.unchanged, stale: stats.stale }
+}
+
+fn insert_dirty_ancestors(path: &Path, paths: &mut BTreeSet<PathBuf>, all_dirty: &mut bool) {
+    if *all_dirty {
+        return;
+    }
+    for ancestor in path.ancestors() {
+        paths.insert(ancestor.to_path_buf());
+        if paths.len() > MAX_DIRTY_PATHS {
+            paths.clear();
+            *all_dirty = true;
+            return;
         }
     }
-    Ok(())
 }
 
 fn same_target(
@@ -2241,8 +2461,11 @@ mod tests {
 
         let mut committed_clocks: Vec<u64> = Vec::with_capacity(writer_count);
         for (path, outcome) in result_rx {
-            let applied: AppliedDelta =
-                outcome.expect("writer apply").applied.expect("unique upsert must commit");
+            let applied: AppliedDelta = outcome
+                .expect("writer apply")
+                .applied()
+                .cloned()
+                .expect("unique upsert must commit");
             committed_clocks.push(applied.clock.0);
             assert!(handle.kind(Path::new(&path)).expect("query committed path").is_some());
         }
@@ -2412,9 +2635,9 @@ mod tests {
             .expect("a rejected stale observation needs no new clock");
 
         assert_eq!(no_op.unchanged, 1);
-        assert!(no_op.applied.is_none());
+        assert!(no_op.applied().is_none());
         assert_eq!(stale.stale, 1);
-        assert!(stale.applied.is_none());
+        assert!(stale.applied().is_none());
         assert_eq!(index.clock(), Clock(u64::MAX));
         assert_eq!(index.len(), before_len);
         assert_eq!(index.total(), before_total);
@@ -2444,7 +2667,7 @@ mod tests {
         let outcome = index.apply_ok(&delayed);
 
         assert_eq!(outcome.stats.stale, 1);
-        assert!(outcome.applied.is_none());
+        assert!(outcome.applied().is_none());
         assert_eq!(index.attrs(Path::new("file.txt")).expect("file").size, 30);
     }
 
@@ -2466,7 +2689,7 @@ mod tests {
         let outcome = index.apply_ok(&delayed);
 
         assert_eq!(outcome.stats.stale, 1);
-        assert!(outcome.applied.is_none());
+        assert!(outcome.applied().is_none());
         assert_eq!(index.kind(Path::new("parent")), Some(EntryKind::File));
         assert!(index.lookup(Path::new("parent/child.txt")).is_none());
     }
@@ -2498,7 +2721,7 @@ mod tests {
         let outcome = index.apply_ok(&delayed);
 
         assert_eq!(outcome.stats.stale, 1);
-        assert!(outcome.applied.is_none());
+        assert!(outcome.applied().is_none());
         assert_eq!(index.attrs(Path::new("file.txt")).expect("file").size, 10);
     }
 
@@ -2520,7 +2743,7 @@ mod tests {
         let outcome = index.apply_ok(&delayed);
 
         assert_eq!(outcome.stats.stale, 1);
-        assert!(outcome.applied.is_none());
+        assert!(outcome.applied().is_none());
         assert!(index.lookup(Path::new("file.txt")).is_none());
     }
 
@@ -2642,7 +2865,7 @@ mod tests {
                 let before_live = index.live;
                 let before_total = index.total();
                 let before_journal = index.journal.clone();
-                let before_journal_ops = index.journal_ops;
+                let before_journal_cost = index.journal_cost;
                 let before_journal_floor = index.journal_floor;
                 let before_invalidations = index.pending_invalidations.clone();
                 let before_freshness_epoch = index.freshness_epoch;
@@ -2663,7 +2886,7 @@ mod tests {
                 assert_eq!(index.live, before_live);
                 assert_eq!(index.total(), before_total);
                 assert_eq!(index.journal, before_journal);
-                assert_eq!(index.journal_ops, before_journal_ops);
+                assert_eq!(index.journal_cost, before_journal_cost);
                 assert_eq!(index.journal_floor, before_journal_floor);
                 assert_eq!(index.pending_invalidations, before_invalidations);
                 assert_eq!(index.freshness_epoch, before_freshness_epoch);
@@ -2867,9 +3090,137 @@ mod tests {
         ]));
 
         assert_eq!(outcome.stats.unchanged, 2);
-        let applied = outcome.applied.expect("one effective insert");
+        let applied = outcome.applied().expect("one effective insert");
         assert_eq!(applied.len(), 1);
         assert_eq!(applied.ops[0].path(), Path::new("new.txt"));
+    }
+
+    #[test]
+    fn exact_commit_records_verified_ancestry_and_kind_replacement() {
+        let mut index = Index::new("/root");
+        let inserted = index.apply_ok(&Observation::new(vec![upsert(
+            "unknown/deep/file.txt",
+            EntryKind::File,
+            file_attrs(10, 1),
+        )]));
+        let inserted = inserted.commit.expect("ancestry commit");
+        assert_eq!(
+            inserted.changes.iter().map(EffectiveChange::path).collect::<Vec<_>>(),
+            [Path::new("unknown"), Path::new("unknown/deep"), Path::new("unknown/deep/file.txt")]
+        );
+        assert!(
+            inserted
+                .changes
+                .iter()
+                .all(|change| matches!(change, EffectiveChange::Inserted { .. }))
+        );
+
+        let replaced = index.apply_ok(&Observation::new(vec![upsert(
+            "unknown",
+            EntryKind::File,
+            file_attrs(20, 2),
+        )]));
+        let replaced = replaced.commit.expect("replacement commit");
+        assert_eq!(
+            replaced.changes,
+            vec![
+                EffectiveChange::Removed {
+                    path: "unknown".into(),
+                    kind: EntryKind::Dir,
+                    attrs: Attrs::default(),
+                },
+                EffectiveChange::Removed {
+                    path: "unknown/deep".into(),
+                    kind: EntryKind::Dir,
+                    attrs: Attrs::default(),
+                },
+                EffectiveChange::Removed {
+                    path: "unknown/deep/file.txt".into(),
+                    kind: EntryKind::File,
+                    attrs: file_attrs(10, 1),
+                },
+                EffectiveChange::Inserted {
+                    path: "unknown".into(),
+                    kind: EntryKind::File,
+                    attrs: file_attrs(20, 2),
+                },
+            ]
+        );
+        assert_eq!(
+            replaced.impact.domains,
+            vec![
+                ImpactDomain::Topology,
+                ImpactDomain::Metadata,
+                ImpactDomain::Classification,
+                ImpactDomain::Aggregates,
+                ImpactDomain::Content,
+            ]
+        );
+        assert_eq!(
+            replaced.impact.dirty_paths,
+            vec![
+                PathBuf::new(),
+                "unknown".into(),
+                "unknown/deep".into(),
+                "unknown/deep/file.txt".into(),
+            ]
+        );
+    }
+
+    #[test]
+    fn rejected_prepared_commit_is_fault_atomic() {
+        let mut index = index_with_sample_tree();
+        let before_clock = index.clock();
+        let before_total = index.total();
+        let before_len = index.len();
+        let before_history = index.since(Clock::ZERO);
+        let mut prepared = prepare_observation(&Observation::new(vec![upsert(
+            "new/deep.txt",
+            EntryKind::File,
+            file_attrs(99, 99),
+        )]))
+        .expect("valid preparation");
+        prepared.reject_before_apply = true;
+
+        let error = index.commit_prepared(prepared, true).expect_err("injected preflight");
+
+        assert!(matches!(error, crate::Error::CommitRejected("injected reducer preflight")));
+        assert_eq!(index.clock(), before_clock);
+        assert_eq!(index.total(), before_total);
+        assert_eq!(index.len(), before_len);
+        assert_eq!(index.since(Clock::ZERO), before_history);
+        assert!(index.lookup(Path::new("new")).is_none());
+    }
+
+    #[test]
+    fn reconciliation_state_moves_through_exact_commits() {
+        let mut index = Index::new("/root");
+        let started = index.begin_reconcile(Path::new("src")).expect("begin");
+        let start = index.since(Clock::ZERO).commits.pop().expect("start commit");
+        assert!(start.changes.is_empty());
+        assert_eq!(
+            start.state,
+            vec![StateTransition::Freshness {
+                path: "src".into(),
+                previous: Freshness::Fresh,
+                current: Freshness::Reconciling,
+            }]
+        );
+
+        index.finish_reconcile(Path::new("src"), started, true).expect("finish");
+        let finish = index.since(start.clock).commits.pop().expect("finish commit");
+        assert!(finish.changes.is_empty());
+        assert_eq!(
+            finish.state,
+            vec![
+                StateTransition::Verified { path: "src".into() },
+                StateTransition::Freshness {
+                    path: "src".into(),
+                    previous: Freshness::Reconciling,
+                    current: Freshness::Fresh,
+                },
+            ]
+        );
     }
 
     #[test]
@@ -3091,22 +3442,22 @@ mod tests {
 
     #[test]
     fn oversized_single_batch_is_not_retained() {
-        let mut index = Index::with_journal_op_capacity("/root", 2);
+        let mut index = Index::with_journal_capacity("/root", 2);
         let outcome = index.apply_ok(&Observation::new(vec![
             upsert("a.txt", EntryKind::File, file_attrs(1, 1)),
             upsert("b.txt", EntryKind::File, file_attrs(2, 2)),
             upsert("c.txt", EntryKind::File, file_attrs(3, 3)),
         ]));
 
-        assert_eq!(outcome.applied.as_ref().expect("committed").len(), 3);
+        assert_eq!(outcome.applied().as_ref().expect("committed").len(), 3);
         let since = index.since(Clock::ZERO);
         assert!(since.truncated);
         assert!(since.deltas.is_empty());
     }
 
     #[test]
-    fn journal_eviction_uses_the_operation_budget() {
-        let mut index = Index::with_journal_op_capacity("/root", 3);
+    fn journal_eviction_charges_the_complete_retained_payload() {
+        let mut index = Index::with_journal_capacity("/root", 6);
         index.apply_ok(&Observation::new(vec![
             upsert("a.txt", EntryKind::File, file_attrs(1, 1)),
             upsert("b.txt", EntryKind::File, file_attrs(2, 2)),
@@ -3121,6 +3472,27 @@ mod tests {
         assert_eq!(since.deltas.len(), 1);
         assert_eq!(since.deltas[0].len(), 2);
         assert_eq!(since.deltas[0].ops[0].path(), Path::new("c.txt"));
+    }
+
+    #[test]
+    fn impact_drops_an_overflowing_path_set_instead_of_truncating_it() {
+        let mut index = Index::new("/root");
+        let ops = (0..=MAX_DIRTY_PATHS)
+            .map(|which| {
+                upsert(
+                    &format!("file-{which}.txt"),
+                    EntryKind::File,
+                    file_attrs(u64::try_from(which).expect("bounded"), 1),
+                )
+            })
+            .collect();
+
+        let commit =
+            index.apply_ok(&Observation::new(ops)).commit.expect("overflowing impact commit");
+
+        assert!(commit.impact.all_dirty);
+        assert!(commit.impact.dirty_paths.is_empty(), "a partial path list must not escape");
+        assert_eq!(commit.changes.len(), MAX_DIRTY_PATHS + 1);
     }
 
     #[test]
@@ -3292,7 +3664,7 @@ mod tests {
 
         // A sweep re-observes both: one is unchanged and elided, one is updated.
         index.set_applying_source(Source::Revalidated, 2_000);
-        index.begin_reconcile(Path::new(""));
+        index.begin_reconcile(Path::new("")).expect("begin reconciliation");
         index.apply_ok(&Observation::new(vec![
             Op::Upsert {
                 path: "a/kept.txt".into(),
@@ -3305,7 +3677,7 @@ mod tests {
                 attrs: file_attrs(9, 2),
             },
         ]));
-        index.finish_reconcile(Path::new(""), 0, true);
+        index.finish_reconcile(Path::new(""), 0, true).expect("finish reconciliation");
 
         let kept = index.provenance(Path::new("a/kept.txt")).expect("present");
         let changed = index.provenance(Path::new("a/changed.txt")).expect("present");
@@ -3336,7 +3708,7 @@ mod tests {
             "nothing has checked it yet"
         );
         // A completed sweep then covers the whole tree.
-        index.finish_reconcile(Path::new(""), 0, true);
+        index.finish_reconcile(Path::new(""), 0, true).expect("finish reconciliation");
         let path = Path::new("a/file.txt");
         assert_eq!(
             index.provenance(path).expect("present").source,
@@ -3367,7 +3739,9 @@ mod tests {
         // dropping the oldest only ever under-claims trust.
         let mut index = Index::new("/root");
         for which in 0..(MAX_VERIFIED_INTERVALS * 2) {
-            index.finish_reconcile(&PathBuf::from(format!("dir-{which}")), 0, true);
+            index
+                .finish_reconcile(&PathBuf::from(format!("dir-{which}")), 0, true)
+                .expect("finish reconciliation");
         }
         assert!(
             index.verified.len() <= MAX_VERIFIED_INTERVALS,

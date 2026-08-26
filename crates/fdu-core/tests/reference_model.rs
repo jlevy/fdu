@@ -10,11 +10,14 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 use fdu_core::{
-    AppliedDelta, ApplyOutcome, ApplyStats, Attrs, Clock, EntryKind, ExtTally, Freshness, Index,
-    InvalidateReason, Observation, ObservationOp, Op, PathExpectation, PathState, RollUp,
+    AppliedDelta, ApplyOutcome, ApplyStats, Attrs, Clock, Commit, EffectiveChange, EntryKind,
+    ExtTally, Freshness, Impact, ImpactDomain, Index, InvalidateReason, Observation, ObservationOp,
+    Op, PathExpectation, PathState, RollUp, StateTransition,
 };
 
 const JOURNAL_CAPACITY: usize = 64 * 1024;
+/// Contractual dirty-path bound checked independently of the production constant.
+const EXPECTED_DIRTY_PATH_LIMIT: usize = 256;
 /// Number of transitions exercised for each reproducible generator seed.
 const GENERATED_STEPS: usize = 400;
 /// State-machine actions from which each generated transition chooses.
@@ -77,8 +80,8 @@ struct Model {
     nodes: BTreeMap<PathBuf, Node>,
     next_id: u64,
     clock: Clock,
-    journal: VecDeque<AppliedDelta>,
-    journal_ops: usize,
+    journal: VecDeque<Commit>,
+    journal_cost: usize,
     journal_floor: Clock,
     pending_invalidations: Vec<(PathBuf, InvalidateReason)>,
     freshness_epoch: u64,
@@ -103,7 +106,7 @@ impl Model {
             next_id: 1,
             clock: Clock::ZERO,
             journal: VecDeque::new(),
-            journal_ops: 0,
+            journal_cost: 0,
             journal_floor: Clock::ZERO,
             pending_invalidations: Vec::new(),
             freshness_epoch: 0,
@@ -174,34 +177,54 @@ impl Model {
                 ModelCondition::State(expected) => self.expectation_matches(&observed.op, expected),
             })
             .collect();
+        let observed = u64::try_from(ops.len()).expect("model operation count");
         let mut stats = ApplyStats::default();
-        let mut effective = Vec::new();
+        let mut changes = Vec::new();
+        let mut transitions = Vec::new();
         for (observed, accepted) in ops.iter().zip(accepted) {
             if !accepted {
                 stats.stale += 1;
                 continue;
             }
-            let changed = match &observed.op {
-                Op::Upsert { path, kind, attrs } => self.upsert(path, *kind, *attrs, &mut stats),
-                Op::Remove { path } => self.remove(path, &mut stats),
+            match &observed.op {
+                Op::Upsert { path, kind, attrs } => {
+                    self.upsert(path, *kind, *attrs, &mut stats, &mut changes);
+                }
+                Op::Remove { path } => {
+                    self.remove(path, &mut stats, &mut changes);
+                }
                 Op::InvalidateSubtree { path, reason } => {
+                    let previous = self.freshness_at(path);
                     self.pending_invalidations.push((path.clone(), *reason));
                     self.mark_unfresh(path, Freshness::Stale);
+                    let current = self.freshness_at(path);
                     stats.invalidated += 1;
-                    true
+                    changes
+                        .push(EffectiveChange::Invalidated { path: path.clone(), reason: *reason });
+                    if previous != current {
+                        transitions.push(StateTransition::Freshness {
+                            path: path.clone(),
+                            previous,
+                            current,
+                        });
+                    }
                 }
-            };
-            if changed {
-                effective.push(observed.op.clone());
             }
         }
-        if effective.is_empty() {
-            return ApplyOutcome { stats, applied: None };
+        if changes.is_empty() && transitions.is_empty() {
+            return ApplyOutcome { stats, commit: None, applied: None };
         }
         self.clock = self.clock.checked_next().expect("model clock");
-        let applied = AppliedDelta { clock: self.clock, ops: effective };
-        self.retain(applied.clone());
-        ApplyOutcome { stats, applied: Some(applied) }
+        let commit = Commit {
+            clock: self.clock,
+            impact: model_impact(&changes, &transitions),
+            changes,
+            state: transitions,
+            work: model_work(observed, stats),
+        };
+        self.retain(commit.clone());
+        let applied = commit.applied_delta();
+        ApplyOutcome { stats, commit: Some(commit), applied }
     }
 
     fn upsert(
@@ -210,6 +233,7 @@ impl Model {
         kind: EntryKind,
         attrs: Attrs,
         stats: &mut ApplyStats,
+        changes: &mut Vec<EffectiveChange>,
     ) -> bool {
         if path.as_os_str().is_empty() {
             let root = self.nodes.get_mut(Path::new("")).expect("model root");
@@ -217,31 +241,51 @@ impl Model {
                 stats.unchanged += 1;
                 return false;
             }
+            let previous = root.attrs;
             root.attrs = attrs;
             root.revision += 1;
             stats.updated += 1;
+            changes.push(EffectiveChange::Updated {
+                path: PathBuf::new(),
+                kind: EntryKind::Dir,
+                previous,
+                current: attrs,
+            });
             return true;
         }
-        self.ensure_parents(path, stats);
+        self.ensure_parents(path, stats, changes);
         if let Some(node) = self.nodes.get_mut(path) {
             if node.kind == kind && node.attrs == attrs {
                 stats.unchanged += 1;
                 return false;
             }
             if node.kind == kind {
+                let previous = node.attrs;
                 node.attrs = attrs;
                 node.revision += 1;
                 stats.updated += 1;
+                changes.push(EffectiveChange::Updated {
+                    path: path.to_path_buf(),
+                    kind,
+                    previous,
+                    current: attrs,
+                });
                 return true;
             }
-            self.remove(path, stats);
+            self.remove(path, stats, changes);
         }
         self.insert(path, kind, attrs);
         stats.inserted += 1;
+        changes.push(EffectiveChange::Inserted { path: path.to_path_buf(), kind, attrs });
         true
     }
 
-    fn ensure_parents(&mut self, path: &Path, stats: &mut ApplyStats) {
+    fn ensure_parents(
+        &mut self,
+        path: &Path,
+        stats: &mut ApplyStats,
+        changes: &mut Vec<EffectiveChange>,
+    ) {
         let mut current = PathBuf::new();
         let mut components = path.components().peekable();
         while let Some(component) = components.next() {
@@ -253,10 +297,16 @@ impl Model {
                 continue;
             }
             if self.nodes.contains_key(&current) {
-                self.remove(&current, stats);
+                self.remove(&current, stats, changes);
             }
-            self.insert(&current, EntryKind::Dir, Attrs::default());
+            let attrs = Attrs::default();
+            self.insert(&current, EntryKind::Dir, attrs);
             stats.inserted += 1;
+            changes.push(EffectiveChange::Inserted {
+                path: current.clone(),
+                kind: EntryKind::Dir,
+                attrs,
+            });
         }
     }
 
@@ -271,24 +321,48 @@ impl Model {
         );
     }
 
-    fn remove(&mut self, path: &Path, stats: &mut ApplyStats) -> bool {
+    fn remove(
+        &mut self,
+        path: &Path,
+        stats: &mut ApplyStats,
+        changes: &mut Vec<EffectiveChange>,
+    ) -> bool {
         if path.as_os_str().is_empty() || !self.nodes.contains_key(path) {
             stats.unchanged += 1;
             return false;
         }
         let parent = path.parent().unwrap_or(Path::new("")).to_path_buf();
-        let removed: Vec<PathBuf> = self
-            .nodes
-            .keys()
-            .filter(|candidate| *candidate == path || candidate.starts_with(path))
-            .cloned()
-            .collect();
+        let removed = self.removal_order(path);
         stats.removed += u64::try_from(removed.len()).expect("model entry count");
         for candidate in removed {
+            let node = self.nodes.get(&candidate).expect("model removal node");
+            changes.push(EffectiveChange::Removed {
+                path: candidate.clone(),
+                kind: node.kind,
+                attrs: node.attrs,
+            });
             self.nodes.remove(&candidate);
         }
         self.bump_children(&parent);
         true
+    }
+
+    fn removal_order(&self, path: &Path) -> Vec<PathBuf> {
+        let mut result = Vec::new();
+        let mut queue = VecDeque::from([path.to_path_buf()]);
+        while let Some(current) = queue.pop_front() {
+            result.push(current.clone());
+            queue.extend(
+                self.nodes
+                    .keys()
+                    .filter(|candidate| {
+                        candidate.as_path() != current
+                            && candidate.parent() == Some(current.as_path())
+                    })
+                    .cloned(),
+            );
+        }
+        result
     }
 
     fn bump_children(&mut self, path: &Path) {
@@ -298,6 +372,52 @@ impl Model {
     fn mark_unfresh(&mut self, path: &Path, freshness: Freshness) {
         self.freshness_epoch += 1;
         self.freshness.insert(path.to_path_buf(), (freshness, self.freshness_epoch));
+    }
+
+    fn begin_reconcile(&mut self, path: &Path) -> u64 {
+        let previous = self.freshness_at(path);
+        self.mark_unfresh(path, Freshness::Reconciling);
+        let started_at = self.freshness_epoch;
+        let current = self.freshness_at(path);
+        if previous != current {
+            self.commit_state(vec![StateTransition::Freshness {
+                path: path.to_path_buf(),
+                previous,
+                current,
+            }]);
+        }
+        started_at
+    }
+
+    fn finish_reconcile(&mut self, path: &Path, started_at: u64, complete: bool) {
+        let previous = self.freshness_at(path);
+        self.freshness
+            .retain(|marked, (_, epoch)| !marked.starts_with(path) || *epoch > started_at);
+        let mut state = Vec::new();
+        if complete {
+            state.push(StateTransition::Verified { path: path.to_path_buf() });
+        } else {
+            self.mark_unfresh(path, Freshness::Partial);
+        }
+        let current = self.freshness_at(path);
+        if previous != current {
+            state.push(StateTransition::Freshness { path: path.to_path_buf(), previous, current });
+        }
+        if !state.is_empty() {
+            self.commit_state(state);
+        }
+    }
+
+    fn commit_state(&mut self, state: Vec<StateTransition>) {
+        self.clock = self.clock.checked_next().expect("model state clock");
+        let commit = Commit {
+            clock: self.clock,
+            changes: Vec::new(),
+            impact: model_impact(&[], &state),
+            state,
+            work: fdu_core::Work::default(),
+        };
+        self.retain(commit);
     }
 
     fn freshness_at(&self, path: &Path) -> Freshness {
@@ -353,31 +473,94 @@ impl Model {
         })
     }
 
-    fn retain(&mut self, applied: AppliedDelta) {
-        if applied.len() > JOURNAL_CAPACITY {
+    fn retain(&mut self, commit: Commit) {
+        let cost = commit.retained_cost();
+        if cost > JOURNAL_CAPACITY {
             self.journal.clear();
-            self.journal_ops = 0;
-            self.journal_floor = applied.clock;
+            self.journal_cost = 0;
+            self.journal_floor = commit.clock;
             return;
         }
-        while self.journal_ops + applied.len() > JOURNAL_CAPACITY {
+        while self.journal_cost + cost > JOURNAL_CAPACITY {
             let dropped = self.journal.pop_front().expect("over-capacity model journal");
-            self.journal_ops -= dropped.len();
+            self.journal_cost -= dropped.retained_cost();
             self.journal_floor = dropped.clock;
         }
-        self.journal_ops += applied.len();
-        self.journal.push_back(applied);
+        self.journal_cost += cost;
+        self.journal.push_back(commit);
     }
 
-    fn since(&self, clock: Clock) -> (Vec<AppliedDelta>, bool) {
-        (
-            self.journal.iter().filter(|delta| delta.clock > clock).cloned().collect(),
-            clock < self.journal_floor,
-        )
+    fn since(&self, clock: Clock) -> (Vec<Commit>, Vec<AppliedDelta>, bool) {
+        let commits: Vec<Commit> =
+            self.journal.iter().filter(|commit| commit.clock > clock).cloned().collect();
+        let deltas = commits.iter().filter_map(Commit::applied_delta).collect();
+        (commits, deltas, clock < self.journal_floor)
     }
 
     fn take_pending_invalidations(&mut self) -> Vec<(PathBuf, InvalidateReason)> {
         std::mem::take(&mut self.pending_invalidations)
+    }
+}
+
+fn model_impact(changes: &[EffectiveChange], state: &[StateTransition]) -> Impact {
+    let mut domains = BTreeSet::new();
+    let mut dirty_paths = BTreeSet::new();
+    let mut all_dirty = false;
+    for change in changes {
+        match change {
+            EffectiveChange::Inserted { .. } | EffectiveChange::Removed { .. } => {
+                domains.extend([
+                    ImpactDomain::Topology,
+                    ImpactDomain::Metadata,
+                    ImpactDomain::Classification,
+                    ImpactDomain::Aggregates,
+                    ImpactDomain::Content,
+                ]);
+            }
+            EffectiveChange::Updated { .. } => {
+                domains.extend([
+                    ImpactDomain::Metadata,
+                    ImpactDomain::Aggregates,
+                    ImpactDomain::Content,
+                ]);
+            }
+            EffectiveChange::Invalidated { .. } => {
+                domains.insert(ImpactDomain::State);
+            }
+        }
+        model_dirty(change.path(), &mut dirty_paths, &mut all_dirty, EXPECTED_DIRTY_PATH_LIMIT);
+    }
+    for transition in state {
+        domains.insert(ImpactDomain::State);
+        model_dirty(transition.path(), &mut dirty_paths, &mut all_dirty, EXPECTED_DIRTY_PATH_LIMIT);
+    }
+    Impact {
+        domains: domains.into_iter().collect(),
+        dirty_paths: if all_dirty { Vec::new() } else { dirty_paths.into_iter().collect() },
+        all_dirty,
+    }
+}
+
+fn model_work(observations: u64, stats: ApplyStats) -> fdu_core::Work {
+    fdu_core::Work { observations, unchanged: stats.unchanged, stale: stats.stale }
+}
+
+fn model_dirty(
+    path: &Path,
+    dirty_paths: &mut BTreeSet<PathBuf>,
+    all_dirty: &mut bool,
+    limit: usize,
+) {
+    if *all_dirty {
+        return;
+    }
+    for ancestor in path.ancestors() {
+        dirty_paths.insert(ancestor.to_path_buf());
+        if dirty_paths.len() > limit {
+            dirty_paths.clear();
+            *all_dirty = true;
+            return;
+        }
     }
 }
 
@@ -510,7 +693,8 @@ fn assert_equivalent(index: &mut Index, model: &mut Model, seed: u64, trace: &[S
     );
 
     let actual_since = index.since(Clock::ZERO);
-    let (model_deltas, model_truncated) = model.since(Clock::ZERO);
+    let (model_commits, model_deltas, model_truncated) = model.since(Clock::ZERO);
+    assert_eq!(actual_since.commits, model_commits, "commit journal mismatch\n{}", context());
     assert_eq!(actual_since.deltas, model_deltas, "journal mismatch\n{}", context());
     assert_eq!(actual_since.truncated, model_truncated, "journal floor mismatch\n{}", context());
     assert_eq!(
@@ -689,6 +873,32 @@ fn fixed_seed_operation_sequences_match_the_independent_model_after_every_step()
 }
 
 #[test]
+fn reconciliation_state_only_commits_match_the_independent_model() {
+    let dir = tempfile::tempdir().expect("temporary root");
+    std::fs::write(dir.path().join("file.txt"), b"stable").expect("fixture file");
+    let config = fdu_core::ScanConfig::default();
+    let (mut index, _) = fdu_core::scan::scan_into_index(dir.path(), &config).expect("baseline");
+    let before = index.clock();
+    let mut model = Model::new();
+    let started_at = model.begin_reconcile(Path::new(""));
+    model.finish_reconcile(Path::new(""), started_at, true);
+
+    let mut legacy_deltas = Vec::new();
+    let report = fdu_core::scan::reconcile(&mut index, &config, &mut |delta| {
+        legacy_deltas.push(delta.clone());
+    })
+    .expect("unchanged reconciliation");
+
+    assert!(report.is_complete());
+    assert!(legacy_deltas.is_empty(), "state-only commits stay out of the legacy projection");
+    let actual = index.since(before);
+    let (expected_commits, expected_deltas, expected_truncated) = model.since(Clock::ZERO);
+    assert_eq!(actual.commits, expected_commits);
+    assert_eq!(actual.deltas, expected_deltas);
+    assert_eq!(actual.truncated, expected_truncated);
+}
+
+#[test]
 fn delayed_observations_reject_present_and_absent_aba() {
     let mut index = Index::new("/model-root");
     let mut model = Model::new();
@@ -731,7 +941,7 @@ fn delayed_observations_reject_present_and_absent_aba() {
 
     assert_eq!(actual, expected);
     assert_eq!(actual.stats.stale, 2);
-    assert!(actual.applied.is_none());
+    assert!(actual.applied().is_none());
     assert_equivalent(&mut index, &mut model, 0xaba, &["named ABA regression".into()]);
 }
 
@@ -839,11 +1049,12 @@ fn bounded_journal_reports_loss_at_the_same_clock_as_the_model() {
     }
 
     let actual = index.since(Clock::ZERO);
-    let (expected_deltas, expected_truncated) = model.since(Clock::ZERO);
+    let (expected_commits, expected_deltas, expected_truncated) = model.since(Clock::ZERO);
     assert_eq!(actual.truncated, expected_truncated);
+    assert_eq!(actual.commits, expected_commits);
     assert_eq!(actual.deltas, expected_deltas);
     assert!(actual.truncated);
-    assert_eq!(actual.deltas.len(), JOURNAL_CAPACITY);
+    assert!(!actual.deltas.is_empty());
 }
 
 #[cfg(unix)]

@@ -855,14 +855,14 @@ impl ReconcileTarget<'_> {
 
     fn begin_reconcile(&mut self, path: &Path) -> Result<u64> {
         match self {
-            Self::Direct(index) => Ok(index.begin_reconcile(path)),
+            Self::Direct(index) => index.begin_reconcile(path),
             Self::Shared(handle) => handle.begin_reconcile(path),
         }
     }
 
     fn finish_reconcile(&mut self, path: &Path, started_at: u64, complete: bool) -> Result<()> {
         match self {
-            Self::Direct(index) => index.finish_reconcile(path, started_at, complete),
+            Self::Direct(index) => index.finish_reconcile(path, started_at, complete)?,
             Self::Shared(handle) => handle.finish_reconcile(path, started_at, complete)?,
         }
         Ok(())
@@ -3484,7 +3484,7 @@ fn flush_direct_reconcile_batch(
     }
     let outcome = index.apply(&Observation::new(std::mem::take(batch)))?;
     merge_apply_stats(stats, outcome.stats);
-    if let Some(applied) = &outcome.applied {
+    if let Some(applied) = outcome.applied() {
         sink(applied);
     }
     Ok(())
@@ -3605,7 +3605,7 @@ fn flush_reconcile_batch(
     }
     let outcome = target.apply(&Observation::from_ops(std::mem::take(batch)))?;
     merge_apply_stats(stats, outcome.stats);
-    if let Some(applied) = &outcome.applied {
+    if let Some(applied) = outcome.applied() {
         sink(applied);
     }
     Ok(())
@@ -5502,7 +5502,14 @@ mod tests {
         assert!(report.is_complete());
         assert_eq!(report.apply.unchanged, 5, "3 files + 2 dirs all already known");
         assert!(deltas.is_empty());
-        assert_eq!(index.clock(), before_clock);
+        assert_eq!(
+            index.clock(),
+            crate::Clock(before_clock.0 + 2),
+            "start and finish are state commits"
+        );
+        let commits = index.since(before_clock).commits;
+        assert_eq!(commits.len(), 2);
+        assert!(commits.iter().all(|commit| commit.changes.is_empty()));
         assert_eq!(index.total(), before_total);
     }
 
@@ -5792,7 +5799,14 @@ mod tests {
         assert!(report.is_complete());
         assert_eq!(report.apply.unchanged, 5, "3 files + 2 dirs all already known");
         assert!(deltas.is_empty());
-        assert_eq!(handle.clock().expect("clock"), before_clock);
+        assert_eq!(
+            handle.clock().expect("clock"),
+            crate::Clock(before_clock.0 + 2),
+            "start and finish are state commits"
+        );
+        let commits = handle.since(before_clock).expect("state commits").commits;
+        assert_eq!(commits.len(), 2);
+        assert!(commits.iter().all(|commit| commit.changes.is_empty()));
     }
 
     #[test]

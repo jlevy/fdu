@@ -1,9 +1,10 @@
 //! The observation and commit contract shared by every producer and consumer.
 //!
 //! The walker, revalidator, and watch layer produce [`Observation`] batches. The index
-//! arbitrates their preconditions, removes no-ops, and stamps an [`AppliedDelta`] only
-//! after a change has been accepted. The journal and consumer-facing change feed see
-//! only those committed deltas. Nothing else mutates the index.
+//! arbitrates their preconditions, removes no-ops, and creates a [`Commit`] only after
+//! every effective fact, reducer, and state change is known. The journal retains those
+//! commits. [`AppliedDelta`] is a compatibility projection; it is never a second source
+//! of change truth.
 //!
 //! Three properties are load-bearing, and the rest of the crate depends on them:
 //!
@@ -13,14 +14,14 @@
 //!   state plus generation and revision guards from the start of its check. If another
 //!   producer commits a conflicting change first, arbitration rejects the delayed
 //!   observation.
-//! - **Applied deltas contain changes, not attempts.** No-ops and stale observations do
-//!   not advance the public clock or consume journal space.
+//! - **Commits contain changes, not attempts.** No-ops and stale observations do not
+//!   advance the public clock or consume journal space.
 
 use std::path::{Path, PathBuf};
 
 /// A monotonic logical clock, in the spirit of Watchman's clockspec but process-local.
 ///
-/// Every [`AppliedDelta`] is stamped, so a consumer can ask "what changed since C?"
+/// Every [`Commit`] is stamped, so a consumer can ask "what changed since C?"
 /// rather than having to hold a live subscription.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default, Hash)]
 pub struct Clock(pub u64);
@@ -534,7 +535,195 @@ impl Observation {
     }
 }
 
-/// A committed batch containing only effective mutations.
+/// One exact fact mutation performed by the index.
+///
+/// These are deliberately more specific than [`Op`]. An observation says what a
+/// producer requested; an effective change says what the index actually did. One
+/// upsert may, for example, replace a subtree and insert a differently typed entry.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum EffectiveChange {
+    /// A previously absent entry was inserted.
+    Inserted {
+        /// Relative path of the inserted entry.
+        path: PathBuf,
+        /// Filesystem kind retained for the entry.
+        kind: EntryKind,
+        /// Metadata retained for the entry.
+        attrs: Attrs,
+    },
+    /// An existing entry retained its kind and changed metadata.
+    Updated {
+        /// Relative path of the updated entry.
+        path: PathBuf,
+        /// Filesystem kind retained for the entry.
+        kind: EntryKind,
+        /// Metadata before the commit.
+        previous: Attrs,
+        /// Metadata after the commit.
+        current: Attrs,
+    },
+    /// One entry was removed. Removing a subtree records one change per entry.
+    Removed {
+        /// Relative path of the removed entry.
+        path: PathBuf,
+        /// Filesystem kind the entry had before removal.
+        kind: EntryKind,
+        /// Metadata the entry had before removal.
+        attrs: Attrs,
+    },
+    /// A producer reported uncertainty that requires verified reconciliation.
+    Invalidated {
+        /// Relative root of the invalidated subtree.
+        path: PathBuf,
+        /// Why precise facts were unavailable.
+        reason: InvalidateReason,
+    },
+}
+
+impl EffectiveChange {
+    /// Relative path affected by this change.
+    pub fn path(&self) -> &Path {
+        match self {
+            Self::Inserted { path, .. }
+            | Self::Updated { path, .. }
+            | Self::Removed { path, .. }
+            | Self::Invalidated { path, .. } => path,
+        }
+    }
+
+    fn as_compatibility_op(&self) -> Op {
+        match self {
+            Self::Inserted { path, kind, attrs } => {
+                Op::Upsert { path: path.clone(), kind: *kind, attrs: *attrs }
+            }
+            Self::Updated { path, kind, current, .. } => {
+                Op::Upsert { path: path.clone(), kind: *kind, attrs: *current }
+            }
+            Self::Removed { path, .. } => Op::Remove { path: path.clone() },
+            Self::Invalidated { path, reason } => {
+                Op::InvalidateSubtree { path: path.clone(), reason: *reason }
+            }
+        }
+    }
+}
+
+/// A stable fdu-native answer domain that one commit may have made stale.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+pub enum ImpactDomain {
+    /// Entry presence, kind, parentage, or child membership.
+    Topology,
+    /// Filesystem metadata on retained entries.
+    Metadata,
+    /// Type or ignore classification.
+    Classification,
+    /// Maintained directory and whole-tree aggregates.
+    Aggregates,
+    /// Derived content records or aggregates.
+    Content,
+    /// Trust, coverage, or lifecycle state.
+    State,
+}
+
+/// Maximum number of individual dirty paths retained in one commit.
+///
+/// When a commit touches more, [`Impact::all_dirty`] is set and the partial list is
+/// discarded. A truncated list would look complete and allow a stale answer to survive.
+pub const MAX_DIRTY_PATHS: usize = 256;
+
+/// Bounded invalidation guidance derived from exact effective changes.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub struct Impact {
+    /// Answer domains that may have changed, in stable enum order without duplicates.
+    pub domains: Vec<ImpactDomain>,
+    /// Exact affected paths and ancestors, unless [`Self::all_dirty`] is set.
+    pub dirty_paths: Vec<PathBuf>,
+    /// Whether the affected path set exceeded the engine's retained-path limit.
+    pub all_dirty: bool,
+}
+
+/// One observable transition that did not change a retained filesystem entry.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum StateTransition {
+    /// The trust state visible for a subtree changed.
+    Freshness {
+        /// Relative root of the affected subtree.
+        path: PathBuf,
+        /// State before the commit.
+        previous: Freshness,
+        /// State after the commit.
+        current: Freshness,
+    },
+    /// A completed reconciliation verified every retained path beneath this root.
+    Verified {
+        /// Relative root covered by the reconciliation.
+        path: PathBuf,
+    },
+}
+
+impl StateTransition {
+    /// Relative path affected by this transition.
+    pub fn path(&self) -> &Path {
+        match self {
+            Self::Freshness { path, .. } | Self::Verified { path } => path,
+        }
+    }
+}
+
+/// Bounded work performed while arbitrating and committing producer input.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct Work {
+    /// Producer operations considered.
+    pub observations: u64,
+    /// Accepted operations whose complete observed state already matched.
+    pub unchanged: u64,
+    /// Conditional observations rejected at the commit boundary.
+    pub stale: u64,
+}
+
+/// One atomic, exact index transition.
+///
+/// Detached indexes use the process-local [`Clock`] as their version sequence. The
+/// opened-root layer later binds that sequence to its own lifetime identity without
+/// putting live-session identity into clonable detached state.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Commit {
+    /// Logical commit clock minted for the complete transition.
+    pub clock: Clock,
+    /// Exact retained fact mutations in application order.
+    pub changes: Vec<EffectiveChange>,
+    /// Bounded answer invalidation derived from `changes` and `state`.
+    pub impact: Impact,
+    /// Observable non-entry transitions committed at the same boundary.
+    pub state: Vec<StateTransition>,
+    /// Work performed to reach this commit.
+    pub work: Work,
+}
+
+impl Commit {
+    /// Whether this value carries no effective fact or state transition.
+    pub fn is_empty(&self) -> bool {
+        self.changes.is_empty() && self.state.is_empty()
+    }
+
+    /// Units charged against the bounded retained journal.
+    pub fn retained_cost(&self) -> usize {
+        self.changes.len()
+            + self.state.len()
+            + self.impact.dirty_paths.len()
+            + usize::from(self.impact.all_dirty)
+    }
+
+    /// Project entry changes into the legacy delta vocabulary.
+    ///
+    /// State-only commits return `None`: callers needing complete history consume
+    /// commits, while legacy callers continue to see only entry-operation deltas.
+    pub fn applied_delta(&self) -> Option<AppliedDelta> {
+        let ops = self.changes.iter().map(EffectiveChange::as_compatibility_op).collect();
+        (!self.changes.is_empty()).then_some(AppliedDelta { clock: self.clock, ops })
+    }
+}
+
+/// A compatibility projection of a commit's effective entry changes.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct AppliedDelta {
     /// Logical commit clock minted for the whole batch.
@@ -615,6 +804,11 @@ pub enum Error {
     /// The watch worker panicked; its bounded channel is no longer live.
     #[error("watch worker panicked and stopped")]
     WatchWorkerPanicked,
+
+    #[cfg(test)]
+    /// A test-only reducer preflight rejected a prepared transition.
+    #[error("prepared commit rejected by {0}")]
+    CommitRejected(&'static str),
 
     /// An argument value did not match its documented grammar.
     ///

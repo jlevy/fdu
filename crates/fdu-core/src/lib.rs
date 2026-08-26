@@ -83,9 +83,10 @@ pub use crate::cache::{
     CacheStatus, SnapshotInfo, cache_status, clear_all_caches, clear_cache, list_caches,
 };
 pub use crate::engine_contract::{
-    AppliedDelta, Attrs, Clock, EntryKind, Error, Expectation, Fingerprint, Freshness,
-    InvalidateReason, Observation, ObservationOp, Op, PathExpectation, PathState, Provenance,
-    Result, ScanScope, Source, Status,
+    AppliedDelta, Attrs, Clock, Commit, EffectiveChange, EntryKind, Error, Expectation,
+    Fingerprint, Freshness, Impact, ImpactDomain, InvalidateReason, Observation, ObservationOp, Op,
+    PathExpectation, PathState, Provenance, Result, ScanScope, Source, StateTransition, Status,
+    Work,
 };
 pub use crate::index::{
     ApplyOutcome, ApplyStats, ChildSnapshot, EntryId, ExtTally, Index, IndexHandle, RollUp, Since,
