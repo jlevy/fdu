@@ -1,19 +1,17 @@
 # fdu Surface Architecture
 
-**Date:** 2026-08-22
-
-**Author:** fdu project
-
-**Status:** Current
-
 ## Overview
 
-fdu answers one question — how is size distributed across a tree — through three
-surfaces. This document says what each one is, which is authoritative, and how they are
-kept from disagreeing.
+fdu answers directory-inventory questions through three surfaces.
+This document owns their package boundaries, public responsibilities, parity contract,
+and the boundary between the synchronous engine and an interactive application.
 
 The rules themselves are stated in [the design principles](fdu-design-principles.md)
-under *One Engine, and Surfaces That Cannot Disagree With It*. This is the how.
+under *One Engine, and Surfaces That Cannot Disagree With It*.
+[The engine architecture](fdu-engine-architecture.md) owns retained facts, commits,
+serving lifecycles, paging, and shutdown.
+This document explains how those engine capabilities reach users without acquiring a
+second implementation.
 
 ## The Three Surfaces
 
@@ -28,15 +26,14 @@ The other two present it; neither may know something it does not.
 
 The engine has two additive serving lifecycles, not two engines:
 
-- the existing one-shot lifecycle returns a complete `Index` or `Report` after the work
-  needed for that answer finishes;
-- the target opened-root lifecycle returns one shared `OpenedIndex` while cold discovery
-  proceeds and exposes bounded reads, change polling, refresh, prioritization, and
-  joined close.
+- the detached lifecycle returns a complete `Index` or `Report` after the work needed
+  for that answer finishes;
+- the opened lifecycle returns one shared `OpenedIndex` while cold discovery proceeds
+  and exposes bounded reads, change polling, refresh, prioritization, and joined close.
 
 Both use the same facts, reducers, exact commit path, query vocabulary, and runtime type
-registry. The opened-root ownership and concurrency rules are in
-[the opened-root architecture](arch-2026-08-25-fdu-opened-root.md).
+registry. The ownership and concurrency rules are in
+[the engine architecture](fdu-engine-architecture.md).
 
 ### Why the packages are shaped this way
 
@@ -81,15 +78,16 @@ not print it.
 
 ## How Agreement Is Enforced
 
-`tests/golden/*.tryscript.md` records what the command line prints for 129 sessions.
-The same corpus is replayed against the Python surface through a shim
+`tests/golden/*.tryscript.md` records complete command-line product sessions.
+The same applicable corpus is replayed against the Python surface through a shim
 (`tests/parity/py/parity_cli.py`) that serves fdu’s argv using only the public Python
 package — not a wrapper around the binary, which would test nothing.
 
-Parity compares 126 of those 129. Three are declined by name in `run-parity.mjs`,
-because they render clap’s own help and usage errors or a static document the package
-does not carry. The two numbers are different on purpose, and a report quoting one where
-it means the other is the kind of drift this document exists to prevent.
+Cases the Python API cannot own, such as the Rust argument parser’s help or a static
+document not shipped in the wheel, are declined explicitly by name in `run-parity.mjs`.
+The harness asserts that every other golden participates.
+It never relies on a remembered session count, which would become stale as the corpus
+grows.
 
 Differences land in `tests/parity/deviations-python.diff`, committed and reviewed like
 any golden. Each is matched against a named class in `scripts/parity-classes.mjs`, and
@@ -99,7 +97,7 @@ A class is a claim about the API and needs the same scrutiny as changing behavio
 When one stops explaining anything it is deleted rather than kept: its matcher would
 still match, so it would silently absorb the next real regression.
 
-### What the surviving classes mean
+### What deviation classes mean
 
 - **Each surface names its own parameter.** There is no `--view` in Python, so its
   diagnostics name the parameter.
@@ -128,7 +126,7 @@ would not have.
 
 ## Interactive Client Boundary
 
-The Python package mirrors the opened-root engine as five synchronous operations.
+The Python package mirrors the opened lifecycle as five synchronous operations.
 Calls that block or perform substantial native work release the GIL, but the package
 does not add an async runtime or hide long-lived polls in Python’s shared executor.
 
@@ -136,19 +134,46 @@ An async application adapts that synchronous surface at its own boundary.
 That adapter may own an event-loop bridge, root generations, and application cache
 invalidation, but it may not become another inventory engine: it does not walk the
 filesystem, retain an entry replica, rebuild roll-ups, or invent fingerprint and paging
-semantics.
+semantics. The bridge bounds in-flight polls and native results and joins its worker on
+close.
+
+An explicitly selected adapter fails visibly when its package or API is unavailable; it
+does not silently substitute another provider.
+Cross-package conformance installs the exact engine revision under test rather than
+using a moving branch or sibling source checkout.
 
 The command line does not need to expose every lifecycle immediately.
 “The command line invents nothing” means a CLI capability must come from the engine; it
 does not require every additive library capability to become a default flag before a
 client has proven it.
 
+## Future Considerations
+
+### Open Questions
+
+- Which opened-lifecycle capabilities should eventually receive an explicit CLI
+  presentation, without changing the default one-shot command?
+- When another language binding is justified, which parts of the parity harness can be
+  replayed unchanged and which differences are intrinsic to that language?
+- Which interactive clients, if any, need a stronger bridge than a bounded blocking
+  change poll adapted at the application boundary?
+
+### Potential Improvements
+
+- Generalize the parity runner to register another public binding without copying the
+  golden corpus or expected output.
+- Reduce deviation classes whenever public types can carry the missing information
+  directly.
+- Add packaging-boundary conformance sessions for the opened lifecycle after its public
+  types stabilize.
+
 ## References
 
+- [Architecture index](README.md)
 - [Design principles](fdu-design-principles.md) — the rules and why they are
   load-bearing
-- [Opened-root architecture](arch-2026-08-25-fdu-opened-root.md) — the target live
-  owner, commit, read, journal, and client boundaries
+- [Engine architecture](fdu-engine-architecture.md) — facts, ownership, commits,
+  lifecycles, reads, paging, and shutdown
 - [Python CLI parity](../specs/done/plan-2026-08-21-fdu-python-cli-parity.md) — the
   harness and what it found
 - [The command line on the public API](../specs/done/plan-2026-08-22-fdu-cli-on-the-public-api.md)

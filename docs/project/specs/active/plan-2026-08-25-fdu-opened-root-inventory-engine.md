@@ -53,8 +53,8 @@ remain on the MetaBrowser PR #74 branch.
 The two PRs form one coordinated integration effort and pin each other’s exact tested
 revisions.
 
-[The opened-root architecture](../../architecture/arch-2026-08-25-fdu-opened-root.md) is
-the durable design authority for this work.
+[The engine architecture](../../architecture/fdu-engine-architecture.md) is the durable
+design authority for this work.
 This plan maps that architecture to phases, files, functions, reusable prototype units,
 tests, and beads.
 
@@ -79,7 +79,7 @@ tests, and beads.
 | Add an async Rust runtime? | No. Use standard threads and synchronization in core. Async adaptation belongs at the Python boundary. |
 | Change the default CLI? | No. Existing one-shot behavior and output remain the default. Interactive progress is a later explicit mode over the same engine. |
 
-The opened-root architecture and the detailed Design and phase acceptance sections are
+The engine architecture and the detailed Design and phase acceptance sections are
 normative for implementation.
 The Decision Summary and Bead Reconciliation table are indexes and must be corrected if
 they drift from those sections.
@@ -196,7 +196,7 @@ The rewrite must preserve the repository’s
 [design principles](../../architecture/fdu-design-principles.md) and
 [surface architecture](../../architecture/fdu-surface-architecture.md), with the live
 ownership and transition boundaries defined by
-[the opened-root architecture](../../architecture/arch-2026-08-25-fdu-opened-root.md):
+[the engine architecture](../../architecture/fdu-engine-architecture.md):
 
 - defaults answer the stated question;
 - no bound or truncation is silent;
@@ -1924,8 +1924,12 @@ their status as approval of that shape.
 Implementation epic `fdu-snej` owns this plan.
 The detailed children in the implementation bead graph now record the reviewed file and
 function boundaries.
-They remain unstarted while this architecture update is reviewed; changing a boundary
-first requires updating the architecture, this plan, and the affected bead together.
+The documentation prerequisite is complete on this branch: the architecture directory
+now has an explicit index, the engine design is a general undated authority, and the
+principles and surface documents have distinct responsibilities.
+Implementation children remain unstarted while that architecture is reviewed; changing a
+boundary first requires updating the architecture, this plan, and the affected bead
+together.
 
 ## Open Questions
 
@@ -1947,7 +1951,7 @@ commit invariants:
 - [PR #47 design and merge-readiness review](../../reports/report-2026-08-25-pr-47-design-and-readiness-review.md)
 - [fdu design principles](../../architecture/fdu-design-principles.md)
 - [fdu surface architecture](../../architecture/fdu-surface-architecture.md)
-- [fdu opened-root architecture](../../architecture/arch-2026-08-25-fdu-opened-root.md)
+- [fdu engine architecture](../../architecture/fdu-engine-architecture.md)
 - [Existing interactive-client contract at the reviewed PR #47 head](https://github.com/jlevy/fdu/blob/0558c7eff1b91a1dca052d4259dbe3751f6ffcd0/docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md)
 - [Existing implementation map at the reviewed PR #47 head](https://github.com/jlevy/fdu/blob/0558c7eff1b91a1dca052d4259dbe3751f6ffcd0/docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md)
 - [Progressive-results plan](plan-2026-08-11-fdu-progressive-results.md)

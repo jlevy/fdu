@@ -7,11 +7,11 @@ The design of fdu, and the principles any change must respect, are in
 Read it before changing engine behavior, and read its **First Principles** section
 before choosing a default, an ordering, an output shape, or a bound — those rules exist
 because each was broken once by a choice that looked entirely normal.
-The target ownership, commit, paging, shutdown, and client boundaries for long-lived
-interactive work are in
-[arch-2026-08-25-fdu-opened-root.md](docs/project/architecture/arch-2026-08-25-fdu-opened-root.md).
-Read it before changing opened-root, progressive discovery, refresh, journal, observer,
-or continuation behavior.
+The retained-state, commit, serving-lifecycle, paging, observation, and shutdown
+boundaries are in
+[fdu-engine-architecture.md](docs/project/architecture/fdu-engine-architecture.md).
+Read it before changing index ownership, one-shot or opened serving, progressive
+discovery, refresh, journals, observers, continuations, or engine test seams.
 This file covers how to operate on the repository; that one covers what the code must be
 true to.
 
