@@ -5,7 +5,7 @@ title: Implement exact MetaBrowser catalog predicate semantics
 kind: bug
 status: open
 priority: 1
-version: 9
+version: 11
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
@@ -17,19 +17,22 @@ refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5021788526
     at: 2026-08-25T17:13:14.178Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5025612603
+    at: 2026-08-26T00:28:56.520Z
 labels:
   - pr47-review
   - metabrowser
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-25T14:14:37.582Z
-updated_at: 2026-08-25T23:47:03.450Z
+updated_at: 2026-08-26T00:28:56.523Z
 closed_at: null
 close_reason: null
 resolution: null
 duplicate_of: null
 ---
-At PR #47 exact head e9af881a31243c5c763eff09b2e21ece3a7f5aab, native catalog predicates exist but are not exact with MetaBrowser #74 at 0577bb125c4a607719befa3f213362f5522d5724. MetaBrowser matches terminal extensions with PurePosixPath(entry.name).suffix.lower(); PurePosixPath("..foo").suffix is empty, while query_selection::terminal_suffix returns Some(".foo") and its unit test requires that, so .foo admits a row the Python provider excludes. CatalogQuery rejects every ancestor containing slash or backslash and rejects duplicate terminal_extensions/ancestor_names; admit_ancestor_name uses native Path components and admits backslash on POSIX, and both FDU admit methods append duplicates. The generated fixture explicitly records accepted asymmetries and omits a ..foo file and a real POSIX backslash directory, so it cannot establish exactness. Align the public contract deliberately on both sides (rejecting . and .. in MetaBrowser is reasonable), but make answer semantics and validation identical: use the consumer suffix rule, reject both separators and duplicates, and turn every former asymmetry into a shared acceptance/refusal case. Add paging and Python-boundary regressions for ..foo/.foo, a POSIX directory named with backslash, duplicates, dot components, and cross-platform behavior; no adapter-side filtering or mirror state.
+At PR #47 exact head 0558c7eff1b91a1dca052d4259dbe3751f6ffcd0 versus MetaBrowser #74 exact head 0577bb125c4a607719befa3f213362f5522d5724, catalog predicates are still not a runtime-independent exact contract. The new FDU spec rejects the prior ..foo finding after checking CPython 3.11-3.13, but MetaBrowser supports 3.12-3.14. Verified with uv: PurePosixPath("..foo").suffix is ".foo" on 3.12/3.13 and "" on 3.14; PurePosixPath("foo.").suffix changes from "" to ".". MetaBrowser's Python provider therefore changes answers by supported runtime. FDU's explicit terminal_suffix is stable and matches 3.12/3.13. Align both owned sides on one stated rule, preferably the existing FDU rule (last dot, neither first nor final: ".gitignore" and "foo." have none, "..foo" has ".foo"), and replace MetaBrowser's pathlib dependency with the contract helper tracked by mb-5npa. Remaining FDU work: reject duplicate terminal_extensions and ancestor_names; reject both separators in ancestor names on every platform. MetaBrowser should reject "." and ".." ancestor names so queries that canonical paths can never match fail at construction, matching FDU. Turn every boundary into a shared acceptance/refusal case across Python 3.12/3.13/3.14 and the Rust/Python binding: ..foo, .foo, foo., duplicates, dot components, and a real POSIX backslash directory. The generated fixture must not silently depend on the interpreter used to regenerate it. No adapter-side filtering, runtime-version branch, or mirror state.
 
 ## Notes
 
