@@ -1057,8 +1057,10 @@ described in the reuse protocol so later `index.rs` work does not create conflic
   assertions before importing new surface behavior.
 - [ ] Add an independent deterministic reference model for retained facts, parent
   ordering, roll-ups, exact changes, control-file updates, and resource refusal.
-- [ ] Add the opened-root golden-session harness, its five canonical scenarios, and
-  automatic public-contract coverage closure described in Testing Strategy.
+- [ ] Fix the closed session schema, automatic contract-coverage manifest, and staged
+  per-owner test-control boundaries described in Testing Strategy.
+  Implement each seam with the production Phase 2 capability it controls; compose the
+  five session goldens only after all five operations exist.
 - [ ] Gate with the focused model tests, complete golden corpus, CLI/Python parity,
   `make docs-format-check`, and `make check`.
 
@@ -1114,6 +1116,8 @@ Acceptance for Phase 1:
 - [ ] Add bounded verified multi-path refresh through the shared commit pipeline.
 - [ ] Add native observation with capture-before-baseline buffering, scripted overflow,
   final reconciliation, and a no-gap transition to watching.
+- [ ] Compose the staged test seams into the five opened-root session goldens and close
+  the automatic public-contract coverage manifest against real production values.
 - [ ] Mirror the five synchronous operations in Python with GIL release; keep the
   long-lived async change bridge in the MetaBrowser adapter.
 - [ ] Prove shutdown, concurrent reads and commits, slow consumers, provider gaps,
@@ -1287,14 +1291,19 @@ Bead `fdu-utf1` integrates the existing `fdu-9tdm` and `fdu-o8r8` prerequisites.
 | `tests/golden/cli-content.tryscript.md` | Replace each Node command that parses a complete JSON report and prints selected fields with either the direct complete deterministic JSON response or a focused Rust/Python test. Preserve Node commands that only create or inspect fixture state. | `rg` finds no product-output parser that discards adjacent contract fields; reviewed golden diffs show the whole answer. |
 | Any future `tests/golden/cli-cost.tryscript.md` | Do not import PR #47’s relation-only golden. Put counter relationships in `counters.rs`, scan integration tests, or the performance harness; a golden may show one complete stable diagnostic record only if that record is itself the product surface under test. | `fdu-9tdm` closes with an audited inventory of every parsing site. |
 | `crates/fdu-core/tests/reference_model.rs` | Add a dependency-free canonical tree model that recomputes parents, ordering, roll-ups, completeness, control effects, exact changes, and state from scratch. Use a fixed-seed operation generator and print the seed plus full trace on failure. | Compare every observable field after every operation; retain every minimized discovery as a named regression. |
-| `crates/fdu-core/src/opened/test_support.rs` and `opened/golden_tests.rs`, both under `cfg(test)` | Add the deterministic scenario driver, scripted producer/barrier seams, stable trace values, canonical renderer, invariant validator, and five named sessions. Keep production paths in use and test-only control out of the public API. | Every session passes the independent model and invariant validator before its complete trace is compared; no runtime dependency is added. |
-| `crates/fdu-core/tests/golden/opened-root/*.golden` | Record complete, bounded scenario inputs, actions, commits, reads, polls, receipts, failures, and final state. Use exact stable values and central normalization only for genuinely unstable fields. | Five reviewable artifacts stay below their size budget and collectively close the public contract coverage manifest. |
-| `scripts/check-opened-root-goldens.mjs` and `Makefile` | Add comparison, one-scenario update, artifact lint, and contract-coverage targets. Refuse an unnamed bulk update and reject unstable literals, broad patterns, duplicate scenarios, and oversized artifacts. | Default comparison is hermetic; updating requires an explicit scenario name and leaves an ordinary reviewed git diff. |
 | `crates/fdu-core/src/index.rs` test support only | Expose no production helper to the model. Add test-only constructors only for facts that cannot be expressed through public observations. | A source check and code review confirm the model does not call production reducers or mutation helpers. |
 | `scripts/run-golden.mjs`, `scripts/run-parity.mjs`, `scripts/parity-classes.mjs` | Change only if broad observations require a portability class; classes match unstable fields, never whole semantic subtrees. | Golden portability and CLI/Python parity gates pass. |
 
-Gate: focused model and golden tests, complete golden corpus, parity, docs format, then
-`make check`. Record the green commit before the registry reuse commit.
+The production `OpenedIndex` and exact commits do not exist at 1A. Creating the runner
+or artifacts here would require a parallel test API whose values could agree with
+themselves while production later diverged.
+Checkpoint 1A therefore fixes the session design and seam ownership only; the owner,
+discovery, read, journal, refresh, and observation beads add their own typed test
+controls as those real boundaries land, and `fdu-0kv7` composes the runner and artifacts
+afterward.
+
+Gate: focused model tests, complete golden corpus, parity, docs format, `make check`,
+and `make cross-lint`. Record the green commit before the registry reuse commit.
 
 ### Preparatory registry reuse
 
@@ -1390,6 +1399,14 @@ No Phase 2 bead starts if a one-shot surface differs without a reviewed correcti
 | `watch.rs` plus `watch/scripted_events.rs` | Separate capture from verification. Capture before baseline where supported, buffer bounded hints, report overflow/gaps, reconcile, and use the opened-root commit path for the final state transition to `watching`. | `fdu-9jzp`: scripted before/during/after baseline events, overflow, registration gap, final reconciliation, live mutation, disabled-watch behavior, and deterministic shutdown. |
 | Transitional `watch_session.rs` | Consume the same verifier and exact commits for the CLI; do not share `OpenedIndex` journal or lifecycle state unless it can become a truly thin adapter. | Existing watch behavior and goldens. |
 
+Each capability adds only its own typed, per-owner test seam while its production
+boundary is in view: lifecycle and joined shutdown with `fdu-mkga`, discovery order and
+budget with `fdu-194x`, complete read envelopes with `fdu-r7s7`, wait boundaries with
+`fdu-ngnm`, conditional-commit barriers with `fdu-3za7`, and scripted hints with
+`fdu-9jzp`. Bead `fdu-0kv7` then composes those seams into the five canonical sessions,
+artifact tooling, invariant checks, and automatic coverage closure.
+It adds no new production seam and blocks the Python surface.
+
 #### Python surface
 
 | File or function | Change | Gate |
@@ -1477,7 +1494,7 @@ arrow means the bead on the left depends on the bead or beads on the right.
 
 | Phase | Bead | Depends on |
 | --- | --- | --- |
-| 1A | `fdu-utf1` observable oracle and golden sessions | existing `fdu-9tdm`, `fdu-o8r8` |
+| 1A | `fdu-utf1` observable oracle prerequisites and staged session design | existing `fdu-9tdm`, `fdu-o8r8` |
 | 1C preparation | `fdu-tewk` audited runtime registry reuse | `fdu-utf1` |
 | 1B kernel | `fdu-qzqf` exact prepared commit | `fdu-tewk` |
 | 1B producers | `fdu-gpls` route every producer | `fdu-qzqf` |
@@ -1489,7 +1506,8 @@ arrow means the bead on the left depends on the bead or beads on the right.
 | 2 journal | `fdu-ngnm` journal and change poll | `fdu-mkga`, `fdu-gpls` |
 | 2 refresh | `fdu-3za7` multi-path refresh | `fdu-mkga`, `fdu-gpls` |
 | 2 observation | `fdu-9jzp` no-gap handoff | `fdu-194x`, `fdu-ngnm`, `fdu-3za7` |
-| 2 Python | `fdu-bnsk` synchronous Python surface | `fdu-r7s7`, `fdu-ngnm`, `fdu-3za7`, `fdu-9jzp` |
+| 2 session proof | `fdu-0kv7` five session goldens and coverage closure | `fdu-mkga`, `fdu-194x`, `fdu-r7s7`, `fdu-ngnm`, `fdu-3za7`, `fdu-9jzp` |
+| 2 Python | `fdu-bnsk` synchronous Python surface | `fdu-r7s7`, `fdu-ngnm`, `fdu-3za7`, `fdu-9jzp`, `fdu-0kv7` |
 | 3A | `fdu-sewa` unchanged-contract measurement | `fdu-bnsk` |
 | 3B contract | `fdu-m68r` joint contract | `fdu-sewa` |
 | 3B oracle | `fdu-yv1o` Python provider | `fdu-m68r` |
@@ -1589,6 +1607,12 @@ must read a private field to explain an effect, serialize an internal control-fl
 or infer a change from before/after snapshots, stop and repair the production value
 model. Exact commits and bounded diagnostics should make the complete causal behavior
 naturally inspectable.
+
+The harness is staged, not front-loaded.
+Each Phase 2 bead adds the typed control for the production boundary it introduces;
+`fdu-0kv7` creates the runner and checked-in artifacts only after all required public
+values exist. This avoids both late synchronization retrofits and an early fake
+`OpenedIndex` whose test-only values could become a second contract.
 
 The initial files are:
 
