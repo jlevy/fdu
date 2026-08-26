@@ -9,7 +9,7 @@ UV ?= uv
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test reference-model test-golden golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse clean cli perf-help verify-beads
+.PHONY: help build release test rust-test reference-model test-golden golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names admission-sites fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -28,6 +28,7 @@ help:
 	@echo "make check      Handoff gate: tests, audits, docs, and installed-wheel smoke"
 	@echo "make supply-chain  Verify release age, provenance, pins, and CI trust controls"
 	@echo "make rust-module-names  Check Rust source filenames for ambiguity"
+	@echo "make admission-sites  Check every filesystem producer routes through admission"
 	@echo "make msrv       Compile all features and test the core contract on Rust $(MSRV)"
 	@echo "make fix        Apply formatting and machine-applicable lint fixes"
 	@echo "make audit      Dependency advisory and license audit (needs cargo-deny)"
@@ -87,7 +88,7 @@ $(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
 	$(NPM) ci
 
 # Everything CI enforces, in the order that fails fastest.
-check: uv-version supply-chain rust-module-names golden-invocations golden-observability portability fmt-check clippy test docs docs-format-check perf-test perf-schema-check perf-ledger-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check release-test
+check: uv-version supply-chain rust-module-names admission-sites golden-invocations golden-observability portability fmt-check clippy test docs docs-format-check perf-test perf-schema-check perf-ledger-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check release-test
 
 # The uv.toml files express the supply-chain cool-off as a relative `exclude-newer`
 # ("14 days"). uv releases older than this cannot parse that form: they abort with
@@ -159,6 +160,9 @@ supply-chain:
 rust-module-names:
 	$(NODE) --test scripts/check-rust-module-names.test.mjs
 	$(NODE) scripts/check-rust-module-names.mjs
+
+admission-sites:
+	$(NODE) scripts/check-admission-sites.mjs
 
 # The corpus selects its binary by full path. This keeps a bare `fdu` -- which PATH
 # would happily resolve to an installed build -- from creeping back in (fdu-9h2w).
@@ -242,11 +246,11 @@ cross-lint:
 docs:
 	RUSTDOCFLAGS="-D warnings" $(CARGO) doc --locked --no-deps --all-features
 
-# How library consumers build: `default-features = false` for the minimal core, then the
-# additive watch and gitignore layers, without relying on what the binary enables. The
-# dependency guard
-# proves the crate split stuck -- a library that pulls in an argument parser has back the
-# dependency the split removed.
+# How library consumers build: the minimal core, then the additive watch and gitignore
+# layers, without relying on what the binary enables. Explicit `--no-default-features`
+# pins the empty feature floor as a contract. The dependency guard proves the crate split
+# stuck -- a library that pulls in an argument parser has back the dependency the split
+# removed.
 #
 # The guard captures `cargo tree` before testing it, rather than piping straight into
 # grep. A pipeline's status is its last command's, so a failing `cargo tree` -- renamed

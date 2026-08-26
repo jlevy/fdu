@@ -1068,11 +1068,11 @@ described in the reuse protocol so later `index.rs` work does not create conflic
 
 - [x] Introduce prepared mutations and one atomic `Commit` containing exact effective
   changes, impact, state, and work.
-- [ ] Route scan, reconcile, explicit refresh, control-file updates, and existing watch
+- [x] Route scan, reconcile, explicit refresh, control-file updates, and existing watch
   application through that commit path.
-- [ ] Remove implicit guessed-parent mutations from the live path; normalize unknown
+- [x] Remove implicit guessed-parent mutations from the live path; normalize unknown
   ancestry through verified reconciliation.
-- [ ] Gate with generated operation-sequence comparison, fault injection, concurrent
+- [x] Gate with generated operation-sequence comparison, fault injection, concurrent
   reader/writer tests, `make check`, and `make cross-lint`.
 
 #### Checkpoint 1C: Control State
@@ -1086,12 +1086,30 @@ described in the reuse protocol so later `index.rs` work does not create conflic
 
 #### Checkpoint 1D: Live Identity and Feature Floor
 
-- [ ] Separate detached index snapshots from live session and continuation authority.
-- [ ] Keep core default features empty and record dependency and binary-size baselines.
-- [ ] Prove the kernel under operation-sequence tests, fault injection, model
+- [x] Separate detached index snapshots from live session and continuation authority.
+- [x] Keep core default features empty and record dependency and binary-size baselines.
+- [x] Prove the kernel under operation-sequence tests, fault injection, model
   comparison, and all existing one-shot surface parity tests.
-- [ ] Gate clone/detached-image identity, continuation authority, snapshot round-trip,
+- [x] Gate clone/detached-image identity, continuation authority, snapshot round-trip,
   `make check`, `make cross-lint`, dependency audit, and size baselines.
+
+The Phase 1D size baseline was recorded on Apple Silicon macOS with Rust 1.97.1 using
+the release profile, LTO, and stripping declared by this repository.
+It is a regression reference, not a cross-platform size claim.
+
+| Artifact or dependency surface | Baseline |
+| --- | ---: |
+| `fdu-core --no-default-features`, unique normal package nodes | 15 |
+| `fdu-core --all-features`, unique normal package nodes | 21 |
+| `fdu --all-features`, unique normal package nodes | 39 |
+| Stripped release CLI | 2,688,608 bytes |
+| Gzip-9 release CLI | 1,198,715 bytes |
+| CPython 3.12 stable-ABI macOS arm64 wheel | 1,179,071 bytes |
+| Extracted wheel payload | 2,392 KiB |
+
+The implementation changed no lockfile entry and added no dependency.
+The dependency counts come from unique normal-package lines in `cargo tree`; the wheel
+was built with the locked `maturin build --release` path used by the repository gate.
 
 Acceptance for Phase 1:
 

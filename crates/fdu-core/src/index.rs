@@ -623,6 +623,10 @@ impl IndexHandle {
         Ok(collect_child_expectations(&index, path))
     }
 
+    pub(crate) fn has_control(&self, path: &Path) -> crate::Result<bool> {
+        Ok(self.read_index()?.controls().contains(path))
+    }
+
     pub(crate) fn take_pending_invalidations(
         &self,
     ) -> crate::Result<Vec<(PathBuf, InvalidateReason)>> {
@@ -2815,6 +2819,24 @@ mod tests {
         assert_eq!(retained_children.expect("src directory").len(), 2);
         assert!(retained_snapshot.lookup(Path::new("concurrent.txt")).is_none());
         assert!(handle.kind(Path::new("concurrent.txt")).expect("query").is_some());
+    }
+
+    #[test]
+    fn cloned_indexes_are_independent_detached_images() {
+        let original = index_with_sample_tree();
+        let original_clock = original.clock();
+        let mut detached = original.clone();
+
+        detached.apply_ok(&Observation::new(vec![upsert(
+            "detached-only.txt",
+            EntryKind::File,
+            file_attrs(7, 30),
+        )]));
+
+        assert_eq!(original.clock(), original_clock);
+        assert!(original.lookup(Path::new("detached-only.txt")).is_none());
+        assert!(detached.lookup(Path::new("detached-only.txt")).is_some());
+        assert_eq!(detached.total().files, original.total().files + 1);
     }
 
     #[test]

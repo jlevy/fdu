@@ -46,11 +46,14 @@
 //!
 //! # Feature flags
 //!
-//! - `cli` *(default)* — the `fdu` binary and its dependencies. Library consumers should
-//!   take `default-features = false`.
-//! - `watch` *(default)* — the OS-native watch layer. Strictly additive: without it
-//!   everything else works, just without live updates.
+//! - `watch` — the OS-native watch layer.
+//! - `gitignore` — exact `.gitignore` control state and fixed unignored roll-ups.
+//!
+//! `fdu-core` has no default features. The command and Python packages opt into the
+//! capabilities they expose, while embedding consumers can retain the smaller one-shot
+//! engine.
 
+pub mod admission;
 pub mod cache;
 pub mod classify;
 pub mod content;
@@ -81,6 +84,7 @@ pub mod watch;
 #[cfg(feature = "watch")]
 pub use crate::watch_session as session;
 
+pub use crate::admission::HiddenPolicy;
 pub use crate::cache::{
     CacheStatus, SnapshotInfo, cache_status, clear_all_caches, clear_cache, list_caches,
 };
@@ -91,8 +95,8 @@ pub use crate::control::{
 pub use crate::engine_contract::{
     AppliedDelta, Attrs, Clock, Commit, EffectiveChange, EntryKind, Error, Expectation,
     Fingerprint, Freshness, Impact, ImpactDomain, InvalidateReason, Observation, ObservationOp, Op,
-    PathExpectation, PathState, Provenance, Result, ScanScope, Source, StateTransition, Status,
-    Work,
+    PathExpectation, PathState, Provenance, Result, ScanScope, ScopeIdentity, SemanticIdentity,
+    Source, StateTransition, Status, Work,
 };
 pub use crate::index::{
     ApplyOutcome, ApplyStats, ChildSnapshot, EntryId, ExtTally, Index, IndexHandle,
@@ -1127,6 +1131,39 @@ mod tests {
         assert_eq!(report.path_taken, OpenPath::ColdScan);
         assert!(index.lookup(Path::new("deep")).is_some());
         assert!(index.lookup(Path::new("deep/nested.txt")).is_none());
+    }
+
+    #[test]
+    fn admission_scope_mismatch_cannot_reinterpret_a_snapshot() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        write_file(&dir.path().join(".hidden"), b"hidden");
+        let cache_path = cache.path().join("snap.fdu");
+        let seed = OpenConfig {
+            cache_path: Some(cache_path.clone()),
+            policy: CachePolicy::Auto,
+            ..OpenConfig::default()
+        };
+        open(dir.path(), &seed).expect("seed snapshot");
+
+        let changed_scopes = [
+            ScanConfig {
+                hidden: Some(std::sync::Arc::new(
+                    HiddenPolicy::prune_hidden::<[&str; 0], &str>([]),
+                )),
+                ..ScanConfig::default()
+            },
+            ScanConfig { exclude_special: true, ..ScanConfig::default() },
+        ];
+        for scan in changed_scopes {
+            let only = OpenConfig {
+                scan,
+                cache_path: Some(cache_path.clone()),
+                policy: CachePolicy::Only,
+                analysis: content::AnalysisRequest::default(),
+            };
+            assert!(matches!(open(dir.path(), &only), Err(Error::Snapshot(_))));
+        }
     }
 
     #[test]

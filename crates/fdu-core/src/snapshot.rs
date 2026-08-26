@@ -93,13 +93,15 @@ const SCOPE_FOLLOW_SYMLINKS: u8 = 1 << 0;
 
 /// Scope flag for staying on the root filesystem.
 const SCOPE_ONE_FILESYSTEM: u8 = 1 << 1;
+/// Scope flag for excluding native special objects.
+const SCOPE_EXCLUDE_SPECIAL: u8 = 1 << 2;
 
 /// All scope bits understood by this format version.
-const SCOPE_KNOWN_FLAGS: u8 = SCOPE_FOLLOW_SYMLINKS | SCOPE_ONE_FILESYSTEM;
+const SCOPE_KNOWN_FLAGS: u8 = SCOPE_FOLLOW_SYMLINKS | SCOPE_ONE_FILESYSTEM | SCOPE_EXCLUDE_SPECIAL;
 
 /// Encoded byte width of the fixed scan-scope header.
 #[cfg(test)]
-const SERIALIZED_SCOPE_BYTES: usize = 8 + 1 + 8 * 3;
+const SERIALIZED_SCOPE_BYTES: usize = 8 + 1 + 8 * 4;
 
 /// Smallest possible on-disk record: parent slot, kind, name length, and six 8-byte
 /// attribute fields, with a zero-length name. Used to sanity-check a declared entry
@@ -742,7 +744,11 @@ fn put_scope(buf: &mut Vec<u8>, scope: ScanScope) -> Result<()> {
     if scope.one_filesystem {
         flags |= SCOPE_ONE_FILESYSTEM;
     }
+    if scope.exclude_special {
+        flags |= SCOPE_EXCLUDE_SPECIAL;
+    }
     buf.push(flags);
+    buf.extend_from_slice(&scope.hidden_fingerprint.to_le_bytes());
     buf.extend_from_slice(&scope.ignore_rules_fingerprint.to_le_bytes());
     buf.extend_from_slice(&scope.type_rules_fingerprint.to_le_bytes());
     buf.extend_from_slice(&scope.reducers_fingerprint.to_le_bytes());
@@ -764,6 +770,8 @@ fn read_scope(reader: &mut impl Read) -> ParseResult<ScanScope> {
         max_depth,
         follow_symlinks: flags & SCOPE_FOLLOW_SYMLINKS != 0,
         one_filesystem: flags & SCOPE_ONE_FILESYSTEM != 0,
+        hidden_fingerprint: read_u64(reader)?,
+        exclude_special: flags & SCOPE_EXCLUDE_SPECIAL != 0,
         ignore_rules_fingerprint: read_u64(reader)?,
         type_rules_fingerprint: read_u64(reader)?,
         reducers_fingerprint: read_u64(reader)?,
@@ -1963,6 +1971,8 @@ mod tests {
             max_depth: Some(7),
             follow_symlinks: false,
             one_filesystem: true,
+            hidden_fingerprint: 5,
+            exclude_special: true,
             ignore_rules_fingerprint: 11,
             type_rules_fingerprint: crate::classify::type_rule_fingerprint(),
             reducers_fingerprint: 33,

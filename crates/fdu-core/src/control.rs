@@ -18,6 +18,7 @@ mod gitignore {
 
     impl Gitignore {
         pub(super) const fn matches(&self, _relative: &Path, _is_dir: bool) -> Option<bool> {
+            let _ = self;
             None
         }
     }
@@ -85,9 +86,9 @@ impl ControlTable {
         #[cfg(not(feature = "gitignore"))]
         {
             let _ = (path, source);
-            return Err(crate::Error::UnsupportedScanConfig(
+            Err(crate::Error::UnsupportedScanConfig(
                 "control observations require the fdu-core `gitignore` feature",
-            ));
+            ))
         }
         #[cfg(feature = "gitignore")]
         {
@@ -239,6 +240,13 @@ impl ControlTable {
             .ok()
             .and_then(|directory| self.by_directory.get(directory))
             .is_some_and(|current| current.bytes == source)
+    }
+
+    /// Whether an exact control source is retained at `path`.
+    pub(crate) fn contains(&self, path: &Path) -> bool {
+        control_directory(path)
+            .ok()
+            .is_some_and(|directory| self.by_directory.contains_key(directory))
     }
 
     /// Number of retained control files.

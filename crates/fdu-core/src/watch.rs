@@ -229,7 +229,7 @@ impl Watcher {
         let Some(intent) = self.next_intent(timeout)? else {
             return Ok(None);
         };
-        Ok(Some(verify_intent(&self.root, self.config, &intent)))
+        Ok(Some(verify_intent(&self.root, self.config, &intent, &ScanConfig::default())))
     }
 
     fn next_intent(&self, timeout: Duration) -> Result<Option<CoalescedIntent>> {
@@ -278,7 +278,8 @@ fn apply_intent(
     scan_config: &ScanConfig,
     sink: &mut dyn FnMut(&Commit),
 ) -> Result<WatchApplyReport> {
-    let mut verifier = |_: &Path, _: &Observation| Ok(verify_intent(root, watch_config, intent));
+    let mut verifier =
+        |_: &Path, _: &Observation| Ok(verify_intent(root, watch_config, intent, scan_config));
     let apply = apply_reverified_with(index, &Observation::default(), scan_config, &mut verifier)?;
     if let Some(commit) = apply.commit.as_ref() {
         sink(commit);
@@ -321,7 +322,10 @@ fn apply_reverified(
     observation: &Observation,
     scan_config: &ScanConfig,
 ) -> Result<ApplyOutcome> {
-    apply_reverified_with(index, observation, scan_config, &mut reverify_observation)
+    let mut verifier = |root: &Path, observation: &Observation| {
+        reverify_observation(root, observation, scan_config)
+    };
+    apply_reverified_with(index, observation, scan_config, &mut verifier)
 }
 
 fn apply_reverified_with(
@@ -378,7 +382,11 @@ fn escalate_unknown_ancestry(index: &IndexHandle, candidate: Observation) -> Res
 }
 
 #[cfg(test)]
-fn reverify_observation(root: &Path, observation: &Observation) -> Result<Observation> {
+fn reverify_observation(
+    root: &Path,
+    observation: &Observation,
+    scan_config: &ScanConfig,
+) -> Result<Observation> {
     let mut ops = Vec::with_capacity(observation.len().saturating_mul(2));
     for observed in &observation.ops {
         let relative = scan::normalize_subtree(observed.op.path())?;
@@ -391,9 +399,29 @@ fn reverify_observation(root: &Path, observation: &Observation) -> Result<Observ
                 match std::fs::symlink_metadata(&absolute) {
                     Ok(metadata) => {
                         let (kind, attrs) = scan::observe(&metadata);
-                        ops.push(Op::Upsert { path: relative.clone(), kind, attrs });
-                        if let Some(control) = scan::read_control_op(root, &relative, kind)? {
-                            ops.push(control);
+                        match crate::admission::decide_path(
+                            &relative,
+                            kind,
+                            scan_config.hidden(),
+                            scan_config.exclude_special,
+                        ) {
+                            crate::admission::Disposition::Retain => {
+                                ops.push(Op::Upsert { path: relative.clone(), kind, attrs });
+                                if let Some(control) = scan::read_control_op(root, &relative, kind)?
+                                {
+                                    ops.push(control);
+                                }
+                            }
+                            crate::admission::Disposition::ControlOnly => {
+                                ops.push(Op::Remove { path: relative.clone() });
+                                if let Some(control) = scan::read_control_op(root, &relative, kind)?
+                                {
+                                    ops.push(control);
+                                }
+                            }
+                            crate::admission::Disposition::Reject => {
+                                ops.push(Op::Remove { path: relative });
+                            }
                         }
                     }
                     Err(error) => ops.push(op_for_stat_error(relative, &error)),
@@ -641,7 +669,12 @@ fn try_deliver_overflow(out: &SyncSender<CoalescedIntent>) -> std::result::Resul
 }
 
 /// Verify one bounded intent: stat once per path, never once per backend event.
-fn verify_intent(root: &Path, config: WatchConfig, intent: &CoalescedIntent) -> Observation {
+fn verify_intent(
+    root: &Path,
+    config: WatchConfig,
+    intent: &CoalescedIntent,
+    scan_config: &ScanConfig,
+) -> Observation {
     let mut ops = Vec::with_capacity(intent.pending.len());
 
     for (rel, state) in &intent.pending {
@@ -654,16 +687,50 @@ fn verify_intent(root: &Path, config: WatchConfig, intent: &CoalescedIntent) -> 
                 match std::fs::symlink_metadata(&absolute) {
                     Ok(meta) => {
                         let (kind, attrs) = scan::observe(&meta);
-                        ops.push(Op::Upsert { path: rel.clone(), kind, attrs });
-                        match scan::read_control_op(root, rel, kind) {
-                            Ok(Some(control)) => ops.push(control),
-                            Ok(None) => {}
-                            Err(_) => ops.push(Op::InvalidateSubtree {
-                                path: rel.parent().map_or_else(PathBuf::new, Path::to_path_buf),
-                                reason: InvalidateReason::VerificationFailed,
-                            }),
+                        let disposition = crate::admission::decide_path(
+                            rel,
+                            kind,
+                            scan_config.hidden(),
+                            scan_config.exclude_special,
+                        );
+                        match disposition {
+                            crate::admission::Disposition::Retain => {
+                                ops.push(Op::Upsert { path: rel.clone(), kind, attrs });
+                                match scan::read_control_op(root, rel, kind) {
+                                    Ok(Some(control)) => ops.push(control),
+                                    Ok(None) => {}
+                                    Err(_) => ops.push(Op::InvalidateSubtree {
+                                        path: rel
+                                            .parent()
+                                            .map_or_else(PathBuf::new, Path::to_path_buf),
+                                        reason: InvalidateReason::VerificationFailed,
+                                    }),
+                                }
+                            }
+                            crate::admission::Disposition::ControlOnly => {
+                                match scan::read_control_op(root, rel, kind) {
+                                    Ok(Some(control)) => {
+                                        ops.push(Op::Remove { path: rel.clone() });
+                                        ops.push(control);
+                                    }
+                                    Ok(None) => ops.push(Op::Remove { path: rel.clone() }),
+                                    Err(_) => ops.push(Op::InvalidateSubtree {
+                                        path: rel
+                                            .parent()
+                                            .map_or_else(PathBuf::new, Path::to_path_buf),
+                                        reason: InvalidateReason::VerificationFailed,
+                                    }),
+                                }
+                            }
+                            crate::admission::Disposition::Reject => {
+                                ops.push(Op::Remove { path: rel.clone() });
+                            }
                         }
-                        if kind.is_dir() && *relist_if_dir && config.relist_new_dirs {
+                        if disposition == crate::admission::Disposition::Retain
+                            && kind.is_dir()
+                            && *relist_if_dir
+                            && config.relist_new_dirs
+                        {
                             // The watch for this directory was installed after it was
                             // created, so anything already inside produced no event.
                             ops.push(Op::InvalidateSubtree {
@@ -1068,7 +1135,12 @@ mod tests {
         receiver.try_recv().expect("make output capacity");
         assert!(try_deliver_overflow(&sender).expect("connected"));
         let intent = receiver.try_recv().expect("sticky overflow intent");
-        let observation = verify_intent(Path::new("/unused"), WatchConfig::default(), &intent);
+        let observation = verify_intent(
+            Path::new("/unused"),
+            WatchConfig::default(),
+            &intent,
+            &ScanConfig::default(),
+        );
         assert!(matches!(
             &observation.ops[0].op,
             Op::InvalidateSubtree {
@@ -1143,7 +1215,8 @@ mod tests {
         };
 
         fs::write(dir.path().join(&relative), b"current").expect("create after coalescing");
-        let observation = verify_intent(dir.path(), WatchConfig::default(), &intent);
+        let observation =
+            verify_intent(dir.path(), WatchConfig::default(), &intent, &ScanConfig::default());
 
         assert!(matches!(
             &observation.ops[0].op,
@@ -1161,7 +1234,8 @@ mod tests {
             pending: BTreeMap::from([(relative.clone(), Pending::Verify { relist_if_dir: false })]),
         };
 
-        let observation = verify_intent(dir.path(), WatchConfig::default(), &intent);
+        let observation =
+            verify_intent(dir.path(), WatchConfig::default(), &intent, &ScanConfig::default());
 
         assert!(matches!(
             &observation.ops[0].op,
@@ -1171,6 +1245,46 @@ mod tests {
             &observation.ops[1].op,
             Op::ControlUpsert { path, source } if path == &relative && source == b"*.log\n"
         ));
+    }
+
+    #[cfg(all(unix, feature = "gitignore"))]
+    #[test]
+    fn applying_verification_uses_the_index_admission_scope() {
+        use std::os::unix::net::UnixListener;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::write(dir.path().join(".gitignore"), b"*.log\n").expect("write control");
+        fs::write(dir.path().join(".secret"), b"hidden").expect("write hidden");
+        let _listener = UnixListener::bind(dir.path().join("service.sock")).expect("bind socket");
+        let intent = CoalescedIntent {
+            pending: [".gitignore", ".secret", "service.sock"]
+                .into_iter()
+                .map(|path| (PathBuf::from(path), Pending::Verify { relist_if_dir: false }))
+                .collect(),
+        };
+        let config = ScanConfig {
+            hidden: Some(Arc::new(crate::HiddenPolicy::prune_hidden::<[&str; 0], &str>([]))),
+            exclude_special: true,
+            ..ScanConfig::default()
+        };
+
+        let observation = verify_intent(dir.path(), WatchConfig::default(), &intent, &config);
+
+        assert!(observation.ops.iter().any(|observed| matches!(
+            &observed.op,
+            Op::ControlUpsert { path, source }
+                if path == Path::new(".gitignore") && source == b"*.log\n"
+        )));
+        for path in [".gitignore", ".secret", "service.sock"] {
+            assert!(observation.ops.iter().any(|observed| matches!(
+                &observed.op,
+                Op::Remove { path: removed } if removed == Path::new(path)
+            )));
+            assert!(!observation.ops.iter().any(|observed| matches!(
+                &observed.op,
+                Op::Upsert { path: retained, .. } if retained == Path::new(path)
+            )));
+        }
     }
 
     #[test]

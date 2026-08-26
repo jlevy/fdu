@@ -23,8 +23,10 @@ path = "tests/watch_session_integration.rs"
 required-features = ["watch"]
 
 [features]
-# The shipped binary watches; `--no-default-features` and library consumers do not.
-default = ["watch"]
+# Embedding consumers pay only for the retained one-shot engine unless they opt in.
+# The shipped CLI and Python package enable their capabilities explicitly below their
+# own package boundaries.
+default = []
 # Gates the OS-native watch layer. Strictly additive: without it, scan, index, and
 # snapshot are all fully functional, just without live updates -- which is what keeps
 # the watch layer deletable rather than merely optional.

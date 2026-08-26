@@ -142,12 +142,67 @@ pub struct ScanScope {
     pub follow_symlinks: bool,
     /// Whether traversal stays on the root filesystem.
     pub one_filesystem: bool,
+    /// Identity of leading-dot component admission and its exact-name allowlist.
+    pub hidden_fingerprint: u64,
+    /// Whether filesystem objects outside files, directories, and symlinks are excluded.
+    pub exclude_special: bool,
     /// Identity of the compiled ignore policy.
     pub ignore_rules_fingerprint: u64,
     /// Identity of the compiled type-classification policy.
     pub type_rules_fingerprint: u64,
     /// Identity of the enabled reducer set.
     pub reducers_fingerprint: u64,
+}
+
+/// Filesystem-admission identity derived from a validated scan configuration.
+///
+/// Root binding and execution policy are deliberately absent. Two roots may share this
+/// configuration identity without claiming to be the same live session.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct ScopeIdentity {
+    /// Maximum retained relative depth, or unlimited when absent.
+    pub max_depth: Option<usize>,
+    /// Whether directory symlinks are followed.
+    pub follow_symlinks: bool,
+    /// Whether traversal stays on the root filesystem.
+    pub one_filesystem: bool,
+    /// Identity of leading-dot component admission and its exact-name allowlist.
+    pub hidden_fingerprint: u64,
+    /// Whether filesystem objects outside files, directories, and symlinks are excluded.
+    pub exclude_special: bool,
+}
+
+/// Answer-semantics identity derived from validated classification and reducer rules.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct SemanticIdentity {
+    /// Identity of the compiled ignore policy.
+    pub ignore_rules_fingerprint: u64,
+    /// Identity of the compiled type-classification policy.
+    pub type_rules_fingerprint: u64,
+    /// Identity of the enabled reducer set.
+    pub reducers_fingerprint: u64,
+}
+
+impl ScanScope {
+    /// The part of this validated scope that determines retained filesystem facts.
+    pub const fn scope_identity(self) -> ScopeIdentity {
+        ScopeIdentity {
+            max_depth: self.max_depth,
+            follow_symlinks: self.follow_symlinks,
+            one_filesystem: self.one_filesystem,
+            hidden_fingerprint: self.hidden_fingerprint,
+            exclude_special: self.exclude_special,
+        }
+    }
+
+    /// The part of this validated scope that determines classifications and roll-ups.
+    pub const fn semantic_identity(self) -> SemanticIdentity {
+        SemanticIdentity {
+            ignore_rules_fingerprint: self.ignore_rules_fingerprint,
+            type_rules_fingerprint: self.type_rules_fingerprint,
+            reducers_fingerprint: self.reducers_fingerprint,
+        }
+    }
 }
 
 /// Where a value came from, so a consumer can trade speed for certainty knowingly.
@@ -939,6 +994,19 @@ mod tests {
         // A ctime bump is, even when mtime was rolled back to look unchanged.
         let touched = Attrs { ctime_ns: 9, ..base };
         assert_ne!(base.fingerprint(), touched.fingerprint());
+    }
+
+    #[test]
+    fn scan_scope_separates_admission_from_answer_semantics() {
+        let base = ScanScope::default();
+        let changed_admission = ScanScope { exclude_special: !base.exclude_special, ..base };
+        let changed_semantics =
+            ScanScope { reducers_fingerprint: base.reducers_fingerprint.wrapping_add(1), ..base };
+
+        assert_ne!(base.scope_identity(), changed_admission.scope_identity());
+        assert_eq!(base.semantic_identity(), changed_admission.semantic_identity());
+        assert_eq!(base.scope_identity(), changed_semantics.scope_identity());
+        assert_ne!(base.semantic_identity(), changed_semantics.semantic_identity());
     }
 }
 
