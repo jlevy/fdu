@@ -88,28 +88,26 @@ decisions, including the explicit delivery override recorded below.
 
 ## Current Implementation Status
 
-This status describes committed checkpoint `d5d9151` on fdu PR #48 and the corresponding
-tbd snapshot on 2026-08-26. The PR is draft and mergeable, with all 19 required GitHub
-checks passing at that checkpoint in
-[run 33005096442](https://github.com/jlevy/fdu/actions/runs/33005096442). The no-gap
-observation checkpoint is implemented in the active working tree.
+This status describes committed checkpoint `e5e27eb` on fdu PR #48 and the corresponding
+tbd snapshot on 2026-08-26. The PR remains draft, and all 19 required GitHub checks pass
+at that checkpoint in
+[run 33011941829](https://github.com/jlevy/fdu/actions/runs/33011941829). The no-gap
+observation bead is closed.
 Its focused tests, all-feature and feature-disabled core suites, independent reference
 model, and both installed `make cross-lint` targets pass.
-The post-review `make check` rerun passed the supply-chain, formatting, lint,
-all-feature, golden, documentation, generated-artifact, and current-toolchain
-feature-matrix stages before the host volume filled during the MSRV replay.
-Clean-runner PR CI is therefore the remaining handoff step before the session-golden
-bead starts.
+The final local `make check` rerun reached the MSRV replay before the host volume
+filled; the complete clean-runner matrix subsequently passed.
+The five-session golden and contract-coverage bead is now in progress.
 
 | Phase | Status | Evidence and next boundary |
 | --- | --- | --- |
 | Architecture and implementation map | Complete | The durable architecture, PR #44 and #47 reconciliation, direct-API correction, file/function map, test design, and reuse ledger are committed and reviewed. |
 | Phase 1: exact engine kernel | Complete | Checkpoints 1A through 1D passed their local gates and the cumulative cross-platform PR gate. |
-| Phase 2: opened-root vertical slice | In progress | Ownership and joined close, discovery and priority, coherent reads, the change journal, and bounded multi-path refresh are committed. `fdu-9jzp` has implemented the no-gap observation path and passed its local behavior suites; its clean-runner handoff gate is pending. Session goldens and Python follow in that dependency order. |
+| Phase 2: opened-root vertical slice | In progress | Ownership and joined close, discovery and priority, coherent reads, the change journal, bounded multi-path refresh, and no-gap observation are committed and green through `e5e27eb`. `fdu-0kv7` is composing those capabilities into five transparent session goldens and the public-contract coverage gate; Python follows. |
 | Phase 3: MetaBrowser adoption | Not started | Begins only after the complete native and Python Phase 2 surface passes. The first step is the disposable unchanged-contract measurement, not a contract edit. |
 | Phase 4: composed proof | Not started | Cross-provider conformance, route and lifecycle integration, installed-wheel proof, and final performance and size acceptance remain required. |
 
-The implementation epic currently has 17 closed children, one in progress, and 11 open
+The implementation epic currently has 18 closed children, one in progress, and 10 open
 children. Those counts are a checkpoint, not a completion percentage: the closed set
 includes the design and review work, while every MetaBrowser and final-acceptance bead
 remains open. The tbd graph is authoritative for live status and dependencies; the
@@ -1591,8 +1589,8 @@ arrow means the bead on the left depends on the bead or beads on the right.
 | 2 reads | `fdu-r7s7` coherent projections | Closed | `fdu-mkga` |
 | 2 journal | `fdu-ngnm` journal and change poll | Closed | `fdu-mkga`, `fdu-gpls` |
 | 2 refresh | `fdu-3za7` multi-path refresh | Closed | `fdu-mkga`, `fdu-gpls` |
-| 2 observation | `fdu-9jzp` no-gap handoff | In progress; CI gate pending | `fdu-194x`, `fdu-ngnm`, `fdu-3za7` |
-| 2 session proof | `fdu-0kv7` five session goldens and coverage closure | Open | `fdu-mkga`, `fdu-194x`, `fdu-r7s7`, `fdu-ngnm`, `fdu-3za7`, `fdu-9jzp` |
+| 2 observation | `fdu-9jzp` no-gap handoff | Closed | `fdu-194x`, `fdu-ngnm`, `fdu-3za7` |
+| 2 session proof | `fdu-0kv7` five session goldens and coverage closure | In progress | `fdu-mkga`, `fdu-194x`, `fdu-r7s7`, `fdu-ngnm`, `fdu-3za7`, `fdu-9jzp` |
 | 2 Python | `fdu-bnsk` synchronous Python surface | Open | `fdu-r7s7`, `fdu-ngnm`, `fdu-3za7`, `fdu-9jzp`, `fdu-0kv7` |
 | 3A | `fdu-sewa` unchanged-contract measurement | Open | `fdu-bnsk` |
 | 3B contract | `fdu-m68r` joint contract | Open | `fdu-sewa` |
