@@ -1027,6 +1027,8 @@ described in the reuse protocol so later `index.rs` work does not create conflic
   assertions before importing new surface behavior.
 - [ ] Add an independent deterministic reference model for retained facts, parent
   ordering, roll-ups, exact changes, control-file updates, and resource refusal.
+- [ ] Add the opened-root golden-session harness, its five canonical scenarios, and
+  automatic public-contract coverage closure described in Testing Strategy.
 - [ ] Gate with the focused model tests, complete golden corpus, CLI/Python parity,
   `make docs-format-check`, and `make check`.
 
@@ -1254,6 +1256,9 @@ Bead `fdu-utf1` integrates the existing `fdu-9tdm` and `fdu-o8r8` prerequisites.
 | `tests/golden/cli-content.tryscript.md` | Replace each Node command that parses a complete JSON report and prints selected fields with either the direct complete deterministic JSON response or a focused Rust/Python test. Preserve Node commands that only create or inspect fixture state. | `rg` finds no product-output parser that discards adjacent contract fields; reviewed golden diffs show the whole answer. |
 | Any future `tests/golden/cli-cost.tryscript.md` | Do not import PR #47’s relation-only golden. Put counter relationships in `counters.rs`, scan integration tests, or the performance harness; a golden may show one complete stable diagnostic record only if that record is itself the product surface under test. | `fdu-9tdm` closes with an audited inventory of every parsing site. |
 | `crates/fdu-core/tests/reference_model.rs` | Add a dependency-free canonical tree model that recomputes parents, ordering, roll-ups, completeness, control effects, exact changes, and state from scratch. Use a fixed-seed operation generator and print the seed plus full trace on failure. | Compare every observable field after every operation; retain every minimized discovery as a named regression. |
+| `crates/fdu-core/src/opened/test_support.rs` and `opened/golden_tests.rs`, both under `cfg(test)` | Add the deterministic scenario driver, scripted producer/barrier seams, stable trace values, canonical renderer, invariant validator, and five named sessions. Keep production paths in use and test-only control out of the public API. | Every session passes the independent model and invariant validator before its complete trace is compared; no runtime dependency is added. |
+| `crates/fdu-core/tests/golden/opened-root/*.golden` | Record complete, bounded scenario inputs, actions, commits, reads, polls, receipts, failures, and final state. Use exact stable values and central normalization only for genuinely unstable fields. | Five reviewable artifacts stay below their size budget and collectively close the public contract coverage manifest. |
+| `scripts/check-opened-root-goldens.mjs` and `Makefile` | Add comparison, one-scenario update, artifact lint, and contract-coverage targets. Refuse an unnamed bulk update and reject unstable literals, broad patterns, duplicate scenarios, and oversized artifacts. | Default comparison is hermetic; updating requires an explicit scenario name and leaves an ordinary reviewed git diff. |
 | `crates/fdu-core/src/index.rs` test support only | Expose no production helper to the model. Add test-only constructors only for facts that cannot be expressed through public observations. | A source check and code review confirm the model does not call production reducers or mutation helpers. |
 | `scripts/run-golden.mjs`, `scripts/run-parity.mjs`, `scripts/parity-classes.mjs` | Change only if broad observations require a portability class; classes match unstable fields, never whole semantic subtrees. | Golden portability and CLI/Python parity gates pass. |
 
@@ -1441,7 +1446,7 @@ arrow means the bead on the left depends on the bead or beads on the right.
 
 | Phase | Bead | Depends on |
 | --- | --- | --- |
-| 1A | `fdu-utf1` observable oracle | existing `fdu-9tdm`, `fdu-o8r8` |
+| 1A | `fdu-utf1` observable oracle and golden sessions | existing `fdu-9tdm`, `fdu-o8r8` |
 | 1C preparation | `fdu-tewk` audited runtime registry reuse | `fdu-utf1` |
 | 1B kernel | `fdu-qzqf` exact prepared commit | `fdu-tewk` |
 | 1B producers | `fdu-gpls` route every producer | `fdu-qzqf` |
@@ -1474,62 +1479,352 @@ prototype epic’s implementation order.
 
 ## Testing Strategy
 
-### Model-based engine tests
+### Test architecture: one trace, three oracles, few boundaries
 
-Build the independent model before the live owner.
-Generate deterministic sequences containing upserts, removes, kind changes, out-of-order
-observations, control-file creation and removal, resource refusal, refresh overlap, and
-state-only transitions.
-After every operation compare facts, roll-ups, coverage, state, clock movement, and
-exact effective changes.
+The test suite should make the live engine easier to change, not reproduce its module
+graph as another large body of tests.
+PR #47 added 213 Rust `#[test]` cases, 41 sequential checks in a 2,989-line installed
+wheel smoke script, and 26 tests in a 1,235-line real-watcher integration file.
+Many of those tests found important defects and contain excellent oracles, but their
+aggregate shape is too expensive to extend and too coupled to the prototype’s public
+types.
 
-The model must not call production mutation helpers.
-That preserves its value as an oracle rather than a second spelling of the same code.
+Most underlying index mutation, roll-up, classification, query, scan, and platform logic
+is already stable and extensively tested.
+The new risk is the opened-root layer that keeps that logic alive: ownership, discovery
+scheduling, observer handoff, refresh arbitration, atomic publication, journals,
+continuations, Python conversion, and MetaBrowser lifecycle.
+The new corpus concentrates there and keeps the mature module tests unless a session
+demonstrably subsumes a duplicate integration case.
 
-### Deterministic lifecycle tests
+#### Alternatives and decision
 
-Use injected discovery order, worker count, observation scripts, barriers, and bounded
-queues to force:
+| Design | Advantages | Costs and failure mode | Decision |
+| --- | --- | --- | --- |
+| Large black-box filesystem matrix | Exercises real system calls and observer backend. | Slow, timing-sensitive, hard to force rare races and recovery, and duplicates setup around each assertion. | Keep only a few boundary smokes. |
+| Pervasive internal event logging behind a runtime flag | Can expose every queue, worker, and lock step. | Creates a parallel behavior vocabulary, makes harmless refactors rewrite goldens, and adds branches, serialization, and possible binary cost to release code. | Reject. |
+| Fully simulated state machine | Extremely fast, deterministic, and easy to generate. | Can agree with itself while bypassing the owner, workers, locks, journal, and binding orchestration that most needs proof. | Use only as an independent oracle. |
+| Full dependency injection for clock, filesystem, scheduler, executor, and queues | Can control nearly any condition. | Adds traits, generics, indirection, and test-shaped production architecture far beyond the product’s needs. | Reject. |
+| Controlled transparent-box session driver | Runs real owner/workers/commit/journal/API code, forces important schedules, and produces one inspectable causal artifact. | Requires a deliberately small test-only control seam and a complete production value model. | Choose as the primary integration mechanism. |
 
-- an event before baseline starts;
-- an event during a baseline batch;
-- queue overflow;
-- per-directory observer registration gaps;
-- concurrent direct refresh and observer reconciliation;
-- state-only commits while a consumer waits;
-- journal-floor reset;
-- close while discovery, refresh, and change polling are blocked.
+The selected control is a typed value passed to a test-only constructor, not an
+environment variable or process-global flag.
+Parallel scenarios therefore cannot alter one another.
+It can choose worker count and deterministic discovery order, install the scripted
+observation-hint source, pause and release named production boundaries, and trigger
+named worker or queue failures.
+It cannot inject retained facts, publish a commit, mutate state, or replace an operation
+result. Fixtures and ordinary production verification determine facts.
 
-Timing-only sleeps are not proof of these interleavings.
+The recorder sits outside the owner.
+It calls the same five handle operations as a client, drains exact commits through
+`changes`, and serializes those production values with one test-only renderer.
+“Every event” means every contract-relevant causal event: the complete action, result,
+commit, state/work/recovery value, named barrier used to force the causal order, and
+final joined shutdown.
+Internal queue pushes, mutex acquisitions, thread IDs, and elapsed time are neither the
+contract nor golden text.
+When one of them matters, a programmatic invariant proves it without turning the
+implementation into the expected behavior.
 
-### Projection and continuation tests
+The rewrite uses four complementary layers:
 
-For every pageable projection assert:
+| Layer | Purpose | Shape |
+| --- | --- | --- |
+| Canonical opened-root sessions | Reveal the complete behavior of representative lifecycles. | Five deterministic, bounded, human-reviewed trace artifacts. |
+| Independent model and generated sequences | Search many operation combinations without recording thousands of expected files. | One recomputing model, a dependency-free fixed-seed generator, and minimized regressions promoted into the session corpus. |
+| Shared provider contract packet | Prove Python and fdu providers implement the application boundary rather than merely agreeing with themselves. | One provider-independent data packet with inputs and expected semantic results, run by both providers and through fdu’s Python binding. |
+| Real boundary smokes | Prove the mocks and packaged surfaces reach the real operating-system and distribution boundaries. | A few causal native-observer, installed-wheel, route, and shutdown tests; no duplicate semantic matrix. |
 
-- positive and enforced row bound;
-- proportional page work rather than a repeated full selection pass;
-- advancing continuation;
-- no duplicates or omissions when the version is stable;
-- typed stale-version, foreign-token, and eviction failures;
-- bounded table memory and cleanup on close.
+A narrow unit test remains appropriate for a pure parser or arithmetic rule whose whole
+behavior fits in a small table.
+A new live-engine test must otherwise add a missing contract variant or state edge,
+exercise a real external boundary, or preserve a minimized generated failure.
+If an existing session can expose the behavior by adding one action, extend it instead
+of creating another fixture and setup path.
 
-Product totals are tested as aggregate projections at the same version, not inferred
-from page-control metadata.
+### Canonical opened-root session harness
 
-### Cross-provider conformance
+The core golden is a transparent-box session, not a snapshot of one final report.
+Each scenario records the input tree and options, every requested action, every exact
+commit, complete public operation results, bounded work, recovery, and final shutdown.
+The recorder wraps real typed requests, responses, change polls, state, work, and
+diagnostics in a thin session envelope.
+It does not define alternate `Commit`, state, read, or error values, and production code
+does not emit a second diagnostic event stream.
 
-MetaBrowser’s provider registry remains the application-level oracle.
-Both implementations must pass the same test cases, including lifecycle, coherent reads,
-exact predicates, paging, changes, reset, refresh, close, and budget truth.
+The session runner is therefore the first demanding consumer of the proposed API. If it
+must read a private field to explain an effect, serialize an internal control-flow step,
+or infer a change from before/after snapshots, stop and repair the production value
+model. Exact commits and bounded diagnostics should make the complete causal behavior
+naturally inspectable.
 
-The shared File Rollup packet is pinned to a reviewed MetaBrowser revision and exercised
-by both packages. Git history already identifies its source; a second hand-maintained
-hash beside the vendored data is unnecessary unless the fixture crosses an actual
-untrusted boundary.
+The initial files are:
 
-Recorded observation replay compares both engines after every step.
-It is stronger than comparing only final rows because it catches invalidation, state,
-and cursor drift.
+| File | Responsibility |
+| --- | --- |
+| `crates/fdu-core/src/opened/test_support.rs` under `cfg(test)` | `OpenedTestControl`, `OpenedIndex::open_for_test`, scenario builder, scripted observer-hint source, deterministic barriers, thin session envelopes over production values, normalization, and invariant collection. The typed control is per owner and the seams control timing or named faults, not facts. |
+| `crates/fdu-core/src/opened/golden_tests.rs` | Five scenario definitions driven through real operations and change polls, model comparison after every commit, complete-trace comparison, and contract-coverage closure. |
+| `crates/fdu-core/tests/golden/opened-root/*.golden` | Canonical line-oriented session artifacts, one file per scenario. |
+| `scripts/check-opened-root-goldens.mjs` | Artifact lint, named update workflow, size checks, and unstable-literal checks. |
+| `Makefile` | `opened-root-golden` comparison and `opened-root-golden-update SCENARIO=name`; the update target refuses an omitted scenario. |
+
+Scenario inputs are small Rust values rather than another runtime configuration format.
+They are declarative action tables consumed by one generic runner, not five hand-coded
+integration programs.
+Adding ordinary coverage means adding an action row or fixture fact; runner, rendering,
+synchronization, and validation code stay shared.
+The checked-in output uses a closed, line-oriented text schema rendered in one test-only
+function. This avoids adding a serialization dependency to core or a parser solely for
+tests while retaining a clean, structured diff.
+The shared cross-provider packet uses JSON because Python can read it without a
+dependency and it is a real cross-language artifact.
+
+Every core session record has one of these meanings:
+
+- `scenario`: schema version, stable fixture description, options, and declared bounds;
+- `action`: open, discovery step, read, poll, refresh, prioritize, observer hint, fault,
+  continuation resume, or close, with the complete request;
+- `commit`: the complete production commit returned through the change surface, with
+  relative version, exact effective changes, impact, terminal state, issues, and work;
+- `result`: the complete public response or typed error for that action;
+- `barrier`: a named deterministic interleaving point reached or released;
+- `final`: complete retained facts and roll-ups, journal range, continuation count,
+  worker count, and shutdown outcome.
+
+Do not record `agreement: true` in place of state, reconstruct a “cleaner” synthetic
+commit, or select a few fields from a broad response.
+The artifact shows the complete actual behavior; independent relations are asserted in
+code beside the comparison.
+For small fixtures, record full paths, values, rows, and issues rather than checksums.
+
+#### Stable and unstable fields
+
+Normalization occurs once while constructing the trace, never as a loose comparison
+pattern:
+
+| Field | Treatment |
+| --- | --- |
+| Relative paths, options, rows, state values, changes, impact, work counts, errors | Stable and exact. |
+| Root directory | Rewrite only the temporary prefix to `$ROOT`; retain every relative component. |
+| Opened-root identity | Allocate `session-1`, `session-2` in observation order. |
+| Engine sequence | Record relative sequence exactly from zero. |
+| Observation and query instants | Inject explicit fixed instants where they affect semantics. |
+| Operating-system timestamps not under test | Replace at trace construction with `[TIME]`; no regex in the expected artifact. |
+| Durations and thread IDs | Omit; deterministic work and named barriers are the contract. |
+| Platform-specific native path spelling | Keep in a platform fixture, or map only the root separator before portable projection. |
+
+Known values never use patterns.
+The artifact linter rejects machine paths, raw session identities, wall-clock durations,
+and wildcard placeholders outside the closed normalization vocabulary.
+
+#### Five canonical scenarios
+
+The first corpus is deliberately small:
+
+1. **Cold progressive knowledge.** Open a rich tree, commit shallow parent-first
+   batches, reprioritize one subtree, read during discovery, reach a discovery budget,
+   and show `present`, `absent`, and `unknown` with directory completeness and exact
+   lower bounds.
+2. **Exact mutation and refresh.** Exercise out-of-order ancestors, kind replacement,
+   no-op verification, control-file creation/edit/removal, the fixed `all`/`unignored`
+   partition, special-object admission, resource refusal after an earlier effect, and a
+   deduplicated multi-path refresh receipt.
+3. **Coherent projections and continuations.** Request every native projection in one
+   read, assemble tree and flat pages at limits one, two, and unbounded, check exact or
+   capped totals, then exercise stale, foreign, evicted, and closed continuation
+   results.
+4. **Journal and observation recovery.** Start observation before baseline, inject a
+   pre-baseline event, an event during discovery, overflow, a state-only commit, an idle
+   poll, a blocked poll, consumer journal loss, and provider-gap reconciliation as two
+   distinct recovery boundaries.
+5. **Ownership, races, and shutdown.** Clone the façade, pause prepared work at named
+   barriers, interleave refresh and observation, reject stale preparation, close while a
+   poll and worker are blocked, repeat close from another clone, inject a worker panic,
+   and end with no continuation, waiter, or worker retained.
+
+Each artifact should stay below 400 lines and the complete core corpus below 2,000
+lines.
+Each deterministic scenario should execute in less than 100 milliseconds after the
+test binary starts; the full generated model corpus should remain below two seconds on a
+development build. If a scenario exceeds either budget, shard by lifecycle phase before
+hiding detail.
+
+### Automatic contract-coverage closure
+
+A small golden corpus needs an objective answer to “what did we forget?”
+The runner derives coverage keys from events it actually observed; scenarios do not
+claim coverage with hand-written tags.
+An exhaustive matcher over public contract enums defines the required set:
+
+- all five operations and each closed success, recovery, and typed failure result
+  variant;
+- every lifecycle phase and allowed transition edge;
+- complete and each partial-coverage reason;
+- fresh, reconciling, stale, and partial freshness;
+- `present`, `absent`, and `unknown` knowledge;
+- every exact change and impact domain;
+- immediate, idle, blocking, reset, future, foreign, and closed poll outcomes;
+- live, stale, foreign, evicted, and closed continuation outcomes;
+- provider gap, consumer reset, query limit, resource refusal, worker failure, and
+  joined close.
+
+Adding an enum member makes the matcher non-exhaustive at compile time.
+Adding a contract outcome to the required set without reaching it fails the coverage
+test and prints the missing keys and closest scenarios.
+This is coverage of behavior, not lines: a session update cannot make a missing state
+edge pass merely by accepting new text.
+
+Pairwise configuration cases cover watch on/off, hidden admission, runtime registry,
+fixed ignore partition, resource budget, and portable-path representability without
+running their full Cartesian product.
+Cargo feature combinations remain the responsibility of `make check` and
+`make cross-lint`.
+
+### Independent model and generated sequences
+
+Build the recomputing model before the live owner.
+It owns a canonical map of paths to facts and recomputes parents, ordering, roll-ups,
+control effects, completeness, state, and expected exact changes from first principles.
+It must not call production mutation helpers, reducers, classification lookup, impact
+derivation, or continuation code.
+
+A dependency-free fixed-seed generator produces bounded sequences containing upserts,
+removes, kind changes, out-of-order observations, control creation and removal, resource
+refusal, refresh overlap, stale preparation, and state-only transitions.
+After every committed step it compares the full model and engine facts, roll-ups,
+coverage, state, version movement, exact changes, and impact.
+It also checks algebraic relations: no-op idempotence, remove-then-add equivalence,
+serial versus admitted concurrent order, maintained index versus full recomputation, and
+page conservation at a stable version.
+
+Generated traces are not all checked in.
+On failure the runner prints the seed and complete scenario text, minimizes by deleting
+actions while preserving the failure, and offers the minimized case for promotion into
+one of the five goldens.
+This gives broad combination coverage without a new test function per discovered edge.
+
+### Deterministic concurrency and lifecycle proof
+
+Use injected discovery order, scripted observation, bounded queues, and named barriers
+to force interleavings.
+The barrier seam pauses at existing boundaries—after verification, before conditional
+commit, after commit, while waiting, and before worker exit—and never supplies facts or
+changes the production decision.
+
+The scenarios force an event before baseline, an event during a baseline batch,
+overflow, registration gap, overlapping refresh and observation, state-only wakeup,
+journal-floor reset, close during a blocked poll, and close during prepared work.
+Timing-only sleeps are not proof of these conditions.
+Real observer tests use a deadline and a causally observed marker; they do not duplicate
+the deterministic semantic matrix.
+
+### Projection and continuation relations
+
+One assembly helper runs every pageable projection at limits one, two, a boundary-sized
+page, and unbounded.
+For each stable-version assembly it checks positive bounds, advancing continuation,
+exact order, no duplicates or omissions, proportional work, and equality with the
+unpaged answer. The same table exercises stale, foreign, evicted, query-mismatched, and
+closed continuations.
+
+Product totals are separate coherent aggregate projections.
+The harness checks `exact(n)` or `at_least(n)` against independent recomputation and
+never infers a denominator from page-control metadata.
+
+### Shared cross-provider contract packet
+
+MetaBrowser’s provider registry is a runner, not the sole oracle.
+Both providers could agree on the same copied bug, so the shared packet includes
+provider-independent inputs and reviewed expected semantic results.
+It contains:
+
+- the actual File Rollup registry document and expected normalized identity;
+- one compact corpus covering logical/canonical extensions, groups, the fixed ignore
+  partition, non-ASCII names, invalid Unix bytes, Windows separators and unpaired
+  surrogates;
+- the eight application queries, exact tree/flat ordering, exact/capped totals, and
+  portable completeness;
+- a scripted operation sequence with expected state, change cursor, invalidation, and
+  settled read after every step;
+- lifecycle, budget, reset, refresh, cancellation, and close failures.
+
+The packet is authored from the contract and independent model, not generated by
+executing either provider’s matcher.
+MetaBrowser owns the canonical file; fdu vendors the reviewed revision for binding
+tests, and composed CI directly compares the two files before running both providers.
+Git history and the exact counterpart revision provide provenance; no decorative hash is
+added beside data already compared byte for byte.
+
+### PR #47 test reuse audit
+
+The old tests are mined by oracle, not copied by file.
+
+| PR #47 source | Assessment and rewrite use |
+| --- | --- |
+| `9460231` `watch/scripted_events.rs` | Strong seam. Borrow its backend-level event vocabulary, path validation, overflow/error cases, and rule that scripts provide hints which production verification must confirm. Extend it with named barriers; do not let scripts inject facts. |
+| `50e078c` ancestor-impact test | Strong independent oracle. Keep the separate ancestor calculation, but compare it with impact derived from exact committed effects rather than requested operations. |
+| `2ab02ee`, `a3960fb`, `c31ad3c` coherent read cases | Strong relations. Fold single-guard version/state/projection checks and pinned-time behavior into the projection session and invariant validator. |
+| `a5a7ae3`, `91b6895`, `051e7cc` paging tests | Keep assembly conservation, cross-directory order, advancing position, and proportional-work relations. Replace exact remainder and signed-token tests with handle-local stale/foreign/evicted/query-mismatch cases. One table replaces most of the 714-line paging file. |
+| `d19b0ce` `batched_refresh.rs` | Keep ancestor collapse, bounded rejection, empty batch, one terminal commit range, and batch-versus-independent-recompute cases. Move them into the exact-mutation session and generator. |
+| `5ace86c`, `6a8ac6f`, `ff210d0`, `048b0cc` platform and admission cases | Keep invalid native paths, hidden control signals, macOS admission parity, Windows spelling, special objects, and serial/parallel equivalence as fixture rows. Avoid a separate integration file per scope axis. |
+| `a07fa17`, `ac38584`, `fad3d2f`, `44e79c3`, `eaae030` state and journal cases | Keep exhaustive state vocabulary, state-only version movement, cursor/commit ordering, consumer reset, and terminal-state-at-cursor relations. Express them as automatic coverage keys and the journal session. |
+| `37e791f`, `825fd92`, `c4f3343` ownership and synchronization regressions | Keep shared-authority, wait-on-the-causal-index, and select-the-semantic-batch lessons. Reproduce them with deterministic barriers, not sleep or “first dirty batch” assumptions. |
+| `walk_budget.rs`, `hidden_admission.rs`, `special_objects.rs`, `plane_equivalence.rs` | The fixtures and independent maintained-versus-walked comparisons are useful. Merge their cases into the rich corpus; replace exact-prefix scope and generic promoted planes with discovery-budget truth and fixed `all`/`unignored`. |
+| `catalog-predicates.json` and its generator | Keep the compact corpus and predicate boundary cases. Do not keep expected answers generated by lifting and executing the provider implementation, or the embedded provider source; those characterize one implementation rather than independently test the contract. |
+| `scope-fingerprint.json` | Keep order-insensitive collection and non-ASCII encoding vectors. Rebuild expected values for the new scope schema; `max_depth` and discovery budget no longer belong to identity. |
+| `tests/golden/cli-cost.tryscript.md` | Reject its product-output parsing. Move syscall/work relations to the invariant runner or performance harness; a CLI golden may show a complete stable diagnostic record only if that whole record is the public surface under test. |
+| `crates/fdu-py/tests/public_smoke.py` | Keep installed-wheel isolation, public export/stub parity, one complete five-operation lifecycle, and GIL-detached concurrency. Replace the 41-check sequential grab bag and its AST “all checks were called” self-test with the shared packet plus small, independently reported tests. |
+| real `watch_session_integration.rs` cases | Keep a minimal create/remove delivery and idle-no-work platform smoke. Move gaps, overflow, filters, budgets, state, ordering, and shutdown to the scripted deterministic sessions. |
+
+The quality assessment is therefore mixed but favorable at the assertion level: PR #47
+contains many precise causal regressions and several genuinely independent oracles.
+Its weakness is topology—similar fixtures and surface assertions accreted across Rust,
+Python, goldens, examples, and live timing tests.
+The rewrite preserves the information and removes that duplication.
+
+### Golden update and review discipline
+
+The default target always compares.
+Updating requires `SCENARIO=name`, writes one artifact, reruns its model and invariant
+checks, and prints the ordinary git diff.
+There is no update-all shortcut during implementation.
+Before commit, the complete corpus runs and the reviewer reads every changed session as
+a behavioral change.
+
+The artifact checker enforces:
+
+- one known trace schema and complete event shapes;
+- exact stable fields and only the central unstable placeholders;
+- bounded artifact and event sizes;
+- no duplicate scenario names or orphaned expected files;
+- no `grep`, `jq`, `head`, `tail`, or inline parsing that reduces a product response to
+  selected scalars in a golden path;
+- fixture-setup scripts remain allowed when they create state rather than hide output;
+- every critical invariant is programmatic as well as visible in the trace;
+- CI is proven to fail after a deliberate unapproved trace change.
+
+The existing CLI tryscript corpus continues to own human-facing CLI behavior.
+`fdu-9tdm` audits and repairs its surgical parsing sites before the opened-root corpus
+lands; the new interactive API does not acquire a CLI solely to make it golden-testable.
+
+### Minimal real boundary suite
+
+Mocks and scripts stop at boundaries whose behavior they cannot prove:
+
+1. one native observer smoke per supported platform causes a create and remove, waits on
+   the causal change rather than sleeping for correctness, and proves idle observation
+   performs no filesystem work;
+2. one clean installed-wheel smoke imports only the wheel, performs all five synchronous
+   operations, verifies public/stub parity and GIL release, then closes with no worker;
+3. one MetaBrowser installed-wheel lifecycle opens cold, reads useful progress, observes
+   a real mutation, rereads after invalidation, refreshes, replaces the root, and
+   closes;
+4. existing provider-neutral route and browser tests run against both providers without
+   duplicating the semantic packet.
+
+These tests may take seconds and run at the appropriate integration gate.
+They do not carry the combinatorial correctness burden of the deterministic corpus.
 
 ### Composed MetaBrowser integration matrix
 

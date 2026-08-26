@@ -129,6 +129,22 @@ Missing entries use three-valued knowledge:
 - `unknown` when discovery, a resource stop, an inaccessible boundary, or portable-path
   loss prevents an absence claim.
 
+#### A complete behavior session is inspectable
+
+The opened-root value model is complete enough that a client or test harness can record
+one causal session from real engine values: input options, operation requests and
+responses, exact commits, coherent state, work, recovery, and shutdown.
+It does not need a private mutation log, selected debug counters, or a second test event
+vocabulary that can drift from the public behavior.
+
+This is a design constraint, not only a testing preference.
+If an important effect cannot be explained from the operation result, commit journal,
+bounded diagnostics, and final read, improve those production values before adding a
+test-only observation path.
+Test seams may supply deterministic filesystem hints or pause at named scheduling
+boundaries; they control when production behavior runs and never state facts, mint
+changes, or bypass verification.
+
 #### Optional mechanisms remain removable
 
 The owner, exact commits, reads, explicit refresh, journal, and continuation table use
@@ -473,6 +489,36 @@ second use exists.
 **Rationale:** The fixed partition is the demonstrated client requirement and is easy to
 remove or generalize after another use case establishes the correct abstraction.
 
+### Controlled transparent-box sessions instead of an internal trace bus
+
+**Chosen approach:** A test-only typed control drives the real opened-root owner,
+workers, commit pipeline, journal, and five operations through named scheduling and
+fault boundaries.
+A recorder outside the owner drains the real change surface and renders
+complete production requests and results.
+The control may select worker count, pause or release a named boundary, script
+filesystem hints, or trigger a named failure; it never supplies an entry fact, commit,
+state transition, or public result.
+
+**Alternatives considered:** Full real-filesystem sessions have the best boundary
+fidelity but cannot reliably force races, gaps, overflow, or worker failure.
+A pervasive internal event bus can log every queue and thread step, but creates a second
+semantic vocabulary, couples goldens to refactors, and adds release-path cost.
+A fully simulated owner is deterministic but does not test the orchestration being
+added. Abstracting the clock, filesystem, scheduler, executor, and every queue behind
+production traits would make tests flexible at the cost of permanent indirection and a
+much larger design.
+
+**Rationale:** The difficult new behavior is orchestration around already-tested index,
+classification, and projection logic.
+Controlled sessions exercise that orchestration end to end while making only
+contract-relevant causal events durable: actions, exact commits, operation results,
+state, work, recovery, and joined shutdown.
+Incidental queue operations, mutex timing, thread identifiers, and wall-clock duration
+remain implementation details.
+A few native-observer, installed-package, and application tests retain real boundary
+coverage.
+
 ## Security Considerations
 
 The opened-root API is local and adds no authentication or network listener.
@@ -548,6 +594,8 @@ A change to the opened-root work is architecturally sound only if all answers re
 - Are scope, execution policy, and query selection still separate?
 - Does the Python binding remain synchronous and does the application own async policy?
 - Does the adapter remain a translation layer rather than a second engine?
+- Can a complete causal session be recorded from real engine values without a parallel
+  test-only behavior log?
 - Do the CLI and existing one-shot surfaces retain their behavior and dependency floor?
 
 ## References
