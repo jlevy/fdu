@@ -97,21 +97,22 @@ pub use crate::control::{
     is_control_file,
 };
 pub use crate::engine_contract::{
-    AppliedDelta, Attrs, Clock, Commit, ContinuationId, CountResult, Coverage, CoverageReason,
-    DEFAULT_COUNT_CAP, DiscoveryProgress, EffectiveChange, EngineVersion, EntryKind, EntryValue,
-    Error, Expectation, Fingerprint, FlatPage, Freshness, Impact, ImpactDomain, IndexState,
-    InvalidateReason, Issue, IssueKind, IssueSummary, Knowledge, LifecyclePhase, LimitedProjection,
-    MAX_COUNT_CAP, MAX_ISSUE_MESSAGE_BYTES, MAX_ISSUE_PATH_BYTES, MAX_PAGE_ROWS, MAX_PAGE_WORK,
-    MAX_PORTABLE_PATH_EXAMPLE_BYTES, MAX_PORTABLE_PATH_EXAMPLES, MAX_READ_PROJECTIONS,
-    MAX_REPORT_VIEWS, MAX_RETAINED_ISSUES, Observation, ObservationOp, Op, PageRequest,
-    PathExpectation, PathState, PortablePathEncoding, PortablePathExample, PortablePathIssue,
-    ProjectionResult, Provenance, QueryLimit, ReadDiagnostics, ReadProjection, ReadRequest,
-    ReadResponse, ReportRequest, Result, RowShape, ScanScope, ScopeIdentity, SemanticIdentity,
-    SessionId, Source, StateTransition, Status, TreePage, Work,
+    AppliedDelta, Attrs, ChangeOutcome, ChangePoll, ChangeRequest, Clock, Commit, ContinuationId,
+    CountResult, Coverage, CoverageReason, DEFAULT_COUNT_CAP, DiscoveryProgress, EffectiveChange,
+    EngineVersion, EntryKind, EntryValue, Error, Expectation, Fingerprint, FlatPage, Freshness,
+    Impact, ImpactDomain, IndexState, InvalidateReason, Issue, IssueKind, IssueSummary, Knowledge,
+    LifecyclePhase, LimitedProjection, MAX_COUNT_CAP, MAX_DIRTY_PATHS, MAX_ISSUE_MESSAGE_BYTES,
+    MAX_ISSUE_PATH_BYTES, MAX_PAGE_ROWS, MAX_PAGE_WORK, MAX_PORTABLE_PATH_EXAMPLE_BYTES,
+    MAX_PORTABLE_PATH_EXAMPLES, MAX_READ_PROJECTIONS, MAX_REPORT_VIEWS, MAX_RETAINED_ISSUES,
+    Observation, ObservationOp, Op, PageRequest, PathExpectation, PathState, PortablePathEncoding,
+    PortablePathExample, PortablePathIssue, ProjectionResult, Provenance, QueryLimit,
+    ReadDiagnostics, ReadProjection, ReadRequest, ReadResponse, ReportRequest, Result, RowShape,
+    ScanScope, ScopeIdentity, SemanticIdentity, SessionId, Source, StateTransition, Status,
+    TreePage, Work,
 };
 pub use crate::index::{
-    ApplyOutcome, ApplyStats, ChildSnapshot, EntryId, ExtTally, Index, IndexHandle,
-    PartitionRollUp, PartitionRollUpSummary, RollUp, RollUpSummary, Since,
+    ApplyOutcome, ApplyStats, ChildSnapshot, DEFAULT_JOURNAL_CAPACITY, EntryId, ExtTally, Index,
+    IndexHandle, PartitionRollUp, PartitionRollUpSummary, RollUp, RollUpSummary, Since,
 };
 pub use crate::opened::{DiscoveryBudget, MAX_PRIORITY_PATHS, OpenOptions, OpenedIndex};
 // Ungated with report_format, for the same reason: one-shot planning is an execution

@@ -839,6 +839,49 @@ pub struct ReadResponse {
     pub change_cursor: EngineVersion,
 }
 
+/// Input to one blocking opened-root journal poll.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ChangeRequest {
+    /// Exact live version after which commits are requested.
+    pub after: EngineVersion,
+    /// Maximum time to wait when the journal has not advanced.
+    pub timeout: std::time::Duration,
+}
+
+/// Journal outcome at one coherent terminal version and state.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum ChangeOutcome {
+    /// Every retained exact commit after the requested version, oldest first.
+    Changes {
+        /// Exact engine commits; consumers invalidate and coherently reread projections.
+        commits: Vec<Commit>,
+        /// Bounded union of the commits' answer invalidations.
+        impact: Impact,
+    },
+    /// No newer commit arrived before the timeout.
+    Idle,
+    /// The requested version predates retained history and the consumer must reread.
+    Reset {
+        /// Complete invalidation guidance; lost paths are never presented as enumerable.
+        impact: Impact,
+    },
+}
+
+/// Result of one opened-root journal poll.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ChangePoll {
+    /// Cursor to use for the next poll; unchanged for [`ChangeOutcome::Idle`].
+    pub cursor: EngineVersion,
+    /// Exact terminal version captured with the outcome and state.
+    pub version: EngineVersion,
+    /// Complete public state at `version`.
+    pub state: IndexState,
+    /// Changes, timeout, or consumer-history recovery.
+    pub outcome: ChangeOutcome,
+    /// Deterministic journal work performed while assembling the result.
+    pub work: Work,
+}
+
 impl Default for IndexState {
     fn default() -> Self {
         Self {
@@ -1277,7 +1320,7 @@ impl StateTransition {
     }
 }
 
-/// Bounded work performed while arbitrating and committing producer input.
+/// Bounded work performed while committing producer input or serving engine reads.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct Work {
     /// Producer operations considered.
@@ -1292,6 +1335,10 @@ pub struct Work {
     pub rows_returned: u64,
     /// Lookups against commit-maintained projection indexes.
     pub maintained_index_work: u64,
+    /// Retained journal commits examined by a change poll.
+    pub commits_visited: u64,
+    /// Exact journal commits copied into a change result.
+    pub commits_returned: u64,
 }
 
 /// One atomic, exact index transition.
@@ -1531,6 +1578,20 @@ pub enum Error {
         /// Current live version.
         current: Box<EngineVersion>,
     },
+
+    /// A change cursor belongs to another handle, has incompatible identities, or is in
+    /// the future.
+    #[error("change cursor {requested:?} is unavailable; current is {current:?}")]
+    ChangeCursorUnavailable {
+        /// Cursor supplied by the consumer.
+        requested: Box<EngineVersion>,
+        /// Current live version against which it was validated.
+        current: Box<EngineVersion>,
+    },
+
+    /// A panic poisoned opened-root journal wait coordination.
+    #[error("opened-index journal wait state was poisoned by a panic")]
+    OpenedJournalPoisoned,
 
     /// A producer tried to complete a path that was not a retained directory.
     #[error("directory completion named an unknown or non-directory path: {0:?}")]

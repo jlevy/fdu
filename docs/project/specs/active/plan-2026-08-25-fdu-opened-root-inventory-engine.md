@@ -1129,7 +1129,7 @@ Acceptance for Phase 1:
   per-directory completeness, explicit budget state, and scheduling priority.
 - [x] Add coherent lookup, depth-one tree, roll-up, state, version, and work projections
   in one bounded `read()`.
-- [ ] Add the bounded pull journal and `changes(after, timeout)` with state-only
+- [x] Add the bounded pull journal and `changes(after, timeout)` with state-only
   commits, cursor validation, timeout, reset, and close wakeup.
 - [ ] Add bounded verified multi-path refresh through the shared commit pipeline.
 - [ ] Add native observation with capture-before-baseline buffering, scripted overflow,

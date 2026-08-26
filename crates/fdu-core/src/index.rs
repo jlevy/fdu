@@ -59,7 +59,7 @@ const MAX_VERIFIED_INTERVALS: usize = 256;
 /// Bounded on purpose: an unbounded journal is a memory leak in a long-lived server. A
 /// consumer that falls further behind than this is told so ([`Since::truncated`]) and is
 /// expected to re-read state rather than silently miss changes.
-const DEFAULT_JOURNAL_CAPACITY: usize = 64 * 1024;
+pub const DEFAULT_JOURNAL_CAPACITY: usize = 64 * 1024;
 
 /// Identifier for an entry within an [`Index`] arena.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
@@ -359,6 +359,10 @@ pub struct Since {
     ///
     /// This is derived from `commits` for compatibility and excludes state-only commits.
     pub deltas: Vec<AppliedDelta>,
+    /// Terminal clock captured under the same read boundary as `commits`.
+    pub clock: Clock,
+    /// Complete public state at `clock`.
+    pub state: IndexState,
     /// True when the requested clock is older than the retained journal, meaning the
     /// caller has missed commits and must re-read state rather than trust either view.
     pub truncated: bool,
@@ -854,12 +858,26 @@ impl Index {
         scope: ScanScope,
         types: std::sync::Arc<crate::classify::TypeRegistry>,
     ) -> Self {
+        Self::new_with_scope_types_and_journal_capacity(
+            root_path,
+            scope,
+            types,
+            DEFAULT_JOURNAL_CAPACITY,
+        )
+    }
+
+    pub(crate) fn new_with_scope_types_and_journal_capacity(
+        root_path: impl Into<PathBuf>,
+        scope: ScanScope,
+        types: std::sync::Arc<crate::classify::TypeRegistry>,
+        journal_capacity: usize,
+    ) -> Self {
         assert_eq!(
             scope.type_rules_fingerprint,
             types.fingerprint(),
             "an index's registry must match its semantic scope"
         );
-        Self::new_with_journal_capacity(root_path, scope, DEFAULT_JOURNAL_CAPACITY, types)
+        Self::new_with_journal_capacity(root_path, scope, journal_capacity, types)
     }
 
     fn new_with_journal_capacity(
@@ -1512,6 +1530,8 @@ impl Index {
         Since {
             deltas: commits.iter().filter_map(Commit::applied_delta).collect(),
             commits,
+            clock: self.clock,
+            state: self.state,
             truncated: clock < self.journal_floor,
         }
     }

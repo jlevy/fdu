@@ -13,6 +13,7 @@ use crate::index::{DiscoveryCommit, DiscoveryTransition};
 use crate::{EntryKind, Error, Index, IndexHandle, Observation, Op, Result, ScanConfig, SessionId};
 
 mod continuation;
+mod journal;
 pub(crate) mod read;
 
 /// First ordinal reserved for a minted session; zero never identifies a live owner.
@@ -76,8 +77,8 @@ pub struct DiscoveryBudget {
 ///
 /// Scope and execution settings are flat here because each is one independent decision;
 /// display depth is absent by design and belongs to a read request. Progressive
-/// discovery budgets, observation, and bounded history are added with their respective
-/// capabilities.
+/// Observation policy is added with its capability; the current options already bind
+/// progressive-discovery and exact-history bounds.
 #[derive(Clone, Debug)]
 pub struct OpenOptions {
     /// Ops per committed discovery batch.
@@ -94,6 +95,8 @@ pub struct OpenOptions {
     pub types: Option<Arc<crate::classify::TypeRegistry>>,
     /// Resource policy for the cold progressive walk.
     pub budget: DiscoveryBudget,
+    /// Maximum retained-cost units in the exact commit journal.
+    pub journal_capacity: usize,
 }
 
 impl Default for OpenOptions {
@@ -107,12 +110,13 @@ impl Default for OpenOptions {
             exclude_special: scan.exclude_special,
             types: scan.types,
             budget: DiscoveryBudget::default(),
+            journal_capacity: crate::DEFAULT_JOURNAL_CAPACITY,
         }
     }
 }
 
 impl OpenOptions {
-    fn into_parts(self) -> (ScanConfig, DiscoveryBudget) {
+    fn into_parts(self) -> (ScanConfig, DiscoveryBudget, usize) {
         let scan = ScanConfig {
             max_depth: None,
             batch_size: self.batch_size,
@@ -127,7 +131,7 @@ impl OpenOptions {
             order: crate::ScanOrder::BreadthFirst,
             types: self.types,
         };
-        (scan, self.budget)
+        (scan, self.budget, self.journal_capacity)
     }
 }
 
@@ -240,10 +244,21 @@ impl OpenedIndex {
         read::read(self, request)
     }
 
+    /// Return exact commits after one version, waiting up to the supplied timeout.
+    pub fn changes(&self, request: crate::ChangeRequest) -> Result<crate::ChangePoll> {
+        self.ensure_open()?;
+        journal::poll(self, request)
+    }
+
     fn start_discovery(&self) -> Result<()> {
-        self.state.index.transition_discovery(DiscoveryTransition::Begin)?;
+        publish_discovery_transition(
+            &self.state.index,
+            &self.state.journal,
+            DiscoveryTransition::Begin,
+        )?;
         let root = self.state.root.clone();
         let index = self.state.index.clone();
+        let journal = Arc::clone(&self.state.journal);
         let scan = self.state.scan.clone();
         let budget = self.state.budget;
         let frontier = Arc::clone(&self.state.frontier);
@@ -253,17 +268,29 @@ impl OpenedIndex {
             #[cfg(test)]
             controls.reach(TestPoint::BeforeDiscovery);
             #[cfg(not(test))]
-            let outcome = { run_discovery(&root, &index, &scan, budget, &frontier, &cancellation) };
+            let outcome =
+                { run_discovery(&root, &index, &journal, &scan, budget, &frontier, &cancellation) };
             #[cfg(test)]
             let outcome = {
-                run_discovery(&root, &index, &scan, budget, &frontier, &cancellation, &controls)
+                run_discovery(
+                    &root,
+                    &index,
+                    &journal,
+                    &scan,
+                    budget,
+                    &frontier,
+                    &cancellation,
+                    &controls,
+                )
             };
             if let Err(error) = outcome {
                 let state = index.state()?;
                 if state.phase == crate::LifecyclePhase::Discovering {
-                    index.transition_discovery(DiscoveryTransition::Failed(
-                        crate::Issue::from_error(&error),
-                    ))?;
+                    publish_discovery_transition(
+                        &index,
+                        &journal,
+                        DiscoveryTransition::Failed(crate::Issue::from_error(&error)),
+                    )?;
                 }
                 return Err(error);
             }
@@ -345,6 +372,7 @@ struct OpenedState {
     budget: DiscoveryBudget,
     frontier: Arc<DiscoveryFrontier>,
     continuations: Mutex<continuation::ContinuationTable>,
+    journal: Arc<journal::JournalWait>,
     cancellation: Arc<Cancellation>,
     lifecycle: Mutex<Lifecycle>,
     lifecycle_changed: Condvar,
@@ -374,6 +402,7 @@ impl OpenedState {
             budget,
             frontier: Arc::new(DiscoveryFrontier::new()),
             continuations: Mutex::new(continuation::ContinuationTable::default()),
+            journal: Arc::new(journal::JournalWait::new()),
             cancellation: Arc::new(Cancellation::default()),
             lifecycle: Mutex::new(Lifecycle::default()),
             lifecycle_changed: Condvar::new(),
@@ -391,6 +420,7 @@ impl OpenedState {
             budget,
             frontier: Arc::new(DiscoveryFrontier::new()),
             continuations: Mutex::new(continuation::ContinuationTable::default()),
+            journal: Arc::new(journal::JournalWait::new()),
             cancellation: Arc::new(Cancellation::default()),
             lifecycle: Mutex::new(Lifecycle::default()),
             lifecycle_changed: Condvar::new(),
@@ -427,8 +457,9 @@ impl OpenedState {
                 OwnerPhase::Open => {
                     lifecycle.phase = OwnerPhase::Closing;
                     let workers = std::mem::take(&mut lifecycle.workers);
-                    drop(lifecycle);
                     self.cancellation.cancel();
+                    drop(lifecycle);
+                    self.journal.close();
                     match self.continuations.lock() {
                         Ok(mut continuations) => continuations.clear(),
                         Err(poisoned) => poisoned.into_inner().clear(),
@@ -492,12 +523,15 @@ fn bind_root(
     root: &Path,
     options: OpenOptions,
 ) -> Result<(std::path::PathBuf, IndexHandle, ScanConfig, DiscoveryBudget)> {
-    let (scan, budget) = options.into_parts();
+    let (scan, budget, journal_capacity) = options.into_parts();
     scan.validate()?;
     if budget.max_files == Some(0) {
         return Err(Error::UnsupportedScanConfig(
             "max_files must be nonzero; omit it for an unlimited discovery",
         ));
+    }
+    if journal_capacity == 0 {
+        return Err(Error::UnsupportedScanConfig("journal_capacity must be nonzero"));
     }
     let root = root.canonicalize().map_err(|source| Error::io(root, source))?;
     let metadata = std::fs::symlink_metadata(&root).map_err(|source| Error::io(&root, source))?;
@@ -513,7 +547,12 @@ fn bind_root(
 
     let scope = scan.scope();
     let types = scan.types_shared();
-    let index = IndexHandle::new(Index::new_with_scope_and_types(&root, scope, types));
+    let index = IndexHandle::new(Index::new_with_scope_types_and_journal_capacity(
+        &root,
+        scope,
+        types,
+        journal_capacity,
+    ));
     Ok((root, index, scan, budget))
 }
 
@@ -589,9 +628,11 @@ impl DiscoveryFrontier {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_discovery(
     root: &Path,
     index: &IndexHandle,
+    journal: &journal::JournalWait,
     scan: &ScanConfig,
     budget: DiscoveryBudget,
     frontier: &DiscoveryFrontier,
@@ -606,12 +647,13 @@ fn run_discovery(
     while let Some(directory) = frontier.pop() {
         if cancellation.is_cancelled() {
             frontier.stop();
-            index.transition_discovery(DiscoveryTransition::Cancelled)?;
+            publish_discovery_transition(index, journal, DiscoveryTransition::Cancelled)?;
             return Ok(());
         }
         match discover_directory(
             root,
             index,
+            journal,
             scan,
             budget,
             root_dev,
@@ -628,7 +670,7 @@ fn run_discovery(
             controls.reach(TestPoint::AfterRootDirectory);
         }
     }
-    index.transition_discovery(DiscoveryTransition::Finish)?;
+    publish_discovery_transition(index, journal, DiscoveryTransition::Finish)?;
     Ok(())
 }
 
@@ -642,6 +684,7 @@ enum DiscoveryStep {
 fn discover_directory(
     root: &Path,
     index: &IndexHandle,
+    journal: &journal::JournalWait,
     scan: &ScanConfig,
     budget: DiscoveryBudget,
     root_dev: u64,
@@ -656,10 +699,14 @@ fn discover_directory(
         Ok(listing) => listing,
         Err(source) => {
             let error = Error::io(&absolute, source);
-            index.transition_discovery(DiscoveryTransition::Inaccessible {
-                issues: vec![crate::Issue::from_error(&error)],
-                omitted: 0,
-            })?;
+            publish_discovery_transition(
+                index,
+                journal,
+                DiscoveryTransition::Inaccessible {
+                    issues: vec![crate::Issue::from_error(&error)],
+                    omitted: 0,
+                },
+            )?;
             return Ok(DiscoveryStep::Continue);
         }
     };
@@ -670,7 +717,13 @@ fn discover_directory(
 
     for item in listing {
         if cancellation.is_cancelled() {
-            commit_discovery_batch(index, &mut batch, None, Some(DiscoveryTransition::Cancelled))?;
+            commit_discovery_batch(
+                index,
+                journal,
+                &mut batch,
+                None,
+                Some(DiscoveryTransition::Cancelled),
+            )?;
             frontier.stop();
             return Ok(DiscoveryStep::Stopped);
         }
@@ -726,7 +779,7 @@ fn discover_directory(
         }
         if !retained {
             if let Some(control) = control {
-                push_discovery_op(index, scan.batch_size, &mut batch, control)?;
+                push_discovery_op(index, journal, scan.batch_size, &mut batch, control)?;
             }
             continue;
         }
@@ -734,6 +787,7 @@ fn discover_directory(
         if kind == EntryKind::File && budget.max_files.is_some_and(|max| *retained_files >= max) {
             commit_discovery_batch(
                 index,
+                journal,
                 &mut batch,
                 None,
                 Some(DiscoveryTransition::BudgetRefused(crate::Issue::resource_budget(
@@ -748,12 +802,13 @@ fn discover_directory(
         }
         push_discovery_op(
             index,
+            journal,
             scan.batch_size,
             &mut batch,
             Op::Upsert { path: path.clone(), kind, attrs },
         )?;
         if let Some(control) = control {
-            push_discovery_op(index, scan.batch_size, &mut batch, control)?;
+            push_discovery_op(index, journal, scan.batch_size, &mut batch, control)?;
         }
         if descend {
             discovered.push(PendingDirectory { path, depth: directory.depth.saturating_add(1) });
@@ -764,7 +819,7 @@ fn discover_directory(
     let transition =
         incomplete.then_some(DiscoveryTransition::Inaccessible { issues, omitted: omitted_issues });
     let complete = (!incomplete).then(|| directory.path.clone());
-    commit_discovery_batch(index, &mut batch, complete, transition)?;
+    commit_discovery_batch(index, journal, &mut batch, complete, transition)?;
     frontier.extend(discovered);
     Ok(DiscoveryStep::Continue)
 }
@@ -779,25 +834,43 @@ fn retain_local_issue(issues: &mut Vec<crate::Issue>, omitted: &mut u64, issue: 
 
 fn push_discovery_op(
     index: &IndexHandle,
+    journal: &journal::JournalWait,
     batch_size: usize,
     batch: &mut Vec<Op>,
     op: Op,
 ) -> Result<()> {
     batch.push(op);
     if batch.len() >= batch_size {
-        commit_discovery_batch(index, batch, None, None)?;
+        commit_discovery_batch(index, journal, batch, None, None)?;
     }
     Ok(())
 }
 
 fn commit_discovery_batch(
     index: &IndexHandle,
+    journal: &journal::JournalWait,
     batch: &mut Vec<Op>,
     directory_complete: Option<PathBuf>,
     transition: Option<DiscoveryTransition>,
 ) -> Result<()> {
     let observation = Observation::new(std::mem::take(batch));
-    index.apply_discovery(&observation, DiscoveryCommit { directory_complete, transition })?;
+    let outcome =
+        index.apply_discovery(&observation, DiscoveryCommit { directory_complete, transition })?;
+    if outcome.commit.is_some() {
+        journal.notify_commit();
+    }
+    Ok(())
+}
+
+fn publish_discovery_transition(
+    index: &IndexHandle,
+    journal: &journal::JournalWait,
+    transition: DiscoveryTransition,
+) -> Result<()> {
+    let outcome = index.transition_discovery(transition)?;
+    if outcome.commit.is_some() {
+        journal.notify_commit();
+    }
     Ok(())
 }
 
@@ -902,6 +975,7 @@ enum TestPoint {
     BeforeCloseWait,
     BeforeDiscovery,
     AfterRootDirectory,
+    BeforeJournalWait,
 }
 
 #[cfg(test)]
@@ -911,6 +985,7 @@ struct TestControls {
     before_close_wait: TestGate,
     before_discovery: TestGate,
     after_root_directory: TestGate,
+    before_journal_wait: TestGate,
     discovery_disabled: AtomicBool,
 }
 
@@ -922,6 +997,7 @@ impl TestControls {
             TestPoint::BeforeCloseWait => &self.before_close_wait,
             TestPoint::BeforeDiscovery => &self.before_discovery,
             TestPoint::AfterRootDirectory => &self.after_root_directory,
+            TestPoint::BeforeJournalWait => &self.before_journal_wait,
         }
     }
 
@@ -1023,6 +1099,18 @@ mod tests {
         let opened = OpenedIndex::open_for_test(root.path(), OpenOptions::default(), controls)
             .expect("open live root");
         (root, opened)
+    }
+
+    fn current_version(opened: &OpenedIndex) -> crate::EngineVersion {
+        opened.read(crate::ReadRequest::default()).expect("read version").version
+    }
+
+    fn apply_and_notify(opened: &OpenedIndex, observation: &Observation) -> crate::ApplyOutcome {
+        let outcome = opened.state.index.apply(observation).expect("apply observation");
+        if outcome.commit.is_some() {
+            opened.state.journal.notify_commit();
+        }
+        outcome
     }
 
     #[test]
@@ -1199,6 +1287,12 @@ mod tests {
             OpenedIndex::open(root.path(), zero_budget),
             Err(Error::UnsupportedScanConfig(_))
         ));
+
+        let zero_journal = OpenOptions { journal_capacity: 0, ..OpenOptions::default() };
+        assert!(matches!(
+            OpenedIndex::open(root.path(), zero_journal),
+            Err(Error::UnsupportedScanConfig(_))
+        ));
     }
 
     #[test]
@@ -1372,6 +1466,277 @@ mod tests {
         assert!(matches!(
             response.results[1],
             crate::ProjectionResult::Lookup(crate::Knowledge::Absent)
+        ));
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn change_poll_returns_the_detached_exact_range_and_terminal_state() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        let after = current_version(&opened);
+        apply_and_notify(
+            &opened,
+            &Observation::new(vec![Op::Upsert {
+                path: PathBuf::from("note.txt"),
+                kind: EntryKind::File,
+                attrs: crate::Attrs { size: 7, ..crate::Attrs::default() },
+            }]),
+        );
+        let state_only = opened
+            .state
+            .index
+            .transition_discovery(DiscoveryTransition::Begin)
+            .expect("state-only commit");
+        assert!(state_only.commit.as_ref().is_some_and(|commit| commit.changes.is_empty()));
+        opened.state.journal.notify_commit();
+
+        let poll = opened
+            .changes(crate::ChangeRequest { after, timeout: std::time::Duration::ZERO })
+            .expect("immediate changes");
+        let crate::ChangeOutcome::Changes { commits, impact } = &poll.outcome else {
+            panic!("expected changes");
+        };
+        let detached = opened.state.index.since(after.sequence).expect("detached range");
+        assert_eq!(commits, &detached.commits);
+        assert_eq!(commits.len(), 2);
+        assert!(commits[1].changes.is_empty(), "state-only commit remains observable");
+        assert!(impact.domains.contains(&crate::ImpactDomain::State));
+        assert_eq!(poll.cursor, poll.version);
+        assert_eq!(poll.version.sequence, detached.clock);
+        assert_eq!(poll.state, detached.state);
+        assert_eq!(poll.work.commits_visited, 2);
+        assert_eq!(poll.work.commits_returned, 2);
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn idle_change_poll_waits_without_advancing_its_cursor() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        let after = current_version(&opened);
+        let poll = opened
+            .changes(crate::ChangeRequest { after, timeout: std::time::Duration::from_millis(5) })
+            .expect("idle poll");
+
+        assert!(matches!(poll.outcome, crate::ChangeOutcome::Idle));
+        assert_eq!(poll.cursor, after);
+        assert_eq!(poll.version, after);
+        assert_eq!(poll.work, crate::Work::default());
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn a_commit_at_the_wait_boundary_cannot_lose_its_wakeup() {
+        let controls = Arc::new(TestControls::default());
+        controls.gate(TestPoint::BeforeJournalWait).arm();
+        let (_root, opened) = opened(Arc::clone(&controls));
+        let after = current_version(&opened);
+        let poller = opened.clone();
+        let poll = thread::spawn(move || {
+            poller
+                .changes(crate::ChangeRequest { after, timeout: std::time::Duration::from_secs(5) })
+        });
+        controls.gate(TestPoint::BeforeJournalWait).wait_reached();
+
+        let (applied_sender, applied_receiver) = std::sync::mpsc::sync_channel(0);
+        let committer = opened.clone();
+        let commit = thread::spawn(move || {
+            let outcome = committer
+                .state
+                .index
+                .apply(&Observation::new(vec![Op::Upsert {
+                    path: PathBuf::from("arrived"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs::default(),
+                }]))
+                .expect("commit at wait boundary");
+            applied_sender.send(()).expect("report applied commit");
+            if outcome.commit.is_some() {
+                committer.state.journal.notify_commit();
+            }
+        });
+        applied_receiver.recv_timeout(TEST_GATE_TIMEOUT).expect("commit applied");
+        controls.gate(TestPoint::BeforeJournalWait).release();
+
+        commit.join().expect("committer");
+        let poll = poll.join().expect("poller").expect("change poll");
+        assert!(matches!(
+            poll.outcome,
+            crate::ChangeOutcome::Changes { ref commits, .. } if commits.len() == 1
+        ));
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn progressive_discovery_notifies_the_same_change_poll() {
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::write(root.path().join("discovered"), b"data").expect("fixture");
+        let controls = Arc::new(TestControls::default());
+        controls.gate(TestPoint::BeforeDiscovery).arm();
+        let opened =
+            OpenedIndex::open_for_test(root.path(), OpenOptions::default(), Arc::clone(&controls))
+                .expect("opened root");
+        let after = current_version(&opened);
+        let poller = opened.clone();
+        let poll = thread::spawn(move || {
+            poller
+                .changes(crate::ChangeRequest { after, timeout: std::time::Duration::from_secs(5) })
+        });
+
+        controls.gate(TestPoint::BeforeDiscovery).release();
+        let poll = poll.join().expect("poller").expect("discovery changes");
+        assert!(matches!(
+            poll.outcome,
+            crate::ChangeOutcome::Changes { ref commits, .. } if !commits.is_empty()
+        ));
+        assert!(poll.version.sequence > after.sequence);
+        wait_until_settled(&opened);
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn terminal_state_only_discovery_commit_wakes_a_blocked_poll() {
+        let root = tempfile::tempdir().expect("temp root");
+        let controls = Arc::new(TestControls::default());
+        controls.gate(TestPoint::AfterRootDirectory).arm();
+        controls.gate(TestPoint::BeforeJournalWait).arm();
+        let opened =
+            OpenedIndex::open_for_test(root.path(), OpenOptions::default(), Arc::clone(&controls))
+                .expect("opened root");
+        controls.gate(TestPoint::AfterRootDirectory).wait_reached();
+        let after = current_version(&opened);
+        let poller = opened.clone();
+        let poll = thread::spawn(move || {
+            poller
+                .changes(crate::ChangeRequest { after, timeout: std::time::Duration::from_secs(5) })
+        });
+        controls.gate(TestPoint::BeforeJournalWait).wait_reached();
+        controls.gate(TestPoint::BeforeJournalWait).release();
+        controls.gate(TestPoint::AfterRootDirectory).release();
+
+        let poll = poll.join().expect("poller").expect("terminal change");
+        let crate::ChangeOutcome::Changes { commits, .. } = poll.outcome else {
+            panic!("expected terminal change");
+        };
+        assert_eq!(commits.len(), 1);
+        assert!(commits[0].changes.is_empty());
+        assert!(commits[0].state.iter().any(|transition| matches!(
+            transition,
+            crate::StateTransition::IndexState {
+                current: crate::IndexState { phase: crate::LifecyclePhase::Ready, .. },
+                ..
+            }
+        )));
+        assert_eq!(poll.state.phase, crate::LifecyclePhase::Ready);
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn change_cursors_reject_foreign_identity_and_future_sequences() {
+        let (_first_root, first) = opened(Arc::new(TestControls::default()));
+        let (_second_root, second) = opened(Arc::new(TestControls::default()));
+        let first_version = current_version(&first);
+        let second_version = current_version(&second);
+
+        assert!(matches!(
+            first.changes(crate::ChangeRequest {
+                after: second_version,
+                timeout: std::time::Duration::ZERO,
+            }),
+            Err(Error::ChangeCursorUnavailable { .. })
+        ));
+        let future = crate::EngineVersion {
+            sequence: first_version.sequence.checked_next().expect("future sequence"),
+            ..first_version
+        };
+        assert!(matches!(
+            first.changes(crate::ChangeRequest {
+                after: future,
+                timeout: std::time::Duration::ZERO,
+            }),
+            Err(Error::ChangeCursorUnavailable { .. })
+        ));
+        first.close().expect("first close");
+        second.close().expect("second close");
+    }
+
+    #[test]
+    fn a_slow_consumer_gets_one_coherent_all_dirty_reset() {
+        let controls = Arc::new(TestControls::default());
+        controls.discovery_disabled.store(true, Ordering::Release);
+        let root = tempfile::tempdir().expect("temp root");
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            OpenOptions { journal_capacity: 1, ..OpenOptions::default() },
+            controls,
+        )
+        .expect("opened root");
+        let after = current_version(&opened);
+        apply_and_notify(
+            &opened,
+            &Observation::new(vec![Op::Upsert {
+                path: PathBuf::from("larger-than-history"),
+                kind: EntryKind::File,
+                attrs: crate::Attrs::default(),
+            }]),
+        );
+
+        let poll = opened
+            .changes(crate::ChangeRequest { after, timeout: std::time::Duration::ZERO })
+            .expect("consumer reset");
+        let crate::ChangeOutcome::Reset { impact } = &poll.outcome else {
+            panic!("expected reset");
+        };
+        assert!(impact.all_dirty);
+        assert!(impact.dirty_paths.is_empty());
+        assert_eq!(impact.domains.len(), 6);
+        assert_eq!(poll.cursor, poll.version);
+        assert_eq!(poll.state, opened.state.index.state().expect("terminal state"));
+        assert!(opened.state.index.since(after.sequence).expect("history").truncated);
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn close_wakes_a_blocked_change_poll() {
+        let controls = Arc::new(TestControls::default());
+        controls.gate(TestPoint::BeforeJournalWait).arm();
+        let (_root, opened) = opened(Arc::clone(&controls));
+        let after = current_version(&opened);
+        let poller = opened.clone();
+        let poll = thread::spawn(move || {
+            poller.changes(crate::ChangeRequest {
+                after,
+                timeout: std::time::Duration::from_secs(60),
+            })
+        });
+        controls.gate(TestPoint::BeforeJournalWait).wait_reached();
+        controls.gate(TestPoint::BeforeJournalWait).release();
+        opened.close().expect("close");
+
+        assert!(matches!(poll.join().expect("poller"), Err(Error::OpenedIndexClosed)));
+    }
+
+    #[test]
+    fn change_invalidations_fail_closed_at_the_existing_path_bound() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        let after = current_version(&opened);
+        let ops = (0..=crate::MAX_DIRTY_PATHS)
+            .map(|index| Op::Upsert {
+                path: PathBuf::from(format!("entry-{index}")),
+                kind: EntryKind::File,
+                attrs: crate::Attrs::default(),
+            })
+            .collect();
+        apply_and_notify(&opened, &Observation::new(ops));
+
+        let poll = opened
+            .changes(crate::ChangeRequest { after, timeout: std::time::Duration::ZERO })
+            .expect("bounded invalidation");
+        assert!(matches!(
+            poll.outcome,
+            crate::ChangeOutcome::Changes {
+                ref commits,
+                impact: crate::Impact { all_dirty: true, ref dirty_paths, .. },
+            } if commits.len() == 1 && dirty_paths.is_empty()
         ));
         opened.close().expect("close");
     }
