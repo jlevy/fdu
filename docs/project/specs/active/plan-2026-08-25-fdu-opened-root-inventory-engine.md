@@ -4,7 +4,7 @@
 
 **Author:** fdu project, with Codex review assistance
 
-**Status:** Draft
+**Status:** Active — Phase 1 complete; Phase 2 refresh in progress
 
 ## Overview
 
@@ -85,6 +85,27 @@ The Decision Summary and Bead Reconciliation table are indexes and must be corre
 they drift from those sections.
 The review report owns the diagnosis and evidence; this plan owns later implementation
 decisions, including the explicit delivery override recorded below.
+
+## Current Implementation Status
+
+This status describes implementation checkpoint `c5d1780` on fdu PR #48 and the
+corresponding tbd snapshot on 2026-08-26. The PR is draft and mergeable, with all 19
+required GitHub checks passing at that checkpoint in
+[run 32978903202](https://github.com/jlevy/fdu/actions/runs/32978903202).
+
+| Phase | Status | Evidence and next boundary |
+| --- | --- | --- |
+| Architecture and implementation map | Complete | The durable architecture, PR #44 and #47 reconciliation, direct-API correction, file/function map, test design, and reuse ledger are committed and reviewed. |
+| Phase 1: exact engine kernel | Complete | Checkpoints 1A through 1D passed their local gates and the cumulative cross-platform PR gate. |
+| Phase 2: opened-root vertical slice | In progress | Ownership and joined close, discovery and priority, coherent reads, and the change journal are committed. `fdu-3za7` owns the next checkpoint: bounded multi-path refresh. Observation, session goldens, and Python follow in that dependency order. |
+| Phase 3: MetaBrowser adoption | Not started | Begins only after the complete native and Python Phase 2 surface passes. The first step is the disposable unchanged-contract measurement, not a contract edit. |
+| Phase 4: composed proof | Not started | Cross-provider conformance, route and lifecycle integration, installed-wheel proof, and final performance and size acceptance remain required. |
+
+The implementation epic currently has 16 closed children, one in progress, and 12 open
+children. Those counts are a checkpoint, not a completion percentage: the closed set
+includes the design and review work, while every MetaBrowser and final-acceptance bead
+remains open. The tbd graph is authoritative for live status and dependencies; the
+checklists and bead table below are maintained as its readable plan view.
 
 ## Goals
 
@@ -1053,16 +1074,21 @@ described in the reuse protocol so later `index.rs` work does not create conflic
 
 #### Checkpoint 1A: Observable Oracle
 
-- [ ] Fix `fdu-9tdm`: replace surgical golden parsing with broad observable-output
+- [x] Fix `fdu-9tdm`: replace surgical golden parsing with broad observable-output
   assertions before importing new surface behavior.
-- [ ] Add an independent deterministic reference model for retained facts, parent
+- [x] Add an independent deterministic reference model for retained facts, parent
   ordering, roll-ups, exact changes, control-file updates, and resource refusal.
-- [ ] Fix the closed session schema, automatic contract-coverage manifest, and staged
+- [x] Fix the closed session schema, automatic contract-coverage manifest, and staged
   per-owner test-control boundaries described in Testing Strategy.
   Implement each seam with the production Phase 2 capability it controls; compose the
   five session goldens only after all five operations exist.
-- [ ] Gate with the focused model tests, complete golden corpus, CLI/Python parity,
+- [x] Gate with the focused model tests, complete golden corpus, CLI/Python parity,
   `make docs-format-check`, and `make check`.
+
+Implementation status: complete.
+The transparent-output policy and independent reference model landed under `fdu-utf1`;
+the session schema and seam ownership are fixed here, while `fdu-0kv7` still owns the
+later composition of the five real opened-root session artifacts.
 
 #### Checkpoint 1B: Exact Commit Truth
 
@@ -1544,31 +1570,31 @@ green.
 The tbd planning shortcut materializes the execution map as children of `fdu-snej`. An
 arrow means the bead on the left depends on the bead or beads on the right.
 
-| Phase | Bead | Depends on |
-| --- | --- | --- |
-| 1A | `fdu-utf1` observable oracle prerequisites and staged session design | existing `fdu-9tdm`, `fdu-o8r8` |
-| 1C preparation | `fdu-tewk` audited runtime registry reuse | `fdu-utf1` |
-| 1B kernel | `fdu-qzqf` exact prepared commit | `fdu-tewk` |
-| 1B producers | `fdu-gpls` route every producer | `fdu-qzqf` |
-| 1C | `fdu-wzu9` control and fixed partitions | `fdu-gpls` |
-| 1D | `fdu-ff6r` admission, images, features, identity | `fdu-wzu9` |
-| 2 opened root | `fdu-mkga` shared live state and close | `fdu-ff6r` |
-| 2 discovery | `fdu-194x` progressive discovery, budget, priority | `fdu-mkga` |
-| 2 reads | `fdu-r7s7` coherent projections | `fdu-mkga` |
-| 2 journal | `fdu-ngnm` journal and change poll | `fdu-mkga`, `fdu-gpls` |
-| 2 refresh | `fdu-3za7` multi-path refresh | `fdu-mkga`, `fdu-gpls` |
-| 2 observation | `fdu-9jzp` no-gap handoff | `fdu-194x`, `fdu-ngnm`, `fdu-3za7` |
-| 2 session proof | `fdu-0kv7` five session goldens and coverage closure | `fdu-mkga`, `fdu-194x`, `fdu-r7s7`, `fdu-ngnm`, `fdu-3za7`, `fdu-9jzp` |
-| 2 Python | `fdu-bnsk` synchronous Python surface | `fdu-r7s7`, `fdu-ngnm`, `fdu-3za7`, `fdu-9jzp`, `fdu-0kv7` |
-| 3A | `fdu-sewa` unchanged-contract measurement | `fdu-bnsk` |
-| 3B contract | `fdu-m68r` joint contract | `fdu-sewa` |
-| 3B oracle | `fdu-yv1o` Python provider | `fdu-m68r` |
-| 3B application | `fdu-kh2d` coordinator, assembly, runtime, routes | `fdu-m68r`, `fdu-yv1o` |
-| 3C native | `fdu-hgnj` measured indexes and continuations | `fdu-sewa`, `fdu-m68r` |
-| 3C adapter | `fdu-2xfp` fdu provider and async bridge | `fdu-hgnj`, `fdu-bnsk`, `fdu-m68r` |
-| 4 semantics | `fdu-xu27` two-provider conformance and replay | `fdu-yv1o`, `fdu-2xfp` |
-| 4 product | `fdu-bldb` routes, lifecycle, recovery, wheel | `fdu-kh2d`, `fdu-xu27` |
-| 4 acceptance | `fdu-ekad` performance, size, rollout evidence | `fdu-bldb` |
+| Phase | Bead | Status | Depends on |
+| --- | --- | --- | --- |
+| 1A | `fdu-utf1` observable oracle prerequisites and staged session design | Closed | existing `fdu-9tdm`, `fdu-o8r8` |
+| 1C preparation | `fdu-tewk` audited runtime registry reuse | Closed | `fdu-utf1` |
+| 1B kernel | `fdu-qzqf` exact prepared commit | Closed | `fdu-tewk` |
+| 1B producers | `fdu-gpls` route every producer | Closed | `fdu-qzqf` |
+| 1C | `fdu-wzu9` control and fixed partitions | Closed | `fdu-gpls` |
+| 1D | `fdu-ff6r` admission, images, features, identity | Closed | `fdu-wzu9` |
+| 2 opened root | `fdu-mkga` shared live state and close | Closed | `fdu-ff6r` |
+| 2 discovery | `fdu-194x` progressive discovery, budget, priority | Closed | `fdu-mkga` |
+| 2 reads | `fdu-r7s7` coherent projections | Closed | `fdu-mkga` |
+| 2 journal | `fdu-ngnm` journal and change poll | Closed | `fdu-mkga`, `fdu-gpls` |
+| 2 refresh | `fdu-3za7` multi-path refresh | In progress | `fdu-mkga`, `fdu-gpls` |
+| 2 observation | `fdu-9jzp` no-gap handoff | Open | `fdu-194x`, `fdu-ngnm`, `fdu-3za7` |
+| 2 session proof | `fdu-0kv7` five session goldens and coverage closure | Open | `fdu-mkga`, `fdu-194x`, `fdu-r7s7`, `fdu-ngnm`, `fdu-3za7`, `fdu-9jzp` |
+| 2 Python | `fdu-bnsk` synchronous Python surface | Open | `fdu-r7s7`, `fdu-ngnm`, `fdu-3za7`, `fdu-9jzp`, `fdu-0kv7` |
+| 3A | `fdu-sewa` unchanged-contract measurement | Open | `fdu-bnsk` |
+| 3B contract | `fdu-m68r` joint contract | Open | `fdu-sewa` |
+| 3B oracle | `fdu-yv1o` Python provider | Open | `fdu-m68r` |
+| 3B application | `fdu-kh2d` coordinator, assembly, runtime, routes | Open | `fdu-m68r`, `fdu-yv1o` |
+| 3C native | `fdu-hgnj` measured indexes and continuations | Open | `fdu-sewa`, `fdu-m68r` |
+| 3C adapter | `fdu-2xfp` fdu provider and async bridge | Open | `fdu-hgnj`, `fdu-bnsk`, `fdu-m68r` |
+| 4 semantics | `fdu-xu27` two-provider conformance and replay | Open | `fdu-yv1o`, `fdu-2xfp` |
+| 4 product | `fdu-bldb` routes, lifecycle, recovery, wheel | Open | `fdu-kh2d`, `fdu-xu27` |
+| 4 acceptance | `fdu-ekad` performance, size, rollout evidence | Open | `fdu-bldb` |
 
 This graph makes the intended parallelism explicit.
 After `fdu-mkga`, reads, journal, and refresh can proceed independently.
