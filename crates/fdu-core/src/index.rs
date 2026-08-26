@@ -1519,19 +1519,23 @@ impl Index {
 
     /// Rebuild `newest_mtime_ns` from direct children, walking to the root.
     ///
-    /// Stops early once a directory's value is unchanged, since nothing above it can
-    /// change either. That early exit is what keeps the common removal O(depth) instead
-    /// of O(depth x children).
+    /// Every ancestor must be visited even when the nearest directory is already
+    /// correct. Differential unmerge/re-merge can repair a single-child directory as
+    /// it goes while leaving an ancestor with other contributors holding the removed
+    /// maximum. Stopping at the first unchanged directory therefore strands a stale
+    /// value higher in the tree.
     fn recompute_newest_upward(&mut self, from: Option<EntryId>) {
         let mut current = from;
         while let Some(id) = current {
             let mut newest: Option<i64> = None;
             for child in self.entry(id).children.values() {
                 let child_entry = self.entry(*child);
-                let candidate = if child_entry.kind.is_dir() {
-                    (child_entry.rollup.files > 0).then_some(child_entry.rollup.newest_mtime_ns)
-                } else {
-                    Some(child_entry.attrs.mtime_ns)
+                let candidate = match child_entry.kind {
+                    EntryKind::Dir => {
+                        (child_entry.rollup.files > 0).then_some(child_entry.rollup.newest_mtime_ns)
+                    }
+                    EntryKind::File => Some(child_entry.attrs.mtime_ns),
+                    EntryKind::Symlink | EntryKind::Other => None,
                 };
                 if let Some(candidate) = candidate {
                     newest = Some(newest.map_or(candidate, |current| current.max(candidate)));
@@ -1539,9 +1543,6 @@ impl Index {
             }
             let newest = newest.unwrap_or(0);
             let entry = self.entry_mut(id);
-            if entry.rollup.newest_mtime_ns == newest {
-                return;
-            }
             entry.rollup.newest_mtime_ns = newest;
             current = entry.parent;
         }

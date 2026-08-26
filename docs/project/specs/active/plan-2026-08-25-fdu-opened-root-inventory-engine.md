@@ -1962,6 +1962,12 @@ Implementation began after the architecture review completed.
 The Phase 1A golden prerequisite removes surgical CLI-output parsing, retains complete
 product behavior in the corpus, and adds a checked observability policy before the
 opened-root sessions are built.
+The independent metadata oracle now replays fixed-seed operations against a canonical
+from-scratch model and retains named ABA, refusal, journal-loss, native-name, and
+reducer regressions.
+Its first run found and fixed two newest-mtime repair defects: an incorrect early stop
+above a repaired nested directory and accidental inclusion of symlinks and special
+objects during full recomputation.
 Changing a boundary first requires updating the architecture, this plan, and the
 affected bead together.
 

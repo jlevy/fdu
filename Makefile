@@ -9,12 +9,13 @@ UV ?= uv
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test test-golden golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse clean cli perf-help verify-beads
+.PHONY: help build release test rust-test reference-model test-golden golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
 	@echo "make release    Optimized build of the core library and CLI"
 	@echo "make test       Run Rust, CLI golden, and performance-harness tests"
+	@echo "make reference-model  Compare generated index transitions with the independent model"
 	@echo "make test-golden  Build and compare the CLI golden contract"
 	@echo "make golden-invocations  Check the corpus never resolves fdu through PATH"
 	@echo "make golden-observability  Reject goldens that hide product output behind parsers"
@@ -56,6 +57,9 @@ test: rust-test test-golden content-selfcheck yaml-selfcheck test-performance
 
 rust-test:
 	$(CARGO) test --locked --all-features
+
+reference-model:
+	$(CARGO) test --locked -p fdu-core --test reference_model --no-default-features
 
 test-golden: build $(NODE_INSTALL_STAMP)
 	$(NPM) run test:golden
