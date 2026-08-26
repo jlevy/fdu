@@ -488,12 +488,14 @@ impl Issue {
         }
     }
 
-    /// Describe the first file refused by a discovery resource budget.
+    /// Describe the first file refused by an opened-root resource budget.
     pub(crate) fn resource_budget(max_files: u64) -> Self {
         Self {
             kind: IssueKind::ResourceBudget,
             path: None,
-            message: format!("discovery refused an admissible file after retaining {max_files}"),
+            message: format!(
+                "verified work refused an admissible file after retaining {max_files}"
+            ),
             os_error: None,
         }
     }
@@ -880,6 +882,72 @@ pub struct ChangePoll {
     pub outcome: ChangeOutcome,
     /// Deterministic journal work performed while assembling the result.
     pub work: Work,
+}
+
+/// Why one requested refresh path was not verified.
+///
+/// Rejections are values rather than dropped inputs so a hint producer can distinguish
+/// "verified and unchanged" from "not examined" without parsing an error message.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[non_exhaustive]
+pub enum RefreshRejection {
+    /// The path was absolute or traversed above the opened root.
+    OutsideRoot,
+    /// The path is deeper than the opened root's semantic depth boundary.
+    BeyondDepth,
+    /// A fixed admission rule excludes the path from retained truth.
+    NotAdmitted,
+    /// Verifying the path could expand a resource-stopped retained set.
+    ResourceBudget,
+}
+
+impl RefreshRejection {
+    /// Stable label for wire adapters.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::OutsideRoot => "outside_root",
+            Self::BeyondDepth => "beyond_depth",
+            Self::NotAdmitted => "not_admitted",
+            Self::ResourceBudget => "resource_budget",
+        }
+    }
+}
+
+/// One refresh path that the engine declined, with its typed reason.
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+pub struct RejectedRefreshPath {
+    /// Path exactly as supplied by the caller.
+    pub path: PathBuf,
+    /// Rule that prevented verification.
+    pub reason: RefreshRejection,
+}
+
+/// Result of one bounded, multi-path refresh.
+///
+/// Every commit created by this operation lies in the half-open journal interval
+/// `(after, version]`. Concurrent producers may also commit within that interval, so
+/// `impact` covers the complete interval rather than trying to identify a producer.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct RefreshResult {
+    /// Coherent engine version immediately before refresh state was announced.
+    pub after: EngineVersion,
+    /// Coherent terminal engine version after every accepted scope was closed.
+    pub version: EngineVersion,
+    /// Complete public state at `version`.
+    pub state: IndexState,
+    /// Unique canonical paths accepted for verification, in stable path order.
+    pub accepted: Vec<PathBuf>,
+    /// Rejected request entries in caller order.
+    pub rejected: Vec<RejectedRefreshPath>,
+    /// Bounded union of every invalidation in `(after, version]`, or `all_dirty` when
+    /// the journal floor advanced before the receipt was assembled.
+    pub impact: Impact,
+    /// Deterministic filesystem and commit work performed by this refresh.
+    pub work: Work,
+    /// Bounded operational issues encountered while verification continued.
+    pub issues: Vec<Issue>,
+    /// Additional issues omitted after the public detail bound.
+    pub omitted_issues: u64,
 }
 
 impl Default for IndexState {
@@ -1329,6 +1397,8 @@ pub struct Work {
     pub unchanged: u64,
     /// Conditional observations rejected at the commit boundary.
     pub stale: u64,
+    /// File observations refused at the commit boundary by a resource budget.
+    pub resource_refused: u64,
     /// Retained index rows examined by a read projection.
     pub rows_visited: u64,
     /// Rows copied into read projection results.
@@ -1339,6 +1409,14 @@ pub struct Work {
     pub commits_visited: u64,
     /// Exact journal commits copied into a change result.
     pub commits_returned: u64,
+    /// Filesystem directories successfully enumerated by verified work.
+    pub directories_read: u64,
+    /// Filesystem entries whose metadata was examined by verified work.
+    pub entries_visited: u64,
+    /// Regular files whose metadata was examined by verified work.
+    pub files_visited: u64,
+    /// Apparent bytes represented by regular files examined by verified work.
+    pub bytes_visited: u64,
 }
 
 /// One atomic, exact index transition.
@@ -1496,6 +1574,15 @@ pub enum Error {
     /// A priority request exceeded the public per-call bound.
     #[error("priority request contains {attempted} paths; limit is {limit}")]
     PriorityPathLimit {
+        /// Paths supplied by the caller.
+        attempted: usize,
+        /// Maximum paths accepted by one request.
+        limit: usize,
+    },
+
+    /// A refresh request exceeded the public per-call input bound.
+    #[error("refresh request contains {attempted} paths; limit is {limit}")]
+    RefreshPathLimit {
         /// Paths supplied by the caller.
         attempted: usize,
         /// Maximum paths accepted by one request.

@@ -9,8 +9,11 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
 
+#[cfg(test)]
+use crate::EntryKind;
 use crate::index::{DiscoveryCommit, DiscoveryTransition};
-use crate::{EntryKind, Error, Index, IndexHandle, Observation, Op, Result, ScanConfig, SessionId};
+use crate::scan::ReconcileControl;
+use crate::{Error, Index, IndexHandle, Observation, Op, Result, ScanConfig, SessionId};
 
 mod continuation;
 mod journal;
@@ -26,6 +29,8 @@ const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 const FIRST_SESSION_ID: u64 = 1;
 /// Maximum paths accepted by one best-effort priority request.
 pub const MAX_PRIORITY_PATHS: usize = 64;
+/// Maximum paths accepted by one refresh operation.
+pub const MAX_REFRESH_PATHS: usize = 1_024;
 #[cfg(test)]
 /// Deadline for a missing deterministic test barrier to fail instead of hanging.
 const TEST_GATE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
@@ -250,6 +255,110 @@ impl OpenedIndex {
         journal::poll(self, request)
     }
 
+    /// Verify a bounded set of relative paths and conditionally commit exact changes.
+    ///
+    /// Inputs are classified as one set: duplicates are removed, descendants covered
+    /// by an accepted ancestor cost no second walk, and an empty set is a no-op. The
+    /// returned `(after, version]` interval is safe as the next journal boundary even
+    /// when another producer committed concurrently.
+    pub fn refresh(&self, paths: &[PathBuf]) -> Result<crate::RefreshResult> {
+        let _active = self.state.begin_refresh()?;
+        if paths.len() > MAX_REFRESH_PATHS {
+            return Err(Error::RefreshPathLimit {
+                attempted: paths.len(),
+                limit: MAX_REFRESH_PATHS,
+            });
+        }
+        let control = OpenedReconcileControl { state: &self.state };
+        let (after, initial_state) = self.version_and_state()?;
+        // A stopped partial root remains readable and may verify work that proves it
+        // cannot expand retained truth. Before that terminal state, the exact commit
+        // boundary arbitrates every file upsert against the shared budget.
+        let forbid_expansion = initial_state.phase == crate::LifecyclePhase::Stopped
+            && initial_state.coverage == crate::Coverage::Partial(crate::CoverageReason::Budget);
+        let report = crate::scan::reconcile_paths_handle_controlled(
+            &self.state.index,
+            paths,
+            &self.state.scan,
+            forbid_expansion,
+            &control,
+            &mut |_commit| self.state.journal.notify_commit(),
+        )?;
+        control.check_active()?;
+        let (version, state, impact) = self.state.index.read_with(|index| {
+            let scope = index.scope();
+            let since = index.since(after.sequence);
+            let version = crate::EngineVersion {
+                session: self.state.session,
+                sequence: since.clock,
+                scope: scope.scope_identity(),
+                semantics: scope.semantic_identity(),
+            };
+            let impact = journal::interval_impact(&since);
+            (version, since.state, impact)
+        })?;
+        let mut issues = Vec::new();
+        let mut omitted_issues = 0_u64;
+        for error in &report.reconciliation.scan.errors {
+            let issue = crate::Issue::from_error(error);
+            if issues.len() < crate::MAX_RETAINED_ISSUES {
+                issues.push(issue);
+            } else {
+                omitted_issues = omitted_issues.saturating_add(1);
+            }
+        }
+        if report.reconciliation.apply.resource_refused > 0 {
+            let issue = crate::Issue::resource_budget(
+                self.state
+                    .budget
+                    .max_files
+                    .expect("resource refusal requires a configured file limit"),
+            );
+            if issues.len() < crate::MAX_RETAINED_ISSUES {
+                issues.push(issue);
+            } else {
+                omitted_issues = omitted_issues.saturating_add(1);
+            }
+        }
+        let work = crate::Work {
+            observations: report.reconciliation.observations,
+            unchanged: report.reconciliation.apply.unchanged,
+            stale: report.reconciliation.apply.stale,
+            resource_refused: report.reconciliation.apply.resource_refused,
+            directories_read: report.reconciliation.scan.dirs_read,
+            entries_visited: report.reconciliation.scan.entries,
+            files_visited: report.reconciliation.scan.files_walked,
+            bytes_visited: report.reconciliation.scan.bytes_walked,
+            ..crate::Work::default()
+        };
+        Ok(crate::RefreshResult {
+            after,
+            version,
+            state,
+            accepted: report.accepted,
+            rejected: report.rejected,
+            impact,
+            work,
+            issues,
+            omitted_issues,
+        })
+    }
+
+    fn version_and_state(&self) -> Result<(crate::EngineVersion, crate::IndexState)> {
+        self.state.index.read_with(|index| {
+            let scope = index.scope();
+            (
+                crate::EngineVersion {
+                    session: self.state.session,
+                    sequence: index.clock(),
+                    scope: scope.scope_identity(),
+                    semantics: scope.semantic_identity(),
+                },
+                index.state(),
+            )
+        })
+    }
+
     fn start_discovery(&self) -> Result<()> {
         publish_discovery_transition(
             &self.state.index,
@@ -447,6 +556,19 @@ impl OpenedState {
         }
     }
 
+    fn begin_refresh(&self) -> Result<ActiveRefresh<'_>> {
+        let locked = self.lock_lifecycle();
+        if locked.poisoned {
+            return Err(Error::OpenedLifecyclePoisoned);
+        }
+        let mut lifecycle = locked.guard;
+        if lifecycle.phase != OwnerPhase::Open {
+            return Err(Error::OpenedIndexClosed);
+        }
+        lifecycle.active_refreshes = lifecycle.active_refreshes.saturating_add(1);
+        Ok(ActiveRefresh { state: self })
+    }
+
     fn shutdown(&self) -> Result<()> {
         let mut saw_poison = false;
         let workers = loop {
@@ -490,6 +612,19 @@ impl OpenedState {
         };
 
         let worker_outcome = join_workers(workers);
+        let locked = self.lock_lifecycle();
+        saw_poison |= locked.poisoned;
+        let mut lifecycle = locked.guard;
+        while lifecycle.active_refreshes > 0 {
+            match self.lifecycle_changed.wait(lifecycle) {
+                Ok(next) => lifecycle = next,
+                Err(poisoned) => {
+                    saw_poison = true;
+                    lifecycle = poisoned.into_inner();
+                }
+            }
+        }
+        drop(lifecycle);
         let index_poisoned = self.index.clock().is_err();
         let mut outcome = if saw_poison {
             CloseOutcome::LifecyclePoisoned
@@ -642,7 +777,6 @@ fn run_discovery(
     let root_metadata =
         std::fs::symlink_metadata(root).map_err(|source| Error::io(root, source))?;
     let root_dev = crate::scan::attrs_from(&root_metadata).dev;
-    let mut retained_files = 0_u64;
 
     while let Some(directory) = frontier.pop() {
         if cancellation.is_cancelled() {
@@ -660,7 +794,6 @@ fn run_discovery(
             &directory,
             frontier,
             cancellation,
-            &mut retained_files,
         )? {
             DiscoveryStep::Continue => {}
             DiscoveryStep::Stopped => return Ok(()),
@@ -691,7 +824,6 @@ fn discover_directory(
     directory: &PendingDirectory,
     frontier: &DiscoveryFrontier,
     cancellation: &Cancellation,
-    retained_files: &mut u64,
 ) -> Result<DiscoveryStep> {
     let absolute = root.join(&directory.path);
     crate::counters::bump(|c| c.dir_opens += 1);
@@ -723,6 +855,7 @@ fn discover_directory(
                 &mut batch,
                 None,
                 Some(DiscoveryTransition::Cancelled),
+                budget.max_files,
             )?;
             frontier.stop();
             return Ok(DiscoveryStep::Stopped);
@@ -779,36 +912,44 @@ fn discover_directory(
         }
         if !retained {
             if let Some(control) = control {
-                push_discovery_op(index, journal, scan.batch_size, &mut batch, control)?;
+                if push_discovery_op(
+                    index,
+                    journal,
+                    scan.batch_size,
+                    &mut batch,
+                    control,
+                    budget.max_files,
+                )? {
+                    frontier.stop();
+                    return Ok(DiscoveryStep::Stopped);
+                }
             }
             continue;
         }
 
-        if kind == EntryKind::File && budget.max_files.is_some_and(|max| *retained_files >= max) {
-            commit_discovery_batch(
-                index,
-                journal,
-                &mut batch,
-                None,
-                Some(DiscoveryTransition::BudgetRefused(crate::Issue::resource_budget(
-                    budget.max_files.expect("budget refusal requires a configured limit"),
-                ))),
-            )?;
-            frontier.stop();
-            return Ok(DiscoveryStep::Stopped);
-        }
-        if kind == EntryKind::File {
-            *retained_files = retained_files.saturating_add(1);
-        }
-        push_discovery_op(
+        if push_discovery_op(
             index,
             journal,
             scan.batch_size,
             &mut batch,
             Op::Upsert { path: path.clone(), kind, attrs },
-        )?;
+            budget.max_files,
+        )? {
+            frontier.stop();
+            return Ok(DiscoveryStep::Stopped);
+        }
         if let Some(control) = control {
-            push_discovery_op(index, journal, scan.batch_size, &mut batch, control)?;
+            if push_discovery_op(
+                index,
+                journal,
+                scan.batch_size,
+                &mut batch,
+                control,
+                budget.max_files,
+            )? {
+                frontier.stop();
+                return Ok(DiscoveryStep::Stopped);
+            }
         }
         if descend {
             discovered.push(PendingDirectory { path, depth: directory.depth.saturating_add(1) });
@@ -819,7 +960,10 @@ fn discover_directory(
     let transition =
         incomplete.then_some(DiscoveryTransition::Inaccessible { issues, omitted: omitted_issues });
     let complete = (!incomplete).then(|| directory.path.clone());
-    commit_discovery_batch(index, journal, &mut batch, complete, transition)?;
+    if commit_discovery_batch(index, journal, &mut batch, complete, transition, budget.max_files)? {
+        frontier.stop();
+        return Ok(DiscoveryStep::Stopped);
+    }
     frontier.extend(discovered);
     Ok(DiscoveryStep::Continue)
 }
@@ -838,12 +982,13 @@ fn push_discovery_op(
     batch_size: usize,
     batch: &mut Vec<Op>,
     op: Op,
-) -> Result<()> {
+    max_files: Option<u64>,
+) -> Result<bool> {
     batch.push(op);
     if batch.len() >= batch_size {
-        commit_discovery_batch(index, journal, batch, None, None)?;
+        return commit_discovery_batch(index, journal, batch, None, None, max_files);
     }
-    Ok(())
+    Ok(false)
 }
 
 fn commit_discovery_batch(
@@ -852,14 +997,18 @@ fn commit_discovery_batch(
     batch: &mut Vec<Op>,
     directory_complete: Option<PathBuf>,
     transition: Option<DiscoveryTransition>,
-) -> Result<()> {
+    max_files: Option<u64>,
+) -> Result<bool> {
     let observation = Observation::new(std::mem::take(batch));
-    let outcome =
-        index.apply_discovery(&observation, DiscoveryCommit { directory_complete, transition })?;
+    let outcome = index.apply_discovery_bounded(
+        &observation,
+        DiscoveryCommit { directory_complete, transition },
+        max_files,
+    )?;
     if outcome.commit.is_some() {
         journal.notify_commit();
     }
-    Ok(())
+    Ok(outcome.stats.resource_refused > 0)
 }
 
 fn publish_discovery_transition(
@@ -883,7 +1032,41 @@ struct LockedLifecycle<'a> {
 struct Lifecycle {
     phase: OwnerPhase,
     workers: Vec<Worker>,
+    active_refreshes: usize,
     terminal: Option<CloseOutcome>,
+}
+
+struct ActiveRefresh<'a> {
+    state: &'a OpenedState,
+}
+
+impl Drop for ActiveRefresh<'_> {
+    fn drop(&mut self) {
+        let mut lifecycle = self.state.lock_lifecycle().guard;
+        lifecycle.active_refreshes = lifecycle.active_refreshes.saturating_sub(1);
+        self.state.lifecycle_changed.notify_all();
+    }
+}
+
+struct OpenedReconcileControl<'a> {
+    state: &'a OpenedState,
+}
+
+impl crate::scan::ReconcileControl for OpenedReconcileControl<'_> {
+    fn check_active(&self) -> Result<()> {
+        if self.state.cancellation.is_cancelled() { Err(Error::OpenedIndexClosed) } else { Ok(()) }
+    }
+
+    fn before_conditional_commit(&self) -> Result<()> {
+        self.check_active()?;
+        #[cfg(test)]
+        self.state.test_controls.reach(TestPoint::AfterRefreshVerification);
+        self.check_active()
+    }
+
+    fn max_files(&self) -> Option<u64> {
+        self.state.budget.max_files
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -976,6 +1159,7 @@ enum TestPoint {
     BeforeDiscovery,
     AfterRootDirectory,
     BeforeJournalWait,
+    AfterRefreshVerification,
 }
 
 #[cfg(test)]
@@ -986,6 +1170,7 @@ struct TestControls {
     before_discovery: TestGate,
     after_root_directory: TestGate,
     before_journal_wait: TestGate,
+    after_refresh_verification: TestGate,
     discovery_disabled: AtomicBool,
 }
 
@@ -998,6 +1183,7 @@ impl TestControls {
             TestPoint::BeforeDiscovery => &self.before_discovery,
             TestPoint::AfterRootDirectory => &self.after_root_directory,
             TestPoint::BeforeJournalWait => &self.before_journal_wait,
+            TestPoint::AfterRefreshVerification => &self.after_refresh_verification,
         }
     }
 
@@ -2548,6 +2734,335 @@ mod tests {
             change,
             crate::EffectiveChange::Inserted { kind: EntryKind::File, .. }
         )));
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn refresh_receipt_counts_verified_no_op_work_without_a_fact_commit() {
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::write(root.path().join("stable.txt"), b"stable").expect("fixture");
+        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("opened root");
+        assert_eq!(wait_until_settled(&opened).phase, crate::LifecyclePhase::Ready);
+
+        let result = opened.refresh(&[PathBuf::from("stable.txt")]).expect("refresh");
+
+        assert_eq!(result.accepted, vec![PathBuf::from("stable.txt")]);
+        assert!(result.rejected.is_empty());
+        assert_eq!(result.work.observations, 1, "the verified observation is still work");
+        assert_eq!(result.work.unchanged, 1, "the matching fact is reported as unchanged");
+        assert_eq!(result.work.stale, 0);
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn refresh_can_fill_remaining_file_budget_without_exceeding_it() {
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::write(root.path().join("one"), b"1").expect("fixture");
+        let opened = OpenedIndex::open(
+            root.path(),
+            OpenOptions {
+                budget: DiscoveryBudget { max_files: Some(2) },
+                ..OpenOptions::default()
+            },
+        )
+        .expect("opened root");
+        assert_eq!(wait_until_settled(&opened).progress.files_retained, 1);
+        std::fs::write(root.path().join("two"), b"2").expect("new file");
+
+        let result = opened.refresh(&[PathBuf::from("two")]).expect("refresh");
+
+        assert_eq!(result.accepted, vec![PathBuf::from("two")]);
+        assert!(result.rejected.is_empty());
+        assert_eq!(opened.state.index.total().expect("total").files, 2);
+        assert_eq!(result.state.phase, crate::LifecyclePhase::Ready);
+        assert_eq!(result.state.progress.files_retained, 2);
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn refresh_classifies_paths_and_collapses_overlapping_walks() {
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::create_dir_all(root.path().join("visible/nested")).expect("fixture directories");
+        std::fs::write(root.path().join("visible/nested/leaf"), b"leaf").expect("fixture");
+        std::fs::create_dir(root.path().join(".hidden")).expect("hidden directory");
+        std::fs::write(root.path().join(".hidden/leaf"), b"hidden").expect("hidden fixture");
+        let opened = OpenedIndex::open(
+            root.path(),
+            OpenOptions {
+                hidden: Some(Arc::new(crate::HiddenPolicy::prune_hidden::<[&str; 0], &str>([]))),
+                ..OpenOptions::default()
+            },
+        )
+        .expect("opened root");
+        assert_eq!(wait_until_settled(&opened).phase, crate::LifecyclePhase::Ready);
+
+        let result = opened
+            .refresh(&[
+                PathBuf::from("visible/nested"),
+                PathBuf::from("visible"),
+                PathBuf::from("visible/nested"),
+                PathBuf::from("../escape"),
+                PathBuf::from(".hidden/leaf"),
+            ])
+            .expect("refresh");
+
+        assert_eq!(
+            result.accepted,
+            vec![PathBuf::from("visible"), PathBuf::from("visible/nested")]
+        );
+        assert_eq!(
+            result.rejected,
+            vec![
+                crate::RejectedRefreshPath {
+                    path: PathBuf::from("../escape"),
+                    reason: crate::RefreshRejection::OutsideRoot,
+                },
+                crate::RejectedRefreshPath {
+                    path: PathBuf::from(".hidden/leaf"),
+                    reason: crate::RefreshRejection::NotAdmitted,
+                },
+            ]
+        );
+        assert_eq!(result.work.directories_read, 2, "the descendant was not walked twice");
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn refresh_widens_through_a_replaced_ancestor_and_reports_exact_commits() {
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::create_dir_all(root.path().join("parent/child")).expect("fixture directories");
+        std::fs::write(root.path().join("parent/child/leaf"), b"leaf").expect("fixture");
+        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("opened root");
+        assert_eq!(wait_until_settled(&opened).phase, crate::LifecyclePhase::Ready);
+        std::fs::remove_dir_all(root.path().join("parent")).expect("remove old subtree");
+        std::fs::write(root.path().join("parent"), b"replacement").expect("replacement file");
+        let before = current_version(&opened);
+
+        let result =
+            opened.refresh(&[PathBuf::from("parent/child/leaf")]).expect("refresh widened path");
+        let poll = opened
+            .changes(crate::ChangeRequest { after: before, timeout: std::time::Duration::ZERO })
+            .expect("refresh commits");
+
+        assert_eq!(result.after, before);
+        assert_eq!(result.version, poll.version);
+        assert_eq!(result.accepted, vec![PathBuf::from("parent/child/leaf")]);
+        assert_eq!(
+            opened.state.index.kind(Path::new("parent")).expect("kind"),
+            Some(EntryKind::File)
+        );
+        assert_eq!(
+            opened.state.index.kind(Path::new("parent/child/leaf")).expect("removed child"),
+            None
+        );
+        let crate::ChangeOutcome::Changes { commits, impact } = poll.outcome else {
+            panic!("refresh must advance the journal");
+        };
+        assert!(!commits.is_empty());
+        assert_eq!(impact, result.impact);
+        assert!(commits.iter().all(|commit| {
+            commit.clock.0 > result.after.sequence.0 && commit.clock.0 <= result.version.sequence.0
+        }));
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn refresh_refusal_is_atomic_with_the_shared_file_budget() {
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::write(root.path().join("one"), b"1").expect("fixture");
+        let opened = OpenedIndex::open(
+            root.path(),
+            OpenOptions {
+                budget: DiscoveryBudget { max_files: Some(2) },
+                ..OpenOptions::default()
+            },
+        )
+        .expect("opened root");
+        assert_eq!(wait_until_settled(&opened).progress.files_retained, 1);
+        std::fs::write(root.path().join("two"), b"2").expect("new file");
+        std::fs::write(root.path().join("three"), b"3").expect("new file");
+
+        let result = opened
+            .refresh(&[PathBuf::from("two"), PathBuf::from("three")])
+            .expect("bounded refresh");
+
+        assert_eq!(result.accepted.len(), 2);
+        assert!(result.rejected.is_empty());
+        assert_eq!(result.work.observations, 2);
+        assert_eq!(result.work.resource_refused, 1);
+        assert_eq!(opened.state.index.total().expect("total").files, 2);
+        assert_eq!(result.state.progress.files_retained, 2);
+        assert_eq!(result.state.phase, crate::LifecyclePhase::Stopped);
+        assert_eq!(result.state.coverage, crate::Coverage::Partial(crate::CoverageReason::Budget));
+        assert_eq!(result.issues.len(), 1);
+        assert_eq!(result.issues[0].kind, crate::IssueKind::ResourceBudget);
+
+        std::fs::write(root.path().join("four"), b"4").expect("later file");
+        let stopped = opened.refresh(&[PathBuf::from("four")]).expect("stopped refresh receipt");
+        assert!(stopped.accepted.is_empty());
+        assert_eq!(
+            stopped.rejected,
+            vec![crate::RejectedRefreshPath {
+                path: PathBuf::from("four"),
+                reason: crate::RefreshRejection::ResourceBudget,
+            }]
+        );
+        assert_eq!(stopped.work.entries_visited, 1, "the refusal reports its probe");
+        assert_eq!(stopped.work.files_visited, 1);
+        assert_eq!(stopped.work.bytes_visited, 1);
+        assert_eq!(opened.state.index.total().expect("bounded total").files, 2);
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn concurrent_discovery_and_refresh_share_one_atomic_file_budget() {
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::write(root.path().join("from-discovery"), b"discovery").expect("fixture");
+        let controls = Arc::new(TestControls::default());
+        controls.gate(TestPoint::BeforeDiscovery).arm();
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            OpenOptions {
+                budget: DiscoveryBudget { max_files: Some(1) },
+                ..OpenOptions::default()
+            },
+            Arc::clone(&controls),
+        )
+        .expect("opened root");
+        controls.gate(TestPoint::BeforeDiscovery).wait_reached();
+        std::fs::write(root.path().join("from-refresh"), b"refresh").expect("new file");
+
+        let refreshed =
+            opened.refresh(&[PathBuf::from("from-refresh")]).expect("refresh during discovery");
+        assert_eq!(refreshed.accepted, vec![PathBuf::from("from-refresh")]);
+        assert_eq!(opened.state.index.total().expect("after refresh").files, 1);
+        controls.gate(TestPoint::BeforeDiscovery).release();
+
+        let state = wait_until_settled(&opened);
+        assert_eq!(opened.state.index.total().expect("bounded total").files, 1);
+        assert_eq!(state.progress.files_retained, 1);
+        assert_eq!(state.phase, crate::LifecyclePhase::Stopped);
+        assert_eq!(state.coverage, crate::Coverage::Partial(crate::CoverageReason::Budget));
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn refresh_rejects_an_unbounded_input_before_filesystem_work() {
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::write(root.path().join("same"), b"same").expect("fixture");
+        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("opened root");
+        assert_eq!(wait_until_settled(&opened).phase, crate::LifecyclePhase::Ready);
+        let paths = vec![PathBuf::from("same"); MAX_REFRESH_PATHS + 2];
+
+        assert!(matches!(
+            opened.refresh(&paths),
+            Err(Error::RefreshPathLimit {
+                attempted,
+                limit: MAX_REFRESH_PATHS,
+            }) if attempted == MAX_REFRESH_PATHS + 2
+        ));
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn refresh_rejects_stale_preparation_and_counts_the_lost_race() {
+        let controls = Arc::new(TestControls::default());
+        let (root, opened) = opened(Arc::clone(&controls));
+        std::fs::write(root.path().join("race"), b"filesystem").expect("fixture");
+        controls.gate(TestPoint::AfterRefreshVerification).arm();
+        let refresher = opened.clone();
+        let refresh = thread::spawn(move || refresher.refresh(&[PathBuf::from("race")]));
+        controls.gate(TestPoint::AfterRefreshVerification).wait_reached();
+        let concurrent = Observation::new(vec![
+            Op::Upsert {
+                path: PathBuf::from("race"),
+                kind: EntryKind::File,
+                attrs: crate::Attrs { size: 99, ..crate::Attrs::default() },
+            },
+            Op::Upsert {
+                path: PathBuf::from("other"),
+                kind: EntryKind::File,
+                attrs: crate::Attrs { size: 5, ..crate::Attrs::default() },
+            },
+        ]);
+        apply_and_notify(&opened, &concurrent);
+        controls.gate(TestPoint::AfterRefreshVerification).release();
+
+        let result = refresh.join().expect("refresh thread").expect("refresh receipt");
+        assert_eq!(result.work.observations, 1);
+        assert_eq!(result.work.stale, 1);
+        assert!(
+            result.impact.dirty_paths.contains(&PathBuf::from("other")),
+            "advancing to the receipt version must cover a concurrent producer"
+        );
+        assert_eq!(
+            opened.state.index.attrs(Path::new("race")).expect("attrs").expect("retained").size,
+            99
+        );
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn close_cancels_verified_refresh_before_its_conditional_commit() {
+        let controls = Arc::new(TestControls::default());
+        let (root, opened) = opened(Arc::clone(&controls));
+        std::fs::write(root.path().join("late"), b"late").expect("fixture");
+        controls.gate(TestPoint::AfterRefreshVerification).arm();
+        let refresher = opened.clone();
+        let refresh = thread::spawn(move || refresher.refresh(&[PathBuf::from("late")]));
+        controls.gate(TestPoint::AfterRefreshVerification).wait_reached();
+        let closer = opened.clone();
+        let close = thread::spawn(move || closer.close());
+        let deadline = std::time::Instant::now() + TEST_GATE_TIMEOUT;
+        while !opened.state.cancellation.is_cancelled() {
+            assert!(std::time::Instant::now() < deadline, "close did not cancel refresh");
+            thread::yield_now();
+        }
+        controls.gate(TestPoint::AfterRefreshVerification).release();
+
+        assert!(matches!(refresh.join().expect("refresh thread"), Err(Error::OpenedIndexClosed)));
+        close.join().expect("close thread").expect("joined close");
+        assert_eq!(opened.state.index.kind(Path::new("late")).expect("lookup"), None);
+        opened.close().expect("repeat close");
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn refresh_tracks_hidden_control_creation_edit_and_deletion() {
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::write(root.path().join("debug.log"), b"log").expect("fixture");
+        std::fs::write(root.path().join("keep.rs"), b"keep").expect("fixture");
+        let opened = OpenedIndex::open(
+            root.path(),
+            OpenOptions {
+                hidden: Some(Arc::new(crate::HiddenPolicy::prune_hidden::<[&str; 0], &str>([]))),
+                ..OpenOptions::default()
+            },
+        )
+        .expect("opened root");
+        assert_eq!(wait_until_settled(&opened).phase, crate::LifecyclePhase::Ready);
+
+        std::fs::write(root.path().join(".gitignore"), b"*.log\n").expect("create control");
+        let created = opened.refresh(&[PathBuf::from(".gitignore")]).expect("create refresh");
+        assert_eq!(created.accepted, vec![PathBuf::from(".gitignore")]);
+        let image = opened.state.index.snapshot().expect("snapshot");
+        assert!(image.controls().source_is(Path::new(".gitignore"), b"*.log\n"));
+        assert_eq!(image.is_ignored(Path::new("debug.log")), Some(true));
+
+        std::fs::write(root.path().join(".gitignore"), b"*.tmp\n").expect("edit control");
+        opened.refresh(&[PathBuf::from(".gitignore")]).expect("edit refresh");
+        let image = opened.state.index.snapshot().expect("snapshot");
+        assert!(image.controls().source_is(Path::new(".gitignore"), b"*.tmp\n"));
+        assert_eq!(image.is_ignored(Path::new("debug.log")), Some(false));
+        let unchanged =
+            opened.refresh(&[PathBuf::from(".gitignore")]).expect("unchanged control refresh");
+        assert_eq!(unchanged.work.observations, 1);
+
+        std::fs::remove_file(root.path().join(".gitignore")).expect("delete control");
+        opened.refresh(&[PathBuf::from(".gitignore")]).expect("delete refresh");
+        let image = opened.state.index.snapshot().expect("snapshot");
+        assert!(image.controls().is_empty());
+        assert_eq!(image.partition_total().all, image.partition_total().unignored);
         opened.close().expect("close");
     }
 }

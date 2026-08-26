@@ -795,54 +795,74 @@ pub struct ReconcileReport {
     pub scan: ScanReport,
     /// Index arbitration and mutation effects.
     pub apply: ApplyStats,
+    /// Exact producer operations considered, including no-op controls that do not
+    /// increment an effect counter or create a commit.
+    pub(crate) observations: u64,
 }
 
 impl ReconcileReport {
     /// True when the filesystem walk was complete and no conditional observation lost
     /// a race with another producer.
     pub fn is_complete(&self) -> bool {
-        self.scan.is_complete() && self.apply.stale == 0
+        self.scan.is_complete() && self.apply.stale == 0 && self.apply.resource_refused == 0
     }
 }
 
 enum ReconcileTarget<'a> {
     Direct(&'a mut Index),
     Shared(&'a IndexHandle),
+    Controlled { handle: &'a IndexHandle, control: &'a dyn ReconcileControl },
+}
+
+/// Lifecycle checkpoints used by an owned long-running reconciliation.
+///
+/// The ordinary one-shot APIs use no controller. An [`crate::OpenedIndex`] supplies one
+/// so close can stop a refresh before another write, and deterministic tests can pause
+/// after filesystem verification but before conditional arbitration.
+pub(crate) trait ReconcileControl {
+    /// Fail when the owning operation may no longer publish state.
+    fn check_active(&self) -> Result<()>;
+
+    /// Boundary after filesystem verification and before a conditional fact commit.
+    fn before_conditional_commit(&self) -> Result<()>;
+
+    /// Atomic file-retention limit shared with every producer for this opened root.
+    fn max_files(&self) -> Option<u64>;
 }
 
 impl ReconcileTarget<'_> {
     fn scope(&self) -> Result<ScanScope> {
         match self {
             Self::Direct(index) => Ok(index.scope()),
-            Self::Shared(handle) => handle.scope(),
+            Self::Shared(handle) | Self::Controlled { handle, .. } => handle.scope(),
         }
     }
 
     fn root_path(&self) -> Result<PathBuf> {
         match self {
             Self::Direct(index) => Ok(index.root_path().to_path_buf()),
-            Self::Shared(handle) => handle.root_path(),
+            Self::Shared(handle) | Self::Controlled { handle, .. } => handle.root_path(),
         }
     }
 
     fn expectation(&self, path: &Path) -> Result<PathExpectation> {
         match self {
             Self::Direct(index) => Ok(index.expectation(path)),
-            Self::Shared(handle) => handle.expectation(path),
+            Self::Shared(handle) | Self::Controlled { handle, .. } => handle.expectation(path),
         }
     }
 
     fn child_states(&self, path: &Path) -> Result<BTreeMap<OsString, PathExpectation>> {
         match self {
             Self::Direct(index) => Ok(collect_child_expectations(index, path)),
-            Self::Shared(handle) => handle.child_states(path),
+            Self::Shared(handle) | Self::Controlled { handle, .. } => handle.child_states(path),
         }
     }
 
     fn has_control(&self, path: &Path) -> Result<bool> {
         match self {
             Self::Direct(index) => Ok(index.controls().contains(path)),
-            Self::Shared(handle) => handle.has_control(path),
+            Self::Shared(handle) | Self::Controlled { handle, .. } => handle.has_control(path),
         }
     }
 
@@ -850,6 +870,10 @@ impl ReconcileTarget<'_> {
         match self {
             Self::Direct(index) => index.apply(observation),
             Self::Shared(handle) => handle.apply(observation),
+            Self::Controlled { handle, control } => {
+                control.before_conditional_commit()?;
+                handle.apply_opened(observation, control.max_files())
+            }
         }
     }
 
@@ -865,7 +889,9 @@ impl ReconcileTarget<'_> {
     fn take_pending_invalidations(&mut self) -> Result<Vec<(PathBuf, crate::InvalidateReason)>> {
         match self {
             Self::Direct(index) => Ok(index.take_pending_invalidations()),
-            Self::Shared(handle) => handle.take_pending_invalidations(),
+            Self::Shared(handle) | Self::Controlled { handle, .. } => {
+                handle.take_pending_invalidations()
+            }
         }
     }
 
@@ -875,7 +901,9 @@ impl ReconcileTarget<'_> {
     ) -> Result<()> {
         match self {
             Self::Direct(index) => index.restore_pending_invalidations(invalidations),
-            Self::Shared(handle) => handle.restore_pending_invalidations(invalidations)?,
+            Self::Shared(handle) | Self::Controlled { handle, .. } => {
+                handle.restore_pending_invalidations(invalidations)?;
+            }
         }
         Ok(())
     }
@@ -884,6 +912,10 @@ impl ReconcileTarget<'_> {
         match self {
             Self::Direct(index) => index.begin_reconcile(path),
             Self::Shared(handle) => handle.begin_reconcile(path),
+            Self::Controlled { handle, control } => {
+                control.check_active()?;
+                handle.begin_reconcile(path)
+            }
         }
     }
 
@@ -896,6 +928,10 @@ impl ReconcileTarget<'_> {
         match self {
             Self::Direct(index) => index.finish_reconcile(path, started_at, complete),
             Self::Shared(handle) => handle.finish_reconcile(path, started_at, complete),
+            Self::Controlled { handle, control } => {
+                control.check_active()?;
+                handle.finish_reconcile(path, started_at, complete)
+            }
         }
     }
 }
@@ -3147,6 +3183,169 @@ pub fn reconcile_subtree_handle(
     reconcile_target(&mut ReconcileTarget::Shared(handle), subtree, config, sink)
 }
 
+/// Internal effects of one opened-root multi-path reconciliation.
+#[derive(Debug, Default)]
+pub(crate) struct ReconcilePathsReport {
+    pub(crate) reconciliation: ReconcileReport,
+    pub(crate) accepted: Vec<PathBuf>,
+    pub(crate) rejected: Vec<crate::RejectedRefreshPath>,
+    #[cfg(test)]
+    pub(crate) walked: Vec<PathBuf>,
+}
+
+/// Reconcile one bounded path set under an opened-root lifecycle controller.
+///
+/// Classification precedes I/O, overlapping descendants fold into one walk, and all
+/// surviving scopes enter `Reconciling` before the first is read. `forbid_expansion`
+/// is the conservative resource-stop rule: removals and same-file verification remain
+/// legal, while work that could retain another file or discover children is refused.
+pub(crate) fn reconcile_paths_handle_controlled(
+    handle: &IndexHandle,
+    paths: &[PathBuf],
+    config: &ScanConfig,
+    forbid_expansion: bool,
+    control: &dyn ReconcileControl,
+    sink: &mut dyn FnMut(&Commit),
+) -> Result<ReconcilePathsReport> {
+    let mut target = ReconcileTarget::Controlled { handle, control };
+    reconcile_paths_target(&mut target, paths, config, forbid_expansion, sink)
+}
+
+fn reconcile_paths_target(
+    target: &mut ReconcileTarget<'_>,
+    paths: &[PathBuf],
+    config: &ScanConfig,
+    forbid_expansion: bool,
+    sink: &mut dyn FnMut(&Commit),
+) -> Result<ReconcilePathsReport> {
+    config.validate_for_scope(target.scope()?)?;
+    let mut report = ReconcilePathsReport::default();
+    let mut accepted = BTreeSet::new();
+
+    for requested in paths {
+        let reject = |reason| crate::RejectedRefreshPath { path: requested.clone(), reason };
+        let Ok(path) = normalize_subtree(requested) else {
+            report.rejected.push(reject(crate::RefreshRejection::OutsideRoot));
+            continue;
+        };
+        if config.max_depth.is_some_and(|maximum| path.components().count() > maximum) {
+            report.rejected.push(reject(crate::RefreshRejection::BeyondDepth));
+            continue;
+        }
+        // This is lexical admission before the final kind is observed. Treating the
+        // boundary as a file preserves the fixed hidden `.gitignore` control exception;
+        // the verified walk still applies the real kind and special-object policy.
+        if crate::admission::decide_path(&path, EntryKind::File, config.hidden(), false)
+            == crate::admission::Disposition::Reject
+        {
+            report.rejected.push(reject(crate::RefreshRejection::NotAdmitted));
+            continue;
+        }
+        if forbid_expansion && refresh_may_expand(target, &path, &mut report.reconciliation.scan)? {
+            report.rejected.push(reject(crate::RefreshRejection::ResourceBudget));
+            continue;
+        }
+        accepted.insert(path);
+    }
+
+    report.accepted = accepted.into_iter().collect();
+    let mut resolved = Vec::new();
+    for requested_root in covering_roots(report.accepted.clone()) {
+        resolved.push(resolve_subtree_root(target, &requested_root, config)?);
+    }
+    let walked = covering_roots(resolved);
+    #[cfg(test)]
+    report.walked.clone_from(&walked);
+    if walked.is_empty() {
+        return Ok(report);
+    }
+
+    let mut opened = Vec::with_capacity(walked.len());
+    for subtree in walked {
+        let (started_at, commit) = target.begin_reconcile(&subtree)?;
+        if let Some(commit) = commit.as_ref() {
+            sink(commit);
+        }
+        opened.push((subtree, started_at));
+    }
+
+    let mut failure = None;
+    for (subtree, _) in &opened {
+        if failure.is_some() {
+            break;
+        }
+        match reconcile_target_inner(target, subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
+            Ok(reconciliation) => {
+                merge_reconcile_report(&mut report.reconciliation, reconciliation);
+            }
+            Err(error) => failure = Some(error),
+        }
+    }
+
+    let complete = failure.is_none() && report.reconciliation.is_complete();
+    for (subtree, started_at) in opened {
+        let commit = target.finish_reconcile(&subtree, started_at, complete)?;
+        if let Some(commit) = commit.as_ref() {
+            sink(commit);
+        }
+    }
+
+    match failure {
+        Some(error) => Err(error),
+        None => Ok(report),
+    }
+}
+
+/// Whether verification could increase the retained-file set.
+///
+/// This deliberately recognizes only cases that prove non-expansion. At a resource
+/// boundary, uncertainty is a refusal rather than permission to exceed the bound.
+fn refresh_may_expand(
+    target: &ReconcileTarget<'_>,
+    path: &Path,
+    work: &mut ScanReport,
+) -> Result<bool> {
+    let current = target.expectation(path)?.state;
+    let absolute = target.root_path()?.join(path);
+    let observed = match fs::symlink_metadata(&absolute) {
+        Ok(metadata) => {
+            let kind = kind_from(&metadata);
+            work.observe(kind, attrs_from(&metadata));
+            Some(kind)
+        }
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+            ) =>
+        {
+            None
+        }
+        Err(_) => return Ok(true),
+    };
+    Ok(!matches!(
+        (current, observed),
+        (PathState::Present { kind: EntryKind::File, .. }, Some(EntryKind::File)) | (_, None)
+    ))
+}
+
+/// Drop every path covered by a shallower member of the same sorted set.
+fn covering_roots(mut paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    paths.sort();
+    paths.dedup();
+    if paths.first().is_some_and(|first| first.as_os_str().is_empty()) {
+        return vec![PathBuf::new()];
+    }
+    let mut roots: Vec<PathBuf> = Vec::with_capacity(paths.len());
+    for path in paths {
+        if roots.last().is_some_and(|kept| path.starts_with(kept)) {
+            continue;
+        }
+        roots.push(path);
+    }
+    roots
+}
+
 fn reconcile_target(
     target: &mut ReconcileTarget<'_>,
     subtree: &Path,
@@ -3210,7 +3409,7 @@ fn reconcile_target_inner(
     let mut batch: Vec<ObservationOp> = Vec::with_capacity(config.batch_size.max(1));
 
     if config.max_depth == Some(0) {
-        remove_known_children(target, Path::new(""), config, &mut batch, sink, &mut report.apply)?;
+        remove_known_children(target, Path::new(""), config, &mut batch, sink, &mut report)?;
         return Ok(report);
     }
 
@@ -3224,7 +3423,13 @@ fn reconcile_target_inner(
                     Op::Remove { path: subtree.to_path_buf() },
                     baseline,
                 ));
-                flush_reconcile_batch(target, &mut batch, sink, &mut report.apply)?;
+                if target.has_control(subtree)? {
+                    batch.push(ObservationOp::if_state(
+                        Op::ControlRemove { path: subtree.to_path_buf() },
+                        baseline,
+                    ));
+                }
+                flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
                 return Ok(report);
             }
             Err(error) => {
@@ -3252,30 +3457,15 @@ fn reconcile_target_inner(
                     Err(error) => report.scan.errors.push(error),
                 }
             }
-            flush_reconcile_batch(target, &mut batch, sink, &mut report.apply)?;
+            flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
             return Ok(report);
         }
         report.scan.observe(kind, attrs);
-        push_reconcile_upsert(
-            target,
-            subtree,
-            kind,
-            attrs,
-            baseline,
-            &mut batch,
-            &mut report.apply,
-        );
-        flush_reconcile_batch(target, &mut batch, sink, &mut report.apply)?;
+        push_reconcile_upsert(target, subtree, kind, attrs, baseline, &mut batch, &mut report);
+        flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
         if !should_descend(kind, attrs, start_depth.saturating_sub(1), root_dev, config) {
             if kind.is_dir() {
-                remove_known_children(
-                    target,
-                    subtree,
-                    config,
-                    &mut batch,
-                    sink,
-                    &mut report.apply,
-                )?;
+                remove_known_children(target, subtree, config, &mut batch, sink, &mut report)?;
             }
             return Ok(report);
         }
@@ -3337,28 +3527,20 @@ fn reconcile_target_inner(
                     }
                 }
                 if batch.len() >= config.batch_size.max(1) {
-                    flush_reconcile_batch(target, batch, sink, &mut report.apply)?;
+                    flush_reconcile_batch(target, batch, sink, report)?;
                 }
                 return Ok(());
             }
             report.scan.observe(kind, attrs);
-            push_reconcile_upsert(
-                target,
-                &rel_path,
-                kind,
-                attrs,
-                baseline,
-                batch,
-                &mut report.apply,
-            );
+            push_reconcile_upsert(target, &rel_path, kind, attrs, baseline, batch, report);
             if batch.len() >= config.batch_size.max(1) {
-                flush_reconcile_batch(target, batch, sink, &mut report.apply)?;
+                flush_reconcile_batch(target, batch, sink, report)?;
             }
             match read_control_op(&root, &rel_path, kind) {
                 Ok(Some(control)) => {
                     batch.push(ObservationOp::if_state(control, baseline));
                     if batch.len() >= config.batch_size.max(1) {
-                        flush_reconcile_batch(target, batch, sink, &mut report.apply)?;
+                        flush_reconcile_batch(target, batch, sink, report)?;
                     }
                 }
                 Ok(None) => {}
@@ -3368,7 +3550,7 @@ fn reconcile_target_inner(
             if should_descend(kind, attrs, depth, root_dev, config) {
                 queue.push_back((rel_path, depth + 1));
             } else if kind.is_dir() {
-                remove_known_children(target, &rel_path, config, batch, sink, &mut report.apply)?;
+                remove_known_children(target, &rel_path, config, batch, sink, report)?;
             }
             Ok(())
         };
@@ -3460,7 +3642,7 @@ fn reconcile_target_inner(
                     baseline,
                 ));
                 if batch.len() >= config.batch_size.max(1) {
-                    flush_reconcile_batch(target, &mut batch, sink, &mut report.apply)?;
+                    flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
                 }
             }
             if had_control && !control_seen {
@@ -3473,7 +3655,7 @@ fn reconcile_target_inner(
         }
     }
 
-    flush_reconcile_batch(target, &mut batch, sink, &mut report.apply)?;
+    flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
     report.scan.errors.sort_by_cached_key(ToString::to_string);
     Ok(report)
 }
@@ -3591,12 +3773,20 @@ fn reconcile_direct_parallel(
         for worker in results {
             report.scan.absorb(worker.scan);
             report.apply.unchanged += worker.unchanged;
+            report.observations = report.observations.saturating_add(worker.unchanged);
             operations.extend(worker.operations);
             for directory in worker.discovered {
                 frontier.push(directory, config.order);
             }
         }
-        apply_deferred_reconcile(index, &mut operations, config, sink, &mut report.apply)?;
+        apply_deferred_reconcile(
+            index,
+            &mut operations,
+            config,
+            sink,
+            &mut report.apply,
+            &mut report.observations,
+        )?;
     }
     report.scan.errors.sort_by_cached_key(ToString::to_string);
     Ok(DirectParallelOutcome::Complete(report))
@@ -3608,6 +3798,7 @@ fn apply_deferred_reconcile(
     config: &ScanConfig,
     sink: &mut dyn FnMut(&Commit),
     stats: &mut ApplyStats,
+    observations: &mut u64,
 ) -> Result<()> {
     // Parent upserts establish real directory attributes before children arrive.
     // Removals run deepest first so a parent removal never precedes an independently
@@ -3632,10 +3823,10 @@ fn apply_deferred_reconcile(
     for operation in operations.drain(..) {
         batch.push(operation);
         if batch.len() >= batch_limit {
-            flush_direct_reconcile_batch(index, &mut batch, sink, stats)?;
+            flush_direct_reconcile_batch(index, &mut batch, sink, stats, observations)?;
         }
     }
-    flush_direct_reconcile_batch(index, &mut batch, sink, stats)
+    flush_direct_reconcile_batch(index, &mut batch, sink, stats, observations)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3886,10 +4077,12 @@ fn flush_direct_reconcile_batch(
     batch: &mut Vec<Op>,
     sink: &mut dyn FnMut(&Commit),
     stats: &mut ApplyStats,
+    observations: &mut u64,
 ) -> Result<()> {
     if batch.is_empty() {
         return Ok(());
     }
+    *observations = observations.saturating_add(u64::try_from(batch.len()).unwrap_or(u64::MAX));
     let outcome = index.apply(&Observation::new(std::mem::take(batch)))?;
     merge_apply_stats(stats, outcome.stats);
     if let Some(commit) = outcome.commit.as_ref() {
@@ -3967,15 +4160,15 @@ fn remove_known_children(
     config: &ScanConfig,
     batch: &mut Vec<ObservationOp>,
     sink: &mut dyn FnMut(&Commit),
-    stats: &mut ApplyStats,
+    report: &mut ReconcileReport,
 ) -> Result<()> {
     for (name, baseline) in target.child_states(path)? {
         batch.push(ObservationOp::if_state(Op::Remove { path: path.join(name) }, baseline));
         if batch.len() >= config.batch_size.max(1) {
-            flush_reconcile_batch(target, batch, sink, stats)?;
+            flush_reconcile_batch(target, batch, sink, report)?;
         }
     }
-    flush_reconcile_batch(target, batch, sink, stats)
+    flush_reconcile_batch(target, batch, sink, report)
 }
 
 fn push_reconcile_upsert(
@@ -3985,7 +4178,7 @@ fn push_reconcile_upsert(
     attrs: Attrs,
     baseline: PathExpectation,
     batch: &mut Vec<ObservationOp>,
-    stats: &mut ApplyStats,
+    report: &mut ReconcileReport,
 ) {
     // An exclusive Index borrow cannot race another index producer. If filesystem
     // metadata exactly matches the captured state, applying this upsert can only be a
@@ -3993,7 +4186,8 @@ fn push_reconcile_upsert(
     // reconciliation keeps the conditional observation so ABA arbitration remains
     // authoritative between its read and write lock boundaries.
     if target.direct_upsert_is_unchanged(baseline, kind, attrs) {
-        stats.unchanged += 1;
+        report.observations = report.observations.saturating_add(1);
+        report.apply.unchanged = report.apply.unchanged.saturating_add(1);
         return;
     }
     batch.push(ObservationOp::if_state(
@@ -4006,13 +4200,15 @@ fn flush_reconcile_batch(
     target: &mut ReconcileTarget<'_>,
     batch: &mut Vec<ObservationOp>,
     sink: &mut dyn FnMut(&Commit),
-    stats: &mut ApplyStats,
+    report: &mut ReconcileReport,
 ) -> Result<()> {
     if batch.is_empty() {
         return Ok(());
     }
+    report.observations =
+        report.observations.saturating_add(u64::try_from(batch.len()).unwrap_or(u64::MAX));
     let outcome = target.apply(&Observation::from_ops(std::mem::take(batch)))?;
-    merge_apply_stats(stats, outcome.stats);
+    merge_apply_stats(&mut report.apply, outcome.stats);
     if let Some(commit) = outcome.commit.as_ref() {
         sink(commit);
     }
@@ -4028,6 +4224,7 @@ fn merge_apply_stats(total: &mut ApplyStats, addition: ApplyStats) {
     total.controls += addition.controls;
     total.reclassified += addition.reclassified;
     total.stale += addition.stale;
+    total.resource_refused += addition.resource_refused;
 }
 
 fn merge_reconcile_report(total: &mut ReconcileReport, addition: ReconcileReport) {
@@ -4036,6 +4233,7 @@ fn merge_reconcile_report(total: &mut ReconcileReport, addition: ReconcileReport
     total.scan.files_walked += addition.scan.files_walked;
     total.scan.bytes_walked += addition.scan.bytes_walked;
     total.scan.errors.extend(addition.scan.errors);
+    total.observations = total.observations.saturating_add(addition.observations);
     merge_apply_stats(&mut total.apply, addition.apply);
 }
 
@@ -6061,6 +6259,7 @@ mod tests {
         let report = ReconcileReport {
             scan: ScanReport::default(),
             apply: ApplyStats { stale: 1, ..ApplyStats::default() },
+            observations: 1,
         };
 
         assert!(!report.is_complete());

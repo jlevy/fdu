@@ -388,6 +388,9 @@ pub struct ApplyStats {
     /// Conditional observations rejected because the indexed state changed after the
     /// producer captured its baseline.
     pub stale: u64,
+    /// File upserts refused because their exact effect would exceed an opened-root
+    /// resource budget.
+    pub resource_refused: u64,
 }
 
 impl ApplyStats {
@@ -568,8 +571,8 @@ pub struct IndexHandle {
 
 /// Index-owned part of one progressive discovery commit.
 ///
-/// The producer may combine one of these with entry observations; the index derives
-/// file progress from effective inserts and publishes one exact commit.
+/// The producer may combine one of these with entry observations; the opened commit
+/// policy updates exact file progress and publishes one atomic fact-and-state commit.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct DiscoveryCommit {
     pub(crate) directory_complete: Option<PathBuf>,
@@ -629,7 +632,26 @@ impl IndexHandle {
         discovery: DiscoveryCommit,
     ) -> crate::Result<ApplyOutcome> {
         let prepared = prepare_observation(observation)?;
-        self.write_index()?.commit_prepared_with(prepared, true, Some(discovery))
+        self.write_index()?.commit_prepared_with(prepared, true, Some(discovery), None, true)
+    }
+
+    pub(crate) fn apply_opened(
+        &self,
+        observation: &Observation,
+        max_files: Option<u64>,
+    ) -> crate::Result<ApplyOutcome> {
+        let prepared = prepare_observation(observation)?;
+        self.write_index()?.commit_prepared_with(prepared, true, None, max_files, true)
+    }
+
+    pub(crate) fn apply_discovery_bounded(
+        &self,
+        observation: &Observation,
+        discovery: DiscoveryCommit,
+        max_files: Option<u64>,
+    ) -> crate::Result<ApplyOutcome> {
+        let prepared = prepare_observation(observation)?;
+        self.write_index()?.commit_prepared_with(prepared, true, Some(discovery), max_files, true)
     }
 
     pub(crate) fn transition_discovery(
@@ -1087,7 +1109,7 @@ impl Index {
         prepared: PreparedObservation,
         journal: bool,
     ) -> crate::Result<ApplyOutcome> {
-        self.commit_prepared_with(prepared, journal, None)
+        self.commit_prepared_with(prepared, journal, None, None, false)
     }
 
     fn commit_prepared_with(
@@ -1095,6 +1117,8 @@ impl Index {
         prepared: PreparedObservation,
         journal: bool,
         discovery: Option<DiscoveryCommit>,
+        max_files: Option<u64>,
+        track_file_progress: bool,
     ) -> crate::Result<ApplyOutcome> {
         if prepared.ops.is_empty()
             && discovery.as_ref().is_none_or(|discovery| {
@@ -1127,7 +1151,13 @@ impl Index {
             // change without touching the original index.
             let mut probe = self.clone();
             probe.clock = Clock(self.clock.0 - 1);
-            let outcome = probe.commit_prepared_with(prepared, false, discovery)?;
+            let outcome = probe.commit_prepared_with(
+                prepared,
+                false,
+                discovery,
+                max_files,
+                track_file_progress,
+            )?;
             return if outcome.commit.is_some() {
                 Err(crate::Error::ClockExhausted)
             } else {
@@ -1150,6 +1180,12 @@ impl Index {
                 continue;
             }
             let op = &observed.op;
+            if let (Some(max_files), Op::Upsert { path, kind, .. }) = (max_files, op) {
+                if self.files_after_upsert(path, *kind) > max_files {
+                    stats.resource_refused = stats.resource_refused.saturating_add(1);
+                    continue;
+                }
+            }
             match op {
                 Op::Upsert { path, kind, attrs } => {
                     self.apply_upsert(
@@ -1198,7 +1234,15 @@ impl Index {
         }
 
         self.apply_control_transition(projected_controls, &mut stats, &mut effects);
-        self.apply_discovery_transition(discovery, &mut effects);
+        let mut discovery = discovery;
+        if stats.resource_refused > 0 {
+            let max_files = max_files.expect("resource refusal requires a file limit");
+            let discovery = discovery.get_or_insert_with(DiscoveryCommit::default);
+            discovery.directory_complete = None;
+            discovery.transition =
+                Some(DiscoveryTransition::BudgetRefused(Issue::resource_budget(max_files)));
+        }
+        self.apply_opened_state(discovery, track_file_progress, &mut effects);
 
         if effects.is_empty() {
             return Ok(ApplyOutcome::from_commit(stats, None));
@@ -1209,96 +1253,96 @@ impl Index {
         Ok(ApplyOutcome::from_commit(stats, Some(commit)))
     }
 
-    fn apply_discovery_transition(
+    fn apply_opened_state(
         &mut self,
         discovery: Option<DiscoveryCommit>,
+        track_file_progress: bool,
         effects: &mut MutationEffects,
     ) {
-        let Some(discovery) = discovery else {
+        if discovery.is_none() && !track_file_progress {
             return;
-        };
+        }
         let previous = self.state;
-        let inserted_files = effects
-            .changes
-            .iter()
-            .filter(|change| {
-                matches!(change, EffectiveChange::Inserted { kind: EntryKind::File, .. })
-            })
-            .count();
-        self.state.progress.files_retained = self
-            .state
-            .progress
-            .files_retained
-            .saturating_add(u64::try_from(inserted_files).unwrap_or(u64::MAX));
-
-        if let Some(path) = discovery.directory_complete {
-            let id = self.lookup(&path).expect("discovery completion was preflighted");
-            if !self.entry(id).children_complete {
-                self.entry_mut(id).children_complete = true;
-                self.state.progress.directories_complete =
-                    self.state.progress.directories_complete.saturating_add(1);
-                effects.state.push(StateTransition::DirectoryComplete { path });
-            }
+        if track_file_progress {
+            self.state.progress.files_retained = self.total_scalars().files;
         }
 
-        if let Some(transition) = discovery.transition {
-            match transition {
-                DiscoveryTransition::Begin => {
-                    for slot in &mut self.arena {
-                        if let Slot::Occupied { entry, .. } = slot {
-                            if entry.kind == EntryKind::Dir {
-                                entry.children_complete = false;
+        if let Some(discovery) = discovery {
+            if let Some(path) = discovery.directory_complete {
+                let id = self.lookup(&path).expect("discovery completion was preflighted");
+                if !self.entry(id).children_complete {
+                    self.entry_mut(id).children_complete = true;
+                    self.state.progress.directories_complete =
+                        self.state.progress.directories_complete.saturating_add(1);
+                    effects.state.push(StateTransition::DirectoryComplete { path });
+                }
+            }
+
+            if let Some(transition) = discovery.transition {
+                match transition {
+                    DiscoveryTransition::Begin => {
+                        for slot in &mut self.arena {
+                            if let Slot::Occupied { entry, .. } = slot {
+                                if entry.kind == EntryKind::Dir {
+                                    entry.children_complete = false;
+                                }
                             }
                         }
+                        self.state = IndexState {
+                            phase: LifecyclePhase::Discovering,
+                            coverage: Coverage::Partial(CoverageReason::Building),
+                            freshness: Freshness::Fresh,
+                            source: Source::Scanned,
+                            progress: DiscoveryProgress::default(),
+                            issues: crate::IssueSummary::default(),
+                        };
+                        self.issues.clear();
                     }
-                    self.state = IndexState {
-                        phase: LifecyclePhase::Discovering,
-                        coverage: Coverage::Partial(CoverageReason::Building),
-                        freshness: Freshness::Fresh,
-                        source: Source::Scanned,
-                        progress: DiscoveryProgress::default(),
-                        issues: crate::IssueSummary::default(),
-                    };
-                    self.issues.clear();
-                }
-                DiscoveryTransition::Finish => {
-                    self.state.phase = LifecyclePhase::Ready;
-                    if self.state.coverage == Coverage::Partial(CoverageReason::Building) {
-                        self.state.coverage = Coverage::Complete;
+                    DiscoveryTransition::Finish => {
+                        self.state.phase = LifecyclePhase::Ready;
+                        if self.state.coverage == Coverage::Partial(CoverageReason::Building) {
+                            self.state.coverage = Coverage::Complete;
+                        }
+                        self.state.freshness = if self.state.coverage == Coverage::Complete {
+                            Freshness::Fresh
+                        } else {
+                            Freshness::Partial
+                        };
                     }
-                    self.state.freshness = if self.state.coverage == Coverage::Complete {
-                        Freshness::Fresh
-                    } else {
-                        Freshness::Partial
-                    };
-                }
-                DiscoveryTransition::BudgetRefused(issue) => {
-                    self.state.phase = LifecyclePhase::Stopped;
-                    self.state.coverage = Coverage::Partial(CoverageReason::Budget);
-                    self.state.freshness = Freshness::Fresh;
-                    self.retain_issue(issue);
-                }
-                DiscoveryTransition::Inaccessible { issues, omitted } => {
-                    if self.state.coverage != Coverage::Partial(CoverageReason::Budget) {
-                        self.state.coverage = Coverage::Partial(CoverageReason::Inaccessible);
+                    DiscoveryTransition::BudgetRefused(issue) => {
+                        let already_stopped_for_budget = self.state.phase
+                            == LifecyclePhase::Stopped
+                            && self.state.coverage == Coverage::Partial(CoverageReason::Budget);
+                        self.state.phase = LifecyclePhase::Stopped;
+                        self.state.coverage = Coverage::Partial(CoverageReason::Budget);
+                        self.state.freshness = Freshness::Fresh;
+                        if !already_stopped_for_budget {
+                            self.retain_issue(issue);
+                        }
+                    }
+                    DiscoveryTransition::Inaccessible { issues, omitted } => {
+                        if self.state.coverage != Coverage::Partial(CoverageReason::Budget) {
+                            self.state.coverage = Coverage::Partial(CoverageReason::Inaccessible);
+                            self.state.freshness = Freshness::Partial;
+                        }
+                        for issue in issues {
+                            self.retain_issue(issue);
+                        }
+                        self.state.issues.omitted =
+                            self.state.issues.omitted.saturating_add(omitted);
+                    }
+                    DiscoveryTransition::Cancelled => {
+                        self.state.phase = LifecyclePhase::Stopped;
+                        if self.state.coverage != Coverage::Complete {
+                            self.state.coverage = Coverage::Partial(CoverageReason::Cancelled);
+                        }
+                    }
+                    DiscoveryTransition::Failed(issue) => {
+                        self.state.phase = LifecyclePhase::Failed;
+                        self.state.coverage = Coverage::Partial(CoverageReason::Failed);
                         self.state.freshness = Freshness::Partial;
-                    }
-                    for issue in issues {
                         self.retain_issue(issue);
                     }
-                    self.state.issues.omitted = self.state.issues.omitted.saturating_add(omitted);
-                }
-                DiscoveryTransition::Cancelled => {
-                    self.state.phase = LifecyclePhase::Stopped;
-                    if self.state.coverage != Coverage::Complete {
-                        self.state.coverage = Coverage::Partial(CoverageReason::Cancelled);
-                    }
-                }
-                DiscoveryTransition::Failed(issue) => {
-                    self.state.phase = LifecyclePhase::Failed;
-                    self.state.coverage = Coverage::Partial(CoverageReason::Failed);
-                    self.state.freshness = Freshness::Partial;
-                    self.retain_issue(issue);
                 }
             }
         }
@@ -1306,6 +1350,25 @@ impl Index {
         if previous != self.state {
             effects.state.push(StateTransition::IndexState { previous, current: self.state });
         }
+    }
+
+    /// Exact regular-file total that would remain after one upsert at the current
+    /// commit boundary.
+    fn files_after_upsert(&self, path: &Path, kind: EntryKind) -> u64 {
+        let current_total = self.total_scalars().files;
+        let Some(id) = self.lookup(path) else {
+            return current_total.saturating_add(u64::from(kind == EntryKind::File));
+        };
+        let current = self.entry(id);
+        if current.kind == kind {
+            return current_total;
+        }
+        let removed = match current.kind {
+            EntryKind::File => 1,
+            EntryKind::Dir => current.rollup.all.files,
+            _ => 0,
+        };
+        current_total.saturating_sub(removed).saturating_add(u64::from(kind == EntryKind::File))
     }
 
     fn retain_issue(&mut self, issue: Issue) {
@@ -3064,7 +3127,13 @@ fn derive_impact(changes: &[EffectiveChange], state: &[StateTransition]) -> Impa
 }
 
 fn commit_work(observations: u64, stats: ApplyStats) -> Work {
-    Work { observations, unchanged: stats.unchanged, stale: stats.stale, ..Work::default() }
+    Work {
+        observations,
+        unchanged: stats.unchanged,
+        stale: stats.stale,
+        resource_refused: stats.resource_refused,
+        ..Work::default()
+    }
 }
 
 fn insert_dirty_ancestors(path: &Path, paths: &mut BTreeSet<PathBuf>, all_dirty: &mut bool) {

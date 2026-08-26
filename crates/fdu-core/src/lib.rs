@@ -106,15 +106,17 @@ pub use crate::engine_contract::{
     MAX_PORTABLE_PATH_EXAMPLES, MAX_READ_PROJECTIONS, MAX_REPORT_VIEWS, MAX_RETAINED_ISSUES,
     Observation, ObservationOp, Op, PageRequest, PathExpectation, PathState, PortablePathEncoding,
     PortablePathExample, PortablePathIssue, ProjectionResult, Provenance, QueryLimit,
-    ReadDiagnostics, ReadProjection, ReadRequest, ReadResponse, ReportRequest, Result, RowShape,
-    ScanScope, ScopeIdentity, SemanticIdentity, SessionId, Source, StateTransition, Status,
-    TreePage, Work,
+    ReadDiagnostics, ReadProjection, ReadRequest, ReadResponse, RefreshRejection, RefreshResult,
+    RejectedRefreshPath, ReportRequest, Result, RowShape, ScanScope, ScopeIdentity,
+    SemanticIdentity, SessionId, Source, StateTransition, Status, TreePage, Work,
 };
 pub use crate::index::{
     ApplyOutcome, ApplyStats, ChildSnapshot, DEFAULT_JOURNAL_CAPACITY, EntryId, ExtTally, Index,
     IndexHandle, PartitionRollUp, PartitionRollUpSummary, RollUp, RollUpSummary, Since,
 };
-pub use crate::opened::{DiscoveryBudget, MAX_PRIORITY_PATHS, OpenOptions, OpenedIndex};
+pub use crate::opened::{
+    DiscoveryBudget, MAX_PRIORITY_PATHS, MAX_REFRESH_PATHS, OpenOptions, OpenedIndex,
+};
 // Ungated with report_format, for the same reason: one-shot planning is an execution
 // strategy, not a front end. A caller wanting one report without retaining an index was
 // previously required to compile the command line to get it (fdu-z7sp).

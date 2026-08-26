@@ -4,7 +4,7 @@
 
 **Author:** fdu project, with Codex review assistance
 
-**Status:** Active — Phase 1 complete; Phase 2 refresh in progress
+**Status:** Active — Phase 1 complete; Phase 2 refresh complete, observation next
 
 ## Overview
 
@@ -97,7 +97,7 @@ required GitHub checks passing at that checkpoint in
 | --- | --- | --- |
 | Architecture and implementation map | Complete | The durable architecture, PR #44 and #47 reconciliation, direct-API correction, file/function map, test design, and reuse ledger are committed and reviewed. |
 | Phase 1: exact engine kernel | Complete | Checkpoints 1A through 1D passed their local gates and the cumulative cross-platform PR gate. |
-| Phase 2: opened-root vertical slice | In progress | Ownership and joined close, discovery and priority, coherent reads, and the change journal are committed. `fdu-3za7` owns the next checkpoint: bounded multi-path refresh. Observation, session goldens, and Python follow in that dependency order. |
+| Phase 2: opened-root vertical slice | In progress | Ownership and joined close, discovery and priority, coherent reads, the change journal, and bounded multi-path refresh are committed. `fdu-9jzp` owns the next checkpoint: no-gap native observation. Session goldens and Python follow in that dependency order. |
 | Phase 3: MetaBrowser adoption | Not started | Begins only after the complete native and Python Phase 2 surface passes. The first step is the disposable unchanged-contract measurement, not a contract edit. |
 | Phase 4: composed proof | Not started | Cross-provider conformance, route and lifecycle integration, installed-wheel proof, and final performance and size acceptance remain required. |
 
@@ -1157,7 +1157,7 @@ Acceptance for Phase 1:
   in one bounded `read()`.
 - [x] Add the bounded pull journal and `changes(after, timeout)` with state-only
   commits, cursor validation, timeout, reset, and close wakeup.
-- [ ] Add bounded verified multi-path refresh through the shared commit pipeline.
+- [x] Add bounded verified multi-path refresh through the shared commit pipeline.
 - [ ] Add native observation with capture-before-baseline buffering, scripted overflow,
   final reconciliation, and a no-gap transition to watching.
 - [ ] Compose the staged test seams into the five opened-root session goldens and close
@@ -1582,7 +1582,7 @@ arrow means the bead on the left depends on the bead or beads on the right.
 | 2 discovery | `fdu-194x` progressive discovery, budget, priority | Closed | `fdu-mkga` |
 | 2 reads | `fdu-r7s7` coherent projections | Closed | `fdu-mkga` |
 | 2 journal | `fdu-ngnm` journal and change poll | Closed | `fdu-mkga`, `fdu-gpls` |
-| 2 refresh | `fdu-3za7` multi-path refresh | In progress | `fdu-mkga`, `fdu-gpls` |
+| 2 refresh | `fdu-3za7` multi-path refresh | Closed | `fdu-mkga`, `fdu-gpls` |
 | 2 observation | `fdu-9jzp` no-gap handoff | Open | `fdu-194x`, `fdu-ngnm`, `fdu-3za7` |
 | 2 session proof | `fdu-0kv7` five session goldens and coverage closure | Open | `fdu-mkga`, `fdu-194x`, `fdu-r7s7`, `fdu-ngnm`, `fdu-3za7`, `fdu-9jzp` |
 | 2 Python | `fdu-bnsk` synchronous Python surface | Open | `fdu-r7s7`, `fdu-ngnm`, `fdu-3za7`, `fdu-9jzp`, `fdu-0kv7` |

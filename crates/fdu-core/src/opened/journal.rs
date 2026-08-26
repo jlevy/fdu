@@ -140,21 +140,27 @@ fn reset_at(snapshot: &JournalSnapshot) -> ChangePoll {
         cursor: snapshot.version,
         version: snapshot.version,
         state: snapshot.state,
-        outcome: ChangeOutcome::Reset {
-            impact: Impact {
-                domains: vec![
-                    ImpactDomain::Topology,
-                    ImpactDomain::Metadata,
-                    ImpactDomain::Classification,
-                    ImpactDomain::Aggregates,
-                    ImpactDomain::Content,
-                    ImpactDomain::State,
-                ],
-                dirty_paths: Vec::new(),
-                all_dirty: true,
-            },
-        },
+        outcome: ChangeOutcome::Reset { impact: reset_impact() },
         work: Work { commits_visited: visited, ..Work::default() },
+    }
+}
+
+pub(super) fn interval_impact(since: &Since) -> Impact {
+    if since.truncated { reset_impact() } else { combined_impact(&since.commits) }
+}
+
+fn reset_impact() -> Impact {
+    Impact {
+        domains: vec![
+            ImpactDomain::Topology,
+            ImpactDomain::Metadata,
+            ImpactDomain::Classification,
+            ImpactDomain::Aggregates,
+            ImpactDomain::Content,
+            ImpactDomain::State,
+        ],
+        dirty_paths: Vec::new(),
+        all_dirty: true,
     }
 }
 
