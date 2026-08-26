@@ -499,6 +499,11 @@ impl PyIndex {
                         item.set_item("op", "invalidate_subtree")?;
                         item.set_item("reason", format!("{reason:?}"))?;
                     }
+                    fdu_core::Op::ControlUpsert { .. } | fdu_core::Op::ControlRemove { .. } => {
+                        // Exact control changes live only in `Commit`; the legacy delta
+                        // projection intentionally excludes them.
+                        continue;
+                    }
                 }
                 ops.append(item)?;
             }

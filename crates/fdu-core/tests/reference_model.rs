@@ -154,7 +154,13 @@ impl Model {
         let require_structure = match (op, expected.state) {
             (Op::Remove { .. }, _) => true,
             (Op::Upsert { kind, .. }, PathState::Present { kind: old, .. }) => *kind != old,
-            (Op::Upsert { .. } | Op::InvalidateSubtree { .. }, _) => false,
+            (
+                Op::Upsert { .. }
+                | Op::ControlUpsert { .. }
+                | Op::ControlRemove { .. }
+                | Op::InvalidateSubtree { .. },
+                _,
+            ) => false,
         };
         if !same_target(
             self.nodes.get(op.path()).map(Node::identity),
@@ -192,6 +198,9 @@ impl Model {
                 }
                 Op::Remove { path } => {
                     self.remove(path, &mut stats, &mut changes);
+                }
+                Op::ControlUpsert { .. } | Op::ControlRemove { .. } => {
+                    panic!("control operations use the dedicated control-state oracle")
                 }
                 Op::InvalidateSubtree { path, reason } => {
                     let previous = self.freshness_at(path);
@@ -508,6 +517,9 @@ fn model_impact(changes: &[EffectiveChange], state: &[StateTransition]) -> Impac
             }
             EffectiveChange::Invalidated { .. } => {
                 domains.insert(ImpactDomain::State);
+            }
+            EffectiveChange::ControlUpdated { .. } | EffectiveChange::Reclassified { .. } => {
+                domains.extend([ImpactDomain::Classification, ImpactDomain::Aggregates]);
             }
         }
         model_dirty(change.path(), &mut dirty_paths, &mut all_dirty, EXPECTED_DIRTY_PATH_LIMIT);

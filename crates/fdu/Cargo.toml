@@ -42,10 +42,15 @@ path = "tests/watch_persistence.rs"
 required-features = ["watch"]
 
 [features]
-default = ["watch"]
+# The shipped command watches and maintains gitignore partitions; embedding consumers
+# can remove either capability independently.
+default = ["watch", "gitignore"]
 # Passed through to the library. Without it the command line still builds and works,
 # just without `--watch`, which is what keeps the watch layer deletable.
 watch = ["fdu-core/watch"]
+# Passed through so the shipped command can supply the same fixed partition as an
+# interactive client without making it mandatory for library consumers.
+gitignore = ["fdu-core/gitignore"]
 
 [dependencies]
 # An ordinary dependency, which is the whole point: `crate::` does not reach the library

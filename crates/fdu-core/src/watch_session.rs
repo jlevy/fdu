@@ -196,6 +196,10 @@ impl Session {
                 mtime_ns: None,
                 clock,
             }),
+            // The legacy watch surface repaints the complete query when `dirty` is true,
+            // so it needs no second row-change vocabulary for control and partition
+            // effects. Opened-root consumers read these exact commit variants directly.
+            EffectiveChange::ControlUpdated { .. } | EffectiveChange::Reclassified { .. } => None,
         }
     }
 

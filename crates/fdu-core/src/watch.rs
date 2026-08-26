@@ -379,25 +379,31 @@ fn escalate_unknown_ancestry(index: &IndexHandle, candidate: Observation) -> Res
 
 #[cfg(test)]
 fn reverify_observation(root: &Path, observation: &Observation) -> Result<Observation> {
-    let mut ops = Vec::with_capacity(observation.len());
+    let mut ops = Vec::with_capacity(observation.len().saturating_mul(2));
     for observed in &observation.ops {
         let relative = scan::normalize_subtree(observed.op.path())?;
-        let op = match &observed.op {
+        match &observed.op {
             Op::InvalidateSubtree { reason, .. } => {
-                Op::InvalidateSubtree { path: relative, reason: *reason }
+                ops.push(Op::InvalidateSubtree { path: relative, reason: *reason });
             }
             Op::Upsert { .. } | Op::Remove { .. } => {
                 let absolute = root.join(&relative);
                 match std::fs::symlink_metadata(&absolute) {
                     Ok(metadata) => {
                         let (kind, attrs) = scan::observe(&metadata);
-                        Op::Upsert { path: relative, kind, attrs }
+                        ops.push(Op::Upsert { path: relative.clone(), kind, attrs });
+                        if let Some(control) = scan::read_control_op(root, &relative, kind)? {
+                            ops.push(control);
+                        }
                     }
-                    Err(error) => op_for_stat_error(relative, &error),
+                    Err(error) => ops.push(op_for_stat_error(relative, &error)),
                 }
             }
-        };
-        ops.push(op);
+            Op::ControlUpsert { source, .. } => {
+                ops.push(Op::ControlUpsert { path: relative, source: source.clone() });
+            }
+            Op::ControlRemove { .. } => ops.push(Op::ControlRemove { path: relative }),
+        }
     }
     Ok(Observation::new(ops))
 }
@@ -649,6 +655,14 @@ fn verify_intent(root: &Path, config: WatchConfig, intent: &CoalescedIntent) -> 
                     Ok(meta) => {
                         let (kind, attrs) = scan::observe(&meta);
                         ops.push(Op::Upsert { path: rel.clone(), kind, attrs });
+                        match scan::read_control_op(root, rel, kind) {
+                            Ok(Some(control)) => ops.push(control),
+                            Ok(None) => {}
+                            Err(_) => ops.push(Op::InvalidateSubtree {
+                                path: rel.parent().map_or_else(PathBuf::new, Path::to_path_buf),
+                                reason: InvalidateReason::VerificationFailed,
+                            }),
+                        }
                         if kind.is_dir() && *relist_if_dir && config.relist_new_dirs {
                             // The watch for this directory was installed after it was
                             // created, so anything already inside produced no event.
@@ -1134,6 +1148,28 @@ mod tests {
         assert!(matches!(
             &observation.ops[0].op,
             Op::Upsert { path, attrs, .. } if path == &relative && attrs.size == 7
+        ));
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn control_verification_emits_exact_source_with_the_entry_fact() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let relative = PathBuf::from(".gitignore");
+        fs::write(dir.path().join(&relative), b"*.log\n").expect("write control");
+        let intent = CoalescedIntent {
+            pending: BTreeMap::from([(relative.clone(), Pending::Verify { relist_if_dir: false })]),
+        };
+
+        let observation = verify_intent(dir.path(), WatchConfig::default(), &intent);
+
+        assert!(matches!(
+            &observation.ops[0].op,
+            Op::Upsert { path, kind: crate::EntryKind::File, .. } if path == &relative
+        ));
+        assert!(matches!(
+            &observation.ops[1].op,
+            Op::ControlUpsert { path, source } if path == &relative && source == b"*.log\n"
         ));
     }
 

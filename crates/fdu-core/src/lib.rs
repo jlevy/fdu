@@ -54,6 +54,7 @@
 pub mod cache;
 pub mod classify;
 pub mod content;
+pub mod control;
 pub mod counters;
 mod engine_contract;
 mod execution;
@@ -83,6 +84,10 @@ pub use crate::watch_session as session;
 pub use crate::cache::{
     CacheStatus, SnapshotInfo, cache_status, clear_all_caches, clear_cache, list_caches,
 };
+pub use crate::control::{
+    CONTROL_FILE_NAME, ControlIdentity, ControlMatcher, ControlTable, MAX_CONTROL_TABLE_BYTES,
+    is_control_file,
+};
 pub use crate::engine_contract::{
     AppliedDelta, Attrs, Clock, Commit, EffectiveChange, EntryKind, Error, Expectation,
     Fingerprint, Freshness, Impact, ImpactDomain, InvalidateReason, Observation, ObservationOp, Op,
@@ -90,7 +95,8 @@ pub use crate::engine_contract::{
     Work,
 };
 pub use crate::index::{
-    ApplyOutcome, ApplyStats, ChildSnapshot, EntryId, ExtTally, Index, IndexHandle, RollUp, Since,
+    ApplyOutcome, ApplyStats, ChildSnapshot, EntryId, ExtTally, Index, IndexHandle,
+    PartitionRollUp, RollUp, Since,
 };
 // Ungated with report_format, for the same reason: one-shot planning is an execution
 // strategy, not a front end. A caller wanting one report without retaining an index was

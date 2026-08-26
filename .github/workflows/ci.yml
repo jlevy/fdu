@@ -120,8 +120,10 @@ jobs:
       # Library consumers take `default-features = false`. Without this job, that path
       # would only ever be compiled by them.
       - run: cargo test --locked -p fdu-core --no-default-features
-      # The watch layer is strictly additive and must not inherit CLI-only features.
+      # Optional layers are additive alone and together; neither may inherit CLI-only features.
+      - run: cargo test --locked -p fdu-core --no-default-features --features gitignore
       - run: cargo test --locked -p fdu-core --no-default-features --features watch
+      - run: cargo test --locked -p fdu-core --no-default-features --features watch,gitignore
 
   msrv:
     name: MSRV (1.85)

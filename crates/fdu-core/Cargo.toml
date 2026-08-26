@@ -29,6 +29,10 @@ default = ["watch"]
 # snapshot are all fully functional, just without live updates -- which is what keeps
 # the watch layer deletable rather than merely optional.
 watch = ["dep:notify"]
+# Gates exact `.gitignore` control state and fixed ignored/unignored partitioning.
+# The matcher is in-tree and dependency-free; the gate keeps both its code and its
+# filesystem reads removable for embedding consumers that do not need the capability.
+gitignore = []
 [dependencies]
 thiserror = "2.0"
 

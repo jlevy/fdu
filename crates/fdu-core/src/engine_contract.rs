@@ -364,6 +364,22 @@ pub enum Op {
         /// Path relative to the index root.
         path: PathBuf,
     },
+    /// Exact bytes read from a verified `.gitignore` control file.
+    ///
+    /// This is separate from the file entry upsert so admission may retain the signal
+    /// without creating a visible row. Producers normally emit both while control files
+    /// are visible and only this operation when later admission excludes the row.
+    ControlUpsert {
+        /// Control-file path relative to the index root.
+        path: PathBuf,
+        /// Complete source bytes, bounded by the receiving control table.
+        source: Vec<u8>,
+    },
+    /// A previously observed `.gitignore` control file is absent.
+    ControlRemove {
+        /// Control-file path relative to the index root.
+        path: PathBuf,
+    },
     /// The producer could not describe the change precisely; the consumer must re-scan
     /// this subtree. The scan layer turns this back into precise ops, so escalation is
     /// closed-loop rather than a dead end.
@@ -381,6 +397,8 @@ impl Op {
         match self {
             Self::Upsert { path, .. }
             | Self::Remove { path }
+            | Self::ControlUpsert { path, .. }
+            | Self::ControlRemove { path }
             | Self::InvalidateSubtree { path, .. } => path,
         }
     }
@@ -574,6 +592,24 @@ pub enum EffectiveChange {
         /// Metadata the entry had before removal.
         attrs: Attrs,
     },
+    /// Exact control source identity changed.
+    ControlUpdated {
+        /// Relative `.gitignore` path.
+        path: PathBuf,
+        /// Previous source identity, or absence.
+        previous: Option<crate::control::ControlIdentity>,
+        /// Current source identity, or absence.
+        current: Option<crate::control::ControlIdentity>,
+    },
+    /// One retained entry moved between the fixed ignored and unignored partitions.
+    Reclassified {
+        /// Relative retained-entry path.
+        path: PathBuf,
+        /// Effective ignore classification before the commit.
+        previous_ignored: bool,
+        /// Effective ignore classification after the commit.
+        current_ignored: bool,
+    },
     /// A producer reported uncertainty that requires verified reconciliation.
     Invalidated {
         /// Relative root of the invalidated subtree.
@@ -590,22 +626,25 @@ impl EffectiveChange {
             Self::Inserted { path, .. }
             | Self::Updated { path, .. }
             | Self::Removed { path, .. }
+            | Self::ControlUpdated { path, .. }
+            | Self::Reclassified { path, .. }
             | Self::Invalidated { path, .. } => path,
         }
     }
 
-    fn as_compatibility_op(&self) -> Op {
+    fn as_compatibility_op(&self) -> Option<Op> {
         match self {
             Self::Inserted { path, kind, attrs } => {
-                Op::Upsert { path: path.clone(), kind: *kind, attrs: *attrs }
+                Some(Op::Upsert { path: path.clone(), kind: *kind, attrs: *attrs })
             }
             Self::Updated { path, kind, current, .. } => {
-                Op::Upsert { path: path.clone(), kind: *kind, attrs: *current }
+                Some(Op::Upsert { path: path.clone(), kind: *kind, attrs: *current })
             }
-            Self::Removed { path, .. } => Op::Remove { path: path.clone() },
+            Self::Removed { path, .. } => Some(Op::Remove { path: path.clone() }),
             Self::Invalidated { path, reason } => {
-                Op::InvalidateSubtree { path: path.clone(), reason: *reason }
+                Some(Op::InvalidateSubtree { path: path.clone(), reason: *reason })
             }
+            Self::ControlUpdated { .. } | Self::Reclassified { .. } => None,
         }
     }
 }
@@ -721,8 +760,9 @@ impl Commit {
     /// State-only commits return `None`: callers needing complete history consume
     /// commits, while legacy callers continue to see only entry-operation deltas.
     pub fn applied_delta(&self) -> Option<AppliedDelta> {
-        let ops = self.changes.iter().map(EffectiveChange::as_compatibility_op).collect();
-        (!self.changes.is_empty()).then_some(AppliedDelta { clock: self.clock, ops })
+        let ops: Vec<Op> =
+            self.changes.iter().filter_map(EffectiveChange::as_compatibility_op).collect();
+        (!ops.is_empty()).then_some(AppliedDelta { clock: self.clock, ops })
     }
 }
 
@@ -773,6 +813,19 @@ pub enum Error {
         path: PathBuf,
         /// Nearest known directory from which a producer can reconcile safely.
         reconcile_from: PathBuf,
+    },
+
+    /// A control observation did not name the fixed control filename.
+    #[error("invalid control-file path: {0:?}")]
+    InvalidControlPath(PathBuf),
+
+    /// Exact retained control sources exceeded the per-index resource bound.
+    #[error("control table requires {attempted} bytes; limit is {limit} bytes")]
+    ControlSourceLimit {
+        /// Bytes the resulting table would retain.
+        attempted: usize,
+        /// Shared table limit.
+        limit: usize,
     },
 
     /// Snapshot persistence failed after a usable snapshot had been selected.

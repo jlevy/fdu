@@ -18,6 +18,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::fs;
+#[cfg(feature = "gitignore")]
+use std::io::Read as _;
 use std::path::{Component, Path, PathBuf};
 
 use crate::ApplyStats;
@@ -59,7 +61,12 @@ const MAX_DEFERRED_RECONCILE_OPS: usize = MAX_SCAN_BATCH_SIZE;
 const RECONCILE_WAVE_DIRECTORIES: usize =
     crate::platform_tuning::tuning().reconcile_wave_directories.get();
 
-/// Identity of the current built-in ignore policy. No ignore rules exist yet.
+/// Identity of the current fixed `.gitignore` control semantics.
+#[cfg(feature = "gitignore")]
+const IGNORE_RULES_FINGERPRINT: u64 = 1;
+
+/// A build without the capability performs no control reads or classification.
+#[cfg(not(feature = "gitignore"))]
 const IGNORE_RULES_FINGERPRINT: u64 = 0;
 
 /// Identity of the fixed stat-tier reducer set.
@@ -1009,12 +1016,28 @@ fn scan_internal(
             let attrs = attrs_from(&meta);
             let kind = kind_from(&meta);
             report.observe(kind, attrs);
+            let control = match read_control_op(root, &rel_path, kind) {
+                Ok(control) => control,
+                Err(error) => {
+                    report.errors.push(error);
+                    None
+                }
+            };
             batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
             if batch.len() >= config.batch_size {
                 let send_started = std::time::Instant::now();
                 sink(Observation::new(std::mem::take(&mut batch)));
                 report.attribution.send_ns += elapsed_ns(send_started);
                 batch.reserve(config.batch_size);
+            }
+            if let Some(control) = control {
+                batch.push(control);
+                if batch.len() >= config.batch_size {
+                    let send_started = std::time::Instant::now();
+                    sink(Observation::new(std::mem::take(&mut batch)));
+                    report.attribution.send_ns += elapsed_ns(send_started);
+                    batch.reserve(config.batch_size);
+                }
             }
 
             if should_descend(kind, attrs, depth, root_dev, config) {
@@ -1923,6 +1946,7 @@ fn walk_worker(
                     report.dirs_read += 1;
                     for entry in entries {
                         if !record_walk_entry(
+                            root,
                             &rel_dir,
                             depth,
                             region,
@@ -1989,6 +2013,7 @@ fn walk_worker(
                 let attrs = attrs_from(&meta);
                 let kind = kind_from(&meta);
                 if !record_walk_entry(
+                    root,
                     &rel_dir,
                     depth,
                     region,
@@ -2062,6 +2087,7 @@ fn walk_worker(
 
 #[allow(clippy::too_many_arguments)]
 fn record_walk_entry(
+    root: &Path,
     rel_dir: &Path,
     depth: usize,
     region: RegionId,
@@ -2080,6 +2106,13 @@ fn record_walk_entry(
     let rel_path = rel_dir.join(name);
     let descend = should_descend(kind, attrs, depth, root_dev, config);
     report.observe(kind, attrs);
+    let control = match read_control_op(root, &rel_path, kind) {
+        Ok(control) => control,
+        Err(error) => {
+            report.errors.push(error);
+            None
+        }
+    };
     batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
     if batch.len() >= config.batch_size {
         let send_started = std::time::Instant::now();
@@ -2087,6 +2120,18 @@ fn record_walk_entry(
         *chunk_send_ns += elapsed_ns(send_started);
         if !sent {
             return false;
+        }
+    }
+    if let Some(control) = control {
+        batch.push(control);
+        if batch.len() >= config.batch_size {
+            let send_started = std::time::Instant::now();
+            let sent =
+                send_observation(sender, Observation::new(std::mem::take(batch)), diagnostics);
+            *chunk_send_ns += elapsed_ns(send_started);
+            if !sent {
+                return false;
+            }
         }
     }
     if descend {
@@ -2097,6 +2142,38 @@ fn record_walk_entry(
         discovered.push((rel_path, depth + 1, child_region));
     }
     true
+}
+
+/// Read one fixed control source without allowing a raced or hostile file to allocate
+/// beyond the index-wide control budget.
+pub(crate) fn read_control_op(root: &Path, path: &Path, kind: EntryKind) -> Result<Option<Op>> {
+    #[cfg(not(feature = "gitignore"))]
+    {
+        let _ = (root, path, kind);
+        return Ok(None);
+    }
+    #[cfg(feature = "gitignore")]
+    {
+        if kind != EntryKind::File || !crate::control::is_control_file(path) {
+            return Ok(None);
+        }
+        let absolute = root.join(path);
+        let file = fs::File::open(&absolute).map_err(|error| Error::io(&absolute, error))?;
+        let read_limit = u64::try_from(crate::control::MAX_CONTROL_TABLE_BYTES)
+            .unwrap_or(u64::MAX)
+            .saturating_add(1);
+        let mut source = Vec::new();
+        file.take(read_limit)
+            .read_to_end(&mut source)
+            .map_err(|error| Error::io(&absolute, error))?;
+        if source.len() >= crate::control::MAX_CONTROL_TABLE_BYTES {
+            return Err(Error::ControlSourceLimit {
+                attempted: source.len().saturating_add(64),
+                limit: crate::control::MAX_CONTROL_TABLE_BYTES,
+            });
+        }
+        Ok(Some(Op::ControlUpsert { path: path.to_path_buf(), source }))
+    }
 }
 
 fn send_observation(
@@ -2843,6 +2920,13 @@ pub fn revalidate(
             let kind = kind_from(&meta);
             let attrs = attrs_from(&meta);
             report.observe(kind, attrs);
+            let control = match read_control_op(&root, &rel_path, kind) {
+                Ok(control) => control,
+                Err(error) => {
+                    report.errors.push(error);
+                    None
+                }
+            };
             batch.push(ObservationOp::if_state(
                 Op::Upsert { path: rel_path.clone(), kind, attrs },
                 baseline,
@@ -2850,6 +2934,13 @@ pub fn revalidate(
             if batch.len() >= batch_limit {
                 sink(Observation::from_ops(std::mem::take(&mut batch)));
                 batch.reserve(batch_limit);
+            }
+            if let Some(control) = control {
+                batch.push(ObservationOp::if_state(control, baseline));
+                if batch.len() >= batch_limit {
+                    sink(Observation::from_ops(std::mem::take(&mut batch)));
+                    batch.reserve(batch_limit);
+                }
             }
 
             if should_descend(kind, attrs, depth, root_dev, config) {
@@ -3092,6 +3183,16 @@ fn reconcile_target_inner(
             );
             if batch.len() >= config.batch_size.max(1) {
                 flush_reconcile_batch(target, batch, sink, &mut report.apply)?;
+            }
+            match read_control_op(&root, &rel_path, kind) {
+                Ok(Some(control)) => {
+                    batch.push(ObservationOp::if_state(control, baseline));
+                    if batch.len() >= config.batch_size.max(1) {
+                        flush_reconcile_batch(target, batch, sink, &mut report.apply)?;
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => report.scan.errors.push(error),
             }
 
             if should_descend(kind, attrs, depth, root_dev, config) {
@@ -3384,6 +3485,7 @@ fn reconcile_wave_worker(
             let mut known = collect_child_expectations(index, rel_dir);
             let abs_dir = root.join(rel_dir);
             let mut listing_complete = true;
+            let mut control_errors = Vec::new();
 
             {
                 let mut process_entry =
@@ -3404,6 +3506,21 @@ fn reconcile_wave_worker(
                                 overflowed,
                                 max_deferred_ops,
                             );
+                        }
+                        match read_control_op(root, &rel_path, kind) {
+                            Ok(Some(Op::ControlUpsert { path, source })) => {
+                                if !index.controls().source_is(&path, &source) {
+                                    defer_reconcile_op(
+                                        Op::ControlUpsert { path, source },
+                                        &mut result.operations,
+                                        deferred_count,
+                                        overflowed,
+                                        max_deferred_ops,
+                                    );
+                                }
+                            }
+                            Ok(Some(_) | None) => {}
+                            Err(error) => control_errors.push(error),
                         }
 
                         if should_descend(kind, attrs, *depth, root_dev, config) {
@@ -3475,6 +3592,7 @@ fn reconcile_wave_worker(
                     }
                 }
             }
+            result.scan.errors.append(&mut control_errors);
             if listing_complete {
                 for (name, _) in known {
                     defer_reconcile_op(
@@ -3650,6 +3768,8 @@ fn merge_apply_stats(total: &mut ApplyStats, addition: ApplyStats) {
     total.removed += addition.removed;
     total.unchanged += addition.unchanged;
     total.invalidated += addition.invalidated;
+    total.controls += addition.controls;
+    total.reclassified += addition.reclassified;
     total.stale += addition.stale;
 }
 
@@ -4240,17 +4360,21 @@ mod tests {
         let mut operations: Vec<_> = commits
             .iter()
             .flat_map(|commit| commit.changes.iter())
-            .map(|change| match change {
+            .filter_map(|change| match change {
                 crate::EffectiveChange::Inserted { path, kind, attrs } => {
-                    Op::Upsert { path: path.clone(), kind: *kind, attrs: *attrs }
+                    Some(Op::Upsert { path: path.clone(), kind: *kind, attrs: *attrs })
                 }
                 crate::EffectiveChange::Updated { path, kind, current, .. } => {
-                    Op::Upsert { path: path.clone(), kind: *kind, attrs: *current }
+                    Some(Op::Upsert { path: path.clone(), kind: *kind, attrs: *current })
                 }
-                crate::EffectiveChange::Removed { path, .. } => Op::Remove { path: path.clone() },
+                crate::EffectiveChange::Removed { path, .. } => {
+                    Some(Op::Remove { path: path.clone() })
+                }
                 crate::EffectiveChange::Invalidated { path, reason } => {
-                    Op::InvalidateSubtree { path: path.clone(), reason: *reason }
+                    Some(Op::InvalidateSubtree { path: path.clone(), reason: *reason })
                 }
+                crate::EffectiveChange::ControlUpdated { .. }
+                | crate::EffectiveChange::Reclassified { .. } => None,
             })
             .collect();
         operations.sort_by(|left, right| left.path().cmp(right.path()));
@@ -5318,6 +5442,102 @@ mod tests {
         let src = index.rollup(Path::new("src")).expect("src");
         assert_eq!(src.files, 2);
         assert_eq!(src.dirs, 1);
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn cold_scan_routes_control_sources_through_both_walkers() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join(".gitignore"), b"*.log\n");
+        write_file(&dir.path().join("debug.log"), b"ignored");
+        write_file(&dir.path().join("keep.rs"), b"visible");
+
+        for threads in [1, 4] {
+            let config = ScanConfig { threads: Some(threads), ..ScanConfig::default() };
+            let (index, report) = scan_into_index(dir.path(), &config).expect("scan");
+
+            assert!(report.is_complete(), "unexpected errors: {:?}", report.errors);
+            assert!(index.controls().source_is(Path::new(".gitignore"), b"*.log\n"));
+            assert_eq!(index.is_ignored(Path::new("debug.log")), Some(true));
+            assert_eq!(index.is_ignored(Path::new("keep.rs")), Some(false));
+            assert_eq!(index.partition_total().all.files, 3);
+            assert_eq!(index.partition_total().unignored.files, 2);
+        }
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn control_sources_respect_a_single_operation_batch_bound() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join(".gitignore"), b"*.log\n");
+        write_file(&dir.path().join("debug.log"), b"ignored");
+
+        for threads in [1, 4] {
+            let config =
+                ScanConfig { threads: Some(threads), batch_size: 1, ..ScanConfig::default() };
+            let mut largest = 0;
+            let report = scan(dir.path(), &config, &mut |observation| {
+                largest = largest.max(observation.len());
+            })
+            .expect("scan");
+
+            assert!(report.is_complete(), "unexpected errors: {:?}", report.errors);
+            assert_eq!(largest, 1);
+        }
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn cold_scan_matches_the_metabrowser_nested_control_fixture() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join(".gitignore"), b"node_modules/\n*.pyc\n");
+        write_file(&dir.path().join("src/app.py"), b"x");
+        write_file(&dir.path().join("src/thing.pyc"), b"x");
+        write_file(&dir.path().join("src/generated/.gitignore"), b"*.gen\n");
+        write_file(&dir.path().join("src/generated/out.gen"), b"x");
+        write_file(&dir.path().join("node_modules/.gitignore"), b"!keep-me.py\n");
+        write_file(&dir.path().join("node_modules/keep-me.py"), b"x");
+
+        let (index, report) =
+            scan_into_index(dir.path(), &ScanConfig { threads: Some(4), ..ScanConfig::default() })
+                .expect("scan fixture");
+
+        assert!(report.is_complete(), "unexpected errors: {:?}", report.errors);
+        assert_eq!(index.is_ignored(Path::new("src/app.py")), Some(false));
+        assert_eq!(index.is_ignored(Path::new("src/thing.pyc")), Some(true));
+        assert_eq!(index.is_ignored(Path::new("src/generated")), Some(false));
+        assert_eq!(index.is_ignored(Path::new("src/generated/out.gen")), Some(true));
+        assert_eq!(index.is_ignored(Path::new("node_modules")), Some(true));
+        assert_eq!(index.is_ignored(Path::new("node_modules/keep-me.py")), Some(true));
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn reconciliation_observes_same_metadata_control_edits_and_last_deletion() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join(".gitignore"), b"*.log\n");
+        write_file(&dir.path().join("debug.log"), b"ignored");
+        let config = ScanConfig { threads: Some(1), ..ScanConfig::default() };
+        let (mut index, report) = scan_into_index(dir.path(), &config).expect("scan");
+        assert!(report.is_complete());
+        assert_eq!(index.is_ignored(Path::new("debug.log")), Some(true));
+
+        // Same-length content proves control identity is not inferred from stat-tier
+        // metadata, which can remain unchanged on coarse filesystems.
+        write_file(&dir.path().join(".gitignore"), b"*.tmp\n");
+        let edited = reconcile(&mut index, &config, &mut |_| {}).expect("edit reconcile");
+        assert!(edited.is_complete());
+        assert_eq!(edited.apply.controls, 1);
+        assert_eq!(edited.apply.reclassified, 1);
+        assert!(index.controls().source_is(Path::new(".gitignore"), b"*.tmp\n"));
+        assert_eq!(index.is_ignored(Path::new("debug.log")), Some(false));
+
+        fs::remove_file(dir.path().join(".gitignore")).expect("remove control");
+        let removed = reconcile(&mut index, &config, &mut |_| {}).expect("remove reconcile");
+        assert!(removed.is_complete());
+        assert_eq!(removed.apply.controls, 1);
+        assert!(index.controls().is_empty());
+        assert_eq!(index.partition_total().all, index.partition_total().unignored);
     }
 
     #[cfg(unix)]

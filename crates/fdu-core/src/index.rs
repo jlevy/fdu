@@ -123,6 +123,15 @@ pub struct RollUp {
     pub by_ext: BTreeMap<String, ExtTally>,
 }
 
+/// The two fixed aggregate partitions maintained for inventory reads.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub struct PartitionRollUp {
+    /// Every retained descendant.
+    pub all: RollUp,
+    /// Retained descendants outside the effective ignored partition.
+    pub unignored: RollUp,
+}
+
 /// Hot-path aggregate state owned by one index.
 ///
 /// Integer extension keys make ancestor merges cheap, but they are meaningful only
@@ -137,6 +146,42 @@ struct InternedRollUp {
     allocated: u64,
     newest_mtime_ns: i64,
     by_ext: BTreeMap<ExtId, ExtTally>,
+}
+
+/// Hot-path form of the fixed `all` and `unignored` partitions.
+///
+/// Dereferencing yields `all`, keeping existing unrestricted query code direct while
+/// mutation helpers update both partitions explicitly.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+struct InternedPartitionRollUp {
+    all: InternedRollUp,
+    unignored: InternedRollUp,
+}
+
+impl std::ops::Deref for InternedPartitionRollUp {
+    type Target = InternedRollUp;
+
+    fn deref(&self) -> &Self::Target {
+        &self.all
+    }
+}
+
+impl std::ops::DerefMut for InternedPartitionRollUp {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.all
+    }
+}
+
+impl InternedPartitionRollUp {
+    fn merge(&mut self, other: &Self) {
+        self.all.merge(&other.all);
+        self.unignored.merge(&other.unignored);
+    }
+
+    fn unmerge(&mut self, other: &Self) {
+        self.all.unmerge(&other.all);
+        self.unignored.unmerge(&other.unignored);
+    }
 }
 
 /// Map-free roll-up fields for internal reports that do not need extension names.
@@ -219,6 +264,8 @@ struct Entry {
     /// for files without an extension. Precomputing it here is what lets
     /// `contribution` run without a string allocation or an interner borrow.
     ext_id: Option<ExtId>,
+    /// Effective fixed-control classification, including an ignored ancestor.
+    ignored: bool,
     /// Where this entry's metadata came from.
     ///
     /// One byte, not a `Provenance` struct: the timestamps that complete the picture
@@ -230,7 +277,7 @@ struct Entry {
     /// Populated for directories only.
     children: BTreeMap<OsString, EntryId>,
     /// Meaningful for directories only.
-    rollup: InternedRollUp,
+    rollup: InternedPartitionRollUp,
     /// Changes on direct metadata updates. Together with the arena generation this
     /// detects present-state ABA races.
     revision: u64,
@@ -273,6 +320,10 @@ pub struct ApplyStats {
     pub unchanged: u64,
     /// Subtrees escalated for re-scan.
     pub invalidated: u64,
+    /// Exact control sources inserted, replaced, or removed.
+    pub controls: u64,
+    /// Retained entries moved between ignored and unignored partitions.
+    pub reclassified: u64,
     /// Conditional observations rejected because the indexed state changed after the
     /// producer captured its baseline.
     pub stale: u64,
@@ -281,7 +332,12 @@ pub struct ApplyStats {
 impl ApplyStats {
     /// True when any operation changed indexed state.
     pub const fn mutated(&self) -> bool {
-        self.inserted > 0 || self.updated > 0 || self.removed > 0 || self.invalidated > 0
+        self.inserted > 0
+            || self.updated > 0
+            || self.removed > 0
+            || self.invalidated > 0
+            || self.controls > 0
+            || self.reclassified > 0
     }
 }
 
@@ -310,8 +366,12 @@ pub struct ChildSnapshot {
     pub kind: EntryKind,
     /// Last observed metadata.
     pub attrs: Attrs,
+    /// Effective fixed-control classification.
+    pub ignored: bool,
     /// Pre-computed subtree totals for a directory.
     pub rollup: Option<RollUp>,
+    /// Both maintained aggregate partitions for a directory.
+    pub partitions: Option<PartitionRollUp>,
 }
 
 impl std::ops::Deref for ApplyOutcome {
@@ -414,6 +474,8 @@ pub struct Index {
     /// fingerprint: an index that classified under one set of rules while claiming
     /// another would serve a snapshot that is wrong in a way nothing checks.
     types: std::sync::Arc<crate::classify::TypeRegistry>,
+    /// Exact fixed control sources and their derived matchers.
+    controls: crate::control::ControlTable,
     freshness_epoch: u64,
     freshness_marks: BTreeMap<PathBuf, FreshnessMark>,
 }
@@ -535,7 +597,12 @@ impl IndexHandle {
                         name: name.to_os_string(),
                         kind: entry.kind,
                         attrs: entry.attrs,
-                        rollup: entry.kind.is_dir().then(|| index.named_rollup(&entry.rollup)),
+                        ignored: entry.ignored,
+                        rollup: entry.kind.is_dir().then(|| index.named_rollup(&entry.rollup.all)),
+                        partitions: entry
+                            .kind
+                            .is_dir()
+                            .then(|| index.named_partitions(&entry.rollup)),
                     }
                 })
                 .collect(),
@@ -659,11 +726,12 @@ impl Index {
             parent: None,
             name: OsString::new(),
             ext_id: None,
+            ignored: false,
             source: Source::Scanned,
             kind: EntryKind::Dir,
             attrs: Attrs::default(),
             children: BTreeMap::new(),
-            rollup: InternedRollUp::default(),
+            rollup: InternedPartitionRollUp::default(),
             revision: 0,
             children_revision: 0,
         };
@@ -691,12 +759,36 @@ impl Index {
             free_ext_ids: Vec::new(),
             content: None,
             types,
+            controls: crate::control::ControlTable::default(),
         }
     }
 
     /// The file-type rules this index classifies against.
     pub fn types(&self) -> &crate::classify::TypeRegistry {
         self.types.as_ref()
+    }
+
+    /// Exact fixed control state retained by this detached index.
+    pub fn controls(&self) -> &crate::control::ControlTable {
+        &self.controls
+    }
+
+    /// Install a complete bounded control table while restoring a detached snapshot.
+    pub(crate) fn install_controls(
+        &mut self,
+        controls: crate::control::ControlTable,
+    ) -> crate::Result<()> {
+        if controls.retained_cost() > crate::control::MAX_CONTROL_TABLE_BYTES {
+            return Err(crate::Error::ControlSourceLimit {
+                attempted: controls.retained_cost(),
+                limit: crate::control::MAX_CONTROL_TABLE_BYTES,
+            });
+        }
+        self.controls = controls;
+        let mut stats = ApplyStats::default();
+        let mut effects = MutationEffects::default();
+        self.reclassify_controlled_subtrees(&[PathBuf::new()], &mut stats, &mut effects);
+        Ok(())
     }
 
     /// Share the registry with background analysis workers.
@@ -761,12 +853,17 @@ impl Index {
 
     /// Owned, self-describing roll-up state for the whole tree.
     pub fn total(&self) -> RollUp {
-        self.named_rollup(&self.entry(EntryId::ROOT).rollup)
+        self.named_rollup(&self.entry(EntryId::ROOT).rollup.all)
+    }
+
+    /// Both fixed aggregate partitions for the complete tree.
+    pub fn partition_total(&self) -> PartitionRollUp {
+        self.named_partitions(&self.entry(EntryId::ROOT).rollup)
     }
 
     /// Map-free whole-tree totals for in-crate reporting paths.
     pub(crate) fn total_scalars(&self) -> RollUpScalars {
-        RollUpScalars::from(&self.entry(EntryId::ROOT).rollup)
+        RollUpScalars::from(&self.entry(EntryId::ROOT).rollup.all)
     }
 
     /// Arbitrate a producer observation and commit its effective mutations.
@@ -832,6 +929,7 @@ impl Index {
         stats.stale = u64::try_from(accepted.iter().filter(|accepted| !**accepted).count())
             .unwrap_or(u64::MAX);
         self.validate_known_ancestry(&prepared.ops, &accepted)?;
+        let projected_controls = self.projected_controls(&prepared.ops, &accepted)?;
 
         for (observed, accepted) in prepared.ops.iter().zip(accepted) {
             if !accepted {
@@ -858,6 +956,12 @@ impl Index {
                     parent_memo.clear();
                     self.apply_remove(path, &mut stats, &mut effects);
                 }
+                Op::ControlUpsert { .. } | Op::ControlRemove { .. } => {
+                    // The complete table was already prepared above. It is installed
+                    // once, after ordinary structural mutations, so classification and
+                    // both reducer partitions become visible atomically.
+                    parent_memo.clear();
+                }
                 Op::InvalidateSubtree { path, reason } => {
                     parent_memo.clear();
                     let previous = self.freshness_at(path);
@@ -878,6 +982,8 @@ impl Index {
                 }
             }
         }
+
+        self.apply_control_transition(projected_controls, &mut stats, &mut effects);
 
         if effects.is_empty() {
             return Ok(ApplyOutcome::from_commit(stats, None));
@@ -1122,7 +1228,13 @@ impl Index {
     pub fn rollup(&self, path: &Path) -> Option<RollUp> {
         let id = self.lookup(path)?;
         let entry = self.entry(id);
-        entry.kind.is_dir().then(|| self.named_rollup(&entry.rollup))
+        entry.kind.is_dir().then(|| self.named_rollup(&entry.rollup.all))
+    }
+
+    /// Both fixed aggregate partitions for a directory by relative path.
+    pub fn partition_rollup(&self, path: &Path) -> Option<PartitionRollUp> {
+        let entry = self.entry(self.lookup(path)?);
+        entry.kind.is_dir().then(|| self.named_partitions(&entry.rollup))
     }
 
     /// Attributes for any entry, by relative path.
@@ -1133,6 +1245,11 @@ impl Index {
     /// Kind of an entry, by relative path.
     pub fn kind(&self, path: &Path) -> Option<EntryKind> {
         Some(self.entry(self.lookup(path)?).kind)
+    }
+
+    /// Effective fixed-control classification for one retained entry.
+    pub fn is_ignored(&self, path: &Path) -> Option<bool> {
+        Some(self.entry(self.lookup(path)?).ignored)
     }
 
     /// Borrow direct children of a directory as `(name, id)` pairs in name order.
@@ -1178,13 +1295,13 @@ impl Index {
     /// Owned, self-describing roll-up state for an entry id, if it is a directory.
     pub fn rollup_of(&self, id: EntryId) -> Option<RollUp> {
         let entry = self.try_entry(id)?;
-        entry.kind.is_dir().then(|| self.named_rollup(&entry.rollup))
+        entry.kind.is_dir().then(|| self.named_rollup(&entry.rollup.all))
     }
 
     /// Map-free directory totals for in-crate reporting paths.
     pub(crate) fn rollup_scalars_of(&self, id: EntryId) -> Option<RollUpScalars> {
         let entry = self.try_entry(id)?;
-        entry.kind.is_dir().then(|| RollUpScalars::from(&entry.rollup))
+        entry.kind.is_dir().then(|| RollUpScalars::from(&entry.rollup.all))
     }
 
     /// Attributes for an entry id, or `None` when the handle is stale.
@@ -1321,7 +1438,13 @@ impl Index {
             (Op::Upsert { kind, .. }, PathState::Present { kind: baseline, .. }) => {
                 *kind != baseline
             }
-            (Op::Upsert { .. } | Op::InvalidateSubtree { .. }, _) => false,
+            (
+                Op::Upsert { .. }
+                | Op::ControlUpsert { .. }
+                | Op::ControlRemove { .. }
+                | Op::InvalidateSubtree { .. },
+                _,
+            ) => false,
         };
         if !same_target(self.entry_identity(op.path()), expected.entry(), require_structure) {
             return false;
@@ -1375,6 +1498,155 @@ impl Index {
             .collect()
     }
 
+    /// Evaluate the complete resulting control table before any fact or reducer moves.
+    ///
+    /// Parsing is infallible, but the shared source bound is not. Building the projected
+    /// table here makes an over-limit observation fault-atomic even when the same batch
+    /// also inserts or removes ordinary entries.
+    fn projected_controls(
+        &self,
+        ops: &[ObservationOp],
+        accepted: &[bool],
+    ) -> crate::Result<crate::control::ControlTable> {
+        let mut projected = self.controls.clone();
+        let mut structure = StructuralOverlay::default();
+        for (observed, accepted) in ops.iter().zip(accepted) {
+            if !accepted {
+                continue;
+            }
+            match &observed.op {
+                Op::Upsert { path, kind, .. } => {
+                    if crate::control::is_control_file(path) && *kind != EntryKind::File {
+                        projected.remove(path)?;
+                    }
+                    if structure.kind(self, path) == Some(EntryKind::Dir) && !kind.is_dir() {
+                        projected.remove_subtree(path);
+                    }
+                    structure.upsert(self, path, *kind);
+                }
+                Op::Remove { path } => {
+                    if crate::control::is_control_file(path) {
+                        projected.remove(path)?;
+                    }
+                    projected.remove_subtree(path);
+                    structure.remove(self, path);
+                }
+                Op::ControlUpsert { path, source } => {
+                    projected.upsert(path, source.clone())?;
+                }
+                Op::ControlRemove { path } => {
+                    #[cfg(not(feature = "gitignore"))]
+                    {
+                        let _ = path;
+                        return Err(crate::Error::UnsupportedScanConfig(
+                            "control observations require the fdu-core `gitignore` feature",
+                        ));
+                    }
+                    #[cfg(feature = "gitignore")]
+                    projected.remove(path)?;
+                }
+                Op::InvalidateSubtree { .. } => {}
+            }
+        }
+        Ok(projected)
+    }
+
+    fn apply_control_transition(
+        &mut self,
+        projected: crate::control::ControlTable,
+        stats: &mut ApplyStats,
+        effects: &mut MutationEffects,
+    ) {
+        let changes = projected.changes_from(&self.controls);
+        if changes.is_empty() {
+            return;
+        }
+        let affected: Vec<PathBuf> = changes
+            .iter()
+            .filter_map(|(path, _, _)| crate::control::ControlTable::affected_subtree(path).ok())
+            .collect();
+        self.controls = projected;
+        stats.controls = u64::try_from(changes.len()).unwrap_or(u64::MAX);
+        effects.changes.extend(changes.into_iter().map(|(path, previous, current)| {
+            EffectiveChange::ControlUpdated { path, previous, current }
+        }));
+        self.reclassify_controlled_subtrees(&affected, stats, effects);
+    }
+
+    /// Re-evaluate only subtrees governed by changed controls, then rebuild the fixed
+    /// unignored reducer from the resulting facts.
+    fn reclassify_controlled_subtrees(
+        &mut self,
+        affected: &[PathBuf],
+        stats: &mut ApplyStats,
+        effects: &mut MutationEffects,
+    ) {
+        let mut roots: Vec<PathBuf> = affected.to_vec();
+        roots.sort();
+        roots.dedup();
+        let mut collapsed = Vec::new();
+        for root in roots {
+            if collapsed.iter().any(|ancestor: &PathBuf| root.starts_with(ancestor)) {
+                continue;
+            }
+            collapsed.push(root);
+        }
+
+        let mut moved = false;
+        for root in collapsed {
+            let Some(root_id) = self.lookup(&root) else {
+                continue;
+            };
+            let children: Vec<(PathBuf, EntryId)> = self
+                .entry(root_id)
+                .children
+                .iter()
+                .map(|(name, id)| (root.join(name), *id))
+                .collect();
+            let mut queue = VecDeque::from(children);
+            while let Some((path, id)) = queue.pop_front() {
+                let entry = self.entry(id);
+                let parent_ignored = entry.parent.is_some_and(|parent| self.entry(parent).ignored);
+                let current = entry.ignored;
+                let next = parent_ignored
+                    || self.controls.matcher_for(&path).is_ignored(entry.kind.is_dir());
+                let descendants: Vec<(PathBuf, EntryId)> =
+                    entry.children.iter().map(|(name, child)| (path.join(name), *child)).collect();
+                if current != next {
+                    self.entry_mut(id).ignored = next;
+                    stats.reclassified += 1;
+                    effects.changes.push(EffectiveChange::Reclassified {
+                        path: path.clone(),
+                        previous_ignored: current,
+                        current_ignored: next,
+                    });
+                    moved = true;
+                }
+                queue.extend(descendants);
+            }
+        }
+        if moved {
+            self.rebuild_unignored_rollups();
+        }
+    }
+
+    fn rebuild_unignored_rollups(&mut self) {
+        let mut order = Vec::with_capacity(usize::try_from(self.live).unwrap_or(0));
+        let mut stack = vec![EntryId::ROOT];
+        while let Some(id) = stack.pop() {
+            order.push(id);
+            stack.extend(self.entry(id).children.values().copied());
+            self.entry_mut(id).rollup.unignored = InternedRollUp::default();
+        }
+        for id in order.into_iter().rev() {
+            let Some(parent) = self.entry(id).parent else {
+                continue;
+            };
+            let contribution = self.contribution(id).unignored;
+            self.entry_mut(parent).rollup.unignored.merge(&contribution);
+        }
+    }
+
     fn unknown_ancestry(
         &self,
         ops: &[ObservationOp],
@@ -1387,7 +1659,9 @@ impl Index {
                 continue;
             }
             match &observed.op {
-                Op::Upsert { path, kind, .. } if !path.as_os_str().is_empty() => {
+                Op::Upsert { path, .. } | Op::ControlUpsert { path, .. }
+                    if !path.as_os_str().is_empty() =>
+                {
                     let mut reconcile_from = PathBuf::new();
                     let mut ancestry_known = true;
                     let parts = normalize(path).expect("prepared paths are canonical");
@@ -1403,13 +1677,19 @@ impl Index {
                         reconcile_from.clone_from(&ancestor);
                     }
                     if ancestry_known {
-                        structure.upsert(self, path, *kind);
+                        if let Op::Upsert { kind, .. } = &observed.op {
+                            structure.upsert(self, path, *kind);
+                        }
                     }
                 }
                 Op::Remove { path } if !path.as_os_str().is_empty() => {
                     structure.remove(self, path);
                 }
-                Op::Upsert { .. } | Op::Remove { .. } | Op::InvalidateSubtree { .. } => {}
+                Op::Upsert { .. }
+                | Op::Remove { .. }
+                | Op::ControlUpsert { .. }
+                | Op::ControlRemove { .. }
+                | Op::InvalidateSubtree { .. } => {}
             }
         }
         unknown
@@ -1684,17 +1964,29 @@ impl Index {
         }
     }
 
+    fn named_partitions(&self, rollup: &InternedPartitionRollUp) -> PartitionRollUp {
+        PartitionRollUp {
+            all: self.named_rollup(&rollup.all),
+            unignored: self.named_rollup(&rollup.unignored),
+        }
+    }
+
     /// What an entry contributes to each of its ancestors.
-    fn contribution(&self, id: EntryId) -> InternedRollUp {
+    fn contribution(&self, id: EntryId) -> InternedPartitionRollUp {
         let entry = self.entry(id);
         match entry.kind {
             EntryKind::Dir => {
-                let mut roll = entry.rollup.clone();
-                roll.dirs += 1;
-                roll
+                let mut all = entry.rollup.all.clone();
+                all.dirs += 1;
+                let mut unignored = InternedRollUp::default();
+                if !entry.ignored {
+                    unignored = entry.rollup.unignored.clone();
+                    unignored.dirs += 1;
+                }
+                InternedPartitionRollUp { all, unignored }
             }
             EntryKind::File => {
-                let mut roll = InternedRollUp {
+                let mut all = InternedRollUp {
                     files: 1,
                     dirs: 0,
                     bytes: entry.attrs.size,
@@ -1703,7 +1995,7 @@ impl Index {
                     by_ext: BTreeMap::new(),
                 };
                 if let Some(ext_id) = entry.ext_id {
-                    roll.by_ext.insert(
+                    all.by_ext.insert(
                         ext_id,
                         ExtTally {
                             files: 1,
@@ -1712,13 +2004,18 @@ impl Index {
                         },
                     );
                 }
-                roll
+                let unignored = if entry.ignored { InternedRollUp::default() } else { all.clone() };
+                InternedPartitionRollUp { all, unignored }
             }
-            EntryKind::Symlink | EntryKind::Other => InternedRollUp::default(),
+            EntryKind::Symlink | EntryKind::Other => InternedPartitionRollUp::default(),
         }
     }
 
-    fn merge_upward(&mut self, from_parent: Option<EntryId>, contribution: &InternedRollUp) {
+    fn merge_upward(
+        &mut self,
+        from_parent: Option<EntryId>,
+        contribution: &InternedPartitionRollUp,
+    ) {
         let mut current = from_parent;
         while let Some(id) = current {
             // Counted per level rather than per call: the O(depth) shape is the thing
@@ -1730,7 +2027,11 @@ impl Index {
         }
     }
 
-    fn unmerge_upward(&mut self, from_parent: Option<EntryId>, contribution: &InternedRollUp) {
+    fn unmerge_upward(
+        &mut self,
+        from_parent: Option<EntryId>,
+        contribution: &InternedPartitionRollUp,
+    ) {
         let mut current = from_parent;
         while let Some(id) = current {
             let entry = self.entry_mut(id);
@@ -1764,8 +2065,25 @@ impl Index {
                 }
             }
             let newest = newest.unwrap_or(0);
+            self.entry_mut(id).rollup.all.newest_mtime_ns = newest;
+
+            let mut newest_unignored: Option<i64> = None;
+            for child in self.entry(id).children.values() {
+                let child_entry = self.entry(*child);
+                let candidate = match child_entry.kind {
+                    EntryKind::Dir => (!child_entry.ignored
+                        && child_entry.rollup.unignored.files > 0)
+                        .then_some(child_entry.rollup.unignored.newest_mtime_ns),
+                    EntryKind::File => (!child_entry.ignored).then_some(child_entry.attrs.mtime_ns),
+                    EntryKind::Symlink | EntryKind::Other => None,
+                };
+                if let Some(candidate) = candidate {
+                    newest_unignored =
+                        Some(newest_unignored.map_or(candidate, |current| current.max(candidate)));
+                }
+            }
             let entry = self.entry_mut(id);
-            entry.rollup.newest_mtime_ns = newest;
+            entry.rollup.unignored.newest_mtime_ns = newest_unignored.unwrap_or(0);
             current = entry.parent;
         }
     }
@@ -1927,15 +2245,18 @@ impl Index {
         }
 
         let ext_id = (kind == EntryKind::File).then(|| self.intern_ext(&ext_bucket(name)));
+        let ignored =
+            self.entry(parent).ignored || self.controls.matcher_for(path).is_ignored(kind.is_dir());
         let id = self.alloc(Entry {
             parent: Some(parent),
             name: name.to_os_string(),
             ext_id,
+            ignored,
             source,
             kind,
             attrs,
             children: BTreeMap::new(),
-            rollup: InternedRollUp::default(),
+            rollup: InternedPartitionRollUp::default(),
             revision: 0,
             children_revision: 0,
         });
@@ -1983,11 +2304,12 @@ impl Index {
             parent: Some(parent),
             name: name.clone(),
             ext_id,
+            ignored: false,
             source,
             kind,
             attrs,
             children: BTreeMap::new(),
-            rollup: InternedRollUp::default(),
+            rollup: InternedPartitionRollUp::default(),
             revision: 0,
             children_revision: 0,
         });
@@ -2209,6 +2531,18 @@ fn prepare_observation(observation: &Observation) -> crate::Result<PreparedObser
         let op = match &observed.op {
             Op::Upsert { kind, attrs, .. } => Op::Upsert { path, kind: *kind, attrs: *attrs },
             Op::Remove { .. } => Op::Remove { path },
+            Op::ControlUpsert { source, .. } => {
+                if !crate::control::is_control_file(&path) {
+                    return Err(crate::Error::InvalidControlPath(path));
+                }
+                Op::ControlUpsert { path, source: source.clone() }
+            }
+            Op::ControlRemove { .. } => {
+                if !crate::control::is_control_file(&path) {
+                    return Err(crate::Error::InvalidControlPath(path));
+                }
+                Op::ControlRemove { path }
+            }
             Op::InvalidateSubtree { reason, .. } => Op::InvalidateSubtree { path, reason: *reason },
         };
         ops.push(ObservationOp { op, expectation: observed.expectation });
@@ -2249,6 +2583,9 @@ fn derive_impact(changes: &[EffectiveChange], state: &[StateTransition]) -> Impa
                     ImpactDomain::Aggregates,
                     ImpactDomain::Content,
                 ]);
+            }
+            EffectiveChange::ControlUpdated { .. } | EffectiveChange::Reclassified { .. } => {
+                domains.extend([ImpactDomain::Classification, ImpactDomain::Aggregates]);
             }
             EffectiveChange::Invalidated { .. } => {
                 domains.insert(ImpactDomain::State);
@@ -3735,6 +4072,112 @@ mod tests {
             index.apply_analysis(AnalysisObservation { candidate, analysis }),
             AnalysisApplyOutcome::Stale
         );
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn control_changes_atomically_move_fixed_partitions_without_changing_all() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert(".gitignore", EntryKind::File, file_attrs(6, 1)),
+            upsert("debug.log", EntryKind::File, file_attrs(10, 2)),
+            upsert("keep.rs", EntryKind::File, file_attrs(20, 3)),
+            upsert("docs", EntryKind::Dir, file_attrs(0, 4)),
+            upsert("docs/other.log", EntryKind::File, file_attrs(30, 5)),
+            upsert("docs/keep.log", EntryKind::File, file_attrs(40, 6)),
+        ]));
+        let before = index.partition_total();
+
+        let outcome = index.apply_ok(&Observation::new(vec![Op::ControlUpsert {
+            path: PathBuf::from(".gitignore"),
+            source: b"*.log\n".to_vec(),
+        }]));
+        let partitions = index.partition_total();
+
+        assert_eq!(partitions.all, before.all, "classification never changes all facts");
+        assert_eq!(partitions.all.files, 5);
+        assert_eq!(partitions.unignored.files, 2);
+        assert_eq!(partitions.unignored.bytes, 26);
+        assert_eq!(outcome.controls, 1);
+        assert_eq!(outcome.reclassified, 3);
+        assert_eq!(index.is_ignored(Path::new("debug.log")), Some(true));
+        assert_eq!(index.is_ignored(Path::new("keep.rs")), Some(false));
+
+        let commit = outcome.commit.expect("control and classification commit together");
+        assert!(matches!(
+            commit.changes.first(),
+            Some(EffectiveChange::ControlUpdated { path, previous: None, current: Some(_) })
+                if path == Path::new(".gitignore")
+        ));
+        assert_eq!(
+            commit
+                .changes
+                .iter()
+                .filter(|change| matches!(change, EffectiveChange::Reclassified { .. }))
+                .count(),
+            3
+        );
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn nested_negation_edit_and_last_control_deletion_reclassify_exactly() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert(".gitignore", EntryKind::File, file_attrs(6, 1)),
+            upsert("docs", EntryKind::Dir, file_attrs(0, 2)),
+            upsert("docs/.gitignore", EntryKind::File, file_attrs(10, 3)),
+            upsert("docs/keep.log", EntryKind::File, file_attrs(40, 4)),
+            Op::ControlUpsert { path: PathBuf::from(".gitignore"), source: b"*.log\n".to_vec() },
+            Op::ControlUpsert {
+                path: PathBuf::from("docs/.gitignore"),
+                source: b"!keep.log\n".to_vec(),
+            },
+        ]));
+        assert_eq!(index.is_ignored(Path::new("docs/keep.log")), Some(false));
+
+        let edited = index.apply_ok(&Observation::new(vec![Op::ControlUpsert {
+            path: PathBuf::from("docs/.gitignore"),
+            source: b"# no exception\n".to_vec(),
+        }]));
+        assert_eq!(edited.reclassified, 1);
+        assert_eq!(index.is_ignored(Path::new("docs/keep.log")), Some(true));
+
+        let removed = index
+            .apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from(".gitignore") }]));
+        assert_eq!(removed.controls, 1, "removing the retained row removes its control state");
+        assert_eq!(removed.reclassified, 1);
+        assert_eq!(index.controls().len(), 1, "the nested control remains");
+        assert_eq!(index.is_ignored(Path::new("docs/keep.log")), Some(false));
+
+        index.apply_ok(&Observation::new(vec![Op::Remove {
+            path: PathBuf::from("docs/.gitignore"),
+        }]));
+        assert!(index.controls().is_empty());
+        assert_eq!(index.is_ignored(Path::new("docs/keep.log")), Some(false));
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn control_bound_failure_is_atomic_with_ordinary_entry_work() {
+        let mut index = Index::new("/root");
+        let before = index.clone();
+        let error = index
+            .apply(&Observation::new(vec![
+                upsert("ordinary.txt", EntryKind::File, file_attrs(1, 1)),
+                Op::ControlUpsert {
+                    path: PathBuf::from(".gitignore"),
+                    source: vec![b'x'; crate::control::MAX_CONTROL_TABLE_BYTES],
+                },
+            ]))
+            .expect_err("the complete batch must fail before any mutation");
+
+        assert!(matches!(error, crate::Error::ControlSourceLimit { .. }));
+        assert_eq!(index.clock(), before.clock());
+        assert_eq!(index.len(), before.len());
+        assert_eq!(index.total(), before.total());
+        assert!(index.lookup(Path::new("ordinary.txt")).is_none());
+        assert!(index.controls().is_empty());
     }
 
     #[test]

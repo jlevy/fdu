@@ -243,7 +243,8 @@ docs:
 	RUSTDOCFLAGS="-D warnings" $(CARGO) doc --locked --no-deps --all-features
 
 # How library consumers build: `default-features = false` for the minimal core, then the
-# additive watch layer, neither relying on what the binary enables. The dependency guard
+# additive watch and gitignore layers, without relying on what the binary enables. The
+# dependency guard
 # proves the crate split stuck -- a library that pulls in an argument parser has back the
 # dependency the split removed.
 #
@@ -254,7 +255,9 @@ docs:
 # success having checked nothing (fdu-cqtk).
 lib-only:
 	$(CARGO) test --locked -p fdu-core --no-default-features
+	$(CARGO) test --locked -p fdu-core --no-default-features --features gitignore
 	$(CARGO) test --locked -p fdu-core --no-default-features --features watch
+	$(CARGO) test --locked -p fdu-core --no-default-features --features watch,gitignore
 	@tree="$$($(CARGO) tree -p fdu-core --all-features --prefix none)" || exit 1; \
 		! printf '%s\n' "$$tree" | grep -qE '^(clap|anyhow) ' \
 		|| { echo 'fdu-core must not depend on clap or anyhow; they belong to fdu'; exit 1; }

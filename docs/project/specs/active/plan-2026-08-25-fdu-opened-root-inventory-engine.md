@@ -1077,11 +1077,11 @@ described in the reuse protocol so later `index.rs` work does not create conflic
 
 #### Checkpoint 1C: Control State
 
-- [ ] Add the exact removal-aware `.gitignore` control table and the fixed
+- [x] Add the exact removal-aware `.gitignore` control table and the fixed
   `all`/`unignored` partition behind a removable feature.
-- [ ] Introduce the runtime registry/classification pieces needed by the fixed partition
+- [x] Introduce the runtime registry/classification pieces needed by the fixed partition
   behind explicit features; preserve the no-default-features build.
-- [ ] Gate creation, edit, deletion, hidden-control discovery, provider-order
+- [x] Gate creation, edit, deletion, hidden-control discovery, provider-order
   equivalence, all feature combinations, and dependency audit.
 
 #### Checkpoint 1D: Live Identity and Feature Floor
