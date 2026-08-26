@@ -4,10 +4,9 @@
 //! `emit_version` is duplicated in `fdu/build.rs`; that script explains why neither copy
 //! can be removed, and this one exists because the perf probe is this crate's example and
 //! the provenance gate asserts the revision in its `--version` (fdu-zuyq).
-//! The `[[kind]]` manifest is validated and rendered as native Rust data so runtime
-//! classification never parses configuration or builds match structures.
+//! The repository's `[[kind]]` manifest is validated and rendered as native Rust data,
+//! so the default registry needs neither runtime parsing nor a file beside the binary.
 
-use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::PathBuf;
@@ -15,29 +14,23 @@ use std::process::Command;
 
 const RULES_PATH: &str = "rules/file-types.toml";
 const GENERATED_NAME: &str = "file_type_rules.rs";
+/// The dialect's one parser, compiled into the crate and included here.
+///
+/// Sharing it is the point: the rules a caller supplies at run time are read by exactly
+/// the code that read this repository's manifest at build time, so the two cannot come
+/// to disagree about what `[[kind]]` means.
+const MANIFEST_PARSER_PATH: &str = "src/classify/type_rule_manifest.rs";
 
-#[derive(Default)]
-struct Rule {
-    id: String,
-    family: String,
-    extensions: Vec<String>,
-    filenames: Vec<String>,
-    shebangs: Vec<String>,
-    priority: u16,
-}
+include!("src/classify/type_rule_manifest.rs");
 
 fn main() {
     emit_version();
     println!("cargo:rerun-if-changed={RULES_PATH}");
+    println!("cargo:rerun-if-changed={MANIFEST_PARSER_PATH}");
     let source = fs::read_to_string(RULES_PATH).expect("read file-type rules");
-    let rules = parse_rules(&source).unwrap_or_else(|error| panic!("{RULES_PATH}: {error}"));
-    validate_rules(&rules).unwrap_or_else(|error| panic!("{RULES_PATH}: {error}"));
-
-    // Git may materialize text files with CRLF on Windows. The fingerprint describes
-    // the manifest, not the checkout's line-ending convention, because reports and
-    // content sidecars must remain compatible across hosts.
-    let normalized_source = source.replace("\r\n", "\n").replace('\r', "\n");
-    let generated = render_rules(&rules, fingerprint(normalized_source.as_bytes()));
+    let rules = parse_manifest(&source).unwrap_or_else(|error| panic!("{RULES_PATH}: {error}"));
+    validate_manifest(&rules).unwrap_or_else(|error| panic!("{RULES_PATH}: {error}"));
+    let generated = render_rules(&rules, manifest_fingerprint(&rules));
     let output = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
     fs::write(output.join(GENERATED_NAME), generated).expect("write compiled file-type rules");
 }
@@ -90,127 +83,7 @@ fn emit_version() {
     println!("cargo:rustc-env=FDU_BUILD_VERSION={version}");
 }
 
-fn parse_rules(source: &str) -> Result<Vec<Rule>, String> {
-    let mut rules = Vec::new();
-    let mut current: Option<Rule> = None;
-    for (line_index, raw) in source.lines().enumerate() {
-        let line_number = line_index + 1;
-        let line = raw.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if line == "[[kind]]" {
-            if let Some(rule) = current.take() {
-                rules.push(rule);
-            }
-            current = Some(Rule { priority: 100, ..Rule::default() });
-            continue;
-        }
-        let rule = current
-            .as_mut()
-            .ok_or_else(|| format!("line {line_number}: field appears before [[kind]]"))?;
-        let (key, value) = line
-            .split_once('=')
-            .ok_or_else(|| format!("line {line_number}: expected key = value"))?;
-        let key = key.trim();
-        let value = value.trim();
-        match key {
-            "id" => rule.id = parse_string(value, line_number)?,
-            "family" => rule.family = parse_string(value, line_number)?,
-            "extensions" => rule.extensions = parse_array(value, line_number)?,
-            "filenames" => rule.filenames = parse_array(value, line_number)?,
-            "shebangs" => rule.shebangs = parse_array(value, line_number)?,
-            "priority" => {
-                rule.priority = value
-                    .parse()
-                    .map_err(|_| format!("line {line_number}: priority must fit u16"))?;
-            }
-            _ => return Err(format!("line {line_number}: unknown field {key:?}")),
-        }
-    }
-    if let Some(rule) = current {
-        rules.push(rule);
-    }
-    Ok(rules)
-}
-
-fn parse_string(value: &str, line: usize) -> Result<String, String> {
-    value
-        .strip_prefix('"')
-        .and_then(|value| value.strip_suffix('"'))
-        .map(str::to_owned)
-        .ok_or_else(|| format!("line {line}: expected a quoted string"))
-}
-
-fn parse_array(value: &str, line: usize) -> Result<Vec<String>, String> {
-    let inner = value
-        .strip_prefix('[')
-        .and_then(|value| value.strip_suffix(']'))
-        .ok_or_else(|| format!("line {line}: expected a string array"))?;
-    if inner.trim().is_empty() {
-        return Ok(Vec::new());
-    }
-    inner.split(',').map(|item| parse_string(item.trim(), line)).collect()
-}
-
-fn validate_rules(rules: &[Rule]) -> Result<(), String> {
-    if rules.is_empty() {
-        return Err("at least one [[kind]] rule is required".to_string());
-    }
-    let mut ids = BTreeMap::new();
-    let mut extensions = BTreeMap::new();
-    let mut filenames = BTreeMap::new();
-    for rule in rules {
-        if rule.id.is_empty()
-            || !rule.id.bytes().all(|byte| byte.is_ascii_lowercase() || byte == b'-')
-        {
-            return Err(format!("invalid rule id {:?}", rule.id));
-        }
-        if !matches!(
-            rule.family.as_str(),
-            "code" | "prose" | "markup" | "data" | "binary" | "unknown"
-        ) {
-            return Err(format!("rule {} has invalid family {:?}", rule.id, rule.family));
-        }
-        if ids.insert(rule.id.as_str(), rule.id.as_str()).is_some() {
-            return Err(format!("duplicate rule id {:?}", rule.id));
-        }
-        for extension in &rule.extensions {
-            if extension.is_empty()
-                || extension.starts_with('.')
-                || !extension.is_ascii()
-                || extension.bytes().any(|byte| byte.is_ascii_uppercase())
-            {
-                return Err(format!("rule {} has invalid extension {:?}", rule.id, extension));
-            }
-            insert_unique(&mut extensions, extension, rule)?;
-        }
-        for filename in &rule.filenames {
-            if filename.is_empty()
-                || !filename.is_ascii()
-                || filename.contains('/')
-                || filename.contains('\\')
-            {
-                return Err(format!("rule {} has invalid filename {:?}", rule.id, filename));
-            }
-            insert_unique(&mut filenames, filename, rule)?;
-        }
-    }
-    Ok(())
-}
-
-fn insert_unique<'a>(
-    values: &mut BTreeMap<&'a String, &'a str>,
-    value: &'a String,
-    rule: &'a Rule,
-) -> Result<(), String> {
-    if let Some(previous) = values.insert(value, &rule.id) {
-        return Err(format!("{value:?} is assigned to both {previous} and {}", rule.id));
-    }
-    Ok(())
-}
-
-fn render_rules(rules: &[Rule], fingerprint: u64) -> String {
+fn render_rules(rules: &[ManifestRule], fingerprint: u64) -> String {
     let mut output = String::new();
     writeln!(
         output,
@@ -245,10 +118,4 @@ fn family_variant(family: &str) -> &'static str {
         "unknown" => "Unknown",
         _ => unreachable!("validated family"),
     }
-}
-
-fn fingerprint(bytes: &[u8]) -> u64 {
-    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-    const PRIME: u64 = 0x0000_0100_0000_01b3;
-    bytes.iter().fold(OFFSET, |hash, byte| (hash ^ u64::from(*byte)).wrapping_mul(PRIME))
 }

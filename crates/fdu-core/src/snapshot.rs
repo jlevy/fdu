@@ -261,7 +261,31 @@ pub fn load(path: &Path) -> Result<Option<Index>> {
     load_with_size_limit(path, MAX_SNAPSHOT_BYTES)
 }
 
+/// Load a snapshot under the registry that will classify and analyze its entries.
+///
+/// A snapshot made under different rules is a clean cache miss. The snapshot carries
+/// only their derived identity, so the caller must supply the matching registry rather
+/// than allowing the loader to attach unrelated default rules.
+pub fn load_with_types(
+    path: &Path,
+    types: std::sync::Arc<crate::classify::TypeRegistry>,
+) -> Result<Option<Index>> {
+    load_with_types_and_size_limit(path, MAX_SNAPSHOT_BYTES, types)
+}
+
 fn load_with_size_limit(path: &Path, max_snapshot_bytes: u64) -> Result<Option<Index>> {
+    load_with_types_and_size_limit(
+        path,
+        max_snapshot_bytes,
+        crate::classify::TypeRegistry::compiled_shared(),
+    )
+}
+
+fn load_with_types_and_size_limit(
+    path: &Path,
+    max_snapshot_bytes: u64,
+    types: std::sync::Arc<crate::classify::TypeRegistry>,
+) -> Result<Option<Index>> {
     let mut file = match fs::File::open(path) {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -316,7 +340,7 @@ fn load_with_size_limit(path: &Path, max_snapshot_bytes: u64) -> Result<Option<I
         .and_then(|since| i64::try_from(since.as_nanos()).ok())
         .unwrap_or(0);
     let mut reader = Crc32cReader::new(BufReader::new(file.take(payload_len)));
-    let outcome = parse_stream(&mut reader, payload_len, captured_at_ns);
+    let outcome = parse_stream(&mut reader, payload_len, captured_at_ns, types);
     match outcome {
         Ok(index) => {
             // A successful parse consumed every payload byte (the trailing-byte check
@@ -493,6 +517,7 @@ fn parse_stream(
     reader: &mut impl Read,
     payload_len: u64,
     captured_at_ns: i64,
+    types: std::sync::Arc<crate::classify::TypeRegistry>,
 ) -> ParseResult<Index> {
     if read_array::<_, 8>(reader)? != *MAGIC {
         return Err(ParseError::Invalid);
@@ -504,6 +529,9 @@ fn parse_stream(
         return Err(ParseError::Invalid);
     }
     let scope = read_scope(reader)?;
+    if scope.type_rules_fingerprint != types.fingerprint() {
+        return Err(ParseError::Invalid);
+    }
     let root_path = PathBuf::from(read_os_string(reader)?);
     let count = read_u64(reader)?;
     if count == 0 || count > MAX_SNAPSHOT_ENTRIES {
@@ -516,7 +544,7 @@ fn parse_stream(
         return Err(ParseError::Invalid);
     }
 
-    let mut index = Index::new_with_scope(&root_path, scope);
+    let mut index = Index::new_with_scope_and_types(&root_path, scope, types);
     // Everything this loader inserts describes the tree as the snapshot found it, not
     // as this process has seen it. Stamping the entries `Cached` is what lets a
     // consumer paint them immediately and label them honestly; without it a loaded
@@ -1796,7 +1824,7 @@ mod tests {
             follow_symlinks: false,
             one_filesystem: true,
             ignore_rules_fingerprint: 11,
-            type_rules_fingerprint: 22,
+            type_rules_fingerprint: crate::classify::type_rule_fingerprint(),
             reducers_fingerprint: 33,
         };
         let index = Index::new_with_scope("/some/root", scope);

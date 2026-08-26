@@ -159,6 +159,13 @@ pub struct ScanConfig {
     pub threads: Option<usize>,
     /// The order directories are visited in. See [`ScanOrder`].
     pub order: ScanOrder,
+    /// File-type rules to classify against, or `None` for the ones compiled into fdu.
+    ///
+    /// Unlike [`Self::threads`] this *is* semantic: a different taxonomy classifies the
+    /// same tree differently, which is why its fingerprint rides in [`ScanScope`] and a
+    /// change to it invalidates a snapshot. Shared rather than owned because a scan
+    /// clones its config per wave and a registry is read-only once built.
+    pub types: Option<std::sync::Arc<crate::classify::TypeRegistry>>,
 }
 
 impl Default for ScanConfig {
@@ -170,6 +177,7 @@ impl Default for ScanConfig {
             one_filesystem: false,
             threads: None,
             order: ScanOrder::default(),
+            types: None,
         }
     }
 }
@@ -193,14 +201,40 @@ pub const WATCH_SCOPE_GUIDANCE: &str = concat!(
 );
 
 impl ScanConfig {
+    /// Classify this scan with `types` and include their derived identity in its scope.
+    #[must_use]
+    pub fn with_types(mut self, types: std::sync::Arc<crate::classify::TypeRegistry>) -> Self {
+        self.types = Some(types);
+        self
+    }
+
+    /// The file-type rules in effect: the supplied registry, or the compiled default.
+    pub fn types(&self) -> &crate::classify::TypeRegistry {
+        match &self.types {
+            Some(types) => types,
+            None => crate::classify::TypeRegistry::compiled(),
+        }
+    }
+
+    /// Share the file-type rules with an index that retains them.
+    pub(crate) fn types_shared(&self) -> std::sync::Arc<crate::classify::TypeRegistry> {
+        self.types
+            .as_ref()
+            .map_or_else(crate::classify::TypeRegistry::compiled_shared, std::sync::Arc::clone)
+    }
+
     /// Semantic cache identity, excluding operational batching choices.
-    pub const fn scope(&self) -> ScanScope {
+    ///
+    /// No longer `const`: the type-rule fingerprint is now a property of the registry in
+    /// effect rather than a compiled-in constant, which is the whole point of letting a
+    /// caller supply one. A snapshot taken under different rules must not be reused.
+    pub fn scope(&self) -> ScanScope {
         ScanScope {
             max_depth: self.max_depth,
             follow_symlinks: self.follow_symlinks,
             one_filesystem: self.one_filesystem,
             ignore_rules_fingerprint: IGNORE_RULES_FINGERPRINT,
-            type_rules_fingerprint: crate::classify::type_rule_fingerprint(),
+            type_rules_fingerprint: self.types().fingerprint(),
             reducers_fingerprint: REDUCERS_FINGERPRINT,
         }
     }
@@ -2629,7 +2663,7 @@ fn record_adaptive_worker_expansion(diagnostics: Option<&std::sync::Arc<ScanDiag
 pub fn scan_into_index(root: &Path, config: &ScanConfig) -> Result<(Index, ScanReport)> {
     config.validate()?;
     let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
-    let mut index = Index::new_with_scope(&root, config.scope());
+    let mut index = Index::new_with_scope_and_types(&root, config.scope(), config.types_shared());
     let mut apply_error: Option<Error> = None;
     let report = scan(&root, config, &mut |observation| {
         if apply_error.is_none() {
@@ -2666,7 +2700,7 @@ pub fn scan_into_index_with_policy_diagnostics(
 ) -> Result<(Index, ScanReport, ScanDiagnostics)> {
     config.validate()?;
     let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
-    let mut index = Index::new_with_scope(&root, config.scope());
+    let mut index = Index::new_with_scope_and_types(&root, config.scope(), config.types_shared());
     let mut apply_error: Option<Error> = None;
     let (report, diagnostics) = scan_with_policy_diagnostics(
         &root,

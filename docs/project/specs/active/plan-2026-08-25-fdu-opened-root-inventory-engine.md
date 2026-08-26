@@ -1313,7 +1313,8 @@ The audited patch owns these exact symbols:
 
 - `TypeRegistry::compiled`, `TypeRegistry::from_manifest`, `TypeRegistry::fingerprint`,
   registry lookup, and `classify_with` in `classify.rs`;
-- `parse_manifest`, `validate_manifest`, and `manifest_fingerprint` in the new shared
+- the internal `parse_manifest`, `validate_manifest`, and semantic
+  `manifest_fingerprint` implementation in the new shared
   `classify/type_rule_manifest.rs`;
 - `ScanConfig::with_types`, `Index::types`, and registry-based classification at every
   content and scan site;
@@ -1324,6 +1325,13 @@ The implementation commit does not add `--type-rules`, Python public models, bro
 groups, gitignore, or MetaBrowser code.
 If any hunk no longer applies after 1A, resolve only the test-harness overlap; do not
 manually retype the 738-line implementation unless the semantic audit rejects it.
+
+Implementation status: complete.
+The audited reuse keeps manifest parsing behind `TypeRegistry`, derives identity from
+the parsed ordered values rather than source-file formatting, borrows compiled rule
+text, and rejects any internal registry/scope mismatch.
+Both default and no-default core suites cover classification, snapshots, and content
+provenance.
 
 ### Checkpoint 1B: exact commit truth
 

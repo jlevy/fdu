@@ -371,6 +371,13 @@ pub struct Index {
     free_ext_ids: Vec<ExtId>,
     /// Sparse derived-data tier, allocated only after analysis is enabled.
     content: Option<Box<ContentIndex>>,
+    /// File-type rules this index classifies against.
+    ///
+    /// Held rather than reached for globally, because a caller may run two indexes under
+    /// different taxonomies in one process. It must agree with `scope`'s type-rule
+    /// fingerprint: an index that classified under one set of rules while claiming
+    /// another would serve a snapshot that is wrong in a way nothing checks.
+    types: std::sync::Arc<crate::classify::TypeRegistry>,
     freshness_epoch: u64,
     freshness_marks: BTreeMap<PathBuf, FreshnessMark>,
 }
@@ -573,13 +580,32 @@ impl Index {
 
     /// Create an empty index with an explicit semantic scan scope.
     pub fn new_with_scope(root_path: impl Into<PathBuf>, scope: ScanScope) -> Self {
-        Self::new_with_journal_op_capacity(root_path, scope, DEFAULT_JOURNAL_OP_CAPACITY)
+        Self::new_with_scope_and_types(
+            root_path,
+            scope,
+            crate::classify::TypeRegistry::compiled_shared(),
+        )
+    }
+
+    /// Create an index whose registry is part of its validated semantic scope.
+    pub(crate) fn new_with_scope_and_types(
+        root_path: impl Into<PathBuf>,
+        scope: ScanScope,
+        types: std::sync::Arc<crate::classify::TypeRegistry>,
+    ) -> Self {
+        assert_eq!(
+            scope.type_rules_fingerprint,
+            types.fingerprint(),
+            "an index's registry must match its semantic scope"
+        );
+        Self::new_with_journal_op_capacity(root_path, scope, DEFAULT_JOURNAL_OP_CAPACITY, types)
     }
 
     fn new_with_journal_op_capacity(
         root_path: impl Into<PathBuf>,
         scope: ScanScope,
         journal_op_capacity: usize,
+        types: std::sync::Arc<crate::classify::TypeRegistry>,
     ) -> Self {
         let root = Entry {
             parent: None,
@@ -616,12 +642,33 @@ impl Index {
             ext_refcounts: Vec::new(),
             free_ext_ids: Vec::new(),
             content: None,
+            types,
         }
+    }
+
+    /// The file-type rules this index classifies against.
+    pub fn types(&self) -> &crate::classify::TypeRegistry {
+        self.types.as_ref()
+    }
+
+    /// Share the registry with background analysis workers.
+    pub(crate) fn types_shared(&self) -> std::sync::Arc<crate::classify::TypeRegistry> {
+        std::sync::Arc::clone(&self.types)
+    }
+
+    /// Classify one relative path under this index's rules, without opening the file.
+    pub fn classify(&self, relative_path: &Path) -> crate::classify::Classification {
+        crate::classify::classify_with(&self.types, relative_path, None)
     }
 
     #[cfg(test)]
     fn with_journal_op_capacity(root_path: impl Into<PathBuf>, journal_op_capacity: usize) -> Self {
-        Self::new_with_journal_op_capacity(root_path, ScanScope::default(), journal_op_capacity)
+        Self::new_with_journal_op_capacity(
+            root_path,
+            ScanScope::default(),
+            journal_op_capacity,
+            crate::classify::TypeRegistry::compiled_shared(),
+        )
     }
 
     /// The absolute path this index is rooted at.
@@ -1062,9 +1109,10 @@ impl Index {
         if !request.profile.is_enabled() {
             return;
         }
-        self.content
-            .get_or_insert_with(|| Box::new(ContentIndex::default()))
-            .prepare(request.profile, crate::content::ContentProvenance::for_request(request));
+        self.content.get_or_insert_with(|| Box::new(ContentIndex::default())).prepare(
+            request.profile,
+            crate::content::ContentProvenance::for_request(request, self.types.fingerprint()),
+        );
     }
 
     /// Capture every regular-file analysis candidate without retaining a lock or entry
@@ -1091,7 +1139,7 @@ impl Index {
                     entry_id: id,
                     revision: entry.revision,
                     absolute_path: self.root_path.join(&relative_path),
-                    classification: crate::classify::classify_path(&relative_path),
+                    classification: self.classify(&relative_path),
                     relative_path,
                     attrs: entry.attrs,
                     profile,
@@ -1112,7 +1160,11 @@ impl Index {
                     .and_then(|content| content.file(&candidate.relative_path))
                     .is_none_or(|record| {
                         record.fingerprint != candidate.attrs.fingerprint()
-                            || !record.provenance.satisfies(record.profile, request.profile)
+                            || !record.provenance.satisfies(
+                                record.profile,
+                                request.profile,
+                                self.types.fingerprint(),
+                            )
                     })
             })
             .collect()
@@ -1128,7 +1180,7 @@ impl Index {
         if entry.kind != EntryKind::File
             || entry.revision != candidate.revision
             || entry.attrs.fingerprint() != candidate.attrs.fingerprint()
-            || crate::classify::classify_path(&candidate.relative_path) != candidate.classification
+            || self.classify(&candidate.relative_path) != candidate.classification
         {
             return AnalysisApplyOutcome::Stale;
         }
@@ -1978,6 +2030,19 @@ mod tests {
 
     fn upsert(path: &str, kind: EntryKind, attrs: Attrs) -> Op {
         Op::Upsert { path: PathBuf::from(path), kind, attrs }
+    }
+
+    #[test]
+    #[should_panic(expected = "an index's registry must match its semantic scope")]
+    fn an_index_cannot_claim_a_registry_different_from_its_scope() {
+        let types = Arc::new(
+            crate::classify::TypeRegistry::from_manifest(
+                "[[kind]]\nid = \"notes\"\nfamily = \"prose\"\nextensions = [\"rs\"]\n",
+            )
+            .expect("custom registry"),
+        );
+
+        let _ = Index::new_with_scope_and_types("/root", ScanScope::default(), types);
     }
 
     /// The parent memo skips resolving a path when consecutive upserts share a parent,
@@ -3165,10 +3230,10 @@ mod tests {
             fingerprint: candidate.attrs.fingerprint(),
             bytes: candidate.attrs.size,
             profile: candidate.profile,
-            provenance: ContentProvenance::for_request(AnalysisRequest {
-                profile: candidate.profile,
-                ..AnalysisRequest::default()
-            }),
+            provenance: ContentProvenance::for_request(
+                AnalysisRequest { profile: candidate.profile, ..AnalysisRequest::default() },
+                crate::classify::type_rule_fingerprint(),
+            ),
             metrics: MetricValues {
                 physical_lines: 2,
                 nonblank_lines: 2,
