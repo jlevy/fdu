@@ -1958,9 +1958,12 @@ function boundaries.
 The documentation prerequisite is complete on this branch: the architecture directory
 now has an explicit index, the engine design is a general undated authority, and the
 principles and surface documents have distinct responsibilities.
-Implementation children remain unstarted while that architecture is reviewed; changing a
-boundary first requires updating the architecture, this plan, and the affected bead
-together.
+Implementation began after the architecture review completed.
+The Phase 1A golden prerequisite removes surgical CLI-output parsing, retains complete
+product behavior in the corpus, and adds a checked observability policy before the
+opened-root sessions are built.
+Changing a boundary first requires updating the architecture, this plan, and the
+affected bead together.
 
 ## Open Questions
 

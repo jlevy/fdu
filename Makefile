@@ -9,7 +9,7 @@ UV ?= uv
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test test-golden golden-invocations portability parity-venv test-parity parity-check parity-update content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse clean cli perf-help verify-beads
+.PHONY: help build release test rust-test test-golden golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -17,6 +17,7 @@ help:
 	@echo "make test       Run Rust, CLI golden, and performance-harness tests"
 	@echo "make test-golden  Build and compare the CLI golden contract"
 	@echo "make golden-invocations  Check the corpus never resolves fdu through PATH"
+	@echo "make golden-observability  Reject goldens that hide product output behind parsers"
 	@echo "make portability  Check committed test data names no machine"
 	@echo "make test-parity  Replay the corpus against the Python surface"
 	@echo "make parity-update  Re-record the Python surface deviations"
@@ -82,7 +83,7 @@ $(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
 	$(NPM) ci
 
 # Everything CI enforces, in the order that fails fastest.
-check: uv-version supply-chain rust-module-names golden-invocations portability fmt-check clippy test docs docs-format-check perf-test perf-schema-check perf-ledger-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check release-test
+check: uv-version supply-chain rust-module-names golden-invocations golden-observability portability fmt-check clippy test docs docs-format-check perf-test perf-schema-check perf-ledger-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check release-test
 
 # The uv.toml files express the supply-chain cool-off as a relative `exclude-newer`
 # ("14 days"). uv releases older than this cannot parse that form: they abort with
@@ -159,6 +160,10 @@ rust-module-names:
 # would happily resolve to an installed build -- from creeping back in (fdu-9h2w).
 golden-invocations:
 	$(NODE) scripts/check-golden-invocations.mjs
+
+golden-observability:
+	$(NODE) --test scripts/check-golden-observability.test.mjs
+	$(NODE) scripts/check-golden-observability.mjs
 
 # Committed test data must not name the machine that recorded it. `tryscript run --update`
 # writes what it saw, so it expands named patterns into literals -- which passes forever

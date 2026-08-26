@@ -83,6 +83,8 @@ jobs:
         run: node scripts/check-rust-module-names.mjs
       - name: Check the golden corpus never resolves fdu through PATH
         run: node scripts/check-golden-invocations.mjs
+      - name: Check golden sessions expose complete product behavior
+        run: npm run check:golden-observability
       - name: Check committed test data names no machine
         run: node scripts/check-portability.mjs
       # The watch tests exercise a different notify backend on each of these runners —
