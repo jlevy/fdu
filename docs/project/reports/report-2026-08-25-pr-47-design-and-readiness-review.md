@@ -95,6 +95,120 @@ at 3,396, and
 at 2,143. File length is not itself a defect, but in this case the largest files also
 own several independent invariants, which makes the size diagnostically relevant.
 
+## PR #44 Reconciliation
+
+[PR #44](https://github.com/jlevy/fdu/pull/44) is the independent design and research
+base beneath PR #47. Its exact head, `7f18f20`, contains twelve commits and a docs-only
+four-file diff: a 903-line active plan, a 310-line research record, a `TODO.md` update,
+and one tbd documentation-cache entry.
+PR #47 descends exactly from that head; PR #48 instead starts from the shared `main`
+ancestor and replaces the design.
+
+PR #44 should not merge and none of its commits should be cherry-picked as a unit.
+Its branch tip is a useful investigation record, but not a valid current plan:
+
+- The
+  [formal design review](https://github.com/jlevy/fdu/pull/44#pullrequestreview-5010948152)
+  required six amendments—one opened-root authority, session-scoped atomic cursors, a
+  complete observation envelope, structured invalidations, active semantic configuration
+  during snapshot materialization, and whole-binding performance evidence—that were
+  never applied to the branch.
+- Later MetaBrowser handoffs changed the contract again: refresh became a terminal
+  completion boundary rather than necessarily one transaction; depth became selection; a
+  file limit became a resource budget; provider gaps became distinct from consumer
+  reset; portable paths and object kinds gained explicit semantics; and every
+  answer-affecting state transition joined the data clock.
+- The old plan still assigns authority to separate progressive and watch sessions, says
+  the existing `since(clock)` mapping needs no new machinery, puts an async adapter in
+  the fdu package, and carries the generic tag-plane and reducer-union shape that the
+  current design rejects or defers.
+- Merging it would restore a second active plan and stale `TODO.md` entry beside the
+  opened-root plan, recreating the documentation ownership conflict the rewrite removed.
+
+The correct operation is selective evidence extraction.
+The current [engine architecture](../architecture/fdu-engine-architecture.md) owns the
+durable design, and the
+[opened-root plan](../specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md)
+owns implementation and integration.
+PR #44 remains the immutable source for the original measured client investigation and
+cross-repository reasoning.
+
+| PR #44 artifact | Disposition | Reason |
+| --- | --- | --- |
+| [Interactive-client plan at `7f18f20`](https://github.com/jlevy/fdu/blob/7f18f208dbd3ccb2002228bb52ae00c5d4ffcabb/docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md) | Evidence only | Its requirement inventory and measurements remain useful; its ownership, cursor, async, scope, and delivery design is superseded. |
+| [Contract-reconciliation research at `7f18f20`](https://github.com/jlevy/fdu/blob/7f18f208dbd3ccb2002228bb52ae00c5d4ffcabb/docs/project/research/research-2026-08-23-interactive-contract-reconciliation.md) | Preserve as linked research and summarize below | Its source checks and two-level extension correction are durable. Several “settled” implementation choices changed after the recorded MetaBrowser revision. |
+| `TODO.md` changes | Do not import | The current map has one opened-root plan and separately narrows the warm-progressive plan. |
+| `.tbd/config.yml` cache entry | Do not import | The current repository already carries the later tbd configuration. |
+| Twelve-commit branch history | Do not cherry-pick | Documentation changes are entangled with the superseded active plan and an obsolete base. Direct links preserve attribution without adding a second authority. |
+
+### Research Worth Preserving
+
+The orientation measurements provided initial evidence that fdu was worth adapting
+before either repository paid the contract cost.
+They used one 120,001-entry generated corpus on virtualized Linux with a warm page
+cache, no gitignore patterns, and single trials through both public Python APIs.
+They are orientation evidence for that regime, not benchmark-ledger claims.
+Both engines returned the same byte total.
+
+| Moment | MetaBrowser Python inventory | fdu Python API |
+| --- | ---: | ---: |
+| Cold walk and index | 5.764 s | 0.201 s |
+| Revalidate an unchanged tree | full rewalk, 5.764 s | 0.106 s |
+| Load a snapshot without filesystem verification | unavailable | 0.090 s |
+| Immediate root children with roll-ups | not measured | 0.32 ms |
+| Subtree roll-up | not measured | 0.06 ms |
+| Bounded tree report | not measured | 1.03 ms |
+| Watch delivery at a 50 ms interval | not measured | 51 ms steady state |
+| Selection-filtered summary | not measured | 122 ms, versus 0.29 ms unfiltered |
+| Resident memory for one retained index | 99.8 MB | 70.3 MB |
+| 3,200 reads across 16 threads | not measured | 0.31 s, no errors |
+| Reads overlapping `refresh()` | not measured | readers raised `Already mutably borrowed` |
+
+Four source-level findings also survive the old design:
+
+- PyO3’s exclusive borrow, not the retained engine’s read guard, caused the measured
+  read-during-refresh failure.
+  The replacement keeps shared native reads and releases the GIL, but exposes them
+  through `OpenedIndex` rather than making `IndexHandle` the live public API.
+- `children()` materialized every directory child’s complete extension map.
+  This is the evidence for scalar bounded rows plus a separate roll-up projection.
+- File Rollup has two extension values.
+  `release.v2.zip` has raw logical extension `.v2.zip` but canonical suffix `.zip`;
+  replacing fdu’s existing canonical derivation would have broken classification.
+  The replacement retains both values and strengthens the conformance packet with
+  basename-derived cases.
+- Symlink and special-object roll-ups could not distinguish a leaf-only subtree from an
+  empty directory, and trust changes were not on the same clock as data.
+  Those findings survive as explicit leaf, state, and journal requirements even though
+  MetaBrowser’s portable provider view excludes special objects and first-version warm
+  provenance is deferred.
+
+The no-callback argument also remains sound.
+Per-entry Rust-to-Python callbacks would serialize parallel workers on the GIL, invert
+control into the event loop, and let a slow consumer block discovery.
+The current design keeps the Rust API synchronous, releases the GIL around bounded
+operations, and gives MetaBrowser a bounded pull bridge.
+
+### Current Disposition of the Old Decisions
+
+| PR #44 insight | Current disposition |
+| --- | --- |
+| Retained engine behind a thin MetaBrowser adapter | Retained; now expressed as one direct `OpenedIndex` API and MetaBrowser-owned translation. |
+| One coherent, bounded multi-projection read | Retained, with session/version pinning, work bounds, typed state and issues, and caller-pinned `as_of`. |
+| Read on dirty rather than streaming entry replicas | Retained; the journal carries exact commits and bounded fdu-native impact, while the adapter maps invalidations to client query kinds. |
+| Registry content supplied at open | Retained; each provider validates the actual registry and derives identity rather than trusting an asserted fingerprint. |
+| Hidden paths are scope | Retained; MetaBrowser depth is now query selection, while symlink, filesystem-boundary, and object-kind policy are explicit scope. |
+| Gitignore population | Narrowed to the demonstrated fixed `all` and `unignored` partition; generic tags and promoted planes are deferred. |
+| Capture before baseline | Retained inside one opened-root lifecycle, with provider recovery distinct from consumer-history reset. |
+| Async adapter | Moved out of the fdu package’s long-lived state and into MetaBrowser’s bounded per-handle bridge. |
+| Warm progressive open and composed provenance | Deferred behind a separate trust design; the first opened lifecycle streams a cold baseline honestly. |
+| Polling observer | Deferred until platform evidence requires it; explicit refresh and provider choice remain available. |
+| Four-way reducer union | Replaced by Phase 3A measurement before adding each maintained structure; the generic tag and immediate warm-provenance members no longer justify prepayment. |
+
+After the reconciliation lands on PR #48, PR #44 can be closed as superseded with links
+to this report, the engine architecture, and the active plan.
+It should not be merged before closing.
+
 ## What the history says
 
 The PR’s history is best understood as seven overlapping efforts rather than one

@@ -849,10 +849,34 @@ There is no reason to retain compatibility shims for the prototype spellings.
 
 ## Reuse and Disposition of Existing Work
 
-PR #47 should remain available until the replacement slices land.
-Code is selected by invariant and retested in its new context.
-One commit is eligible for an audited whole-commit cherry-pick; every other reusable
-piece is smaller than its original commit.
+PR #44 and PR #47 should remain accessible as evidence while the replacement slices
+land. PR #44 is the measured design and research base; PR #47 is its implementation
+descendant. Neither branch is a compatibility contract.
+Code and evidence are selected by invariant and retested or re-evaluated in their new
+context. One commit is eligible for an audited whole-commit cherry-pick; every other
+reusable piece is smaller than its original commit.
+
+### PR #44 Design and Research Base
+
+PR #44 is reconciled but not merged.
+Its formal review and later MetaBrowser handoffs were never folded into the branch, so
+merging it would add a known-stale active plan beside this one.
+The complete ancestry, research summary, measurement table, and superseded decisions are
+recorded in the
+[PR #47 review](../../reports/report-2026-08-25-pr-47-design-and-readiness-review.md#pr-44-reconciliation).
+
+| PR #44 material | Disposition |
+| --- | --- |
+| Measured 120,001-entry client comparison | Evidence. Preserve the regime and single-trial caveat; rerun through Phase 3A before making adoption claims. |
+| Source verification and raw-versus-canonical extension correction | Retain. The Phase 4 File Rollup packet gains direct basename derivation cases. |
+| Requirement-by-requirement MetaBrowser inventory | Retain as historical input; this plan and the reviewed MetaBrowser contract own current requirements. |
+| Retained-engine seam, no callbacks, coherent reads, read-on-dirty, registry-at-open, and capture-before-baseline | Retain in the current architecture. |
+| Separate session surfaces, `IndexHandle` as the live API, package-owned async adaptation, generic tag planes, and `since(clock)` without session identity | Reject or replace as specified by the current architecture. |
+| PR #44 `TODO.md`, tbd config, and active-plan files | Do not import. The current branch already has the later tracker configuration and one active opened-root plan. |
+| PR #44 commits | Do not cherry-pick. Link the immutable artifacts for attribution and extract only the evidence above. |
+
+PR #44 can close as superseded after this reconciliation is visible on PR #48. It should
+not merge into `main` or into the rewrite branch.
 
 | PR #47 area | Disposition |
 | --- | --- |
@@ -1959,6 +1983,10 @@ commit invariants:
 - [fdu design principles](../../architecture/fdu-design-principles.md)
 - [fdu surface architecture](../../architecture/fdu-surface-architecture.md)
 - [fdu engine architecture](../../architecture/fdu-engine-architecture.md)
+- [PR #44 design and research base](https://github.com/jlevy/fdu/pull/44)
+- [PR #44 formal design review](https://github.com/jlevy/fdu/pull/44#pullrequestreview-5010948152)
+- [PR #44 interactive-client plan at its final head](https://github.com/jlevy/fdu/blob/7f18f208dbd3ccb2002228bb52ae00c5d4ffcabb/docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md)
+- [PR #44 contract-reconciliation research at its final head](https://github.com/jlevy/fdu/blob/7f18f208dbd3ccb2002228bb52ae00c5d4ffcabb/docs/project/research/research-2026-08-23-interactive-contract-reconciliation.md)
 - [Existing interactive-client contract at the reviewed PR #47 head](https://github.com/jlevy/fdu/blob/0558c7eff1b91a1dca052d4259dbe3751f6ffcd0/docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md)
 - [Existing implementation map at the reviewed PR #47 head](https://github.com/jlevy/fdu/blob/0558c7eff1b91a1dca052d4259dbe3751f6ffcd0/docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md)
 - [Progressive-results plan](plan-2026-08-11-fdu-progressive-results.md)
