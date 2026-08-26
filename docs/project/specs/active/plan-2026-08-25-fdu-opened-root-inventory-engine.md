@@ -34,8 +34,8 @@ opened root:
   close()
 ```
 
-One owner holds discovery, the retained index, the commit journal, optional filesystem
-observation, continuation state, and worker lifetime.
+One `OpenedIndex` holds discovery, the retained index, the commit journal, optional
+filesystem observation, continuation state, and worker lifetime.
 Every mutation enters one exact commit path.
 Reads and change polls are coherent views of committed state.
 The API is blocking and runtime-free in Rust; Python releases the GIL, and MetaBrowser
@@ -226,7 +226,7 @@ work; `fdu-snej` owns this plan.
 
 ### Ownership boundary
 
-The system has three layers with one owner at each concern:
+The system has three boundaries with one authority at each concern:
 
 ```text
 MetaBrowser coordinator
@@ -239,7 +239,7 @@ thin fdu adapter
         |
         | fdu-native values
         v
-OpenedIndex owner
+OpenedIndex API
   owns discovery, index, commit journal, observer, continuations, workers
 ```
 
@@ -247,14 +247,19 @@ The coordinator never applies filesystem deltas to a second inventory.
 The adapter never walks or aggregates entries.
 The core never names MetaBrowser routes, query kinds, cache keys, or SSE events.
 
-`OpenedIndex` is cloneable as a lightweight reference to one owner.
+`OpenedIndex` is the live-root API, not a façade over another API-shaped object.
+Its operations are implemented directly on the public type.
+Private shared state holds data and synchronization only; it has no parallel service
+interface or method-for-method forwarding surface.
+
+`OpenedIndex` is cloneable as a lightweight reference to one live state.
 Cloning it does not copy the index, clock, session, journal, or continuation table.
 An owned `Index` value may remain cloneable for current callers if necessary, but such a
 clone is a detached value and carries no live session or continuation authority.
 Persisted state uses a distinct snapshot representation rather than pretending to be a
 second live owner.
 
-`close()` closes that shared owner, not one reference.
+`close()` closes that shared live state, not one reference.
 The first caller starts cancellation and joined shutdown; concurrent callers wait for
 and receive the same terminal result.
 Every outstanding clone immediately observes the closing or closed lifecycle and all
@@ -491,8 +496,8 @@ Partial baselines are not persisted as reusable snapshots.
 
 ### Discovery-to-observation handoff
 
-One owner and one session cover the entire opened-root lifetime.
-There is no progressive session followed by a separate watch session.
+`OpenedIndex` covers the entire opened-root lifetime.
+There is no separate progressive or watch session object.
 
 Where the backend permits it, the observer is captured before baseline discovery and its
 hints are buffered in a bounded queue.
@@ -632,7 +637,7 @@ defined above.
 
 ### Change polling
 
-The owner keeps one bounded journal of commits.
+The opened root keeps one bounded journal of commits.
 `changes(after, timeout)` is a pull operation over that journal:
 
 - it returns immediately when newer commits exist;
@@ -647,7 +652,7 @@ The owner keeps one bounded journal of commits.
 
 No per-subscriber engine queue is required.
 MetaBrowser may keep its own bounded SSE bus after the coordinator has translated the
-provider batch; that is a different owner and recovery boundary.
+provider batch; that is a different authority and recovery boundary.
 
 The first change result carries bounded invalidation information rather than entry
 replicas because MetaBrowser rereads coherent projections.
@@ -706,8 +711,8 @@ reconciliation or cold discovery, and a partial snapshot is never served as comp
 
 `fdu-core` remains usable with no default features.
 The CLI and Python package may opt into `watch` and `gitignore` explicitly.
-The new owner, journal, blocking reads, refresh, and continuation table use the standard
-library where practical.
+The opened-root state, journal, blocking reads, refresh, and continuation table use the
+standard library where practical.
 
 Any dependency addition must follow the supply-chain policy and include a before/after
 measurement of:
@@ -786,7 +791,7 @@ There is no reason to retain compatibility shims for the prototype spellings.
   Keep exact product totals only in maintained aggregate projections, and return an
   explicit capped count for an unmaintained compound total.
 - Retain the Python provider as the readable reference implementation.
-  Favor direct code over imitating fdu’s internal owner, journal, or continuation types.
+  Favor direct code over imitating fdu’s private state, journal, or continuation types.
 
 #### Coordinator, assembly, and routes
 
@@ -800,7 +805,7 @@ There is no reason to retain compatibility shims for the prototype spellings.
 - Read product totals as a separate projection rather than trusting page-control
   metadata. A route that needs rows and a total requests both in one coherent read.
 - Keep provider-history reset distinct from host SSE replay loss and from a provider
-  observation gap. Each owner recovers only its own boundary.
+  observation gap. Each authority recovers only its own boundary.
 - Keep `QueryKind` and host-cache invalidation in MetaBrowser.
   The fdu adapter owns one exhaustive, tested mapping from fdu impact domains to those
   application kinds.
@@ -826,7 +831,7 @@ There is no reason to retain compatibility shims for the prototype spellings.
   interval. It does not close the provider handle, and a later bounded read on the same
   handle must succeed.
   Handle `close()` cancels the iterator, joins the bridge, and then joins the native
-  owner. A second simultaneous change iterator fails with a typed busy result.
+  native handle. A second simultaneous change iterator fails with a typed busy result.
 - Pass the registry document and explicit MetaBrowser scope at open, then use the
   identities returned by fdu.
   Do not hash a second spelling of either contract.
@@ -845,18 +850,18 @@ There is no reason to retain compatibility shims for the prototype spellings.
 ## Reuse and Disposition of Existing Work
 
 PR #47 should remain available until the replacement slices land.
-Code is selected by invariant and retested in its new owner.
+Code is selected by invariant and retested in its new context.
 One commit is eligible for an audited whole-commit cherry-pick; every other reusable
 piece is smaller than its original commit.
 
 | PR #47 area | Disposition |
 | --- | --- |
 | Runtime registry parser, logical/canonical extension derivation, browsing groups | Extract, then change open to consume actual registry content and derive identity. |
-| Typed lifecycle state and coherent read envelope | Extract after simplifying the owner and state clock. |
+| Typed lifecycle state and coherent read envelope | Extract after simplifying the live state and state clock. |
 | Bounded journal and no-history reset | Extract behind the exact commit pipeline. |
 | Shared guarded reads and GIL release | Extract and retain. |
 | Scripted watcher, hidden/special-object tests, scope fixtures | Reuse as tests against the new producer boundary. |
-| Bounded refresh, prioritization, joined close | Reimplement around the one owner; reuse value types and focused tests where sound. |
+| Bounded refresh, prioritization, joined close | Reimplement around the one `OpenedIndex`; reuse value types and focused tests where sound. |
 | Requested-observation `AppliedDelta` and implicit-parent mutation | Replace. |
 | Mutable clone/session/continuation authority | Replace. |
 | Stateless signed page token | Replace with bounded handle-local continuation state. |
@@ -876,10 +881,11 @@ message:
    staged diff against the new base, remove any out-of-scope hunks, and run the gate for
    that slice before committing.
    This is allowed only when the old change already owns one coherent invariant and does
-   not import the prototype’s owner, journal, token, cap, or generic-plane design.
+   not import the prototype’s live-state object, journal, token, cap, or generic-plane
+   design.
 2. **Selective extraction.** Reapply named functions, value types, fixtures, or tests in
-   their new owner. Preserve the source commit in the new commit message, but do not use
-   `git cherry-pick` when the old commit also carries rejected semantics.
+   their new context. Preserve the source commit in the new commit message, but do not
+   use `git cherry-pick` when the old commit also carries rejected semantics.
    Tests are rewritten to assert the new contract before production code is ported.
 3. **Evidence only.** Keep the old commit as a regression record.
    Do not move its code.
@@ -898,7 +904,7 @@ incomplete interactive surface.
 | --- | --- | --- |
 | `9b31220` `classify: the rule set becomes a value a caller can supply` | Audited cherry-pick. This is the one coherent, semantically retained implementation unit. | After Checkpoint 1A, apply with `git cherry-pick --no-commit 9b31220`; inspect all 11 files; retain `TypeRegistry`, the shared manifest parser, registry-owned classification, scope/content fingerprinting, and its migration tests; run default/no-default, snapshot, content, and classification tests before committing. Do not add the later PR #47 surface flags in the same commit. |
 | `29cd8bf` `test: assert what a run costs` | Do not cherry-pick despite a clean mechanical apply. | Retain `CounterSnapshot::to_json` only if the 3A harness needs it. Replace the inline parsed `cli-cost` golden with focused Rust relations under `fdu-9tdm`; never import the selective-output anti-pattern. |
-| `a4b0626` `serve reads during a write, and expose scope knobs` | Do not cherry-pick despite a clean mechanical apply. | Extract the `IndexHandle::with_index` shared-read pattern, GIL-detached read tests, and owned child snapshots only. The CLI knobs and mutable shared handle do not belong to the new live-owner contract. |
+| `a4b0626` `serve reads during a write, and expose scope knobs` | Do not cherry-pick despite a clean mechanical apply. | Extract the `IndexHandle::with_index` shared-read pattern, GIL-detached read tests, and owned child snapshots only. The CLI knobs and mutable shared handle do not belong to the new opened-root contract. |
 | `50e078c` `name the roll-ups each batch invalidated` | Do not cherry-pick despite a clean mechanical apply. | Reuse the independent ancestor-oracle test. Its implementation derives dirtiness from requested operations instead of the exact commit and would preserve the central defect. |
 
 These four are the only implementation commits whose raw patches currently pass
@@ -949,7 +955,7 @@ production code moves.
 | `6a6291f` | Extract | The rule and tests that a bound cannot hide a reported dimension. |
 | `9adc8c7` | Extract | Scope/semantic fingerprint snapshot tests. Rewrite snapshot construction around detached `IndexImage`. |
 | `be04134` | Extract | Control sources come from retained control state, not a second tree walk. Rewrite reclassification as an exact prepared commit. |
-| `37e791f` | Evidence | Confirms one opened-root authority. Its owner remains entangled with the old session and is replaced. |
+| `37e791f` | Evidence | Confirms one opened-root authority. Its lifecycle remains entangled with the old session and is replaced. |
 | `4ddf0e9` | Tests only | Foreign, stale, and resumed-page failure cases. Reject stateless signed tokens. |
 | `a3960fb` | Extract | Coherent envelope assembly and read-lock boundary tests. |
 | `558461a` | Tests only | Consumer-information fixtures. Replace its requested-versus-effective batch construction. |
@@ -1074,7 +1080,7 @@ Acceptance for Phase 1:
 
 ### Phase 2: Opened-Root Vertical Slice
 
-- [ ] Add the one-owner `OpenedIndex` with idempotent joined close.
+- [ ] Add the single-authority `OpenedIndex` with idempotent joined close.
 - [ ] Implement cold progressive discovery with parent-first bounded commits,
   per-directory completeness, explicit budget state, and scheduling priority.
 - [ ] Add coherent lookup, depth-one tree, roll-up, state, version, and work projections
@@ -1213,7 +1219,7 @@ Acceptance for Phase 4:
 This map is the implementation authority below the architectural sections above.
 If implementation discovers that a named function cannot preserve its assigned
 invariant, update this map and its bead before widening the function’s responsibility.
-Do not solve the mismatch by adding a second owner or a translation cache.
+Do not solve the mismatch by adding a second live authority or a translation cache.
 
 ### New source-file boundaries
 
@@ -1226,11 +1232,11 @@ The rewrite adds a small number of named modules instead of continuing to grow
 | `crates/fdu-core/src/index.rs` | Detached tree facts, reducers, prepared-input validation against current facts, exact atomic application, maintained indexes, and the bounded exact history behind existing nonblocking `Index::since`. | Opened-root identity, blocking waits, observer threads, page-token authority. |
 | `crates/fdu-core/src/control.rs` and `control/gitignore.rs` | Bounded removal-aware control sources, matcher construction, affected-subtree calculation, and fixed ignore semantics. | Generic tags, generic promoted planes, filesystem walking at bind time. |
 | `crates/fdu-core/src/admission.rs` | One lexical/native admission decision used by every scan path, refresh, watch verification, and portable projection. | Query depth or discovery budgets. |
-| `crates/fdu-core/src/opened.rs` | Public `OpenedIndex` façade, shared owner, lifecycle, cancellation, worker registry, five synchronous operations, and joined close. | Projection algorithms, journal storage, token encoding, async runtimes. |
+| `crates/fdu-core/src/opened.rs` | Direct public `OpenedIndex` API, private shared state, lifecycle, cancellation, worker registry, five synchronous operations, and joined close. | A parallel `Owner` service, method-for-method forwarding, projection algorithms, journal storage, token encoding, or async runtimes. |
 | `crates/fdu-core/src/opened/read.rs` | Coherent read assembly and dispatch to bounded native projections. | Filesystem reads or application query policy. |
 | `crates/fdu-core/src/opened/journal.rs` | Opened-root cursor validation, condition-variable polling over the index’s one exact commit history, reset, and close wakeup. | A copied commit store, provider recovery, or per-subscriber queues. |
 | `crates/fdu-core/src/opened/continuation.rs` | Bounded handle-local continuation records and eviction. | Signed or self-describing public tokens, historical index images. |
-| `crates/fdu-core/src/scan.rs` | One-shot scan/reconcile plus reusable verified discovery production, scheduling frontier, and refresh verification. | A second live owner or consumer-visible change truth. |
+| `crates/fdu-core/src/scan.rs` | One-shot scan/reconcile plus reusable verified discovery production, scheduling frontier, and refresh verification. | A second live authority or consumer-visible change truth. |
 | `crates/fdu-core/src/watch.rs` | Native or scripted hint capture, bounded coalescing, verification, and gap reporting. | Direct index mutation, journals, projection invalidations. |
 | `crates/fdu-py/src/opened.rs` | PyO3 conversions and GIL-detached calls for the synchronous opened-root API. | Async bridging, query aggregation, package policy. |
 | `crates/fdu-py/python/fdu/_opened.py` | Thin public Python wrapper and ergonomic validation over `_native.PyOpenedIndex`. | Background executors or an event loop. |
@@ -1242,10 +1248,11 @@ commits; opened-root polling adds identity and waiting without duplicating those
 commits.
 `IndexHandle` may remain as the existing short-write coordination primitive, but
 it is not an opened-root session and carries no session, continuation, or shutdown
-authority. `OpenedIndex` clones share exactly one owner; `close()` closes that owner for
-every clone. `watch_session.rs` continues to serve the existing CLI watch surface during
-the rewrite and becomes a thin compatibility consumer only after the new owner is
-complete.
+authority.
+`OpenedIndex` clones share exactly one live state; `close()` closes that state
+for every clone. `watch_session.rs` continues to serve the existing CLI watch surface
+during the rewrite and becomes a thin compatibility consumer only after the opened-root
+implementation is complete.
 
 ### Checkpoint 1A: observable oracle
 
@@ -1308,7 +1315,7 @@ reviewed independently.
 | `scan_internal`, `scan_into_index*` | Produce verified parent-first inputs and use the exact baseline commit path. Preserve the blocking one-shot return and existing scan diagnostics. | Current `scan_populates_an_index_end_to_end`, baseline, depth, scope, serial/parallel equivalence tests. |
 | `reconcile_target_inner`, `reconcile_direct_parallel`, `apply_deferred_reconcile`, `flush_direct_reconcile_batch`, `flush_reconcile_batch` | Carry normalized verified inputs and conditional expectations into `commit_prepared`; stop publishing requested batches. | Current stale-arbitration, overflow retry, concurrent invalidation, widening, symlink, and scope mismatch tests. |
 | `watch::apply_intent`, `apply_observation`, `apply_reverified_with` | Verify outside the index guard, then conditionally call the exact commit path. Watch code receives the returned commit; it never reconstructs it. | Current blocked-verifier, contention, error-no-mutation, root-disappearance, and scope rejection tests. |
-| `watch_session::Session::next_batch` | Transitional adapter translates exact commits for the existing CLI watch surface. It does not become the new journal owner. | Existing `watch_session_integration.rs` and CLI watch goldens remain unchanged. |
+| `watch_session::Session::next_batch` | Transitional adapter translates exact commits for the existing CLI watch surface. It does not own the new journal. | Existing `watch_session_integration.rs` and CLI watch goldens remain unchanged. |
 | `lib.rs` open and cache paths | Keep one-shot public behavior. Route any revalidation and state movement through the same internal commit path. | Existing warm/cold/cache-only/snapshot and surface parity corpus. |
 
 Unknown live ancestry has one path: the producer schedules reconciliation from the
@@ -1330,22 +1337,22 @@ Beads `fdu-wzu9` and `fdu-ff6r` finish the kernel before a worker is added.
 | `index.rs` `PartitionRollUp` | Maintain only `all` and `unignored` roll-ups plus the registry-derived classification dimensions used by existing reports. Control changes prepare exact reclassification moves and commit them atomically. | Extract generic-plane merge/unmerge tests from `a6a89ab` and `7aaaf84` without their abstraction. |
 | New `admission.rs`; `scan.rs`; `scan/macos_bulk.rs`; `watch.rs` | Centralize hidden, symlink, filesystem-boundary, and object-kind admission. Every scan acceleration and live path calls the same decision. Control-file signals bypass ordinary row admission without creating a visible row. | Extract `6a8ac6f`, `ff210d0`, and `048b0cc`; add `scripts/check-admission-sites.mjs`, Unix invalid-byte, Windows surrogate/separator, macOS bulk, FIFO/socket, and control-file cases. |
 | `classify.rs` | Add `logical_ext` and `TypeRegistry::canonical_ext` from `2a70a12`; add browsing groups from `77e5b7b` only if File Rollup requires them at this checkpoint. | Runtime/compiled registry equivalence and cross-platform component tests. |
-| `Index`, `IndexHandle`, and new `OpenedIndex` boundary types | Keep cloned `Index` detached. Do not put session identity, worker ownership, journal waiters, or continuations into it. Reserve those for the Phase 2 owner. | Clone independence, no shared live identity in snapshots, and existing `IndexHandle` read/write behavior. |
+| `Index`, `IndexHandle`, and new `OpenedIndex` boundary types | Keep cloned `Index` detached. Do not put session identity, worker ownership, journal waiters, or continuations into it. Reserve those for the Phase 2 opened-root state. | Clone independence, no shared live identity in snapshots, and existing `IndexHandle` read/write behavior. |
 | `snapshot.rs` `save`, `save_handle`, `load`, `put_scope`, `read_scope`, `engine_fingerprint` | Serialize detached facts, control table, reducers, validated scope, and semantic identity only. Bump format/fingerprint once for the cumulative representation change; reject partial-resource baselines. | Existing corruption/size/atomicity tests plus registry, control-removal, portable-path, and partial-baseline cases. |
 | `Cargo.toml`, `crates/fdu-core/Cargo.toml`, `crates/fdu-py/Cargo.toml`, `Makefile`, CI | Make core default features empty; keep `watch` and any `gitignore` dependency removable and explicit; update library-only feature matrix, audit pins, and recorded size commands. | `cargo tree` deltas, `make check`, `make cross-lint`, MSRV, audit, no-default tests, CLI/wheel size baselines. |
 
-The 1D green checkpoint is the base for every live-owner commit.
+The 1D green checkpoint is the base for every opened-root commit.
 No Phase 2 bead starts if a one-shot surface differs without a reviewed correction.
 
 ### Phase 2: opened-root vertical slice
 
-#### Shared owner and progressive discovery
+#### Shared live state and progressive discovery
 
 | File or function | Change | Gate |
 | --- | --- | --- |
-| New `opened.rs` `OpenedIndex::{open, read, changes, refresh, prioritize, close}` | Add a cloneable façade over `Arc<Owner>`. The associated `open` constructor avoids colliding with the existing free one-shot `open`. `Owner` holds the guarded `Index`, state, cancellation, join handles, journal wait state, and continuations, and binds root, options, scope identity, semantic identity, and a fresh opaque session identity. Workers hold `Weak<Owner>` or narrower state so they cannot create a last-reference cycle. | `fdu-mkga`: old and new open contracts coexist, clone-wide close, concurrent close with one shared terminal result, close during every blocked operation, final-reference fallback, poison/panic propagation, and no worker after success. |
+| New `opened.rs` `OpenedIndex::{open, read, changes, refresh, prioritize, close}` | Implement the operations directly on `OpenedIndex`, backed by a private `Arc<OpenedState>` that holds the guarded `Index`, lifecycle data, cancellation, join handles, journal wait state, and continuations, and binds root, options, scope identity, semantic identity, and a fresh opaque session identity. `OpenedState` is storage and synchronization, not an internal service API. The associated `open` constructor avoids colliding with the existing free one-shot `open`. Workers hold `Weak<OpenedState>` or narrower state so they cannot create a last-reference cycle. | `fdu-mkga`: old and new open contracts coexist, clone-wide close, concurrent close with one shared terminal result, close during every blocked operation, final-reference fallback, poison/panic propagation, and no worker after success. API-shape review confirms that `OpenedState` has no mirror of the six public methods. |
 | `lib.rs` | Export the new synchronous values without changing existing `open`, `OpenConfig`, `Index`, CLI, or Python one-shot defaults. Update crate-level docs to distinguish detached indexes from opened roots. | Rust docs and backward-compatibility tests. |
-| `scan.rs` reusable discovery producer | Split verified entry production and traversal scheduling from `scan_into_index*`. Feed bounded parent-first `PreparedCommit` inputs to `Owner`; retain current blocking consumer for one-shot scans. | Same tree and diagnostics under one-shot and opened-root settled reads. |
+| `scan.rs` reusable discovery producer | Split verified entry production and traversal scheduling from `scan_into_index*`. Feed bounded parent-first `PreparedCommit` inputs through the opened-root commit path; retain the current blocking consumer for one-shot scans. | Same tree and diagnostics under one-shot and opened-root settled reads. |
 | `opened.rs` discovery frontier | Track shallow pending directories, per-directory completeness, bounded commit batches, cancellation, and `prioritize` scheduling hints. Apply a file-retention execution budget without promising a deterministic prefix. | `fdu-194x`: first useful shallow read, parent-before-child, priority changes order only, exact file bound, limit-without-refusal remains complete, first refusal becomes typed partial, stopped session does not watch or expand. |
 
 #### Reads, journal, refresh, and observation
@@ -1356,15 +1363,15 @@ No Phase 2 bead starts if a one-shot surface differs without a reviewed correcti
 | `index.rs` maintained indexes | Maintain portable path order and the minimal global/per-directory timestamp, extension, canonical-extension, family/group, and partition structures needed by the approved projections. Each update is part of the exact commit and reversible on removal. | Reference-model comparison, tally/index conservation, resource and memory counters. Add only indexes justified by Phase 3A; until then Phase 2 may expose only the minimal lookup/tree/roll-up slice. |
 | New `opened/journal.rs` `JournalWait::{notify_commit, poll, reset_at, close}` plus `Index::since` | Retain exact commits once in the index, validate opened-root session and sequence, wait on a condition variable, return idle without moving the cursor, distinguish consumer reset, and wake on close. No copied commit store or subscriber queue. | `fdu-ngnm`: detached `since` and opened polling return the same commit range; immediate, blocking, timeout, state-only, slow consumer, floor, future/foreign, close, cancellation, and bounded-memory cases; extract `fad3d2f`, `1e1c207`, `44e79c3`, `eaae030`. |
 | `scan.rs` `normalize_subtree`, new `normalize_refresh_paths`, reconciliation functions | Generalize the sound PR #47 `d19b0ce` algorithms to a bounded path set and one conditional exact commit stream. Return accepted/rejected paths and the committed journal range. | `fdu-3za7`: canonical validation, duplicate and descendant collapse, missing/non-directory widening, control files, budget refusal, overlap with discovery/watch, and exact receipt. |
-| `watch.rs` plus `watch/scripted_events.rs` | Separate capture from verification. Capture before baseline where supported, buffer bounded hints, report overflow/gaps, reconcile, and let `Owner` make the final state commit to `watching`. | `fdu-9jzp`: scripted before/during/after baseline events, overflow, registration gap, final reconciliation, live mutation, disabled-watch behavior, and deterministic shutdown. |
-| Transitional `watch_session.rs` | Consume the same verifier and exact commits for the CLI; do not share the opened owner’s journal or lifecycle unless it can become a truly thin adapter. | Existing watch behavior and goldens. |
+| `watch.rs` plus `watch/scripted_events.rs` | Separate capture from verification. Capture before baseline where supported, buffer bounded hints, report overflow/gaps, reconcile, and use the opened-root commit path for the final state transition to `watching`. | `fdu-9jzp`: scripted before/during/after baseline events, overflow, registration gap, final reconciliation, live mutation, disabled-watch behavior, and deterministic shutdown. |
+| Transitional `watch_session.rs` | Consume the same verifier and exact commits for the CLI; do not share `OpenedIndex` journal or lifecycle state unless it can become a truly thin adapter. | Existing watch behavior and goldens. |
 
 #### Python surface
 
 | File or function | Change | Gate |
 | --- | --- | --- |
 | New `crates/fdu-py/src/opened.rs` `PyOpenedIndex` | Bind the five synchronous operations and value conversions. Use `py.detach` for native open/read/change poll/refresh/close and any substantial projection. Store only the shared native handle. | `fdu-bnsk`: real thread overlap, a read during commit, change timeout without GIL starvation, iterator-independent handle use, concurrent close, and post-close typed failures. |
-| `crates/fdu-py/src/lib.rs` module registration | Register `PyOpenedIndex` and conversion helpers; move no new owner logic into the existing monolith. | Extension and embeddable modes compile. |
+| `crates/fdu-py/src/lib.rs` module registration | Register `PyOpenedIndex` and conversion helpers; move no opened-root lifecycle or state logic into the existing monolith. | Extension and embeddable modes compile. |
 | `python/fdu/_models.py`, new `_opened.py`, `_native.pyi`, `__init__.py` | Add immutable typed models and a thin wrapper. Keep async code out of the package and preserve existing one-shot names. | public smoke, BasedPyright, sdist/wheel smoke, parity, installed import. |
 
 Phase 2 closes only when all five operations are useful through Rust and Python, the
@@ -1427,7 +1434,7 @@ green.
 | fdu `opened/continuation.rs` `create`, `resume`, `evict`, `clear` | Store version, normalized fdu-native query identity, and last visited structural position. Use a bounded opaque ID; do not encode or sign the record. | Extract traversal/work cases from `a5a7ae3`, `91b6895`, and `051e7cc`; port only failure tests from token commits. |
 | fdu `opened/read.rs` tree and flat projections | Traverse the maintained structures in the two exact contract orders and resume without a full selection pass. Return separate exact/capped aggregates. | Stable-version page conservation, proportional work, stale/foreign/evicted, unrepresentable path, and close cleanup. |
 | MetaBrowser new `providers/fdu_inventory.py` `FduInventoryBackend`, private handle | Map config, paths, eight queries, state, rows, work, and impact. Retain the native handle and bridge only. | `fdu-2xfp`: no walker/index/aggregate/fingerprint recipe; every query is one bounded native read. |
-| `fdu_inventory.py` private change bridge | Run bounded provider operations with `asyncio.to_thread`. Give one handle one dedicated poll worker, a one-slot locked mailbox, and an `asyncio.Event` woken with `loop.call_soon_threadsafe`. Keep one result pending and do not poll or advance the local cursor until consumption. Iterator `aclose` joins the bridge only; handle `close` then joins bridge and native owner through `to_thread`. | Cancellation within one poll interval, later read after iterator close, concurrent bounded reads, second-iterator busy error, reset after backpressure, event-loop closure, and close during poll. |
+| `fdu_inventory.py` private change bridge | Run bounded provider operations with `asyncio.to_thread`. Give one handle one dedicated poll worker, a one-slot locked mailbox, and an `asyncio.Event` woken with `loop.call_soon_threadsafe`. Keep one result pending and do not poll or advance the local cursor until consumption. Iterator `aclose` joins the bridge only; handle `close` then joins the bridge and native opened root through `to_thread`. | Cancellation within one poll interval, later read after iterator close, concurrent bounded reads, second-iterator busy error, reset after backpressure, event-loop closure, and close during poll. |
 | `factory.py` `InventoryProvider`, `create_inventory_backend`; `pyproject.toml`; `uv.lock` | Register explicit `fdu` selection and optional dependency. Missing or incompatible package is a typed startup failure; Python remains default and no automatic fallback exists. | Clean install without fdu, exact-revision wheel install with fdu, lock/supply-chain gate. |
 
 ### Phase 4: composed proof and rollout evidence
@@ -1452,7 +1459,7 @@ arrow means the bead on the left depends on the bead or beads on the right.
 | 1B producers | `fdu-gpls` route every producer | `fdu-qzqf` |
 | 1C | `fdu-wzu9` control and fixed partitions | `fdu-gpls` |
 | 1D | `fdu-ff6r` admission, images, features, identity | `fdu-wzu9` |
-| 2 owner | `fdu-mkga` shared owner and close | `fdu-ff6r` |
+| 2 opened root | `fdu-mkga` shared live state and close | `fdu-ff6r` |
 | 2 discovery | `fdu-194x` progressive discovery, budget, priority | `fdu-mkga` |
 | 2 reads | `fdu-r7s7` coherent projections | `fdu-mkga` |
 | 2 journal | `fdu-ngnm` journal and change poll | `fdu-mkga`, `fdu-gpls` |
@@ -1503,9 +1510,9 @@ demonstrably subsumes a duplicate integration case.
 | --- | --- | --- | --- |
 | Large black-box filesystem matrix | Exercises real system calls and observer backend. | Slow, timing-sensitive, hard to force rare races and recovery, and duplicates setup around each assertion. | Keep only a few boundary smokes. |
 | Pervasive internal event logging behind a runtime flag | Can expose every queue, worker, and lock step. | Creates a parallel behavior vocabulary, makes harmless refactors rewrite goldens, and adds branches, serialization, and possible binary cost to release code. | Reject. |
-| Fully simulated state machine | Extremely fast, deterministic, and easy to generate. | Can agree with itself while bypassing the owner, workers, locks, journal, and binding orchestration that most needs proof. | Use only as an independent oracle. |
+| Fully simulated state machine | Extremely fast, deterministic, and easy to generate. | Can agree with itself while bypassing the live state, workers, locks, journal, and binding orchestration that most needs proof. | Use only as an independent oracle. |
 | Full dependency injection for clock, filesystem, scheduler, executor, and queues | Can control nearly any condition. | Adds traits, generics, indirection, and test-shaped production architecture far beyond the product’s needs. | Reject. |
-| Controlled transparent-box session driver | Runs real owner/workers/commit/journal/API code, forces important schedules, and produces one inspectable causal artifact. | Requires a deliberately small test-only control seam and a complete production value model. | Choose as the primary integration mechanism. |
+| Controlled transparent-box session driver | Runs the real `OpenedIndex`, workers, commit path, journal, and API code, forces important schedules, and produces one inspectable causal artifact. | Requires a deliberately small test-only control seam and a complete production value model. | Choose as the primary integration mechanism. |
 
 The selected control is a typed value passed to a test-only constructor, not an
 environment variable or process-global flag.
@@ -1516,9 +1523,9 @@ named worker or queue failures.
 It cannot inject retained facts, publish a commit, mutate state, or replace an operation
 result. Fixtures and ordinary production verification determine facts.
 
-The recorder sits outside the owner.
-It calls the same five handle operations as a client, drains exact commits through
-`changes`, and serializes those production values with one test-only renderer.
+The recorder sits outside `OpenedIndex`. It calls the same five handle operations as a
+client, drains exact commits through `changes`, and serializes those production values
+with one test-only renderer.
 “Every event” means every contract-relevant causal event: the complete action, result,
 commit, state/work/recovery value, named barrier used to force the causal order, and
 final joined shutdown.
@@ -1563,7 +1570,7 @@ The initial files are:
 
 | File | Responsibility |
 | --- | --- |
-| `crates/fdu-core/src/opened/test_support.rs` under `cfg(test)` | `OpenedTestControl`, `OpenedIndex::open_for_test`, scenario builder, scripted observer-hint source, deterministic barriers, thin session envelopes over production values, normalization, and invariant collection. The typed control is per owner and the seams control timing or named faults, not facts. |
+| `crates/fdu-core/src/opened/test_support.rs` under `cfg(test)` | `OpenedTestControl`, `OpenedIndex::open_for_test`, scenario builder, scripted observer-hint source, deterministic barriers, thin session envelopes over production values, normalization, and invariant collection. The typed control is per opened root and the seams control timing or named faults, not facts. |
 | `crates/fdu-core/src/opened/golden_tests.rs` | Five scenario definitions driven through real operations and change polls, model comparison after every commit, complete-trace comparison, and contract-coverage closure. |
 | `crates/fdu-core/tests/golden/opened-root/*.golden` | Canonical line-oriented session artifacts, one file per scenario. |
 | `scripts/check-opened-root-goldens.mjs` | Artifact lint, named update workflow, size checks, and unstable-literal checks. |
@@ -1638,7 +1645,7 @@ The first corpus is deliberately small:
    pre-baseline event, an event during discovery, overflow, a state-only commit, an idle
    poll, a blocked poll, consumer journal loss, and provider-gap reconciliation as two
    distinct recovery boundaries.
-5. **Ownership, races, and shutdown.** Clone the façade, pause prepared work at named
+5. **Ownership, races, and shutdown.** Clone the handle, pause prepared work at named
    barriers, interleave refresh and observation, reject stale preparation, close while a
    poll and worker are blocked, repeat close from another clone, inject a worker panic,
    and end with no continuation, waiter, or worker retained.
@@ -1683,7 +1690,7 @@ Cargo feature combinations remain the responsibility of `make check` and
 
 ### Independent model and generated sequences
 
-Build the recomputing model before the live owner.
+Build the recomputing model before the live opened root.
 It owns a canonical map of paths to facts and recomputes parents, ordering, roll-ups,
 control effects, completeness, state, and expected exact changes from first principles.
 It must not call production mutation helpers, reducers, classification lookup, impact
@@ -1916,7 +1923,7 @@ their status as approval of that shape.
 | `fdu-91ru` coherent paging | Keep the coherent envelope; replace stateless token authority and repeated full selection with bounded continuation state. |
 | `fdu-t5h2` sorted resumable pages | Defer; path-order pages satisfy the immediate client. |
 | `fdu-8w5k` catalog predicates | MetaBrowser head now pins its side; implement as fdu selection conformance in Phase 3, not as a new core query name. |
-| `fdu-sgp7` prioritize and close | Phase 2 operations on the one owner. |
+| `fdu-sgp7` prioritize and close | Phase 2 operations on the one `OpenedIndex`. |
 | `fdu-kl7r`, `fdu-vfyw` agreement proof | Phase 4 two-provider registry and observation replay. |
 | `fdu-gy3g` File Rollup packet | Phase 4, expanded to exercise basename-derived logical extensions. |
 | `fdu-livs` progressive provenance | Defer warm/mixed serving; cold streaming uses honest global source plus directory completeness. |

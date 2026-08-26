@@ -158,8 +158,8 @@ opt into that serving model.
 It returns while cold discovery is still running, owns discovery through observation as
 one lifetime, serves bounded coherent reads, exposes a bounded pull journal, accepts
 verified refresh and scheduling hints, and closes by cancelling and joining everything
-it owns. Its clones share one owner; a detached `Index` or snapshot never shares that
-live identity.
+it owns. Its clones share one live state; a detached `Index` or snapshot never shares
+that live identity.
 
 The watcher is an adapter and driver.
 The existing one-shot `open()` and one-shot Python API never start one implicitly; the
@@ -219,8 +219,8 @@ by errors can move either way.
 The contract keeps facts, reducers, lifecycle state, version, and the change feed from
 drifting apart. A new producer submits a verified observation or state transition; it
 does not reach into the index, mint its own clock, or reconstruct impact from what it
-requested. Mutation helpers record their exact effects, and the owner publishes them as
-one atomic commit.
+requested. Mutation helpers record their exact effects, and the opened lifecycle
+publishes them as one atomic commit.
 
 ### Never Size an Allocation from Untrusted Input
 

@@ -79,7 +79,7 @@ snapshot ---- load/validate ---+--> verified producers
                      |                                 |
                      v                                 v
           detached / one-shot lifecycle       opened / live lifecycle
-          complete Index or Report            shared Owner + journal
+          complete Index or Report            OpenedIndex + shared state
                      |                                 |
                      +----------------+----------------+
                                       |
@@ -112,18 +112,19 @@ is not a second engine or a user-selectable fast mode.
 
 #### One opened root has one authority
 
-One opened root has one internal owner for its index, logical version, lifecycle,
-coverage, journal, continuations, discovery frontier, optional observation, refreshes,
-and shutdown. Public `OpenedIndex` clones share that owner.
+`OpenedIndex` is the public authority for one opened root.
+Its clones refer to one private shared state containing the index, logical version,
+lifecycle, coverage, journal, continuations, discovery frontier, optional observation,
+refreshes, and shutdown.
 They never clone independently mutable facts while retaining the same session identity,
 and a progressive lifecycle never hands authority to a second watch lifecycle.
 
-`close()` closes the shared owner.
+`close()` closes the shared live state.
 The first caller begins cancellation and joined shutdown; concurrent callers wait for
 the same terminal result, and every clone immediately observes closing or closed state.
 Dropping the last public reference performs joined shutdown as a defensive fallback, but
 explicit close is the error-reporting path.
-Worker closures hold weak owner references or narrower shared state so they cannot keep
+Worker closures hold weak state references or narrower shared state so they cannot keep
 the final public handle alive.
 
 #### One exact commit is the truth consumers observe
@@ -175,10 +176,11 @@ commits, or bypass verification.
 
 #### Optional mechanisms remain removable
 
-The retained index, commit path, explicit refresh, bounded reads, opened owner, journal,
-continuation table, and shutdown use the standard library and build without native
-observation. The `watch` feature supplies observation hints and their driver, not a
-second index or change contract.
+The retained index, commit path, explicit refresh, bounded reads, opened lifecycle
+state, journal, continuation table, and shutdown use the standard library and build
+without native observation.
+The `watch` feature supplies observation hints and their driver, not a second index or
+change contract.
 
 Ignore handling is a fixed semantic capability and remains removable if it requires an
 additional dependency.
@@ -200,7 +202,7 @@ never persisted. A cloned `Index` is a separate value.
 
 `IndexHandle` remains a short-write coordination primitive for reconciliation and
 compatibility paths.
-It is not a live-root owner and does not acquire change-poll or shutdown authority.
+It is not the live-root API and does not acquire change-poll or shutdown authority.
 
 #### Commit
 
@@ -217,7 +219,7 @@ There is no route that changes one without the others.
 
 #### Persisted snapshot
 
-A snapshot is a detached representation, not a dormant live owner.
+A snapshot is a detached representation, not a dormant opened root.
 It contains complete retained facts, reducers, validated scope and semantic identities,
 and the control state required to interpret them.
 It never contains a live session identity, version sequence, journal history, waiter,
@@ -230,8 +232,18 @@ later as complete.
 
 #### Opened root
 
-`OpenedIndex` is a small cloneable façade over one shared owner.
-The owner contains:
+`OpenedIndex` is the public API and ownership handle for one live root.
+A clone contains only a reference to the same private shared state.
+There is no parallel `Owner` service, interface-and-implementation pair, or
+method-for-method forwarding layer.
+Public operations are implemented directly on `OpenedIndex`; private modules provide
+data structures and algorithms rather than a second API surface.
+The shared-state indirection exists because discovery workers, change waiters,
+concurrent callers, cancellation, and joined shutdown must share one lifetime.
+It does not translate or mirror `Index`: `Index` is the detached fact value, while
+`OpenedIndex` owns the live lifecycle around that value.
+
+The shared state contains:
 
 - the guarded current `Index`;
 - one opaque session identity and monotonically increasing version;
@@ -255,7 +267,7 @@ impl OpenedIndex {
 }
 ~~~
 
-Names may follow established fdu vocabulary, but the responsibilities and shared-owner
+Names may follow established fdu vocabulary, but the responsibilities and shared-state
 semantics are stable.
 The associated constructor preserves the existing blocking free `open()` contract.
 
@@ -352,7 +364,7 @@ Every returned value carries enough context to calibrate it:
 - source records whether facts were scanned, revalidated, journal-scoped, or cached;
 - coverage records whether the relevant retained scope is complete or partial;
 - observation time records when the underlying evidence was collected;
-- lifecycle records whether the owner is discovering, reconciling, watching,
+- lifecycle records whether the opened root is discovering, reconciling, watching,
   resource-stopped, closing, closed, or terminally failed;
 - bounded issues explain operational conditions that affect the answer.
 
@@ -409,8 +421,8 @@ useful shallow structure while deeper work continues.
 
 Each directory records whether its children are completely known.
 Reaching a numerical resource limit remains complete until additional admissible work is
-actually refused. After refusal, the owner reports partial coverage and unknown absence
-outside complete directories.
+actually refused. After refusal, the opened root reports partial coverage and unknown
+absence outside complete directories.
 A resource-stopped live root remains readable but does not accept work that would expand
 the retained set; the caller reopens with a larger budget.
 
@@ -440,8 +452,8 @@ Logical preconditions prevent an older sample from overwriting newer facts.
 
 Where the backend permits it, observation starts before baseline discovery and buffers
 hints in a bounded queue.
-After the baseline, the owner reconciles buffered hints, overflow, and registration
-gaps, then enters watching only after the gap is closed.
+After the baseline, the opened root reconciles buffered hints, overflow, and
+registration gaps, then enters watching only after the gap is closed.
 Hints arriving during verification remain queued for the next batch.
 
 Provider loss and consumer lag are different recovery boundaries:
@@ -486,16 +498,17 @@ A record contains the pinned version, normalized query identity, and native resu
 traversal position. The public token contains no trusted path, total, sort key, request,
 or signature.
 
-A continuation fails explicitly when its version is stale, its owner is foreign, or its
-record was evicted. Close clears the table.
+A continuation fails explicitly when its version is stale, belongs to another opened
+root, or its record was evicted.
+Close clears the table.
 No page retains a historical index image.
 
 ### Change History
 
 The index retains one bounded exact history.
-Detached callers may inspect it with the nonblocking `since` API. The opened owner adds
-session-aware cursors, condition-variable waiting, reset, and close wakeup around that
-same history; it does not copy commits into a second store.
+Detached callers may inspect it with the nonblocking `since` API. The opened lifecycle
+adds session-aware cursors, condition-variable waiting, reset, and close wakeup around
+that same history; it does not copy commits into a second store.
 
 `changes(after, timeout)` returns newer commits immediately or waits until a commit,
 close, cancellation, or timeout.
@@ -531,7 +544,7 @@ The complete package and adapter boundary is in
 The difficult live behavior is orchestration around index, classification, query, and
 rendering logic that already have focused tests.
 The primary integration instrument is therefore a controlled session harness over the
-real owner and commit path.
+real opened-root state and commit path.
 
 A scenario is a compact action script:
 
@@ -572,13 +585,14 @@ callbacks, but it duplicates mutation, aggregation, freshness, and query semanti
 **Rationale:** Streaming changes when an answer becomes visible, not what the answer
 means. One fact model makes parity structural and keeps the additive cost bounded.
 
-### One owner instead of progressive and watch sessions
+### One opened root instead of progressive and watch sessions
 
-**Chosen approach:** One opened owner covers discovery through observation and close.
+**Chosen approach:** One `OpenedIndex` lifetime covers discovery through observation and
+close.
 
 **Alternatives considered:** A progressive session handing an `IndexHandle` to a watch
 session creates two lifecycles around one identity and a baseline-to-watch gap.
-An application-owned owner duplicates engine truth and shutdown policy.
+An application-owned live-state coordinator duplicates engine truth and shutdown policy.
 
 **Rationale:** Version, history, continuations, workers, and close need one place to
 agree.
@@ -615,8 +629,8 @@ A runtime-free API works from Rust, Python, the CLI, and other runtimes.
 signing, and compatibility for data that currently stays in-process.
 Offset tokens rescan and repeat work proportional to the index.
 
-**Rationale:** Bounded owner-local state is smaller, easy to invalidate, and can retain
-the native traversal position needed for proportional paging.
+**Rationale:** Bounded opened-root-local state is smaller, easy to invalidate, and can
+retain the native traversal position needed for proportional paging.
 
 ### Cold progressive serving before mixed-source serving
 
@@ -643,13 +657,13 @@ generalized when evidence demands it.
 
 ### Controlled sessions instead of an internal trace bus
 
-**Chosen approach:** Test-only control drives the real owner and records public
-operations, commits, state, work, recovery, and shutdown.
+**Chosen approach:** Test-only control drives the real opened-root state and records
+public operations, commits, state, work, recovery, and shutdown.
 
 **Alternatives considered:** Real-filesystem-only tests cannot reliably force races,
 gaps, overflow, or worker failure.
 A pervasive trace bus creates a parallel semantic vocabulary and couples goldens to
-internal refactors. A simulated owner does not test the orchestration.
+internal refactors. A simulated live-root coordinator does not test the orchestration.
 Abstracting every clock, filesystem call, scheduler, executor, and queue creates
 permanent indirection for test flexibility.
 
@@ -659,8 +673,8 @@ truth or preserving incidental concurrency details.
 ## Security Considerations
 
 The engine is local and adds no authentication or listener.
-Session identities and continuation tokens prevent accidental cross-owner use; they are
-not credentials and never authorize filesystem access.
+Session identities and continuation tokens prevent accidental cross-session use; they
+are not credentials and never authorize filesystem access.
 
 Relative paths, registry documents, ignore controls, snapshots, declared counts, request
 bounds, and continuation inputs are untrusted at their boundaries.
@@ -729,14 +743,17 @@ idle native observer performs no filesystem work.
 An engine change is sound only if these answers remain yes:
 
 - Do detached and opened lifecycles use one fact and query model?
-- Does one shared owner retain all live authority for one root?
+- Is `OpenedIndex` the only live-root behavior surface, with private shared state rather
+  than a parallel service API?
+- Does one shared live state retain all authority for one root?
 - Does every observable mutation or lifecycle transition produce one exact atomic
   commit?
 - Is impact derived from effective changes rather than requested observations?
 - Can every operation state its input, output, and work bounds?
 - Does every read identify one coherent version, lifecycle state, source, and coverage?
 - Are unknown, capped, stale, reset, gap, unavailable, and terminal states explicit?
-- Does a page resume from bounded owner state without retaining an old index image?
+- Does a page resume from bounded opened-root state without retaining an old index
+  image?
 - Does filesystem I/O stay outside index read and write guards where possible?
 - Can observation and other optional capabilities be removed without breaking the base
   engine?
