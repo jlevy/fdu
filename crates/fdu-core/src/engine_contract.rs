@@ -441,6 +441,8 @@ pub enum IssueKind {
     InvalidMetadata,
     /// A configured discovery resource bound refused work.
     ResourceBudget,
+    /// The filesystem observer lost precision and required verified recovery.
+    ObservationGap,
     /// The provider failed for another reason.
     ProviderFailure,
 }
@@ -496,6 +498,19 @@ impl Issue {
             message: format!(
                 "verified work refused an admissible file after retaining {max_files}"
             ),
+            os_error: None,
+        }
+    }
+
+    /// Describe observer loss without confusing it with consumer journal loss.
+    pub(crate) fn observation_gap(path: &Path, reason: InvalidateReason) -> Self {
+        Self {
+            kind: IssueKind::ObservationGap,
+            path: bounded_issue_path(path),
+            message: bounded_issue_message(format!(
+                "filesystem observation lost precision at {}: {reason:?}",
+                path.display()
+            )),
             os_error: None,
         }
     }
@@ -1722,6 +1737,15 @@ pub enum Error {
     /// The watch worker panicked; its bounded channel is no longer live.
     #[error("watch worker panicked and stopped")]
     WatchWorkerPanicked,
+
+    /// A scripted watch backend's event file could not be used.
+    #[cfg(all(feature = "watch", test))]
+    #[error("invalid watch script: {0}")]
+    WatchScript(String),
+
+    /// Capture began, but verification could not establish a complete live baseline.
+    #[error("filesystem observation handoff could not establish a complete verified baseline")]
+    ObservationHandoffIncomplete,
 
     #[cfg(test)]
     /// A test-only reducer preflight rejected a prepared transition.

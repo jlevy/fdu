@@ -589,6 +589,18 @@ pub(crate) enum DiscoveryTransition {
     Failed(Issue),
 }
 
+/// Index-owned lifecycle transitions for the optional observation producer.
+#[derive(Clone, Debug)]
+#[cfg_attr(not(feature = "watch"), allow(dead_code))]
+pub(crate) enum ObservationTransition {
+    /// Baseline discovery finished and the observer is closing its registration gap.
+    Reconciling,
+    /// The observer is active and its baseline handoff has been verified.
+    Watching,
+    /// Observation could not establish or retain a trustworthy live boundary.
+    Failed(Issue),
+}
+
 impl IndexHandle {
     /// Wrap an owned index in the shared single-writer owner.
     pub fn new(index: Index) -> Self {
@@ -632,7 +644,7 @@ impl IndexHandle {
         discovery: DiscoveryCommit,
     ) -> crate::Result<ApplyOutcome> {
         let prepared = prepare_observation(observation)?;
-        self.write_index()?.commit_prepared_with(prepared, true, Some(discovery), None, true)
+        self.write_index()?.commit_prepared_with(prepared, true, Some(discovery), None, None, true)
     }
 
     pub(crate) fn apply_opened(
@@ -641,7 +653,7 @@ impl IndexHandle {
         max_files: Option<u64>,
     ) -> crate::Result<ApplyOutcome> {
         let prepared = prepare_observation(observation)?;
-        self.write_index()?.commit_prepared_with(prepared, true, None, max_files, true)
+        self.write_index()?.commit_prepared_with(prepared, true, None, None, max_files, true)
     }
 
     pub(crate) fn apply_discovery_bounded(
@@ -651,7 +663,14 @@ impl IndexHandle {
         max_files: Option<u64>,
     ) -> crate::Result<ApplyOutcome> {
         let prepared = prepare_observation(observation)?;
-        self.write_index()?.commit_prepared_with(prepared, true, Some(discovery), max_files, true)
+        self.write_index()?.commit_prepared_with(
+            prepared,
+            true,
+            Some(discovery),
+            None,
+            max_files,
+            true,
+        )
     }
 
     pub(crate) fn transition_discovery(
@@ -662,6 +681,15 @@ impl IndexHandle {
             &Observation::new(Vec::new()),
             DiscoveryCommit { directory_complete: None, transition: Some(transition) },
         )
+    }
+
+    #[cfg(feature = "watch")]
+    pub(crate) fn transition_observation(
+        &self,
+        transition: ObservationTransition,
+    ) -> crate::Result<ApplyOutcome> {
+        let prepared = prepare_observation(&Observation::default())?;
+        self.write_index()?.commit_prepared_with(prepared, true, None, Some(transition), None, true)
     }
 
     /// Absolute filesystem root, copied without retaining the read lock.
@@ -834,6 +862,21 @@ impl IndexHandle {
             return Ok(None);
         }
         index.commit_prepared(prepared, true).map(Some)
+    }
+
+    #[cfg(feature = "watch")]
+    pub(crate) fn apply_opened_if_clock(
+        &self,
+        clock: Clock,
+        observation: &Observation,
+        max_files: Option<u64>,
+    ) -> crate::Result<Option<ApplyOutcome>> {
+        let prepared = prepare_observation(observation)?;
+        let mut index = self.write_index()?;
+        if index.clock() != clock {
+            return Ok(None);
+        }
+        index.commit_prepared_with(prepared, true, None, None, max_files, true).map(Some)
     }
 
     #[cfg(feature = "watch")]
@@ -1109,7 +1152,7 @@ impl Index {
         prepared: PreparedObservation,
         journal: bool,
     ) -> crate::Result<ApplyOutcome> {
-        self.commit_prepared_with(prepared, journal, None, None, false)
+        self.commit_prepared_with(prepared, journal, None, None, None, false)
     }
 
     fn commit_prepared_with(
@@ -1117,6 +1160,7 @@ impl Index {
         prepared: PreparedObservation,
         journal: bool,
         discovery: Option<DiscoveryCommit>,
+        observation: Option<ObservationTransition>,
         max_files: Option<u64>,
         track_file_progress: bool,
     ) -> crate::Result<ApplyOutcome> {
@@ -1124,6 +1168,7 @@ impl Index {
             && discovery.as_ref().is_none_or(|discovery| {
                 discovery.directory_complete.is_none() && discovery.transition.is_none()
             })
+            && observation.is_none()
         {
             return Ok(ApplyOutcome::default());
         }
@@ -1155,6 +1200,7 @@ impl Index {
                 prepared,
                 false,
                 discovery,
+                observation,
                 max_files,
                 track_file_progress,
             )?;
@@ -1214,10 +1260,23 @@ impl Index {
                 }
                 Op::InvalidateSubtree { path, reason } => {
                     parent_memo.clear();
+                    let previous_index_state = self.state;
                     let previous = self.freshness_at(path);
                     self.pending_invalidations.push((path.clone(), *reason));
                     self.mark_unfresh(path, Freshness::Stale);
                     let current = self.freshness_at(path);
+                    self.state.freshness = self.freshness();
+                    if matches!(
+                        reason,
+                        InvalidateReason::WatchOverflow
+                            | InvalidateReason::UnpairedRename
+                            | InvalidateReason::WatchSetupRace
+                            | InvalidateReason::VerificationFailed
+                            | InvalidateReason::UnknownAncestry
+                            | InvalidateReason::WatchContention
+                    ) {
+                        self.retain_issue(Issue::observation_gap(path, *reason));
+                    }
                     stats.invalidated += 1;
                     effects
                         .changes
@@ -1227,6 +1286,12 @@ impl Index {
                             path: path.clone(),
                             previous,
                             current,
+                        });
+                    }
+                    if previous_index_state != self.state {
+                        effects.state.push(StateTransition::IndexState {
+                            previous: previous_index_state,
+                            current: self.state,
                         });
                     }
                 }
@@ -1242,7 +1307,7 @@ impl Index {
             discovery.transition =
                 Some(DiscoveryTransition::BudgetRefused(Issue::resource_budget(max_files)));
         }
-        self.apply_opened_state(discovery, track_file_progress, &mut effects);
+        self.apply_opened_state(discovery, observation, track_file_progress, &mut effects);
 
         if effects.is_empty() {
             return Ok(ApplyOutcome::from_commit(stats, None));
@@ -1256,10 +1321,11 @@ impl Index {
     fn apply_opened_state(
         &mut self,
         discovery: Option<DiscoveryCommit>,
+        observation: Option<ObservationTransition>,
         track_file_progress: bool,
         effects: &mut MutationEffects,
     ) {
-        if discovery.is_none() && !track_file_progress {
+        if discovery.is_none() && observation.is_none() && !track_file_progress {
             return;
         }
         let previous = self.state;
@@ -1340,6 +1406,33 @@ impl Index {
                     DiscoveryTransition::Failed(issue) => {
                         self.state.phase = LifecyclePhase::Failed;
                         self.state.coverage = Coverage::Partial(CoverageReason::Failed);
+                        self.state.freshness = Freshness::Partial;
+                        self.retain_issue(issue);
+                    }
+                }
+            }
+        }
+
+        if let Some(observation) = observation {
+            match observation {
+                ObservationTransition::Reconciling => {
+                    if self.state.phase == LifecyclePhase::Ready {
+                        self.state.phase = LifecyclePhase::Reconciling;
+                        self.state.freshness = Freshness::Reconciling;
+                    }
+                }
+                ObservationTransition::Watching => {
+                    if self.state.phase == LifecyclePhase::Reconciling {
+                        self.state.phase = LifecyclePhase::Watching;
+                        self.state.freshness = self.freshness();
+                        if self.state.coverage != Coverage::Complete {
+                            self.state.freshness = Freshness::Partial;
+                        }
+                    }
+                }
+                ObservationTransition::Failed(issue) => {
+                    if self.state.phase != LifecyclePhase::Stopped {
+                        self.state.phase = LifecyclePhase::Failed;
                         self.state.freshness = Freshness::Partial;
                         self.retain_issue(issue);
                     }
@@ -1488,16 +1581,25 @@ impl Index {
     pub(crate) fn begin_reconcile(&mut self, path: &Path) -> crate::Result<(u64, Option<Commit>)> {
         let path = canonical_relative_path(path)?;
         let next_clock = self.clock.checked_next().ok_or(crate::Error::ClockExhausted)?;
+        let previous_index_state = self.state;
         let previous = self.freshness_at(&path);
         let epoch = self.mark_unfresh(&path, Freshness::Reconciling);
         let current = self.freshness_at(&path);
-        let commit = if previous == current {
+        self.state.freshness = self.freshness();
+        let commit = if previous == current && previous_index_state == self.state {
             None
         } else {
-            let effects = MutationEffects {
-                state: vec![StateTransition::Freshness { path, previous, current }],
-                ..MutationEffects::default()
-            };
+            let mut state = Vec::new();
+            if previous != current {
+                state.push(StateTransition::Freshness { path, previous, current });
+            }
+            if previous_index_state != self.state {
+                state.push(StateTransition::IndexState {
+                    previous: previous_index_state,
+                    current: self.state,
+                });
+            }
+            let effects = MutationEffects { state, ..MutationEffects::default() };
             Some(self.publish_effects(next_clock, effects, Work::default(), true))
         };
         Ok((epoch, commit))
@@ -1511,6 +1613,7 @@ impl Index {
     ) -> crate::Result<Option<Commit>> {
         let path = canonical_relative_path(path)?;
         let next_clock = self.clock.checked_next().ok_or(crate::Error::ClockExhausted)?;
+        let previous_index_state = self.state;
         let previous = self.freshness_at(&path);
         self.freshness_marks
             .retain(|marked, mark| !marked.starts_with(&path) || mark.epoch > started_at);
@@ -1533,8 +1636,15 @@ impl Index {
         }
 
         let current = self.freshness_at(&path);
+        self.state.freshness = self.freshness();
         if previous != current {
             state.push(StateTransition::Freshness { path: path.clone(), previous, current });
+        }
+        if previous_index_state != self.state {
+            state.push(StateTransition::IndexState {
+                previous: previous_index_state,
+                current: self.state,
+            });
         }
         if state.is_empty() {
             return Ok(None);
@@ -4233,11 +4343,20 @@ mod tests {
         assert!(start.changes.is_empty());
         assert_eq!(
             start.state,
-            vec![StateTransition::Freshness {
-                path: "src".into(),
-                previous: Freshness::Fresh,
-                current: Freshness::Reconciling,
-            }]
+            vec![
+                StateTransition::Freshness {
+                    path: "src".into(),
+                    previous: Freshness::Fresh,
+                    current: Freshness::Reconciling,
+                },
+                StateTransition::IndexState {
+                    previous: IndexState::default(),
+                    current: IndexState {
+                        freshness: Freshness::Reconciling,
+                        ..IndexState::default()
+                    },
+                },
+            ]
         );
 
         let finish = index
@@ -4254,8 +4373,36 @@ mod tests {
                     previous: Freshness::Reconciling,
                     current: Freshness::Fresh,
                 },
+                StateTransition::IndexState {
+                    previous: IndexState {
+                        freshness: Freshness::Reconciling,
+                        ..IndexState::default()
+                    },
+                    current: IndexState::default(),
+                },
             ]
         );
+    }
+
+    #[cfg(feature = "watch")]
+    #[test]
+    fn observation_failure_cannot_overwrite_a_terminal_resource_stop() {
+        let handle = IndexHandle::new(Index::new("/root"));
+        handle
+            .transition_discovery(DiscoveryTransition::BudgetRefused(Issue::resource_budget(0)))
+            .expect("stop for budget");
+        let stopped = handle.state().expect("stopped state");
+        let clock = handle.clock().expect("stopped clock");
+
+        let outcome = handle
+            .transition_observation(ObservationTransition::Failed(Issue::from_error(
+                &crate::Error::WatchStopped,
+            )))
+            .expect("late observer failure is ignored");
+
+        assert_eq!(outcome.commit, None);
+        assert_eq!(handle.state().expect("terminal state"), stopped);
+        assert_eq!(handle.clock().expect("terminal clock"), clock);
     }
 
     #[test]

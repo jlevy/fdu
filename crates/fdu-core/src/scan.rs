@@ -4111,6 +4111,18 @@ pub fn reconcile_pending_handle(
     reconcile_pending_target(&mut target, config, sink)
 }
 
+/// Drain and reconcile invalidations under an opened-root lifecycle and resource bound.
+#[cfg(feature = "watch")]
+pub(crate) fn reconcile_pending_handle_controlled(
+    handle: &IndexHandle,
+    config: &ScanConfig,
+    control: &dyn ReconcileControl,
+    sink: &mut dyn FnMut(&Commit),
+) -> Result<ReconcileReport> {
+    let mut target = ReconcileTarget::Controlled { handle, control };
+    reconcile_pending_target(&mut target, config, sink)
+}
+
 fn reconcile_pending_target(
     target: &mut ReconcileTarget<'_>,
     config: &ScanConfig,

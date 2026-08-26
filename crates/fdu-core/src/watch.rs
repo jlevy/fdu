@@ -37,6 +37,9 @@ use std::time::{Duration, Instant};
 
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher as NotifyWatcher};
 
+#[cfg(test)]
+mod scripted_events;
+
 use crate::engine_contract::{
     Commit, Error, InvalidateReason, Observation, ObservationOp, Op, Result,
 };
@@ -134,6 +137,7 @@ struct CoalescedIntent {
 
 enum RawMessage {
     Event(notify::Result<notify::Event>),
+    Flush(SyncSender<()>),
     Stop,
 }
 
@@ -153,6 +157,25 @@ pub struct Watcher {
     cancelled: Arc<AtomicBool>,
     worker_status: Arc<AtomicU8>,
     worker: Option<JoinHandle<()>>,
+}
+
+#[cfg(test)]
+pub(crate) struct ScriptedSender {
+    root: PathBuf,
+    raw: SyncSender<RawMessage>,
+    overflowed: Arc<AtomicBool>,
+}
+
+#[cfg(test)]
+impl ScriptedSender {
+    pub(crate) fn send(&self, source: &str) -> Result<()> {
+        let events =
+            scripted_events::parse_script(source, &self.root).map_err(Error::WatchScript)?;
+        for event in events {
+            enqueue_raw(&self.raw, &self.overflowed, event);
+        }
+        Ok(())
+    }
 }
 
 /// Effects of one watch observation and any reconciliation it requested.
@@ -176,12 +199,11 @@ impl Watcher {
         let overflowed = Arc::new(AtomicBool::new(false));
         let callback_overflowed = Arc::clone(&overflowed);
 
-        let mut inner = notify::recommended_watcher(move |res| {
-            enqueue_raw(&raw_tx, &callback_overflowed, res);
+        let mut inner = notify::recommended_watcher(move |result| {
+            enqueue_raw(&raw_tx, &callback_overflowed, result);
         })
-        .map_err(|e| notify_error(&root, e))?;
-
-        inner.watch(&root, RecursiveMode::Recursive).map_err(|e| notify_error(&root, e))?;
+        .map_err(|error| notify_error(&root, error))?;
+        inner.watch(&root, RecursiveMode::Recursive).map_err(|error| notify_error(&root, error))?;
 
         let worker_root = root.clone();
         let cancelled = Arc::new(AtomicBool::new(false));
@@ -218,6 +240,66 @@ impl Watcher {
         })
     }
 
+    #[cfg(test)]
+    pub(crate) fn scripted(
+        root: &Path,
+        config: WatchConfig,
+        events: &Path,
+    ) -> Result<(Self, ScriptedSender)> {
+        config.validate()?;
+        let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
+        let scripted = scripted_events::read_script(events, &root).map_err(Error::WatchScript)?;
+        let (raw_tx, raw_rx) = sync_channel::<RawMessage>(config.event_capacity);
+        let (intent_tx, intent_rx) = sync_channel::<CoalescedIntent>(config.intent_capacity);
+        let control_tx = raw_tx.clone();
+        let overflowed = Arc::new(AtomicBool::new(false));
+        for event in scripted {
+            enqueue_raw(&raw_tx, &overflowed, event);
+        }
+
+        let worker_root = root.clone();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let worker_cancelled = Arc::clone(&cancelled);
+        let worker_overflowed = Arc::clone(&overflowed);
+        let worker_status = Arc::new(AtomicU8::new(WORKER_RUNNING));
+        let tracked_status = Arc::clone(&worker_status);
+        let worker = std::thread::Builder::new()
+            .name("fdu-scripted-watch".into())
+            .spawn(move || {
+                let _counter_guard = crate::counters::thread_flush_guard();
+                run_tracked_worker(&tracked_status, || {
+                    run_worker(
+                        &worker_root,
+                        config,
+                        &raw_rx,
+                        &intent_tx,
+                        &worker_overflowed,
+                        &worker_cancelled,
+                    );
+                });
+            })
+            .map_err(|error| Error::io(&root, error))?;
+
+        let sender = ScriptedSender {
+            root: root.clone(),
+            raw: control_tx.clone(),
+            overflowed: Arc::clone(&overflowed),
+        };
+        Ok((
+            Self {
+                root,
+                config,
+                inner: None,
+                intents: intent_rx,
+                control: Some(control_tx),
+                cancelled,
+                worker_status,
+                worker: Some(worker),
+            },
+            sender,
+        ))
+    }
+
     /// Block for and verify the next coalesced intent, up to `timeout`.
     ///
     /// Filesystem calls happen synchronously on this consuming thread and may have
@@ -244,6 +326,29 @@ impl Watcher {
         }
     }
 
+    /// Advance capture through every raw hint accepted before this call.
+    ///
+    /// A full intent queue may retain their loss as one internal sticky overflow marker;
+    /// the next barrier advances that marker after the consumer drains queue capacity.
+    pub(crate) fn flush_capture(&self) -> Result<()> {
+        let Some(control) = self.control.as_ref() else {
+            return Err(Error::WatchStopped);
+        };
+        let (acknowledge, acknowledged) = sync_channel(0);
+        control.send(RawMessage::Flush(acknowledge)).map_err(|_| Error::WatchStopped)?;
+        acknowledged.recv().map_err(|_| Error::WatchStopped)
+    }
+
+    /// Maximum intents that can represent the raw hints preceding a flush barrier.
+    ///
+    /// The intent queue supplies the ordinary bound. One additional root invalidation
+    /// may be held as `sticky_overflow` when that queue filled, so the handoff derives
+    /// its drain work from the configured capacity rather than imposing another
+    /// unrelated limit.
+    pub(crate) const fn capture_backlog_bound(&self) -> usize {
+        self.config.intent_capacity.saturating_add(1)
+    }
+
     /// Apply one verified watch observation and close any invalidation loop it opens.
     ///
     /// Restricted `max_depth` and `one_filesystem` scopes are rejected until the watch
@@ -268,6 +373,30 @@ impl Watcher {
         };
         apply_intent(index, &self.root, self.config, &intent, scan_config, sink).map(Some)
     }
+
+    /// Apply one intent through the opened-root lifecycle and exact resource boundary.
+    pub(crate) fn apply_next_controlled(
+        &self,
+        index: &IndexHandle,
+        scan_config: &ScanConfig,
+        timeout: Duration,
+        control: &dyn scan::ReconcileControl,
+        sink: &mut dyn FnMut(&Commit),
+    ) -> Result<Option<WatchApplyReport>> {
+        scan_config.validate_for_watch_scope(index.scope()?)?;
+        let indexed_root = index.root_path()?;
+        if indexed_root != self.root {
+            return Err(Error::WatchRootMismatch {
+                watched: self.root.clone(),
+                indexed: indexed_root,
+            });
+        }
+        let Some(intent) = self.next_intent(timeout)? else {
+            return Ok(None);
+        };
+        apply_intent_controlled(index, &self.root, self.config, &intent, scan_config, control, sink)
+            .map(Some)
+    }
 }
 
 fn apply_intent(
@@ -285,6 +414,32 @@ fn apply_intent(
         sink(commit);
     }
     let reconciliation = scan::reconcile_pending_handle(index, scan_config, sink)?;
+    Ok(WatchApplyReport { apply, reconciliation })
+}
+
+fn apply_intent_controlled(
+    index: &IndexHandle,
+    root: &Path,
+    watch_config: WatchConfig,
+    intent: &CoalescedIntent,
+    scan_config: &ScanConfig,
+    control: &dyn scan::ReconcileControl,
+    sink: &mut dyn FnMut(&Commit),
+) -> Result<WatchApplyReport> {
+    let mut verifier =
+        |_: &Path, _: &Observation| Ok(verify_intent(root, watch_config, intent, scan_config));
+    let apply = apply_reverified_with_control(
+        index,
+        &Observation::default(),
+        scan_config,
+        control,
+        &mut verifier,
+    )?;
+    if let Some(commit) = apply.commit.as_ref() {
+        sink(commit);
+    }
+    let reconciliation =
+        scan::reconcile_pending_handle_controlled(index, scan_config, control, sink)?;
     Ok(WatchApplyReport { apply, reconciliation })
 }
 
@@ -346,6 +501,39 @@ fn apply_reverified_with(
     }
 
     index.invalidate_root(InvalidateReason::WatchContention)
+}
+
+fn apply_reverified_with_control(
+    index: &IndexHandle,
+    observation: &Observation,
+    scan_config: &ScanConfig,
+    control: &dyn scan::ReconcileControl,
+    verifier: &mut impl FnMut(&Path, &Observation) -> Result<Observation>,
+) -> Result<ApplyOutcome> {
+    let (root, scope, _) = index.watch_boundary()?;
+    scan_config.validate_for_watch_scope(scope)?;
+    for _ in 0..MAX_OPTIMISTIC_APPLY_ATTEMPTS {
+        control.check_active()?;
+        let clock = index.clock()?;
+        let candidate = verifier(&root, observation)?;
+        let candidate = escalate_unknown_ancestry(index, candidate)?;
+        control.before_conditional_commit()?;
+        if let Some(outcome) =
+            index.apply_opened_if_clock(clock, &candidate, control.max_files())?
+        {
+            return Ok(outcome);
+        }
+    }
+
+    control.before_conditional_commit()?;
+    let outcome = index.apply_opened(
+        &Observation::new(vec![Op::InvalidateSubtree {
+            path: PathBuf::new(),
+            reason: InvalidateReason::WatchContention,
+        }]),
+        control.max_files(),
+    )?;
+    Ok(outcome)
 }
 
 /// Replace unverifiable child facts with bounded reconciliation hints.
@@ -510,6 +698,18 @@ fn run_worker(
                 let _ = err;
                 collapse_to_overflow(&mut pending);
                 batch_started.get_or_insert_with(Instant::now);
+            }
+            Ok(RawMessage::Flush(acknowledge)) => {
+                if overflowed.swap(false, Ordering::AcqRel) {
+                    collapse_to_overflow(&mut pending);
+                }
+                if !pending.is_empty()
+                    && try_deliver_pending(&mut pending, out, &mut sticky_overflow).is_err()
+                {
+                    return;
+                }
+                batch_started = None;
+                let _ = acknowledge.send(());
             }
             Ok(RawMessage::Stop) => return,
             Err(RecvTimeoutError::Timeout) => {

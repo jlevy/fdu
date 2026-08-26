@@ -11,13 +11,15 @@ use std::path::{Path, PathBuf};
 
 use fdu_core::{
     AppliedDelta, ApplyOutcome, ApplyStats, Attrs, Clock, Commit, EffectiveChange, EntryKind,
-    ExtTally, Freshness, Impact, ImpactDomain, Index, InvalidateReason, Observation, ObservationOp,
-    Op, PathExpectation, PathState, RollUp, StateTransition,
+    ExtTally, Freshness, Impact, ImpactDomain, Index, IndexState, InvalidateReason, Observation,
+    ObservationOp, Op, PathExpectation, PathState, RollUp, StateTransition,
 };
 
 const JOURNAL_CAPACITY: usize = 64 * 1024;
 /// Contractual dirty-path bound checked independently of the production constant.
 const EXPECTED_DIRTY_PATH_LIMIT: usize = 256;
+/// Contractual retained-issue bound checked independently of the production constant.
+const EXPECTED_RETAINED_ISSUE_LIMIT: u64 = 64;
 /// Number of transitions exercised for each reproducible generator seed.
 const GENERATED_STEPS: usize = 400;
 /// State-machine actions from which each generated transition chooses.
@@ -86,6 +88,7 @@ struct Model {
     pending_invalidations: Vec<(PathBuf, InvalidateReason)>,
     freshness_epoch: u64,
     freshness: BTreeMap<PathBuf, (Freshness, u64)>,
+    state: IndexState,
 }
 
 impl Model {
@@ -111,6 +114,7 @@ impl Model {
             pending_invalidations: Vec::new(),
             freshness_epoch: 0,
             freshness: BTreeMap::new(),
+            state: IndexState::default(),
         }
     }
 
@@ -203,10 +207,19 @@ impl Model {
                     panic!("control operations use the dedicated control-state oracle")
                 }
                 Op::InvalidateSubtree { path, reason } => {
+                    let previous_index_state = self.state;
                     let previous = self.freshness_at(path);
                     self.pending_invalidations.push((path.clone(), *reason));
                     self.mark_unfresh(path, Freshness::Stale);
                     let current = self.freshness_at(path);
+                    self.state.freshness = self.freshness_at(Path::new(""));
+                    if is_observation_gap(*reason) {
+                        if self.state.issues.retained < EXPECTED_RETAINED_ISSUE_LIMIT {
+                            self.state.issues.retained += 1;
+                        } else {
+                            self.state.issues.omitted += 1;
+                        }
+                    }
                     stats.invalidated += 1;
                     changes
                         .push(EffectiveChange::Invalidated { path: path.clone(), reason: *reason });
@@ -215,6 +228,12 @@ impl Model {
                             path: path.clone(),
                             previous,
                             current,
+                        });
+                    }
+                    if previous_index_state != self.state {
+                        transitions.push(StateTransition::IndexState {
+                            previous: previous_index_state,
+                            current: self.state,
                         });
                     }
                 }
@@ -359,21 +378,30 @@ impl Model {
     }
 
     fn begin_reconcile(&mut self, path: &Path) -> u64 {
+        let previous_index_state = self.state;
         let previous = self.freshness_at(path);
         self.mark_unfresh(path, Freshness::Reconciling);
         let started_at = self.freshness_epoch;
         let current = self.freshness_at(path);
+        self.state.freshness = self.freshness_at(Path::new(""));
+        let mut state = Vec::new();
         if previous != current {
-            self.commit_state(vec![StateTransition::Freshness {
-                path: path.to_path_buf(),
-                previous,
-                current,
-            }]);
+            state.push(StateTransition::Freshness { path: path.to_path_buf(), previous, current });
+        }
+        if previous_index_state != self.state {
+            state.push(StateTransition::IndexState {
+                previous: previous_index_state,
+                current: self.state,
+            });
+        }
+        if !state.is_empty() {
+            self.commit_state(state);
         }
         started_at
     }
 
     fn finish_reconcile(&mut self, path: &Path, started_at: u64, complete: bool) {
+        let previous_index_state = self.state;
         let previous = self.freshness_at(path);
         self.freshness
             .retain(|marked, (_, epoch)| !marked.starts_with(path) || *epoch > started_at);
@@ -384,8 +412,15 @@ impl Model {
             self.mark_unfresh(path, Freshness::Partial);
         }
         let current = self.freshness_at(path);
+        self.state.freshness = self.freshness_at(Path::new(""));
         if previous != current {
             state.push(StateTransition::Freshness { path: path.to_path_buf(), previous, current });
+        }
+        if previous_index_state != self.state {
+            state.push(StateTransition::IndexState {
+                previous: previous_index_state,
+                current: self.state,
+            });
         }
         if !state.is_empty() {
             self.commit_state(state);
@@ -491,6 +526,18 @@ impl Model {
     fn take_pending_invalidations(&mut self) -> Vec<(PathBuf, InvalidateReason)> {
         std::mem::take(&mut self.pending_invalidations)
     }
+}
+
+fn is_observation_gap(reason: InvalidateReason) -> bool {
+    matches!(
+        reason,
+        InvalidateReason::WatchOverflow
+            | InvalidateReason::UnpairedRename
+            | InvalidateReason::WatchSetupRace
+            | InvalidateReason::VerificationFailed
+            | InvalidateReason::UnknownAncestry
+            | InvalidateReason::WatchContention
+    )
 }
 
 fn model_impact(changes: &[EffectiveChange], state: &[StateTransition]) -> Impact {

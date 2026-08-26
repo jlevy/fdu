@@ -81,9 +81,9 @@ pub struct DiscoveryBudget {
 /// Configuration for a long-lived [`OpenedIndex`].
 ///
 /// Scope and execution settings are flat here because each is one independent decision;
-/// display depth is absent by design and belongs to a read request. Progressive
-/// Observation policy is added with its capability; the current options already bind
-/// progressive-discovery and exact-history bounds.
+/// display depth is absent by design and belongs to a read request. The options bind
+/// progressive discovery, exact-history bounds, and optional live observation without
+/// changing the one-shot API.
 #[derive(Clone, Debug)]
 pub struct OpenOptions {
     /// Ops per committed discovery batch.
@@ -100,6 +100,13 @@ pub struct OpenOptions {
     pub types: Option<Arc<crate::classify::TypeRegistry>>,
     /// Resource policy for the cold progressive walk.
     pub budget: DiscoveryBudget,
+    /// Optional filesystem observation captured before cold discovery begins.
+    #[cfg(feature = "watch")]
+    pub observation: Option<crate::watch::WatchConfig>,
+    /// Test-only replacement for the native event source.
+    #[cfg(all(feature = "watch", test))]
+    #[doc(hidden)]
+    pub observation_script: Option<PathBuf>,
     /// Maximum retained-cost units in the exact commit journal.
     pub journal_capacity: usize,
 }
@@ -115,6 +122,10 @@ impl Default for OpenOptions {
             exclude_special: scan.exclude_special,
             types: scan.types,
             budget: DiscoveryBudget::default(),
+            #[cfg(feature = "watch")]
+            observation: None,
+            #[cfg(all(feature = "watch", test))]
+            observation_script: None,
             journal_capacity: crate::DEFAULT_JOURNAL_CAPACITY,
         }
     }
@@ -163,9 +174,9 @@ impl std::fmt::Debug for OpenedIndex {
 impl OpenedIndex {
     /// Open one live root without changing the existing blocking [`crate::open`] API.
     ///
-    /// This constructor validates and binds the root and semantic configuration. Cold
-    /// progressive discovery is attached to this owner by the next implementation
-    /// checkpoint; no cache image or second mutable index is created here.
+    /// This constructor validates and binds the root and semantic configuration, starts
+    /// cold progressive discovery, and captures optional observation before that
+    /// baseline begins. No cache image or second mutable index is created here.
     pub fn open(root: &Path, options: OpenOptions) -> Result<Self> {
         #[cfg(test)]
         let opened = Self::open_inner(root, options, Arc::default());
@@ -189,6 +200,11 @@ impl OpenedIndex {
         let state = OpenedState::new(root, options)?;
         let opened = Self { state: Arc::new(state) };
         opened.start_discovery()?;
+        #[cfg(feature = "watch")]
+        if let Err(error) = opened.start_observation() {
+            let _ = opened.close();
+            return Err(error);
+        }
         Ok(opened)
     }
 
@@ -198,6 +214,11 @@ impl OpenedIndex {
         let opened = Self { state: Arc::new(state) };
         if !opened.state.test_controls.discovery_disabled.load(Ordering::Acquire) {
             opened.start_discovery()?;
+        }
+        #[cfg(feature = "watch")]
+        if let Err(error) = opened.start_observation() {
+            let _ = opened.close();
+            return Err(error);
         }
         Ok(opened)
     }
@@ -371,9 +392,13 @@ impl OpenedIndex {
         let scan = self.state.scan.clone();
         let budget = self.state.budget;
         let frontier = Arc::clone(&self.state.frontier);
+        #[cfg(feature = "watch")]
+        let baseline = Arc::clone(&self.state.baseline);
         #[cfg(test)]
         let controls = Arc::clone(&self.state.test_controls);
         self.spawn_worker("discovery", move |cancellation| {
+            #[cfg(feature = "watch")]
+            let _baseline_finished = BaselineCompletion(baseline);
             #[cfg(test)]
             controls.reach(TestPoint::BeforeDiscovery);
             #[cfg(not(test))]
@@ -407,6 +432,50 @@ impl OpenedIndex {
         })
     }
 
+    #[cfg(feature = "watch")]
+    fn start_observation(&self) -> Result<()> {
+        let watcher =
+            self.state.observer.lock().map_err(|_| Error::OpenedLifecyclePoisoned)?.take();
+        let Some(watcher) = watcher else {
+            return Ok(());
+        };
+        let index = self.state.index.clone();
+        let journal = Arc::clone(&self.state.journal);
+        let scan = self.state.scan.clone();
+        let budget = self.state.budget;
+        let baseline = Arc::clone(&self.state.baseline);
+        #[cfg(test)]
+        let controls = Arc::clone(&self.state.test_controls);
+        self.spawn_worker("observation", move |cancellation| {
+            let outcome = run_observation(
+                watcher,
+                &index,
+                &journal,
+                &scan,
+                budget,
+                &baseline,
+                &cancellation,
+                #[cfg(test)]
+                &controls,
+            );
+            if matches!(outcome, Err(Error::OpenedIndexClosed)) && cancellation.is_cancelled() {
+                return Ok(());
+            }
+            if let Err(error) = &outcome {
+                if !cancellation.is_cancelled() {
+                    publish_observation_transition(
+                        &index,
+                        &journal,
+                        crate::index::ObservationTransition::Failed(crate::Issue::from_error(
+                            error,
+                        )),
+                    )?;
+                }
+            }
+            outcome
+        })
+    }
+
     #[allow(dead_code)]
     fn ensure_open(&self) -> Result<()> {
         self.state.ensure_open()
@@ -415,8 +484,8 @@ impl OpenedIndex {
     /// Register one worker with the shared owner before it can race with close.
     ///
     /// The worker receives only cancellation, not a strong owner reference. Discovery
-    /// and observation use this boundary as their implementations land; the lifecycle
-    /// checkpoint exercises it directly through its deterministic tests.
+    /// and observation both use this boundary, which deterministic lifecycle tests
+    /// exercise directly.
     #[allow(dead_code)]
     fn spawn_worker<F>(&self, name: &'static str, run: F) -> Result<()>
     where
@@ -474,7 +543,7 @@ struct OpenedState {
     session: SessionId,
     root: std::path::PathBuf,
     index: IndexHandle,
-    /// Retained for discovery and later verified producers; semantic identity is also
+    /// Retained for discovery and verified producers; semantic identity is also
     /// fixed in `index`, so this cannot reinterpret already-retained facts.
     #[allow(dead_code)]
     scan: ScanConfig,
@@ -483,6 +552,10 @@ struct OpenedState {
     continuations: Mutex<continuation::ContinuationTable>,
     journal: Arc<journal::JournalWait>,
     cancellation: Arc<Cancellation>,
+    #[cfg(feature = "watch")]
+    baseline: Arc<BaselineLatch>,
+    #[cfg(feature = "watch")]
+    observer: Mutex<Option<crate::watch::Watcher>>,
     lifecycle: Mutex<Lifecycle>,
     lifecycle_changed: Condvar,
     #[cfg(test)]
@@ -502,7 +575,16 @@ impl OpenedState {
 
     #[cfg(not(test))]
     fn build(root: &Path, options: OpenOptions) -> Result<Self> {
+        #[cfg(feature = "watch")]
+        let observation = options.observation;
         let (root, index, scan, budget) = bind_root(root, options)?;
+        #[cfg(feature = "watch")]
+        let observer = if let Some(config) = observation {
+            scan.validate_for_watch_scope(index.scope()?)?;
+            Some(crate::watch::Watcher::new(&root, config)?)
+        } else {
+            None
+        };
         Ok(Self {
             session: SessionId::mint()?,
             root,
@@ -513,6 +595,10 @@ impl OpenedState {
             continuations: Mutex::new(continuation::ContinuationTable::default()),
             journal: Arc::new(journal::JournalWait::new()),
             cancellation: Arc::new(Cancellation::default()),
+            #[cfg(feature = "watch")]
+            baseline: Arc::new(BaselineLatch::default()),
+            #[cfg(feature = "watch")]
+            observer: Mutex::new(observer),
             lifecycle: Mutex::new(Lifecycle::default()),
             lifecycle_changed: Condvar::new(),
         })
@@ -520,7 +606,29 @@ impl OpenedState {
 
     #[cfg(test)]
     fn build(root: &Path, options: OpenOptions, controls: Arc<TestControls>) -> Result<Self> {
+        #[cfg(feature = "watch")]
+        let observation = options.observation;
+        #[cfg(feature = "watch")]
+        let observation_script = options.observation_script.clone();
         let (root, index, scan, budget) = bind_root(root, options)?;
+        #[cfg(feature = "watch")]
+        if observation.is_some() {
+            scan.validate_for_watch_scope(index.scope()?)?;
+        }
+        #[cfg(feature = "watch")]
+        let (observer, scripted_sender) = match (observation, observation_script) {
+            (Some(config), Some(events)) => {
+                let (watcher, sender) = crate::watch::Watcher::scripted(&root, config, &events)?;
+                (Some(watcher), Some(sender))
+            }
+            (Some(config), None) => (Some(crate::watch::Watcher::new(&root, config)?), None),
+            (None, _) => (None, None),
+        };
+        #[cfg(feature = "watch")]
+        {
+            *controls.scripted_observer.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
+                scripted_sender;
+        }
         Ok(Self {
             session: SessionId::mint()?,
             root,
@@ -531,6 +639,10 @@ impl OpenedState {
             continuations: Mutex::new(continuation::ContinuationTable::default()),
             journal: Arc::new(journal::JournalWait::new()),
             cancellation: Arc::new(Cancellation::default()),
+            #[cfg(feature = "watch")]
+            baseline: Arc::new(BaselineLatch::default()),
+            #[cfg(feature = "watch")]
+            observer: Mutex::new(observer),
             lifecycle: Mutex::new(Lifecycle::default()),
             lifecycle_changed: Condvar::new(),
             test_controls: controls,
@@ -580,6 +692,8 @@ impl OpenedState {
                     lifecycle.phase = OwnerPhase::Closing;
                     let workers = std::mem::take(&mut lifecycle.workers);
                     self.cancellation.cancel();
+                    #[cfg(feature = "watch")]
+                    self.baseline.wake();
                     drop(lifecycle);
                     self.journal.close();
                     match self.continuations.lock() {
@@ -1023,6 +1137,216 @@ fn publish_discovery_transition(
     Ok(())
 }
 
+#[cfg(feature = "watch")]
+/// Maximum time the owner waits for an idle observation before checking cancellation.
+const OBSERVATION_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
+#[cfg(feature = "watch")]
+/// Full-root handoff retries allowed after benign conditional conflicts with a producer.
+const MAX_HANDOFF_RECONCILIATION_ATTEMPTS: usize = 3;
+
+#[cfg(feature = "watch")]
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::needless_pass_by_value)] // Ownership keeps the backend alive for this worker.
+fn run_observation(
+    watcher: crate::watch::Watcher,
+    index: &IndexHandle,
+    journal: &journal::JournalWait,
+    scan: &ScanConfig,
+    budget: DiscoveryBudget,
+    baseline: &BaselineLatch,
+    cancellation: &Cancellation,
+    #[cfg(test)] controls: &TestControls,
+) -> Result<()> {
+    if !baseline.wait(cancellation) {
+        return Ok(());
+    }
+    let state = index.state()?;
+    if state.phase != crate::LifecyclePhase::Ready {
+        return Ok(());
+    }
+
+    publish_observation_transition(
+        index,
+        journal,
+        crate::index::ObservationTransition::Reconciling,
+    )?;
+    let state = index.state()?;
+    if state.phase == crate::LifecyclePhase::Stopped {
+        return Ok(());
+    }
+    if state.phase != crate::LifecyclePhase::Reconciling {
+        return Err(Error::ObservationHandoffIncomplete);
+    }
+    #[cfg(test)]
+    controls.reach(TestPoint::BeforeObservationHandoff);
+    let control = ObservationReconcileControl {
+        cancellation,
+        max_files: budget.max_files,
+        #[cfg(test)]
+        controls,
+    };
+    let handoff_intents = watcher.capture_backlog_bound();
+
+    watcher.flush_capture()?;
+    let _ = drain_observation_hints(&watcher, index, journal, scan, &control, handoff_intents)?;
+    if index.state()?.phase == crate::LifecyclePhase::Stopped {
+        return Ok(());
+    }
+    watcher.flush_capture()?;
+    let mut handoff_complete = false;
+    for _ in 0..MAX_HANDOFF_RECONCILIATION_ATTEMPTS {
+        let final_pass = crate::scan::reconcile_paths_handle_controlled(
+            index,
+            &[PathBuf::new()],
+            scan,
+            false,
+            &control,
+            &mut |_commit| journal.notify_commit(),
+        )?;
+        watcher.flush_capture()?;
+        let drained =
+            drain_observation_hints(&watcher, index, journal, scan, &control, handoff_intents)?;
+        if final_pass.reconciliation.is_complete() && drained.complete {
+            handoff_complete = true;
+            break;
+        }
+        if index.state()?.phase == crate::LifecyclePhase::Stopped {
+            return Ok(());
+        }
+        let final_retryable = final_pass.reconciliation.is_complete()
+            || reconcile_conflict_is_retryable(&final_pass.reconciliation);
+        let retryable_conflict =
+            final_retryable && (drained.complete || drained.retryable_conflict);
+        if !retryable_conflict {
+            break;
+        }
+    }
+
+    control.check_active()?;
+    let state = index.state()?;
+    if state.phase == crate::LifecyclePhase::Stopped {
+        return Ok(());
+    }
+    if !handoff_complete {
+        return Err(Error::ObservationHandoffIncomplete);
+    }
+    #[cfg(test)]
+    controls.reach(TestPoint::BeforeObservationWatching);
+    publish_observation_transition(index, journal, crate::index::ObservationTransition::Watching)?;
+    let state = index.state()?;
+    if state.phase == crate::LifecyclePhase::Stopped {
+        return Ok(());
+    }
+    if state.phase != crate::LifecyclePhase::Watching {
+        return Err(Error::ObservationHandoffIncomplete);
+    }
+
+    loop {
+        control.check_active()?;
+        #[cfg(test)]
+        controls.reach(TestPoint::BeforeObservationPoll);
+        match watcher.apply_next_controlled(
+            index,
+            scan,
+            OBSERVATION_POLL_INTERVAL,
+            &control,
+            &mut |_commit| journal.notify_commit(),
+        ) {
+            Ok(_) => {}
+            Err(Error::OpenedIndexClosed) if cancellation.is_cancelled() => return Ok(()),
+            Err(error) => return Err(error),
+        }
+        if index.state()?.phase == crate::LifecyclePhase::Stopped {
+            return Ok(());
+        }
+    }
+}
+
+#[cfg(feature = "watch")]
+fn drain_observation_hints(
+    watcher: &crate::watch::Watcher,
+    index: &IndexHandle,
+    journal: &journal::JournalWait,
+    scan: &ScanConfig,
+    control: &dyn ReconcileControl,
+    limit: usize,
+) -> Result<HandoffDrain> {
+    let mut drained = HandoffDrain { complete: true, retryable_conflict: true };
+    for _ in 0..limit {
+        let Some(report) = watcher.apply_next_controlled(
+            index,
+            scan,
+            std::time::Duration::ZERO,
+            control,
+            &mut |_commit| journal.notify_commit(),
+        )?
+        else {
+            break;
+        };
+        let report_complete = report.apply.resource_refused == 0
+            && report.apply.stale == 0
+            && report.reconciliation.is_complete();
+        if !report_complete {
+            drained.complete = false;
+            drained.retryable_conflict &= report.apply.resource_refused == 0
+                && report.reconciliation.apply.resource_refused == 0
+                && report.reconciliation.scan.is_complete()
+                && (report.apply.stale > 0 || report.reconciliation.apply.stale > 0);
+        }
+    }
+    Ok(drained)
+}
+
+#[cfg(feature = "watch")]
+struct HandoffDrain {
+    complete: bool,
+    retryable_conflict: bool,
+}
+
+#[cfg(feature = "watch")]
+fn reconcile_conflict_is_retryable(report: &crate::scan::ReconcileReport) -> bool {
+    report.scan.is_complete() && report.apply.resource_refused == 0 && report.apply.stale > 0
+}
+
+#[cfg(feature = "watch")]
+fn publish_observation_transition(
+    index: &IndexHandle,
+    journal: &journal::JournalWait,
+    transition: crate::index::ObservationTransition,
+) -> Result<()> {
+    let outcome = index.transition_observation(transition)?;
+    if outcome.commit.is_some() {
+        journal.notify_commit();
+    }
+    Ok(())
+}
+
+#[cfg(feature = "watch")]
+struct ObservationReconcileControl<'a> {
+    cancellation: &'a Cancellation,
+    max_files: Option<u64>,
+    #[cfg(test)]
+    controls: &'a TestControls,
+}
+
+#[cfg(feature = "watch")]
+impl ReconcileControl for ObservationReconcileControl<'_> {
+    fn check_active(&self) -> Result<()> {
+        if self.cancellation.is_cancelled() { Err(Error::OpenedIndexClosed) } else { Ok(()) }
+    }
+
+    fn before_conditional_commit(&self) -> Result<()> {
+        self.check_active()?;
+        #[cfg(test)]
+        self.controls.reach(TestPoint::AfterObservationVerification);
+        self.check_active()
+    }
+
+    fn max_files(&self) -> Option<u64> {
+        self.max_files
+    }
+}
+
 struct LockedLifecycle<'a> {
     guard: MutexGuard<'a, Lifecycle>,
     poisoned: bool,
@@ -1122,6 +1446,47 @@ fn join_workers(workers: Vec<Worker>) -> Option<CloseOutcome> {
     first_failure
 }
 
+#[cfg(feature = "watch")]
+#[derive(Default)]
+struct BaselineLatch {
+    finished: Mutex<bool>,
+    changed: Condvar,
+}
+
+#[cfg(feature = "watch")]
+impl BaselineLatch {
+    fn finish(&self) {
+        let mut finished = self.finished.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        *finished = true;
+        self.changed.notify_all();
+    }
+
+    fn wake(&self) {
+        let guard = self.finished.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.changed.notify_all();
+        drop(guard);
+    }
+
+    fn wait(&self, cancellation: &Cancellation) -> bool {
+        let mut finished = self.finished.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        while !*finished && !cancellation.is_cancelled() {
+            finished =
+                self.changed.wait(finished).unwrap_or_else(std::sync::PoisonError::into_inner);
+        }
+        *finished && !cancellation.is_cancelled()
+    }
+}
+
+#[cfg(feature = "watch")]
+struct BaselineCompletion(Arc<BaselineLatch>);
+
+#[cfg(feature = "watch")]
+impl Drop for BaselineCompletion {
+    fn drop(&mut self) {
+        self.0.finish();
+    }
+}
+
 #[derive(Default)]
 struct Cancellation {
     cancelled: AtomicBool,
@@ -1160,6 +1525,14 @@ enum TestPoint {
     AfterRootDirectory,
     BeforeJournalWait,
     AfterRefreshVerification,
+    #[cfg(feature = "watch")]
+    BeforeObservationHandoff,
+    #[cfg(feature = "watch")]
+    BeforeObservationWatching,
+    #[cfg(feature = "watch")]
+    BeforeObservationPoll,
+    #[cfg(feature = "watch")]
+    AfterObservationVerification,
 }
 
 #[cfg(test)]
@@ -1171,6 +1544,16 @@ struct TestControls {
     after_root_directory: TestGate,
     before_journal_wait: TestGate,
     after_refresh_verification: TestGate,
+    #[cfg(feature = "watch")]
+    before_observation_handoff: TestGate,
+    #[cfg(feature = "watch")]
+    before_observation_watching: TestGate,
+    #[cfg(feature = "watch")]
+    before_observation_poll: TestGate,
+    #[cfg(feature = "watch")]
+    after_observation_verification: TestGate,
+    #[cfg(feature = "watch")]
+    scripted_observer: Mutex<Option<crate::watch::ScriptedSender>>,
     discovery_disabled: AtomicBool,
 }
 
@@ -1184,11 +1567,30 @@ impl TestControls {
             TestPoint::AfterRootDirectory => &self.after_root_directory,
             TestPoint::BeforeJournalWait => &self.before_journal_wait,
             TestPoint::AfterRefreshVerification => &self.after_refresh_verification,
+            #[cfg(feature = "watch")]
+            TestPoint::BeforeObservationHandoff => &self.before_observation_handoff,
+            #[cfg(feature = "watch")]
+            TestPoint::BeforeObservationWatching => &self.before_observation_watching,
+            #[cfg(feature = "watch")]
+            TestPoint::BeforeObservationPoll => &self.before_observation_poll,
+            #[cfg(feature = "watch")]
+            TestPoint::AfterObservationVerification => &self.after_observation_verification,
         }
     }
 
     fn reach(&self, point: TestPoint) {
         self.gate(point).reach();
+    }
+
+    #[cfg(feature = "watch")]
+    fn send_observation_hints(&self, source: &str) {
+        self.scripted_observer
+            .lock()
+            .expect("scripted observer lock")
+            .as_ref()
+            .expect("scripted observer installed")
+            .send(source)
+            .expect("valid scripted hints");
     }
 }
 
@@ -1262,6 +1664,35 @@ mod tests {
             }
             assert!(std::time::Instant::now() < deadline, "discovery did not settle");
             std::thread::yield_now();
+        }
+    }
+
+    #[cfg(feature = "watch")]
+    fn wait_until_phase(
+        opened: &OpenedIndex,
+        expected: crate::LifecyclePhase,
+    ) -> crate::IndexState {
+        let deadline = std::time::Instant::now() + TEST_GATE_TIMEOUT;
+        loop {
+            let state = opened.state.index.state().expect("read state");
+            if state.phase == expected {
+                return state;
+            }
+            assert!(std::time::Instant::now() < deadline, "phase did not become {expected:?}");
+            std::thread::yield_now();
+        }
+    }
+
+    #[cfg(feature = "watch")]
+    fn scripted_options(script: &Path) -> OpenOptions {
+        OpenOptions {
+            observation: Some(crate::watch::WatchConfig {
+                settle: std::time::Duration::from_millis(1),
+                max_hold: std::time::Duration::from_millis(10),
+                ..crate::watch::WatchConfig::default()
+            }),
+            observation_script: Some(script.to_path_buf()),
+            ..OpenOptions::default()
         }
     }
 
@@ -3063,6 +3494,467 @@ mod tests {
         let image = opened.state.index.snapshot().expect("snapshot");
         assert!(image.controls().is_empty());
         assert_eq!(image.partition_total().all, image.partition_total().unignored);
+        opened.close().expect("close");
+    }
+
+    #[cfg(feature = "watch")]
+    #[test]
+    fn observation_is_captured_before_baseline_and_closes_the_handoff_gap() {
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        let path = root.path().join("during.txt");
+        std::fs::write(&path, b"before").expect("fixture");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"modify\tduring.txt\n").expect("script");
+        let controls = Arc::new(TestControls::default());
+        controls.gate(TestPoint::BeforeDiscovery).arm();
+
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            scripted_options(&script),
+            Arc::clone(&controls),
+        )
+        .expect("opened observed root");
+        controls.gate(TestPoint::BeforeDiscovery).wait_reached();
+        std::fs::write(&path, b"changed-during-baseline").expect("mutate during handoff");
+        controls.gate(TestPoint::BeforeDiscovery).release();
+
+        let state = wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+        assert_eq!(state.freshness, crate::Freshness::Fresh);
+        assert_eq!(state.coverage, crate::Coverage::Complete);
+        assert_eq!(
+            opened
+                .state
+                .index
+                .attrs(Path::new("during.txt"))
+                .expect("attrs")
+                .expect("retained")
+                .size,
+            23
+        );
+        let since = opened.state.index.since(crate::Clock::ZERO).expect("journal");
+        assert!(since.commits.iter().any(|commit| {
+            commit.state.iter().any(|transition| {
+                matches!(
+                    transition,
+                    crate::StateTransition::IndexState { current, .. }
+                        if current.phase == crate::LifecyclePhase::Reconciling
+                )
+            })
+        }));
+        assert!(since.commits.iter().any(|commit| {
+            commit.state.iter().any(|transition| {
+                matches!(
+                    transition,
+                    crate::StateTransition::IndexState { current, .. }
+                        if current.phase == crate::LifecyclePhase::Watching
+                )
+            })
+        }));
+        opened.close().expect("joined close");
+    }
+
+    #[cfg(feature = "watch")]
+    #[test]
+    fn scripted_overflow_is_provider_recovery_not_a_consumer_reset() {
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        std::fs::create_dir(root.path().join("src")).expect("directory");
+        std::fs::write(root.path().join("src/present"), b"present").expect("fixture");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"rescan\tsrc\n").expect("script");
+        let opened = OpenedIndex::open(root.path(), scripted_options(&script)).expect("open");
+
+        let state = wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+        assert_eq!(state.freshness, crate::Freshness::Fresh);
+        assert!(state.issues.retained > 0);
+        let since = opened.state.index.since(crate::Clock::ZERO).expect("journal");
+        assert!(!since.truncated);
+        assert!(since.commits.iter().any(|commit| commit.changes.iter().any(|change| {
+            matches!(
+                change,
+                crate::EffectiveChange::Invalidated {
+                    path,
+                    reason: crate::InvalidateReason::WatchOverflow,
+                } if path == Path::new("src")
+            )
+        })));
+        assert!(
+            opened
+                .state
+                .index
+                .issues()
+                .expect("issues")
+                .iter()
+                .any(|issue| issue.kind == crate::IssueKind::ObservationGap)
+        );
+        opened.close().expect("close");
+    }
+
+    #[cfg(feature = "watch")]
+    #[test]
+    fn scripted_directory_creation_closes_the_registration_gap() {
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        std::fs::create_dir(root.path().join("newdir")).expect("directory");
+        std::fs::write(root.path().join("newdir/child"), b"child").expect("fixture");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"create-dir\tnewdir\n").expect("script");
+        let opened = OpenedIndex::open(root.path(), scripted_options(&script)).expect("open");
+
+        wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+        let since = opened.state.index.since(crate::Clock::ZERO).expect("journal");
+        assert!(since.commits.iter().any(|commit| commit.changes.iter().any(|change| {
+            matches!(
+                change,
+                crate::EffectiveChange::Invalidated {
+                    path,
+                    reason: crate::InvalidateReason::WatchSetupRace,
+                } if path == Path::new("newdir")
+            )
+        })));
+        assert_eq!(
+            opened.state.index.kind(Path::new("newdir/child")).expect("lookup"),
+            Some(EntryKind::File)
+        );
+        opened.close().expect("close");
+    }
+
+    #[cfg(feature = "watch")]
+    #[test]
+    fn scripted_observation_keeps_the_opened_index_live_after_handoff() {
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"").expect("script");
+        let controls = Arc::new(TestControls::default());
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            scripted_options(&script),
+            Arc::clone(&controls),
+        )
+        .expect("open scripted observer");
+        wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+        let before = current_version(&opened);
+
+        std::fs::write(root.path().join("live.txt"), b"live").expect("live mutation");
+        controls.send_observation_hints("create\tlive.txt\n");
+        let deadline = std::time::Instant::now() + TEST_GATE_TIMEOUT;
+        loop {
+            if opened.state.index.kind(Path::new("live.txt")).expect("lookup")
+                == Some(EntryKind::File)
+            {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "scripted hint was not applied");
+            std::thread::yield_now();
+        }
+        let since = opened.state.index.since(before.sequence).expect("journal");
+        assert!(since.commits.iter().any(|commit| commit.changes.iter().any(|change| {
+            matches!(
+                change,
+                crate::EffectiveChange::Inserted { path, .. }
+                    if path == Path::new("live.txt")
+            )
+        })));
+        opened.close().expect("close");
+    }
+
+    #[cfg(feature = "watch")]
+    #[test]
+    fn live_observation_gap_recovers_before_reporting_freshness() {
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"").expect("script");
+        let controls = Arc::new(TestControls::default());
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            scripted_options(&script),
+            Arc::clone(&controls),
+        )
+        .expect("open scripted observer");
+        wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+        let before = current_version(&opened);
+
+        std::fs::write(root.path().join("recovered.txt"), b"recovered").expect("missed mutation");
+        controls.send_observation_hints("rescan\t.\n");
+        let deadline = std::time::Instant::now() + TEST_GATE_TIMEOUT;
+        loop {
+            let state = opened.state.index.state().expect("read state");
+            let recovered = opened.state.index.kind(Path::new("recovered.txt")).expect("lookup")
+                == Some(EntryKind::File);
+            if recovered && state.freshness == crate::Freshness::Fresh {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "gap recovery did not finish");
+            std::thread::yield_now();
+        }
+
+        let since = opened.state.index.since(before.sequence).expect("journal");
+        assert!(since.commits.iter().any(|commit| commit.changes.iter().any(|change| {
+            matches!(
+                change,
+                crate::EffectiveChange::Invalidated {
+                    path,
+                    reason: crate::InvalidateReason::WatchOverflow,
+                } if path.as_os_str().is_empty()
+            )
+        })));
+        assert!(since.commits.iter().any(|commit| commit.state.iter().any(|transition| {
+            matches!(
+                transition,
+                crate::StateTransition::Freshness {
+                    current: crate::Freshness::Reconciling | crate::Freshness::Stale,
+                    ..
+                }
+            )
+        })));
+        assert!(since.commits.iter().any(|commit| commit.state.iter().any(|transition| {
+            matches!(
+                transition,
+                crate::StateTransition::Freshness { current: crate::Freshness::Fresh, .. }
+            )
+        })));
+        assert!(
+            opened
+                .state
+                .index
+                .issues()
+                .expect("issues")
+                .iter()
+                .any(|issue| issue.kind == crate::IssueKind::ObservationGap)
+        );
+        opened.close().expect("close");
+    }
+
+    #[cfg(feature = "watch")]
+    #[test]
+    fn live_observation_shares_the_exact_opened_root_file_budget() {
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        std::fs::write(root.path().join("baseline.txt"), b"baseline").expect("fixture");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"").expect("script");
+        let controls = Arc::new(TestControls::default());
+        let mut options = scripted_options(&script);
+        options.budget.max_files = Some(1);
+        let opened = OpenedIndex::open_for_test(root.path(), options, Arc::clone(&controls))
+            .expect("open scripted observer");
+        wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+
+        std::fs::write(root.path().join("over-budget.txt"), b"refused")
+            .expect("over-budget mutation");
+        controls.send_observation_hints("create\tover-budget.txt\n");
+        let state = wait_until_phase(&opened, crate::LifecyclePhase::Stopped);
+
+        assert_eq!(state.coverage, crate::Coverage::Partial(crate::CoverageReason::Budget));
+        assert_eq!(opened.state.index.kind(Path::new("over-budget.txt")).expect("lookup"), None);
+        assert_eq!(opened.state.index.total().expect("total").files, 1);
+        assert!(
+            opened
+                .state
+                .index
+                .issues()
+                .expect("issues")
+                .iter()
+                .any(|issue| issue.kind == crate::IssueKind::ResourceBudget)
+        );
+        opened.close().expect("close");
+    }
+
+    #[cfg(feature = "watch")]
+    #[test]
+    fn close_after_observation_verification_prevents_publication() {
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"").expect("script");
+        let controls = Arc::new(TestControls::default());
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            scripted_options(&script),
+            Arc::clone(&controls),
+        )
+        .expect("open scripted observer");
+        wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+
+        controls.gate(TestPoint::AfterObservationVerification).arm();
+        std::fs::write(root.path().join("too-late.txt"), b"verified").expect("late mutation");
+        controls.send_observation_hints("create\ttoo-late.txt\n");
+        controls.gate(TestPoint::AfterObservationVerification).wait_reached();
+
+        let closer = opened.clone();
+        let close = thread::spawn(move || closer.close());
+        let deadline = std::time::Instant::now() + TEST_GATE_TIMEOUT;
+        while !opened.state.cancellation.is_cancelled() {
+            assert!(std::time::Instant::now() < deadline, "close did not cancel observation");
+            thread::yield_now();
+        }
+        assert!(!close.is_finished(), "close returned before the commit boundary released");
+        controls.gate(TestPoint::AfterObservationVerification).release();
+        close.join().expect("close thread").expect("joined close");
+
+        assert_eq!(opened.state.index.kind(Path::new("too-late.txt")).expect("lookup"), None);
+        opened.close().expect("repeat close");
+    }
+
+    #[cfg(feature = "watch")]
+    #[test]
+    fn stopped_discovery_never_claims_to_be_watching() {
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        std::fs::write(root.path().join("one"), b"one").expect("fixture");
+        std::fs::write(root.path().join("two"), b"two").expect("fixture");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"").expect("script");
+        let mut options = scripted_options(&script);
+        options.budget.max_files = Some(1);
+        let opened = OpenedIndex::open(root.path(), options).expect("open");
+
+        wait_until_phase(&opened, crate::LifecyclePhase::Stopped);
+        let since = opened.state.index.since(crate::Clock::ZERO).expect("journal");
+        assert!(!since.commits.iter().any(|commit| commit.state.iter().any(|transition| {
+            matches!(
+                transition,
+                crate::StateTransition::IndexState { current, .. }
+                    if current.phase == crate::LifecyclePhase::Watching
+            )
+        })));
+        opened.close().expect("close");
+    }
+
+    #[cfg(feature = "watch")]
+    #[test]
+    fn close_joins_an_observation_worker_blocked_at_a_named_boundary() {
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"").expect("script");
+        let controls = Arc::new(TestControls::default());
+        controls.gate(TestPoint::BeforeObservationPoll).arm();
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            scripted_options(&script),
+            Arc::clone(&controls),
+        )
+        .expect("open");
+        controls.gate(TestPoint::BeforeObservationPoll).wait_reached();
+
+        let closer = opened.clone();
+        let close = thread::spawn(move || closer.close());
+        let deadline = std::time::Instant::now() + TEST_GATE_TIMEOUT;
+        while !opened.state.cancellation.is_cancelled() {
+            assert!(std::time::Instant::now() < deadline, "close did not cancel observation");
+            thread::yield_now();
+        }
+        assert!(!close.is_finished(), "close returned before the owned worker was released");
+        controls.gate(TestPoint::BeforeObservationPoll).release();
+        close.join().expect("close thread").expect("joined close");
+        opened.close().expect("repeat close");
+    }
+
+    #[cfg(feature = "watch")]
+    #[test]
+    fn malformed_script_fails_before_discovery_starts() {
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"teleport\tmissing\n").expect("script");
+        let error = OpenedIndex::open(root.path(), scripted_options(&script))
+            .expect_err("invalid observer configuration must fail open");
+        assert!(matches!(error, Error::WatchScript(_)));
+    }
+
+    #[cfg(feature = "watch")]
+    #[test]
+    fn observation_rejects_a_restricted_scope_before_open_returns() {
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"").expect("script");
+        let mut options = scripted_options(&script);
+        options.one_filesystem = true;
+
+        let error = OpenedIndex::open(root.path(), options)
+            .expect_err("unsupported observed scope must fail open");
+        assert!(matches!(error, Error::UnsupportedScanConfig(_)));
+    }
+
+    #[cfg(feature = "watch")]
+    #[test]
+    fn handoff_retries_a_benign_refresh_conflict_before_watching() {
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        let path = root.path().join("shared.txt");
+        std::fs::write(&path, b"before").expect("fixture");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"").expect("script");
+        let controls = Arc::new(TestControls::default());
+        controls.gate(TestPoint::AfterObservationVerification).arm();
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            scripted_options(&script),
+            Arc::clone(&controls),
+        )
+        .expect("open scripted observer");
+        controls.gate(TestPoint::AfterObservationVerification).wait_reached();
+
+        std::fs::write(&path, b"updated-by-refresh").expect("concurrent mutation");
+        let refreshed =
+            opened.refresh(&[PathBuf::from("shared.txt")]).expect("overlapping refresh succeeds");
+        assert_eq!(refreshed.work.stale, 0);
+        controls.gate(TestPoint::AfterObservationVerification).release();
+
+        wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+        assert_eq!(
+            opened
+                .state
+                .index
+                .attrs(Path::new("shared.txt"))
+                .expect("attrs")
+                .expect("retained")
+                .size,
+            18
+        );
+        opened.close().expect("close");
+    }
+
+    #[cfg(feature = "watch")]
+    #[test]
+    fn budget_stop_wins_a_race_with_the_transition_to_watching() {
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        std::fs::write(root.path().join("baseline.txt"), b"baseline").expect("fixture");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"").expect("script");
+        let controls = Arc::new(TestControls::default());
+        controls.gate(TestPoint::BeforeObservationWatching).arm();
+        let mut options = scripted_options(&script);
+        options.budget.max_files = Some(1);
+        let opened =
+            OpenedIndex::open_for_test(root.path(), options, Arc::clone(&controls)).expect("open");
+        controls.gate(TestPoint::BeforeObservationWatching).wait_reached();
+
+        std::fs::write(root.path().join("over-budget.txt"), b"refused")
+            .expect("over-budget mutation");
+        let refreshed = opened
+            .refresh(&[PathBuf::from("over-budget.txt")])
+            .expect("resource refusal is a typed result");
+        assert_eq!(refreshed.work.resource_refused, 1);
+        assert_eq!(refreshed.state.phase, crate::LifecyclePhase::Stopped);
+        controls.gate(TestPoint::BeforeObservationWatching).release();
+
+        let state = wait_until_phase(&opened, crate::LifecyclePhase::Stopped);
+        assert_eq!(state.coverage, crate::Coverage::Partial(crate::CoverageReason::Budget));
+        let since = opened.state.index.since(crate::Clock::ZERO).expect("journal");
+        assert!(!since.commits.iter().any(|commit| commit.state.iter().any(|transition| {
+            matches!(
+                transition,
+                crate::StateTransition::IndexState { current, .. }
+                    if current.phase == crate::LifecyclePhase::Watching
+            )
+        })));
         opened.close().expect("close");
     }
 }
