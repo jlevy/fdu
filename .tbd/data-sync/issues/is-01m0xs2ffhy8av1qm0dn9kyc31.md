@@ -5,7 +5,7 @@ title: Implement the opened-root inventory engine rewrite
 kind: epic
 status: in_progress
 priority: 1
-version: 35
+version: 36
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -48,11 +48,11 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-08-26T00:56:09.456Z
-updated_at: 2026-08-26T08:06:55.813Z
+updated_at: 2026-08-26T17:38:39.033Z
 started_at: 2026-08-26T01:54:35.977Z
 ---
 Implement the clean opened-root and streaming design from the linked plan in merge-sized slices from current main. Preserve the one-shot engine and CLI defaults; first establish exact commits and ownership, then the minimal opened-root lifecycle, then adopt it through MetaBrowser's provider conformance boundary.
 
 ## Notes
 
-The 2026-08-26 implementation audit confirmed 22 open dependency-wired children covering Phases 1A-4, plus the two explicit Phase 1A prerequisites fdu-9tdm and fdu-o8r8. File/function/test ownership and PR #47 reuse are authoritative in the linked plan; the bead graph encodes every sequencing edge, including parallel read/journal/refresh work after ownership and parallel provider/index work after the measured MetaBrowser contract. Corrected fdu-mkga to describe OpenedIndex as the direct public API, not a facade.
+Status at committed PR #48 head c5d1780 on 2026-08-26: Phase 1 is complete; Phase 2 has committed OpenedIndex ownership/joined close, progressive discovery/priority, coherent reads, and the bounded change journal. All 19 GitHub checks pass in run 32978903202. The epic has 16 closed children, fdu-3za7 in progress, and 12 open children. Next dependency chain: finish refresh, then no-gap observation, five session goldens/coverage closure, synchronous Python, the unchanged-contract MetaBrowser measurement, joint contract and providers, composed integration, and final performance/size acceptance. The linked plan and TODO now carry the same checkpoint.
