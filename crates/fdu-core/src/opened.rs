@@ -3,12 +3,14 @@
 //! [`OpenedIndex`] is the public behavior surface. Its private shared state contains
 //! data and synchronization only; it is deliberately not a second API-shaped service.
 
-use std::path::Path;
+use std::collections::VecDeque;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
 
-use crate::{Error, Index, IndexHandle, Result, ScanConfig};
+use crate::index::{DiscoveryCommit, DiscoveryTransition};
+use crate::{EntryKind, Error, Index, IndexHandle, Observation, Op, Result, ScanConfig};
 
 /// First ordinal reserved for a minted session; zero never identifies a live owner.
 const FIRST_SESSION_ORDINAL: u64 = 1;
@@ -18,6 +20,8 @@ const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 /// Nonzero fallback for the reserved zero identity.
 const FIRST_SESSION_ID: u64 = 1;
+/// Maximum paths accepted by one best-effort priority request.
+pub const MAX_PRIORITY_PATHS: usize = 64;
 #[cfg(test)]
 /// Deadline for a missing deterministic test barrier to fail instead of hanging.
 const TEST_GATE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
@@ -57,6 +61,17 @@ impl SessionId {
     }
 }
 
+/// Resource bounds applied to progressive discovery.
+///
+/// The first version deliberately has one measured resource: retained regular files.
+/// The value is execution policy, not semantic scan scope, and therefore is absent from
+/// [`crate::ScanScope`] and snapshot identity.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct DiscoveryBudget {
+    /// Maximum regular files retained, or no limit when absent.
+    pub max_files: Option<u64>,
+}
+
 /// Configuration for a long-lived [`OpenedIndex`].
 ///
 /// Scope and execution settings are flat here because each is one independent decision;
@@ -75,12 +90,10 @@ pub struct OpenOptions {
     pub hidden: Option<Arc<crate::HiddenPolicy>>,
     /// Exclude objects other than files, directories, and symlinks.
     pub exclude_special: bool,
-    /// Directory-reading worker threads, or a bounded engine-selected default.
-    pub threads: Option<usize>,
-    /// Preferred discovery order.
-    pub order: crate::ScanOrder,
     /// File-type rules, or `None` for the rules compiled into fdu.
     pub types: Option<Arc<crate::classify::TypeRegistry>>,
+    /// Resource policy for the cold progressive walk.
+    pub budget: DiscoveryBudget,
 }
 
 impl Default for OpenOptions {
@@ -92,26 +105,29 @@ impl Default for OpenOptions {
             one_filesystem: scan.one_filesystem,
             hidden: scan.hidden,
             exclude_special: scan.exclude_special,
-            threads: scan.threads,
-            order: scan.order,
             types: scan.types,
+            budget: DiscoveryBudget::default(),
         }
     }
 }
 
 impl OpenOptions {
-    fn into_scan_config(self) -> ScanConfig {
-        ScanConfig {
+    fn into_parts(self) -> (ScanConfig, DiscoveryBudget) {
+        let scan = ScanConfig {
             max_depth: None,
             batch_size: self.batch_size,
             follow_symlinks: self.follow_symlinks,
             one_filesystem: self.one_filesystem,
             hidden: self.hidden,
             exclude_special: self.exclude_special,
-            threads: self.threads,
-            order: self.order,
+            // The first opened-root scheduler is intentionally one parent-first
+            // producer. Parallel I/O is an internal optimization, not a public
+            // semantic or tuning promise for this new API.
+            threads: Some(1),
+            order: crate::ScanOrder::BreadthFirst,
             types: self.types,
-        }
+        };
+        (scan, self.budget)
     }
 }
 
@@ -162,13 +178,19 @@ impl OpenedIndex {
     #[cfg(not(test))]
     fn build(root: &Path, options: OpenOptions) -> Result<Self> {
         let state = OpenedState::new(root, options)?;
-        Ok(Self { state: Arc::new(state) })
+        let opened = Self { state: Arc::new(state) };
+        opened.start_discovery()?;
+        Ok(opened)
     }
 
     #[cfg(test)]
     fn build(root: &Path, options: OpenOptions, controls: Arc<TestControls>) -> Result<Self> {
         let state = OpenedState::new(root, options, controls)?;
-        Ok(Self { state: Arc::new(state) })
+        let opened = Self { state: Arc::new(state) };
+        if !opened.state.test_controls.discovery_disabled.load(Ordering::Acquire) {
+            opened.start_discovery()?;
+        }
+        Ok(opened)
     }
 
     /// Cancel and join all work owned by this opened root.
@@ -178,6 +200,63 @@ impl OpenedIndex {
     /// still live.
     pub fn close(&self) -> Result<()> {
         self.state.shutdown()
+    }
+
+    /// Reorder pending discovery toward the supplied relative paths.
+    ///
+    /// This is a bounded best-effort scheduling hint. It does not change scope, facts,
+    /// lifecycle state, or the index clock, and paths that are already complete simply
+    /// have no effect.
+    pub fn prioritize(&self, paths: &[PathBuf]) -> Result<()> {
+        self.ensure_open()?;
+        if paths.len() > MAX_PRIORITY_PATHS {
+            return Err(Error::PriorityPathLimit {
+                attempted: paths.len(),
+                limit: MAX_PRIORITY_PATHS,
+            });
+        }
+        if self.state.index.state()?.phase == crate::LifecyclePhase::Stopped {
+            return Err(Error::OpenedIndexStopped);
+        }
+        let mut normalized = Vec::with_capacity(paths.len());
+        for path in paths {
+            normalized.push(crate::scan::normalize_subtree(path)?);
+        }
+        normalized.sort();
+        normalized.dedup();
+        self.state.frontier.prioritize(normalized);
+        Ok(())
+    }
+
+    fn start_discovery(&self) -> Result<()> {
+        self.state.index.transition_discovery(DiscoveryTransition::Begin)?;
+        let root = self.state.root.clone();
+        let index = self.state.index.clone();
+        let scan = self.state.scan.clone();
+        let budget = self.state.budget;
+        let frontier = Arc::clone(&self.state.frontier);
+        #[cfg(test)]
+        let controls = Arc::clone(&self.state.test_controls);
+        self.spawn_worker("discovery", move |cancellation| {
+            #[cfg(test)]
+            controls.reach(TestPoint::BeforeDiscovery);
+            #[cfg(not(test))]
+            let outcome = { run_discovery(&root, &index, &scan, budget, &frontier, &cancellation) };
+            #[cfg(test)]
+            let outcome = {
+                run_discovery(&root, &index, &scan, budget, &frontier, &cancellation, &controls)
+            };
+            if let Err(error) = outcome {
+                let state = index.state()?;
+                if state.phase == crate::LifecyclePhase::Discovering {
+                    index.transition_discovery(DiscoveryTransition::Failed(
+                        crate::Issue::from_error(&error),
+                    ))?;
+                }
+                return Err(error);
+            }
+            Ok(())
+        })
     }
 
     #[allow(dead_code)]
@@ -219,7 +298,9 @@ impl OpenedIndex {
                     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         run(cancellation)
                     }));
-                    controls.reach(TestPoint::BeforeWorkerExit);
+                    if name != "discovery" {
+                        controls.reach(TestPoint::BeforeWorkerExit);
+                    }
                     match outcome {
                         Ok(result) => result,
                         Err(payload) => std::panic::resume_unwind(payload),
@@ -249,6 +330,8 @@ struct OpenedState {
     /// fixed in `index`, so this cannot reinterpret already-retained facts.
     #[allow(dead_code)]
     scan: ScanConfig,
+    budget: DiscoveryBudget,
+    frontier: Arc<DiscoveryFrontier>,
     cancellation: Arc<Cancellation>,
     lifecycle: Mutex<Lifecycle>,
     lifecycle_changed: Condvar,
@@ -269,12 +352,14 @@ impl OpenedState {
 
     #[cfg(not(test))]
     fn build(root: &Path, options: OpenOptions) -> Result<Self> {
-        let (root, index, scan) = bind_root(root, options)?;
+        let (root, index, scan, budget) = bind_root(root, options)?;
         Ok(Self {
             session: SessionId::mint()?,
             root,
             index,
             scan,
+            budget,
+            frontier: Arc::new(DiscoveryFrontier::new()),
             cancellation: Arc::new(Cancellation::default()),
             lifecycle: Mutex::new(Lifecycle::default()),
             lifecycle_changed: Condvar::new(),
@@ -283,12 +368,14 @@ impl OpenedState {
 
     #[cfg(test)]
     fn build(root: &Path, options: OpenOptions, controls: Arc<TestControls>) -> Result<Self> {
-        let (root, index, scan) = bind_root(root, options)?;
+        let (root, index, scan, budget) = bind_root(root, options)?;
         Ok(Self {
             session: SessionId::mint()?,
             root,
             index,
             scan,
+            budget,
+            frontier: Arc::new(DiscoveryFrontier::new()),
             cancellation: Arc::new(Cancellation::default()),
             lifecycle: Mutex::new(Lifecycle::default()),
             lifecycle_changed: Condvar::new(),
@@ -385,9 +472,14 @@ impl Drop for OpenedState {
 fn bind_root(
     root: &Path,
     options: OpenOptions,
-) -> Result<(std::path::PathBuf, IndexHandle, ScanConfig)> {
-    let scan = options.into_scan_config();
+) -> Result<(std::path::PathBuf, IndexHandle, ScanConfig, DiscoveryBudget)> {
+    let (scan, budget) = options.into_parts();
     scan.validate()?;
+    if budget.max_files == Some(0) {
+        return Err(Error::UnsupportedScanConfig(
+            "max_files must be nonzero; omit it for an unlimited discovery",
+        ));
+    }
     let root = root.canonicalize().map_err(|source| Error::io(root, source))?;
     let metadata = std::fs::symlink_metadata(&root).map_err(|source| Error::io(&root, source))?;
     if !metadata.is_dir() {
@@ -403,7 +495,291 @@ fn bind_root(
     let scope = scan.scope();
     let types = scan.types_shared();
     let index = IndexHandle::new(Index::new_with_scope_and_types(&root, scope, types));
-    Ok((root, index, scan))
+    Ok((root, index, scan, budget))
+}
+
+#[derive(Clone, Debug)]
+struct PendingDirectory {
+    path: PathBuf,
+    depth: usize,
+}
+
+struct DiscoveryFrontier {
+    state: Mutex<FrontierState>,
+}
+
+struct FrontierState {
+    pending: VecDeque<PendingDirectory>,
+    priorities: Vec<PathBuf>,
+    stopped: bool,
+}
+
+impl DiscoveryFrontier {
+    fn new() -> Self {
+        Self {
+            state: Mutex::new(FrontierState {
+                pending: VecDeque::from([PendingDirectory { path: PathBuf::new(), depth: 0 }]),
+                priorities: Vec::new(),
+                stopped: false,
+            }),
+        }
+    }
+
+    fn pop(&self) -> Option<PendingDirectory> {
+        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if state.stopped {
+            return None;
+        }
+        let selected = state
+            .pending
+            .iter()
+            .enumerate()
+            .filter_map(|(position, pending)| {
+                state
+                    .priorities
+                    .iter()
+                    .position(|priority| {
+                        priority.starts_with(&pending.path) || pending.path.starts_with(priority)
+                    })
+                    .map(|priority| (priority, position))
+            })
+            .min()
+            .map_or(0, |(_, position)| position);
+        state.pending.remove(selected)
+    }
+
+    fn extend(&self, directories: impl IntoIterator<Item = PendingDirectory>) {
+        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !state.stopped {
+            state.pending.extend(directories);
+        }
+    }
+
+    fn prioritize(&self, priorities: Vec<PathBuf>) {
+        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !state.stopped {
+            state.priorities = priorities;
+        }
+    }
+
+    fn stop(&self) {
+        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.stopped = true;
+        state.pending.clear();
+        state.priorities.clear();
+    }
+}
+
+fn run_discovery(
+    root: &Path,
+    index: &IndexHandle,
+    scan: &ScanConfig,
+    budget: DiscoveryBudget,
+    frontier: &DiscoveryFrontier,
+    cancellation: &Cancellation,
+    #[cfg(test)] controls: &TestControls,
+) -> Result<()> {
+    let root_metadata =
+        std::fs::symlink_metadata(root).map_err(|source| Error::io(root, source))?;
+    let root_dev = crate::scan::attrs_from(&root_metadata).dev;
+    let mut retained_files = 0_u64;
+
+    while let Some(directory) = frontier.pop() {
+        if cancellation.is_cancelled() {
+            frontier.stop();
+            index.transition_discovery(DiscoveryTransition::Cancelled)?;
+            return Ok(());
+        }
+        match discover_directory(
+            root,
+            index,
+            scan,
+            budget,
+            root_dev,
+            &directory,
+            frontier,
+            cancellation,
+            &mut retained_files,
+        )? {
+            DiscoveryStep::Continue => {}
+            DiscoveryStep::Stopped => return Ok(()),
+        }
+        #[cfg(test)]
+        if directory.path.as_os_str().is_empty() {
+            controls.reach(TestPoint::AfterRootDirectory);
+        }
+    }
+    index.transition_discovery(DiscoveryTransition::Finish)?;
+    Ok(())
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DiscoveryStep {
+    Continue,
+    Stopped,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn discover_directory(
+    root: &Path,
+    index: &IndexHandle,
+    scan: &ScanConfig,
+    budget: DiscoveryBudget,
+    root_dev: u64,
+    directory: &PendingDirectory,
+    frontier: &DiscoveryFrontier,
+    cancellation: &Cancellation,
+    retained_files: &mut u64,
+) -> Result<DiscoveryStep> {
+    let absolute = root.join(&directory.path);
+    crate::counters::bump(|c| c.dir_opens += 1);
+    let listing = match std::fs::read_dir(&absolute) {
+        Ok(listing) => listing,
+        Err(source) => {
+            let error = Error::io(&absolute, source);
+            index.transition_discovery(DiscoveryTransition::Inaccessible {
+                issues: vec![crate::Issue::from_error(&error)],
+                omitted: 0,
+            })?;
+            return Ok(DiscoveryStep::Continue);
+        }
+    };
+    let mut batch = Vec::with_capacity(scan.batch_size);
+    let mut discovered = Vec::new();
+    let mut issues = Vec::new();
+    let mut omitted_issues = 0_u64;
+
+    for item in listing {
+        if cancellation.is_cancelled() {
+            commit_discovery_batch(index, &mut batch, None, Some(DiscoveryTransition::Cancelled))?;
+            frontier.stop();
+            return Ok(DiscoveryStep::Stopped);
+        }
+        let item = item
+            .inspect_err(|source| {
+                retain_local_issue(
+                    &mut issues,
+                    &mut omitted_issues,
+                    crate::Issue::from_io(&absolute, source),
+                );
+            })
+            .ok();
+        let Some(item) = item else {
+            continue;
+        };
+        crate::counters::bump(|c| c.dir_entries += 1);
+        let metadata = match crate::scan::metadata_for_fingerprint(&item) {
+            Ok(metadata) => metadata,
+            Err(source) => {
+                retain_local_issue(
+                    &mut issues,
+                    &mut omitted_issues,
+                    crate::Issue::from_io(&item.path(), &source),
+                );
+                continue;
+            }
+        };
+        let name = item.file_name();
+        let (kind, attrs) = crate::scan::observe(&metadata);
+        let Some(prepared) = crate::scan::prepare_walk_entry(
+            root,
+            &directory.path,
+            directory.depth,
+            &name,
+            kind,
+            attrs,
+            root_dev,
+            scan,
+        ) else {
+            continue;
+        };
+        let crate::scan::PreparedWalkEntry {
+            path,
+            kind,
+            attrs,
+            retained,
+            control,
+            descend,
+            control_error,
+        } = prepared;
+        if let Some(error) = control_error {
+            retain_local_issue(&mut issues, &mut omitted_issues, crate::Issue::from_error(&error));
+        }
+        if !retained {
+            if let Some(control) = control {
+                push_discovery_op(index, scan.batch_size, &mut batch, control)?;
+            }
+            continue;
+        }
+
+        if kind == EntryKind::File && budget.max_files.is_some_and(|max| *retained_files >= max) {
+            commit_discovery_batch(
+                index,
+                &mut batch,
+                None,
+                Some(DiscoveryTransition::BudgetRefused(crate::Issue::resource_budget(
+                    budget.max_files.expect("budget refusal requires a configured limit"),
+                ))),
+            )?;
+            frontier.stop();
+            return Ok(DiscoveryStep::Stopped);
+        }
+        if kind == EntryKind::File {
+            *retained_files = retained_files.saturating_add(1);
+        }
+        push_discovery_op(
+            index,
+            scan.batch_size,
+            &mut batch,
+            Op::Upsert { path: path.clone(), kind, attrs },
+        )?;
+        if let Some(control) = control {
+            push_discovery_op(index, scan.batch_size, &mut batch, control)?;
+        }
+        if descend {
+            discovered.push(PendingDirectory { path, depth: directory.depth.saturating_add(1) });
+        }
+    }
+
+    let incomplete = !issues.is_empty() || omitted_issues > 0;
+    let transition =
+        incomplete.then_some(DiscoveryTransition::Inaccessible { issues, omitted: omitted_issues });
+    let complete = (!incomplete).then(|| directory.path.clone());
+    commit_discovery_batch(index, &mut batch, complete, transition)?;
+    frontier.extend(discovered);
+    Ok(DiscoveryStep::Continue)
+}
+
+fn retain_local_issue(issues: &mut Vec<crate::Issue>, omitted: &mut u64, issue: crate::Issue) {
+    if issues.len() < crate::MAX_RETAINED_ISSUES {
+        issues.push(issue);
+    } else {
+        *omitted = omitted.saturating_add(1);
+    }
+}
+
+fn push_discovery_op(
+    index: &IndexHandle,
+    batch_size: usize,
+    batch: &mut Vec<Op>,
+    op: Op,
+) -> Result<()> {
+    batch.push(op);
+    if batch.len() >= batch_size {
+        commit_discovery_batch(index, batch, None, None)?;
+    }
+    Ok(())
+}
+
+fn commit_discovery_batch(
+    index: &IndexHandle,
+    batch: &mut Vec<Op>,
+    directory_complete: Option<PathBuf>,
+    transition: Option<DiscoveryTransition>,
+) -> Result<()> {
+    let observation = Observation::new(std::mem::take(batch));
+    index.apply_discovery(&observation, DiscoveryCommit { directory_complete, transition })?;
+    Ok(())
 }
 
 struct LockedLifecycle<'a> {
@@ -505,6 +881,8 @@ impl Cancellation {
 enum TestPoint {
     BeforeWorkerExit,
     BeforeCloseWait,
+    BeforeDiscovery,
+    AfterRootDirectory,
 }
 
 #[cfg(test)]
@@ -512,6 +890,9 @@ enum TestPoint {
 struct TestControls {
     before_worker_exit: TestGate,
     before_close_wait: TestGate,
+    before_discovery: TestGate,
+    after_root_directory: TestGate,
+    discovery_disabled: AtomicBool,
 }
 
 #[cfg(test)]
@@ -520,6 +901,8 @@ impl TestControls {
         match point {
             TestPoint::BeforeWorkerExit => &self.before_worker_exit,
             TestPoint::BeforeCloseWait => &self.before_close_wait,
+            TestPoint::BeforeDiscovery => &self.before_discovery,
+            TestPoint::AfterRootDirectory => &self.after_root_directory,
         }
     }
 
@@ -586,9 +969,37 @@ impl TestGate {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    fn wait_until_settled(opened: &OpenedIndex) -> crate::IndexState {
+        let deadline = std::time::Instant::now() + TEST_GATE_TIMEOUT;
+        loop {
+            let state = opened.state.index.state().expect("read state");
+            if state.phase != crate::LifecyclePhase::Discovering {
+                return state;
+            }
+            assert!(std::time::Instant::now() < deadline, "discovery did not settle");
+            std::thread::yield_now();
+        }
+    }
+
+    fn child_facts(index: &Index, path: &Path) -> Vec<(OsString, EntryKind, crate::Attrs)> {
+        index
+            .children(path)
+            .expect("known directory")
+            .map(|(name, id)| {
+                (
+                    name.to_os_string(),
+                    index.kind(&index.path_of(id).expect("path")).expect("kind"),
+                    *index.attrs(&index.path_of(id).expect("path")).expect("attrs"),
+                )
+            })
+            .collect()
+    }
+
     fn opened(controls: Arc<TestControls>) -> (tempfile::TempDir, OpenedIndex) {
+        controls.discovery_disabled.store(true, Ordering::Release);
         let root = tempfile::tempdir().expect("temp root");
         let opened = OpenedIndex::open_for_test(root.path(), OpenOptions::default(), controls)
             .expect("open live root");
@@ -760,6 +1171,15 @@ mod tests {
         let file = root.path().join("file");
         std::fs::write(&file, b"x").expect("fixture");
         assert!(matches!(OpenedIndex::open(&file, OpenOptions::default()), Err(Error::Io { .. })));
+
+        let zero_budget = OpenOptions {
+            budget: DiscoveryBudget { max_files: Some(0) },
+            ..OpenOptions::default()
+        };
+        assert!(matches!(
+            OpenedIndex::open(root.path(), zero_budget),
+            Err(Error::UnsupportedScanConfig(_))
+        ));
     }
 
     #[test]
@@ -770,5 +1190,198 @@ mod tests {
         assert_ne!(first.state.session, second.state.session);
         first.close().expect("first close");
         second.close().expect("second close");
+    }
+
+    #[test]
+    fn terminal_discovery_failure_retains_bounded_typed_evidence() {
+        let root = tempfile::tempdir().expect("temp root");
+        let controls = Arc::new(TestControls::default());
+        controls.gate(TestPoint::BeforeDiscovery).arm();
+        let opened =
+            OpenedIndex::open_for_test(root.path(), OpenOptions::default(), Arc::clone(&controls))
+                .expect("opened root");
+        std::fs::remove_dir(root.path()).expect("remove empty fixture root");
+        controls.gate(TestPoint::BeforeDiscovery).release();
+
+        let state = wait_until_settled(&opened);
+        assert_eq!(state.phase, crate::LifecyclePhase::Failed);
+        assert_eq!(state.coverage, crate::Coverage::Partial(crate::CoverageReason::Failed));
+        assert_eq!(state.issues.retained, 1);
+        let issues = opened.state.index.issues().expect("issues");
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].kind, crate::IssueKind::Disappeared);
+        assert!(matches!(opened.close(), Err(Error::OpenedWorkerFailed { .. })));
+    }
+
+    #[test]
+    fn progressive_discovery_settles_to_the_one_shot_tree() {
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::create_dir_all(root.path().join("alpha/deep")).expect("fixture directories");
+        std::fs::write(root.path().join("root.txt"), b"root").expect("root fixture");
+        std::fs::write(root.path().join("alpha/child.bin"), b"child").expect("child fixture");
+        std::fs::write(root.path().join("alpha/deep/leaf.rs"), b"leaf").expect("leaf fixture");
+        let options = OpenOptions { batch_size: 2, ..OpenOptions::default() };
+
+        let opened = OpenedIndex::open(root.path(), options.clone()).expect("opened root");
+        let state = wait_until_settled(&opened);
+        assert_eq!(state.phase, crate::LifecyclePhase::Ready);
+        assert_eq!(state.coverage, crate::Coverage::Complete);
+        assert_eq!(state.progress.files_retained, 3);
+
+        let live = opened.state.index.snapshot().expect("live snapshot");
+        let (one_shot, report) =
+            crate::scan::scan_into_index(root.path(), &options.clone().into_parts().0)
+                .expect("one-shot scan");
+        assert!(report.is_complete());
+        assert_eq!(live.total(), one_shot.total());
+        assert_eq!(live.len(), one_shot.len());
+        for path in [Path::new(""), Path::new("alpha"), Path::new("alpha/deep")] {
+            assert_eq!(child_facts(&live, path), child_facts(&one_shot, path));
+            assert_eq!(live.directory_complete(path), Some(true));
+        }
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn parent_listing_commits_before_prioritized_child_work_without_a_clock_change() {
+        let root = tempfile::tempdir().expect("temp root");
+        for directory in ["alpha", "target"] {
+            std::fs::create_dir(root.path().join(directory)).expect("fixture directory");
+            std::fs::write(root.path().join(directory).join("leaf"), directory)
+                .expect("fixture file");
+        }
+        let controls = Arc::new(TestControls::default());
+        controls.gate(TestPoint::AfterRootDirectory).arm();
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            OpenOptions { batch_size: 64, ..OpenOptions::default() },
+            Arc::clone(&controls),
+        )
+        .expect("opened root");
+        controls.gate(TestPoint::AfterRootDirectory).wait_reached();
+
+        let before_priority = opened.state.index.clock().expect("clock");
+        assert_eq!(
+            opened.state.index.directory_complete(Path::new("")).expect("root completeness"),
+            Some(true)
+        );
+        assert_eq!(
+            opened
+                .state
+                .index
+                .directory_complete(Path::new("target"))
+                .expect("target completeness"),
+            Some(false)
+        );
+        opened.prioritize(&[PathBuf::from("target")]).expect("prioritize");
+        assert_eq!(opened.state.index.clock().expect("clock"), before_priority);
+        controls.gate(TestPoint::AfterRootDirectory).release();
+        let state = wait_until_settled(&opened);
+        assert_eq!(state.coverage, crate::Coverage::Complete);
+
+        let since = opened.state.index.since(before_priority).expect("commits after root");
+        let first_file = since
+            .commits
+            .iter()
+            .flat_map(|commit| &commit.changes)
+            .find_map(|change| match change {
+                crate::EffectiveChange::Inserted { path, kind: EntryKind::File, .. } => {
+                    Some(path.clone())
+                }
+                _ => None,
+            })
+            .expect("child file commit");
+        assert_eq!(first_file, PathBuf::from("target/leaf"));
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn reaching_a_file_limit_without_refusal_remains_complete() {
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::write(root.path().join("one"), b"1").expect("fixture");
+        std::fs::write(root.path().join("two"), b"2").expect("fixture");
+        let opened = OpenedIndex::open(
+            root.path(),
+            OpenOptions {
+                budget: DiscoveryBudget { max_files: Some(2) },
+                ..OpenOptions::default()
+            },
+        )
+        .expect("opened root");
+
+        let state = wait_until_settled(&opened);
+        assert_eq!(state.coverage, crate::Coverage::Complete);
+        assert_eq!(state.progress.files_retained, 2);
+        assert_eq!(
+            opened.state.index.directory_complete(Path::new("")).expect("root completeness"),
+            Some(true)
+        );
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn first_refusal_stops_expansion_and_commits_the_budget_state_with_prior_facts() {
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::create_dir(root.path().join("nested")).expect("fixture directory");
+        std::fs::write(root.path().join("one"), b"1").expect("fixture");
+        std::fs::write(root.path().join("two"), b"2").expect("fixture");
+        std::fs::write(root.path().join("nested/deep"), b"deep").expect("deep fixture");
+        let opened = OpenedIndex::open(
+            root.path(),
+            OpenOptions {
+                batch_size: 64,
+                budget: DiscoveryBudget { max_files: Some(1) },
+                ..OpenOptions::default()
+            },
+        )
+        .expect("opened root");
+
+        let state = wait_until_settled(&opened);
+        assert_eq!(state.phase, crate::LifecyclePhase::Stopped);
+        assert_eq!(state.coverage, crate::Coverage::Partial(crate::CoverageReason::Budget));
+        assert_eq!(state.progress.files_retained, 1);
+        assert_eq!(opened.state.index.total().expect("total").files, 1);
+        assert_eq!(opened.state.index.kind(Path::new("nested/deep")).expect("deep lookup"), None);
+        assert_eq!(
+            opened.state.index.directory_complete(Path::new("")).expect("root completeness"),
+            Some(false)
+        );
+        let partial = opened.state.index.snapshot().expect("partial snapshot image");
+        assert!(matches!(
+            crate::snapshot::save(&partial, &root.path().join("partial.fdu")),
+            Err(Error::Snapshot(_))
+        ));
+        assert!(matches!(
+            opened.prioritize(&[PathBuf::from("nested")]),
+            Err(Error::OpenedIndexStopped)
+        ));
+
+        let terminal = opened
+            .state
+            .index
+            .since(crate::Clock::ZERO)
+            .expect("journal")
+            .commits
+            .into_iter()
+            .find(|commit| {
+                commit.state.iter().any(|transition| {
+                    matches!(
+                        transition,
+                        crate::StateTransition::IndexState {
+                            current: crate::IndexState {
+                                coverage: crate::Coverage::Partial(crate::CoverageReason::Budget),
+                                ..
+                            },
+                            ..
+                        }
+                    )
+                })
+            })
+            .expect("budget commit");
+        assert!(terminal.changes.iter().any(|change| matches!(
+            change,
+            crate::EffectiveChange::Inserted { kind: EntryKind::File, .. }
+        )));
+        opened.close().expect("close");
     }
 }

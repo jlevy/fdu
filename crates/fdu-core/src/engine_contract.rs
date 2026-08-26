@@ -356,6 +356,192 @@ pub enum Freshness {
     Partial,
 }
 
+/// Current activity of one opened root.
+///
+/// Phase is deliberately independent of coverage and freshness. A stopped root may
+/// still serve a useful partial image, and a watching root may temporarily be stale.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum LifecyclePhase {
+    /// The root is being bound and its initial state established.
+    Opening,
+    /// A cold walk is adding verified entries.
+    Discovering,
+    /// Explicit or gap-closing verification is in progress.
+    Reconciling,
+    /// The current retained image is available without a live observer.
+    Ready,
+    /// Native or polling observation is active.
+    Watching,
+    /// The owner will perform no more expanding work.
+    Stopped,
+    /// A terminal provider failure ended useful work.
+    Failed,
+}
+
+/// Why an opened root cannot claim complete structural coverage.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum CoverageReason {
+    /// Initial discovery has not yet finished.
+    Building,
+    /// A configured resource budget refused additional admissible work.
+    Budget,
+    /// The owner was cancelled before the operation completed.
+    Cancelled,
+    /// Part of the configured scope could not be read.
+    Inaccessible,
+    /// A terminal provider failure prevented completion.
+    Failed,
+}
+
+/// Structural coverage of one opened root.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum Coverage {
+    /// Every directory in scope has a complete child listing.
+    Complete,
+    /// Some in-scope absence remains unknowable for the stated reason.
+    Partial(CoverageReason),
+}
+
+/// Maximum issue details retained by one index image.
+pub const MAX_RETAINED_ISSUES: usize = 64;
+/// Maximum UTF-8 bytes retained in one rendered issue message.
+pub const MAX_ISSUE_MESSAGE_BYTES: usize = 512;
+/// Maximum native encoded bytes retained for one issue path.
+pub const MAX_ISSUE_PATH_BYTES: usize = 4_096;
+
+/// Stable category for one non-fatal condition or terminal provider failure.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum IssueKind {
+    /// The operating system refused access to a path.
+    Permission,
+    /// A path disappeared during verification.
+    Disappeared,
+    /// Filesystem metadata could not be interpreted.
+    InvalidMetadata,
+    /// A configured discovery resource bound refused work.
+    ResourceBudget,
+    /// The provider failed for another reason.
+    ProviderFailure,
+}
+
+/// Bounded diagnostic evidence retained with an index state.
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+pub struct Issue {
+    /// Machine-readable category.
+    pub kind: IssueKind,
+    /// Affected relative or absolute path when it fits the detail bound.
+    pub path: Option<PathBuf>,
+    /// Human-readable detail, truncated at a UTF-8 boundary when necessary.
+    pub message: String,
+    /// Operating-system error number when one was supplied.
+    pub os_error: Option<i32>,
+}
+
+impl Issue {
+    /// Convert one engine error without retaining unbounded rendered detail.
+    pub fn from_error(error: &Error) -> Self {
+        match error {
+            Error::Io { path, source } => Self::from_io(path, source),
+            other => Self {
+                kind: IssueKind::ProviderFailure,
+                path: None,
+                message: bounded_issue_message(other.to_string()),
+                os_error: None,
+            },
+        }
+    }
+
+    pub(crate) fn from_io(path: &Path, source: &std::io::Error) -> Self {
+        Self {
+            kind: match source.kind() {
+                std::io::ErrorKind::PermissionDenied => IssueKind::Permission,
+                std::io::ErrorKind::NotFound => IssueKind::Disappeared,
+                std::io::ErrorKind::InvalidData | std::io::ErrorKind::InvalidInput => {
+                    IssueKind::InvalidMetadata
+                }
+                _ => IssueKind::ProviderFailure,
+            },
+            path: bounded_issue_path(path),
+            message: bounded_issue_message(format!("I/O error at {}: {source}", path.display())),
+            os_error: source.raw_os_error(),
+        }
+    }
+
+    /// Describe the first file refused by a discovery resource budget.
+    pub(crate) fn resource_budget(max_files: u64) -> Self {
+        Self {
+            kind: IssueKind::ResourceBudget,
+            path: None,
+            message: format!("discovery refused an admissible file after retaining {max_files}"),
+            os_error: None,
+        }
+    }
+}
+
+fn bounded_issue_path(path: &Path) -> Option<PathBuf> {
+    (path.as_os_str().as_encoded_bytes().len() <= MAX_ISSUE_PATH_BYTES).then(|| path.to_path_buf())
+}
+
+fn bounded_issue_message(mut message: String) -> String {
+    if message.len() <= MAX_ISSUE_MESSAGE_BYTES {
+        return message;
+    }
+    let mut end = MAX_ISSUE_MESSAGE_BYTES;
+    while !message.is_char_boundary(end) {
+        end -= 1;
+    }
+    message.truncate(end);
+    message
+}
+
+/// Counts for the bounded issue details captured with a state.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
+pub struct IssueSummary {
+    /// Details retained and available to a coherent read.
+    pub retained: u64,
+    /// Additional details omitted after the bound was reached.
+    pub omitted: u64,
+}
+
+/// Committed, bounded discovery counters.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
+pub struct DiscoveryProgress {
+    /// Regular files retained by cold discovery.
+    pub files_retained: u64,
+    /// Directories whose complete in-scope child listing was committed.
+    pub directories_complete: u64,
+}
+
+/// Coherent public state captured at an index commit boundary.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct IndexState {
+    /// Current activity of the opened root.
+    pub phase: LifecyclePhase,
+    /// Whether the retained tree covers all configured scope.
+    pub coverage: Coverage,
+    /// How current the retained facts are believed to be.
+    pub freshness: Freshness,
+    /// Weakest source represented by this first implementation.
+    pub source: Source,
+    /// Stable counters advanced only by committed discovery work.
+    pub progress: DiscoveryProgress,
+    /// Bounded diagnostic evidence counts at this version.
+    pub issues: IssueSummary,
+}
+
+impl Default for IndexState {
+    fn default() -> Self {
+        Self {
+            phase: LifecyclePhase::Ready,
+            coverage: Coverage::Complete,
+            freshness: Freshness::Fresh,
+            source: Source::Scanned,
+            progress: DiscoveryProgress::default(),
+            issues: IssueSummary::default(),
+        }
+    }
+}
+
 impl Freshness {
     pub(crate) const fn rank(self) -> u8 {
         match self {
@@ -755,13 +941,28 @@ pub enum StateTransition {
         /// Relative root covered by the reconciliation.
         path: PathBuf,
     },
+    /// One directory's complete in-scope child listing became known.
+    DirectoryComplete {
+        /// Relative directory whose child set is now authoritative.
+        path: PathBuf,
+    },
+    /// The coherent opened-root state changed.
+    IndexState {
+        /// State before this commit.
+        previous: IndexState,
+        /// State after this commit.
+        current: IndexState,
+    },
 }
 
 impl StateTransition {
     /// Relative path affected by this transition.
     pub fn path(&self) -> &Path {
         match self {
-            Self::Freshness { path, .. } | Self::Verified { path } => path,
+            Self::Freshness { path, .. }
+            | Self::Verified { path }
+            | Self::DirectoryComplete { path } => path,
+            Self::IndexState { .. } => Path::new(""),
         }
     }
 }
@@ -924,6 +1125,23 @@ pub enum Error {
     /// An operation was attempted after shared shutdown began.
     #[error("the opened index is closed")]
     OpenedIndexClosed,
+
+    /// An expanding operation was attempted after a resource stop.
+    #[error("the opened index is stopped and cannot expand its retained set")]
+    OpenedIndexStopped,
+
+    /// A priority request exceeded the public per-call bound.
+    #[error("priority request contains {attempted} paths; limit is {limit}")]
+    PriorityPathLimit {
+        /// Paths supplied by the caller.
+        attempted: usize,
+        /// Maximum paths accepted by one request.
+        limit: usize,
+    },
+
+    /// A producer tried to complete a path that was not a retained directory.
+    #[error("directory completion named an unknown or non-directory path: {0:?}")]
+    InvalidDirectoryCompletion(PathBuf),
 
     /// A panic poisoned the opened index's lifecycle coordination state.
     #[error("opened-index lifecycle state was poisoned by a panic")]

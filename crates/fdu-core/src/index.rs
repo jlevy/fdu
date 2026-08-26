@@ -40,9 +40,11 @@ use crate::content::{
     ContentRollUp,
 };
 use crate::engine_contract::{
-    AppliedDelta, Attrs, Clock, Commit, EffectiveChange, EntryIdentity, EntryKind, Expectation,
-    Freshness, Impact, ImpactDomain, InvalidateReason, MAX_DIRTY_PATHS, Observation, ObservationOp,
-    Op, PathExpectation, PathState, Provenance, ScanScope, Source, StateTransition, Status, Work,
+    AppliedDelta, Attrs, Clock, Commit, Coverage, CoverageReason, DiscoveryProgress,
+    EffectiveChange, EntryIdentity, EntryKind, Expectation, Freshness, Impact, ImpactDomain,
+    IndexState, InvalidateReason, Issue, LifecyclePhase, MAX_DIRTY_PATHS, MAX_RETAINED_ISSUES,
+    Observation, ObservationOp, Op, PathExpectation, PathState, Provenance, ScanScope, Source,
+    StateTransition, Status, Work,
 };
 
 /// Verification intervals kept before the oldest are dropped.
@@ -284,6 +286,11 @@ struct Entry {
     /// Changes only on direct child-map mutations. This is the narrow structural guard
     /// for absent paths and destructive subtree operations.
     children_revision: u64,
+    /// Whether every in-scope child of this directory has been enumerated.
+    ///
+    /// Meaningful only for directories. Keeping the bit on the entry makes absence a
+    /// local fact instead of forcing readers to reconstruct the discovery frontier.
+    children_complete: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -478,6 +485,11 @@ pub struct Index {
     controls: crate::control::ControlTable,
     freshness_epoch: u64,
     freshness_marks: BTreeMap<PathBuf, FreshnessMark>,
+    /// Coherent opened-root state. Detached indexes retain the settled default and do
+    /// not acquire live identity or worker ownership by carrying this value.
+    state: IndexState,
+    /// Bounded diagnostic details summarized by `state.issues`.
+    issues: Vec<Issue>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -490,6 +502,26 @@ struct FreshnessMark {
 #[derive(Clone, Debug)]
 pub struct IndexHandle {
     inner: Arc<RwLock<Index>>,
+}
+
+/// Index-owned part of one progressive discovery commit.
+///
+/// The producer may combine one of these with entry observations; the index derives
+/// file progress from effective inserts and publishes one exact commit.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct DiscoveryCommit {
+    pub(crate) directory_complete: Option<PathBuf>,
+    pub(crate) transition: Option<DiscoveryTransition>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum DiscoveryTransition {
+    Begin,
+    Finish,
+    BudgetRefused(Issue),
+    Inaccessible { issues: Vec<Issue>, omitted: u64 },
+    Cancelled,
+    Failed(Issue),
 }
 
 impl IndexHandle {
@@ -521,6 +553,25 @@ impl IndexHandle {
     pub fn apply(&self, observation: &Observation) -> crate::Result<ApplyOutcome> {
         let prepared = prepare_observation(observation)?;
         self.write_index()?.commit_prepared(prepared, true)
+    }
+
+    pub(crate) fn apply_discovery(
+        &self,
+        observation: &Observation,
+        discovery: DiscoveryCommit,
+    ) -> crate::Result<ApplyOutcome> {
+        let prepared = prepare_observation(observation)?;
+        self.write_index()?.commit_prepared_with(prepared, true, Some(discovery))
+    }
+
+    pub(crate) fn transition_discovery(
+        &self,
+        transition: DiscoveryTransition,
+    ) -> crate::Result<ApplyOutcome> {
+        self.apply_discovery(
+            &Observation::new(Vec::new()),
+            DiscoveryCommit { directory_complete: None, transition: Some(transition) },
+        )
     }
 
     /// Absolute filesystem root, copied without retaining the read lock.
@@ -561,6 +612,22 @@ impl IndexHandle {
     /// Owned roll-up totals for the whole tree.
     pub fn total(&self) -> crate::Result<RollUp> {
         Ok(self.read_index()?.total())
+    }
+
+    /// Coherent opened-root state at the returned clock.
+    pub(crate) fn state(&self) -> crate::Result<IndexState> {
+        Ok(self.read_index()?.state())
+    }
+
+    #[allow(dead_code)] // Consumed by the opened-root coherent read checkpoint.
+    pub(crate) fn issues(&self) -> crate::Result<Vec<Issue>> {
+        Ok(self.read_index()?.issues().to_vec())
+    }
+
+    /// Whether a known directory has an authoritative in-scope child set.
+    #[allow(dead_code)] // Consumed by the opened-root coherent read checkpoint.
+    pub(crate) fn directory_complete(&self, path: &Path) -> crate::Result<Option<bool>> {
+        Ok(self.read_index()?.directory_complete(path))
     }
 
     /// Owned roll-up state for a relative directory path.
@@ -749,6 +816,7 @@ impl Index {
             rollup: InternedPartitionRollUp::default(),
             revision: 0,
             children_revision: 0,
+            children_complete: true,
         };
         Self {
             root_path: root_path.into(),
@@ -764,6 +832,8 @@ impl Index {
             pending_invalidations: Vec::new(),
             freshness_epoch: 0,
             freshness_marks: BTreeMap::new(),
+            state: IndexState::default(),
+            issues: Vec::new(),
             applying_source: Source::Scanned,
             scanned_at_ns: Self::now_unix_nanos(),
             captured_at_ns: 0,
@@ -841,6 +911,24 @@ impl Index {
         self.freshness_at(Path::new(""))
     }
 
+    /// Coherent state at the current clock.
+    pub(crate) const fn state(&self) -> IndexState {
+        self.state
+    }
+
+    #[allow(dead_code)] // Consumed through `IndexHandle` by the next vertical slice.
+    pub(crate) fn issues(&self) -> &[Issue] {
+        &self.issues
+    }
+
+    /// Whether the complete in-scope child set of a known directory is authoritative.
+    #[allow(dead_code)] // Consumed through `IndexHandle` by the next vertical slice.
+    pub(crate) fn directory_complete(&self, path: &Path) -> Option<bool> {
+        let id = self.lookup(path)?;
+        let entry = self.entry(id);
+        (entry.kind == EntryKind::Dir).then_some(entry.children_complete)
+    }
+
     /// Trust state for one subtree, including any stale descendant it contains.
     pub fn freshness_at(&self, path: &Path) -> Freshness {
         self.freshness_marks
@@ -913,8 +1001,33 @@ impl Index {
         prepared: PreparedObservation,
         journal: bool,
     ) -> crate::Result<ApplyOutcome> {
-        if prepared.ops.is_empty() {
+        self.commit_prepared_with(prepared, journal, None)
+    }
+
+    fn commit_prepared_with(
+        &mut self,
+        prepared: PreparedObservation,
+        journal: bool,
+        discovery: Option<DiscoveryCommit>,
+    ) -> crate::Result<ApplyOutcome> {
+        if prepared.ops.is_empty()
+            && discovery.as_ref().is_none_or(|discovery| {
+                discovery.directory_complete.is_none() && discovery.transition.is_none()
+            })
+        {
             return Ok(ApplyOutcome::default());
+        }
+
+        if let Some(path) =
+            discovery.as_ref().and_then(|discovery| discovery.directory_complete.as_ref())
+        {
+            let path = canonical_relative_path(path)?;
+            let Some(id) = self.lookup(&path) else {
+                return Err(crate::Error::InvalidDirectoryCompletion(path));
+            };
+            if self.entry(id).kind != EntryKind::Dir {
+                return Err(crate::Error::InvalidDirectoryCompletion(path));
+            }
         }
 
         #[cfg(test)]
@@ -928,7 +1041,7 @@ impl Index {
             // change without touching the original index.
             let mut probe = self.clone();
             probe.clock = Clock(self.clock.0 - 1);
-            let outcome = probe.commit_prepared(prepared, false)?;
+            let outcome = probe.commit_prepared_with(prepared, false, discovery)?;
             return if outcome.commit.is_some() {
                 Err(crate::Error::ClockExhausted)
             } else {
@@ -999,6 +1112,7 @@ impl Index {
         }
 
         self.apply_control_transition(projected_controls, &mut stats, &mut effects);
+        self.apply_discovery_transition(discovery, &mut effects);
 
         if effects.is_empty() {
             return Ok(ApplyOutcome::from_commit(stats, None));
@@ -1007,6 +1121,114 @@ impl Index {
         let commit =
             self.publish_effects(next_clock, effects, commit_work(observed, stats), journal);
         Ok(ApplyOutcome::from_commit(stats, Some(commit)))
+    }
+
+    fn apply_discovery_transition(
+        &mut self,
+        discovery: Option<DiscoveryCommit>,
+        effects: &mut MutationEffects,
+    ) {
+        let Some(discovery) = discovery else {
+            return;
+        };
+        let previous = self.state;
+        let inserted_files = effects
+            .changes
+            .iter()
+            .filter(|change| {
+                matches!(change, EffectiveChange::Inserted { kind: EntryKind::File, .. })
+            })
+            .count();
+        self.state.progress.files_retained = self
+            .state
+            .progress
+            .files_retained
+            .saturating_add(u64::try_from(inserted_files).unwrap_or(u64::MAX));
+
+        if let Some(path) = discovery.directory_complete {
+            let id = self.lookup(&path).expect("discovery completion was preflighted");
+            if !self.entry(id).children_complete {
+                self.entry_mut(id).children_complete = true;
+                self.state.progress.directories_complete =
+                    self.state.progress.directories_complete.saturating_add(1);
+                effects.state.push(StateTransition::DirectoryComplete { path });
+            }
+        }
+
+        if let Some(transition) = discovery.transition {
+            match transition {
+                DiscoveryTransition::Begin => {
+                    for slot in &mut self.arena {
+                        if let Slot::Occupied { entry, .. } = slot {
+                            if entry.kind == EntryKind::Dir {
+                                entry.children_complete = false;
+                            }
+                        }
+                    }
+                    self.state = IndexState {
+                        phase: LifecyclePhase::Discovering,
+                        coverage: Coverage::Partial(CoverageReason::Building),
+                        freshness: Freshness::Fresh,
+                        source: Source::Scanned,
+                        progress: DiscoveryProgress::default(),
+                        issues: crate::IssueSummary::default(),
+                    };
+                    self.issues.clear();
+                }
+                DiscoveryTransition::Finish => {
+                    self.state.phase = LifecyclePhase::Ready;
+                    if self.state.coverage == Coverage::Partial(CoverageReason::Building) {
+                        self.state.coverage = Coverage::Complete;
+                    }
+                    self.state.freshness = if self.state.coverage == Coverage::Complete {
+                        Freshness::Fresh
+                    } else {
+                        Freshness::Partial
+                    };
+                }
+                DiscoveryTransition::BudgetRefused(issue) => {
+                    self.state.phase = LifecyclePhase::Stopped;
+                    self.state.coverage = Coverage::Partial(CoverageReason::Budget);
+                    self.state.freshness = Freshness::Fresh;
+                    self.retain_issue(issue);
+                }
+                DiscoveryTransition::Inaccessible { issues, omitted } => {
+                    if self.state.coverage != Coverage::Partial(CoverageReason::Budget) {
+                        self.state.coverage = Coverage::Partial(CoverageReason::Inaccessible);
+                        self.state.freshness = Freshness::Partial;
+                    }
+                    for issue in issues {
+                        self.retain_issue(issue);
+                    }
+                    self.state.issues.omitted = self.state.issues.omitted.saturating_add(omitted);
+                }
+                DiscoveryTransition::Cancelled => {
+                    self.state.phase = LifecyclePhase::Stopped;
+                    if self.state.coverage != Coverage::Complete {
+                        self.state.coverage = Coverage::Partial(CoverageReason::Cancelled);
+                    }
+                }
+                DiscoveryTransition::Failed(issue) => {
+                    self.state.phase = LifecyclePhase::Failed;
+                    self.state.coverage = Coverage::Partial(CoverageReason::Failed);
+                    self.state.freshness = Freshness::Partial;
+                    self.retain_issue(issue);
+                }
+            }
+        }
+
+        if previous != self.state {
+            effects.state.push(StateTransition::IndexState { previous, current: self.state });
+        }
+    }
+
+    fn retain_issue(&mut self, issue: Issue) {
+        if self.issues.len() < MAX_RETAINED_ISSUES {
+            self.issues.push(issue);
+            self.state.issues.retained = u64::try_from(self.issues.len()).unwrap_or(u64::MAX);
+        } else {
+            self.state.issues.omitted = self.state.issues.omitted.saturating_add(1);
+        }
     }
 
     /// Mint and optionally retain one fully evaluated transition.
@@ -1095,8 +1317,22 @@ impl Index {
 
     pub(crate) fn set_initial_freshness(&mut self, complete: bool) {
         self.freshness_marks.clear();
-        if !complete {
+        if complete {
+            for slot in &mut self.arena {
+                if let Slot::Occupied { entry, .. } = slot {
+                    if entry.kind == EntryKind::Dir {
+                        entry.children_complete = true;
+                    }
+                }
+            }
+            self.state.phase = LifecyclePhase::Ready;
+            self.state.coverage = Coverage::Complete;
+            self.state.freshness = Freshness::Fresh;
+        } else {
             self.mark_unfresh(Path::new(""), Freshness::Partial);
+            self.state.phase = LifecyclePhase::Ready;
+            self.state.coverage = Coverage::Partial(CoverageReason::Inaccessible);
+            self.state.freshness = Freshness::Partial;
         }
     }
 
@@ -2274,6 +2510,7 @@ impl Index {
             rollup: InternedPartitionRollUp::default(),
             revision: 0,
             children_revision: 0,
+            children_complete: kind != EntryKind::Dir,
         });
         self.insert_child(parent, name.to_os_string(), id);
         let contribution = self.contribution(id);
@@ -2327,6 +2564,7 @@ impl Index {
             rollup: InternedPartitionRollUp::default(),
             revision: 0,
             children_revision: 0,
+            children_complete: true,
         });
         self.insert_child(parent, name, id);
         // Roll-ups stay eager. The same profile put `merge_upward` at about 3.5%, so

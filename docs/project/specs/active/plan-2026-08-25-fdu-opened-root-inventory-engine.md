@@ -1125,7 +1125,7 @@ Acceptance for Phase 1:
 ### Phase 2: Opened-Root Vertical Slice
 
 - [x] Add the single-authority `OpenedIndex` with idempotent joined close.
-- [ ] Implement cold progressive discovery with parent-first bounded commits,
+- [x] Implement cold progressive discovery with parent-first bounded commits,
   per-directory completeness, explicit budget state, and scheduling priority.
 - [ ] Add coherent lookup, depth-one tree, roll-up, state, version, and work projections
   in one bounded `read()`.

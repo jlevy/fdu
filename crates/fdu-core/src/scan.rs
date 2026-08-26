@@ -901,13 +901,13 @@ impl ReconcileTarget<'_> {
 }
 
 #[cfg(unix)]
-fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<fs::Metadata> {
+pub(crate) fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<fs::Metadata> {
     crate::counters::bump(|c| c.stats += 1);
     entry.metadata()
 }
 
 #[cfg(not(unix))]
-fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<fs::Metadata> {
+pub(crate) fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<fs::Metadata> {
     crate::counters::bump(|c| c.stats += 1);
     // Windows serves DirEntry metadata from directory-enumeration data, which the
     // platform permits to be stale. Fingerprints need a fresh non-following query.
@@ -2122,6 +2122,52 @@ fn walk_worker(
     report
 }
 
+/// One filesystem entry after the scan's shared admission, control, and descent rules.
+pub(crate) struct PreparedWalkEntry {
+    pub(crate) path: PathBuf,
+    pub(crate) kind: EntryKind,
+    pub(crate) attrs: Attrs,
+    pub(crate) retained: bool,
+    pub(crate) control: Option<Op>,
+    pub(crate) descend: bool,
+    pub(crate) control_error: Option<Error>,
+}
+
+/// Apply the producer-independent part of a directory walk to one verified entry.
+///
+/// Both blocking and opened-root scans call this after obtaining non-following metadata,
+/// which keeps admission, fixed controls, and traversal boundaries from drifting.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prepare_walk_entry(
+    root: &Path,
+    rel_dir: &Path,
+    depth: usize,
+    name: &OsStr,
+    kind: EntryKind,
+    attrs: Attrs,
+    root_dev: u64,
+    config: &ScanConfig,
+) -> Option<PreparedWalkEntry> {
+    let disposition = crate::admission::decide(name, kind, config.hidden(), config.exclude_special);
+    if disposition == crate::admission::Disposition::Reject {
+        return None;
+    }
+    let path = rel_dir.join(name);
+    let (control, control_error) = match read_control_op(root, &path, kind) {
+        Ok(control) => (control, None),
+        Err(error) => (None, Some(error)),
+    };
+    Some(PreparedWalkEntry {
+        path,
+        kind,
+        attrs,
+        retained: disposition == crate::admission::Disposition::Retain,
+        control,
+        descend: should_descend(kind, attrs, depth, root_dev, config),
+        control_error,
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn record_walk_entry(
     root: &Path,
@@ -2140,21 +2186,16 @@ fn record_walk_entry(
     chunk_send_ns: &mut u64,
     diagnostics: Option<&ScanDiagnosticsRecorder>,
 ) -> bool {
-    let rel_path = rel_dir.join(name);
-    let disposition = crate::admission::decide(name, kind, config.hidden(), config.exclude_special);
-    if disposition == crate::admission::Disposition::Reject {
+    let Some(prepared) =
+        prepare_walk_entry(root, rel_dir, depth, name, kind, attrs, root_dev, config)
+    else {
         return true;
-    }
-    let descend = should_descend(kind, attrs, depth, root_dev, config);
-    let control = match read_control_op(root, &rel_path, kind) {
-        Ok(control) => control,
-        Err(error) => {
-            report.errors.push(error);
-            None
-        }
     };
-    if disposition == crate::admission::Disposition::ControlOnly {
-        if let Some(control) = control {
+    if let Some(error) = prepared.control_error {
+        report.errors.push(error);
+    }
+    if !prepared.retained {
+        if let Some(control) = prepared.control {
             batch.push(control);
             if batch.len() >= config.batch_size {
                 let send_started = std::time::Instant::now();
@@ -2167,7 +2208,7 @@ fn record_walk_entry(
         return true;
     }
     report.observe(kind, attrs);
-    batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
+    batch.push(Op::Upsert { path: prepared.path.clone(), kind, attrs });
     if batch.len() >= config.batch_size {
         let send_started = std::time::Instant::now();
         let sent = send_observation(sender, Observation::new(std::mem::take(batch)), diagnostics);
@@ -2176,7 +2217,7 @@ fn record_walk_entry(
             return false;
         }
     }
-    if let Some(control) = control {
+    if let Some(control) = prepared.control {
         batch.push(control);
         if batch.len() >= config.batch_size {
             let send_started = std::time::Instant::now();
@@ -2188,12 +2229,12 @@ fn record_walk_entry(
             }
         }
     }
-    if descend {
+    if prepared.descend {
         // A child of the root seeds a new region; everything deeper inherits its
         // parent's. Region membership therefore costs one integer copy and never
         // inspects a path.
         let child_region = if depth == 0 { RegionId::UNASSIGNED } else { region };
-        discovered.push((rel_path, depth + 1, child_region));
+        discovered.push((prepared.path, depth + 1, child_region));
     }
     true
 }

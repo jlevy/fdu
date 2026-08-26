@@ -34,7 +34,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::engine_contract::{
-    Attrs, EntryKind, Error, Freshness, Observation, Op, Result, ScanScope, Source,
+    Attrs, Coverage, EntryKind, Error, Freshness, Observation, Op, Result, ScanScope, Source,
 };
 use crate::index::{EntryId, Index, IndexHandle};
 
@@ -186,9 +186,9 @@ pub fn engine_fingerprint() -> u64 {
 
 /// Write `index` to `path`, replacing any existing snapshot atomically.
 pub fn save(index: &Index, path: &Path) -> Result<()> {
-    if index.freshness() != Freshness::Fresh {
+    if index.freshness() != Freshness::Fresh || index.state().coverage != Coverage::Complete {
         return Err(Error::Snapshot(
-            "refusing to persist an index that is stale, reconciling, or partial".into(),
+            "refusing to persist an index that is stale, reconciling, or incomplete".into(),
         ));
     }
     let mut buf: Vec<u8> = Vec::new();
