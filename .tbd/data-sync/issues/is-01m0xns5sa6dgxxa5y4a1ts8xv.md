@@ -5,15 +5,15 @@ title: "Review PR #47 design, implementation, and outstanding work"
 kind: task
 status: closed
 priority: 1
-version: 5
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 6
+spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 child_order_hints:
   - is-01m0xpk29gmsams0zwb3msep2v
 created_at: 2026-08-25T23:58:38.889Z
-updated_at: 2026-08-26T00:27:44.922Z
+updated_at: 2026-08-26T07:01:50.826Z
 closed_at: 2026-08-26T00:26:13.556Z
 close_reason: The full review is recorded in report-2026-08-25-pr-47-design-and-readiness-review.md, with design assessment, implementation findings, current issue inventory, target architecture, staged delivery plan, and merge criteria. The golden-test antipattern remains open separately as fdu-9tdm.
 resolution: null

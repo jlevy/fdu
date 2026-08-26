@@ -5,15 +5,15 @@ title: "Coverage reason: partial must say why, not only that"
 kind: feature
 status: closed
 priority: 1
-version: 8
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 9
+spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels: []
 dependencies:
   - type: blocks
     target: is-01m0rw7d4h3t49rwvk11cmk5xb
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T03:15:01.418Z
-updated_at: 2026-08-24T23:51:03.913Z
+updated_at: 2026-08-26T07:01:50.826Z
 closed_at: 2026-08-24T23:51:03.913Z
 close_reason: |
   Closed. `make check` green.

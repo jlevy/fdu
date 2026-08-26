@@ -5,8 +5,8 @@ title: Complete the coherent read envelope and version-pinned paging
 kind: bug
 status: open
 priority: 1
-version: 34
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 35
+spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5018121437
@@ -30,7 +30,7 @@ dependencies:
     target: is-01m0tdy9ceep2byvbtyvwc2vky
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.445Z
-updated_at: 2026-08-25T23:47:04.093Z
+updated_at: 2026-08-26T07:01:50.826Z
 closed_at: null
 close_reason: null
 resolution: null

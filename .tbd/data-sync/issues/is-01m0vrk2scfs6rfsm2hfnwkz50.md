@@ -5,8 +5,8 @@ title: "Two-engine agreement oracle: conformance packet and recorded-observation
 kind: task
 status: open
 priority: 1
-version: 7
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 8
+spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5017522830
@@ -21,7 +21,7 @@ labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-25T06:09:16.076Z
-updated_at: 2026-08-25T13:21:15.011Z
+updated_at: 2026-08-26T07:01:50.826Z
 ---
 Split out of fdu-vfyw, which shipped fdu's side of the contract: the reference embedder
 example (crates/fdu-py/examples/browser_provider.py), the semantic_fingerprint recipe,

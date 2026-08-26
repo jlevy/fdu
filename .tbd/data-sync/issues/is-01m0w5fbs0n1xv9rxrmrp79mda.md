@@ -5,8 +5,8 @@ title: Exclude special filesystem objects at the MetaBrowser provider boundary
 kind: bug
 status: closed
 priority: 1
-version: 6
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 7
+spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47
@@ -26,7 +26,7 @@ labels:
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-25T09:54:25.695Z
-updated_at: 2026-08-25T12:07:06.277Z
+updated_at: 2026-08-26T07:01:50.826Z
 closed_at: 2026-08-25T11:28:11.417Z
 close_reason: null
 resolution: null

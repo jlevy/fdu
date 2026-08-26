@@ -5,13 +5,13 @@ title: Fold Classification.flags into the tag model as Name-tier rules
 kind: task
 status: closed
 priority: 3
-version: 2
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 3
+spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T15:21:48.073Z
-updated_at: 2026-08-25T06:23:26.410Z
+updated_at: 2026-08-26T07:01:50.826Z
 closed_at: 2026-08-25T06:23:26.410Z
 close_reason: |
   Two of the three folded in; the third cannot, and the tag model's own tier check is the

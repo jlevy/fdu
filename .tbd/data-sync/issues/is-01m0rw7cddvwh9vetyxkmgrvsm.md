@@ -5,13 +5,13 @@ title: "Handle lifecycle: prioritize() and close() on the opened root"
 kind: feature
 status: open
 priority: 2
-version: 1
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 2
+spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T03:15:03.725Z
-updated_at: 2026-08-24T03:15:03.725Z
+updated_at: 2026-08-26T07:01:50.826Z
 ---
 MetaBrowser's InventoryHandle has five operations. fdu answers three and not two:
 

@@ -5,8 +5,8 @@ title: Hidden-path admission as scope, with an exact-name allowlist
 kind: task
 status: open
 priority: 2
-version: 10
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 11
+spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5019372007
@@ -18,7 +18,7 @@ labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T15:21:47.400Z
-updated_at: 2026-08-25T15:10:56.894Z
+updated_at: 2026-08-26T07:01:50.826Z
 closed_at: 2026-08-25T06:35:17.988Z
 close_reason: |
   Shipped as `crates/fdu-core/src/admission.rs` plus wiring across all three surfaces.

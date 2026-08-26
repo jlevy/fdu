@@ -5,8 +5,8 @@ title: Resume cursor can skip deltas and cannot reject another session
 kind: bug
 status: closed
 priority: 0
-version: 6
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 7
+spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - pr47-review
   - metabrowser
@@ -19,7 +19,7 @@ dependencies:
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:52.910Z
-updated_at: 2026-08-24T22:04:05.358Z
+updated_at: 2026-08-26T07:01:50.826Z
 closed_at: 2026-08-24T22:04:05.358Z
 close_reason: |
   Shipped. `make check` green. This is the third and last of the P0 authority defects.

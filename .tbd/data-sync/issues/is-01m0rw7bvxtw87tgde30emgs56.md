@@ -5,13 +5,13 @@ title: "Invalidation vocabulary: dirty query kinds, all-dirty, and reset as dist
 kind: feature
 status: closed
 priority: 1
-version: 7
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 8
+spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T03:15:03.165Z
-updated_at: 2026-08-25T03:44:15.611Z
+updated_at: 2026-08-26T07:01:50.826Z
 closed_at: 2026-08-25T03:44:15.610Z
 close_reason: |
   Shipped, both halves. `make check` green, parity holds.

@@ -5,13 +5,13 @@ title: Per-result work counters on every query result
 kind: feature
 status: closed
 priority: 2
-version: 2
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 3
+spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-23T22:03:13.678Z
-updated_at: 2026-08-23T23:45:49.019Z
+updated_at: 2026-08-26T07:01:50.826Z
 closed_at: 2026-08-23T23:45:49.019Z
 close_reason: |-
   Every bundled read now carries a Work record beside its answer.

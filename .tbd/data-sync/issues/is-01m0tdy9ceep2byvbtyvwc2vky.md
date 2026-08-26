@@ -5,8 +5,8 @@ title: Release the GIL and measure the full Python read boundary
 kind: task
 status: closed
 priority: 1
-version: 9
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 10
+spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - pr47-review
   - performance
@@ -16,7 +16,7 @@ dependencies:
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:54.508Z
-updated_at: 2026-08-25T01:31:41.390Z
+updated_at: 2026-08-26T07:01:50.826Z
 closed_at: 2026-08-25T01:31:41.390Z
 close_reason: |
   Shipped. `make check` green, parity holds (23 recorded deviations matched).

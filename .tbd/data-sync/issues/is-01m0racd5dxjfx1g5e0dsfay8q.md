@@ -5,8 +5,8 @@ title: Roll-up leaf counts so empty is decidable from the aggregate
 kind: feature
 status: closed
 priority: 2
-version: 6
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 7
+spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
@@ -14,7 +14,7 @@ child_order_hints:
   - is-01m0rh6bhzbhf822jt62q14kvn
   - is-01m0rm411csthct7rcayfhs1y0
 created_at: 2026-08-23T22:03:13.964Z
-updated_at: 2026-08-24T00:53:25.163Z
+updated_at: 2026-08-26T07:01:50.826Z
 closed_at: 2026-08-24T00:03:01.228Z
 close_reason: |-
   A subtree of symlinks weighs nothing and is not nothing. The aggregate now says which.

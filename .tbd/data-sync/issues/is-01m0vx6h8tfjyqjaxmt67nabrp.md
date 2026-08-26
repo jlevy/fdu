@@ -5,13 +5,13 @@ title: "Batched scoped refresh: many hint paths, one commit, one receipt"
 kind: task
 status: closed
 priority: 1
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 5
+spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-25T07:29:47.802Z
-updated_at: 2026-08-25T09:29:21.861Z
+updated_at: 2026-08-26T07:01:50.826Z
 closed_at: 2026-08-25T09:29:21.861Z
 close_reason: "Batched scoped refresh shipped: scan::reconcile_paths / reconcile_paths_handle returning a RefreshReceipt, and Index.refresh_paths on the Python surface. One operation, one terminal position, overlapping hints folded into one walk, the whole batch announced before any of it is read, and typed per-path refusals. Nine engine tests plus a Python smoke check, mutation-checked three ways."
 resolution: null

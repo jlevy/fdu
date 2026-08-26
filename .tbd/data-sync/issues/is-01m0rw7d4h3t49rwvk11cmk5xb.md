@@ -5,15 +5,15 @@ title: The bundled read carries only three projections, not the query algebra
 kind: feature
 status: closed
 priority: 1
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 5
+spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels: []
 dependencies:
   - type: blocks
     target: is-01m0tdy9ceep2byvbtyvwc2vky
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T03:15:04.465Z
-updated_at: 2026-08-24T17:48:54.852Z
+updated_at: 2026-08-26T07:01:50.826Z
 closed_at: 2026-08-24T17:44:46.449Z
 close_reason: |
   `ReadRequest` now carries a `report` projection and `ReadBundle` returns the `Report` it

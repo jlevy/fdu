@@ -5,8 +5,8 @@ title: "[bug] Gitignore bind walks the whole tree at open, even cache-only"
 kind: bug
 status: open
 priority: 1
-version: 10
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 11
+spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5020603690
@@ -23,7 +23,7 @@ labels:
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T20:45:09.518Z
-updated_at: 2026-08-25T23:47:04.729Z
+updated_at: 2026-08-26T07:01:50.826Z
 closed_at: null
 close_reason: null
 resolution: null

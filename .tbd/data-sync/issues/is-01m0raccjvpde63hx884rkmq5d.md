@@ -5,13 +5,13 @@ title: Scalar paged child rows with remainder, no extension-map copy
 kind: feature
 status: closed
 priority: 1
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 5
+spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-23T22:03:13.370Z
-updated_at: 2026-08-24T00:49:20.034Z
+updated_at: 2026-08-26T07:01:50.826Z
 closed_at: 2026-08-24T00:49:20.033Z
 close_reason: |
   The listing and the breakdown are separate questions and now cost separately.

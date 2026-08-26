@@ -5,15 +5,15 @@ title: "Two extension levels: raw logical extension plus canonical suffix matchi
 kind: feature
 status: closed
 priority: 1
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 4
+spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 child_order_hints:
   - is-01m0rdxwt5fx2h2c0j3wzek4n7
 created_at: 2026-08-23T22:06:01.965Z
-updated_at: 2026-08-23T23:05:27.832Z
+updated_at: 2026-08-26T07:01:50.826Z
 closed_at: 2026-08-23T23:05:27.832Z
 close_reason: |-
   Both levels land, and the trap the bead named is defused rather than stepped in.

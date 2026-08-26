@@ -5,8 +5,8 @@ title: Implement exact MetaBrowser catalog predicate semantics
 kind: bug
 status: open
 priority: 1
-version: 11
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 12
+spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5019981640
@@ -26,7 +26,7 @@ labels:
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-25T14:14:37.582Z
-updated_at: 2026-08-26T00:28:56.523Z
+updated_at: 2026-08-26T07:01:50.826Z
 closed_at: null
 close_reason: null
 resolution: null
