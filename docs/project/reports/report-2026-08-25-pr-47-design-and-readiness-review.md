@@ -759,7 +759,8 @@ capability.
 
 Land only:
 
-- non-cloneable live index ownership and a distinct immutable image;
+- one non-cloneable live owner, cloneable lightweight handles, and a distinct immutable
+  image;
 - exact mutation effects and replayable commits;
 - exact control-file state;
 - a simpler or total continuation implementation;
@@ -852,6 +853,15 @@ several separately merged fdu PRs.
 The branch starts from current `main` and contains no PR #47 history.
 This changes the delivery mechanics, not the architecture or ordering recommended above.
 
+This is an explicit project-owner decision made after considering the report’s preferred
+merge topology. The cumulative branch gives the two-repository effort one fdu head and
+one MetaBrowser counterpart pin while the provider contract is changing, and avoids
+stacked-PR base churn.
+It also preserves the report’s review-size concern: checkpoints improve review timing
+and bisectability but do not make the final merge unit smaller.
+The final reviewer must assess the accumulated diff, and an independently understandable
+or green phase is a stop condition that reopens this decision.
+
 The single-PR choice reintroduces review-size risk, so four controls are part of the
 decision:
 
@@ -860,6 +870,11 @@ decision:
 - the PR remains a draft until the complete MetaBrowser integration phase passes;
 - a second agent reviews the full accumulated PR, and every finding is tracked and
   addressed before it is marked ready.
+
+Phase 1 is further divided into four named gates: observable oracle, exact commit truth,
+control state, and live identity/feature floor.
+Phase 3 begins with a disposable adapter against the unchanged MetaBrowser contract so
+measured route cost precedes joint contract changes.
 
 MetaBrowser is a separate repository, so its client-side contract changes stay on PR
 #74. Both PR descriptions record the exact counterpart revision used by the integration

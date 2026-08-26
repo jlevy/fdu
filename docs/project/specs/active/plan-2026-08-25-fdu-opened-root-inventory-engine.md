@@ -38,8 +38,8 @@ One owner holds discovery, the retained index, the commit journal, optional file
 observation, continuation state, and worker lifetime.
 Every mutation enters one exact commit path.
 Reads and change polls are coherent views of committed state.
-The API is blocking and runtime-free in Rust; Python releases the GIL and supplies the
-small async wrapper MetaBrowser needs.
+The API is blocking and runtime-free in Rust; Python releases the GIL, and MetaBrowser
+owns the bounded bridge from blocking change polls to its async provider contract.
 
 This plan deliberately does not reproduce all of PR #47. The branch is valuable as a
 prototype and source of tested components, but its history shows that implementing the
@@ -64,13 +64,21 @@ revisions.
 | Use separate progressive and watch sessions? | No. One opened root owns a single lifecycle, session identity, clock, and journal from first discovery through observation. |
 | Report requested observations as changes? | No. A prepared mutation records its exact effective changes; the journal stores the resulting commit verbatim. |
 | Make `max_files` semantic scope? | No. Treat it as a discovery resource budget with explicit partial coverage, not as a promise of a deterministic retained prefix. |
+| Make MetaBrowser’s depth limit semantic scope? | No. It is a read-selection and rendering bound. The live opened root discovers an observation-compatible unbounded-depth scope. |
 | Require exact page remainders? | No. Prove lossless bounded paging by conformance; expose product totals separately when the UI needs them. |
+| What is provider row order? | Tree pages use parent-first traversal with directories before nondirectories and canonical-name order within each partition. Flat pages use lexicographic canonical POSIX-path UTF-8 byte order. |
 | Sign self-contained page tokens? | No. Use opaque, handle-local continuation IDs backed by bounded server-side state. The immediate boundary is in-process. |
 | Accept a registry fingerprint as classification input? | No. Pass the actual registry document, validate it in each provider, and derive the reported fingerprint from that content. |
 | Ship arbitrary tags and promoted roll-up planes now? | No. Ship the one demonstrated partition, `all` versus `unignored`, behind a feature; defer a generic tag algebra until a second use case exists. |
 | Serve warm and cold facts together during discovery? | Not in the first version. Stream a cold baseline honestly; retain current blocking warm-cache behavior until trust can be represented without per-value guesswork. |
 | Add an async Rust runtime? | No. Use standard threads and synchronization in core. Async adaptation belongs at the Python boundary. |
 | Change the default CLI? | No. Existing one-shot behavior and output remain the default. Interactive progress is a later explicit mode over the same engine. |
+
+The detailed Design and phase acceptance sections are normative for implementation.
+The Decision Summary and Bead Reconciliation table are indexes and must be corrected if
+they drift from those sections.
+The review report owns the diagnosis and evidence; this plan owns later implementation
+decisions, including the explicit delivery override recorded below.
 
 ## Goals
 
@@ -192,6 +200,19 @@ The rewrite must preserve the repository’s
 - visible CLI behavior is tested broadly rather than by surgically parsing only the
   value a test expects.
 
+### Ownership of progressive work
+
+This plan owns cold progressive discovery, the opened-root/session lifecycle, coherent
+mid-discovery reads, the no-gap observation handoff, and the immediate MetaBrowser
+adapter contract.
+
+The older [progressive-results plan](plan-2026-08-11-fdu-progressive-results.md) is
+narrowed to warm persisted roll-ups, lazy warm open, prefer-cache policy, and per-value
+mixed-source provenance.
+Its traversal-order work has landed and remains useful background, but it no longer owns
+a second streaming-session API. Epic `fdu-wpa0` tracks only that narrowed warm-serving
+work; `fdu-snej` owns this plan.
+
 ## Design
 
 ### Ownership boundary
@@ -224,6 +245,14 @@ clone is a detached value and carries no live session or continuation authority.
 Persisted state uses a distinct snapshot representation rather than pretending to be a
 second live owner.
 
+`close()` closes that shared owner, not one reference.
+The first caller starts cancellation and joined shutdown; concurrent callers wait for
+and receive the same terminal result.
+Every outstanding clone immediately observes the closing or closed lifecycle and all
+operations except repeated `close()` return a typed closed-handle error.
+Dropping the last reference performs the same joined shutdown as a defensive fallback,
+but ordinary clients close explicitly.
+
 ### Surface shape
 
 The initial Rust shape is intentionally synchronous:
@@ -245,10 +274,11 @@ cardinality and ownership are fixed.
 There is no callback per entry and no async executor in core.
 Blocking waits use standard threads, locks, condition variables, and cancellation.
 
-The Python binding mirrors the five operations.
-Calls that may block or perform substantial Rust work release the GIL. Its async
-convenience methods use a bounded blocking-worker bridge, such as `asyncio.to_thread`,
-and cancellation always converges on `close()` joining the native workers.
+The Python binding mirrors the five synchronous operations.
+Calls that may block or perform substantial Rust work release the GIL. It does not hide
+long-lived change polls in Python’s shared default executor.
+The MetaBrowser adapter owns the async bridge described below, where iterator
+cancellation and handle close have distinct lifetimes.
 
 ### Configuration and derived identity
 
@@ -258,14 +288,26 @@ The opened root binds one root path separately from its portable scope identity.
 The root binding belongs to the session and snapshot header; it is not folded into a
 cross-provider configuration digest whose path encoding could vary by platform.
 
-Semantic scope includes the remaining values that change which filesystem facts a
-complete index can know:
+Semantic scope includes values that change which filesystem facts a complete live index
+can know and that the observation backend can enforce:
 
-- maximum depth;
 - hidden-component admission and exact-name allowlist;
 - whether symlinks are followed;
 - filesystem-boundary policy;
 - admitted object kinds;
+
+MetaBrowser’s `max_depth` is not part of that scope.
+It bounds a tree read and browser rendering, so Phase 3 moves it into query selection.
+The opened root discovers at unbounded depth, and a depth-limited read does not change
+cache identity or observer admission.
+
+The initial live fdu provider supports the observation-compatible scope MetaBrowser
+uses: hidden components are filtered lexically, symlinks are retained but not followed,
+files/directories/symlinks are admitted, and filesystem boundaries are crossed.
+The joint contract names all four decisions even where v1 accepts only that value.
+A future restricted filesystem-boundary mode must either remain nonwatching or amend the
+observer design before it can be selected; the adapter returns a typed unsupported-scope
+error instead of promising a watch it cannot enforce.
 
 Execution policy includes values that change how or how quickly the answer is found:
 
@@ -294,8 +336,19 @@ Other filesystem objects remain available to ordinary fdu callers but are outsid
 MetaBrowser inventory contract.
 The adapter is also the only place that translates fdu’s native relative-path identity
 to MetaBrowser’s canonical POSIX-relative strings.
-It validates that conversion once at the boundary and reports unrepresentable paths
-explicitly rather than creating aliases.
+It validates that conversion once at the boundary and never creates aliases.
+Representable components become Unicode scalar strings joined by `/`; Windows native
+separators are structure, not path content.
+Invalid Unix byte sequences and Windows unpaired surrogates are unrepresentable.
+
+Unrepresentable entries remain in native fdu facts and roll-ups.
+Portable row projections omit them and return a typed issue containing an exact count
+and bounded escaped examples.
+A portable directory with such children is incomplete even when native discovery is
+complete; lookup below that directory returns `unknown`, not `absent`, when the missing
+name could lie in the unrepresentable sibling set.
+The conformance packet includes invalid Unix bytes and Windows Unicode/separator cases,
+and verifies counts, portable completeness, issues, and knowledge state.
 
 ### Version, state, and knowledge
 
@@ -314,8 +367,8 @@ The state record keeps orthogonal facts orthogonal:
 
 - **phase:** opening, discovering, reconciling, ready, watching, stopped, or failed;
 - **coverage:** complete or partial with a typed reason;
-- **freshness:** fresh, reconciling, stale, or unknown;
-- **source:** cold discovery, verified cache, or other explicitly named source;
+- **freshness:** fresh, reconciling, stale, or partial;
+- **source:** scanned, revalidated, journal-scoped, or cached;
 - **progress:** bounded counters and current work frontier;
 - **issues:** a bounded list of typed issues with bounded detail.
 
@@ -325,12 +378,25 @@ A read returns the state captured at the same version as its projections.
 A change batch returns the terminal state captured with its journal range.
 Neither surface performs a second state read after releasing the observation guard.
 
+Phase 3 aligns the adapter-visible values rather than asking the adapter to invent a
+lossy mapping:
+
+| fdu value | MetaBrowser value after the contract amendment | Rule |
+| --- | --- | --- |
+| phase `opening` | `OPENING` | Rename prototype `OPENING_CACHE`; opening is not necessarily a cache read. |
+| `discovering`, `reconciling`, `ready`, `watching`, `stopped`, `failed` | same named lifecycle value | Exhaustive one-to-one mapping. |
+| coverage complete or partial with `building`, `budget`, `cancelled`, `inaccessible`, or `failed` | same boolean and reason | No reason folding. |
+| freshness `fresh`, `reconciling`, `stale`, or `partial` | same named freshness value | Per-path `unknown` remains knowledge state, not freshness. |
+| source `scanned`, `revalidated`, `journal_scoped`, or `cached` | same named source value | A provider may support only a subset, but cannot rename one. |
+
+The contract suite fails if either enum gains an unmapped value.
+
 Entry lookup uses three-valued knowledge:
 
 - `present` when the entry is retained;
 - `absent` only when relevant coverage is complete;
-- `unknown` when a budget, failure, depth boundary, or unfinished discovery prevents an
-  absence claim.
+- `unknown` when a budget, failure, unsupported scope boundary, unrepresentable sibling
+  set, or unfinished discovery prevents an absence claim.
 
 Directory completeness is recorded separately from global coverage so a discovered
 subtree can be answered honestly before the full baseline is complete.
@@ -455,21 +521,39 @@ observation boundary with:
 
 Every interactive projection has both an output bound and a deterministic work bound,
 such as a maximum number of index rows visited.
-Exhausting that budget returns a typed query-limit result; it never silently relabels a
-partial calculation as exact.
+Exhausting that budget returns a typed query-limit result for row projections; it never
+silently relabels a partial calculation as exact.
 Repeated client aggregates must use maintained indexes so their normal exact path stays
 within the bound. No read performs an unbounded full-index traversal while holding the
 writer guard. Expensive preparation may use immutable indexes or resumable state outside
 the short commit critical section, but the returned answer must still be pinned to one
 version.
 
+Product totals have a separate bounded result because a missing denominator and a known
+lower bound are different user experiences.
+The initial exact totals are backed by named commit-maintained structures:
+
+- a timestamp-ordered multiset supports exact recency-window counts and ranked recent
+  rows;
+- global and per-directory extension, canonical-extension, family, and `all` versus
+  `unignored` tallies support the catalog and navigation predicates the client already
+  uses;
+- hierarchical roll-ups support exact directory totals.
+
+An aggregate outside that maintained set receives a request `count_cap` bounded by a
+server maximum. Its result is either `exact(n)` or `at_least(n)`; the latter renders as
+`n+` and is never cached or serialized as an exact total.
+The initial MetaBrowser default cap is 10,000. Adding another exact total therefore
+requires either a maintained index with measured cost or an explicit capped product
+contract.
+
 The first native projection vocabulary is:
 
 1. **Lookup:** one retained entry or three-valued absence.
 2. **Tree page:** bounded structural rows below a path, including the ancestors needed
    to render them and per-directory completeness.
-3. **Flat entry page:** bounded path-ordered entries under a selection, with compact or
-   full row shape.
+3. **Flat entry page:** bounded portable-path-ordered entries under a selection, with
+   compact or full row shape.
 4. **Roll-up/report:** existing fdu `Query` selection and view machinery for bounded
    summaries, breakdowns, navigation tallies, and ranked slices.
 5. **Diagnostics:** fixed-size provider and lifecycle diagnostics.
@@ -506,12 +590,26 @@ The rules are:
 - a later page fails with a typed stale-version result if the index has changed;
 - an evicted or foreign continuation fails with a typed unavailable result;
 - close clears the continuation table;
+- a continuation belongs to one provider handle and one MetaBrowser host generation;
+  root replacement or host-generation change discards it before the new generation is
+  published;
 - the table and each stored record are bounded;
 - no historical index image is retained merely to satisfy a stale page.
 
-Path order is the first supported resumable order because the tree already maintains it.
-Sorted resumable reports are deferred until a client needs them and a measured index can
-support them without a full re-sort on every page.
+Ordering is part of the joint contract:
+
+- a tree page is parent-first.
+  Within each directory, directories precede nondirectories, and each partition is
+  ordered by canonical component UTF-8 bytes;
+- a flat or catalog page is lexicographic by the complete canonical POSIX-relative path
+  encoded as UTF-8 bytes.
+
+The tree projection pays through the retained hierarchy and two bounded child
+partitions. The flat projection pays through a commit-maintained ordered index of
+representable portable paths; it never materializes and sorts the full catalog per
+request. Unrepresentable native paths follow the explicit partial-row semantics above.
+Other resumable sort orders are deferred until a measured client need justifies their
+own maintained index.
 
 The joint provider contract drops exact `remaining_rows` and repeated catalog totals
 from page control flow.
@@ -519,6 +617,8 @@ Conformance proves conservation by assembling all pages and checking advancing c
 row bounds, no duplicates, and exact final contents.
 When the UI needs a filtered total, it receives a separate aggregate projection bundled
 with the first page at the same engine version.
+That projection returns an exact maintained total or the explicit capped-count result
+defined above.
 
 ### Change polling
 
@@ -626,15 +726,34 @@ defend the current prototype contract.
   field can remain a file limit, but the name and state describe resource exhaustion,
   not a deterministic cross-provider scope prefix.
 - Remove the discovery budget from `inventory_scope_fingerprint()`.
-- Keep maximum depth, hidden admission, symlink behavior, filesystem-boundary behavior,
-  and admitted object kinds as explicit scope decisions.
+- Move maximum depth to tree-query selection; remove it from
+  `inventory_scope_fingerprint()` and from opened-root cache identity.
+- Keep hidden admission as explicit scope and add explicit symlink behavior,
+  filesystem-boundary behavior, and admitted object kinds to `InventoryConfig`. V1
+  validates the fixed observation-compatible values described above rather than leaving
+  provider defaults implicit.
   Do not reproduce a private fingerprint recipe in the fdu adapter; compare the
   identities each provider derives from the same validated values.
+- Version the new scope-fingerprint encoding.
+  Removing `max_files` and `max_depth` while adding the three explicit scope fields
+  intentionally invalidates every prototype fingerprint and persisted provider cache;
+  both unmerged providers rebuild rather than carry a compatibility recipe.
 - Remove `remaining_rows` from directory, filtered-tree, and catalog page projections.
   Keep `next_page` as opaque provider state.
   Move UI-visible totals to an explicit aggregate projection at the same version.
+- Pin tree and flat row order to the two exact definitions above.
+  Both providers return that order directly; the coordinator never resorts assembled
+  pages.
+- Add the typed unrepresentable-path issue and portable-directory completeness rule.
+  Native roll-ups still include every retained entry.
 - Add a deterministic work budget to potentially scanning queries and a typed
   query-limit result. Output bounds alone do not protect event-loop latency.
+- Add an exact-or-capped count result.
+  Recency, navigation, and catalog totals use the maintained indexes named above; an
+  unmaintained compound total returns `at_least(n)` at the request cap rather than
+  dropping the denominator.
+- Align lifecycle, coverage, freshness, and source values with the exhaustive mapping
+  above, including renaming prototype `OPENING_CACHE` to `OPENING`.
 - Preserve caller-pinned `as_of` reads, coherent state/version, typed payloads, bounded
   issue detail, and the closed eight-query application algebra.
 
@@ -654,8 +773,8 @@ There is no reason to retain compatibility shims for the prototype spellings.
   handle; remove caller-asserted identity fields.
 - Change page memoization to return a bounded page and opaque next position without
   counting a suffix for control flow.
-  Keep exact product totals only in maintained or explicitly requested aggregate
-  projections.
+  Keep exact product totals only in maintained aggregate projections, and return an
+  explicit capped count for an unmaintained compound total.
 - Retain the Python provider as the readable reference implementation.
   Favor direct code over imitating fdu’s internal owner, journal, or continuation types.
 
@@ -663,6 +782,8 @@ There is no reason to retain compatibility shims for the prototype spellings.
 
 - Keep root replacement and host overlay in `InventoryCoordinator`; replacing a root
   closes and joins the old handle before publishing the new host generation.
+- Discard every old-handle continuation before publishing a replacement root or host
+  generation. A continuation is never retried against the new handle.
 - Replace exact-remainder assembly checks with a bounded assembly loop: enforce a stable
   provider version, positive page size, unique advancing continuations, maximum pages,
   maximum assembled rows, and the request work budget.
@@ -682,13 +803,22 @@ There is no reason to retain compatibility shims for the prototype spellings.
 - Implement `FduInventoryBackend` and its private handle in MetaBrowser, not in
   `fdu-core`. The adapter maps config, paths, eight queries, state, rows, work, and
   invalidations without retaining a second filesystem index.
-- Call the blocking Python fdu handle through a bounded worker bridge.
-  The native call releases the GIL; async cancellation closes and joins the handle.
+- Give each opened provider handle a dedicated one-worker change-poll executor and a
+  bounded queue to its single active async change iterator.
+  The native call releases the GIL and uses a poll timeout no greater than 250
+  milliseconds. Queue backpressure does not advance the delivered cursor; journal
+  eviction therefore recovers through the ordinary consumer-reset result.
+- `aclose()` on the change iterator cancels and joins only that bridge within one poll
+  interval. It does not close the provider handle, and a later bounded read on the same
+  handle must succeed.
+  Handle `close()` cancels the iterator, joins the bridge, and then joins the native
+  owner. A second simultaneous change iterator fails with a typed busy result.
 - Pass the registry document and explicit MetaBrowser scope at open, then use the
   identities returned by fdu.
   Do not hash a second spelling of either contract.
 - Translate fdu continuation IDs only as opaque strings.
-  MetaBrowser neither decodes nor rewrites them.
+  MetaBrowser neither decodes nor rewrites them, and never retains them across root
+  replacement or host-generation change.
 - Make the fdu package an explicit optional provider dependency until rollout.
   Selecting `fdu` when the extension is unavailable produces a typed startup error; it
   never silently chooses Python.
@@ -727,36 +857,66 @@ bulk.
 All fdu phases use `codex/opened-root-inventory-rewrite` and one draft PR rooted at
 current `main`, not PR #47. Each checkbox is independently reviewable, each phase ends
 in a named green commit checkpoint, and work does not advance across a failed phase
-gate. The branch may be large by completion, so commit boundaries and phase acceptance
-replace separate PRs as the review units.
-The PR remains a draft until Phase 4 passes.
+gate. The PR remains a draft until Phase 4 passes.
+
+This merge topology explicitly overrides the review report’s preferred sequence of a
+core-integrity PR followed by an opened-root PR. The project owner selected one
+cumulative branch after considering that recommendation so the cross-repository effort
+has one fdu head, one MetaBrowser counterpart pin, and no stacked-PR base churn while
+the contract is still moving.
+That choice does not make the final merge unit small: phase checkpoints improve review
+timing and bisectability, not total diff size.
+Reviewers must approve each named checkpoint and the final accumulated diff.
+If a phase cannot remain green or independently understandable, implementation stops and
+the merge-topology decision is reopened rather than weakening a gate.
 
 MetaBrowser changes in Phases 3 and 4 land on its own PR #74 branch and are tested
 against the exact fdu draft-PR revision recorded in both PR descriptions.
 
 ### Phase 1: Exact Engine Kernel
 
-The golden cleanup lands as the first focused commit group.
-The reference model and exact prepared-commit path follow, then control state and
-live-identity separation as distinct commit groups within this phase.
-None changes default CLI behavior or exposes an incomplete MetaBrowser provider.
+Phase 1 has four separately reviewed green checkpoints.
+No checkpoint changes default CLI behavior or exposes an incomplete MetaBrowser
+provider. Code is reimplemented from `main` or extracted in minimal pieces from PR #47;
+no PR #47 commit is cherry-picked wholesale.
+
+#### Checkpoint 1A: Observable Oracle
 
 - [ ] Fix `fdu-9tdm`: replace surgical golden parsing with broad observable-output
   assertions before importing new surface behavior.
 - [ ] Add an independent deterministic reference model for retained facts, parent
   ordering, roll-ups, exact changes, control-file updates, and resource refusal.
+- [ ] Gate with the focused model tests, complete golden corpus, CLI/Python parity,
+  `make docs-format-check`, and `make check`.
+
+#### Checkpoint 1B: Exact Commit Truth
+
 - [ ] Introduce prepared mutations and one atomic `Commit` containing exact effective
   changes, impact, state, and work.
 - [ ] Route scan, reconcile, explicit refresh, control-file updates, and existing watch
   application through that commit path.
 - [ ] Remove implicit guessed-parent mutations from the live path; normalize unknown
   ancestry through verified reconciliation.
+- [ ] Gate with generated operation-sequence comparison, fault injection, concurrent
+  reader/writer tests, `make check`, and `make cross-lint`.
+
+#### Checkpoint 1C: Control State
+
 - [ ] Add the exact removal-aware `.gitignore` control table and the fixed
   `all`/`unignored` partition behind a removable feature.
+- [ ] Introduce the runtime registry/classification pieces needed by the fixed partition
+  behind explicit features; preserve the no-default-features build.
+- [ ] Gate creation, edit, deletion, hidden-control discovery, provider-order
+  equivalence, all feature combinations, and dependency audit.
+
+#### Checkpoint 1D: Live Identity and Feature Floor
+
 - [ ] Separate detached index snapshots from live session and continuation authority.
 - [ ] Keep core default features empty and record dependency and binary-size baselines.
 - [ ] Prove the kernel under operation-sequence tests, fault injection, model
   comparison, and all existing one-shot surface parity tests.
+- [ ] Gate clone/detached-image identity, continuation authority, snapshot round-trip,
+  `make check`, `make cross-lint`, dependency audit, and size baselines.
 
 Acceptance for Phase 1:
 
@@ -781,8 +941,8 @@ Acceptance for Phase 1:
 - [ ] Add bounded verified multi-path refresh through the shared commit pipeline.
 - [ ] Add native observation with capture-before-baseline buffering, scripted overflow,
   final reconciliation, and a no-gap transition to watching.
-- [ ] Mirror the minimal handle in Python with GIL release and cancellation-safe async
-  adaptation.
+- [ ] Mirror the five synchronous operations in Python with GIL release; keep the
+  long-lived async change bridge in the MetaBrowser adapter.
 - [ ] Prove shutdown, concurrent reads and commits, slow consumers, provider gaps,
   resource-stop behavior, and every supported feature combination.
 
@@ -793,17 +953,42 @@ Acceptance for Phase 2:
 - no filesystem mutation in the baseline-to-observer handoff is silently lost;
 - every bounded output has a bounded-work test or counter oracle;
 - watch-disabled core builds and behaves correctly;
-- Python async cancellation leaves no worker alive.
+- cancelling the MetaBrowser async change iterator without closing the handle joins its
+  bridge within one native poll interval, and a read on that same handle still succeeds;
+- handle close leaves no Python or native worker alive.
 
 ### Phase 3: MetaBrowser Contract and fdu Adapter
 
+Phase 3 starts with measurement against the unchanged MetaBrowser contract before either
+provider contract is edited.
+This applies the repository’s instrument-before-optimizing rule to the API boundary.
+
+#### Checkpoint 3A: Unchanged-Contract Cost Spike
+
+- [ ] Implement a disposable fdu adapter over the Phase 2 handle against MetaBrowser PR
+  #74’s unchanged provider contract.
+  Materializing catalog rows, sorting, and scanning for totals are allowed only in this
+  spike and are instrumented explicitly.
+- [ ] Run the existing route and provider tests on the representative corpus; record
+  route predicates, rows visited, sort/materialization work, latency, memory, and which
+  totals and orders are product-visible.
+- [ ] Publish the evidence before changing either contract.
+  Keep the reusable harness and evidence; delete the naive aggregation and replica code.
+
+#### Checkpoint 3B: Joint Contract and Reference Provider
+
 - [ ] Amend MetaBrowser’s provider contract so the registry content is an input,
-  discovery budget is execution policy with honest partial state, and page assembly does
-  not require exact remainders.
+  discovery budget is execution policy with honest partial state, maximum depth is
+  selection, scope fields and state values are explicit, row orders are exact, count
+  bounds are honest, and page assembly does not require exact remainders.
 - [ ] Update the Python reference provider to use its injected registry and the revised
   budget, identity, work-limit, and page contracts.
 - [ ] Update coordinator and route assembly to use bounded continuation safety and
   coherent aggregate totals without reintroducing filesystem or aggregation ownership.
+- [ ] Gate the revised Python provider and all existing routes before adding fdu.
+
+#### Checkpoint 3C: Native Indexes and Thin Adapter
+
 - [ ] Add path-ordered tree and flat-entry continuations backed by the bounded
   handle-local table.
 - [ ] Complete the existing fdu query indexes needed for filtered tree, navigation,
@@ -818,12 +1003,14 @@ Acceptance for Phase 2:
 Acceptance for Phase 3:
 
 - the revised Python provider passes MetaBrowser’s provider contract suite;
+- the 3A evidence names the work eliminated by every maintained native index or contract
+  change; no index is justified only by conjecture;
 - the fdu adapter contains no walker, aggregate store, row replica, fingerprint recipe,
   or provider-independent application policy;
 - every MetaBrowser query maps to one bounded coherent fdu read rather than a Python
   entry loop;
-- root replacement, close, cancellation, and package-unavailable errors are explicit and
-  leave no worker alive;
+- iterator-only cancellation preserves a usable handle; root replacement, handle close,
+  cancellation, and package-unavailable errors are explicit and leave no worker alive;
 - both repositories build independently, and MetaBrowser without the optional fdu
   package retains its current Python-provider behavior.
 
@@ -836,6 +1023,11 @@ browser uses, then produces the evidence required for a separate rollout decisio
 - [ ] Run the same provider conformance registry against Python and fdu providers.
 - [ ] Expand the File Rollup packet to include basename-to-logical-extension derivation,
   not only rows whose logical extension is already supplied.
+- [ ] Add cross-platform path fixtures for invalid Unix bytes, Windows separator
+  normalization and unpaired surrogates, non-ASCII Unicode, and portable-directory
+  completeness around unrepresentable children.
+- [ ] Assert the exact tree and flat ordering contracts, exact maintained totals,
+  explicit capped totals, and exhaustive state-value mapping in both providers.
 - [ ] Replay one recorded, verified observation script through both providers and
   compare complete reads after every step.
 - [ ] Parameterize MetaBrowser’s route-level inventory tests over both providers for
@@ -845,7 +1037,8 @@ browser uses, then produces the evidence required for a separate rollout decisio
   replacement, and shutdown.
 - [ ] Add integration faults for discovery-budget exhaustion, stale and evicted page
   continuations, consumer journal reset, provider observation recovery, unavailable
-  native package, and cancellation during close.
+  native package, iterator-only cancellation, cancellation during close, and attempted
+  continuation reuse after root replacement.
 - [ ] Verify an installed wheel rather than only a source-tree import, including the
   supported Python and platform matrix.
 - [ ] Measure cold usefulness, settled answers, change latency, request latency, memory,
@@ -857,6 +1050,8 @@ Acceptance for Phase 4:
 
 - both providers pass the same closed conformance registry;
 - complete settled responses and replay checkpoints agree exactly;
+- representable path rows, unrepresentable-path issues, roll-up counts, row order,
+  aggregate bounds, and state vocabulary agree on every platform fixture;
 - partial sessions agree on bounds and knowledge state without requiring the same
   concurrent retained prefix;
 - MetaBrowser performs no replacement walk, retained aggregation, or entry-replica
@@ -981,9 +1176,11 @@ cache, and filesystem regime.
 1. Freeze PR #47 as the prototype and review record.
 2. Open one draft PR from `codex/opened-root-inventory-rewrite`, rooted at current
    `main`, containing this review and plan.
-3. Complete Phase 1 on that branch and record its exact green checkpoint in the PR.
+3. Complete Phase 1A through 1D on that branch and record every exact green checkpoint
+   in the PR.
 4. Complete Phase 2 on the same branch and record its exact green checkpoint.
-5. Update MetaBrowser PR #74 for Phase 3, pin it to the current fdu revision, and keep
+5. Run the Phase 3A unchanged-contract cost spike, publish its evidence, then update
+   MetaBrowser PR #74 for Phases 3B and 3C. Pin it to the current fdu revision and keep
    the Python provider as the default.
 6. Add the fdu provider behind explicit configuration and run the complete Phase 4
    installed-artifact integration matrix across both exact PR heads.
@@ -1013,7 +1210,7 @@ their status as approval of that shape.
 | `fdu-e86o`, `fdu-a0j0`, `fdu-4o0m` progressive sessions | Supersede with one Rust/Python `OpenedIndex` lifecycle in Phase 2. |
 | `fdu-vfx7` watch carrier defects | Solve through journal-derived invalidations and terminal state, not row-carrying callbacks. |
 | `fdu-97dd` file cap | Redefine jointly as a discovery resource budget; do not preserve exact-prefix or live-free-slot semantics. |
-| `fdu-7sou` watch scope rejection | Supersede: watching supports valid semantic scopes; resource-stopped partial discovery does not enter watching. |
+| `fdu-7sou` watch scope rejection | Preserve the invariant: MetaBrowser depth becomes read selection, its v1 live scope is observation-compatible, and unsupported restricted scopes fail explicitly. |
 | `fdu-91ru` coherent paging | Keep the coherent envelope; replace stateless token authority and repeated full selection with bounded continuation state. |
 | `fdu-t5h2` sorted resumable pages | Defer; path-order pages satisfy the immediate client. |
 | `fdu-8w5k` catalog predicates | MetaBrowser head now pins its side; implement as fdu selection conformance in Phase 3, not as a new core query name. |
