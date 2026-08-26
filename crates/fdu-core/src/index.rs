@@ -506,6 +506,17 @@ impl IndexHandle {
         self.inner.write().map_err(|_| crate::Error::IndexLockPoisoned)
     }
 
+    #[cfg(test)]
+    pub(crate) fn poison_for_test(&self) {
+        let inner = std::sync::Arc::clone(&self.inner);
+        std::thread::spawn(move || {
+            let _guard = inner.write().expect("test index write lock");
+            panic!("inject index poison");
+        })
+        .join()
+        .expect_err("injected index panic");
+    }
+
     /// Arbitrate and apply one observation under the single-writer lock.
     pub fn apply(&self, observation: &Observation) -> crate::Result<ApplyOutcome> {
         let prepared = prepare_observation(observation)?;

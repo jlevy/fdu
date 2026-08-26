@@ -917,6 +917,45 @@ pub enum Error {
     #[error("the process-local index clock is exhausted")]
     ClockExhausted,
 
+    /// No further live-session identity can be represented in this process.
+    #[error("the process-local opened-index identity space is exhausted")]
+    OpenedIdentityExhausted,
+
+    /// An operation was attempted after shared shutdown began.
+    #[error("the opened index is closed")]
+    OpenedIndexClosed,
+
+    /// A panic poisoned the opened index's lifecycle coordination state.
+    #[error("opened-index lifecycle state was poisoned by a panic")]
+    OpenedLifecyclePoisoned,
+
+    /// An owned opened-index worker panicked before joined shutdown completed.
+    #[error("opened-index worker {worker} panicked")]
+    OpenedWorkerPanicked {
+        /// Stable role of the failed worker.
+        worker: &'static str,
+    },
+
+    /// An owned opened-index worker returned a terminal error during joined shutdown.
+    #[error("opened-index worker {worker} failed: {source}")]
+    OpenedWorkerFailed {
+        /// Stable role of the failed worker.
+        worker: &'static str,
+        /// Original typed engine error, shared so repeated close returns the same cause.
+        #[source]
+        source: std::sync::Arc<Error>,
+    },
+
+    /// An operating-system thread could not be created for an opened-index worker.
+    #[error("could not start opened-index worker {worker}: {source}")]
+    OpenedWorkerSpawn {
+        /// Stable role of the worker that could not start.
+        worker: &'static str,
+        #[source]
+        /// Underlying operating-system error.
+        source: std::io::Error,
+    },
+
     /// The watch worker ended permanently without panicking.
     #[error("watch worker stopped before another observation was available")]
     WatchStopped,

@@ -31,8 +31,11 @@
 //! the loaded baseline concurrently. Applications that want that model can own an
 //! [`IndexHandle`], call the applying reconciliation APIs, and inspect [`Freshness`]
 //! while readers continue between short write batches. With the `watch` feature,
-//! [`watch::Watcher::apply_next`] verifies event hints and closes invalidations through
+//! `watch::Watcher::apply_next` verifies event hints and closes invalidations through
 //! subtree reconciliation; neither `open` nor the Python binding starts it implicitly.
+//! [`OpenedIndex`] is the additive long-lived owner: its clones share one live identity,
+//! cancellation domain, index, and joined shutdown. A cloned [`Index`] remains a
+//! detached image and never inherits that authority.
 //!
 //! ```no_run
 //! use fdu_core::{OpenConfig, open};
@@ -62,6 +65,7 @@ pub mod counters;
 mod engine_contract;
 mod execution;
 mod index;
+mod opened;
 mod platform_tuning;
 pub mod query;
 pub mod scan;
@@ -102,6 +106,7 @@ pub use crate::index::{
     ApplyOutcome, ApplyStats, ChildSnapshot, EntryId, ExtTally, Index, IndexHandle,
     PartitionRollUp, RollUp, Since,
 };
+pub use crate::opened::{OpenOptions, OpenedIndex, SessionId};
 // Ungated with report_format, for the same reason: one-shot planning is an execution
 // strategy, not a front end. A caller wanting one report without retaining an index was
 // previously required to compile the command line to get it (fdu-z7sp).

@@ -289,7 +289,7 @@ impl ScanConfig {
         }
     }
 
-    fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
         if self.batch_size == 0 || self.batch_size > MAX_SCAN_BATCH_SIZE {
             return Err(Error::UnsupportedScanConfig(
                 "batch_size must be nonzero and no greater than MAX_SCAN_BATCH_SIZE",
