@@ -3,9 +3,9 @@ type: is
 id: is-01m0y1sed8zrkf6hdnp5wrq5ty
 title: Add bounded verified multi-path refresh
 kind: feature
-status: in_progress
+status: closed
 priority: 1
-version: 8
+version: 10
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 delegate: codex@spud10.local
 labels:
@@ -19,10 +19,14 @@ dependencies:
     target: is-01m0yhq8268z0qrza1fnwrddfm
 parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 created_at: 2026-08-26T03:28:30.631Z
-updated_at: 2026-08-26T17:56:24.762Z
+updated_at: 2026-08-26T19:32:50.286Z
+closed_at: 2026-08-26T19:32:50.285Z
+close_reason: Implemented in d5d9151. The complete local handoff gate, cross-platform lint, no-default Clippy, and all 19 GitHub checks in run 33005096442 pass.
+resolution: null
+duplicate_of: null
 ---
 Implement refresh(paths) validation, canonicalization, deduplication, ancestor collapse, widening, I/O outside the write guard, conditional exact commits, typed accepted/rejected paths, journal range, state, and work. Reuse the sound algorithms and fixtures from PR #47 d19b0ce.
 
 ## Notes
 
-Resume from the four-file uncommitted refresh slice in engine_contract.rs, lib.rs, opened.rs, and scan.rs. Preserve the named after-verification/before-conditional-commit test barrier for fdu-0kv7. Before commit, resolve three review findings: RefreshResult.work must account for verified no-op/stale work even when no Commit is emitted; ResourceBudget rejection must correspond to a resource-stopped/full retained set or shared commit-boundary capacity accounting, not merely the presence of max_files; and the scan.rs candidate-kind predicate must use matches! so clippy passes. Then add the bounded path/ancestor/widening/budget/concurrency regressions, run the focused no-default/all-feature suites, make check, and cross-lint.
+Implementation complete pending pushed CI. Added OpenedIndex::refresh for bounded canonical multi-path verification, typed accepted/rejected inputs, ancestor collapse and widening, one safe (after, version] journal interval, bounded issues, and transparent filesystem/commit work. Reused PR #47's d19b0ce reconciliation structure but replaced its per-path bound refusal, direct resource accounting, and delta receipt with the rewrite's exact commit, lifecycle, and shared-budget boundaries. Discovery and refresh now arbitrate max_files atomically under the index write lock; first refusal publishes the stopped/budget state in the same commit, retained-file progress stays exact after removals, and later stopped refreshes allow only proven non-expanding work. Close cancels and waits for active refreshes. Tests cover no-op work, duplicate/ancestor collapse, invalid/hidden paths, ancestor kind replacement, exact interval impact including concurrent producers, stale arbitration, discovery/refresh budget races, oversize preflight, stopped probes, close races, and .gitignore create/edit/delete. Precommit review fixed a Rust 1.85-incompatible let-chain, concurrent-interval impact loss, invisible no-op and resource-probe work, duplicate retained budget issues, and direct hidden-control deletion. Validation is green: focused all-feature refresh regression; complete make check including all feature matrices, Rust 1.85 tests, goldens, Python wheel/sdist/parity, docs and audits; make cross-lint for x86_64 macOS and Windows; and no-default-features Clippy with warnings denied.

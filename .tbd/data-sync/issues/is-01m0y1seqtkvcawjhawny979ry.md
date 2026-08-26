@@ -3,9 +3,9 @@ type: is
 id: is-01m0y1seqtkvcawjhawny979ry
 title: Add the no-gap discovery-to-observation handoff
 kind: feature
-status: open
+status: in_progress
 priority: 1
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - opened-root-rewrite
@@ -16,7 +16,7 @@ dependencies:
     target: is-01m0yhq8268z0qrza1fnwrddfm
 parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 created_at: 2026-08-26T03:28:30.969Z
-updated_at: 2026-08-26T08:07:19.532Z
+updated_at: 2026-08-26T19:32:55.748Z
 ---
 Start the supported observer before baseline capture, buffer bounded hints, reconcile overflow and registration gaps, perform required final verification, and enter watching only after freshness is proven. Reuse the scripted backend and deterministic interleaving fixtures; keep watch fully removable.
 
