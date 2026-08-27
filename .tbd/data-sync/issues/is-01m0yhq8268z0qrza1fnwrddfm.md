@@ -5,7 +5,7 @@ title: Complete the opened-root session goldens and contract coverage gate
 kind: task
 status: in_progress
 priority: 1
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - opened-root-rewrite
@@ -14,7 +14,7 @@ dependencies:
     target: is-01m0y1sf2nph021wtx28p8ahxh
 parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 created_at: 2026-08-26T08:06:55.813Z
-updated_at: 2026-08-27T02:11:36.783Z
+updated_at: 2026-08-27T02:26:56.135Z
 closed_at: 2026-08-27T01:48:23.090Z
 close_reason: "Completed in b3cb609: all review findings and suggestions were implemented, the five opened-root session goldens and coverage gate landed, make check passed on the exact tree, and macOS/Windows cross-lint passed."
 resolution: null
@@ -24,4 +24,4 @@ Compose the test seams added with each Phase 2 capability into one deterministic
 
 ## Notes
 
-CI run 33031258054 exposed host read_dir ordering in cold-progressive-knowledge on Linux and Windows. Added a per-open test-only deterministic discovery scheduler that sorts real directory entries before production admission while leaving non-test discovery streaming and recording exact public commits. Regenerated only that scenario's root commit order. Local validation now passes: focused all-feature and watch+gitignore golden tests, golden lint (5 sessions/159 records), no-default feature suite, clippy all targets/features, full make check, and x86_64 Apple/Windows cross-lint. Awaiting final GitHub CI before re-closing.
+CI run 33031258054 first exposed host read_dir ordering in cold-progressive-knowledge. Commit 8166cf1 added a per-open test-only deterministic discovery scheduler that sorts real directory entries before production admission while leaving non-test discovery streaming and recording exact public commits. CI run 33032529592 then exposed the same portability class in coherent-projections-and-continuations, showing scenario-specific enablement was insufficient. The golden runner now constructs all TestControls through one deterministic_controls helper, so every session receives the same portable input schedule by construction; only coherent-projections-and-continuations required a new expected root commit. Exact-tree local validation passes: focused all-feature golden test; golden lint (5 sessions/159 records); full make check including all feature combinations, MSRV, Python wheel/sdist smoke, and CLI/Python parity; plus x86_64 Apple/Windows cross-lint. Awaiting replacement GitHub CI before re-closing.
