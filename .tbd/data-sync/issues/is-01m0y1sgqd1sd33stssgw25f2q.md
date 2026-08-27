@@ -3,9 +3,9 @@ type: is
 id: is-01m0y1sgqd1sd33stssgw25f2q
 title: Update MetaBrowser coordinator, page assembly, runtime, and routes
 kind: task
-status: open
+status: closed
 priority: 1
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - opened-root-rewrite
@@ -20,6 +20,10 @@ child_order_hints:
   - is-01m10nrbaqfz5va594e01y265j
   - is-01m10nrbpdhjb0srvkkhs7mwx7
 created_at: 2026-08-26T03:28:32.986Z
-updated_at: 2026-08-27T03:57:21.246Z
+updated_at: 2026-08-27T07:56:15.100Z
+closed_at: 2026-08-27T07:56:15.099Z
+close_reason: "Completed in MetaBrowser commit 45266a8: coordinator, bounded page assembly, runtime consumers, routes, and browser display are aligned with the revised provider contract."
+resolution: null
+duplicate_of: null
 ---
 Update InventoryCoordinator, assemble_tree_pages, InventoryRuntime, and inventory routes for advancing opaque continuations, bounded assembly, separate coherent totals, exhaustive state and invalidation mapping, root-generation cleanup, and no filesystem, row-replica, resort, or aggregate fallback.
