@@ -146,6 +146,7 @@ impl SessionTrace {
         }
         value = value.replace("/private$ROOT", "$ROOT");
         value = normalize_debug_path_separators(value, std::path::MAIN_SEPARATOR);
+        value = replace_system_times(value);
         for (session, alias) in &self.sessions {
             value = value.replace(session, alias);
         }
@@ -183,6 +184,23 @@ fn normalize_debug_path_separators(value: String, separator: char) -> String {
     if separator == '\\' { value.replace("\\\\", "/") } else { value }
 }
 
+/// `SystemTime`'s derived debug shape is an implementation detail of each platform.
+fn replace_system_times(mut source: String) -> String {
+    const PREFIX: &str = "SystemTime {";
+    const REPLACEMENT: &str = "[SYSTEM_TIME]";
+    let mut offset = 0;
+    while let Some(found) = source[offset..].find(PREFIX) {
+        let start = offset + found;
+        let Some(relative_end) = source[start + PREFIX.len()..].find('}') else {
+            break;
+        };
+        let end = start + PREFIX.len() + relative_end + 1;
+        source.replace_range(start..end, REPLACEMENT);
+        offset = start + REPLACEMENT.len();
+    }
+    source
+}
+
 #[cfg(test)]
 mod normalization_tests {
     use super::*;
@@ -207,6 +225,16 @@ mod normalization_tests {
             normalize_debug_path_separators(rendered, '\\'),
             r#"Commit { path: "target/leaf.txt" }"#
         );
+    }
+
+    #[test]
+    fn system_time_debug_shapes_share_one_closed_token() {
+        for rendered in [
+            "generated_at: SystemTime { tv_sec: 0, tv_nsec: 0 }",
+            "generated_at: SystemTime { intervals: 116444736000000000 }",
+        ] {
+            assert_eq!(replace_system_times(rendered.to_owned()), "generated_at: [SYSTEM_TIME]");
+        }
     }
 }
 

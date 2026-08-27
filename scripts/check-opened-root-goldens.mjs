@@ -17,6 +17,7 @@ const ALLOWED_TOKENS = new Set([
   "[DEVICE]",
   "[DIR_SIZE]",
   "[INODE]",
+  "[SYSTEM_TIME]",
   "[TIME]",
 ]);
 

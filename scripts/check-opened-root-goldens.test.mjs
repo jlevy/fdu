@@ -9,7 +9,7 @@ const valid = [
   "result.open: Ok(SessionId(session-1))",
   "action.close: close()",
   "result.close: Ok(())",
-  "final: attrs=[TIME] [DIR_SIZE] [ALLOCATED] [INODE] [DEVICE]",
+  "final: attrs=[TIME] [SYSTEM_TIME] [DIR_SIZE] [ALLOCATED] [INODE] [DEVICE]",
   "",
 ].join("\n");
 
