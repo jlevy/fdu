@@ -119,7 +119,7 @@ pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadRes
                             state.coverage,
                             Some(&next),
                             &mut work,
-                        )?,
+                        ),
                         ContinuationKind::Flat { selection, shape, next } => flat_projection(
                             opened,
                             index,
@@ -129,9 +129,9 @@ pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadRes
                             version,
                             Some(&next),
                             &mut work,
-                        )?,
+                        ),
                     };
-                    if matches!(result, ProjectionResult::Limit(_)) {
+                    if result.is_err() || matches!(result, Ok(ProjectionResult::Limit(_))) {
                         let mut table = opened
                             .state
                             .continuations
@@ -139,7 +139,7 @@ pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadRes
                             .map_err(|_| Error::OpenedLifecyclePoisoned)?;
                         table.restore(continuation, retry);
                     }
-                    results.push(result);
+                    results.push(result?);
                 }
                 crate::ReadProjection::Flat { selection, shape, page } => {
                     validate_page(page)?;

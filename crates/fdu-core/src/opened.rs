@@ -2671,6 +2671,68 @@ mod tests {
     }
 
     #[test]
+    fn flat_continuation_retains_its_normalized_native_query() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("a.rs"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("b.txt"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("c.rs"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs::default(),
+                },
+            ]))
+            .expect("seed entries");
+        let selection = crate::query::Selection {
+            include: vec![crate::query::Pattern::parse("*.rs").expect("pattern")],
+            ..crate::query::Selection::default()
+        };
+
+        let first = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Flat {
+                    selection,
+                    shape: crate::RowShape::Compact,
+                    page: crate::PageRequest { limit: 1, max_work: 3 },
+                }],
+                ..crate::ReadRequest::default()
+            })
+            .expect("first page");
+        let crate::ProjectionResult::Flat(first_page) = &first.results[0] else {
+            panic!("flat page");
+        };
+        assert_eq!(first_page.rows[0].portable_path.as_deref(), Some("a.rs"));
+
+        let second = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Continue {
+                    continuation: first_page.next.expect("continuation"),
+                    page: crate::PageRequest { limit: 1, max_work: 1 },
+                }],
+                expected: Some(first.version),
+            })
+            .expect("continued page");
+        let crate::ProjectionResult::Flat(second_page) = &second.results[0] else {
+            panic!("continued flat page");
+        };
+        assert_eq!(second_page.rows[0].portable_path.as_deref(), Some("c.rs"));
+        assert!(second_page.next.is_none());
+        assert_eq!(second.work.rows_visited, 1);
+        opened.close().expect("close");
+    }
+
+    #[test]
     fn continuations_are_single_use_version_pinned_handle_local_and_bounded() {
         let (_root, opened) = opened(Arc::new(TestControls::default()));
         opened

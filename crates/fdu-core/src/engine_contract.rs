@@ -598,6 +598,11 @@ pub const MAX_REPORT_VIEWS: usize = 16;
 pub const DEFAULT_COUNT_CAP: u64 = 10_000;
 /// Maximum caller-selected cap for an on-demand aggregate.
 pub const MAX_COUNT_CAP: u64 = 1_000_000;
+/// Maximum retained payload for one handle-local continuation record.
+///
+/// Together with the 128-record table bound, this caps retained continuation payload at
+/// eight MiB per opened root, excluding fixed map nodes and allocator bookkeeping.
+pub const MAX_CONTINUATION_RECORD_BYTES: usize = 64 * 1_024;
 
 /// Opaque identifier for resumable work retained by one opened root.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
@@ -1711,6 +1716,15 @@ pub enum Error {
     /// A continuation belongs to another handle or is no longer retained.
     #[error("the page continuation is unavailable for this opened index")]
     ContinuationUnavailable,
+
+    /// A resumable query would retain more payload than one continuation permits.
+    #[error("continuation record requires {attempted} bytes; limit is {limit} bytes")]
+    ContinuationRecordLimit {
+        /// Structural payload bytes the record would retain.
+        attempted: usize,
+        /// Maximum structural payload retained by one record.
+        limit: usize,
+    },
 
     /// No further handle-local continuation identifier can be represented.
     #[error("the opened index continuation identity space is exhausted")]

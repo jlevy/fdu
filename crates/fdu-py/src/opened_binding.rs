@@ -52,7 +52,8 @@ fn opened_py_err(error: fdu_core::Error) -> PyErr {
         | fdu_core::Error::PageRowLimit { .. }
         | fdu_core::Error::PageWorkLimit { .. }
         | fdu_core::Error::CountCapLimit { .. }
-        | fdu_core::Error::ReportViewLimit { .. } => {
+        | fdu_core::Error::ReportViewLimit { .. }
+        | fdu_core::Error::ContinuationRecordLimit { .. } => {
             OpenedIndexLimitError::new_err(error.to_string())
         }
         fdu_core::Error::ContinuationIdentityExhausted

@@ -4,8 +4,8 @@
 
 **Author:** fdu project, with Codex review assistance
 
-**Status:** Active — Phase 3B contract and Python oracle complete; Phase 3C native
-projections in progress
+**Status:** Active — Phase 3B contract and Python oracle complete; Phase 3C bounded
+native projections in progress
 
 ## Overview
 
@@ -104,7 +104,7 @@ coordinator assembly, route integration, and full application gate.
 | Architecture and implementation map | Complete | The durable architecture, PR #44 and #47 reconciliation, direct-API correction, file/function map, test design, and reuse ledger are committed and reviewed. |
 | Phase 1: exact engine kernel | Complete | Checkpoints 1A through 1D passed their local gates and the cumulative cross-platform PR gate. |
 | Phase 2: opened-root vertical slice | Complete | The native lifecycle and five transparent session goldens are green. The direct `PyO3` handle, exhaustive value conversion, immutable `fdu.opened` API, typed errors, GIL-detached operations, strict downstream typing fixture, installed-wheel lifecycle, source distribution, CLI parity, and cross-target lint all pass. |
-| Phase 3: MetaBrowser adoption | Checkpoint 3C in progress | MetaBrowser commit `2743064` measures the unchanged contract against the exact fdu wheel from `0583a1a`; `45266a8` completes the shared bounded contract and Python oracle. fdu now isolates portable path and child order, semantic type and declared exact-name tallies, and global file recency inside optional `ServingIndexes`, with exact mutation, independent-recomputation, structural-bound, and commit-cost tests. Native projection readers and the thin production adapter are next. |
+| Phase 3: MetaBrowser adoption | Checkpoint 3C in progress | MetaBrowser commit `2743064` measures the unchanged contract against the exact fdu wheel from `0583a1a`; `45266a8` completes the shared bounded contract and Python oracle. fdu `a286145` completes the approved optional serving-index set with exact mutation, independent-recomputation, structural-bound, and commit-cost tests. The bounded continuation authority is complete locally; native projection readers and the thin production adapter are next. |
 | Phase 4: composed proof | Not started | Cross-provider conformance, route and lifecycle integration, installed-wheel proof, and final performance and size acceptance remain required. |
 
 The implementation epic has completed the native and Python Phase 2 dependency chain.
@@ -1343,6 +1343,23 @@ exit before serving classification or basename allocation.
 Final Phase 4 evidence still measures whole CLI and opened-root startup, peak memory,
 and client query latency on the shared corpus.
 
+The existing Phase 2 continuation implementation is retained rather than replaced.
+It already keeps opaque authority in the opened handle, pins each record to one engine
+version and parsed fdu-native query, resumes tree and flat reads from structural keys,
+uses a 128-record oldest-first table, treats IDs as single-use, restores an underfunded
+record, rejects stale and foreign or evicted IDs, and clears the table during joined
+close.
+Checkpoint 3C adds one missing memory bound: each record may retain at most 64 KiB
+of structural payload, for at most eight MiB across the table before fixed map nodes and
+allocator bookkeeping.
+The insert checks this bound before advancing the identity or evicting a valid record,
+and any projection error restores the consumed record.
+The continuation request carries no second query, so query mismatch is deliberately
+unrepresentable rather than another public failure mode.
+Tests prove retained filtered-query identity, constant structural resume work, single
+use, version pinning, foreign and evicted outcomes, underfunded retry, bound atomicity,
+and clear-on-close behavior.
+
 The filtered-tree paging field in MetaBrowser commit `45266a8` is therefore provisional
 and must be removed before the native provider lands.
 MetaBrowser’s route accumulates every provider page before returning one bounded
@@ -1378,7 +1395,9 @@ design failure, not an adapter tradeoff.
 #### Checkpoint 3C: Native Indexes and Thin Adapter
 
 - [x] Add path-ordered tree and flat-entry continuations backed by the bounded
-  handle-local table.
+  handle-local table; cap retained record payload, preserve tokens after underfunded or
+  failed resumes, and prove query ownership, version and handle isolation, eviction,
+  proportional work, and close cleanup.
 - [x] Isolate all interactive indexes behind an opened-root-only `ServingIndexes`
   allocation; maintain semantic type tallies, declared exact-name tallies, and global
   file recency through exact insertion, metadata update, kind change, ignore

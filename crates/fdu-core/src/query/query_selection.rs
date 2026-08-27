@@ -154,6 +154,20 @@ pub struct Candidate<'a> {
 }
 
 impl Selection {
+    /// Heap payload retained when an opened-root continuation owns this selection.
+    pub(crate) fn retained_heap_bytes(&self) -> usize {
+        let pattern_bytes =
+            self.include.iter().chain(&self.exclude).fold(0_usize, |total, pattern| {
+                total.saturating_add(pattern.retained_heap_bytes())
+            });
+        self.include
+            .capacity()
+            .saturating_add(self.exclude.capacity())
+            .saturating_mul(std::mem::size_of::<Pattern>())
+            .saturating_add(pattern_bytes)
+            .saturating_add(self.kinds.capacity().saturating_mul(std::mem::size_of::<EntryKind>()))
+    }
+
     /// Whether this selection constrains which entries are considered.
     ///
     /// An unconstrained selection lets a view read pre-computed roll-up state directly
