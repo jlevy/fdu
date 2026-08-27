@@ -4,7 +4,7 @@
 
 **Author:** fdu project, with Codex review assistance
 
-**Status:** Active — native Phase 2 complete; Python binding next
+**Status:** Active — Phase 2 complete; MetaBrowser spike next
 
 ## Overview
 
@@ -89,24 +89,23 @@ decisions, including the explicit delivery override recorded below.
 
 ## Current Implementation Status
 
-This status describes fdu PR #48 at `86f64eb`. The PR remains draft.
-The full local `make check` handoff gate and both installed `make cross-lint` targets
-pass on that exact tree.
-GitHub Actions run `33035356756` passed all 19 checks across Linux, macOS, and Windows.
+This status describes the current Phase 2 checkpoint on fdu PR #48. The PR remains draft
+while the MetaBrowser adoption and composed proof proceed.
 The no-gap observation and five-session golden beads are complete.
-The next dependency is the synchronous Python binding, decomposed into native-value
-conversion, the typed public wrapper, and installed-wheel lifecycle proof.
+The direct synchronous Python binding, typed public namespace, and installed-wheel
+lifecycle are implemented and pass the full local handoff, distribution, parity, and
+cross-target gates.
 
 | Phase | Status | Evidence and next boundary |
 | --- | --- | --- |
 | Architecture and implementation map | Complete | The durable architecture, PR #44 and #47 reconciliation, direct-API correction, file/function map, test design, and reuse ledger are committed and reviewed. |
 | Phase 1: exact engine kernel | Complete | Checkpoints 1A through 1D passed their local gates and the cumulative cross-platform PR gate. |
-| Phase 2: opened-root vertical slice | Native complete; Python next | The complete native lifecycle and five transparent session goldens are committed and green. `fdu-bnsk` now binds the same five synchronous operations to Python and proves GIL release, shared-handle semantics, typing, and installed-wheel shutdown. |
+| Phase 2: opened-root vertical slice | Complete | The native lifecycle and five transparent session goldens are green. The direct `PyO3` handle, exhaustive value conversion, immutable `fdu.opened` API, typed errors, GIL-detached operations, strict downstream typing fixture, installed-wheel lifecycle, source distribution, CLI parity, and cross-target lint all pass. |
 | Phase 3: MetaBrowser adoption | Spike branch prepared | Begins only after the complete Python Phase 2 surface passes. The unchanged-contract spike branch `codex/fdu-opened-root-e2e-spike` is pinned to MetaBrowser PR #74 head `3183888`; no contract edit precedes its evidence. |
 | Phase 4: composed proof | Not started | Cross-provider conformance, route and lifecycle integration, installed-wheel proof, and final performance and size acceptance remain required. |
 
-The implementation epic has completed the native Phase 2 dependency chain.
-Python, MetaBrowser adoption, composed integration, and final acceptance remain open.
+The implementation epic has completed the native and Python Phase 2 dependency chain.
+MetaBrowser adoption, composed integration, and final acceptance remain open.
 The tbd graph is authoritative for live status and dependencies; the checklists and bead
 table below are maintained as its readable plan view.
 
@@ -236,8 +235,8 @@ ownership and transition boundaries defined by
 ### Ownership of progressive work
 
 This plan owns cold progressive discovery, the opened-root/session lifecycle, coherent
-mid-discovery reads, the no-gap observation handoff, and the immediate MetaBrowser
-adapter contract.
+mid-discovery reads, the no-gap observation handoff, the immediate Python client
+contract, and MetaBrowser adoption.
 
 The older [progressive-results plan](plan-2026-08-11-fdu-progressive-results.md) is
 narrowed to warm persisted roll-ups, lazy warm open, prefer-cache policy, and per-value
@@ -1190,14 +1189,30 @@ Acceptance for Phase 1:
   final reconciliation, and a no-gap transition to watching.
 - [x] Compose the staged test seams into the five opened-root session goldens and close
   the automatic public-contract coverage manifest against real production values.
-- [ ] Mirror the five synchronous operations in Python with GIL release; keep the
+- [x] Mirror the five synchronous operations in Python with GIL release; keep the
   long-lived async change bridge in the MetaBrowser adapter.
   Expose fdu-native immutable values and typed errors; do not leak MetaBrowser query or
   transport vocabulary into the package.
 - [x] Prove native shutdown, concurrent reads and commits, slow consumers, provider
   gaps, resource-stop behavior, and every supported feature combination.
-- [ ] Prove Python GIL release, typed conversion, clone-wide close, installed-wheel
+- [x] Prove Python GIL release, typed conversion, clone-wide close, installed-wheel
   isolation, and no surviving worker after shutdown.
+
+Phase 2 validation evidence:
+
+- `make check` passes the complete Rust feature matrix, MSRV, docs, audits, the 125-case
+  CLI golden corpus, the installed wheel and source distribution, strict downstream
+  Python typing, and CLI/Python parity with only the 21 classified existing deviations.
+- `make cross-lint` passes both installed macOS and Windows targets.
+- The installed-wheel lifecycle covers coherent mixed projections, single-use paging,
+  exact change polling, verified refresh, foreign version and cursor errors, concurrent
+  close through shared Python aliases, and typed post-close behavior.
+- A Rust embedding test blocks in `changes()` while another Python thread acquires the
+  GIL and publishes the waking refresh; no timing sleep stands in for synchronization.
+- The wheel smoke invokes the packaged `fdu` entry point for version, help, guide,
+  successful JSON scanning, and usage errors.
+  The new surface adds no dependency or lockfile change and does not alter the command
+  line’s defaults or output.
 
 Acceptance for Phase 2:
 
@@ -1352,8 +1367,8 @@ The rewrite adds a small number of named modules instead of continuing to grow
 | `crates/fdu-core/src/opened/continuation.rs` | Bounded handle-local continuation records and eviction. | Signed or self-describing public tokens, historical index images. |
 | `crates/fdu-core/src/scan.rs` | One-shot scan/reconcile plus reusable verified discovery production, scheduling frontier, and refresh verification. | A second live authority or consumer-visible change truth. |
 | `crates/fdu-core/src/watch.rs` | Native or scripted hint capture, bounded coalescing, verification, and gap reporting. | Direct index mutation, journals, projection invalidations. |
-| `crates/fdu-py/src/opened.rs` | PyO3 conversions and GIL-detached calls for the synchronous opened-root API. | Async bridging, query aggregation, package policy. |
-| `crates/fdu-py/python/fdu/_opened.py` | Thin public Python wrapper and ergonomic validation over `_native.PyOpenedIndex`. | Background executors or an event loop. |
+| `crates/fdu-py/src/opened_binding.rs` | PyO3 conversions and GIL-detached calls for the synchronous opened-root API. | Async bridging, query aggregation, package policy. |
+| `crates/fdu-py/python/fdu/opened.py` | Direct public Python namespace, immutable values, and ergonomic validation over `_native.OpenedIndex`. Keeping it as the public submodule preserves every existing top-level one-shot name without adding a forwarding façade. | Background executors, an event loop, MetaBrowser vocabulary, or duplicated engine decisions. |
 | `src/metabrowser/inventory_engine/providers/fdu_inventory.py` in MetaBrowser | Contract mapping, one async change bridge, optional-package error handling. | Filesystem walking, retained entry replicas, aggregate stores, identity recipes. |
 
 `Index` remains the detached, independently owned one-shot value for compatibility.
@@ -1531,9 +1546,9 @@ It adds no new production seam and blocks the Python surface.
 
 | File or function | Change | Gate |
 | --- | --- | --- |
-| New `crates/fdu-py/src/opened.rs` `PyOpenedIndex` | Bind the five synchronous operations and value conversions. Use `py.detach` for native open/read/change poll/refresh/close and any substantial projection. Store only the shared native handle. | `fdu-bnsk`: real thread overlap, a read during commit, change timeout without GIL starvation, iterator-independent handle use, concurrent close, and post-close typed failures. |
+| New `crates/fdu-py/src/opened_binding.rs` `PyOpenedIndex` | Bind the five synchronous operations and value conversions. Use `py.detach` for native open/read/change poll/refresh/close and any substantial projection. Store only the shared native handle. | `fdu-bnsk`: real thread overlap, a read during commit, change timeout without GIL starvation, iterator-independent handle use, concurrent close, and post-close typed failures. |
 | `crates/fdu-py/src/lib.rs` module registration | Register `PyOpenedIndex` and conversion helpers; move no opened-root lifecycle or state logic into the existing monolith. | Extension and embeddable modes compile. |
-| `python/fdu/_models.py`, new `_opened.py`, `_native.pyi`, `__init__.py` | Add immutable typed models and a thin wrapper. Keep async code out of the package and preserve existing one-shot names. | public smoke, BasedPyright, sdist/wheel smoke, parity, installed import. |
+| New public `python/fdu/opened.py` and `_native.pyi` | Add immutable typed models and the direct wrapper in one cohesive opt-in namespace. Keep async code out of the package and preserve every existing top-level one-shot name. | public smoke, BasedPyright, sdist/wheel smoke, parity, installed import. |
 
 Phase 2 closes only when all five operations are useful through Rust and Python, the
 watch-disabled build is complete, and close leaves no native or Python worker alive.

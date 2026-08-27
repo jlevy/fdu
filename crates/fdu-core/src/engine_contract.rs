@@ -191,6 +191,23 @@ pub struct SemanticIdentity {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct SessionId(pub(crate) u64);
 
+impl SessionId {
+    /// Return the process-local opaque value for a language or wire adapter.
+    ///
+    /// This value is an identity, not a credential. Consumers should preserve it exactly
+    /// and must not infer ordering or lifetime from it.
+    pub const fn opaque(self) -> u64 {
+        self.0
+    }
+
+    /// Recover an opaque session identity previously returned by [`Self::opaque`].
+    ///
+    /// Zero is reserved and never identifies a live opened root.
+    pub const fn from_opaque(value: u64) -> Option<Self> {
+        if value == 0 { None } else { Some(Self(value)) }
+    }
+}
+
 /// Identity and exact sequence of one committed opened-root state.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct EngineVersion {
@@ -587,6 +604,23 @@ pub const MAX_COUNT_CAP: u64 = 1_000_000;
 pub struct ContinuationId {
     pub(crate) session: SessionId,
     pub(crate) ordinal: u64,
+}
+
+impl ContinuationId {
+    /// Return the opaque parts a language or wire adapter must round-trip.
+    pub const fn opaque_parts(self) -> (u64, u64) {
+        (self.session.opaque(), self.ordinal)
+    }
+
+    /// Recover an opaque continuation previously returned by [`Self::opaque_parts`].
+    ///
+    /// Both zero values are reserved and never identify live continuation state.
+    pub const fn from_opaque_parts(session: u64, ordinal: u64) -> Option<Self> {
+        match SessionId::from_opaque(session) {
+            Some(session) if ordinal != 0 => Some(Self { session, ordinal }),
+            _ => None,
+        }
+    }
 }
 
 /// Output and work bounds for one resumable page.
