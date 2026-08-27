@@ -93,6 +93,7 @@ fn cold_progressive_knowledge() -> SessionTrace {
     std::fs::write(root.path().join("target/leaf.txt"), b"target").expect("target leaf");
 
     let controls = Arc::new(TestControls::default());
+    controls.use_deterministic_discovery_order();
     controls.gate(TestPoint::AfterRootDirectory).arm();
     let options = OpenOptions {
         batch_size: 1,

@@ -912,6 +912,8 @@ fn run_discovery(
             &directory,
             frontier,
             cancellation,
+            #[cfg(test)]
+            controls.deterministic_discovery_order.load(Ordering::Acquire),
         )? {
             DiscoveryStep::Continue => {}
             DiscoveryStep::Stopped => return Ok(()),
@@ -942,6 +944,7 @@ fn discover_directory(
     directory: &PendingDirectory,
     frontier: &DiscoveryFrontier,
     cancellation: &Cancellation,
+    #[cfg(test)] deterministic_discovery_order: bool,
 ) -> Result<DiscoveryStep> {
     let absolute = root.join(&directory.path);
     crate::counters::bump(|c| c.dir_opens += 1);
@@ -960,6 +963,8 @@ fn discover_directory(
             return Ok(DiscoveryStep::Continue);
         }
     };
+    #[cfg(test)]
+    let listing = test_directory_listing(listing, deterministic_discovery_order);
     let mut batch = Vec::with_capacity(scan.batch_size);
     let mut discovered = Vec::new();
     let mut issues = Vec::new();
@@ -1084,6 +1089,27 @@ fn discover_directory(
     }
     frontier.extend(discovered);
     Ok(DiscoveryStep::Continue)
+}
+
+#[cfg(test)]
+fn test_directory_listing(
+    listing: std::fs::ReadDir,
+    deterministic: bool,
+) -> Box<dyn Iterator<Item = std::io::Result<std::fs::DirEntry>>> {
+    if !deterministic {
+        return Box::new(listing);
+    }
+
+    // Schedule real filesystem inputs before they enter production admission; do not
+    // normalize or reorder the commits whose exact sequence the golden records.
+    let mut entries = listing.collect::<Vec<_>>();
+    entries.sort_by(|left, right| match (left, right) {
+        (Ok(left), Ok(right)) => left.file_name().cmp(&right.file_name()),
+        (Ok(_), Err(_)) => std::cmp::Ordering::Less,
+        (Err(_), Ok(_)) => std::cmp::Ordering::Greater,
+        (Err(_), Err(_)) => std::cmp::Ordering::Equal,
+    });
+    Box::new(entries.into_iter())
 }
 
 fn retain_local_issue(issues: &mut Vec<crate::Issue>, omitted: &mut u64, issue: crate::Issue) {
@@ -1607,10 +1633,16 @@ struct TestControls {
     #[cfg(feature = "watch")]
     scripted_observer: Mutex<Option<crate::watch::ScriptedSender>>,
     discovery_disabled: AtomicBool,
+    deterministic_discovery_order: AtomicBool,
 }
 
 #[cfg(test)]
 impl TestControls {
+    #[cfg(all(feature = "watch", feature = "gitignore"))]
+    fn use_deterministic_discovery_order(&self) {
+        self.deterministic_discovery_order.store(true, Ordering::Release);
+    }
+
     fn gate(&self, point: TestPoint) -> &TestGate {
         match point {
             TestPoint::BeforeWorkerExit => &self.before_worker_exit,
