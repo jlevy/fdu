@@ -16,6 +16,10 @@ use crate::scan::ReconcileControl;
 use crate::{Error, Index, IndexHandle, Observation, Op, Result, ScanConfig, SessionId};
 
 mod continuation;
+#[cfg(all(test, feature = "watch", feature = "gitignore"))]
+mod golden_support;
+#[cfg(all(test, feature = "watch", feature = "gitignore"))]
+mod golden_tests;
 mod journal;
 pub(crate) mod read;
 
@@ -1186,9 +1190,18 @@ fn run_observation(
         controls,
     };
     let handoff_intents = watcher.capture_backlog_bound();
+    let mut handoff_evidence = HandoffEvidence::default();
 
     watcher.flush_capture()?;
-    let _ = drain_observation_hints(&watcher, index, journal, scan, &control, handoff_intents)?;
+    let _ = drain_observation_hints(
+        &watcher,
+        index,
+        journal,
+        scan,
+        &control,
+        handoff_intents,
+        &mut handoff_evidence,
+    )?;
     if index.state()?.phase == crate::LifecyclePhase::Stopped {
         return Ok(());
     }
@@ -1203,18 +1216,28 @@ fn run_observation(
             &control,
             &mut |_commit| journal.notify_commit(),
         )?;
+        handoff_evidence.retain(&final_pass.reconciliation);
         watcher.flush_capture()?;
-        let drained =
-            drain_observation_hints(&watcher, index, journal, scan, &control, handoff_intents)?;
-        if final_pass.reconciliation.is_complete() && drained.complete {
+        let drained = drain_observation_hints(
+            &watcher,
+            index,
+            journal,
+            scan,
+            &control,
+            handoff_intents,
+            &mut handoff_evidence,
+        )?;
+        let final_settled = final_pass.reconciliation.apply.resource_refused == 0
+            && final_pass.reconciliation.apply.stale == 0;
+        if final_settled && drained.complete {
             handoff_complete = true;
             break;
         }
         if index.state()?.phase == crate::LifecyclePhase::Stopped {
             return Ok(());
         }
-        let final_retryable = final_pass.reconciliation.is_complete()
-            || reconcile_conflict_is_retryable(&final_pass.reconciliation);
+        let final_retryable =
+            final_settled || reconcile_conflict_is_retryable(&final_pass.reconciliation);
         let retryable_conflict =
             final_retryable && (drained.complete || drained.retryable_conflict);
         if !retryable_conflict {
@@ -1232,7 +1255,14 @@ fn run_observation(
     }
     #[cfg(test)]
     controls.reach(TestPoint::BeforeObservationWatching);
-    publish_observation_transition(index, journal, crate::index::ObservationTransition::Watching)?;
+    publish_observation_transition(
+        index,
+        journal,
+        crate::index::ObservationTransition::Watching {
+            issues: handoff_evidence.issues,
+            omitted: handoff_evidence.omitted,
+        },
+    )?;
     let state = index.state()?;
     if state.phase == crate::LifecyclePhase::Stopped {
         return Ok(());
@@ -1270,6 +1300,7 @@ fn drain_observation_hints(
     scan: &ScanConfig,
     control: &dyn ReconcileControl,
     limit: usize,
+    evidence: &mut HandoffEvidence,
 ) -> Result<HandoffDrain> {
     let mut drained = HandoffDrain { complete: true, retryable_conflict: true };
     for _ in 0..limit {
@@ -1283,14 +1314,15 @@ fn drain_observation_hints(
         else {
             break;
         };
+        evidence.retain(&report.reconciliation);
         let report_complete = report.apply.resource_refused == 0
             && report.apply.stale == 0
-            && report.reconciliation.is_complete();
+            && report.reconciliation.apply.resource_refused == 0
+            && report.reconciliation.apply.stale == 0;
         if !report_complete {
             drained.complete = false;
             drained.retryable_conflict &= report.apply.resource_refused == 0
                 && report.reconciliation.apply.resource_refused == 0
-                && report.reconciliation.scan.is_complete()
                 && (report.apply.stale > 0 || report.reconciliation.apply.stale > 0);
         }
     }
@@ -1305,7 +1337,27 @@ struct HandoffDrain {
 
 #[cfg(feature = "watch")]
 fn reconcile_conflict_is_retryable(report: &crate::scan::ReconcileReport) -> bool {
-    report.scan.is_complete() && report.apply.resource_refused == 0 && report.apply.stale > 0
+    report.apply.resource_refused == 0 && report.apply.stale > 0
+}
+
+#[cfg(feature = "watch")]
+#[derive(Default)]
+struct HandoffEvidence {
+    issues: Vec<crate::Issue>,
+    omitted: u64,
+}
+
+#[cfg(feature = "watch")]
+impl HandoffEvidence {
+    fn retain(&mut self, report: &crate::scan::ReconcileReport) {
+        for error in &report.scan.errors {
+            retain_local_issue(
+                &mut self.issues,
+                &mut self.omitted,
+                crate::Issue::from_error(error),
+            );
+        }
+    }
 }
 
 #[cfg(feature = "watch")]
@@ -3297,6 +3349,37 @@ mod tests {
         opened.close().expect("close");
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn refresh_rejects_symlink_shadowed_ancestry_without_aborting_other_paths() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().expect("temp root");
+        let outside = tempfile::tempdir().expect("outside root");
+        std::fs::create_dir_all(root.path().join("shadow/child")).expect("baseline ancestry");
+        std::fs::write(root.path().join("good.txt"), b"before").expect("baseline file");
+        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("opened root");
+        assert_eq!(wait_until_settled(&opened).phase, crate::LifecyclePhase::Ready);
+
+        std::fs::remove_dir_all(root.path().join("shadow")).expect("remove ancestry");
+        symlink(outside.path(), root.path().join("shadow")).expect("shadow with symlink");
+        std::fs::write(root.path().join("good.txt"), b"after and larger").expect("mutate file");
+
+        let result = opened
+            .refresh(&[PathBuf::from("shadow/child/leaf"), PathBuf::from("good.txt")])
+            .expect("one unsafe path is a rejection, not a batch error");
+
+        assert_eq!(result.accepted, vec![PathBuf::from("good.txt")]);
+        assert_eq!(result.rejected.len(), 1);
+        assert_eq!(result.rejected[0].path, Path::new("shadow/child/leaf"));
+        assert_eq!(result.rejected[0].reason, crate::RefreshRejection::UnsafeAncestry);
+        assert_eq!(
+            opened.state.index.attrs(Path::new("good.txt")).expect("attrs").expect("retained").size,
+            16
+        );
+        opened.close().expect("close");
+    }
+
     #[test]
     fn refresh_refusal_is_atomic_with_the_shared_file_budget() {
         let root = tempfile::tempdir().expect("temp root");
@@ -3494,6 +3577,50 @@ mod tests {
         let image = opened.state.index.snapshot().expect("snapshot");
         assert!(image.controls().is_empty());
         assert_eq!(image.partition_total().all, image.partition_total().unignored);
+        opened.close().expect("close");
+    }
+
+    #[cfg(feature = "watch")]
+    #[test]
+    #[cfg(unix)]
+    fn inaccessible_baseline_enters_watching_with_partial_coverage() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        let inaccessible = root.path().join("inaccessible");
+        std::fs::create_dir(&inaccessible).expect("inaccessible directory");
+        std::fs::write(inaccessible.join("secret"), b"secret").expect("fixture");
+        std::fs::set_permissions(&inaccessible, std::fs::Permissions::from_mode(0o000))
+            .expect("make directory inaccessible");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"").expect("script");
+
+        let opened = OpenedIndex::open(root.path(), scripted_options(&script)).expect("open");
+        let deadline = std::time::Instant::now() + TEST_GATE_TIMEOUT;
+        let state = loop {
+            let state = opened.state.index.state().expect("read state");
+            if matches!(
+                state.phase,
+                crate::LifecyclePhase::Watching | crate::LifecyclePhase::Failed
+            ) {
+                break state;
+            }
+            assert!(std::time::Instant::now() < deadline, "observation handoff did not settle");
+            std::thread::yield_now();
+        };
+        std::fs::set_permissions(&inaccessible, std::fs::Permissions::from_mode(0o700))
+            .expect("restore directory permissions");
+
+        assert_eq!(state.phase, crate::LifecyclePhase::Watching);
+        assert_eq!(state.coverage, crate::Coverage::Partial(crate::CoverageReason::Inaccessible));
+        assert_eq!(state.freshness, crate::Freshness::Partial);
+        assert!(state.issues.retained > 0);
         opened.close().expect("close");
     }
 

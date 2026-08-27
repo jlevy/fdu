@@ -48,10 +48,11 @@ anstyle = "1.0"
 notify = { version = "8.2", optional = true }
 pulldown-cmark = { version = "=0.13.4", default-features = false }
 
-[target.'cfg(target_os = "macos")'.dependencies]
-# The macOS scan accelerator calls getattrlistbulk through the official Rust libc
-# bindings. Keep the direct surface target-specific and pinned to the version already
-# reviewed and locked transitively in this workspace.
+[target.'cfg(unix)'.dependencies]
+# Unix control-file reads use O_NONBLOCK so a raced FIFO cannot stall a scan. The
+# macOS scan accelerator also calls getattrlistbulk through these official bindings.
+# Keep the direct surface target-specific and pinned to the version already reviewed
+# and locked transitively in this workspace.
 libc = "=0.2.189"
 
 [dev-dependencies]

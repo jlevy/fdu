@@ -39,9 +39,14 @@ pub const CONTROL_FILE_NAME: &str = ".gitignore";
 /// repositories while remaining small relative to the inventory it governs.
 pub const MAX_CONTROL_TABLE_BYTES: usize = 4 * 1024 * 1024;
 
+/// Maximum bytes in one parsed ignore pattern line.
+///
+/// A control file may contain many ordinary rules up to the shared table bound, but a
+/// single adversarial rule must not impose unbounded matching work on every entry.
+pub const MAX_CONTROL_PATTERN_BYTES: usize = 16 * 1024;
+
 /// Conservative retained charge for one key, identity, and matcher shell.
-#[cfg(feature = "gitignore")]
-const CONTROL_SOURCE_OVERHEAD: usize = 64;
+pub(crate) const CONTROL_SOURCE_OVERHEAD: usize = 64;
 
 /// Stable, non-sensitive identity of one retained control source.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
@@ -93,6 +98,15 @@ impl ControlTable {
         #[cfg(feature = "gitignore")]
         {
             let directory = control_directory(path)?;
+            if let Some(line) = source
+                .split(|byte| *byte == b'\n')
+                .find(|line| line.len() > MAX_CONTROL_PATTERN_BYTES)
+            {
+                return Err(crate::Error::ControlPatternLimit {
+                    attempted: line.len(),
+                    limit: MAX_CONTROL_PATTERN_BYTES,
+                });
+            }
             let replaced = self.by_directory.get(directory).map_or(0, |value| value.retained_cost);
             let incoming_cost = retained_source_cost(directory, &source);
             let next = self
@@ -308,10 +322,13 @@ fn control_path(directory: &Path) -> PathBuf {
 
 #[cfg(feature = "gitignore")]
 fn identity(bytes: &[u8]) -> ControlIdentity {
-    let mut fingerprint = 0xcbf2_9ce4_8422_2325_u64;
+    const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+    const FNV_PRIME: u64 = 0x100_0000_01b3;
+
+    let mut fingerprint = FNV_OFFSET_BASIS;
     for byte in bytes {
         fingerprint ^= u64::from(*byte);
-        fingerprint = fingerprint.wrapping_mul(0x1000_0000_01b3);
+        fingerprint = fingerprint.wrapping_mul(FNV_PRIME);
     }
     ControlIdentity { bytes: u64::try_from(bytes.len()).unwrap_or(u64::MAX), fingerprint }
 }
@@ -328,6 +345,24 @@ fn retained_source_cost(directory: &Path, source: &[u8]) -> usize {
         .saturating_add(source.len().saturating_mul(2))
         .saturating_add(pattern_shells.saturating_mul(64))
         .saturating_add(segment_shells.saturating_mul(24))
+}
+
+#[cfg(all(test, feature = "gitignore"))]
+pub(crate) fn source_at_test_limit() -> Vec<u8> {
+    let mut source = Vec::new();
+    loop {
+        let previous_len = source.len();
+        source.extend(std::iter::repeat_n(b'a', MAX_CONTROL_PATTERN_BYTES));
+        source.push(b'\n');
+        if retained_source_cost(Path::new(""), &source) > MAX_CONTROL_TABLE_BYTES {
+            source.truncate(previous_len);
+            break;
+        }
+    }
+    let remaining = MAX_CONTROL_TABLE_BYTES - retained_source_cost(Path::new(""), &source);
+    source.extend(std::iter::repeat_n(b'a', (remaining / 2).min(MAX_CONTROL_PATTERN_BYTES)));
+    assert_eq!(retained_source_cost(Path::new(""), &source), MAX_CONTROL_TABLE_BYTES);
+    source
 }
 
 #[cfg(all(test, feature = "gitignore"))]
@@ -351,7 +386,7 @@ mod tests {
     #[test]
     fn total_source_bound_is_shared_and_replacement_gets_its_bytes_back() {
         let mut table = ControlTable::default();
-        let first = vec![b'a'; (MAX_CONTROL_TABLE_BYTES - CONTROL_SOURCE_OVERHEAD - 64) / 2];
+        let first = source_at_test_limit();
         assert!(table.upsert(Path::new(".gitignore"), first).expect("at the shared bound"));
         let error = table
             .upsert(Path::new("nested/.gitignore"), b"ab".to_vec())
@@ -363,6 +398,26 @@ mod tests {
                 .upsert(Path::new("nested/.gitignore"), b"now it fits\n".to_vec())
                 .expect("freed bytes are reusable")
         );
+    }
+
+    #[test]
+    fn one_pattern_line_has_an_independent_work_bound() {
+        let source = vec![b'a'; MAX_CONTROL_PATTERN_BYTES + 1];
+        let error = ControlTable::default()
+            .upsert(Path::new(".gitignore"), source)
+            .expect_err("one hostile rule is rejected before parsing");
+        let crate::Error::ControlPatternLimit { attempted, limit } = error else {
+            panic!("unexpected control error: {error}");
+        };
+        assert_eq!(attempted, MAX_CONTROL_PATTERN_BYTES + 1);
+        assert_eq!(limit, MAX_CONTROL_PATTERN_BYTES);
+    }
+
+    #[test]
+    fn control_identity_uses_standard_fnv1a_vectors() {
+        assert_eq!(identity(b"").fingerprint, 0xcbf2_9ce4_8422_2325);
+        assert_eq!(identity(b"a").fingerprint, 0xaf63_dc4c_8601_ec8c);
+        assert_eq!(identity(b"foobar").fingerprint, 0x8594_4171_f739_67e8);
     }
 
     #[test]

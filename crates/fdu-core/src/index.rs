@@ -596,7 +596,10 @@ pub(crate) enum ObservationTransition {
     /// Baseline discovery finished and the observer is closing its registration gap.
     Reconciling,
     /// The observer is active and its baseline handoff has been verified.
-    Watching,
+    ///
+    /// Persistent inaccessible boundaries do not prevent observation of the readable
+    /// scope, but they keep coverage partial and their causes remain inspectable.
+    Watching { issues: Vec<Issue>, omitted: u64 },
     /// Observation could not establish or retain a trustworthy live boundary.
     Failed(Issue),
 }
@@ -1421,9 +1424,17 @@ impl Index {
                         self.state.freshness = Freshness::Reconciling;
                     }
                 }
-                ObservationTransition::Watching => {
+                ObservationTransition::Watching { issues, omitted } => {
                     if self.state.phase == LifecyclePhase::Reconciling {
                         self.state.phase = LifecyclePhase::Watching;
+                        if !issues.is_empty() || omitted > 0 {
+                            self.state.coverage = Coverage::Partial(CoverageReason::Inaccessible);
+                            for issue in issues {
+                                self.retain_issue(issue);
+                            }
+                            self.state.issues.omitted =
+                                self.state.issues.omitted.saturating_add(omitted);
+                        }
                         self.state.freshness = self.freshness();
                         if self.state.coverage != Coverage::Complete {
                             self.state.freshness = Freshness::Partial;
@@ -4955,13 +4966,12 @@ mod tests {
     fn control_bound_failure_is_atomic_with_ordinary_entry_work() {
         let mut index = Index::new("/root");
         let before = index.clone();
+        let mut oversized = crate::control::source_at_test_limit();
+        oversized.push(b'a');
         let error = index
             .apply(&Observation::new(vec![
                 upsert("ordinary.txt", EntryKind::File, file_attrs(1, 1)),
-                Op::ControlUpsert {
-                    path: PathBuf::from(".gitignore"),
-                    source: vec![b'x'; crate::control::MAX_CONTROL_TABLE_BYTES],
-                },
+                Op::ControlUpsert { path: PathBuf::from(".gitignore"), source: oversized },
             ]))
             .expect_err("the complete batch must fail before any mutation");
 

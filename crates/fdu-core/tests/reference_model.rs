@@ -251,7 +251,7 @@ impl Model {
             work: model_work(observed, stats),
         };
         self.retain(commit.clone());
-        let applied = commit.applied_delta();
+        let applied = model_applied_delta(&commit);
         ApplyOutcome { stats, commit: Some(commit), applied }
     }
 
@@ -500,7 +500,7 @@ impl Model {
     }
 
     fn retain(&mut self, commit: Commit) {
-        let cost = commit.retained_cost();
+        let cost = model_commit_cost(&commit);
         if cost > JOURNAL_CAPACITY {
             self.journal.clear();
             self.journal_cost = 0;
@@ -509,7 +509,7 @@ impl Model {
         }
         while self.journal_cost + cost > JOURNAL_CAPACITY {
             let dropped = self.journal.pop_front().expect("over-capacity model journal");
-            self.journal_cost -= dropped.retained_cost();
+            self.journal_cost -= model_commit_cost(&dropped);
             self.journal_floor = dropped.clock;
         }
         self.journal_cost += cost;
@@ -519,13 +519,41 @@ impl Model {
     fn since(&self, clock: Clock) -> (Vec<Commit>, Vec<AppliedDelta>, bool) {
         let commits: Vec<Commit> =
             self.journal.iter().filter(|commit| commit.clock > clock).cloned().collect();
-        let deltas = commits.iter().filter_map(Commit::applied_delta).collect();
+        let deltas = commits.iter().filter_map(model_applied_delta).collect();
         (commits, deltas, clock < self.journal_floor)
     }
 
     fn take_pending_invalidations(&mut self) -> Vec<(PathBuf, InvalidateReason)> {
         std::mem::take(&mut self.pending_invalidations)
     }
+}
+
+fn model_commit_cost(commit: &Commit) -> usize {
+    commit.changes.len()
+        + commit.state.len()
+        + commit.impact.dirty_paths.len()
+        + usize::from(commit.impact.all_dirty)
+}
+
+fn model_applied_delta(commit: &Commit) -> Option<AppliedDelta> {
+    let ops = commit
+        .changes
+        .iter()
+        .filter_map(|change| match change {
+            EffectiveChange::Inserted { path, kind, attrs } => {
+                Some(Op::Upsert { path: path.clone(), kind: *kind, attrs: *attrs })
+            }
+            EffectiveChange::Updated { path, kind, current, .. } => {
+                Some(Op::Upsert { path: path.clone(), kind: *kind, attrs: *current })
+            }
+            EffectiveChange::Removed { path, .. } => Some(Op::Remove { path: path.clone() }),
+            EffectiveChange::Invalidated { path, reason } => {
+                Some(Op::InvalidateSubtree { path: path.clone(), reason: *reason })
+            }
+            EffectiveChange::ControlUpdated { .. } | EffectiveChange::Reclassified { .. } => None,
+        })
+        .collect::<Vec<_>>();
+    (!ops.is_empty()).then_some(AppliedDelta { clock: commit.clock, ops })
 }
 
 fn is_observation_gap(reason: InvalidateReason) -> bool {
@@ -799,6 +827,64 @@ fn parent_first_upsert(model: &Model, op: Op, generator: &mut Generator) -> Vec<
     }
     operations.push(Op::Upsert { path, kind, attrs: entry_attrs });
     operations
+}
+
+#[test]
+fn issue_and_dirty_path_bounds_match_the_independent_model_beyond_their_limits() {
+    let mut index = Index::new("/model-root");
+    let mut model = Model::new();
+    let gap_count = usize::try_from(EXPECTED_RETAINED_ISSUE_LIMIT).expect("small limit") + 7;
+    let gaps = (0..gap_count)
+        .map(|which| Op::InvalidateSubtree {
+            path: PathBuf::from(format!("gap-{which}")),
+            reason: InvalidateReason::WatchOverflow,
+        })
+        .collect::<Vec<_>>();
+    let actual = index.apply(&Observation::new(gaps.clone())).expect("bounded invalidations");
+    let expected = model.apply(
+        &gaps
+            .into_iter()
+            .map(|op| ModelOp { op, condition: ModelCondition::Any })
+            .collect::<Vec<_>>(),
+    );
+
+    assert_eq!(actual, expected);
+    assert_eq!(model.state.issues.retained, EXPECTED_RETAINED_ISSUE_LIMIT);
+    assert_eq!(model.state.issues.omitted, 7);
+    let current = actual
+        .commit
+        .as_ref()
+        .expect("gap commit")
+        .state
+        .iter()
+        .rev()
+        .find_map(|transition| match transition {
+            StateTransition::IndexState { current, .. } => Some(current),
+            _ => None,
+        })
+        .expect("issue changes are observable state");
+    assert_eq!(current.issues, model.state.issues);
+    assert_equivalent(&mut index, &mut model, 0x64, &["issue detail overflow".into()]);
+
+    let dirty = (0..=EXPECTED_DIRTY_PATH_LIMIT)
+        .map(|which| Op::InvalidateSubtree {
+            path: PathBuf::from(format!("dirty-{which}")),
+            reason: InvalidateReason::Requested,
+        })
+        .collect::<Vec<_>>();
+    let actual = index.apply(&Observation::new(dirty.clone())).expect("bounded impact");
+    let expected = model.apply(
+        &dirty
+            .into_iter()
+            .map(|op| ModelOp { op, condition: ModelCondition::Any })
+            .collect::<Vec<_>>(),
+    );
+
+    assert_eq!(actual, expected);
+    let impact = &actual.commit.as_ref().expect("dirty-path commit").impact;
+    assert!(impact.all_dirty);
+    assert!(impact.dirty_paths.is_empty(), "a partial path list must never escape");
+    assert_equivalent(&mut index, &mut model, 0x256, &["dirty path overflow".into()]);
 }
 
 #[test]

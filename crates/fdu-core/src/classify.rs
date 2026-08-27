@@ -698,10 +698,11 @@ fn derive_ext_str(name: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::type_rule_manifest::{ManifestRule, parse_manifest};
+    use super::type_rule_manifest::{MANIFEST_FAMILIES, ManifestRule, parse_manifest};
     use super::{
         ContentFamily, DetectionConfidence, DetectionSource, TypeRegistry, classify_path,
-        classify_path_with_prefix, classify_with, derive_ext, type_rule_fingerprint,
+        classify_path_with_prefix, classify_with, derive_ext, family_from_name,
+        type_rule_fingerprint,
     };
     use super::{GENERATED_RULES, human_language_name};
     use std::ffi::OsStr;
@@ -712,6 +713,16 @@ mod tests {
 
     fn default_manifest_rules() -> Vec<ManifestRule> {
         parse_manifest(DEFAULT_MANIFEST).expect("the repository's own manifest parses")
+    }
+
+    #[test]
+    fn every_validated_manifest_family_maps_to_an_engine_family() {
+        for family in MANIFEST_FAMILIES {
+            assert!(
+                family_from_name(family).is_some(),
+                "manifest validation admits {family:?}, but registry construction cannot map it"
+            );
+        }
     }
 
     /// Assert both lookup tiers against their complete declarative source.

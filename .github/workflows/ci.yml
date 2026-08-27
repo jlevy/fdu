@@ -81,6 +81,8 @@ jobs:
         run: node --test scripts/check-rust-module-names.test.mjs
       - name: Check Rust module filenames
         run: node scripts/check-rust-module-names.mjs
+      - name: Check every inventory producer routes through shared admission
+        run: npm run check:admission-sites
       - name: Check the golden corpus never resolves fdu through PATH
         run: node scripts/check-golden-invocations.mjs
       - name: Check golden sessions expose complete product behavior

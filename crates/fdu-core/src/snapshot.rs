@@ -608,7 +608,9 @@ fn parse_stream(
     }
 
     let control_count = read_u32(reader)?;
-    if usize::try_from(control_count).map_err(|_| ParseError::Invalid)?.saturating_mul(64)
+    if usize::try_from(control_count)
+        .map_err(|_| ParseError::Invalid)?
+        .saturating_mul(crate::control::CONTROL_SOURCE_OVERHEAD)
         > crate::control::MAX_CONTROL_TABLE_BYTES
     {
         return Err(ParseError::Invalid);
@@ -1421,7 +1423,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("bounded-controls.fdu");
         let mut original = Index::new("/some/root");
-        let source = vec![b'a'; (crate::control::MAX_CONTROL_TABLE_BYTES - 64 - 64) / 2];
+        let source = crate::control::source_at_test_limit();
         original.apply_ok(&Observation::new(vec![Op::ControlUpsert {
             path: PathBuf::from(".gitignore"),
             source: source.clone(),

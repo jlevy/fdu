@@ -4,7 +4,7 @@
 
 **Author:** fdu project, with Codex review assistance
 
-**Status:** Active — Phase 1 complete; Phase 2 session proof next
+**Status:** Active — Phase 1 complete; Phase 2 Python binding next
 
 ## Overview
 
@@ -88,30 +88,25 @@ decisions, including the explicit delivery override recorded below.
 
 ## Current Implementation Status
 
-This status describes committed checkpoint `e5e27eb` on fdu PR #48 and the corresponding
-tbd snapshot on 2026-08-26. The PR remains draft, and all 19 required GitHub checks pass
-at that checkpoint in
-[run 33011941829](https://github.com/jlevy/fdu/actions/runs/33011941829). The no-gap
-observation bead is closed.
-Its focused tests, all-feature and feature-disabled core suites, independent reference
-model, and both installed `make cross-lint` targets pass.
-The final local `make check` rerun reached the MSRV replay before the host volume
-filled; the complete clean-runner matrix subsequently passed.
-The five-session golden and contract-coverage bead is now in progress.
+This status describes the session-proof and review-hardening checkpoint at the head of
+fdu PR #48. The PR remains draft.
+The full local `make check` handoff gate and both installed `make cross-lint` targets
+pass on the exact checkpoint tree; GitHub CI is the remaining publication check.
+The no-gap observation and five-session golden beads are complete.
+The next dependency is the synchronous Python binding.
 
 | Phase | Status | Evidence and next boundary |
 | --- | --- | --- |
 | Architecture and implementation map | Complete | The durable architecture, PR #44 and #47 reconciliation, direct-API correction, file/function map, test design, and reuse ledger are committed and reviewed. |
 | Phase 1: exact engine kernel | Complete | Checkpoints 1A through 1D passed their local gates and the cumulative cross-platform PR gate. |
-| Phase 2: opened-root vertical slice | In progress | Ownership and joined close, discovery and priority, coherent reads, the change journal, bounded multi-path refresh, and no-gap observation are committed and green through `e5e27eb`. `fdu-0kv7` is composing those capabilities into five transparent session goldens and the public-contract coverage gate; Python follows. |
+| Phase 2: opened-root vertical slice | In progress | The complete native lifecycle and five transparent session goldens are committed and green. `fdu-bnsk` now binds the same five synchronous operations to Python and proves GIL release and shared-handle semantics. |
 | Phase 3: MetaBrowser adoption | Not started | Begins only after the complete native and Python Phase 2 surface passes. The first step is the disposable unchanged-contract measurement, not a contract edit. |
 | Phase 4: composed proof | Not started | Cross-provider conformance, route and lifecycle integration, installed-wheel proof, and final performance and size acceptance remain required. |
 
-The implementation epic currently has 18 closed children, one in progress, and 10 open
-children. Those counts are a checkpoint, not a completion percentage: the closed set
-includes the design and review work, while every MetaBrowser and final-acceptance bead
-remains open. The tbd graph is authoritative for live status and dependencies; the
-checklists and bead table below are maintained as its readable plan view.
+The implementation epic has completed the native Phase 2 dependency chain.
+Python, MetaBrowser adoption, composed integration, and final acceptance remain open.
+The tbd graph is authoritative for live status and dependencies; the checklists and bead
+table below are maintained as its readable plan view.
 
 ## Goals
 
@@ -1590,7 +1585,7 @@ arrow means the bead on the left depends on the bead or beads on the right.
 | 2 journal | `fdu-ngnm` journal and change poll | Closed | `fdu-mkga`, `fdu-gpls` |
 | 2 refresh | `fdu-3za7` multi-path refresh | Closed | `fdu-mkga`, `fdu-gpls` |
 | 2 observation | `fdu-9jzp` no-gap handoff | Closed | `fdu-194x`, `fdu-ngnm`, `fdu-3za7` |
-| 2 session proof | `fdu-0kv7` five session goldens and coverage closure | In progress | `fdu-mkga`, `fdu-194x`, `fdu-r7s7`, `fdu-ngnm`, `fdu-3za7`, `fdu-9jzp` |
+| 2 session proof | `fdu-0kv7` five session goldens and coverage closure | Closed | `fdu-mkga`, `fdu-194x`, `fdu-r7s7`, `fdu-ngnm`, `fdu-3za7`, `fdu-9jzp` |
 | 2 Python | `fdu-bnsk` synchronous Python surface | Open | `fdu-r7s7`, `fdu-ngnm`, `fdu-3za7`, `fdu-9jzp`, `fdu-0kv7` |
 | 3A | `fdu-sewa` unchanged-contract measurement | Open | `fdu-bnsk` |
 | 3B contract | `fdu-m68r` joint contract | Open | `fdu-sewa` |
@@ -1750,6 +1745,7 @@ pattern:
 | Engine sequence | Record relative sequence exactly from zero. |
 | Observation and query instants | Inject explicit fixed instants where they affect semantics. |
 | Operating-system timestamps not under test | Replace at trace construction with `[TIME]`; no regex in the expected artifact. |
+| Operating-system directory size, allocation, inode, and device identities not under test | Replace at trace construction with the closed `[DIR_SIZE]`, `[ALLOCATED]`, `[INODE]`, and `[DEVICE]` vocabulary. File logical sizes remain exact. |
 | Durations and thread IDs | Omit; deterministic work and named barriers are the contract. |
 | Platform-specific native path spelling | Keep in a platform fixture, or map only the root separator before portable projection. |
 
@@ -1771,8 +1767,9 @@ The first corpus is deliberately small:
    deduplicated multi-path refresh receipt.
 3. **Coherent projections and continuations.** Request every native projection in one
    read, assemble tree and flat pages at limits one, two, and unbounded, check exact or
-   capped totals, then exercise stale, foreign, evicted, and closed continuation
-   results.
+   capped totals, then exercise live, stale, unavailable, and closed continuation
+   results. `Unavailable` deliberately covers both foreign and evicted tokens because the
+   public API does not expose handle-local retention policy.
 4. **Journal and observation recovery.** Start observation before baseline, inject a
    pre-baseline event, an event during discovery, overflow, a state-only commit, an idle
    poll, a blocked poll, consumer journal loss, and provider-gap reconciliation as two
@@ -1798,13 +1795,16 @@ An exhaustive matcher over public contract enums defines the required set:
 
 - all five operations and each closed success, recovery, and typed failure result
   variant;
-- every lifecycle phase and allowed transition edge;
+- every publicly observable lifecycle phase and allowed transition edge; root binding
+  completes before a handle exists and therefore has no separate `opening` phase;
 - complete and each partial-coverage reason;
 - fresh, reconciling, stale, and partial freshness;
 - `present`, `absent`, and `unknown` knowledge;
 - every exact change and impact domain;
-- immediate, idle, blocking, reset, future, foreign, and closed poll outcomes;
-- live, stale, foreign, evicted, and closed continuation outcomes;
+- immediate, idle, blocking, reset, unavailable, and closed poll outcomes; future and
+  foreign cursors share the public `ChangeCursorUnavailable` result;
+- live, stale, unavailable, and closed continuation outcomes; foreign and evicted tokens
+  share the public `ContinuationUnavailable` result;
 - provider gap, consumer reset, query limit, resource refusal, worker failure, and
   joined close.
 
@@ -1864,8 +1864,10 @@ One assembly helper runs every pageable projection at limits one, two, a boundar
 page, and unbounded.
 For each stable-version assembly it checks positive bounds, advancing continuation,
 exact order, no duplicates or omissions, proportional work, and equality with the
-unpaged answer. The same table exercises stale, foreign, evicted, query-mismatched, and
-closed continuations.
+unpaged answer.
+The same table exercises stale, unavailable, query-mismatched, and closed
+continuations; scenario setup distinguishes foreign and evicted causes only when that
+distinction matters to the harness, never as a fabricated public result.
 
 Product totals are separate coherent aggregate projections.
 The harness checks `exact(n)` or `at_least(n)` against independent recomputation and

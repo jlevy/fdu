@@ -63,7 +63,7 @@ const RECONCILE_WAVE_DIRECTORIES: usize =
 
 /// Identity of the current fixed `.gitignore` control semantics.
 #[cfg(feature = "gitignore")]
-const IGNORE_RULES_FINGERPRINT: u64 = 1;
+const IGNORE_RULES_FINGERPRINT: u64 = 2;
 
 /// A build without the capability performs no control reads or classification.
 #[cfg(not(feature = "gitignore"))]
@@ -2293,7 +2293,10 @@ pub(crate) fn read_control_op(root: &Path, path: &Path, kind: EntryKind) -> Resu
         return Ok(Some(Op::ControlRemove { path: path.to_path_buf() }));
     }
     let absolute = root.join(path);
-    let file = fs::File::open(&absolute).map_err(|error| Error::io(&absolute, error))?;
+    let file = open_control_file(&absolute).map_err(|error| Error::io(&absolute, error))?;
+    if !file.metadata().map_err(|error| Error::io(&absolute, error))?.file_type().is_file() {
+        return Ok(Some(Op::ControlRemove { path: path.to_path_buf() }));
+    }
     let read_limit = u64::try_from(crate::control::MAX_CONTROL_TABLE_BYTES)
         .unwrap_or(u64::MAX)
         .saturating_add(1);
@@ -2301,11 +2304,23 @@ pub(crate) fn read_control_op(root: &Path, path: &Path, kind: EntryKind) -> Resu
     file.take(read_limit).read_to_end(&mut source).map_err(|error| Error::io(&absolute, error))?;
     if source.len() >= crate::control::MAX_CONTROL_TABLE_BYTES {
         return Err(Error::ControlSourceLimit {
-            attempted: source.len().saturating_add(64),
+            attempted: source.len().saturating_add(crate::control::CONTROL_SOURCE_OVERHEAD),
             limit: crate::control::MAX_CONTROL_TABLE_BYTES,
         });
     }
     Ok(Some(Op::ControlUpsert { path: path.to_path_buf(), source }))
+}
+
+#[cfg(all(feature = "gitignore", unix))]
+fn open_control_file(path: &Path) -> std::io::Result<fs::File> {
+    use std::os::unix::fs::OpenOptionsExt as _;
+
+    fs::OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW).open(path)
+}
+
+#[cfg(all(feature = "gitignore", not(unix)))]
+fn open_control_file(path: &Path) -> std::io::Result<fs::File> {
+    fs::File::open(path)
 }
 
 fn send_observation(
@@ -3041,6 +3056,10 @@ pub fn revalidate(
                 }
             };
             let name = item.file_name();
+            // Seeing the name proves it is not absent even when a following metadata
+            // lookup fails. Record it before any fallible per-entry work so an
+            // operational error cannot become a false removal in the missing sweep.
+            seen.insert(name.clone());
             control_seen |= name == crate::control::CONTROL_FILE_NAME;
             let rel_path = rel_dir.join(&name);
             let baseline = index.relaxed_expectation(&rel_path);
@@ -3056,9 +3075,6 @@ pub fn revalidate(
             let attrs = attrs_from(&meta);
             let disposition =
                 crate::admission::decide(&name, kind, config.hidden(), config.exclude_special);
-            if disposition == crate::admission::Disposition::Reject {
-                continue;
-            }
             let control = match read_control_op(&root, &rel_path, kind) {
                 Ok(control) => control,
                 Err(error) => {
@@ -3066,17 +3082,24 @@ pub fn revalidate(
                     None
                 }
             };
-            if disposition == crate::admission::Disposition::ControlOnly {
-                if let Some(control) = control {
-                    batch.push(ObservationOp::if_state(control, baseline));
-                    if batch.len() >= batch_limit {
-                        sink(Observation::from_ops(std::mem::take(&mut batch)));
-                        batch.reserve(batch_limit);
+            if disposition != crate::admission::Disposition::Retain {
+                if baseline.state != PathState::Absent {
+                    batch.push(ObservationOp::if_state(
+                        Op::Remove { path: rel_path.clone() },
+                        baseline,
+                    ));
+                }
+                if disposition == crate::admission::Disposition::ControlOnly {
+                    if let Some(control) = control {
+                        batch.push(ObservationOp::if_state(control, baseline));
                     }
+                }
+                if batch.len() >= batch_limit {
+                    sink(Observation::from_ops(std::mem::take(&mut batch)));
+                    batch.reserve(batch_limit);
                 }
                 continue;
             }
-            seen.insert(name);
             report.observe(kind, attrs);
             batch.push(ObservationOp::if_state(
                 Op::Upsert { path: rel_path.clone(), kind, attrs },
@@ -3189,8 +3212,6 @@ pub(crate) struct ReconcilePathsReport {
     pub(crate) reconciliation: ReconcileReport,
     pub(crate) accepted: Vec<PathBuf>,
     pub(crate) rejected: Vec<crate::RejectedRefreshPath>,
-    #[cfg(test)]
-    pub(crate) walked: Vec<PathBuf>,
 }
 
 /// Reconcile one bounded path set under an opened-root lifecycle controller.
@@ -3250,12 +3271,29 @@ fn reconcile_paths_target(
 
     report.accepted = accepted.into_iter().collect();
     let mut resolved = Vec::new();
+    let mut unsafe_roots = Vec::new();
     for requested_root in covering_roots(report.accepted.clone()) {
-        resolved.push(resolve_subtree_root(target, &requested_root, config)?);
+        match resolve_subtree_root(target, &requested_root, config) {
+            Ok(root) => resolved.push(root),
+            Err(Error::SubtreeOutsideScanScope { .. }) => unsafe_roots.push(requested_root),
+            Err(error) => return Err(error),
+        }
+    }
+    if !unsafe_roots.is_empty() {
+        let mut retained = Vec::with_capacity(report.accepted.len());
+        for path in std::mem::take(&mut report.accepted) {
+            if unsafe_roots.iter().any(|root| path.starts_with(root)) {
+                report.rejected.push(crate::RejectedRefreshPath {
+                    path,
+                    reason: crate::RefreshRejection::UnsafeAncestry,
+                });
+            } else {
+                retained.push(path);
+            }
+        }
+        report.accepted = retained;
     }
     let walked = covering_roots(resolved);
-    #[cfg(test)]
-    report.walked.clone_from(&walked);
     if walked.is_empty() {
         return Ok(report);
     }
@@ -5937,6 +5975,32 @@ mod tests {
         }
     }
 
+    #[cfg(all(feature = "gitignore", unix))]
+    #[test]
+    fn raced_fifo_control_source_is_rejected_without_blocking() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let control = dir.path().join(".gitignore");
+        let status = match std::process::Command::new("mkfifo").arg(&control).status() {
+            Ok(status) => status,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+            Err(error) => panic!("create fifo: {error}"),
+        };
+        assert!(status.success(), "mkfifo exited with {status}");
+
+        let root = dir.path().to_path_buf();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let result = read_control_op(&root, Path::new(".gitignore"), EntryKind::File);
+            sender.send(result).ok();
+        });
+        let result = receiver
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("a raced FIFO must not block the scan worker")
+            .expect("the non-regular replacement is a normal control removal");
+
+        assert!(matches!(result, Some(Op::ControlRemove { .. })));
+    }
+
     #[cfg(feature = "gitignore")]
     #[test]
     fn hidden_admission_keeps_exact_allowlist_and_control_signals_only() {
@@ -6477,6 +6541,41 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn revalidation_metadata_errors_do_not_delete_enumerated_entries() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+
+        let dir = sample_tree();
+        let config = ScanConfig::default();
+        let (mut index, baseline_report) =
+            scan_into_index(dir.path(), &config).expect("baseline scan");
+        assert!(baseline_report.is_complete());
+        let before = index_fingerprint(&index);
+        let original_permissions = fs::metadata(dir.path()).expect("root metadata").permissions();
+
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o400))
+            .expect("remove search permission");
+        let mut observations = Vec::new();
+        let outcome = revalidate(&index, &config, &mut |observation| {
+            observations.push(observation);
+        });
+        fs::set_permissions(dir.path(), original_permissions).expect("restore permissions");
+
+        let report = outcome.expect("operational metadata errors are a partial report");
+        assert!(!report.errors.is_empty(), "the fixture did not induce metadata errors");
+        for observation in &observations {
+            index.apply_ok(observation);
+        }
+        assert_eq!(index_fingerprint(&index), before);
+        assert!(index.attrs(Path::new("a.txt")).is_some(), "existing entry was removed");
     }
 
     #[cfg(unix)]

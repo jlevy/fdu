@@ -383,8 +383,6 @@ pub enum Freshness {
 /// still serve a useful partial image, and a watching root may temporarily be stale.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum LifecyclePhase {
-    /// The root is being bound and its initial state established.
-    Opening,
     /// A cold walk is adding verified entries.
     Discovering,
     /// Explicit or gap-closing verification is in progress.
@@ -912,6 +910,8 @@ pub enum RefreshRejection {
     BeyondDepth,
     /// A fixed admission rule excludes the path from retained truth.
     NotAdmitted,
+    /// A symlink or filesystem boundary makes the requested ancestry unsafe to walk.
+    UnsafeAncestry,
     /// Verifying the path could expand a resource-stopped retained set.
     ResourceBudget,
 }
@@ -923,6 +923,7 @@ impl RefreshRejection {
             Self::OutsideRoot => "outside_root",
             Self::BeyondDepth => "beyond_depth",
             Self::NotAdmitted => "not_admitted",
+            Self::UnsafeAncestry => "unsafe_ancestry",
             Self::ResourceBudget => "resource_budget",
         }
     }
@@ -1537,6 +1538,15 @@ pub enum Error {
         /// Bytes the resulting table would retain.
         attempted: usize,
         /// Shared table limit.
+        limit: usize,
+    },
+
+    /// One control pattern exceeded the per-line matching-work bound.
+    #[error("control pattern requires {attempted} bytes; limit is {limit} bytes")]
+    ControlPatternLimit {
+        /// Bytes in the oversized pattern line.
+        attempted: usize,
+        /// Per-line pattern limit.
         limit: usize,
     },
 

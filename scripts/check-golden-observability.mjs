@@ -17,15 +17,28 @@ const ROOT = dirname(SCRIPT_DIRECTORY);
 const GOLDEN_DIRECTORY = join(ROOT, "tests", "golden");
 
 const SHELL_FILTER = /(?:^|[|;&][ \t]*)\b(?:grep|jq|head|tail|sed|awk)\b/;
+const SHELL_REDIRECT = /(?:^|[ \t])1?>[ \t]*(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))/g;
 const WRAPPER_INVOCATION = /(?:execFileSync|spawnSync)\(process\.env\.FDU\b/;
 const OUTPUT_PARSER = /(?:JSON\.parse|yaml\.parse|parseYaml|\.stdout\s*\.(?:split|match)|\.stdout\s*\[)/;
 
 export function auditGoldenText(source, file) {
   const findings = [];
   const helperRunsFdu = file.includes("/bin/") && /process\.env\.FDU\b/.test(source);
+  const redirectedFduOutputs = new Set();
 
   source.split("\n").forEach((line, index) => {
-    if (SHELL_FILTER.test(line) && /(?:\bfdu\b|\$FDU|process\.env\.FDU)/.test(line)) {
+    const command = line.replace(/^\s*\$\s+/, "");
+    const invokesFdu = /(?:\bfdu\b|\$FDU|process\.env\.FDU)/.test(command);
+    if (invokesFdu) {
+      for (const match of command.matchAll(SHELL_REDIRECT)) {
+        redirectedFduOutputs.add(match[1] ?? match[2] ?? match[3]);
+      }
+    }
+    const filtersRedirectedOutput = [...redirectedFduOutputs].some((path) =>
+      command.includes(path),
+    );
+
+    if (SHELL_FILTER.test(command) && (invokesFdu || filtersRedirectedOutput)) {
       findings.push({
         file,
         line: index + 1,
@@ -35,7 +48,7 @@ export function auditGoldenText(source, file) {
       return;
     }
 
-    if (WRAPPER_INVOCATION.test(line) && OUTPUT_PARSER.test(line)) {
+    if (WRAPPER_INVOCATION.test(command) && OUTPUT_PARSER.test(command)) {
       findings.push({
         file,
         line: index + 1,
@@ -45,7 +58,7 @@ export function auditGoldenText(source, file) {
       return;
     }
 
-    if (helperRunsFdu && OUTPUT_PARSER.test(line)) {
+    if (helperRunsFdu && OUTPUT_PARSER.test(command)) {
       findings.push({
         file,
         line: index + 1,

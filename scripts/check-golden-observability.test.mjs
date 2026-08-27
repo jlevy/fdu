@@ -34,12 +34,15 @@ test("rejects wrappers that parse and select fields from fdu output", () => {
 });
 
 test("rejects redirection followed by a product-output filter", () => {
-  const source = "$ fdu --format json fixture > report.json; jq '.complete' report.json";
+  const source = [
+    "$ fdu --format json fixture > report.json",
+    "$ jq '.complete' report.json",
+  ].join("\n");
 
   assert.deepEqual(auditGoldenText(source, "tests/golden/bad.tryscript.md"), [
     {
       file: "tests/golden/bad.tryscript.md",
-      line: 1,
+      line: 2,
       reason: "a shell filter selects part of fdu output instead of recording the complete product response",
     },
   ]);
