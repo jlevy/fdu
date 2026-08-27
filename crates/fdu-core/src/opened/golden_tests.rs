@@ -92,8 +92,7 @@ fn cold_progressive_knowledge() -> SessionTrace {
     std::fs::write(root.path().join("alpha/leaf.txt"), b"alpha").expect("alpha leaf");
     std::fs::write(root.path().join("target/leaf.txt"), b"target").expect("target leaf");
 
-    let controls = Arc::new(TestControls::default());
-    controls.use_deterministic_discovery_order();
+    let controls = deterministic_controls();
     controls.gate(TestPoint::AfterRootDirectory).arm();
     let options = OpenOptions {
         batch_size: 1,
@@ -139,7 +138,7 @@ fn cold_progressive_knowledge() -> SessionTrace {
 
 fn exact_mutation_and_refresh() -> SessionTrace {
     let root = tempfile::tempdir().expect("mutation root");
-    let controls = Arc::new(TestControls::default());
+    let controls = deterministic_controls();
     let options = OpenOptions {
         hidden: Some(Arc::new(crate::HiddenPolicy::prune_hidden::<[&str; 0], &str>([]))),
         ..OpenOptions::default()
@@ -206,7 +205,7 @@ fn coherent_projections_and_continuations() -> SessionTrace {
     ] {
         std::fs::write(root.path().join(path), contents).expect("projection fixture");
     }
-    let controls = Arc::new(TestControls::default());
+    let controls = deterministic_controls();
     let options = OpenOptions::default();
     let mut trace = SessionTrace::new("coherent-projections-and-continuations", root.path());
     trace.record("action.open", &options);
@@ -357,7 +356,7 @@ fn journal_and_observation_recovery() -> SessionTrace {
     let script = scripts.path().join("events.script");
     std::fs::write(root.path().join("baseline.txt"), b"before").expect("baseline fixture");
     std::fs::write(&script, b"modify\tbaseline.txt\n").expect("initial observation script");
-    let controls = Arc::new(TestControls::default());
+    let controls = deterministic_controls();
     controls.gate(TestPoint::BeforeDiscovery).arm();
     let options = scripted_options(&script, 32);
     let mut trace = SessionTrace::new("journal-and-observation-recovery", root.path());
@@ -405,7 +404,7 @@ fn journal_and_observation_recovery() -> SessionTrace {
 
 fn ownership_races_and_shutdown() -> SessionTrace {
     let root = tempfile::tempdir().expect("ownership root");
-    let controls = Arc::new(TestControls::default());
+    let controls = deterministic_controls();
     controls.discovery_disabled.store(true, std::sync::atomic::Ordering::Release);
     let options = OpenOptions::default();
     let mut trace = SessionTrace::new("ownership-races-and-shutdown", root.path());
@@ -443,7 +442,7 @@ fn ownership_races_and_shutdown() -> SessionTrace {
 
     let race_root = tempfile::tempdir().expect("refresh race root");
     trace.alias_path(race_root.path(), "$RACE_ROOT");
-    let race_controls = Arc::new(TestControls::default());
+    let race_controls = deterministic_controls();
     race_controls.discovery_disabled.store(true, std::sync::atomic::Ordering::Release);
     let raced = OpenedIndex::open_for_test(
         race_root.path(),
@@ -475,7 +474,7 @@ fn ownership_races_and_shutdown() -> SessionTrace {
 
     let panic_root = tempfile::tempdir().expect("panic root");
     trace.alias_path(panic_root.path(), "$PANIC_ROOT");
-    let panic_controls = Arc::new(TestControls::default());
+    let panic_controls = deterministic_controls();
     panic_controls.discovery_disabled.store(true, std::sync::atomic::Ordering::Release);
     let panicked =
         OpenedIndex::open_for_test(panic_root.path(), OpenOptions::default(), panic_controls)
@@ -497,6 +496,12 @@ fn ownership_races_and_shutdown() -> SessionTrace {
 fn zero_cursor(opened: &OpenedIndex, trace: &mut SessionTrace) -> EngineVersion {
     let response = read(opened, trace, ReadRequest::default()).expect("initial version read");
     EngineVersion { sequence: Clock::ZERO, ..response.version }
+}
+
+fn deterministic_controls() -> Arc<TestControls> {
+    let controls = Arc::new(TestControls::default());
+    controls.use_deterministic_discovery_order();
+    controls
 }
 
 fn read(
