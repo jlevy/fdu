@@ -5,7 +5,7 @@ title: Implement the opened-root inventory engine rewrite
 kind: epic
 status: in_progress
 priority: 1
-version: 37
+version: 39
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -45,14 +45,15 @@ child_order_hints:
   - is-01m0y9g99mn8nzj7ydyt6yj478
   - is-01m0ydh0b0dw4xhf37y4gxm1jb
   - is-01m0yhq8268z0qrza1fnwrddfm
+  - is-01m10afnckpkf0m2fnhgw3sx1d
 hold: null
 hold_until: null
 created_at: 2026-08-26T00:56:09.456Z
-updated_at: 2026-08-26T19:33:01.665Z
+updated_at: 2026-08-27T01:52:10.764Z
 started_at: 2026-08-26T01:54:35.977Z
 ---
 Implement the clean opened-root and streaming design from the linked plan in merge-sized slices from current main. Preserve the one-shot engine and CLI defaults; first establish exact commits and ownership, then the minimal opened-root lifecycle, then adopt it through MetaBrowser's provider conformance boundary.
 
 ## Notes
 
-Status at committed PR #48 head d5d9151 on 2026-08-26: Phase 1 is complete; Phase 2 has committed OpenedIndex ownership/joined close, progressive discovery/priority, coherent reads, the bounded change journal, and exact bounded multi-path refresh. The full local handoff gate, cross-lint, no-default Clippy, and all 19 GitHub checks pass in run 33005096442. The epic has 17 closed children, fdu-9jzp in progress, and 11 other open children. Next dependency chain: no-gap observation, five session goldens/coverage closure, synchronous Python, the unchanged-contract MetaBrowser measurement, joint contract and providers, composed integration, and final performance/size acceptance. The linked plan, TODO, and PR body carry the same checkpoint.
+Status at PR #48 checkpoint b3cb609 on 2026-08-26: Phase 1 and the complete native Phase 2 dependency chain are implemented. OpenedIndex ownership, progressive discovery, coherent reads, bounded journal and refresh, no-gap observation, five transparent session goldens, independent-model validation, and all implementation-review findings are complete. The exact-tree make check and macOS/Windows cross-lint pass; GitHub CI is pending. Next dependency: fdu-bnsk, the synchronous Python surface, followed by unchanged-contract MetaBrowser measurement, joint provider work, composed integration, and final performance/size acceptance. PR #48 remains draft.
