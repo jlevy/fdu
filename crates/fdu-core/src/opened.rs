@@ -800,7 +800,7 @@ fn bind_root(
 
     let scope = scan.scope();
     let types = scan.types_shared();
-    let index = IndexHandle::new(Index::new_with_scope_types_and_journal_capacity(
+    let index = IndexHandle::new(Index::new_opened_with_scope_types_and_journal_capacity(
         &root,
         scope,
         types,

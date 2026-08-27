@@ -343,10 +343,145 @@ pub(crate) struct PortableChildren {
     pub(crate) examples: Vec<EntryId>,
 }
 
+/// Commit-maintained orders and diagnostics used only while serving an opened root.
+///
+/// A detached [`Index`] is the storage and one-shot execution shape used by the CLI,
+/// snapshots, and ordinary library callers. Keeping these maps behind one optional
+/// allocation makes interactive reads additive without charging those paths one copied
+/// portable string and child-map node per entry.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+struct ServingIndexes {
+    portable_children: BTreeMap<PathBuf, PortableChildren>,
+    portable_entries: BTreeMap<String, EntryId>,
+    portable_omitted: u64,
+    portable_examples: Vec<EntryId>,
+    recent_files: BTreeSet<RecentKey>,
+    semantic_names: Vec<Option<String>>,
+    semantic_ids: BTreeMap<String, u32>,
+    semantic_refcounts: Vec<u64>,
+    free_semantic_ids: Vec<u32>,
+    semantic_by_directory: BTreeMap<EntryId, InternedSemanticPartitions>,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+struct InternedSemanticPartitions {
+    all: BTreeMap<u32, ExtTally>,
+    unignored: BTreeMap<u32, ExtTally>,
+}
+
+/// One regular file in global newest-first order.
+#[derive(Clone, PartialEq, Eq, Debug)]
+struct RecentKey {
+    mtime_ns: i64,
+    portable_path: String,
+    id: EntryId,
+}
+
+impl PartialOrd for RecentKey {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for RecentKey {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        other
+            .mtime_ns
+            .cmp(&self.mtime_ns)
+            .then_with(|| self.portable_path.cmp(&other.portable_path))
+            .then_with(|| self.id.cmp(&other.id))
+    }
+}
+
+impl ServingIndexes {
+    fn intern_semantic(&mut self, name: &str) -> u32 {
+        if let Some(id) = self.semantic_ids.get(name).copied() {
+            let refcount = self
+                .semantic_refcounts
+                .get_mut(id as usize)
+                .expect("a live semantic id has a refcount");
+            *refcount = refcount.checked_add(1).expect("semantic refcount exhausted");
+            return id;
+        }
+        let id = if let Some(id) = self.free_semantic_ids.pop() {
+            self.semantic_names[id as usize] = Some(name.to_string());
+            self.semantic_refcounts[id as usize] = 1;
+            id
+        } else {
+            let id = u32::try_from(self.semantic_names.len())
+                .expect("fewer than four billion semantic types are live");
+            self.semantic_names.push(Some(name.to_string()));
+            self.semantic_refcounts.push(1);
+            id
+        };
+        self.semantic_ids.insert(name.to_string(), id);
+        id
+    }
+
+    fn release_semantic(&mut self, id: u32, count: u64) {
+        let slot = self
+            .semantic_refcounts
+            .get_mut(id as usize)
+            .expect("a live semantic id has a refcount");
+        *slot = slot.checked_sub(count).expect("semantic reference released twice");
+        if *slot != 0 {
+            return;
+        }
+        let name =
+            self.semantic_names[id as usize].take().expect("a referenced semantic id has a name");
+        let removed = self.semantic_ids.remove(&name);
+        debug_assert_eq!(removed, Some(id), "the semantic interner's two maps disagreed");
+        self.free_semantic_ids.push(id);
+    }
+}
+
+fn merge_semantic(map: &mut BTreeMap<u32, ExtTally>, id: u32, attrs: Attrs) {
+    let tally = map.entry(id).or_default();
+    tally.files = tally.files.saturating_add(1);
+    tally.bytes = tally.bytes.saturating_add(attrs.size);
+    tally.allocated = tally.allocated.saturating_add(attrs.allocated);
+}
+
+fn unmerge_semantic(map: &mut BTreeMap<u32, ExtTally>, id: u32, attrs: Attrs) {
+    let tally = map.get_mut(&id).expect("a semantic contribution must exist before removal");
+    tally.files = tally.files.saturating_sub(1);
+    tally.bytes = tally.bytes.saturating_sub(attrs.size);
+    tally.allocated = tally.allocated.saturating_sub(attrs.allocated);
+    if tally.files == 0 && tally.bytes == 0 && tally.allocated == 0 {
+        map.remove(&id);
+    }
+}
+
+fn unmerge_semantic_map(
+    destination: &mut BTreeMap<u32, ExtTally>,
+    contribution: &BTreeMap<u32, ExtTally>,
+) {
+    for (id, removed) in contribution {
+        let tally = destination
+            .get_mut(id)
+            .expect("a semantic subtree contribution must exist before removal");
+        tally.files = tally.files.saturating_sub(removed.files);
+        tally.bytes = tally.bytes.saturating_sub(removed.bytes);
+        tally.allocated = tally.allocated.saturating_sub(removed.allocated);
+        if tally.files == 0 && tally.bytes == 0 && tally.allocated == 0 {
+            destination.remove(id);
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 enum Slot {
     Occupied { generation: u64, entry: Box<Entry> },
     Free { generation: u64, next_free: Option<u32> },
+}
+
+fn retained_parent(arena: &[Slot], id: EntryId) -> Option<EntryId> {
+    match arena.get(id.idx()) {
+        Some(Slot::Occupied { generation, entry }) if *generation == id.generation => entry.parent,
+        Some(Slot::Occupied { .. } | Slot::Free { .. }) | None => {
+            panic!("internal entry handle must be live: {id:?}")
+        }
+    }
 }
 
 /// Result of [`Index::since`].
@@ -547,14 +682,11 @@ pub struct Index {
     state: IndexState,
     /// Bounded diagnostic details summarized by `state.issues`.
     issues: Vec<Issue>,
-    /// Commit-maintained portable direct-child partitions used by bounded tree pages.
-    portable_children: BTreeMap<PathBuf, PortableChildren>,
-    /// Commit-maintained canonical path order used by flat pages.
-    portable_entries: BTreeMap<String, EntryId>,
-    /// Exact count of retained entries excluded from portable projections.
-    portable_omitted: u64,
-    /// Bounded native examples of retained unrepresentable paths.
-    portable_examples: Vec<EntryId>,
+    /// Optional commit-maintained state for interactive opened-root projections.
+    ///
+    /// Detached indexes deliberately carry `None`, including the standalone CLI's
+    /// one-shot scan. Only [`crate::OpenedIndex`] enables this allocation.
+    serving: Option<Box<ServingIndexes>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -811,7 +943,9 @@ impl IndexHandle {
     /// Capture one coherent owned index image, releasing the lock before callers do
     /// serialization, filesystem I/O, conversion, or other potentially blocking work.
     pub fn snapshot(&self) -> crate::Result<Index> {
-        Ok(self.read_index()?.clone())
+        let mut snapshot = self.read_index()?.clone();
+        snapshot.serving = None;
+        Ok(snapshot)
     }
 
     pub(crate) fn child_states(
@@ -945,7 +1079,28 @@ impl Index {
             types.fingerprint(),
             "an index's registry must match its semantic scope"
         );
-        Self::new_with_journal_capacity(root_path, scope, journal_capacity, types)
+        Self::new_with_journal_capacity(root_path, scope, journal_capacity, types, None)
+    }
+
+    /// Create the retained index behind an opened root, including its serving orders.
+    pub(crate) fn new_opened_with_scope_types_and_journal_capacity(
+        root_path: impl Into<PathBuf>,
+        scope: ScanScope,
+        types: std::sync::Arc<crate::classify::TypeRegistry>,
+        journal_capacity: usize,
+    ) -> Self {
+        assert_eq!(
+            scope.type_rules_fingerprint,
+            types.fingerprint(),
+            "an index's registry must match its semantic scope"
+        );
+        Self::new_with_journal_capacity(
+            root_path,
+            scope,
+            journal_capacity,
+            types,
+            Some(Box::default()),
+        )
     }
 
     fn new_with_journal_capacity(
@@ -953,6 +1108,7 @@ impl Index {
         scope: ScanScope,
         journal_capacity: usize,
         types: std::sync::Arc<crate::classify::TypeRegistry>,
+        serving: Option<Box<ServingIndexes>>,
     ) -> Self {
         let root = Entry {
             parent: None,
@@ -984,10 +1140,7 @@ impl Index {
             freshness_marks: BTreeMap::new(),
             state: IndexState::default(),
             issues: Vec::new(),
-            portable_children: BTreeMap::new(),
-            portable_entries: BTreeMap::new(),
-            portable_omitted: 0,
-            portable_examples: Vec::new(),
+            serving,
             applying_source: Source::Scanned,
             scanned_at_ns: Self::now_unix_nanos(),
             captured_at_ns: 0,
@@ -1047,6 +1200,7 @@ impl Index {
             ScanScope::default(),
             journal_capacity,
             crate::classify::TypeRegistry::compiled_shared(),
+            None,
         )
     }
 
@@ -1786,32 +1940,68 @@ impl Index {
     }
 
     pub(crate) fn portable_children(&self, path: &Path) -> Option<&PortableChildren> {
-        self.portable_children.get(path)
+        self.serving.as_ref()?.portable_children.get(path)
     }
 
     pub(crate) fn portable_entries(&self) -> &BTreeMap<String, EntryId> {
-        &self.portable_entries
+        &self.serving.as_ref().expect("opened-root reads require serving indexes").portable_entries
     }
 
     pub(crate) fn portable_issue(&self) -> (u64, &[EntryId]) {
-        (self.portable_omitted, &self.portable_examples)
+        self.serving.as_ref().map_or((0, &[]), |serving| {
+            (serving.portable_omitted, serving.portable_examples.as_slice())
+        })
     }
 
-    fn insert_portable_child(&mut self, path: &Path, kind: EntryKind, id: EntryId) {
+    #[cfg(test)]
+    pub(crate) const fn serving_indexes_enabled(&self) -> bool {
+        self.serving.is_some()
+    }
+
+    fn insert_serving_entry(&mut self, path: &Path, kind: EntryKind, attrs: Attrs, id: EntryId) {
         if path.as_os_str().is_empty() {
             return;
         }
+        let semantic = (kind == EntryKind::File).then(|| {
+            (
+                self.classify(path).file_type.as_str().to_string(),
+                self.entry(id).ignored,
+                self.entry(id).parent,
+            )
+        });
+        let arena = &self.arena;
+        let Some(serving) = self.serving.as_mut() else {
+            return;
+        };
+        if let Some((name, ignored, mut ancestor)) = semantic {
+            let semantic = serving.intern_semantic(&name);
+            while let Some(directory) = ancestor {
+                let partition = serving.semantic_by_directory.entry(directory).or_default();
+                merge_semantic(&mut partition.all, semantic, attrs);
+                if !ignored {
+                    merge_semantic(&mut partition.unignored, semantic, attrs);
+                }
+                ancestor = retained_parent(arena, directory);
+            }
+        }
         if let Some(portable) = crate::opened::read::portable_path(path) {
-            self.portable_entries.insert(portable, id);
+            serving.portable_entries.insert(portable.clone(), id);
+            if kind == EntryKind::File {
+                serving.recent_files.insert(RecentKey {
+                    mtime_ns: attrs.mtime_ns,
+                    portable_path: portable,
+                    id,
+                });
+            }
         } else {
-            self.portable_omitted = self.portable_omitted.saturating_add(1);
-            if self.portable_examples.len() < crate::MAX_PORTABLE_PATH_EXAMPLES {
-                self.portable_examples.push(id);
+            serving.portable_omitted = serving.portable_omitted.saturating_add(1);
+            if serving.portable_examples.len() < crate::MAX_PORTABLE_PATH_EXAMPLES {
+                serving.portable_examples.push(id);
             }
         }
         let parent = path.parent().unwrap_or_else(|| Path::new("")).to_path_buf();
         if crate::opened::read::portable_path(&parent).is_none() {
-            let children = self.portable_children.entry(parent).or_default();
+            let children = serving.portable_children.entry(parent).or_default();
             children.omitted = children.omitted.saturating_add(1);
             if children.examples.len() < crate::MAX_PORTABLE_PATH_EXAMPLES {
                 children.examples.push(id);
@@ -1819,14 +2009,14 @@ impl Index {
             return;
         }
         let Some(name) = path.file_name().and_then(OsStr::to_str) else {
-            let children = self.portable_children.entry(parent).or_default();
+            let children = serving.portable_children.entry(parent).or_default();
             children.omitted = children.omitted.saturating_add(1);
             if children.examples.len() < crate::MAX_PORTABLE_PATH_EXAMPLES {
                 children.examples.push(id);
             }
             return;
         };
-        let children = self.portable_children.entry(parent).or_default();
+        let children = serving.portable_children.entry(parent).or_default();
         if kind.is_dir() {
             children.directories.insert(name.to_string(), id);
         } else {
@@ -1834,18 +2024,28 @@ impl Index {
         }
     }
 
-    fn remove_portable_child(&mut self, path: &Path, kind: EntryKind, id: EntryId) {
+    fn remove_serving_entry(&mut self, path: &Path, kind: EntryKind, attrs: Attrs, id: EntryId) {
         if path.as_os_str().is_empty() {
             return;
         }
+        let Some(serving) = self.serving.as_mut() else {
+            return;
+        };
         if let Some(portable) = crate::opened::read::portable_path(path) {
-            self.portable_entries.remove(&portable);
+            serving.portable_entries.remove(&portable);
+            if kind == EntryKind::File {
+                serving.recent_files.remove(&RecentKey {
+                    mtime_ns: attrs.mtime_ns,
+                    portable_path: portable,
+                    id,
+                });
+            }
         } else {
-            self.portable_omitted = self.portable_omitted.saturating_sub(1);
-            self.portable_examples.retain(|example| *example != id);
+            serving.portable_omitted = serving.portable_omitted.saturating_sub(1);
+            serving.portable_examples.retain(|example| *example != id);
         }
         let parent = path.parent().unwrap_or_else(|| Path::new("")).to_path_buf();
-        let remove_parent = if let Some(children) = self.portable_children.get_mut(&parent) {
+        let remove_parent = if let Some(children) = serving.portable_children.get_mut(&parent) {
             if crate::opened::read::portable_path(&parent).is_none() {
                 children.omitted = children.omitted.saturating_sub(1);
                 children.examples.retain(|example| *example != id);
@@ -1866,10 +2066,134 @@ impl Index {
             false
         };
         if remove_parent {
-            self.portable_children.remove(&parent);
+            serving.portable_children.remove(&parent);
         }
         if kind.is_dir() {
-            self.portable_children.remove(path);
+            serving.portable_children.remove(path);
+        }
+    }
+
+    fn remove_serving_file_semantics(&mut self, path: &Path, id: EntryId, attrs: Attrs) {
+        if self.serving.is_none() {
+            return;
+        }
+        let name = self.classify(path).file_type.as_str().to_string();
+        let ignored = self.entry(id).ignored;
+        let mut ancestor = self.entry(id).parent;
+        let arena = &self.arena;
+        let serving = self.serving.as_mut().expect("checked above");
+        let semantic = *serving
+            .semantic_ids
+            .get(&name)
+            .expect("every served file has an interned semantic type");
+        let mut empty = Vec::new();
+        while let Some(directory) = ancestor {
+            let partition = serving
+                .semantic_by_directory
+                .get_mut(&directory)
+                .expect("every served file contributes to every ancestor");
+            unmerge_semantic(&mut partition.all, semantic, attrs);
+            if !ignored {
+                unmerge_semantic(&mut partition.unignored, semantic, attrs);
+            }
+            if partition.all.is_empty() && partition.unignored.is_empty() {
+                empty.push(directory);
+            }
+            ancestor = retained_parent(arena, directory);
+        }
+        for ancestor in empty {
+            serving.semantic_by_directory.remove(&ancestor);
+        }
+        serving.release_semantic(semantic, 1);
+    }
+
+    fn remove_serving_subtree_semantics(&mut self, root: EntryId, path: &Path) {
+        if self.serving.is_none() {
+            return;
+        }
+        match self.entry(root).kind {
+            EntryKind::File => {
+                let attrs = self.entry(root).attrs;
+                self.remove_serving_file_semantics(path, root, attrs);
+            }
+            EntryKind::Dir => {
+                let mut ancestor = self.entry(root).parent;
+                let mut stack = vec![root];
+                let mut directories = Vec::new();
+                while let Some(id) = stack.pop() {
+                    let entry = self.entry(id);
+                    if !entry.kind.is_dir() {
+                        continue;
+                    }
+                    directories.push(id);
+                    stack.extend(entry.children.values().copied());
+                }
+                let arena = &self.arena;
+                let serving = self.serving.as_mut().expect("checked above");
+                let contribution =
+                    serving.semantic_by_directory.get(&root).cloned().unwrap_or_default();
+                let mut empty = Vec::new();
+                if !contribution.all.is_empty() || !contribution.unignored.is_empty() {
+                    while let Some(directory) = ancestor {
+                        let partition = serving
+                            .semantic_by_directory
+                            .get_mut(&directory)
+                            .expect("a semantic subtree contributes to every ancestor");
+                        unmerge_semantic_map(&mut partition.all, &contribution.all);
+                        unmerge_semantic_map(&mut partition.unignored, &contribution.unignored);
+                        if partition.all.is_empty() && partition.unignored.is_empty() {
+                            empty.push(directory);
+                        }
+                        ancestor = retained_parent(arena, directory);
+                    }
+                }
+                for ancestor in empty {
+                    serving.semantic_by_directory.remove(&ancestor);
+                }
+                for directory in directories {
+                    serving.semantic_by_directory.remove(&directory);
+                }
+                for (semantic, tally) in contribution.all {
+                    serving.release_semantic(semantic, tally.files);
+                }
+            }
+            EntryKind::Symlink | EntryKind::Other => {}
+        }
+    }
+
+    fn move_serving_file_partition(
+        &mut self,
+        path: &Path,
+        id: EntryId,
+        previous_ignored: bool,
+        current_ignored: bool,
+    ) {
+        if previous_ignored == current_ignored
+            || self.serving.is_none()
+            || self.entry(id).kind != EntryKind::File
+        {
+            return;
+        }
+        let name = self.classify(path).file_type.as_str().to_string();
+        let attrs = self.entry(id).attrs;
+        let mut ancestor = self.entry(id).parent;
+        let arena = &self.arena;
+        let serving = self.serving.as_mut().expect("checked above");
+        let semantic = *serving
+            .semantic_ids
+            .get(&name)
+            .expect("every served file has an interned semantic type");
+        while let Some(directory) = ancestor {
+            let partition = serving
+                .semantic_by_directory
+                .get_mut(&directory)
+                .expect("every served file contributes to every ancestor");
+            if current_ignored {
+                unmerge_semantic(&mut partition.unignored, semantic, attrs);
+            } else {
+                merge_semantic(&mut partition.unignored, semantic, attrs);
+            }
+            ancestor = retained_parent(arena, directory);
         }
     }
 
@@ -2249,6 +2573,7 @@ impl Index {
                 let descendants: Vec<(PathBuf, EntryId)> =
                     entry.children.iter().map(|(name, child)| (path.join(name), *child)).collect();
                 if current != next {
+                    self.move_serving_file_partition(&path, id, current, next);
                     self.entry_mut(id).ignored = next;
                     stats.reclassified += 1;
                     effects.changes.push(EffectiveChange::Reclassified {
@@ -2848,7 +3173,10 @@ impl Index {
                     });
                     return true;
                 }
+                let previous_attrs = entry.attrs;
                 self.invalidate_content(path);
+                self.remove_serving_file_semantics(path, id, previous_attrs);
+                self.remove_serving_entry(path, kind, previous_attrs, id);
                 let old = self.contribution(id);
                 self.unmerge_upward(Some(parent), &old);
                 let entry = self.entry_mut(id);
@@ -2858,6 +3186,7 @@ impl Index {
                 Self::bump_revision(entry);
                 let new = self.contribution(id);
                 self.merge_upward(Some(parent), &new);
+                self.insert_serving_entry(path, kind, attrs, id);
                 if new.newest_mtime_ns < old.newest_mtime_ns {
                     self.recompute_newest_upward(Some(parent));
                 }
@@ -2902,7 +3231,7 @@ impl Index {
         self.merge_upward(Some(parent), &contribution);
         stats.inserted += 1;
         effects.changes.push(EffectiveChange::Inserted { path: path.to_path_buf(), kind, attrs });
-        self.insert_portable_child(path, kind, id);
+        self.insert_serving_entry(path, kind, attrs, id);
         true
     }
 
@@ -2959,7 +3288,7 @@ impl Index {
         let contribution = self.contribution(id);
         self.merge_upward(Some(parent), &contribution);
         let path = self.path_of(id).expect("a newly loaded entry has a path");
-        self.insert_portable_child(&path, kind, id);
+        self.insert_serving_entry(&path, kind, attrs, id);
         Some(id)
     }
 
@@ -2984,6 +3313,7 @@ impl Index {
     fn remove_entry(&mut self, id: EntryId, stats: &mut ApplyStats, effects: &mut MutationEffects) {
         let removed_root = self.path_of(id).expect("a live entry has a path");
         self.invalidate_content(&removed_root);
+        self.remove_serving_subtree_semantics(id, &removed_root);
         let parent = self.entry(id).parent;
         let name = self.entry(id).name.clone();
         let contribution = self.contribution(id);
@@ -3006,7 +3336,7 @@ impl Index {
             for (name, child) in children {
                 queue.push_back((child, path.join(name)));
             }
-            self.remove_portable_child(&path, kind, node);
+            self.remove_serving_entry(&path, kind, attrs, node);
             effects.changes.push(EffectiveChange::Removed { path, kind, attrs });
             // Give the extension back before the entry itself goes, so the interner
             // holds only what the tree still contains.
@@ -3304,12 +3634,17 @@ mod tests {
         Op::Upsert { path: PathBuf::from(path), kind, attrs }
     }
 
-    fn assert_portable_indexes(index: &Index) {
+    fn assert_serving_indexes(index: &Index) {
+        let serving = index.serving.as_ref().expect("test index has serving state");
         let mut entries = BTreeMap::new();
         let mut children = BTreeMap::<PathBuf, PortableChildren>::new();
+        let mut recent_files = BTreeSet::new();
+        let mut semantic_by_directory =
+            BTreeMap::<EntryId, (BTreeMap<String, ExtTally>, BTreeMap<String, ExtTally>)>::new();
+        let mut semantic_refcounts = BTreeMap::<String, u64>::new();
         let mut omitted = 0_u64;
-        let mut pending = vec![(EntryId::ROOT, PathBuf::new())];
-        while let Some((parent_id, parent_path)) = pending.pop() {
+        let mut pending = vec![(EntryId::ROOT, PathBuf::new(), vec![EntryId::ROOT])];
+        while let Some((parent_id, parent_path, ancestors)) = pending.pop() {
             let facts: Vec<_> = index
                 .children_of(parent_id)
                 .expect("live directory")
@@ -3319,9 +3654,38 @@ mod tests {
                 let path = parent_path.join(&name);
                 let kind = index.kind_of(id).expect("live child");
                 if let Some(portable) = crate::opened::read::portable_path(&path) {
-                    entries.insert(portable, id);
+                    entries.insert(portable.clone(), id);
+                    if kind == EntryKind::File {
+                        recent_files.insert(RecentKey {
+                            mtime_ns: index
+                                .attrs(&path)
+                                .expect("live child has attributes")
+                                .mtime_ns,
+                            portable_path: portable,
+                            id,
+                        });
+                    }
                 } else {
                     omitted = omitted.saturating_add(1);
+                }
+                if kind == EntryKind::File {
+                    let semantic = index.classify(&path).file_type.as_str().to_string();
+                    *semantic_refcounts.entry(semantic.clone()).or_default() += 1;
+                    let attrs = *index.attrs(&path).expect("live child has attributes");
+                    let ignored = index.is_ignored(&path).expect("live child is classified");
+                    for ancestor in &ancestors {
+                        let partition = semantic_by_directory.entry(*ancestor).or_default();
+                        let all = partition.0.entry(semantic.clone()).or_default();
+                        all.files += 1;
+                        all.bytes += attrs.size;
+                        all.allocated += attrs.allocated;
+                        if !ignored {
+                            let unignored = partition.1.entry(semantic.clone()).or_default();
+                            unignored.files += 1;
+                            unignored.bytes += attrs.size;
+                            unignored.allocated += attrs.allocated;
+                        }
+                    }
                 }
                 let partition = children.entry(parent_path.clone()).or_default();
                 if crate::opened::read::portable_path(&parent_path).is_none() {
@@ -3336,25 +3700,54 @@ mod tests {
                     partition.omitted = partition.omitted.saturating_add(1);
                 }
                 if kind.is_dir() {
-                    pending.push((id, path));
+                    let mut child_ancestors = ancestors.clone();
+                    child_ancestors.insert(0, id);
+                    pending.push((id, path, child_ancestors));
                 }
             }
         }
 
-        assert_eq!(index.portable_entries, entries);
+        assert_eq!(serving.portable_entries, entries);
+        assert_eq!(serving.recent_files, recent_files);
+        let actual_semantics: BTreeMap<_, _> = serving
+            .semantic_by_directory
+            .iter()
+            .map(|(directory, partitions)| {
+                let named = |source: &BTreeMap<u32, ExtTally>| {
+                    source
+                        .iter()
+                        .map(|(semantic, tally)| {
+                            let name = serving.semantic_names[*semantic as usize]
+                                .as_ref()
+                                .expect("live semantic has a name")
+                                .clone();
+                            (name, *tally)
+                        })
+                        .collect()
+                };
+                (*directory, (named(&partitions.all), named(&partitions.unignored)))
+            })
+            .collect();
+        assert_eq!(actual_semantics, semantic_by_directory);
+        let actual_refcounts: BTreeMap<_, _> = serving
+            .semantic_ids
+            .iter()
+            .map(|(name, semantic)| (name.clone(), serving.semantic_refcounts[*semantic as usize]))
+            .collect();
+        assert_eq!(actual_refcounts, semantic_refcounts);
         for expected in children.values_mut() {
             expected.examples.clear();
         }
-        let mut actual = index.portable_children.clone();
+        let mut actual = serving.portable_children.clone();
         for retained in actual.values_mut() {
             assert!(retained.examples.len() <= crate::MAX_PORTABLE_PATH_EXAMPLES);
             retained.examples.clear();
         }
         assert_eq!(actual, children);
-        assert_eq!(index.portable_omitted, omitted);
-        assert!(index.portable_examples.len() <= crate::MAX_PORTABLE_PATH_EXAMPLES);
+        assert_eq!(serving.portable_omitted, omitted);
+        assert!(serving.portable_examples.len() <= crate::MAX_PORTABLE_PATH_EXAMPLES);
         assert!(
-            index
+            serving
                 .portable_examples
                 .iter()
                 .filter_map(|id| index.path_of(*id))
@@ -3364,26 +3757,75 @@ mod tests {
 
     #[test]
     fn portable_indexes_conserve_insert_kind_change_and_subtree_removal() {
-        let mut index = Index::new("/root");
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+            "/root",
+            ScanScope::default(),
+            crate::classify::TypeRegistry::compiled_shared(),
+            DEFAULT_JOURNAL_CAPACITY,
+        );
         index.apply_ok(&Observation::new(vec![
             upsert("dir", EntryKind::Dir, Attrs::default()),
             upsert("dir/a", EntryKind::File, file_attrs(1, 1)),
             upsert("replace", EntryKind::File, file_attrs(2, 2)),
         ]));
-        assert_portable_indexes(&index);
+        assert_serving_indexes(&index);
 
         index.apply_ok(&Observation::new(vec![
             upsert("replace", EntryKind::Dir, Attrs::default()),
             upsert("replace/child", EntryKind::File, file_attrs(3, 3)),
         ]));
-        assert_portable_indexes(&index);
+        assert_serving_indexes(&index);
+
+        index.apply_ok(&Observation::new(vec![upsert("dir/a", EntryKind::File, file_attrs(4, 9))]));
+        assert_serving_indexes(&index);
+        assert_eq!(
+            index
+                .serving
+                .as_ref()
+                .expect("opened test index")
+                .recent_files
+                .iter()
+                .map(|entry| entry.portable_path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["dir/a", "replace/child"]
+        );
 
         index.apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("replace") }]));
-        assert_portable_indexes(&index);
+        assert_serving_indexes(&index);
         assert_eq!(
-            index.portable_entries.keys().cloned().collect::<Vec<_>>(),
+            index.portable_entries().keys().cloned().collect::<Vec<_>>(),
             vec!["dir", "dir/a"]
         );
+    }
+
+    #[test]
+    fn detached_indexes_never_allocate_or_populate_serving_state() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("dir", EntryKind::Dir, Attrs::default()),
+            upsert("dir/a", EntryKind::File, file_attrs(1, 1)),
+        ]));
+
+        assert!(index.serving.is_none());
+        assert!(index.portable_children(Path::new("dir")).is_none());
+        assert_eq!(index.portable_issue(), (0, &[][..]));
+    }
+
+    #[test]
+    fn a_shared_snapshot_drops_opened_root_serving_state() {
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+            "/root",
+            ScanScope::default(),
+            crate::classify::TypeRegistry::compiled_shared(),
+            DEFAULT_JOURNAL_CAPACITY,
+        );
+        index.apply_ok(&Observation::new(vec![upsert("a.txt", EntryKind::File, file_attrs(1, 1))]));
+        assert!(index.serving_indexes_enabled());
+
+        let snapshot = IndexHandle::new(index).snapshot().expect("detached snapshot");
+
+        assert!(!snapshot.serving_indexes_enabled());
+        assert_eq!(snapshot.total().files, 1);
     }
 
     #[test]
@@ -4768,7 +5210,12 @@ mod tests {
 
         let first = PathBuf::from(OsString::from_vec(vec![b'n', 0x80]));
         let second = PathBuf::from(OsString::from_vec(vec![b'n', 0x81]));
-        let mut index = Index::new("/root");
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+            "/root",
+            ScanScope::default(),
+            crate::classify::TypeRegistry::compiled_shared(),
+            DEFAULT_JOURNAL_CAPACITY,
+        );
         index.apply_ok(&Observation::new(vec![
             Op::Upsert { path: first.clone(), kind: EntryKind::File, attrs: file_attrs(10, 1) },
             Op::Upsert { path: second.clone(), kind: EntryKind::File, attrs: file_attrs(20, 2) },
@@ -4778,7 +5225,7 @@ mod tests {
         assert_eq!(index.total().bytes, 30);
         assert!(index.lookup(&first).is_some());
         assert!(index.lookup(&second).is_some());
-        assert_portable_indexes(&index);
+        assert_serving_indexes(&index);
     }
 
     #[cfg(unix)]
@@ -4789,13 +5236,18 @@ mod tests {
 
         let directory = PathBuf::from(OsString::from_vec(vec![b'd', 0x80]));
         let child = directory.join("child");
-        let mut index = Index::new("/root");
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+            "/root",
+            ScanScope::default(),
+            crate::classify::TypeRegistry::compiled_shared(),
+            DEFAULT_JOURNAL_CAPACITY,
+        );
         index.apply_ok(&Observation::new(vec![
             Op::Upsert { path: directory.clone(), kind: EntryKind::Dir, attrs: Attrs::default() },
             Op::Upsert { path: child, kind: EntryKind::File, attrs: file_attrs(1, 1) },
         ]));
 
-        assert_portable_indexes(&index);
+        assert_serving_indexes(&index);
         assert_eq!(index.portable_children(&directory).map(|children| children.omitted), Some(1));
     }
 
@@ -4925,6 +5377,34 @@ mod tests {
 
     #[cfg(feature = "gitignore")]
     #[test]
+    fn serving_semantics_follow_ignore_reclassification_exactly() {
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+            "/root",
+            ScanScope::default(),
+            crate::classify::TypeRegistry::compiled_shared(),
+            DEFAULT_JOURNAL_CAPACITY,
+        );
+        index.apply_ok(&Observation::new(vec![
+            upsert(".gitignore", EntryKind::File, file_attrs(6, 1)),
+            upsert("debug.log", EntryKind::File, file_attrs(10, 2)),
+            upsert("keep.rs", EntryKind::File, file_attrs(20, 3)),
+        ]));
+        assert_serving_indexes(&index);
+
+        index.apply_ok(&Observation::new(vec![Op::ControlUpsert {
+            path: PathBuf::from(".gitignore"),
+            source: b"*.log\n".to_vec(),
+        }]));
+        assert_serving_indexes(&index);
+
+        index.apply_ok(&Observation::new(vec![Op::ControlRemove {
+            path: PathBuf::from(".gitignore"),
+        }]));
+        assert_serving_indexes(&index);
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
     fn nested_negation_edit_and_last_control_deletion_reclassify_exactly() {
         let mut index = Index::new("/root");
         index.apply_ok(&Observation::new(vec![
@@ -4964,7 +5444,12 @@ mod tests {
     #[cfg(feature = "gitignore")]
     #[test]
     fn control_bound_failure_is_atomic_with_ordinary_entry_work() {
-        let mut index = Index::new("/root");
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+            "/root",
+            ScanScope::default(),
+            crate::classify::TypeRegistry::compiled_shared(),
+            DEFAULT_JOURNAL_CAPACITY,
+        );
         let before = index.clone();
         let mut oversized = crate::control::source_at_test_limit();
         oversized.push(b'a');
@@ -4979,6 +5464,7 @@ mod tests {
         assert_eq!(index.clock(), before.clock());
         assert_eq!(index.len(), before.len());
         assert_eq!(index.total(), before.total());
+        assert_eq!(index.serving, before.serving);
         assert!(index.lookup(Path::new("ordinary.txt")).is_none());
         assert!(index.controls().is_empty());
     }

@@ -104,7 +104,7 @@ coordinator assembly, route integration, and full application gate.
 | Architecture and implementation map | Complete | The durable architecture, PR #44 and #47 reconciliation, direct-API correction, file/function map, test design, and reuse ledger are committed and reviewed. |
 | Phase 1: exact engine kernel | Complete | Checkpoints 1A through 1D passed their local gates and the cumulative cross-platform PR gate. |
 | Phase 2: opened-root vertical slice | Complete | The native lifecycle and five transparent session goldens are green. The direct `PyO3` handle, exhaustive value conversion, immutable `fdu.opened` API, typed errors, GIL-detached operations, strict downstream typing fixture, installed-wheel lifecycle, source distribution, CLI parity, and cross-target lint all pass. |
-| Phase 3: MetaBrowser adoption | Checkpoint 3C in progress | MetaBrowser commit `2743064` measures the unchanged contract against the exact fdu wheel from `0583a1a`; `45266a8` completes the shared bounded contract and Python oracle. fdu already maintains portable path and child order and has handle-local continuations; the approved semantic-tally and recency structures and the thin production adapter are next. |
+| Phase 3: MetaBrowser adoption | Checkpoint 3C in progress | MetaBrowser commit `2743064` measures the unchanged contract against the exact fdu wheel from `0583a1a`; `45266a8` completes the shared bounded contract and Python oracle. fdu now isolates portable path/child order, a semantic type tally, and global file recency inside optional `ServingIndexes`, with exact mutation and independent-recomputation tests. Native projection readers and the thin production adapter are next. |
 | Phase 4: composed proof | Not started | Cross-provider conformance, route and lifecycle integration, installed-wheel proof, and final performance and size acceptance remain required. |
 
 The implementation epic has completed the native and Python Phase 2 dependency chain.
@@ -1365,6 +1365,10 @@ design failure, not an adapter tradeoff.
 
 - [x] Add path-ordered tree and flat-entry continuations backed by the bounded
   handle-local table.
+- [x] Isolate all interactive indexes behind an opened-root-only `ServingIndexes`
+  allocation; maintain semantic type tallies and global file recency through exact
+  insertion, metadata update, kind change, ignore reclassification, and subtree removal;
+  prove detached indexes and snapshots retain none of that state.
 - [ ] Complete the existing fdu query indexes needed for filtered tree, navigation,
   recent, catalog, and diagnostics without per-request Python aggregation.
 - [ ] Implement a thin `FduInventoryBackend`/handle mapping the eight MetaBrowser

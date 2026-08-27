@@ -1315,28 +1315,8 @@ mod tests {
         assert_eq!(restored_total.allocated, original_total.allocated);
         assert_eq!(restored_total.newest_mtime_ns, original_total.newest_mtime_ns);
         assert_eq!(restored_total.by_ext, original_total.by_ext);
-        assert_eq!(
-            restored.portable_entries().keys().collect::<Vec<_>>(),
-            original.portable_entries().keys().collect::<Vec<_>>()
-        );
-        for directory in ["", "src", "src/deep"] {
-            let restored_children = restored.portable_children(Path::new(directory));
-            let original_children = original.portable_children(Path::new(directory));
-            assert_eq!(
-                restored_children.map(|children| children.directories.keys().collect::<Vec<_>>()),
-                original_children.map(|children| children.directories.keys().collect::<Vec<_>>())
-            );
-            assert_eq!(
-                restored_children
-                    .map(|children| children.nondirectories.keys().collect::<Vec<_>>()),
-                original_children
-                    .map(|children| children.nondirectories.keys().collect::<Vec<_>>())
-            );
-            assert_eq!(
-                restored_children.map(|children| children.omitted),
-                original_children.map(|children| children.omitted)
-            );
-        }
+        assert!(!original.serving_indexes_enabled());
+        assert!(!restored.serving_indexes_enabled());
         assert_eq!(restored.total().files, 3);
         assert_eq!(restored.total().dirs, 2);
         assert_eq!(restored.total().bytes, 157);
@@ -2033,11 +2013,6 @@ mod tests {
         assert_eq!(restored.total().bytes, 30);
         assert!(restored.lookup(&first).is_some());
         assert!(restored.lookup(&second).is_some());
-        assert!(restored.portable_entries().is_empty());
-        assert_eq!(restored.portable_issue().0, 2);
-        assert_eq!(
-            restored.portable_children(Path::new("")).map(|children| children.omitted),
-            Some(2)
-        );
+        assert!(!restored.serving_indexes_enabled());
     }
 }
