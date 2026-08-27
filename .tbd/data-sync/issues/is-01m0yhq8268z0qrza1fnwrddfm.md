@@ -5,7 +5,7 @@ title: Complete the opened-root session goldens and contract coverage gate
 kind: task
 status: in_progress
 priority: 1
-version: 9
+version: 10
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - opened-root-rewrite
@@ -14,7 +14,7 @@ dependencies:
     target: is-01m0y1sf2nph021wtx28p8ahxh
 parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 created_at: 2026-08-26T08:06:55.813Z
-updated_at: 2026-08-27T02:43:24.506Z
+updated_at: 2026-08-27T02:50:31.527Z
 closed_at: 2026-08-27T01:48:23.090Z
 close_reason: "Completed in b3cb609: all review findings and suggestions were implemented, the five opened-root session goldens and coverage gate landed, make check passed on the exact tree, and macOS/Windows cross-lint passed."
 resolution: null
@@ -24,4 +24,4 @@ Compose the test seams added with each Phase 2 capability into one deterministic
 
 ## Notes
 
-CI run 33031258054 first exposed host read_dir ordering; run 33032529592 showed scenario-specific scheduling was insufficient, so e8c0961 centralized the test-only input schedule across every golden session. Run 33033327929 passed Linux, macOS, feature boundaries, and all wheel jobs but isolated a distinct Windows presentation gap: exact nested PathBuf values used Debug-escaped backslashes and canonical roots used an escaped extended-length prefix, neither of which matched the recorder's native path aliases. The final correction records both native and Debug-escaped alias spellings and converts only doubled Windows Debug separators after aliasing; it does not normalize commits, reorder output, or change engine behavior. Two direct unit tests pin both rules, and the five existing golden artifacts remain unchanged locally. Exact-tree validation passes: focused 5-session/159-record golden suite, full make check including all feature combinations, MSRV, installed wheel/sdist smoke, and CLI/Python parity, plus x86_64 Apple/Windows cross-lint. Awaiting replacement GitHub CI before re-closing.
+CI run 33034183558 showed the path presentation correction was semantically complete: after decoding the assertion, actual and expected had identical 26-line content and differed only by checkout line endings. Windows had converted the newly located crates/fdu-core/tests/golden/opened-root/*.golden files to CRLF because .gitattributes covered tests/golden/** but not core-crate goldens. Added a repository-wide *.golden text eol=lf policy. git check-attr now reports text=set/eol=lf for all five artifacts and git ls-files --eol confirms index and worktree LF. Focused 5-session/159-record golden comparison and the golden lint pass; the full make check and macOS/Windows cross-lint already passed on the identical source tree at 37604b8. Awaiting replacement GitHub CI before re-closing.
