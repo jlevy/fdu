@@ -4,7 +4,7 @@
 
 **Author:** fdu project, with Codex review assistance
 
-**Status:** Active — Phase 2 complete; MetaBrowser spike next
+**Status:** Active — Phase 3A measured; joint contract next
 
 ## Overview
 
@@ -89,8 +89,8 @@ decisions, including the explicit delivery override recorded below.
 
 ## Current Implementation Status
 
-This status describes the current Phase 2 checkpoint on fdu PR #48. The PR remains draft
-while the MetaBrowser adoption and composed proof proceed.
+This status describes the current Phase 3A checkpoint on fdu PR #48. The PR remains
+draft while the MetaBrowser adoption and composed proof proceed.
 The no-gap observation and five-session golden beads are complete.
 The direct synchronous Python binding, typed public namespace, and installed-wheel
 lifecycle are implemented and pass the full local handoff, distribution, parity, and
@@ -101,7 +101,7 @@ cross-target gates.
 | Architecture and implementation map | Complete | The durable architecture, PR #44 and #47 reconciliation, direct-API correction, file/function map, test design, and reuse ledger are committed and reviewed. |
 | Phase 1: exact engine kernel | Complete | Checkpoints 1A through 1D passed their local gates and the cumulative cross-platform PR gate. |
 | Phase 2: opened-root vertical slice | Complete | The native lifecycle and five transparent session goldens are green. The direct `PyO3` handle, exhaustive value conversion, immutable `fdu.opened` API, typed errors, GIL-detached operations, strict downstream typing fixture, installed-wheel lifecycle, source distribution, CLI parity, and cross-target lint all pass. |
-| Phase 3: MetaBrowser adoption | Spike branch prepared | Begins only after the complete Python Phase 2 surface passes. The unchanged-contract spike branch `codex/fdu-opened-root-e2e-spike` is pinned to MetaBrowser PR #74 head `3183888`; no contract edit precedes its evidence. |
+| Phase 3: MetaBrowser adoption | Checkpoint 3A complete | MetaBrowser commit `2743064` measures the unchanged contract against the exact fdu wheel from `0583a1a`. Checkpoint 3B revises the joint contract and Python oracle from that evidence. |
 | Phase 4: composed proof | Not started | Cross-provider conformance, route and lifecycle integration, installed-wheel proof, and final performance and size acceptance remain required. |
 
 The implementation epic has completed the native and Python Phase 2 dependency chain.
@@ -1256,18 +1256,43 @@ The disposable adapter may do inefficient work only when the harness counts that
 It may not fake missing semantics, bypass the five-operation handle, or change the
 provider contract to make the spike pass.
 
-- [ ] Implement a disposable fdu adapter over the Phase 2 handle against MetaBrowser PR
+- [x] Implement a disposable fdu adapter over the Phase 2 handle against MetaBrowser PR
   #74’s unchanged provider contract.
   Materializing catalog rows, sorting, and scanning for totals are allowed only in this
   spike and are instrumented explicitly.
-- [ ] Run the existing route and provider tests on the representative corpus; record
+- [x] Run the existing route and provider tests on the representative corpus; record
   route predicates, rows visited, sort/materialization work, latency, memory, and which
   totals and orders are product-visible.
-- [ ] Run one installed-wheel application lifecycle through MetaBrowser: cold open,
+- [x] Run one installed-wheel application lifecycle through MetaBrowser: cold open,
   useful progressive read, completion, live mutation, change delivery, coherent reread,
   refresh, root replacement, iterator cancellation, and joined close.
-- [ ] Publish the evidence before changing either contract.
-  Keep the reusable harness and evidence; delete the naive aggregation and replica code.
+- [x] Publish the evidence before changing either contract.
+  Keep the reusable harness and evidence.
+  Quarantine the naive adapter on the spike branch until the thin provider replaces it;
+  it is not packaged, registered, or selectable, and the final adapter gate requires its
+  removal.
+
+The recorded spike passes nine of twelve unchanged provider-contract cases and twelve of
+thirteen selected route and SSE cases.
+The complete lifecycle passes cold and progressive reads, settled state, live mutation
+and coherent reread, explicit refresh, root replacement, iterator-only cancellation,
+concurrent close, and zero surviving poll workers.
+The four differences are now contract work rather than adapter guesses:
+
+- resource refusal enters fdu’s terminal `stopped` phase instead of pretending the
+  refused root is watching;
+- journal capacity must be defined in provider-batch terms because one application
+  refresh may create several native commits;
+- the pending-discovery route test needs a provider-owned scripted barrier rather than a
+  private Python-walker pause;
+- recursive invalidations need one explicit host coalescing boundary.
+
+On the fully provisioned MetaBrowser checkout, the materializing eight-query read
+visited 8,830 native rows and 412,836 path bytes, rebuilt 470 child buckets, ran four
+full-result sorts and four aggregate passes, returned 9,071 rows, took about 852 ms, and
+reached about 13 MB of traced Python allocation.
+A source-only checkout measured 791 rows and about 98 ms.
+These are recorded observations, not adoption claims.
 
 #### Checkpoint 3B: Joint Contract and Reference Provider
 
@@ -1307,6 +1332,9 @@ Acceptance for Phase 3:
   cancellation, and package-unavailable errors are explicit and leave no worker alive;
 - both repositories build independently, and MetaBrowser without the optional fdu
   package retains its current Python-provider behavior.
+- the stripped standalone fdu CLI remains byte-for-byte at its Phase 2 baseline, its
+  existing one-shot goldens remain unchanged, and neither MetaBrowser nor the Python
+  package shells out to it.
 
 ### Phase 4: End-to-End Integration Proof
 
@@ -1584,7 +1612,7 @@ Its five ordered children are `fdu-q21b`, `fdu-x53q`, `fdu-cdc2`, `fdu-jvpr`, an
 
 | File or function | Temporary change and measurement | Retained result |
 | --- | --- | --- |
-| New `explorations/fdu-inventory-adapter/README.md`, `adapter.py`, `probe.py`, and `run.py` in MetaBrowser | Record exact revisions and the wheel build/install command; implement the smallest adapter from `PyOpenedIndex` to the existing `InventoryHandle` protocol; allow full row materialization, Python sorting, repeated scans, and exact-remainder calculation only when each cost is counted. | A reproducible harness, corpus manifest, raw measurements, and report. The naive adapter code is deleted. |
+| New `explorations/fdu-inventory-adapter/README.md`, `adapter.py`, `probe.py`, and `run.py` in MetaBrowser | Record exact revisions and the wheel build/install command; implement the smallest adapter from `PyOpenedIndex` to the existing `InventoryHandle` protocol; allow full row materialization, Python sorting, repeated scans, and exact-remainder calculation only when each cost is counted. | A reproducible harness, normalized evidence, and report. The naive adapter remains quarantined and unpackageable until the thin provider replaces it, then is deleted. |
 | Spike-local composition over `InventoryCoordinator` and `tests/inventory_harness.py` | Supply the experimental backend directly to the coordinator or a test-owned runtime. Do not register `fdu` in the shipping factory or change `METABROWSER_INVENTORY_PROVIDER` during 3A. | Provider-neutral route and lifespan tests exercise the real coordinator, overlay, event bus, and routes without a production selection path. |
 | `contract.py` query registry and `tests/test_inventory_provider_contract.py` | Record which query and projection fields each route requests, which orders and totals are visible, and which bounds are relied on. Reuse the existing registered cases; do not edit the contract or copy their expectations. | A closed evidence table mapping visible requirements to native index or contract work. |
 | `python_inventory.py` `_capture_image`, `_read_sync`, `_project_query`, projection helpers | Run the same counters around the reference provider so the comparison distinguishes inherent product work from adapter duplication. | Rows visited/returned, full sorts, materialized bytes, aggregate passes, latency, and peak memory per query. |
@@ -1593,9 +1621,9 @@ Its five ordered children are `fdu-q21b`, `fdu-x53q`, `fdu-cdc2`, `fdu-jvpr`, an
 
 No native maintained index is approved merely because PR #47 contained one.
 Bead `fdu-hgnj` must cite the 3A observation that each index eliminates.
-Checkpoint 3A closes only after the report identifies every incomplete or expensive
-mapping, the reusable harness remains, and the naive implementation and temporary
-instrumentation are gone.
+Checkpoint 3A closes when the report identifies every incomplete or expensive mapping,
+the reusable harness and normalized evidence remain, and no experiment code is packaged
+or selectable. Checkpoint 3C deletes the naive adapter when its thin replacement lands.
 
 #### Checkpoint 3B: joint contract and Python oracle
 
@@ -1665,8 +1693,8 @@ arrow means the bead on the left depends on the bead or beads on the right.
 | 2 refresh | `fdu-3za7` multi-path refresh | Closed | `fdu-mkga`, `fdu-gpls` |
 | 2 observation | `fdu-9jzp` no-gap handoff | Closed | `fdu-194x`, `fdu-ngnm`, `fdu-3za7` |
 | 2 session proof | `fdu-0kv7` five session goldens and coverage closure | Closed | `fdu-mkga`, `fdu-194x`, `fdu-r7s7`, `fdu-ngnm`, `fdu-3za7`, `fdu-9jzp` |
-| 2 Python | `fdu-bnsk` synchronous Python surface | Open | `fdu-r7s7`, `fdu-ngnm`, `fdu-3za7`, `fdu-9jzp`, `fdu-0kv7` |
-| 3A | `fdu-sewa` unchanged-contract measurement | Open | `fdu-bnsk` |
+| 2 Python | `fdu-bnsk` synchronous Python surface | Closed | `fdu-r7s7`, `fdu-ngnm`, `fdu-3za7`, `fdu-9jzp`, `fdu-0kv7` |
+| 3A | `fdu-sewa` unchanged-contract measurement | Closed | `fdu-bnsk` |
 | 3B contract | `fdu-m68r` joint contract | Open | `fdu-sewa` |
 | 3B oracle | `fdu-yv1o` Python provider | Open | `fdu-m68r` |
 | 3B application | `fdu-kh2d` coordinator, assembly, runtime, routes | Open | `fdu-m68r`, `fdu-yv1o` |
@@ -1693,7 +1721,7 @@ The parent closes only when all listed children and its checkpoint gate pass.
 | Parent | Ordered child beads |
 | --- | --- |
 | `fdu-bnsk` Python surface | `fdu-seku` PyO3 values and handle → `fdu-2fhv` immutable models, wrapper, and stubs → `fdu-nsn3` GIL, lifecycle, typing, sdist, and installed-wheel proof |
-| `fdu-sewa` unchanged-contract spike | `fdu-q21b` exact branch/wheel bootstrap → `fdu-x53q` disposable adapter → `fdu-cdc2` shared provider/route instrumentation → `fdu-jvpr` full installed-wheel lifecycle → `fdu-pe58` evidence and naive-code removal |
+| `fdu-sewa` unchanged-contract spike | `fdu-q21b` exact branch/wheel bootstrap → `fdu-x53q` disposable adapter → `fdu-cdc2` shared provider/route instrumentation → `fdu-jvpr` full installed-wheel lifecycle → `fdu-pe58` evidence publication and adapter quarantine |
 | `fdu-m68r` joint contract | `fdu-hnyg` configuration and identity → `fdu-8qpb` state, queries, pages, counts, and work → `fdu-mtl6` closed conformance registry |
 | `fdu-yv1o` Python reference provider | `fdu-mcbx` registry, identity, and budget → `fdu-lx1j` bounded projections, pages, order, work, and totals → `fdu-ljge` lifecycle and eight-query gate |
 | `fdu-kh2d` MetaBrowser application | `fdu-i0pg` bounded assembly and coherent reads → `fdu-3aej` relay, root replacement, and shutdown → `fdu-9bzr` runtime and routes |
@@ -2123,8 +2151,10 @@ cache, and filesystem regime.
    checkpoint beside the already complete native checkpoint.
 5. Run Phase 3A on MetaBrowser branch `codex/fdu-opened-root-e2e-spike`, pinned to PR
    #74 head `3183888` and an exact fdu wheel.
-   Publish its full lifecycle and cost evidence, delete naive code, then update
-   MetaBrowser PR #74 for Phases 3B and 3C. Keep the Python provider as the default.
+   Publish its full lifecycle and cost evidence, quarantine the reproducible adapter,
+   then implement Phases 3B and 3C on that branch.
+   Delete the naive adapter when the thin provider replaces it.
+   Keep the Python provider as the default.
 6. Add the fdu provider behind explicit configuration and run the complete Phase 4
    installed-artifact integration matrix across both exact PR heads.
 7. Mark the fdu PR ready only after all four phase gates, the second-agent review, and
