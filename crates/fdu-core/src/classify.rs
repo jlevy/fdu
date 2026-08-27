@@ -316,6 +316,16 @@ impl TypeRegistry {
         self.by_filename.len()
     }
 
+    /// Exact basename keys declared by this registry.
+    ///
+    /// The serving index uses this closed vocabulary to maintain bounded basename
+    /// tallies without changing the classification cascade or retaining arbitrary file
+    /// names. Callers that need case-insensitive presentation may normalize these keys;
+    /// classification itself keeps its existing exact spelling contract.
+    pub(crate) fn exact_filenames(&self) -> impl Iterator<Item = &str> {
+        self.by_filename.keys().map(AsRef::as_ref)
+    }
+
     /// Distinct extensions it claims.
     pub fn extension_count(&self) -> usize {
         self.by_extension.len()

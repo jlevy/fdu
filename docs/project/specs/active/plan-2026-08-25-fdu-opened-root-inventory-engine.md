@@ -104,7 +104,7 @@ coordinator assembly, route integration, and full application gate.
 | Architecture and implementation map | Complete | The durable architecture, PR #44 and #47 reconciliation, direct-API correction, file/function map, test design, and reuse ledger are committed and reviewed. |
 | Phase 1: exact engine kernel | Complete | Checkpoints 1A through 1D passed their local gates and the cumulative cross-platform PR gate. |
 | Phase 2: opened-root vertical slice | Complete | The native lifecycle and five transparent session goldens are green. The direct `PyO3` handle, exhaustive value conversion, immutable `fdu.opened` API, typed errors, GIL-detached operations, strict downstream typing fixture, installed-wheel lifecycle, source distribution, CLI parity, and cross-target lint all pass. |
-| Phase 3: MetaBrowser adoption | Checkpoint 3C in progress | MetaBrowser commit `2743064` measures the unchanged contract against the exact fdu wheel from `0583a1a`; `45266a8` completes the shared bounded contract and Python oracle. fdu now isolates portable path/child order, a semantic type tally, and global file recency inside optional `ServingIndexes`, with exact mutation and independent-recomputation tests. Native projection readers and the thin production adapter are next. |
+| Phase 3: MetaBrowser adoption | Checkpoint 3C in progress | MetaBrowser commit `2743064` measures the unchanged contract against the exact fdu wheel from `0583a1a`; `45266a8` completes the shared bounded contract and Python oracle. fdu now isolates portable path and child order, semantic type and declared exact-name tallies, and global file recency inside optional `ServingIndexes`, with exact mutation, independent-recomputation, structural-bound, and commit-cost tests. Native projection readers and the thin production adapter are next. |
 | Phase 4: composed proof | Not started | Cross-provider conformance, route and lifecycle integration, installed-wheel proof, and final performance and size acceptance remain required. |
 
 The implementation epic has completed the native and Python Phase 2 dependency chain.
@@ -1329,6 +1329,20 @@ Three proposed structures are explicitly rejected:
   partitions, semantic tallies, and recency order.
   The adapter formats those aggregate rows but never loops over entry rows.
 
+The retained manual commit-cost probe applies the same 10,101-entry, two-level batch to
+fresh detached and opened indexes, alternates their order over seven release-build
+samples, and reports medians without enforcing a machine-dependent timing threshold.
+On the local uncontrolled checkpoint host, the detached median was 51.2 ms and the
+opened median was 62.8 ms, a 1.225 ratio.
+The opened shape held 10,100 portable-entry rows, 10,100 child rows, 10,000 recency
+rows, 404 semantic partition rows, and 202 declared exact-name partition rows from a
+fixed 11-name vocabulary.
+The incremental cost is accepted for the opt-in interactive path because it removes
+repeated full-result materialization, sorting, and aggregate passes; detached indexes
+exit before serving classification or basename allocation.
+Final Phase 4 evidence still measures whole CLI and opened-root startup, peak memory,
+and client query latency on the shared corpus.
+
 The filtered-tree paging field in MetaBrowser commit `45266a8` is therefore provisional
 and must be removed before the native provider lands.
 MetaBrowser’s route accumulates every provider page before returning one bounded
@@ -1366,9 +1380,10 @@ design failure, not an adapter tradeoff.
 - [x] Add path-ordered tree and flat-entry continuations backed by the bounded
   handle-local table.
 - [x] Isolate all interactive indexes behind an opened-root-only `ServingIndexes`
-  allocation; maintain semantic type tallies and global file recency through exact
-  insertion, metadata update, kind change, ignore reclassification, and subtree removal;
-  prove detached indexes and snapshots retain none of that state.
+  allocation; maintain semantic type tallies, declared exact-name tallies, and global
+  file recency through exact insertion, metadata update, kind change, ignore
+  reclassification, and subtree removal; prove detached indexes and snapshots retain
+  none of that state, and retain a release-build commit-cost and structural-row probe.
 - [ ] Complete the existing fdu query indexes needed for filtered tree, navigation,
   recent, catalog, and diagnostics without per-request Python aggregation.
 - [ ] Implement a thin `FduInventoryBackend`/handle mapping the eight MetaBrowser

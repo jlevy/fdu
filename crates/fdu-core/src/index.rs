@@ -361,6 +361,9 @@ struct ServingIndexes {
     semantic_refcounts: Vec<u64>,
     free_semantic_ids: Vec<u32>,
     semantic_by_directory: BTreeMap<EntryId, InternedSemanticPartitions>,
+    exact_name_ids: BTreeMap<String, u32>,
+    exact_names: Vec<String>,
+    exact_name_by_directory: BTreeMap<EntryId, InternedSemanticPartitions>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
@@ -394,6 +397,36 @@ impl Ord for RecentKey {
 }
 
 impl ServingIndexes {
+    fn for_types(types: &crate::classify::TypeRegistry) -> Self {
+        let exact_names: Vec<_> = types
+            .exact_filenames()
+            .map(str::to_ascii_lowercase)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let exact_name_ids = exact_names
+            .iter()
+            .enumerate()
+            .map(|(index, name)| {
+                let id = u32::try_from(index)
+                    .expect("a registry declares fewer than four billion exact filenames");
+                (name.clone(), id)
+            })
+            .collect();
+        Self { exact_name_ids, exact_names, ..Self::default() }
+    }
+
+    fn exact_name_id(&self, name: &OsStr) -> Option<u32> {
+        let name = name.to_str()?;
+        if let Some(id) = self.exact_name_ids.get(name) {
+            return Some(*id);
+        }
+        name.bytes()
+            .any(|byte| byte.is_ascii_uppercase())
+            .then(|| name.to_ascii_lowercase())
+            .and_then(|name| self.exact_name_ids.get(&name).copied())
+    }
+
     fn intern_semantic(&mut self, name: &str) -> u32 {
         if let Some(id) = self.semantic_ids.get(name).copied() {
             let refcount = self
@@ -1094,12 +1127,13 @@ impl Index {
             types.fingerprint(),
             "an index's registry must match its semantic scope"
         );
+        let serving = ServingIndexes::for_types(&types);
         Self::new_with_journal_capacity(
             root_path,
             scope,
             journal_capacity,
             types,
-            Some(Box::default()),
+            Some(Box::new(serving)),
         )
     }
 
@@ -1959,12 +1993,13 @@ impl Index {
     }
 
     fn insert_serving_entry(&mut self, path: &Path, kind: EntryKind, attrs: Attrs, id: EntryId) {
-        if path.as_os_str().is_empty() {
+        if path.as_os_str().is_empty() || self.serving.is_none() {
             return;
         }
-        let semantic = (kind == EntryKind::File).then(|| {
+        let file = (kind == EntryKind::File).then(|| {
             (
                 self.classify(path).file_type.as_str().to_string(),
+                path.file_name(),
                 self.entry(id).ignored,
                 self.entry(id).parent,
             )
@@ -1973,8 +2008,9 @@ impl Index {
         let Some(serving) = self.serving.as_mut() else {
             return;
         };
-        if let Some((name, ignored, mut ancestor)) = semantic {
+        if let Some((name, exact_name, ignored, parent)) = file {
             let semantic = serving.intern_semantic(&name);
+            let mut ancestor = parent;
             while let Some(directory) = ancestor {
                 let partition = serving.semantic_by_directory.entry(directory).or_default();
                 merge_semantic(&mut partition.all, semantic, attrs);
@@ -1982,6 +2018,17 @@ impl Index {
                     merge_semantic(&mut partition.unignored, semantic, attrs);
                 }
                 ancestor = retained_parent(arena, directory);
+            }
+            if let Some(exact_name) = exact_name.and_then(|name| serving.exact_name_id(name)) {
+                let mut ancestor = parent;
+                while let Some(directory) = ancestor {
+                    let partition = serving.exact_name_by_directory.entry(directory).or_default();
+                    merge_semantic(&mut partition.all, exact_name, attrs);
+                    if !ignored {
+                        merge_semantic(&mut partition.unignored, exact_name, attrs);
+                    }
+                    ancestor = retained_parent(arena, directory);
+                }
             }
         }
         if let Some(portable) = crate::opened::read::portable_path(path) {
@@ -2078,8 +2125,9 @@ impl Index {
             return;
         }
         let name = self.classify(path).file_type.as_str().to_string();
+        let exact_name = path.file_name();
         let ignored = self.entry(id).ignored;
-        let mut ancestor = self.entry(id).parent;
+        let parent = self.entry(id).parent;
         let arena = &self.arena;
         let serving = self.serving.as_mut().expect("checked above");
         let semantic = *serving
@@ -2087,6 +2135,7 @@ impl Index {
             .get(&name)
             .expect("every served file has an interned semantic type");
         let mut empty = Vec::new();
+        let mut ancestor = parent;
         while let Some(directory) = ancestor {
             let partition = serving
                 .semantic_by_directory
@@ -2105,6 +2154,27 @@ impl Index {
             serving.semantic_by_directory.remove(&ancestor);
         }
         serving.release_semantic(semantic, 1);
+        if let Some(exact_name) = exact_name.and_then(|name| serving.exact_name_id(name)) {
+            let mut exact_empty = Vec::new();
+            let mut ancestor = parent;
+            while let Some(directory) = ancestor {
+                let partition = serving
+                    .exact_name_by_directory
+                    .get_mut(&directory)
+                    .expect("every declared exact-name file contributes to every ancestor");
+                unmerge_semantic(&mut partition.all, exact_name, attrs);
+                if !ignored {
+                    unmerge_semantic(&mut partition.unignored, exact_name, attrs);
+                }
+                if partition.all.is_empty() && partition.unignored.is_empty() {
+                    exact_empty.push(directory);
+                }
+                ancestor = retained_parent(arena, directory);
+            }
+            for ancestor in exact_empty {
+                serving.exact_name_by_directory.remove(&ancestor);
+            }
+        }
     }
 
     fn remove_serving_subtree_semantics(&mut self, root: EntryId, path: &Path) {
@@ -2117,7 +2187,7 @@ impl Index {
                 self.remove_serving_file_semantics(path, root, attrs);
             }
             EntryKind::Dir => {
-                let mut ancestor = self.entry(root).parent;
+                let parent = self.entry(root).parent;
                 let mut stack = vec![root];
                 let mut directories = Vec::new();
                 while let Some(id) = stack.pop() {
@@ -2132,8 +2202,11 @@ impl Index {
                 let serving = self.serving.as_mut().expect("checked above");
                 let contribution =
                     serving.semantic_by_directory.get(&root).cloned().unwrap_or_default();
+                let exact_contribution =
+                    serving.exact_name_by_directory.get(&root).cloned().unwrap_or_default();
                 let mut empty = Vec::new();
                 if !contribution.all.is_empty() || !contribution.unignored.is_empty() {
+                    let mut ancestor = parent;
                     while let Some(directory) = ancestor {
                         let partition = serving
                             .semantic_by_directory
@@ -2147,11 +2220,34 @@ impl Index {
                         ancestor = retained_parent(arena, directory);
                     }
                 }
+                let mut exact_empty = Vec::new();
+                if !exact_contribution.all.is_empty() || !exact_contribution.unignored.is_empty() {
+                    let mut ancestor = parent;
+                    while let Some(directory) = ancestor {
+                        let partition = serving
+                            .exact_name_by_directory
+                            .get_mut(&directory)
+                            .expect("an exact-name subtree contributes to every ancestor");
+                        unmerge_semantic_map(&mut partition.all, &exact_contribution.all);
+                        unmerge_semantic_map(
+                            &mut partition.unignored,
+                            &exact_contribution.unignored,
+                        );
+                        if partition.all.is_empty() && partition.unignored.is_empty() {
+                            exact_empty.push(directory);
+                        }
+                        ancestor = retained_parent(arena, directory);
+                    }
+                }
                 for ancestor in empty {
                     serving.semantic_by_directory.remove(&ancestor);
                 }
+                for ancestor in exact_empty {
+                    serving.exact_name_by_directory.remove(&ancestor);
+                }
                 for directory in directories {
                     serving.semantic_by_directory.remove(&directory);
+                    serving.exact_name_by_directory.remove(&directory);
                 }
                 for (semantic, tally) in contribution.all {
                     serving.release_semantic(semantic, tally.files);
@@ -2175,14 +2271,16 @@ impl Index {
             return;
         }
         let name = self.classify(path).file_type.as_str().to_string();
+        let exact_name = path.file_name();
         let attrs = self.entry(id).attrs;
-        let mut ancestor = self.entry(id).parent;
+        let parent = self.entry(id).parent;
         let arena = &self.arena;
         let serving = self.serving.as_mut().expect("checked above");
         let semantic = *serving
             .semantic_ids
             .get(&name)
             .expect("every served file has an interned semantic type");
+        let mut ancestor = parent;
         while let Some(directory) = ancestor {
             let partition = serving
                 .semantic_by_directory
@@ -2194,6 +2292,21 @@ impl Index {
                 merge_semantic(&mut partition.unignored, semantic, attrs);
             }
             ancestor = retained_parent(arena, directory);
+        }
+        if let Some(exact_name) = exact_name.and_then(|name| serving.exact_name_id(name)) {
+            let mut ancestor = parent;
+            while let Some(directory) = ancestor {
+                let partition = serving
+                    .exact_name_by_directory
+                    .get_mut(&directory)
+                    .expect("every declared exact-name file contributes to every ancestor");
+                if current_ignored {
+                    unmerge_semantic(&mut partition.unignored, exact_name, attrs);
+                } else {
+                    merge_semantic(&mut partition.unignored, exact_name, attrs);
+                }
+                ancestor = retained_parent(arena, directory);
+            }
         }
     }
 
@@ -3641,6 +3754,10 @@ mod tests {
         let mut recent_files = BTreeSet::new();
         let mut semantic_by_directory =
             BTreeMap::<EntryId, (BTreeMap<String, ExtTally>, BTreeMap<String, ExtTally>)>::new();
+        let declared_exact_names: BTreeSet<_> =
+            index.types.exact_filenames().map(str::to_ascii_lowercase).collect();
+        let mut exact_name_by_directory =
+            BTreeMap::<EntryId, (BTreeMap<String, ExtTally>, BTreeMap<String, ExtTally>)>::new();
         let mut semantic_refcounts = BTreeMap::<String, u64>::new();
         let mut omitted = 0_u64;
         let mut pending = vec![(EntryId::ROOT, PathBuf::new(), vec![EntryId::ROOT])];
@@ -3686,6 +3803,25 @@ mod tests {
                             unignored.allocated += attrs.allocated;
                         }
                     }
+                    if let Some(exact_name) = name
+                        .to_str()
+                        .map(str::to_ascii_lowercase)
+                        .filter(|name| declared_exact_names.contains(name))
+                    {
+                        for ancestor in &ancestors {
+                            let partition = exact_name_by_directory.entry(*ancestor).or_default();
+                            let all = partition.0.entry(exact_name.clone()).or_default();
+                            all.files += 1;
+                            all.bytes += attrs.size;
+                            all.allocated += attrs.allocated;
+                            if !ignored {
+                                let unignored = partition.1.entry(exact_name.clone()).or_default();
+                                unignored.files += 1;
+                                unignored.bytes += attrs.size;
+                                unignored.allocated += attrs.allocated;
+                            }
+                        }
+                    }
                 }
                 let partition = children.entry(parent_path.clone()).or_default();
                 if crate::opened::read::portable_path(&parent_path).is_none() {
@@ -3729,6 +3865,50 @@ mod tests {
             })
             .collect();
         assert_eq!(actual_semantics, semantic_by_directory);
+        let actual_exact_names: BTreeMap<_, _> = serving
+            .exact_name_by_directory
+            .iter()
+            .map(|(directory, partitions)| {
+                let named = |source: &BTreeMap<u32, ExtTally>| {
+                    source
+                        .iter()
+                        .map(|(exact_name, tally)| {
+                            (serving.exact_names[*exact_name as usize].clone(), *tally)
+                        })
+                        .collect()
+                };
+                (*directory, (named(&partitions.all), named(&partitions.unignored)))
+            })
+            .collect();
+        assert_eq!(actual_exact_names, exact_name_by_directory);
+        assert_eq!(
+            serving.exact_names.iter().cloned().collect::<BTreeSet<_>>(),
+            declared_exact_names
+        );
+        assert_eq!(
+            serving.exact_name_ids,
+            serving
+                .exact_names
+                .iter()
+                .enumerate()
+                .map(|(position, name)| {
+                    (
+                        name.clone(),
+                        u32::try_from(position).expect("the exact-name vocabulary fits u32"),
+                    )
+                })
+                .collect()
+        );
+        assert!(serving.exact_name_by_directory.len() <= index.arena.len());
+        assert!(serving.exact_name_by_directory.values().all(|partitions| {
+            partitions.all.len() <= serving.exact_names.len()
+                && partitions.unignored.len() <= serving.exact_names.len()
+                && partitions
+                    .all
+                    .keys()
+                    .chain(partitions.unignored.keys())
+                    .all(|name| (*name as usize) < serving.exact_names.len())
+        }));
         let actual_refcounts: BTreeMap<_, _> = serving
             .semantic_ids
             .iter()
@@ -3795,6 +3975,148 @@ mod tests {
         assert_eq!(
             index.portable_entries().keys().cloned().collect::<Vec<_>>(),
             vec!["dir", "dir/a"]
+        );
+    }
+
+    #[test]
+    fn declared_exact_names_roll_up_by_ancestor_and_partition() {
+        let types = Arc::new(
+            crate::classify::TypeRegistry::from_manifest(
+                "[[kind]]\nid = \"make\"\nfamily = \"code\"\nfilenames = [\"Makefile\"]\n",
+            )
+            .expect("custom registry"),
+        );
+        let scope =
+            ScanScope { type_rules_fingerprint: types.fingerprint(), ..ScanScope::default() };
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+            "/root",
+            scope,
+            types,
+            DEFAULT_JOURNAL_CAPACITY,
+        );
+        index.apply_ok(&Observation::new(vec![
+            upsert("Makefile", EntryKind::File, file_attrs(2, 1)),
+            upsert("dir", EntryKind::Dir, Attrs::default()),
+            upsert("dir/makefile", EntryKind::File, file_attrs(3, 2)),
+            upsert("dir/notes", EntryKind::File, file_attrs(5, 3)),
+        ]));
+
+        let serving = index.serving.as_ref().expect("opened test index");
+        let exact_name = serving.exact_name_ids["makefile"];
+        let root = &serving.exact_name_by_directory[&EntryId::ROOT];
+        assert_eq!(root.all[&exact_name], ExtTally { files: 2, bytes: 5, allocated: 1_024 });
+        assert_eq!(root.unignored, root.all);
+
+        let directory = index.lookup(Path::new("dir")).expect("directory");
+        let nested = &serving.exact_name_by_directory[&directory];
+        assert_eq!(nested.all[&exact_name], ExtTally { files: 1, bytes: 3, allocated: 512 });
+        assert_eq!(nested.unignored, nested.all);
+    }
+
+    #[test]
+    #[ignore = "manual opened-root commit-cost evidence"]
+    fn measure_opened_serving_commit_cost() {
+        const DIRECTORY_COUNT: usize = 100;
+        const FILES_PER_DIRECTORY: usize = 100;
+        const SAMPLE_COUNT: usize = 7;
+
+        let mut operations = Vec::with_capacity(
+            DIRECTORY_COUNT.saturating_mul(FILES_PER_DIRECTORY.saturating_add(1)),
+        );
+        for directory in 0..DIRECTORY_COUNT {
+            let parent = format!("d{directory:03}");
+            operations.push(upsert(&parent, EntryKind::Dir, Attrs::default()));
+            for file in 0..FILES_PER_DIRECTORY {
+                let size = u64::try_from(file).expect("the probe file count fits u64") + 1;
+                let mtime = i64::try_from(file).expect("the probe file count fits i64");
+                let name = if file == 0 {
+                    format!("{parent}/Makefile")
+                } else {
+                    format!("{parent}/f{file:03}.rs")
+                };
+                operations.push(upsert(&name, EntryKind::File, file_attrs(size, mtime)));
+            }
+        }
+        let observation = Observation::new(operations);
+        let types = crate::classify::TypeRegistry::compiled_shared();
+        let scope =
+            ScanScope { type_rules_fingerprint: types.fingerprint(), ..ScanScope::default() };
+        let measure = |opened: bool| {
+            let mut index = if opened {
+                Index::new_opened_with_scope_types_and_journal_capacity(
+                    "/root",
+                    scope,
+                    Arc::clone(&types),
+                    DEFAULT_JOURNAL_CAPACITY,
+                )
+            } else {
+                Index::new_with_scope_types_and_journal_capacity(
+                    "/root",
+                    scope,
+                    Arc::clone(&types),
+                    DEFAULT_JOURNAL_CAPACITY,
+                )
+            };
+            let started = std::time::Instant::now();
+            index.apply_ok(&observation);
+            let elapsed = started.elapsed();
+            std::hint::black_box(index.len());
+            (elapsed, index)
+        };
+
+        let _ = measure(false);
+        let _ = measure(true);
+        let mut detached = Vec::with_capacity(SAMPLE_COUNT);
+        let mut opened = Vec::with_capacity(SAMPLE_COUNT);
+        let mut last_opened = None;
+        for sample in 0..SAMPLE_COUNT {
+            if sample % 2 == 0 {
+                detached.push(measure(false).0);
+                let (duration, index) = measure(true);
+                opened.push(duration);
+                last_opened = Some(index);
+            } else {
+                let (duration, index) = measure(true);
+                opened.push(duration);
+                last_opened = Some(index);
+                detached.push(measure(false).0);
+            }
+        }
+        detached.sort_unstable();
+        opened.sort_unstable();
+        let detached_median = detached[SAMPLE_COUNT / 2];
+        let opened_median = opened[SAMPLE_COUNT / 2];
+        let ratio = opened_median.as_secs_f64() / detached_median.as_secs_f64();
+
+        let index = last_opened.expect("an opened sample ran");
+        let serving = index.serving.as_ref().expect("opened sample has serving indexes");
+        let semantic_rows: usize = serving
+            .semantic_by_directory
+            .values()
+            .map(|partitions| partitions.all.len() + partitions.unignored.len())
+            .sum();
+        let exact_name_rows: usize = serving
+            .exact_name_by_directory
+            .values()
+            .map(|partitions| partitions.all.len() + partitions.unignored.len())
+            .sum();
+        eprintln!(
+            "entries={} detached_median_us={} opened_median_us={} ratio={ratio:.3} \
+             portable_rows={} child_rows={} recent_rows={} semantic_rows={} exact_name_rows={} \
+             exact_name_vocabulary={}",
+            index.len(),
+            detached_median.as_micros(),
+            opened_median.as_micros(),
+            serving.portable_entries.len(),
+            serving
+                .portable_children
+                .values()
+                .map(|children| children.directories.len() + children.nondirectories.len())
+                .sum::<usize>(),
+            serving.recent_files.len(),
+            semantic_rows,
+            exact_name_rows,
+            serving.exact_names.len(),
         );
     }
 
@@ -5388,12 +5710,13 @@ mod tests {
             upsert(".gitignore", EntryKind::File, file_attrs(6, 1)),
             upsert("debug.log", EntryKind::File, file_attrs(10, 2)),
             upsert("keep.rs", EntryKind::File, file_attrs(20, 3)),
+            upsert("Makefile", EntryKind::File, file_attrs(30, 4)),
         ]));
         assert_serving_indexes(&index);
 
         index.apply_ok(&Observation::new(vec![Op::ControlUpsert {
             path: PathBuf::from(".gitignore"),
-            source: b"*.log\n".to_vec(),
+            source: b"*.log\nMakefile\n".to_vec(),
         }]));
         assert_serving_indexes(&index);
 
