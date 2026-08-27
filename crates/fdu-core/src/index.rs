@@ -34,7 +34,6 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
-use crate::classify::ext_bucket;
 use crate::content::{
     AnalysisApplyOutcome, AnalysisCandidate, AnalysisObservation, AnalysisSet, ContentIndex,
     ContentRollUp,
@@ -1968,6 +1967,8 @@ impl Index {
             kind: entry.kind,
             attrs: entry.attrs,
             ignored: entry.ignored,
+            classification: (entry.kind == EntryKind::File)
+                .then(|| self.types.classify_name(path.file_name().unwrap_or_default())),
             rollup: entry.kind.is_dir().then(|| partition_summary(&entry.rollup)),
             children_complete: entry.kind.is_dir().then_some(entry.children_complete),
         }
@@ -3322,7 +3323,8 @@ impl Index {
             self.remove_entry(id, stats, effects);
         }
 
-        let ext_id = (kind == EntryKind::File).then(|| self.intern_ext(&ext_bucket(name)));
+        let ext_id =
+            (kind == EntryKind::File).then(|| self.intern_ext(&self.types.ext_bucket(name)));
         let ignored =
             self.entry(parent).ignored || self.controls.matcher_for(path).is_ignored(kind.is_dir());
         let id = self.alloc(Entry {
@@ -3379,7 +3381,8 @@ impl Index {
             return None;
         }
         let source = self.applying_source;
-        let ext_id = (kind == EntryKind::File).then(|| self.intern_ext(&ext_bucket(&name)));
+        let ext_id =
+            (kind == EntryKind::File).then(|| self.intern_ext(&self.types.ext_bucket(&name)));
         let id = self.alloc(Entry {
             parent: Some(parent),
             name: name.clone(),
@@ -4131,6 +4134,28 @@ mod tests {
         assert!(index.serving.is_none());
         assert!(index.portable_children(Path::new("dir")).is_none());
         assert_eq!(index.portable_issue(), (0, &[][..]));
+    }
+
+    #[test]
+    fn opened_entry_values_project_name_identity_without_retaining_it_on_detached_entries() {
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+            "/root",
+            ScanScope::default(),
+            crate::classify::TypeRegistry::compiled_shared(),
+            DEFAULT_JOURNAL_CAPACITY,
+        );
+        index.apply_ok(&Observation::new(vec![upsert(
+            "bundle.umd.min.js",
+            EntryKind::File,
+            file_attrs(7, 1),
+        )]));
+
+        let row = index.entry_value(Path::new("bundle.umd.min.js")).expect("entry value");
+        let identity = row.classification.expect("regular files carry name identity");
+        assert_eq!(identity.logical_extension(), Some(".min.js"));
+        assert_eq!(identity.canonical_extension(), Some(".js"));
+        assert_eq!(identity.kind_id(), Some("javascript"));
+        assert_eq!(identity.content_family(), crate::classify::ContentFamily::Code);
     }
 
     #[test]

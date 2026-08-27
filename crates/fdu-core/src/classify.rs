@@ -13,6 +13,7 @@ use std::fmt;
 use std::path::Path;
 use std::sync::{Arc, LazyLock};
 
+mod file_rollup_manifest;
 mod file_type_detection;
 
 // Compiled into the crate and `include!`d by `build.rs`, so rules supplied at run time
@@ -199,8 +200,115 @@ fn family_from_name(name: &str) -> Option<ContentFamily> {
 struct TypeRule {
     id: Cow<'static, str>,
     family: ContentFamily,
+    display_family: Option<Cow<'static, str>>,
+    display_group: Option<Cow<'static, str>>,
     shebangs: Vec<Cow<'static, str>>,
     priority: u16,
+}
+
+/// One ordered browsing group from a File Rollup registry.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct TypeGroup {
+    id: String,
+    label: String,
+    order: u32,
+}
+
+impl TypeGroup {
+    /// Stable machine identity.
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Human-facing label.
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+
+    /// Registry display order.
+    pub fn order(&self) -> u32 {
+        self.order
+    }
+}
+
+/// One ordered display family from a File Rollup registry.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct TypeFamily {
+    id: String,
+    label: String,
+    group_id: String,
+    order: u32,
+    extensions: Vec<String>,
+}
+
+impl TypeFamily {
+    /// Stable machine identity.
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Human-facing label.
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+
+    /// Owning browsing group identity.
+    pub fn group_id(&self) -> &str {
+        &self.group_id
+    }
+
+    /// Registry display order.
+    pub fn order(&self) -> u32 {
+        self.order
+    }
+
+    /// Complete canonical extensions declared by member kinds, with leading dots.
+    pub fn extensions(&self) -> &[String] {
+        &self.extensions
+    }
+}
+
+/// Registry-derived portable identity for one basename.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct NameClassification {
+    logical_extension: Option<String>,
+    canonical_extension: Option<String>,
+    kind_id: Option<String>,
+    family_id: Option<String>,
+    group_id: Option<String>,
+    content_family: ContentFamily,
+}
+
+impl NameClassification {
+    /// Name-owned logical extension.
+    pub fn logical_extension(&self) -> Option<&str> {
+        self.logical_extension.as_deref()
+    }
+
+    /// Registry-owned canonical extension.
+    pub fn canonical_extension(&self) -> Option<&str> {
+        self.canonical_extension.as_deref()
+    }
+
+    /// Winning kind identity.
+    pub fn kind_id(&self) -> Option<&str> {
+        self.kind_id.as_deref()
+    }
+
+    /// Winning display family identity.
+    pub fn family_id(&self) -> Option<&str> {
+        self.family_id.as_deref()
+    }
+
+    /// Winning browsing group identity.
+    pub fn group_id(&self) -> Option<&str> {
+        self.group_id.as_deref()
+    }
+
+    /// Analyzer-oriented family.
+    pub fn content_family(&self) -> ContentFamily {
+        self.content_family
+    }
 }
 
 /// A set of file-type rules, indexed for the classification cascade.
@@ -221,6 +329,10 @@ pub struct TypeRegistry {
     by_filename: HashMap<Cow<'static, str>, u32>,
     /// Extension lookup table storing indexes into `rules`.
     by_extension: HashMap<Cow<'static, str>, u32>,
+    groups: Vec<TypeGroup>,
+    families: Vec<TypeFamily>,
+    registry_revision: Option<u32>,
+    case_insensitive_filenames: bool,
     fingerprint: u64,
 }
 
@@ -252,6 +364,79 @@ impl TypeRegistry {
             value: String::new(),
             hint: message,
         };
+        if file_rollup_manifest::looks_like_registry(source) {
+            let parsed = file_rollup_manifest::parse(source).map_err(reject)?;
+            let mut groups: Vec<_> = parsed
+                .groups
+                .iter()
+                .map(|group| TypeGroup {
+                    id: group.id.clone(),
+                    label: group.label.clone(),
+                    order: group.order,
+                })
+                .collect();
+            groups.sort_by(|left, right| {
+                left.order.cmp(&right.order).then_with(|| left.id.cmp(&right.id))
+            });
+            let group_order: HashMap<_, _> =
+                groups.iter().map(|group| (group.id.as_str(), group.order)).collect();
+            let mut families: Vec<_> = parsed
+                .families
+                .iter()
+                .map(|family| TypeFamily {
+                    id: family.id.clone(),
+                    label: family.label.clone(),
+                    group_id: family.group.clone(),
+                    order: family.order,
+                    extensions: parsed
+                        .kinds
+                        .iter()
+                        .filter(|kind| kind.family == family.id)
+                        .flat_map(|kind| kind.extensions.iter().map(|value| format!(".{value}")))
+                        .collect(),
+                })
+                .collect();
+            families.sort_by(|left, right| {
+                group_order[&left.group_id.as_str()]
+                    .cmp(&group_order[&right.group_id.as_str()])
+                    .then_with(|| left.order.cmp(&right.order))
+                    .then_with(|| left.id.cmp(&right.id))
+            });
+            let family_groups: HashMap<_, _> = parsed
+                .families
+                .iter()
+                .map(|family| (family.id.as_str(), family.group.as_str()))
+                .collect();
+            let rules = parsed
+                .kinds
+                .iter()
+                .map(|kind| TypeRule {
+                    id: Cow::Owned(kind.id.clone()),
+                    family: family_from_name(&kind.content_family)
+                        .expect("validated content family"),
+                    display_family: (!kind.family.is_empty())
+                        .then(|| Cow::Owned(kind.family.clone())),
+                    display_group: Some(Cow::Owned(if kind.group.is_empty() {
+                        family_groups[&kind.family.as_str()].to_string()
+                    } else {
+                        kind.group.clone()
+                    })),
+                    shebangs: kind.shebangs.iter().cloned().map(Cow::Owned).collect(),
+                    priority: kind.priority,
+                })
+                .collect();
+            let mut registry = Self::indexed(
+                rules,
+                parsed.kinds.iter().map(|kind| kind.filenames.iter().cloned().map(Cow::Owned)),
+                parsed.kinds.iter().map(|kind| kind.extensions.iter().cloned().map(Cow::Owned)),
+                file_rollup_manifest::fingerprint(&parsed),
+            );
+            registry.groups = groups;
+            registry.families = families;
+            registry.registry_revision = Some(parsed.revision);
+            registry.case_insensitive_filenames = true;
+            return Ok(registry);
+        }
         let parsed = type_rule_manifest::parse_manifest(source).map_err(reject)?;
         type_rule_manifest::validate_manifest(&parsed).map_err(reject)?;
         let rules = parsed
@@ -259,6 +444,8 @@ impl TypeRegistry {
             .map(|rule| TypeRule {
                 id: Cow::Owned(rule.id.clone()),
                 family: family_from_name(&rule.family).expect("validated family"),
+                display_family: None,
+                display_group: None,
                 shebangs: rule.shebangs.iter().cloned().map(Cow::Owned).collect(),
                 priority: rule.priority,
             })
@@ -277,6 +464,8 @@ impl TypeRegistry {
             .map(|rule| TypeRule {
                 id: Cow::Borrowed(rule.id),
                 family: rule.family,
+                display_family: None,
+                display_group: None,
                 shebangs: rule.shebangs.iter().copied().map(Cow::Borrowed).collect(),
                 priority: rule.priority,
             })
@@ -298,12 +487,41 @@ impl TypeRegistry {
     ) -> Self {
         let by_filename = index_keys(filenames);
         let by_extension = index_keys(extensions);
-        Self { rules, by_filename, by_extension, fingerprint }
+        Self {
+            rules,
+            by_filename,
+            by_extension,
+            groups: Vec::new(),
+            families: Vec::new(),
+            registry_revision: None,
+            case_insensitive_filenames: false,
+            fingerprint,
+        }
     }
 
     /// Identity of the rules this registry holds.
     pub fn fingerprint(&self) -> u64 {
         self.fingerprint
+    }
+
+    /// File Rollup registry revision, absent for the compact fdu analyzer manifest.
+    pub fn registry_revision(&self) -> Option<u32> {
+        self.registry_revision
+    }
+
+    /// Ordered File Rollup browsing groups.
+    pub fn groups(&self) -> impl Iterator<Item = &TypeGroup> {
+        self.groups.iter()
+    }
+
+    /// Ordered File Rollup display families.
+    pub fn families(&self) -> impl Iterator<Item = &TypeFamily> {
+        self.families.iter()
+    }
+
+    /// Look up one File Rollup display family.
+    pub fn family(&self, id: &str) -> Option<&TypeFamily> {
+        self.families.iter().find(|family| family.id == id)
     }
 
     /// How many `[[kind]]` rules it holds.
@@ -331,13 +549,79 @@ impl TypeRegistry {
         self.by_extension.len()
     }
 
+    /// Registry-normalized extension used for classification and aggregate buckets.
+    ///
+    /// A file name owns its [`logical_ext`], which may retain two trailing components.
+    /// The registry owns the canonical level: a logical extension claimed whole stays
+    /// whole, while an unclaimed compound tail falls back to its final component. Thus
+    /// `archive.tar.gz` remains `.tar.gz`, while `release.v2.zip` becomes `.zip` when the
+    /// registry claims `zip` but not `v2.zip`.
+    pub fn canonical_ext(&self, name: &OsStr) -> Option<String> {
+        let logical = logical_ext(name)?;
+        let key = logical.strip_prefix('.').expect("a logical extension starts with a dot");
+        if self.by_extension.contains_key(key) {
+            return Some(logical);
+        }
+        match key.rsplit_once('.') {
+            Some((_, final_component)) => Some(format!(".{final_component}")),
+            None => Some(logical),
+        }
+    }
+
+    /// Extension roll-up bucket under this registry.
+    pub fn ext_bucket(&self, name: &OsStr) -> String {
+        self.canonical_ext(name).unwrap_or_else(|| NO_EXTENSION.to_string())
+    }
+
     /// Every stable type identifier it can produce, in manifest order.
     pub fn type_ids(&self) -> impl Iterator<Item = &str> {
         self.rules.iter().map(|rule| rule.id.as_ref())
     }
 
+    /// Classify one basename into portable File Rollup identity without opening a file.
+    pub fn classify_name(&self, name: &OsStr) -> NameClassification {
+        let logical_extension = logical_ext(name);
+        let filename_rule = name.to_str().and_then(|name| self.by_filename(name));
+        let extension_match = filename_rule.is_none().then(|| {
+            let logical = logical_extension.as_deref()?;
+            let key = logical.strip_prefix('.').expect("a logical extension starts with a dot");
+            self.by_extension(key).map(|rule| (logical.to_string(), rule)).or_else(|| {
+                let (_, suffix) = key.rsplit_once('.')?;
+                self.by_extension(suffix).map(|rule| (format!(".{suffix}"), rule))
+            })
+        });
+        let (canonical_extension, rule) = match (filename_rule, extension_match.flatten()) {
+            (Some(rule), _) => (None, Some(rule)),
+            (None, Some((extension, rule))) => (Some(extension), Some(rule)),
+            (None, None) => (None, None),
+        };
+        let fallback_group = self
+            .registry_revision
+            .is_some()
+            .then(|| self.groups.iter().find(|group| group.id == "other"))
+            .flatten()
+            .map(|group| group.id.clone());
+        NameClassification {
+            logical_extension,
+            canonical_extension,
+            kind_id: rule.map(|rule| rule.id.to_string()),
+            family_id: rule.and_then(|rule| rule.display_family.as_ref().map(ToString::to_string)),
+            group_id: rule
+                .and_then(|rule| rule.display_group.as_ref().map(ToString::to_string))
+                .or(fallback_group),
+            content_family: rule.map_or(ContentFamily::Unknown, |rule| rule.family),
+        }
+    }
+
     fn by_filename(&self, name: &str) -> Option<&TypeRule> {
-        self.by_filename.get(name).map(|index| &self.rules[*index as usize])
+        self.by_filename
+            .get(name)
+            .or_else(|| {
+                self.case_insensitive_filenames
+                    .then(|| name.to_ascii_lowercase())
+                    .and_then(|name| self.by_filename.get(name.as_str()))
+            })
+            .map(|index| &self.rules[*index as usize])
     }
 
     fn by_extension(&self, key: &str) -> Option<&TypeRule> {
@@ -451,7 +735,7 @@ pub fn classify_with(
         );
     }
 
-    let extension = derive_ext(name);
+    let extension = registry.canonical_ext(name);
     if let Some(extension) = extension.as_deref() {
         let key = extension.strip_prefix('.').expect("derived extensions start with a dot");
         if let Some(rule) = registry.by_extension(key) {
@@ -569,28 +853,35 @@ fn with_flags(
     classification
 }
 
-/// Extract the compound-tail extension from a file name, lowercased and including the
-/// leading dot.
+/// Return the logical extension of a file name, lowercased and including its leading dot.
 ///
-/// "Compound tail" means `archive.tar.gz` yields `.tar.gz` rather than `.gz`, because
-/// the pair is what a human means by the file's type. Only `.tar` is folded this way;
-/// generalizing to an arbitrary set of compound stems belongs in the rule dialect, not
-/// in a hand-maintained list here.
+/// The logical level is name-owned rather than registry-owned. It retains at most two
+/// trailing dotted components when each is nonempty, ASCII alphanumeric, and at most
+/// twelve characters. A leading dot belongs to the basename, and an ineligible final
+/// component means the name has no logical extension.
 ///
-/// Returns `None` for names with no usable extension, including dotfiles like
-/// `.gitignore` — a leading dot marks a hidden file, it does not introduce an extension.
+/// This is the value a portable entry row reports. Classification and aggregate buckets
+/// use [`TypeRegistry::canonical_ext`] instead.
 ///
 /// ```
 /// use std::ffi::OsStr;
-/// use fdu_core::classify::derive_ext;
+/// use fdu_core::classify::logical_ext;
 ///
-/// assert_eq!(derive_ext(OsStr::new("archive.tar.gz")).as_deref(), Some(".tar.gz"));
-/// assert_eq!(derive_ext(OsStr::new("notes.MD")).as_deref(), Some(".md"));
-/// assert_eq!(derive_ext(OsStr::new(".gitignore")), None);
-/// assert_eq!(derive_ext(OsStr::new("README")), None);
+/// assert_eq!(logical_ext(OsStr::new("archive.tar.gz")).as_deref(), Some(".tar.gz"));
+/// assert_eq!(logical_ext(OsStr::new("release.v2.zip")).as_deref(), Some(".v2.zip"));
+/// assert_eq!(logical_ext(OsStr::new(".gitignore")), None);
 /// ```
+pub fn logical_ext(name: &OsStr) -> Option<String> {
+    logical_ext_native(name)
+}
+
+/// Return the compiled registry's canonical extension.
+///
+/// This preserves the original public helper's answer while making the distinction
+/// explicit for new callers. Registry-aware code should call
+/// [`TypeRegistry::canonical_ext`] directly.
 pub fn derive_ext(name: &OsStr) -> Option<String> {
-    derive_ext_native(name)
+    TypeRegistry::compiled().canonical_ext(name)
 }
 
 /// Label of the extension bucket a file belongs to, including the one for no extension.
@@ -614,7 +905,7 @@ pub fn derive_ext(name: &OsStr) -> Option<String> {
 /// assert_eq!(ext_bucket(OsStr::new(".gitignore")), NO_EXTENSION);
 /// ```
 pub fn ext_bucket(name: &OsStr) -> String {
-    derive_ext(name).unwrap_or_else(|| NO_EXTENSION.to_string())
+    TypeRegistry::compiled().ext_bucket(name)
 }
 
 /// Extension-view label for files whose name carries no extension.
@@ -624,19 +915,19 @@ pub fn ext_bucket(name: &OsStr) -> String {
 pub const NO_EXTENSION: &str = "(none)";
 
 #[cfg(unix)]
-fn derive_ext_native(name: &OsStr) -> Option<String> {
+fn logical_ext_native(name: &OsStr) -> Option<String> {
     use std::os::unix::ffi::OsStrExt;
 
-    derive_ext_units(name.as_bytes(), b'.', |unit| unit.to_ascii_lowercase())
+    logical_ext_units(name.as_bytes(), b'.', |unit| unit.to_ascii_lowercase())
         .and_then(|units| String::from_utf8(units).ok())
 }
 
 #[cfg(windows)]
-fn derive_ext_native(name: &OsStr) -> Option<String> {
+fn logical_ext_native(name: &OsStr) -> Option<String> {
     use std::os::windows::ffi::OsStrExt;
 
     let units: Vec<u16> = name.encode_wide().collect();
-    derive_ext_units(&units, u16::from(b'.'), |unit| {
+    logical_ext_units(&units, u16::from(b'.'), |unit| {
         // Lowercase the units that are single bytes and leave the rest alone. Asking
         // `try_from` whether it fits says that directly, where a comparison plus an
         // `expect` made the caller argue the bound was already checked.
@@ -649,11 +940,23 @@ fn derive_ext_native(name: &OsStr) -> Option<String> {
 }
 
 #[cfg(not(any(unix, windows)))]
-fn derive_ext_native(name: &OsStr) -> Option<String> {
-    derive_ext_str(name.to_str()?)
+fn logical_ext_native(name: &OsStr) -> Option<String> {
+    let units: Vec<char> = name.to_str()?.chars().collect();
+    logical_ext_units(&units, '.', |unit| unit.to_ascii_lowercase())
+        .map(|extension| extension.into_iter().collect())
 }
 
-fn derive_ext_units<T: Copy + Eq + From<u8>>(
+const MAX_LOGICAL_EXTENSION_COMPONENT: usize = 12;
+
+fn eligible_extension_component<T: Copy + Eq + From<u8>>(component: &[T]) -> bool {
+    !component.is_empty()
+        && component.len() <= MAX_LOGICAL_EXTENSION_COMPONENT
+        && component.iter().all(|unit| {
+            (b'0'..=b'9').chain(b'a'..=b'z').chain(b'A'..=b'Z').any(|byte| *unit == T::from(byte))
+        })
+}
+
+fn logical_ext_units<T: Copy + Eq + From<u8>>(
     name: &[T],
     dot: T,
     lowercase: impl Fn(T) -> T,
@@ -661,49 +964,22 @@ fn derive_ext_units<T: Copy + Eq + From<u8>>(
     let searchable = if name.first() == Some(&dot) { &name[1..] } else { name };
     let dot_index = searchable.iter().rposition(|unit| *unit == dot)?;
     let (stem, last) = searchable.split_at(dot_index);
-    if last.len() <= 1 {
+    let last = &last[1..];
+    if !eligible_extension_component(last) {
         return None;
     }
 
     let mut extension = Vec::new();
     if let Some(inner_dot) = stem.iter().rposition(|unit| *unit == dot) {
-        let inner = &stem[inner_dot..];
-        let tar = [
-            dot,
-            lowercase_ascii_unit(b't', &lowercase),
-            lowercase_ascii_unit(b'a', &lowercase),
-            lowercase_ascii_unit(b'r', &lowercase),
-        ];
-        if inner.len() == tar.len() && inner.iter().copied().map(&lowercase).eq(tar) {
+        let inner = &stem[inner_dot + 1..];
+        if eligible_extension_component(inner) {
+            extension.push(dot);
             extension.extend(inner.iter().copied().map(&lowercase));
         }
     }
+    extension.push(dot);
     extension.extend(last.iter().copied().map(lowercase));
     Some(extension)
-}
-
-fn lowercase_ascii_unit<T: Copy + From<u8>>(byte: u8, lowercase: &impl Fn(T) -> T) -> T {
-    lowercase(T::from(byte))
-}
-
-#[cfg(not(any(unix, windows)))]
-fn derive_ext_str(name: &str) -> Option<String> {
-    // Skip a leading dot so dotfiles are not read as all-extension.
-    let searchable = name.strip_prefix('.').unwrap_or(name);
-    let dot = searchable.rfind('.')?;
-    let (stem, last) = searchable.split_at(dot);
-    if last.len() <= 1 {
-        // A trailing dot with nothing after it is not an extension.
-        return None;
-    }
-
-    if let Some(inner_dot) = stem.rfind('.') {
-        if stem[inner_dot..].eq_ignore_ascii_case(".tar") {
-            return Some(format!(".tar{}", last.to_ascii_lowercase()));
-        }
-    }
-
-    Some(last.to_ascii_lowercase())
 }
 
 #[cfg(test)]
@@ -711,7 +987,7 @@ mod tests {
     use super::type_rule_manifest::{MANIFEST_FAMILIES, ManifestRule, parse_manifest};
     use super::{
         ContentFamily, DetectionConfidence, DetectionSource, TypeRegistry, classify_path,
-        classify_path_with_prefix, classify_with, derive_ext, family_from_name,
+        classify_path_with_prefix, classify_with, derive_ext, family_from_name, logical_ext,
         type_rule_fingerprint,
     };
     use super::{GENERATED_RULES, human_language_name};
@@ -864,6 +1140,86 @@ mod tests {
     }
 
     #[test]
+    fn file_rollup_v3_registry_supplies_display_taxonomy_and_content_classification() {
+        let registry = TypeRegistry::from_manifest(
+            r#"
+schema_version = 3
+registry_revision = 7
+max_extension_components = 2
+
+[[group]]
+id = "code"
+label = "Code"
+order = 10
+
+[[group]]
+id = "other"
+label = "Other"
+order = 20
+
+[[family]]
+id = "javascript"
+label = "JavaScript"
+group = "code"
+order = 100
+hue = 102.0
+
+[[kind]]
+id = "javascript"
+family = "javascript"
+content_family = "code"
+extensions = ["js", "js.map"]
+filenames = []
+shebangs = ["node"]
+priority = 100
+
+[[kind]]
+id = "make"
+group = "other"
+content_family = "code"
+extensions = []
+filenames = ["makefile"]
+shebangs = []
+priority = 100
+"#,
+        )
+        .expect("File Rollup v3 registry parses");
+
+        assert_eq!(registry.registry_revision(), Some(7));
+        assert_eq!(
+            registry.groups().map(super::TypeGroup::id).collect::<Vec<_>>(),
+            vec!["code", "other"]
+        );
+        let family = registry.family("javascript").expect("display family retained");
+        assert_eq!(family.label(), "JavaScript");
+        assert_eq!(family.group_id(), "code");
+        assert_eq!(family.extensions(), &[".js", ".js.map"]);
+
+        let source_map = registry.classify_name(OsStr::new("bundle.js.map"));
+        assert_eq!(source_map.kind_id(), Some("javascript"));
+        assert_eq!(source_map.family_id(), Some("javascript"));
+        assert_eq!(source_map.group_id(), Some("code"));
+        assert_eq!(source_map.content_family(), ContentFamily::Code);
+        assert_eq!(source_map.logical_extension(), Some(".js.map"));
+        assert_eq!(source_map.canonical_extension(), Some(".js.map"));
+
+        let makefile = registry.classify_name(OsStr::new("Makefile"));
+        assert_eq!(makefile.kind_id(), Some("make"));
+        assert_eq!(makefile.family_id(), None);
+        assert_eq!(makefile.group_id(), Some("other"));
+        assert_eq!(makefile.logical_extension(), None);
+        assert_eq!(makefile.canonical_extension(), None);
+
+        let unknown = registry.classify_name(OsStr::new("release.v2.widget"));
+        assert_eq!(unknown.logical_extension(), Some(".v2.widget"));
+        assert_eq!(unknown.canonical_extension(), None);
+        assert_eq!(unknown.kind_id(), None);
+        assert_eq!(unknown.family_id(), None);
+        assert_eq!(unknown.group_id(), Some("other"));
+        assert_eq!(unknown.content_family(), ContentFamily::Unknown);
+    }
+
+    #[test]
     fn registry_identity_is_derived_from_semantics_not_formatting() {
         let compact = TypeRegistry::from_manifest(
             "[[kind]]\nid = \"notes\"\nfamily = \"prose\"\nextensions = [\"txt\"]\n",
@@ -900,6 +1256,28 @@ mod tests {
     fn plain_extensions_lowercase() {
         assert_eq!(derive_ext(OsStr::new("main.RS")).as_deref(), Some(".rs"));
         assert_eq!(derive_ext(OsStr::new("Photo.JPEG")).as_deref(), Some(".jpeg"));
+    }
+
+    #[test]
+    fn logical_and_canonical_extensions_are_distinct_without_changing_legacy_answers() {
+        let rules = TypeRegistry::compiled();
+        for (name, logical, canonical) in [
+            ("archive.tar.gz", Some(".tar.gz"), Some(".tar.gz")),
+            ("release.v2.zip", Some(".v2.zip"), Some(".zip")),
+            ("bundle.umd.min.js", Some(".min.js"), Some(".js")),
+            (".eslintrc.json", Some(".json"), Some(".json")),
+            (".gitignore", None, None),
+            ("trailing.", None, None),
+        ] {
+            let name = OsStr::new(name);
+            assert_eq!(logical_ext(name).as_deref(), logical, "logical {name:?}");
+            assert_eq!(rules.canonical_ext(name).as_deref(), canonical, "canonical {name:?}");
+            assert_eq!(
+                derive_ext(name).as_deref(),
+                canonical,
+                "the existing public helper keeps its compiled-registry answer for {name:?}"
+            );
+        }
     }
 
     #[test]

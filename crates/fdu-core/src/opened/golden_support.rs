@@ -350,7 +350,7 @@ impl SessionModel {
             .read(ReadRequest {
                 projections: vec![
                     ReadProjection::Flat {
-                        selection: crate::query::Selection::default(),
+                        selection: crate::query::EntrySelection::default(),
                         shape: RowShape::Full,
                         page: crate::PageRequest {
                             limit: crate::MAX_PAGE_ROWS,

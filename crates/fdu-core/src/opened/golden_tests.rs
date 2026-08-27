@@ -227,12 +227,12 @@ fn coherent_projections_and_continuations() -> SessionTrace {
                 ReadProjection::RollUp { path: PathBuf::new() },
                 ReadProjection::Tree { path: PathBuf::new(), page },
                 ReadProjection::Flat {
-                    selection: crate::query::Selection::default(),
+                    selection: crate::query::EntrySelection::default(),
                     shape: RowShape::Full,
                     page: PageRequest { limit: 2, max_work: 16 },
                 },
                 ReadProjection::Aggregate {
-                    selection: crate::query::Selection::default(),
+                    selection: crate::query::EntrySelection::default(),
                     count_cap: 2,
                     max_work: 16,
                 },
@@ -270,7 +270,7 @@ fn coherent_projections_and_continuations() -> SessionTrace {
         &mut trace,
         ReadRequest {
             projections: vec![ReadProjection::Flat {
-                selection: crate::query::Selection::default(),
+                selection: crate::query::EntrySelection::default(),
                 shape: RowShape::Compact,
                 page,
             }],
@@ -296,7 +296,7 @@ fn coherent_projections_and_continuations() -> SessionTrace {
         &mut trace,
         ReadRequest {
             projections: vec![ReadProjection::Flat {
-                selection: crate::query::Selection::default(),
+                selection: crate::query::EntrySelection::default(),
                 shape: RowShape::Compact,
                 page,
             }],
@@ -329,7 +329,7 @@ fn coherent_projections_and_continuations() -> SessionTrace {
         &mut trace,
         ReadRequest {
             projections: vec![ReadProjection::Flat {
-                selection: crate::query::Selection::default(),
+                selection: crate::query::EntrySelection::default(),
                 shape: RowShape::Compact,
                 page: PageRequest { limit: 1, max_work: 1 },
             }],
@@ -589,7 +589,7 @@ fn final_read(opened: &OpenedIndex, trace: &mut SessionTrace) {
                     page: PageRequest { limit: 4_096, max_work: 1_000_000 },
                 },
                 ReadProjection::Flat {
-                    selection: crate::query::Selection::default(),
+                    selection: crate::query::EntrySelection::default(),
                     shape: RowShape::Full,
                     page: PageRequest { limit: 4_096, max_work: 1_000_000 },
                 },

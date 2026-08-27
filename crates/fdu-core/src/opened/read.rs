@@ -341,11 +341,11 @@ fn validate_count(count_cap: u64, max_work: u64) -> Result<()> {
     Ok(())
 }
 
-fn validate_flat_selection(selection: &crate::query::Selection) -> Result<()> {
-    if selection.depth.is_some()
-        || selection.limit.is_some()
-        || selection.sort.is_some()
-        || selection.reverse
+fn validate_flat_selection(selection: &crate::query::EntrySelection) -> Result<()> {
+    if selection.query.depth.is_some()
+        || selection.query.limit.is_some()
+        || selection.query.sort.is_some()
+        || selection.query.reverse
     {
         return Err(Error::UnsupportedFlatSelection);
     }
@@ -492,7 +492,7 @@ fn tree_projection(
 fn flat_projection(
     opened: &OpenedIndex,
     index: &crate::Index,
-    selection: &crate::query::Selection,
+    selection: &crate::query::EntrySelection,
     shape: crate::RowShape,
     page: PageRequest,
     version: EngineVersion,
@@ -530,7 +530,7 @@ fn flat_projection(
             allocated: row.attrs.allocated,
             mtime_ns: row.attrs.mtime_ns,
         };
-        if !selection.admits(&candidate) {
+        if !selection.admits(&candidate, row.ignored) {
             continue;
         }
         if rows.len() == page.limit {
@@ -555,7 +555,11 @@ fn flat_projection(
             opened.state.session,
             ContinuationRecord {
                 version,
-                kind: ContinuationKind::Flat { selection: selection.clone(), shape, next },
+                kind: ContinuationKind::Flat {
+                    selection: Box::new(selection.clone()),
+                    shape,
+                    next,
+                },
             },
         )?)
     } else {
@@ -571,7 +575,7 @@ fn flat_projection(
 
 fn aggregate_projection(
     index: &crate::Index,
-    selection: &crate::query::Selection,
+    selection: &crate::query::EntrySelection,
     count_cap: u64,
     max_work: u64,
     work: &mut Work,
@@ -607,7 +611,7 @@ fn aggregate_projection(
             allocated: row.attrs.allocated,
             mtime_ns: row.attrs.mtime_ns,
         };
-        if !selection.admits(&candidate) {
+        if !selection.admits(&candidate, row.ignored) {
             continue;
         }
         if matches == count_cap {

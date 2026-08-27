@@ -15,7 +15,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyDict, PyList, PyModule};
 
 use fdu_core::content::AnalysisSet;
-use fdu_core::query::{AxisNames, Query, Selection};
+use fdu_core::query::{AxisNames, EntrySelection, Query, Selection};
 use fdu_core::{
     ChangeOutcome, ChangePoll, ChangeRequest, ContinuationId, CountResult, Coverage,
     CoverageReason, EffectiveChange, EngineVersion, EntryKind, EntryValue, Freshness, Impact,
@@ -133,6 +133,32 @@ fn parse_selection(dict: Option<&Bound<'_, PyDict>>, now: SystemTime) -> PyResul
         250,
     )?
     .selection)
+}
+
+fn parse_entry_selection(
+    dict: Option<&Bound<'_, PyDict>>,
+    now: SystemTime,
+) -> PyResult<EntrySelection> {
+    let Some(dict) = dict else {
+        return Ok(EntrySelection::default());
+    };
+    Ok(EntrySelection {
+        query: parse_selection(Some(dict), now)?,
+        max_size: dict
+            .get_item("max_size")?
+            .filter(|value| !value.is_none())
+            .map(|value| value.extract())
+            .transpose()?,
+        exclude_ignored: dict
+            .get_item("exclude_ignored")?
+            .map(|value| value.extract())
+            .transpose()?
+            .unwrap_or(false),
+        logical_extensions: optional_strings(dict, "logical_extensions")?.unwrap_or_default(),
+        exact_names: optional_strings(dict, "exact_names")?.unwrap_or_default(),
+        terminal_extensions: optional_strings(dict, "terminal_extensions")?.unwrap_or_default(),
+        ancestor_names: optional_strings(dict, "ancestor_names")?.unwrap_or_default(),
+    })
 }
 
 fn parse_scope(dict: &Bound<'_, PyDict>) -> PyResult<ScopeIdentity> {
@@ -255,7 +281,7 @@ fn parse_projection(value: Bound<'_, PyAny>, now: SystemTime) -> PyResult<ReadPr
                 }
             };
             Ok(ReadProjection::Flat {
-                selection: parse_selection(selection.as_ref(), now)?,
+                selection: parse_entry_selection(selection.as_ref(), now)?,
                 shape,
                 page: page()?,
             })
@@ -264,7 +290,7 @@ fn parse_projection(value: Bound<'_, PyAny>, now: SystemTime) -> PyResult<ReadPr
             let selection =
                 dict.get_item("selection")?.map(|value| mapping(value, "selection")).transpose()?;
             Ok(ReadProjection::Aggregate {
-                selection: parse_selection(selection.as_ref(), now)?,
+                selection: parse_entry_selection(selection.as_ref(), now)?,
                 count_cap: required(&dict, "count_cap")?.extract()?,
                 max_work: required(&dict, "max_work")?.extract()?,
             })
@@ -527,10 +553,32 @@ fn entry_dict<'py>(py: Python<'py>, entry: &EntryValue) -> PyResult<Bound<'py, P
     out.set_item("attrs", attrs_dict(py, entry.attrs)?)?;
     out.set_item("ignored", entry.ignored)?;
     out.set_item(
+        "classification",
+        entry
+            .classification
+            .as_ref()
+            .map(|classification| classification_dict(py, classification))
+            .transpose()?,
+    )?;
+    out.set_item(
         "rollup",
         entry.rollup.map(|rollup| partition_rollup_dict(py, rollup)).transpose()?,
     )?;
     out.set_item("children_complete", entry.children_complete)?;
+    Ok(out)
+}
+
+fn classification_dict<'py>(
+    py: Python<'py>,
+    classification: &fdu_core::classify::NameClassification,
+) -> PyResult<Bound<'py, PyDict>> {
+    let out = PyDict::new(py);
+    out.set_item("logical_extension", classification.logical_extension())?;
+    out.set_item("canonical_extension", classification.canonical_extension())?;
+    out.set_item("kind_id", classification.kind_id())?;
+    out.set_item("family_id", classification.family_id())?;
+    out.set_item("group_id", classification.group_id())?;
+    out.set_item("content_family", classification.content_family().as_str())?;
     Ok(out)
 }
 

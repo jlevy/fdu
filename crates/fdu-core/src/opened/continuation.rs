@@ -30,7 +30,7 @@ pub(super) enum ContinuationKind {
         next: ChildPosition,
     },
     Flat {
-        selection: crate::query::Selection,
+        selection: Box<crate::query::EntrySelection>,
         shape: crate::RowShape,
         /// First complete portable path the resumed page should visit.
         next: String,
@@ -157,7 +157,7 @@ mod tests {
                 ContinuationRecord {
                     version: version(session),
                     kind: ContinuationKind::Flat {
-                        selection: crate::query::Selection::default(),
+                        selection: Box::new(crate::query::EntrySelection::default()),
                         shape: crate::RowShape::Compact,
                         next: "first".to_owned(),
                     },
@@ -171,7 +171,7 @@ mod tests {
                 ContinuationRecord {
                     version: version(session),
                     kind: ContinuationKind::Flat {
-                        selection: crate::query::Selection::default(),
+                        selection: Box::new(crate::query::EntrySelection::default()),
                         shape: crate::RowShape::Compact,
                         next: "x".repeat(crate::MAX_CONTINUATION_RECORD_BYTES),
                     },
@@ -192,10 +192,13 @@ mod tests {
                 ContinuationRecord {
                     version: version(session),
                     kind: ContinuationKind::Flat {
-                        selection: crate::query::Selection {
-                            include: vec![expanded],
-                            ..crate::query::Selection::default()
-                        },
+                        selection: Box::new(crate::query::EntrySelection {
+                            query: crate::query::Selection {
+                                include: vec![expanded],
+                                ..crate::query::Selection::default()
+                            },
+                            ..crate::query::EntrySelection::default()
+                        }),
                         shape: crate::RowShape::Compact,
                         next: "next".to_owned(),
                     },

@@ -90,8 +90,8 @@ decisions, including the explicit delivery override recorded below.
 
 ## Current Implementation Status
 
-This status describes the current Phase 3B checkpoint on fdu PR #48. The PR remains
-draft while the MetaBrowser adoption and composed proof proceed.
+This status describes the current Phase 3C checkpoint on fdu PR #48. The PR remains
+draft while the native projections, MetaBrowser adoption, and composed proof proceed.
 The no-gap observation and five-session golden beads are complete.
 The direct synchronous Python binding, typed public namespace, and installed-wheel
 lifecycle are implemented and pass the full local handoff, distribution, parity, and
@@ -104,7 +104,7 @@ coordinator assembly, route integration, and full application gate.
 | Architecture and implementation map | Complete | The durable architecture, PR #44 and #47 reconciliation, direct-API correction, file/function map, test design, and reuse ledger are committed and reviewed. |
 | Phase 1: exact engine kernel | Complete | Checkpoints 1A through 1D passed their local gates and the cumulative cross-platform PR gate. |
 | Phase 2: opened-root vertical slice | Complete | The native lifecycle and five transparent session goldens are green. The direct `PyO3` handle, exhaustive value conversion, immutable `fdu.opened` API, typed errors, GIL-detached operations, strict downstream typing fixture, installed-wheel lifecycle, source distribution, CLI parity, and cross-target lint all pass. |
-| Phase 3: MetaBrowser adoption | Checkpoint 3C in progress | MetaBrowser commit `2743064` measures the unchanged contract against the exact fdu wheel from `0583a1a`; `45266a8` completes the shared bounded contract and Python oracle. fdu `a286145` completes the approved optional serving-index set with exact mutation, independent-recomputation, structural-bound, and commit-cost tests. The bounded continuation authority is complete locally; native projection readers and the thin production adapter are next. |
+| Phase 3: MetaBrowser adoption | Checkpoint 3C in progress | MetaBrowser commit `2743064` measures the unchanged contract against the exact fdu wheel from `0583a1a`; `45266a8` completes the shared bounded contract and Python oracle. fdu `a286145` completes the approved optional serving-index set, and `27aeed0` completes the bounded continuation authority with green CI. The current native checkpoint parses the actual File Rollup v3 registry without adding a dependency, projects classification on demand, and adds the selection predicates needed by catalog and filtered reads. The bounded projection readers, Python registry input, and thin production adapter remain open. |
 | Phase 4: composed proof | Not started | Cross-provider conformance, route and lifecycle integration, installed-wheel proof, and final performance and size acceptance remain required. |
 
 The implementation epic has completed the native and Python Phase 2 dependency chain.
@@ -1403,6 +1403,14 @@ design failure, not an adapter tradeoff.
   file recency through exact insertion, metadata update, kind change, ignore
   reclassification, and subtree removal; prove detached indexes and snapshots retain
   none of that state, and retain a release-build commit-cost and structural-row probe.
+- [ ] Parse the actual File Rollup v3 registry once at opened-root setup, derive its
+  identity from validated content, and expose registry-owned classification and browsing
+  taxonomy without a TOML, Python, or MetaBrowser dependency in the standalone binary.
+  Compose the established one-shot `Selection` inside a new additive `EntrySelection`
+  carrying the name, ignored-state, maximum-size, suffix, and ancestor predicates
+  required by bounded native reads.
+  Do not add fields to the existing public struct or create adapter-only filtering
+  semantics.
 - [ ] Complete the existing fdu query indexes needed for filtered tree, navigation,
   recent, catalog, and diagnostics without per-request Python aggregation.
 - [ ] Implement a thin `FduInventoryBackend`/handle mapping the eight MetaBrowser
@@ -1428,6 +1436,11 @@ Acceptance for Phase 3:
 - the stripped standalone fdu CLI remains byte-for-byte at its Phase 2 baseline, its
   existing one-shot goldens remain unchanged, and neither MetaBrowser nor the Python
   package shells out to it.
+- the command parser, defaults, output shapes, exit behavior, and one-shot cache
+  behavior remain unchanged.
+  No opened-root serving allocation is reachable from an existing CLI invocation, and
+  the CLI dependency tree contains no Python, async-runtime, serialization-framework, or
+  MetaBrowser package.
 
 ### Phase 4: End-to-End Integration Proof
 
@@ -1641,7 +1654,7 @@ Beads `fdu-wzu9` and `fdu-ff6r` finish the kernel before a worker is added.
 | New `control/gitignore.rs` | Parse and evaluate the fixed `.gitignore` semantics required by MetaBrowser, including nested negation and removal. Dependency choice is made under supply-chain policy; if the reviewed crate raises MSRV or size without enough benefit, keep the narrow parser in core. | Port the prototype corpus, then compare provider order against MetaBrowser on the shared fixture. |
 | `index.rs` `PartitionRollUp` | Maintain only `all` and `unignored` roll-ups plus the registry-derived classification dimensions used by existing reports. Control changes prepare exact reclassification moves and commit them atomically. | Extract generic-plane merge/unmerge tests from `a6a89ab` and `7aaaf84` without their abstraction. |
 | New `admission.rs`; `scan.rs`; `scan/macos_bulk.rs`; `watch.rs` | Centralize hidden, symlink, filesystem-boundary, and object-kind admission. Every scan acceleration and live path calls the same decision. Control-file signals bypass ordinary row admission without creating a visible row. | Extract `6a8ac6f`, `ff210d0`, and `048b0cc`; add `scripts/check-admission-sites.mjs`, Unix invalid-byte, Windows surrogate/separator, macOS bulk, FIFO/socket, and control-file cases. |
-| `classify.rs` | Add `logical_ext` and `TypeRegistry::canonical_ext` from `2a70a12`; add browsing groups from `77e5b7b` only if File Rollup requires them at this checkpoint. | Runtime/compiled registry equivalence and cross-platform component tests. |
+| `classify.rs` and new `classify/file_rollup_manifest.rs` | Add portable `logical_ext`, registry-owned canonical extension and name classification, ordered browsing groups and families, and the dependency-free validated File Rollup v3 profile. Keep the compiled analyzer registry and existing `derive_ext` answer stable for detached and CLI consumers. | Parse the exact shared document; prove formatting-insensitive semantic identity, exact-basename precedence, longest-suffix matching, unknown fallback, compact-manifest compatibility, and cross-platform components. Reject malformed and unsupported documents before opening a root. |
 | `Index`, `IndexHandle`, and new `OpenedIndex` boundary types | Keep cloned `Index` detached. Do not put session identity, worker ownership, journal waiters, or continuations into it. Reserve those for the Phase 2 opened-root state. | Clone independence, no shared live identity in snapshots, and existing `IndexHandle` read/write behavior. |
 | `snapshot.rs` `save`, `save_handle`, `load`, `put_scope`, `read_scope`, `engine_fingerprint` | Serialize detached facts, control table, reducers, validated scope, and semantic identity only. Bump format/fingerprint once for the cumulative representation change; reject partial-resource baselines. | Existing corruption/size/atomicity tests plus registry, control-removal, portable-path, and partial-baseline cases. |
 | `Cargo.toml`, `crates/fdu-core/Cargo.toml`, `crates/fdu-py/Cargo.toml`, `Makefile`, CI | Make core default features empty; keep `watch` and any `gitignore` dependency removable and explicit; update library-only feature matrix, audit pins, and recorded size commands. | `cargo tree` deltas, `make check`, `make cross-lint`, MSRV, audit, no-default tests, CLI/wheel size baselines. |

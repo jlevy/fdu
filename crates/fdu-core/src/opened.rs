@@ -2633,7 +2633,7 @@ mod tests {
         let first = opened
             .read(crate::ReadRequest {
                 projections: vec![crate::ReadProjection::Flat {
-                    selection: crate::query::Selection::default(),
+                    selection: crate::query::EntrySelection::default(),
                     shape: crate::RowShape::Compact,
                     page: crate::PageRequest { limit: 2, max_work: 3 },
                 }],
@@ -2694,9 +2694,12 @@ mod tests {
                 },
             ]))
             .expect("seed entries");
-        let selection = crate::query::Selection {
-            include: vec![crate::query::Pattern::parse("*.rs").expect("pattern")],
-            ..crate::query::Selection::default()
+        let selection = crate::query::EntrySelection {
+            query: crate::query::Selection {
+                include: vec![crate::query::Pattern::parse("*.rs").expect("pattern")],
+                ..crate::query::Selection::default()
+            },
+            ..crate::query::EntrySelection::default()
         };
 
         let first = opened
@@ -2756,7 +2759,7 @@ mod tests {
             let response = opened
                 .read(crate::ReadRequest {
                     projections: vec![crate::ReadProjection::Flat {
-                        selection: crate::query::Selection::default(),
+                        selection: crate::query::EntrySelection::default(),
                         shape: crate::RowShape::Compact,
                         page,
                     }],
@@ -2891,7 +2894,7 @@ mod tests {
                         },
                     },
                     crate::ReadProjection::Flat {
-                        selection: crate::query::Selection::default(),
+                        selection: crate::query::EntrySelection::default(),
                         shape: crate::RowShape::Compact,
                         page: crate::PageRequest {
                             limit: crate::MAX_PAGE_ROWS,
@@ -2978,7 +2981,7 @@ mod tests {
         let first = opened
             .read(crate::ReadRequest {
                 projections: vec![crate::ReadProjection::Flat {
-                    selection: crate::query::Selection::default(),
+                    selection: crate::query::EntrySelection::default(),
                     shape: crate::RowShape::Compact,
                     page: crate::PageRequest { limit: 1, max_work: 2 },
                 }],
@@ -3029,7 +3032,7 @@ mod tests {
         assert!(matches!(
             opened.read(crate::ReadRequest {
                 projections: vec![crate::ReadProjection::Aggregate {
-                    selection: crate::query::Selection::default(),
+                    selection: crate::query::EntrySelection::default(),
                     count_cap: 0,
                     max_work: 1,
                 }],
@@ -3151,14 +3154,17 @@ mod tests {
             .read(crate::ReadRequest {
                 projections: vec![
                     crate::ReadProjection::Aggregate {
-                        selection: crate::query::Selection::default(),
+                        selection: crate::query::EntrySelection::default(),
                         count_cap: 1,
                         max_work: 1,
                     },
                     crate::ReadProjection::Aggregate {
-                        selection: crate::query::Selection {
-                            kinds: vec![EntryKind::File],
-                            ..crate::query::Selection::default()
+                        selection: crate::query::EntrySelection {
+                            query: crate::query::Selection {
+                                kinds: vec![EntryKind::File],
+                                ..crate::query::Selection::default()
+                            },
+                            ..crate::query::EntrySelection::default()
                         },
                         count_cap: 2,
                         max_work: 3,

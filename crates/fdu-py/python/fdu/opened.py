@@ -47,6 +47,7 @@ __all__ = [
     "EngineVersion",
     "Entry",
     "EntryKind",
+    "EntrySelection",
     "Flat",
     "FlatPage",
     "FlatResult",
@@ -64,6 +65,7 @@ __all__ = [
     "LimitedProjection",
     "Lookup",
     "LookupResult",
+    "NameClassification",
     "OpenedIndex",
     "OpenedIndexClosedError",
     "OpenedIndexError",
@@ -367,12 +369,23 @@ class PartitionRollUpSummary:
 
 
 @dataclass(frozen=True, slots=True)
+class NameClassification:
+    logical_extension: str | None
+    canonical_extension: str | None
+    kind_id: str | None
+    family_id: str | None
+    group_id: str | None
+    content_family: str
+
+
+@dataclass(frozen=True, slots=True)
 class Entry:
     path: Path
     portable_path: str | None
     kind: EntryKind
     attrs: Attributes
     ignored: bool
+    classification: NameClassification | None
     rollup: PartitionRollUpSummary | None
     children_complete: bool | None
 
@@ -433,15 +446,32 @@ class Tree:
 
 
 @dataclass(frozen=True, slots=True)
+class EntrySelection:
+    """Portable opened-root row predicates composed with the one-shot query selection."""
+
+    query: Selection = field(default_factory=Selection)
+    max_size: int | None = None
+    exclude_ignored: bool = False
+    logical_extensions: tuple[str, ...] = ()
+    exact_names: tuple[str, ...] = ()
+    terminal_extensions: tuple[str, ...] = ()
+    ancestor_names: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.max_size is not None and self.max_size < 0:
+            raise ValueError("entry selection max_size must be nonnegative")
+
+
+@dataclass(frozen=True, slots=True)
 class Flat:
-    selection: Selection = field(default_factory=Selection)
+    selection: EntrySelection = field(default_factory=EntrySelection)
     shape: RowShape = RowShape.COMPACT
     page: Page = field(default_factory=Page)
 
 
 @dataclass(frozen=True, slots=True)
 class Aggregate:
-    selection: Selection = field(default_factory=Selection)
+    selection: EntrySelection = field(default_factory=EntrySelection)
     count_cap: int = 10_000
     max_work: int = 100_000
 
@@ -779,16 +809,37 @@ def _partition_rollup(value: object) -> PartitionRollUpSummary:
 def _entry(value: object) -> Entry:
     raw = _mapping(value, "entry")
     rollup = raw.get("rollup")
+    raw_classification = raw.get("classification")
+    classification = (
+        _name_classification(raw_classification) if raw_classification is not None else None
+    )
     return Entry(
         path=Path(raw["path"]),
         portable_path=str(raw["portable_path"]) if raw["portable_path"] is not None else None,
         kind=EntryKind(str(raw["kind"])),
         attrs=_attrs(raw["attrs"]),
         ignored=bool(raw["ignored"]),
+        classification=classification,
         rollup=_partition_rollup(rollup) if rollup is not None else None,
         children_complete=(
             bool(raw["children_complete"]) if raw["children_complete"] is not None else None
         ),
+    )
+
+
+def _name_classification(value: object) -> NameClassification:
+    raw = _mapping(value, "name classification")
+    return NameClassification(
+        logical_extension=(
+            str(raw["logical_extension"]) if raw["logical_extension"] is not None else None
+        ),
+        canonical_extension=(
+            str(raw["canonical_extension"]) if raw["canonical_extension"] is not None else None
+        ),
+        kind_id=str(raw["kind_id"]) if raw["kind_id"] is not None else None,
+        family_id=str(raw["family_id"]) if raw["family_id"] is not None else None,
+        group_id=str(raw["group_id"]) if raw["group_id"] is not None else None,
+        content_family=str(raw["content_family"]),
     )
 
 
@@ -1093,6 +1144,21 @@ def _selection_wire(selection: Selection) -> dict[str, object]:
     return values
 
 
+def _entry_selection_wire(selection: EntrySelection) -> dict[str, object]:
+    values = _selection_wire(selection.query)
+    values.update(
+        {
+            "max_size": selection.max_size,
+            "exclude_ignored": selection.exclude_ignored,
+            "logical_extensions": selection.logical_extensions,
+            "exact_names": selection.exact_names,
+            "terminal_extensions": selection.terminal_extensions,
+            "ancestor_names": selection.ancestor_names,
+        }
+    )
+    return values
+
+
 def _projection_wire(projection: Projection) -> dict[str, object]:
     if isinstance(projection, Lookup):
         return {"kind": "lookup", "path": projection.path}
@@ -1103,14 +1169,14 @@ def _projection_wire(projection: Projection) -> dict[str, object]:
     if isinstance(projection, Flat):
         return {
             "kind": "flat",
-            "selection": _selection_wire(projection.selection),
+            "selection": _entry_selection_wire(projection.selection),
             "shape": projection.shape.value,
             "page": _page_wire(projection.page),
         }
     if isinstance(projection, Aggregate):
         return {
             "kind": "aggregate",
-            "selection": _selection_wire(projection.selection),
+            "selection": _entry_selection_wire(projection.selection),
             "count_cap": projection.count_cap,
             "max_work": projection.max_work,
         }

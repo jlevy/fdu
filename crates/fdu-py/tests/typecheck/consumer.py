@@ -33,6 +33,14 @@ live: opened.OpenedIndex = opened.OpenedIndex.open(
 live_read: opened.ReadResponse = live.read(
     opened.Lookup("pyproject.toml"),
     opened.Tree(page=opened.Page(limit=20, max_work=10_000)),
+    opened.Flat(
+        selection=opened.EntrySelection(
+            query=fdu.Selection(kinds=(fdu.EntryKind.FILE,)),
+            max_size=1_000_000,
+            exclude_ignored=True,
+            logical_extensions=(".py",),
+        )
+    ),
     opened.Diagnostics(),
 )
 live_cursor: opened.EngineVersion = live_read.change_cursor

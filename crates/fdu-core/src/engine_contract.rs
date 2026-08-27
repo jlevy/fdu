@@ -682,6 +682,11 @@ pub struct EntryValue {
     pub attrs: Attrs,
     /// Effective fixed-control classification.
     pub ignored: bool,
+    /// Name- and registry-derived identity for a regular file.
+    ///
+    /// Projected at read time so detached indexes and the standalone CLI retain no
+    /// duplicate strings or interactive-only classification payload.
+    pub classification: Option<crate::classify::NameClassification>,
     /// Both constant-size maintained aggregate partitions for a directory.
     pub rollup: Option<crate::index::PartitionRollUpSummary>,
     /// Whether a directory's complete in-scope child set is known.
@@ -724,8 +729,8 @@ pub enum ReadProjection {
     },
     /// Return one portable-path-ordered page under an fdu-native selection.
     Flat {
-        /// Existing pure fdu selection predicates.
-        selection: crate::query::Selection,
+        /// Additive portable-entry selection composing the existing query predicates.
+        selection: crate::query::EntrySelection,
         /// Compact or full retained row shape.
         shape: RowShape,
         /// Page output and work bounds.
@@ -733,8 +738,8 @@ pub enum ReadProjection {
     },
     /// Count portable entries under one selection, exactly or to an explicit cap.
     Aggregate {
-        /// Existing pure fdu selection predicates.
-        selection: crate::query::Selection,
+        /// Additive portable-entry selection composing the existing query predicates.
+        selection: crate::query::EntrySelection,
         /// Maximum matches counted before returning a lower bound.
         count_cap: u64,
         /// Maximum portable index rows inspected.
