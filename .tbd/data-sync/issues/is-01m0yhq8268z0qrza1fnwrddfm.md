@@ -3,9 +3,9 @@ type: is
 id: is-01m0yhq8268z0qrza1fnwrddfm
 title: Complete the opened-root session goldens and contract coverage gate
 kind: task
-status: closed
+status: in_progress
 priority: 1
-version: 5
+version: 7
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - opened-root-rewrite
@@ -14,7 +14,7 @@ dependencies:
     target: is-01m0y1sf2nph021wtx28p8ahxh
 parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 created_at: 2026-08-26T08:06:55.813Z
-updated_at: 2026-08-27T01:48:23.090Z
+updated_at: 2026-08-27T02:11:36.783Z
 closed_at: 2026-08-27T01:48:23.090Z
 close_reason: "Completed in b3cb609: all review findings and suggestions were implemented, the five opened-root session goldens and coverage gate landed, make check passed on the exact tree, and macOS/Windows cross-lint passed."
 resolution: null
@@ -24,4 +24,4 @@ Compose the test seams added with each Phase 2 capability into one deterministic
 
 ## Notes
 
-Implemented the five-session transparent-box harness in the working tree: 159 causal records across five named goldens; public-value trace normalization; event-derived contract coverage; independent commit/fact/state replay with flat-page and roll-up checks; consumer reset rebuild from filesystem; named-only update and artifact lint/size/orphan/portability gates; Makefile integration. Focused all-feature golden test and Node linter passed before the rebuilt target exhausted the APFS volume. Remaining before commit: empty macOS Trash, Flowmark the plan update, rerun fmt/clippy/no-default and handoff gates, commit/push, update PR validation plan, wait CI.
+CI run 33031258054 exposed host read_dir ordering in cold-progressive-knowledge on Linux and Windows. Added a per-open test-only deterministic discovery scheduler that sorts real directory entries before production admission while leaving non-test discovery streaming and recording exact public commits. Regenerated only that scenario's root commit order. Local validation now passes: focused all-feature and watch+gitignore golden tests, golden lint (5 sessions/159 records), no-default feature suite, clippy all targets/features, full make check, and x86_64 Apple/Windows cross-lint. Awaiting final GitHub CI before re-closing.
