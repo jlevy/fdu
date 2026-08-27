@@ -3,9 +3,9 @@ type: is
 id: is-01m10nrcsqr74exp5xrxetmf83
 title: Implement bounded handle-local continuation authority
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - opened-root-rewrite
@@ -14,7 +14,11 @@ dependencies:
     target: is-01m10nrd50t3xfevcxx7j98x5h
 parent_id: is-01m0y1shykye8sc7h7e9rkk6kh
 created_at: 2026-08-27T03:55:56.598Z
-updated_at: 2026-08-27T10:03:44.239Z
+updated_at: 2026-08-27T10:11:10.574Z
+closed_at: 2026-08-27T10:11:10.563Z
+close_reason: "Completed in 27aeed0: bounded handle-local continuation authority, atomic 64 KiB record cap, exact query/version ownership, proportional resume, restoration after projection errors, cleanup, full make check, and all 19 PR CI jobs passed."
+resolution: null
+duplicate_of: null
 ---
 Implement opened/continuation.rs create/resume/evict/clear over version, normalized fdu-native query identity, and structural traversal position. Public IDs remain opaque; enforce table/record bounds, stale/query-mismatch/foreign/evicted/closed outcomes, proportional resume work, and close cleanup without historical images or signing.
 
