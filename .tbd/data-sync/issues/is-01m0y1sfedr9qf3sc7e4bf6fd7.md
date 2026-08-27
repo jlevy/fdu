@@ -3,9 +3,9 @@ type: is
 id: is-01m0y1sfedr9qf3sc7e4bf6fd7
 title: Measure a disposable fdu adapter against the unchanged MetaBrowser contract
 kind: task
-status: open
+status: closed
 priority: 1
-version: 12
+version: 13
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - opened-root-rewrite
@@ -26,7 +26,11 @@ child_order_hints:
   - is-01m10nq4dv23nfwsghy63h8628
   - is-01m10nq4rd347gj3makrvtrd5m
 created_at: 2026-08-26T03:28:31.692Z
-updated_at: 2026-08-27T03:57:23.336Z
+updated_at: 2026-08-27T06:12:06.711Z
+closed_at: 2026-08-27T06:12:06.710Z
+close_reason: "Completed on MetaBrowser branch codex/fdu-opened-root-e2e-spike at commit 2743064 against exact fdu wheel revision 0583a1a. The normalized evidence and reproduction commands are under explorations/fdu-inventory-adapter; MetaBrowser make verify and strict exact-wheel typing pass. Results: 9/12 unchanged provider cases, 12/13 selected route/SSE cases, full lifecycle pass, and measured materialization cost. The four differences are mapped into Checkpoint 3B."
+resolution: null
+duplicate_of: null
 ---
 On MetaBrowser PR #74, build a deliberately disposable adapter against the unchanged provider protocol. Instrument row materialization, sorting, scans, totals, latency, memory, and route-visible ordering on the representative corpus; publish evidence, retain the harness, and delete naive replica and aggregation code.
 
