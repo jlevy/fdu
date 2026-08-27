@@ -5,7 +5,7 @@ title: Implement the opened-root inventory engine rewrite
 kind: epic
 status: in_progress
 priority: 1
-version: 39
+version: 40
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -49,11 +49,11 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-08-26T00:56:09.456Z
-updated_at: 2026-08-27T01:52:10.764Z
+updated_at: 2026-08-27T03:14:49.585Z
 started_at: 2026-08-26T01:54:35.977Z
 ---
 Implement the clean opened-root and streaming design from the linked plan in merge-sized slices from current main. Preserve the one-shot engine and CLI defaults; first establish exact commits and ownership, then the minimal opened-root lifecycle, then adopt it through MetaBrowser's provider conformance boundary.
 
 ## Notes
 
-Status at PR #48 checkpoint b3cb609 on 2026-08-26: Phase 1 and the complete native Phase 2 dependency chain are implemented. OpenedIndex ownership, progressive discovery, coherent reads, bounded journal and refresh, no-gap observation, five transparent session goldens, independent-model validation, and all implementation-review findings are complete. The exact-tree make check and macOS/Windows cross-lint pass; GitHub CI is pending. Next dependency: fdu-bnsk, the synchronous Python surface, followed by unchanged-contract MetaBrowser measurement, joint provider work, composed integration, and final performance/size acceptance. PR #48 remains draft.
+Status at PR #48 checkpoint 86f64eb on 2026-08-26: Phase 1 and the complete native Phase 2 dependency chain are implemented. OpenedIndex ownership, progressive discovery, coherent bounded reads, exact refresh, the no-gap observation handoff, and the five-session transparent contract proof are complete; implementation-review findings F1-F15 and S1-S3 are closed. The exact-tree make check passes and GitHub Actions run 33035356756 passed all 19 checks across macOS, Linux, and Windows. Next dependency: fdu-bnsk, the synchronous Python surface, followed by unchanged-contract MetaBrowser measurement, joint provider work, composed integration, and final performance/size acceptance. PR #48 remains draft.
