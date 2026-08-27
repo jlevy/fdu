@@ -4,8 +4,8 @@
 
 **Author:** fdu project, with Codex review assistance
 
-**Status:** Active — Phase 3B scope and classification complete; lifecycle and queries
-next
+**Status:** Active — Phase 3B contract and Python oracle complete; Phase 3C native
+projections in progress
 
 ## Overview
 
@@ -79,7 +79,7 @@ tests, and beads.
 | Ship arbitrary tags and promoted roll-up planes now? | No. Ship the one demonstrated partition, `all` versus `unignored`, behind a feature; defer a generic tag algebra until a second use case exists. |
 | Serve warm and cold facts together during discovery? | Not in the first version. Stream a cold baseline honestly; retain current blocking warm-cache behavior until trust can be represented without per-value guesswork. |
 | Add an async Rust runtime? | No. Use standard threads and synchronization in core. Async adaptation belongs at the Python boundary. |
-| Preserve the standalone CLI? | Yes. Existing one-shot behavior and output remain the default and retain full utility. Any later interactive mode is additive and calls the same public engine operations available to Rust and Python callers. |
+| Preserve the standalone CLI? | Yes. Existing one-shot behavior and output remain the default and retain full utility. The binary acquires no Python, async-runtime, or MetaBrowser dependency. Any later interactive mode is additive and calls the same public engine operations available to Rust and Python callers. |
 
 The engine architecture and the detailed Design and phase acceptance sections are
 normative for implementation.
@@ -95,14 +95,16 @@ draft while the MetaBrowser adoption and composed proof proceed.
 The no-gap observation and five-session golden beads are complete.
 The direct synchronous Python binding, typed public namespace, and installed-wheel
 lifecycle are implemented and pass the full local handoff, distribution, parity, and
-cross-target gates.
+cross-target gates. MetaBrowser commit `45266a8` now carries the revised bounded
+contract, provider-wide conformance registry, Python reference implementation,
+coordinator assembly, route integration, and full application gate.
 
 | Phase | Status | Evidence and next boundary |
 | --- | --- | --- |
 | Architecture and implementation map | Complete | The durable architecture, PR #44 and #47 reconciliation, direct-API correction, file/function map, test design, and reuse ledger are committed and reviewed. |
 | Phase 1: exact engine kernel | Complete | Checkpoints 1A through 1D passed their local gates and the cumulative cross-platform PR gate. |
 | Phase 2: opened-root vertical slice | Complete | The native lifecycle and five transparent session goldens are green. The direct `PyO3` handle, exhaustive value conversion, immutable `fdu.opened` API, typed errors, GIL-detached operations, strict downstream typing fixture, installed-wheel lifecycle, source distribution, CLI parity, and cross-target lint all pass. |
-| Phase 3: MetaBrowser adoption | Checkpoint 3B in progress | MetaBrowser commit `2743064` measures the unchanged contract against the exact fdu wheel from `0583a1a`; `9cf1d87` makes resource refusal terminal and readable; `0a6ddbb` separates scope, selection, execution policy, and classification input while keeping the full application and CLI gates green. Lifecycle, paging, count, and work values are next. |
+| Phase 3: MetaBrowser adoption | Checkpoint 3C in progress | MetaBrowser commit `2743064` measures the unchanged contract against the exact fdu wheel from `0583a1a`; `45266a8` completes the shared bounded contract and Python oracle. fdu already maintains portable path and child order and has handle-local continuations; the approved semantic-tally and recency structures and the thin production adapter are next. |
 | Phase 4: composed proof | Not started | Cross-provider conformance, route and lifecycle integration, installed-wheel proof, and final performance and size acceptance remain required. |
 
 The implementation epic has completed the native and Python Phase 2 dependency chain.
@@ -618,8 +620,8 @@ core:
 | MetaBrowser query | fdu adapter operation |
 | --- | --- |
 | Entry | Lookup |
-| Directory | Tree page at depth one |
-| Filtered tree | Tree page plus roll-up/report at the same version |
+| Directory | Tree page at the requested render depth |
+| Filtered tree | One complete-or-limit selected-tree report at the requested render depth |
 | Roll-up | Roll-up/report |
 | Navigation | Roll-up/report with maintained aggregate indexes |
 | Recent | Bounded ranked report |
@@ -1295,6 +1297,54 @@ reached about 13 MB of traced Python allocation.
 A source-only checkout measured 791 rows and about 98 ms.
 These are recorded observations, not adoption claims.
 
+#### Approved native index set
+
+Checkpoint 3A justifies two structures that Phase 2 already implemented and two
+additions. They live together in one optional, commit-maintained `ServingIndexes`
+allocation enabled by `OpenedIndex`; detached indexes, one-shot Python calls, and the
+standalone CLI neither populate nor retain them.
+This is the complete Phase 3C index set.
+A later structure requires new measurement and a plan amendment rather than being added
+because a projection happens to expose the same noun.
+
+| Structure | Measured work removed | Update and memory cost | Rejected alternative |
+| --- | --- | --- | --- |
+| Existing `portable_entries` canonical-path order | Removes the 8,830-row and 412,836-path-byte materialization and every catalog full-result sort. Flat continuations resume at the first unvisited key. | In an opened root only, one portable path string and one tree-map entry per representable retained non-root entry; insert and remove are part of the exact commit. | Do not rebuild and sort a Python list, retain a second catalog image, or add a separate catalog-order index containing the same keys. |
+| Existing `portable_children` directory/nondirectory partitions | Removes reconstruction of 470 child buckets and their repeated sorts. Tree continuations resume within the exact parent and partition. | In an opened root only, one child-name map entry per representable retained child plus bounded omission evidence; insert and remove are part of the exact commit. | Do not reconstruct parent buckets in the adapter or retain a second hierarchy. |
+| One maintained semantic classification tally per directory partition | Removes the navigation-wide classification pass and the file-type aggregate passes in roll-up. Each file contributes one registry type identity; canonical extension, family, group, and preset rows derive from bounded type and raw-extension tally maps rather than separate per-dimension indexes. Exact basenames used by declared presets retain one bounded classifier-key tally because an extension tally cannot distinguish `Makefile` from another extensionless file. | One interned type identity per file and one type-tally row per distinct type under each ancestor, in both existing `all` and `unignored` partitions; an exact-basename key exists only for names declared by the active registry. The independent reference model must prove add, update, kind change, ignore reclassification, removal, and subtree removal. | Do not add separate canonical-extension, family, group, preset, or navigation caches. They multiply ancestor-update and memory cost while carrying values derivable from the type tally and immutable registry. |
+| One global portable-file recency order keyed by modification time, canonical path, and entry identity | Removes the recent-query full-result sort and supplies bounded cumulative recency counts for navigation windows. | One ordered key per representable regular file; metadata update, kind change, and removal replace it in the same exact commit. Ignored state stays on the entry and is tested while traversing, avoiding two time indexes. | Do not retain a sorted Python image, one index per recency window, or per-directory time indexes before a measured subtree-recency client exists. |
+
+Three proposed structures are explicitly rejected:
+
+- **No second catalog index.** `portable_entries` already is catalog order.
+  Catalog predicates scan that order under `max_work`, stop counting at `count_cap`, and
+  never sort or materialize the unreturned suffix.
+- **No arbitrary-filter index.** The conjunction space for filename, type, time, size,
+  ignored state, and subtree scope is combinatorial.
+  Filtered tree performs one bounded native selection and aggregation pass against one
+  committed version. It either returns a complete result within its row and work limits
+  or a typed limit; it does not retain a historic result image merely to make an
+  application route pageable.
+- **No navigation cache.** Navigation derives bounded rows from maintained root
+  partitions, semantic tallies, and recency order.
+  The adapter formats those aggregate rows but never loops over entry rows.
+
+The filtered-tree paging field in MetaBrowser commit `45266a8` is therefore provisional
+and must be removed before the native provider lands.
+MetaBrowser’s route accumulates every provider page before returning one bounded
+response, so paging did not bound the route’s final memory or output.
+A complete-or-limit provider projection is simpler and honest: it avoids a retained
+selected-row image, a root rescan on every page, and an unbounded breadth-first
+continuation frontier.
+
+The standalone binary is an independent acceptance denominator for this index work.
+The serving structures live in `fdu-core` and are available through `OpenedIndex`, but
+the existing command parser, detached `Index`, and one-shot renderer do not allocate or
+maintain them. The Phase 3C gate repeats the complete CLI golden corpus and records
+stripped bytes, gzip bytes, cold startup, one-shot scan time and peak memory,
+`cargo tree`, default-feature state, and `--no-default-features`; a regression is a
+design failure, not an adapter tradeoff.
+
 #### Checkpoint 3B: Joint Contract and Reference Provider
 
 - [x] Pass immutable registry content, derive provider identity from parsed content,
@@ -1303,17 +1353,17 @@ These are recorded observations, not adoption claims.
 - [x] Update the Python reference provider so the injected registry drives filters,
   navigation tallies, and rollups, and resource refusal remains terminal, readable, and
   non-expanding.
-- [ ] Align lifecycle and issue values, make row orders exact, add honest count and work
+- [x] Align lifecycle and issue values, make row orders exact, add honest count and work
   bounds, and remove exact page remainders from the provider contract.
-- [ ] Update the Python reference provider to implement the revised lifecycle,
+- [x] Update the Python reference provider to implement the revised lifecycle,
   work-limit, count, and page contracts.
-- [ ] Update coordinator and route assembly to use bounded continuation safety and
+- [x] Update coordinator and route assembly to use bounded continuation safety and
   coherent aggregate totals without reintroducing filesystem or aggregation ownership.
-- [ ] Gate the revised Python provider and all existing routes before adding fdu.
+- [x] Gate the revised Python provider and all existing routes before adding fdu.
 
 #### Checkpoint 3C: Native Indexes and Thin Adapter
 
-- [ ] Add path-ordered tree and flat-entry continuations backed by the bounded
+- [x] Add path-ordered tree and flat-entry continuations backed by the bounded
   handle-local table.
 - [ ] Complete the existing fdu query indexes needed for filtered tree, navigation,
   recent, catalog, and diagnostics without per-request Python aggregation.
@@ -1577,7 +1627,7 @@ No Phase 2 bead starts if a one-shot surface differs without a reviewed correcti
 | File or function | Change | Gate |
 | --- | --- | --- |
 | New `opened/read.rs` `read`, `lookup`, `tree_page`, `flat_page`, `rollup_report`, `diagnostics` | Capture one guard/version/state boundary and return projections in request order. Charge rows visited, returned, and maintained-index work. Never do filesystem I/O or a full sort under the guard. | `fdu-r7s7`: coherent mixed projections, three-valued absence, portable incomplete directories, exact/capped totals, row/work bounds, current report equivalence. |
-| `index.rs` maintained indexes | Maintain portable path order and the minimal global/per-directory timestamp, extension, canonical-extension, family/group, and partition structures needed by the approved projections. Each update is part of the exact commit and reversible on removal. | Reference-model comparison, tally/index conservation, resource and memory counters. Add only indexes justified by Phase 3A; until then Phase 2 may expose only the minimal lookup/tree/roll-up slice. |
+| `index.rs` maintained indexes | Move Phase 2 portable path order and direct-child partitions into an optional `ServingIndexes` allocation enabled only by `OpenedIndex`. Add one per-partition semantic type tally plus declared exact-basename classifier keys, and one global portable-file recency order there. Reuse the base index’s raw-extension and `all`/`unignored` roll-ups. Derive canonical-extension, family, group, preset, and navigation rows at the read boundary; add no duplicate dimension or catalog index. Each serving-index update is part of the exact commit and reversible on removal. | `fdu-ixhy`: independent reference-model comparison, tally/index conservation, exact add/update/kind-change/reclassification/removal behavior, resource and memory counters, measured opened-root commit cost, and proof that a detached index and one-shot CLI allocate no serving state. |
 | New `opened/journal.rs` `JournalWait::{notify_commit, poll, reset_at, close}` plus `Index::since` | Retain exact commits once in the index, validate opened-root session and sequence, wait on a condition variable, return idle without moving the cursor, distinguish consumer reset, and wake on close. No copied commit store or subscriber queue. | `fdu-ngnm`: detached `since` and opened polling return the same commit range; immediate, blocking, timeout, state-only, slow consumer, floor, future/foreign, close, cancellation, and bounded-memory cases; extract `fad3d2f`, `1e1c207`, `44e79c3`, `eaae030`. |
 | `scan.rs` `normalize_subtree`, new `normalize_refresh_paths`, reconciliation functions | Generalize the sound PR #47 `d19b0ce` algorithms to a bounded path set and one conditional exact commit stream. Return accepted/rejected paths and the committed journal range. | `fdu-3za7`: canonical validation, duplicate and descendant collapse, missing/non-directory widening, control files, budget refusal, overlap with discovery/watch, and exact receipt. |
 | `watch.rs` plus `watch/scripted_events.rs` | Separate capture from verification. Capture before baseline where supported, buffer bounded hints, report overflow/gaps, reconcile, and use the opened-root commit path for the final state transition to `watching`. | `fdu-9jzp`: scripted before/during/after baseline events, overflow, registration gap, final reconciliation, live mutation, disabled-watch behavior, and deterministic shutdown. |
