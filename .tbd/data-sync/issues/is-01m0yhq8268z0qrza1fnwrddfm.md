@@ -3,9 +3,9 @@ type: is
 id: is-01m0yhq8268z0qrza1fnwrddfm
 title: Complete the opened-root session goldens and contract coverage gate
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 11
+version: 12
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - opened-root-rewrite
@@ -14,9 +14,9 @@ dependencies:
     target: is-01m0y1sf2nph021wtx28p8ahxh
 parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 created_at: 2026-08-26T08:06:55.813Z
-updated_at: 2026-08-27T03:06:37.788Z
-closed_at: 2026-08-27T01:48:23.090Z
-close_reason: "Completed in b3cb609: all review findings and suggestions were implemented, the five opened-root session goldens and coverage gate landed, make check passed on the exact tree, and macOS/Windows cross-lint passed."
+updated_at: 2026-08-27T03:14:06.664Z
+closed_at: 2026-08-27T03:14:06.650Z
+close_reason: "Completed at 86f64eb: the five deterministic opened-root session goldens, independent-model and contract-coverage gates, closed normalization vocabulary, named-only updates, and cross-platform portability fixes are complete. The exact-tree make check passed, and GitHub Actions run 33035356756 passed all 19 checks across macOS, Linux, and Windows."
 resolution: null
 duplicate_of: null
 ---
