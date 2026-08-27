@@ -5,7 +5,7 @@ title: Implement the opened-root inventory engine rewrite
 kind: epic
 status: in_progress
 priority: 1
-version: 40
+version: 41
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -49,11 +49,11 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-08-26T00:56:09.456Z
-updated_at: 2026-08-27T03:14:49.585Z
+updated_at: 2026-08-27T03:57:23.636Z
 started_at: 2026-08-26T01:54:35.977Z
 ---
 Implement the clean opened-root and streaming design from the linked plan in merge-sized slices from current main. Preserve the one-shot engine and CLI defaults; first establish exact commits and ownership, then the minimal opened-root lifecycle, then adopt it through MetaBrowser's provider conformance boundary.
 
 ## Notes
 
-Status at PR #48 checkpoint 86f64eb on 2026-08-26: Phase 1 and the complete native Phase 2 dependency chain are implemented. OpenedIndex ownership, progressive discovery, coherent bounded reads, exact refresh, the no-gap observation handoff, and the five-session transparent contract proof are complete; implementation-review findings F1-F15 and S1-S3 are closed. The exact-tree make check passes and GitHub Actions run 33035356756 passed all 19 checks across macOS, Linux, and Windows. Next dependency: fdu-bnsk, the synchronous Python surface, followed by unchanged-contract MetaBrowser measurement, joint provider work, composed integration, and final performance/size acceptance. PR #48 remains draft.
+Status after planning reconciliation: native Phase 2 and its five session goldens are complete and green at fdu PR #48 head 86f64eb (GitHub Actions run 33035356756, all 19 checks). Remaining Python, unchanged-contract MetaBrowser spike, joint contract, reference provider, native indexes, thin adapter, cross-provider semantics, installed-wheel product proof, and final acceptance are now decomposed into commit-sized child beads under their checkpoint parents. Next executable slice is fdu-seku under fdu-bnsk; MetaBrowser spike branch codex/fdu-opened-root-e2e-spike is pinned to PR #74 head 3183888 and waits for the Python checkpoint.
