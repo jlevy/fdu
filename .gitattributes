@@ -1,3 +1,4 @@
 *.json text eol=lf
+*.golden text eol=lf
 tests/golden/** text eol=lf
 tests/golden/fixtures/**/*.tar.gz binary
