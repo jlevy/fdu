@@ -31,9 +31,9 @@ pub(super) struct SessionTrace {
 impl SessionTrace {
     pub(super) fn new(name: &'static str, root: &Path) -> Self {
         let mut aliases = BTreeMap::new();
-        aliases.insert(root.display().to_string(), "$ROOT");
+        insert_path_alias(&mut aliases, root, "$ROOT");
         if let Ok(canonical) = std::fs::canonicalize(root) {
-            aliases.insert(canonical.display().to_string(), "$ROOT");
+            insert_path_alias(&mut aliases, &canonical, "$ROOT");
         }
         Self {
             name,
@@ -46,9 +46,9 @@ impl SessionTrace {
     }
 
     pub(super) fn alias_path(&mut self, path: &Path, alias: &'static str) {
-        self.aliases.insert(path.display().to_string(), alias);
+        insert_path_alias(&mut self.aliases, path, alias);
         if let Ok(canonical) = std::fs::canonicalize(path) {
-            self.aliases.insert(canonical.display().to_string(), alias);
+            insert_path_alias(&mut self.aliases, &canonical, alias);
         }
     }
 
@@ -145,6 +145,7 @@ impl SessionTrace {
             value = value.replace(path, alias);
         }
         value = value.replace("/private$ROOT", "$ROOT");
+        value = normalize_debug_path_separators(value, std::path::MAIN_SEPARATOR);
         for (session, alias) in &self.sessions {
             value = value.replace(session, alias);
         }
@@ -160,6 +161,52 @@ impl SessionTrace {
         value = replace_integer_after(value, "newest_mtime_ns: Some(", "[TIME]");
         value = replace_integer_after(value, "kind: Dir, attrs: Attrs { size: ", "[DIR_SIZE]");
         value
+    }
+}
+
+fn insert_path_alias(
+    aliases: &mut BTreeMap<String, &'static str>,
+    path: &Path,
+    alias: &'static str,
+) {
+    let rendered = path.display().to_string();
+    aliases.insert(rendered.clone(), alias);
+    aliases.insert(debug_string_contents(&rendered), alias);
+}
+
+fn debug_string_contents(value: &str) -> String {
+    let quoted = format!("{value:?}");
+    quoted[1..quoted.len() - 1].to_owned()
+}
+
+fn normalize_debug_path_separators(value: String, separator: char) -> String {
+    if separator == '\\' { value.replace("\\\\", "/") } else { value }
+}
+
+#[cfg(test)]
+mod normalization_tests {
+    use super::*;
+
+    #[test]
+    fn path_aliases_cover_native_and_debug_escaped_spellings() {
+        let path = Path::new(r"\\?\C:\Temp\root");
+        let rendered = path.display().to_string();
+        let mut aliases = BTreeMap::new();
+
+        insert_path_alias(&mut aliases, path, "$ROOT");
+
+        assert_eq!(aliases.get(&rendered), Some(&"$ROOT"));
+        assert_eq!(aliases.get(&debug_string_contents(&rendered)), Some(&"$ROOT"));
+    }
+
+    #[test]
+    fn windows_debug_path_separators_become_portable_once() {
+        let rendered = r#"Commit { path: "target\\leaf.txt" }"#.to_owned();
+
+        assert_eq!(
+            normalize_debug_path_separators(rendered, '\\'),
+            r#"Commit { path: "target/leaf.txt" }"#
+        );
     }
 }
 
