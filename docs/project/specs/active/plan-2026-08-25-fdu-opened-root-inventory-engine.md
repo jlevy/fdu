@@ -1214,6 +1214,22 @@ Phase 2 validation evidence:
   The new surface adds no dependency or lockfile change and does not alter the command
   line’s defaults or output.
 
+The Python cost was isolated by building the clean pre-binding checkpoint `00cce1a` and
+the clean binding checkpoint `fa85812` with the same Apple Silicon release toolchain.
+The CLI’s raw size is byte-for-byte unchanged; the six-byte compressed variation is
+revision and layout compression noise rather than an added command-line code path.
+
+| Artifact | Before | After | Delta |
+| --- | ---: | ---: | ---: |
+| Stripped release CLI | 2,771,296 bytes | 2,771,296 bytes | 0 |
+| Gzip-9 release CLI | 1,230,254 bytes | 1,230,260 bytes | +6 bytes |
+| CPython 3.12 stable-ABI macOS arm64 wheel | 1,209,989 bytes | 1,349,352 bytes | +139,363 bytes (11.5%) |
+| Extracted wheel payload | 2,456 KiB | 2,740 KiB | +284 KiB (11.6%) |
+
+The wheel delta is the complete typed opened-root surface and native conversion
+boundary. No package node, feature default, or standalone binary capability was added to
+pay for it.
+
 Acceptance for Phase 2:
 
 - a client can open a cold tree, render a shallow directory and roll-up before discovery
