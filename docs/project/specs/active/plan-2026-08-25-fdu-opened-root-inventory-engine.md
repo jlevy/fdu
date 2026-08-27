@@ -4,7 +4,8 @@
 
 **Author:** fdu project, with Codex review assistance
 
-**Status:** Active — Phase 3A measured; joint contract next
+**Status:** Active — Phase 3B scope and classification complete; lifecycle and queries
+next
 
 ## Overview
 
@@ -89,7 +90,7 @@ decisions, including the explicit delivery override recorded below.
 
 ## Current Implementation Status
 
-This status describes the current Phase 3A checkpoint on fdu PR #48. The PR remains
+This status describes the current Phase 3B checkpoint on fdu PR #48. The PR remains
 draft while the MetaBrowser adoption and composed proof proceed.
 The no-gap observation and five-session golden beads are complete.
 The direct synchronous Python binding, typed public namespace, and installed-wheel
@@ -101,7 +102,7 @@ cross-target gates.
 | Architecture and implementation map | Complete | The durable architecture, PR #44 and #47 reconciliation, direct-API correction, file/function map, test design, and reuse ledger are committed and reviewed. |
 | Phase 1: exact engine kernel | Complete | Checkpoints 1A through 1D passed their local gates and the cumulative cross-platform PR gate. |
 | Phase 2: opened-root vertical slice | Complete | The native lifecycle and five transparent session goldens are green. The direct `PyO3` handle, exhaustive value conversion, immutable `fdu.opened` API, typed errors, GIL-detached operations, strict downstream typing fixture, installed-wheel lifecycle, source distribution, CLI parity, and cross-target lint all pass. |
-| Phase 3: MetaBrowser adoption | Checkpoint 3A complete | MetaBrowser commit `2743064` measures the unchanged contract against the exact fdu wheel from `0583a1a`. Checkpoint 3B revises the joint contract and Python oracle from that evidence. |
+| Phase 3: MetaBrowser adoption | Checkpoint 3B in progress | MetaBrowser commit `2743064` measures the unchanged contract against the exact fdu wheel from `0583a1a`; `9cf1d87` makes resource refusal terminal and readable; `0a6ddbb` separates scope, selection, execution policy, and classification input while keeping the full application and CLI gates green. Lifecycle, paging, count, and work values are next. |
 | Phase 4: composed proof | Not started | Cross-provider conformance, route and lifecycle integration, installed-wheel proof, and final performance and size acceptance remain required. |
 
 The implementation epic has completed the native and Python Phase 2 dependency chain.
@@ -1296,12 +1297,16 @@ These are recorded observations, not adoption claims.
 
 #### Checkpoint 3B: Joint Contract and Reference Provider
 
-- [ ] Amend MetaBrowser’s provider contract so the registry content is an input,
-  discovery budget is execution policy with honest partial state, maximum depth is
-  selection, scope fields and state values are explicit, row orders are exact, count
-  bounds are honest, and page assembly does not require exact remainders.
-- [ ] Update the Python reference provider to use its injected registry and the revised
-  budget, identity, work-limit, and page contracts.
+- [x] Pass immutable registry content, derive provider identity from parsed content,
+  make discovery budget execution policy, move maximum depth to query selection, and
+  name the supported v1 filesystem scope explicitly.
+- [x] Update the Python reference provider so the injected registry drives filters,
+  navigation tallies, and rollups, and resource refusal remains terminal, readable, and
+  non-expanding.
+- [ ] Align lifecycle and issue values, make row orders exact, add honest count and work
+  bounds, and remove exact page remainders from the provider contract.
+- [ ] Update the Python reference provider to implement the revised lifecycle,
+  work-limit, count, and page contracts.
 - [ ] Update coordinator and route assembly to use bounded continuation safety and
   coherent aggregate totals without reintroducing filesystem or aggregation ownership.
 - [ ] Gate the revised Python provider and all existing routes before adding fdu.
