@@ -152,8 +152,8 @@ Presence uses three-valued knowledge:
 
 - `present` when the entry is retained;
 - `absent` only when the relevant directory coverage is complete;
-- `unknown` when discovery, a resource stop, an inaccessible boundary, or portable-path
-  loss prevents an absence claim.
+- `unknown` when discovery, a resource stop, or an inaccessible boundary prevents an
+  absence claim.
 
 Trust and coverage are separate.
 A complete cached value can be structurally complete but stale; a freshly discovered
@@ -527,15 +527,16 @@ other property, in any branch.
 Excluding ignored entries prunes the excluded directory’s whole subtree, not merely its
 row.
 
-Ordered pages are drawn from entries that have a canonical portable form, which requires
-every component to be valid UTF-8 — a native path is not obliged to be.
-Such entries are absent from every ordered page while keeping full native identity and
-their bytes in roll-ups, so ordered pages and native roll-ups answer over deliberately
-different populations.
-The omission is reported rather than silent, through an exact count, bounded escaped
-examples, and separate native and portable completeness.
-A directory without a portable form denies its whole subtree, because the form is built
-from every component.
+Every entry has a canonical portable name, so ordered pages and native roll-ups answer
+over one population.
+A native path need not be UTF-8, so exactly two kinds of byte are percent-escaped —
+those that do not decode, and `%` itself, whose escaping is what keeps the mapping
+injective. Nothing else changes, because the result is a JSON string and not a URL.
+
+A directory whose own name required escaping still lists its children, and a complete
+directory that does not hold a name answers `absent` rather than `unknown`, because
+nothing can be hiding in a set that cannot be listed.
+One completeness value therefore answers for every consumer.
 
 Page continuations are opaque identifiers into a bounded table owned by one opened root.
 A record contains the pinned version, normalized query identity, and native resumable

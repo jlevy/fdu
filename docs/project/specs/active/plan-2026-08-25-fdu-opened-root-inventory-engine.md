@@ -401,18 +401,44 @@ MetaBrowser inventory contract.
 The adapter is also the only place that translates fdu’s native relative-path identity
 to MetaBrowser’s canonical POSIX-relative strings.
 It validates that conversion once at the boundary and never creates aliases.
-Representable components become Unicode scalar strings joined by `/`; Windows native
-separators are structure, not path content.
-Invalid Unix byte sequences and Windows unpaired surrogates are unrepresentable.
+Components become Unicode scalar strings joined by `/`; Windows native separators are
+structure, not path content.
 
-Unrepresentable entries remain in native fdu facts and roll-ups.
-Portable row projections omit them and return a typed issue containing an exact count
-and bounded escaped examples.
-A portable directory with such children is incomplete even when native discovery is
-complete; lookup below that directory returns `unknown`, not `absent`, when the missing
-name could lie in the unrepresentable sibling set.
+**Every entry has a canonical name.** A native path is not obliged to be UTF-8 — Unix
+filenames are arbitrary non-NUL bytes and Windows filenames may hold unpaired surrogates
+— so exactly two kinds of byte are percent-escaped: those that do not decode, and `%`
+itself. Nothing else is touched, because the result is a JSON string rather than a URL:
+`café/naïve.txt` is unchanged, while `x` followed by `0xFF` becomes `x%FF`.
+
+Escaping `%` in every name is what makes the mapping injective, and it is not optional.
+A file named `caf%FF.txt` is valid UTF-8 and one named `caf` + `0xFF` + `.txt` is not;
+escaping only the undecodable byte gives both the same wire name, which is the aliasing
+failure of lossy conversion in better clothes.
+The price is that `100%.txt` transmits as `100%25.txt` — invisible wherever the adapter
+decodes, visible to anyone reading raw JSON, and the same property git’s quoted paths
+have.
+
+Because the encoding is total, ordered pages and native roll-ups answer over **one**
+population. A directory whose own name holds a stray byte still lists its children under
+that directory’s escaped name.
+A complete directory that does not hold a name answers `absent` rather than `unknown`,
+because nothing can be hiding in an unlistable set.
+One completeness flag suffices, since portable and native consumers now agree about
+which entries exist.
+
+This replaced a partial derivation that returned nothing for such a component.
+That version needed an omission count, bounded escaped examples, and a second
+completeness flag to describe what it could not name, and it left a directory reporting
+ten thousand files while paging it returned nine thousand nine hundred and ninety-eight
+— both answers correct, over different populations.
+Every mature system that meets this problem makes the derived name total instead: git’s
+quoted paths, Python’s surrogate escapes, and the `file://` URIs that LSP and the
+desktop file managers exchange.
+None of them tells a caller that a file has no name.
+
 The conformance packet includes invalid Unix bytes and Windows Unicode/separator cases,
-and verifies counts, portable completeness, issues, and knowledge state.
+and must pair a literal `%` with an undecodable byte in one corpus, since that pair is
+what a non-injective encoding collapses.
 
 ### Version, state, and knowledge
 
@@ -459,8 +485,8 @@ Entry lookup uses three-valued knowledge:
 
 - `present` when the entry is retained;
 - `absent` only when relevant coverage is complete;
-- `unknown` when a budget, failure, unsupported scope boundary, unrepresentable sibling
-  set, or unfinished discovery prevents an absence claim.
+- `unknown` when a budget, failure, unsupported scope boundary, or unfinished discovery
+  prevents an absence claim.
 
 Directory completeness is recorded separately from global coverage so a discovered
 subtree can be answered honestly before the full baseline is complete.
@@ -885,8 +911,9 @@ defend the current prototype contract.
   The reference already prunes, by skipping before extending its frontier; the contract
   has to say so, because filtering rows instead is an equally reasonable reading of an
   unstated rule.
-- Add the typed unrepresentable-path issue and portable-directory completeness rule.
-  Native roll-ups still include every retained entry.
+- Remove the unrepresentable-path issue and the second completeness flag.
+  The canonical name is total, so pages and roll-ups cover the same entries and one
+  completeness value answers for both.
 - Add a deterministic work budget to potentially scanning queries and a typed
   query-limit result. Output bounds alone do not protect event-loop latency.
 - Add an exact-or-capped count result.
@@ -1394,10 +1421,10 @@ because a projection happens to expose the same noun.
 
 | Structure | Measured work removed | Update and memory cost | Rejected alternative |
 | --- | --- | --- | --- |
-| Existing `portable_entries` canonical-path order | Removes the 8,830-row and 412,836-path-byte materialization and every catalog full-result sort. Flat continuations resume at the first unvisited key. | In an opened root only, one portable path string and one tree-map entry per representable retained non-root entry; insert and remove are part of the exact commit. | Do not rebuild and sort a Python list, retain a second catalog image, or add a separate catalog-order index containing the same keys. |
-| Existing `portable_children` directory/nondirectory partitions | Removes reconstruction of 470 child buckets and their repeated sorts. Tree continuations resume within the exact parent and partition. | In an opened root only, one child-name map entry per representable retained child plus bounded omission evidence; insert and remove are part of the exact commit. | Do not reconstruct parent buckets in the adapter or retain a second hierarchy. |
+| Existing `portable_entries` canonical-path order | Removes the 8,830-row and 412,836-path-byte materialization and every catalog full-result sort. Flat continuations resume at the first unvisited key. | In an opened root only, one portable path string and one tree-map entry per retained non-root entry; insert and remove are part of the exact commit. | Do not rebuild and sort a Python list, retain a second catalog image, or add a separate catalog-order index containing the same keys. |
+| Existing `portable_children` directory/nondirectory partitions | Removes reconstruction of 470 child buckets and their repeated sorts. Tree continuations resume within the exact parent and partition. | In an opened root only, one child-name map entry per retained child; insert and remove are part of the exact commit. | Do not reconstruct parent buckets in the adapter or retain a second hierarchy. |
 | One maintained semantic classification tally per directory partition | Removes the navigation-wide classification pass and the file-type aggregate passes in roll-up. Each file contributes one registry type identity; canonical extension, family, group, and preset rows derive from bounded type and raw-extension tally maps rather than separate per-dimension indexes. Exact basenames used by declared presets retain one bounded classifier-key tally because an extension tally cannot distinguish `Makefile` from another extensionless file. | One interned type identity per file and one type-tally row per distinct type under each ancestor, in both existing `all` and `unignored` partitions; an exact-basename key exists only for names declared by the active registry. The independent reference model must prove add, update, kind change, ignore reclassification, removal, and subtree removal. | Do not add separate canonical-extension, family, group, preset, or navigation caches. They multiply ancestor-update and memory cost while carrying values derivable from the type tally and immutable registry. |
-| One global portable-file recency order keyed by modification time, canonical path, and entry identity | Removes the recent-query full-result sort and supplies bounded cumulative recency counts for navigation windows. | One ordered key per representable regular file; metadata update, kind change, and removal replace it in the same exact commit. Ignored state stays on the entry and is tested while traversing, avoiding two time indexes. | Do not retain a sorted Python image, one index per recency window, or per-directory time indexes before a measured subtree-recency client exists. |
+| One global portable-file recency order keyed by modification time, canonical path, and entry identity | Removes the recent-query full-result sort and supplies bounded cumulative recency counts for navigation windows. | One ordered key per regular file; metadata update, kind change, and removal replace it in the same exact commit. Ignored state stays on the entry and is tested while traversing, avoiding two time indexes. | Do not retain a sorted Python image, one index per recency window, or per-directory time indexes before a measured subtree-recency client exists. |
 
 Three proposed structures are explicitly rejected:
 
@@ -1440,7 +1467,7 @@ allocator bookkeeping.
 The insert checks this bound before advancing the identity or evicting a valid record,
 and any projection error restores the consumed record.
 The continuation request carries no second query, so query mismatch is deliberately
-unrepresentable rather than another public failure mode.
+escaped into its canonical name rather than raising another public failure mode.
 Tests prove retained filtered-query identity, constant structural resume work, single
 use, version pinning, foreign and evicted outcomes, underfunded retry, bound atomicity,
 and clear-on-close behavior.
@@ -1546,7 +1573,7 @@ browser uses, then produces the evidence required for a separate rollout decisio
   not only rows whose logical extension is already supplied.
 - [ ] Add cross-platform path fixtures for invalid Unix bytes, Windows separator
   normalization and unpaired surrogates, non-ASCII Unicode, and portable-directory
-  completeness around unrepresentable children.
+  completeness around children whose names need escaping.
 - [ ] Assert the exact tree and flat ordering contracts, exact maintained totals,
   explicit capped totals, and exhaustive state-value mapping in both providers.
 - [ ] Replay one recorded, verified observation script through both providers and
@@ -1571,8 +1598,8 @@ Acceptance for Phase 4:
 
 - both providers pass the same closed conformance registry;
 - complete settled responses and replay checkpoints agree exactly;
-- representable path rows, unrepresentable-path issues, roll-up counts, row order,
-  aggregate bounds, and state vocabulary agree on every platform fixture;
+- escaped path rows, roll-up counts, row order, aggregate bounds, and state vocabulary
+  agree on every platform fixture;
 - partial sessions agree on bounds and knowledge state without requiring the same
   concurrent retained prefix;
 - MetaBrowser performs no replacement walk, retained aggregation, or entry-replica
@@ -1830,7 +1857,7 @@ or selectable. Checkpoint 3C deletes the naive adapter when its thin replacement
 | --- | --- | --- |
 | `inventory_engine/contract.py` `InventoryConfig`, `__post_init__`, `inventory_scope_fingerprint` | Replace asserted registry fingerprint with immutable registry content; introduce `DiscoveryBudget`; move maximum depth to queries; name hidden, symlink, filesystem, and object-kind scope; version the new scope encoding; use provider-derived identities. | `fdu-m68r`: validation and byte-level identity cases, including non-ASCII and every field moving independently. |
 | `LifecyclePhase`, `CoverageReason`, `Coverage`, `Freshness`, `SourceKind`, `IndexState` | Align exactly with the architecture vocabulary and require exhaustive mapping tests. Rename `OPENING_CACHE` to `OPENING`; do not fold reasons. | Transition graph, state explanation, and cross-provider enum-closure tests. |
-| `WorkCounters`, `ReadRequest`, query and projection dataclasses | Add deterministic work limits and typed limit results; remove `remaining_rows`; add opaque `next_page`, portable-directory completeness and path issue, exact-or-capped count, and exact row-order documentation. | Bound validation, page conservation, version pin, unrepresentable path, capped total, and no-hidden-dimension tests. |
+| `WorkCounters`, `ReadRequest`, query and projection dataclasses | Add deterministic work limits and typed limit results; remove `remaining_rows`; add opaque `next_page`, one directory completeness value, exact-or-capped count, and exact row-order documentation. | Bound validation, page conservation, version pin, escaped path, capped total, and no-hidden-dimension tests. |
 | `InventoryHandle` and `InventoryBackend` protocols | Keep exactly `open` plus read, changes, refresh, prioritize, close. Specify one active change iterator and iterator-close versus handle-close behavior. | Structural protocol and lifecycle tests. |
 | `tests/test_inventory_provider_contract.py` | Replace exact-remainder assertions with the bounded assembly contract; expand the closed conformance registry for identities, states, paths, counts, order, paging, changes, refresh, cancellation, and close. | The revised Python provider must pass before the fdu backend is registered. |
 | `providers/python_inventory.py` constructor and `start` | Parse and retain the supplied registry, derive both identities, and bind one budget policy. Stop reading module-global classification state for provider answers. | `fdu-yv1o`: injected registries produce different answers and identities in one process. |
@@ -1858,7 +1885,7 @@ green.
 | --- | --- | --- |
 | fdu `index.rs` maintained-index mutation hooks | Add only indexes named by 3A, updated inside every exact commit and removed symmetrically. Likely candidates are portable path order, timestamp order, registry dimensions, fixed partitions, and navigation presets. | `fdu-hgnj`: model equality, conservation, memory, commit cost, and one named 3A work reduction per structure. |
 | fdu `opened/continuation.rs` `create`, `resume`, `evict`, `clear` | Store version, normalized fdu-native query identity, and last visited structural position. Use a bounded opaque ID; do not encode or sign the record. | Extract traversal/work cases from `a5a7ae3`, `91b6895`, and `051e7cc`; port only failure tests from token commits. |
-| fdu `opened/read.rs` tree, flat, and ranked projections | Traverse the maintained structures in the three stated contract orders and resume without a full selection pass. Add the query’s maximum depth and ignored-subtree pruning to the tree projection, and serve ranked recency from the maintained timestamp-ordered set rather than a request-time sort over every entry. Return separate exact/capped aggregates. | Stable-version page conservation, proportional work, stale/foreign/evicted, unrepresentable path, and close cleanup; plus the packet’s order cases, which must distinguish level order from pre-order and exercise a recency tie rather than assume one. |
+| fdu `opened/read.rs` tree, flat, and ranked projections | Traverse the maintained structures in the three stated contract orders and resume without a full selection pass. Add the query’s maximum depth and ignored-subtree pruning to the tree projection, and serve ranked recency from the maintained timestamp-ordered set rather than a request-time sort over every entry. Return separate exact/capped aggregates. | Stable-version page conservation, proportional work, stale/foreign/evicted, escaped path, and close cleanup; plus the packet’s order cases, which must distinguish level order from pre-order and exercise a recency tie rather than assume one. |
 | fdu `opened/continuation.rs` tree cursor | Store the depth-bounded stack of `(parent portable path, last emitted child name)` pairs that enumerates a level lazily. Do not store a frontier: it is unbounded in directory width, and re-deriving it per page makes paging one wide level quadratic in pages. | Resume cost proportional to depth rather than to rows already emitted, measured by paging one wide level to exhaustion; record size bounded by maximum depth. |
 | MetaBrowser new `providers/fdu_inventory.py` `FduInventoryBackend`, private handle | Map config, paths, eight queries, state, rows, work, and impact. Retain the native handle and bridge only. | `fdu-2xfp`: no walker/index/aggregate/fingerprint recipe; every query is one bounded native read. |
 | `fdu_inventory.py` private change bridge | Run bounded provider operations with `asyncio.to_thread`. Give one handle one dedicated poll worker, a one-slot locked mailbox, and an `asyncio.Event` woken with `loop.call_soon_threadsafe`. Keep one result pending and do not poll or advance the local cursor until consumption. Iterator `aclose` joins the bridge only; handle `close` then joins the bridge and native opened root through `to_thread`. | Cancellation within one poll interval, later read after iterator close, concurrent bounded reads, second-iterator busy error, reset after backpressure, event-loop closure, and close during poll. |
