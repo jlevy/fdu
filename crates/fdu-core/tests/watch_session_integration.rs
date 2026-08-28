@@ -114,25 +114,30 @@ fn an_idle_tree_yields_nothing_and_costs_nothing() {
     fs::write(dir.path().join("still.txt"), b"unchanged").expect("seed");
     let mut session = session(dir.path(), Selection::default(), vec![ViewSpec::Summary]);
 
-    // Drain first. A backend may still be delivering events for the seed write, which
-    // happened just before the watcher was bound — that is arrival latency, not activity,
-    // and asserting through it makes the test fail on a loaded machine rather than on a
-    // real defect.
-    // Requires a *sustained* quiet period, not one empty poll. A single `None` can simply
-    // mean the backend has not delivered the seed event yet, and breaking on it lets that
-    // late batch land in the assertion below — a flake that looks like a polling bug.
-    let settle = Instant::now() + Duration::from_secs(3);
-    let mut quiet_polls = 0;
-    while Instant::now() < settle && quiet_polls < 3 {
-        if session.next_batch(Duration::from_millis(200)).expect("batch").is_none() {
-            quiet_polls += 1;
-        } else {
-            quiet_polls = 0;
-        }
-    }
+    // Establish quiet by *positive confirmation*, not by waiting for silence.
+    //
+    // Waiting for silence cannot work here, and the previous two attempts at it failed
+    // for the same reason in different disguises. The seed write lands just before the
+    // watcher binds, so its events may still be in flight; a run of empty polls proves
+    // only that none has arrived *yet*, and on a loaded machine one can arrive after
+    // three consecutive quiet polls and land in the assertion below — reported as "an
+    // idle tree must produce no batches", which is a statement about the product
+    // contract and not about what went wrong.
+    //
+    // Writing a sentinel and waiting for its own change is deterministic: the event is
+    // one this test caused, so its arrival is a fact rather than a timeout, and it
+    // cannot be delivered before the seed events that preceded it. Once it lands, the
+    // backend has demonstrably drained everything older, and any further batch is
+    // genuinely spurious — which is exactly the claim the assertion wants to make.
+    fs::write(dir.path().join("sentinel.txt"), b"sentinel").expect("sentinel");
+    assert!(
+        wait_for(&mut session, |change| change.path.ends_with("sentinel.txt")).is_some(),
+        "the backend never delivered the sentinel within {SETTLE:?}, so the tree was never \
+         known to be drained; this is a delivery timeout, not a claim about idleness"
+    );
 
-    // Now nothing is changing, so nothing should arrive. A polling implementation would
-    // still return work here.
+    // Nothing has changed since the sentinel, so nothing should arrive. A polling
+    // implementation would still return work here.
     for _ in 0..4 {
         assert!(
             session.next_batch(Duration::from_millis(250)).expect("batch").is_none(),

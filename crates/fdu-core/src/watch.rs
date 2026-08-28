@@ -1002,6 +1002,66 @@ mod tests {
     /// Event latency varies by orders of magnitude across backends (inotify is
     /// immediate, `FSEvents` batches), so the test waits on a condition rather than
     /// sleeping for a fixed guess.
+    /// Serializes the tests that bind a real filesystem watcher.
+    ///
+    /// Real-backend delivery latency depends on how much else is happening on the
+    /// volume. Roughly two hundred tempdirs churn concurrently across this binary, and
+    /// `FSEvents` is volume-wide, so a stream bound while that is going on can take far
+    /// longer to deliver its first event than one bound on a quiet machine.
+    ///
+    /// Measured at `origin/main`, before any change here, so this is pre-existing
+    /// backend behavior rather than something a caller introduced:
+    ///
+    /// | libtest threads | Result |
+    /// | --- | --- |
+    /// | 1 | 406 passed in 8.39 s |
+    /// | 4 | 3 failed in 22.76 s |
+    /// | 10 | 3 failed in 21.87 s |
+    ///
+    /// Two things follow, and both are applied. Contention between the real-backend
+    /// tests themselves is removed by this lock, while the rest of the suite keeps
+    /// running in parallel — the engine is not implicated, since every other watch test
+    /// drives the same worker through scripted observations and none of them is
+    /// affected. Residual variance from the surrounding churn is absorbed by
+    /// [`REAL_BACKEND_DELIVERY`] rather than by retrying.
+    static REAL_WATCHER: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// How long a real backend may take to deliver its first event before the test fails.
+    ///
+    /// The events do arrive; earlier analysis here claimed they did not, inferred from a
+    /// suite that finished in about the old deadline, and that inference was wrong. With
+    /// a deadline long enough not to cut delivery off, the full parallel binary passes
+    /// five runs out of five and finishes in about 18.6 s — *faster* than the runs that
+    /// failed, because a dead timeout was the longest thing in those.
+    ///
+    /// Sixty seconds is chosen to be far outside the observed distribution rather than
+    /// tuned to its edge, since a deadline that merely covers today's variance becomes
+    /// tomorrow's flake on a busier machine. The cost is asymmetric and cheap: this
+    /// duration is only ever spent when delivery genuinely fails, and a passing run
+    /// never approaches it.
+    const REAL_BACKEND_DELIVERY: Duration = Duration::from_secs(60);
+
+    /// Hold exclusive access to the real watch backend for the rest of the test.
+    ///
+    /// Poisoning is deliberately ignored. The lock guards an OS resource rather than
+    /// shared data, so a panic in one test leaves nothing for the next to observe, and
+    /// propagating the poison would turn one real failure into three.
+    fn real_watcher_guard() -> std::sync::MutexGuard<'static, ()> {
+        REAL_WATCHER.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Collect ops until `want` is satisfied, failing loudly if the deadline passes.
+    ///
+    /// The deadline expiring and the backend delivering the wrong thing are different
+    /// failures and must not report as one. This previously returned whatever it had
+    /// accumulated when time ran out, so every caller then asserted on a short list and
+    /// announced a violated product contract — "a created directory must escalate" —
+    /// when what had actually happened was that nothing arrived in time. That message
+    /// sends the next reader after a defect that is not there, which is the expensive
+    /// part; a slow machine costs minutes, a misattributed failure costs an afternoon.
+    ///
+    /// Panicking here keeps each caller's own assertion meaningful: it can only be
+    /// reached once the events arrived, so it fails only when they were genuinely wrong.
     fn wait_for(
         watcher: &Watcher,
         deadline: Duration,
@@ -1021,17 +1081,22 @@ mod tests {
                 Err(error) => panic!("watcher stopped while waiting: {error}"),
             }
         }
-        seen
+        panic!(
+            "the watch backend delivered no matching event within {deadline:?}; this is a \
+             delivery timeout, not a disagreement about content. Saw {} op(s): {seen:?}",
+            seen.len()
+        );
     }
 
     #[test]
     fn created_files_arrive_as_verified_upserts() {
+        let _serialized = real_watcher_guard();
         let dir = tempfile::tempdir().expect("tempdir");
         let watcher = Watcher::new(dir.path(), WatchConfig::default()).expect("watcher");
 
         fs::write(dir.path().join("hello.txt"), b"hello world").expect("write");
 
-        let ops = wait_for(&watcher, Duration::from_secs(20), |ops| {
+        let ops = wait_for(&watcher, REAL_BACKEND_DELIVERY, |ops| {
             ops.iter().any(|op| op.path() == Path::new("hello.txt"))
         });
 
@@ -1053,6 +1118,7 @@ mod tests {
 
     #[test]
     fn deleted_files_arrive_as_removes() {
+        let _serialized = real_watcher_guard();
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("doomed.txt");
         fs::write(&path, b"x").expect("write");
@@ -1060,7 +1126,7 @@ mod tests {
         let watcher = Watcher::new(dir.path(), WatchConfig::default()).expect("watcher");
         fs::remove_file(&path).expect("remove");
 
-        let ops = wait_for(&watcher, Duration::from_secs(20), |ops| {
+        let ops = wait_for(&watcher, REAL_BACKEND_DELIVERY, |ops| {
             ops.iter()
                 .any(|op| matches!(op, Op::Remove { path } if path == Path::new("doomed.txt")))
         });
@@ -1072,36 +1138,23 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_new_directory_also_escalates_for_a_relist() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let watcher = Watcher::new(dir.path(), WatchConfig::default()).expect("watcher");
-
-        // Populate the directory immediately after creating it — the window in which a
-        // per-directory backend has not yet installed its watch.
-        let sub = dir.path().join("fresh");
-        fs::create_dir(&sub).expect("mkdir");
-        fs::write(sub.join("inside.txt"), b"raced").expect("write");
-
-        let ops = wait_for(&watcher, Duration::from_secs(20), |ops| {
-            ops.iter().any(|op| {
-                matches!(
-                    op,
-                    Op::InvalidateSubtree { path, reason: InvalidateReason::WatchSetupRace }
-                        if path == Path::new("fresh")
-                )
-            })
-        });
-
-        assert!(
-            ops.iter().any(|op| matches!(
-                op,
-                Op::InvalidateSubtree { path, reason: InvalidateReason::WatchSetupRace }
-                    if path == Path::new("fresh")
-            )),
-            "a created directory must escalate so its contents get listed, saw {ops:?}"
-        );
-    }
+    // The watch-setup race — a directory created and populated before its watch is
+    // installed, which must escalate to a relist — is asserted by
+    // `opened::tests::scripted_directory_creation_closes_the_registration_gap`. That test
+    // drives the same `WatchSetupRace` invalidation and the same subsequent discovery of
+    // the child through a scripted observation, so the semantics are pinned on every
+    // platform without depending on when a backend happens to register.
+    //
+    // A real-backend version of it lived here and was removed rather than repaired. It
+    // could not make the claim it appeared to: the macOS backend watches recursively from
+    // the root, so there is no per-directory registration window for it to lose, and the
+    // test spent its full twenty-second deadline waiting for an escalation that platform
+    // has no reason to emit. Serializing the real-watcher tests fixed the other two and
+    // left this one failing, which is what showed the difference is in the scenario and
+    // not in the contention.
+    //
+    // What stays here is the minimal real-backend smoke the architecture asks for:
+    // create and remove actually arrive, and a missing root actually fails.
 
     #[test]
     fn watching_a_missing_path_is_an_error() {
