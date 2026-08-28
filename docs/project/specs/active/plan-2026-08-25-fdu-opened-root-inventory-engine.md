@@ -92,6 +92,14 @@ decisions, including the explicit delivery override recorded below.
 
 This status describes the current Phase 3C checkpoint on fdu PR #48. The PR remains
 draft while the native projections, MetaBrowser adoption, and composed proof proceed.
+The registry parser and additive `EntrySelection` landed at `328ca65`, and the three
+ordered-page contracts are now stated in
+[Row order is stated here, not inferred from an implementation](#row-order-is-stated-here-not-inferred-from-an-implementation)
+after implementation work found that none of them was written down: ordered pages were
+specified as prose that did not separate level order from pre-order, ranked recency left
+its tie to a stable sort’s input order, and MetaBrowser’s `contract.py` documented no
+row order at all. Implementing against an unstated order is what the cross-provider
+replay would have caught late, so the contract moved first.
 The no-gap observation and five-session golden beads are complete.
 The direct synchronous Python binding, typed public namespace, and installed-wheel
 lifecycle are implemented and pass the full local handoff, distribution, parity, and
@@ -652,18 +660,80 @@ The rules are:
 - the table and each stored record are bounded;
 - no historical index image is retained merely to satisfy a stale page.
 
-Ordering is part of the joint contract:
+#### Row order is stated here, not inferred from an implementation
 
-- a tree page is parent-first.
-  Within each directory, directories precede nondirectories, and each partition is
-  ordered by canonical component UTF-8 bytes;
-- a flat or catalog page is lexicographic by the complete canonical POSIX-relative path
-  encoded as UTF-8 bytes.
+Ordering is part of the joint contract, and every order below is **total**: two
+providers answering the same query at the same version return the same rows in the same
+sequence, with no tie left to insertion order, hash iteration, or a stable sort’s input
+order. An order a provider merely happens to produce is not a contract.
+This section states the orders because the earlier prose did not: “parent-first” does
+not distinguish level order from pre-order, and the two emit different sequences for any
+tree deeper than one level.
+
+**Tree and directory pages are breadth-first level order.** All children of the
+requested path are emitted, then all children of those directories, until the query’s
+maximum depth is reached or the page bound is met.
+Within one parent, directories precede nondirectories, and each partition is ordered by
+canonical component UTF-8 bytes.
+
+Level order rather than pre-order, for three reasons:
+
+- it matches how the index fills.
+  Discovery is parent-first in bounded batches, so a level-ordered page is served from
+  the knowledge that exists earliest, while a pre-order page descends into the subtree
+  least likely to be discovered yet;
+- it keeps truncation honest.
+  A pre-order page cut at its row bound can return one directory and its first thousand
+  descendants, leaving the caller unable to tell whether the parent has two entries or
+  two thousand. Level order returns the complete shallow picture first, so what a bound
+  withheld is visible as depth rather than hidden as breadth;
+- the reference provider already implements it, so this documents behavior rather than
+  changing an oracle.
+
+The cost is a more intricate cursor, and that cost is paid in the engine rather than by
+the caller. A level’s frontier is every directory one level above it, which is unbounded
+and therefore cannot be stored in a record capped at 64 KiB; re-deriving it per page
+would make paging one wide level quadratic in the number of pages.
+So a tree continuation stores a **stack of at most `max_depth`
+`(parent portable path, last emitted child name)` pairs**, which enumerates the frontier
+lazily. Resume is one `portable_children` lookup per level: state proportional to depth,
+work proportional to depth, and no frontier materialized.
+A continuation that would exceed the depth bound is a defect, not a truncation.
+
+**Flat and catalog pages are lexicographic by the complete canonical POSIX-relative
+path, encoded as UTF-8 bytes.** A flat continuation stores the last emitted portable
+path; that path alone determines the position.
+
+**Ranked recent rows are ordered by modification time descending, then by canonical
+POSIX-relative path ascending.** The path is unique within one index, so the pair is
+already total and no third key is carried.
+Recency ranking is exactly these two keys: no provider may reorder ranked rows by
+ignored state, size, or any other property, and in particular the top *n* rows are the
+*n* newest under this order whether or not the match count exceeds the row bound.
+A rule that applies only when a page overflows produces two different contracts under
+one name and the caller cannot tell which it received.
+
+**`include_ignored: false` prunes the subtree, not merely the row.** An excluded
+directory contributes neither itself nor any descendant.
+This is what a browser means by hiding ignored content, it is cheaper than filtering
+rows a caller will never see, and stating it prevents one provider pruning while another
+filters.
+
+**Ordered pages are drawn from representable entries.** Tree, flat, catalog, and recent
+rows come from the maintained portable structures, so an entry whose native path has no
+canonical representation is absent from all four.
+It is not silently dropped: it remains in native facts and roll-ups, and its count and
+examples reach the caller through the portable-path issue and per-directory completeness
+already defined above.
+Ordered projections and native roll-ups therefore answer over deliberately different
+populations, and a conformance case pins that difference rather than letting it read as
+a defect.
 
 The tree projection pays through the retained hierarchy and two bounded child
 partitions. The flat projection pays through a commit-maintained ordered index of
 representable portable paths; it never materializes and sorts the full catalog per
-request. Unrepresentable native paths follow the explicit partial-row semantics above.
+request. The recent projection pays through the maintained timestamp-ordered set, which
+is what makes a ranked slice proportional to the row bound instead of to the tree.
 Other resumable sort orders are deferred until a measured client need justifies their
 own maintained index.
 
@@ -797,9 +867,24 @@ defend the current prototype contract.
 - Remove `remaining_rows` from directory, filtered-tree, and catalog page projections.
   Keep `next_page` as opaque provider state.
   Move UI-visible totals to an explicit aggregate projection at the same version.
-- Pin tree and flat row order to the two exact definitions above.
-  Both providers return that order directly; the coordinator never resorts assembled
-  pages.
+- Write the three row orders defined above into `contract.py` itself, beside the query
+  and projection dataclasses they govern: breadth-first level order for tree and
+  directory pages, canonical POSIX path order for flat and catalog pages, and
+  `(mtime descending, canonical POSIX path ascending)` for ranked recent rows.
+  The contract currently states none of them, so each provider’s order is discoverable
+  only by reading its implementation, and a tie is settled by whichever sort the
+  provider happened to use.
+  Both providers return the stated order directly; the coordinator never resorts
+  assembled pages.
+- Delete the ranked-recency reordering in `_recent_projection` that moves ignored
+  entries behind unignored ones when the match count exceeds the row bound.
+  It applies in one branch and not the other, so `include_ignored` silently selects
+  between two different ranking contracts.
+  `include_ignored` filters; it does not rank.
+- State that `include_ignored: false` prunes the excluded directory’s whole subtree.
+  The reference already prunes, by skipping before extending its frontier; the contract
+  has to say so, because filtering rows instead is an equally reasonable reading of an
+  unstated rule.
 - Add the typed unrepresentable-path issue and portable-directory completeness rule.
   Native roll-ups still include every retained entry.
 - Add a deterministic work budget to potentially scanning queries and a typed
@@ -1403,7 +1488,7 @@ design failure, not an adapter tradeoff.
   file recency through exact insertion, metadata update, kind change, ignore
   reclassification, and subtree removal; prove detached indexes and snapshots retain
   none of that state, and retain a release-build commit-cost and structural-row probe.
-- [ ] Parse the actual File Rollup v3 registry once at opened-root setup, derive its
+- [x] Parse the actual File Rollup v3 registry once at opened-root setup, derive its
   identity from validated content, and expose registry-owned classification and browsing
   taxonomy without a TOML, Python, or MetaBrowser dependency in the standalone binary.
   Compose the established one-shot `Selection` inside a new additive `EntrySelection`
@@ -1411,8 +1496,16 @@ design failure, not an adapter tradeoff.
   required by bounded native reads.
   Do not add fields to the existing public struct or create adapter-only filtering
   semantics.
+- [x] State the three row orders in the joint contract before implementing against them.
+  Ordered pages were specified only as prose that did not distinguish level order from
+  pre-order, ranked recency left its tie to a stable sort’s input order, and
+  `contract.py` documented no row order at all.
+  A guess is invisible until cross-provider replay, which is the failure mode this
+  rewrite exists to remove.
 - [ ] Complete the existing fdu query indexes needed for filtered tree, navigation,
-  recent, catalog, and diagnostics without per-request Python aggregation.
+  recent, catalog, and diagnostics without per-request Python aggregation, traversing
+  the stated orders with the depth-bounded cursor stack rather than materializing a
+  frontier.
 - [ ] Implement a thin `FduInventoryBackend`/handle mapping the eight MetaBrowser
   queries and fdu impact domains to the existing application contract.
 - [ ] Package fdu as an explicit optional provider and make missing or incompatible
@@ -1765,7 +1858,8 @@ green.
 | --- | --- | --- |
 | fdu `index.rs` maintained-index mutation hooks | Add only indexes named by 3A, updated inside every exact commit and removed symmetrically. Likely candidates are portable path order, timestamp order, registry dimensions, fixed partitions, and navigation presets. | `fdu-hgnj`: model equality, conservation, memory, commit cost, and one named 3A work reduction per structure. |
 | fdu `opened/continuation.rs` `create`, `resume`, `evict`, `clear` | Store version, normalized fdu-native query identity, and last visited structural position. Use a bounded opaque ID; do not encode or sign the record. | Extract traversal/work cases from `a5a7ae3`, `91b6895`, and `051e7cc`; port only failure tests from token commits. |
-| fdu `opened/read.rs` tree and flat projections | Traverse the maintained structures in the two exact contract orders and resume without a full selection pass. Return separate exact/capped aggregates. | Stable-version page conservation, proportional work, stale/foreign/evicted, unrepresentable path, and close cleanup. |
+| fdu `opened/read.rs` tree, flat, and ranked projections | Traverse the maintained structures in the three stated contract orders and resume without a full selection pass. Add the query’s maximum depth and ignored-subtree pruning to the tree projection, and serve ranked recency from the maintained timestamp-ordered set rather than a request-time sort over every entry. Return separate exact/capped aggregates. | Stable-version page conservation, proportional work, stale/foreign/evicted, unrepresentable path, and close cleanup; plus the packet’s order cases, which must distinguish level order from pre-order and exercise a recency tie rather than assume one. |
+| fdu `opened/continuation.rs` tree cursor | Store the depth-bounded stack of `(parent portable path, last emitted child name)` pairs that enumerates a level lazily. Do not store a frontier: it is unbounded in directory width, and re-deriving it per page makes paging one wide level quadratic in pages. | Resume cost proportional to depth rather than to rows already emitted, measured by paging one wide level to exhaustion; record size bounded by maximum depth. |
 | MetaBrowser new `providers/fdu_inventory.py` `FduInventoryBackend`, private handle | Map config, paths, eight queries, state, rows, work, and impact. Retain the native handle and bridge only. | `fdu-2xfp`: no walker/index/aggregate/fingerprint recipe; every query is one bounded native read. |
 | `fdu_inventory.py` private change bridge | Run bounded provider operations with `asyncio.to_thread`. Give one handle one dedicated poll worker, a one-slot locked mailbox, and an `asyncio.Event` woken with `loop.call_soon_threadsafe`. Keep one result pending and do not poll or advance the local cursor until consumption. Iterator `aclose` joins the bridge only; handle `close` then joins the bridge and native opened root through `to_thread`. | Cancellation within one poll interval, later read after iterator close, concurrent bounded reads, second-iterator busy error, reset after backpressure, event-loop closure, and close during poll. |
 | `factory.py` `InventoryProvider`, `create_inventory_backend`; `pyproject.toml`; `uv.lock` | Register explicit `fdu` selection and optional dependency. Missing or incompatible package is a typed startup failure; Python remains default and no automatic fallback exists. | Clean install without fdu, exact-revision wheel install with fdu, lock/supply-chain gate. |
@@ -2116,8 +2210,19 @@ It contains:
 - one compact corpus covering logical/canonical extensions, groups, the fixed ignore
   partition, non-ASCII names, invalid Unix bytes, Windows separators and unpaired
   surrogates;
-- the eight application queries, exact tree/flat ordering, exact/capped totals, and
-  portable completeness;
+- the eight application queries, exact/capped totals, and portable completeness;
+- **order cases that a tie alone can fail.** An order is only proved by inputs whose
+  answer differs between the plausible readings, so the packet carries, for each of the
+  three stated orders, a fixture that distinguishes it from its most likely alternative:
+  a tree at least three levels deep and wide at the top, whose row sequence differs
+  between level order and pre-order; a directory whose children mix directories and
+  nondirectories whose names interleave, so a dirs-first partition is distinguishable
+  from one lexicographic pass; several files sharing one modification time, so a recency
+  tie-break is exercised rather than assumed; an ignored directory holding the newest
+  file in the corpus, so ranking cannot be reordered by ignored state and pruning is
+  distinguishable from row filtering; and one corpus whose match count exceeds the row
+  bound and one whose does not, read with the same query, so a rule that fires only on
+  overflow cannot pass unnoticed;
 - a scripted operation sequence with expected state, change cursor, invalidation, and
   settled read after every step;
 - lifecycle, budget, reset, refresh, cancellation, and close failures.
