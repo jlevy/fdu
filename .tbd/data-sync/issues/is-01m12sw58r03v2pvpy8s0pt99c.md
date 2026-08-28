@@ -3,16 +3,20 @@ type: is
 id: is-01m12sw58r03v2pvpy8s0pt99c
 title: "Port the scripted-event path guard fix from PR #47 ledger row 5ace86c"
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - opened-root-rewrite
 dependencies: []
 parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 created_at: 2026-08-27T23:46:23.120Z
-updated_at: 2026-08-28T00:15:03.278Z
+updated_at: 2026-08-28T00:20:39.241Z
+closed_at: 2026-08-28T00:20:39.229Z
+close_reason: null
+resolution: null
+duplicate_of: null
 ---
 PR #47 commit 5ace86c replaced a path guard in crates/fdu-core/src/watch/scripted_events.rs that did not guard. The plan's PR #47 implementation ledger row for 5ace86c says: 'Port each Windows-only correction with its test when the affected code moves; do not cherry-pick the accumulated diff.'
 
