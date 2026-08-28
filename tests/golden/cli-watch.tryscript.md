@@ -76,6 +76,19 @@ The capture needs a tree of its own: the change stream above leaves its own behi
 a directory in it, and this section’s expectations are written against a tree holding
 nothing but the seed file.
 
+One record is excluded from the capture rather than pinned here.
+The engine reconciles the root when its optimistic apply loop loses three times — it
+reads the clock, verifies a sample with filesystem I/O outside the index lock, then
+commits only if the clock has not moved — and that reconciliation renders as an empty
+path followed by `invalidate`. Doing the I/O under the lock or letting a stale sample
+win would both be worse, so this is correct behavior rather than a defect, and the
+product is not changed to hide it.
+Whether it happens at all depends on how commits interleave, which is not something a
+golden can pin.
+What this section pins is where the separator falls, so the capture drops
+those lines and leaves the change vocabulary to the stream section above, whose helper
+matches each record by exact path and operation and is therefore already immune.
+
 ```console
 $ node -e "require('node:fs').mkdirSync('repaint'); require('node:fs').writeFileSync('repaint/seed.txt', 'seed')"
 ? 0

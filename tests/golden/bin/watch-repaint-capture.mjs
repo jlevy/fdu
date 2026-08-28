@@ -129,6 +129,27 @@ function waitFor(matches, description) {
 
 const isSummaryRow = (line) => line.includes("1 file, 0 directories");
 
+// A change record the engine may legitimately add, which this section does not pin.
+//
+// Rendered as text it is `"\tinvalidate"` — an empty path, because the root is what was
+// invalidated. The reason is `WatchContention`, which the engine emits after its
+// optimistic apply loop loses three times: it reads the clock, verifies the sample with
+// filesystem I/O outside the index lock, then commits only if the clock has not moved.
+// When concurrent commits keep moving it, reconciling the root is the correct answer,
+// because the alternatives are doing that I/O under the lock or letting a stale sample
+// win.
+//
+// It is not the operating system dropping events. That is a different reason
+// (`WatchOverflow`) and it is not what fires here; the distinction matters because it
+// decides whether the fix belongs in the product or in this capture.
+//
+// So the product is left alone, and the line is dropped here instead: whether the loop
+// loses three times depends on how commits interleave, which is not something a golden
+// can pin. This section's contract is where the separator falls. The sibling
+// `watch-capture` helper pins the change vocabulary, and it needs no filter because it
+// matches each record by exact path and operation.
+const isInvalidation = (line) => line.endsWith("\tinvalidate");
+
 try {
   // Waiting for the initial report whole is what proves the watcher is bound before the
   // change is made; skipping it would race the scan and lose the event.
@@ -148,7 +169,10 @@ try {
   // Everything from the initial report through the first complete repaint. Printed as
   // captured so the golden shows the boundary in place rather than a claim about it.
   const end = lines.lastIndexOf(closing) + 1;
-  for (const line of lines.slice(0, end)) console.log(line);
+  for (const line of lines.slice(0, end)) {
+    if (isInvalidation(line)) continue;
+    console.log(line);
+  }
   // The separator belongs between repaints, never above the first, so where it is not is
   // as much of the contract as where it is.
   if (lines.slice(0, beforeChange).some((line) => line.startsWith("────"))) {

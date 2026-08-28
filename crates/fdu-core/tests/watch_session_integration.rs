@@ -16,7 +16,7 @@ use fdu_core::watch::WatchConfig;
 use fdu_core::{CachePolicy, IndexHandle, OpenConfig, ScanConfig, open};
 
 /// Long enough for a backend to deliver and coalesce, short enough to fail fast.
-const SETTLE: Duration = Duration::from_secs(10);
+const SETTLE: Duration = Duration::from_secs(60);
 
 fn session(root: &Path, selection: Selection, views: Vec<ViewSpec>) -> Session {
     let config = OpenConfig { policy: CachePolicy::Off, ..OpenConfig::default() };

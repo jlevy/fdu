@@ -1,4 +1,4 @@
-//! The OS-native watch layer: turning an unreliable event stream into verified observations.
+//! Th OS-native watch layer: turning an unreliable event stream into verified observations.
 //!
 //! This module's whole job is that conversion. Filesystem events are **hints, not
 //! truth**, and the ways they lie are documented per platform:
