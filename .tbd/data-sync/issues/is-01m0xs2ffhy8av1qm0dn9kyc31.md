@@ -5,7 +5,7 @@ title: Implement the opened-root inventory engine rewrite
 kind: epic
 status: in_progress
 priority: 1
-version: 41
+version: 42
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -46,10 +46,11 @@ child_order_hints:
   - is-01m0ydh0b0dw4xhf37y4gxm1jb
   - is-01m0yhq8268z0qrza1fnwrddfm
   - is-01m10afnckpkf0m2fnhgw3sx1d
+  - is-01m12sw58r03v2pvpy8s0pt99c
 hold: null
 hold_until: null
 created_at: 2026-08-26T00:56:09.456Z
-updated_at: 2026-08-27T03:57:23.636Z
+updated_at: 2026-08-28T00:15:03.333Z
 started_at: 2026-08-26T01:54:35.977Z
 ---
 Implement the clean opened-root and streaming design from the linked plan in merge-sized slices from current main. Preserve the one-shot engine and CLI defaults; first establish exact commits and ownership, then the minimal opened-root lifecycle, then adopt it through MetaBrowser's provider conformance boundary.
