@@ -519,10 +519,17 @@ can return one directory and a thousand of its descendants while leaving the cal
 unable to tell whether the parent held two entries or two thousand.
 
 Flat and catalog rows are ordered by complete canonical POSIX-relative UTF-8 bytes.
-Ranked recency is modification time descending, then that same canonical path ascending;
-the path is unique within one index, so the pair is total and no third key is carried.
-Ranking is those two keys only: no surface reorders ranked rows by ignored state or any
-other property, in any branch.
+Ranked recency has a selection order and a presentation order, and they differ.
+Rows are selected by ignored state, then modification time descending, then canonical
+path ascending; the page that survives is returned in modification time descending, then
+that same path ascending.
+The path is the final key in both, which is what makes each total.
+
+Ignored entries rank last during selection because installing dependencies writes
+thousands of files at once, and pure recency would answer “what changed recently” with a
+page of vendored output.
+The demotion applies in every branch: applying it only when a page overflows gives one
+query name two ranking contracts.
 
 Excluding ignored entries prunes the excluded directory’s whole subtree, not merely its
 row.

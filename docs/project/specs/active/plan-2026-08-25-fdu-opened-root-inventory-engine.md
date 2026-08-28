@@ -730,14 +730,27 @@ A continuation that would exceed the depth bound is a defect, not a truncation.
 path, encoded as UTF-8 bytes.** A flat continuation stores the last emitted portable
 path; that path alone determines the position.
 
-**Ranked recent rows are ordered by modification time descending, then by canonical
-POSIX-relative path ascending.** The path is unique within one index, so the pair is
-already total and no third key is carried.
-Recency ranking is exactly these two keys: no provider may reorder ranked rows by
-ignored state, size, or any other property, and in particular the top *n* rows are the
-*n* newest under this order whether or not the match count exceeds the row bound.
-A rule that applies only when a page overflows produces two different contracts under
-one name and the caller cannot tell which it received.
+**Ranked recency answers two ordering questions, and both are part of the contract.**
+Rows are *selected* by ignored state, then modification time descending, then canonical
+POSIX-relative path ascending.
+The page that survives is *returned* in modification time descending, then that same
+path ascending, so a caller sees the newest first among rows chosen for relevance.
+The path is the final key in both, because it is unique within one index and that is
+what makes each order total.
+
+Ignored entries rank last during selection deliberately.
+Installing dependencies writes thousands of files at once, and pure recency answers
+“what have I been working on” with a page of `node_modules` and none of the caller’s own
+work. An earlier draft of this section forbade exactly this, reasoning that ranking
+should depend on nothing but time; the consuming application already had a test
+asserting the demotion by name, and it is right.
+Structural tidiness is not a reason to delete behavior a product depends on.
+
+What was genuinely wrong is narrower and still holds: the demotion applied only when the
+match count exceeded the row bound, so one query name carried two ranking contracts and
+which one a caller received depended on the size of the corpus.
+It applies in every branch now.
+Beyond these keys nothing reorders ranked rows — not size, not type, not depth.
 
 **`include_ignored: false` prunes the subtree, not merely the row.** An excluded
 directory contributes neither itself nor any descendant.
