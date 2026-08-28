@@ -3603,12 +3603,23 @@ fn normalize(path: &Path) -> Option<Vec<&OsStr>> {
     Some(parts)
 }
 
-/// Whether a path can be represented by an index keyed on relative paths.
+/// Whether a path is relative and never ascends, so joining it cannot leave a base.
+///
+/// Every component must be `Normal` or `CurDir`. That rejects `..`, a root, and a
+/// Windows prefix, which is both what an index keyed on relative paths can store and
+/// what keeps a joined path inside the directory it was joined to.
+///
+/// Deliberately *not* named for representability. This project already uses
+/// "representable" for a different question — whether a native path has a canonical
+/// UTF-8 portable form, which is what decides whether an entry appears in portable
+/// projections. That predicate is [`crate::opened::read::portable_path`]. A path can
+/// satisfy one and fail the other in either direction, so one word for both invites
+/// exactly the confusion it caused.
 ///
 /// The same rule as [`normalize`] without building anything: validation asks a yes or
 /// no question, and answering it by constructing a component list and dropping it was
 /// pure allocation.
-pub(crate) fn path_is_representable(path: &Path) -> bool {
+pub(crate) fn path_is_relative_normal(path: &Path) -> bool {
     path.components().all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
 }
 
@@ -3643,7 +3654,7 @@ fn prepare_observation(observation: &Observation) -> crate::Result<PreparedObser
 }
 
 fn canonical_relative_path(path: &Path) -> crate::Result<PathBuf> {
-    if !path_is_representable(path) {
+    if !path_is_relative_normal(path) {
         return Err(crate::Error::PathEscapesRoot(path.to_path_buf()));
     }
     Ok(normalize(path).expect("representable paths normalize").into_iter().collect::<PathBuf>())

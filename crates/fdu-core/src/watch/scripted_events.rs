@@ -70,7 +70,7 @@ fn event_for(
     let mut paths = Vec::with_capacity(wanted);
     for argument in arguments {
         let relative = Path::new(argument);
-        if !crate::index::path_is_representable(relative) {
+        if !crate::index::path_is_relative_normal(relative) {
             return Err(format!(
                 "line {line}: {argument:?} escapes the watch root; script paths are relative to \
                  it so a script stays portable"
