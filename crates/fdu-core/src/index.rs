@@ -351,7 +351,7 @@ pub(crate) struct PortableChildren {
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 struct ServingIndexes {
     portable_children: BTreeMap<PathBuf, PortableChildren>,
-    portable_entries: BTreeMap<String, EntryId>,
+    portable_entries: BTreeMap<crate::PortablePath, EntryId>,
     portable_omitted: u64,
     portable_examples: Vec<EntryId>,
     recent_files: BTreeSet<RecentKey>,
@@ -375,7 +375,7 @@ struct InternedSemanticPartitions {
 #[derive(Clone, PartialEq, Eq, Debug)]
 struct RecentKey {
     mtime_ns: i64,
-    portable_path: String,
+    portable_path: crate::PortablePath,
     id: EntryId,
 }
 
@@ -1978,7 +1978,7 @@ impl Index {
         self.serving.as_ref()?.portable_children.get(path)
     }
 
-    pub(crate) fn portable_entries(&self) -> &BTreeMap<String, EntryId> {
+    pub(crate) fn portable_entries(&self) -> &BTreeMap<crate::PortablePath, EntryId> {
         &self.serving.as_ref().expect("opened-root reads require serving indexes").portable_entries
     }
 
@@ -3987,9 +3987,54 @@ mod tests {
         index.apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("replace") }]));
         assert_serving_indexes(&index);
         assert_eq!(
-            index.portable_entries().keys().cloned().collect::<Vec<_>>(),
+            index.portable_entries().keys().map(crate::PortablePath::as_str).collect::<Vec<_>>(),
             vec!["dir", "dir/a"]
         );
+    }
+
+    /// `PortablePath::to_native_relative_path` inverts the derivation for every entry the
+    /// portable index holds, so the read projections may rebuild a path instead of walking
+    /// the arena for one.
+    ///
+    /// The equivalence is a property of the derivation being partial: an entry reaches
+    /// `portable_entries` only when every component is already valid UTF-8, so nothing is
+    /// escaped and the round trip is the identity. Making the encoding total would break
+    /// exactly this test, which is the point of having it — the failure names the callers
+    /// that must change rather than letting a rebuilt path quietly address the wrong file.
+    #[test]
+    fn entries_rebuild_to_their_native_paths() {
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+            "/root",
+            ScanScope::default(),
+            crate::classify::TypeRegistry::compiled_shared(),
+            DEFAULT_JOURNAL_CAPACITY,
+        );
+        index.apply_ok(&Observation::new(vec![
+            upsert("dir", EntryKind::Dir, Attrs::default()),
+            upsert("dir/plain.txt", EntryKind::File, file_attrs(1, 1)),
+            // Non-ASCII is representable and must round trip unchanged.
+            upsert("café", EntryKind::Dir, Attrs::default()),
+            upsert("café/naïve.txt", EntryKind::File, file_attrs(2, 2)),
+            upsert("日本語.md", EntryKind::File, file_attrs(3, 3)),
+            // A literal percent is ordinary today. Under a total escaping encoding it
+            // would be the character that has to be escaped, so pin it now: this row is
+            // what fails first if the derivation stops being the identity.
+            upsert("100%.txt", EntryKind::File, file_attrs(4, 4)),
+            upsert("a b", EntryKind::Dir, Attrs::default()),
+            upsert("a b/c d.txt", EntryKind::File, file_attrs(5, 5)),
+        ]));
+
+        let entries: Vec<_> =
+            index.portable_entries().iter().map(|(portable, id)| (portable.clone(), *id)).collect();
+        assert!(entries.len() >= 7, "fixture must populate the portable index");
+
+        for (portable, id) in entries {
+            assert_eq!(
+                Some(portable.to_native_relative_path()),
+                index.path_of(id),
+                "rebuilt path must equal the arena's native path for {portable:?}"
+            );
+        }
     }
 
     #[test]

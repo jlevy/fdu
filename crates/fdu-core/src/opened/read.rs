@@ -1,6 +1,7 @@
 //! Coherent bounded projections over one opened root.
 
 use std::collections::BTreeMap;
+use std::ops::Bound;
 use std::path::{Component, Path, PathBuf};
 
 use super::OpenedIndex;
@@ -127,7 +128,7 @@ pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadRes
                             shape,
                             page,
                             version,
-                            Some(&next),
+                            Some(next.as_str()),
                             &mut work,
                         ),
                     };
@@ -501,8 +502,10 @@ fn flat_projection(
 ) -> Result<ProjectionResult> {
     validate_flat_selection(selection)?;
     let entries = index.portable_entries();
-    let iterator: Box<dyn Iterator<Item = (&String, &EntryId)> + '_> = match start {
-        Some(start) => Box::new(entries.range(start.to_string()..)),
+    let iterator: Box<dyn Iterator<Item = (&crate::PortablePath, &EntryId)> + '_> = match start {
+        Some(start) => {
+            Box::new(entries.range::<str, _>((Bound::Included(start), Bound::Unbounded)))
+        }
         None => Box::new(entries.iter()),
     };
     let mut rows = Vec::with_capacity(page.limit);
@@ -519,9 +522,9 @@ fn flat_projection(
                 rows_visited: page.max_work,
             }));
         }
-        let native = PathBuf::from(portable);
+        let native = portable.to_native_relative_path();
         let mut row = index.entry_value_of(*id, &native);
-        let name = portable.rsplit('/').next().unwrap_or(portable);
+        let name = portable.as_str().rsplit('/').next().unwrap_or(portable.as_str());
         let candidate = crate::query::Candidate {
             relative: &native,
             name,
@@ -600,9 +603,9 @@ fn aggregate_projection(
                 rows_visited: max_work,
             });
         }
-        let native = PathBuf::from(portable);
+        let native = portable.to_native_relative_path();
         let row = index.entry_value_of(*id, &native);
-        let name = portable.rsplit('/').next().unwrap_or(portable);
+        let name = portable.as_str().rsplit('/').next().unwrap_or(portable.as_str());
         let candidate = crate::query::Candidate {
             relative: &native,
             name,
@@ -639,6 +642,8 @@ fn collect_children(
     rows: &mut Vec<crate::EntryValue>,
     spent: &mut u64,
 ) -> Option<ChildPosition> {
+    // Child names, not portable paths: one component, no separators, already relative to
+    // `parent`. Keeping them `String` is what makes `parent.join(name)` below correct.
     let iterator: Box<dyn Iterator<Item = (&String, &EntryId)> + '_> = match start {
         Some(start) => Box::new(children.range(start.to_string()..)),
         None => Box::new(children.iter()),
@@ -758,7 +763,18 @@ fn encode_path_example(
     crate::PortablePathExample { encoding, encoded_hex, truncated }
 }
 
-pub(crate) fn portable_path(path: &Path) -> Option<String> {
+/// Derive the canonical POSIX-relative form of a native path, when it has one.
+///
+/// `None` means some component is not valid UTF-8, so no portable name exists and the
+/// entry cannot enter any ordered projection. The whole decision is the `?` below: a
+/// native path is bytes, and nothing obliges those bytes to be UTF-8.
+///
+/// The partiality is deliberate today — fdu declines to invent a name it cannot reverse.
+/// It is also the reason ordered pages and native roll-ups answer over different
+/// populations, which every consumer then has to reconcile. Making the encoding total by
+/// escaping the offending bytes would collapse the two, and is tracked as a design
+/// decision rather than assumed here.
+pub(crate) fn portable_path(path: &Path) -> Option<crate::PortablePath> {
     let mut portable = String::new();
     for component in path.components() {
         let Component::Normal(component) = component else {
@@ -770,5 +786,5 @@ pub(crate) fn portable_path(path: &Path) -> Option<String> {
         }
         portable.push_str(component);
     }
-    Some(portable)
+    Some(crate::PortablePath::new(portable))
 }

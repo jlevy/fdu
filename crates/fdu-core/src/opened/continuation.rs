@@ -33,7 +33,7 @@ pub(super) enum ContinuationKind {
         selection: Box<crate::query::EntrySelection>,
         shape: crate::RowShape,
         /// First complete portable path the resumed page should visit.
-        next: String,
+        next: crate::PortablePath,
     },
 }
 
@@ -117,7 +117,7 @@ impl ContinuationRecord {
                 path.as_os_str().as_encoded_bytes().len().saturating_add(next.name.len())
             }
             ContinuationKind::Flat { selection, next, .. } => {
-                selection.retained_heap_bytes().saturating_add(next.capacity())
+                selection.retained_heap_bytes().saturating_add(next.retained_heap_bytes())
             }
         };
         std::mem::size_of::<Self>().saturating_add(kind)
@@ -159,7 +159,7 @@ mod tests {
                     kind: ContinuationKind::Flat {
                         selection: Box::new(crate::query::EntrySelection::default()),
                         shape: crate::RowShape::Compact,
-                        next: "first".to_owned(),
+                        next: crate::PortablePath::new("first".to_owned()),
                     },
                 },
             )
@@ -173,7 +173,9 @@ mod tests {
                     kind: ContinuationKind::Flat {
                         selection: Box::new(crate::query::EntrySelection::default()),
                         shape: crate::RowShape::Compact,
-                        next: "x".repeat(crate::MAX_CONTINUATION_RECORD_BYTES),
+                        next: crate::PortablePath::new(
+                            "x".repeat(crate::MAX_CONTINUATION_RECORD_BYTES),
+                        ),
                     },
                 },
             )
@@ -200,7 +202,7 @@ mod tests {
                             ..crate::query::EntrySelection::default()
                         }),
                         shape: crate::RowShape::Compact,
-                        next: "next".to_owned(),
+                        next: crate::PortablePath::new("next".to_owned()),
                     },
                 },
             )

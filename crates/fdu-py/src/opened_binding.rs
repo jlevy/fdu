@@ -548,7 +548,10 @@ fn partition_rollup_dict(
 fn entry_dict<'py>(py: Python<'py>, entry: &EntryValue) -> PyResult<Bound<'py, PyDict>> {
     let out = PyDict::new(py);
     out.set_item("path", entry.path.as_os_str())?;
-    out.set_item("portable_path", &entry.portable_path)?;
+    out.set_item(
+        "portable_path",
+        entry.portable_path.as_ref().map(fdu_core::PortablePath::as_str),
+    )?;
     out.set_item("kind", entry_kind_label(entry.kind))?;
     out.set_item("attrs", attrs_dict(py, entry.attrs)?)?;
     out.set_item("ignored", entry.ignored)?;

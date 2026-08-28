@@ -658,6 +658,103 @@ pub enum PortablePathEncoding {
     PlatformBytes,
 }
 
+/// A retained entry's canonical POSIX-relative name, in the form ordered pages use.
+///
+/// **This is not the filename.** It is a derived name, and the two differ whenever a
+/// component is not valid UTF-8. Never open, stat, or compare a filesystem path against
+/// one of these: [`EntryValue::path`] is the identity, and this is the wire form the
+/// portable projections are keyed and ordered by. The newtype exists so that mistake is
+/// a compile error rather than a convention, because a bare `String` here reads exactly
+/// like a path and every test tree an author thinks to write is pure UTF-8, so the
+/// substitution passes locally and fails on a real disk.
+///
+/// Not every entry has one. Deriving it requires every component to be valid UTF-8,
+/// which a native path is not obliged to be: Unix filenames are arbitrary non-NUL bytes
+/// and Windows filenames may hold unpaired surrogates. An entry without one keeps its
+/// full native identity and its bytes still count in roll-ups, but it is absent from
+/// `portable_entries`, from the maintained recency order, and from its parent's portable
+/// child partitions, so no tree, flat, catalog, or recent page can return it. That
+/// omission is reported rather than silent, through [`PortablePathIssue`] and the
+/// separate native and portable completeness flags on [`TreePage`].
+///
+/// Because a portable path is built from every component, a directory without one denies
+/// its whole subtree: one stray byte in a directory name hides everything beneath it from
+/// portable consumers while leaving all of it in native facts. This is why the two
+/// populations differ by design, and why a conformance case pins the difference instead
+/// of letting a reader take it for a defect.
+///
+/// Distinct from [`crate::index::path_is_relative_normal`], which asks the unrelated
+/// structural question of whether a path is relative and never ascends. A path can
+/// satisfy either and fail the other.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PortablePath(String);
+
+impl PortablePath {
+    /// Wrap an already-canonical portable string.
+    pub(crate) fn new(path: String) -> Self {
+        Self(path)
+    }
+
+    /// The canonical POSIX-relative form, for transport and ordering only.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Consume the wrapper, yielding the canonical POSIX-relative form.
+    pub fn into_string(self) -> String {
+        self.0
+    }
+
+    /// Heap payload retained when a continuation record owns this path.
+    ///
+    /// Named to match `Selection::retained_heap_bytes` and
+    /// `EntrySelection::retained_heap_bytes`, because all three feed one cap and a
+    /// component that accounts for itself differently is how a bound silently stops
+    /// holding.
+    pub(crate) fn retained_heap_bytes(&self) -> usize {
+        self.0.capacity()
+    }
+
+    /// Rebuild the native relative path this was derived from.
+    ///
+    /// Sound **only** for a value taken from a maintained portable structure, and only
+    /// while the derivation stays partial. An entry reaches `portable_entries` exactly
+    /// when every component is valid UTF-8, so for those entries the derivation is
+    /// injective and this inverts it: the components are unchanged, and `Path` accepts
+    /// `/` as a separator on every supported platform.
+    ///
+    /// It is **not** sound for an arbitrary portable path, which is why this is a named
+    /// method rather than a `From` impl and why the newtype blocks the bare conversion.
+    /// Making the encoding total by escaping non-UTF-8 bytes would break it silently —
+    /// a file named `caf%FF.txt` and one named `caf<0xFF>.txt` would rebuild to the same
+    /// native path — so that change must revisit every caller. `entries_rebuild_to_their
+    /// _native_paths` pins the current equivalence against the arena.
+    pub(crate) fn to_native_relative_path(&self) -> std::path::PathBuf {
+        std::path::PathBuf::from(&self.0)
+    }
+}
+
+impl std::borrow::Borrow<str> for PortablePath {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for PortablePath {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+// Transparent on purpose. These values appear in session goldens, where the reader is
+// checking which path a page returned; a wrapper name repeated on every row would be
+// noise in the one place the value has to stay legible.
+impl std::fmt::Debug for PortablePath {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.0, formatter)
+    }
+}
+
 /// Bounded lossless prefix of one unrepresentable native path.
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub struct PortablePathExample {
@@ -675,7 +772,10 @@ pub struct EntryValue {
     /// Native path relative to the opened root.
     pub path: PathBuf,
     /// Canonical POSIX-relative form when every component is representable.
-    pub portable_path: Option<String>,
+    ///
+    /// `None` is not an error and not a missing value: it says this entry cannot appear
+    /// in any ordered page. See [`PortablePath`].
+    pub portable_path: Option<PortablePath>,
     /// Retained filesystem kind.
     pub kind: EntryKind,
     /// Retained filesystem attributes.

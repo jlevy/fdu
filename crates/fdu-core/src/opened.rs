@@ -2644,7 +2644,11 @@ mod tests {
             panic!("flat page");
         };
         assert_eq!(
-            first_page.rows.iter().map(|row| row.portable_path.as_deref()).collect::<Vec<_>>(),
+            first_page
+                .rows
+                .iter()
+                .map(|row| row.portable_path.as_ref().map(crate::PortablePath::as_str))
+                .collect::<Vec<_>>(),
             vec![Some("a.txt"), Some("b.txt")]
         );
         let continuation = first_page.next.expect("more rows");
@@ -2662,7 +2666,11 @@ mod tests {
             panic!("continued flat page");
         };
         assert_eq!(
-            second_page.rows.iter().map(|row| row.portable_path.as_deref()).collect::<Vec<_>>(),
+            second_page
+                .rows
+                .iter()
+                .map(|row| row.portable_path.as_ref().map(crate::PortablePath::as_str))
+                .collect::<Vec<_>>(),
             vec![Some("c.txt")]
         );
         assert!(second_page.next.is_none());
@@ -2715,7 +2723,10 @@ mod tests {
         let crate::ProjectionResult::Flat(first_page) = &first.results[0] else {
             panic!("flat page");
         };
-        assert_eq!(first_page.rows[0].portable_path.as_deref(), Some("a.rs"));
+        assert_eq!(
+            first_page.rows[0].portable_path.as_ref().map(crate::PortablePath::as_str),
+            Some("a.rs")
+        );
 
         let second = opened
             .read(crate::ReadRequest {
@@ -2729,7 +2740,10 @@ mod tests {
         let crate::ProjectionResult::Flat(second_page) = &second.results[0] else {
             panic!("continued flat page");
         };
-        assert_eq!(second_page.rows[0].portable_path.as_deref(), Some("c.rs"));
+        assert_eq!(
+            second_page.rows[0].portable_path.as_ref().map(crate::PortablePath::as_str),
+            Some("c.rs")
+        );
         assert!(second_page.next.is_none());
         assert_eq!(second.work.rows_visited, 1);
         opened.close().expect("close");
