@@ -3,15 +3,19 @@ type: is
 id: is-01m12xe7z1vh1739cmpc4k2f7z
 title: The joint contract does not state the row orders fdu is required to traverse
 kind: task
-status: open
+status: closed
 priority: 0
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels: []
 dependencies: []
 parent_id: is-01m0y1shykye8sc7h7e9rkk6kh
 created_at: 2026-08-28T00:48:41.440Z
-updated_at: 2026-08-28T00:48:41.440Z
+updated_at: 2026-08-28T02:03:00.965Z
+closed_at: 2026-08-28T02:03:00.964Z
+close_reason: null
+resolution: null
+duplicate_of: null
 ---
 Checkpoint 3C's fdu row in the plan says: 'opened/read.rs tree and flat projections | Traverse the maintained structures in the two exact contract orders and resume without a full selection pass.'
 

@@ -3,15 +3,19 @@ type: is
 id: is-01m12xch71jmwypv71hygaw5cj
 title: Settle the joint Recent ordering contract before wiring the maintained recency index
 kind: task
-status: open
+status: closed
 priority: 1
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels: []
 dependencies: []
 parent_id: is-01m0y1shykye8sc7h7e9rkk6kh
 created_at: 2026-08-28T00:47:45.369Z
-updated_at: 2026-08-28T00:47:45.369Z
+updated_at: 2026-08-28T02:03:01.274Z
+closed_at: 2026-08-28T02:03:01.273Z
+close_reason: null
+resolution: null
+duplicate_of: null
 ---
 The maintained global recency index (ServingIndexes::recent_files) is built, mutation-tested against independent recomputation, and has NO reader. Wiring it is blocked on a joint ordering decision, not on fdu implementation.
 
