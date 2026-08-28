@@ -3,16 +3,16 @@ type: is
 id: is-01m10nrd50t3xfevcxx7j98x5h
 title: Complete bounded tree, flat, aggregate, recent, and navigation projections
 kind: task
-status: in_progress
+status: blocked
 priority: 1
-version: 4
+version: 6
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - opened-root-rewrite
 dependencies: []
 parent_id: is-01m0y1shykye8sc7h7e9rkk6kh
 created_at: 2026-08-27T03:55:56.959Z
-updated_at: 2026-08-28T00:15:48.372Z
+updated_at: 2026-08-28T00:48:45.162Z
 ---
 Update opened/read.rs to traverse approved maintained structures in exact tree and flat orders, resume without root rescans, and return separate exact-or-capped totals and honest portable-path issues. Gate every page size against unpaged independent recomputation, work bounds, and the canonical opened-root sessions.
 
@@ -20,47 +20,57 @@ Update opened/read.rs to traverse approved maintained structures in exact tree a
 
 ## Notes
 
-Checkpoint in progress: added dependency-free File Rollup v3 registry parsing, ordered
-browsing taxonomy, on-demand opened-row name classification, and additive Selection
-predicates for ignored state, logical extension/exact basename identity, terminal suffix,
-ancestor name, and inclusive maximum size. Preserved the public compiled-registry
-derive_ext/ext_bucket answers and opened-root-only serving allocation. Focused
-classifier/selection tests, five transparent opened-root session goldens, and Python
-check are green. The bounded recursive tree, maintained recent/navigation reads, Python
-registry-document input, and MetaBrowser adapter remain open; do not close this bead yet.
-CLI acceptance remains unchanged parser/defaults/output/cache semantics, no existing-path
-serving allocation, no Python/async/MetaBrowser dependency, and final
-size/startup/memory comparison.
+Registry parsing, browsing taxonomy, on-demand opened-row name classification, and the
+additive `EntrySelection` predicates are complete and committed as `328ca65`. Local
+`make check` exits 0, all 19 CI checks are green, and `make cross-lint` is clean on both
+cross targets. The prior session ended before handoff; the work was recovered, its stale
+opened-root goldens re-blessed one scenario at a time, and pushed.
 
-## Recovered and committed 2026-08-27 as `328ca65`
+## Corrected scope, 2026-08-27
 
-The session carrying the above work ended before handoff, leaving it uncommitted. It is
-recovered, stabilized, and pushed; nothing was lost.
+An earlier reading of this bead treated `Recent`, `Navigation`, and `Catalog` as missing
+`ReadProjection` variants. That is wrong and would have violated the design. Decision
+line 70 of the plan asks "Put MetaBrowser's eight query names in fdu?" and answers "No.
+Keep a small fdu-native read algebra and map to the client vocabulary in a thin adapter."
 
-One failure was outstanding: the work had first widened `Selection` in place, regenerated
-the opened-root goldens at that shape, then refactored to the additive `EntrySelection`
-without re-blessing. The four affected goldens were updated one scenario at a time
-through `make opened-root-golden-update`, which refuses a blanket corpus update. The
-regenerated corpus differs from the intermediate one on `action.read` lines alone — no
-`result.` line moved, so no answer changed.
+The native vocabulary is five projections and is already complete: Lookup, Tree page,
+Flat entry page, Roll-up/report, and Diagnostics, plus Aggregate and Continue. The plan's
+own mapping table routes the client queries onto them:
 
-`EntrySelection::retained_heap_bytes` was checked against the 64 KiB continuation record
-cap: it accounts for all four added string vectors, so a continuation owning one stays
-bounded.
+| MetaBrowser query | fdu operation | State |
+| --- | --- | --- |
+| Entry | Lookup | done |
+| Directory | Tree page at render depth | **needs render depth** |
+| Filtered tree | Complete-or-limit selected-tree report at render depth | **open** |
+| Roll-up | Roll-up/report | done |
+| Navigation | Report over maintained aggregate indexes | **open: report walks instead** |
+| Recent | Bounded ranked report | **open: report walks instead** |
+| Catalog | Flat entry page with compact fields and predicates | done at `328ca65` |
+| Diagnostics | Diagnostics and the coherent envelope | done |
 
-State at `328ca65`: local `make check` exit 0, 558 Rust tests, 125 CLI goldens unchanged,
-parity holding with 21 matched deviations, and all 19 CI checks green across the
-three-platform matrix and six wheel builds.
+So no new projection variant is added. Three pieces of work remain.
 
-## Remaining before this bead closes
+1. **Serve ranked and aggregate views from the maintained indexes.** `report_work`
+   currently charges `entries` — a full pass — to `work.rows` for `ViewSpec::Recent` and
+   for the classification views, even on an unfiltered query, while `ServingIndexes`
+   already maintains `recent_files` as a global newest-first `BTreeSet` and
+   `semantic_by_directory` as per-directory classification tallies. An unfiltered Recent
+   view should read the maintained set in work proportional to the limit and charge
+   `maintained`, not `rows`.
 
-1. Bounded native recursive tree and selected-tree complete-or-limit reads.
-2. Maintained `Recent` and `Navigation` projections — neither is a `ReadProjection`
-   variant yet; the enum currently carries Lookup, RollUp, Tree, Flat, Aggregate, Report,
-   Continue, and Diagnostics.
-3. Catalog and diagnostic projections without request-time full sorts or Python entry
-   loops.
-4. Python registry-document input, with provider identity derived from parsed semantic
-   content rather than supplied.
+   Design constraint: `crate::query::report` is the shared one-shot and command-line
+   machinery and is currently serving-blind, though it holds the `Index` and can reach
+   `serving`. The maintained index must be an accelerator only — the walk stays the
+   definition and the detached path must keep answering identically with `serving`
+   absent. The oracle is exactly that: an opened root and a detached index must return
+   equal reports while charging different work.
 
-Sequenced after this bead, not inside it: the thin adapter under `fdu-2xfp`.
+2. **Render depth on the tree projection.** `ReadProjection::Tree` carries only `path`
+   and `page`; the contract needs a bounded recursive page at a requested render depth,
+   carrying the ancestors needed to render it and per-directory completeness.
+
+3. **Complete-or-limit selected-tree report** at a render depth, for the filtered-tree
+   query, plus Python registry-document input with provider identity derived from parsed
+   content.
+
+Do not close this bead until all three land with their independent-recomputation tests.
