@@ -2644,12 +2644,8 @@ mod tests {
             panic!("flat page");
         };
         assert_eq!(
-            first_page
-                .rows
-                .iter()
-                .map(|row| row.portable_path.as_ref().map(crate::PortablePath::as_str))
-                .collect::<Vec<_>>(),
-            vec![Some("a.txt"), Some("b.txt")]
+            first_page.rows.iter().map(|row| row.portable_path.as_str()).collect::<Vec<_>>(),
+            vec!["a.txt", "b.txt"]
         );
         let continuation = first_page.next.expect("more rows");
 
@@ -2666,12 +2662,8 @@ mod tests {
             panic!("continued flat page");
         };
         assert_eq!(
-            second_page
-                .rows
-                .iter()
-                .map(|row| row.portable_path.as_ref().map(crate::PortablePath::as_str))
-                .collect::<Vec<_>>(),
-            vec![Some("c.txt")]
+            second_page.rows.iter().map(|row| row.portable_path.as_str()).collect::<Vec<_>>(),
+            vec!["c.txt"]
         );
         assert!(second_page.next.is_none());
         assert!(second.work.rows_visited <= 2, "continuation resumed from retained position");
@@ -2723,10 +2715,7 @@ mod tests {
         let crate::ProjectionResult::Flat(first_page) = &first.results[0] else {
             panic!("flat page");
         };
-        assert_eq!(
-            first_page.rows[0].portable_path.as_ref().map(crate::PortablePath::as_str),
-            Some("a.rs")
-        );
+        assert_eq!(first_page.rows[0].portable_path.as_str(), "a.rs");
 
         let second = opened
             .read(crate::ReadRequest {
@@ -2740,10 +2729,7 @@ mod tests {
         let crate::ProjectionResult::Flat(second_page) = &second.results[0] else {
             panic!("continued flat page");
         };
-        assert_eq!(
-            second_page.rows[0].portable_path.as_ref().map(crate::PortablePath::as_str),
-            Some("c.rs")
-        );
+        assert_eq!(second_page.rows[0].portable_path.as_str(), "c.rs");
         assert!(second_page.next.is_none());
         assert_eq!(second.work.rows_visited, 1);
         opened.close().expect("close");
@@ -2869,16 +2855,29 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// A name whose bytes are not UTF-8 is escaped and listed, not omitted.
+    ///
+    /// This fixture used to prove the opposite. While a portable name was optional these
+    /// two entries were retained, counted in roll-ups, and absent from every page, and
+    /// the page reported an omission count with escaped examples so the loss was at least
+    /// visible. It also meant a lookup below such a directory had to answer `unknown`
+    /// rather than `absent`, because the name asked for might have been in the invisible
+    /// set.
+    ///
+    /// The encoding is total now, so the same fixture must show the opposite: both rows
+    /// appear, ordered pages and roll-ups agree on the population, and absence is
+    /// answerable. `x\xff` becomes `x%FF`; the valid prefix survives as text and only the
+    /// undecodable byte is escaped.
     #[cfg(unix)]
     #[test]
-    fn portable_pages_expose_exact_path_loss_and_fail_closed_on_absence() {
+    fn non_utf8_names_are_escaped_into_pages_rather_than_omitted() {
         use std::os::unix::ffi::OsStringExt;
 
         let (_root, opened) = opened(Arc::new(TestControls::default()));
         let invalid = PathBuf::from(OsString::from_vec(vec![b'x', 0xff]));
-        let mut long_bytes = vec![b'y'; crate::MAX_PORTABLE_PATH_EXAMPLE_BYTES + 1];
-        *long_bytes.last_mut().expect("nonempty path") = 0xfe;
-        let long_invalid = PathBuf::from(OsString::from_vec(long_bytes));
+        // A literal `%` beside an escaped byte is the pair that proves injectivity: if
+        // `%` were left alone, a file actually named `y%FE` and this one would collide.
+        let literal_percent = PathBuf::from("y%FE");
         opened
             .state
             .index
@@ -2889,12 +2888,12 @@ mod tests {
                     attrs: crate::Attrs { size: 9, ..crate::Attrs::default() },
                 },
                 Op::Upsert {
-                    path: long_invalid.clone(),
+                    path: literal_percent.clone(),
                     kind: EntryKind::File,
                     attrs: crate::Attrs { size: 1, ..crate::Attrs::default() },
                 },
             ]))
-            .expect("seed unrepresentable entry");
+            .expect("seed non-utf8 and literal-percent entries");
 
         let response = opened
             .read(crate::ReadRequest {
@@ -2920,34 +2919,36 @@ mod tests {
                 ..crate::ReadRequest::default()
             })
             .expect("portable read");
+
+        // Absence is answerable: nothing can be hiding in an unlistable set any more.
         assert!(matches!(
             response.results[0],
-            crate::ProjectionResult::Lookup(crate::Knowledge::Unknown { .. })
+            crate::ProjectionResult::Lookup(crate::Knowledge::Absent)
         ));
+
         let crate::ProjectionResult::Tree(crate::Knowledge::Present(tree)) = &response.results[1]
         else {
             panic!("tree page");
         };
-        assert!(tree.rows.is_empty());
-        assert!(tree.native_complete);
-        assert!(!tree.portable_complete);
-        assert_eq!(tree.portable_issue.as_ref().map(|issue| issue.omitted), Some(2));
-        let example = &tree.portable_issue.as_ref().expect("path issue").examples[0];
-        assert_eq!(example.encoding, crate::PortablePathEncoding::UnixBytes);
-        assert!(example.encoded_hex.ends_with("78ff"));
-        assert!(!example.truncated);
-        let long_example = &tree.portable_issue.as_ref().expect("path issue").examples[1];
-        assert_eq!(long_example.encoded_hex.len(), crate::MAX_PORTABLE_PATH_EXAMPLE_BYTES * 2);
-        assert!(long_example.truncated);
+        assert!(tree.complete);
+        let names: Vec<_> =
+            tree.rows.iter().map(|row| row.portable_path.as_str().to_owned()).collect();
+        assert_eq!(names, vec!["x%FF".to_owned(), "y%25FE".to_owned()]);
+
         let crate::ProjectionResult::Flat(flat) = &response.results[2] else {
             panic!("flat page");
         };
-        assert!(flat.rows.is_empty());
-        assert_eq!(flat.portable_issue.as_ref().map(|issue| issue.omitted), Some(2));
+        let flat_names: Vec<_> =
+            flat.rows.iter().map(|row| row.portable_path.as_str().to_owned()).collect();
+        assert_eq!(flat_names, names, "ordered pages agree on one population");
+
+        // The population the pages return is the population the roll-up counts.
         assert!(matches!(
             &response.results[3],
             crate::ProjectionResult::RollUp(crate::Knowledge::Present(rollup))
-                if rollup.all.files == 2 && rollup.all.bytes == 10
+                if rollup.all.files == 2
+                    && rollup.all.files
+                        == u64::try_from(flat.rows.len()).expect("row count fits u64")
         ));
 
         opened
@@ -2955,21 +2956,26 @@ mod tests {
             .index
             .apply(&Observation::new(vec![
                 Op::Remove { path: invalid },
-                Op::Remove { path: long_invalid },
+                Op::Remove { path: literal_percent },
             ]))
-            .expect("remove unrepresentable entry");
-        assert!(matches!(
-            opened
-                .read(crate::ReadRequest {
-                    projections: vec![crate::ReadProjection::Lookup {
-                        path: PathBuf::from("missing"),
-                    }],
-                    ..crate::ReadRequest::default()
-                })
-                .expect("known absence")
-                .results[0],
-            crate::ProjectionResult::Lookup(crate::Knowledge::Absent)
-        ));
+            .expect("remove escaped entries");
+        let after = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Tree {
+                    path: PathBuf::new(),
+                    page: crate::PageRequest {
+                        limit: crate::MAX_PAGE_ROWS,
+                        max_work: crate::MAX_PAGE_WORK,
+                    },
+                }],
+                ..crate::ReadRequest::default()
+            })
+            .expect("read after removal");
+        let crate::ProjectionResult::Tree(crate::Knowledge::Present(tree)) = &after.results[0]
+        else {
+            panic!("tree page");
+        };
+        assert!(tree.rows.is_empty(), "removal is symmetric for escaped names too");
         opened.close().expect("close");
     }
 

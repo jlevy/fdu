@@ -103,13 +103,11 @@ pub use crate::engine_contract::{
     Impact, ImpactDomain, IndexState, InvalidateReason, Issue, IssueKind, IssueSummary, Knowledge,
     LifecyclePhase, LimitedProjection, MAX_CONTINUATION_RECORD_BYTES, MAX_COUNT_CAP,
     MAX_DIRTY_PATHS, MAX_ISSUE_MESSAGE_BYTES, MAX_ISSUE_PATH_BYTES, MAX_PAGE_ROWS, MAX_PAGE_WORK,
-    MAX_PORTABLE_PATH_EXAMPLE_BYTES, MAX_PORTABLE_PATH_EXAMPLES, MAX_READ_PROJECTIONS,
-    MAX_REPORT_VIEWS, MAX_RETAINED_ISSUES, Observation, ObservationOp, Op, PageRequest,
-    PathExpectation, PathState, PortablePath, PortablePathEncoding, PortablePathExample,
-    PortablePathIssue, ProjectionResult, Provenance, QueryLimit, ReadDiagnostics, ReadProjection,
-    ReadRequest, ReadResponse, RefreshRejection, RefreshResult, RejectedRefreshPath, ReportRequest,
-    Result, RowShape, ScanScope, ScopeIdentity, SemanticIdentity, SessionId, Source,
-    StateTransition, Status, TreePage, Work,
+    MAX_READ_PROJECTIONS, MAX_REPORT_VIEWS, MAX_RETAINED_ISSUES, Observation, ObservationOp, Op,
+    PageRequest, PathExpectation, PathState, PortablePath, ProjectionResult, Provenance,
+    QueryLimit, ReadDiagnostics, ReadProjection, ReadRequest, ReadResponse, RefreshRejection,
+    RefreshResult, RejectedRefreshPath, ReportRequest, Result, RowShape, ScanScope, ScopeIdentity,
+    SemanticIdentity, SessionId, Source, StateTransition, Status, TreePage, Work,
 };
 pub use crate::index::{
     ApplyOutcome, ApplyStats, ChildSnapshot, DEFAULT_JOURNAL_CAPACITY, EntryId, ExtTally, Index,

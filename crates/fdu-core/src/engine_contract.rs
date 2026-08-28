@@ -588,10 +588,6 @@ pub const MAX_READ_PROJECTIONS: usize = 16;
 pub const MAX_PAGE_ROWS: usize = 4_096;
 /// Maximum deterministic work allowance accepted by one page projection.
 pub const MAX_PAGE_WORK: u64 = 1_000_000;
-/// Maximum native path examples retained for one portable projection issue.
-pub const MAX_PORTABLE_PATH_EXAMPLES: usize = 8;
-/// Maximum native encoded bytes retained in one escaped portable-path example.
-pub const MAX_PORTABLE_PATH_EXAMPLE_BYTES: usize = 256;
 /// Maximum report sections and reported omissions accepted in one opened read.
 pub const MAX_REPORT_VIEWS: usize = 16;
 /// Default cap for a selection count not backed by an exact maintained aggregate.
@@ -637,51 +633,34 @@ pub struct PageRequest {
     pub max_work: u64,
 }
 
-/// Portable-path loss attached to a portable row projection.
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
-pub struct PortablePathIssue {
-    /// Exact native entries omitted because their path is not representable.
-    pub omitted: u64,
-    /// Bounded native examples retained for diagnostics.
-    pub examples: Vec<PortablePathExample>,
-}
-
-/// Stable native encoding used by one unrepresentable path example.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-#[non_exhaustive]
-pub enum PortablePathEncoding {
-    /// Native Unix path bytes.
-    UnixBytes,
-    /// Native Windows WTF-16 code units encoded little-endian.
-    WindowsWtf16Le,
-    /// Rust's platform-native self-synchronizing byte representation.
-    PlatformBytes,
-}
-
 /// A retained entry's canonical POSIX-relative name, in the form ordered pages use.
 ///
-/// **This is not the filename.** It is a derived name, and the two differ whenever a
-/// component is not valid UTF-8. Never open, stat, or compare a filesystem path against
-/// one of these: [`EntryValue::path`] is the identity, and this is the wire form the
-/// portable projections are keyed and ordered by. The newtype exists so that mistake is
-/// a compile error rather than a convention, because a bare `String` here reads exactly
-/// like a path and every test tree an author thinks to write is pure UTF-8, so the
-/// substitution passes locally and fails on a real disk.
+/// **This is not the filename.** It is a derived name, and it differs from the native one
+/// whenever a component holds bytes that are not valid UTF-8, or holds a literal `%`.
+/// Never open, stat, or compare a filesystem path against one of these:
+/// [`EntryValue::path`] is the identity, and this is the wire form the ordered
+/// projections are keyed and ordered by. The newtype exists so that mistake is a compile
+/// error rather than a convention, because a bare `String` here reads exactly like a path
+/// and every test tree an author thinks to write is pure UTF-8, so the substitution passes
+/// locally and fails on a real disk.
 ///
-/// Not every entry has one. Deriving it requires every component to be valid UTF-8,
-/// which a native path is not obliged to be: Unix filenames are arbitrary non-NUL bytes
-/// and Windows filenames may hold unpaired surrogates. An entry without one keeps its
-/// full native identity and its bytes still count in roll-ups, but it is absent from
-/// `portable_entries`, from the maintained recency order, and from its parent's portable
-/// child partitions, so no tree, flat, catalog, or recent page can return it. That
-/// omission is reported rather than silent, through [`PortablePathIssue`] and the
-/// separate native and portable completeness flags on [`TreePage`].
+/// Every entry has one. A native path is not obliged to be UTF-8 — Unix filenames are
+/// arbitrary non-NUL bytes, Windows filenames may hold unpaired surrogates — so the two
+/// kinds of byte that cannot be carried are percent-escaped: those that do not decode,
+/// and `%` itself. Escaping `%` is what makes the mapping injective. A file named
+/// `caf%FF.txt` is valid UTF-8 and a file named `caf<0xFF>.txt` is not; escaping only the
+/// undecodable byte would give both the same wire name, which is the aliasing bug of
+/// lossy conversion in better clothes.
 ///
-/// Because a portable path is built from every component, a directory without one denies
-/// its whole subtree: one stray byte in a directory name hides everything beneath it from
-/// portable consumers while leaving all of it in native facts. This is why the two
-/// populations differ by design, and why a conformance case pins the difference instead
-/// of letting a reader take it for a defect.
+/// Nothing else is touched. This produces a JSON string, not a URL, so spaces, `#`, `?`
+/// and every non-ASCII scalar pass through: `café/naïve.txt` is unchanged.
+///
+/// Totality is why ordered pages and native roll-ups answer over one population, why a
+/// directory whose name has a stray byte still lists its children, and why a complete
+/// directory that does not hold a name can answer `absent` rather than `unknown`. The
+/// partial version that preceded it needed an omission count, bounded escaped examples,
+/// and a second completeness flag on [`TreePage`] to describe what it could not name; all
+/// three are gone.
 ///
 /// Distinct from the crate-internal `path_is_relative_normal`, which asks the unrelated
 /// structural question of whether a path is relative and never ascends. A path can
@@ -714,25 +693,6 @@ impl PortablePath {
     pub(crate) fn retained_heap_bytes(&self) -> usize {
         self.0.capacity()
     }
-
-    /// Rebuild the native relative path this was derived from.
-    ///
-    /// Sound **only** for a value taken from a maintained portable structure, and only
-    /// while the derivation stays partial. An entry reaches `portable_entries` exactly
-    /// when every component is valid UTF-8, so for those entries the derivation is
-    /// injective and this inverts it: the components are unchanged, and `Path` accepts
-    /// `/` as a separator on every supported platform.
-    ///
-    /// It is **not** sound for an arbitrary portable path, which is why this is a named
-    /// method rather than a `From` impl and why the newtype blocks the bare conversion.
-    /// Making the encoding total by escaping non-UTF-8 bytes would break it silently —
-    /// a file named `caf%FF.txt` and one named `caf<0xFF>.txt` would rebuild to the same
-    /// native path — so that change must revisit every caller.
-    /// `entries_rebuild_to_their_native_paths` pins the current equivalence against the
-    /// arena.
-    pub(crate) fn to_native_relative_path(&self) -> std::path::PathBuf {
-        std::path::PathBuf::from(&self.0)
-    }
 }
 
 impl std::borrow::Borrow<str> for PortablePath {
@@ -756,27 +716,13 @@ impl std::fmt::Debug for PortablePath {
     }
 }
 
-/// Bounded lossless prefix of one unrepresentable native path.
-#[derive(Clone, PartialEq, Eq, Debug, Hash)]
-pub struct PortablePathExample {
-    /// Platform encoding represented by `encoded_hex`.
-    pub encoding: PortablePathEncoding,
-    /// Lowercase hexadecimal native bytes, safe for portable serialization.
-    pub encoded_hex: String,
-    /// Whether the native value continued beyond the retained prefix.
-    pub truncated: bool,
-}
-
 /// One immutable retained entry returned by an opened-root read.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct EntryValue {
     /// Native path relative to the opened root.
     pub path: PathBuf,
-    /// Canonical POSIX-relative form when every component is representable.
-    ///
-    /// `None` is not an error and not a missing value: it says this entry cannot appear
-    /// in any ordered page. See [`PortablePath`].
-    pub portable_path: Option<PortablePath>,
+    /// Canonical POSIX-relative form. Every entry has one. See [`PortablePath`].
+    pub portable_path: PortablePath,
     /// Retained filesystem kind.
     pub kind: EntryKind,
     /// Retained filesystem attributes.
@@ -881,12 +827,8 @@ pub struct TreePage {
     pub rows: Vec<EntryValue>,
     /// Opaque continuation when another page exists at this version.
     pub next: Option<ContinuationId>,
-    /// Whether the native directory child set is authoritative.
-    pub native_complete: bool,
-    /// Whether portable consumers can treat the returned directory as authoritative.
-    pub portable_complete: bool,
-    /// Exact omission count and bounded examples, when any.
-    pub portable_issue: Option<PortablePathIssue>,
+    /// Whether this directory's complete in-scope child set is known.
+    pub complete: bool,
 }
 
 /// Retained fields copied into portable page rows.
@@ -906,8 +848,6 @@ pub struct FlatPage {
     pub rows: Vec<EntryValue>,
     /// Opaque continuation when another matching row exists at this version.
     pub next: Option<ContinuationId>,
-    /// Exact omission count and bounded examples, when any.
-    pub portable_issue: Option<PortablePathIssue>,
 }
 
 /// Product count whose exactness is explicit.

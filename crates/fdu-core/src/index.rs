@@ -338,8 +338,6 @@ struct Entry {
 pub(crate) struct PortableChildren {
     pub(crate) directories: BTreeMap<String, EntryId>,
     pub(crate) nondirectories: BTreeMap<String, EntryId>,
-    pub(crate) omitted: u64,
-    pub(crate) examples: Vec<EntryId>,
 }
 
 /// Commit-maintained orders and diagnostics used only while serving an opened root.
@@ -352,8 +350,6 @@ pub(crate) struct PortableChildren {
 struct ServingIndexes {
     portable_children: BTreeMap<PathBuf, PortableChildren>,
     portable_entries: BTreeMap<crate::PortablePath, EntryId>,
-    portable_omitted: u64,
-    portable_examples: Vec<EntryId>,
     recent_files: BTreeSet<RecentKey>,
     semantic_names: Vec<Option<String>>,
     semantic_ids: BTreeMap<String, u32>,
@@ -1982,12 +1978,6 @@ impl Index {
         &self.serving.as_ref().expect("opened-root reads require serving indexes").portable_entries
     }
 
-    pub(crate) fn portable_issue(&self) -> (u64, &[EntryId]) {
-        self.serving.as_ref().map_or((0, &[]), |serving| {
-            (serving.portable_omitted, serving.portable_examples.as_slice())
-        })
-    }
-
     #[cfg(test)]
     pub(crate) const fn serving_indexes_enabled(&self) -> bool {
         self.serving.is_some()
@@ -2032,43 +2022,24 @@ impl Index {
                 }
             }
         }
-        if let Some(portable) = crate::opened::read::portable_path(path) {
-            serving.portable_entries.insert(portable.clone(), id);
-            if kind == EntryKind::File {
-                serving.recent_files.insert(RecentKey {
-                    mtime_ns: attrs.mtime_ns,
-                    portable_path: portable,
-                    id,
-                });
-            }
-        } else {
-            serving.portable_omitted = serving.portable_omitted.saturating_add(1);
-            if serving.portable_examples.len() < crate::MAX_PORTABLE_PATH_EXAMPLES {
-                serving.portable_examples.push(id);
-            }
+        let portable = crate::opened::read::portable_path(path);
+        serving.portable_entries.insert(portable.clone(), id);
+        if kind == EntryKind::File {
+            serving.recent_files.insert(RecentKey {
+                mtime_ns: attrs.mtime_ns,
+                portable_path: portable,
+                id,
+            });
         }
         let parent = path.parent().unwrap_or_else(|| Path::new("")).to_path_buf();
-        if crate::opened::read::portable_path(&parent).is_none() {
-            let children = serving.portable_children.entry(parent).or_default();
-            children.omitted = children.omitted.saturating_add(1);
-            if children.examples.len() < crate::MAX_PORTABLE_PATH_EXAMPLES {
-                children.examples.push(id);
-            }
-            return;
-        }
-        let Some(name) = path.file_name().and_then(OsStr::to_str) else {
-            let children = serving.portable_children.entry(parent).or_default();
-            children.omitted = children.omitted.saturating_add(1);
-            if children.examples.len() < crate::MAX_PORTABLE_PATH_EXAMPLES {
-                children.examples.push(id);
-            }
+        let Some(name) = path.file_name().map(crate::opened::read::portable_component) else {
             return;
         };
         let children = serving.portable_children.entry(parent).or_default();
         if kind.is_dir() {
-            children.directories.insert(name.to_string(), id);
+            children.directories.insert(name, id);
         } else {
-            children.nondirectories.insert(name.to_string(), id);
+            children.nondirectories.insert(name, id);
         }
     }
 
@@ -2079,37 +2050,25 @@ impl Index {
         let Some(serving) = self.serving.as_mut() else {
             return;
         };
-        if let Some(portable) = crate::opened::read::portable_path(path) {
-            serving.portable_entries.remove(&portable);
-            if kind == EntryKind::File {
-                serving.recent_files.remove(&RecentKey {
-                    mtime_ns: attrs.mtime_ns,
-                    portable_path: portable,
-                    id,
-                });
-            }
-        } else {
-            serving.portable_omitted = serving.portable_omitted.saturating_sub(1);
-            serving.portable_examples.retain(|example| *example != id);
+        let portable = crate::opened::read::portable_path(path);
+        serving.portable_entries.remove(&portable);
+        if kind == EntryKind::File {
+            serving.recent_files.remove(&RecentKey {
+                mtime_ns: attrs.mtime_ns,
+                portable_path: portable,
+                id,
+            });
         }
         let parent = path.parent().unwrap_or_else(|| Path::new("")).to_path_buf();
         let remove_parent = if let Some(children) = serving.portable_children.get_mut(&parent) {
-            if crate::opened::read::portable_path(&parent).is_none() {
-                children.omitted = children.omitted.saturating_sub(1);
-                children.examples.retain(|example| *example != id);
-            } else if let Some(name) = path.file_name().and_then(OsStr::to_str) {
+            if let Some(name) = path.file_name().map(crate::opened::read::portable_component) {
                 if kind.is_dir() {
-                    children.directories.remove(name);
+                    children.directories.remove(&name);
                 } else {
-                    children.nondirectories.remove(name);
+                    children.nondirectories.remove(&name);
                 }
-            } else {
-                children.omitted = children.omitted.saturating_sub(1);
-                children.examples.retain(|example| *example != id);
             }
-            children.directories.is_empty()
-                && children.nondirectories.is_empty()
-                && children.omitted == 0
+            children.directories.is_empty() && children.nondirectories.is_empty()
         } else {
             false
         };
@@ -3773,7 +3732,6 @@ mod tests {
         let mut exact_name_by_directory =
             BTreeMap::<EntryId, (BTreeMap<String, ExtTally>, BTreeMap<String, ExtTally>)>::new();
         let mut semantic_refcounts = BTreeMap::<String, u64>::new();
-        let mut omitted = 0_u64;
         let mut pending = vec![(EntryId::ROOT, PathBuf::new(), vec![EntryId::ROOT])];
         while let Some((parent_id, parent_path, ancestors)) = pending.pop() {
             let facts: Vec<_> = index
@@ -3784,20 +3742,14 @@ mod tests {
             for (name, id) in facts {
                 let path = parent_path.join(&name);
                 let kind = index.kind_of(id).expect("live child");
-                if let Some(portable) = crate::opened::read::portable_path(&path) {
-                    entries.insert(portable.clone(), id);
-                    if kind == EntryKind::File {
-                        recent_files.insert(RecentKey {
-                            mtime_ns: index
-                                .attrs(&path)
-                                .expect("live child has attributes")
-                                .mtime_ns,
-                            portable_path: portable,
-                            id,
-                        });
-                    }
-                } else {
-                    omitted = omitted.saturating_add(1);
+                let portable = crate::opened::read::portable_path(&path);
+                entries.insert(portable.clone(), id);
+                if kind == EntryKind::File {
+                    recent_files.insert(RecentKey {
+                        mtime_ns: index.attrs(&path).expect("live child has attributes").mtime_ns,
+                        portable_path: portable,
+                        id,
+                    });
                 }
                 if kind == EntryKind::File {
                     let semantic = index.classify(&path).file_type.as_str().to_string();
@@ -3838,16 +3790,11 @@ mod tests {
                     }
                 }
                 let partition = children.entry(parent_path.clone()).or_default();
-                if crate::opened::read::portable_path(&parent_path).is_none() {
-                    partition.omitted = partition.omitted.saturating_add(1);
-                } else if let Some(name) = name.to_str() {
-                    if kind.is_dir() {
-                        partition.directories.insert(name.to_string(), id);
-                    } else {
-                        partition.nondirectories.insert(name.to_string(), id);
-                    }
+                let portable_name = crate::opened::read::portable_component(&name);
+                if kind.is_dir() {
+                    partition.directories.insert(portable_name, id);
                 } else {
-                    partition.omitted = partition.omitted.saturating_add(1);
+                    partition.nondirectories.insert(portable_name, id);
                 }
                 if kind.is_dir() {
                     let mut child_ancestors = ancestors.clone();
@@ -3929,23 +3876,15 @@ mod tests {
             .map(|(name, semantic)| (name.clone(), serving.semantic_refcounts[*semantic as usize]))
             .collect();
         assert_eq!(actual_refcounts, semantic_refcounts);
-        for expected in children.values_mut() {
-            expected.examples.clear();
-        }
-        let mut actual = serving.portable_children.clone();
-        for retained in actual.values_mut() {
-            assert!(retained.examples.len() <= crate::MAX_PORTABLE_PATH_EXAMPLES);
-            retained.examples.clear();
-        }
-        assert_eq!(actual, children);
-        assert_eq!(serving.portable_omitted, omitted);
-        assert!(serving.portable_examples.len() <= crate::MAX_PORTABLE_PATH_EXAMPLES);
-        assert!(
-            serving
-                .portable_examples
-                .iter()
-                .filter_map(|id| index.path_of(*id))
-                .all(|path| crate::opened::read::portable_path(&path).is_none())
+        assert_eq!(serving.portable_children, children);
+
+        // Every retained entry has a portable name, and the names are unique. The second
+        // half is what the escaping has to earn: `%` is escaped in every name precisely so
+        // a file called `x%FF` and one whose bytes are `x\xff` cannot collide here.
+        assert_eq!(
+            u64::try_from(serving.portable_entries.len()).expect("entry count fits u64"),
+            index.len().saturating_sub(1),
+            "every retained non-root entry has exactly one portable name"
         );
     }
 
@@ -3992,17 +3931,20 @@ mod tests {
         );
     }
 
-    /// `PortablePath::to_native_relative_path` inverts the derivation for every entry the
-    /// portable index holds, so the read projections may rebuild a path instead of walking
-    /// the arena for one.
+    /// Escaping touches exactly two things and leaves everything else byte-identical.
     ///
-    /// The equivalence is a property of the derivation being partial: an entry reaches
-    /// `portable_entries` only when every component is already valid UTF-8, so nothing is
-    /// escaped and the round trip is the identity. Making the encoding total would break
-    /// exactly this test, which is the point of having it — the failure names the callers
-    /// that must change rather than letting a rebuilt path quietly address the wrong file.
+    /// The rule is narrow on purpose: a byte that is not valid UTF-8, and `%` itself.
+    /// Everything else — spaces, non-ASCII scalars, punctuation — passes through, because
+    /// this produces a JSON string rather than a URL and mangling readable names would be
+    /// a cost with no benefit.
+    ///
+    /// This test used to assert the opposite property, that the derived name could be
+    /// turned back into a filesystem path with `PathBuf::from`. That held only while the
+    /// derivation was the identity, and it is now unsound: `100%.txt` derives to
+    /// `100%25.txt`, which names no file. The conversion was deleted rather than kept
+    /// working, and callers ask the arena for a native path instead.
     #[test]
-    fn entries_rebuild_to_their_native_paths() {
+    fn escaping_touches_only_invalid_bytes_and_percent() {
         let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
             "/root",
             ScanScope::default(),
@@ -4012,29 +3954,30 @@ mod tests {
         index.apply_ok(&Observation::new(vec![
             upsert("dir", EntryKind::Dir, Attrs::default()),
             upsert("dir/plain.txt", EntryKind::File, file_attrs(1, 1)),
-            // Non-ASCII is representable and must round trip unchanged.
             upsert("café", EntryKind::Dir, Attrs::default()),
             upsert("café/naïve.txt", EntryKind::File, file_attrs(2, 2)),
             upsert("日本語.md", EntryKind::File, file_attrs(3, 3)),
-            // A literal percent is ordinary today. Under a total escaping encoding it
-            // would be the character that has to be escaped, so pin it now: this row is
-            // what fails first if the derivation stops being the identity.
-            upsert("100%.txt", EntryKind::File, file_attrs(4, 4)),
             upsert("a b", EntryKind::Dir, Attrs::default()),
             upsert("a b/c d.txt", EntryKind::File, file_attrs(5, 5)),
+            upsert("100%.txt", EntryKind::File, file_attrs(4, 4)),
         ]));
 
-        let entries: Vec<_> =
-            index.portable_entries().iter().map(|(portable, id)| (portable.clone(), *id)).collect();
-        assert!(entries.len() >= 7, "fixture must populate the portable index");
-
-        for (portable, id) in entries {
-            assert_eq!(
-                Some(portable.to_native_relative_path()),
-                index.path_of(id),
-                "rebuilt path must equal the arena's native path for {portable:?}"
-            );
-        }
+        let names: Vec<_> =
+            index.portable_entries().keys().map(crate::PortablePath::as_str).collect();
+        assert_eq!(
+            names,
+            vec![
+                "100%25.txt",
+                "a b",
+                "a b/c d.txt",
+                "café",
+                "café/naïve.txt",
+                "dir",
+                "dir/plain.txt",
+                "日本語.md",
+            ],
+            "only the literal percent is rewritten; separators, spaces and non-ASCII are not"
+        );
     }
 
     #[test]
@@ -4189,7 +4132,6 @@ mod tests {
 
         assert!(index.serving.is_none());
         assert!(index.portable_children(Path::new("dir")).is_none());
-        assert_eq!(index.portable_issue(), (0, &[][..]));
     }
 
     #[test]
@@ -5633,7 +5575,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn an_unrepresentable_parent_accounts_for_every_direct_child() {
+    fn a_non_utf8_parent_still_lists_its_children() {
         use std::ffi::OsString;
         use std::os::unix::ffi::OsStringExt;
 
@@ -5651,7 +5593,17 @@ mod tests {
         ]));
 
         assert_serving_indexes(&index);
-        assert_eq!(index.portable_children(&directory).map(|children| children.omitted), Some(1));
+        // The directory's own name escapes to `d%80`, and its child is reachable beneath
+        // it. While the encoding was partial this directory had no portable name, so its
+        // whole subtree was unlistable and the assertion here counted the loss instead.
+        assert_eq!(
+            index.portable_children(&directory).map(|children| children.nondirectories.len()),
+            Some(1)
+        );
+        assert!(
+            index.portable_entries().keys().any(|portable| portable.as_str() == "d%80/child"),
+            "a child under a non-utf8 directory is listed at its escaped path"
+        );
     }
 
     #[cfg(unix)]

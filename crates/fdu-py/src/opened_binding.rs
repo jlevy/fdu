@@ -20,9 +20,9 @@ use fdu_core::{
     ChangeOutcome, ChangePoll, ChangeRequest, ContinuationId, CountResult, Coverage,
     CoverageReason, EffectiveChange, EngineVersion, EntryKind, EntryValue, Freshness, Impact,
     ImpactDomain, IndexState, Issue, IssueKind, Knowledge, LifecyclePhase, LimitedProjection,
-    OpenOptions, OpenedIndex, PageRequest, PortablePathEncoding, PortablePathIssue,
-    ProjectionResult, ReadDiagnostics, ReadProjection, ReadRequest, ReadResponse, RefreshResult,
-    RollUpSummary, RowShape, ScopeIdentity, SemanticIdentity, Source, StateTransition, Work,
+    OpenOptions, OpenedIndex, PageRequest, ProjectionResult, ReadDiagnostics, ReadProjection,
+    ReadRequest, ReadResponse, RefreshResult, RollUpSummary, RowShape, ScopeIdentity,
+    SemanticIdentity, Source, StateTransition, Work,
 };
 
 create_exception!(fdu, OpenedIndexError, PyRuntimeError);
@@ -405,17 +405,6 @@ fn limited_projection_label(value: LimitedProjection) -> &'static str {
     }
 }
 
-fn portable_encoding_label(value: PortablePathEncoding) -> PyResult<&'static str> {
-    match value {
-        PortablePathEncoding::UnixBytes => Ok("unix_bytes"),
-        PortablePathEncoding::WindowsWtf16Le => Ok("windows_wtf16_le"),
-        PortablePathEncoding::PlatformBytes => Ok("platform_bytes"),
-        _ => Err(OpenedIndexError::new_err(
-            "this Python binding does not recognize the engine's portable-path encoding",
-        )),
-    }
-}
-
 fn scope_dict(py: Python<'_>, scope: ScopeIdentity) -> PyResult<Bound<'_, PyDict>> {
     let out = PyDict::new(py);
     out.set_item("max_depth", scope.max_depth)?;
@@ -548,10 +537,7 @@ fn partition_rollup_dict(
 fn entry_dict<'py>(py: Python<'py>, entry: &EntryValue) -> PyResult<Bound<'py, PyDict>> {
     let out = PyDict::new(py);
     out.set_item("path", entry.path.as_os_str())?;
-    out.set_item(
-        "portable_path",
-        entry.portable_path.as_ref().map(fdu_core::PortablePath::as_str),
-    )?;
+    out.set_item("portable_path", entry.portable_path.as_str())?;
     out.set_item("kind", entry_kind_label(entry.kind))?;
     out.set_item("attrs", attrs_dict(py, entry.attrs)?)?;
     out.set_item("ignored", entry.ignored)?;
@@ -591,24 +577,6 @@ fn issue_dict<'py>(py: Python<'py>, issue: &Issue) -> PyResult<Bound<'py, PyDict
     out.set_item("path", issue.path.as_ref().map(|path| path.as_os_str()))?;
     out.set_item("message", &issue.message)?;
     out.set_item("os_error", issue.os_error)?;
-    Ok(out)
-}
-
-fn portable_issue_dict<'py>(
-    py: Python<'py>,
-    issue: &PortablePathIssue,
-) -> PyResult<Bound<'py, PyDict>> {
-    let out = PyDict::new(py);
-    out.set_item("omitted", issue.omitted)?;
-    let examples = PyList::empty(py);
-    for example in &issue.examples {
-        let item = PyDict::new(py);
-        item.set_item("encoding", portable_encoding_label(example.encoding)?)?;
-        item.set_item("encoded_hex", &example.encoded_hex)?;
-        item.set_item("truncated", example.truncated)?;
-        examples.append(item)?;
-    }
-    out.set_item("examples", examples)?;
     Ok(out)
 }
 
@@ -742,12 +710,7 @@ fn tree_page_dict<'py>(py: Python<'py>, page: &fdu_core::TreePage) -> PyResult<B
     }
     out.set_item("rows", rows)?;
     out.set_item("next", page.next.map(|value| continuation_dict(py, value)).transpose()?)?;
-    out.set_item("native_complete", page.native_complete)?;
-    out.set_item("portable_complete", page.portable_complete)?;
-    out.set_item(
-        "portable_issue",
-        page.portable_issue.as_ref().map(|issue| portable_issue_dict(py, issue)).transpose()?,
-    )?;
+    out.set_item("complete", page.complete)?;
     Ok(out)
 }
 
@@ -759,10 +722,6 @@ fn flat_page_dict<'py>(py: Python<'py>, page: &fdu_core::FlatPage) -> PyResult<B
     }
     out.set_item("rows", rows)?;
     out.set_item("next", page.next.map(|value| continuation_dict(py, value)).transpose()?)?;
-    out.set_item(
-        "portable_issue",
-        page.portable_issue.as_ref().map(|issue| portable_issue_dict(py, issue)).transpose()?,
-    )?;
     Ok(out)
 }
 

@@ -75,9 +75,6 @@ __all__ = [
     "OpenedState",
     "Page",
     "PartitionRollUpSummary",
-    "PortablePathEncoding",
-    "PortablePathExample",
-    "PortablePathIssue",
     "Projection",
     "ProjectionResult",
     "Query",
@@ -195,12 +192,6 @@ class ChangeOutcomeKind(StrEnum):
     CHANGES = "changes"
     IDLE = "idle"
     RESET = "reset"
-
-
-class PortablePathEncoding(StrEnum):
-    UNIX_BYTES = "unix_bytes"
-    WINDOWS_WTF16_LE = "windows_wtf16_le"
-    PLATFORM_BYTES = "platform_bytes"
 
 
 class LimitedProjection(StrEnum):
@@ -381,7 +372,7 @@ class NameClassification:
 @dataclass(frozen=True, slots=True)
 class Entry:
     path: Path
-    portable_path: str | None
+    portable_path: str
     kind: EntryKind
     attrs: Attributes
     ignored: bool
@@ -402,19 +393,6 @@ class Issue:
 class Continuation:
     session: int
     ordinal: int
-
-
-@dataclass(frozen=True, slots=True)
-class PortablePathExample:
-    encoding: PortablePathEncoding
-    encoded_hex: str
-    truncated: bool
-
-
-@dataclass(frozen=True, slots=True)
-class PortablePathIssue:
-    omitted: int
-    examples: tuple[PortablePathExample, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -519,16 +497,13 @@ class TreePage:
     directory: Entry
     rows: tuple[Entry, ...]
     next: Continuation | None
-    native_complete: bool
-    portable_complete: bool
-    portable_issue: PortablePathIssue | None
+    complete: bool
 
 
 @dataclass(frozen=True, slots=True)
 class FlatPage:
     rows: tuple[Entry, ...]
     next: Continuation | None
-    portable_issue: PortablePathIssue | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -815,7 +790,7 @@ def _entry(value: object) -> Entry:
     )
     return Entry(
         path=Path(raw["path"]),
-        portable_path=str(raw["portable_path"]) if raw["portable_path"] is not None else None,
+        portable_path=str(raw["portable_path"]),
         kind=EntryKind(str(raw["kind"])),
         attrs=_attrs(raw["attrs"]),
         ignored=bool(raw["ignored"]),
@@ -858,21 +833,6 @@ def _continuation(value: object) -> Continuation:
     return Continuation(session=int(raw["session"]), ordinal=int(raw["ordinal"]))
 
 
-def _portable_issue(value: object) -> PortablePathIssue:
-    raw = _mapping(value, "portable path issue")
-    return PortablePathIssue(
-        omitted=int(raw["omitted"]),
-        examples=tuple(
-            PortablePathExample(
-                encoding=PortablePathEncoding(str(item["encoding"])),
-                encoded_hex=str(item["encoded_hex"]),
-                truncated=bool(item["truncated"]),
-            )
-            for item in (_mapping(entry, "portable path example") for entry in raw["examples"])
-        ),
-    )
-
-
 def _knowledge[T](value: object, converter: Callable[[object], T]) -> Knowledge[T]:
     raw = _mapping(value, "knowledge")
     kind = KnowledgeKind(str(raw["knowledge"]))
@@ -887,26 +847,21 @@ def _knowledge[T](value: object, converter: Callable[[object], T]) -> Knowledge[
 
 def _tree_page(value: object) -> TreePage:
     raw = _mapping(value, "tree page")
-    portable_issue = raw.get("portable_issue")
     continuation = raw.get("next")
     return TreePage(
         directory=_entry(raw["directory"]),
         rows=tuple(_entry(row) for row in _sequence(raw["rows"], "tree rows")),
         next=_continuation(continuation) if continuation is not None else None,
-        native_complete=bool(raw["native_complete"]),
-        portable_complete=bool(raw["portable_complete"]),
-        portable_issue=_portable_issue(portable_issue) if portable_issue is not None else None,
+        complete=bool(raw["complete"]),
     )
 
 
 def _flat_page(value: object) -> FlatPage:
     raw = _mapping(value, "flat page")
-    portable_issue = raw.get("portable_issue")
     continuation = raw.get("next")
     return FlatPage(
         rows=tuple(_entry(row) for row in _sequence(raw["rows"], "flat rows")),
         next=_continuation(continuation) if continuation is not None else None,
-        portable_issue=_portable_issue(portable_issue) if portable_issue is not None else None,
     )
 
 

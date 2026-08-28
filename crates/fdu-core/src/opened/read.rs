@@ -472,20 +472,16 @@ fn tree_projection(
     } else {
         None
     };
-    let (omitted, examples) = index.portable_children(path).map_or_else(
-        || (0, Vec::new()),
-        |children| (children.omitted, portable_examples(index, &children.examples)),
-    );
-    let native_complete = directory.children_complete.unwrap_or(false);
-    let directory_portable = directory.portable_path.is_some();
-    let portable_issue = (omitted > 0).then_some(crate::PortablePathIssue { omitted, examples });
+    // One completeness, because there is now one population. While a portable name was
+    // optional this had to distinguish "the native child set is authoritative" from
+    // "a portable consumer may trust it", since an entry with no portable name was in the
+    // first and absent from the second. Every entry has a portable name now, so the two
+    // questions have the same answer and asking twice would only invite them to diverge.
     Ok(ProjectionResult::Tree(Knowledge::Present(TreePage {
+        complete: directory.children_complete.unwrap_or(false),
         directory,
         rows,
         next: continuation,
-        native_complete,
-        portable_complete: native_complete && omitted == 0 && directory_portable,
-        portable_issue,
     })))
 }
 
@@ -522,7 +518,7 @@ fn flat_projection(
                 rows_visited: page.max_work,
             }));
         }
-        let native = portable.to_native_relative_path();
+        let native = index.path_of(*id).unwrap_or_default();
         let mut row = index.entry_value_of(*id, &native);
         let name = portable.as_str().rsplit('/').next().unwrap_or(portable.as_str());
         let candidate = crate::query::Candidate {
@@ -568,12 +564,7 @@ fn flat_projection(
     } else {
         None
     };
-    let (omitted, examples) = index.portable_issue();
-    let portable_issue = (omitted > 0).then(|| crate::PortablePathIssue {
-        omitted,
-        examples: portable_examples(index, examples),
-    });
-    Ok(ProjectionResult::Flat(crate::FlatPage { rows, next: continuation, portable_issue }))
+    Ok(ProjectionResult::Flat(crate::FlatPage { rows, next: continuation }))
 }
 
 fn aggregate_projection(
@@ -603,7 +594,7 @@ fn aggregate_projection(
                 rows_visited: max_work,
             });
         }
-        let native = portable.to_native_relative_path();
+        let native = index.path_of(*id).unwrap_or_default();
         let row = index.entry_value_of(*id, &native);
         let name = portable.as_str().rsplit('/').next().unwrap_or(portable.as_str());
         let candidate = crate::query::Candidate {
@@ -653,7 +644,12 @@ fn collect_children(
         if *spent > page.max_work || rows.len() == page.limit {
             return Some(ChildPosition { partition, name: name.clone() });
         }
-        let path = parent.join(name);
+        // The arena owns the native path. Joining the child *name* here would be joining
+        // an escaped component onto a native parent, and the row's portable form would
+        // then be derived from an already-escaped string and escaped a second time —
+        // `x%FF` became `x%25FF`. The names in this map are portable by construction, so
+        // they are for ordering and resumption, never for addressing.
+        let path = index.path_of(*id).unwrap_or_else(|| parent.join(name));
         rows.push(index.entry_value_of(*id, &path));
     }
     None
@@ -687,8 +683,13 @@ fn absence_is_known(index: &crate::Index, path: &Path) -> bool {
     while let Some(Component::Normal(component)) = components.next() {
         let candidate = parent.join(component);
         let Some(kind) = index.kind(&candidate) else {
-            return index.directory_complete(&parent) == Some(true)
-                && index.portable_children(&parent).is_none_or(|children| children.omitted == 0);
+            // Directory completeness alone settles this now. It once had to be paired
+            // with "and that directory omitted nothing", because a sibling whose name had
+            // no portable form was retained but unlistable, so the name asked about might
+            // have been hiding in that invisible set and absence could not be claimed.
+            // Every entry is listable now, so a complete directory that does not hold the
+            // name genuinely does not hold it.
+            return index.directory_complete(&parent) == Some(true);
         };
         if components.peek().is_some() && !kind.is_dir() {
             return true;
@@ -705,86 +706,140 @@ fn coverage_reason(coverage: Coverage) -> CoverageReason {
     }
 }
 
-fn portable_examples(
-    index: &crate::Index,
-    examples: &[EntryId],
-) -> Vec<crate::PortablePathExample> {
-    examples
-        .iter()
-        .filter_map(|id| index.path_of(*id))
-        .map(|path| portable_path_example(&path))
-        .collect()
-}
-
-#[cfg(unix)]
-fn portable_path_example(path: &Path) -> crate::PortablePathExample {
-    use std::os::unix::ffi::OsStrExt;
-
-    encode_path_example(
-        crate::PortablePathEncoding::UnixBytes,
-        path.as_os_str().as_bytes().iter().copied(),
-    )
-}
-
-#[cfg(windows)]
-fn portable_path_example(path: &Path) -> crate::PortablePathExample {
-    use std::os::windows::ffi::OsStrExt;
-
-    encode_path_example(
-        crate::PortablePathEncoding::WindowsWtf16Le,
-        path.as_os_str().encode_wide().flat_map(u16::to_le_bytes),
-    )
-}
-
-#[cfg(not(any(unix, windows)))]
-fn portable_path_example(path: &Path) -> crate::PortablePathExample {
-    encode_path_example(
-        crate::PortablePathEncoding::PlatformBytes,
-        path.as_os_str().as_encoded_bytes().iter().copied(),
-    )
-}
-
-fn encode_path_example(
-    encoding: crate::PortablePathEncoding,
-    bytes: impl Iterator<Item = u8>,
-) -> crate::PortablePathExample {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-
-    let mut encoded_hex = String::with_capacity(crate::MAX_PORTABLE_PATH_EXAMPLE_BYTES * 2);
-    let mut truncated = false;
-    for (position, byte) in bytes.enumerate() {
-        if position == crate::MAX_PORTABLE_PATH_EXAMPLE_BYTES {
-            truncated = true;
-            break;
-        }
-        encoded_hex.push(char::from(HEX[usize::from(byte >> 4)]));
-        encoded_hex.push(char::from(HEX[usize::from(byte & 0x0f)]));
-    }
-    crate::PortablePathExample { encoding, encoded_hex, truncated }
-}
-
-/// Derive the canonical POSIX-relative form of a native path, when it has one.
+/// Derive the canonical POSIX-relative form of a native path.
 ///
-/// `None` means some component is not valid UTF-8, so no portable name exists and the
-/// entry cannot enter any ordered projection. The whole decision is the `?` below: a
-/// native path is bytes, and nothing obliges those bytes to be UTF-8.
+/// Total: every path has one. Components join with `/`, and two kinds of byte are
+/// percent-escaped — those that are not valid UTF-8, and `%` itself.
 ///
-/// The partiality is deliberate today — fdu declines to invent a name it cannot reverse.
-/// It is also the reason ordered pages and native roll-ups answer over different
-/// populations, which every consumer then has to reconcile. Making the encoding total by
-/// escaping the offending bytes would collapse the two, and is tracked as a design
-/// decision rather than assumed here.
-pub(crate) fn portable_path(path: &Path) -> Option<crate::PortablePath> {
+/// Escaping `%` everywhere is not decoration, it is what makes the mapping injective.
+/// A file literally named `caf%FF.txt` is valid UTF-8; a file named `caf<0xFF>.txt` is
+/// not. Escaping only the invalid byte maps both to `caf%FF.txt`, and two distinct files
+/// would share one wire name — the aliasing bug of lossy conversion wearing better
+/// output. So a literal `%` becomes `%25`, and the cost is that `100%.txt` transmits as
+/// `100%25.txt`.
+///
+/// This is not URI encoding. The result is a JSON string, not a URL, so spaces, `#`, `?`
+/// and every non-ASCII scalar pass through untouched: `café/naïve.txt` is unchanged.
+///
+/// The partial version this replaced returned `None` for a non-UTF-8 component, which is
+/// why ordered pages and native roll-ups used to answer over different populations, why a
+/// directory with one stray byte in its name hid its whole subtree from browsing, and why
+/// omission counts, bounded escaped examples and a second completeness flag existed at
+/// all. Every mature system that meets this problem — git's quoted paths, Python's
+/// surrogate escapes, the `file://` URIs that LSP and the desktop file managers exchange
+/// — makes the derived name total. None of them tells a caller that a file has no name.
+pub(crate) fn portable_path(path: &Path) -> crate::PortablePath {
     let mut portable = String::new();
     for component in path.components() {
         let Component::Normal(component) = component else {
             continue;
         };
-        let component = component.to_str()?;
         if !portable.is_empty() {
             portable.push('/');
         }
-        portable.push_str(component);
+        push_component(&mut portable, component);
     }
-    Some(crate::PortablePath::new(portable))
+    crate::PortablePath::new(portable)
+}
+
+/// The canonical form of one path component, escaped by the same rules.
+///
+/// A child-name map is keyed by this rather than by the native name, so a component whose
+/// bytes are not UTF-8 still has a key and its directory can still be listed.
+pub(crate) fn portable_component(component: &std::ffi::OsStr) -> String {
+    let mut out = String::new();
+    push_component(&mut out, component);
+    out
+}
+
+fn push_component(out: &mut String, component: &std::ffi::OsStr) {
+    match component.to_str() {
+        Some(text) => push_text(out, text),
+        None => push_unrepresentable(out, component),
+    }
+}
+
+/// Append valid UTF-8, escaping only `%`.
+fn push_text(out: &mut String, text: &str) {
+    if !text.contains('%') {
+        out.push_str(text);
+        return;
+    }
+    for character in text.chars() {
+        if character == '%' {
+            out.push_str("%25");
+        } else {
+            out.push(character);
+        }
+    }
+}
+
+fn push_byte(out: &mut String, byte: u8) {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    out.push('%');
+    out.push(char::from(HEX[usize::from(byte >> 4)]));
+    out.push(char::from(HEX[usize::from(byte & 0x0f)]));
+}
+
+/// Append platform bytes that are not wholly valid UTF-8.
+///
+/// Valid runs are kept as text so a name that is mostly readable stays mostly readable;
+/// only the bytes that cannot be decoded are escaped.
+fn push_lossy_bytes(out: &mut String, mut bytes: &[u8]) {
+    loop {
+        match std::str::from_utf8(bytes) {
+            Ok(text) => {
+                push_text(out, text);
+                return;
+            }
+            Err(error) => {
+                let valid = error.valid_up_to();
+                if valid > 0 {
+                    let text = std::str::from_utf8(&bytes[..valid])
+                        .expect("the prefix utf8 validation just accepted");
+                    push_text(out, text);
+                }
+                // `None` means the input ended mid-sequence, so the remainder is escaped.
+                let invalid = error.error_len().unwrap_or(bytes.len() - valid);
+                for byte in &bytes[valid..valid + invalid] {
+                    push_byte(out, *byte);
+                }
+                bytes = &bytes[valid + invalid..];
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+fn push_unrepresentable(out: &mut String, component: &std::ffi::OsStr) {
+    use std::os::unix::ffi::OsStrExt;
+
+    push_lossy_bytes(out, component.as_bytes());
+}
+
+/// Windows names are UTF-16 that need not be well formed.
+///
+/// An unpaired surrogate has no UTF-8 encoding at all, so its two code-unit bytes are
+/// escaped big-endian, matching how `PortablePathEncoding::WindowsWtf16Le` already
+/// describes native bytes elsewhere.
+#[cfg(windows)]
+fn push_unrepresentable(out: &mut String, component: &std::ffi::OsStr) {
+    use std::os::windows::ffi::OsStrExt;
+
+    for unit in char::decode_utf16(component.encode_wide()) {
+        match unit {
+            Ok('%') => out.push_str("%25"),
+            Ok(character) => out.push(character),
+            Err(unpaired) => {
+                for byte in unpaired.unpaired_surrogate().to_be_bytes() {
+                    push_byte(out, byte);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn push_unrepresentable(out: &mut String, component: &std::ffi::OsStr) {
+    push_lossy_bytes(out, component.as_encoded_bytes());
 }
