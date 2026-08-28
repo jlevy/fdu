@@ -134,7 +134,7 @@ uv-version:
 # configuration. Keep this list aligned with the recipe-coverage test.
 UV_BACKED_TARGETS := test-performance python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse docs-format docs-format-check \
 	perf-baseline perf-profile perf-content-profile perf-compare perf-content-compare \
-	perf-compare-tools perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check
+	perf-compare-tools perf-floor perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check
 
 $(UV_BACKED_TARGETS): uv-version
 
@@ -388,7 +388,7 @@ PERF_TOOL_EVIDENCE_ARGS = $(PERF_EVIDENCE_ARGS) \
 PERF_UV := PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=explorations $(UV) run --project explorations/benchmarks --frozen
 PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 
-.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check
+.PHONY: perf-floor perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check
 
 perf-probe-release:
 	$(CARGO) build --locked --release -p fdu-core --example perf_probe --no-default-features
@@ -494,6 +494,36 @@ perf-subjects:
 # before they compare last month's number with today's.
 perf-subjects-check:
 	$(PERF_RUN) subjects --check $(PERF_SUBJECTS)
+
+# The tier-by-subject floor scoreboard: where each tier sits against what the machine
+# charges for the work fdu cannot avoid. Campaign 2 orders work by that distance, so this
+# is the scoreboard every accepted change re-runs, and what makes its termination
+# criteria checkable rather than asserted.
+#
+# Not in `check`, and not a verdict harness: `perf-compare` decides whether a change is
+# kept, under the paired accept rule. This divides two absolute numbers to say where a
+# tier stands, which is a different question and needs the host to itself just as much.
+#
+# Linux only, and it refuses rather than falling back: `parfloor.c` is the denominator
+# every x-floor threshold is defined against and it issues SYS_getdents64 and statx
+# directly. A macOS scoreboard needs a getattrlistbulk floor (fdu-9hdc) or a different
+# floor set with the regime difference recorded -- a decision for the campaign plan
+# rather than one a harness makes by substituting a denominator and printing the same
+# column heading. See fdu-33ri.
+#
+# SUBJECTS takes repeated LABEL=PATH pairs; a subject decides only if it is dense and at
+# least 50,000 entries, and smaller ones screen.
+PERF_FLOOR_OUT ?= /tmp/fdu-floor
+PERF_FLOOR_SUBJECT_ARGS = $(foreach subject,$(SUBJECTS),--subject $(subject))
+perf-floor:
+	@test -n "$(SUBJECTS)" || \
+		{ echo "SUBJECTS must name at least one LABEL=PATH tree to score" >&2; exit 2; }
+	$(PERF_UV) python -m benchmarks.realtree.floor \
+		$(PERF_FLOOR_SUBJECT_ARGS) \
+		--trials $(or $(TRIALS),30) --warmups $(or $(WARMUPS),3) \
+		--host-regime $(or $(PERF_HOST_REGIME),quiet) \
+		--output $(PERF_FLOOR_OUT)/scoreboard-$(or $(NAME),latest).json \
+		--markdown $(PERF_FLOOR_OUT)/scoreboard-$(or $(NAME),latest).md
 
 perf-record:
 	$(PERF_UV) --group dev python -m benchmarks.realtree.record $(ARGS)
