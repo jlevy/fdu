@@ -142,6 +142,14 @@ does not silently substitute another provider.
 Cross-package conformance installs the exact engine revision under test rather than
 using a moving branch or sibling source checkout.
 
+The file-type registry is a value a caller supplies, not a constant the engine hides,
+and that makes it a three-surface capability rather than a flag.
+The engine parses the shared registry document itself and derives the identity it
+reports from the parsed content, so a caller cannot assert one identity beside different
+rules. Parsing it costs the standalone command no dependency: the profile has a narrow
+reader in the engine rather than a general-purpose configuration library, and the
+compiled default registry remains the answer when no document is supplied.
+
 The command line does not need to expose every lifecycle immediately.
 “The command line invents nothing” means a CLI capability must come from the engine; it
 does not require every additive library capability to become a default flag before a

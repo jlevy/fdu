@@ -326,6 +326,21 @@ An opened root starts native observation only when its explicit options request 
 the backend can support honestly.
 Unsupported combinations fail explicitly rather than silently omitting paths.
 
+Interactive serving state is opt-in and belongs to the opened lifecycle alone.
+An opened root allocates one optional set of maintained structures — portable path and
+per-directory child order, classification and declared-name tallies, and a global file
+recency order — and updates them inside the same exact commit that moves the facts, so a
+read traverses maintained state instead of scanning and sorting per request.
+A detached `Index`, a snapshot, a one-shot report, and the command line allocate none of
+it, retain none of it, and pay nothing for it.
+That isolation is a tested boundary, not an intention: the assertion is that a detached
+index’s serving state is absent, and the command line’s existing golden corpus is
+required to stay unchanged.
+
+Each maintained structure has to name the measured request work it removes.
+None is justified by having existed in an earlier prototype, because a maintained index
+is a permanent cost on every commit paid for an intermittent read.
+
 ### Configuration, Scope, and Identity
 
 Configuration separates answer semantics from execution policy and query selection.
@@ -486,17 +501,53 @@ Repeated exact aggregates are maintained at commit time only when their read fre
 and measured cost justify mutation and memory overhead.
 An unmaintained compound total is `exact(n)` or `at_least(n)` under a request cap.
 
-Tree order is parent-first.
-Within a directory, directories precede nondirectories and each partition is ordered by
+Every ordered page has a **total** order: two providers answering one query at one
+version return the same rows in the same sequence, with no tie left to insertion order,
+hash iteration, or a stable sort’s input order.
+An order a provider merely happens to produce is not a contract, and an order stated
+only as prose is not either — “parent-first” once stood here and did not distinguish
+level order from pre-order, which are different sequences for any tree deeper than one
+level.
+
+Tree order is **breadth-first level order**: all children of the requested path, then
+all children of those directories, to the query’s maximum depth.
+Within one parent, directories precede nondirectories and each partition is ordered by
 canonical component UTF-8 bytes.
-Flat portable rows are ordered by complete canonical POSIX-relative UTF-8 bytes.
-Portable projections omit unrepresentable native paths but report their exact count,
-bounded escaped examples, and affected completeness; native roll-ups still include them.
+Level order matches parent-first discovery, so a page is served from the knowledge that
+exists earliest, and it keeps truncation honest — a pre-order page cut at its row bound
+can return one directory and a thousand of its descendants while leaving the caller
+unable to tell whether the parent held two entries or two thousand.
+
+Flat and catalog rows are ordered by complete canonical POSIX-relative UTF-8 bytes.
+Ranked recency is modification time descending, then that same canonical path ascending;
+the path is unique within one index, so the pair is total and no third key is carried.
+Ranking is those two keys only: no surface reorders ranked rows by ignored state or any
+other property, in any branch.
+
+Excluding ignored entries prunes the excluded directory’s whole subtree, not merely its
+row.
+
+Ordered pages are drawn from entries that have a canonical portable form, which requires
+every component to be valid UTF-8 — a native path is not obliged to be.
+Such entries are absent from every ordered page while keeping full native identity and
+their bytes in roll-ups, so ordered pages and native roll-ups answer over deliberately
+different populations.
+The omission is reported rather than silent, through an exact count, bounded escaped
+examples, and separate native and portable completeness.
+A directory without a portable form denies its whole subtree, because the form is built
+from every component.
 
 Page continuations are opaque identifiers into a bounded table owned by one opened root.
 A record contains the pinned version, normalized query identity, and native resumable
 traversal position. The public token contains no trusted path, total, sort key, request,
 or signature.
+
+A flat continuation stores the last emitted portable path, which alone fixes the
+position. A tree continuation stores a stack of at most the query’s maximum depth
+`(parent portable path, last emitted child name)` pairs, which enumerates a level
+lazily. It deliberately does not store the frontier: the set of directories one level up
+is unbounded in directory width, so it cannot fit a bounded record, and re-deriving it
+per page would make paging one wide level quadratic in the number of pages.
 
 A continuation fails explicitly when its version is stale, belongs to another opened
 root, or its record was evicted.
