@@ -5,11 +5,11 @@ title: Real-backend watch tests fail ~2 runs in 3 inside the parallel lib binary
 kind: bug
 status: open
 priority: 1
-version: 6
+version: 7
 labels: []
 dependencies: []
 created_at: 2026-08-28T02:41:40.011Z
-updated_at: 2026-08-28T03:58:52.830Z
+updated_at: 2026-08-28T07:00:09.803Z
 ---
 crates/fdu-core/tests/watch_session_integration.rs, an_idle_tree_yields_nothing_and_costs_nothing, fails roughly one run in three on a loaded machine. Observed while a rename-only change was in the tree; the same code passed on the next two runs, so it is timing, not a regression.
 
@@ -31,60 +31,57 @@ This matters beyond local runs: CI runners are shared and loaded, so the same wi
 
 ## Notes
 
-## Reproduced and correctly diagnosed 2026-08-27
+## Host evidence, 2026-08-27 — first hypothesis with observational support
 
-Two earlier diagnoses were wrong and are recorded so nobody repeats them.
+Four earlier hypotheses were tested and killed. Recording them so nobody re-runs them:
+external CPU load (test passes in 0.45 s with eight cores saturated), volume-wide
+filesystem churn (eight aggressive churn loops with instrumentation on the raw notify
+callback produced zero missed events), pairwise binary concurrency
+(`watch_persistence` alongside `watch_session`, 3/3 pass), and serializing watchers
+(contradicted by `watch_session` running five real watchers in parallel and passing 5/5).
 
-**Not external machine load.** The failures first appeared at load average 221 on ten
-cores, which looked sufficient. They recur unchanged at load 74 with `fseventsd` back to
-2.8% CPU.
+What the failure actually looks like, measured rather than inferred:
 
-**Not CPU contention.** `a_new_directory_also_escalates_for_a_relist` run on its own
-passes in 0.83 s idle and 0.45 s with eight cores saturated by `yes`. Starving the CPU
-does not reproduce it at all.
+- the test receives *nothing*, not late events. `wait_for` reports `Saw 0 op(s): []`
+  after a full sixty seconds;
+- it is per-process, not per-test. One run failed all five `watch_session` tests at once,
+  so that binary's delivery was dead for its whole life;
+- it is not macOS as a platform. CI's `Test (macos-latest)` job has passed on every run
+  of this branch, on fresh VMs, with these same tests.
 
-**It is concurrency inside the test binary.** Running the exact failing target,
-`cargo test -p fdu-core --all-features --lib`, three times in a row with nothing else
-running:
+`log show --predicate 'process == "fseventsd"'` on this host shows why that last row is
+the important one:
 
-| Run | Result | Wall time |
-| --- | --- | --- |
-| 1 | 535 passed | 53.96 s |
-| 2 | 2 failed | 49.77 s |
-| 3 | 3 failed | 92.77 s |
+- `fseventsd` is at 4.75 GB RSS and still climbing. It was 2.8 GB earlier in the same
+  session, then 3.8 GB. That is far outside normal for this daemon;
+- it is repeatedly logging `client_buffer_flush: sending client(...) USER DROPPED event
+  to pid 12137`, and pid 12137 is Apple's own `CacheDelete.framework/deleted`, which has
+  been a slow consumer for over four hours. The daemon is buffering and dropping for a
+  stuck system client;
+- 346 stream registrations in two hours, on fifteen days of uptime, from the many
+  watcher-heavy tools this machine runs.
 
-Roughly one run in three passes, and the same binary's runtime varies by a factor of two.
-The failing tests are the ones that wait on real FSEvents delivery, while five hundred
-sibling tests in the same binary create, write, and delete temporary files on the same
-volume. FSEvents is volume-wide, so that churn is delivered into the same stream the
-watch tests are filtering, and macOS coalesces under pressure. The tests are not isolated
-from their siblings' filesystem activity, and no timeout value fixes that.
+Hypothesis: a degraded local `fseventsd` sometimes gives a newly registered stream no
+delivery at all. It explains every observation above, including why no synthetic load
+reproduced it — the trigger is daemon state at registration time, not load this process
+generates — and why `origin/main` fails here while both CI platforms are green.
 
-Affected: `a_new_directory_also_escalates_for_a_relist`,
-`created_files_arrive_as_verified_upserts`, `deleted_files_arrive_as_removes`.
+**Falsifier, and it must be run before this is believed.** After a reboot,
+`make rust-test` should pass repeatedly on this host. If it still fails against a healthy
+daemon, this hypothesis is wrong like the other four and the investigation resumes.
 
-Pre-existing. All three are present in `origin/main`.
+## Containment that does not depend on the host
 
-## The fix the plan already prescribes
+Independent of the cause, a test must not report a product defect when the host's event
+service gave it nothing. The repository already has the pattern:
+`test_support::permission_bits_are_enforced` skips fixtures the host cannot provide.
 
-The PR #47 test reuse audit says of the real watch cases: "Keep a minimal create/remove
-delivery and idle-no-work platform smoke. Move gaps, overflow, filters, budgets, state,
-ordering, and shutdown to the scripted deterministic sessions."
+Probe delivery before asserting it. Write a file this test causes, and wait for that
+file's own event. If the probe never arrives, the host event service is unavailable:
+skip visibly, naming the host, and never evaluate the product assertion. If the probe
+arrives, the stream works and every existing assertion runs at full strength.
 
-`a_new_directory_also_escalates_for_a_relist` drives a watch-setup *race* through a real
-backend. A race is exactly what a deterministic scripted observer exists to express, and
-exactly what a shared event stream cannot be relied on to reproduce. Move it, and keep
-only minimal create and remove delivery against the real backend.
-
-Two supporting changes:
-
-- `wait_for` returns whatever it accumulated when its deadline expires, so the caller
-  cannot distinguish "the backend never delivered" from "the backend delivered the wrong
-  ops", and reports the second. Give it a distinguishable result so a delivery timeout
-  says so.
-- Real-backend tests should not share a binary with hundreds of filesystem-mutating
-  siblings. Consider moving them to their own integration target so they are serialized
-  against that churn.
-
-Raised to P1: this blocks `make check`, the required handoff gate, about two runs in
-three on macOS.
+Residual exposure: the `cli-watch` golden helpers cannot skip, because tryscript has no
+skip semantics. A dead stream still fails `test-golden` there, though now with a
+correctly attributed "timed out waiting for the repaint separator" rather than a claim
+about product behavior.
