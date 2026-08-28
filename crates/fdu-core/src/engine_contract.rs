@@ -683,7 +683,7 @@ pub enum PortablePathEncoding {
 /// populations differ by design, and why a conformance case pins the difference instead
 /// of letting a reader take it for a defect.
 ///
-/// Distinct from [`crate::index::path_is_relative_normal`], which asks the unrelated
+/// Distinct from the crate-internal `path_is_relative_normal`, which asks the unrelated
 /// structural question of whether a path is relative and never ascends. A path can
 /// satisfy either and fail the other.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -727,8 +727,9 @@ impl PortablePath {
     /// method rather than a `From` impl and why the newtype blocks the bare conversion.
     /// Making the encoding total by escaping non-UTF-8 bytes would break it silently —
     /// a file named `caf%FF.txt` and one named `caf<0xFF>.txt` would rebuild to the same
-    /// native path — so that change must revisit every caller. `entries_rebuild_to_their
-    /// _native_paths` pins the current equivalence against the arena.
+    /// native path — so that change must revisit every caller.
+    /// `entries_rebuild_to_their_native_paths` pins the current equivalence against the
+    /// arena.
     pub(crate) fn to_native_relative_path(&self) -> std::path::PathBuf {
         std::path::PathBuf::from(&self.0)
     }
