@@ -5,7 +5,7 @@ title: Add measured native indexes and handle-local continuations
 kind: feature
 status: in_progress
 priority: 1
-version: 13
+version: 14
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - opened-root-rewrite
@@ -24,7 +24,8 @@ child_order_hints:
   - is-01m12xe7z1vh1739cmpc4k2f7z
   - is-01m138wcqyxn6x4d6ksdrrgyye
   - is-01m138x5kdsqfcebcdp01y6rr7
+  - is-01m1390q785a65db2wqcda85w9
 created_at: 2026-08-26T03:28:34.258Z
-updated_at: 2026-08-28T04:09:04.876Z
+updated_at: 2026-08-28T04:11:01.222Z
 ---
 Using 3A evidence, add only the path, recency, classification, partition, and navigation indexes required for bounded MetaBrowser projections. Add a bounded handle-local continuation table with version/query/traversal position, proportional work, stale/foreign/evicted results, and close cleanup.
