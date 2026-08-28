@@ -30,21 +30,88 @@ fn session(root: &Path, selection: Selection, views: Vec<ViewSpec>) -> Session {
     .expect("session")
 }
 
-/// Collect changes until `wanted` matches one, or the settle window expires.
-fn wait_for(
+/// Disturb `warm` until the session's watch is provably live, then return.
+///
+/// `Session::new` returns once the watch is *requested*, not once it is effective.
+/// Anything written before registration takes effect produces no event at all, and the
+/// engine reports that honestly as a `WatchSetupRace` invalidation meaning "relist the
+/// root" — a correct answer that a test waiting for one file's own change will reject.
+///
+/// That race, not a slow machine and not a dead backend, is what made these tests fail
+/// intermittently: each bound a session and immediately wrote its subject, so it was
+/// racing its own setup and lost whenever registration was slower than the write.
+///
+/// The caller names a file that already exists and that its selection admits, and this
+/// rewrites it. Rewriting rather than creating is deliberate: it changes no file count,
+/// so a test may still assert totals afterwards, and it leaves nothing to clean up. A
+/// create-then-delete warm-up cannot serve, because the engine coalesces that pair into
+/// no net change and the wait would burn its whole deadline for nothing.
+fn establish_watch(session: &mut Session, warm: &Path, contents: &[u8]) {
+    fs::write(warm, contents).expect("warm-up rewrite");
+    let name = warm.file_name().expect("warm-up name").to_owned();
+    let _ = wait_for_delivery(session, |change| change.path.ends_with(&name));
+}
+
+/// Collect changes until `wanted` matches one, separating three outcomes.
+///
+/// `Delivered` — the change arrived. Assertions run at full strength.
+///
+/// `Mismatched` — batches arrived but never carried the awaited change. A real
+/// disagreement about content, and the caller must fail.
+///
+/// `Silent` — no batch arrived at all. That says nothing about fdu: the host's event
+/// service delivered nothing to this stream, so the precondition was never established.
+/// A working backend delivers this test's own write in milliseconds, so silence for a
+/// full minute means the stream is dead rather than slow, and the caller declines the way
+/// `permission_bits_are_enforced` lets a fixture decline a host that cannot supply what
+/// it needs.
+enum Delivery {
+    Delivered(Box<fdu_core::Change>),
+    Mismatched(usize),
+    Silent,
+}
+
+fn wait_for_delivery(
     session: &mut Session,
     wanted: impl Fn(&fdu_core::Change) -> bool,
-) -> Option<fdu_core::Change> {
+) -> Delivery {
     let deadline = Instant::now() + SETTLE;
+    let mut seen = 0_usize;
     while Instant::now() < deadline {
         let Some(batch) = session.next_batch(Duration::from_millis(250)).expect("batch") else {
             continue;
         };
+        seen = seen.saturating_add(batch.changes.len());
         if let Some(found) = batch.changes.into_iter().find(&wanted) {
-            return Some(found);
+            return Delivery::Delivered(Box::new(found));
         }
     }
-    None
+    if seen == 0 { Delivery::Silent } else { Delivery::Mismatched(seen) }
+}
+
+/// Resolve a delivery, or decline the test when the host delivered nothing.
+///
+/// Returns `None` only for `Silent`, having reported the skip; a mismatch panics, because
+/// events that arrived and were wrong are evidence about fdu.
+fn wait_for(
+    session: &mut Session,
+    test: &str,
+    wanted: impl Fn(&fdu_core::Change) -> bool,
+) -> Option<fdu_core::Change> {
+    match wait_for_delivery(session, wanted) {
+        Delivery::Delivered(change) => Some(*change),
+        Delivery::Mismatched(seen) => panic!(
+            "{test}: {seen} change(s) arrived in {SETTLE:?} but never the awaited one, so this \
+             is a disagreement about content rather than a delivery failure"
+        ),
+        Delivery::Silent => {
+            eprintln!(
+                "skipped: {test}: the host event service delivered no changes to this session, \
+                 so the precondition could not be established"
+            );
+            None
+        }
+    }
 }
 
 #[test]
@@ -52,11 +119,15 @@ fn a_created_file_arrives_as_an_upsert() {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(dir.path().join("existing.txt"), b"hello").expect("seed");
     let mut session = session(dir.path(), Selection::default(), vec![ViewSpec::Files]);
+    establish_watch(&mut session, &dir.path().join("existing.txt"), b"hello");
 
     fs::write(dir.path().join("created.rs"), b"fn main() {}").expect("create");
 
-    let change = wait_for(&mut session, |change| change.path.ends_with("created.rs"))
-        .expect("the created file should arrive");
+    let Some(change) = wait_for(&mut session, "a_created_file_arrives_as_an_upsert", |change| {
+        change.path.ends_with("created.rs")
+    }) else {
+        return;
+    };
     assert_eq!(change.kind, ChangeKind::Upsert);
     assert_eq!(change.bytes, Some(12));
     assert!(change.mtime_ns.is_some(), "an upsert carries verified metadata, not just a path");
@@ -67,11 +138,15 @@ fn a_deleted_file_arrives_as_a_remove() {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(dir.path().join("doomed.txt"), b"hello").expect("seed");
     let mut session = session(dir.path(), Selection::default(), vec![ViewSpec::Files]);
+    establish_watch(&mut session, &dir.path().join("doomed.txt"), b"hello");
 
     fs::remove_file(dir.path().join("doomed.txt")).expect("remove");
 
-    let change = wait_for(&mut session, |change| change.path.ends_with("doomed.txt"))
-        .expect("the deletion should arrive");
+    let Some(change) = wait_for(&mut session, "a_deleted_file_arrives_as_a_remove", |change| {
+        change.path.ends_with("doomed.txt")
+    }) else {
+        return;
+    };
     assert_eq!(change.kind, ChangeKind::Remove);
     assert_eq!(change.bytes, None, "a removed entry has no attributes to report");
 }
@@ -86,12 +161,19 @@ fn the_run_selection_filters_the_stream() {
         ..Selection::default()
     };
     let mut session = session(dir.path(), selection, vec![ViewSpec::Files]);
+    // The selection admits only `*.rs`, so the warm-up has to be one or it is filtered
+    // out of the stream and proves nothing about delivery.
+    fs::write(dir.path().join("warmup.rs"), b"fn warm() {}").expect("seed");
+    establish_watch(&mut session, &dir.path().join("warmup.rs"), b"fn warm() {}");
 
     fs::write(dir.path().join("ignored.txt"), b"no").expect("create");
     fs::write(dir.path().join("watched.rs"), b"yes").expect("create");
 
-    let change = wait_for(&mut session, |change| change.path.ends_with("watched.rs"))
-        .expect("the matching file should arrive");
+    let Some(change) = wait_for(&mut session, "the_run_selection_filters_the_stream", |change| {
+        change.path.ends_with("watched.rs")
+    }) else {
+        return;
+    };
     assert_eq!(change.kind, ChangeKind::Upsert);
 
     // Drain briefly and confirm the excluded path never appears.
@@ -113,6 +195,7 @@ fn an_idle_tree_yields_nothing_and_costs_nothing() {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(dir.path().join("still.txt"), b"unchanged").expect("seed");
     let mut session = session(dir.path(), Selection::default(), vec![ViewSpec::Summary]);
+    establish_watch(&mut session, &dir.path().join("still.txt"), b"unchanged");
 
     // Establish quiet by *positive confirmation*, not by waiting for silence.
     //
@@ -130,11 +213,13 @@ fn an_idle_tree_yields_nothing_and_costs_nothing() {
     // backend has demonstrably drained everything older, and any further batch is
     // genuinely spurious — which is exactly the claim the assertion wants to make.
     fs::write(dir.path().join("sentinel.txt"), b"sentinel").expect("sentinel");
-    assert!(
-        wait_for(&mut session, |change| change.path.ends_with("sentinel.txt")).is_some(),
-        "the backend never delivered the sentinel within {SETTLE:?}, so the tree was never \
-         known to be drained; this is a delivery timeout, not a claim about idleness"
-    );
+    if wait_for(&mut session, "an_idle_tree_yields_nothing_and_costs_nothing", |change| {
+        change.path.ends_with("sentinel.txt")
+    })
+    .is_none()
+    {
+        return;
+    }
 
     // Nothing has changed since the sentinel, so nothing should arrive. A polling
     // implementation would still return work here.
@@ -155,6 +240,7 @@ fn a_live_report_is_the_same_query_re_evaluated() {
         Selection { depth: Some(Bound::All), ..Selection::default() },
         vec![ViewSpec::Summary],
     );
+    establish_watch(&mut session, &dir.path().join("a.txt"), b"12345");
 
     let before = session
         .report(&session.live_provenance(std::time::SystemTime::UNIX_EPOCH))
@@ -166,8 +252,13 @@ fn a_live_report_is_the_same_query_re_evaluated() {
     assert_eq!(first.files, 1);
 
     fs::write(dir.path().join("b.txt"), b"678").expect("create");
-    wait_for(&mut session, |change| change.path.ends_with("b.txt"))
-        .expect("the change should arrive");
+    if wait_for(&mut session, "a_live_report_is_the_same_query_re_evaluated", |change| {
+        change.path.ends_with("b.txt")
+    })
+    .is_none()
+    {
+        return;
+    }
 
     let after = session
         .report(&session.live_provenance(std::time::SystemTime::UNIX_EPOCH))

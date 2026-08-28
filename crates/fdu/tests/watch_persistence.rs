@@ -47,6 +47,30 @@ fn wait_for_rewrite(cache_dir: &Path, before: Option<(u64, std::time::SystemTime
     false
 }
 
+/// Wait until the spawned watcher has provably registered, then return its baseline.
+///
+/// A watch process is not watching the moment it starts: registration is requested first
+/// and takes effect a little later, and anything written before then produces no event at
+/// all. The engine reports that honestly as a setup race meaning "relist the root", so a
+/// test whose subject write lands in that window is asserting against a reply it never
+/// asked for. Both tests here used a fixed sleep, which is a guess about how long
+/// registration takes, and the guess is wrong exactly when the machine is busy.
+///
+/// A warm-up write proves it instead. When the snapshot changes because of that write,
+/// the watcher is demonstrably live and persisting, so the subject write that follows
+/// cannot fall into the setup window. The value returned is the fingerprint *after* the
+/// warm-up, which is the baseline a later rewrite must differ from.
+fn establish_watch(cache_dir: &Path, tree: &Path) -> Option<(u64, std::time::SystemTime)> {
+    let before = snapshot_fingerprint(cache_dir);
+    fs::write(tree.join("warmup.txt"), b"warmup").expect("write warm-up file");
+    assert!(
+        wait_for_rewrite(cache_dir, before),
+        "the watcher never persisted a warm-up change within {DEADLINE:?}, so it was never \
+         observed to be watching and nothing after this point would be evidence about fdu",
+    );
+    snapshot_fingerprint(cache_dir)
+}
+
 /// Run `fdu` to completion and return stdout.
 fn report(tree: &Path, cache: &Path, args: &[&str]) -> String {
     let output = Command::new(env!("CARGO_BIN_EXE_fdu"))
@@ -102,10 +126,9 @@ fn a_watch_started_from_a_warm_cache_still_persists_what_it_sees() {
         .spawn()
         .expect("spawn watching fdu");
 
-    // Baseline *after* the watcher's own startup save, or that write is mistaken for the
-    // incremental one and the test passes without proving anything.
-    sleep(Duration::from_secs(3));
-    let initial = snapshot_fingerprint(cache.path());
+    // Baseline *after* the watcher is provably registered, so a later rewrite is
+    // provably the incremental one rather than that same startup file seen again.
+    let initial = establish_watch(cache.path(), &tree);
 
     fs::write(tree.join("second.txt"), b"second").expect("write second file");
     let rewritten = wait_for_rewrite(cache.path(), initial);
@@ -141,8 +164,7 @@ fn a_killed_watch_still_leaves_a_warm_cache() {
 
     // Let the initial open's snapshot land and record it, so a later write is provably a
     // second one rather than that same file seen again.
-    sleep(Duration::from_secs(2));
-    let initial = snapshot_fingerprint(cache.path());
+    let initial = establish_watch(cache.path(), &tree);
 
     fs::write(tree.join("second.txt"), b"second").expect("write second file");
     let rewritten = wait_for_rewrite(cache.path(), initial);

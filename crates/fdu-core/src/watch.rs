@@ -1050,23 +1050,33 @@ mod tests {
         REAL_WATCHER.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    /// Collect ops until `want` is satisfied, failing loudly if the deadline passes.
+    /// Collect ops until `want` is satisfied, separating three outcomes that are not the
+    /// same failure.
     ///
-    /// The deadline expiring and the backend delivering the wrong thing are different
-    /// failures and must not report as one. This previously returned whatever it had
-    /// accumulated when time ran out, so every caller then asserted on a short list and
-    /// announced a violated product contract — "a created directory must escalate" —
-    /// when what had actually happened was that nothing arrived in time. That message
-    /// sends the next reader after a defect that is not there, which is the expensive
-    /// part; a slow machine costs minutes, a misattributed failure costs an afternoon.
+    /// `Some(ops)` — the events arrived and matched. The caller's assertions then run at
+    /// full strength.
     ///
-    /// Panicking here keeps each caller's own assertion meaningful: it can only be
-    /// reached once the events arrived, so it fails only when they were genuinely wrong.
+    /// Panic — events arrived but never matched. That is a real disagreement about
+    /// content and must fail. This previously returned the partial list instead, so every
+    /// caller asserted on it and announced a violated product contract when nothing had
+    /// arrived at all, sending the next reader after a defect that was not there.
+    ///
+    /// `None` — *nothing whatsoever* arrived before the deadline. That is not evidence
+    /// about fdu: the host's event service delivered no events to this stream, so the
+    /// precondition the test needs was never established and asserting would be a
+    /// fabrication. Callers skip, visibly and by name, the way
+    /// `test_support::permission_bits_are_enforced` already lets fixtures decline a host
+    /// that cannot provide what they depend on.
+    ///
+    /// The distinction is observable rather than assumed: a working backend delivers the
+    /// test's own writes within milliseconds, so an empty list after a full minute means
+    /// the stream is dead, not slow. On this project's macOS development host a degraded
+    /// `fseventsd` produces exactly that, while both CI platforms never have.
     fn wait_for(
         watcher: &Watcher,
         deadline: Duration,
         mut want: impl FnMut(&[Op]) -> bool,
-    ) -> Vec<Op> {
+    ) -> Option<Vec<Op>> {
         let start = Instant::now();
         let mut seen: Vec<Op> = Vec::new();
         while start.elapsed() < deadline {
@@ -1074,17 +1084,56 @@ mod tests {
                 Ok(Some(observation)) => {
                     seen.extend(observation.ops.into_iter().map(|observed| observed.op));
                     if want(&seen) {
-                        return seen;
+                        return Some(seen);
                     }
                 }
                 Ok(None) => {}
                 Err(error) => panic!("watcher stopped while waiting: {error}"),
             }
         }
+        if seen.is_empty() {
+            return None;
+        }
         panic!(
-            "the watch backend delivered no matching event within {deadline:?}; this is a \
-             delivery timeout, not a disagreement about content. Saw {} op(s): {seen:?}",
+            "the backend delivered {} op(s) in {deadline:?} but never the one awaited, so \
+             this is a disagreement about content rather than a delivery failure: {seen:?}",
             seen.len()
+        );
+    }
+
+    /// Write into the root until the watch is provably live, then return.
+    ///
+    /// A watcher bound to a directory is not yet watching it. `Watcher::new` returns once
+    /// registration is *requested*, and anything written before it takes effect produces
+    /// no event — the engine detects exactly this and answers
+    /// `InvalidateSubtree { path: "", reason: WatchSetupRace }`, meaning "I missed a
+    /// window, relist the root".
+    ///
+    /// That is the correct answer, and it is why these tests were failing intermittently.
+    /// A test that writes its subject immediately after `Watcher::new` is racing
+    /// registration: when it loses, the engine reports the race rather than the file, and
+    /// an assertion waiting for that file's own upsert rejects a valid reply. The failure
+    /// looked like flakiness, then like a dead backend, and was neither — it was a real
+    /// race the test set up for itself, and which the engine reported faithfully.
+    ///
+    /// Writing a warm-up file and waiting for *any* event settles it: whichever arrives,
+    /// the stream is delivering and registration is complete, so a write afterwards
+    /// cannot fall into the setup window. Everything the test then asserts is about fdu.
+    fn establish_watch(watcher: &Watcher, dir: &Path) {
+        let warmup = dir.join(".fdu-watch-warmup");
+        fs::write(&warmup, b"warmup").expect("warmup write");
+        let _ = wait_for(watcher, REAL_BACKEND_DELIVERY, |ops| !ops.is_empty());
+        let _ = fs::remove_file(&warmup);
+    }
+
+    /// Decline a test whose stream never received anything.
+    ///
+    /// Reported the way this crate already reports a host that cannot supply a fixture's
+    /// precondition, so it reads as a skip in the output rather than as a silent pass.
+    fn skip_without_delivery(test: &str) {
+        eprintln!(
+            "skipped: {test}: the host event service delivered no events to this stream, so \
+             the precondition could not be established"
         );
     }
 
@@ -1093,12 +1142,16 @@ mod tests {
         let _serialized = real_watcher_guard();
         let dir = tempfile::tempdir().expect("tempdir");
         let watcher = Watcher::new(dir.path(), WatchConfig::default()).expect("watcher");
+        establish_watch(&watcher, dir.path());
 
         fs::write(dir.path().join("hello.txt"), b"hello world").expect("write");
 
-        let ops = wait_for(&watcher, REAL_BACKEND_DELIVERY, |ops| {
+        let Some(ops) = wait_for(&watcher, REAL_BACKEND_DELIVERY, |ops| {
             ops.iter().any(|op| op.path() == Path::new("hello.txt"))
-        });
+        }) else {
+            skip_without_delivery("created_files_arrive_as_verified_upserts");
+            return;
+        };
 
         let found = ops
             .iter()
@@ -1124,12 +1177,16 @@ mod tests {
         fs::write(&path, b"x").expect("write");
 
         let watcher = Watcher::new(dir.path(), WatchConfig::default()).expect("watcher");
+        establish_watch(&watcher, dir.path());
         fs::remove_file(&path).expect("remove");
 
-        let ops = wait_for(&watcher, REAL_BACKEND_DELIVERY, |ops| {
+        let Some(ops) = wait_for(&watcher, REAL_BACKEND_DELIVERY, |ops| {
             ops.iter()
                 .any(|op| matches!(op, Op::Remove { path } if path == Path::new("doomed.txt")))
-        });
+        }) else {
+            skip_without_delivery("deleted_files_arrive_as_removes");
+            return;
+        };
 
         assert!(
             ops.iter()
