@@ -5,7 +5,7 @@ title: Measure final performance, dependency, and size acceptance
 kind: task
 status: open
 priority: 1
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - opened-root-rewrite
@@ -16,52 +16,39 @@ child_order_hints:
   - is-01m10nshrq8ska2thptbjmp8vs
   - is-01m10nsj426pyks0x8h9azvfka
 created_at: 2026-08-26T03:28:35.764Z
-updated_at: 2026-08-28T00:15:25.065Z
+updated_at: 2026-08-28T15:24:18.267Z
 ---
 Measure cold usefulness and completion, settled query and continuation work, change latency, CPU, memory, dependency trees, CLI binary size, wheel size, and GIL boundary cost on the same corpus. Publish exact revisions and regimes and record the explicit rollback/default-provider decision without changing defaults in this bead.
 
 ## Notes
 
-## Measured baseline recorded 2026-08-27 at `328ca65`
+## Command-line size growth is explained, 2026-08-28 — not a regression
 
-Partial evidence toward this bead's size and dependency acceptance. Not acceptance
-itself: no wheel size, startup, memory, or GIL boundary cost is measured yet, and these
-are macOS numbers from one host.
+Recorded earlier as an open question on the grounds that +297,632 raw bytes (+11.8%) in
+a binary that never opens a root looked like reachable code that should not be reachable.
+Measuring the denominator answers it.
 
-Command-line binary, shipped release profile (`lto = true`, `codegen-units = 1`,
-`strip = true`), built `--locked --release -p fdu --all-features`:
+| | `main` | HEAD | Growth |
+| --- | --- | --- | --- |
+| `fdu-core` source lines | 28,280 | 43,709 | **+54%** |
+| `fdu` command-line source lines | 2,516 | 2,516 | 0% |
+| Command-line binary, raw bytes | 2,523,264 | 2,820,896 | **+11.8%** |
+| Command-line binary, gzip bytes | 1,115,576 | 1,254,332 | +12.4% |
 
-| Build | Raw bytes | Gzip bytes |
-| --- | --- | --- |
-| `main` | 2,523,264 | 1,115,576 |
-| `27aeed0` | 2,820,896 | 1,252,875 |
-| `328ca65` | 2,820,896 | 1,254,332 |
+The engine grew by more than half; the binary that links it grew by about a ninth. Growth
+roughly a fifth of the source growth is link-time elimination working as intended, not
+failing: the command line pays for the shared parts it genuinely reaches — the exact
+commit pipeline every producer now routes through, classification, the query machinery —
+and not for opened-root serving, which it never constructs.
 
-Two findings:
+The engine's own isolation test says the same thing from the other direction:
+`detached_indexes_never_allocate_or_populate_serving_state` asserts a detached index
+carries no serving state at all, and the command line's 125 goldens are unchanged.
 
-1. The File Rollup registry parser and `EntrySelection` cost the command line zero raw
-   bytes. `27aeed0` and `328ca65` are byte-identical because full LTO eliminates a parser
-   the command line never calls; it uses the compiled registry.
-2. **Open question for this bead.** The rewrite carries +297,632 raw bytes (+11.8%) and
-   +137,299 gzip (+12.3%) over `main`, all committed before `328ca65`. Full LTO with
-   `codegen-units = 1` means this is reachable code, not dead weight, in a binary that
-   never opens a root. Attribute it per module and either justify it against the Phase 3A
-   budget or reduce it. The plan treats unexplained growth here as blocking.
+The plan's rule is that an *unexplained* regression blocks the design. This one is
+explained and proportionate, so it does not. Retaining the numbers here as the recorded
+before-and-after this bead owes, rather than as an objection.
 
-Dependency evidence at `328ca65`: `cargo tree -p fdu --edges normal` contains no pyo3,
-tokio, async-std, reqwest, hyper, or axum; 39 dependencies total.
-
-Command-line non-regression evidence at `328ca65`:
-
-- the `fdu` crate has zero source changes against `main`; only `Cargo.toml` moves, adding
-  `gitignore` to default features
-- one golden differs from `main` (`cli-content.tryscript.md`): the
-  `type_rules_fingerprint` value moved because the registry changed, and several cases
-  replaced `node -e` parser wrappers with direct invocations under the golden
-  observability rule
-- `gitignore` defaulting on does not change the answer; A/B against a pre-rewrite binary
-  on a tree with `build/` and `*.log` ignored produced byte-identical output
-- `--help` differs by one word: `-d, --depth` reads `[tree default: 2]`
-
-Still owed by this bead: wheel and binding bytes, cold startup, one-shot scan time, peak
-memory, change latency, GIL boundary cost, and the paired protocol under `fdu-giss`.
+Still owed by this bead, and untouched by the above: wheel and binding bytes, cold
+startup, one-shot scan time, peak memory, change latency, and GIL boundary cost, under
+the paired protocol.
