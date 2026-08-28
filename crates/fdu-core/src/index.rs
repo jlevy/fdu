@@ -3608,7 +3608,7 @@ fn normalize(path: &Path) -> Option<Vec<&OsStr>> {
 /// The same rule as [`normalize`] without building anything: validation asks a yes or
 /// no question, and answering it by constructing a component list and dropping it was
 /// pure allocation.
-fn path_is_representable(path: &Path) -> bool {
+pub(crate) fn path_is_representable(path: &Path) -> bool {
     path.components().all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
 }
 

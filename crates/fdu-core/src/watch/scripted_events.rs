@@ -70,10 +70,10 @@ fn event_for(
     let mut paths = Vec::with_capacity(wanted);
     for argument in arguments {
         let relative = Path::new(argument);
-        if relative.is_absolute() {
+        if !crate::index::path_is_representable(relative) {
             return Err(format!(
-                "line {line}: {argument:?} is absolute; script paths are relative to the watch \
-                 root so a script stays portable"
+                "line {line}: {argument:?} escapes the watch root; script paths are relative to \
+                 it so a script stays portable"
             ));
         }
         paths.push(root.join(relative));
@@ -117,6 +117,15 @@ mod tests {
             ("create\n", "takes 1 path"),
             ("rename-both\tonly.txt\n", "takes 2 path"),
             ("error\n", "error takes a message"),
+            // Rooted, and on Windows *not* absolute: `is_absolute` answers `false` for a
+            // path with no drive prefix, which is how the first version of this guard
+            // passed on Unix and let the path through on Windows.
+            ("create\t/rooted.txt\n", "escapes the watch root"),
+            // `..` slipped past that guard on every platform, Unix included, so the check
+            // was incomplete where it appeared to work rather than merely wrong where it
+            // failed. Both arguments of a two-path directive are checked.
+            ("create\t../escape.txt\n", "escapes the watch root"),
+            ("rename-both\tok.txt\t../out.txt\n", "escapes the watch root"),
         ] {
             let error = parse_script(source, Path::new("/root")).expect_err("script must fail");
             assert!(error.contains(expected), "{error:?} should mention {expected:?}");
@@ -126,6 +135,6 @@ mod tests {
         let source = format!("create\t{}\n", absolute.display());
         let error = parse_script(&source, Path::new("/root"))
             .expect_err("an absolute script path must fail on this platform");
-        assert!(error.contains("is absolute"));
+        assert!(error.contains("escapes the watch root"));
     }
 }
