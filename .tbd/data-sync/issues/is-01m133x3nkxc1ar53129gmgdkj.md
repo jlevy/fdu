@@ -1,15 +1,15 @@
 ---
 type: is
 id: is-01m133x3nkxc1ar53129gmgdkj
-title: Real-backend watch tests fail ~2 runs in 3 inside the parallel lib binary
+title: Real-backend watch tests raced their own watch registration (fixed)
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 7
+version: 9
 labels: []
 dependencies: []
 created_at: 2026-08-28T02:41:40.011Z
-updated_at: 2026-08-28T07:00:09.803Z
+updated_at: 2026-08-28T14:46:28.975Z
 ---
 crates/fdu-core/tests/watch_session_integration.rs, an_idle_tree_yields_nothing_and_costs_nothing, fails roughly one run in three on a loaded machine. Observed while a rename-only change was in the tree; the same code passed on the next two runs, so it is timing, not a regression.
 
@@ -31,57 +31,61 @@ This matters beyond local runs: CI runners are shared and loaded, so the same wi
 
 ## Notes
 
-## Host evidence, 2026-08-27 — first hypothesis with observational support
+## Resolved 2026-08-28 — and the cause was none of the five hypotheses above
 
-Four earlier hypotheses were tested and killed. Recording them so nobody re-runs them:
-external CPU load (test passes in 0.45 s with eight cores saturated), volume-wide
-filesystem churn (eight aggressive churn loops with instrumentation on the raw notify
-callback produced zero missed events), pairwise binary concurrency
-(`watch_persistence` alongside `watch_session`, 3/3 pass), and serializing watchers
-(contradicted by `watch_session` running five real watchers in parallel and passing 5/5).
+Every environmental diagnosis recorded earlier in this bead was wrong. Keeping them,
+because the sequence is the useful part: machine load, CPU starvation, volume-wide
+filesystem churn, cross-binary concurrency, and finally a degraded local `fseventsd`.
+Each was plausible because the symptom is timing-shaped, and each was disproved by
+measurement — CPU starvation least ambiguously, since the test passes in 0.45 s with
+eight cores saturated.
 
-What the failure actually looks like, measured rather than inferred:
+The cause was a race the tests set up for themselves.
 
-- the test receives *nothing*, not late events. `wait_for` reports `Saw 0 op(s): []`
-  after a full sixty seconds;
-- it is per-process, not per-test. One run failed all five `watch_session` tests at once,
-  so that binary's delivery was dead for its whole life;
-- it is not macOS as a platform. CI's `Test (macos-latest)` job has passed on every run
-  of this branch, on fresh VMs, with these same tests.
+A watcher is not watching when its constructor returns. Registration is requested first
+and takes effect a little later, and anything written inside that window produces no
+event at all. The engine detects precisely this and answers
+`InvalidateSubtree { path: "", reason: WatchSetupRace }`, meaning "I missed a window,
+relist the root". Every one of these tests wrote its subject immediately after binding,
+so each raced its own setup; when it lost, the engine replied correctly and the test
+rejected the reply because it was waiting for one specific file's event.
 
-`log show --predicate 'process == "fseventsd"'` on this host shows why that last row is
-the important one:
+What made it visible was changing `wait_for` to report what it saw rather than a
+truncated list:
 
-- `fseventsd` is at 4.75 GB RSS and still climbing. It was 2.8 GB earlier in the same
-  session, then 3.8 GB. That is far outside normal for this daemon;
-- it is repeatedly logging `client_buffer_flush: sending client(...) USER DROPPED event
-  to pid 12137`, and pid 12137 is Apple's own `CacheDelete.framework/deleted`, which has
-  been a slow consumer for over four hours. The daemon is buffering and dropping for a
-  stuck system client;
-- 346 stream registrations in two hours, on fifteen days of uptime, from the many
-  watcher-heavy tools this machine runs.
+    delivered 2 op(s) in 60s but never the one awaited:
+      [Upsert { path: "", kind: Dir, .. },
+       InvalidateSubtree { path: "", reason: WatchSetupRace }]
 
-Hypothesis: a degraded local `fseventsd` sometimes gives a newly registered stream no
-delivery at all. It explains every observation above, including why no synthetic load
-reproduced it — the trigger is daemon state at registration time, not load this process
-generates — and why `origin/main` fails here while both CI platforms are green.
+fdu was correct in every failing run. No product code changed.
 
-**Falsifier, and it must be run before this is believed.** After a reboot,
-`make rust-test` should pass repeatedly on this host. If it still fails against a healthy
-daemon, this hypothesis is wrong like the other four and the investigation resumes.
+## The fix
 
-## Containment that does not depend on the host
+Each test now proves its watch is live before measuring what it measures.
 
-Independent of the cause, a test must not report a product defect when the host's event
-service gave it nothing. The repository already has the pattern:
-`test_support::permission_bits_are_enforced` skips fixtures the host cannot provide.
+- Engine tests warm up with a write and wait for any delivery.
+- Session tests rewrite a file that already exists and that their own selection admits.
+  Rewriting rather than creating is load-bearing: it changes no file count, so a test may
+  still assert totals, and it leaves nothing to clean up. A first attempt created and
+  then deleted a warm-up and cost sixty seconds per test, because the engine coalesces
+  that pair into no net change and the wait could never be satisfied — correct engine
+  behavior finding a wrong test.
+- Persistence tests replace fixed two- and three-second sleeps, which were guesses about
+  registration latency, with a warm-up whose persisted snapshot proves the watcher runs.
 
-Probe delivery before asserting it. Write a file this test causes, and wait for that
-file's own event. If the probe never arrives, the host event service is unavailable:
-skip visibly, naming the host, and never evaluate the product assertion. If the probe
-arrives, the stream works and every existing assertion runs at full strength.
+`wait_for` now separates three outcomes that had been one: matched, arrived-but-wrong
+(a real content disagreement, still fails), and nothing at all (the host's event service
+gave this stream nothing, which is not evidence about fdu, so the caller skips by name
+the way `permission_bits_are_enforced` already declines a host that cannot supply a
+precondition).
 
-Residual exposure: the `cli-watch` golden helpers cannot skip, because tryscript has no
-skip semantics. A dead stream still fails `test-golden` there, though now with a
-correctly attributed "timed out waiting for the repaint separator" rather than a claim
-about product behavior.
+Result: `make rust-test` passed four consecutive runs, from zero of three. The session
+suite runs in three to five seconds rather than sixty to a hundred and twenty, because
+the deadlines that were being spent are no longer reached. Landed in `19d3a76`.
+
+## Not the cause, but still true and worth someone's attention
+
+This host's `fseventsd` reached 4.75 GB RSS and was logging `USER DROPPED` events to a
+stuck Apple `CacheDelete` client. That is a genuine oddity, it is unrelated to these
+failures, and it will not fix itself without a reboot. Recorded here only so the
+observation is not lost; it is not a reason to reopen this bead.
