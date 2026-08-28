@@ -173,11 +173,29 @@ Phases 0 and A–C are parallel where their beads say so; D and E follow their g
   Each host nominates its own, because `root_id` hashes a path — this repository now
   carries the Darwin/arm64 set: a 60k source checkout, the 175k rustup store and the
   159k sealed system frameworks decide, and a 5.8k cargo registry cache screens.
-- [ ] `fdu-33ri` — `make perf-floor`: run the floor spikes and the tiers across the
+- [~] `fdu-33ri` — `make perf-floor`: run the floor spikes and the tiers across the
   nominated subjects and emit the ×floor table, the campaign’s scoreboard.
-  **Now the largest gap, and it has a named obstacle rather than only a size.**
-  `parfloor.c` — the denominator every ×floor threshold below is defined against — is
-  Linux-only: `SYS_getdents64` and `statx` have no Darwin equivalents.
+  **The Linux half landed** (2026-08-28,
+  [the scoreboard report](../../reports/report-2026-08-28-linux-floor-scoreboard.md)):
+  `make perf-floor SUBJECTS="label=/path"` builds `parfloor` and `arena_spike`, runs
+  them interleaved with the aggregate and index tiers under the shared tally oracle, and
+  emits the ×floor table with each tier marked against its termination threshold.
+  It reproduced the by-hand report’s aggregate ratio on an independent host — 1.58× on
+  `/usr` against the recorded 1.59× — which is the first time any ×floor number in this
+  campaign has been measured twice, and it put the index tier at 2.82–2.93×. Two things
+  it added that the by-hand session could not.
+  `arena_spike` is **bimodal** on a 76k subject (a ~63 ms and a ~150 ms mode, selected
+  by how much memory the preceding process churned; 1.09× and unimodal on a 48k one), so
+  H86’s pre-registered peak-RSS and tail-spread targets need to name which mode they
+  mean — and `p95/median` reads a calm 1.16 on that same distribution, because both
+  humps are individually narrow, so the spread is what catches it.
+  And the index tier’s spawn wall exceeds its own component timer by 149 ms against a
+  110 ms component, so 57% of a spawn-timed index number is the probe’s own oracle
+  rather than the engine, which sharpens `fdu-4xtm` from a tidiness item into a
+  correctness one for this tier.
+  **The macOS half remains, and remains a decision rather than effort.** `parfloor.c` —
+  the denominator every ×floor threshold below is defined against — is Linux-only:
+  `SYS_getdents64` and `statx` have no Darwin equivalents.
   A macOS scoreboard therefore needs either a `getattrlistbulk` port of the floor or a
   different floor set (`arena_spike` and `peerwalk` are portable; `dumac` is the
   practical anchor) with the regime difference recorded.
