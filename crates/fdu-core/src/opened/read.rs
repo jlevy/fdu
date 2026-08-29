@@ -918,6 +918,12 @@ fn push_byte(out: &mut String, byte: u8) {
 ///
 /// Valid runs are kept as text so a name that is mostly readable stays mostly readable;
 /// only the bytes that cannot be decoded are escaped.
+///
+/// This is the byte-oriented platforms' path. Windows names are UTF-16 and never reach a
+/// byte slice, so the function is genuinely absent there rather than merely unused: the
+/// gate is the union of its two callers' gates, and `-D warnings` in the Windows CI job
+/// is what proves it stayed that way.
+#[cfg(not(windows))]
 fn push_lossy_bytes(out: &mut String, mut bytes: &[u8]) {
     loop {
         match std::str::from_utf8(bytes) {
@@ -953,8 +959,11 @@ fn push_unrepresentable(out: &mut String, component: &std::ffi::OsStr) {
 /// Windows names are UTF-16 that need not be well formed.
 ///
 /// An unpaired surrogate has no UTF-8 encoding at all, so its two code-unit bytes are
-/// escaped big-endian, matching how `PortablePathEncoding::WindowsWtf16Le` already
-/// describes native bytes elsewhere.
+/// escaped big-endian: `U+D800` becomes `%D8%00`, whose hex digits read in the same order
+/// as the code unit they stand for. Note this is deliberately *not* the byte order of the
+/// `windows-wtf16le` raw identity in `report_format`, which is little-endian because it
+/// reports the native bytes as the platform stores them. This one reports a name a person
+/// reads, so it is ordered for reading.
 #[cfg(windows)]
 fn push_unrepresentable(out: &mut String, component: &std::ffi::OsStr) {
     use std::os::windows::ffi::OsStrExt;
