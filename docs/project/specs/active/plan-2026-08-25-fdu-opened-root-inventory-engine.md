@@ -1999,6 +1999,37 @@ The parent closes only when all listed children and its checkpoint gate pass.
 | `fdu-bldb` composed product | `fdu-lr6r` provider-neutral routes → `fdu-cuwr` complete installed-wheel lifecycle → `fdu-blqg` recovery matrix → `fdu-4w03` exact-revision cross-repository CI |
 | `fdu-ekad` final acceptance | `fdu-giss` paired protocol and thresholds → `fdu-umwm` composed measurements → `fdu-vmzf` dependency, size, rollback, and rollout disposition |
 
+### Ordered path to a mergeable branch
+
+The engine is sound; what remains is composition, and it has one ordering constraint
+that is easy to get backwards.
+
+Settle the engine’s contract before aligning the other side against it.
+Aligning MetaBrowser first means aligning it to a moving target, and the adapter that
+proves the two agree cannot be written against either side while either is still moving.
+
+| Order | Bead | Why here |
+| --- | --- | --- |
+| 1 | `fdu-pokc` tree level-advance bound | The tree projection can report `rows_visited` above the requested `max_work`. That is not merely a slow page: it is a value the contract on the other side is specified to reject, so it has to be closed here or renegotiated in both documents. |
+| 2 | `fdu-shkr` total portable encoding in the MetaBrowser contract | The largest remaining divergence, and it touches a value on every row. `PortablePathEncoding`, `PortablePathIssue`, and four `portable_issue` fields still exist there and no longer exist here, so any cross-provider replay diverges on contact. |
+| 3 | `fdu-a0cf` remainder | The complete-or-limit selected-tree report, and the maintained Recent and Navigation readers. Measurable today: `report_work` still charges a full pass for those views because they are not yet served from `recent_files` and `semantic_by_directory`. |
+| 4 | `fdu-2xfp` thin fdu backend | The adapter proves the two surfaces agree rather than asserting it, and it depends on both sides having stopped moving. |
+| 5 | `fdu-ekad` final acceptance | Wheel bytes, cold startup, peak memory, and GIL cost, once there is nothing left to change. |
+
+Two constraints inside that order are worth stating, because each inverts if read
+casually.
+
+`fdu-3v0d` — the specified work-budget enforcement that `assemble_tree_pages` does not
+implement — must land *after* `fdu-pokc`, never before.
+Enforcing a bound the engine does not yet honour converts correct pages into consistency
+errors, on exactly the trees where the overrun happens.
+
+The engine has never overrun a bound in a way that lost data, and must not start.
+A page stopped by the work budget carries a continuation; the failure this ordering
+guards against is a rejected page, not a wrong one.
+That distinction is what makes the enforcement safe to add second rather than urgent to
+add first.
+
 ## Testing Strategy
 
 ### Test architecture: one trace, three oracles, few boundaries
