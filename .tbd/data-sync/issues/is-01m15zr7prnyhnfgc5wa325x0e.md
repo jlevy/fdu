@@ -5,7 +5,7 @@ title: Bound the tree level-advance search without stranding the cursor
 kind: task
 status: open
 priority: 1
-version: 5
+version: 6
 labels: []
 dependencies:
   - type: blocks
@@ -13,7 +13,7 @@ dependencies:
   - type: blocks
     target: is-01m1687g2cazrcaxzwkpdcazz5
 created_at: 2026-08-29T05:26:49.303Z
-updated_at: 2026-08-29T07:55:27.097Z
+updated_at: 2026-08-29T08:12:57.103Z
 ---
 The breadth-first tree projection charges its level-advance search against `spent` but
 never cuts it short, so one page can exceed `page.max_work` by a scan of one level.
@@ -75,42 +75,47 @@ regress it.
 
 ## Notes
 
-Reconsidered: there is a better approach than the resumable-search cursor this bead was
-filed with, and a sharper reason to do it than latency.
+## Progress: descent fixed in `7509222`, same-depth advance still open
 
-## Why it matters more than milliseconds
+The descent no longer searches. The first directory at the next level is noticed while
+the current level is emitted and carried in the cursor, so discovering "there is no level
+below" costs nothing instead of a scan of the level just walked. Measured on sixty leaf
+directories: 180 steps for 121 rows, against 241 before.
 
-The plan spec's implementation table requires MetaBrowser's `assemble_tree_pages` to
-"Enforce stable provider version, positive row bound, unique advancing opaque
-continuation, maximum pages, maximum rows, and request work budget."
+Verified by mutation, not just by passing:
 
-fdu's tree projection can report `rows_visited` above the requested `max_work`. Verified
-against MetaBrowser `codex/inventory-contract-alignment`: `assemble_tree_pages` does not
-yet check work, so there is no live failure. But whoever implements that specified rule
-will reject valid fdu pages on exactly the trees where the overrun happens. The deviation
-is unrepresentable in the contract the other side is specified to enforce, so it has to be
-closed in the engine or renegotiated in both specs.
+- disabling the memo raises the same read to 241 steps, over the test's bound of 190
+- recording before the ignore check expands a pruned forty-child subtree, 46 steps against
+  a bound of 40 (no row leaks, because every child of a pruned directory is ignored and
+  the row filter catches them again -- which is why that test asserts on work, not rows)
+- dropping the memo from the cursor fails both resume tests
 
-## Better design: memoize instead of rescanning
+## What remains
 
-The expensive scan is `directory_at_depth(deeper, None)` -- discovering whether a level
-below exists by asking every parent at the current depth for a directory child. But the
-breadth-first walk already visits every one of those parents while emitting.
+The same-depth advance, `directory_at_depth(parent_depth, Some(&parent))`, can still scan
+a run of childless directories at the level above before finding the next parent. So a
+page can still exceed `max_work`, and the strict bound this bead asks for is unfinished.
 
-So record it in passing: while emitting children of parent P at depth d, if P has a
-non-ignored directory child and none is recorded yet, remember it. When the level is
-exhausted, that value is the first parent at d+1 in level order, because level order at
-d+1 is grouped by parent order at d. Nothing recorded means there is no level below.
+What changed is reachability. Before, every leaf level cost a scan of its whole width --
+universal, since every tree has a last level. Now it takes an adversarial shape: a long
+contiguous run of childless directories inside one level, followed by one with children.
 
-O(1) instead of O(level width), and it removes the scan rather than making it resumable.
+Also unreachable for the query that matters most. `'levels: while parent_depth < max_depth`
+means a `depth: Limit(1)` read runs the body only at depth zero and its single advance
+returns immediately, so a one-level directory listing -- MetaBrowser's Directory query --
+performs no search at all. The residual is confined to `depth: All` and deep bounded reads.
 
-Cost: one more optional path in `ChildPosition`, still bounded by a single path. The
-per-parent check is a `first_directory_child` call already made during today's descent
-scan, moved to where the walk is already standing and remembered.
+## Open decision before finishing this
 
-Residual: the same-depth advance can still spike on a long run of childless directories
-mid-level, but its total cost is amortized O(1) per emitted parent across the level. The
-pathological shape narrows from "the whole level is leaves" -- the common case, every leaf
-level -- to "a long childless run inside one level".
+Closing the residual strictly means teaching the cursor the searching state after all:
+`directory_at_depth` reporting where it stopped, as a path at some level above the target
+plus that target depth. That is real work.
 
-Reasoned through, not yet implemented or tested.
+The alternative is `fdu-3v0d`: make the MetaBrowser-side work budget an observation that
+is recorded and surfaced rather than an assertion that rejects the page. A provider
+overrunning its budget is a performance fault, not a correctness one, and rejecting throws
+away correct rows; the duplicate-path check already catches the correctness failure the
+assertion would otherwise stand in for.
+
+Decide that before spending the engine work, because if the budget is an observation the
+residual needs measuring rather than eliminating.
