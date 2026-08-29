@@ -63,7 +63,9 @@ fn opened_py_err(error: fdu_core::Error) -> PyErr {
         | fdu_core::Error::OpenedWorkerPanicked { .. }
         | fdu_core::Error::OpenedWorkerFailed { .. }
         | fdu_core::Error::OpenedWorkerSpawn { .. } => OpenedIndexError::new_err(error.to_string()),
-        fdu_core::Error::UnsupportedFlatSelection => PyValueError::new_err(error.to_string()),
+        fdu_core::Error::UnsupportedFlatSelection | fdu_core::Error::TreeDepthZero => {
+            PyValueError::new_err(error.to_string())
+        }
         other => super::to_py_err(other),
     }
 }

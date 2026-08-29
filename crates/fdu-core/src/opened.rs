@@ -3445,6 +3445,21 @@ mod tests {
             }),
             Err(Error::CountCapLimit { attempted: 0, .. })
         ));
+        // Zero levels is its own rejection, not a row-bound one. It once reported
+        // `PageRowLimit { attempted: 0 }`, which named a bound the caller had not set and
+        // sent them to inspect `page.limit` instead of `depth`.
+        assert!(matches!(
+            opened.read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Tree {
+                    path: PathBuf::new(),
+                    depth: crate::query::Bound::Limit(0),
+                    include_ignored: true,
+                    page: crate::PageRequest { limit: 1, max_work: 1 },
+                }],
+                ..crate::ReadRequest::default()
+            }),
+            Err(Error::TreeDepthZero)
+        ));
         let bounded_path = opened
             .read(crate::ReadRequest {
                 projections: vec![crate::ReadProjection::Tree {

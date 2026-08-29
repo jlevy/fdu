@@ -363,7 +363,7 @@ fn validate_flat_selection(selection: &crate::query::EntrySelection) -> Result<(
 /// A render depth of zero asks for a page that can hold nothing.
 fn validate_depth(depth: crate::query::Bound) -> Result<()> {
     if depth == crate::query::Bound::Limit(0) {
-        return Err(Error::PageRowLimit { attempted: 0, limit: crate::MAX_PAGE_ROWS });
+        return Err(Error::TreeDepthZero);
     }
     Ok(())
 }

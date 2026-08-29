@@ -1746,6 +1746,14 @@ pub enum Error {
         limit: u64,
     },
 
+    /// A tree page asked for zero levels.
+    ///
+    /// Distinct from the page bounds above, which are about how much of a level fits.
+    /// Zero levels is not a small page, it is a request with no rows to return, and
+    /// reporting it as a row-limit failure sends a caller to inspect the wrong argument.
+    #[error("tree page depth must be at least one level")]
+    TreeDepthZero,
+
     /// A flat page attempted to use presentation axes whose ordering is not resumable.
     #[error(
         "flat opened-index pages use fixed portable path order; selection cannot set depth, limit, sort, or reverse"
