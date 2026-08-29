@@ -771,6 +771,17 @@ pub enum ReadProjection {
     Tree {
         /// Directory relative to the opened root.
         path: PathBuf,
+        /// How many levels below `path` the page descends.
+        ///
+        /// `Limit(1)` is this directory's own children. Rows arrive in breadth-first
+        /// level order, so a page cut short by `page` withholds depth rather than
+        /// breadth: the caller can always tell how wide each level it received was.
+        depth: crate::query::Bound,
+        /// Whether entries in the fixed ignored partition are traversed.
+        ///
+        /// `false` prunes the excluded directory's whole subtree, contributing neither
+        /// it nor any descendant, rather than filtering its row and descending anyway.
+        include_ignored: bool,
         /// Page output and work bounds.
         page: PageRequest,
     },

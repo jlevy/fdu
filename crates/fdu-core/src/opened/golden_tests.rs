@@ -225,7 +225,12 @@ fn coherent_projections_and_continuations() -> SessionTrace {
             projections: vec![
                 ReadProjection::Lookup { path: PathBuf::from("a.txt") },
                 ReadProjection::RollUp { path: PathBuf::new() },
-                ReadProjection::Tree { path: PathBuf::new(), page },
+                ReadProjection::Tree {
+                    path: PathBuf::new(),
+                    depth: crate::query::Bound::Limit(1),
+                    include_ignored: true,
+                    page,
+                },
                 ReadProjection::Flat {
                     selection: crate::query::EntrySelection::default(),
                     shape: RowShape::Full,
@@ -586,6 +591,8 @@ fn final_read(opened: &OpenedIndex, trace: &mut SessionTrace) {
                 ReadProjection::RollUp { path: PathBuf::new() },
                 ReadProjection::Tree {
                     path: PathBuf::new(),
+                    depth: crate::query::Bound::Limit(1),
+                    include_ignored: true,
                     page: PageRequest { limit: 4_096, max_work: 1_000_000 },
                 },
                 ReadProjection::Flat {

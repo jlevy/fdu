@@ -16,10 +16,25 @@ pub(super) enum ChildPartition {
     Nondirectories,
 }
 
+/// Where a breadth-first tree page stopped.
+///
+/// One frame, not a stack of them. Enumerating level *d* requires walking the directories
+/// of level *d-1* in order, which sounds like it needs a frame per level — but the
+/// ancestor chain of `parent` already *is* that stack, and it is derivable from the path
+/// by splitting it. Storing the path stores the whole position, and advancing to the next
+/// directory at this depth costs one child-map lookup per ancestor.
+///
+/// What must not be stored is the frontier: the set of directories one level up is
+/// unbounded in directory width, so it cannot fit a bounded record, and re-deriving it per
+/// page would make paging one wide level quadratic in the number of pages.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub(super) struct ChildPosition {
+    /// Native path of the directory whose children were being emitted.
+    pub(super) parent: PathBuf,
+    /// Levels between the requested root and `parent`; zero is the root itself.
+    pub(super) depth: u32,
     pub(super) partition: ChildPartition,
-    /// First child name the resumed page should visit.
+    /// First child name the resumed page should visit within `partition`.
     pub(super) name: String,
 }
 
@@ -27,6 +42,8 @@ pub(super) struct ChildPosition {
 pub(super) enum ContinuationKind {
     Tree {
         path: PathBuf,
+        depth: crate::query::Bound,
+        include_ignored: bool,
         next: ChildPosition,
     },
     Flat {
@@ -113,9 +130,12 @@ impl ContinuationTable {
 impl ContinuationRecord {
     fn retained_bytes(&self) -> usize {
         let kind = match &self.kind {
-            ContinuationKind::Tree { path, next } => {
-                path.as_os_str().as_encoded_bytes().len().saturating_add(next.name.len())
-            }
+            ContinuationKind::Tree { path, next, .. } => path
+                .as_os_str()
+                .as_encoded_bytes()
+                .len()
+                .saturating_add(next.parent.as_os_str().as_encoded_bytes().len())
+                .saturating_add(next.name.len()),
             ContinuationKind::Flat { selection, next, .. } => {
                 selection.retained_heap_bytes().saturating_add(next.retained_heap_bytes())
             }
@@ -219,7 +239,11 @@ mod tests {
                     version: version(session),
                     kind: ContinuationKind::Tree {
                         path: PathBuf::new(),
+                        depth: crate::query::Bound::Limit(1),
+                        include_ignored: true,
                         next: ChildPosition {
+                            parent: PathBuf::new(),
+                            depth: 0,
                             partition: ChildPartition::Directories,
                             name: "next".to_owned(),
                         },

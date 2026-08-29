@@ -2566,6 +2566,8 @@ mod tests {
             .read(crate::ReadRequest {
                 projections: vec![crate::ReadProjection::Tree {
                     path: PathBuf::new(),
+                    depth: crate::query::Bound::Limit(1),
+                    include_ignored: true,
                     page: crate::PageRequest { limit: 2, max_work: 4 },
                 }],
                 ..crate::ReadRequest::default()
@@ -2855,6 +2857,273 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// Level order, proved against the sequence pre-order would have produced.
+    ///
+    /// An order is only proved by a fixture whose answer differs between the plausible
+    /// readings, and "parent-first" admits both. This tree is three levels deep and wide
+    /// at the top, so the two disagree:
+    ///
+    /// ```text
+    /// a/  a/a1/  a/a1/deep.txt  b/  b/b1/  z.txt
+    /// ```
+    ///
+    /// Level order returns `a`, `b`, `z.txt`, then `a/a1`, `b/b1`, then `a/a1/deep.txt` —
+    /// every level whole before descending. Pre-order would return `a`, `a/a1`,
+    /// `a/a1/deep.txt`, `b`, `b/b1`, `z.txt`, burying `b` behind the whole of `a`'s
+    /// subtree. A page bound cutting the pre-order sequence at three rows would hide the
+    /// existence of `b` and `z.txt` entirely, which is what level order prevents.
+    #[test]
+    fn tree_pages_are_breadth_first_across_levels() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("a"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("b"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("z.txt"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs { size: 1, ..crate::Attrs::default() },
+                },
+                Op::Upsert {
+                    path: PathBuf::from("a/a1"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("b/b1"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("a/a1/deep.txt"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs { size: 2, ..crate::Attrs::default() },
+                },
+            ]))
+            .expect("seed tree");
+
+        let rows = |depth: crate::query::Bound| -> Vec<String> {
+            let response = opened
+                .read(crate::ReadRequest {
+                    projections: vec![crate::ReadProjection::Tree {
+                        path: PathBuf::new(),
+                        depth,
+                        include_ignored: true,
+                        page: crate::PageRequest {
+                            limit: crate::MAX_PAGE_ROWS,
+                            max_work: crate::MAX_PAGE_WORK,
+                        },
+                    }],
+                    ..crate::ReadRequest::default()
+                })
+                .expect("tree read");
+            let crate::ProjectionResult::Tree(crate::Knowledge::Present(page)) =
+                &response.results[0]
+            else {
+                panic!("tree page");
+            };
+            page.rows.iter().map(|row| row.portable_path.as_str().to_owned()).collect()
+        };
+
+        // One level is this directory's own children: directories first, then files, each
+        // partition in canonical byte order.
+        assert_eq!(rows(crate::query::Bound::Limit(1)), vec!["a", "b", "z.txt"]);
+
+        // Two levels adds the next level whole, never a subtree at a time.
+        assert_eq!(rows(crate::query::Bound::Limit(2)), vec!["a", "b", "z.txt", "a/a1", "b/b1"]);
+
+        // Unbounded reaches the leaf, still level by level. Pre-order would have placed
+        // `a/a1` and `a/a1/deep.txt` before `b`.
+        assert_eq!(
+            rows(crate::query::Bound::All),
+            vec!["a", "b", "z.txt", "a/a1", "b/b1", "a/a1/deep.txt"]
+        );
+
+        opened.close().expect("close");
+    }
+
+    /// Paging a multi-level tree one row at a time reassembles the same sequence.
+    ///
+    /// Resumption is where a level-order traversal can go wrong invisibly: the cursor
+    /// holds one frame, and crossing a level boundary means re-deriving the position from
+    /// the ancestor chain. A page bound that lands exactly on such a boundary is the case
+    /// that would duplicate or drop a row, so this walks every boundary in the fixture.
+    #[test]
+    fn tree_pages_resume_across_level_boundaries() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("a"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("b"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("z.txt"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs { size: 1, ..crate::Attrs::default() },
+                },
+                Op::Upsert {
+                    path: PathBuf::from("a/a1"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("b/b1"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("a/a1/deep.txt"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs { size: 2, ..crate::Attrs::default() },
+                },
+            ]))
+            .expect("seed tree");
+
+        let whole = vec!["a", "b", "z.txt", "a/a1", "b/b1", "a/a1/deep.txt"];
+        let page = crate::PageRequest { limit: 1, max_work: crate::MAX_PAGE_WORK };
+
+        let mut seen: Vec<String> = Vec::new();
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Tree {
+                    path: PathBuf::new(),
+                    depth: crate::query::Bound::All,
+                    include_ignored: true,
+                    page,
+                }],
+                ..crate::ReadRequest::default()
+            })
+            .expect("first page");
+        let crate::ProjectionResult::Tree(crate::Knowledge::Present(first)) = &response.results[0]
+        else {
+            panic!("tree page");
+        };
+        seen.extend(first.rows.iter().map(|row| row.portable_path.as_str().to_owned()));
+        let mut continuation = first.next;
+
+        while let Some(token) = continuation {
+            let response = opened
+                .read(crate::ReadRequest {
+                    projections: vec![crate::ReadProjection::Continue {
+                        continuation: token,
+                        page,
+                    }],
+                    ..crate::ReadRequest::default()
+                })
+                .expect("resumed page");
+            let crate::ProjectionResult::Tree(crate::Knowledge::Present(next)) =
+                &response.results[0]
+            else {
+                panic!("tree page");
+            };
+            seen.extend(next.rows.iter().map(|row| row.portable_path.as_str().to_owned()));
+            continuation = next.next;
+            assert!(seen.len() <= whole.len(), "paging must terminate, saw {seen:?}");
+        }
+
+        assert_eq!(seen, whole, "one row at a time reassembles the single-page order");
+        opened.close().expect("close");
+    }
+
+    /// Excluding ignored entries prunes the subtree, not merely the row.
+    ///
+    /// Filtering the row and descending anyway is an equally reasonable reading of an
+    /// unstated rule, and it is observably different: it would still return
+    /// `vendor/keep.txt` while hiding the directory that explains where it came from.
+    // The ignore partition is only populated when the feature that reads control files is
+    // compiled in; without it nothing is ignored and the fixture cannot express the case.
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn excluding_ignored_prunes_the_subtree() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("src"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("src/main.rs"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs { size: 1, ..crate::Attrs::default() },
+                },
+                Op::ControlUpsert {
+                    path: PathBuf::from(".gitignore"),
+                    source: b"vendor/\n".to_vec(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("vendor"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("vendor/keep.txt"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs { size: 2, ..crate::Attrs::default() },
+                },
+            ]))
+            .expect("seed tree");
+
+        let rows = |include_ignored: bool| -> Vec<String> {
+            let response = opened
+                .read(crate::ReadRequest {
+                    projections: vec![crate::ReadProjection::Tree {
+                        path: PathBuf::new(),
+                        depth: crate::query::Bound::All,
+                        include_ignored,
+                        page: crate::PageRequest {
+                            limit: crate::MAX_PAGE_ROWS,
+                            max_work: crate::MAX_PAGE_WORK,
+                        },
+                    }],
+                    ..crate::ReadRequest::default()
+                })
+                .expect("tree read");
+            let crate::ProjectionResult::Tree(crate::Knowledge::Present(page)) =
+                &response.results[0]
+            else {
+                panic!("tree page");
+            };
+            page.rows.iter().map(|row| row.portable_path.as_str().to_owned()).collect()
+        };
+
+        let included = rows(true);
+        assert!(included.iter().any(|row| row == "vendor"));
+        assert!(included.iter().any(|row| row == "vendor/keep.txt"));
+
+        let excluded = rows(false);
+        assert!(!excluded.iter().any(|row| row == "vendor"), "the row is gone");
+        assert!(
+            !excluded.iter().any(|row| row == "vendor/keep.txt"),
+            "and so is everything beneath it, which is what pruning means"
+        );
+        assert!(excluded.iter().any(|row| row == "src/main.rs"), "unignored work is untouched");
+
+        opened.close().expect("close");
+    }
+
     /// A name whose bytes are not UTF-8 is escaped and listed, not omitted.
     ///
     /// This fixture used to prove the opposite. While a portable name was optional these
@@ -2901,6 +3170,8 @@ mod tests {
                     crate::ReadProjection::Lookup { path: PathBuf::from("missing") },
                     crate::ReadProjection::Tree {
                         path: PathBuf::new(),
+                        depth: crate::query::Bound::Limit(1),
+                        include_ignored: true,
                         page: crate::PageRequest {
                             limit: crate::MAX_PAGE_ROWS,
                             max_work: crate::MAX_PAGE_WORK,
@@ -2963,6 +3234,8 @@ mod tests {
             .read(crate::ReadRequest {
                 projections: vec![crate::ReadProjection::Tree {
                     path: PathBuf::new(),
+                    depth: crate::query::Bound::Limit(1),
+                    include_ignored: true,
                     page: crate::PageRequest {
                         limit: crate::MAX_PAGE_ROWS,
                         max_work: crate::MAX_PAGE_WORK,
@@ -3022,6 +3295,8 @@ mod tests {
                     },
                     crate::ReadProjection::Tree {
                         path: PathBuf::new(),
+                        depth: crate::query::Bound::Limit(1),
+                        include_ignored: true,
                         page: crate::PageRequest { limit: 0, max_work: 1 },
                     },
                 ],
@@ -3064,6 +3339,8 @@ mod tests {
             .read(crate::ReadRequest {
                 projections: vec![crate::ReadProjection::Tree {
                     path: PathBuf::from("missing/deep"),
+                    depth: crate::query::Bound::Limit(1),
+                    include_ignored: true,
                     page: crate::PageRequest { limit: 1, max_work: 1 },
                 }],
                 ..crate::ReadRequest::default()
@@ -3121,6 +3398,8 @@ mod tests {
                     projections: vec![
                         crate::ReadProjection::Tree {
                             path: PathBuf::new(),
+                            depth: crate::query::Bound::Limit(1),
+                            include_ignored: true,
                             page: crate::PageRequest {
                                 limit: crate::MAX_PAGE_ROWS,
                                 max_work: crate::MAX_PAGE_WORK,

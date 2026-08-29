@@ -204,6 +204,26 @@ fn parse_continuation(dict: &Bound<'_, PyDict>) -> PyResult<ContinuationId> {
         .ok_or_else(|| PyValueError::new_err("continuation parts must be nonzero integers"))
 }
 
+/// Accept `"all"` or a positive integer for a tree render depth.
+///
+/// Spelled the way the command line spells `--depth`, so one grammar answers "how deep"
+/// everywhere rather than each surface inventing its own.
+fn parse_tree_depth(value: &Bound<'_, PyAny>) -> PyResult<fdu_core::query::Bound> {
+    if let Ok(text) = value.extract::<String>() {
+        if text.eq_ignore_ascii_case("all") {
+            return Ok(fdu_core::query::Bound::All);
+        }
+        return Err(PyValueError::new_err(format!(
+            "depth must be \"all\" or a count, got {text:?}"
+        )));
+    }
+    let count: usize = value.extract()?;
+    if count == 0 {
+        return Err(PyValueError::new_err("depth must be at least one level"));
+    }
+    Ok(fdu_core::query::Bound::Limit(count))
+}
+
 fn parse_page(dict: &Bound<'_, PyDict>) -> PyResult<PageRequest> {
     Ok(PageRequest {
         limit: required(dict, "limit")?.extract()?,
@@ -262,7 +282,20 @@ fn parse_projection(value: Bound<'_, PyAny>, now: SystemTime) -> PyResult<ReadPr
     match kind.as_str() {
         "lookup" => Ok(ReadProjection::Lookup { path: path()? }),
         "rollup" => Ok(ReadProjection::RollUp { path: path()? }),
-        "tree" => Ok(ReadProjection::Tree { path: path()?, page: page()? }),
+        "tree" => {
+            // Both default to what a caller gets today if they say nothing: one level,
+            // everything visible. Making them optional keeps the existing call shape
+            // working while the deeper page is opt-in.
+            let depth = match dict.get_item("depth")? {
+                Some(value) => parse_tree_depth(&value)?,
+                None => fdu_core::query::Bound::Limit(1),
+            };
+            let include_ignored = match dict.get_item("include_ignored")? {
+                Some(value) => value.extract::<bool>()?,
+                None => true,
+            };
+            Ok(ReadProjection::Tree { path: path()?, depth, include_ignored, page: page()? })
+        }
         "flat" => {
             let selection =
                 dict.get_item("selection")?.map(|value| mapping(value, "selection")).transpose()?;

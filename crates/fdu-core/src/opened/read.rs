@@ -79,13 +79,16 @@ pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadRes
                     };
                     results.push(ProjectionResult::RollUp(value));
                 }
-                crate::ReadProjection::Tree { path, page } => {
+                crate::ReadProjection::Tree { path, depth, include_ignored, page } => {
                     validate_page(page)?;
+                    validate_depth(depth)?;
                     let path = crate::scan::normalize_subtree(&path)?;
                     results.push(tree_projection(
                         opened,
                         index,
                         &path,
+                        depth,
+                        include_ignored,
                         page,
                         version,
                         state.coverage,
@@ -111,16 +114,20 @@ pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadRes
                     }
                     let retry = record.clone();
                     let result = match record.kind {
-                        ContinuationKind::Tree { path, next } => tree_projection(
-                            opened,
-                            index,
-                            &path,
-                            page,
-                            version,
-                            state.coverage,
-                            Some(&next),
-                            &mut work,
-                        ),
+                        ContinuationKind::Tree { path, depth, include_ignored, next } => {
+                            tree_projection(
+                                opened,
+                                index,
+                                &path,
+                                depth,
+                                include_ignored,
+                                page,
+                                version,
+                                state.coverage,
+                                Some(&next),
+                                &mut work,
+                            )
+                        }
                         ContinuationKind::Flat { selection, shape, next } => flat_projection(
                             opened,
                             index,
@@ -353,6 +360,14 @@ fn validate_flat_selection(selection: &crate::query::EntrySelection) -> Result<(
     Ok(())
 }
 
+/// A render depth of zero asks for a page that can hold nothing.
+fn validate_depth(depth: crate::query::Bound) -> Result<()> {
+    if depth == crate::query::Bound::Limit(0) {
+        return Err(Error::PageRowLimit { attempted: 0, limit: crate::MAX_PAGE_ROWS });
+    }
+    Ok(())
+}
+
 fn validate_page(page: PageRequest) -> Result<()> {
     if page.limit == 0 || page.limit > crate::MAX_PAGE_ROWS {
         return Err(Error::PageRowLimit { attempted: page.limit, limit: crate::MAX_PAGE_ROWS });
@@ -363,11 +378,22 @@ fn validate_page(page: PageRequest) -> Result<()> {
     Ok(())
 }
 
+/// One breadth-first page of the tree below `path`.
+///
+/// Level order, not pre-order. Both put a parent before its children, so "parent-first"
+/// never decided between them, and they emit different sequences for any tree deeper than
+/// one level. Level order is what keeps a bounded page honest: a pre-order page cut at its
+/// row bound can return one directory and a thousand of its descendants, leaving the
+/// caller unable to tell whether the parent held two entries or two thousand. Level order
+/// returns each level whole before descending, so what a bound withheld shows up as
+/// missing depth rather than as hidden breadth.
 #[allow(clippy::too_many_arguments)]
 fn tree_projection(
     opened: &OpenedIndex,
     index: &crate::Index,
     path: &Path,
+    depth: crate::query::Bound,
+    include_ignored: bool,
     page: PageRequest,
     version: EngineVersion,
     coverage: Coverage,
@@ -396,82 +422,121 @@ fn tree_projection(
         return Ok(ProjectionResult::Tree(Knowledge::Absent));
     }
 
+    // Levels below `path` that may be emitted. A parent at depth `d` produces rows at
+    // `d + 1`, so parents are expanded while their own depth is under this bound.
+    let max_depth = match depth {
+        crate::query::Bound::All => u32::MAX,
+        crate::query::Bound::Limit(limit) => u32::try_from(limit).unwrap_or(u32::MAX),
+    };
+
     let mut rows = Vec::with_capacity(page.limit);
     let mut spent = path_work;
-    let mut next = None;
-    if let Some(children) = index.portable_children(path) {
-        let start_partition = start.map(|position| position.partition);
-        if start_partition != Some(ChildPartition::Nondirectories) {
-            let start_name = start
-                .filter(|position| position.partition == ChildPartition::Directories)
-                .map(|position| position.name.as_str());
-            next = collect_children(
-                index,
-                path,
-                &children.directories,
-                ChildPartition::Directories,
-                start_name,
-                page,
-                &mut rows,
-                &mut spent,
-            );
-        }
-        if next.is_none() && rows.len() < page.limit {
-            let start_name = start
-                .filter(|position| position.partition == ChildPartition::Nondirectories)
-                .map(|position| position.name.as_str());
-            next = collect_children(
-                index,
-                path,
-                &children.nondirectories,
-                ChildPartition::Nondirectories,
-                start_name,
-                page,
-                &mut rows,
-                &mut spent,
-            );
-        } else if next.is_none() && rows.len() == page.limit {
-            next = first_position(
-                &children.nondirectories,
-                ChildPartition::Nondirectories,
-                None,
-                page.max_work,
-                &mut spent,
-            );
+    let mut next: Option<ChildPosition> = None;
+
+    // Resume exactly where the previous page stopped, or start at the requested root.
+    let (mut parent, mut parent_depth, mut partition, mut after) = match start {
+        Some(position) => (
+            position.parent.clone(),
+            position.depth,
+            position.partition,
+            Some(position.name.clone()),
+        ),
+        None => (path.to_path_buf(), 0, ChildPartition::Directories, None),
+    };
+
+    'levels: while parent_depth < max_depth {
+        if let Some(children) = index.portable_children(&parent) {
+            for current in [ChildPartition::Directories, ChildPartition::Nondirectories] {
+                if partition == ChildPartition::Nondirectories
+                    && current == ChildPartition::Directories
+                {
+                    // Resumed inside the second partition; the first is already emitted.
+                    continue;
+                }
+                let map = match current {
+                    ChildPartition::Directories => &children.directories,
+                    ChildPartition::Nondirectories => &children.nondirectories,
+                };
+                let start_name = (partition == current).then(|| after.clone()).flatten();
+                if let Some(stopped) = collect_children(
+                    index,
+                    &parent,
+                    parent_depth,
+                    map,
+                    current,
+                    start_name.as_deref(),
+                    include_ignored,
+                    page,
+                    &mut rows,
+                    &mut spent,
+                ) {
+                    next = Some(stopped);
+                    break 'levels;
+                }
+            }
         }
 
+        // This parent is exhausted. Take the next parent at the same depth; when that
+        // level runs out, drop to the first parent of the next one. Keeping those two
+        // steps distinct is what makes the traversal level order rather than pre-order.
+        partition = ChildPartition::Directories;
+        after = None;
+        if let Some(sibling) = directory_at_depth(
+            index,
+            path,
+            parent_depth,
+            Some(&parent),
+            include_ignored,
+            &mut spent,
+        ) {
+            parent = sibling;
+        } else {
+            parent_depth = parent_depth.saturating_add(1);
+            if parent_depth >= max_depth {
+                break;
+            }
+            let Some(first) =
+                directory_at_depth(index, path, parent_depth, None, include_ignored, &mut spent)
+            else {
+                break;
+            };
+            parent = first;
+        }
         if spent > page.max_work {
-            work.rows_visited = work.rows_visited.saturating_add(page.max_work);
-            work.maintained_index_work =
-                work.maintained_index_work.saturating_add(page.max_work.saturating_sub(path_work));
-            return Ok(ProjectionResult::Limit(QueryLimit {
-                projection: LimitedProjection::Tree,
-                max_work: page.max_work,
-                rows_visited: page.max_work,
-            }));
+            break;
         }
     }
 
     work.rows_visited = work.rows_visited.saturating_add(spent);
+    // The path walk that located the directory is row visiting, not maintained-index
+    // work, so it is charged once above and excluded here.
     work.maintained_index_work =
         work.maintained_index_work.saturating_add(spent.saturating_sub(path_work));
+    // Plus one: a tree page returns the directory itself beside its rows, and a caller
+    // counting what it received counts that too.
     work.rows_returned = work
         .rows_returned
         .saturating_add(u64::try_from(rows.len()).unwrap_or(u64::MAX).saturating_add(1));
 
-    let continuation = if let Some(next) = next {
+    let continuation = if let Some(position) = next {
         let mut table =
             opened.state.continuations.lock().map_err(|_| Error::OpenedLifecyclePoisoned)?;
         Some(table.insert(
             opened.state.session,
             ContinuationRecord {
                 version,
-                kind: ContinuationKind::Tree { path: path.to_path_buf(), next },
+                kind: ContinuationKind::Tree {
+                    path: path.to_path_buf(),
+                    depth,
+                    include_ignored,
+                    next: position,
+                },
             },
         )?)
     } else {
         None
     };
+
     // One completeness, because there is now one population. While a portable name was
     // optional this had to distinguish "the native child set is authoritative" from
     // "a portable consumer may trust it", since an entry with no portable name was in the
@@ -622,19 +687,26 @@ fn aggregate_projection(
     ProjectionResult::Aggregate(crate::CountResult::Exact(matches))
 }
 
+/// Emit one parent's children into `rows`, stopping at the page's row or work bound.
+///
+/// Returns where to resume when a bound stopped it, and `None` when the partition was
+/// exhausted.
 #[allow(clippy::too_many_arguments)]
 fn collect_children(
     index: &crate::Index,
     parent: &Path,
+    depth: u32,
     children: &BTreeMap<String, EntryId>,
     partition: ChildPartition,
     start: Option<&str>,
+    include_ignored: bool,
     page: PageRequest,
     rows: &mut Vec<crate::EntryValue>,
     spent: &mut u64,
 ) -> Option<ChildPosition> {
     // Child names, not portable paths: one component, no separators, already relative to
-    // `parent`. Keeping them `String` is what makes `parent.join(name)` below correct.
+    // `parent`. Keeping them `String` is what orders this map by canonical bytes, which is
+    // also what puts uppercase before lowercase without a rule saying so.
     let iterator: Box<dyn Iterator<Item = (&String, &EntryId)> + '_> = match start {
         Some(start) => Box::new(children.range(start.to_string()..)),
         None => Box::new(children.iter()),
@@ -642,35 +714,96 @@ fn collect_children(
     for (name, id) in iterator {
         *spent = spent.saturating_add(1);
         if *spent > page.max_work || rows.len() == page.limit {
-            return Some(ChildPosition { partition, name: name.clone() });
+            return Some(ChildPosition {
+                parent: parent.to_path_buf(),
+                depth,
+                partition,
+                name: name.clone(),
+            });
         }
-        // The arena owns the native path. Joining the child *name* here would be joining
-        // an escaped component onto a native parent, and the row's portable form would
-        // then be derived from an already-escaped string and escaped a second time —
-        // `x%FF` became `x%25FF`. The names in this map are portable by construction, so
-        // they are for ordering and resumption, never for addressing.
+        // The arena owns the native path. Joining the child *name* here would join an
+        // escaped component onto a native parent, and the row's portable form would then
+        // be derived from an already-escaped string and escaped a second time — `x%FF`
+        // became `x%25FF`. These names are portable by construction, so they are for
+        // ordering and resumption, never for addressing.
         let path = index.path_of(*id).unwrap_or_else(|| parent.join(name));
+        if !include_ignored && index.is_ignored(&path) == Some(true) {
+            continue;
+        }
         rows.push(index.entry_value_of(*id, &path));
     }
     None
 }
 
-fn first_position(
-    children: &BTreeMap<String, EntryId>,
-    partition: ChildPartition,
-    start: Option<&str>,
-    max_work: u64,
+/// The first directory child of `parent` after `after`, skipping pruned subtrees.
+fn first_directory_child(
+    index: &crate::Index,
+    parent: &Path,
+    after: Option<&str>,
+    include_ignored: bool,
     spent: &mut u64,
-) -> Option<ChildPosition> {
-    let first = match start {
-        Some(start) => children.range(start.to_string()..).next(),
-        None => children.first_key_value(),
-    }?;
-    *spent = spent.saturating_add(1);
-    if *spent > max_work {
-        return Some(ChildPosition { partition, name: first.0.clone() });
+) -> Option<PathBuf> {
+    let children = index.portable_children(parent)?;
+    let iterator: Box<dyn Iterator<Item = (&String, &EntryId)> + '_> = match after {
+        Some(after) => Box::new(children.directories.range(after.to_string()..).skip(1)),
+        None => Box::new(children.directories.iter()),
+    };
+    for (name, id) in iterator {
+        *spent = spent.saturating_add(1);
+        let path = index.path_of(*id).unwrap_or_else(|| parent.join(name));
+        if !include_ignored && index.is_ignored(&path) == Some(true) {
+            // Pruning the subtree, not the row: an excluded directory is never expanded,
+            // so none of its descendants can reach a later level either.
+            continue;
+        }
+        return Some(path);
     }
-    Some(ChildPosition { partition, name: first.0.clone() })
+    None
+}
+
+/// A directory at exactly `depth` below `root`, in breadth-first order.
+///
+/// With `after`, the next one strictly following it; without, the first at that depth.
+///
+/// This is the whole of the traversal's state management, and it is why the cursor holds
+/// one frame rather than a stack. Enumerating a level means walking the level above it,
+/// which means walking the level above that — but the ancestor chain of a path already
+/// *is* that walk, recoverable by splitting the path. So resuming costs one child-map
+/// lookup per level instead of a rescan of everything already emitted, and nothing
+/// unbounded is retained: the frontier, which is every directory one level up, would be
+/// unbounded in directory width and could never fit a bounded continuation record.
+fn directory_at_depth(
+    index: &crate::Index,
+    root: &Path,
+    depth: u32,
+    after: Option<&Path>,
+    include_ignored: bool,
+    spent: &mut u64,
+) -> Option<PathBuf> {
+    if depth == 0 {
+        // Only the requested root sits at depth zero, so there is never a next one.
+        return after.is_none().then(|| root.to_path_buf());
+    }
+
+    let (mut parent, mut name) = match after {
+        Some(previous) => (
+            previous.parent()?.to_path_buf(),
+            Some(crate::opened::read::portable_component(previous.file_name()?)),
+        ),
+        None => (directory_at_depth(index, root, depth - 1, None, include_ignored, spent)?, None),
+    };
+
+    loop {
+        if let Some(found) =
+            first_directory_child(index, &parent, name.as_deref(), include_ignored, spent)
+        {
+            return Some(found);
+        }
+        // This parent holds no more directories, so continue with the next parent one
+        // level up and start from its first child.
+        parent = directory_at_depth(index, root, depth - 1, Some(&parent), include_ignored, spent)?;
+        name = None;
+    }
 }
 
 fn charge_path(work: &mut Work, path: &Path) {

@@ -720,11 +720,19 @@ The cost is a more intricate cursor, and that cost is paid in the engine rather 
 the caller. A level’s frontier is every directory one level above it, which is unbounded
 and therefore cannot be stored in a record capped at 64 KiB; re-deriving it per page
 would make paging one wide level quadratic in the number of pages.
-So a tree continuation stores a **stack of at most `max_depth`
-`(parent portable path, last emitted child name)` pairs**, which enumerates the frontier
-lazily. Resume is one `portable_children` lookup per level: state proportional to depth,
-work proportional to depth, and no frontier materialized.
-A continuation that would exceed the depth bound is a defect, not a truncation.
+So a tree continuation stores **one frame — the parent’s native path, its depth, the
+partition, and the last emitted child name** — and derives the rest.
+
+One frame is enough because the ancestor chain of that path already *is* the stack this
+paragraph once described, and splitting the path recovers it.
+Advancing to the next directory at a depth walks that chain with one `portable_children`
+lookup per level, so resuming costs work proportional to depth rather than to everything
+already emitted, and the record stays bounded by a single path.
+
+Two questions have to stay distinct in the implementation, and conflating them is what
+turns level order back into pre-order: *the next parent at this depth*, and *the first
+parent at the next depth*. The first walks siblings; the second descends only once the
+level above is exhausted.
 
 **Flat and catalog pages are lexicographic by the complete canonical POSIX-relative
 path, encoded as UTF-8 bytes.** A flat continuation stores the last emitted portable
