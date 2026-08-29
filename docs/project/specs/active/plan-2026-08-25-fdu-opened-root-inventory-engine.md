@@ -722,6 +722,9 @@ and therefore cannot be stored in a record capped at 64 KiB; re-deriving it per 
 would make paging one wide level quadratic in the number of pages.
 So a tree continuation stores **one frame — the parent’s native path, its depth, the
 partition, and the last emitted child name** — and derives the rest.
+That last name is optional, because a page can stop having just arrived at a parent none
+of whose children are emitted yet; the frame then resumes at the start of the partition,
+which is not the same statement as naming its first child.
 
 One frame is enough because the ancestor chain of that path already *is* the stack this
 paragraph once described, and splitting the path recovers it.
@@ -733,6 +736,23 @@ Two questions have to stay distinct in the implementation, and conflating them i
 turns level order back into pre-order: *the next parent at this depth*, and *the first
 parent at the next depth*. The first walks siblings; the second descends only once the
 level above is exhausted.
+
+Stopping a page between those two questions is the one place the work bound stated under
+Coherent reads is not enforced, and the exception is deliberate.
+Searching for the next parent to expand is charged against the budget but never cut
+short, because a search abandoned mid-level has no emitted row for the one frame to
+name. A cursor that cannot record where the search had reached leaves the next page to
+restart it and overrun the same budget, so a level wider than the budget would never be
+crossed at all: the tree would become unpageable rather than merely slow, and returning
+a typed limit instead has the same effect, since re-asking cannot make progress.
+Letting the search finish costs one scan of one level, paid once at each level boundary
+rather than once per page, because the parent it finds is what the frame then records.
+Teaching the frame to express the searching state as well as the emitting one is tracked
+as `fdu-pokc`.
+
+What is never acceptable, budget or no budget, is stopping with rows left and no
+continuation: that is the silent relabelling that rule forbids, and it is what
+`opened::tests::a_tree_page_stopped_by_the_work_budget_is_resumable` pins.
 
 **Flat and catalog pages are lexicographic by the complete canonical POSIX-relative
 path, encoded as UTF-8 bytes.** A flat continuation stores the last emitted portable

@@ -435,12 +435,9 @@ fn tree_projection(
 
     // Resume exactly where the previous page stopped, or start at the requested root.
     let (mut parent, mut parent_depth, mut partition, mut after) = match start {
-        Some(position) => (
-            position.parent.clone(),
-            position.depth,
-            position.partition,
-            Some(position.name.clone()),
-        ),
+        Some(position) => {
+            (position.parent.clone(), position.depth, position.partition, position.name.clone())
+        }
         None => (path.to_path_buf(), 0, ChildPartition::Directories, None),
     };
 
@@ -481,7 +478,13 @@ fn tree_projection(
         // steps distinct is what makes the traversal level order rather than pre-order.
         partition = ChildPartition::Directories;
         after = None;
-        if let Some(sibling) = directory_at_depth(
+        // The search itself is charged but never cut short. Interrupting it would strand
+        // the traversal somewhere a one-frame cursor cannot name -- mid-scan of a level,
+        // with no row to point at -- so the next page would restart the same search and
+        // exhaust the same budget, and a level wider than `max_work` would never be
+        // crossed at all. Letting it finish costs one scan of one level, once, and it is
+        // the parent it finds that the cursor below records. See `fdu-pokc`.
+        let stepped = if let Some(sibling) = directory_at_depth(
             index,
             path,
             parent_depth,
@@ -489,20 +492,32 @@ fn tree_projection(
             include_ignored,
             &mut spent,
         ) {
-            parent = sibling;
+            Some((sibling, parent_depth))
         } else {
-            parent_depth = parent_depth.saturating_add(1);
-            if parent_depth >= max_depth {
-                break;
+            let deeper = parent_depth.saturating_add(1);
+            if deeper >= max_depth {
+                None
+            } else {
+                directory_at_depth(index, path, deeper, None, include_ignored, &mut spent)
+                    .map(|first| (first, deeper))
             }
-            let Some(first) =
-                directory_at_depth(index, path, parent_depth, None, include_ignored, &mut spent)
-            else {
-                break;
-            };
-            parent = first;
-        }
+        };
+        let Some((stepped_parent, stepped_depth)) = stepped else {
+            break;
+        };
+        parent = stepped_parent;
+        parent_depth = stepped_depth;
         if spent > page.max_work {
+            // Arrived at a parent with none of its children emitted yet, so the exact
+            // resume position is the start of its first partition. Breaking here with no
+            // cursor is what returned a truncated tree as a finished one: `next: None`
+            // and a caller with no way to tell that levels were missing.
+            next = Some(ChildPosition {
+                parent: parent.clone(),
+                depth: parent_depth,
+                partition: ChildPartition::Directories,
+                name: None,
+            });
             break;
         }
     }
@@ -718,7 +733,7 @@ fn collect_children(
                 parent: parent.to_path_buf(),
                 depth,
                 partition,
-                name: name.clone(),
+                name: Some(name.clone()),
             });
         }
         // The arena owns the native path. Joining the child *name* here would join an

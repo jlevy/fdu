@@ -3044,6 +3044,116 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// A page the work budget stops must hand back a continuation.
+    ///
+    /// The row limit and the work budget are different stopping conditions, and only the
+    /// row limit is reached inside `collect_children`, which knows the exact child it
+    /// stopped at. The budget can also run out while *advancing* between parents, where
+    /// no row has been reached to point at. Breaking there returns `next: None`, which a
+    /// caller cannot tell apart from a traversal that finished — the tree simply comes
+    /// back missing every level below the one that fit.
+    ///
+    /// Sweeping the budget rather than naming one keeps this from testing an arithmetic
+    /// coincidence: every budget large enough to make progress must reassemble the whole
+    /// tree, whichever of the two conditions happens to stop each page.
+    #[test]
+    fn a_tree_page_stopped_by_the_work_budget_is_resumable() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("a"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("b"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("z.txt"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs { size: 1, ..crate::Attrs::default() },
+                },
+                Op::Upsert {
+                    path: PathBuf::from("a/a1"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("b/b1"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("a/a1/deep.txt"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs { size: 2, ..crate::Attrs::default() },
+                },
+            ]))
+            .expect("seed tree");
+
+        let whole = ["a", "b", "z.txt", "a/a1", "b/b1", "a/a1/deep.txt"];
+
+        // Two is the smallest budget that can still afford a row after the path walk, so
+        // it is the smallest at which paging is obliged to make progress at all.
+        for max_work in 2..=14_u64 {
+            let page = crate::PageRequest { limit: crate::MAX_PAGE_ROWS, max_work };
+            let mut seen: Vec<String> = Vec::new();
+            let mut continuation = None;
+            let mut pages = 0;
+
+            loop {
+                let projection = match continuation {
+                    None => crate::ReadProjection::Tree {
+                        path: PathBuf::new(),
+                        depth: crate::query::Bound::All,
+                        include_ignored: true,
+                        page,
+                    },
+                    Some(token) => crate::ReadProjection::Continue { continuation: token, page },
+                };
+                let response = opened
+                    .read(crate::ReadRequest {
+                        projections: vec![projection],
+                        ..crate::ReadRequest::default()
+                    })
+                    .expect("tree read");
+                let current = match &response.results[0] {
+                    crate::ProjectionResult::Tree(crate::Knowledge::Present(page)) => page,
+                    // A limit here would mean a budget the tree cannot be read at, and
+                    // re-asking cannot help: the search that overran would restart and
+                    // overrun again. Every budget that can hold a row must finish.
+                    other => panic!("unexpected result at budget {max_work}: {other:?}"),
+                };
+                seen.extend(current.rows.iter().map(|row| row.portable_path.as_str().to_owned()));
+                continuation = current.next;
+                pages += 1;
+                assert!(
+                    pages <= whole.len() * 4 + 16,
+                    "budget {max_work} never finished paging, saw {seen:?}"
+                );
+                if continuation.is_none() {
+                    break;
+                }
+            }
+
+            let mut sorted = seen.clone();
+            sorted.sort();
+            let mut expected: Vec<String> = whole.iter().map(|row| (*row).to_owned()).collect();
+            expected.sort();
+            assert_eq!(
+                sorted, expected,
+                "budget {max_work} finished with next: None while missing rows; saw {seen:?}"
+            );
+        }
+
+        opened.close().expect("close");
+    }
+
     /// Excluding ignored entries prunes the subtree, not merely the row.
     ///
     /// Filtering the row and descending anyway is an equally reasonable reading of an

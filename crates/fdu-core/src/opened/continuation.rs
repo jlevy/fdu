@@ -35,7 +35,11 @@ pub(super) struct ChildPosition {
     pub(super) depth: u32,
     pub(super) partition: ChildPartition,
     /// First child name the resumed page should visit within `partition`.
-    pub(super) name: String,
+    ///
+    /// `None` resumes at the start of the partition. That is not the same as naming the
+    /// first child: a page can stop having just arrived at a parent none of whose
+    /// children are emitted yet, and there is no name to point at until one is read.
+    pub(super) name: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -135,7 +139,7 @@ impl ContinuationRecord {
                 .as_encoded_bytes()
                 .len()
                 .saturating_add(next.parent.as_os_str().as_encoded_bytes().len())
-                .saturating_add(next.name.len()),
+                .saturating_add(next.name.as_deref().map_or(0, str::len)),
             ContinuationKind::Flat { selection, next, .. } => {
                 selection.retained_heap_bytes().saturating_add(next.retained_heap_bytes())
             }
@@ -245,7 +249,7 @@ mod tests {
                             parent: PathBuf::new(),
                             depth: 0,
                             partition: ChildPartition::Directories,
-                            name: "next".to_owned(),
+                            name: Some("next".to_owned()),
                         },
                     },
                 },
