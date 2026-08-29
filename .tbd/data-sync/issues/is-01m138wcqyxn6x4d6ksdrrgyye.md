@@ -3,15 +3,26 @@ type: is
 id: is-01m138wcqyxn6x4d6ksdrrgyye
 title: Decide whether the portable encoding should be total
 kind: task
-status: open
+status: closed
 priority: 2
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels: []
 dependencies: []
 parent_id: is-01m0y1shykye8sc7h7e9rkk6kh
 created_at: 2026-08-28T04:08:39.420Z
-updated_at: 2026-08-28T04:08:39.420Z
+updated_at: 2026-08-29T05:52:52.850Z
+closed_at: 2026-08-29T05:52:52.849Z
+close_reason: |-
+  Decided yes, and implemented in 13fe8b4 'feat: every path has a portable name'. The encoding is now total: every path has a portable name, produced by escaping undecodable bytes as %XX and escaping % itself as %25 so the mapping stays injective. Valid UTF-8 runs are preserved, so a mostly-readable name stays mostly readable.
+
+  Making it total collapsed the portable/native population split exactly as this bead anticipated, and deleted the machinery that split required: PortablePathIssue, PortablePathExample, PortablePathEncoding, MAX_PORTABLE_PATH_EXAMPLES, portable_omitted, portable_examples, TreePage's second completeness flag, and the 'unknown instead of absent' branch in absence_is_known. EntryValue.portable_path is a PortablePath rather than an Option.
+
+  Precedent for totality: git's quoted paths, Python's surrogate escapes, and the file:// URIs LSP and desktop file managers exchange all make the derived name total. None tells a caller that a file has no name.
+
+  Closes the follow-on fdu-mokz, which described an omission-example list that no longer exists.
+resolution: null
+duplicate_of: null
 ---
 portable_path returns Option<String>: an entry whose native path is not valid UTF-8 has no portable form and is absent from every ordered projection. That partiality is the sole source of the two-population problem, and everything built to manage it exists only because of it: portable_omitted, portable_examples, the separate native_complete and portable_complete flags, unknown-instead-of-absent lookups below a non-portable directory, and a conformance case whose job is to stop the difference reading as a defect.
 

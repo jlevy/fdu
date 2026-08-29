@@ -3,15 +3,19 @@ type: is
 id: is-01m138x5kdsqfcebcdp01y6rr7
 title: Portable omission examples can empty out while the count stays high
 kind: bug
-status: open
+status: closed
 priority: 3
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels: []
 dependencies: []
 parent_id: is-01m0y1shykye8sc7h7e9rkk6kh
 created_at: 2026-08-28T04:09:04.876Z
-updated_at: 2026-08-28T04:09:04.876Z
+updated_at: 2026-08-29T05:30:43.608Z
+closed_at: 2026-08-29T05:30:43.607Z
+close_reason: "Moot: the defect described a bounded example list that could empty out while the omission count stayed high. Making the portable encoding total (commit 13fe8b4) deleted the whole mechanism -- PortablePathIssue, PortablePathExample, PortablePathEncoding, MAX_PORTABLE_PATH_EXAMPLES, portable_omitted and portable_examples are all gone, and there is no longer an omission to count or exemplify because every path has a portable name. Verified by grep across crates/: no residue."
+resolution: null
+duplicate_of: null
 ---
 ServingIndexes maintains portable_omitted as an exact count and portable_examples as a bounded sample (MAX_PORTABLE_PATH_EXAMPLES). The two drift apart under churn, and a consumer can receive an issue reporting a large omission count beside an empty example list, which reads as a contradiction.
 
