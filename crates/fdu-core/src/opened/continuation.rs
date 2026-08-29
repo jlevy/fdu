@@ -40,6 +40,22 @@ pub(super) struct ChildPosition {
     /// first child: a page can stop having just arrived at a parent none of whose
     /// children are emitted yet, and there is no name to point at until one is read.
     pub(super) name: Option<String>,
+    /// First directory one level below `depth`, noticed while this level was emitted.
+    ///
+    /// Descending used to search for it: ask every parent at this depth for a directory
+    /// child until one answers. That is a scan of the whole level, and on a level of
+    /// leaves — the shape of every last level — it scans everything to conclude there is
+    /// nothing below.
+    ///
+    /// The walk already passes every one of those parents while emitting, so the answer
+    /// is free if it is noticed in passing. The first directory *row* emitted at the next
+    /// level is that level's first directory, because level order there is grouped by
+    /// parent order here. `None` at the end of a level means there is no level below.
+    ///
+    /// It is carried in the cursor because a page can stop mid-level: without it, a
+    /// resumed page would notice only what follows where it resumed and take some later
+    /// directory for the first.
+    pub(super) next_level_first: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug)]
@@ -139,7 +155,12 @@ impl ContinuationRecord {
                 .as_encoded_bytes()
                 .len()
                 .saturating_add(next.parent.as_os_str().as_encoded_bytes().len())
-                .saturating_add(next.name.as_deref().map_or(0, str::len)),
+                .saturating_add(next.name.as_deref().map_or(0, str::len))
+                .saturating_add(
+                    next.next_level_first
+                        .as_ref()
+                        .map_or(0, |path| path.as_os_str().as_encoded_bytes().len()),
+                ),
             ContinuationKind::Flat { selection, next, .. } => {
                 selection.retained_heap_bytes().saturating_add(next.retained_heap_bytes())
             }
@@ -250,6 +271,7 @@ mod tests {
                             depth: 0,
                             partition: ChildPartition::Directories,
                             name: Some("next".to_owned()),
+                            next_level_first: None,
                         },
                     },
                 },

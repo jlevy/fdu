@@ -434,11 +434,16 @@ fn tree_projection(
     let mut next: Option<ChildPosition> = None;
 
     // Resume exactly where the previous page stopped, or start at the requested root.
-    let (mut parent, mut parent_depth, mut partition, mut after) = match start {
-        Some(position) => {
-            (position.parent.clone(), position.depth, position.partition, position.name.clone())
-        }
-        None => (path.to_path_buf(), 0, ChildPartition::Directories, None),
+    let (mut parent, mut parent_depth, mut partition, mut after, mut next_level_first) = match start
+    {
+        Some(position) => (
+            position.parent.clone(),
+            position.depth,
+            position.partition,
+            position.name.clone(),
+            position.next_level_first.clone(),
+        ),
+        None => (path.to_path_buf(), 0, ChildPartition::Directories, None, None),
     };
 
     'levels: while parent_depth < max_depth {
@@ -466,6 +471,7 @@ fn tree_projection(
                     page,
                     &mut rows,
                     &mut spent,
+                    &mut next_level_first,
                 ) {
                     next = Some(stopped);
                     break 'levels;
@@ -478,12 +484,6 @@ fn tree_projection(
         // steps distinct is what makes the traversal level order rather than pre-order.
         partition = ChildPartition::Directories;
         after = None;
-        // The search itself is charged but never cut short. Interrupting it would strand
-        // the traversal somewhere a one-frame cursor cannot name -- mid-scan of a level,
-        // with no row to point at -- so the next page would restart the same search and
-        // exhaust the same budget, and a level wider than `max_work` would never be
-        // crossed at all. Letting it finish costs one scan of one level, once, and it is
-        // the parent it finds that the cursor below records. See `fdu-pokc`.
         let stepped = if let Some(sibling) = directory_at_depth(
             index,
             path,
@@ -494,12 +494,17 @@ fn tree_projection(
         ) {
             Some((sibling, parent_depth))
         } else {
+            // The level is finished, and its first directory was noticed while it was
+            // emitted rather than searched for now. `None` means no directory was emitted
+            // at the next level, so there is no next level: the answer that used to cost
+            // a scan of everything just walked.
             let deeper = parent_depth.saturating_add(1);
             if deeper >= max_depth {
                 None
             } else {
-                directory_at_depth(index, path, deeper, None, include_ignored, &mut spent)
-                    .map(|first| (first, deeper))
+                // Taken, not copied: the memo now describes the level being entered, and
+                // the level after it starts with nothing recorded.
+                next_level_first.take().map(|first| (first, deeper))
             }
         };
         let Some((stepped_parent, stepped_depth)) = stepped else {
@@ -517,6 +522,7 @@ fn tree_projection(
                 depth: parent_depth,
                 partition: ChildPartition::Directories,
                 name: None,
+                next_level_first: next_level_first.clone(),
             });
             break;
         }
@@ -718,6 +724,7 @@ fn collect_children(
     page: PageRequest,
     rows: &mut Vec<crate::EntryValue>,
     spent: &mut u64,
+    next_level_first: &mut Option<PathBuf>,
 ) -> Option<ChildPosition> {
     // Child names, not portable paths: one component, no separators, already relative to
     // `parent`. Keeping them `String` is what orders this map by canonical bytes, which is
@@ -734,6 +741,7 @@ fn collect_children(
                 depth,
                 partition,
                 name: Some(name.clone()),
+                next_level_first: next_level_first.clone(),
             });
         }
         // The arena owns the native path. Joining the child *name* here would join an
@@ -744,6 +752,12 @@ fn collect_children(
         let path = index.path_of(*id).unwrap_or_else(|| parent.join(name));
         if !include_ignored && index.is_ignored(&path) == Some(true) {
             continue;
+        }
+        // Noticed in passing, not searched for: this row is a directory one level down,
+        // and the first such row is that level's first parent. Recorded before the push
+        // so the same pruning rule that decides the row decides the descent.
+        if partition == ChildPartition::Directories && next_level_first.is_none() {
+            *next_level_first = Some(path.clone());
         }
         rows.push(index.entry_value_of(*id, &path));
     }

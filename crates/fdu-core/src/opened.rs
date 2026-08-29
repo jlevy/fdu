@@ -3154,6 +3154,69 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// Descending must not scan the level it is leaving.
+    ///
+    /// A level of leaf directories is the shape of every tree's last level, and searching
+    /// it for a directory child asks every parent in order to conclude there is nothing
+    /// below. Noticing the first directory while the level is emitted answers the same
+    /// question for free, so the work a page reports has to stay proportional to the rows
+    /// it returns rather than to the width of the level under it.
+    #[test]
+    fn descending_costs_nothing_on_a_level_of_leaves() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        let mut ops = Vec::new();
+        for index in 0..60 {
+            ops.push(Op::Upsert {
+                path: PathBuf::from(format!("d{index:03}")),
+                kind: EntryKind::Dir,
+                attrs: crate::Attrs::default(),
+            });
+            ops.push(Op::Upsert {
+                path: PathBuf::from(format!("d{index:03}/leaf.txt")),
+                kind: EntryKind::File,
+                attrs: crate::Attrs { size: 1, ..crate::Attrs::default() },
+            });
+        }
+        opened.state.index.apply(&Observation::new(ops)).expect("seed wide leaf level");
+
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Tree {
+                    path: PathBuf::new(),
+                    depth: crate::query::Bound::All,
+                    include_ignored: true,
+                    page: crate::PageRequest {
+                        limit: crate::MAX_PAGE_ROWS,
+                        max_work: crate::MAX_PAGE_WORK,
+                    },
+                }],
+                ..crate::ReadRequest::default()
+            })
+            .expect("tree read");
+        let crate::ProjectionResult::Tree(crate::Knowledge::Present(page)) = &response.results[0]
+        else {
+            panic!("tree page");
+        };
+        assert_eq!(page.rows.len(), 120, "60 directories and their 60 files");
+        assert!(page.next.is_none(), "one page holds the whole tree");
+        // Three steps per directory and no more: emit the directory as a row at level
+        // one, emit its file as a row at level two, and step past it to its sibling. The
+        // slack covers the path walk and the two advances that end each level.
+        //
+        // Searching for the descent instead of remembering it adds a fourth step per
+        // directory, because it asks every one of them for a directory child before
+        // concluding there is no level below. That is what this bound rejects: measured,
+        // it is 180 steps with the memo and 241 without, for the same 121 rows.
+        let width = 60;
+        assert!(
+            response.work.rows_visited <= 3 * width + 10,
+            "descent scanned the level it was leaving: {} steps for {} rows",
+            response.work.rows_visited,
+            response.work.rows_returned
+        );
+        opened.close().expect("close");
+    }
+
     /// Excluding ignored entries prunes the subtree, not merely the row.
     ///
     /// Filtering the row and descending anyway is an equally reasonable reading of an
@@ -3230,6 +3293,113 @@ mod tests {
             "and so is everything beneath it, which is what pruning means"
         );
         assert!(excluded.iter().any(|row| row == "src/main.rs"), "unignored work is untouched");
+
+        opened.close().expect("close");
+    }
+
+    /// The remembered descent must be the first *unpruned* directory, not the first one.
+    ///
+    /// Noticing the next level's first parent while emitting is only equivalent to
+    /// searching for it if both apply the same pruning rule. `first_directory_child`
+    /// skips ignored directories, so remembering one before the ignore check makes the
+    /// two disagree and hands the traversal a parent the search would never have chosen.
+    ///
+    /// No row leaks when that happens — every child of a pruned directory is itself
+    /// ignored, so the row filter catches them a second time. Which is the point: the
+    /// mistake is invisible in the output and visible only in the work, and a fixture
+    /// that checked rows alone would pass either way. Pruning means an excluded
+    /// directory is never expanded; being saved by a second filter is not pruning.
+    ///
+    /// So the ignored directory sorts first and is given enough children that expanding
+    /// it cannot hide in the noise.
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn the_remembered_descent_skips_a_pruned_first_child() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![
+                Op::ControlUpsert {
+                    path: PathBuf::from(".gitignore"),
+                    source: b"aaa_vendor/\n".to_vec(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("src"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("src/aaa_vendor"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("src/bbb_keep"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("src/bbb_keep/kept.txt"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs { size: 2, ..crate::Attrs::default() },
+                },
+            ]))
+            .expect("seed tree");
+        let buried: Vec<Op> = (0..40)
+            .map(|index| Op::Upsert {
+                path: PathBuf::from(format!("src/aaa_vendor/hidden{index:03}.txt")),
+                kind: EntryKind::File,
+                attrs: crate::Attrs { size: 1, ..crate::Attrs::default() },
+            })
+            .collect();
+        opened.state.index.apply(&Observation::new(buried)).expect("seed the pruned subtree");
+
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Tree {
+                    path: PathBuf::new(),
+                    depth: crate::query::Bound::All,
+                    include_ignored: false,
+                    page: crate::PageRequest {
+                        limit: crate::MAX_PAGE_ROWS,
+                        max_work: crate::MAX_PAGE_WORK,
+                    },
+                }],
+                ..crate::ReadRequest::default()
+            })
+            .expect("tree read");
+        let crate::ProjectionResult::Tree(crate::Knowledge::Present(page)) = &response.results[0]
+        else {
+            panic!("tree page");
+        };
+        let rows: Vec<String> =
+            page.rows.iter().map(|row| row.portable_path.as_str().to_owned()).collect();
+
+        assert!(rows.iter().any(|row| row == "src/bbb_keep"), "the kept directory is listed");
+        assert!(
+            rows.iter().any(|row| row == "src/bbb_keep/kept.txt"),
+            "and the descent reached the level below it"
+        );
+        assert!(
+            !rows.iter().any(|row| row == "src/aaa_vendor"),
+            "the pruned directory is not a row"
+        );
+        assert!(
+            !rows.iter().any(|row| row.starts_with("src/aaa_vendor/")),
+            "and nothing beneath it is listed"
+        );
+
+        // The load-bearing assertion. Expanding the pruned directory charges a step for
+        // each of its forty children before discarding every one of them, so the work
+        // separates a remembered descent that prunes from one that does not, where the
+        // rows above cannot.
+        assert!(
+            response.work.rows_visited < 40,
+            "the pruned subtree was expanded: {} steps for {} rows",
+            response.work.rows_visited,
+            response.work.rows_returned
+        );
 
         opened.close().expect("close");
     }
