@@ -3,15 +3,15 @@ type: is
 id: is-01m16874p7sveb7tbjzgfw203p
 title: Align the MetaBrowser contract with the total portable encoding
 kind: task
-status: open
+status: in_progress
 priority: 1
-version: 3
+version: 4
 labels: []
 dependencies:
   - type: blocks
     target: is-01m0y1sjbfs5h264xhme2vqymg
 created_at: 2026-08-29T07:54:46.342Z
-updated_at: 2026-08-30T07:46:13.869Z
+updated_at: 2026-08-30T17:11:05.822Z
 ---
 fdu made the portable encoding total in `13fe8b4`, and MetaBrowser has not followed. Until
 it does, the two providers disagree about a value that appears on every row, so any
@@ -56,49 +56,37 @@ be settled first.
 
 ## Notes
 
-## Found while aligning: the reference provider crashed on undecodable names
+## Landed: `c585f20` and `a5f5e55` on `codex/inventory-contract-alignment`
 
-Not merely a type mismatch. `_child_order` ordered by `row.name.encode("utf-8")`, and
-`os.scandir` decodes an undecodable byte with `surrogateescape`, so the name holds a
-scalar in `U+DC80..U+DCFF` and encoding it raises `UnicodeEncodeError`. One such file made
-the entire directory unlistable, where fdu escaped it and listed it. The catalog order key
-had the same shape.
+The contract states the total encoding, produces it, orders by it, and no longer carries
+the machinery a partial encoding needed. `make verify` green: 1635 tests, 48 CLI goldens.
 
-The recency keys diverged differently: they sorted by `str` (code point order) while the
-other two sorted by encoded bytes. Those agree for valid UTF-8, since UTF-8 preserves code
-point order, and stop agreeing exactly where surrogates appear.
+## Resolved: one path, not two
 
-## Landed on `codex/inventory-contract-alignment`
+The fork this bead left open is settled, and settled more cheaply than the fdu-mirroring
+option suggested. fdu does not store two paths either -- its arena holds the native path
+and derives `portable_path` per returned row, so the second form exists for a page, never
+for the index. Mirroring that here means escaping at `_semantic_entry`, the single
+outbound boundary, and leaving `FsEntry` holding exactly what the filesystem gave it.
 
-- the contract states the total encoding: `%XX` uppercase for undecodable bytes, `%25` for
-  `%` so the mapping stays injective, valid UTF-8 runs preserved, and it is a name rather
-  than an address
-- `canonical_inventory_name` / `canonical_inventory_path` produce it, with the platform
-  branch mirroring fdu: single escape per surrogateescape byte on POSIX, two big-endian
-  escapes per unpaired UTF-16 surrogate on Windows
-- all four order keys canonicalize, so ordering is total and matches fdu byte for byte
-- `require_canonical_inventory_path` now rejects surrogates, so a raw platform name is
-  refused at the boundary rather than accepted and ordered inconsistently later
-- `PortablePathEncoding`, `PortablePathExample`, `PortablePathIssue`, the two example
-  bounds, and the four `portable_issue` fields are gone, along with the spike adapter's
-  omission guards and the architecture doc's description of them
+No entry holds two strings. That matters because the two forms are equal for essentially
+every file: only an undecodable byte or a literal `%` makes them differ, so storing both
+would be a cost paid by the whole corpus to describe a case most trees never contain.
 
-Verified against fdu's output: `x\xff.txt` becomes `x%FF.txt` in both, `100%.txt` becomes
-`100%25.txt`, and the escaped form is encodable where the raw one raises.
+The common path is C-level -- a `%` substring scan plus an `encode` that raises precisely
+on the surrogates marking an undecodable byte, rather than a Python scan over every
+character of every name in every page. 99ns per call, returning the same object, so an
+ordinary name allocates nothing. A test pins the identity.
 
-## Remaining, and it is now forced rather than optional
+Pinning it found real waste: `canonical_inventory_path` split on `/` and rejoined
+unconditionally, allocating for every path on every page including the untouched ones. No
+escape rule produces or consumes `/`, so it is now the same function as the single-name
+one and inherits the fast path.
 
-`InventoryEntry.__post_init__` validates `path` and `parent` with the tightened checker,
-so constructing a row from a raw platform name now raises at construction instead of later
-at ordering. Both are failures; the fix is for the provider to canonicalize before it
-builds a contract row.
+## Deferred, on purpose
 
-That settles the design fork this bead left open. MetaBrowser's contract row is the
-analogue of fdu's `portable_path`, not of fdu's native `path`: it is the consumer-facing
-identity, and the provider's own `FsEntry` store is the analogue of fdu's arena and can
-stay native. So canonicalize at `_semantic_entry`, the boundary that already exists to
-drop engine bookkeeping, rather than adding a second path field to every projection.
-
-Open question for that step: whether the store should also be keyed by the canonical form,
-since a query names a path the client got from an earlier row. fdu keys its child maps by
-the portable component for exactly this reason.
+`fdu-jng6`: about seven sites use a contract path as a filesystem address, so an escaped
+entry is listable, orderable, and consistent across providers, and may fail to open.
+Before this work one undecodable name made the whole directory unlistable, so this is
+strictly better, and the inverse is available whenever someone needs it because the
+encoding is injective.
