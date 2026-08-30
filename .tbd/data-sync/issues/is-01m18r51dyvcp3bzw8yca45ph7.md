@@ -5,7 +5,7 @@ title: Control state does not scale to a real home directory
 kind: epic
 status: open
 priority: 0
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - scale
@@ -18,8 +18,9 @@ child_order_hints:
   - is-01m18r5zsmxvm2a098rh56w9yr
   - is-01m18r6049rg359vn5nr1tazky
   - is-01m18r70ah7yekzdr3525x8jky
+  - is-01m18sm4xhbs9y0cgb1wpakr95
 created_at: 2026-08-30T07:11:43.549Z
-updated_at: 2026-08-30T07:12:47.952Z
+updated_at: 2026-08-30T07:37:27.215Z
 ---
 Agent field reports: fdu 0.1.0-dev+g27aeed0ef.dirty (branch codex/opened-root-inventory-rewrite, PR #48) cannot complete a roll-up of ~ or ~/wrk on macOS. Two scans abort with 'control table requires N bytes; limit is 4194304 bytes'; a third (~/Library) is SIGKILLed (137).
 
