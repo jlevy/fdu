@@ -1644,34 +1644,58 @@ Two directions are already closed, and are recorded here so they are not reopene
 
 #### What dust already solves, and what it does not
 
-All figures warm, same host and trees, `dust` 1.2.4 against current `main`:
+Two recorded comparisons through `make perf-compare-tools`, paired and interleaved, on
+`rustup-toolchains`: 119,368 entries, no symlinks, no mutation during the run, zero
+invalid samples, zero semantic or oracle mismatches.
 
-| Tree | fdu time | dust time | fdu peak RSS | dust peak RSS |
-| --- | --- | --- | --- | --- |
-| `~/wrk` | 21.2 s | 27.5 s | 1.41 GiB | 887 MiB |
-| `~` | 37.8 s | 87.3 s | 2.39 GiB | 1.59 GiB |
-| `~/Library` | 35.4 s | 29.7 s | 359 MiB | 218 MiB |
+The subject had to be chosen, not assumed.
+`~/wrk` cannot carry this comparison at all: dust’s claim-grade contract excludes
+symlink-bearing trees, and that live working directory grew by 47,881 entries mid-run.
+The harness refused every sample of the first attempt, correctly.
 
-fdu is faster on the two large trees and comparable on the third, so speed is not what
-this comparison is about.
-Three differences are, and only one of them is a technique fdu can copy.
+| fdu contract | fdu wall | dust wall | fdu peak RSS | dust peak RSS |
+| --- | ---: | ---: | ---: | ---: |
+| `fdu-transient-summary` | 0.146 s | 0.218 s | 15.0 MiB | 59.1 MiB |
+| `fdu-default-tree` | 0.157 s | 0.197 s | 77.9 MiB | 59.2 MiB |
+
+Read the second row.
+`fdu-transient-summary` passes `--cache off` with an explicit view, which isolates
+engine work; `fdu-default-tree` is what a user gets by typing `fdu PATH`, and typing
+`fdu PATH` is the only thing the field reports did.
+
+On the default path the wall-time lead is not real: dust is +20.6 % with a 95 % interval
+of −12.8 % to +27.2 %, which crosses zero.
+What is real is memory.
+fdu peaks at 77.9 MiB against dust’s 59.2 MiB, and the harness classifies fdu
+**inferior** on this subject because `peak_rss_bytes` exceeds its +5 % resource limit
+and `minor_faults` exceeds its +10 % limit.
+
+The gap is fdu’s own rather than dust’s advantage.
+The same binary on the same tree moves from 15.0 MiB to 77.9 MiB — 5.2 times — between
+the engine-only contract and the default one, while wall time moves 7.5 %. The reusable
+index and the snapshot write buy that memory, and some part of it is control state a
+roll-up never consumes, which is what `fdu-etfj` removes and `fdu-syyl` measures.
+
+Three differences remain qualitative, and only one is a technique fdu can copy.
 
 - dust has no per-directory control state to exhaust.
   `-I`/`--ignore-all-in-file` takes one file of regexes; there is no hierarchical
   `.gitignore`, no retained table, and no snapshot to serialize one into.
   It escapes this phase’s headline defect by not offering the feature rather than by
-  bounding it better, which is not a fix fdu can adopt while keeping exact control
-  state. It does establish the weaker claim this phase already rests on: a size roll-up
-  needs none of it (`fdu-etfj`).
+  bounding it better, which fdu cannot adopt while keeping exact control state.
+  It does establish the weaker claim this phase rests on: a size roll-up needs none of
+  it.
 - dust suppresses filesystem errors by default and offers `--print-errors` to opt in,
-  exiting 0. fdu does the inverse and exits 2. dust’s quiet is not free: its `~` total
+  exiting 0. fdu does the inverse and exits 2. dust’s quiet is not free — its `~` total
   is 206 G against fdu’s 214 GiB, and part of that gap is what it skipped without saying
-  so. `fdu-5ffm` should take the opt-in shape without taking the silence.
+  so — so `fdu-5ffm` should take the opt-in shape without taking the silence.
 - dust accepts a regular file as a root and reports its size; fdu rejects one
   (`fdu-tsdy`).
 
-Memory is the one axis where fdu is behind on every tree measured, by 1.5 to 1.6 times.
-That is the measurement `fdu-6o5o` starts from.
+Neither recorded run is confirmable under the release rule yet: the transient run lacks
+a paired interval for `voluntary_context_switches`, and the default run is decided
+against fdu on resources rather than being inconclusive.
+Both are clean measurements; neither is a published claim.
 
 The phase’s ordering rule: the roll-up must stop paying for state it does not consume
 before anything tunes what that state costs.
