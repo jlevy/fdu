@@ -1,0 +1,23 @@
+scenario: schema=1 name=ownership-races-and-shutdown
+action.open: OpenOptions { batch_size: 1024, follow_symlinks: false, one_filesystem: false, hidden: None, exclude_special: false, types: None, budget: DiscoveryBudget { max_files: None }, observation: None, observation_script: None, journal_capacity: 65536 }
+result.open: OpenedIndex { session: SessionId(session-1), root: "$ROOT", .. }
+action.read: ReadRequest { projections: [], expected: None }
+result.read: Ok(ReadResponse { version: EngineVersion { session: SessionId(session-1), sequence: Clock(0), scope: ScopeIdentity { max_depth: None, follow_symlinks: false, one_filesystem: false, hidden_fingerprint: 0, exclude_special: false }, semantics: SemanticIdentity { ignore_rules_fingerprint: 2, type_rules_fingerprint: 12438660251313372799, reducers_fingerprint: 1 } }, state: IndexState { phase: Ready, coverage: Complete, freshness: Fresh, source: Scanned, progress: DiscoveryProgress { files_retained: 0, directories_complete: 0 }, issues: IssueSummary { retained: 0, omitted: 0 } }, results: [], work: Work { observations: 0, unchanged: 0, stale: 0, resource_refused: 0, rows_visited: 0, rows_returned: 0, maintained_index_work: 0, commits_visited: 0, commits_returned: 0, directories_read: 0, entries_visited: 0, files_visited: 0, bytes_visited: 0 }, change_cursor: EngineVersion { session: SessionId(session-1), sequence: Clock(0), scope: ScopeIdentity { max_depth: None, follow_symlinks: false, one_filesystem: false, hidden_fingerprint: 0, exclude_special: false }, semantics: SemanticIdentity { ignore_rules_fingerprint: 2, type_rules_fingerprint: 12438660251313372799, reducers_fingerprint: 1 } } })
+action.changes.blocking: changes(after=current, timeout=1s)
+barrier: reached before-journal-wait
+action.close: close() from clone while change poll is blocked
+barrier: owner cancellation published
+barrier: released before-journal-wait
+result.changes.blocking: Err(OpenedIndexClosed)
+result.close.concurrent: Ok(())
+result.close.repeat: Ok(())
+result.open.race: OpenedIndex { session: SessionId(session-2), root: "$RACE_ROOT", .. }
+action.refresh.concurrent: refresh([late.txt])
+barrier: reached after-refresh-verification
+barrier: released after-refresh-verification
+result.refresh.concurrent: Err(OpenedIndexClosed)
+result.close.race: Ok(())
+result.open.panic: OpenedIndex { session: SessionId(session-3), root: "$PANIC_ROOT", .. }
+action.fault: panic worker=golden-panic
+result.close.panic: Err(OpenedWorkerPanicked { worker: "golden-panic" })
+final: joined=true workers=0 waiters=0 continuations=0

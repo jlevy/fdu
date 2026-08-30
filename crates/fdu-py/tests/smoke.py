@@ -22,8 +22,31 @@ import re
 import subprocess
 import sys
 import tempfile
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
+from fdu import Format, Query, View
 from fdu import _native as fdu_py
+from fdu.opened import (
+    Aggregate,
+    ChangeCursorUnavailableError,
+    ChangeOutcomeKind,
+    ContinuationUnavailableError,
+    Continue,
+    CoverageKind,
+    Diagnostics,
+    DirectoryRollUp,
+    Flat,
+    KnowledgeKind,
+    Lookup,
+    OpenedIndex,
+    OpenedIndexClosedError,
+    OpenedOptions,
+    Page,
+    ReportProjection,
+    Tree,
+    VersionUnavailableError,
+)
 
 
 def main() -> None:
@@ -413,6 +436,133 @@ def main() -> None:
     # And it works as a context manager.
     with watch_index.watch(interval=0.1) as scoped:
         assert next(scoped) is not None
+
+    # The long-lived surface owns one native engine and returns complete immutable
+    # values. Drive one lifecycle through the installed wheel rather than importing a
+    # sibling checkout, because that is the artifact MetaBrowser and other clients use.
+    opened_root = pathlib.Path(tempfile.mkdtemp(prefix="fdu-opened-wheel-"))
+    (opened_root / "alpha.txt").write_text("alpha")
+    (opened_root / "src").mkdir()
+    (opened_root / "src" / "main.rs").write_text("fn main() {}")
+    try:
+        OpenedOptions(max_files=0)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("a zero discovery budget must fail at the public boundary")
+
+    opened = OpenedIndex.open(opened_root)
+    opened.prioritize(("src",))
+
+    state = opened.state()
+    cursor = state.change_cursor
+    for invalid_timeout in (float("inf"), float(2**64)):
+        try:
+            opened.changes(cursor, timeout=invalid_timeout)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("an unrepresentable timeout must fail before native polling")
+    for _ in range(40):
+        if state.state.coverage.kind is CoverageKind.COMPLETE:
+            break
+        polled = opened.changes(cursor, timeout=0.25)
+        cursor = polled.cursor
+        state = opened.state()
+    assert state.state.coverage.kind is CoverageKind.COMPLETE, state
+
+    response = opened.read(
+        Lookup("alpha.txt"),
+        DirectoryRollUp(""),
+        Tree("", page=Page(limit=1, max_work=100_000)),
+        Flat(page=Page(limit=2, max_work=100_000)),
+        Aggregate(),
+        ReportProjection(query=Query(views=(View.SUMMARY,))),
+        Diagnostics(),
+    )
+    assert len(response.results) == 7, response
+    lookup = response.results[0]
+    assert lookup.kind == "lookup" and lookup.value.kind is KnowledgeKind.PRESENT, lookup
+    tree_result = response.results[2]
+    assert tree_result.kind == "tree", tree_result
+    assert tree_result.value.kind is KnowledgeKind.PRESENT, tree_result
+    page = tree_result.value.value
+    assert page is not None and len(page.rows) == 1 and page.next is not None, page
+    continued = opened.read(Continue(page.next))
+    assert continued.results[0].kind == "tree", continued
+    try:
+        opened.read(Continue(page.next))
+    except ContinuationUnavailableError:
+        pass
+    else:
+        raise AssertionError("a consumed continuation must raise its typed error")
+    assert response.results[5].kind == "report", response.results[5]
+    opened_report = response.results[5].value
+    assert json.loads(opened_report.render(Format.JSON)) == opened_report.as_dict()
+    assert response.results[6].kind == "diagnostics", response.results[6]
+
+    # Version and cursor identities are scoped to one opened session. Crossing them
+    # between roots must remain a typed recovery condition rather than a generic native
+    # exception or an accidentally accepted read.
+    foreign = OpenedIndex.open(opened_root)
+    foreign_version = foreign.state().version
+    try:
+        opened.read(Diagnostics(), expected=foreign_version)
+    except VersionUnavailableError:
+        pass
+    else:
+        raise AssertionError("a foreign expected version must raise its typed error")
+    try:
+        opened.changes(foreign_version)
+    except ChangeCursorUnavailableError:
+        pass
+    else:
+        raise AssertionError("a foreign change cursor must raise its typed error")
+    foreign.close()
+
+    before_refresh = response.change_cursor
+    (opened_root / "added.md").write_text("added")
+    receipt = opened.refresh(("added.md",))
+    assert receipt.accepted == (pathlib.Path("added.md"),), receipt
+    changed = opened.changes(before_refresh)
+    assert changed.outcome.kind is ChangeOutcomeKind.CHANGES, changed
+    assert any(
+        change.path == pathlib.Path("added.md")
+        for commit in changed.outcome.commits
+        for change in commit.changes
+    ), changed
+
+    opened.close()
+    opened.close()
+    try:
+        opened.state()
+    except OpenedIndexClosedError:
+        pass
+    else:
+        raise AssertionError("an opened-root read after close must raise its typed error")
+
+    # Python aliases share the native close authority. Exercise close concurrently from
+    # two threads so idempotence is proven at the installed-wheel boundary, not inferred
+    # from a Rust-only test.
+    closable = OpenedIndex.open(opened_root)
+    alias = closable
+    close_barrier = threading.Barrier(3)
+
+    def close_after_barrier(handle: OpenedIndex) -> None:
+        close_barrier.wait()
+        handle.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        closes = [executor.submit(close_after_barrier, handle) for handle in (closable, alias)]
+        close_barrier.wait()
+        for closing in closes:
+            closing.result()
+    try:
+        closable.state()
+    except OpenedIndexClosedError:
+        pass
+    else:
+        raise AssertionError("all aliases must observe the shared closed lifecycle")
 
     print(f"fdu._native {fdu_py.__version__} ok")
 

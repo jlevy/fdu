@@ -10,11 +10,13 @@ from fdu import (
     Analysis,
     AnalysisOptions,
     CachePolicy,
+    EntryKind,
     Query,
     ScanOptions,
     Selection,
     SizeMetric,
     View,
+    opened,
 )
 from fdu._api import FduError, FilesystemError, InvalidArgumentError, _call, _query_kwargs
 from fdu._models import report_from_dict
@@ -51,6 +53,24 @@ def test_invalid_option_values_fail_before_crossing_native_boundary() -> None:
         AnalysisOptions(workers=-1)
     with pytest.raises(ValueError, match="words_per_page"):
         Query(words_per_page=0)
+    with pytest.raises(ValueError, match="max_size"):
+        opened.EntrySelection(max_size=-1)
+
+
+def test_opened_entry_selection_composes_the_stable_query_selection() -> None:
+    selection = opened.EntrySelection(
+        query=Selection(kinds=(EntryKind.FILE,)),
+        max_size=100,
+        exclude_ignored=True,
+        logical_extensions=(".js.map",),
+        exact_names=("makefile",),
+        terminal_extensions=(".rs",),
+        ancestor_names=("src",),
+    )
+    projection = opened.Flat(selection=selection)
+    assert projection.selection.query.kinds == (EntryKind.FILE,)
+    assert projection.selection.max_size == 100
+    assert projection.selection.exact_names == ("makefile",)
 
 
 def test_bare_strings_are_rejected_for_sequence_fields() -> None:

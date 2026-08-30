@@ -25,10 +25,11 @@ fdu-core = { path = "crates/fdu-core" }
 The crate is not published yet; the version-based dependency form is a Phase 1 release
 step.
 
-Features: `watch` is enabled by default.
-Library consumers can disable it with `default-features = false`; it is strictly
-additive, and without it scan, index, and snapshot are all fully functional, just
-without live updates.
+The crate has no default features.
+The `watch` and `gitignore` capabilities are strictly additive; without them, scan,
+index, and snapshot remain fully functional.
+The `fdu` command and Python package enable both explicitly, while embedding consumers
+can opt into either independently.
 
 Content inspection is optional and disabled by default.
 `OpenConfig::analysis` enables bounded streaming line, prose, and common-language SLOC

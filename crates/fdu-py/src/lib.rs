@@ -33,6 +33,8 @@ use fdu_core::watch_session::{ChangeKind, Session};
 use fdu_core::{CachePolicy, EntryKind, Freshness, IndexHandle, OpenConfig, RollUp, ScanConfig};
 use std::time::{Duration, SystemTime};
 
+mod opened_binding;
+
 fn to_py_err(err: fdu_core::Error) -> PyErr {
     match err {
         fdu_core::Error::Io { path, source } => PyOSError::new_err((
@@ -340,7 +342,8 @@ impl PyIndex {
         size: &str,
         words_per_page: u64,
     ) -> PyResult<PyWatch> {
-        let query = build_query(
+        let query = build_query_at(
+            SystemTime::now(),
             self.analysis.profile,
             Some(ViewSpec::Files),
             views,
@@ -499,6 +502,11 @@ impl PyIndex {
                         item.set_item("op", "invalidate_subtree")?;
                         item.set_item("reason", format!("{reason:?}"))?;
                     }
+                    fdu_core::Op::ControlUpsert { .. } | fdu_core::Op::ControlRemove { .. } => {
+                        // Exact control changes live only in `Commit`; the legacy delta
+                        // projection intentionally excludes them.
+                        continue;
+                    }
                 }
                 ops.append(item)?;
             }
@@ -537,7 +545,8 @@ impl PyIndex {
         // `now` is the report's own generated_at as well as the clock the time bounds are
         // resolved against, so both come from one reading rather than two.
         let now = SystemTime::now();
-        let query = build_query(
+        let query = build_query_at(
+            now,
             self.analysis.profile,
             None,
             views,
@@ -1076,7 +1085,8 @@ impl PyWatch {
 /// Extracted so the session path and the one-shot cannot disagree about what a request
 /// means. Every value grammar here belongs to the library and is called, not restated.
 #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
-fn build_query(
+fn build_query_at(
+    now: SystemTime,
     profile: AnalysisSet,
     default_view: Option<ViewSpec>,
     views: Option<Vec<String>>,
@@ -1093,7 +1103,6 @@ fn build_query(
     size: &str,
     words_per_page: u64,
 ) -> PyResult<Query> {
-    let now = SystemTime::now();
     let mut selection =
         Selection { reverse, size: parse_size_metric(size)?, ..Selection::default() };
     if let Some(value) = depth {
@@ -1238,7 +1247,8 @@ fn report_once(
         policy: parse_cache_policy(cache)?,
         analysis,
     };
-    let query = build_query(
+    let query = build_query_at(
+        SystemTime::now(),
         analysis.profile,
         None,
         views,
@@ -1589,6 +1599,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(scan, m)?)?;
     m.add_function(wrap_pyfunction!(main, m)?)?;
     m.add_function(wrap_pyfunction!(contract, m)?)?;
+    opened_binding::register(m)?;
 
     Ok(())
 }

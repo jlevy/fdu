@@ -9,15 +9,16 @@
 //! 1. **The index** ([`Index`]) — the in-memory hierarchical structure: entry
 //!    records plus per-directory roll-up state.
 //! 2. **The snapshot** ([`snapshot`]) — that index, serialized.
-//! 3. **The change contract** ([`Observation`] and [`AppliedDelta`]) —
+//! 3. **The change contract** ([`Observation`] and [`Commit`]) —
 //!    producers submit verified observations; the index commits clocked effective
 //!    changes.
 //!
-//! Everything else is a producer of observations or a consumer of applied deltas. The
+//! Everything else is a producer of observations or a consumer of exact commits. The
 //! walker establishes a baseline from upsert observations; the reconciler submits the
 //! conditional diff between indexed state and reality; the watch layer submits verified,
 //! coalesced observations. The index arbitrates them and re-rolls its reducers; a change
-//! feed consumes the effective committed deltas.
+//! feed consumes exact effective changes and state transitions. [`AppliedDelta`] remains
+//! available as an entry-only compatibility projection.
 //!
 //! A deliberate consequence: **watching is not tied to the roll-up logic.** The index
 //! knows `apply(Observation)` and nothing about filesystem events, so a batch scan, a test
@@ -30,8 +31,11 @@
 //! the loaded baseline concurrently. Applications that want that model can own an
 //! [`IndexHandle`], call the applying reconciliation APIs, and inspect [`Freshness`]
 //! while readers continue between short write batches. With the `watch` feature,
-//! [`watch::Watcher::apply_next`] verifies event hints and closes invalidations through
+//! `watch::Watcher::apply_next` verifies event hints and closes invalidations through
 //! subtree reconciliation; neither `open` nor the Python binding starts it implicitly.
+//! [`OpenedIndex`] is the additive long-lived owner: its clones share one live identity,
+//! cancellation domain, index, and joined shutdown. A cloned [`Index`] remains a
+//! detached image and never inherits that authority.
 //!
 //! ```no_run
 //! use fdu_core::{OpenConfig, open};
@@ -45,18 +49,23 @@
 //!
 //! # Feature flags
 //!
-//! - `cli` *(default)* — the `fdu` binary and its dependencies. Library consumers should
-//!   take `default-features = false`.
-//! - `watch` *(default)* — the OS-native watch layer. Strictly additive: without it
-//!   everything else works, just without live updates.
+//! - `watch` — the OS-native watch layer.
+//! - `gitignore` — exact `.gitignore` control state and fixed unignored roll-ups.
+//!
+//! `fdu-core` has no default features. The command and Python packages opt into the
+//! capabilities they expose, while embedding consumers can retain the smaller one-shot
+//! engine.
 
+pub mod admission;
 pub mod cache;
 pub mod classify;
 pub mod content;
+pub mod control;
 pub mod counters;
 mod engine_contract;
 mod execution;
 mod index;
+mod opened;
 mod platform_tuning;
 pub mod query;
 pub mod scan;
@@ -79,16 +88,33 @@ pub mod watch;
 #[cfg(feature = "watch")]
 pub use crate::watch_session as session;
 
+pub use crate::admission::HiddenPolicy;
 pub use crate::cache::{
     CacheStatus, SnapshotInfo, cache_status, clear_all_caches, clear_cache, list_caches,
 };
+pub use crate::control::{
+    CONTROL_FILE_NAME, ControlIdentity, ControlMatcher, ControlTable, MAX_CONTROL_TABLE_BYTES,
+    is_control_file,
+};
 pub use crate::engine_contract::{
-    AppliedDelta, Attrs, Clock, EntryKind, Error, Expectation, Fingerprint, Freshness,
-    InvalidateReason, Observation, ObservationOp, Op, PathExpectation, PathState, Provenance,
-    Result, ScanScope, Source, Status,
+    AppliedDelta, Attrs, ChangeOutcome, ChangePoll, ChangeRequest, Clock, Commit, ContinuationId,
+    CountResult, Coverage, CoverageReason, DEFAULT_COUNT_CAP, DiscoveryProgress, EffectiveChange,
+    EngineVersion, EntryKind, EntryValue, Error, Expectation, Fingerprint, FlatPage, Freshness,
+    Impact, ImpactDomain, IndexState, InvalidateReason, Issue, IssueKind, IssueSummary, Knowledge,
+    LifecyclePhase, LimitedProjection, MAX_CONTINUATION_RECORD_BYTES, MAX_COUNT_CAP,
+    MAX_DIRTY_PATHS, MAX_ISSUE_MESSAGE_BYTES, MAX_ISSUE_PATH_BYTES, MAX_PAGE_ROWS, MAX_PAGE_WORK,
+    MAX_READ_PROJECTIONS, MAX_REPORT_VIEWS, MAX_RETAINED_ISSUES, Observation, ObservationOp, Op,
+    PageRequest, PathExpectation, PathState, PortablePath, ProjectionResult, Provenance,
+    QueryLimit, ReadDiagnostics, ReadProjection, ReadRequest, ReadResponse, RefreshRejection,
+    RefreshResult, RejectedRefreshPath, ReportRequest, Result, RowShape, ScanScope, ScopeIdentity,
+    SemanticIdentity, SessionId, Source, StateTransition, Status, TreePage, Work,
 };
 pub use crate::index::{
-    ApplyOutcome, ApplyStats, ChildSnapshot, EntryId, ExtTally, Index, IndexHandle, RollUp, Since,
+    ApplyOutcome, ApplyStats, ChildSnapshot, DEFAULT_JOURNAL_CAPACITY, EntryId, ExtTally, Index,
+    IndexHandle, PartitionRollUp, PartitionRollUpSummary, RollUp, RollUpSummary, Since,
+};
+pub use crate::opened::{
+    DiscoveryBudget, MAX_PRIORITY_PATHS, MAX_REFRESH_PATHS, OpenOptions, OpenedIndex,
 };
 // Ungated with report_format, for the same reason: one-shot planning is an execution
 // strategy, not a front end. A caller wanting one report without retaining an index was
@@ -317,10 +343,12 @@ pub(crate) fn open_for_report(
     let policy = config.policy;
 
     let loaded = match ((read_snapshot || !policy.scans()) && policy.reads(), &config.cache_path) {
-        (true, Some(cache_path)) => snapshot::load(cache_path)?
-            // A snapshot describing another root or a different scan scope is not this
-            // tree's answer; treat it as absent rather than as data.
-            .filter(|index| index.root_path() == root && index.scope() == config.scan.scope()),
+        (true, Some(cache_path)) => {
+            snapshot::load_with_types(cache_path, config.scan.types_shared())?
+                // A snapshot describing another root or a different scan scope is not this
+                // tree's answer; treat it as absent rather than as data.
+                .filter(|index| index.root_path() == root && index.scope() == config.scan.scope())
+        }
         _ => None,
     };
 
@@ -629,6 +657,80 @@ mod tests {
             fs::create_dir_all(parent).expect("create parent");
         }
         fs::write(path, contents).expect("write");
+    }
+
+    /// Supplied rules reach the answer, and invalidate a snapshot taken under others.
+    ///
+    /// The end-to-end property behind the registry: a consumer whose taxonomy differs
+    /// from this repository's classifies its own way without rebuilding the crate, and a
+    /// snapshot written under one taxonomy is never served under another. The second half
+    /// is the one that would fail silently -- the entry counts and byte totals are
+    /// identical either way, so a stale snapshot looks entirely correct.
+    #[test]
+    fn supplied_type_rules_change_the_answer_and_invalidate_the_snapshot() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        write_file(&dir.path().join("main.rs"), b"fn main() {}\n");
+
+        let default_config = OpenConfig {
+            cache_path: Some(snapshot_path.clone()),
+            analysis: content::AnalysisRequest {
+                profile: content::AnalysisSet::NONE.with_lines(),
+                ..content::AnalysisRequest::default()
+            },
+            ..OpenConfig::default()
+        };
+        let (index, _) = open(dir.path(), &default_config).expect("default open");
+        assert_eq!(index.classify(Path::new("main.rs")).file_type.as_str(), "rust");
+        drop(index);
+
+        let mine = std::sync::Arc::new(
+            classify::TypeRegistry::from_manifest(
+                "[[kind]]\nid = \"notes\"\nfamily = \"prose\"\nextensions = [\"rs\"]\n",
+            )
+            .expect("a minimal manifest"),
+        );
+        let custom_config = OpenConfig {
+            scan: scan::ScanConfig::default().with_types(mine.clone()),
+            ..default_config.clone()
+        };
+
+        assert_ne!(
+            custom_config.scan.scope(),
+            default_config.scan.scope(),
+            "different rules are a different scan scope"
+        );
+
+        let (index, report) = open(dir.path(), &custom_config).expect("custom open");
+        assert_eq!(
+            report.path_taken,
+            OpenPath::ColdScan,
+            "the snapshot was written under other rules and must not be reused"
+        );
+        assert_eq!(index.classify(Path::new("main.rs")).file_type.as_str(), "notes");
+        assert_eq!(index.types().fingerprint(), mine.fingerprint());
+        let content = index
+            .content()
+            .and_then(|content| content.file(Path::new("main.rs")))
+            .expect("custom analysis record");
+        assert_eq!(content.classification.file_type.as_str(), "notes");
+        assert_eq!(content.provenance.type_rules_fingerprint, mine.fingerprint());
+
+        // And the snapshot the custom run wrote is reusable by a run under the same rules.
+        let (_, report) = open(dir.path(), &custom_config).expect("second custom open");
+        assert_eq!(report.path_taken, OpenPath::WarmRevalidate, "same rules, same snapshot");
+        assert_eq!(report.content_cache.hits, 1, "the matching sidecar is reusable");
+        assert_eq!(report.analysis.expect("analysis report").candidates, 0);
+
+        assert!(
+            snapshot::load(&snapshot_path).expect("default-registry load").is_none(),
+            "a direct default-registry load must reject a custom-registry snapshot"
+        );
+        let loaded = snapshot::load_with_types(&snapshot_path, mine)
+            .expect("custom-registry load")
+            .expect("the matching custom registry makes the snapshot usable");
+        assert_eq!(loaded.classify(Path::new("main.rs")).file_type.as_str(), "notes");
     }
 
     /// The behaviour table from the design, asserted rather than described.
@@ -1043,6 +1145,39 @@ mod tests {
         assert_eq!(report.path_taken, OpenPath::ColdScan);
         assert!(index.lookup(Path::new("deep")).is_some());
         assert!(index.lookup(Path::new("deep/nested.txt")).is_none());
+    }
+
+    #[test]
+    fn admission_scope_mismatch_cannot_reinterpret_a_snapshot() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        write_file(&dir.path().join(".hidden"), b"hidden");
+        let cache_path = cache.path().join("snap.fdu");
+        let seed = OpenConfig {
+            cache_path: Some(cache_path.clone()),
+            policy: CachePolicy::Auto,
+            ..OpenConfig::default()
+        };
+        open(dir.path(), &seed).expect("seed snapshot");
+
+        let changed_scopes = [
+            ScanConfig {
+                hidden: Some(std::sync::Arc::new(
+                    HiddenPolicy::prune_hidden::<[&str; 0], &str>([]),
+                )),
+                ..ScanConfig::default()
+            },
+            ScanConfig { exclude_special: true, ..ScanConfig::default() },
+        ];
+        for scan in changed_scopes {
+            let only = OpenConfig {
+                scan,
+                cache_path: Some(cache_path.clone()),
+                policy: CachePolicy::Only,
+                analysis: content::AnalysisRequest::default(),
+            };
+            assert!(matches!(open(dir.path(), &only), Err(Error::Snapshot(_))));
+        }
     }
 
     #[test]

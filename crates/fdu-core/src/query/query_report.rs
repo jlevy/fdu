@@ -19,9 +19,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use crate::classify::{
-    ContentFamily, DetectionConfidence, DetectionSource, classify_path, ext_bucket,
-};
+use crate::classify::{ContentFamily, DetectionConfidence, DetectionSource};
 use crate::content::{
     AnalysisSet, ContentIndex, ContentProvenance, CoverageReason, LogicalWordStats, MetricValues,
 };
@@ -877,7 +875,8 @@ fn walk(index: &Index, selection: &Selection) -> Walked {
                         own.newest_mtime_ns.map_or(attrs.mtime_ns, |seen| seen.max(attrs.mtime_ns)),
                     );
 
-                    let tally = walked.by_ext.entry(ext_bucket(file_name)).or_default();
+                    let tally =
+                        walked.by_ext.entry(index.types().ext_bucket(file_name)).or_default();
                     tally.files += 1;
                     tally.bytes += attrs.size;
                     tally.allocated += attrs.allocated;
@@ -990,7 +989,7 @@ fn metric_summary(
     for file in files.into_iter().filter(|row| row.kind == EntryKind::File) {
         let cached = index.content().and_then(|content| content.file(&file.path));
         let classification = cached
-            .map_or_else(|| classify_path(&file.path), |record| record.classification.clone());
+            .map_or_else(|| index.classify(&file.path), |record| record.classification.clone());
         let included = match view {
             ViewSpec::Languages => classification.family == ContentFamily::Code,
             ViewSpec::Documents => {

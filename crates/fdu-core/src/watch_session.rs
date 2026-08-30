@@ -17,7 +17,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::engine_contract::{AppliedDelta, EntryKind, Op, Result};
+use crate::engine_contract::{Commit, EffectiveChange, EntryKind, Result};
 use crate::index::IndexHandle;
 use crate::query::{Provenance, Query, Report, ReportSource, Selection, report};
 use crate::scan::ScanConfig;
@@ -122,24 +122,23 @@ impl Session {
     /// Takes `&mut self` because consuming from the event queue is a mutation: two
     /// callers draining one session would each see an arbitrary half of the stream.
     pub fn next_batch(&mut self, timeout: Duration) -> Result<Option<Batch>> {
-        let mut applied: Vec<AppliedDelta> = Vec::new();
-        let outcome = self.watcher.apply_next(
-            &self.index,
-            &self.scan,
-            timeout,
-            &mut |delta: &AppliedDelta| {
-                applied.push(delta.clone());
-            },
-        )?;
+        let mut commits: Vec<Commit> = Vec::new();
+        let outcome =
+            self.watcher.apply_next(&self.index, &self.scan, timeout, &mut |commit: &Commit| {
+                commits.push(commit.clone());
+            })?;
 
         let Some(_report) = outcome else {
             return Ok(None);
         };
 
-        let mut batch = Batch { changes: Vec::new(), dirty: !applied.is_empty() };
-        for delta in &applied {
-            for op in &delta.ops {
-                if let Some(change) = self.change_for(op, delta.clock.0) {
+        let mut batch = Batch {
+            changes: Vec::new(),
+            dirty: commits.iter().any(|commit| !commit.changes.is_empty()),
+        };
+        for commit in &commits {
+            for effective in &commit.changes {
+                if let Some(change) = self.change_for(effective, commit.clock.0) {
                     batch.changes.push(change);
                 }
             }
@@ -147,10 +146,11 @@ impl Session {
         Ok(Some(batch))
     }
 
-    /// Translate one applied op into a change, when the selection admits it.
-    fn change_for(&self, op: &Op, clock: u64) -> Option<Change> {
-        match op {
-            Op::Upsert { path, kind, attrs } => {
+    /// Translate one exact effective change into the legacy change view.
+    fn change_for(&self, effective: &EffectiveChange, clock: u64) -> Option<Change> {
+        match effective {
+            EffectiveChange::Inserted { path, kind, attrs }
+            | EffectiveChange::Updated { path, kind, current: attrs, .. } => {
                 let name = path.file_name()?.to_string_lossy().into_owned();
                 let candidate = crate::query::Candidate {
                     relative: path,
@@ -173,7 +173,7 @@ impl Session {
             // A removal carries no attributes to filter on, so only the path-shaped parts
             // of a selection can apply. Filtering it out entirely on a size or time bound
             // would hide the disappearance of something the caller was watching.
-            Op::Remove { path } => {
+            EffectiveChange::Removed { path, .. } => {
                 let name = path.file_name()?.to_string_lossy().into_owned();
                 self.admits_by_path(path, &name).then(|| Change {
                     path: path.clone(),
@@ -187,7 +187,7 @@ impl Session {
             }
             // Escalations are never filtered: they say the consumer's view may have gaps,
             // and that is true regardless of what the selection asked for.
-            Op::InvalidateSubtree { path, .. } => Some(Change {
+            EffectiveChange::Invalidated { path, .. } => Some(Change {
                 path: path.clone(),
                 kind: ChangeKind::Invalidate,
                 entry_kind: None,
@@ -196,6 +196,10 @@ impl Session {
                 mtime_ns: None,
                 clock,
             }),
+            // The legacy watch surface repaints the complete query when `dirty` is true,
+            // so it needs no second row-change vocabulary for control and partition
+            // effects. Opened-root consumers read these exact commit variants directly.
+            EffectiveChange::ControlUpdated { .. } | EffectiveChange::Reclassified { .. } => None,
         }
     }
 

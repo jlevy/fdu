@@ -15,15 +15,17 @@
 //! Every backend produces the same [`Observation`] contract.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fmt::Write as _;
 use std::fs;
+#[cfg(feature = "gitignore")]
+use std::io::Read as _;
 use std::path::{Component, Path, PathBuf};
 
 use crate::ApplyStats;
 use crate::engine_contract::{
-    AppliedDelta, Attrs, EntryKind, Error, Observation, ObservationOp, Op, PathExpectation,
-    PathState, Result, ScanScope,
+    Attrs, Commit, EntryKind, Error, Observation, ObservationOp, Op, PathExpectation, PathState,
+    Result, ScanScope,
 };
 use crate::index::{Index, IndexHandle, collect_child_expectations};
 
@@ -59,7 +61,12 @@ const MAX_DEFERRED_RECONCILE_OPS: usize = MAX_SCAN_BATCH_SIZE;
 const RECONCILE_WAVE_DIRECTORIES: usize =
     crate::platform_tuning::tuning().reconcile_wave_directories.get();
 
-/// Identity of the current built-in ignore policy. No ignore rules exist yet.
+/// Identity of the current fixed `.gitignore` control semantics.
+#[cfg(feature = "gitignore")]
+const IGNORE_RULES_FINGERPRINT: u64 = 2;
+
+/// A build without the capability performs no control reads or classification.
+#[cfg(not(feature = "gitignore"))]
 const IGNORE_RULES_FINGERPRINT: u64 = 0;
 
 /// Identity of the fixed stat-tier reducer set.
@@ -143,6 +150,10 @@ pub struct ScanConfig {
     pub follow_symlinks: bool,
     /// Stay on the filesystem the root lives on.
     pub one_filesystem: bool,
+    /// Hidden-component admission, or `None` to retain every component.
+    pub hidden: Option<std::sync::Arc<crate::admission::HiddenPolicy>>,
+    /// Exclude filesystem objects other than files, directories, and symlinks.
+    pub exclude_special: bool,
     /// Directory-reading worker threads.
     ///
     /// A tree walk is a pile of independent, latency-bound directory reads, so it
@@ -159,6 +170,13 @@ pub struct ScanConfig {
     pub threads: Option<usize>,
     /// The order directories are visited in. See [`ScanOrder`].
     pub order: ScanOrder,
+    /// File-type rules to classify against, or `None` for the ones compiled into fdu.
+    ///
+    /// Unlike [`Self::threads`] this *is* semantic: a different taxonomy classifies the
+    /// same tree differently, which is why its fingerprint rides in [`ScanScope`] and a
+    /// change to it invalidates a snapshot. Shared rather than owned because a scan
+    /// clones its config per wave and a registry is read-only once built.
+    pub types: Option<std::sync::Arc<crate::classify::TypeRegistry>>,
 }
 
 impl Default for ScanConfig {
@@ -168,8 +186,11 @@ impl Default for ScanConfig {
             batch_size: DEFAULT_BATCH_SIZE,
             follow_symlinks: false,
             one_filesystem: false,
+            hidden: None,
+            exclude_special: false,
             threads: None,
             order: ScanOrder::default(),
+            types: None,
         }
     }
 }
@@ -193,14 +214,47 @@ pub const WATCH_SCOPE_GUIDANCE: &str = concat!(
 );
 
 impl ScanConfig {
+    /// Classify this scan with `types` and include their derived identity in its scope.
+    #[must_use]
+    pub fn with_types(mut self, types: std::sync::Arc<crate::classify::TypeRegistry>) -> Self {
+        self.types = Some(types);
+        self
+    }
+
+    /// The file-type rules in effect: the supplied registry, or the compiled default.
+    pub fn types(&self) -> &crate::classify::TypeRegistry {
+        match &self.types {
+            Some(types) => types,
+            None => crate::classify::TypeRegistry::compiled(),
+        }
+    }
+
+    /// Share the file-type rules with an index that retains them.
+    pub(crate) fn types_shared(&self) -> std::sync::Arc<crate::classify::TypeRegistry> {
+        self.types
+            .as_ref()
+            .map_or_else(crate::classify::TypeRegistry::compiled_shared, std::sync::Arc::clone)
+    }
+
+    /// Hidden-component policy in effect.
+    pub fn hidden(&self) -> &crate::admission::HiddenPolicy {
+        self.hidden.as_deref().unwrap_or_else(|| crate::admission::HiddenPolicy::keep_all())
+    }
+
     /// Semantic cache identity, excluding operational batching choices.
-    pub const fn scope(&self) -> ScanScope {
+    ///
+    /// No longer `const`: the type-rule fingerprint is now a property of the registry in
+    /// effect rather than a compiled-in constant, which is the whole point of letting a
+    /// caller supply one. A snapshot taken under different rules must not be reused.
+    pub fn scope(&self) -> ScanScope {
         ScanScope {
             max_depth: self.max_depth,
             follow_symlinks: self.follow_symlinks,
             one_filesystem: self.one_filesystem,
+            hidden_fingerprint: self.hidden().fingerprint(),
+            exclude_special: self.exclude_special,
             ignore_rules_fingerprint: IGNORE_RULES_FINGERPRINT,
-            type_rules_fingerprint: crate::classify::type_rule_fingerprint(),
+            type_rules_fingerprint: self.types().fingerprint(),
             reducers_fingerprint: REDUCERS_FINGERPRINT,
         }
     }
@@ -235,7 +289,7 @@ impl ScanConfig {
         }
     }
 
-    fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
         if self.batch_size == 0 || self.batch_size > MAX_SCAN_BATCH_SIZE {
             return Err(Error::UnsupportedScanConfig(
                 "batch_size must be nonzero and no greater than MAX_SCAN_BATCH_SIZE",
@@ -741,47 +795,74 @@ pub struct ReconcileReport {
     pub scan: ScanReport,
     /// Index arbitration and mutation effects.
     pub apply: ApplyStats,
+    /// Exact producer operations considered, including no-op controls that do not
+    /// increment an effect counter or create a commit.
+    pub(crate) observations: u64,
 }
 
 impl ReconcileReport {
     /// True when the filesystem walk was complete and no conditional observation lost
     /// a race with another producer.
     pub fn is_complete(&self) -> bool {
-        self.scan.is_complete() && self.apply.stale == 0
+        self.scan.is_complete() && self.apply.stale == 0 && self.apply.resource_refused == 0
     }
 }
 
 enum ReconcileTarget<'a> {
     Direct(&'a mut Index),
     Shared(&'a IndexHandle),
+    Controlled { handle: &'a IndexHandle, control: &'a dyn ReconcileControl },
+}
+
+/// Lifecycle checkpoints used by an owned long-running reconciliation.
+///
+/// The ordinary one-shot APIs use no controller. An [`crate::OpenedIndex`] supplies one
+/// so close can stop a refresh before another write, and deterministic tests can pause
+/// after filesystem verification but before conditional arbitration.
+pub(crate) trait ReconcileControl {
+    /// Fail when the owning operation may no longer publish state.
+    fn check_active(&self) -> Result<()>;
+
+    /// Boundary after filesystem verification and before a conditional fact commit.
+    fn before_conditional_commit(&self) -> Result<()>;
+
+    /// Atomic file-retention limit shared with every producer for this opened root.
+    fn max_files(&self) -> Option<u64>;
 }
 
 impl ReconcileTarget<'_> {
     fn scope(&self) -> Result<ScanScope> {
         match self {
             Self::Direct(index) => Ok(index.scope()),
-            Self::Shared(handle) => handle.scope(),
+            Self::Shared(handle) | Self::Controlled { handle, .. } => handle.scope(),
         }
     }
 
     fn root_path(&self) -> Result<PathBuf> {
         match self {
             Self::Direct(index) => Ok(index.root_path().to_path_buf()),
-            Self::Shared(handle) => handle.root_path(),
+            Self::Shared(handle) | Self::Controlled { handle, .. } => handle.root_path(),
         }
     }
 
     fn expectation(&self, path: &Path) -> Result<PathExpectation> {
         match self {
             Self::Direct(index) => Ok(index.expectation(path)),
-            Self::Shared(handle) => handle.expectation(path),
+            Self::Shared(handle) | Self::Controlled { handle, .. } => handle.expectation(path),
         }
     }
 
     fn child_states(&self, path: &Path) -> Result<BTreeMap<OsString, PathExpectation>> {
         match self {
             Self::Direct(index) => Ok(collect_child_expectations(index, path)),
-            Self::Shared(handle) => handle.child_states(path),
+            Self::Shared(handle) | Self::Controlled { handle, .. } => handle.child_states(path),
+        }
+    }
+
+    fn has_control(&self, path: &Path) -> Result<bool> {
+        match self {
+            Self::Direct(index) => Ok(index.controls().contains(path)),
+            Self::Shared(handle) | Self::Controlled { handle, .. } => handle.has_control(path),
         }
     }
 
@@ -789,6 +870,10 @@ impl ReconcileTarget<'_> {
         match self {
             Self::Direct(index) => index.apply(observation),
             Self::Shared(handle) => handle.apply(observation),
+            Self::Controlled { handle, control } => {
+                control.before_conditional_commit()?;
+                handle.apply_opened(observation, control.max_files())
+            }
         }
     }
 
@@ -804,7 +889,9 @@ impl ReconcileTarget<'_> {
     fn take_pending_invalidations(&mut self) -> Result<Vec<(PathBuf, crate::InvalidateReason)>> {
         match self {
             Self::Direct(index) => Ok(index.take_pending_invalidations()),
-            Self::Shared(handle) => handle.take_pending_invalidations(),
+            Self::Shared(handle) | Self::Controlled { handle, .. } => {
+                handle.take_pending_invalidations()
+            }
         }
     }
 
@@ -814,35 +901,49 @@ impl ReconcileTarget<'_> {
     ) -> Result<()> {
         match self {
             Self::Direct(index) => index.restore_pending_invalidations(invalidations),
-            Self::Shared(handle) => handle.restore_pending_invalidations(invalidations)?,
+            Self::Shared(handle) | Self::Controlled { handle, .. } => {
+                handle.restore_pending_invalidations(invalidations)?;
+            }
         }
         Ok(())
     }
 
-    fn begin_reconcile(&mut self, path: &Path) -> Result<u64> {
+    fn begin_reconcile(&mut self, path: &Path) -> Result<(u64, Option<Commit>)> {
         match self {
-            Self::Direct(index) => Ok(index.begin_reconcile(path)),
+            Self::Direct(index) => index.begin_reconcile(path),
             Self::Shared(handle) => handle.begin_reconcile(path),
+            Self::Controlled { handle, control } => {
+                control.check_active()?;
+                handle.begin_reconcile(path)
+            }
         }
     }
 
-    fn finish_reconcile(&mut self, path: &Path, started_at: u64, complete: bool) -> Result<()> {
+    fn finish_reconcile(
+        &mut self,
+        path: &Path,
+        started_at: u64,
+        complete: bool,
+    ) -> Result<Option<Commit>> {
         match self {
             Self::Direct(index) => index.finish_reconcile(path, started_at, complete),
-            Self::Shared(handle) => handle.finish_reconcile(path, started_at, complete)?,
+            Self::Shared(handle) => handle.finish_reconcile(path, started_at, complete),
+            Self::Controlled { handle, control } => {
+                control.check_active()?;
+                handle.finish_reconcile(path, started_at, complete)
+            }
         }
-        Ok(())
     }
 }
 
 #[cfg(unix)]
-fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<fs::Metadata> {
+pub(crate) fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<fs::Metadata> {
     crate::counters::bump(|c| c.stats += 1);
     entry.metadata()
 }
 
 #[cfg(not(unix))]
-fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<fs::Metadata> {
+pub(crate) fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<fs::Metadata> {
     crate::counters::bump(|c| c.stats += 1);
     // Windows serves DirEntry metadata from directory-enumeration data, which the
     // platform permits to be stale. Fingerprints need a fresh non-following query.
@@ -970,6 +1071,30 @@ fn scan_internal(
 
             let attrs = attrs_from(&meta);
             let kind = kind_from(&meta);
+            let disposition =
+                crate::admission::decide(&name, kind, config.hidden(), config.exclude_special);
+            if disposition == crate::admission::Disposition::Reject {
+                continue;
+            }
+            let control = match read_control_op(root, &rel_path, kind) {
+                Ok(control) => control,
+                Err(error) => {
+                    report.errors.push(error);
+                    None
+                }
+            };
+            if disposition == crate::admission::Disposition::ControlOnly {
+                if let Some(control) = control {
+                    batch.push(control);
+                    if batch.len() >= config.batch_size {
+                        let send_started = std::time::Instant::now();
+                        sink(Observation::new(std::mem::take(&mut batch)));
+                        report.attribution.send_ns += elapsed_ns(send_started);
+                        batch.reserve(config.batch_size);
+                    }
+                }
+                continue;
+            }
             report.observe(kind, attrs);
             batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
             if batch.len() >= config.batch_size {
@@ -977,6 +1102,15 @@ fn scan_internal(
                 sink(Observation::new(std::mem::take(&mut batch)));
                 report.attribution.send_ns += elapsed_ns(send_started);
                 batch.reserve(config.batch_size);
+            }
+            if let Some(control) = control {
+                batch.push(control);
+                if batch.len() >= config.batch_size {
+                    let send_started = std::time::Instant::now();
+                    sink(Observation::new(std::mem::take(&mut batch)));
+                    report.attribution.send_ns += elapsed_ns(send_started);
+                    batch.reserve(config.batch_size);
+                }
             }
 
             if should_descend(kind, attrs, depth, root_dev, config) {
@@ -1666,14 +1800,14 @@ const DIR_CLAIM: usize = 4;
 /// The shape is deliberate. Workers read directories and *produce* observations; they
 /// never touch an index. A single consumer — the caller's sink, on this thread —
 /// applies them. That keeps the crate's one mutation contract intact: parallelism is a
-/// property of the producer, and the index still sees one ordered stream of deltas.
+/// property of the producer, and the index still sees one ordered stream of observations.
 ///
-/// Ordering across workers is not fixed, so an entry can arrive before its parent
-/// directory does. The index already tolerates that, because watch events have never
-/// arrived parent-first either, and it fills in a synthesized ancestor's real
-/// attributes when the observation for it turns up. The resulting index is
-/// byte-identical to the serial walker's, which the benchmark harness re-proves on
-/// every trial by comparing engine digests against an independent oracle.
+/// Ordering across independent subtrees is not fixed, but a directory observation is
+/// published before that directory becomes claimable. The index therefore sees a
+/// parent-first causal stream without imposing a global level barrier or serializing
+/// filesystem work. The resulting index is byte-identical to the serial walker's,
+/// which the benchmark harness re-proves on every trial by comparing engine digests
+/// against an independent oracle.
 fn scan_concurrent(
     root: &Path,
     config: &ScanConfig,
@@ -1885,10 +2019,11 @@ fn walk_worker(
                     report.dirs_read += 1;
                     for entry in entries {
                         if !record_walk_entry(
+                            root,
                             &rel_dir,
                             depth,
                             region,
-                            entry.name,
+                            &entry.name,
                             entry.kind,
                             entry.attrs,
                             root_dev,
@@ -1951,10 +2086,11 @@ fn walk_worker(
                 let attrs = attrs_from(&meta);
                 let kind = kind_from(&meta);
                 if !record_walk_entry(
+                    root,
                     &rel_dir,
                     depth,
                     region,
-                    name,
+                    &name,
                     kind,
                     attrs,
                     root_dev,
@@ -1972,11 +2108,31 @@ fn walk_worker(
                 }
             }
         }
+        // The batch contains the directory entries that authorize `discovered` as
+        // known ancestry. Publish it before making those directories claimable: a
+        // different worker may begin reading a child as soon as `extend` returns.
+        if !batch.is_empty() && !discovered.is_empty() {
+            let send_started = std::time::Instant::now();
+            let sent = send_observation(
+                sender,
+                Observation::new(std::mem::take(&mut batch)),
+                diagnostics.map(AsRef::as_ref),
+            );
+            chunk_send_ns += elapsed_ns(send_started);
+            if !sent {
+                report.attribution.send_ns += chunk_send_ns;
+                report.attribution.work_ns +=
+                    elapsed_ns(chunk_started).saturating_sub(chunk_send_ns);
+                consumer_gone = true;
+                break 'walk;
+            }
+        }
         report.attribution.send_ns += chunk_send_ns;
         let chunk_work_ns = elapsed_ns(chunk_started).saturating_sub(chunk_send_ns);
         report.attribution.work_ns += chunk_work_ns;
-        // Publish before releasing the claim so a worker that finds nothing new does
-        // not hold work that others could be doing.
+
+        // Publish new work before releasing the claim so a worker that finds nothing
+        // new does not hold work that others could be doing.
         if !discovered.is_empty() {
             queue.extend(discovered.drain(..), &mut report.attribution);
         }
@@ -2002,12 +2158,59 @@ fn walk_worker(
     report
 }
 
+/// One filesystem entry after the scan's shared admission, control, and descent rules.
+pub(crate) struct PreparedWalkEntry {
+    pub(crate) path: PathBuf,
+    pub(crate) kind: EntryKind,
+    pub(crate) attrs: Attrs,
+    pub(crate) retained: bool,
+    pub(crate) control: Option<Op>,
+    pub(crate) descend: bool,
+    pub(crate) control_error: Option<Error>,
+}
+
+/// Apply the producer-independent part of a directory walk to one verified entry.
+///
+/// Both blocking and opened-root scans call this after obtaining non-following metadata,
+/// which keeps admission, fixed controls, and traversal boundaries from drifting.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prepare_walk_entry(
+    root: &Path,
+    rel_dir: &Path,
+    depth: usize,
+    name: &OsStr,
+    kind: EntryKind,
+    attrs: Attrs,
+    root_dev: u64,
+    config: &ScanConfig,
+) -> Option<PreparedWalkEntry> {
+    let disposition = crate::admission::decide(name, kind, config.hidden(), config.exclude_special);
+    if disposition == crate::admission::Disposition::Reject {
+        return None;
+    }
+    let path = rel_dir.join(name);
+    let (control, control_error) = match read_control_op(root, &path, kind) {
+        Ok(control) => (control, None),
+        Err(error) => (None, Some(error)),
+    };
+    Some(PreparedWalkEntry {
+        path,
+        kind,
+        attrs,
+        retained: disposition == crate::admission::Disposition::Retain,
+        control,
+        descend: should_descend(kind, attrs, depth, root_dev, config),
+        control_error,
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn record_walk_entry(
+    root: &Path,
     rel_dir: &Path,
     depth: usize,
     region: RegionId,
-    name: OsString,
+    name: &OsStr,
     kind: EntryKind,
     attrs: Attrs,
     root_dev: u64,
@@ -2019,10 +2222,29 @@ fn record_walk_entry(
     chunk_send_ns: &mut u64,
     diagnostics: Option<&ScanDiagnosticsRecorder>,
 ) -> bool {
-    let rel_path = rel_dir.join(name);
-    let descend = should_descend(kind, attrs, depth, root_dev, config);
+    let Some(prepared) =
+        prepare_walk_entry(root, rel_dir, depth, name, kind, attrs, root_dev, config)
+    else {
+        return true;
+    };
+    if let Some(error) = prepared.control_error {
+        report.errors.push(error);
+    }
+    if !prepared.retained {
+        if let Some(control) = prepared.control {
+            batch.push(control);
+            if batch.len() >= config.batch_size {
+                let send_started = std::time::Instant::now();
+                let sent =
+                    send_observation(sender, Observation::new(std::mem::take(batch)), diagnostics);
+                *chunk_send_ns += elapsed_ns(send_started);
+                return sent;
+            }
+        }
+        return true;
+    }
     report.observe(kind, attrs);
-    batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
+    batch.push(Op::Upsert { path: prepared.path.clone(), kind, attrs });
     if batch.len() >= config.batch_size {
         let send_started = std::time::Instant::now();
         let sent = send_observation(sender, Observation::new(std::mem::take(batch)), diagnostics);
@@ -2031,14 +2253,74 @@ fn record_walk_entry(
             return false;
         }
     }
-    if descend {
+    if let Some(control) = prepared.control {
+        batch.push(control);
+        if batch.len() >= config.batch_size {
+            let send_started = std::time::Instant::now();
+            let sent =
+                send_observation(sender, Observation::new(std::mem::take(batch)), diagnostics);
+            *chunk_send_ns += elapsed_ns(send_started);
+            if !sent {
+                return false;
+            }
+        }
+    }
+    if prepared.descend {
         // A child of the root seeds a new region; everything deeper inherits its
         // parent's. Region membership therefore costs one integer copy and never
         // inspects a path.
         let child_region = if depth == 0 { RegionId::UNASSIGNED } else { region };
-        discovered.push((rel_path, depth + 1, child_region));
+        discovered.push((prepared.path, depth + 1, child_region));
     }
     true
+}
+
+/// Read one fixed control source without allowing a raced or hostile file to allocate
+/// beyond the index-wide control budget.
+#[cfg(not(feature = "gitignore"))]
+#[allow(clippy::unnecessary_wraps)] // The feature-enabled implementation performs I/O.
+pub(crate) fn read_control_op(root: &Path, path: &Path, kind: EntryKind) -> Result<Option<Op>> {
+    let _ = (root, path, kind);
+    Ok(None)
+}
+
+#[cfg(feature = "gitignore")]
+pub(crate) fn read_control_op(root: &Path, path: &Path, kind: EntryKind) -> Result<Option<Op>> {
+    if !crate::control::is_control_file(path) {
+        return Ok(None);
+    }
+    if kind != EntryKind::File {
+        return Ok(Some(Op::ControlRemove { path: path.to_path_buf() }));
+    }
+    let absolute = root.join(path);
+    let file = open_control_file(&absolute).map_err(|error| Error::io(&absolute, error))?;
+    if !file.metadata().map_err(|error| Error::io(&absolute, error))?.file_type().is_file() {
+        return Ok(Some(Op::ControlRemove { path: path.to_path_buf() }));
+    }
+    let read_limit = u64::try_from(crate::control::MAX_CONTROL_TABLE_BYTES)
+        .unwrap_or(u64::MAX)
+        .saturating_add(1);
+    let mut source = Vec::new();
+    file.take(read_limit).read_to_end(&mut source).map_err(|error| Error::io(&absolute, error))?;
+    if source.len() >= crate::control::MAX_CONTROL_TABLE_BYTES {
+        return Err(Error::ControlSourceLimit {
+            attempted: source.len().saturating_add(crate::control::CONTROL_SOURCE_OVERHEAD),
+            limit: crate::control::MAX_CONTROL_TABLE_BYTES,
+        });
+    }
+    Ok(Some(Op::ControlUpsert { path: path.to_path_buf(), source }))
+}
+
+#[cfg(all(feature = "gitignore", unix))]
+fn open_control_file(path: &Path) -> std::io::Result<fs::File> {
+    use std::os::unix::fs::OpenOptionsExt as _;
+
+    fs::OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW).open(path)
+}
+
+#[cfg(all(feature = "gitignore", not(unix)))]
+fn open_control_file(path: &Path) -> std::io::Result<fs::File> {
+    fs::File::open(path)
 }
 
 fn send_observation(
@@ -2629,7 +2911,7 @@ fn record_adaptive_worker_expansion(diagnostics: Option<&std::sync::Arc<ScanDiag
 pub fn scan_into_index(root: &Path, config: &ScanConfig) -> Result<(Index, ScanReport)> {
     config.validate()?;
     let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
-    let mut index = Index::new_with_scope(&root, config.scope());
+    let mut index = Index::new_with_scope_and_types(&root, config.scope(), config.types_shared());
     let mut apply_error: Option<Error> = None;
     let report = scan(&root, config, &mut |observation| {
         if apply_error.is_none() {
@@ -2666,7 +2948,7 @@ pub fn scan_into_index_with_policy_diagnostics(
 ) -> Result<(Index, ScanReport, ScanDiagnostics)> {
     config.validate()?;
     let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
-    let mut index = Index::new_with_scope(&root, config.scope());
+    let mut index = Index::new_with_scope_and_types(&root, config.scope(), config.types_shared());
     let mut apply_error: Option<Error> = None;
     let (report, diagnostics) = scan_with_policy_diagnostics(
         &root,
@@ -2760,6 +3042,9 @@ pub fn revalidate(
         report.dirs_read += 1;
 
         let mut seen: BTreeSet<OsString> = BTreeSet::new();
+        let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
+        let had_control = index.controls().contains(&control_path);
+        let mut control_seen = false;
         let mut listing_complete = true;
         for item in listing {
             let item = match item {
@@ -2771,7 +3056,11 @@ pub fn revalidate(
                 }
             };
             let name = item.file_name();
+            // Seeing the name proves it is not absent even when a following metadata
+            // lookup fails. Record it before any fallible per-entry work so an
+            // operational error cannot become a false removal in the missing sweep.
             seen.insert(name.clone());
+            control_seen |= name == crate::control::CONTROL_FILE_NAME;
             let rel_path = rel_dir.join(&name);
             let baseline = index.relaxed_expectation(&rel_path);
             let meta = match metadata_for_fingerprint(&item) {
@@ -2784,6 +3073,33 @@ pub fn revalidate(
 
             let kind = kind_from(&meta);
             let attrs = attrs_from(&meta);
+            let disposition =
+                crate::admission::decide(&name, kind, config.hidden(), config.exclude_special);
+            let control = match read_control_op(&root, &rel_path, kind) {
+                Ok(control) => control,
+                Err(error) => {
+                    report.errors.push(error);
+                    None
+                }
+            };
+            if disposition != crate::admission::Disposition::Retain {
+                if baseline.state != PathState::Absent {
+                    batch.push(ObservationOp::if_state(
+                        Op::Remove { path: rel_path.clone() },
+                        baseline,
+                    ));
+                }
+                if disposition == crate::admission::Disposition::ControlOnly {
+                    if let Some(control) = control {
+                        batch.push(ObservationOp::if_state(control, baseline));
+                    }
+                }
+                if batch.len() >= batch_limit {
+                    sink(Observation::from_ops(std::mem::take(&mut batch)));
+                    batch.reserve(batch_limit);
+                }
+                continue;
+            }
             report.observe(kind, attrs);
             batch.push(ObservationOp::if_state(
                 Op::Upsert { path: rel_path.clone(), kind, attrs },
@@ -2792,6 +3108,13 @@ pub fn revalidate(
             if batch.len() >= batch_limit {
                 sink(Observation::from_ops(std::mem::take(&mut batch)));
                 batch.reserve(batch_limit);
+            }
+            if let Some(control) = control {
+                batch.push(ObservationOp::if_state(control, baseline));
+                if batch.len() >= batch_limit {
+                    sink(Observation::from_ops(std::mem::take(&mut batch)));
+                    batch.reserve(batch_limit);
+                }
             }
 
             if should_descend(kind, attrs, depth, root_dev, config) {
@@ -2826,6 +3149,12 @@ pub fn revalidate(
                     }
                 }
             }
+            if had_control && !control_seen {
+                batch.push(ObservationOp::if_state(
+                    Op::ControlRemove { path: control_path.clone() },
+                    index.relaxed_expectation(&control_path),
+                ));
+            }
         }
     }
 
@@ -2835,11 +3164,11 @@ pub fn revalidate(
     Ok(report)
 }
 
-/// Reconcile the full index and publish each effective committed delta as it lands.
+/// Reconcile the full index and publish each exact commit as it lands.
 pub fn reconcile(
     index: &mut Index,
     config: &ScanConfig,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
 ) -> Result<ReconcileReport> {
     reconcile_subtree(index, Path::new(""), config, sink)
 }
@@ -2852,7 +3181,7 @@ pub fn reconcile_subtree(
     index: &mut Index,
     subtree: &Path,
     config: &ScanConfig,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
 ) -> Result<ReconcileReport> {
     reconcile_target(&mut ReconcileTarget::Direct(index), subtree, config, sink)
 }
@@ -2861,7 +3190,7 @@ pub fn reconcile_subtree(
 pub fn reconcile_handle(
     handle: &IndexHandle,
     config: &ScanConfig,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
 ) -> Result<ReconcileReport> {
     reconcile_subtree_handle(handle, Path::new(""), config, sink)
 }
@@ -2872,16 +3201,194 @@ pub fn reconcile_subtree_handle(
     handle: &IndexHandle,
     subtree: &Path,
     config: &ScanConfig,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
 ) -> Result<ReconcileReport> {
     reconcile_target(&mut ReconcileTarget::Shared(handle), subtree, config, sink)
+}
+
+/// Internal effects of one opened-root multi-path reconciliation.
+#[derive(Debug, Default)]
+pub(crate) struct ReconcilePathsReport {
+    pub(crate) reconciliation: ReconcileReport,
+    pub(crate) accepted: Vec<PathBuf>,
+    pub(crate) rejected: Vec<crate::RejectedRefreshPath>,
+}
+
+/// Reconcile one bounded path set under an opened-root lifecycle controller.
+///
+/// Classification precedes I/O, overlapping descendants fold into one walk, and all
+/// surviving scopes enter `Reconciling` before the first is read. `forbid_expansion`
+/// is the conservative resource-stop rule: removals and same-file verification remain
+/// legal, while work that could retain another file or discover children is refused.
+pub(crate) fn reconcile_paths_handle_controlled(
+    handle: &IndexHandle,
+    paths: &[PathBuf],
+    config: &ScanConfig,
+    forbid_expansion: bool,
+    control: &dyn ReconcileControl,
+    sink: &mut dyn FnMut(&Commit),
+) -> Result<ReconcilePathsReport> {
+    let mut target = ReconcileTarget::Controlled { handle, control };
+    reconcile_paths_target(&mut target, paths, config, forbid_expansion, sink)
+}
+
+fn reconcile_paths_target(
+    target: &mut ReconcileTarget<'_>,
+    paths: &[PathBuf],
+    config: &ScanConfig,
+    forbid_expansion: bool,
+    sink: &mut dyn FnMut(&Commit),
+) -> Result<ReconcilePathsReport> {
+    config.validate_for_scope(target.scope()?)?;
+    let mut report = ReconcilePathsReport::default();
+    let mut accepted = BTreeSet::new();
+
+    for requested in paths {
+        let reject = |reason| crate::RejectedRefreshPath { path: requested.clone(), reason };
+        let Ok(path) = normalize_subtree(requested) else {
+            report.rejected.push(reject(crate::RefreshRejection::OutsideRoot));
+            continue;
+        };
+        if config.max_depth.is_some_and(|maximum| path.components().count() > maximum) {
+            report.rejected.push(reject(crate::RefreshRejection::BeyondDepth));
+            continue;
+        }
+        // This is lexical admission before the final kind is observed. Treating the
+        // boundary as a file preserves the fixed hidden `.gitignore` control exception;
+        // the verified walk still applies the real kind and special-object policy.
+        if crate::admission::decide_path(&path, EntryKind::File, config.hidden(), false)
+            == crate::admission::Disposition::Reject
+        {
+            report.rejected.push(reject(crate::RefreshRejection::NotAdmitted));
+            continue;
+        }
+        if forbid_expansion && refresh_may_expand(target, &path, &mut report.reconciliation.scan)? {
+            report.rejected.push(reject(crate::RefreshRejection::ResourceBudget));
+            continue;
+        }
+        accepted.insert(path);
+    }
+
+    report.accepted = accepted.into_iter().collect();
+    let mut resolved = Vec::new();
+    let mut unsafe_roots = Vec::new();
+    for requested_root in covering_roots(report.accepted.clone()) {
+        match resolve_subtree_root(target, &requested_root, config) {
+            Ok(root) => resolved.push(root),
+            Err(Error::SubtreeOutsideScanScope { .. }) => unsafe_roots.push(requested_root),
+            Err(error) => return Err(error),
+        }
+    }
+    if !unsafe_roots.is_empty() {
+        let mut retained = Vec::with_capacity(report.accepted.len());
+        for path in std::mem::take(&mut report.accepted) {
+            if unsafe_roots.iter().any(|root| path.starts_with(root)) {
+                report.rejected.push(crate::RejectedRefreshPath {
+                    path,
+                    reason: crate::RefreshRejection::UnsafeAncestry,
+                });
+            } else {
+                retained.push(path);
+            }
+        }
+        report.accepted = retained;
+    }
+    let walked = covering_roots(resolved);
+    if walked.is_empty() {
+        return Ok(report);
+    }
+
+    let mut opened = Vec::with_capacity(walked.len());
+    for subtree in walked {
+        let (started_at, commit) = target.begin_reconcile(&subtree)?;
+        if let Some(commit) = commit.as_ref() {
+            sink(commit);
+        }
+        opened.push((subtree, started_at));
+    }
+
+    let mut failure = None;
+    for (subtree, _) in &opened {
+        if failure.is_some() {
+            break;
+        }
+        match reconcile_target_inner(target, subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
+            Ok(reconciliation) => {
+                merge_reconcile_report(&mut report.reconciliation, reconciliation);
+            }
+            Err(error) => failure = Some(error),
+        }
+    }
+
+    let complete = failure.is_none() && report.reconciliation.is_complete();
+    for (subtree, started_at) in opened {
+        let commit = target.finish_reconcile(&subtree, started_at, complete)?;
+        if let Some(commit) = commit.as_ref() {
+            sink(commit);
+        }
+    }
+
+    match failure {
+        Some(error) => Err(error),
+        None => Ok(report),
+    }
+}
+
+/// Whether verification could increase the retained-file set.
+///
+/// This deliberately recognizes only cases that prove non-expansion. At a resource
+/// boundary, uncertainty is a refusal rather than permission to exceed the bound.
+fn refresh_may_expand(
+    target: &ReconcileTarget<'_>,
+    path: &Path,
+    work: &mut ScanReport,
+) -> Result<bool> {
+    let current = target.expectation(path)?.state;
+    let absolute = target.root_path()?.join(path);
+    let observed = match fs::symlink_metadata(&absolute) {
+        Ok(metadata) => {
+            let kind = kind_from(&metadata);
+            work.observe(kind, attrs_from(&metadata));
+            Some(kind)
+        }
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+            ) =>
+        {
+            None
+        }
+        Err(_) => return Ok(true),
+    };
+    Ok(!matches!(
+        (current, observed),
+        (PathState::Present { kind: EntryKind::File, .. }, Some(EntryKind::File)) | (_, None)
+    ))
+}
+
+/// Drop every path covered by a shallower member of the same sorted set.
+fn covering_roots(mut paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    paths.sort();
+    paths.dedup();
+    if paths.first().is_some_and(|first| first.as_os_str().is_empty()) {
+        return vec![PathBuf::new()];
+    }
+    let mut roots: Vec<PathBuf> = Vec::with_capacity(paths.len());
+    for path in paths {
+        if roots.last().is_some_and(|kept| path.starts_with(kept)) {
+            continue;
+        }
+        roots.push(path);
+    }
+    roots
 }
 
 fn reconcile_target(
     target: &mut ReconcileTarget<'_>,
     subtree: &Path,
     config: &ScanConfig,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
 ) -> Result<ReconcileReport> {
     config.validate_for_scope(target.scope()?)?;
     let subtree = normalize_subtree(subtree)?;
@@ -2889,14 +3396,23 @@ fn reconcile_target(
         return Err(Error::SubtreeOutsideScanScope { path: subtree, scope: config.scope() });
     }
     let subtree = resolve_subtree_root(target, &subtree, config)?;
-    let started_at = target.begin_reconcile(&subtree)?;
+    let (started_at, started) = target.begin_reconcile(&subtree)?;
+    if let Some(commit) = started.as_ref() {
+        sink(commit);
+    }
     match reconcile_target_inner(target, &subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
         Ok(report) => {
-            target.finish_reconcile(&subtree, started_at, report.is_complete())?;
+            let finished = target.finish_reconcile(&subtree, started_at, report.is_complete())?;
+            if let Some(commit) = finished.as_ref() {
+                sink(commit);
+            }
             Ok(report)
         }
         Err(error) => {
-            target.finish_reconcile(&subtree, started_at, false)?;
+            let finished = target.finish_reconcile(&subtree, started_at, false)?;
+            if let Some(commit) = finished.as_ref() {
+                sink(commit);
+            }
             Err(error)
         }
     }
@@ -2907,7 +3423,7 @@ fn reconcile_target_inner(
     subtree: &Path,
     config: &ScanConfig,
     max_deferred_ops: usize,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
 ) -> Result<ReconcileReport> {
     let root = target.root_path()?;
     let root_meta = {
@@ -2931,7 +3447,7 @@ fn reconcile_target_inner(
     let mut batch: Vec<ObservationOp> = Vec::with_capacity(config.batch_size.max(1));
 
     if config.max_depth == Some(0) {
-        remove_known_children(target, Path::new(""), config, &mut batch, sink, &mut report.apply)?;
+        remove_known_children(target, Path::new(""), config, &mut batch, sink, &mut report)?;
         return Ok(report);
     }
 
@@ -2945,7 +3461,13 @@ fn reconcile_target_inner(
                     Op::Remove { path: subtree.to_path_buf() },
                     baseline,
                 ));
-                flush_reconcile_batch(target, &mut batch, sink, &mut report.apply)?;
+                if target.has_control(subtree)? {
+                    batch.push(ObservationOp::if_state(
+                        Op::ControlRemove { path: subtree.to_path_buf() },
+                        baseline,
+                    ));
+                }
+                flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
                 return Ok(report);
             }
             Err(error) => {
@@ -2955,27 +3477,33 @@ fn reconcile_target_inner(
         };
         let kind = kind_from(&meta);
         let attrs = attrs_from(&meta);
+        let disposition =
+            crate::admission::decide_path(subtree, kind, config.hidden(), config.exclude_special);
+        if disposition != crate::admission::Disposition::Retain {
+            if baseline.state != PathState::Absent {
+                batch.push(ObservationOp::if_state(
+                    Op::Remove { path: subtree.to_path_buf() },
+                    baseline,
+                ));
+            }
+            if disposition == crate::admission::Disposition::ControlOnly {
+                match read_control_op(&root, subtree, kind) {
+                    Ok(Some(control)) => {
+                        batch.push(ObservationOp::if_state(control, baseline));
+                    }
+                    Ok(None) => {}
+                    Err(error) => report.scan.errors.push(error),
+                }
+            }
+            flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
+            return Ok(report);
+        }
         report.scan.observe(kind, attrs);
-        push_reconcile_upsert(
-            target,
-            subtree,
-            kind,
-            attrs,
-            baseline,
-            &mut batch,
-            &mut report.apply,
-        );
-        flush_reconcile_batch(target, &mut batch, sink, &mut report.apply)?;
+        push_reconcile_upsert(target, subtree, kind, attrs, baseline, &mut batch, &mut report);
+        flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
         if !should_descend(kind, attrs, start_depth.saturating_sub(1), root_dev, config) {
             if kind.is_dir() {
-                remove_known_children(
-                    target,
-                    subtree,
-                    config,
-                    &mut batch,
-                    sink,
-                    &mut report.apply,
-                )?;
+                remove_known_children(target, subtree, config, &mut batch, sink, &mut report)?;
             }
             return Ok(report);
         }
@@ -3001,36 +3529,66 @@ fn reconcile_target_inner(
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
         let mut known = target.child_states(&rel_dir)?;
         let abs_dir = root.join(&rel_dir);
+        let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
+        let had_control = target.has_control(&control_path)?;
+        let mut control_seen = false;
         let mut listing_complete = true;
         let process_entry = |name: OsString,
                              kind: EntryKind,
                              attrs: Attrs,
                              baseline: PathExpectation,
+                             control_seen: &mut bool,
                              target: &mut ReconcileTarget<'_>,
                              queue: &mut VecDeque<(PathBuf, usize)>,
                              batch: &mut Vec<ObservationOp>,
-                             sink: &mut dyn FnMut(&AppliedDelta),
+                             sink: &mut dyn FnMut(&Commit),
                              report: &mut ReconcileReport|
          -> Result<()> {
             let rel_path = rel_dir.join(&name);
+            *control_seen |= name == crate::control::CONTROL_FILE_NAME;
+            let disposition =
+                crate::admission::decide(&name, kind, config.hidden(), config.exclude_special);
+            if disposition != crate::admission::Disposition::Retain {
+                if baseline.state != PathState::Absent {
+                    batch.push(ObservationOp::if_state(
+                        Op::Remove { path: rel_path.clone() },
+                        baseline,
+                    ));
+                }
+                if disposition == crate::admission::Disposition::ControlOnly {
+                    match read_control_op(&root, &rel_path, kind) {
+                        Ok(Some(control)) => {
+                            batch.push(ObservationOp::if_state(control, baseline));
+                        }
+                        Ok(None) => {}
+                        Err(error) => report.scan.errors.push(error),
+                    }
+                }
+                if batch.len() >= config.batch_size.max(1) {
+                    flush_reconcile_batch(target, batch, sink, report)?;
+                }
+                return Ok(());
+            }
             report.scan.observe(kind, attrs);
-            push_reconcile_upsert(
-                target,
-                &rel_path,
-                kind,
-                attrs,
-                baseline,
-                batch,
-                &mut report.apply,
-            );
+            push_reconcile_upsert(target, &rel_path, kind, attrs, baseline, batch, report);
             if batch.len() >= config.batch_size.max(1) {
-                flush_reconcile_batch(target, batch, sink, &mut report.apply)?;
+                flush_reconcile_batch(target, batch, sink, report)?;
+            }
+            match read_control_op(&root, &rel_path, kind) {
+                Ok(Some(control)) => {
+                    batch.push(ObservationOp::if_state(control, baseline));
+                    if batch.len() >= config.batch_size.max(1) {
+                        flush_reconcile_batch(target, batch, sink, report)?;
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => report.scan.errors.push(error),
             }
 
             if should_descend(kind, attrs, depth, root_dev, config) {
                 queue.push_back((rel_path, depth + 1));
             } else if kind.is_dir() {
-                remove_known_children(target, &rel_path, config, batch, sink, &mut report.apply)?;
+                remove_known_children(target, &rel_path, config, batch, sink, report)?;
             }
             Ok(())
         };
@@ -3049,6 +3607,7 @@ fn reconcile_target_inner(
                         entry.kind,
                         entry.attrs,
                         baseline,
+                        &mut control_seen,
                         target,
                         &mut queue,
                         &mut batch,
@@ -3083,6 +3642,7 @@ fn reconcile_target_inner(
                     }
                 };
                 let name = item.file_name();
+                control_seen |= name == crate::control::CONTROL_FILE_NAME;
                 // Seeing the name proves it is not absent even if the following
                 // metadata lookup fails. Remove it from the missing set before that
                 // fallible lookup so an operational error cannot turn an existing
@@ -3103,6 +3663,7 @@ fn reconcile_target_inner(
                     kind_from(&meta),
                     attrs_from(&meta),
                     baseline,
+                    &mut control_seen,
                     target,
                     &mut queue,
                     &mut batch,
@@ -3119,13 +3680,20 @@ fn reconcile_target_inner(
                     baseline,
                 ));
                 if batch.len() >= config.batch_size.max(1) {
-                    flush_reconcile_batch(target, &mut batch, sink, &mut report.apply)?;
+                    flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
                 }
+            }
+            if had_control && !control_seen {
+                let baseline = target.expectation(&control_path)?;
+                batch.push(ObservationOp::if_state(
+                    Op::ControlRemove { path: control_path },
+                    baseline,
+                ));
             }
         }
     }
 
-    flush_reconcile_batch(target, &mut batch, sink, &mut report.apply)?;
+    flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
     report.scan.errors.sort_by_cached_key(ToString::to_string);
     Ok(report)
 }
@@ -3165,7 +3733,7 @@ fn reconcile_direct_parallel(
     root_dev: u64,
     config: &ScanConfig,
     max_deferred_ops: usize,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
 ) -> Result<DirectParallelOutcome> {
     let mut frontier = DirectoryQueueState::seeded(
         (PathBuf::new(), 0),
@@ -3243,12 +3811,20 @@ fn reconcile_direct_parallel(
         for worker in results {
             report.scan.absorb(worker.scan);
             report.apply.unchanged += worker.unchanged;
+            report.observations = report.observations.saturating_add(worker.unchanged);
             operations.extend(worker.operations);
             for directory in worker.discovered {
                 frontier.push(directory, config.order);
             }
         }
-        apply_deferred_reconcile(index, &mut operations, config, sink, &mut report.apply)?;
+        apply_deferred_reconcile(
+            index,
+            &mut operations,
+            config,
+            sink,
+            &mut report.apply,
+            &mut report.observations,
+        )?;
     }
     report.scan.errors.sort_by_cached_key(ToString::to_string);
     Ok(DirectParallelOutcome::Complete(report))
@@ -3258,13 +3834,14 @@ fn apply_deferred_reconcile(
     index: &mut Index,
     operations: &mut Vec<Op>,
     config: &ScanConfig,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
     stats: &mut ApplyStats,
+    observations: &mut u64,
 ) -> Result<()> {
     // Parent upserts establish real directory attributes before children arrive.
     // Removals run deepest first so a parent removal never precedes an independently
-    // observed descendant operation. The index supports out-of-order producers, but a
-    // deterministic causal order also makes emitted deltas stable for callers.
+    // observed descendant operation. Deterministic causal order also makes emitted
+    // commits stable for callers.
     operations.sort_by(|left, right| {
         let left_remove = matches!(left, Op::Remove { .. });
         let right_remove = matches!(right, Op::Remove { .. });
@@ -3284,10 +3861,10 @@ fn apply_deferred_reconcile(
     for operation in operations.drain(..) {
         batch.push(operation);
         if batch.len() >= batch_limit {
-            flush_direct_reconcile_batch(index, &mut batch, sink, stats)?;
+            flush_direct_reconcile_batch(index, &mut batch, sink, stats, observations)?;
         }
     }
-    flush_direct_reconcile_batch(index, &mut batch, sink, stats)
+    flush_direct_reconcile_batch(index, &mut batch, sink, stats, observations)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3316,12 +3893,68 @@ fn reconcile_wave_worker(
         for (rel_dir, depth, region) in &wave[start..end] {
             let mut known = collect_child_expectations(index, rel_dir);
             let abs_dir = root.join(rel_dir);
+            let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
+            let had_control = index.controls().contains(&control_path);
+            let mut control_seen = false;
             let mut listing_complete = true;
+            let mut control_errors = Vec::new();
 
             {
                 let mut process_entry =
-                    |name: OsString, kind: EntryKind, attrs: Attrs, baseline: PathExpectation| {
+                    |name: OsString,
+                     kind: EntryKind,
+                     attrs: Attrs,
+                     baseline: PathExpectation,
+                     control_seen: &mut bool| {
                         let rel_path = rel_dir.join(&name);
+                        *control_seen |= name == crate::control::CONTROL_FILE_NAME;
+                        let disposition = crate::admission::decide(
+                            &name,
+                            kind,
+                            config.hidden(),
+                            config.exclude_special,
+                        );
+                        if disposition == crate::admission::Disposition::Reject {
+                            if baseline.state != PathState::Absent {
+                                defer_reconcile_op(
+                                    Op::Remove { path: rel_path },
+                                    &mut result.operations,
+                                    deferred_count,
+                                    overflowed,
+                                    max_deferred_ops,
+                                );
+                            }
+                            return;
+                        }
+                        if disposition == crate::admission::Disposition::ControlOnly {
+                            match read_control_op(root, &rel_path, kind) {
+                                Ok(Some(Op::ControlUpsert { path, source })) => {
+                                    if !index.controls().source_is(&path, &source) {
+                                        defer_reconcile_op(
+                                            Op::ControlUpsert { path, source },
+                                            &mut result.operations,
+                                            deferred_count,
+                                            overflowed,
+                                            max_deferred_ops,
+                                        );
+                                    }
+                                }
+                                Ok(Some(Op::ControlRemove { path })) => {
+                                    if index.controls().contains(&path) {
+                                        defer_reconcile_op(
+                                            Op::ControlRemove { path },
+                                            &mut result.operations,
+                                            deferred_count,
+                                            overflowed,
+                                            max_deferred_ops,
+                                        );
+                                    }
+                                }
+                                Ok(Some(_) | None) => {}
+                                Err(error) => control_errors.push(error),
+                            }
+                            return;
+                        }
                         result.scan.entries += 1;
                         if kind == EntryKind::File {
                             result.scan.files_walked += 1;
@@ -3337,6 +3970,21 @@ fn reconcile_wave_worker(
                                 overflowed,
                                 max_deferred_ops,
                             );
+                        }
+                        match read_control_op(root, &rel_path, kind) {
+                            Ok(Some(Op::ControlUpsert { path, source })) => {
+                                if !index.controls().source_is(&path, &source) {
+                                    defer_reconcile_op(
+                                        Op::ControlUpsert { path, source },
+                                        &mut result.operations,
+                                        deferred_count,
+                                        overflowed,
+                                        max_deferred_ops,
+                                    );
+                                }
+                            }
+                            Ok(Some(_) | None) => {}
+                            Err(error) => control_errors.push(error),
                         }
 
                         if should_descend(kind, attrs, *depth, root_dev, config) {
@@ -3363,7 +4011,13 @@ fn reconcile_wave_worker(
                         let baseline = known
                             .remove(&entry.name)
                             .unwrap_or_else(|| index.expectation(&rel_dir.join(&entry.name)));
-                        process_entry(entry.name, entry.kind, entry.attrs, baseline);
+                        process_entry(
+                            entry.name,
+                            entry.kind,
+                            entry.attrs,
+                            baseline,
+                            &mut control_seen,
+                        );
                     }
                     true
                 } else {
@@ -3392,6 +4046,7 @@ fn reconcile_wave_worker(
                             }
                         };
                         let name = item.file_name();
+                        control_seen |= name == crate::control::CONTROL_FILE_NAME;
                         // Match the serial path: an entry whose name was enumerated is
                         // not missing merely because its metadata could not be read.
                         let baseline = known
@@ -3404,14 +4059,30 @@ fn reconcile_wave_worker(
                                 continue;
                             }
                         };
-                        process_entry(name, kind_from(&meta), attrs_from(&meta), baseline);
+                        process_entry(
+                            name,
+                            kind_from(&meta),
+                            attrs_from(&meta),
+                            baseline,
+                            &mut control_seen,
+                        );
                     }
                 }
             }
+            result.scan.errors.append(&mut control_errors);
             if listing_complete {
                 for (name, _) in known {
                     defer_reconcile_op(
                         Op::Remove { path: rel_dir.join(name) },
+                        &mut result.operations,
+                        deferred_count,
+                        overflowed,
+                        max_deferred_ops,
+                    );
+                }
+                if had_control && !control_seen {
+                    defer_reconcile_op(
+                        Op::ControlRemove { path: control_path },
                         &mut result.operations,
                         deferred_count,
                         overflowed,
@@ -3442,16 +4113,18 @@ fn defer_reconcile_op(
 fn flush_direct_reconcile_batch(
     index: &mut Index,
     batch: &mut Vec<Op>,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
     stats: &mut ApplyStats,
+    observations: &mut u64,
 ) -> Result<()> {
     if batch.is_empty() {
         return Ok(());
     }
+    *observations = observations.saturating_add(u64::try_from(batch.len()).unwrap_or(u64::MAX));
     let outcome = index.apply(&Observation::new(std::mem::take(batch)))?;
     merge_apply_stats(stats, outcome.stats);
-    if let Some(applied) = &outcome.applied {
-        sink(applied);
+    if let Some(commit) = outcome.commit.as_ref() {
+        sink(commit);
     }
     Ok(())
 }
@@ -3460,7 +4133,7 @@ fn flush_direct_reconcile_batch(
 pub fn reconcile_pending(
     index: &mut Index,
     config: &ScanConfig,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
 ) -> Result<ReconcileReport> {
     let mut target = ReconcileTarget::Direct(index);
     reconcile_pending_target(&mut target, config, sink)
@@ -3470,16 +4143,28 @@ pub fn reconcile_pending(
 pub fn reconcile_pending_handle(
     handle: &IndexHandle,
     config: &ScanConfig,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
 ) -> Result<ReconcileReport> {
     let mut target = ReconcileTarget::Shared(handle);
+    reconcile_pending_target(&mut target, config, sink)
+}
+
+/// Drain and reconcile invalidations under an opened-root lifecycle and resource bound.
+#[cfg(feature = "watch")]
+pub(crate) fn reconcile_pending_handle_controlled(
+    handle: &IndexHandle,
+    config: &ScanConfig,
+    control: &dyn ReconcileControl,
+    sink: &mut dyn FnMut(&Commit),
+) -> Result<ReconcileReport> {
+    let mut target = ReconcileTarget::Controlled { handle, control };
     reconcile_pending_target(&mut target, config, sink)
 }
 
 fn reconcile_pending_target(
     target: &mut ReconcileTarget<'_>,
     config: &ScanConfig,
-    sink: &mut dyn FnMut(&AppliedDelta),
+    sink: &mut dyn FnMut(&Commit),
 ) -> Result<ReconcileReport> {
     config.validate_for_scope(target.scope()?)?;
     let roots = take_invalidation_roots(target)?;
@@ -3524,16 +4209,16 @@ fn remove_known_children(
     path: &Path,
     config: &ScanConfig,
     batch: &mut Vec<ObservationOp>,
-    sink: &mut dyn FnMut(&AppliedDelta),
-    stats: &mut ApplyStats,
+    sink: &mut dyn FnMut(&Commit),
+    report: &mut ReconcileReport,
 ) -> Result<()> {
     for (name, baseline) in target.child_states(path)? {
         batch.push(ObservationOp::if_state(Op::Remove { path: path.join(name) }, baseline));
         if batch.len() >= config.batch_size.max(1) {
-            flush_reconcile_batch(target, batch, sink, stats)?;
+            flush_reconcile_batch(target, batch, sink, report)?;
         }
     }
-    flush_reconcile_batch(target, batch, sink, stats)
+    flush_reconcile_batch(target, batch, sink, report)
 }
 
 fn push_reconcile_upsert(
@@ -3543,7 +4228,7 @@ fn push_reconcile_upsert(
     attrs: Attrs,
     baseline: PathExpectation,
     batch: &mut Vec<ObservationOp>,
-    stats: &mut ApplyStats,
+    report: &mut ReconcileReport,
 ) {
     // An exclusive Index borrow cannot race another index producer. If filesystem
     // metadata exactly matches the captured state, applying this upsert can only be a
@@ -3551,7 +4236,8 @@ fn push_reconcile_upsert(
     // reconciliation keeps the conditional observation so ABA arbitration remains
     // authoritative between its read and write lock boundaries.
     if target.direct_upsert_is_unchanged(baseline, kind, attrs) {
-        stats.unchanged += 1;
+        report.observations = report.observations.saturating_add(1);
+        report.apply.unchanged = report.apply.unchanged.saturating_add(1);
         return;
     }
     batch.push(ObservationOp::if_state(
@@ -3563,16 +4249,18 @@ fn push_reconcile_upsert(
 fn flush_reconcile_batch(
     target: &mut ReconcileTarget<'_>,
     batch: &mut Vec<ObservationOp>,
-    sink: &mut dyn FnMut(&AppliedDelta),
-    stats: &mut ApplyStats,
+    sink: &mut dyn FnMut(&Commit),
+    report: &mut ReconcileReport,
 ) -> Result<()> {
     if batch.is_empty() {
         return Ok(());
     }
+    report.observations =
+        report.observations.saturating_add(u64::try_from(batch.len()).unwrap_or(u64::MAX));
     let outcome = target.apply(&Observation::from_ops(std::mem::take(batch)))?;
-    merge_apply_stats(stats, outcome.stats);
-    if let Some(applied) = &outcome.applied {
-        sink(applied);
+    merge_apply_stats(&mut report.apply, outcome.stats);
+    if let Some(commit) = outcome.commit.as_ref() {
+        sink(commit);
     }
     Ok(())
 }
@@ -3583,7 +4271,10 @@ fn merge_apply_stats(total: &mut ApplyStats, addition: ApplyStats) {
     total.removed += addition.removed;
     total.unchanged += addition.unchanged;
     total.invalidated += addition.invalidated;
+    total.controls += addition.controls;
+    total.reclassified += addition.reclassified;
     total.stale += addition.stale;
+    total.resource_refused += addition.resource_refused;
 }
 
 fn merge_reconcile_report(total: &mut ReconcileReport, addition: ReconcileReport) {
@@ -3592,6 +4283,7 @@ fn merge_reconcile_report(total: &mut ReconcileReport, addition: ReconcileReport
     total.scan.files_walked += addition.scan.files_walked;
     total.scan.bytes_walked += addition.scan.bytes_walked;
     total.scan.errors.extend(addition.scan.errors);
+    total.observations = total.observations.saturating_add(addition.observations);
     merge_apply_stats(&mut total.apply, addition.apply);
 }
 
@@ -3602,9 +4294,14 @@ fn should_descend(
     root_dev: u64,
     config: &ScanConfig,
 ) -> bool {
-    let within_depth = config.max_depth.is_none_or(|max| parent_depth + 1 < max);
-    let same_filesystem = !config.one_filesystem || attrs.dev == root_dev || attrs.dev == 0;
-    kind.is_dir() && within_depth && same_filesystem
+    crate::admission::should_descend(
+        kind,
+        attrs,
+        parent_depth,
+        root_dev,
+        config.max_depth,
+        config.one_filesystem,
+    )
 }
 
 pub(crate) fn normalize_subtree(path: &Path) -> Result<PathBuf> {
@@ -4169,11 +4866,33 @@ mod tests {
         write_file(&root.join("added-tree/nested/new.md"), b"new nested file");
     }
 
-    fn effective_ops(deltas: &[AppliedDelta]) -> Vec<Op> {
-        let mut operations: Vec<_> =
-            deltas.iter().flat_map(|delta| delta.ops.iter().cloned()).collect();
+    fn effective_ops(commits: &[Commit]) -> Vec<Op> {
+        let mut operations: Vec<_> = commits
+            .iter()
+            .flat_map(|commit| commit.changes.iter())
+            .filter_map(|change| match change {
+                crate::EffectiveChange::Inserted { path, kind, attrs } => {
+                    Some(Op::Upsert { path: path.clone(), kind: *kind, attrs: *attrs })
+                }
+                crate::EffectiveChange::Updated { path, kind, current, .. } => {
+                    Some(Op::Upsert { path: path.clone(), kind: *kind, attrs: *current })
+                }
+                crate::EffectiveChange::Removed { path, .. } => {
+                    Some(Op::Remove { path: path.clone() })
+                }
+                crate::EffectiveChange::Invalidated { path, reason } => {
+                    Some(Op::InvalidateSubtree { path: path.clone(), reason: *reason })
+                }
+                crate::EffectiveChange::ControlUpdated { .. }
+                | crate::EffectiveChange::Reclassified { .. } => None,
+            })
+            .collect();
         operations.sort_by(|left, right| left.path().cmp(right.path()));
         operations
+    }
+
+    fn commit_touches(commit: &Commit, path: &Path) -> bool {
+        commit.changes.iter().any(|change| change.path() == path)
     }
 
     #[test]
@@ -5235,6 +5954,212 @@ mod tests {
         assert_eq!(src.dirs, 1);
     }
 
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn cold_scan_routes_control_sources_through_both_walkers() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join(".gitignore"), b"*.log\n");
+        write_file(&dir.path().join("debug.log"), b"ignored");
+        write_file(&dir.path().join("keep.rs"), b"visible");
+
+        for threads in [1, 4] {
+            let config = ScanConfig { threads: Some(threads), ..ScanConfig::default() };
+            let (index, report) = scan_into_index(dir.path(), &config).expect("scan");
+
+            assert!(report.is_complete(), "unexpected errors: {:?}", report.errors);
+            assert!(index.controls().source_is(Path::new(".gitignore"), b"*.log\n"));
+            assert_eq!(index.is_ignored(Path::new("debug.log")), Some(true));
+            assert_eq!(index.is_ignored(Path::new("keep.rs")), Some(false));
+            assert_eq!(index.partition_total().all.files, 3);
+            assert_eq!(index.partition_total().unignored.files, 2);
+        }
+    }
+
+    #[cfg(all(feature = "gitignore", unix))]
+    #[test]
+    fn raced_fifo_control_source_is_rejected_without_blocking() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let control = dir.path().join(".gitignore");
+        let status = match std::process::Command::new("mkfifo").arg(&control).status() {
+            Ok(status) => status,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+            Err(error) => panic!("create fifo: {error}"),
+        };
+        assert!(status.success(), "mkfifo exited with {status}");
+
+        let root = dir.path().to_path_buf();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let result = read_control_op(&root, Path::new(".gitignore"), EntryKind::File);
+            sender.send(result).ok();
+        });
+        let result = receiver
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("a raced FIFO must not block the scan worker")
+            .expect("the non-regular replacement is a normal control removal");
+
+        assert!(matches!(result, Some(Op::ControlRemove { .. })));
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn hidden_admission_keeps_exact_allowlist_and_control_signals_only() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join(".gitignore"), b"*.log\n");
+        write_file(&dir.path().join("debug.log"), b"ignored");
+        write_file(&dir.path().join(".secret/token"), b"hidden");
+        write_file(&dir.path().join(".github/workflows/check.yml"), b"visible");
+        let hidden = std::sync::Arc::new(crate::HiddenPolicy::prune_hidden([".github"]));
+
+        for threads in [1, 4] {
+            let config = ScanConfig {
+                hidden: Some(std::sync::Arc::clone(&hidden)),
+                threads: Some(threads),
+                ..ScanConfig::default()
+            };
+            let (mut index, report) = scan_into_index(dir.path(), &config).expect("scan");
+
+            assert!(report.is_complete(), "unexpected errors: {:?}", report.errors);
+            assert!(index.lookup(Path::new(".gitignore")).is_none());
+            assert!(index.lookup(Path::new(".secret")).is_none());
+            assert!(index.lookup(Path::new(".secret/token")).is_none());
+            assert!(index.lookup(Path::new(".github/workflows/check.yml")).is_some());
+            assert!(index.controls().source_is(Path::new(".gitignore"), b"*.log\n"));
+            assert_eq!(index.is_ignored(Path::new("debug.log")), Some(true));
+
+            fs::remove_file(dir.path().join(".gitignore")).expect("remove control");
+            if threads > 1 {
+                fs::create_dir(dir.path().join(".gitignore")).expect("replace with directory");
+            }
+            let reconciled = reconcile(&mut index, &config, &mut |_| {}).expect("reconcile");
+            assert!(reconciled.is_complete());
+            assert!(index.controls().is_empty());
+            if threads > 1 {
+                fs::remove_dir(dir.path().join(".gitignore")).expect("remove directory");
+            }
+            write_file(&dir.path().join(".gitignore"), b"*.log\n");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn excluded_special_objects_never_enter_cold_or_reconciled_facts() {
+        use std::os::unix::net::UnixListener;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let socket_path = dir.path().join("service.sock");
+        let _listener = UnixListener::bind(&socket_path).expect("bind socket");
+        write_file(&dir.path().join("replacement"), b"ordinary");
+        let (kept, kept_report) =
+            scan_into_index(dir.path(), &ScanConfig::default()).expect("default scan");
+        assert!(kept_report.is_complete());
+        assert_eq!(kept.kind(Path::new("service.sock")), Some(EntryKind::Other));
+
+        let serial_config =
+            ScanConfig { exclude_special: true, threads: Some(1), ..ScanConfig::default() };
+        let parallel_config =
+            ScanConfig { exclude_special: true, threads: Some(4), ..ScanConfig::default() };
+        let (mut serial, serial_report) =
+            scan_into_index(dir.path(), &serial_config).expect("serial scan");
+        let (mut parallel, parallel_report) =
+            scan_into_index(dir.path(), &parallel_config).expect("parallel scan");
+
+        for (index, report) in [(&serial, &serial_report), (&parallel, &parallel_report)] {
+            assert!(report.is_complete(), "unexpected errors: {:?}", report.errors);
+            assert!(index.lookup(Path::new("service.sock")).is_none());
+            assert!(index.lookup(Path::new("replacement")).is_some());
+        }
+
+        fs::remove_file(dir.path().join("replacement")).expect("remove file");
+        let _replacement =
+            UnixListener::bind(dir.path().join("replacement")).expect("bind replacement socket");
+        let serial_reconciled =
+            reconcile(&mut serial, &serial_config, &mut |_| {}).expect("serial reconcile");
+        let parallel_reconciled =
+            reconcile(&mut parallel, &parallel_config, &mut |_| {}).expect("parallel reconcile");
+
+        assert!(serial_reconciled.is_complete());
+        assert!(parallel_reconciled.is_complete());
+        assert!(serial.lookup(Path::new("replacement")).is_none());
+        assert!(parallel.lookup(Path::new("replacement")).is_none());
+        assert_eq!(index_fingerprint(&serial), index_fingerprint(&parallel));
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn control_sources_respect_a_single_operation_batch_bound() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join(".gitignore"), b"*.log\n");
+        write_file(&dir.path().join("debug.log"), b"ignored");
+
+        for threads in [1, 4] {
+            let config =
+                ScanConfig { threads: Some(threads), batch_size: 1, ..ScanConfig::default() };
+            let mut largest = 0;
+            let report = scan(dir.path(), &config, &mut |observation| {
+                largest = largest.max(observation.len());
+            })
+            .expect("scan");
+
+            assert!(report.is_complete(), "unexpected errors: {:?}", report.errors);
+            assert_eq!(largest, 1);
+        }
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn cold_scan_matches_the_metabrowser_nested_control_fixture() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join(".gitignore"), b"node_modules/\n*.pyc\n");
+        write_file(&dir.path().join("src/app.py"), b"x");
+        write_file(&dir.path().join("src/thing.pyc"), b"x");
+        write_file(&dir.path().join("src/generated/.gitignore"), b"*.gen\n");
+        write_file(&dir.path().join("src/generated/out.gen"), b"x");
+        write_file(&dir.path().join("node_modules/.gitignore"), b"!keep-me.py\n");
+        write_file(&dir.path().join("node_modules/keep-me.py"), b"x");
+
+        let (index, report) =
+            scan_into_index(dir.path(), &ScanConfig { threads: Some(4), ..ScanConfig::default() })
+                .expect("scan fixture");
+
+        assert!(report.is_complete(), "unexpected errors: {:?}", report.errors);
+        assert_eq!(index.is_ignored(Path::new("src/app.py")), Some(false));
+        assert_eq!(index.is_ignored(Path::new("src/thing.pyc")), Some(true));
+        assert_eq!(index.is_ignored(Path::new("src/generated")), Some(false));
+        assert_eq!(index.is_ignored(Path::new("src/generated/out.gen")), Some(true));
+        assert_eq!(index.is_ignored(Path::new("node_modules")), Some(true));
+        assert_eq!(index.is_ignored(Path::new("node_modules/keep-me.py")), Some(true));
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn reconciliation_observes_same_metadata_control_edits_and_last_deletion() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join(".gitignore"), b"*.log\n");
+        write_file(&dir.path().join("debug.log"), b"ignored");
+        let config = ScanConfig { threads: Some(1), ..ScanConfig::default() };
+        let (mut index, report) = scan_into_index(dir.path(), &config).expect("scan");
+        assert!(report.is_complete());
+        assert_eq!(index.is_ignored(Path::new("debug.log")), Some(true));
+
+        // Same-length content proves control identity is not inferred from stat-tier
+        // metadata, which can remain unchanged on coarse filesystems.
+        write_file(&dir.path().join(".gitignore"), b"*.tmp\n");
+        let edited = reconcile(&mut index, &config, &mut |_| {}).expect("edit reconcile");
+        assert!(edited.is_complete());
+        assert_eq!(edited.apply.controls, 1);
+        assert_eq!(edited.apply.reclassified, 1);
+        assert!(index.controls().source_is(Path::new(".gitignore"), b"*.tmp\n"));
+        assert_eq!(index.is_ignored(Path::new("debug.log")), Some(false));
+
+        fs::remove_file(dir.path().join(".gitignore")).expect("remove control");
+        let removed = reconcile(&mut index, &config, &mut |_| {}).expect("remove reconcile");
+        assert!(removed.is_complete());
+        assert_eq!(removed.apply.controls, 1);
+        assert!(index.controls().is_empty());
+        assert_eq!(index.partition_total().all, index.partition_total().unignored);
+    }
+
     #[cfg(unix)]
     #[test]
     fn directory_entry_metadata_does_not_follow_symlinks() {
@@ -5410,6 +6335,7 @@ mod tests {
         let report = ReconcileReport {
             scan: ScanReport::default(),
             apply: ApplyStats { stale: 1, ..ApplyStats::default() },
+            observations: 1,
         };
 
         assert!(!report.is_complete());
@@ -5453,22 +6379,30 @@ mod tests {
     }
 
     #[test]
-    fn direct_reconciliation_counts_unchanged_entries_without_publishing_deltas() {
+    fn direct_reconciliation_counts_unchanged_entries_and_publishes_state_commits() {
         let dir = sample_tree();
         let (mut index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
         let before_total = index.total();
         let before_clock = index.clock();
-        let mut deltas = Vec::new();
+        let mut commits = Vec::new();
 
-        let report = reconcile(&mut index, &ScanConfig::default(), &mut |delta| {
-            deltas.push(delta.clone());
+        let report = reconcile(&mut index, &ScanConfig::default(), &mut |commit| {
+            commits.push(commit.clone());
         })
         .expect("reconcile");
 
         assert!(report.is_complete());
         assert_eq!(report.apply.unchanged, 5, "3 files + 2 dirs all already known");
-        assert!(deltas.is_empty());
-        assert_eq!(index.clock(), before_clock);
+        assert_eq!(commits.len(), 2);
+        assert!(commits.iter().all(|commit| commit.changes.is_empty()));
+        assert_eq!(
+            index.clock(),
+            crate::Clock(before_clock.0 + 2),
+            "start and finish are state commits"
+        );
+        let commits = index.since(before_clock).commits;
+        assert_eq!(commits.len(), 2);
+        assert!(commits.iter().all(|commit| commit.changes.is_empty()));
         assert_eq!(index.total(), before_total);
     }
 
@@ -5543,9 +6477,9 @@ mod tests {
                 mutate_reconciliation_transition_tree(dir.path());
 
                 let mut serial = baseline.clone();
-                let mut serial_deltas = Vec::new();
-                let serial_report = reconcile(&mut serial, &reference_config, &mut |delta| {
-                    serial_deltas.push(delta.clone());
+                let mut serial_commits = Vec::new();
+                let serial_report = reconcile(&mut serial, &reference_config, &mut |commit| {
+                    serial_commits.push(commit.clone());
                 })
                 .expect("serial reconciliation");
                 let (fresh, fresh_report) =
@@ -5561,9 +6495,9 @@ mod tests {
                 for workers in [2, 4] {
                     let mut parallel = baseline.clone();
                     let config = ScanConfig { threads: Some(workers), ..reference_config.clone() };
-                    let mut parallel_deltas = Vec::new();
-                    let report = reconcile(&mut parallel, &config, &mut |delta| {
-                        parallel_deltas.push(delta.clone());
+                    let mut parallel_commits = Vec::new();
+                    let report = reconcile(&mut parallel, &config, &mut |commit| {
+                        parallel_commits.push(commit.clone());
                     })
                     .expect("parallel reconciliation");
                     let context = format!("{order:?}/{max_depth:?}/{workers} workers");
@@ -5573,8 +6507,8 @@ mod tests {
                     assert_eq!(report.scan.dirs_read, serial_report.scan.dirs_read, "{context}");
                     assert_eq!(report.apply, serial_report.apply, "{context}");
                     assert_eq!(
-                        effective_ops(&parallel_deltas),
-                        effective_ops(&serial_deltas),
+                        effective_ops(&parallel_commits),
+                        effective_ops(&serial_commits),
                         "{context}: effective delta differs"
                     );
                     assert_eq!(
@@ -5607,6 +6541,41 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn revalidation_metadata_errors_do_not_delete_enumerated_entries() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+
+        let dir = sample_tree();
+        let config = ScanConfig::default();
+        let (mut index, baseline_report) =
+            scan_into_index(dir.path(), &config).expect("baseline scan");
+        assert!(baseline_report.is_complete());
+        let before = index_fingerprint(&index);
+        let original_permissions = fs::metadata(dir.path()).expect("root metadata").permissions();
+
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o400))
+            .expect("remove search permission");
+        let mut observations = Vec::new();
+        let outcome = revalidate(&index, &config, &mut |observation| {
+            observations.push(observation);
+        });
+        fs::set_permissions(dir.path(), original_permissions).expect("restore permissions");
+
+        let report = outcome.expect("operational metadata errors are a partial report");
+        assert!(!report.errors.is_empty(), "the fixture did not induce metadata errors");
+        for observation in &observations {
+            index.apply_ok(observation);
+        }
+        assert_eq!(index_fingerprint(&index), before);
+        assert!(index.attrs(Path::new("a.txt")).is_some(), "existing entry was removed");
     }
 
     #[cfg(unix)]
@@ -5670,14 +6639,14 @@ mod tests {
             fs::symlink_metadata(&root)
         }
         .expect("root metadata");
-        let mut deltas = Vec::new();
+        let mut commits = Vec::new();
         let outcome = reconcile_direct_parallel(
             &mut index,
             &root,
             attrs_from(&root_meta).dev,
             &config,
             1,
-            &mut |delta| deltas.push(delta.clone()),
+            &mut |commit| commits.push(commit.clone()),
         )
         .expect("parallel attempt");
         let DirectParallelOutcome::RetrySerial { prefix, remaining } = outcome else {
@@ -5686,7 +6655,7 @@ mod tests {
 
         assert_eq!(prefix.apply, ApplyStats::default());
         assert_eq!(remaining, VecDeque::from([(PathBuf::new(), 0)]));
-        assert!(deltas.is_empty());
+        assert!(commits.is_empty());
         assert_eq!(index_fingerprint(&index), before);
 
         let serial = ScanConfig { threads: Some(1), ..config };
@@ -5748,17 +6717,25 @@ mod tests {
         let (index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
         let handle = crate::IndexHandle::new(index);
         let before_clock = handle.clock().expect("clock");
-        let mut deltas = Vec::new();
+        let mut commits = Vec::new();
 
-        let report = reconcile_handle(&handle, &ScanConfig::default(), &mut |delta| {
-            deltas.push(delta.clone());
+        let report = reconcile_handle(&handle, &ScanConfig::default(), &mut |commit| {
+            commits.push(commit.clone());
         })
         .expect("reconcile");
 
         assert!(report.is_complete());
         assert_eq!(report.apply.unchanged, 5, "3 files + 2 dirs all already known");
-        assert!(deltas.is_empty());
-        assert_eq!(handle.clock().expect("clock"), before_clock);
+        assert_eq!(commits.len(), 2);
+        assert!(commits.iter().all(|commit| commit.changes.is_empty()));
+        assert_eq!(
+            handle.clock().expect("clock"),
+            crate::Clock(before_clock.0 + 2),
+            "start and finish are state commits"
+        );
+        let commits = handle.since(before_clock).expect("state commits").commits;
+        assert_eq!(commits.len(), 2);
+        assert!(commits.iter().all(|commit| commit.changes.is_empty()));
     }
 
     #[test]
@@ -5830,11 +6807,7 @@ mod tests {
         assert!(index.lookup(Path::new("src/added.rs")).is_some());
         assert_eq!(index.freshness_at(Path::new("src")), crate::Freshness::Fresh);
         assert!(index.take_pending_invalidations().is_empty());
-        assert!(
-            applied
-                .iter()
-                .any(|delta| { delta.ops.iter().any(|op| op.path() == Path::new("src/added.rs")) })
-        );
+        assert!(applied.iter().any(|commit| commit_touches(commit, Path::new("src/added.rs"))));
     }
 
     #[test]
@@ -5846,8 +6819,8 @@ mod tests {
         write_file(&dir.path().join("added.md"), b"new");
 
         let mut observed_after_apply = false;
-        reconcile_handle(&handle, &ScanConfig::default(), &mut |delta| {
-            if delta.ops.iter().any(|op| op.path() == Path::new("added.md")) {
+        reconcile_handle(&handle, &ScanConfig::default(), &mut |commit| {
+            if commit_touches(commit, Path::new("added.md")) {
                 observed_after_apply =
                     reader.kind(Path::new("added.md")).expect("query index").is_some();
             }
@@ -5866,8 +6839,8 @@ mod tests {
 
         let invalidator = handle.clone();
         let mut saw_reconciling = false;
-        reconcile_handle(&handle, &ScanConfig::default(), &mut |delta| {
-            if delta.ops.iter().any(|op| op.path() == Path::new("added.md")) {
+        reconcile_handle(&handle, &ScanConfig::default(), &mut |commit| {
+            if commit_touches(commit, Path::new("added.md")) {
                 saw_reconciling =
                     invalidator.freshness().expect("query") == crate::Freshness::Reconciling;
                 invalidator

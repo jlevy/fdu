@@ -1,6 +1,6 @@
 //! Persisting an index to disk and reading it back.
 //!
-//! # Status: format v2 is a bounded bootstrap format
+//! # Status: format v3 is a bounded bootstrap format
 //!
 //! This module implements a flat, uncompressed writer and a bounded streaming reader.
 //! It exists so the cache *lifecycle* — semantic-scope invalidation, atomic replacement,
@@ -34,7 +34,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::engine_contract::{
-    Attrs, EntryKind, Error, Freshness, Observation, Op, Result, ScanScope, Source,
+    Attrs, Coverage, EntryKind, Error, Freshness, Observation, Op, Result, ScanScope, Source,
 };
 use crate::index::{EntryId, Index, IndexHandle};
 
@@ -57,7 +57,7 @@ const CRC32C_TABLES: [[u32; 256]; 8] = make_crc32c_tables();
 
 /// On-disk format version. Bump on any layout change; old snapshots are then discarded
 /// rather than misread.
-const FORMAT_VERSION: u32 = 2;
+const FORMAT_VERSION: u32 = 3;
 
 /// Version of the rules that decide which bucket an entry's bytes are tallied under.
 ///
@@ -93,13 +93,15 @@ const SCOPE_FOLLOW_SYMLINKS: u8 = 1 << 0;
 
 /// Scope flag for staying on the root filesystem.
 const SCOPE_ONE_FILESYSTEM: u8 = 1 << 1;
+/// Scope flag for excluding native special objects.
+const SCOPE_EXCLUDE_SPECIAL: u8 = 1 << 2;
 
 /// All scope bits understood by this format version.
-const SCOPE_KNOWN_FLAGS: u8 = SCOPE_FOLLOW_SYMLINKS | SCOPE_ONE_FILESYSTEM;
+const SCOPE_KNOWN_FLAGS: u8 = SCOPE_FOLLOW_SYMLINKS | SCOPE_ONE_FILESYSTEM | SCOPE_EXCLUDE_SPECIAL;
 
 /// Encoded byte width of the fixed scan-scope header.
 #[cfg(test)]
-const SERIALIZED_SCOPE_BYTES: usize = 8 + 1 + 8 * 3;
+const SERIALIZED_SCOPE_BYTES: usize = 8 + 1 + 8 * 4;
 
 /// Smallest possible on-disk record: parent slot, kind, name length, and six 8-byte
 /// attribute fields, with a zero-length name. Used to sanity-check a declared entry
@@ -184,9 +186,9 @@ pub fn engine_fingerprint() -> u64 {
 
 /// Write `index` to `path`, replacing any existing snapshot atomically.
 pub fn save(index: &Index, path: &Path) -> Result<()> {
-    if index.freshness() != Freshness::Fresh {
+    if index.freshness() != Freshness::Fresh || index.state().coverage != Coverage::Complete {
         return Err(Error::Snapshot(
-            "refusing to persist an index that is stale, reconciling, or partial".into(),
+            "refusing to persist an index that is stale, reconciling, or incomplete".into(),
         ));
     }
     let mut buf: Vec<u8> = Vec::new();
@@ -238,6 +240,14 @@ pub fn save(index: &Index, path: &Path) -> Result<()> {
         buf.extend_from_slice(&attrs.inode.to_le_bytes());
         buf.extend_from_slice(&attrs.dev.to_le_bytes());
     }
+    let controls: Vec<_> = index.controls().sources().collect();
+    let control_count = u32::try_from(controls.len())
+        .map_err(|_| Error::Snapshot("control table exceeds u32 capacity".into()))?;
+    buf.extend_from_slice(&control_count.to_le_bytes());
+    for (path, source) in controls {
+        put_os_str(&mut buf, path.as_os_str())?;
+        put_control_bytes(&mut buf, source)?;
+    }
     let checksum = crc32c(&buf);
     buf.extend_from_slice(&checksum.to_le_bytes());
     buf.extend_from_slice(TRAILER);
@@ -261,7 +271,31 @@ pub fn load(path: &Path) -> Result<Option<Index>> {
     load_with_size_limit(path, MAX_SNAPSHOT_BYTES)
 }
 
+/// Load a snapshot under the registry that will classify and analyze its entries.
+///
+/// A snapshot made under different rules is a clean cache miss. The snapshot carries
+/// only their derived identity, so the caller must supply the matching registry rather
+/// than allowing the loader to attach unrelated default rules.
+pub fn load_with_types(
+    path: &Path,
+    types: std::sync::Arc<crate::classify::TypeRegistry>,
+) -> Result<Option<Index>> {
+    load_with_types_and_size_limit(path, MAX_SNAPSHOT_BYTES, types)
+}
+
 fn load_with_size_limit(path: &Path, max_snapshot_bytes: u64) -> Result<Option<Index>> {
+    load_with_types_and_size_limit(
+        path,
+        max_snapshot_bytes,
+        crate::classify::TypeRegistry::compiled_shared(),
+    )
+}
+
+fn load_with_types_and_size_limit(
+    path: &Path,
+    max_snapshot_bytes: u64,
+    types: std::sync::Arc<crate::classify::TypeRegistry>,
+) -> Result<Option<Index>> {
     let mut file = match fs::File::open(path) {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -316,7 +350,7 @@ fn load_with_size_limit(path: &Path, max_snapshot_bytes: u64) -> Result<Option<I
         .and_then(|since| i64::try_from(since.as_nanos()).ok())
         .unwrap_or(0);
     let mut reader = Crc32cReader::new(BufReader::new(file.take(payload_len)));
-    let outcome = parse_stream(&mut reader, payload_len, captured_at_ns);
+    let outcome = parse_stream(&mut reader, payload_len, captured_at_ns, types);
     match outcome {
         Ok(index) => {
             // A successful parse consumed every payload byte (the trailing-byte check
@@ -493,6 +527,7 @@ fn parse_stream(
     reader: &mut impl Read,
     payload_len: u64,
     captured_at_ns: i64,
+    types: std::sync::Arc<crate::classify::TypeRegistry>,
 ) -> ParseResult<Index> {
     if read_array::<_, 8>(reader)? != *MAGIC {
         return Err(ParseError::Invalid);
@@ -504,6 +539,9 @@ fn parse_stream(
         return Err(ParseError::Invalid);
     }
     let scope = read_scope(reader)?;
+    if scope.type_rules_fingerprint != types.fingerprint() {
+        return Err(ParseError::Invalid);
+    }
     let root_path = PathBuf::from(read_os_string(reader)?);
     let count = read_u64(reader)?;
     if count == 0 || count > MAX_SNAPSHOT_ENTRIES {
@@ -516,7 +554,7 @@ fn parse_stream(
         return Err(ParseError::Invalid);
     }
 
-    let mut index = Index::new_with_scope(&root_path, scope);
+    let mut index = Index::new_with_scope_and_types(&root_path, scope, types);
     // Everything this loader inserts describes the tree as the snapshot found it, not
     // as this process has seen it. Stamping the entries `Cached` is what lets a
     // consumer paint them immediately and label them honestly; without it a loaded
@@ -568,6 +606,22 @@ fn parse_stream(
         let id = index.insert_loaded_child(parent, name, kind, attrs).ok_or(ParseError::Invalid)?;
         ids.push(id);
     }
+
+    let control_count = read_u32(reader)?;
+    if usize::try_from(control_count)
+        .map_err(|_| ParseError::Invalid)?
+        .saturating_mul(crate::control::CONTROL_SOURCE_OVERHEAD)
+        > crate::control::MAX_CONTROL_TABLE_BYTES
+    {
+        return Err(ParseError::Invalid);
+    }
+    let mut controls = crate::control::ControlTable::default();
+    for _ in 0..control_count {
+        let path = PathBuf::from(read_os_string(reader)?);
+        let source = read_control_bytes(reader)?;
+        controls.upsert(&path, source).map_err(|_| ParseError::Invalid)?;
+    }
+    index.install_controls(controls).map_err(|_| ParseError::Invalid)?;
 
     let mut extra = [0u8; 1];
     if reader.read(&mut extra).map_err(ParseError::Io)? != 0 {
@@ -628,6 +682,21 @@ fn read_bytes(reader: &mut impl Read) -> ParseResult<Vec<u8>> {
     }
 }
 
+fn read_control_bytes(reader: &mut impl Read) -> ParseResult<Vec<u8>> {
+    let len = read_u32(reader)?;
+    if usize::try_from(len).map_err(|_| ParseError::Invalid)?
+        >= crate::control::MAX_CONTROL_TABLE_BYTES
+    {
+        return Err(ParseError::Invalid);
+    }
+    let mut bytes = vec![0u8; usize::try_from(len).map_err(|_| ParseError::Invalid)?];
+    match reader.read_exact(&mut bytes) {
+        Ok(()) => Ok(bytes),
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Err(ParseError::Invalid),
+        Err(error) => Err(ParseError::Io(error)),
+    }
+}
+
 #[cfg(unix)]
 fn read_os_string(reader: &mut impl Read) -> ParseResult<OsString> {
     Ok(os_string_from_bytes(&read_bytes(reader)?))
@@ -644,6 +713,17 @@ fn put_bytes(buf: &mut Vec<u8>, bytes: &[u8]) -> Result<()> {
     if len > MAX_PATH_BYTES {
         return Err(Error::Snapshot("path exceeds snapshot limit".into()));
     }
+    buf.extend_from_slice(&len.to_le_bytes());
+    buf.extend_from_slice(bytes);
+    Ok(())
+}
+
+fn put_control_bytes(buf: &mut Vec<u8>, bytes: &[u8]) -> Result<()> {
+    if bytes.len() >= crate::control::MAX_CONTROL_TABLE_BYTES {
+        return Err(Error::Snapshot("control source exceeds snapshot limit".into()));
+    }
+    let len = u32::try_from(bytes.len())
+        .map_err(|_| Error::Snapshot("control source exceeds u32 capacity".into()))?;
     buf.extend_from_slice(&len.to_le_bytes());
     buf.extend_from_slice(bytes);
     Ok(())
@@ -666,7 +746,11 @@ fn put_scope(buf: &mut Vec<u8>, scope: ScanScope) -> Result<()> {
     if scope.one_filesystem {
         flags |= SCOPE_ONE_FILESYSTEM;
     }
+    if scope.exclude_special {
+        flags |= SCOPE_EXCLUDE_SPECIAL;
+    }
     buf.push(flags);
+    buf.extend_from_slice(&scope.hidden_fingerprint.to_le_bytes());
     buf.extend_from_slice(&scope.ignore_rules_fingerprint.to_le_bytes());
     buf.extend_from_slice(&scope.type_rules_fingerprint.to_le_bytes());
     buf.extend_from_slice(&scope.reducers_fingerprint.to_le_bytes());
@@ -688,6 +772,8 @@ fn read_scope(reader: &mut impl Read) -> ParseResult<ScanScope> {
         max_depth,
         follow_symlinks: flags & SCOPE_FOLLOW_SYMLINKS != 0,
         one_filesystem: flags & SCOPE_ONE_FILESYSTEM != 0,
+        hidden_fingerprint: read_u64(reader)?,
+        exclude_special: flags & SCOPE_EXCLUDE_SPECIAL != 0,
         ignore_rules_fingerprint: read_u64(reader)?,
         type_rules_fingerprint: read_u64(reader)?,
         reducers_fingerprint: read_u64(reader)?,
@@ -952,6 +1038,11 @@ mod tests {
                 path: PathBuf::from("src/main.rs"),
                 kind: EntryKind::File,
                 attrs: attrs(100, 10),
+            },
+            Op::Upsert {
+                path: PathBuf::from("src/deep"),
+                kind: EntryKind::Dir,
+                attrs: attrs(0, 2),
             },
             Op::Upsert {
                 path: PathBuf::from("src/deep/nested.rs"),
@@ -1224,6 +1315,8 @@ mod tests {
         assert_eq!(restored_total.allocated, original_total.allocated);
         assert_eq!(restored_total.newest_mtime_ns, original_total.newest_mtime_ns);
         assert_eq!(restored_total.by_ext, original_total.by_ext);
+        assert!(!original.serving_indexes_enabled());
+        assert!(!restored.serving_indexes_enabled());
         assert_eq!(restored.total().files, 3);
         assert_eq!(restored.total().dirs, 2);
         assert_eq!(restored.total().bytes, 157);
@@ -1235,6 +1328,93 @@ mod tests {
             restored.attrs(Path::new("src/deep/nested.rs")),
             original.attrs(Path::new("src/deep/nested.rs"))
         );
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn round_trip_preserves_exact_controls_and_fixed_partitions() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("controls.fdu");
+        let mut original = Index::new("/some/root");
+        original.apply_ok(&Observation::new(vec![
+            Op::Upsert {
+                path: PathBuf::from(".gitignore"),
+                kind: EntryKind::File,
+                attrs: attrs(6, 1),
+            },
+            Op::Upsert {
+                path: PathBuf::from("debug.log"),
+                kind: EntryKind::File,
+                attrs: attrs(10, 2),
+            },
+            Op::Upsert {
+                path: PathBuf::from("keep.rs"),
+                kind: EntryKind::File,
+                attrs: attrs(20, 3),
+            },
+            Op::ControlUpsert { path: PathBuf::from(".gitignore"), source: b"*.log\n".to_vec() },
+        ]));
+
+        save(&original, &path).expect("save");
+        let restored = load(&path).expect("load").expect("snapshot present");
+
+        assert!(restored.controls().source_is(Path::new(".gitignore"), b"*.log\n"));
+        assert_eq!(restored.controls().source_bytes(), 6);
+        assert_eq!(restored.is_ignored(Path::new("debug.log")), Some(true));
+        assert_eq!(restored.is_ignored(Path::new("keep.rs")), Some(false));
+        assert_eq!(restored.partition_total(), original.partition_total());
+        assert_eq!(restored.partition_total().all.files, 3);
+        assert_eq!(restored.partition_total().unignored.files, 2);
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn removing_the_last_control_before_save_round_trips_an_empty_table() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("no-controls.fdu");
+        let mut original = Index::new("/some/root");
+        original.apply_ok(&Observation::new(vec![
+            Op::Upsert {
+                path: PathBuf::from(".gitignore"),
+                kind: EntryKind::File,
+                attrs: attrs(6, 1),
+            },
+            Op::Upsert {
+                path: PathBuf::from("debug.log"),
+                kind: EntryKind::File,
+                attrs: attrs(10, 2),
+            },
+            Op::ControlUpsert { path: PathBuf::from(".gitignore"), source: b"*.log\n".to_vec() },
+        ]));
+        original
+            .apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from(".gitignore") }]));
+
+        save(&original, &path).expect("save");
+        let restored = load(&path).expect("load").expect("snapshot present");
+
+        assert!(restored.controls().is_empty());
+        assert_eq!(restored.is_ignored(Path::new("debug.log")), Some(false));
+        assert_eq!(restored.partition_total().all, restored.partition_total().unignored);
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn a_control_table_at_its_shared_bound_round_trips() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("bounded-controls.fdu");
+        let mut original = Index::new("/some/root");
+        let source = crate::control::source_at_test_limit();
+        original.apply_ok(&Observation::new(vec![Op::ControlUpsert {
+            path: PathBuf::from(".gitignore"),
+            source: source.clone(),
+        }]));
+        assert_eq!(original.controls().retained_cost(), crate::control::MAX_CONTROL_TABLE_BYTES);
+
+        save(&original, &path).expect("save at bound");
+        let restored = load(&path).expect("load").expect("snapshot present");
+
+        assert_eq!(restored.controls().retained_cost(), original.controls().retained_cost());
+        assert!(restored.controls().source_is(Path::new(".gitignore"), &source));
     }
 
     #[test]
@@ -1795,8 +1975,10 @@ mod tests {
             max_depth: Some(7),
             follow_symlinks: false,
             one_filesystem: true,
+            hidden_fingerprint: 5,
+            exclude_special: true,
             ignore_rules_fingerprint: 11,
-            type_rules_fingerprint: 22,
+            type_rules_fingerprint: crate::classify::type_rule_fingerprint(),
             reducers_fingerprint: 33,
         };
         let index = Index::new_with_scope("/some/root", scope);
@@ -1831,5 +2013,6 @@ mod tests {
         assert_eq!(restored.total().bytes, 30);
         assert!(restored.lookup(&first).is_some());
         assert!(restored.lookup(&second).is_some());
+        assert!(!restored.serving_indexes_enabled());
     }
 }

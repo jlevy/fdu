@@ -41,7 +41,7 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 20 sessions differ, and every one of them has a named cause.
+# 21 sessions differ, and every one of them has a named cause.
 #
 #  13  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
@@ -65,7 +65,7 @@
 #      CLI user got help. A unit test pins the substitution, because doing it sequentially
 #      produced `--scan---depth` the first time (the fdu-7j6z bug, again).
 #
-#   3  Output carrying walk telemetry the report schema excludes  [run-telemetry]
+#   4  Output carrying walk telemetry the report schema excludes  [run-telemetry]
 #      A note quoting how many bytes analysis read, or the performance footer itself.
 #      Both are telemetry about the run rather than facts about the report, and the
 #      envelope deliberately carries none, so a Report cannot reproduce them. The omission
@@ -156,7 +156,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 @@ -1,1 +1,1 @@
 -fdu: --view documents requires content analysis: add --analyze lines, code, words, or all; views never enable content analysis implicitly
 +fdu: view documents requires content analysis: add analyze lines, code, words, or all; views never enable content analysis implicitly
-  ✓ Human Summaries Separate Code and Documents
+  ✗ Human Summaries Separate Code and Documents
+@@ -1,2 +1,1 @@
+        0 B  0 files, 0 directories
+-note: --analyze lines read 0 B; no selected view displays content metrics — try --view families, languages, or all
   ✓ Human Summaries Separate Code and Documents
   ✓ Human Summaries Separate Code and Documents
   ✓ JSON Exposes Provenance, Exact Shares, Metrics, and Coverage
@@ -177,10 +180,6 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 @@ -1,2 +1,1 @@
       256 B  7 files, 4 directories
 -note: --analyze lines read 0 B; no selected view displays content metrics — try --view families, languages, or all
-  ✓ Document Metrics Normalize Prose Without Losing Raw Evidence
-  ✓ Document Metrics Normalize Prose Without Losing Raw Evidence
-  ✓ Document Metrics Normalize Prose Without Losing Raw Evidence
-  ✓ Document Metrics Normalize Prose Without Losing Raw Evidence
   ✓ Common-Language SLOC Is a Complete Partition
   ✓ The Analyzer Set Chooses the View
   ✓ The Analyzer Set Chooses the View

@@ -81,8 +81,12 @@ jobs:
         run: node --test scripts/check-rust-module-names.test.mjs
       - name: Check Rust module filenames
         run: node scripts/check-rust-module-names.mjs
+      - name: Check every inventory producer routes through shared admission
+        run: npm run check:admission-sites
       - name: Check the golden corpus never resolves fdu through PATH
         run: node scripts/check-golden-invocations.mjs
+      - name: Check golden sessions expose complete product behavior
+        run: npm run check:golden-observability
       - name: Check committed test data names no machine
         run: node scripts/check-portability.mjs
       # The watch tests exercise a different notify backend on each of these runners —
@@ -118,8 +122,10 @@ jobs:
       # Library consumers take `default-features = false`. Without this job, that path
       # would only ever be compiled by them.
       - run: cargo test --locked -p fdu-core --no-default-features
-      # The watch layer is strictly additive and must not inherit CLI-only features.
+      # Optional layers are additive alone and together; neither may inherit CLI-only features.
+      - run: cargo test --locked -p fdu-core --no-default-features --features gitignore
       - run: cargo test --locked -p fdu-core --no-default-features --features watch
+      - run: cargo test --locked -p fdu-core --no-default-features --features watch,gitignore
 
   msrv:
     name: MSRV (1.85)

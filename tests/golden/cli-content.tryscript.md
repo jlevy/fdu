@@ -65,8 +65,13 @@ literals, or named signatures.
 Origin flags are independent of the detected type.
 
 ```console
-$ node -e "const {execFileSync}=require('node:child_process'); const r=JSON.parse(execFileSync(process.env.FDU,['--cache','off','--analyze','code','--view','types','--format','json','--sort','count','--limit','all','detection-project'],{encoding:'utf8'})); const m=r.reports[0].metrics; console.log(JSON.stringify({complete:r.complete,total:m.total.detection,rows:m.rows.map(x=>({id:x.id,coverage:x.coverage,detection:x.detection}))}));"
-{"complete":true,"total":{"sources":{"extension":1,"modeline":1,"ambiguous_content":1,"format_signature":3},"confidence":{"certain":1,"high":5},"flags":{"generated":1,"vendored":1,"documentation":1}},"rows":[{"id":"rust","coverage":{"analyzed":2},"detection":{"sources":{"extension":1,"modeline":1},"confidence":{"certain":1,"high":1},"flags":{"generated":0,"vendored":0,"documentation":0}}},{"id":"cpp","coverage":{"analyzed":1},"detection":{"sources":{"ambiguous_content":1},"confidence":{"high":1},"flags":{"generated":1,"vendored":1,"documentation":1}}},{"id":"manpage","coverage":{"analyzed":1},"detection":{"sources":{"format_signature":1},"confidence":{"high":1},"flags":{"generated":0,"vendored":0,"documentation":0}}},{"id":"pdf","coverage":{"binary":1},"detection":{"sources":{"format_signature":1},"confidence":{"high":1},"flags":{"generated":0,"vendored":0,"documentation":0}}},{"id":"xml","coverage":{"analyzed":1},"detection":{"sources":{"format_signature":1},"confidence":{"high":1},"flags":{"generated":0,"vendored":0,"documentation":0}}}]}
+$ fdu --cache off --analyze code --view types --sort count --limit all --size apparent detection-project
+      65 B   26.4%  rust               2 files, 4 lines (3 code, 1 comment, 0 blank), 12 words (0.0 pages)
+      73 B   29.7%  cpp                1 file, 4 lines (3 code, 1 comment, 0 blank), 14 words (0.0 pages), 1 generated, 1 vendored, 1 documentation
+      36 B   14.6%  manpage            1 file, 3 lines (3 nonblank, 0 blank), 9 words (0.0 pages)
+      24 B    9.8%  pdf                1 file, 1 binary
+      48 B   19.5%  xml                1 file, 2 lines (2 nonblank, 0 blank), 3 words (0.0 pages)
+Performance: walked 6 files / 246 B; content read 246 B at [BYTE_RATE]; analysis 6 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -95,8 +100,10 @@ $ fdu --cache off --view documents content-project
 An explicit analysis request remains visible even when there are no file records.
 
 ```console
-$ node -e "const {execFileSync}=require('node:child_process'); const r=JSON.parse(execFileSync(process.env.FDU,['--cache','off','--analyze','lines','--view','summary','--format','json','empty-project'],{encoding:'utf8'})); console.log(JSON.stringify({schema:r.schema,profile:r.analysis.profile,files:r.reports[0].summary.files}));"
-{"schema":"fdu.report/5","files":0}
+$ fdu --cache off --analyze lines --view summary empty-project
+       0 B  0 files, 0 directories
+Performance: walked 0 files / 0 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+note: --analyze lines read 0 B; no selected view displays content metrics — try --view families, languages, or all
 ? 0
 ```
 
@@ -137,7 +144,7 @@ $ fdu --cache off --analyze lines --view types,families --format json --size app
   "freshness": "fresh",
   "complete": true,
   "errors": [],
-  "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 10477590033123394727, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]},
+  "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]},
   "reports": [
     {
       "view": "types",
@@ -168,7 +175,7 @@ $ fdu --cache off --analyze lines --view types,families --format json --size app
 
 ```console
 $ fdu --cache off --analyze lines --view documents --format jsonl --size apparent --limit 1 content-project
-{"schema": "fdu.report/5", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": [], "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 10477590033123394727, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
+{"schema": "fdu.report/5", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": [], "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
 {"view": "documents", "metrics": {"group": "type", "share_metric": "document_words", "words_per_page": 250, "bound": {"shown": 1, "total": 2}, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "analyzed_files": 2, "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 11, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 11}, "coverage": {"analyzed": 2, "binary": 1}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}, "pages": {"words": 11, "words_per_page": 250}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "analyzed_files": 1, "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 7, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 7}, "coverage": {"analyzed": 1}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 7, "words_per_page": 250}}]}}
 ? 0
 ```
@@ -189,7 +196,7 @@ errors: []
 analysis:
   analyze:
     - lines
-  type_rules_fingerprint: 10477590033123394727
+  type_rules_fingerprint: 12438660251313372799
   options_fingerprint: 12638152016183539244
   analyzers:
     - id: content-basic-v1
@@ -314,7 +321,7 @@ truncate a file or exclude it because of size.
 
 ```console
 $ fdu --cache off --analyze lines --view types --format jsonl --size apparent content-project
-{"schema": "fdu.report/5", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": [], "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 10477590033123394727, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
+{"schema": "fdu.report/5", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": [], "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
 {"view": "types", "metrics": {"group": "type", "share_metric": "apparent_bytes", "words_per_page": 250, "bound": null, "total": {"id": "total", "family": "unknown", "files": 7, "bytes": 256, "allocated": [ALLOCATED], "analyzed_files": 5, "share": {"numerator": 256, "denominator": 256}, "metrics": {"physical_lines": 18, "blank_lines": 5, "nonblank_lines": 13, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 23, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 23}, "coverage": {"analyzed": 5, "binary": 2}, "detection": {"sources": {"extension": 7}, "confidence": {"certain": 7}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}, "pages": {"words": 23, "words_per_page": 250}}, "rows": [{"id": "image", "family": "binary", "files": 1, "bytes": 80, "allocated": [ALLOCATED], "analyzed_files": 0, "share": {"numerator": 80, "denominator": 256}, "metrics": {"physical_lines": 0, "blank_lines": 0, "nonblank_lines": 0, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 0, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 0}, "coverage": {"binary": 1}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}, "pages": {"words": 0, "words_per_page": 250}}, {"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "analyzed_files": 1, "share": {"numerator": 42, "denominator": 256}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 7, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 7}, "coverage": {"analyzed": 1}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 7, "words_per_page": 250}}, {"id": "python", "family": "code", "files": 1, "bytes": 39, "allocated": [ALLOCATED], "analyzed_files": 1, "share": {"numerator": 39, "denominator": 256}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 3, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 3}, "coverage": {"analyzed": 1}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}, "pages": {"words": 3, "words_per_page": 250}}, {"id": "rust", "family": "code", "files": 1, "bytes": 38, "allocated": [ALLOCATED], "analyzed_files": 1, "share": {"numerator": 38, "denominator": 256}, "metrics": {"physical_lines": 4, "blank_lines": 1, "nonblank_lines": 3, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 5, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 5}, "coverage": {"analyzed": 1}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}, "pages": {"words": 5, "words_per_page": 250}}, {"id": "text", "family": "prose", "files": 2, "bytes": 35, "allocated": [ALLOCATED], "analyzed_files": 1, "share": {"numerator": 35, "denominator": 256}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 4, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 4}, "coverage": {"analyzed": 1, "binary": 1}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 4, "words_per_page": 250}}, {"id": "json", "family": "data", "files": 1, "bytes": 22, "allocated": [ALLOCATED], "analyzed_files": 1, "share": {"numerator": 22, "denominator": 256}, "metrics": {"physical_lines": 3, "blank_lines": 0, "nonblank_lines": 3, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 4, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 4}, "coverage": {"analyzed": 1}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}, "pages": {"words": 4, "words_per_page": 250}}]}}
 ? 0
 ```
@@ -324,7 +331,7 @@ It does not make the operation partial.
 
 ```console
 $ fdu --cache off --analyze code --view languages --format jsonl --size apparent unsupported-project
-{"schema": "fdu.report/5", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": [], "analysis": {"analyze": ["lines", "code"], "type_rules_fingerprint": 10477590033123394727, "options_fingerprint": 12638154215206795666, "analyzers": [{"id": "content-basic-v1", "version": 1}, {"id": "code-sloc-v1", "version": 1}]}}
+{"schema": "fdu.report/5", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": [], "analysis": {"analyze": ["lines", "code"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638154215206795666, "analyzers": [{"id": "content-basic-v1", "version": 1}, {"id": "code-sloc-v1", "version": 1}]}}
 {"view": "languages", "metrics": {"group": "type", "share_metric": "code_lines", "words_per_page": 250, "bound": null, "total": {"id": "total", "family": "unknown", "files": 1, "bytes": 15, "allocated": [ALLOCATED], "analyzed_files": 0, "share": {"numerator": 0, "denominator": 0}, "metrics": {"physical_lines": 0, "blank_lines": 0, "nonblank_lines": 0, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 0, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 0}, "coverage": {"unsupported": 1}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}, "pages": {"words": 0, "words_per_page": 250}}, "rows": [{"id": "haskell", "family": "code", "files": 1, "bytes": 15, "allocated": [ALLOCATED], "analyzed_files": 0, "share": {"numerator": 0, "denominator": 0}, "metrics": {"physical_lines": 0, "blank_lines": 0, "nonblank_lines": 0, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 0, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 0}, "coverage": {"unsupported": 1}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}, "pages": {"words": 0, "words_per_page": 250}}]}}
 ? 0
 ```
@@ -341,14 +348,16 @@ Cold and cache-only runs both preserve that evidence without a warning, an error
 partial exit status.
 
 ```console
-$ node -e "const {spawnSync}=require('node:child_process'); const p=spawnSync(process.env.FDU,['--analyze','lines','--view','types','--format','json','--size','apparent','cached-partial-project'],{encoding:'utf8'}); const r=JSON.parse(p.stdout); console.log(JSON.stringify({status:p.status,source:r.source,complete:r.complete,errors:r.errors,coverage:r.reports[0].metrics.total.coverage}));"
-{"status":0,"source":"cold_scan","complete":true,"errors":[],"coverage":{"invalid_utf8":1}}
+$ fdu --analyze lines --view types --size apparent cached-partial-project
+       6 B  100.0%  text               1 file, 1 invalid UTF-8
+Performance: walked 1 file / 6 B; content read 6 B at [BYTE_RATE]; analysis 1 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
 ```console
-$ node -e "const {spawnSync}=require('node:child_process'); const p=spawnSync(process.env.FDU,['--cache','only','--analyze','lines','--view','types','--format','json','--size','apparent','cached-partial-project'],{encoding:'utf8'}); const r=JSON.parse(p.stdout); console.log(JSON.stringify({status:p.status,source:r.source,complete:r.complete,errors:r.errors,coverage:r.reports[0].metrics.total.coverage}));"
-{"status":0,"source":"cache_only","complete":true,"errors":[],"coverage":{"invalid_utf8":1}}
+$ fdu --cache only --analyze lines --view types --size apparent cached-partial-project
+       6 B  100.0%  text               1 file, 1 invalid UTF-8
+Performance: walked 0 files / 0 B; content read 0 B; analysis 0 fresh, 1 cached / 6 B; cache only; total [PERF_TIME]
 ? 0
 ```
 
@@ -356,7 +365,7 @@ $ node -e "const {spawnSync}=require('node:child_process'); const p=spawnSync(pr
 
 ```console
 $ fdu --analyze lines --view documents --format jsonl --size apparent content-project
-{"schema": "fdu.report/5", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": [], "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 10477590033123394727, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
+{"schema": "fdu.report/5", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": [], "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
 {"view": "documents", "metrics": {"group": "type", "share_metric": "document_words", "words_per_page": 250, "bound": null, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "analyzed_files": 2, "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 11, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 11}, "coverage": {"analyzed": 2, "binary": 1}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}, "pages": {"words": 11, "words_per_page": 250}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "analyzed_files": 1, "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 7, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 7}, "coverage": {"analyzed": 1}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 7, "words_per_page": 250}}, {"id": "text", "family": "prose", "files": 2, "bytes": 35, "allocated": [ALLOCATED], "analyzed_files": 1, "share": {"numerator": 4, "denominator": 11}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 4, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 4}, "coverage": {"analyzed": 1, "binary": 1}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 4, "words_per_page": 250}}]}}
 ? 0
 ```
@@ -374,7 +383,7 @@ note: --analyze lines read 0 B; no selected view displays content metrics — tr
 
 ```console
 $ fdu --cache only --analyze lines --view documents --format jsonl --size apparent content-project
-{"schema": "fdu.report/5", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cache_only", "freshness": "stale", "complete": true, "errors": [], "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 10477590033123394727, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
+{"schema": "fdu.report/5", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cache_only", "freshness": "stale", "complete": true, "errors": [], "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
 {"view": "documents", "metrics": {"group": "type", "share_metric": "document_words", "words_per_page": 250, "bound": null, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "analyzed_files": 2, "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 11, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 11}, "coverage": {"analyzed": 2, "binary": 1}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}, "pages": {"words": 11, "words_per_page": 250}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "analyzed_files": 1, "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 7, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 7}, "coverage": {"analyzed": 1}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 7, "words_per_page": 250}}, {"id": "text", "family": "prose", "files": 2, "bytes": 35, "allocated": [ALLOCATED], "analyzed_files": 1, "share": {"numerator": 4, "denominator": 11}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 4, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 4}, "coverage": {"analyzed": 1, "binary": 1}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 4, "words_per_page": 250}}]}}
 ? 0
 ```
@@ -389,40 +398,10 @@ note: --analyze lines read 0 B; no selected view displays content metrics — tr
 ? 0
 ```
 
-## Document Metrics Normalize Prose Without Losing Raw Evidence
-
-The compact projections below pin the semantic fields while leaving filesystem
-allocation out of the contract.
-
-```console
-$ node -e "const {execFileSync}=require('node:child_process'); const r=JSON.parse(execFileSync(process.env.FDU,['--cache','off','--analyze','words','--view','documents','--format','json','--limit','all','text-project'],{encoding:'utf8'})); const m=r.reports[0].metrics; console.log(JSON.stringify({analyzers:r.analysis.analyzers,share_metric:m.share_metric,words_per_page:m.words_per_page,files:m.total.files,metrics:m.total.metrics,pages:m.total.pages}));"
-{"analyzers":[{"id":"content-basic-v1","version":1},{"id":"text-logical-v1","version":1},{"id":"markdown-prose-v1","version":1}],"share_metric":"document_words","words_per_page":250,"files":6,"metrics":{"physical_lines":8,"blank_lines":1,"nonblank_lines":7,"code_lines":0,"comment_lines":0,"code_blank_lines":0,"raw_words":26,"logical_words":40,"paragraphs":7,"visible_words":0,"visible_logical_words":0,"document_words":40},"pages":{"words":40,"words_per_page":250}}
-? 0
-```
-
-Two half-wide CJK files aggregate to one logical word before the single rounding step.
-
-```console
-$ node -e "const {execFileSync}=require('node:child_process'); const r=JSON.parse(execFileSync(process.env.FDU,['--cache','off','--analyze','words','--view','documents','--format','json','--limit','all','aggregate-project'],{encoding:'utf8'})); const m=r.reports[0].metrics; console.log(JSON.stringify({files:m.total.files,raw_words:m.total.metrics.raw_words,logical_words:m.total.metrics.logical_words,document_words:m.total.metrics.document_words,pages:m.total.pages}));"
-{"files":2,"raw_words":2,"logical_words":1,"document_words":1,"pages":{"words":1,"words_per_page":250}}
-? 0
-```
-
-Markdown keeps reader-visible labels and table cells while excluding destinations, code,
-frontmatter, footnotes, and hidden script text.
-Malformed markup remains bounded and deterministic.
-
-```console
-$ node -e "const {execFileSync}=require('node:child_process'); const r=JSON.parse(execFileSync(process.env.FDU,['--cache','off','--analyze','words','--view','documents','--format','json','--limit','all','markdown-project'],{encoding:'utf8'})); const m=r.reports[0].metrics; console.log(JSON.stringify({share_metric:m.share_metric,files:m.total.files,metrics:m.total.metrics,pages:m.total.pages}));"
-{"share_metric":"document_words","files":2,"metrics":{"physical_lines":27,"blank_lines":9,"nonblank_lines":18,"code_lines":0,"comment_lines":0,"code_blank_lines":0,"raw_words":56,"logical_words":70,"paragraphs":6,"visible_words":22,"visible_logical_words":25,"document_words":25},"pages":{"words":25,"words_per_page":250}}
-? 0
-```
-
-```console
-$ node -e "const {execFileSync}=require('node:child_process'); const args=['--analyze','words','--view','documents','--format','json','--limit','all','markdown-project']; const cold=JSON.parse(execFileSync(process.env.FDU,args,{encoding:'utf8'})); const hit=JSON.parse(execFileSync(process.env.FDU,['--cache','only',...args.slice(0)],{encoding:'utf8'})); const cm=cold.reports[0].metrics.total; const hm=hit.reports[0].metrics.total; console.log(JSON.stringify({cold:cold.source,hit:hit.source,cold_metrics:cm.metrics,hit_metrics:hm.metrics,equal:JSON.stringify(cm.metrics)===JSON.stringify(hm.metrics)}));"
-{"cold":"cold_scan","hit":"cache_only","cold_metrics":{"physical_lines":27,"blank_lines":9,"nonblank_lines":18,"code_lines":0,"comment_lines":0,"code_blank_lines":0,"raw_words":56,"logical_words":70,"paragraphs":6,"visible_words":22,"visible_logical_words":25,"document_words":25},"hit_metrics":{"physical_lines":27,"blank_lines":9,"nonblank_lines":18,"code_lines":0,"comment_lines":0,"code_blank_lines":0,"raw_words":56,"logical_words":70,"paragraphs":6,"visible_words":22,"visible_logical_words":25,"document_words":25},"equal":true}
-? 0
-```
+The complete human and machine reports above own the visible document behavior.
+Focused content-model, Markdown, aggregation, and sidecar round-trip tests own the
+relational invariants; a golden does not parse those reports back down to selected
+scalars.
 
 ## Common-Language SLOC Is a Complete Partition
 

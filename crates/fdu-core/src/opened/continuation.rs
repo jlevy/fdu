@@ -1,0 +1,283 @@
+//! Bounded handle-local page traversal state.
+
+use std::collections::{BTreeMap, VecDeque};
+use std::path::PathBuf;
+
+use crate::{ContinuationId, EngineVersion, Error, Result, SessionId};
+
+/// Maximum resumable page positions retained by one opened root.
+pub(super) const MAX_CONTINUATIONS: usize = 128;
+/// First nonzero handle-local continuation ordinal.
+const FIRST_CONTINUATION_ORDINAL: u64 = 1;
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub(super) enum ChildPartition {
+    Directories,
+    Nondirectories,
+}
+
+/// Where a breadth-first tree page stopped.
+///
+/// One frame, not a stack of them. Enumerating level *d* requires walking the directories
+/// of level *d-1* in order, which sounds like it needs a frame per level — but the
+/// ancestor chain of `parent` already *is* that stack, and it is derivable from the path
+/// by splitting it. Storing the path stores the whole position, and advancing to the next
+/// directory at this depth costs one child-map lookup per ancestor.
+///
+/// What must not be stored is the frontier: the set of directories one level up is
+/// unbounded in directory width, so it cannot fit a bounded record, and re-deriving it per
+/// page would make paging one wide level quadratic in the number of pages.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub(super) struct ChildPosition {
+    /// Native path of the directory whose children were being emitted.
+    pub(super) parent: PathBuf,
+    /// Levels between the requested root and `parent`; zero is the root itself.
+    pub(super) depth: u32,
+    pub(super) partition: ChildPartition,
+    /// First child name the resumed page should visit within `partition`.
+    ///
+    /// `None` resumes at the start of the partition. That is not the same as naming the
+    /// first child: a page can stop having just arrived at a parent none of whose
+    /// children are emitted yet, and there is no name to point at until one is read.
+    pub(super) name: Option<String>,
+    /// First directory one level below `depth`, noticed while this level was emitted.
+    ///
+    /// Descending used to search for it: ask every parent at this depth for a directory
+    /// child until one answers. That is a scan of the whole level, and on a level of
+    /// leaves — the shape of every last level — it scans everything to conclude there is
+    /// nothing below.
+    ///
+    /// The walk already passes every one of those parents while emitting, so the answer
+    /// is free if it is noticed in passing. The first directory *row* emitted at the next
+    /// level is that level's first directory, because level order there is grouped by
+    /// parent order here. `None` at the end of a level means there is no level below.
+    ///
+    /// It is carried in the cursor because a page can stop mid-level: without it, a
+    /// resumed page would notice only what follows where it resumed and take some later
+    /// directory for the first.
+    pub(super) next_level_first: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) enum ContinuationKind {
+    Tree {
+        path: PathBuf,
+        depth: crate::query::Bound,
+        include_ignored: bool,
+        next: ChildPosition,
+    },
+    Flat {
+        selection: Box<crate::query::EntrySelection>,
+        shape: crate::RowShape,
+        /// First complete portable path the resumed page should visit.
+        next: crate::PortablePath,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct ContinuationRecord {
+    pub(super) version: EngineVersion,
+    pub(super) kind: ContinuationKind,
+}
+
+#[derive(Debug)]
+pub(super) struct ContinuationTable {
+    next: u64,
+    records: BTreeMap<u64, ContinuationRecord>,
+    order: VecDeque<u64>,
+}
+
+impl Default for ContinuationTable {
+    fn default() -> Self {
+        Self { next: FIRST_CONTINUATION_ORDINAL, records: BTreeMap::new(), order: VecDeque::new() }
+    }
+}
+
+impl ContinuationTable {
+    pub(super) fn insert(
+        &mut self,
+        session: SessionId,
+        record: ContinuationRecord,
+    ) -> Result<ContinuationId> {
+        let retained_bytes = record.retained_bytes();
+        if retained_bytes > crate::MAX_CONTINUATION_RECORD_BYTES {
+            return Err(Error::ContinuationRecordLimit {
+                attempted: retained_bytes,
+                limit: crate::MAX_CONTINUATION_RECORD_BYTES,
+            });
+        }
+        let ordinal = self.next;
+        self.next = self.next.checked_add(1).ok_or(Error::ContinuationIdentityExhausted)?;
+        if self.records.len() == MAX_CONTINUATIONS {
+            let evicted = self.order.pop_front().expect("a full table has an oldest record");
+            self.records.remove(&evicted);
+        }
+        self.records.insert(ordinal, record);
+        self.order.push_back(ordinal);
+        Ok(ContinuationId { session, ordinal })
+    }
+
+    pub(super) fn take(
+        &mut self,
+        session: SessionId,
+        continuation: ContinuationId,
+    ) -> Result<ContinuationRecord> {
+        if continuation.session != session {
+            return Err(Error::ContinuationUnavailable);
+        }
+        let Some(record) = self.records.remove(&continuation.ordinal) else {
+            return Err(Error::ContinuationUnavailable);
+        };
+        self.order.retain(|ordinal| *ordinal != continuation.ordinal);
+        Ok(record)
+    }
+
+    /// Restore a consumed continuation after a bounded projection returns no page.
+    pub(super) fn restore(&mut self, continuation: ContinuationId, record: ContinuationRecord) {
+        debug_assert!(!self.records.contains_key(&continuation.ordinal));
+        self.records.insert(continuation.ordinal, record);
+        // A repeatedly underfunded token must not become immortal merely because it was
+        // retried; keeping it oldest preserves the table's original eviction pressure.
+        self.order.push_front(continuation.ordinal);
+    }
+
+    pub(super) fn clear(&mut self) {
+        self.records.clear();
+        self.order.clear();
+    }
+}
+
+impl ContinuationRecord {
+    fn retained_bytes(&self) -> usize {
+        let kind = match &self.kind {
+            ContinuationKind::Tree { path, next, .. } => path
+                .as_os_str()
+                .as_encoded_bytes()
+                .len()
+                .saturating_add(next.parent.as_os_str().as_encoded_bytes().len())
+                .saturating_add(next.name.as_deref().map_or(0, str::len))
+                .saturating_add(
+                    next.next_level_first
+                        .as_ref()
+                        .map_or(0, |path| path.as_os_str().as_encoded_bytes().len()),
+                ),
+            ContinuationKind::Flat { selection, next, .. } => {
+                selection.retained_heap_bytes().saturating_add(next.retained_heap_bytes())
+            }
+        };
+        std::mem::size_of::<Self>().saturating_add(kind)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn version(session: SessionId) -> EngineVersion {
+        EngineVersion {
+            session,
+            sequence: crate::Clock::ZERO,
+            scope: crate::ScopeIdentity {
+                max_depth: None,
+                follow_symlinks: false,
+                one_filesystem: false,
+                hidden_fingerprint: 0,
+                exclude_special: false,
+            },
+            semantics: crate::SemanticIdentity {
+                ignore_rules_fingerprint: 0,
+                type_rules_fingerprint: 0,
+                reducers_fingerprint: 0,
+            },
+        }
+    }
+
+    #[test]
+    fn oversized_record_is_rejected_before_identity_or_eviction_changes() {
+        let session = SessionId::from_opaque(1).expect("nonzero session");
+        let mut table = ContinuationTable::default();
+        let first = table
+            .insert(
+                session,
+                ContinuationRecord {
+                    version: version(session),
+                    kind: ContinuationKind::Flat {
+                        selection: Box::new(crate::query::EntrySelection::default()),
+                        shape: crate::RowShape::Compact,
+                        next: crate::PortablePath::new("first".to_owned()),
+                    },
+                },
+            )
+            .expect("small record");
+
+        let error = table
+            .insert(
+                session,
+                ContinuationRecord {
+                    version: version(session),
+                    kind: ContinuationKind::Flat {
+                        selection: Box::new(crate::query::EntrySelection::default()),
+                        shape: crate::RowShape::Compact,
+                        next: crate::PortablePath::new(
+                            "x".repeat(crate::MAX_CONTINUATION_RECORD_BYTES),
+                        ),
+                    },
+                },
+            )
+            .expect_err("oversized record");
+        assert!(matches!(
+            error,
+            Error::ContinuationRecordLimit { attempted, limit }
+                if attempted > limit && limit == crate::MAX_CONTINUATION_RECORD_BYTES
+        ));
+
+        let expanded =
+            crate::query::Pattern::parse(&"{a,b}".repeat(10)).expect("bounded pattern expansion");
+        let query_error = table
+            .insert(
+                session,
+                ContinuationRecord {
+                    version: version(session),
+                    kind: ContinuationKind::Flat {
+                        selection: Box::new(crate::query::EntrySelection {
+                            query: crate::query::Selection {
+                                include: vec![expanded],
+                                ..crate::query::Selection::default()
+                            },
+                            ..crate::query::EntrySelection::default()
+                        }),
+                        shape: crate::RowShape::Compact,
+                        next: crate::PortablePath::new("next".to_owned()),
+                    },
+                },
+            )
+            .expect_err("expanded query record");
+        assert!(matches!(query_error, Error::ContinuationRecordLimit { .. }));
+        assert_eq!(table.records.len(), 1);
+        assert_eq!(table.next, first.ordinal + 1);
+        table.take(session, first).expect("existing record was not evicted");
+
+        let retained = table
+            .insert(
+                session,
+                ContinuationRecord {
+                    version: version(session),
+                    kind: ContinuationKind::Tree {
+                        path: PathBuf::new(),
+                        depth: crate::query::Bound::Limit(1),
+                        include_ignored: true,
+                        next: ChildPosition {
+                            parent: PathBuf::new(),
+                            depth: 0,
+                            partition: ChildPartition::Directories,
+                            name: Some("next".to_owned()),
+                            next_level_first: None,
+                        },
+                    },
+                },
+            )
+            .expect("retained record");
+        table.clear();
+        assert!(matches!(table.take(session, retained), Err(Error::ContinuationUnavailable)));
+    }
+}

@@ -813,20 +813,24 @@ fn revalidate(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
 }
 
 fn delta_apply(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
-    let operations = (0..arguments.operations)
-        .map(|index| Op::Upsert {
-            path: PathBuf::from(format!("synthetic/entry-{index:09}.dat")),
-            kind: EntryKind::File,
-            attrs: Attrs {
-                size: u64::try_from(index % 4096).unwrap_or(0),
-                allocated: 4096,
-                mtime_ns: i64::try_from(index).unwrap_or(i64::MAX),
-                ctime_ns: i64::try_from(index).unwrap_or(i64::MAX),
-                inode: u64::try_from(index).unwrap_or(u64::MAX),
-                dev: 1,
-            },
-        })
-        .collect();
+    let mut operations = Vec::with_capacity(arguments.operations.saturating_add(1));
+    operations.push(Op::Upsert {
+        path: PathBuf::from("synthetic"),
+        kind: EntryKind::Dir,
+        attrs: Attrs::default(),
+    });
+    operations.extend((0..arguments.operations).map(|index| Op::Upsert {
+        path: PathBuf::from(format!("synthetic/entry-{index:09}.dat")),
+        kind: EntryKind::File,
+        attrs: Attrs {
+            size: u64::try_from(index % 4096).unwrap_or(0),
+            allocated: 4096,
+            mtime_ns: i64::try_from(index).unwrap_or(i64::MAX),
+            ctime_ns: i64::try_from(index).unwrap_or(i64::MAX),
+            inode: u64::try_from(index).unwrap_or(u64::MAX),
+            dev: 1,
+        },
+    }));
     let observation = Observation::new(operations);
     let mut index = Index::new(&arguments.root);
     let started = Instant::now();

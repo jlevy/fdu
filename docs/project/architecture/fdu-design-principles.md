@@ -1,30 +1,31 @@
-# fdu Design and Principles
-
-**Date:** 2026-08-12
-
-**Author:** fdu project
-
-**Status:** Active
+# fdu Design Principles
 
 ## Overview
 
 fdu summarizes directory trees: sizes, counts, recency, and file types, rolled up for
 every directory at once.
-This document covers the engine’s shape, the command-line and query surface built over
-it, and the rules both hold themselves to.
+This document owns the principles that govern the engine and every surface over it: the
+questions defaults answer, the truth an output may claim, the evidence a performance
+decision needs, and the boundaries that keep optional capability additive.
+
+It deliberately does not inventory components or delivery phases.
+[The engine architecture](fdu-engine-architecture.md) explains retained state,
+transitions, and serving lifecycles.
+[The surface architecture](fdu-surface-architecture.md) explains packages, bindings, and
+parity.
 
 Each rule exists because breaking it produces a specific failure: a cache that lies, a
 benchmark that measures the wrong job, or a number a consumer cannot calibrate.
 The reasoning matters more than the rule, so each one states what goes wrong without it.
 
 Start with [First Principles](#first-principles).
-Those three govern the rest, and they are the ones most easily broken by a choice that
+Those four govern the rest, and they are the ones most easily broken by a choice that
 looks ordinary — every example in them is a real defect that passed review because it
 resembled what other tools do.
 
-For what is built and what comes next, see
-[the phase-1 plan](../specs/active/plan-2026-08-08-fdu-phase-1.md).
-For where the design comes from and which prior art each piece draws on, see
+For what is built and what comes next, see the dated plans under
+[`docs/project/specs`](../specs/). For where the design comes from and which prior art
+each piece draws on, see
 [the file roll-up engine research](../research/research-2026-08-06-file-rollup-engine.md).
 
 ## First Principles
@@ -133,38 +134,16 @@ clothes.
 This is the cache’s honesty contract one level up: brevity, like speed, may be traded
 for completeness in the open and never in secret.
 
-## Architecture
+## Engine Invariants
 
-The metadata core has two retained artifacts, one transient answer, and one mutation
-contract. Explicit content analysis adds two separately invalidated derived artifacts:
+The component model, ownership graph, and transition flows are in
+[the engine architecture](fdu-engine-architecture.md).
+The governing principle is shorter: one authoritative index interprets verified facts;
+one commit boundary moves facts and every derived consequence; queries only read.
+Persistence, content analysis, observation, one-shot planning, and long-lived serving
+compose around that model instead of creating variants of it.
 
-- **Index** (`index.rs`): in-memory parent-pointer tree.
-  Every directory carries pre-computed roll-up state.
-- **Snapshot** (`snapshot.rs`): the index serialized, invalidated wholesale by an engine
-  fingerprint.
-- **Delta** (`engine_contract.rs`): a typed, clocked metadata change, and the only way
-  the metadata index or snapshot is ever modified.
-  Producers submit `Observation`s; the index arbitrates them and mints `AppliedDelta`.
-- **Content index** (`content/content_index.rs`): optional sparse file records and
-  pre-computed content roll-ups, allocated only for an enabled analysis profile.
-- **Content sidecar** (`content/content_cache.rs`): profile-scoped persistence for the
-  derived content tier, never loaded by metadata-only requests and never embedded in the
-  metadata snapshot.
-- **Derived report plan** (`execution.rs`): the minimum transient state sufficient for
-  one complete one-shot request when no cache, live session, or later query can consume
-  an index. It produces a `Report`, never a hidden cache or second query grammar.
-
-`scan.rs` and `watch.rs` are metadata-delta *producers*. `index.rs` and `snapshot.rs`
-are metadata-delta *consumers*. Content workers submit independently fingerprint-checked
-analysis observations through the index’s derived-data boundary; they do not advance the
-metadata clock or alter snapshot truth.
-
-A cold scan establishes a historyless baseline.
-A reconciliation sweep conditionally applies its diff while it walks.
-The watch layer coalesces event hints and verifies them by `stat`. The index alone
-arbitrates observations, removes no-ops, advances the clock, and mints `AppliedDelta`.
-
-### Serving Model
+### One Fact Model, Two Serving Lifecycles
 
 `open()` is deliberately blocking: it loads a usable snapshot and completes a filesystem
 reconciliation before returning.
@@ -175,10 +154,19 @@ snapshot with a partial result.
 explicit `Fresh`, `Reconciling`, `Stale`, and `Partial` state, but an application must
 opt into that serving model.
 
+`OpenedIndex` is the additive long-lived serving lifecycle.
+It returns while cold discovery is still running, owns discovery through observation as
+one lifetime, serves bounded coherent reads, exposes a bounded pull journal, accepts
+verified refresh and scheduling hints, and closes by cancelling and joining everything
+it owns. Its clones share one live state; a detached `Index` or snapshot never shares
+that live identity.
+
 The watcher is an adapter and driver.
-`open()` and the Python API never start one implicitly; the wheel compiles the watch
-layer so an explicit `Index.watch()` is available, and the core crate still builds
-without it. Its applying driver re-verifies queued samples at a clock-stable commit
+The existing one-shot `open()` and one-shot Python API never start one implicitly; the
+wheel compiles the watch layer so an explicit `Index.watch()` is available, and the core
+crate still builds without it.
+An `OpenedIndex` starts observation only when its explicit options request the supported
+live scope. The applying driver re-verifies queued samples at a clock-stable commit
 boundary and accepts only an unbounded, cross-filesystem scope; bounded-depth and
 one-filesystem event filtering fail explicitly rather than indexing excluded paths.
 
@@ -201,15 +189,16 @@ filesystem boundaries, or through symlink ancestors.
 
 ## Data Structures
 
-### Partial-Friendly as Well as Delta-Friendly
+### Partial-Friendly as Well as Commit-Friendly
 
 A partially walked tree is a valid, useful answer as long as the boundary of
 incompleteness is knowable: roll-ups are correct lower bounds, unvisited subtrees are
-identifiable, and per-value provenance carries `status: Partial`. Queries, sessions, and
-reducers accept partial structures as first-class inputs.
-Code that requires completeness must demand it explicitly, never assume it.
+identifiable, directory completeness is explicit, and absence below an incomplete
+boundary is `unknown`. Queries, opened roots, and reducers accept partial structures as
+first-class inputs. Code that requires completeness must demand it explicitly, never
+assume it.
 
-The two properties compose: a delta stream applied to a partial structure yields another
+The two properties compose: exact commits applied to a partial structure yield another
 valid partial structure.
 That composition is what progressive results are.
 
@@ -225,11 +214,13 @@ in its signature and says so in its error.
 A value is a monotone lower bound only while an additive walk is running; one truncated
 by errors can move either way.
 
-### No Mutation Path Bypasses `Delta`
+### No Mutation Path Bypasses `Commit`
 
-The contract keeps the in-memory structure, the serialized form, and the change feed
-from drifting apart.
-A new producer emits deltas; it does not reach into the index.
+The contract keeps facts, reducers, lifecycle state, version, and the change feed from
+drifting apart. A new producer submits a verified observation or state transition; it
+does not reach into the index, mint its own clock, or reconstruct impact from what it
+requested. Mutation helpers record their exact effects, and the opened lifecycle
+publishes them as one atomic commit.
 
 ### Never Size an Allocation from Untrusted Input
 
@@ -256,13 +247,16 @@ Producers that lose precision escalate with `InvalidateSubtree` rather than gues
 
 A verified answer over a huge tree costs minutes and a cached one costs milliseconds, so
 the trade is legitimate and often necessary.
-It is only honest when every value carries its provenance: where it came from, when it
-was observed, and whether it is final.
+It is only honest when every value’s trust can be determined: where its facts came from,
+when they were observed, and whether the relevant coverage is complete.
 
-Label per value, not per run.
-A consumer rendering a thousand rows needs to know which of them to trust.
-Anything that returns a number without that context is the silent lie the rule above
-forbids.
+Use the narrowest trust boundary the serving model can prove.
+The first cold-progressive opened root has one verified source plus per-directory
+completeness, so global state and directory knowledge are sufficient.
+A later design that mixes cached and newly verified facts must label trust per subtree
+or value and prove that roll-up trust composes under update and deletion before serving
+the mixture. Anything that returns a number without enough context to make that decision
+is the silent lie the rule above forbids.
 
 ### The Journal Bounds Uncertainty; It Does Not Replace Verification
 
@@ -708,6 +702,26 @@ Extract a module into a crate when an external consumer exists, not before.
 `dut`’s atomic-refcount roll-up and `fsearch`’s record layout are described in
 [the file roll-up engine research](../research/research-2026-08-06-file-rollup-engine.md)
 and are written from those descriptions, not transliterated from their source.
+
+## Future Considerations
+
+### Open Questions
+
+- What additional behavior can move from reviewer convention into a mechanical parity,
+  portability, dependency, or evidence gate?
+- Which future client requirements are genuinely new axes, rather than compositions of
+  the existing query and serving model?
+- What evidence would be sufficient to relax a conservative default without making an
+  answer harder to calibrate?
+
+### Potential Improvements
+
+- Convert repeated review findings into narrow automated checks so the principle is
+  enforced where the failure occurs.
+- Retire mechanism-level explanation from this document when the engine or surface
+  architecture can carry it without losing the motivating failure.
+- Add a principle only when it names a concrete failure mode; avoid turning current
+  implementation taste into permanent doctrine.
 
 ## Code
 
