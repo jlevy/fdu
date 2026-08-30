@@ -1631,10 +1631,47 @@ Two directions are already closed, and are recorded here so they are not reopene
   The total is a property of the tree and is unknowable until the tree has been walked,
   so “fail fast instead of after three minutes” is not implementable as stated.
   Degrading at the crossing is what turns the elapsed work into an answer.
-- `~/Library/Containers` slowness is not fdu’s. `du` and fdu both fail to finish that
-  subtree inside 60 seconds on the reported host, because each of its 1,012 sandbox
-  containers costs a TCC permission check.
-  It is hostile to every tool and is out of scope for this phase.
+- The `~/Library` slowness first attributed to fdu was a cold-cache artefact, and the
+  regime was not controlled when it was recorded.
+  Warm, fdu finishes `~/Library` in 35 s at 359 MiB and `dust` in 30 s at 218 MiB. Cold,
+  `du` and fdu both exceed a minute on `~/Library/Containers` alone, whose 1,012 sandbox
+  containers each cost a TCC permission check.
+  Cache state, not the tool, explains the original observation, and this plan states it
+  because the project’s own rule is to record the regime rather than the number.
+  What survives the correction is memory, not time: fdu’s peak is consistently 1.5 to
+  1.6 times dust’s on the same trees, which is what makes fdu the first process to die
+  on a host already under pressure.
+
+#### What dust already solves, and what it does not
+
+All figures warm, same host and trees, `dust` 1.2.4 against current `main`:
+
+| Tree | fdu time | dust time | fdu peak RSS | dust peak RSS |
+| --- | --- | --- | --- | --- |
+| `~/wrk` | 21.2 s | 27.5 s | 1.41 GiB | 887 MiB |
+| `~` | 37.8 s | 87.3 s | 2.39 GiB | 1.59 GiB |
+| `~/Library` | 35.4 s | 29.7 s | 359 MiB | 218 MiB |
+
+fdu is faster on the two large trees and comparable on the third, so speed is not what
+this comparison is about.
+Three differences are, and only one of them is a technique fdu can copy.
+
+- dust has no per-directory control state to exhaust.
+  `-I`/`--ignore-all-in-file` takes one file of regexes; there is no hierarchical
+  `.gitignore`, no retained table, and no snapshot to serialize one into.
+  It escapes this phase’s headline defect by not offering the feature rather than by
+  bounding it better, which is not a fix fdu can adopt while keeping exact control
+  state. It does establish the weaker claim this phase already rests on: a size roll-up
+  needs none of it (`fdu-etfj`).
+- dust suppresses filesystem errors by default and offers `--print-errors` to opt in,
+  exiting 0. fdu does the inverse and exits 2. dust’s quiet is not free: its `~` total
+  is 206 G against fdu’s 214 GiB, and part of that gap is what it skipped without saying
+  so. `fdu-5ffm` should take the opt-in shape without taking the silence.
+- dust accepts a regular file as a root and reports its size; fdu rejects one
+  (`fdu-tsdy`).
+
+Memory is the one axis where fdu is behind on every tree measured, by 1.5 to 1.6 times.
+That is the measurement `fdu-6o5o` starts from.
 
 The phase’s ordering rule: the roll-up must stop paying for state it does not consume
 before anything tunes what that state costs.
@@ -1655,6 +1692,9 @@ before anything tunes what that state costs.
   separate from TCC-induced slowness (`fdu-6o5o`).
 - [ ] Re-measure `~`, `~/wrk`, and `~/Library` on macOS against `main` as the control,
   and record the regime alongside the numbers.
+- [ ] Attribute the peak-memory gap against dust — 1.5 to 1.6 times on every tree
+  measured — between the retained index contract and retention a roll-up never uses
+  (`fdu-syyl`), through the recorded peer comparison rather than by hand (`fdu-zibs`).
 
 This phase does not change what a complete answer means.
 Control state remains exact for the consumers that ask for it; what changes is that a
@@ -2017,6 +2057,8 @@ green.
 | `fdu-szkg`: `crates/fdu-core/src/control.rs` `retained_source_cost`, `ControlSource` | Deduplicate retained sources by the `ControlIdentity` fingerprint already computed, so identical control files are compiled and charged once. | Removal semantics unchanged and tested; measured retention on `~/wrk` falls from 9.93 MiB toward the deduplicated 3.81 MiB. |
 | `fdu-okne`: `crates/fdu-core/src/control.rs`, `crates/fdu-core/src/snapshot.rs`, `crates/fdu/src/cli.rs` | Split the constant into a strict snapshot-parser guard and a separate, larger runtime retention budget. Expose the runtime budget where it is stated and name it in the diagnostic. | The bound is liftable by a flag; the parser guard stays strict against untrusted `u32` lengths on load. |
 | `fdu-6o5o`: macOS `~/Library` memory investigation | Establish whether peak memory grows unbounded on deep, wide, many-small-file trees and bound whatever accumulates. Keep this separate from TCC-induced slowness, which is not fdu’s. | Peak memory is bounded and measured, or the SIGKILL is attributed outside fdu with evidence. |
+| `fdu-syyl`: peak-memory deficit against dust | Separate the portion of fdu’s peak that the retained index contract requires from the portion a roll-up never uses. Measure through the harness, paired and interleaved, not by hand. | Peak RSS on nominated macOS trees is measured and attributed; any reducible part has an owner or a recorded decision to keep it. |
+| `fdu-zibs`: recorded macOS peer comparison | Run `make perf-compare-tools` over the nominated macOS subjects and record the artifact, so no fdu-versus-dust figure rests on an unpaired or cache-uncontrolled run. | A recorded artifact exists with platform, host, and cache state stated; the `~/Library` case where dust leads is explained or filed. |
 
 ### Phase 5: composed proof and rollout evidence
 
@@ -2587,6 +2629,7 @@ their status as approval of that shape.
 | `fdu-kl7r`, `fdu-vfyw` agreement proof | Phase 5 two-provider registry and observation replay. |
 | `fdu-gy3g` File Rollup packet | Phase 5, expanded to exercise basename-derived logical extensions. |
 | `fdu-2lkf` control-state scale | Phase 4 epic. Its P0 children gate this PR leaving draft. |
+| `fdu-syyl`, `fdu-zibs` peer-comparison deficits | Phase 4. Memory, not wall time, is where fdu trails dust; measure it with the harness. |
 | `fdu-tsdy` regular-file scan root | Outside this plan. Decide deliberately on the CLI surface plan rather than by omission. |
 | `fdu-5ffm` macOS TCC exit 2 | `main` behaviour, not this branch. Tracked against the CLI UX plan beside `fdu-jej9`. |
 | `fdu-livs` progressive provenance | Defer warm/mixed serving; cold streaming uses honest global source plus directory completeness. |
