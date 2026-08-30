@@ -3154,6 +3154,95 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// A page must move, even when the path walk has already spent the budget.
+    ///
+    /// `spent` starts at the cost of walking to the requested directory, and only a walk
+    /// strictly longer than the budget is refused outright. At exactly the budget the walk
+    /// is allowed, and then the first child pushes `spent` over before any row is emitted:
+    /// the page returns no rows and a cursor pointing at that same child, and resuming
+    /// reproduces it exactly. The bound stops being "how much work per page" and becomes
+    /// "no page ever finishes".
+    ///
+    /// A budget says where to stop, not whether to start. Every page therefore emits at
+    /// least one row or ends the traversal, and this reads a nested directory so the path
+    /// walk is expensive enough to collide with the budget at all.
+    #[test]
+    fn a_page_moves_even_when_the_path_walk_spends_the_budget() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("a"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("a/b"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("a/b/x.txt"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs { size: 1, ..crate::Attrs::default() },
+                },
+                Op::Upsert {
+                    path: PathBuf::from("a/b/y.txt"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs { size: 2, ..crate::Attrs::default() },
+                },
+            ]))
+            .expect("seed tree");
+
+        // Walking to `a/b` costs three, so three is the budget that is spent on arrival.
+        // Sweeping upward from it keeps this a property rather than one arithmetic
+        // coincidence: every budget the request is allowed to make must terminate.
+        for max_work in 3..=12_u64 {
+            let page = crate::PageRequest { limit: crate::MAX_PAGE_ROWS, max_work };
+            let mut seen: Vec<String> = Vec::new();
+            let mut continuation = None;
+            let mut pages = 0;
+
+            loop {
+                let projection = match continuation {
+                    None => crate::ReadProjection::Tree {
+                        path: PathBuf::from("a/b"),
+                        depth: crate::query::Bound::All,
+                        include_ignored: true,
+                        page,
+                    },
+                    Some(token) => crate::ReadProjection::Continue { continuation: token, page },
+                };
+                let response = opened
+                    .read(crate::ReadRequest {
+                        projections: vec![projection],
+                        ..crate::ReadRequest::default()
+                    })
+                    .expect("tree read");
+                let crate::ProjectionResult::Tree(crate::Knowledge::Present(current)) =
+                    &response.results[0]
+                else {
+                    panic!("tree page");
+                };
+                seen.extend(current.rows.iter().map(|row| row.portable_path.as_str().to_owned()));
+                continuation = current.next;
+                pages += 1;
+                assert!(
+                    pages <= 16,
+                    "budget {max_work} never terminated; after {pages} pages saw {seen:?}"
+                );
+                if continuation.is_none() {
+                    break;
+                }
+            }
+
+            assert_eq!(seen, vec!["a/b/x.txt", "a/b/y.txt"], "budget {max_work} lost rows");
+        }
+        opened.close().expect("close");
+    }
+
     /// Descending must not scan the level it is leaving.
     ///
     /// A level of leaf directories is the shape of every tree's last level, and searching

@@ -609,10 +609,23 @@ observation boundary with:
 - bounded work accounting;
 - a change cursor for resuming after that version.
 
-Every interactive projection has both an output bound and a deterministic work bound,
-such as a maximum number of index rows visited.
-Exhausting that budget returns a typed query-limit result for row projections; it never
-silently relabels a partial calculation as exact.
+Every interactive projection has both an output bound and a work bound, such as a
+maximum number of index rows visited, and reports the work it actually spent.
+
+How a projection exhausts that budget depends on whether it has a resumable position to
+offer, and the difference is principled rather than incidental.
+A filtered or aggregate scan can run arbitrarily long without producing a row, so it has
+none, and returns a typed query-limit result.
+A tree page always has the next parent ahead of it, so the budget is a soft one there:
+the page stops at the first position its cursor can name, which may be a little past the
+bound, and returns rows with a continuation.
+Overrun is reported, not refused.
+
+What no projection may do is stop with rows left and no continuation, or relabel a
+partial calculation as exact.
+And a budget decides where a page stops, never whether it starts: every page emits at
+least one row or ends the traversal, or the bound stops meaning work per page and starts
+meaning no page ever finishes.
 Repeated client aggregates must use maintained indexes so their normal exact path stays
 within the bound. No read performs an unbounded full-index traversal while holding the
 writer guard. Expensive preparation may use immutable indexes or resumable state outside
@@ -737,22 +750,51 @@ turns level order back into pre-order: *the next parent at this depth*, and *the
 parent at the next depth*. The first walks siblings; the second descends only once the
 level above is exhausted.
 
-Stopping a page between those two questions is the one place the work bound stated under
-Coherent reads is not enforced, and the exception is deliberate.
-Searching for the next parent to expand is charged against the budget but never cut
-short, because a search abandoned mid-level has no emitted row for the one frame to
-name. A cursor that cannot record where the search had reached leaves the next page to
-restart it and overrun the same budget, so a level wider than the budget would never be
-crossed at all: the tree would become unpageable rather than merely slow, and returning
-a typed limit instead has the same effect, since re-asking cannot make progress.
-Letting the search finish costs one scan of one level, paid once at each level boundary
-rather than once per page, because the parent it finds is what the frame then records.
-Teaching the frame to express the searching state as well as the emitting one is tracked
-as `fdu-pokc`.
+**For the tree, `max_work` is a soft budget: it says where to stop, not how much to
+refuse.** A page spends it, then stops at the first position the cursor can name, and
+reports what it actually spent.
+Overrunning slightly is the normal case, not a fault.
 
-What is never acceptable, budget or no budget, is stopping with rows left and no
-continuation: that is the silent relabelling that rule forbids, and it is what
-`opened::tests::a_tree_page_stopped_by_the_work_budget_is_resumable` pins.
+That is not a weaker promise than a hard cap, because the two things a bound is really
+for still hold, and they are what the tests pin rather than the number itself.
+
+*It always terminates.* The level advance walks a finite index, each step strictly
+forward, so it ends whether or not it finds anything.
+
+*Every page moves.* A page emits at least one row or ends the traversal.
+This is a rule in its own right, not a consequence: `spent` starts at the cost of
+walking to the requested directory, so a budget near that walk is gone before the first
+child is read, and stopping there returns no rows and a cursor pointing at the child
+about to be read -- which the next page reproduces exactly.
+The bound then stops meaning “work per page” and starts meaning “no page ever finishes”.
+A budget decides where to stop, never whether to start.
+
+The overrun is bounded by the distance to the next nameable position.
+Descending costs nothing, because the next level’s first parent is noticed while the
+current level is emitted rather than searched for afterwards.
+What remains is the same-depth advance, which can cross a run of childless directories
+before reaching the next parent; that run is bounded by one level’s width and is paid
+once at that boundary, because the parent it finds is what the frame then records.
+A `depth: Limit(1)` read never advances at all.
+
+Cutting the advance short instead would be worse than the overrun it prevents.
+A search abandoned mid-level has no emitted row for the one frame to name, so the next
+page restarts it and spends the same budget again; a level wider than the budget would
+never be crossed, and the tree would become unpageable rather than merely slow.
+Returning a typed limit has the same effect, since re-asking cannot make progress.
+Bounding it strictly means teaching the frame the searching state as well as the
+emitting one, tracked as `fdu-pokc`; whether that is worth doing depends on whether the
+consumer treats the budget as an observation or an assertion, tracked as `fdu-3v0d`.
+
+So the rule under Coherent reads divides by projection, and for a reason rather than by
+accident. A filtered or aggregate scan can run arbitrarily long without producing a row,
+so it has no resumable position to offer and returns a typed limit.
+A tree page always has one ahead of it, so it returns rows and a continuation.
+Both refuse the same thing: what is never acceptable, budget or no budget, is stopping
+with rows left and no continuation.
+That is the silent relabelling the rule forbids, and it is what
+`opened::tests::a_tree_page_stopped_by_the_work_budget_is_resumable` and
+`a_page_moves_even_when_the_path_walk_spends_the_budget` pin between them.
 
 **Flat and catalog pages are lexicographic by the complete canonical POSIX-relative
 path, encoded as UTF-8 bytes.** A flat continuation stores the last emitted portable

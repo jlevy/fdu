@@ -735,7 +735,12 @@ fn collect_children(
     };
     for (name, id) in iterator {
         *spent = spent.saturating_add(1);
-        if *spent > page.max_work || rows.len() == page.limit {
+        // A budget says where to stop, not whether to start. `spent` begins at the cost of
+        // walking to this directory, so a budget close to that walk is already gone before
+        // the first child is looked at -- and stopping there returns no rows and a cursor
+        // pointing at the child that was about to be read, which the next page reproduces
+        // exactly. Requiring a row first makes every page either move or end.
+        if (*spent > page.max_work && !rows.is_empty()) || rows.len() == page.limit {
             return Some(ChildPosition {
                 parent: parent.to_path_buf(),
                 depth,
