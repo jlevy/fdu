@@ -287,6 +287,13 @@ impl ControlMatcher<'_> {
     /// so it can stop immediately when that parent is ignored. Otherwise every control
     /// directory on this path is active and the deepest matching opinion wins.
     pub fn is_ignored(&self, is_dir: bool) -> bool {
+        // The empty table answers without collecting the ancestor list. Every entry of
+        // a scan that observes no control state asks this question exactly once, so the
+        // allocation below would be the last per-entry cost of a machinery the scan
+        // opted out of (fdu-etfj).
+        if self.table.by_directory.is_empty() {
+            return false;
+        }
         let mut verdict = false;
         let mut directories: Vec<&Path> =
             self.path.parent().into_iter().flat_map(Path::ancestors).collect();
