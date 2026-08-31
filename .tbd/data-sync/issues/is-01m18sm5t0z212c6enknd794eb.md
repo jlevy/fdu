@@ -5,14 +5,14 @@ title: Stand up a recorded macOS fdu-vs-dust comparison on nominated real trees
 kind: task
 status: in_progress
 priority: 2
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels:
   - performance
   - macos
 dependencies: []
 created_at: 2026-08-30T07:37:28.125Z
-updated_at: 2026-08-30T07:55:57.819Z
+updated_at: 2026-08-31T04:15:22.477Z
 ---
 The fdu-vs-dust question came up from field reports and was first answered with ad-hoc timing, which produced one wrong conclusion (a cold fdu run compared against a warm dust run made dust look 2.4x faster on ~; warm-vs-warm fdu is roughly twice as fast). The project already has the right instrument and it was not reached for first.
 
@@ -26,8 +26,16 @@ Acceptance: a recorded artifact exists for the macOS trees with regime stated (p
 
 ## Notes
 
-Two recorded runs now exist on rustup-toolchains, both clean (0 invalid samples, 0 semantic mismatches, 0 oracle mismatches, no baseline drift, no mutation): run-fdu-vs-dust-rustup and run-fdu-default-vs-dust-rustup.
+TIMING CORRECTION. An intermediate hand-run measurement of mine reported fdu default at 0.380 s and dust at 0.180 s, i.e. dust twice as fast. That was wrong twice over:
 
-Confirmed subject-selection rules the hard way, see prior notes: symlinks == 0 is mandatory for any dust comparison, the tree must be quiescent, and it must be large enough that fdu's adaptive calibration window completes (cargo-registry-src at 5,838 entries is too small; rustup-toolchains at ~119k works).
+1. It used dust's REFERENCE argv ('-d 1 --no-progress' from measure.py REFERENCE_ARGV) rather than dust's claim-grade CONTRACT argv in compare_tools.py ('-d 0 -n 1 --no-progress --no-colors --no-percent-bars --print-errors --output-format b'). Those are different commands and only the second is comparable.
+2. It ran on a machine still loaded from a preceding 12-run cache-clearing sweep.
 
-Still open: ~ and ~/Library are not yet covered, and both are symlink-bearing and live, so neither can be compared against dust under its claim-grade contract. Decide whether to compare those against du/gdu instead, or to build a quiescent macOS subject that resembles them in shape. Artifacts are in /tmp and are not yet recorded via 'make perf-record' or republished.
+Re-measured clean, n=9 each, same tree, exact contract argv:
+  fdu  --color never ROOT      median 0.150 s (min 0.140 max 0.190)
+  dust contract argv           median 0.230 s (min 0.180 max 0.300)
+  dust reference argv          median 0.180 s (min 0.170 max 0.190)
+
+This reproduces the recorded harness run (fdu 0.157 s, dust 0.197 s) and confirms the harness numbers stand. fdu default is faster than dust on this subject on point estimate, with the cache ON.
+
+Standing caveat: the harness's 95% interval on the default-tree run was -12.8% to +27.2%, which crosses zero, so 'faster' is not confirmable under the release rule even though every point estimate favours fdu. The resource verdict is the one that was decided: fdu inferior on peak_rss_bytes and minor_faults.

@@ -5,7 +5,7 @@ title: fdu peak memory runs ~1.5x dust on every macOS tree measured
 kind: bug
 status: open
 priority: 1
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - performance
@@ -14,7 +14,7 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-30T07:37:27.215Z
-updated_at: 2026-08-30T07:55:57.568Z
+updated_at: 2026-08-31T04:15:22.118Z
 ---
 Ad-hoc warm measurements on this host, fdu from main vs dust 1.2.4:
 
@@ -37,21 +37,27 @@ Acceptance: peak RSS on nominated macOS real trees is measured through the harne
 
 ## Notes
 
-Superseded by recorded measurement. The original 1.5-1.6x figures were hand-run with /usr/bin/time on live trees and are NOT claim-grade; the harness later refused an equivalent run on ~/wrk outright.
+ATTRIBUTED. The memory gap is the retained index forced by the default VIEW. It is not the cache, and it is not the snapshot write.
 
-Recorded via 'make perf-compare-tools' on rustup-toolchains (119,368 entries, 0 symlinks, no mutation, 0 invalid samples, 0 oracle mismatches), paired and interleaved, 6 trials / 2 warmups:
+Measured peak RSS, rustup-toolchains, 3 runs each (indicative, hand-run):
 
-| fdu contract | fdu wall | dust wall | fdu peak RSS | dust peak RSS |
-|---|---|---|---|---|
-| fdu-transient-summary | 0.146 s | 0.218 s | 15.0 MiB | 59.1 MiB |
-| fdu-default-tree | 0.157 s | 0.197 s | 77.9 MiB | 59.2 MiB |
+  cache off + --view summary + json : 13-17 MiB
+  cache off + --view summary (text) : 13-14 MiB
+  cache off, DEFAULT tree view      : 63-68 MiB   <-- the jump is here
+  bare default (fdu ROOT)           : 75-77 MiB
 
-The default-tree row is the one that matters - it is 'fdu PATH', which is all the field reports did. There the harness classifies fdu INFERIOR: peak_rss_bytes exceeds its +5% resource limit and minor_faults exceeds its +10% limit.
+Rows 2 and 3 share --cache off and differ only in the view: 14 MiB -> 66 MiB. The cache policy adds ~9 MiB on top of that (66 -> 75), roughly an eighth of the gap.
 
-Two things this settles:
-- The wall-time story is not a story. dust at +20.6% has a 95% interval of -12.8% to +27.2%, crossing zero. fdu is not reliably faster on the default path on this subject, and not reliably slower either.
-- The memory story is fdu's own, not dust's advantage. The same binary on the same tree goes 15.0 MiB -> 77.9 MiB (5.2x) between the engine-only contract and the default one, while wall time moves 7.5%. The reusable index and the snapshot write buy that, and control state built for every scan (fdu-etfj) is inside it.
+crates/fdu-core/src/execution.rs plan_report() says why:
 
-Next: attribute the 63 MiB delta. How much is the index contract, how much is the snapshot write, how much is control state a roll-up never consumes. Measure with FDU_COUNTERS=1 and the instrumentation playbook rather than by subtraction.
+  summary_is_sufficient = views == [Summary] && selection.is_unfiltered()
+  policy_requires_index = Only => true; Refresh => cache_path.is_some();
+                          Off | Auto | ReadOnly => false
+  retained_state = if !policy_requires_index && !analysis_requested && summary_is_sufficient
+                   { Summary } else { FullIndex }
 
-Neither run is confirmable under the release rule yet - the transient run lacks a paired interval for voluntary_context_switches. Clean measurements, not published claims.
+--cache off does not avoid the index; it only PERMITS the Summary tier. What forces FullIndex is any view other than a bare unfiltered summary. The default tree view therefore retains one node per entry: ~60 MiB over the summary tier for 119,368 entries, about 550 bytes per retained entry.
+
+Consequence for the fix: reducing this is about the tree view's retention, not about cache policy. Either the depth-2 default tree is served from a bounded structure rather than a full index, or per-entry retained size comes down. Control state built for every scan (fdu-etfj) sits inside that per-entry cost and is the cheapest part to remove first.
+
+Wall time is NOT part of this deficit - see the correction in fdu-zibs. fdu default is faster than dust on this subject.
