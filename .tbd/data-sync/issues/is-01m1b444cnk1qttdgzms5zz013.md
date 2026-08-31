@@ -3,9 +3,9 @@ type: is
 id: is-01m1b444cnk1qttdgzms5zz013
 title: "PR #48 branch is 3.6-10x slower than main: allocator churn, not I/O"
 kind: bug
-status: open
+status: in_progress
 priority: 0
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - performance
@@ -13,7 +13,7 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-31T05:19:25.577Z
-updated_at: 2026-08-31T06:16:14.742Z
+updated_at: 2026-08-31T06:38:15.149Z
 ---
 The opened-root-inventory-rewrite branch has an unreported whole-scan performance regression against main that is larger and broader than the control-table cap this epic started from. It affects trees with NO .gitignore files, so it is not control-file I/O.
 
@@ -51,27 +51,69 @@ Acceptance: bisect the branch to the commit that introduces the allocation growt
 
 ## Notes
 
-CONFIRMED ACROSS THREE INDEPENDENT BUILDS. Not a defective binary.
+## ROOT CAUSE FOUND (bisect complete, mechanism identified)
 
-A fresh, clean install of the PR #48 branch at c853f7c ('fix: a budget decides where a page stops, never whether it starts', one commit newer than 7509222) reproduces the regression exactly. Note this build carries no .dirty suffix, unlike the original 27aeed0 install, so a bad working tree is excluded.
+First, a correction to this record: at 23:25 the global `/Users/levy/.cargo/bin/fdu` was
+replaced with a MAIN build (gb75bf85a3) -- presumably this investigation's own comparison
+step. Any measurement of "the installed binary" after 23:25 measured main. I lost an hour
+to exactly this before checking `--version`; the regression then reproduced perfectly with
+an explicitly built branch tip: 1.7-1.84s vs 0.42-0.54s on ~/.rustup/toolchains,
+allocations 4.15M vs 982k. All conclusions below are from explicitly version-checked
+binaries.
 
-Wall time, 5 runs each, warm, medians, 'fdu --color never TREE':
+## The bisect: cumulative, not one commit
 
-| Tree | main b75bf85 | PR48 fresh c853f7c | PR48 built here 4ce1539 |
-|---|---|---|---|
-| ~/.rustup/toolchains | 0.470 s | 1.650 s | 1.640 s |
-| ~/wrk/github/thinking-scratchpad | 0.310 s | 1.820 s | 1.780 s |
-| ~/wrk/github/metabrowser | 1.520 s | 11.180 s | 11.010 s |
+Debug-build oracle (signature survives profiles; counters deterministic):
 
-The two PR48 builds agree within noise, and main is 3.5x to 7.4x faster in this round. (Main's own numbers drifted slightly upward versus the previous round from host noise, so treat the ratios as approximate and the absolute PR48 figures as the stable part - they are essentially unchanged across rounds.)
+    1dac219                              983k   clean
+    6d18e87 make index commits exact    1.73M   +0.75M
+    947cd49 route producers through     3.54M   +1.8M
+    c5d1780 add opened-root journal     4.68M   +1.1M
+    tip c853f7c                         4.15M
 
-Counters on ~/.rustup/toolchains, fresh install vs main:
+The named suspects 13fe8b4/c0fb6de (portable path) are EXONERATED by timeline: 27aeed0e
+already carried the full signature and predates both.
 
-  filesystem: IDENTICAL - directory opens 3775, entries 119367, stats 119368, file opens 0
-  allocations     983,345 -> 4,151,649   (4.22x)
-  reallocations   138,325 -> 2,785,069   (20.1x)
-  bytes allocated 181,235,826 -> 677,013,892 (3.73x)
+## Mechanism at tip
 
-These match the earlier 27aeed0 and 4ce1539 measurements to within a fraction of a percent. Three builds, three commits, one signature: same syscalls, same index work, ~4.2x allocations and ~20x reallocations.
+The one-shot cold scan now routes every entry through the exact-commit pipeline:
 
-The defective-build hypothesis is closed. The regression is in the branch code and is present at the current tip.
+1. Walker materializes `Op::Upsert { path: path.clone(), .. }` per entry (947cd49).
+2. `Index::apply` -> `prepare_observation` -> `canonical_relative_path` per op:
+   `normalize(path).into_iter().collect::<PathBuf>()` -- rebuilds every path
+   component-by-component, a PathBuf grown by repeated push. That is the 20x
+   reallocation signature. These paths come from fdu's own walker and are canonical by
+   construction; they are re-canonicalized as untrusted input once per entry.
+3. Commit machinery clones effective changes / impact paths again.
+
+Journal EXONERATED at tip: patching `apply` to `journal: false` changed nothing
+(4.165M vs 4.167M). c5d1780's historical +1.1M must have moved or been absorbed;
+attribute per-mechanism shares at tip by profiling, not by that table.
+
+## The design flaw (instance 2 of the PR #50 pattern)
+
+One mandatory commit pipeline for every lifecycle. The one-shot CLI pays per-entry
+validation, op materialization, and clone-per-change built for concurrent opened-root
+mutation, with no consumer that can ever observe the difference. PR #50's control table
+is instance 1 (state retained for a reader that does not exist); this is instance 2
+(pipeline work for arbitration that cannot happen -- one-shot has exactly one producer
+and zero concurrent readers). The codebase contains the correct pattern applied once:
+serving indexes are `None` unless opened (`new_opened_with_...`), and the CLI never pays
+for them.
+
+Design-principles rules violated: "Speed changes are decided by measurement, never by
+argument" -- the rework was filed as architecture, so nobody ran perf-compare, and the
+floor doc's own budget ("one enumeration and one metadata read per entry, and nothing
+else") was spent 3.6x by the spine while campaign-2 fought for 3%.
+
+## Fix direction
+
+- `canonical_relative_path`: check `path_is_relative_normal` first and pass the already-
+  canonical path through untouched (move, not rebuild). Walker paths always take this
+  lane; only genuinely non-normal input pays normalization. Kills the realloc storm.
+- `apply` should consume the Observation (walker already `mem::take`s the batch) so
+  prepare can move paths instead of cloning.
+- Audit commit-side clones (effective changes, impact sets) for the one-shot lifecycle.
+- Acceptance stands as written, plus: the counters-based regression check is CI-able
+  because allocation counts are deterministic -- pin allocs/entry on a fixture tree in
+  `make check`, so the next per-entry-path change is caught at review, not at benchmark.
