@@ -5,7 +5,7 @@ title: "PR #48 branch is 3.6-10x slower than main: allocator churn, not I/O"
 kind: bug
 status: open
 priority: 0
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - performance
@@ -13,7 +13,7 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-31T05:19:25.577Z
-updated_at: 2026-08-31T05:19:25.577Z
+updated_at: 2026-08-31T06:16:14.742Z
 ---
 The opened-root-inventory-rewrite branch has an unreported whole-scan performance regression against main that is larger and broader than the control-table cap this epic started from. It affects trees with NO .gitignore files, so it is not control-file I/O.
 
@@ -48,3 +48,30 @@ A 20x realloc ratio is the signature of a buffer grown by repeated push without 
 This also explains the field reports better than the cap does: the agent's 1m17s on ~/wrk and 3m37s on ~ were the branch's regression, not fdu-versus-dust. Against main, fdu beats dust; against this branch, dust wins comfortably.
 
 Acceptance: bisect the branch to the commit that introduces the allocation growth; per-entry allocations and reallocations return to main's order; the three trees above land within noise of main; a counters-based regression check exists so the next such change is caught before merge.
+
+## Notes
+
+CONFIRMED ACROSS THREE INDEPENDENT BUILDS. Not a defective binary.
+
+A fresh, clean install of the PR #48 branch at c853f7c ('fix: a budget decides where a page stops, never whether it starts', one commit newer than 7509222) reproduces the regression exactly. Note this build carries no .dirty suffix, unlike the original 27aeed0 install, so a bad working tree is excluded.
+
+Wall time, 5 runs each, warm, medians, 'fdu --color never TREE':
+
+| Tree | main b75bf85 | PR48 fresh c853f7c | PR48 built here 4ce1539 |
+|---|---|---|---|
+| ~/.rustup/toolchains | 0.470 s | 1.650 s | 1.640 s |
+| ~/wrk/github/thinking-scratchpad | 0.310 s | 1.820 s | 1.780 s |
+| ~/wrk/github/metabrowser | 1.520 s | 11.180 s | 11.010 s |
+
+The two PR48 builds agree within noise, and main is 3.5x to 7.4x faster in this round. (Main's own numbers drifted slightly upward versus the previous round from host noise, so treat the ratios as approximate and the absolute PR48 figures as the stable part - they are essentially unchanged across rounds.)
+
+Counters on ~/.rustup/toolchains, fresh install vs main:
+
+  filesystem: IDENTICAL - directory opens 3775, entries 119367, stats 119368, file opens 0
+  allocations     983,345 -> 4,151,649   (4.22x)
+  reallocations   138,325 -> 2,785,069   (20.1x)
+  bytes allocated 181,235,826 -> 677,013,892 (3.73x)
+
+These match the earlier 27aeed0 and 4ce1539 measurements to within a fraction of a percent. Three builds, three commits, one signature: same syscalls, same index work, ~4.2x allocations and ~20x reallocations.
+
+The defective-build hypothesis is closed. The regression is in the branch code and is present at the current tip.
