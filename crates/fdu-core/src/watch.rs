@@ -595,14 +595,16 @@ fn reverify_observation(
                         ) {
                             crate::admission::Disposition::Retain => {
                                 ops.push(Op::Upsert { path: relative.clone(), kind, attrs });
-                                if let Some(control) = scan::read_control_op(root, &relative, kind)?
+                                if let Some(control) =
+                                    scan::read_control_op_unconditional(root, &relative, kind)?
                                 {
                                     ops.push(control);
                                 }
                             }
                             crate::admission::Disposition::ControlOnly => {
                                 ops.push(Op::Remove { path: relative.clone() });
-                                if let Some(control) = scan::read_control_op(root, &relative, kind)?
+                                if let Some(control) =
+                                    scan::read_control_op_unconditional(root, &relative, kind)?
                                 {
                                     ops.push(control);
                                 }
@@ -896,7 +898,7 @@ fn verify_intent(
                         match disposition {
                             crate::admission::Disposition::Retain => {
                                 ops.push(Op::Upsert { path: rel.clone(), kind, attrs });
-                                match scan::read_control_op(root, rel, kind) {
+                                match scan::read_control_op_unconditional(root, rel, kind) {
                                     Ok(Some(control)) => ops.push(control),
                                     Ok(None) => {}
                                     Err(_) => ops.push(Op::InvalidateSubtree {
@@ -908,7 +910,7 @@ fn verify_intent(
                                 }
                             }
                             crate::admission::Disposition::ControlOnly => {
-                                match scan::read_control_op(root, rel, kind) {
+                                match scan::read_control_op_unconditional(root, rel, kind) {
                                     Ok(Some(control)) => {
                                         ops.push(Op::Remove { path: rel.clone() });
                                         ops.push(control);
