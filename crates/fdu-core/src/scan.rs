@@ -139,6 +139,11 @@ pub enum ScanOrder {
 
 /// Knobs for a scan.
 #[derive(Clone, Debug)]
+// Four booleans, each an independent admission or observation switch with its own
+// semantic-scope consequence, not an enum in disguise: any combination is legal and
+// means what its fields say. The lint suspects flag-soup states; this is a config
+// surface whose fields are documented one by one.
+#[allow(clippy::struct_excessive_bools)]
 pub struct ScanConfig {
     /// Maximum relative entry depth to retain. Zero keeps only the index root and `None`
     /// means unlimited.
@@ -177,6 +182,16 @@ pub struct ScanConfig {
     /// change to it invalidates a snapshot. Shared rather than owned because a scan
     /// clones its config per wave and a registry is read-only once built.
     pub types: Option<std::sync::Arc<crate::classify::TypeRegistry>>,
+    /// Observe `.gitignore` control files and retain ignore classification.
+    ///
+    /// On by default so library callers keep exact control state. A consumer that never
+    /// reads ignore state -- the one-shot size report consumes none of it -- turns this
+    /// off and the scan performs no control-file I/O and retains no control table,
+    /// which is the same semantics the `gitignore` feature being absent gives, and is
+    /// stamped into [`ScanScope`] the same way so the two lifecycles cannot share a
+    /// snapshot (fdu-etfj: every `fdu <dir>` read and retained every `.gitignore` in
+    /// the tree, then could die on a budget for state its report never consumed).
+    pub read_controls: bool,
 }
 
 impl Default for ScanConfig {
@@ -191,6 +206,7 @@ impl Default for ScanConfig {
             threads: None,
             order: ScanOrder::default(),
             types: None,
+            read_controls: true,
         }
     }
 }
@@ -253,7 +269,11 @@ impl ScanConfig {
             one_filesystem: self.one_filesystem,
             hidden_fingerprint: self.hidden().fingerprint(),
             exclude_special: self.exclude_special,
-            ignore_rules_fingerprint: IGNORE_RULES_FINGERPRINT,
+            // Runtime opt-out and compiled-out capability are one semantic identity:
+            // both mean no control reads and no ignore classification, so they must
+            // share a fingerprint or two equivalent indexes would refuse each other's
+            // snapshots.
+            ignore_rules_fingerprint: if self.read_controls { IGNORE_RULES_FINGERPRINT } else { 0 },
             type_rules_fingerprint: self.types().fingerprint(),
             reducers_fingerprint: REDUCERS_FINGERPRINT,
         }
@@ -1076,7 +1096,7 @@ fn scan_internal(
             if disposition == crate::admission::Disposition::Reject {
                 continue;
             }
-            let control = match read_control_op(root, &rel_path, kind) {
+            let control = match read_control_op(config, root, &rel_path, kind) {
                 Ok(control) => control,
                 Err(error) => {
                     report.errors.push(error);
@@ -2189,7 +2209,7 @@ pub(crate) fn prepare_walk_entry(
         return None;
     }
     let path = rel_dir.join(name);
-    let (control, control_error) = match read_control_op(root, &path, kind) {
+    let (control, control_error) = match read_control_op(config, root, &path, kind) {
         Ok(control) => (control, None),
         Err(error) => (None, Some(error)),
     };
@@ -2277,15 +2297,40 @@ fn record_walk_entry(
 
 /// Read one fixed control source without allowing a raced or hostile file to allocate
 /// beyond the index-wide control budget.
+/// Observe one control file if the scan's policy asks for control state at all.
+///
+/// Every scan-side observation goes through here so the policy cannot be forgotten at
+/// one walk site; watching bypasses it via [`read_control_op_unconditional`] because a
+/// watch session always maintains control state.
+pub(crate) fn read_control_op(
+    config: &ScanConfig,
+    root: &Path,
+    path: &Path,
+    kind: EntryKind,
+) -> Result<Option<Op>> {
+    if !config.read_controls {
+        return Ok(None);
+    }
+    read_control_op_unconditional(root, path, kind)
+}
+
 #[cfg(not(feature = "gitignore"))]
 #[allow(clippy::unnecessary_wraps)] // The feature-enabled implementation performs I/O.
-pub(crate) fn read_control_op(root: &Path, path: &Path, kind: EntryKind) -> Result<Option<Op>> {
+pub(crate) fn read_control_op_unconditional(
+    root: &Path,
+    path: &Path,
+    kind: EntryKind,
+) -> Result<Option<Op>> {
     let _ = (root, path, kind);
     Ok(None)
 }
 
 #[cfg(feature = "gitignore")]
-pub(crate) fn read_control_op(root: &Path, path: &Path, kind: EntryKind) -> Result<Option<Op>> {
+pub(crate) fn read_control_op_unconditional(
+    root: &Path,
+    path: &Path,
+    kind: EntryKind,
+) -> Result<Option<Op>> {
     if !crate::control::is_control_file(path) {
         return Ok(None);
     }
@@ -3075,7 +3120,7 @@ pub fn revalidate(
             let attrs = attrs_from(&meta);
             let disposition =
                 crate::admission::decide(&name, kind, config.hidden(), config.exclude_special);
-            let control = match read_control_op(&root, &rel_path, kind) {
+            let control = match read_control_op(config, &root, &rel_path, kind) {
                 Ok(control) => control,
                 Err(error) => {
                     report.errors.push(error);
@@ -3487,7 +3532,7 @@ fn reconcile_target_inner(
                 ));
             }
             if disposition == crate::admission::Disposition::ControlOnly {
-                match read_control_op(&root, subtree, kind) {
+                match read_control_op(config, &root, subtree, kind) {
                     Ok(Some(control)) => {
                         batch.push(ObservationOp::if_state(control, baseline));
                     }
@@ -3556,7 +3601,7 @@ fn reconcile_target_inner(
                     ));
                 }
                 if disposition == crate::admission::Disposition::ControlOnly {
-                    match read_control_op(&root, &rel_path, kind) {
+                    match read_control_op(config, &root, &rel_path, kind) {
                         Ok(Some(control)) => {
                             batch.push(ObservationOp::if_state(control, baseline));
                         }
@@ -3574,7 +3619,7 @@ fn reconcile_target_inner(
             if batch.len() >= config.batch_size.max(1) {
                 flush_reconcile_batch(target, batch, sink, report)?;
             }
-            match read_control_op(&root, &rel_path, kind) {
+            match read_control_op(config, &root, &rel_path, kind) {
                 Ok(Some(control)) => {
                     batch.push(ObservationOp::if_state(control, baseline));
                     if batch.len() >= config.batch_size.max(1) {
@@ -3927,7 +3972,7 @@ fn reconcile_wave_worker(
                             return;
                         }
                         if disposition == crate::admission::Disposition::ControlOnly {
-                            match read_control_op(root, &rel_path, kind) {
+                            match read_control_op(config, root, &rel_path, kind) {
                                 Ok(Some(Op::ControlUpsert { path, source })) => {
                                     if !index.controls().source_is(&path, &source) {
                                         defer_reconcile_op(
@@ -3971,7 +4016,7 @@ fn reconcile_wave_worker(
                                 max_deferred_ops,
                             );
                         }
-                        match read_control_op(root, &rel_path, kind) {
+                        match read_control_op(config, root, &rel_path, kind) {
                             Ok(Some(Op::ControlUpsert { path, source })) => {
                                 if !index.controls().source_is(&path, &source) {
                                     defer_reconcile_op(
@@ -5990,7 +6035,8 @@ mod tests {
         let root = dir.path().to_path_buf();
         let (sender, receiver) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let result = read_control_op(&root, Path::new(".gitignore"), EntryKind::File);
+            let result =
+                read_control_op_unconditional(&root, Path::new(".gitignore"), EntryKind::File);
             sender.send(result).ok();
         });
         let result = receiver

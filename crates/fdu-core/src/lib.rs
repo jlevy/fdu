@@ -334,6 +334,17 @@ pub fn open_with_pending_save(
 ///
 /// A policy that cannot scan reads regardless of the flag — for [`CachePolicy::Only`]
 /// the snapshot is the contract, not a cost choice.
+/// Whether a retained snapshot with scope `stored` can answer a request with scope
+/// `wanted`. Equality, plus one directional allowance: everything equal except the
+/// stored side also observed control state.
+fn scope_serves(stored: ScanScope, wanted: ScanScope) -> bool {
+    if stored == wanted {
+        return true;
+    }
+    ScanScope { ignore_rules_fingerprint: wanted.ignore_rules_fingerprint, ..stored } == wanted
+        && wanted.ignore_rules_fingerprint == 0
+}
+
 pub(crate) fn open_for_report(
     root: &Path,
     config: &OpenConfig,
@@ -347,7 +358,17 @@ pub(crate) fn open_for_report(
             snapshot::load_with_types(cache_path, config.scan.types_shared())?
                 // A snapshot describing another root or a different scan scope is not this
                 // tree's answer; treat it as absent rather than as data.
-                .filter(|index| index.root_path() == root && index.scope() == config.scan.scope())
+                //
+                // Acceptance is "can this snapshot answer this request", which is
+                // directional, not symmetric. A snapshot written with control
+                // observation on retains a superset of what a controls-off request
+                // needs -- the identical rows plus ignore state the report never reads
+                // -- so a watch-maintained cache still serves a plain `fdu <dir>`. The
+                // reverse stays refused: a controls-off snapshot lacks state a
+                // controls-on consumer would silently miss.
+                .filter(|index| {
+                    index.root_path() == root && scope_serves(index.scope(), config.scan.scope())
+                })
         }
         _ => None,
     };
