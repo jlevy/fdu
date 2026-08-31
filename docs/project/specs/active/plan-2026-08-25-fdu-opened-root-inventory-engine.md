@@ -1709,9 +1709,29 @@ a paired interval for `voluntary_context_switches`, and the default run is decid
 against fdu on resources rather than being inconclusive.
 Both are clean measurements; neither is a published claim.
 
+A second defect surfaced while measuring the first, and it is larger.
+This branch is 3.6 to 10 times slower than `main` on ordinary trees, including trees
+with no `.gitignore` at all, so it is not control-file I/O. A clean release build of the
+branch tip reproduces the stale installed binary almost exactly.
+With `FDU_COUNTERS=1` on a zero-`.gitignore` subject the filesystem and index counters
+are identical — same directory opens, same stats, same upserts, same roll-up merges —
+while allocations rise 4.24 times, reallocations 20.1 times, and bytes allocated 3.71
+times. That is roughly 27 extra allocations and 22 extra reallocations per entry, and a
+20-fold reallocation ratio is the signature of a buffer grown by repeated push on a
+per-entry path rather than of extra work.
+
+This also explains the field reports better than the cap does.
+The agent’s 1m17s on `~/wrk` and 3m37s on `~` were this regression, not a comparison
+with dust: against `main` fdu is faster than dust, and against this branch dust wins
+comfortably. `fdu-pro1` carries it, and it is ordered first because a memory or timing
+figure measured on this branch means nothing until it is fixed.
+
 The phase’s ordering rule: the roll-up must stop paying for state it does not consume
 before anything tunes what that state costs.
 
+- [ ] Bisect and fix the whole-scan allocation regression against `main` — 3.6 to 10
+  times slower on ordinary trees, with identical filesystem and index counters
+  (`fdu-pro1`). Nothing else in this phase can be measured until this lands.
 - [ ] Gate control observation on a runtime capability rather than the `gitignore`
   compile feature alone, so a default roll-up performs no control-file I/O and retains
   no control state (`fdu-etfj`).
@@ -2088,6 +2108,7 @@ green.
 
 | Bead and files | Work | Acceptance |
 | --- | --- | --- |
+| `fdu-pro1`: whole-scan allocation regression | Bisect the branch to the commit that introduces the growth. Suspects are the per-entry portable-path commits, unconfirmed. Restore per-entry allocation counts to main’s order and add a counters-based check so the next such change is caught before merge. | The three measured trees land within noise of `main`; allocations and reallocations per entry return to main’s order. |
 | `fdu-etfj`: `crates/fdu/Cargo.toml`, `crates/fdu-core/src/scan.rs` `read_control_op` | Gate control observation on a runtime capability rather than the `gitignore` compile feature alone. A roll-up that never consumes ignore classification must not open, parse, or retain control files. | A default roll-up performs no control-file I/O; inventory consumers still receive exact control state; the `--no-default-features` build is unaffected. |
 | `fdu-1onj`: `crates/fdu-core/src/control.rs` `upsert`, `crates/fdu-core/src/index.rs` `install_controls` | Replace `Err(ControlSourceLimit)` with degradation to partial coverage carrying a typed control-budget issue, matching the resource-budget contract this plan already states for `max_files`. | Crossing the budget yields a usable roll-up and a stated partial boundary; no scan aborts on control state alone. |
 | `fdu-szkg`: `crates/fdu-core/src/control.rs` `retained_source_cost`, `ControlSource` | Deduplicate retained sources by the `ControlIdentity` fingerprint already computed, so identical control files are compiled and charged once. | Removal semantics unchanged and tested; measured retention on `~/wrk` falls from 9.93 MiB toward the deduplicated 3.81 MiB. |
