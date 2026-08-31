@@ -1670,11 +1670,23 @@ fdu peaks at 77.9 MiB against dust’s 59.2 MiB, and the harness classifies fdu
 **inferior** on this subject because `peak_rss_bytes` exceeds its +5 % resource limit
 and `minor_faults` exceeds its +10 % limit.
 
-The gap is fdu’s own rather than dust’s advantage.
-The same binary on the same tree moves from 15.0 MiB to 77.9 MiB — 5.2 times — between
-the engine-only contract and the default one, while wall time moves 7.5 %. The reusable
-index and the snapshot write buy that memory, and some part of it is control state a
-roll-up never consumes, which is what `fdu-etfj` removes and `fdu-syyl` measures.
+The gap is fdu’s own rather than dust’s advantage, and it is the retained index that the
+default *view* forces — not the cache, and not the snapshot write.
+Holding `--cache off` fixed and changing only the view, peak RSS on the same subject
+moves from 14 MiB under `--view summary` to 66 MiB under the default tree.
+Cache policy adds roughly 9 MiB on top of that, about an eighth of the gap.
+
+`plan_report` in `crates/fdu-core/src/execution.rs` states the rule: `--cache off` does
+not avoid the index, it only permits the summary tier, and `RetainedState::FullIndex` is
+selected by any view other than a bare unfiltered summary.
+The depth-2 default tree therefore retains one node per entry, about 550 bytes per
+retained entry on this subject.
+
+Reducing it is a question about the default view’s retention rather than about cache
+policy: either the tree is served from a bounded structure instead of a full index, or
+per-entry retained size comes down.
+Control state built for every scan sits inside that per-entry cost and is the cheapest
+part to remove first (`fdu-etfj`); `fdu-syyl` carries the attribution.
 
 Three differences remain qualitative, and only one is a technique fdu can copy.
 
