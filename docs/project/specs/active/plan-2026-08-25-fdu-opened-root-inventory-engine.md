@@ -5,7 +5,8 @@
 **Author:** fdu project, with Codex review assistance
 
 **Status:** Active — Phase 3B contract and Python oracle complete; Phase 3C bounded
-native projections in progress
+native projections in progress; Phase 4 control-state scale open after macOS field
+reports
 
 ## Overview
 
@@ -113,7 +114,8 @@ coordinator assembly, route integration, and full application gate.
 | Phase 1: exact engine kernel | Complete | Checkpoints 1A through 1D passed their local gates and the cumulative cross-platform PR gate. |
 | Phase 2: opened-root vertical slice | Complete | The native lifecycle and five transparent session goldens are green. The direct `PyO3` handle, exhaustive value conversion, immutable `fdu.opened` API, typed errors, GIL-detached operations, strict downstream typing fixture, installed-wheel lifecycle, source distribution, CLI parity, and cross-target lint all pass. |
 | Phase 3: MetaBrowser adoption | Checkpoint 3C in progress | MetaBrowser commit `2743064` measures the unchanged contract against the exact fdu wheel from `0583a1a`; `45266a8` completes the shared bounded contract and Python oracle. fdu `a286145` completes the approved optional serving-index set, and `27aeed0` completes the bounded continuation authority with green CI. The current native checkpoint parses the actual File Rollup v3 registry without adding a dependency, projects classification on demand, and adds the selection predicates needed by catalog and filtered reads. The bounded projection readers, Python registry input, and thin production adapter remain open. |
-| Phase 4: composed proof | Not started | Cross-provider conformance, route and lifecycle integration, installed-wheel proof, and final performance and size acceptance remain required. |
+| Phase 4: control-state scale | Not started | Branch builds cannot roll up `~`, `~/wrk`, or `~/Library` on macOS while `main` can. The control table aborts the scan at a 4 MiB cumulative budget that `~/wrk` exceeds 2.4-fold. Epic `fdu-2lkf`. |
+| Phase 5: composed proof | Not started | Cross-provider conformance, route and lifecycle integration, installed-wheel proof, and final performance and size acceptance remain required. |
 
 The implementation epic has completed the native and Python Phase 2 dependency chain.
 MetaBrowser adoption, composed integration, and final acceptance remain open.
@@ -1104,7 +1106,7 @@ recorded in the
 | PR #44 material | Disposition |
 | --- | --- |
 | Measured 120,001-entry client comparison | Evidence. Preserve the regime and single-trial caveat; rerun through Phase 3A before making adoption claims. |
-| Source verification and raw-versus-canonical extension correction | Retain. The Phase 4 File Rollup packet gains direct basename derivation cases. |
+| Source verification and raw-versus-canonical extension correction | Retain. The Phase 5 File Rollup packet gains direct basename derivation cases. |
 | Requirement-by-requirement MetaBrowser inventory | Retain as historical input; this plan and the reviewed MetaBrowser contract own current requirements. |
 | Retained-engine seam, no callbacks, coherent reads, read-on-dirty, registry-at-open, and capture-before-baseline | Retain in the current architecture. |
 | Separate session surfaces, `IndexHandle` as the live API, package-owned async adaptation, generic tag planes, and `since(clock)` without session identity | Reject or replace as specified by the current architecture. |
@@ -1263,7 +1265,7 @@ References so rationale is still recoverable.
 All fdu phases use `codex/opened-root-inventory-rewrite` and one draft PR rooted at
 current `main`, not PR #47. Each checkbox is independently reviewable, each phase ends
 in a named green commit checkpoint, and work does not advance across a failed phase
-gate. The PR remains a draft until Phase 4 passes.
+gate. The PR remains a draft until Phase 5 passes.
 
 This merge topology explicitly overrides the review report’s preferred sequence of a
 core-integrity PR followed by an opened-root PR. The project owner selected one
@@ -1281,7 +1283,7 @@ Checkpoint 3A runs on the dedicated MetaBrowser branch
 `3183888808b366b5ba1c381dec1cbb18b49d969e`. It measures the current contract with an
 exact-revision fdu wheel and contains no shipping contract decision.
 After its evidence is published and its naive adapter is deleted, retained harness work
-and Phases 3B through 4 land on the MetaBrowser PR #74 branch.
+and Phases 3B through 5 land on the MetaBrowser PR #74 branch.
 Both PR descriptions pin the exact counterpart revision used by every cross-repository
 checkpoint.
 
@@ -1535,7 +1537,7 @@ fixed 11-name vocabulary.
 The incremental cost is accepted for the opt-in interactive path because it removes
 repeated full-result materialization, sorting, and aggregate passes; detached indexes
 exit before serving classification or basename allocation.
-Final Phase 4 evidence still measures whole CLI and opened-root startup, peak memory,
+Final Phase 5 evidence still measures whole CLI and opened-root startup, peak memory,
 and client query latency on the shared corpus.
 
 The existing Phase 2 continuation implementation is retained rather than replaced.
@@ -1645,7 +1647,177 @@ Acceptance for Phase 3:
   the CLI dependency tree contains no Python, async-runtime, serialization-framework, or
   MetaBrowser package.
 
-### Phase 4: End-to-End Integration Proof
+### Phase 4: Control-State Scale and Bound Discipline
+
+Phase 1 built exact control state and proved it on repositories.
+It does not survive a real home directory, and that is a merge blocker rather than a
+tuning question.
+
+Field agents running ordinary roll-ups on macOS could not complete a scan of `~`,
+`~/wrk`, or `~/Library` with a branch build.
+Two aborted with `control table requires N bytes; limit is 4194304 bytes`; the third was
+SIGKILLed. Current `main`, which has no control table, scans the same `~/wrk` in 15
+seconds and exits 0. The regression is this branch’s, and it arrives on `main` when this
+PR merges.
+
+The overshoot is not marginal, and the reported numbers say otherwise only by accident.
+The budget trips at the first crossing of a running cumulative total, so the number in
+the message is where the walk crossed, not what the tree needed.
+Applying this branch’s own `retained_source_cost` to all 3,256 `.gitignore` files under
+`~/wrk` charges 9.93 MiB against a 4 MiB cap — 2.4 times over, not the 0.4 % the message
+implies. A cap raised to 5 or 8 MiB would look sufficient and would not be.
+
+Two directions are already closed, and are recorded here so they are not reopened:
+
+- The cap cannot be checked before the walk.
+  The total is a property of the tree and is unknowable until the tree has been walked,
+  so “fail fast instead of after three minutes” is not implementable as stated.
+  Degrading at the crossing is what turns the elapsed work into an answer.
+- The `~/Library` slowness first attributed to fdu was a cold-cache artefact, and the
+  regime was not controlled when it was recorded.
+  Warm, fdu finishes `~/Library` in 35 s at 359 MiB and `dust` in 30 s at 218 MiB. Cold,
+  `du` and fdu both exceed a minute on `~/Library/Containers` alone, whose 1,012 sandbox
+  containers each cost a TCC permission check.
+  Cache state, not the tool, explains the original observation, and this plan states it
+  because the project’s own rule is to record the regime rather than the number.
+  What survives the correction is memory, not time: fdu’s peak is consistently 1.5 to
+  1.6 times dust’s on the same trees, which is what makes fdu the first process to die
+  on a host already under pressure.
+
+#### What dust already solves, and what it does not
+
+Two recorded comparisons through `make perf-compare-tools`, paired and interleaved, on
+`rustup-toolchains`: 119,368 entries, no symlinks, no mutation during the run, zero
+invalid samples, zero semantic or oracle mismatches.
+
+The subject had to be chosen, not assumed.
+`~/wrk` cannot carry this comparison at all: dust’s claim-grade contract excludes
+symlink-bearing trees, and that live working directory grew by 47,881 entries mid-run.
+The harness refused every sample of the first attempt, correctly.
+
+| fdu contract | fdu wall | dust wall | fdu peak RSS | dust peak RSS |
+| --- | ---: | ---: | ---: | ---: |
+| `fdu-transient-summary` | 0.146 s | 0.218 s | 15.0 MiB | 59.1 MiB |
+| `fdu-default-tree` | 0.157 s | 0.197 s | 77.9 MiB | 59.2 MiB |
+
+Read the second row.
+`fdu-transient-summary` passes `--cache off` with an explicit view, which isolates
+engine work; `fdu-default-tree` is what a user gets by typing `fdu PATH`, and typing
+`fdu PATH` is the only thing the field reports did.
+
+On the default path the wall-time lead is not real: dust is +20.6 % with a 95 % interval
+of −12.8 % to +27.2 %, which crosses zero.
+What is real is memory.
+fdu peaks at 77.9 MiB against dust’s 59.2 MiB, and the harness classifies fdu
+**inferior** on this subject because `peak_rss_bytes` exceeds its +5 % resource limit
+and `minor_faults` exceeds its +10 % limit.
+
+The gap is fdu’s own rather than dust’s advantage, and it is the retained index that the
+default *view* forces — not the cache, and not the snapshot write.
+Holding `--cache off` fixed and changing only the view, peak RSS on the same subject
+moves from 14 MiB under `--view summary` to 66 MiB under the default tree.
+Cache policy adds roughly 9 MiB on top of that, about an eighth of the gap.
+
+`plan_report` in `crates/fdu-core/src/execution.rs` states the rule: `--cache off` does
+not avoid the index, it only permits the summary tier, and `RetainedState::FullIndex` is
+selected by any view other than a bare unfiltered summary.
+The depth-2 default tree therefore retains one node per entry, about 550 bytes per
+retained entry on this subject.
+
+Reducing it is a question about the default view’s retention rather than about cache
+policy: either the tree is served from a bounded structure instead of a full index, or
+per-entry retained size comes down.
+Control state built for every scan sits inside that per-entry cost and is the cheapest
+part to remove first (`fdu-etfj`); `fdu-syyl` carries the attribution.
+
+Three differences remain qualitative, and only one is a technique fdu can copy.
+
+- dust has no per-directory control state to exhaust.
+  `-I`/`--ignore-all-in-file` takes one file of regexes; there is no hierarchical
+  `.gitignore`, no retained table, and no snapshot to serialize one into.
+  It escapes this phase’s headline defect by not offering the feature rather than by
+  bounding it better, which fdu cannot adopt while keeping exact control state.
+  It does establish the weaker claim this phase rests on: a size roll-up needs none of
+  it.
+- dust suppresses filesystem errors by default and offers `--print-errors` to opt in,
+  exiting 0. fdu does the inverse and exits 2. dust’s quiet is not free — its `~` total
+  is 206 G against fdu’s 214 GiB, and part of that gap is what it skipped without saying
+  so — so `fdu-5ffm` should take the opt-in shape without taking the silence.
+- dust accepts a regular file as a root and reports its size; fdu rejects one
+  (`fdu-tsdy`).
+
+Neither recorded run is confirmable under the release rule yet: the transient run lacks
+a paired interval for `voluntary_context_switches`, and the default run is decided
+against fdu on resources rather than being inconclusive.
+Both are clean measurements; neither is a published claim.
+
+A second defect surfaced while measuring the first, and it is larger.
+This branch is 3.6 to 10 times slower than `main` on ordinary trees, including trees
+with no `.gitignore` at all, so it is not control-file I/O. A clean release build of the
+branch tip reproduces the stale installed binary almost exactly.
+With `FDU_COUNTERS=1` on a zero-`.gitignore` subject the filesystem and index counters
+are identical — same directory opens, same stats, same upserts, same roll-up merges —
+while allocations rise 4.24 times, reallocations 20.1 times, and bytes allocated 3.71
+times. That is roughly 27 extra allocations and 22 extra reallocations per entry, and a
+20-fold reallocation ratio is the signature of a buffer grown by repeated push on a
+per-entry path rather than of extra work.
+
+This also explains the field reports better than the cap does.
+The agent’s 1m17s on `~/wrk` and 3m37s on `~` were this regression, not a comparison
+with dust: against `main` fdu is faster than dust, and against this branch dust wins
+comfortably. `fdu-pro1` carries it, and it is ordered first because a memory or timing
+figure measured on this branch means nothing until it is fixed.
+
+The phase’s ordering rule: the roll-up must stop paying for state it does not consume
+before anything tunes what that state costs.
+
+- [ ] Bisect and fix the whole-scan allocation regression against `main` — 3.6 to 10
+  times slower on ordinary trees, with identical filesystem and index counters
+  (`fdu-pro1`). Nothing else in this phase can be measured until this lands.
+- [ ] Gate control observation on a runtime capability rather than the `gitignore`
+  compile feature alone, so a default roll-up performs no control-file I/O and retains
+  no control state (`fdu-etfj`).
+- [ ] Replace the abort with degradation: on crossing the budget, stop retaining further
+  control sources, mark coverage partial with a typed control-budget issue that names
+  the affected directories, and keep the roll-up answer (`fdu-1onj`).
+- [ ] Deduplicate retained sources by the `ControlIdentity` fingerprint already
+  computed, so identical control files are charged and compiled once (`fdu-szkg`).
+- [ ] Split the constant into a strict snapshot-parser guard and a separate, larger
+  runtime retention budget; make the runtime budget liftable from the command line and
+  name it in the diagnostic (`fdu-okne`).
+- [ ] Establish whether peak memory grows unbounded on `~/Library`-shaped trees — deep,
+  wide, many small files — and bound whatever accumulates, keeping that question
+  separate from TCC-induced slowness (`fdu-6o5o`).
+- [ ] Re-measure `~`, `~/wrk`, and `~/Library` on macOS against `main` as the control,
+  and record the regime alongside the numbers.
+- [ ] Attribute the peak-memory gap against dust — 1.5 to 1.6 times on every tree
+  measured — between the retained index contract and retention a roll-up never uses
+  (`fdu-syyl`), through the recorded peer comparison rather than by hand (`fdu-zibs`).
+
+This phase does not change what a complete answer means.
+Control state remains exact for the consumers that ask for it; what changes is that a
+roll-up no longer builds it, and that exhausting its budget yields a stated partial
+result instead of an error.
+
+Acceptance for Phase 4:
+
+- a default CLI roll-up of `~` and of `~/wrk` completes on macOS, performing no
+  control-file I/O and retaining no control state;
+- opened-root and inventory consumers still receive exact, removal-aware control state,
+  and the `--no-default-features` build is unaffected;
+- crossing the runtime retention budget produces a usable roll-up plus an explicit
+  partial marker whose boundary of incompleteness is knowable, and never an aborted
+  scan;
+- retention is deduplicated by fingerprint, with removal semantics unchanged and tested,
+  and measured retention on `~/wrk` falls by the predicted order;
+- the runtime budget is settable from the command line and named in its own diagnostic,
+  while the snapshot parser guard stays strict and independent of it;
+- peak memory on an `~/Library`-shaped tree is bounded and measured, or the SIGKILL is
+  attributed to a cause outside fdu with evidence;
+- macOS measurements name platform, host, and cache state, and use `main` as the
+  control.
+
+### Phase 5: End-to-End Integration Proof
 
 This phase changes no default.
 It proves the composed product through the same public routes and lifecycle that the
@@ -1677,7 +1849,7 @@ browser uses, then produces the evidence required for a separate rollout decisio
 - [ ] Make fdu the default provider only after correctness and performance acceptance is
   explicit in both repositories.
 
-Acceptance for Phase 4:
+Acceptance for Phase 5:
 
 - both providers pass the same closed conformance registry;
 - complete settled responses and replay checkpoints agree exactly;
@@ -1974,7 +2146,20 @@ green.
 | `fdu_inventory.py` private change bridge | Run bounded provider operations with `asyncio.to_thread`. Give one handle one dedicated poll worker, a one-slot locked mailbox, and an `asyncio.Event` woken with `loop.call_soon_threadsafe`. Keep one result pending and do not poll or advance the local cursor until consumption. Iterator `aclose` joins the bridge only; handle `close` then joins the bridge and native opened root through `to_thread`. | Cancellation within one poll interval, later read after iterator close, concurrent bounded reads, second-iterator busy error, reset after backpressure, event-loop closure, and close during poll. |
 | `factory.py` `InventoryProvider`, `create_inventory_backend`; `pyproject.toml`; `uv.lock` | Register explicit `fdu` selection and optional dependency. Missing or incompatible package is a typed startup failure; Python remains default and no automatic fallback exists. | Clean install without fdu, exact-revision wheel install with fdu, lock/supply-chain gate. |
 
-### Phase 4: composed proof and rollout evidence
+### Phase 4: control-state scale and bound discipline
+
+| Bead and files | Work | Acceptance |
+| --- | --- | --- |
+| `fdu-pro1`: whole-scan allocation regression | Bisect the branch to the commit that introduces the growth. Suspects are the per-entry portable-path commits, unconfirmed. Restore per-entry allocation counts to main’s order and add a counters-based check so the next such change is caught before merge. | The three measured trees land within noise of `main`; allocations and reallocations per entry return to main’s order. |
+| `fdu-etfj`: `crates/fdu/Cargo.toml`, `crates/fdu-core/src/scan.rs` `read_control_op` | Gate control observation on a runtime capability rather than the `gitignore` compile feature alone. A roll-up that never consumes ignore classification must not open, parse, or retain control files. | A default roll-up performs no control-file I/O; inventory consumers still receive exact control state; the `--no-default-features` build is unaffected. |
+| `fdu-1onj`: `crates/fdu-core/src/control.rs` `upsert`, `crates/fdu-core/src/index.rs` `install_controls` | Replace `Err(ControlSourceLimit)` with degradation to partial coverage carrying a typed control-budget issue, matching the resource-budget contract this plan already states for `max_files`. | Crossing the budget yields a usable roll-up and a stated partial boundary; no scan aborts on control state alone. |
+| `fdu-szkg`: `crates/fdu-core/src/control.rs` `retained_source_cost`, `ControlSource` | Deduplicate retained sources by the `ControlIdentity` fingerprint already computed, so identical control files are compiled and charged once. | Removal semantics unchanged and tested; measured retention on `~/wrk` falls from 9.93 MiB toward the deduplicated 3.81 MiB. |
+| `fdu-okne`: `crates/fdu-core/src/control.rs`, `crates/fdu-core/src/snapshot.rs`, `crates/fdu/src/cli.rs` | Split the constant into a strict snapshot-parser guard and a separate, larger runtime retention budget. Expose the runtime budget where it is stated and name it in the diagnostic. | The bound is liftable by a flag; the parser guard stays strict against untrusted `u32` lengths on load. |
+| `fdu-6o5o`: macOS `~/Library` memory investigation | Establish whether peak memory grows unbounded on deep, wide, many-small-file trees and bound whatever accumulates. Keep this separate from TCC-induced slowness, which is not fdu’s. | Peak memory is bounded and measured, or the SIGKILL is attributed outside fdu with evidence. |
+| `fdu-syyl`: peak-memory deficit against dust | Separate the portion of fdu’s peak that the retained index contract requires from the portion a roll-up never uses. Measure through the harness, paired and interleaved, not by hand. | Peak RSS on nominated macOS trees is measured and attributed; any reducible part has an owner or a recorded decision to keep it. |
+| `fdu-zibs`: recorded macOS peer comparison | Run `make perf-compare-tools` over the nominated macOS subjects and record the artifact, so no fdu-versus-dust figure rests on an unpaired or cache-uncontrolled run. | A recorded artifact exists with platform, host, and cache state stated; the `~/Library` case where dust leads is explained or filed. |
+
+### Phase 5: composed proof and rollout evidence
 
 | Bead and files | Work | Acceptance |
 | --- | --- | --- |
@@ -2507,7 +2692,7 @@ cache, and filesystem regime.
    then implement Phases 3B and 3C on that branch.
    Delete the naive adapter when the thin provider replaces it.
    Keep the Python provider as the default.
-6. Add the fdu provider behind explicit configuration and run the complete Phase 4
+6. Add the fdu provider behind explicit configuration and run the complete Phase 5
    installed-artifact integration matrix across both exact PR heads.
 7. Mark the fdu PR ready only after all four phase gates, the second-agent review, and
    both repositories’ CI pass; merge the complete rewrite as one PR.
@@ -2540,8 +2725,12 @@ their status as approval of that shape.
 | `fdu-t5h2` sorted resumable pages | Defer; path-order pages satisfy the immediate client. |
 | `fdu-8w5k` catalog predicates | MetaBrowser head now pins its side; implement as fdu selection conformance in Phase 3, not as a new core query name. |
 | `fdu-sgp7` prioritize and close | Phase 2 operations on the one `OpenedIndex`. |
-| `fdu-kl7r`, `fdu-vfyw` agreement proof | Phase 4 two-provider registry and observation replay. |
-| `fdu-gy3g` File Rollup packet | Phase 4, expanded to exercise basename-derived logical extensions. |
+| `fdu-kl7r`, `fdu-vfyw` agreement proof | Phase 5 two-provider registry and observation replay. |
+| `fdu-gy3g` File Rollup packet | Phase 5, expanded to exercise basename-derived logical extensions. |
+| `fdu-2lkf` control-state scale | Phase 4 epic. Its P0 children gate this PR leaving draft. |
+| `fdu-syyl`, `fdu-zibs` peer-comparison deficits | Phase 4. Memory, not wall time, is where fdu trails dust; measure it with the harness. |
+| `fdu-tsdy` regular-file scan root | Outside this plan. Decide deliberately on the CLI surface plan rather than by omission. |
+| `fdu-5ffm` macOS TCC exit 2 | `main` behaviour, not this branch. Tracked against the CLI UX plan beside `fdu-jej9`. |
 | `fdu-livs` progressive provenance | Defer warm/mixed serving; cold streaming uses honest global source plus directory completeness. |
 
 Implementation epic `fdu-snej` owns this plan.
