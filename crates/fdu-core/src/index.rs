@@ -624,6 +624,32 @@ impl ApplyOutcome {
     }
 }
 
+#[derive(Clone, Copy)]
+enum BatchProvenance {
+    Baseline,
+    Opened,
+    Public,
+}
+
+fn record_batch(provenance: BatchProvenance, observed: usize, stats: ApplyStats) {
+    let observed = u64::try_from(observed).unwrap_or(u64::MAX);
+    let accepted = observed.saturating_sub(stats.stale);
+    crate::counters::bump(|counts| match provenance {
+        BatchProvenance::Baseline => {
+            counts.baseline_batches = counts.baseline_batches.saturating_add(1);
+            counts.baseline_accepted_ops = counts.baseline_accepted_ops.saturating_add(accepted);
+        }
+        BatchProvenance::Opened => {
+            counts.opened_batches = counts.opened_batches.saturating_add(1);
+            counts.opened_accepted_ops = counts.opened_accepted_ops.saturating_add(accepted);
+        }
+        BatchProvenance::Public => {
+            counts.public_batches = counts.public_batches.saturating_add(1);
+            counts.public_accepted_ops = counts.public_accepted_ops.saturating_add(accepted);
+        }
+    });
+}
+
 /// Validated, canonical producer input ready for arbitration under the write guard.
 #[derive(Clone, Debug)]
 struct PreparedObservation {
@@ -798,7 +824,9 @@ impl IndexHandle {
     /// Arbitrate and apply one observation under the single-writer lock.
     pub fn apply(&self, observation: &Observation) -> crate::Result<ApplyOutcome> {
         let prepared = prepare_observation(observation)?;
-        self.write_index()?.commit_prepared(prepared, true)
+        let outcome = self.write_index()?.commit_prepared(prepared, true)?;
+        record_batch(BatchProvenance::Public, observation.len(), outcome.stats);
+        Ok(outcome)
     }
 
     pub(crate) fn apply_discovery(
@@ -807,7 +835,16 @@ impl IndexHandle {
         discovery: DiscoveryCommit,
     ) -> crate::Result<ApplyOutcome> {
         let prepared = prepare_observation(observation)?;
-        self.write_index()?.commit_prepared_with(prepared, true, Some(discovery), None, None, true)
+        let outcome = self.write_index()?.commit_prepared_with(
+            prepared,
+            true,
+            Some(discovery),
+            None,
+            None,
+            true,
+        )?;
+        record_batch(BatchProvenance::Opened, observation.len(), outcome.stats);
+        Ok(outcome)
     }
 
     pub(crate) fn apply_opened(
@@ -816,7 +853,11 @@ impl IndexHandle {
         max_files: Option<u64>,
     ) -> crate::Result<ApplyOutcome> {
         let prepared = prepare_observation(observation)?;
-        self.write_index()?.commit_prepared_with(prepared, true, None, None, max_files, true)
+        let outcome = self
+            .write_index()?
+            .commit_prepared_with(prepared, true, None, None, max_files, true)?;
+        record_batch(BatchProvenance::Opened, observation.len(), outcome.stats);
+        Ok(outcome)
     }
 
     pub(crate) fn apply_discovery_bounded(
@@ -826,14 +867,16 @@ impl IndexHandle {
         max_files: Option<u64>,
     ) -> crate::Result<ApplyOutcome> {
         let prepared = prepare_observation(observation)?;
-        self.write_index()?.commit_prepared_with(
+        let outcome = self.write_index()?.commit_prepared_with(
             prepared,
             true,
             Some(discovery),
             None,
             max_files,
             true,
-        )
+        )?;
+        record_batch(BatchProvenance::Opened, observation.len(), outcome.stats);
+        Ok(outcome)
     }
 
     pub(crate) fn transition_discovery(
@@ -852,7 +895,16 @@ impl IndexHandle {
         transition: ObservationTransition,
     ) -> crate::Result<ApplyOutcome> {
         let prepared = prepare_observation(&Observation::default())?;
-        self.write_index()?.commit_prepared_with(prepared, true, None, Some(transition), None, true)
+        let outcome = self.write_index()?.commit_prepared_with(
+            prepared,
+            true,
+            None,
+            Some(transition),
+            None,
+            true,
+        )?;
+        record_batch(BatchProvenance::Opened, 0, outcome.stats);
+        Ok(outcome)
     }
 
     /// Absolute filesystem root, copied without retaining the read lock.
@@ -1312,7 +1364,9 @@ impl Index {
     /// No-ops and stale operations do not advance the clock or enter the journal.
     pub fn apply(&mut self, observation: &Observation) -> crate::Result<ApplyOutcome> {
         let prepared = prepare_observation(observation)?;
-        self.commit_prepared(prepared, true)
+        let outcome = self.commit_prepared(prepared, true)?;
+        record_batch(BatchProvenance::Public, observation.len(), outcome.stats);
+        Ok(outcome)
     }
 
     /// [`Self::apply`] with the change-history capture optional.
@@ -1329,7 +1383,9 @@ impl Index {
         journal: bool,
     ) -> crate::Result<ApplyOutcome> {
         let prepared = prepare_observation(observation)?;
-        self.commit_prepared(prepared, journal)
+        let outcome = self.commit_prepared(prepared, journal)?;
+        record_batch(BatchProvenance::Baseline, observation.len(), outcome.stats);
+        Ok(outcome)
     }
 
     /// Arbitrate and atomically apply normalized producer input.
@@ -1679,6 +1735,20 @@ impl Index {
         journal: bool,
     ) -> Commit {
         debug_assert!(!effects.is_empty());
+        if crate::counters::enabled() {
+            let effect_paths = u64::try_from(effects.changes.len()).unwrap_or(u64::MAX);
+            let effect_path_bytes = effects.changes.iter().fold(0_u64, |total, change| {
+                total.saturating_add(
+                    u64::try_from(change.path().as_os_str().as_encoded_bytes().len())
+                        .unwrap_or(u64::MAX),
+                )
+            });
+            crate::counters::bump(|counts| {
+                counts.effect_paths = counts.effect_paths.saturating_add(effect_paths);
+                counts.effect_path_bytes =
+                    counts.effect_path_bytes.saturating_add(effect_path_bytes);
+            });
+        }
         let commit = Commit {
             clock: next_clock,
             impact: derive_impact(&effects.changes, &effects.state),
@@ -1688,6 +1758,9 @@ impl Index {
         };
         self.clock = next_clock;
         if journal {
+            crate::counters::bump(|counts| {
+                counts.journal_cloned_commits = counts.journal_cloned_commits.saturating_add(1);
+            });
             self.retain_commit(commit.clone());
         }
         commit
@@ -1696,6 +1769,13 @@ impl Index {
     fn retain_commit(&mut self, commit: Commit) {
         let cost = commit.retained_cost();
         if cost > self.journal_capacity {
+            let dropped = u64::try_from(self.journal.len()).unwrap_or(u64::MAX);
+            crate::counters::bump(|counts| {
+                counts.journal_oversized_commits =
+                    counts.journal_oversized_commits.saturating_add(1);
+                counts.journal_dropped_commits =
+                    counts.journal_dropped_commits.saturating_add(dropped);
+            });
             self.journal.clear();
             self.journal_cost = 0;
             self.journal_floor = commit.clock;
@@ -1704,12 +1784,19 @@ impl Index {
 
         while self.journal_cost + cost > self.journal_capacity {
             if let Some(dropped) = self.journal.pop_front() {
+                crate::counters::bump(|counts| {
+                    counts.journal_dropped_commits =
+                        counts.journal_dropped_commits.saturating_add(1);
+                });
                 self.journal_cost -= dropped.retained_cost();
                 self.journal_floor = dropped.clock;
             }
         }
         self.journal_cost += cost;
         self.journal.push_back(commit);
+        crate::counters::bump(|counts| {
+            counts.journal_retained_commits = counts.journal_retained_commits.saturating_add(1);
+        });
     }
 
     /// Apply trusted bootstrap data without exposing it as live change history.
@@ -2708,6 +2795,10 @@ impl Index {
     ) -> Vec<(PathBuf, PathBuf)> {
         let mut structure = StructuralOverlay::default();
         let mut unknown = Vec::new();
+        let mut overlay_inserts = 0_u64;
+        let mut path_comparisons = 0_u64;
+        let mut parent_proofs = 0_u64;
+        let count_preflight = crate::counters::enabled();
         // The last directory this pass proved, with every ancestor of it. A producer
         // emits a directory's children together, so consecutive ops overwhelmingly
         // share a parent, and re-proving the same chain per op was the largest single
@@ -2726,11 +2817,18 @@ impl Index {
                 Op::Upsert { path, .. } | Op::ControlUpsert { path, .. }
                     if !path.as_os_str().is_empty() =>
                 {
+                    if count_preflight && proven_dir.is_some() {
+                        path_comparisons = path_comparisons.saturating_add(1);
+                    }
                     let same_proven_parent = matches!(
                         (path.parent(), proven_dir.as_deref()),
                         (Some(parent), Some(proven)) if parent == proven
                     );
-                    if !same_proven_parent {
+                    if same_proven_parent {
+                        if count_preflight {
+                            parent_proofs = parent_proofs.saturating_add(1);
+                        }
+                    } else {
                         let mut reconcile_from = PathBuf::new();
                         let mut ancestry_known = true;
                         let parts = normalize(path).expect("prepared paths are canonical");
@@ -2749,6 +2847,9 @@ impl Index {
                             proven_dir = None;
                             continue;
                         }
+                        if count_preflight {
+                            parent_proofs = parent_proofs.saturating_add(1);
+                        }
                         match &mut proven_dir {
                             Some(proven) => {
                                 proven.clear();
@@ -2762,6 +2863,9 @@ impl Index {
                     }
                     if let Op::Upsert { kind, .. } = &observed.op {
                         structure.upsert(self, path, *kind);
+                        if count_preflight {
+                            overlay_inserts = overlay_inserts.saturating_add(1);
+                        }
                         if !kind.is_dir() {
                             // This path may itself have been somebody's proven ancestor
                             // only if it was a directory before; the overlay knows, but
@@ -2785,6 +2889,16 @@ impl Index {
                 | Op::ControlRemove { .. }
                 | Op::InvalidateSubtree { .. } => {}
             }
+        }
+        if count_preflight {
+            crate::counters::bump(|counts| {
+                counts.ancestry_overlay_inserts =
+                    counts.ancestry_overlay_inserts.saturating_add(overlay_inserts);
+                counts.ancestry_path_comparisons =
+                    counts.ancestry_path_comparisons.saturating_add(path_comparisons);
+                counts.ancestry_parent_proofs =
+                    counts.ancestry_parent_proofs.saturating_add(parent_proofs);
+            });
         }
         unknown
     }
@@ -3670,6 +3784,8 @@ fn derive_impact(changes: &[EffectiveChange], state: &[StateTransition]) -> Impa
     let mut domains = BTreeSet::new();
     let mut paths = BTreeSet::new();
     let mut all_dirty = false;
+    let mut ancestor_visits = 0_u64;
+    let count_impact = crate::counters::enabled();
 
     for change in changes {
         match change {
@@ -3696,11 +3812,37 @@ fn derive_impact(changes: &[EffectiveChange], state: &[StateTransition]) -> Impa
                 domains.insert(ImpactDomain::State);
             }
         }
-        insert_dirty_ancestors(change.path(), &mut paths, &mut all_dirty);
+        insert_dirty_ancestors(
+            change.path(),
+            &mut paths,
+            &mut all_dirty,
+            count_impact,
+            &mut ancestor_visits,
+        );
     }
     for transition in state {
         domains.insert(ImpactDomain::State);
-        insert_dirty_ancestors(transition.path(), &mut paths, &mut all_dirty);
+        insert_dirty_ancestors(
+            transition.path(),
+            &mut paths,
+            &mut all_dirty,
+            count_impact,
+            &mut ancestor_visits,
+        );
+    }
+
+    if count_impact {
+        let candidates =
+            u64::try_from(changes.len().saturating_add(state.len())).unwrap_or(u64::MAX);
+        let retained_dirty_paths = u64::try_from(paths.len()).unwrap_or(u64::MAX);
+        crate::counters::bump(|counts| {
+            counts.impact_candidates = counts.impact_candidates.saturating_add(candidates);
+            counts.impact_ancestor_visits =
+                counts.impact_ancestor_visits.saturating_add(ancestor_visits);
+            counts.impact_retained_dirty_paths =
+                counts.impact_retained_dirty_paths.saturating_add(retained_dirty_paths);
+            counts.impact_all_dirty = counts.impact_all_dirty.saturating_add(u64::from(all_dirty));
+        });
     }
 
     Impact {
@@ -3720,11 +3862,20 @@ fn commit_work(observations: u64, stats: ApplyStats) -> Work {
     }
 }
 
-fn insert_dirty_ancestors(path: &Path, paths: &mut BTreeSet<PathBuf>, all_dirty: &mut bool) {
+fn insert_dirty_ancestors(
+    path: &Path,
+    paths: &mut BTreeSet<PathBuf>,
+    all_dirty: &mut bool,
+    count_impact: bool,
+    ancestor_visits: &mut u64,
+) {
     if *all_dirty {
         return;
     }
     for ancestor in path.ancestors() {
+        if count_impact {
+            *ancestor_visits = ancestor_visits.saturating_add(1);
+        }
         paths.insert(ancestor.to_path_buf());
         if paths.len() > MAX_DIRTY_PATHS {
             paths.clear();
@@ -5125,6 +5276,91 @@ mod tests {
         let applied = outcome.applied().expect("one effective insert");
         assert_eq!(applied.len(), 1);
         assert_eq!(applied.ops[0].path(), Path::new("new.txt"));
+    }
+
+    #[test]
+    fn mutation_counters_match_exact_batch_and_consequence_totals() {
+        struct DisableCounters;
+
+        impl Drop for DisableCounters {
+            fn drop(&mut self) {
+                crate::counters::enable(false);
+                crate::counters::test_thread_reset();
+            }
+        }
+
+        let _serial = crate::counters::test_serial();
+        crate::counters::enable(true);
+        let _disable = DisableCounters;
+        let observation = Observation::new(vec![
+            upsert("a", EntryKind::Dir, Attrs::default()),
+            upsert("a/f1", EntryKind::File, file_attrs(1, 1)),
+            upsert("a/f2", EntryKind::File, file_attrs(2, 2)),
+        ]);
+
+        crate::counters::test_thread_reset();
+        let mut baseline = Index::new("/root");
+        baseline.apply_baseline_ok(&observation);
+        let counts = crate::counters::test_thread_snapshot();
+        assert_eq!(counts.baseline_batches, 1);
+        assert_eq!(counts.baseline_accepted_ops, 3);
+        assert_eq!(counts.opened_batches, 0);
+        assert_eq!(counts.public_batches, 0);
+        assert_eq!(counts.ancestry_overlay_inserts, 3);
+        assert_eq!(counts.ancestry_path_comparisons, 2);
+        assert_eq!(counts.ancestry_parent_proofs, 3);
+        assert_eq!(counts.effect_paths, 3);
+        assert_eq!(counts.effect_path_bytes, 9);
+        assert_eq!(counts.impact_candidates, 3);
+        assert_eq!(counts.impact_ancestor_visits, 8);
+        assert_eq!(counts.impact_retained_dirty_paths, 4);
+        assert_eq!(counts.impact_all_dirty, 0);
+        assert_eq!(counts.applied_delta_materializations, 1);
+        assert_eq!(counts.journal_cloned_commits, 0);
+        assert_eq!(counts.journal_retained_commits, 0);
+
+        crate::counters::test_thread_reset();
+        let mut public = Index::new("/root");
+        public.apply_ok(&observation);
+        let counts = crate::counters::test_thread_snapshot();
+        assert_eq!(counts.baseline_batches, 0);
+        assert_eq!(counts.opened_batches, 0);
+        assert_eq!(counts.public_batches, 1);
+        assert_eq!(counts.public_accepted_ops, 3);
+        assert_eq!(counts.effect_paths, 3);
+        assert_eq!(counts.applied_delta_materializations, 1);
+        assert_eq!(counts.journal_cloned_commits, 1);
+        assert_eq!(counts.journal_retained_commits, 1);
+        assert_eq!(counts.journal_oversized_commits, 0);
+        assert_eq!(counts.journal_dropped_commits, 0);
+
+        crate::counters::test_thread_reset();
+        let opened = IndexHandle::new(Index::new("/root"));
+        opened
+            .apply_discovery(&observation, DiscoveryCommit::default())
+            .expect("opened discovery batch");
+        let counts = crate::counters::test_thread_snapshot();
+        assert_eq!(counts.baseline_batches, 0);
+        assert_eq!(counts.opened_batches, 1);
+        assert_eq!(counts.opened_accepted_ops, 3);
+        assert_eq!(counts.public_batches, 0);
+
+        crate::counters::test_thread_reset();
+        let mut bounded = Index::new("/root");
+        bounded.journal_capacity = 4;
+        bounded.apply_ok(&Observation::new(vec![upsert("one", EntryKind::File, file_attrs(1, 1))]));
+        bounded.apply_ok(&Observation::new(vec![upsert("two", EntryKind::File, file_attrs(2, 2))]));
+        bounded.journal_capacity = 1;
+        bounded.apply_ok(&Observation::new(vec![upsert(
+            "three",
+            EntryKind::File,
+            file_attrs(3, 3),
+        )]));
+        let counts = crate::counters::test_thread_snapshot();
+        assert_eq!(counts.journal_cloned_commits, 3);
+        assert_eq!(counts.journal_retained_commits, 2);
+        assert_eq!(counts.journal_oversized_commits, 1);
+        assert_eq!(counts.journal_dropped_commits, 2);
     }
 
     #[test]

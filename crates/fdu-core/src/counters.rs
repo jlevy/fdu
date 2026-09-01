@@ -54,6 +54,46 @@ pub struct Counts {
     pub rollup_merges: u64,
     /// Index entries allocated.
     pub entries_allocated: u64,
+    /// Successful detached baseline batches arbitrated by the index.
+    pub baseline_batches: u64,
+    /// Operations accepted from successful detached baseline batches.
+    pub baseline_accepted_ops: u64,
+    /// Successful opened-root batches arbitrated by the index.
+    pub opened_batches: u64,
+    /// Operations accepted from successful opened-root batches.
+    pub opened_accepted_ops: u64,
+    /// Successful arbitrary public batches arbitrated by the index.
+    pub public_batches: u64,
+    /// Operations accepted from successful arbitrary public batches.
+    pub public_accepted_ops: u64,
+    /// Path-keyed structural-overlay inserts during ancestry preflight.
+    pub ancestry_overlay_inserts: u64,
+    /// Same-parent path comparisons during ancestry preflight.
+    pub ancestry_path_comparisons: u64,
+    /// Parent chains proved during ancestry preflight, including memo hits.
+    pub ancestry_parent_proofs: u64,
+    /// Owned paths retained in exact effective changes.
+    pub effect_paths: u64,
+    /// Native encoded bytes retained by exact effective-change paths.
+    pub effect_path_bytes: u64,
+    /// Change and state paths considered for bounded impact derivation.
+    pub impact_candidates: u64,
+    /// Path ancestors visited while deriving bounded impact.
+    pub impact_ancestor_visits: u64,
+    /// Dirty paths retained in completed bounded impacts.
+    pub impact_retained_dirty_paths: u64,
+    /// Impact derivations that crossed the dirty-path bound.
+    pub impact_all_dirty: u64,
+    /// Legacy `AppliedDelta` values materialized from exact commits.
+    pub applied_delta_materializations: u64,
+    /// Exact commits retained in the bounded journal.
+    pub journal_retained_commits: u64,
+    /// Exact commits cloned for attempted journal retention.
+    pub journal_cloned_commits: u64,
+    /// Exact commits rejected because one commit exceeded journal capacity.
+    pub journal_oversized_commits: u64,
+    /// Older exact commits dropped to admit a new retained commit.
+    pub journal_dropped_commits: u64,
     /// Chunk releases folded into an automatic scan's worker-scaling calibration.
     pub adaptive_calibration_chunks: u64,
     /// Entries folded into that calibration before it reached a decision.
@@ -92,6 +132,26 @@ impl Counts {
         parent_memo_hits: 0,
         rollup_merges: 0,
         entries_allocated: 0,
+        baseline_batches: 0,
+        baseline_accepted_ops: 0,
+        opened_batches: 0,
+        opened_accepted_ops: 0,
+        public_batches: 0,
+        public_accepted_ops: 0,
+        ancestry_overlay_inserts: 0,
+        ancestry_path_comparisons: 0,
+        ancestry_parent_proofs: 0,
+        effect_paths: 0,
+        effect_path_bytes: 0,
+        impact_candidates: 0,
+        impact_ancestor_visits: 0,
+        impact_retained_dirty_paths: 0,
+        impact_all_dirty: 0,
+        applied_delta_materializations: 0,
+        journal_retained_commits: 0,
+        journal_cloned_commits: 0,
+        journal_oversized_commits: 0,
+        journal_dropped_commits: 0,
         adaptive_calibration_chunks: 0,
         adaptive_calibration_entries: 0,
         adaptive_calibration_work_us: 0,
@@ -118,6 +178,34 @@ impl Counts {
             ("index", "parent memo hits", self.parent_memo_hits),
             ("index", "roll-up merges", self.rollup_merges),
             ("index", "index entries allocated", self.entries_allocated),
+            ("mutation provenance", "baseline batches", self.baseline_batches),
+            ("mutation provenance", "baseline accepted ops", self.baseline_accepted_ops),
+            ("mutation provenance", "opened batches", self.opened_batches),
+            ("mutation provenance", "opened accepted ops", self.opened_accepted_ops),
+            ("mutation provenance", "public batches", self.public_batches),
+            ("mutation provenance", "public accepted ops", self.public_accepted_ops),
+            ("mutation preflight", "ancestry overlay inserts", self.ancestry_overlay_inserts),
+            ("mutation preflight", "same-parent path comparisons", self.ancestry_path_comparisons),
+            ("mutation preflight", "parent chains proved", self.ancestry_parent_proofs),
+            ("mutation consequences", "effective paths retained", self.effect_paths),
+            ("mutation consequences", "effective path bytes", self.effect_path_bytes),
+            ("mutation consequences", "impact candidates", self.impact_candidates),
+            ("mutation consequences", "impact ancestor visits", self.impact_ancestor_visits),
+            (
+                "mutation consequences",
+                "impact dirty paths retained",
+                self.impact_retained_dirty_paths,
+            ),
+            ("mutation consequences", "impact all-dirty transitions", self.impact_all_dirty),
+            (
+                "mutation consequences",
+                "AppliedDelta materializations",
+                self.applied_delta_materializations,
+            ),
+            ("mutation journal", "commits retained", self.journal_retained_commits),
+            ("mutation journal", "commits cloned", self.journal_cloned_commits),
+            ("mutation journal", "oversized commits", self.journal_oversized_commits),
+            ("mutation journal", "older commits dropped", self.journal_dropped_commits),
             ("adaptive scan policy", "calibration chunks", self.adaptive_calibration_chunks),
             ("adaptive scan policy", "calibration entries", self.adaptive_calibration_entries),
             (
@@ -153,6 +241,40 @@ impl Counts {
         self.parent_memo_hits = self.parent_memo_hits.saturating_add(other.parent_memo_hits);
         self.rollup_merges = self.rollup_merges.saturating_add(other.rollup_merges);
         self.entries_allocated = self.entries_allocated.saturating_add(other.entries_allocated);
+        self.baseline_batches = self.baseline_batches.saturating_add(other.baseline_batches);
+        self.baseline_accepted_ops =
+            self.baseline_accepted_ops.saturating_add(other.baseline_accepted_ops);
+        self.opened_batches = self.opened_batches.saturating_add(other.opened_batches);
+        self.opened_accepted_ops =
+            self.opened_accepted_ops.saturating_add(other.opened_accepted_ops);
+        self.public_batches = self.public_batches.saturating_add(other.public_batches);
+        self.public_accepted_ops =
+            self.public_accepted_ops.saturating_add(other.public_accepted_ops);
+        self.ancestry_overlay_inserts =
+            self.ancestry_overlay_inserts.saturating_add(other.ancestry_overlay_inserts);
+        self.ancestry_path_comparisons =
+            self.ancestry_path_comparisons.saturating_add(other.ancestry_path_comparisons);
+        self.ancestry_parent_proofs =
+            self.ancestry_parent_proofs.saturating_add(other.ancestry_parent_proofs);
+        self.effect_paths = self.effect_paths.saturating_add(other.effect_paths);
+        self.effect_path_bytes = self.effect_path_bytes.saturating_add(other.effect_path_bytes);
+        self.impact_candidates = self.impact_candidates.saturating_add(other.impact_candidates);
+        self.impact_ancestor_visits =
+            self.impact_ancestor_visits.saturating_add(other.impact_ancestor_visits);
+        self.impact_retained_dirty_paths =
+            self.impact_retained_dirty_paths.saturating_add(other.impact_retained_dirty_paths);
+        self.impact_all_dirty = self.impact_all_dirty.saturating_add(other.impact_all_dirty);
+        self.applied_delta_materializations = self
+            .applied_delta_materializations
+            .saturating_add(other.applied_delta_materializations);
+        self.journal_retained_commits =
+            self.journal_retained_commits.saturating_add(other.journal_retained_commits);
+        self.journal_cloned_commits =
+            self.journal_cloned_commits.saturating_add(other.journal_cloned_commits);
+        self.journal_oversized_commits =
+            self.journal_oversized_commits.saturating_add(other.journal_oversized_commits);
+        self.journal_dropped_commits =
+            self.journal_dropped_commits.saturating_add(other.journal_dropped_commits);
         self.adaptive_calibration_chunks =
             self.adaptive_calibration_chunks.saturating_add(other.adaptive_calibration_chunks);
         self.adaptive_calibration_entries =
@@ -190,6 +312,26 @@ struct GlobalCounts {
     parent_memo_hits: AtomicU64,
     rollup_merges: AtomicU64,
     entries_allocated: AtomicU64,
+    baseline_batches: AtomicU64,
+    baseline_accepted_ops: AtomicU64,
+    opened_batches: AtomicU64,
+    opened_accepted_ops: AtomicU64,
+    public_batches: AtomicU64,
+    public_accepted_ops: AtomicU64,
+    ancestry_overlay_inserts: AtomicU64,
+    ancestry_path_comparisons: AtomicU64,
+    ancestry_parent_proofs: AtomicU64,
+    effect_paths: AtomicU64,
+    effect_path_bytes: AtomicU64,
+    impact_candidates: AtomicU64,
+    impact_ancestor_visits: AtomicU64,
+    impact_retained_dirty_paths: AtomicU64,
+    impact_all_dirty: AtomicU64,
+    applied_delta_materializations: AtomicU64,
+    journal_retained_commits: AtomicU64,
+    journal_cloned_commits: AtomicU64,
+    journal_oversized_commits: AtomicU64,
+    journal_dropped_commits: AtomicU64,
     adaptive_calibration_chunks: AtomicU64,
     adaptive_calibration_entries: AtomicU64,
     adaptive_calibration_work_us: AtomicU64,
@@ -215,6 +357,26 @@ impl GlobalCounts {
             parent_memo_hits: AtomicU64::new(0),
             rollup_merges: AtomicU64::new(0),
             entries_allocated: AtomicU64::new(0),
+            baseline_batches: AtomicU64::new(0),
+            baseline_accepted_ops: AtomicU64::new(0),
+            opened_batches: AtomicU64::new(0),
+            opened_accepted_ops: AtomicU64::new(0),
+            public_batches: AtomicU64::new(0),
+            public_accepted_ops: AtomicU64::new(0),
+            ancestry_overlay_inserts: AtomicU64::new(0),
+            ancestry_path_comparisons: AtomicU64::new(0),
+            ancestry_parent_proofs: AtomicU64::new(0),
+            effect_paths: AtomicU64::new(0),
+            effect_path_bytes: AtomicU64::new(0),
+            impact_candidates: AtomicU64::new(0),
+            impact_ancestor_visits: AtomicU64::new(0),
+            impact_retained_dirty_paths: AtomicU64::new(0),
+            impact_all_dirty: AtomicU64::new(0),
+            applied_delta_materializations: AtomicU64::new(0),
+            journal_retained_commits: AtomicU64::new(0),
+            journal_cloned_commits: AtomicU64::new(0),
+            journal_oversized_commits: AtomicU64::new(0),
+            journal_dropped_commits: AtomicU64::new(0),
             adaptive_calibration_chunks: AtomicU64::new(0),
             adaptive_calibration_entries: AtomicU64::new(0),
             adaptive_calibration_work_us: AtomicU64::new(0),
@@ -239,6 +401,32 @@ impl GlobalCounts {
         atomic_saturating_add(&self.parent_memo_hits, counts.parent_memo_hits);
         atomic_saturating_add(&self.rollup_merges, counts.rollup_merges);
         atomic_saturating_add(&self.entries_allocated, counts.entries_allocated);
+        atomic_saturating_add(&self.baseline_batches, counts.baseline_batches);
+        atomic_saturating_add(&self.baseline_accepted_ops, counts.baseline_accepted_ops);
+        atomic_saturating_add(&self.opened_batches, counts.opened_batches);
+        atomic_saturating_add(&self.opened_accepted_ops, counts.opened_accepted_ops);
+        atomic_saturating_add(&self.public_batches, counts.public_batches);
+        atomic_saturating_add(&self.public_accepted_ops, counts.public_accepted_ops);
+        atomic_saturating_add(&self.ancestry_overlay_inserts, counts.ancestry_overlay_inserts);
+        atomic_saturating_add(&self.ancestry_path_comparisons, counts.ancestry_path_comparisons);
+        atomic_saturating_add(&self.ancestry_parent_proofs, counts.ancestry_parent_proofs);
+        atomic_saturating_add(&self.effect_paths, counts.effect_paths);
+        atomic_saturating_add(&self.effect_path_bytes, counts.effect_path_bytes);
+        atomic_saturating_add(&self.impact_candidates, counts.impact_candidates);
+        atomic_saturating_add(&self.impact_ancestor_visits, counts.impact_ancestor_visits);
+        atomic_saturating_add(
+            &self.impact_retained_dirty_paths,
+            counts.impact_retained_dirty_paths,
+        );
+        atomic_saturating_add(&self.impact_all_dirty, counts.impact_all_dirty);
+        atomic_saturating_add(
+            &self.applied_delta_materializations,
+            counts.applied_delta_materializations,
+        );
+        atomic_saturating_add(&self.journal_retained_commits, counts.journal_retained_commits);
+        atomic_saturating_add(&self.journal_cloned_commits, counts.journal_cloned_commits);
+        atomic_saturating_add(&self.journal_oversized_commits, counts.journal_oversized_commits);
+        atomic_saturating_add(&self.journal_dropped_commits, counts.journal_dropped_commits);
         atomic_saturating_add(
             &self.adaptive_calibration_chunks,
             counts.adaptive_calibration_chunks,
@@ -272,6 +460,28 @@ impl GlobalCounts {
             parent_memo_hits: self.parent_memo_hits.load(Ordering::Relaxed),
             rollup_merges: self.rollup_merges.load(Ordering::Relaxed),
             entries_allocated: self.entries_allocated.load(Ordering::Relaxed),
+            baseline_batches: self.baseline_batches.load(Ordering::Relaxed),
+            baseline_accepted_ops: self.baseline_accepted_ops.load(Ordering::Relaxed),
+            opened_batches: self.opened_batches.load(Ordering::Relaxed),
+            opened_accepted_ops: self.opened_accepted_ops.load(Ordering::Relaxed),
+            public_batches: self.public_batches.load(Ordering::Relaxed),
+            public_accepted_ops: self.public_accepted_ops.load(Ordering::Relaxed),
+            ancestry_overlay_inserts: self.ancestry_overlay_inserts.load(Ordering::Relaxed),
+            ancestry_path_comparisons: self.ancestry_path_comparisons.load(Ordering::Relaxed),
+            ancestry_parent_proofs: self.ancestry_parent_proofs.load(Ordering::Relaxed),
+            effect_paths: self.effect_paths.load(Ordering::Relaxed),
+            effect_path_bytes: self.effect_path_bytes.load(Ordering::Relaxed),
+            impact_candidates: self.impact_candidates.load(Ordering::Relaxed),
+            impact_ancestor_visits: self.impact_ancestor_visits.load(Ordering::Relaxed),
+            impact_retained_dirty_paths: self.impact_retained_dirty_paths.load(Ordering::Relaxed),
+            impact_all_dirty: self.impact_all_dirty.load(Ordering::Relaxed),
+            applied_delta_materializations: self
+                .applied_delta_materializations
+                .load(Ordering::Relaxed),
+            journal_retained_commits: self.journal_retained_commits.load(Ordering::Relaxed),
+            journal_cloned_commits: self.journal_cloned_commits.load(Ordering::Relaxed),
+            journal_oversized_commits: self.journal_oversized_commits.load(Ordering::Relaxed),
+            journal_dropped_commits: self.journal_dropped_commits.load(Ordering::Relaxed),
             adaptive_calibration_chunks: self.adaptive_calibration_chunks.load(Ordering::Relaxed),
             adaptive_calibration_entries: self.adaptive_calibration_entries.load(Ordering::Relaxed),
             adaptive_calibration_work_us: self.adaptive_calibration_work_us.load(Ordering::Relaxed),
@@ -296,6 +506,26 @@ impl GlobalCounts {
         self.parent_memo_hits.store(0, Ordering::Relaxed);
         self.rollup_merges.store(0, Ordering::Relaxed);
         self.entries_allocated.store(0, Ordering::Relaxed);
+        self.baseline_batches.store(0, Ordering::Relaxed);
+        self.baseline_accepted_ops.store(0, Ordering::Relaxed);
+        self.opened_batches.store(0, Ordering::Relaxed);
+        self.opened_accepted_ops.store(0, Ordering::Relaxed);
+        self.public_batches.store(0, Ordering::Relaxed);
+        self.public_accepted_ops.store(0, Ordering::Relaxed);
+        self.ancestry_overlay_inserts.store(0, Ordering::Relaxed);
+        self.ancestry_path_comparisons.store(0, Ordering::Relaxed);
+        self.ancestry_parent_proofs.store(0, Ordering::Relaxed);
+        self.effect_paths.store(0, Ordering::Relaxed);
+        self.effect_path_bytes.store(0, Ordering::Relaxed);
+        self.impact_candidates.store(0, Ordering::Relaxed);
+        self.impact_ancestor_visits.store(0, Ordering::Relaxed);
+        self.impact_retained_dirty_paths.store(0, Ordering::Relaxed);
+        self.impact_all_dirty.store(0, Ordering::Relaxed);
+        self.applied_delta_materializations.store(0, Ordering::Relaxed);
+        self.journal_retained_commits.store(0, Ordering::Relaxed);
+        self.journal_cloned_commits.store(0, Ordering::Relaxed);
+        self.journal_oversized_commits.store(0, Ordering::Relaxed);
+        self.journal_dropped_commits.store(0, Ordering::Relaxed);
         self.adaptive_calibration_chunks.store(0, Ordering::Relaxed);
         self.adaptive_calibration_entries.store(0, Ordering::Relaxed);
         self.adaptive_calibration_work_us.store(0, Ordering::Relaxed);
@@ -567,6 +797,18 @@ fn render_rows(rows: &[(&str, &str, u64)]) -> String {
 pub(crate) fn test_serial() -> std::sync::MutexGuard<'static, ()> {
     static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
     SERIAL.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Calling-thread counts for exact unit tests that must ignore unrelated workers.
+#[cfg(test)]
+pub(crate) fn test_thread_snapshot() -> Counts {
+    LOCAL.try_with(|local| local.counts.get()).unwrap_or_default()
+}
+
+/// Clear only the calling test thread's counts.
+#[cfg(test)]
+pub(crate) fn test_thread_reset() {
+    let _ = LOCAL.try_with(|local| local.counts.set(Counts::default()));
 }
 
 #[cfg(test)]
