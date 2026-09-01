@@ -29,7 +29,7 @@
 //! delta contract being the only mutation path means escalating later to epoch or
 //! arc-swap snapshots stays contained rather than becoming a rewrite.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::ffi::{OsStr, OsString};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -39,11 +39,11 @@ use crate::content::{
     ContentRollUp,
 };
 use crate::engine_contract::{
-    AppliedDelta, Attrs, Clock, Commit, Coverage, CoverageReason, DiscoveryProgress,
-    EffectiveChange, EntryIdentity, EntryKind, Expectation, Freshness, Impact, ImpactDomain,
-    IndexState, InvalidateReason, Issue, LifecyclePhase, MAX_DIRTY_PATHS, MAX_RETAINED_ISSUES,
-    Observation, ObservationOp, Op, PathExpectation, PathState, Provenance, ScanScope, Source,
-    StateTransition, Status, Work,
+    Attrs, Clock, Commit, Coverage, CoverageReason, DiscoveryProgress, EffectiveChange,
+    EntryIdentity, EntryKind, Expectation, Freshness, Impact, ImpactDomain, IndexState,
+    InvalidateReason, Issue, LifecyclePhase, MAX_DIRTY_PATHS, MAX_RETAINED_ISSUES, Observation,
+    ObservationOp, Op, PathExpectation, PathState, Provenance, ScanScope, Source, StateTransition,
+    Status, Work,
 };
 
 /// Verification intervals kept before the oldest are dropped.
@@ -299,6 +299,52 @@ impl InternedRollUp {
 }
 
 #[derive(Clone, Debug)]
+enum DirectoryChildren {
+    /// Name order without a second copy of each retained name.
+    Sorted(Vec<EntryId>),
+    /// Incrementally mutable topology for opened and arbitrary public indexes.
+    Mutable(BTreeMap<OsString, EntryId>),
+}
+
+impl DirectoryChildren {
+    #[cfg(test)]
+    fn is_sorted(&self) -> bool {
+        matches!(self, Self::Sorted(_))
+    }
+
+    #[cfg(test)]
+    fn is_mutable(&self) -> bool {
+        matches!(self, Self::Mutable(_))
+    }
+
+    fn ids(&self) -> ChildIds<'_> {
+        match self {
+            Self::Sorted(ids) => ChildIds::Sorted(ids.iter()),
+            Self::Mutable(children) => ChildIds::Mutable(children.values()),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct DirectoryEntry {
+    children: DirectoryChildren,
+    rollup: InternedPartitionRollUp,
+    children_revision: u64,
+    children_complete: bool,
+}
+
+impl DirectoryEntry {
+    fn new(children_complete: bool) -> Self {
+        Self {
+            children: DirectoryChildren::Mutable(BTreeMap::new()),
+            rollup: InternedPartitionRollUp::default(),
+            children_revision: 0,
+            children_complete,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 struct Entry {
     parent: Option<EntryId>,
     name: OsString,
@@ -316,21 +362,64 @@ struct Entry {
     source: Source,
     kind: EntryKind,
     attrs: Attrs,
-    /// Populated for directories only.
-    children: BTreeMap<OsString, EntryId>,
-    /// Meaningful for directories only.
-    rollup: InternedPartitionRollUp,
     /// Changes on direct metadata updates. Together with the arena generation this
     /// detects present-state ABA races.
     revision: u64,
-    /// Changes only on direct child-map mutations. This is the narrow structural guard
-    /// for absent paths and destructive subtree operations.
-    children_revision: u64,
-    /// Whether every in-scope child of this directory has been enumerated.
-    ///
-    /// Meaningful only for directories. Keeping the bit on the entry makes absence a
-    /// local fact instead of forcing readers to reconstruct the discovery frontier.
-    children_complete: bool,
+    /// Child topology, subtree roll-ups, and discovery state exist only for directories.
+    /// Keeping them behind one pointer prevents every file from paying for two roll-up
+    /// planes and an empty child map.
+    directory: Option<Box<DirectoryEntry>>,
+}
+
+struct NewEntry {
+    parent: Option<EntryId>,
+    name: OsString,
+    ext_id: Option<ExtId>,
+    ignored: bool,
+    source: Source,
+    kind: EntryKind,
+    attrs: Attrs,
+}
+
+impl Entry {
+    fn new(entry: NewEntry, children_complete: bool) -> Self {
+        let NewEntry { parent, name, ext_id, ignored, source, kind, attrs } = entry;
+        Self {
+            parent,
+            name,
+            ext_id,
+            ignored,
+            source,
+            kind,
+            attrs,
+            revision: 0,
+            directory: kind.is_dir().then(|| Box::new(DirectoryEntry::new(children_complete))),
+        }
+    }
+
+    fn new_detached(new_entry: NewEntry, children_complete: bool) -> Self {
+        let mut entry = Self::new(new_entry, children_complete);
+        if let Some(directory) = entry.directory.as_deref_mut() {
+            directory.children = DirectoryChildren::Sorted(Vec::new());
+        }
+        entry
+    }
+
+    fn directory(&self) -> &DirectoryEntry {
+        self.directory.as_deref().expect("directory entry must retain directory state")
+    }
+
+    fn directory_mut(&mut self) -> &mut DirectoryEntry {
+        self.directory.as_deref_mut().expect("directory entry must retain directory state")
+    }
+
+    fn rollup(&self) -> &InternedPartitionRollUp {
+        &self.directory().rollup
+    }
+
+    fn rollup_mut(&mut self) -> &mut InternedPartitionRollUp {
+        &mut self.directory_mut().rollup
+    }
 }
 
 /// Portable direct children retained in the order interactive tree pages emit them.
@@ -499,7 +588,7 @@ fn unmerge_semantic_map(
 
 #[derive(Clone, Debug)]
 enum Slot {
-    Occupied { generation: u64, entry: Box<Entry> },
+    Occupied { generation: u64, entry: Entry },
     Free { generation: u64, next_free: Option<u32> },
 }
 
@@ -518,10 +607,6 @@ fn retained_parent(arena: &[Slot], id: EntryId) -> Option<EntryId> {
 pub struct Since {
     /// Exact commits applied strictly after the requested clock, oldest first.
     pub commits: Vec<Commit>,
-    /// Deltas applied strictly after the requested clock, oldest first.
-    ///
-    /// This is derived from `commits` for compatibility and excludes state-only commits.
-    pub deltas: Vec<AppliedDelta>,
     /// Terminal clock captured under the same read boundary as `commits`.
     pub clock: Clock,
     /// Complete public state at `clock`.
@@ -575,8 +660,6 @@ pub struct ApplyOutcome {
     pub stats: ApplyStats,
     /// Present only when at least one exact fact or state transition was committed.
     pub commit: Option<Commit>,
-    /// Legacy entry-operation projection derived from `commit`.
-    pub applied: Option<AppliedDelta>,
 }
 
 /// One direct child captured from a shared index at a single read boundary.
@@ -611,37 +694,107 @@ impl std::ops::Deref for ApplyOutcome {
 
 impl ApplyOutcome {
     fn from_commit(stats: ApplyStats, commit: Option<Commit>) -> Self {
-        let applied = commit.as_ref().and_then(Commit::applied_delta);
-        Self { stats, commit, applied }
+        Self { stats, commit }
     }
+}
 
-    /// Borrow the legacy entry-operation projection derived from the exact commit.
-    ///
-    /// Existing callers may continue to read the public [`Self::applied`] field. This
-    /// method is useful when code wants to make the derivation explicit.
-    pub fn applied(&self) -> Option<&AppliedDelta> {
-        self.applied.as_ref()
-    }
+#[derive(Clone, Copy)]
+enum BatchProvenance {
+    Baseline,
+    Opened,
+    Public,
+}
+
+fn record_batch(provenance: BatchProvenance, observed: usize, stats: ApplyStats) {
+    let observed = u64::try_from(observed).unwrap_or(u64::MAX);
+    let accepted = observed.saturating_sub(stats.stale);
+    crate::counters::bump(|counts| match provenance {
+        BatchProvenance::Baseline => {
+            counts.baseline_batches = counts.baseline_batches.saturating_add(1);
+            counts.baseline_accepted_ops = counts.baseline_accepted_ops.saturating_add(accepted);
+        }
+        BatchProvenance::Opened => {
+            counts.opened_batches = counts.opened_batches.saturating_add(1);
+            counts.opened_accepted_ops = counts.opened_accepted_ops.saturating_add(accepted);
+        }
+        BatchProvenance::Public => {
+            counts.public_batches = counts.public_batches.saturating_add(1);
+            counts.public_accepted_ops = counts.public_accepted_ops.saturating_add(accepted);
+        }
+    });
+}
+
+fn elapsed_micros(started: std::time::Instant) -> u64 {
+    u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX)
 }
 
 /// Validated, canonical producer input ready for arbitration under the write guard.
 #[derive(Clone, Debug)]
 struct PreparedObservation {
     ops: Vec<ObservationOp>,
+    ancestry: PreparedAncestry,
     #[cfg(test)]
     reject_before_apply: bool,
 }
 
+#[derive(Clone, Debug)]
+enum PreparedAncestry {
+    General,
+    Scanner { parents: Vec<ResolvedParent>, has_batch_parents: bool },
+}
+
+/// Parent identity proved for one operation in a private scanner batch.
+#[derive(Clone, Copy, Debug)]
+enum ResolvedParent {
+    /// The parent is already live in the index at the preparation boundary.
+    Existing(EntryId),
+    /// The parent is the directory produced by this earlier operation in the batch.
+    Earlier(usize),
+}
+
 #[derive(Default)]
-struct MutationEffects {
+struct ExactConsequences {
     changes: Vec<EffectiveChange>,
     state: Vec<StateTransition>,
 }
 
-impl MutationEffects {
+impl ExactConsequences {
     fn is_empty(&self) -> bool {
         self.changes.is_empty() && self.state.is_empty()
     }
+}
+
+#[derive(Default)]
+struct NoConsequences;
+
+/// Batch-selected destination for facts that escape the shared reducer.
+///
+/// The closure is intentional: `NoConsequences` never evaluates it, so path copies and
+/// effect construction compile out of detached baseline application rather than hiding
+/// behind a branch in the per-entry loop.
+trait ConsequenceSink {
+    fn change(&mut self, change: impl FnOnce() -> EffectiveChange);
+    fn state(&mut self, transition: impl FnOnce() -> StateTransition);
+}
+
+impl ConsequenceSink for ExactConsequences {
+    #[inline]
+    fn change(&mut self, change: impl FnOnce() -> EffectiveChange) {
+        self.changes.push(change());
+    }
+
+    #[inline]
+    fn state(&mut self, transition: impl FnOnce() -> StateTransition) {
+        self.state.push(transition());
+    }
+}
+
+impl ConsequenceSink for NoConsequences {
+    #[inline]
+    fn change(&mut self, _change: impl FnOnce() -> EffectiveChange) {}
+
+    #[inline]
+    fn state(&mut self, _transition: impl FnOnce() -> StateTransition) {}
 }
 
 /// The in-memory hierarchical index.
@@ -715,6 +868,106 @@ pub struct Index {
     /// Detached indexes deliberately carry `None`, including the standalone CLI's
     /// one-shot scan. Only [`crate::OpenedIndex`] enables this allocation.
     serving: Option<Box<ServingIndexes>>,
+}
+
+enum ChildIds<'a> {
+    Sorted(std::slice::Iter<'a, EntryId>),
+    Mutable(std::collections::btree_map::Values<'a, OsString, EntryId>),
+}
+
+impl Iterator for ChildIds<'_> {
+    type Item = EntryId;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Sorted(ids) => ids.next().copied(),
+            Self::Mutable(ids) => ids.next().copied(),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.len();
+        (len, Some(len))
+    }
+}
+
+impl DoubleEndedIterator for ChildIds<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Sorted(ids) => ids.next_back().copied(),
+            Self::Mutable(ids) => ids.next_back().copied(),
+        }
+    }
+}
+
+impl ExactSizeIterator for ChildIds<'_> {
+    fn len(&self) -> usize {
+        match self {
+            Self::Sorted(ids) => ids.len(),
+            Self::Mutable(ids) => ids.len(),
+        }
+    }
+}
+
+enum IndexChildren<'a> {
+    Empty,
+    Sorted { index: &'a Index, ids: std::slice::Iter<'a, EntryId> },
+    Mutable(std::collections::btree_map::Iter<'a, OsString, EntryId>),
+}
+
+impl<'a> IndexChildren<'a> {
+    fn new(index: &'a Index, entry: &'a Entry) -> Self {
+        match entry.directory.as_deref().map(|directory| &directory.children) {
+            None => Self::Empty,
+            Some(DirectoryChildren::Sorted(ids)) => Self::Sorted { index, ids: ids.iter() },
+            Some(DirectoryChildren::Mutable(children)) => Self::Mutable(children.iter()),
+        }
+    }
+}
+
+impl<'a> Iterator for IndexChildren<'a> {
+    type Item = (&'a OsStr, EntryId);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Empty => None,
+            Self::Sorted { index, ids } => {
+                let id = *ids.next()?;
+                Some((index.entry(id).name.as_os_str(), id))
+            }
+            Self::Mutable(children) => children.next().map(|(name, id)| (name.as_os_str(), *id)),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.len();
+        (len, Some(len))
+    }
+}
+
+impl DoubleEndedIterator for IndexChildren<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Empty => None,
+            Self::Sorted { index, ids } => {
+                let id = *ids.next_back()?;
+                Some((index.entry(id).name.as_os_str(), id))
+            }
+            Self::Mutable(children) => {
+                children.next_back().map(|(name, id)| (name.as_os_str(), *id))
+            }
+        }
+    }
+}
+
+impl ExactSizeIterator for IndexChildren<'_> {
+    fn len(&self) -> usize {
+        match self {
+            Self::Empty => 0,
+            Self::Sorted { ids, .. } => ids.len(),
+            Self::Mutable(children) => children.len(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -798,7 +1051,9 @@ impl IndexHandle {
     /// Arbitrate and apply one observation under the single-writer lock.
     pub fn apply(&self, observation: &Observation) -> crate::Result<ApplyOutcome> {
         let prepared = prepare_observation(observation)?;
-        self.write_index()?.commit_prepared(prepared, true)
+        let outcome = self.write_index()?.commit_prepared(prepared, true)?;
+        record_batch(BatchProvenance::Public, observation.len(), outcome.stats);
+        Ok(outcome)
     }
 
     pub(crate) fn apply_discovery(
@@ -807,7 +1062,16 @@ impl IndexHandle {
         discovery: DiscoveryCommit,
     ) -> crate::Result<ApplyOutcome> {
         let prepared = prepare_observation(observation)?;
-        self.write_index()?.commit_prepared_with(prepared, true, Some(discovery), None, None, true)
+        let outcome = self.write_index()?.commit_prepared_with(
+            prepared,
+            true,
+            Some(discovery),
+            None,
+            None,
+            true,
+        )?;
+        record_batch(BatchProvenance::Opened, observation.len(), outcome.stats);
+        Ok(outcome)
     }
 
     pub(crate) fn apply_opened(
@@ -816,24 +1080,26 @@ impl IndexHandle {
         max_files: Option<u64>,
     ) -> crate::Result<ApplyOutcome> {
         let prepared = prepare_observation(observation)?;
-        self.write_index()?.commit_prepared_with(prepared, true, None, None, max_files, true)
+        let outcome = self
+            .write_index()?
+            .commit_prepared_with(prepared, true, None, None, max_files, true)?;
+        record_batch(BatchProvenance::Opened, observation.len(), outcome.stats);
+        Ok(outcome)
     }
 
-    pub(crate) fn apply_discovery_bounded(
+    pub(crate) fn apply_scanner_discovery_bounded(
         &self,
-        observation: &Observation,
+        batch: crate::scan::ScannerBatch,
         discovery: DiscoveryCommit,
         max_files: Option<u64>,
     ) -> crate::Result<ApplyOutcome> {
-        let prepared = prepare_observation(observation)?;
-        self.write_index()?.commit_prepared_with(
-            prepared,
-            true,
-            Some(discovery),
-            None,
-            max_files,
-            true,
-        )
+        let observed = batch.len();
+        let mut index = self.write_index()?;
+        let prepared = index.prepare_scanner_batch(batch)?;
+        let outcome =
+            index.commit_prepared_with(prepared, true, Some(discovery), None, max_files, true)?;
+        record_batch(BatchProvenance::Opened, observed, outcome.stats);
+        Ok(outcome)
     }
 
     pub(crate) fn transition_discovery(
@@ -852,7 +1118,16 @@ impl IndexHandle {
         transition: ObservationTransition,
     ) -> crate::Result<ApplyOutcome> {
         let prepared = prepare_observation(&Observation::default())?;
-        self.write_index()?.commit_prepared_with(prepared, true, None, Some(transition), None, true)
+        let outcome = self.write_index()?.commit_prepared_with(
+            prepared,
+            true,
+            None,
+            Some(transition),
+            None,
+            true,
+        )?;
+        record_batch(BatchProvenance::Opened, 0, outcome.stats);
+        Ok(outcome)
     }
 
     /// Absolute filesystem root, copied without retaining the read lock.
@@ -936,7 +1211,7 @@ impl IndexHandle {
         Ok(self.read_index()?.expectation(path))
     }
 
-    /// Owned exact commits and legacy deltas after `clock`.
+    /// Owned exact commits after `clock`.
     pub fn since(&self, clock: Clock) -> crate::Result<Since> {
         Ok(self.read_index()?.since(clock))
     }
@@ -957,11 +1232,14 @@ impl IndexHandle {
                         kind: entry.kind,
                         attrs: entry.attrs,
                         ignored: entry.ignored,
-                        rollup: entry.kind.is_dir().then(|| index.named_rollup(&entry.rollup.all)),
+                        rollup: entry
+                            .kind
+                            .is_dir()
+                            .then(|| index.named_rollup(&entry.rollup().all)),
                         partitions: entry
                             .kind
                             .is_dir()
-                            .then(|| index.named_partitions(&entry.rollup)),
+                            .then(|| index.named_partitions(entry.rollup())),
                     }
                 })
                 .collect(),
@@ -1067,6 +1345,143 @@ impl IndexHandle {
     }
 }
 
+/// Private parent-first builder for a cold index that is not yet externally visible.
+///
+/// Directory groups arrive while filesystem workers are still running. Applying each
+/// group here overlaps structural construction with the walk without turning the cold
+/// path back into public observations or manufacturing one full path per file.
+pub(crate) struct DetachedIndexBuilder {
+    index: Index,
+    directory_ids: HashMap<PathBuf, EntryId>,
+    inserted: u64,
+}
+
+impl DetachedIndexBuilder {
+    pub(crate) fn new(
+        root_path: impl Into<PathBuf>,
+        scope: ScanScope,
+        types: std::sync::Arc<crate::classify::TypeRegistry>,
+    ) -> Self {
+        let mut index = Index::new_with_scope_and_types(root_path, scope, types);
+        index.entry_mut(EntryId::ROOT).directory_mut().children =
+            DirectoryChildren::Sorted(Vec::new());
+        Self { index, directory_ids: HashMap::from([(PathBuf::new(), EntryId::ROOT)]), inserted: 0 }
+    }
+
+    /// Consume one listing after its parent listing has already been consumed.
+    pub(crate) fn push_directory(
+        &mut self,
+        directory: crate::scan::DetachedDirectory,
+    ) -> crate::Result<()> {
+        let crate::scan::DetachedDirectory { path, children, control } = directory;
+        // A listing arrives exactly once and no descendant can become claimable until
+        // its parent's listing has been sent. Retire the lookup entry now instead of
+        // retaining every walked directory path until the end of the scan.
+        let Some(parent) = self.directory_ids.remove(&path) else {
+            return Err(crate::Error::UnknownAncestry { path, reconcile_from: PathBuf::new() });
+        };
+
+        // The worker publishes this listing before descendants become claimable. Apply
+        // its complete fixed-control state before classifying any sibling, and every
+        // later child listing will therefore inherit all governing controls without a
+        // post-build subtree reclassification pass.
+        if let Some(control) = control {
+            match control {
+                Op::ControlUpsert { path, source } => {
+                    self.index.controls.upsert(&path, source)?;
+                }
+                Op::ControlRemove { path } => {
+                    self.index.controls.remove(&path)?;
+                }
+                _ => unreachable!("detached directory retains only fixed-control operations"),
+            }
+            self.inserted = self.inserted.saturating_add(1);
+        }
+
+        let parent_ignored = self.index.entry(parent).ignored;
+        let mut match_path =
+            (!parent_ignored && !self.index.controls.is_empty()).then(|| path.clone());
+        self.index.reserve_detached_children(parent, children.len());
+        for child in children {
+            let crate::scan::DetachedChild { name, kind, attrs } = child;
+            crate::counters::bump(|counts| counts.upserts += 1);
+            let ext_id = (kind == EntryKind::File)
+                .then(|| self.index.intern_ext(&self.index.types.ext_bucket(&name)));
+            let (ignored, child_path) = if let Some(scratch) = &mut match_path {
+                scratch.push(&name);
+                let ignored = self.index.controls.matcher_for(scratch).is_ignored(kind.is_dir());
+                let child_path = kind.is_dir().then(|| scratch.clone());
+                let popped = scratch.pop();
+                debug_assert!(popped);
+                (ignored, child_path)
+            } else {
+                (parent_ignored, kind.is_dir().then(|| path.join(&name)))
+            };
+            let child_id = self.index.alloc(Entry::new_detached(
+                NewEntry {
+                    parent: Some(parent),
+                    name,
+                    ext_id,
+                    ignored,
+                    source: Source::Scanned,
+                    kind,
+                    attrs,
+                },
+                false,
+            ));
+            self.index.push_detached_child(parent, child_id);
+            // Fold the child's own direct contribution while filesystem work is still
+            // in flight. Files are now complete; directories will add only their
+            // descendant roll-up in the short bottom-up finish pass.
+            let direct = self.index.contribution(child_id);
+            crate::counters::bump(|counts| counts.rollup_merges += 1);
+            self.index.entry_mut(parent).rollup_mut().merge(&direct);
+            if let Some(child_path) = child_path {
+                if self.directory_ids.insert(child_path, child_id).is_some() {
+                    return Err(crate::Error::UnsupportedScanConfig(
+                        "detached scan produced a duplicate directory path",
+                    ));
+                }
+            }
+            self.inserted = self.inserted.saturating_add(1);
+        }
+        if !self.index.sort_detached_children(parent) {
+            return Err(crate::Error::UnsupportedScanConfig(
+                "detached scan produced a duplicate child name",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Complete the private baseline after every directory listing has arrived.
+    pub(crate) fn finish(mut self) -> Index {
+        // Parents are allocated before descendants, so reverse arena order is a valid
+        // bottom-up traversal. Direct contributions were merged during the pipelined
+        // build; only completed directory descendants remain to propagate here.
+        for slot in (1..self.index.arena.len()).rev() {
+            let id = EntryId {
+                slot: u32::try_from(slot).expect("index arena exceeded u32 capacity"),
+                generation: 0,
+            };
+            if !self.index.entry(id).kind.is_dir() {
+                continue;
+            }
+            let parent = self.index.entry(id).parent.expect("every non-root entry has a parent");
+            // The directory's own count was merged when its parent listing arrived.
+            crate::counters::bump(|counts| counts.rollup_merges += 1);
+            self.index.merge_detached_descendants(parent, id);
+        }
+
+        crate::counters::bump(|counts| {
+            counts.baseline_batches = counts.baseline_batches.saturating_add(1);
+            counts.baseline_accepted_ops =
+                counts.baseline_accepted_ops.saturating_add(self.inserted);
+        });
+        self.index.establish_baseline();
+        self.index
+    }
+}
+
 impl Index {
     /// Create an empty index rooted at `root_path`.
     pub fn new(root_path: impl Into<PathBuf>) -> Self {
@@ -1139,24 +1554,22 @@ impl Index {
         types: std::sync::Arc<crate::classify::TypeRegistry>,
         serving: Option<Box<ServingIndexes>>,
     ) -> Self {
-        let root = Entry {
-            parent: None,
-            name: OsString::new(),
-            ext_id: None,
-            ignored: false,
-            source: Source::Scanned,
-            kind: EntryKind::Dir,
-            attrs: Attrs::default(),
-            children: BTreeMap::new(),
-            rollup: InternedPartitionRollUp::default(),
-            revision: 0,
-            children_revision: 0,
-            children_complete: true,
-        };
+        let root = Entry::new(
+            NewEntry {
+                parent: None,
+                name: OsString::new(),
+                ext_id: None,
+                ignored: false,
+                source: Source::Scanned,
+                kind: EntryKind::Dir,
+                attrs: Attrs::default(),
+            },
+            true,
+        );
         Self {
             root_path: root_path.into(),
             scope,
-            arena: vec![Slot::Occupied { generation: 0, entry: Box::new(root) }],
+            arena: vec![Slot::Occupied { generation: 0, entry: root }],
             free_head: None,
             live: 1,
             clock: Clock::ZERO,
@@ -1207,7 +1620,7 @@ impl Index {
         }
         self.controls = controls;
         let mut stats = ApplyStats::default();
-        let mut effects = MutationEffects::default();
+        let mut effects = NoConsequences;
         self.reclassify_controlled_subtrees(&[PathBuf::new()], &mut stats, &mut effects);
         Ok(())
     }
@@ -1263,7 +1676,7 @@ impl Index {
     pub(crate) fn directory_complete(&self, path: &Path) -> Option<bool> {
         let id = self.lookup(path)?;
         let entry = self.entry(id);
-        (entry.kind == EntryKind::Dir).then_some(entry.children_complete)
+        (entry.kind == EntryKind::Dir).then(|| entry.directory().children_complete)
     }
 
     /// Trust state for one subtree, including any stale descendant it contains.
@@ -1293,17 +1706,17 @@ impl Index {
 
     /// Owned, self-describing roll-up state for the whole tree.
     pub fn total(&self) -> RollUp {
-        self.named_rollup(&self.entry(EntryId::ROOT).rollup.all)
+        self.named_rollup(&self.entry(EntryId::ROOT).rollup().all)
     }
 
     /// Both fixed aggregate partitions for the complete tree.
     pub fn partition_total(&self) -> PartitionRollUp {
-        self.named_partitions(&self.entry(EntryId::ROOT).rollup)
+        self.named_partitions(self.entry(EntryId::ROOT).rollup())
     }
 
     /// Map-free whole-tree totals for in-crate reporting paths.
     pub(crate) fn total_scalars(&self) -> RollUpScalars {
-        RollUpScalars::from(&self.entry(EntryId::ROOT).rollup.all)
+        RollUpScalars::from(&self.entry(EntryId::ROOT).rollup().all)
     }
 
     /// Arbitrate a producer observation and commit its effective mutations.
@@ -1312,24 +1725,9 @@ impl Index {
     /// No-ops and stale operations do not advance the clock or enter the journal.
     pub fn apply(&mut self, observation: &Observation) -> crate::Result<ApplyOutcome> {
         let prepared = prepare_observation(observation)?;
-        self.commit_prepared(prepared, true)
-    }
-
-    /// [`Self::apply`] with the change-history capture optional.
-    ///
-    /// `journal: false` exists for the bootstrap path, whose history
-    /// [`Self::establish_baseline`] clears after every batch: capturing it first
-    /// cost one effective-change clone per changed entry plus one commit clone per
-    /// batch, all
-    /// freed unread. Arbitration, validation, guards, and stats are identical in
-    /// both modes; only what is retained afterwards differs.
-    fn apply_with(
-        &mut self,
-        observation: &Observation,
-        journal: bool,
-    ) -> crate::Result<ApplyOutcome> {
-        let prepared = prepare_observation(observation)?;
-        self.commit_prepared(prepared, journal)
+        let outcome = self.commit_prepared(prepared, true)?;
+        record_batch(BatchProvenance::Public, observation.len(), outcome.stats);
+        Ok(outcome)
     }
 
     /// Arbitrate and atomically apply normalized producer input.
@@ -1398,8 +1796,49 @@ impl Index {
         };
 
         let observed = u64::try_from(prepared.ops.len()).unwrap_or(u64::MAX);
+        let mut effects = ExactConsequences::default();
+        let stats = self.reduce_prepared(
+            &prepared,
+            discovery,
+            observation,
+            max_files,
+            track_file_progress,
+            &mut effects,
+        )?;
+
+        if effects.is_empty() {
+            return Ok(ApplyOutcome::from_commit(stats, None));
+        }
+
+        let commit =
+            self.publish_effects(next_clock, effects, commit_work(observed, stats), journal);
+        Ok(ApplyOutcome::from_commit(stats, Some(commit)))
+    }
+
+    /// Apply one prepared batch through the shared fact and roll-up reducer.
+    ///
+    /// `C` is selected once by the caller. The exact instantiation retains closures as
+    /// commits; the detached instantiation erases them, including their path copies.
+    fn reduce_prepared<C: ConsequenceSink>(
+        &mut self,
+        prepared: &PreparedObservation,
+        discovery: Option<DiscoveryCommit>,
+        observation: Option<ObservationTransition>,
+        max_files: Option<u64>,
+        track_file_progress: bool,
+        effects: &mut C,
+    ) -> crate::Result<ApplyStats> {
+        if matches!(prepared.ancestry, PreparedAncestry::Scanner { .. }) {
+            debug_assert!(observation.is_none());
+            return self.reduce_scanner_prepared(
+                prepared,
+                discovery,
+                max_files,
+                track_file_progress,
+                effects,
+            );
+        }
         let mut stats = ApplyStats::default();
-        let mut effects = MutationEffects::default();
         let mut parent_memo = ParentMemo::default();
         let accepted = self.accepted_operations(&prepared.ops);
         stats.stale = u64::try_from(accepted.iter().filter(|accepted| !**accepted).count())
@@ -1420,14 +1859,7 @@ impl Index {
             }
             match op {
                 Op::Upsert { path, kind, attrs } => {
-                    self.apply_upsert(
-                        path,
-                        *kind,
-                        *attrs,
-                        &mut stats,
-                        &mut effects,
-                        &mut parent_memo,
-                    );
+                    self.apply_upsert(path, *kind, *attrs, &mut stats, effects, &mut parent_memo);
                 }
                 Op::Remove { path } => {
                     // A removal takes a subtree with it, so a remembered id inside that
@@ -1436,7 +1868,7 @@ impl Index {
                     // ancestor of it: the memo is refilled by the next upsert, so the
                     // cost of being conservative is one path resolution.
                     parent_memo.clear();
-                    self.apply_remove(path, &mut stats, &mut effects);
+                    self.apply_remove(path, &mut stats, effects);
                 }
                 Op::ControlUpsert { .. } | Op::ControlRemove { .. } => {
                     // The complete table was already prepared above. It is installed
@@ -1464,18 +1896,19 @@ impl Index {
                         self.retain_issue(Issue::observation_gap(path, *reason));
                     }
                     stats.invalidated += 1;
-                    effects
-                        .changes
-                        .push(EffectiveChange::Invalidated { path: path.clone(), reason: *reason });
+                    effects.change(|| EffectiveChange::Invalidated {
+                        path: path.clone(),
+                        reason: *reason,
+                    });
                     if previous != current {
-                        effects.state.push(StateTransition::Freshness {
+                        effects.state(|| StateTransition::Freshness {
                             path: path.clone(),
                             previous,
                             current,
                         });
                     }
                     if previous_index_state != self.state {
-                        effects.state.push(StateTransition::IndexState {
+                        effects.state(|| StateTransition::IndexState {
                             previous: previous_index_state,
                             current: self.state,
                         });
@@ -1484,7 +1917,104 @@ impl Index {
             }
         }
 
-        self.apply_control_transition(projected_controls, &mut stats, &mut effects);
+        self.finish_reduction(
+            projected_controls,
+            &mut stats,
+            discovery,
+            observation,
+            max_files,
+            track_file_progress,
+            effects,
+        );
+
+        Ok(stats)
+    }
+
+    /// Apply one scanner batch using only the parent identities proved above.
+    fn reduce_scanner_prepared<C: ConsequenceSink>(
+        &mut self,
+        prepared: &PreparedObservation,
+        discovery: Option<DiscoveryCommit>,
+        max_files: Option<u64>,
+        track_file_progress: bool,
+        effects: &mut C,
+    ) -> crate::Result<ApplyStats> {
+        let PreparedAncestry::Scanner { parents, has_batch_parents } = &prepared.ancestry else {
+            unreachable!("scanner reduction requires scanner ancestry");
+        };
+        debug_assert_eq!(prepared.ops.len(), parents.len());
+        let projection_started = crate::counters::enabled().then(std::time::Instant::now);
+        let projected_controls =
+            self.projected_controls_from(prepared.ops.iter().map(|observed| &observed.op))?;
+        if let Some(started) = projection_started {
+            let elapsed = elapsed_micros(started);
+            crate::counters::bump(|counts| {
+                counts.scanner_control_projection_us =
+                    counts.scanner_control_projection_us.saturating_add(elapsed);
+            });
+        }
+        let mut stats = ApplyStats::default();
+        let mut applied_ids = has_batch_parents.then(|| vec![None; prepared.ops.len()]);
+
+        for (op_index, (observed, parent)) in prepared.ops.iter().zip(parents.iter()).enumerate() {
+            match &observed.op {
+                Op::Upsert { path, kind, attrs } => {
+                    if let Some(max_files) = max_files {
+                        if self.files_after_upsert(path, *kind) > max_files {
+                            stats.resource_refused = stats.resource_refused.saturating_add(1);
+                            continue;
+                        }
+                    }
+                    let parent = match parent {
+                        ResolvedParent::Existing(parent) => *parent,
+                        ResolvedParent::Earlier(parent_op) => applied_ids
+                            .as_ref()
+                            .and_then(|ids| ids.get(*parent_op))
+                            .copied()
+                            .flatten()
+                            .expect("a proved parent directory was applied earlier"),
+                    };
+                    let name = path.file_name().expect("scanner upserts are not root mutations");
+                    crate::counters::bump(|counts| counts.upserts += 1);
+                    self.upsert_beneath(parent, name, path, *kind, *attrs, &mut stats, effects);
+                    if kind.is_dir() {
+                        if let Some(ids) = &mut applied_ids {
+                            ids[op_index] = self.child(parent, name);
+                        }
+                    }
+                }
+                Op::ControlUpsert { .. } | Op::ControlRemove { .. } => {}
+                Op::Remove { .. } | Op::InvalidateSubtree { .. } => {
+                    unreachable!("scanner preparation rejects non-discovery operations");
+                }
+            }
+        }
+
+        self.finish_reduction(
+            projected_controls,
+            &mut stats,
+            discovery,
+            None,
+            max_files,
+            track_file_progress,
+            effects,
+        );
+
+        Ok(stats)
+    }
+
+    #[allow(clippy::too_many_arguments)] // One shared tail keeps both reducer lanes identical.
+    fn finish_reduction<C: ConsequenceSink>(
+        &mut self,
+        projected_controls: crate::control::ControlTable,
+        stats: &mut ApplyStats,
+        discovery: Option<DiscoveryCommit>,
+        observation: Option<ObservationTransition>,
+        max_files: Option<u64>,
+        track_file_progress: bool,
+        effects: &mut C,
+    ) {
+        self.apply_control_transition(projected_controls, stats, effects);
         let mut discovery = discovery;
         if stats.resource_refused > 0 {
             let max_files = max_files.expect("resource refusal requires a file limit");
@@ -1493,23 +2023,15 @@ impl Index {
             discovery.transition =
                 Some(DiscoveryTransition::BudgetRefused(Issue::resource_budget(max_files)));
         }
-        self.apply_opened_state(discovery, observation, track_file_progress, &mut effects);
-
-        if effects.is_empty() {
-            return Ok(ApplyOutcome::from_commit(stats, None));
-        }
-
-        let commit =
-            self.publish_effects(next_clock, effects, commit_work(observed, stats), journal);
-        Ok(ApplyOutcome::from_commit(stats, Some(commit)))
+        self.apply_opened_state(discovery, observation, track_file_progress, effects);
     }
 
-    fn apply_opened_state(
+    fn apply_opened_state<C: ConsequenceSink>(
         &mut self,
         discovery: Option<DiscoveryCommit>,
         observation: Option<ObservationTransition>,
         track_file_progress: bool,
-        effects: &mut MutationEffects,
+        effects: &mut C,
     ) {
         if discovery.is_none() && observation.is_none() && !track_file_progress {
             return;
@@ -1522,11 +2044,11 @@ impl Index {
         if let Some(discovery) = discovery {
             if let Some(path) = discovery.directory_complete {
                 let id = self.lookup(&path).expect("discovery completion was preflighted");
-                if !self.entry(id).children_complete {
-                    self.entry_mut(id).children_complete = true;
+                if !self.entry(id).directory().children_complete {
+                    self.entry_mut(id).directory_mut().children_complete = true;
                     self.state.progress.directories_complete =
                         self.state.progress.directories_complete.saturating_add(1);
-                    effects.state.push(StateTransition::DirectoryComplete { path });
+                    effects.state(|| StateTransition::DirectoryComplete { path });
                 }
             }
 
@@ -1536,7 +2058,7 @@ impl Index {
                         for slot in &mut self.arena {
                             if let Slot::Occupied { entry, .. } = slot {
                                 if entry.kind == EntryKind::Dir {
-                                    entry.children_complete = false;
+                                    entry.directory_mut().children_complete = false;
                                 }
                             }
                         }
@@ -1635,7 +2157,7 @@ impl Index {
         }
 
         if previous != self.state {
-            effects.state.push(StateTransition::IndexState { previous, current: self.state });
+            effects.state(|| StateTransition::IndexState { previous, current: self.state });
         }
     }
 
@@ -1652,7 +2174,7 @@ impl Index {
         }
         let removed = match current.kind {
             EntryKind::File => 1,
-            EntryKind::Dir => current.rollup.all.files,
+            EntryKind::Dir => current.rollup().all.files,
             _ => 0,
         };
         current_total.saturating_sub(removed).saturating_add(u64::from(kind == EntryKind::File))
@@ -1674,11 +2196,25 @@ impl Index {
     fn publish_effects(
         &mut self,
         next_clock: Clock,
-        effects: MutationEffects,
+        effects: ExactConsequences,
         work: Work,
         journal: bool,
     ) -> Commit {
         debug_assert!(!effects.is_empty());
+        if crate::counters::enabled() {
+            let effect_paths = u64::try_from(effects.changes.len()).unwrap_or(u64::MAX);
+            let effect_path_bytes = effects.changes.iter().fold(0_u64, |total, change| {
+                total.saturating_add(
+                    u64::try_from(change.path().as_os_str().as_encoded_bytes().len())
+                        .unwrap_or(u64::MAX),
+                )
+            });
+            crate::counters::bump(|counts| {
+                counts.effect_paths = counts.effect_paths.saturating_add(effect_paths);
+                counts.effect_path_bytes =
+                    counts.effect_path_bytes.saturating_add(effect_path_bytes);
+            });
+        }
         let commit = Commit {
             clock: next_clock,
             impact: derive_impact(&effects.changes, &effects.state),
@@ -1688,14 +2224,21 @@ impl Index {
         };
         self.clock = next_clock;
         if journal {
-            self.retain_commit(commit.clone());
+            self.retain_commit(&commit);
         }
         commit
     }
 
-    fn retain_commit(&mut self, commit: Commit) {
+    fn retain_commit(&mut self, commit: &Commit) {
         let cost = commit.retained_cost();
         if cost > self.journal_capacity {
+            let dropped = u64::try_from(self.journal.len()).unwrap_or(u64::MAX);
+            crate::counters::bump(|counts| {
+                counts.journal_oversized_commits =
+                    counts.journal_oversized_commits.saturating_add(1);
+                counts.journal_dropped_commits =
+                    counts.journal_dropped_commits.saturating_add(dropped);
+            });
             self.journal.clear();
             self.journal_cost = 0;
             self.journal_floor = commit.clock;
@@ -1704,12 +2247,20 @@ impl Index {
 
         while self.journal_cost + cost > self.journal_capacity {
             if let Some(dropped) = self.journal.pop_front() {
+                crate::counters::bump(|counts| {
+                    counts.journal_dropped_commits =
+                        counts.journal_dropped_commits.saturating_add(1);
+                });
                 self.journal_cost -= dropped.retained_cost();
                 self.journal_floor = dropped.clock;
             }
         }
         self.journal_cost += cost;
-        self.journal.push_back(commit);
+        self.journal.push_back(commit.clone());
+        crate::counters::bump(|counts| {
+            counts.journal_cloned_commits = counts.journal_cloned_commits.saturating_add(1);
+            counts.journal_retained_commits = counts.journal_retained_commits.saturating_add(1);
+        });
     }
 
     /// Apply trusted bootstrap data without exposing it as live change history.
@@ -1717,9 +2268,45 @@ impl Index {
         &mut self,
         observation: &Observation,
     ) -> crate::Result<ApplyStats> {
-        let outcome = self.apply_with(observation, false)?;
+        let prepared = prepare_observation(observation)?;
+        #[cfg(test)]
+        if prepared.reject_before_apply {
+            return Err(crate::Error::CommitRejected("injected reducer preflight"));
+        }
+        let mut effects = NoConsequences;
+        let stats = self.reduce_prepared(&prepared, None, None, None, false, &mut effects)?;
+        record_batch(BatchProvenance::Baseline, observation.len(), stats);
         self.establish_baseline();
-        Ok(outcome.stats)
+        Ok(stats)
+    }
+
+    /// Apply one owned filesystem-walker batch without constructing public history.
+    #[cfg(test)]
+    pub(crate) fn apply_scanner_baseline(
+        &mut self,
+        batch: crate::scan::ScannerBatch,
+    ) -> crate::Result<ApplyStats> {
+        let observed = batch.len();
+        let prepare_started = crate::counters::enabled().then(std::time::Instant::now);
+        let prepared = self.prepare_scanner_batch(batch)?;
+        if let Some(started) = prepare_started {
+            let elapsed = elapsed_micros(started);
+            crate::counters::bump(|counts| {
+                counts.scanner_prepare_us = counts.scanner_prepare_us.saturating_add(elapsed);
+            });
+        }
+        let mut effects = NoConsequences;
+        let reduce_started = crate::counters::enabled().then(std::time::Instant::now);
+        let stats = self.reduce_scanner_prepared(&prepared, None, None, false, &mut effects)?;
+        if let Some(started) = reduce_started {
+            let elapsed = elapsed_micros(started);
+            crate::counters::bump(|counts| {
+                counts.scanner_reduce_us = counts.scanner_reduce_us.saturating_add(elapsed);
+            });
+        }
+        record_batch(BatchProvenance::Baseline, observed, stats);
+        self.establish_baseline();
+        Ok(stats)
     }
 
     #[cfg(test)]
@@ -1757,7 +2344,7 @@ impl Index {
             for slot in &mut self.arena {
                 if let Slot::Occupied { entry, .. } = slot {
                     if entry.kind == EntryKind::Dir {
-                        entry.children_complete = true;
+                        entry.directory_mut().children_complete = true;
                     }
                 }
             }
@@ -1793,7 +2380,7 @@ impl Index {
                     current: self.state,
                 });
             }
-            let effects = MutationEffects { state, ..MutationEffects::default() };
+            let effects = ExactConsequences { state, ..ExactConsequences::default() };
             Some(self.publish_effects(next_clock, effects, Work::default(), true))
         };
         Ok((epoch, commit))
@@ -1843,7 +2430,7 @@ impl Index {
         if state.is_empty() {
             return Ok(None);
         }
-        let effects = MutationEffects { state, ..MutationEffects::default() };
+        let effects = ExactConsequences { state, ..ExactConsequences::default() };
         Ok(Some(self.publish_effects(next_clock, effects, Work::default(), true)))
     }
 
@@ -1890,12 +2477,11 @@ impl Index {
         PathExpectation::new(self.path_state(path), self.entry_identity(path), None)
     }
 
-    /// Exact commits and legacy deltas applied since `clock`, oldest first.
+    /// Exact commits applied since `clock`, oldest first.
     pub fn since(&self, clock: Clock) -> Since {
         let commits: Vec<Commit> =
             self.journal.iter().filter(|commit| commit.clock > clock).cloned().collect();
         Since {
-            deltas: commits.iter().filter_map(Commit::applied_delta).collect(),
             commits,
             clock: self.clock,
             state: self.state,
@@ -1924,7 +2510,7 @@ impl Index {
     pub fn lookup(&self, path: &Path) -> Option<EntryId> {
         let mut current = EntryId::ROOT;
         for part in normalize(path)? {
-            current = *self.entry(current).children.get(part)?;
+            current = self.child(current, part)?;
         }
         Some(current)
     }
@@ -1934,19 +2520,19 @@ impl Index {
     pub fn rollup(&self, path: &Path) -> Option<RollUp> {
         let id = self.lookup(path)?;
         let entry = self.entry(id);
-        entry.kind.is_dir().then(|| self.named_rollup(&entry.rollup.all))
+        entry.kind.is_dir().then(|| self.named_rollup(&entry.rollup().all))
     }
 
     /// Both fixed aggregate partitions for a directory by relative path.
     pub fn partition_rollup(&self, path: &Path) -> Option<PartitionRollUp> {
         let entry = self.entry(self.lookup(path)?);
-        entry.kind.is_dir().then(|| self.named_partitions(&entry.rollup))
+        entry.kind.is_dir().then(|| self.named_partitions(entry.rollup()))
     }
 
     /// Both constant-size aggregate partitions for a directory.
     pub fn partition_rollup_summary(&self, path: &Path) -> Option<PartitionRollUpSummary> {
         let entry = self.entry(self.lookup(path)?);
-        entry.kind.is_dir().then(|| partition_summary(&entry.rollup))
+        entry.kind.is_dir().then(|| partition_summary(entry.rollup()))
     }
 
     /// Capture one retained entry without repeating path lookup in a consumer.
@@ -1965,8 +2551,8 @@ impl Index {
             ignored: entry.ignored,
             classification: (entry.kind == EntryKind::File)
                 .then(|| self.types.classify_name(path.file_name().unwrap_or_default())),
-            rollup: entry.kind.is_dir().then(|| partition_summary(&entry.rollup)),
-            children_complete: entry.kind.is_dir().then_some(entry.children_complete),
+            rollup: entry.kind.is_dir().then(|| partition_summary(entry.rollup())),
+            children_complete: entry.kind.is_dir().then(|| entry.directory().children_complete),
         }
     }
 
@@ -2156,7 +2742,7 @@ impl Index {
                         continue;
                     }
                     directories.push(id);
-                    stack.extend(entry.children.values().copied());
+                    stack.extend(self.child_ids(id));
                 }
                 let arena = &self.arena;
                 let serving = self.serving.as_mut().expect("checked above");
@@ -2294,10 +2880,7 @@ impl Index {
     ) -> Option<impl DoubleEndedIterator<Item = (&OsStr, EntryId)> + ExactSizeIterator + '_> {
         let id = self.lookup(path)?;
         let entry = self.entry(id);
-        entry
-            .kind
-            .is_dir()
-            .then(|| entry.children.iter().map(|(name, child)| (name.as_os_str(), *child)))
+        entry.kind.is_dir().then(|| IndexChildren::new(self, entry))
     }
 
     /// Borrow direct children of an entry id as `(name, id)` pairs in name order.
@@ -2307,7 +2890,7 @@ impl Index {
         &self,
         id: EntryId,
     ) -> Option<impl DoubleEndedIterator<Item = (&OsStr, EntryId)> + ExactSizeIterator + '_> {
-        Some(self.try_entry(id)?.children.iter().map(|(name, child)| (name.as_os_str(), *child)))
+        Some(IndexChildren::new(self, self.try_entry(id)?))
     }
 
     /// Reconstruct an entry's path relative to the root by walking parent pointers.
@@ -2328,13 +2911,13 @@ impl Index {
     /// Owned, self-describing roll-up state for an entry id, if it is a directory.
     pub fn rollup_of(&self, id: EntryId) -> Option<RollUp> {
         let entry = self.try_entry(id)?;
-        entry.kind.is_dir().then(|| self.named_rollup(&entry.rollup.all))
+        entry.kind.is_dir().then(|| self.named_rollup(&entry.rollup().all))
     }
 
     /// Map-free directory totals for in-crate reporting paths.
     pub(crate) fn rollup_scalars_of(&self, id: EntryId) -> Option<RollUpScalars> {
         let entry = self.try_entry(id)?;
-        entry.kind.is_dir().then(|| RollUpScalars::from(&entry.rollup.all))
+        entry.kind.is_dir().then(|| RollUpScalars::from(&entry.rollup().all))
     }
 
     /// Attributes for an entry id, or `None` when the handle is stale.
@@ -2378,7 +2961,7 @@ impl Index {
         if !profile.is_enabled() {
             return Vec::new();
         }
-        let root_files = self.entry(EntryId::ROOT).rollup.files;
+        let root_files = self.entry(EntryId::ROOT).rollup().files;
         let mut candidates = Vec::with_capacity(usize::try_from(root_files).unwrap_or(0));
         let mut stack = vec![EntryId::ROOT];
         while let Some(parent) = stack.pop() {
@@ -2496,7 +3079,7 @@ impl Index {
         let (_, ancestors) = parts.split_last()?;
         let mut current = EntryId::ROOT;
         for part in ancestors {
-            let Some(child) = self.entry(current).children.get(*part).copied() else {
+            let Some(child) = self.child(current, part) else {
                 break;
             };
             current = child;
@@ -2531,6 +3114,131 @@ impl Index {
             .collect()
     }
 
+    /// Consume a walker-owned batch and prove every parent before mutation begins.
+    ///
+    /// Scanner batches contain only unconditional discoveries. The walker publishes a
+    /// directory before any worker may enumerate it, so almost every parent resolves to
+    /// an existing id. Serial batches may still contain a parent-first directory and its
+    /// children together; those children retain the earlier operation index instead.
+    /// The proof owns no duplicate paths and application performs no second path-tree
+    /// search.
+    fn prepare_scanner_batch(
+        &self,
+        batch: crate::scan::ScannerBatch,
+    ) -> crate::Result<PreparedObservation> {
+        let ops = batch.into_ops();
+        let mut parents = Vec::with_capacity(ops.len());
+        let mut last_parent: Option<(&Path, ResolvedParent)> = None;
+        let mut has_batch_parents = false;
+        let mut path_comparisons = 0_u64;
+
+        for (op_index, observed) in ops.iter().enumerate() {
+            if !matches!(observed.expectation, Expectation::Any) {
+                return Err(crate::Error::UnsupportedScanConfig(
+                    "scanner batches contain unconditional discoveries only",
+                ));
+            }
+            let op = &observed.op;
+            let path = op.path();
+            if path.as_os_str().is_empty() {
+                return Err(crate::Error::UnsupportedScanConfig(
+                    "scanner batches cannot mutate the index root",
+                ));
+            }
+            for component in path.components() {
+                match component {
+                    Component::Normal(_) => {}
+                    Component::CurDir => {
+                        return Err(crate::Error::UnsupportedScanConfig(
+                            "scanner batches require canonical relative paths",
+                        ));
+                    }
+                    Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                        return Err(crate::Error::PathEscapesRoot(path.to_path_buf()));
+                    }
+                }
+            }
+            match op {
+                Op::Upsert { .. } => {}
+                Op::ControlUpsert { .. } | Op::ControlRemove { .. }
+                    if crate::control::is_control_file(path) => {}
+                Op::ControlUpsert { .. } | Op::ControlRemove { .. } => {
+                    return Err(crate::Error::InvalidControlPath(path.to_path_buf()));
+                }
+                Op::Remove { .. } | Op::InvalidateSubtree { .. } => {
+                    return Err(crate::Error::UnsupportedScanConfig(
+                        "scanner batches contain discoveries only",
+                    ));
+                }
+            }
+
+            let parent_path = path.parent().expect("a non-root relative path has a parent");
+            if last_parent.is_some() {
+                path_comparisons = path_comparisons.saturating_add(1);
+            }
+            let same_parent = last_parent
+                .filter(|(previous, _)| *previous == parent_path)
+                .map(|(_, parent)| parent);
+            let parent = if let Some(parent) = same_parent {
+                parent
+            } else {
+                self.lookup(parent_path)
+                    .filter(|id| self.entry(*id).kind.is_dir())
+                    .map(ResolvedParent::Existing)
+                    .or_else(|| Self::earlier_scanner_parent(&ops, op_index, parent_path))
+                    .ok_or_else(|| crate::Error::UnknownAncestry {
+                        path: path.to_path_buf(),
+                        reconcile_from: PathBuf::new(),
+                    })?
+            };
+            if let (Op::Upsert { kind, .. }, ResolvedParent::Existing(parent)) = (op, parent) {
+                if path.file_name().is_some_and(|name| {
+                    self.child(parent, name).is_some_and(|child| self.entry(child).kind != *kind)
+                }) {
+                    // Bootstrap discovery only adds or refreshes facts. Rejecting a kind
+                    // replacement keeps every existing numeric parent stable until the
+                    // batch is consumed; refresh and watch topology stays on the public
+                    // transactional path.
+                    return Err(crate::Error::UnsupportedScanConfig(
+                        "scanner discovery cannot replace entry kinds",
+                    ));
+                }
+            }
+            has_batch_parents |= matches!(parent, ResolvedParent::Earlier(_));
+            parents.push(parent);
+            last_parent = Some((parent_path, parent));
+        }
+
+        crate::counters::bump(|counts| {
+            counts.ancestry_path_comparisons =
+                counts.ancestry_path_comparisons.saturating_add(path_comparisons);
+            counts.ancestry_parent_proofs = counts
+                .ancestry_parent_proofs
+                .saturating_add(u64::try_from(ops.len()).unwrap_or(u64::MAX));
+        });
+        Ok(PreparedObservation {
+            ops,
+            ancestry: PreparedAncestry::Scanner { parents, has_batch_parents },
+            #[cfg(test)]
+            reject_before_apply: false,
+        })
+    }
+
+    /// Resolve a parent produced earlier in the same scanner batch.
+    fn earlier_scanner_parent(
+        ops: &[ObservationOp],
+        before: usize,
+        parent_path: &Path,
+    ) -> Option<ResolvedParent> {
+        let (op_index, op) = ops[..before].iter().enumerate().rev().find(
+            |(_, observed)| matches!(&observed.op, Op::Upsert { path, .. } if path == parent_path),
+        )?;
+        let Op::Upsert { kind, .. } = &op.op else {
+            unreachable!("the search selected an upsert");
+        };
+        kind.is_dir().then_some(ResolvedParent::Earlier(op_index))
+    }
+
     /// Evaluate the complete resulting control table before any fact or reducer moves.
     ///
     /// Parsing is infallible, but the shared source bound is not. Building the projected
@@ -2540,6 +3248,17 @@ impl Index {
         &self,
         ops: &[ObservationOp],
         accepted: &[bool],
+    ) -> crate::Result<crate::control::ControlTable> {
+        self.projected_controls_from(
+            ops.iter()
+                .zip(accepted)
+                .filter_map(|(observed, accepted)| accepted.then_some(&observed.op)),
+        )
+    }
+
+    fn projected_controls_from<'a>(
+        &self,
+        ops: impl Iterator<Item = &'a Op> + Clone,
     ) -> crate::Result<crate::control::ControlTable> {
         // When the retained table is empty and the batch carries no control op of any
         // kind, projection cannot change anything: only control ops write the table, and
@@ -2554,20 +3273,16 @@ impl Index {
         // which is precisely what `control_input_fails_closed_when_the_capability_is_absent`
         // caught when this lane tested only for upserts.
         if self.controls.is_empty()
-            && !ops.iter().zip(accepted).any(|(observed, accepted)| {
-                *accepted
-                    && matches!(observed.op, Op::ControlUpsert { .. } | Op::ControlRemove { .. })
-            })
+            && !ops
+                .clone()
+                .any(|op| matches!(op, Op::ControlUpsert { .. } | Op::ControlRemove { .. }))
         {
             return Ok(self.controls.clone());
         }
         let mut projected = self.controls.clone();
         let mut structure = StructuralOverlay::default();
-        for (observed, accepted) in ops.iter().zip(accepted) {
-            if !accepted {
-                continue;
-            }
-            match &observed.op {
+        for op in ops {
+            match op {
                 Op::Upsert { path, kind, .. } => {
                     if crate::control::is_control_file(path) && *kind != EntryKind::File {
                         projected.remove(path)?;
@@ -2604,11 +3319,11 @@ impl Index {
         Ok(projected)
     }
 
-    fn apply_control_transition(
+    fn apply_control_transition<C: ConsequenceSink>(
         &mut self,
         projected: crate::control::ControlTable,
         stats: &mut ApplyStats,
-        effects: &mut MutationEffects,
+        effects: &mut C,
     ) {
         let changes = projected.changes_from(&self.controls);
         if changes.is_empty() {
@@ -2620,19 +3335,19 @@ impl Index {
             .collect();
         self.controls = projected;
         stats.controls = u64::try_from(changes.len()).unwrap_or(u64::MAX);
-        effects.changes.extend(changes.into_iter().map(|(path, previous, current)| {
-            EffectiveChange::ControlUpdated { path, previous, current }
-        }));
+        for (path, previous, current) in changes {
+            effects.change(|| EffectiveChange::ControlUpdated { path, previous, current });
+        }
         self.reclassify_controlled_subtrees(&affected, stats, effects);
     }
 
     /// Re-evaluate only subtrees governed by changed controls, then rebuild the fixed
     /// unignored reducer from the resulting facts.
-    fn reclassify_controlled_subtrees(
+    fn reclassify_controlled_subtrees<C: ConsequenceSink>(
         &mut self,
         affected: &[PathBuf],
         stats: &mut ApplyStats,
-        effects: &mut MutationEffects,
+        effects: &mut C,
     ) {
         let mut roots: Vec<PathBuf> = affected.to_vec();
         roots.sort();
@@ -2651,10 +3366,9 @@ impl Index {
                 continue;
             };
             let children: Vec<(PathBuf, EntryId)> = self
-                .entry(root_id)
-                .children
-                .iter()
-                .map(|(name, id)| (root.join(name), *id))
+                .children_of(root_id)
+                .expect("controlled subtree root is live")
+                .map(|(name, id)| (root.join(name), id))
                 .collect();
             let mut queue = VecDeque::from(children);
             while let Some((path, id)) = queue.pop_front() {
@@ -2663,13 +3377,16 @@ impl Index {
                 let current = entry.ignored;
                 let next = parent_ignored
                     || self.controls.matcher_for(&path).is_ignored(entry.kind.is_dir());
-                let descendants: Vec<(PathBuf, EntryId)> =
-                    entry.children.iter().map(|(name, child)| (path.join(name), *child)).collect();
+                let descendants: Vec<(PathBuf, EntryId)> = self
+                    .children_of(id)
+                    .expect("controlled subtree entry is live")
+                    .map(|(name, child)| (path.join(name), child))
+                    .collect();
                 if current != next {
                     self.move_serving_file_partition(&path, id, current, next);
                     self.entry_mut(id).ignored = next;
                     stats.reclassified += 1;
-                    effects.changes.push(EffectiveChange::Reclassified {
+                    effects.change(|| EffectiveChange::Reclassified {
                         path: path.clone(),
                         previous_ignored: current,
                         current_ignored: next,
@@ -2689,15 +3406,19 @@ impl Index {
         let mut stack = vec![EntryId::ROOT];
         while let Some(id) = stack.pop() {
             order.push(id);
-            stack.extend(self.entry(id).children.values().copied());
-            self.entry_mut(id).rollup.unignored = InternedRollUp::default();
+            if self.entry(id).kind.is_dir() {
+                stack.extend(self.child_ids(id));
+            }
+            if self.entry(id).kind.is_dir() {
+                self.entry_mut(id).rollup_mut().unignored = InternedRollUp::default();
+            }
         }
         for id in order.into_iter().rev() {
             let Some(parent) = self.entry(id).parent else {
                 continue;
             };
             let contribution = self.contribution(id).unignored;
-            self.entry_mut(parent).rollup.unignored.merge(&contribution);
+            self.entry_mut(parent).rollup_mut().unignored.merge(&contribution);
         }
     }
 
@@ -2708,6 +3429,10 @@ impl Index {
     ) -> Vec<(PathBuf, PathBuf)> {
         let mut structure = StructuralOverlay::default();
         let mut unknown = Vec::new();
+        let mut overlay_inserts = 0_u64;
+        let mut path_comparisons = 0_u64;
+        let mut parent_proofs = 0_u64;
+        let count_preflight = crate::counters::enabled();
         // The last directory this pass proved, with every ancestor of it. A producer
         // emits a directory's children together, so consecutive ops overwhelmingly
         // share a parent, and re-proving the same chain per op was the largest single
@@ -2726,11 +3451,18 @@ impl Index {
                 Op::Upsert { path, .. } | Op::ControlUpsert { path, .. }
                     if !path.as_os_str().is_empty() =>
                 {
+                    if count_preflight && proven_dir.is_some() {
+                        path_comparisons = path_comparisons.saturating_add(1);
+                    }
                     let same_proven_parent = matches!(
                         (path.parent(), proven_dir.as_deref()),
                         (Some(parent), Some(proven)) if parent == proven
                     );
-                    if !same_proven_parent {
+                    if same_proven_parent {
+                        if count_preflight {
+                            parent_proofs = parent_proofs.saturating_add(1);
+                        }
+                    } else {
                         let mut reconcile_from = PathBuf::new();
                         let mut ancestry_known = true;
                         let parts = normalize(path).expect("prepared paths are canonical");
@@ -2749,6 +3481,9 @@ impl Index {
                             proven_dir = None;
                             continue;
                         }
+                        if count_preflight {
+                            parent_proofs = parent_proofs.saturating_add(1);
+                        }
                         match &mut proven_dir {
                             Some(proven) => {
                                 proven.clear();
@@ -2762,6 +3497,9 @@ impl Index {
                     }
                     if let Op::Upsert { kind, .. } = &observed.op {
                         structure.upsert(self, path, *kind);
+                        if count_preflight {
+                            overlay_inserts = overlay_inserts.saturating_add(1);
+                        }
                         if !kind.is_dir() {
                             // This path may itself have been somebody's proven ancestor
                             // only if it was a directory before; the overlay knows, but
@@ -2786,6 +3524,16 @@ impl Index {
                 | Op::InvalidateSubtree { .. } => {}
             }
         }
+        if count_preflight {
+            crate::counters::bump(|counts| {
+                counts.ancestry_overlay_inserts =
+                    counts.ancestry_overlay_inserts.saturating_add(overlay_inserts);
+                counts.ancestry_path_comparisons =
+                    counts.ancestry_path_comparisons.saturating_add(path_comparisons);
+                counts.ancestry_parent_proofs =
+                    counts.ancestry_parent_proofs.saturating_add(parent_proofs);
+            });
+        }
         unknown
     }
 
@@ -2799,7 +3547,7 @@ impl Index {
             id.slot,
             id.generation,
             entry.revision,
-            entry.children_revision,
+            entry.directory.as_deref().map_or(0, |directory| directory.children_revision),
             entry.kind.is_dir(),
         )
     }
@@ -2809,19 +3557,119 @@ impl Index {
     }
 
     fn bump_children_revision(entry: &mut Entry) {
-        entry.children_revision =
-            entry.children_revision.checked_add(1).expect("entry children revision exhausted");
+        let directory = entry.directory_mut();
+        directory.children_revision =
+            directory.children_revision.checked_add(1).expect("entry children revision exhausted");
+    }
+
+    fn child(&self, parent: EntryId, name: &OsStr) -> Option<EntryId> {
+        let children = &self.entry(parent).directory.as_deref()?.children;
+        match children {
+            DirectoryChildren::Sorted(ids) => ids
+                .binary_search_by(|id| self.entry(*id).name.as_os_str().cmp(name))
+                .ok()
+                .map(|position| ids[position]),
+            DirectoryChildren::Mutable(children) => children.get(name).copied(),
+        }
+    }
+
+    fn child_ids(&self, parent: EntryId) -> ChildIds<'_> {
+        self.entry(parent).directory().children.ids()
+    }
+
+    /// Promote one compact, completed directory when its first mutation arrives.
+    ///
+    /// Detached indexes keep each name only on its child entry. Arbitrary public
+    /// mutation needs keyed insertion and removal, so the touched parent pays the
+    /// name clones once; untouched one-shot topology stays compact.
+    fn promote_children(&mut self, parent: EntryId) {
+        let ids = match &mut self.entry_mut(parent).directory_mut().children {
+            DirectoryChildren::Sorted(ids) => std::mem::take(ids),
+            DirectoryChildren::Mutable(_) => return,
+        };
+        let expected = ids.len();
+        let children =
+            ids.into_iter().map(|id| (self.entry(id).name.clone(), id)).collect::<BTreeMap<_, _>>();
+        assert_eq!(
+            children.len(),
+            expected,
+            "compact child names must remain unique before promotion"
+        );
+        self.entry_mut(parent).directory_mut().children = DirectoryChildren::Mutable(children);
     }
 
     fn insert_child(&mut self, parent: EntryId, name: OsString, child: EntryId) {
+        self.promote_children(parent);
         let entry = self.entry_mut(parent);
-        entry.children.insert(name, child);
+        let DirectoryChildren::Mutable(children) = &mut entry.directory_mut().children else {
+            unreachable!("child promotion produces mutable storage")
+        };
+        children.insert(name, child);
         Self::bump_children_revision(entry);
     }
 
-    fn remove_child(&mut self, parent: EntryId, name: &OsStr) {
+    fn reserve_detached_children(&mut self, parent: EntryId, additional: usize) {
         let entry = self.entry_mut(parent);
-        if entry.children.remove(name).is_some() {
+        let DirectoryChildren::Sorted(children) = &mut entry.directory_mut().children else {
+            unreachable!("detached directories retain sorted child storage")
+        };
+        children.reserve(additional);
+    }
+
+    fn push_detached_child(&mut self, parent: EntryId, child: EntryId) {
+        let entry = self.entry_mut(parent);
+        let DirectoryChildren::Sorted(children) = &mut entry.directory_mut().children else {
+            unreachable!("detached directories retain sorted child storage")
+        };
+        children.push(child);
+        Self::bump_children_revision(entry);
+    }
+
+    fn sort_detached_children(&mut self, parent: EntryId) -> bool {
+        let mut children = match &mut self.entry_mut(parent).directory_mut().children {
+            DirectoryChildren::Sorted(children) => std::mem::take(children),
+            DirectoryChildren::Mutable(_) => {
+                unreachable!("detached directories retain sorted child storage")
+            }
+        };
+        children.sort_unstable_by(|left, right| {
+            self.entry(*left).name.as_os_str().cmp(self.entry(*right).name.as_os_str())
+        });
+        let unique = children.windows(2).all(|pair| {
+            self.entry(pair[0]).name.as_os_str() != self.entry(pair[1]).name.as_os_str()
+        });
+        self.entry_mut(parent).directory_mut().children = DirectoryChildren::Sorted(children);
+        unique
+    }
+
+    /// Merge a completed detached directory without cloning its retained roll-up.
+    fn merge_detached_descendants(&mut self, parent: EntryId, child: EntryId) {
+        debug_assert!(parent.idx() < child.idx(), "cold parents must precede descendants");
+        let (parents, children) = self.arena.split_at_mut(child.idx());
+        let child_rollup = match &children[0] {
+            Slot::Occupied { generation, entry } if *generation == child.generation => {
+                entry.rollup()
+            }
+            Slot::Occupied { .. } | Slot::Free { .. } => {
+                panic!("detached child handle must be live: {child:?}")
+            }
+        };
+        let parent_entry = match &mut parents[parent.idx()] {
+            Slot::Occupied { generation, entry } if *generation == parent.generation => entry,
+            Slot::Occupied { .. } | Slot::Free { .. } => {
+                panic!("detached parent handle must be live: {parent:?}")
+            }
+        };
+        parent_entry.rollup_mut().merge(child_rollup);
+    }
+
+    fn remove_child(&mut self, parent: EntryId, name: &OsStr) {
+        self.promote_children(parent);
+        let entry = self.entry_mut(parent);
+        let DirectoryChildren::Mutable(children) = &mut entry.directory_mut().children else {
+            unreachable!("child promotion produces mutable storage")
+        };
+        if children.remove(name).is_some() {
             Self::bump_children_revision(entry);
         }
     }
@@ -2849,12 +3697,12 @@ impl Index {
                 Slot::Occupied { .. } => unreachable!("free list pointed at a live slot"),
             };
             self.free_head = next;
-            self.arena[free_idx] = Slot::Occupied { generation, entry: Box::new(entry) };
+            self.arena[free_idx] = Slot::Occupied { generation, entry };
             return EntryId { slot: free_slot, generation };
         }
         let slot = u32::try_from(self.arena.len()).expect("index arena exceeded u32 capacity");
         let id = EntryId { slot, generation: 0 };
-        self.arena.push(Slot::Occupied { generation: 0, entry: Box::new(entry) });
+        self.arena.push(Slot::Occupied { generation: 0, entry });
         id
     }
 
@@ -2902,8 +3750,7 @@ impl Index {
     ///
     /// A completed reconciliation records one clocked [`StateTransition::Verified`]
     /// for its subtree, including when every entry was unchanged. Consumers of exact
-    /// commits therefore observe the same provenance movement as readers of this view;
-    /// the legacy [`AppliedDelta`] projection intentionally remains entry-only.
+    /// commits therefore observe the same provenance movement as readers of this view.
     pub fn provenance(&self, path: &Path) -> Option<Provenance> {
         let id = self.lookup(path)?;
         Some(self.provenance_of(id))
@@ -3070,11 +3917,11 @@ impl Index {
         let entry = self.entry(id);
         match entry.kind {
             EntryKind::Dir => {
-                let mut all = entry.rollup.all.clone();
+                let mut all = entry.rollup().all.clone();
                 all.dirs += 1;
                 let mut unignored = InternedRollUp::default();
                 if !entry.ignored {
-                    unignored = entry.rollup.unignored.clone();
+                    unignored = entry.rollup().unignored.clone();
                     unignored.dirs += 1;
                 }
                 InternedPartitionRollUp { all, unignored }
@@ -3116,7 +3963,7 @@ impl Index {
             // worth seeing, and it is what S4's bottom-up pass would collapse.
             crate::counters::bump(|c| c.rollup_merges += 1);
             let entry = self.entry_mut(id);
-            entry.rollup.merge(contribution);
+            entry.rollup_mut().merge(contribution);
             current = entry.parent;
         }
     }
@@ -3129,7 +3976,7 @@ impl Index {
         let mut current = from_parent;
         while let Some(id) = current {
             let entry = self.entry_mut(id);
-            entry.rollup.unmerge(contribution);
+            entry.rollup_mut().unmerge(contribution);
             current = entry.parent;
         }
     }
@@ -3145,12 +3992,11 @@ impl Index {
         let mut current = from;
         while let Some(id) = current {
             let mut newest: Option<i64> = None;
-            for child in self.entry(id).children.values() {
-                let child_entry = self.entry(*child);
+            for child in self.child_ids(id) {
+                let child_entry = self.entry(child);
                 let candidate = match child_entry.kind {
-                    EntryKind::Dir => {
-                        (child_entry.rollup.files > 0).then_some(child_entry.rollup.newest_mtime_ns)
-                    }
+                    EntryKind::Dir => (child_entry.rollup().files > 0)
+                        .then_some(child_entry.rollup().newest_mtime_ns),
                     EntryKind::File => Some(child_entry.attrs.mtime_ns),
                     EntryKind::Symlink | EntryKind::Other => None,
                 };
@@ -3159,15 +4005,15 @@ impl Index {
                 }
             }
             let newest = newest.unwrap_or(0);
-            self.entry_mut(id).rollup.all.newest_mtime_ns = newest;
+            self.entry_mut(id).rollup_mut().all.newest_mtime_ns = newest;
 
             let mut newest_unignored: Option<i64> = None;
-            for child in self.entry(id).children.values() {
-                let child_entry = self.entry(*child);
+            for child in self.child_ids(id) {
+                let child_entry = self.entry(child);
                 let candidate = match child_entry.kind {
                     EntryKind::Dir => (!child_entry.ignored
-                        && child_entry.rollup.unignored.files > 0)
-                        .then_some(child_entry.rollup.unignored.newest_mtime_ns),
+                        && child_entry.rollup().unignored.files > 0)
+                        .then_some(child_entry.rollup().unignored.newest_mtime_ns),
                     EntryKind::File => (!child_entry.ignored).then_some(child_entry.attrs.mtime_ns),
                     EntryKind::Symlink | EntryKind::Other => None,
                 };
@@ -3177,7 +4023,7 @@ impl Index {
                 }
             }
             let entry = self.entry_mut(id);
-            entry.rollup.unignored.newest_mtime_ns = newest_unignored.unwrap_or(0);
+            entry.rollup_mut().unignored.newest_mtime_ns = newest_unignored.unwrap_or(0);
             current = entry.parent;
         }
     }
@@ -3186,23 +4032,21 @@ impl Index {
     fn resolve_dir_chain(&self, parts: &[&OsStr]) -> EntryId {
         let mut current = EntryId::ROOT;
         for part in parts {
-            current = *self
-                .entry(current)
-                .children
-                .get(*part)
+            current = self
+                .child(current, part)
                 .expect("validated ancestry remains present under the writer lock");
             debug_assert!(self.entry(current).kind.is_dir());
         }
         current
     }
 
-    fn apply_upsert(
+    fn apply_upsert<C: ConsequenceSink>(
         &mut self,
         path: &Path,
         kind: EntryKind,
         attrs: Attrs,
         stats: &mut ApplyStats,
-        effects: &mut MutationEffects,
+        effects: &mut C,
         parent_memo: &mut ParentMemo,
     ) -> bool {
         // A walker reports a directory's children consecutively, because that is the
@@ -3241,7 +4085,7 @@ impl Index {
             root.source = source;
             Self::bump_revision(root);
             stats.updated += 1;
-            effects.changes.push(EffectiveChange::Updated {
+            effects.change(|| EffectiveChange::Updated {
                 path: PathBuf::new(),
                 kind: EntryKind::Dir,
                 previous,
@@ -3263,7 +4107,7 @@ impl Index {
     /// the arbitration rules.  Every guard the delta contract requires still runs here:
     /// the caller has supplied a parent, not a decision.
     #[allow(clippy::too_many_arguments)]
-    fn upsert_beneath(
+    fn upsert_beneath<C: ConsequenceSink>(
         &mut self,
         parent: EntryId,
         name: &OsStr,
@@ -3271,10 +4115,10 @@ impl Index {
         kind: EntryKind,
         attrs: Attrs,
         stats: &mut ApplyStats,
-        effects: &mut MutationEffects,
+        effects: &mut C,
     ) -> bool {
         let source = self.applying_source;
-        let existing = self.entry(parent).children.get(name).copied();
+        let existing = self.child(parent, name);
 
         if let Some(id) = existing {
             let entry = self.entry(id);
@@ -3298,7 +4142,7 @@ impl Index {
                     entry.source = source;
                     Self::bump_revision(entry);
                     stats.updated += 1;
-                    effects.changes.push(EffectiveChange::Updated {
+                    effects.change(|| EffectiveChange::Updated {
                         path: path.to_path_buf(),
                         kind,
                         previous,
@@ -3324,7 +4168,7 @@ impl Index {
                     self.recompute_newest_upward(Some(parent));
                 }
                 stats.updated += 1;
-                effects.changes.push(EffectiveChange::Updated {
+                effects.change(|| EffectiveChange::Updated {
                     path: path.to_path_buf(),
                     kind,
                     previous,
@@ -3346,25 +4190,23 @@ impl Index {
             (kind == EntryKind::File).then(|| self.intern_ext(&self.types.ext_bucket(name)));
         let ignored =
             self.entry(parent).ignored || self.controls.matcher_for(path).is_ignored(kind.is_dir());
-        let id = self.alloc(Entry {
-            parent: Some(parent),
-            name: name.to_os_string(),
-            ext_id,
-            ignored,
-            source,
-            kind,
-            attrs,
-            children: BTreeMap::new(),
-            rollup: InternedPartitionRollUp::default(),
-            revision: 0,
-            children_revision: 0,
-            children_complete: kind != EntryKind::Dir,
-        });
+        let id = self.alloc(Entry::new(
+            NewEntry {
+                parent: Some(parent),
+                name: name.to_os_string(),
+                ext_id,
+                ignored,
+                source,
+                kind,
+                attrs,
+            },
+            false,
+        ));
         self.insert_child(parent, name.to_os_string(), id);
         let contribution = self.contribution(id);
         self.merge_upward(Some(parent), &contribution);
         stats.inserted += 1;
-        effects.changes.push(EffectiveChange::Inserted { path: path.to_path_buf(), kind, attrs });
+        effects.change(|| EffectiveChange::Inserted { path: path.to_path_buf(), kind, attrs });
         self.insert_serving_entry(path, kind, attrs, id);
         true
     }
@@ -3396,26 +4238,24 @@ impl Index {
         attrs: Attrs,
     ) -> Option<EntryId> {
         let parent_entry = self.try_entry(parent)?;
-        if parent_entry.kind != EntryKind::Dir || parent_entry.children.contains_key(&name) {
+        if parent_entry.kind != EntryKind::Dir || self.child(parent, &name).is_some() {
             return None;
         }
         let source = self.applying_source;
         let ext_id =
             (kind == EntryKind::File).then(|| self.intern_ext(&self.types.ext_bucket(&name)));
-        let id = self.alloc(Entry {
-            parent: Some(parent),
-            name: name.clone(),
-            ext_id,
-            ignored: false,
-            source,
-            kind,
-            attrs,
-            children: BTreeMap::new(),
-            rollup: InternedPartitionRollUp::default(),
-            revision: 0,
-            children_revision: 0,
-            children_complete: true,
-        });
+        let id = self.alloc(Entry::new(
+            NewEntry {
+                parent: Some(parent),
+                name: name.clone(),
+                ext_id,
+                ignored: false,
+                source,
+                kind,
+                attrs,
+            },
+            true,
+        ));
         self.insert_child(parent, name, id);
         // Roll-ups stay eager. The same profile put `merge_upward` at about 3.5%, so
         // deferring it to a bottom-up pass would buy little and would introduce a window
@@ -3427,11 +4267,11 @@ impl Index {
         Some(id)
     }
 
-    fn apply_remove(
+    fn apply_remove<C: ConsequenceSink>(
         &mut self,
         path: &Path,
         stats: &mut ApplyStats,
-        effects: &mut MutationEffects,
+        effects: &mut C,
     ) -> bool {
         let Some(id) = self.lookup(path) else {
             stats.unchanged += 1;
@@ -3445,7 +4285,12 @@ impl Index {
         true
     }
 
-    fn remove_entry(&mut self, id: EntryId, stats: &mut ApplyStats, effects: &mut MutationEffects) {
+    fn remove_entry<C: ConsequenceSink>(
+        &mut self,
+        id: EntryId,
+        stats: &mut ApplyStats,
+        effects: &mut C,
+    ) {
         let removed_root = self.path_of(id).expect("a live entry has a path");
         self.invalidate_content(&removed_root);
         self.remove_serving_subtree_semantics(id, &removed_root);
@@ -3465,14 +4310,17 @@ impl Index {
             let entry = self.entry(node);
             let kind = entry.kind;
             let attrs = entry.attrs;
-            let children: Vec<(OsString, EntryId)> =
-                entry.children.iter().map(|(name, child)| (name.clone(), *child)).collect();
+            let children: Vec<(OsString, EntryId)> = self
+                .children_of(node)
+                .expect("removed subtree entry is live")
+                .map(|(name, child)| (name.to_os_string(), child))
+                .collect();
             let ext_id = entry.ext_id;
             for (name, child) in children {
                 queue.push_back((child, path.join(name)));
             }
             self.remove_serving_entry(&path, kind, attrs, node);
-            effects.changes.push(EffectiveChange::Removed { path, kind, attrs });
+            effects.change(|| EffectiveChange::Removed { path, kind, attrs });
             // Give the extension back before the entry itself goes, so the interner
             // holds only what the tree still contains.
             if let Some(ext_id) = ext_id {
@@ -3622,26 +4470,6 @@ fn normalize(path: &Path) -> Option<Vec<&OsStr>> {
     Some(parts)
 }
 
-/// Whether a path is relative and never ascends, so joining it cannot leave a base.
-///
-/// Every component must be `Normal` or `CurDir`. That rejects `..`, a root, and a
-/// Windows prefix, which is both what an index keyed on relative paths can store and
-/// what keeps a joined path inside the directory it was joined to.
-///
-/// Deliberately *not* named for representability. This project already uses
-/// "representable" for a different question — whether a native path has a canonical
-/// UTF-8 portable form, which is what decides whether an entry appears in portable
-/// projections. That predicate is [`crate::opened::read::portable_path`]. A path can
-/// satisfy one and fail the other in either direction, so one word for both invites
-/// exactly the confusion it caused.
-///
-/// The same rule as [`normalize`] without building anything: validation asks a yes or
-/// no question, and answering it by constructing a component list and dropping it was
-/// pure allocation.
-pub(crate) fn path_is_relative_normal(path: &Path) -> bool {
-    path.components().all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
-}
-
 fn prepare_observation(observation: &Observation) -> crate::Result<PreparedObservation> {
     let mut ops = Vec::with_capacity(observation.len());
     for observed in &observation.ops {
@@ -3667,30 +4495,32 @@ fn prepare_observation(observation: &Observation) -> crate::Result<PreparedObser
     }
     Ok(PreparedObservation {
         ops,
+        ancestry: PreparedAncestry::General,
         #[cfg(test)]
         reject_before_apply: false,
     })
 }
 
 fn canonical_relative_path(path: &Path) -> crate::Result<PathBuf> {
-    if !path_is_relative_normal(path) {
-        return Err(crate::Error::PathEscapesRoot(path.to_path_buf()));
+    let mut canonical = PathBuf::with_capacity(path.as_os_str().as_encoded_bytes().len());
+    for component in path.components() {
+        match component {
+            Component::Normal(part) => canonical.push(part),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(crate::Error::PathEscapesRoot(path.to_path_buf()));
+            }
+        }
     }
-    // A path whose every component is `Normal` rebuilds to itself, so copy it in one
-    // allocation instead of reconstructing it component-by-component -- `collect` on a
-    // `PathBuf` grows by repeated push, which showed up as the dominant reallocation on
-    // whole-scan profiles (fdu-pro1). Every path fdu's own walker produces takes this
-    // lane; only input that actually contains `.` pays the rebuild.
-    if path.components().all(|component| matches!(component, Component::Normal(_))) {
-        return Ok(path.to_path_buf());
-    }
-    Ok(normalize(path).expect("representable paths normalize").into_iter().collect::<PathBuf>())
+    Ok(canonical)
 }
 
 fn derive_impact(changes: &[EffectiveChange], state: &[StateTransition]) -> Impact {
     let mut domains = BTreeSet::new();
     let mut paths = BTreeSet::new();
     let mut all_dirty = false;
+    let mut ancestor_visits = 0_u64;
+    let count_impact = crate::counters::enabled();
 
     for change in changes {
         match change {
@@ -3717,11 +4547,37 @@ fn derive_impact(changes: &[EffectiveChange], state: &[StateTransition]) -> Impa
                 domains.insert(ImpactDomain::State);
             }
         }
-        insert_dirty_ancestors(change.path(), &mut paths, &mut all_dirty);
+        insert_dirty_ancestors(
+            change.path(),
+            &mut paths,
+            &mut all_dirty,
+            count_impact,
+            &mut ancestor_visits,
+        );
     }
     for transition in state {
         domains.insert(ImpactDomain::State);
-        insert_dirty_ancestors(transition.path(), &mut paths, &mut all_dirty);
+        insert_dirty_ancestors(
+            transition.path(),
+            &mut paths,
+            &mut all_dirty,
+            count_impact,
+            &mut ancestor_visits,
+        );
+    }
+
+    if count_impact {
+        let candidates =
+            u64::try_from(changes.len().saturating_add(state.len())).unwrap_or(u64::MAX);
+        let retained_dirty_paths = u64::try_from(paths.len()).unwrap_or(u64::MAX);
+        crate::counters::bump(|counts| {
+            counts.impact_candidates = counts.impact_candidates.saturating_add(candidates);
+            counts.impact_ancestor_visits =
+                counts.impact_ancestor_visits.saturating_add(ancestor_visits);
+            counts.impact_retained_dirty_paths =
+                counts.impact_retained_dirty_paths.saturating_add(retained_dirty_paths);
+            counts.impact_all_dirty = counts.impact_all_dirty.saturating_add(u64::from(all_dirty));
+        });
     }
 
     Impact {
@@ -3741,11 +4597,20 @@ fn commit_work(observations: u64, stats: ApplyStats) -> Work {
     }
 }
 
-fn insert_dirty_ancestors(path: &Path, paths: &mut BTreeSet<PathBuf>, all_dirty: &mut bool) {
+fn insert_dirty_ancestors(
+    path: &Path,
+    paths: &mut BTreeSet<PathBuf>,
+    all_dirty: &mut bool,
+    count_impact: bool,
+    ancestor_visits: &mut u64,
+) {
     if *all_dirty {
         return;
     }
     for ancestor in path.ancestors() {
+        if count_impact {
+            *ancestor_visits = ancestor_visits.saturating_add(1);
+        }
         paths.insert(ancestor.to_path_buf());
         if paths.len() > MAX_DIRTY_PATHS {
             paths.clear();
@@ -3772,6 +4637,96 @@ mod tests {
     use super::*;
     use crate::engine_contract::ObservationOp;
     use std::sync::{Arc, Barrier};
+
+    #[test]
+    fn reusable_entry_keeps_directory_state_out_of_line() {
+        let entry_bytes = std::mem::size_of::<Entry>();
+        let slot_bytes = std::mem::size_of::<Slot>();
+
+        assert!(
+            entry_bytes <= 136,
+            "common entry storage must not inline directory-only maps and roll-ups: {entry_bytes} bytes"
+        );
+        assert!(
+            slot_bytes <= entry_bytes + 16,
+            "the arena slot must not add a second per-entry allocation: entry={entry_bytes}, slot={slot_bytes}"
+        );
+    }
+
+    #[test]
+    fn detached_children_store_each_name_once_and_promote_on_mutation() {
+        let mut builder = DetachedIndexBuilder::new(
+            "/root",
+            ScanScope::default(),
+            crate::classify::TypeRegistry::compiled_shared(),
+        );
+        builder
+            .push_directory(crate::scan::DetachedDirectory {
+                path: PathBuf::new(),
+                children: vec![
+                    crate::scan::DetachedChild {
+                        name: OsString::from("dir"),
+                        kind: EntryKind::Dir,
+                        attrs: Attrs::default(),
+                    },
+                    crate::scan::DetachedChild {
+                        name: OsString::from("z.txt"),
+                        kind: EntryKind::File,
+                        attrs: file_attrs(1, 1),
+                    },
+                ],
+                control: None,
+            })
+            .expect("detached root listing");
+        builder
+            .push_directory(crate::scan::DetachedDirectory {
+                path: PathBuf::from("dir"),
+                children: vec![
+                    crate::scan::DetachedChild {
+                        name: OsString::from("z.txt"),
+                        kind: EntryKind::File,
+                        attrs: file_attrs(2, 2),
+                    },
+                    crate::scan::DetachedChild {
+                        name: OsString::from("a.txt"),
+                        kind: EntryKind::File,
+                        attrs: file_attrs(3, 3),
+                    },
+                ],
+                control: None,
+            })
+            .expect("detached child listing");
+        let mut index = builder.finish();
+        let directory = index.lookup(Path::new("dir")).expect("detached directory");
+
+        assert!(index.entry(EntryId::ROOT).directory().children.is_sorted());
+        assert!(index.entry(directory).directory().children.is_sorted());
+        assert_eq!(
+            index
+                .children(Path::new("dir"))
+                .expect("directory children")
+                .map(|(name, _)| name.to_os_string())
+                .collect::<Vec<_>>(),
+            [OsString::from("a.txt"), OsString::from("z.txt")]
+        );
+
+        index.apply_ok(&Observation::new(vec![upsert(
+            "dir/m.txt",
+            EntryKind::File,
+            file_attrs(4, 4),
+        )]));
+
+        assert!(index.entry(EntryId::ROOT).directory().children.is_sorted());
+        assert!(index.entry(directory).directory().children.is_mutable());
+        assert_eq!(
+            index
+                .children(Path::new("dir"))
+                .expect("directory children")
+                .map(|(name, _)| name.to_os_string())
+                .collect::<Vec<_>>(),
+            [OsString::from("a.txt"), OsString::from("m.txt"), OsString::from("z.txt")]
+        );
+    }
 
     fn file_attrs(size: u64, mtime_ns: i64) -> Attrs {
         Attrs {
@@ -4396,7 +5351,7 @@ mod tests {
 
         assert_eq!(outcome.inserted, 1);
         assert_eq!(retained_total.files, 3);
-        assert!(!retained_history.deltas.is_empty());
+        assert!(!retained_history.commits.is_empty());
         assert_eq!(retained_children.expect("src directory").len(), 2);
         assert!(retained_snapshot.lookup(Path::new("concurrent.txt")).is_none());
         assert!(handle.kind(Path::new("concurrent.txt")).expect("query").is_some());
@@ -4469,12 +5424,8 @@ mod tests {
 
         let mut committed_clocks: Vec<u64> = Vec::with_capacity(writer_count);
         for (path, outcome) in result_rx {
-            let applied: AppliedDelta = outcome
-                .expect("writer apply")
-                .applied()
-                .cloned()
-                .expect("unique upsert must commit");
-            committed_clocks.push(applied.clock.0);
+            let commit = outcome.expect("writer apply").commit.expect("unique upsert must commit");
+            committed_clocks.push(commit.clock.0);
             assert!(handle.kind(Path::new(&path)).expect("query committed path").is_some());
         }
         committed_clocks.sort_unstable();
@@ -4487,9 +5438,9 @@ mod tests {
         let journal_clocks: Vec<u64> = handle
             .since(Clock::ZERO)
             .expect("journal")
-            .deltas
+            .commits
             .iter()
-            .map(|delta| delta.clock.0)
+            .map(|commit| commit.clock.0)
             .collect();
         assert_eq!(journal_clocks, expected_clocks);
     }
@@ -4644,9 +5595,9 @@ mod tests {
             .expect("a rejected stale observation needs no new clock");
 
         assert_eq!(no_op.unchanged, 1);
-        assert!(no_op.applied().is_none());
+        assert!(no_op.commit.is_none());
         assert_eq!(stale.stale, 1);
-        assert!(stale.applied().is_none());
+        assert!(stale.commit.is_none());
         assert_eq!(index.clock(), Clock(u64::MAX));
         assert_eq!(index.len(), before_len);
         assert_eq!(index.total(), before_total);
@@ -4676,7 +5627,7 @@ mod tests {
         let outcome = index.apply_ok(&delayed);
 
         assert_eq!(outcome.stats.stale, 1);
-        assert!(outcome.applied().is_none());
+        assert!(outcome.commit.is_none());
         assert_eq!(index.attrs(Path::new("file.txt")).expect("file").size, 30);
     }
 
@@ -4698,7 +5649,7 @@ mod tests {
         let outcome = index.apply_ok(&delayed);
 
         assert_eq!(outcome.stats.stale, 1);
-        assert!(outcome.applied().is_none());
+        assert!(outcome.commit.is_none());
         assert_eq!(index.kind(Path::new("parent")), Some(EntryKind::File));
         assert!(index.lookup(Path::new("parent/child.txt")).is_none());
     }
@@ -4730,7 +5681,7 @@ mod tests {
         let outcome = index.apply_ok(&delayed);
 
         assert_eq!(outcome.stats.stale, 1);
-        assert!(outcome.applied().is_none());
+        assert!(outcome.commit.is_none());
         assert_eq!(index.attrs(Path::new("file.txt")).expect("file").size, 10);
     }
 
@@ -4752,7 +5703,7 @@ mod tests {
         let outcome = index.apply_ok(&delayed);
 
         assert_eq!(outcome.stats.stale, 1);
-        assert!(outcome.applied().is_none());
+        assert!(outcome.commit.is_none());
         assert!(index.lookup(Path::new("file.txt")).is_none());
     }
 
@@ -4858,6 +5809,47 @@ mod tests {
 
         assert_eq!(outcome.stats.inserted, 2);
         assert_eq!(outcome.stats.stale, 0);
+    }
+
+    #[test]
+    fn public_observation_outputs_use_canonical_encoded_paths() {
+        let separator = std::path::MAIN_SEPARATOR;
+        let dotted = PathBuf::from(format!("dotted{separator}.{separator}file.txt"));
+        let dotted_canonical = PathBuf::from(format!("dotted{separator}file.txt"));
+        let repeated = PathBuf::from(format!("repeated{separator}{separator}file.txt"));
+        let repeated_canonical = PathBuf::from(format!("repeated{separator}file.txt"));
+        let mut index = Index::new("/root");
+
+        let outcome = index.apply_ok(&Observation::new(vec![
+            upsert("dotted", EntryKind::Dir, file_attrs(0, 1)),
+            Op::Upsert { path: dotted, kind: EntryKind::File, attrs: file_attrs(10, 2) },
+            upsert("repeated", EntryKind::Dir, file_attrs(0, 3)),
+            Op::Upsert { path: repeated, kind: EntryKind::File, attrs: file_attrs(20, 4) },
+        ]));
+        let commit = outcome.commit.as_ref().expect("one exact commit");
+
+        for (actual, canonical) in [
+            (commit.changes[1].path(), dotted_canonical.as_path()),
+            (commit.changes[3].path(), repeated_canonical.as_path()),
+        ] {
+            assert_eq!(
+                actual.as_os_str().as_encoded_bytes(),
+                canonical.as_os_str().as_encoded_bytes()
+            );
+        }
+
+        for canonical in [&dotted_canonical, &repeated_canonical] {
+            let dirty = commit
+                .impact
+                .dirty_paths
+                .iter()
+                .find(|candidate| candidate.as_path() == canonical)
+                .expect("changed path is dirty");
+            assert_eq!(
+                dirty.as_os_str().as_encoded_bytes(),
+                canonical.as_os_str().as_encoded_bytes()
+            );
+        }
     }
 
     #[test]
@@ -5086,11 +6078,11 @@ mod tests {
         assert_eq!(stats.updated, 0);
         assert_eq!(index.total(), before);
         assert_eq!(index.clock(), mark);
-        assert!(index.since(mark).deltas.is_empty());
+        assert!(index.since(mark).commits.is_empty());
     }
 
     #[test]
-    fn applied_delta_contains_only_effective_mutations() {
+    fn commit_contains_only_effective_mutations() {
         let mut index = index_with_sample_tree();
         let outcome = index.apply_ok(&Observation::new(vec![
             upsert("src/main.rs", EntryKind::File, file_attrs(100, 10)),
@@ -5099,9 +6091,208 @@ mod tests {
         ]));
 
         assert_eq!(outcome.stats.unchanged, 2);
-        let applied = outcome.applied().expect("one effective insert");
-        assert_eq!(applied.len(), 1);
-        assert_eq!(applied.ops[0].path(), Path::new("new.txt"));
+        let commit = outcome.commit.expect("one effective insert");
+        assert_eq!(commit.changes.len(), 1);
+        assert_eq!(commit.changes[0].path(), Path::new("new.txt"));
+    }
+
+    #[test]
+    fn mutation_counters_match_exact_batch_and_consequence_totals() {
+        struct DisableCounters;
+
+        impl Drop for DisableCounters {
+            fn drop(&mut self) {
+                crate::counters::enable(false);
+                crate::counters::test_thread_reset();
+            }
+        }
+
+        let _serial = crate::counters::test_serial();
+        crate::counters::enable(true);
+        let _disable = DisableCounters;
+        let observation = Observation::new(vec![
+            upsert("a", EntryKind::Dir, Attrs::default()),
+            upsert("a/f1", EntryKind::File, file_attrs(1, 1)),
+            upsert("a/f2", EntryKind::File, file_attrs(2, 2)),
+        ]);
+
+        crate::counters::test_thread_reset();
+        let mut baseline = Index::new("/root");
+        baseline.apply_baseline_ok(&observation);
+        let counts = crate::counters::test_thread_snapshot();
+        assert_eq!(counts.baseline_batches, 1);
+        assert_eq!(counts.baseline_accepted_ops, 3);
+        assert_eq!(counts.opened_batches, 0);
+        assert_eq!(counts.public_batches, 0);
+        assert_eq!(counts.ancestry_overlay_inserts, 3);
+        assert_eq!(counts.ancestry_path_comparisons, 2);
+        assert_eq!(counts.ancestry_parent_proofs, 3);
+        assert_eq!(counts.effect_paths, 0);
+        assert_eq!(counts.effect_path_bytes, 0);
+        assert_eq!(counts.impact_candidates, 0);
+        assert_eq!(counts.impact_ancestor_visits, 0);
+        assert_eq!(counts.impact_retained_dirty_paths, 0);
+        assert_eq!(counts.impact_all_dirty, 0);
+        assert_eq!(counts.journal_cloned_commits, 0);
+        assert_eq!(counts.journal_retained_commits, 0);
+
+        crate::counters::test_thread_reset();
+        let mut public = Index::new("/root");
+        public.apply_ok(&observation);
+        let counts = crate::counters::test_thread_snapshot();
+        assert_eq!(counts.baseline_batches, 0);
+        assert_eq!(counts.opened_batches, 0);
+        assert_eq!(counts.public_batches, 1);
+        assert_eq!(counts.public_accepted_ops, 3);
+        assert_eq!(counts.effect_paths, 3);
+        assert_eq!(counts.journal_cloned_commits, 1);
+        assert_eq!(counts.journal_retained_commits, 1);
+        assert_eq!(counts.journal_oversized_commits, 0);
+        assert_eq!(counts.journal_dropped_commits, 0);
+
+        crate::counters::test_thread_reset();
+        let opened = IndexHandle::new(Index::new("/root"));
+        opened
+            .apply_discovery(&observation, DiscoveryCommit::default())
+            .expect("opened discovery batch");
+        let counts = crate::counters::test_thread_snapshot();
+        assert_eq!(counts.baseline_batches, 0);
+        assert_eq!(counts.opened_batches, 1);
+        assert_eq!(counts.opened_accepted_ops, 3);
+        assert_eq!(counts.public_batches, 0);
+
+        crate::counters::test_thread_reset();
+        let mut scanner = Index::new("/root");
+        scanner
+            .apply_scanner_baseline(crate::scan::ScannerBatch::from_ops(vec![
+                upsert("a", EntryKind::Dir, Attrs::default()),
+                upsert("a/f1", EntryKind::File, file_attrs(1, 1)),
+                upsert("a/f2", EntryKind::File, file_attrs(2, 2)),
+            ]))
+            .expect("private scanner batch");
+        let counts = crate::counters::test_thread_snapshot();
+        assert_eq!(counts.baseline_batches, 1);
+        assert_eq!(counts.baseline_accepted_ops, 3);
+        assert_eq!(counts.ancestry_overlay_inserts, 0);
+        assert_eq!(counts.ancestry_path_comparisons, 2);
+        assert_eq!(counts.ancestry_parent_proofs, 3);
+        assert_eq!(counts.parent_resolutions, 0);
+        assert_eq!(counts.parent_memo_hits, 0);
+        assert_eq!(scanner.total().dirs, 1);
+        assert_eq!(scanner.total().files, 2);
+
+        crate::counters::test_thread_reset();
+        let opened_scanner = IndexHandle::new(Index::new("/root"));
+        opened_scanner
+            .apply_scanner_discovery_bounded(
+                crate::scan::ScannerBatch::from_ops(vec![
+                    upsert("a", EntryKind::Dir, Attrs::default()),
+                    upsert("a/f1", EntryKind::File, file_attrs(1, 1)),
+                    upsert("a/f2", EntryKind::File, file_attrs(2, 2)),
+                ]),
+                DiscoveryCommit::default(),
+                None,
+            )
+            .expect("opened scanner batch");
+        let counts = crate::counters::test_thread_snapshot();
+        assert_eq!(counts.opened_batches, 1);
+        assert_eq!(counts.opened_accepted_ops, 3);
+        assert_eq!(counts.ancestry_overlay_inserts, 0);
+        assert_eq!(counts.effect_paths, 3);
+        assert_eq!(counts.journal_retained_commits, 1);
+
+        crate::counters::test_thread_reset();
+        let mut bounded = Index::new("/root");
+        bounded.journal_capacity = 4;
+        bounded.apply_ok(&Observation::new(vec![upsert("one", EntryKind::File, file_attrs(1, 1))]));
+        bounded.apply_ok(&Observation::new(vec![upsert("two", EntryKind::File, file_attrs(2, 2))]));
+        bounded.journal_capacity = 1;
+        bounded.apply_ok(&Observation::new(vec![upsert(
+            "three",
+            EntryKind::File,
+            file_attrs(3, 3),
+        )]));
+        let counts = crate::counters::test_thread_snapshot();
+        assert_eq!(counts.journal_cloned_commits, 2);
+        assert_eq!(counts.journal_retained_commits, 2);
+        assert_eq!(counts.journal_oversized_commits, 1);
+        assert_eq!(counts.journal_dropped_commits, 2);
+    }
+
+    #[test]
+    fn detached_and_exact_reducers_produce_the_same_facts_and_stats() {
+        fn fact_image(index: &Index) -> Vec<(PathBuf, EntryKind, Attrs, bool, Source, bool)> {
+            let mut image = Vec::new();
+            let mut frontier = VecDeque::from([EntryId::ROOT]);
+            while let Some(id) = frontier.pop_front() {
+                let entry = index.entry(id);
+                if entry.kind.is_dir() {
+                    frontier.extend(index.child_ids(id));
+                }
+                image.push((
+                    index.path_of(id).expect("live entry path"),
+                    entry.kind,
+                    entry.attrs,
+                    entry.ignored,
+                    entry.source,
+                    entry.directory.as_deref().is_none_or(|directory| directory.children_complete),
+                ));
+            }
+            image.sort_by(|left, right| left.0.cmp(&right.0));
+            image
+        }
+
+        fn assert_same_facts(detached: &Index, exact: &Index) {
+            assert_eq!(fact_image(detached), fact_image(exact));
+            assert_eq!(detached.total(), exact.total());
+            assert_eq!(detached.partition_total(), exact.partition_total());
+            let controls = |index: &Index| {
+                index
+                    .controls
+                    .sources()
+                    .map(|(path, source)| (path, source.to_vec()))
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(controls(detached), controls(exact));
+            assert_eq!(detached.state, exact.state);
+            assert_eq!(detached.issues, exact.issues);
+            let freshness = |index: &Index| {
+                index
+                    .freshness_marks
+                    .iter()
+                    .map(|(path, mark)| (path.clone(), mark.state, mark.epoch))
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(freshness(detached), freshness(exact));
+            assert_eq!(detached.verified, exact.verified);
+            assert_eq!(detached.pending_invalidations, exact.pending_invalidations);
+        }
+
+        let mut detached = Index::new("/root");
+        let mut exact = detached.clone();
+        let batches = [
+            Observation::new(vec![
+                upsert("a", EntryKind::Dir, file_attrs(0, 1)),
+                upsert("a/one.rs", EntryKind::File, file_attrs(10, 2)),
+                upsert("a/two.txt", EntryKind::File, file_attrs(20, 3)),
+            ]),
+            Observation::new(vec![
+                upsert("a/one.rs", EntryKind::File, file_attrs(30, 4)),
+                Op::Remove { path: PathBuf::from("a/two.txt") },
+                Op::InvalidateSubtree {
+                    path: PathBuf::from("a"),
+                    reason: InvalidateReason::VerificationFailed,
+                },
+            ]),
+        ];
+
+        for batch in batches {
+            let detached_stats = detached.apply_baseline(&batch).expect("detached batch");
+            let exact_outcome = exact.apply(&batch).expect("exact batch");
+            assert_eq!(detached_stats, exact_outcome.stats);
+            exact.establish_baseline();
+            assert_same_facts(&detached, &exact);
+        }
     }
 
     #[test]
@@ -5432,6 +6623,79 @@ mod tests {
     }
 
     #[test]
+    fn scanner_parent_proof_matches_public_parent_first_application() {
+        let ops = vec![
+            upsert("deep", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("deep/nested", EntryKind::Dir, file_attrs(0, 2)),
+            upsert("deep/nested/file.txt", EntryKind::File, file_attrs(42, 3)),
+        ];
+        let mut scanner = Index::new("/root");
+        let scanner_stats = scanner
+            .apply_scanner_baseline(crate::scan::ScannerBatch::from_ops(ops.clone()))
+            .expect("scanner proof");
+        let mut public = Index::new("/root");
+        let public_stats = public.apply(&Observation::new(ops)).expect("public proof").stats;
+
+        assert_eq!(scanner_stats, public_stats);
+        assert_eq!(scanner.total(), public.total());
+        assert_eq!(scanner.len(), public.len());
+        for path in ["deep", "deep/nested", "deep/nested/file.txt"] {
+            assert_eq!(scanner.kind(Path::new(path)), public.kind(Path::new(path)));
+            assert_eq!(scanner.attrs(Path::new(path)), public.attrs(Path::new(path)));
+        }
+    }
+
+    #[test]
+    fn scanner_parent_proof_rejects_unknown_ancestry_before_mutation() {
+        let mut index = Index::new("/root");
+        let before = index.total();
+        let error = index
+            .apply_scanner_baseline(crate::scan::ScannerBatch::from_ops(vec![upsert(
+                "missing/child.txt",
+                EntryKind::File,
+                file_attrs(1, 1),
+            )]))
+            .expect_err("scanner proof must reject an unknown parent");
+
+        assert!(matches!(
+            error,
+            crate::Error::UnknownAncestry { path, .. }
+                if path == Path::new("missing/child.txt")
+        ));
+        assert_eq!(index.total(), before);
+        assert_eq!(index.len(), 1);
+        assert_eq!(index.clock(), Clock::ZERO);
+    }
+
+    #[test]
+    fn scanner_parent_proof_rejects_kind_replacement_atomically() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("a", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("a/old.txt", EntryKind::File, file_attrs(7, 1)),
+        ]));
+        let before = index.total();
+        let before_clock = index.clock();
+
+        let error = index
+            .apply_scanner_baseline(crate::scan::ScannerBatch::from_ops(vec![
+                upsert("a", EntryKind::File, file_attrs(2, 2)),
+                upsert("a/new.txt", EntryKind::File, file_attrs(3, 2)),
+            ]))
+            .expect_err("a child cannot attach after its parent became a file");
+
+        assert!(matches!(
+            error,
+            crate::Error::UnsupportedScanConfig("scanner discovery cannot replace entry kinds")
+        ));
+        assert_eq!(index.total(), before);
+        assert_eq!(index.clock(), before_clock);
+        assert_eq!(index.kind(Path::new("a")), Some(EntryKind::Dir));
+        assert!(index.lookup(Path::new("a/old.txt")).is_some());
+        assert!(index.lookup(Path::new("a/new.txt")).is_none());
+    }
+
+    #[test]
     fn live_upsert_refuses_unknown_ancestry_without_mutation() {
         let mut index = Index::new("/root");
         let before = index.clock();
@@ -5503,7 +6767,7 @@ mod tests {
     }
 
     #[test]
-    fn since_returns_deltas_after_a_clock() {
+    fn since_returns_commits_after_a_clock() {
         let mut index = Index::new("/root");
         index.apply_ok(&Observation::new(vec![upsert("a.txt", EntryKind::File, file_attrs(1, 1))]));
         let mark = index.clock();
@@ -5511,10 +6775,10 @@ mod tests {
 
         let since = index.since(mark);
         assert!(!since.truncated);
-        assert_eq!(since.deltas.len(), 1);
-        assert_eq!(since.deltas[0].ops[0].path(), Path::new("b.txt"));
+        assert_eq!(since.commits.len(), 1);
+        assert_eq!(since.commits[0].changes[0].path(), Path::new("b.txt"));
 
-        assert_eq!(index.since(index.clock()).deltas.len(), 0);
+        assert_eq!(index.since(index.clock()).commits.len(), 0);
     }
 
     #[test]
@@ -5526,10 +6790,10 @@ mod tests {
             upsert("c.txt", EntryKind::File, file_attrs(3, 3)),
         ]));
 
-        assert_eq!(outcome.applied().as_ref().expect("committed").len(), 3);
+        assert_eq!(outcome.commit.as_ref().expect("committed").changes.len(), 3);
         let since = index.since(Clock::ZERO);
         assert!(since.truncated);
-        assert!(since.deltas.is_empty());
+        assert!(since.commits.is_empty());
     }
 
     #[test]
@@ -5546,9 +6810,9 @@ mod tests {
 
         let since = index.since(Clock::ZERO);
         assert!(since.truncated);
-        assert_eq!(since.deltas.len(), 1);
-        assert_eq!(since.deltas[0].len(), 2);
-        assert_eq!(since.deltas[0].ops[0].path(), Path::new("c.txt"));
+        assert_eq!(since.commits.len(), 1);
+        assert_eq!(since.commits[0].changes.len(), 2);
+        assert_eq!(since.commits[0].changes[0].path(), Path::new("c.txt"));
     }
 
     #[test]

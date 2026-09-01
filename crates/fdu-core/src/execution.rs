@@ -15,7 +15,7 @@ use crate::query::{
 };
 use crate::{
     CachePolicy, EntryKind, Error, Freshness, OpenConfig, OpenPath, PendingSave, Result,
-    open_for_report,
+    SnapshotUse, open_for_report,
 };
 
 /// The minimum state a one-shot report plan retains while scanning.
@@ -199,7 +199,9 @@ pub fn prepare_report(
 /// Public because the command line needs it and the command line is an ordinary consumer:
 /// it drives repository-controlled measurement of the installed binary. Kept separate
 /// from [`prepare_report`] so callers who do not want traces pay for neither collection
-/// nor serialization.
+/// nor serialization. The diagnostic value is present only when the report performs a
+/// cold scan; cache-only opens do not scan, and warm reconciliation has a different
+/// execution contract.
 pub fn prepare_report_with_scan_diagnostics(
     root: &Path,
     config: &OpenConfig,
@@ -273,8 +275,13 @@ fn prepare_report_internal(
             Ok((report, PendingSave::none(), performance, scan_diagnostics))
         }
         RetainedState::FullIndex => {
-            let (index, open_report, pending_save) =
-                open_for_report(root, config, plan.read_snapshot)?;
+            let (index, open_report, pending_save, scan_diagnostics) = open_for_report(
+                root,
+                config,
+                plan.read_snapshot,
+                SnapshotUse::ReportOnly,
+                collect_scan_diagnostics,
+            )?;
             let provenance = Provenance {
                 scan_started_at: Some(scan_started_at),
                 generated_at: SystemTime::now(),
@@ -289,7 +296,13 @@ fn prepare_report_internal(
                 errors: open_report.error_messages(),
             };
             let performance = PerformanceSummary::from_open_report(&open_report);
-            Ok((report(&index, query, &provenance), pending_save, performance, None))
+            let mut answer = report(&index, query, &provenance);
+            // A cache-only report may consume a controls-on snapshot for a controls-off
+            // request because reporting reads only the all-entry facts. No Index escapes
+            // this boundary, and the projected report must describe the requested scope
+            // rather than the stronger internal snapshot it consumed.
+            answer.scope = config.scan.scope();
+            Ok((answer, pending_save, performance, scan_diagnostics))
         }
     }
 }
@@ -309,6 +322,28 @@ mod tests {
 
     fn config(policy: CachePolicy, cache_path: Option<PathBuf>) -> OpenConfig {
         OpenConfig { scan: ScanConfig::default(), cache_path, policy, ..OpenConfig::default() }
+    }
+
+    #[cfg(feature = "gitignore")]
+    fn controls_config(
+        policy: CachePolicy,
+        cache_path: PathBuf,
+        read_controls: bool,
+    ) -> OpenConfig {
+        OpenConfig {
+            scan: ScanConfig { read_controls, ..ScanConfig::default() },
+            cache_path: Some(cache_path),
+            policy,
+            ..OpenConfig::default()
+        }
+    }
+
+    #[cfg(feature = "gitignore")]
+    fn seed_controls_snapshot(root: &Path, cache_path: PathBuf) {
+        fs::write(root.join(".gitignore"), b"ignored.log\n").expect("control file");
+        fs::write(root.join("ignored.log"), b"ignored").expect("ignored file");
+        crate::open(root, &controls_config(CachePolicy::Auto, cache_path, true))
+            .expect("seed controls-on snapshot");
     }
 
     #[test]
@@ -485,11 +520,84 @@ mod tests {
         pending.join().expect("save");
 
         let only = config(CachePolicy::Only, Some(cache.path().join("cache.fdu")));
-        let (from_cache, pending, performance) =
-            prepare_report(root.path(), &only, &tree_query).expect("cache-only report");
+        let (from_cache, pending, performance, diagnostics) =
+            prepare_report_with_scan_diagnostics(root.path(), &only, &tree_query)
+                .expect("cache-only report");
         pending.join().expect("no save");
         assert_eq!(from_cache.source, ReportSource::CacheOnly);
         assert_eq!(performance.walked_files, 0, "cache-only never touches the tree");
+        assert!(diagnostics.is_none(), "a cache-only open has no scan trace");
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn controls_on_snapshot_projects_to_an_equivalent_controls_off_cache_only_report() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let cache_path = cache.path().join("cache.fdu");
+        fs::create_dir(root.path().join("src")).expect("source dir");
+        fs::write(root.path().join("src/lib.rs"), b"library").expect("source file");
+        seed_controls_snapshot(root.path(), cache_path.clone());
+
+        let controls_off = controls_config(CachePolicy::Only, cache_path, false);
+        let query = Query {
+            views: vec![
+                ViewSpec::Summary,
+                ViewSpec::Tree,
+                ViewSpec::Families,
+                ViewSpec::Types,
+                ViewSpec::Extensions,
+                ViewSpec::Languages,
+                ViewSpec::Largest,
+                ViewSpec::Recent,
+                ViewSpec::Files,
+            ],
+            ..Query::default()
+        };
+        let (projected, pending, performance) =
+            prepare_report(root.path(), &controls_off, &query).expect("projected report");
+        pending.join().expect("no cache-only save");
+
+        let cold = OpenConfig { policy: CachePolicy::Off, cache_path: None, ..controls_off };
+        let (mut expected, pending, _) =
+            prepare_report(root.path(), &cold, &query).expect("controls-off cold report");
+        pending.join().expect("no cold save");
+        expected.scan_started_at = projected.scan_started_at;
+        expected.generated_at = projected.generated_at;
+        expected.source = projected.source;
+        expected.freshness = projected.freshness;
+
+        assert_eq!(performance.source, ReportSource::CacheOnly);
+        assert_eq!(projected.scope, cold.scan.scope());
+        assert_eq!(
+            crate::report_format::render(&projected, crate::report_format::Format::Json, false,),
+            crate::report_format::render(&expected, crate::report_format::Format::Json, false,),
+        );
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn controls_on_snapshot_does_not_serve_controls_off_auto_report() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let cache_path = cache.path().join("cache.fdu");
+        seed_controls_snapshot(root.path(), cache_path.clone());
+
+        let controls_off = OpenConfig {
+            analysis: crate::content::AnalysisRequest {
+                profile: crate::content::AnalysisSet::NONE.with_lines(),
+                ..Default::default()
+            },
+            ..controls_config(CachePolicy::Auto, cache_path, false)
+        };
+        let (report, pending, performance) =
+            prepare_report(root.path(), &controls_off, &summary_query())
+                .expect("controls-off cold fallback");
+        pending.join().expect("save controls-off snapshot");
+
+        assert_eq!(report.source, ReportSource::ColdScan);
+        assert_eq!(report.scope, controls_off.scan.scope());
+        assert_eq!(performance.source, ReportSource::ColdScan);
     }
 
     #[test]
@@ -553,5 +661,28 @@ mod tests {
 
         assert!(report.complete);
         assert!(!cache.exists());
+    }
+
+    #[test]
+    fn full_index_report_exposes_scan_diagnostics_when_requested() {
+        let root = tempfile::tempdir().expect("tempdir");
+        fs::create_dir(root.path().join("nested")).expect("directory");
+        fs::write(root.path().join("nested/file.txt"), b"trace me").expect("file");
+        let query = Query { views: vec![ViewSpec::Tree], ..Query::default() };
+
+        let (report, pending, performance, diagnostics) = prepare_report_with_scan_diagnostics(
+            root.path(),
+            &config(CachePolicy::Off, None),
+            &query,
+        )
+        .expect("full-index report");
+        pending.join().expect("no pending save");
+
+        assert!(report.complete);
+        assert_eq!(performance.walked_files, 1);
+        let diagnostics = diagnostics.expect("full-index scan diagnostics");
+        assert_eq!(diagnostics.schema, crate::scan::SCAN_DIAGNOSTICS_SCHEMA);
+        assert_eq!(diagnostics.worker_policy.ready_directories_at_finish, 0);
+        assert_eq!(diagnostics.worker_policy.in_flight_directories_at_finish, 0);
     }
 }

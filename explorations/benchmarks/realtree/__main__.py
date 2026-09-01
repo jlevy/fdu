@@ -117,6 +117,18 @@ def main(argv: Sequence[str]) -> int:
     profiled.add_argument("--seconds", type=int, default=profile.DEFAULT_SAMPLE_SECONDS)
     profiled.add_argument("--repeat", type=int, default=40)
     profiled.add_argument(
+        "--counters",
+        choices=("enabled", "disabled"),
+        default="enabled",
+        help="collect logical counters during sampling; disable when timers perturb stacks",
+    )
+    profiled.add_argument(
+        "--oracle",
+        choices=("enabled", "disabled"),
+        default="enabled",
+        help="run the probe oracle on every repeat or omit it for labelled attribution only",
+    )
+    profiled.add_argument(
         "--extra-arg",
         action="append",
         default=[],
@@ -399,6 +411,8 @@ def _profile(arguments: argparse.Namespace) -> int:
             repeat=arguments.repeat,
             label=f"{arguments.label or 'profile'} / {job.id}",
             require_diagnostics=job.require_scan_diagnostics,
+            counters_enabled=arguments.counters == "enabled",
+            oracle_enabled=arguments.oracle == "enabled",
         )
         if job.require_scan_diagnostics:
             probe_document = entry.get("probe") or {}

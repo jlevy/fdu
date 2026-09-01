@@ -684,7 +684,10 @@ pub struct Report {
     pub errors: Vec<String>,
     /// How current the index is.
     pub freshness: Freshness,
-    /// The immutable scan scope the index represents.
+    /// The semantic scan scope represented by this report.
+    ///
+    /// A report-only cache projection may consume stronger internal control state that
+    /// no report view exposes; this field still names the weaker requested scope.
     pub scope: ScanScope,
     /// Absolute path of the indexed root.
     pub root: PathBuf,

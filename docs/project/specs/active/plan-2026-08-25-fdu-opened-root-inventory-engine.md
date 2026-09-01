@@ -1742,26 +1742,31 @@ Three rules keep the switch honest:
   The reverse stays refused, because a controls-off snapshot lacks state a controls-on
   consumer would silently miss.
 
-#### The open redesign question this phase leaves
+#### The remaining parity work
 
-The remaining gap to `main` (about 1.9 times on both measured trees) is the
-effective-change stream and the per-op prepare copy: per-entry work the one-shot
-lifecycle pays for `Commit` consumers it cannot have.
-The pattern and its resolution both already exist in this engine -- serving indexes are
-built only for an opened root and the one-shot scan never pays for them -- so the
-question for review is whether the commit pipeline’s effect recording should be gated by
-lifecycle the same way, and what the journal, watch, and opened consumers require of it.
-A counters-based regression guard (per-entry allocation pinned on a fixture tree in
-`make check`) should land with that change, so the next per-entry cost is caught at
-review rather than at benchmark.
+The PR #51 review found that the remaining gap is not explained by the effect stream and
+prepare copy alone. The path-keyed transactional ancestry preflight is the dominant CPU
+cost on both detached scanning and a large public batch.
+Per-batch impact publication is next.
+Prepare, effect, and compatibility-projection path copies account for most of the
+remaining allocation gap.
+
+The correctness fixes, lifecycle-specific consequence work, trusted scanner preparation,
+ownership rules, measurement protocol, and parity thresholds now live in the
+[streaming performance parity plan](plan-2026-08-31-fdu-streaming-performance-parity.md).
+That plan preserves one reducer and exact opened-root commits while making consequence
+work optional for detached consumers.
 
 The phase’s ordering rule: the roll-up must stop paying for state it does not consume
 before anything tunes what that state costs.
 
-- [x] Bisect and fix the whole-scan allocation regression against `main` (`fdu-pro1`).
-  Attributed by bisect and per-mechanism experiment; fixed to 0.70 s / 3.92 s medians on
-  the two measured trees, from 1.58 s / 11.49 s. The residual effect-stream cost stays
-  on `fdu-pro1` as the lifecycle design question above.
+- [ ] Restore whole-scan performance parity with `main` (`fdu-pro1`). PR #51 attributed
+  and removed several costs, reducing the two measured medians from 1.58 s / 11.49 s to
+  0.70 s / 3.92 s, but the P0 acceptance criterion remains open.
+  The stacked
+  [streaming performance parity plan](plan-2026-08-31-fdu-streaming-performance-parity.md)
+  owns the correctness-first redesign, profiles, allocation guard, and final parity
+  evidence.
 - [x] Gate control observation on a runtime capability rather than the `gitignore`
   compile feature alone (`fdu-etfj`). Landed as `ScanConfig::read_controls` with the
   shared scope identity and directional snapshot acceptance described above; a default
@@ -2139,8 +2144,8 @@ green.
 
 | Bead and files | Work | Acceptance |
 | --- | --- | --- |
-| `fdu-pro1`: whole-scan allocation regression | Done for the attributed mechanisms: bisect placed the growth across the exact-commit pipeline (the suspected portable-path commits were exonerated by timeline), and the ancestry, canonical-path, and control-projection fixes landed. Remaining: lifecycle-gate the effective-change stream, and add the counters-based per-entry allocation check to `make check`. | Ultimately: the measured trees land within noise of `main`, with per-entry allocations back to main’s order. Currently about 1.9 times wall on both measured trees, attributed to the effect stream. |
-| `fdu-etfj`: `crates/fdu-core/src/scan.rs` `read_control_op` and `ScanConfig`, `crates/fdu-core/src/lib.rs` snapshot acceptance, `crates/fdu/src/cli.rs` | Done. `ScanConfig::read_controls` (default on) gates one observation funnel; the CLI turns it off for one-shot reports and on for `--watch`; the opened root always observes. The bit shares the compiled-out capability’s identity in `ScanScope::ignore_rules_fingerprint`, and snapshot acceptance is directional, so a controls-on cache serves a controls-off read and never the reverse. | Met and verified: a default roll-up performs no control-file I/O (counters show zero file opens on a 304-`.gitignore` tree) and retains no control state; inventory consumers still receive exact control state; the `--no-default-features` build is unaffected. |
+| `fdu-pro1`: whole-scan allocation regression | PR #51 bisected the growth and removed repeated commit derivation, redundant walker-path reconstruction, and empty control projection. Its review found that path-keyed ancestry preflight now dominates detached CPU, impact publication is next, and prepare, effect, and compatibility path copies dominate residual allocations. The [streaming performance parity plan](plan-2026-08-31-fdu-streaming-performance-parity.md) owns the remaining work. | Open: both nominated real trees must meet the new plan’s wall, component, allocation, semantic, and zero-streaming-work thresholds against the pinned pre-rewrite control. |
+| `fdu-etfj`: `crates/fdu-core/src/scan.rs` `read_control_op` and `ScanConfig`, `crates/fdu-core/src/lib.rs` snapshot acceptance, `crates/fdu/src/cli.rs` | The runtime observation gate is done: `ScanConfig::read_controls` defaults on, the CLI turns it off for one-shot reports and on for `--watch`, and the opened root observes controls. The directional snapshot-acceptance implementation is not complete: public `Auto` opens fail late and `Only` can return controls-on state for a controls-off request (`fdu-vev7`). | Partially met: a default roll-up performs no control-file I/O and retains no control state; inventory consumers receive exact control state; the `--no-default-features` build is unaffected. Exact public scope behavior remains open under `fdu-vev7`. |
 | `fdu-1onj`: `crates/fdu-core/src/control.rs` `upsert`, `crates/fdu-core/src/index.rs` `install_controls` | Replace `Err(ControlSourceLimit)` with degradation to partial coverage carrying a typed control-budget issue, matching the resource-budget contract this plan already states for `max_files`. | Crossing the budget yields a usable roll-up and a stated partial boundary; no scan aborts on control state alone. |
 | `fdu-szkg`: `crates/fdu-core/src/control.rs` `retained_source_cost`, `ControlSource` | Deduplicate retained sources by the `ControlIdentity` fingerprint already computed, so identical control files are compiled and charged once. | Removal semantics unchanged and tested; measured retention on `~/wrk` falls from 9.93 MiB toward the deduplicated 3.81 MiB. |
 | `fdu-okne`: `crates/fdu-core/src/control.rs`, `crates/fdu-core/src/snapshot.rs`, `crates/fdu/src/cli.rs` | Split the constant into a strict snapshot-parser guard and a separate, larger runtime retention budget. Expose the runtime budget where it is stated and name it in the diagnostic. | The bound is liftable by a flag; the parser guard stays strict against untrusted `u32` lengths on load. |

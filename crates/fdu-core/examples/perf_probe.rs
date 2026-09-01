@@ -19,12 +19,15 @@ use std::time::{Duration, Instant};
 use fdu_core::content::{AnalysisRequest, AnalysisSet, CoverageReason};
 use fdu_core::query::{Provenance, Query, ReportSource, ViewSpec};
 use fdu_core::{
-    Attrs, CachePolicy, EntryId, EntryKind, Index, Observation, Op, OpenConfig, ScanConfig,
-    ScanOrder,
+    Attrs, CachePolicy, ChangeOutcome, ChangeRequest, Clock, Commit, Coverage, EffectiveChange,
+    EntryId, EntryKind, Index, LifecyclePhase, Observation, Op, OpenConfig, OpenOptions,
+    OpenedIndex, ReadRequest, ScanConfig, ScanOrder,
 };
 
 const PROBE_SCHEMA: &str = "fdu-perf-probe-v1";
 const DIGEST_ALGORITHM: &str = "fdu-index-record-v1/sha256-multiset-v1";
+const COMMIT_DIGEST_ALGORITHM: &str = "fdu-commit-debug-v1/sha256-sequence-v1";
+const OPENED_PROBE_JOURNAL_CAPACITY: usize = 4 * 1024 * 1024;
 
 /// Count what the run allocates.
 ///
@@ -85,7 +88,10 @@ enum Mode {
     DocumentCacheHit,
     DocumentSeed,
     DeltaApply,
+    DeltaApplyBatched,
+    DeltaApplyLarge,
     MarkdownProse,
+    OpenedDiscovery,
     Query,
     ColdOpenSave,
     DefaultTree,
@@ -117,7 +123,10 @@ impl Mode {
             "document-cache-hit" => Ok(Self::DocumentCacheHit),
             "document-seed" => Ok(Self::DocumentSeed),
             "delta-apply" => Ok(Self::DeltaApply),
+            "delta-apply-batched" => Ok(Self::DeltaApplyBatched),
+            "delta-apply-large" => Ok(Self::DeltaApplyLarge),
             "markdown-prose" => Ok(Self::MarkdownProse),
+            "opened-discovery" => Ok(Self::OpenedDiscovery),
             "query" => Ok(Self::Query),
             "revalidate" => Ok(Self::Revalidate),
             "cold-open-save" => Ok(Self::ColdOpenSave),
@@ -150,7 +159,10 @@ impl Mode {
             Self::DocumentCacheHit => "document-cache-hit",
             Self::DocumentSeed => "document-seed",
             Self::DeltaApply => "delta-apply",
+            Self::DeltaApplyBatched => "delta-apply-batched",
+            Self::DeltaApplyLarge => "delta-apply-large",
             Self::MarkdownProse => "markdown-prose",
+            Self::OpenedDiscovery => "opened-discovery",
             Self::Query => "query",
             Self::Revalidate => "revalidate",
             Self::ColdOpenSave => "cold-open-save",
@@ -174,6 +186,7 @@ struct Arguments {
     operations: usize,
     queries: usize,
     repeat: usize,
+    oracle_enabled: bool,
     diagnostics: bool,
     worker_policy: fdu_core::scan::WorkerPolicyExperiment,
     scan: ScanConfig,
@@ -192,6 +205,7 @@ impl Arguments {
         let mut operations = 1_000_usize;
         let mut queries = 1_000_usize;
         let mut repeat = 1_usize;
+        let mut oracle_enabled = true;
         let mut diagnostics = false;
         let mut worker_policy = fdu_core::scan::WorkerPolicyExperiment::ShippedOneShot;
         let mut scan = ScanConfig::default();
@@ -210,6 +224,8 @@ impl Arguments {
                 Some("--repeat") => {
                     repeat = next_usize(&mut arguments, "--repeat")?;
                 }
+                Some("--no-oracle") => oracle_enabled = false,
+                Some("--no-controls") => scan.read_controls = false,
                 Some("--diagnostics") => diagnostics = true,
                 Some("--worker-policy") => {
                     let value = arguments
@@ -261,6 +277,7 @@ impl Arguments {
             operations,
             queries,
             repeat,
+            oracle_enabled,
             diagnostics,
             worker_policy,
             scan,
@@ -302,7 +319,9 @@ fn execute_repeated(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     for _ in 1..arguments.repeat {
         black_box(execute(arguments)?);
     }
-    execute(arguments)
+    let mut output = execute(arguments)?;
+    output.oracle_enabled = arguments.oracle_enabled;
+    Ok(output)
 }
 
 fn execute(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
@@ -342,7 +361,9 @@ fn execute(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         Mode::SnapshotLoad => snapshot_load(arguments),
         Mode::Summary => summary_tier(arguments),
         Mode::Revalidate => revalidate(arguments),
-        Mode::DeltaApply => delta_apply(arguments),
+        Mode::DeltaApply | Mode::DeltaApplyLarge => delta_apply(arguments),
+        Mode::DeltaApplyBatched => delta_apply_batched(arguments),
+        Mode::OpenedDiscovery => opened_discovery(arguments),
         Mode::MarkdownProse | Mode::TextProse => content_analysis(arguments, document_request()),
         Mode::Query => query(arguments),
     }
@@ -386,7 +407,7 @@ fn classification_probe(arguments: &Arguments, ambiguous: bool) -> ProbeResult<P
         black_box(classification);
     }
     let component = started.elapsed();
-    let mut summary = summarize_index(&index)?;
+    let mut summary = summarize_index(arguments, &index)?;
     summary.query_iterations = u64::try_from(arguments.operations).unwrap_or(u64::MAX);
     summary.query_observations = observed;
     Ok(ProbeOutput::new(arguments.mode, "synthetic", component, summary))
@@ -414,7 +435,7 @@ fn content_analysis(arguments: &Arguments, request: AnalysisRequest) -> ProbeRes
     let report = fdu_core::content::analyze_index(&mut index, request);
     black_box(report);
     let component = started.elapsed();
-    let mut summary = summarize_index(&index)?;
+    let mut summary = summarize_index(arguments, &index)?;
     attach_content_summary(&mut summary, &index);
     summary.content_candidates = report.candidates;
     summary.content_applied = report.applied;
@@ -437,7 +458,7 @@ fn content_open(
     let started = Instant::now();
     let (index, report) = fdu_core::open(&arguments.root, &config)?;
     let component = started.elapsed();
-    let mut summary = summarize_index(&index)?;
+    let mut summary = summarize_index(arguments, &index)?;
     attach_content_summary(&mut summary, &index);
     summary.content_cache_hits = report.content_cache.hits;
     if let Some(analysis) = report.analysis {
@@ -477,7 +498,7 @@ fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         black_box(fdu_core::query::report(&index, &query, &provenance));
     }
     let component = started.elapsed();
-    let mut summary = summarize_index(&index)?;
+    let mut summary = summarize_index(arguments, &index)?;
     attach_content_summary(&mut summary, &index);
     summary.content_candidates = analysis.candidates;
     summary.content_applied = analysis.applied;
@@ -510,7 +531,7 @@ fn scan_producer(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     summary.attribution = Some(report.attribution);
     summary.errors = u64::try_from(report.errors.len()).unwrap_or(u64::MAX);
     summary.complete = report.is_complete();
-    if summary.complete {
+    if summary.complete && arguments.oracle_enabled {
         // The exact oracle is deliberately outside the component timer. A producer
         // summary that is faster because it skipped, duplicated, or misclassified an
         // entry must never become an accepted performance sample.
@@ -519,7 +540,7 @@ fn scan_producer(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         if !validation_report.is_complete() {
             return Err(ProbeError("scan-producer validation scan was partial".into()));
         }
-        let validation = summarize_index(&validation_index)?;
+        let validation = summarize_index(arguments, &validation_index)?;
         validate_producer_summary(&summary, &validation)?;
         summary.engine_digest = validation.engine_digest;
         summary.index_len = validation.index_len;
@@ -545,6 +566,7 @@ fn validate_producer_summary(producer: &Summary, validation: &Summary) -> ProbeR
 }
 
 fn scan_index(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
+    let counters = begin_component_counters();
     let started = Instant::now();
     let (index, report, diagnostics) = if arguments.diagnostics {
         let (index, report, diagnostics) = fdu_core::scan::scan_into_index_with_policy_diagnostics(
@@ -558,7 +580,9 @@ fn scan_index(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         (index, report, None)
     };
     let component = started.elapsed();
-    let mut summary = summarize_index(&index)?;
+    let counters = finish_component_counters(counters.as_ref());
+    let mut summary = summarize_index(arguments, &index)?;
+    summary.counters = counters;
     summary.scan_diagnostics = diagnostics;
     summary.dirs_read = report.dirs_read;
     summary.attribution = Some(report.attribution);
@@ -670,9 +694,15 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     };
     let query = Query { views: vec![ViewSpec::Tree], ..Query::default() };
 
+    let counters = begin_component_counters();
     let started = Instant::now();
-    let (report, pending, _performance) =
-        fdu_core::prepare_report(&arguments.root, &config, &query)?;
+    let (report, pending, _performance, scan_diagnostics) = if arguments.diagnostics {
+        fdu_core::prepare_report_with_scan_diagnostics(&arguments.root, &config, &query)?
+    } else {
+        let (report, pending, performance) =
+            fdu_core::prepare_report(&arguments.root, &config, &query)?;
+        (report, pending, performance, None)
+    };
     // Rendered to a string the way the command line renders into its writer; the bytes
     // are not printed because stdout carries this probe's JSON, and `black_box` keeps the
     // render from being optimised away as an unused value.
@@ -681,6 +711,7 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     black_box(rendered.len());
     pending.join()?;
     let component = started.elapsed();
+    let counters = finish_component_counters(counters.as_ref());
 
     let root = report
         .sections
@@ -705,6 +736,8 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         ..Summary::default()
     };
     summary.errors = u64::try_from(report.errors.len()).unwrap_or(u64::MAX);
+    summary.counters = counters;
+    summary.scan_diagnostics = scan_diagnostics;
     summary.complete = report.complete;
     summary.entries = root.files + root.dirs;
     summary.snapshot_bytes = snapshot.metadata().ok().map(|metadata| metadata.len());
@@ -756,7 +789,7 @@ fn cold_open_save(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     if !report.is_complete() {
         return Err(ProbeError("cold-open-save scan was partial".into()));
     }
-    let mut summary = summarize_index(&index)?;
+    let mut summary = summarize_index(arguments, &index)?;
     summary.complete = report.is_complete();
     summary.errors = u64::try_from(report.scan.errors.len()).unwrap_or(u64::MAX);
     summary.dirs_read = report.scan.dirs_read;
@@ -773,7 +806,7 @@ fn snapshot_save(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let started = Instant::now();
     fdu_core::snapshot::save(&index, snapshot)?;
     let component = started.elapsed();
-    let mut summary = summarize_index(&index)?;
+    let mut summary = summarize_index(arguments, &index)?;
     summary.snapshot_bytes = Some(snapshot.metadata()?.len());
     Ok(ProbeOutput::new(arguments.mode, "scan", component, summary))
 }
@@ -783,7 +816,7 @@ fn snapshot_load(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let started = Instant::now();
     let index = load_snapshot(snapshot)?;
     let component = started.elapsed();
-    let mut summary = summarize_index(&index)?;
+    let mut summary = summarize_index(arguments, &index)?;
     summary.snapshot_bytes = Some(snapshot.metadata()?.len());
     Ok(ProbeOutput::new(arguments.mode, "snapshot", component, summary))
 }
@@ -794,7 +827,7 @@ fn revalidate(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let started = Instant::now();
     let report = fdu_core::scan::reconcile(&mut index, &arguments.scan, &mut |_| {})?;
     let component = started.elapsed();
-    let mut summary = summarize_index(&index)?;
+    let mut summary = summarize_index(arguments, &index)?;
     summary.dirs_read = report.scan.dirs_read;
     // Deliberately left None: neither reconciliation path has complete attribution yet
     // (tracked in fdu-78wr). Null says "not instrumented"; zeros would lie.
@@ -813,13 +846,54 @@ fn revalidate(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
 }
 
 fn delta_apply(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
-    let mut operations = Vec::with_capacity(arguments.operations.saturating_add(1));
-    operations.push(Op::Upsert {
+    let observation = Observation::new(synthetic_operations(arguments.operations));
+    let mut index = Index::new(&arguments.root);
+    let counters = begin_component_counters();
+    let started = Instant::now();
+    let outcome = index.apply(&observation)?;
+    let component = started.elapsed();
+    let counters = finish_component_counters(counters.as_ref());
+    let mut summary = summarize_index(arguments, &index)?;
+    summary.counters = counters;
+    summary.apply.add(outcome.stats);
+    summary.commit = Some(summarize_commits(&outcome.commit.into_iter().collect::<Vec<_>>()));
+    Ok(ProbeOutput::new(arguments.mode, "synthetic", component, summary))
+}
+
+fn delta_apply_batched(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
+    let observations: Vec<_> = synthetic_operations(arguments.operations)
+        .chunks(arguments.scan.batch_size)
+        .map(|operations| Observation::new(operations.to_vec()))
+        .collect();
+    let mut index = Index::new(&arguments.root);
+    let mut apply = ApplySummary::default();
+    let mut commits = Vec::with_capacity(observations.len());
+    let counters = begin_component_counters();
+    let started = Instant::now();
+    for observation in &observations {
+        let outcome = index.apply(observation)?;
+        apply.add(outcome.stats);
+        if let Some(commit) = outcome.commit {
+            commits.push(commit);
+        }
+    }
+    let component = started.elapsed();
+    let counters = finish_component_counters(counters.as_ref());
+    let mut summary = summarize_index(arguments, &index)?;
+    summary.counters = counters;
+    summary.apply = apply;
+    summary.commit = Some(summarize_commits(&commits));
+    Ok(ProbeOutput::new(arguments.mode, "synthetic", component, summary))
+}
+
+fn synthetic_operations(operations: usize) -> Vec<Op> {
+    let mut generated = Vec::with_capacity(operations.saturating_add(1));
+    generated.push(Op::Upsert {
         path: PathBuf::from("synthetic"),
         kind: EntryKind::Dir,
         attrs: Attrs::default(),
     });
-    operations.extend((0..arguments.operations).map(|index| Op::Upsert {
+    generated.extend((0..operations).map(|index| Op::Upsert {
         path: PathBuf::from(format!("synthetic/entry-{index:09}.dat")),
         kind: EntryKind::File,
         attrs: Attrs {
@@ -831,21 +905,125 @@ fn delta_apply(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
             dev: 1,
         },
     }));
-    let observation = Observation::new(operations);
-    let mut index = Index::new(&arguments.root);
-    let started = Instant::now();
-    let outcome = index.apply(&observation)?;
-    let component = started.elapsed();
-    let mut summary = summarize_index(&index)?;
-    summary.apply = ApplySummary {
-        inserted: outcome.inserted,
-        invalidated: outcome.invalidated,
-        removed: outcome.removed,
-        stale: outcome.stale,
-        unchanged: outcome.unchanged,
-        updated: outcome.updated,
+    generated
+}
+
+fn opened_discovery(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
+    let options = OpenOptions {
+        batch_size: arguments.scan.batch_size,
+        follow_symlinks: arguments.scan.follow_symlinks,
+        one_filesystem: arguments.scan.one_filesystem,
+        hidden: arguments.scan.hidden.clone(),
+        exclude_special: arguments.scan.exclude_special,
+        types: arguments.scan.types.clone(),
+        journal_capacity: OPENED_PROBE_JOURNAL_CAPACITY,
+        ..OpenOptions::default()
     };
-    Ok(ProbeOutput::new(arguments.mode, "synthetic", component, summary))
+    let counters = begin_component_counters();
+    let started = Instant::now();
+    let opened = OpenedIndex::open(&arguments.root, options)?;
+    let initial = opened.read(ReadRequest::default())?;
+    let mut cursor = fdu_core::EngineVersion { sequence: Clock::ZERO, ..initial.version };
+    let mut commits = Vec::new();
+    let terminal = loop {
+        let poll =
+            opened.changes(ChangeRequest { after: cursor, timeout: Duration::from_secs(30) })?;
+        cursor = poll.cursor;
+        match poll.outcome {
+            ChangeOutcome::Changes { commits: next, .. } => commits.extend(next),
+            ChangeOutcome::Idle => {
+                return Err(ProbeError("opened discovery did not settle before timeout".into()));
+            }
+            ChangeOutcome::Reset { .. } => {
+                return Err(ProbeError(
+                    "opened discovery outran the probe's exact journal capacity".into(),
+                ));
+            }
+        }
+        if matches!(
+            poll.state.phase,
+            LifecyclePhase::Ready
+                | LifecyclePhase::Watching
+                | LifecyclePhase::Stopped
+                | LifecyclePhase::Failed
+        ) {
+            break poll.state;
+        }
+    };
+    opened.close()?;
+    let component = started.elapsed();
+    let counters = finish_component_counters(counters.as_ref());
+
+    // The independent exact tree oracle is deliberately outside the component timer.
+    // The timed opened path is held to both this final digest and the exact public
+    // commit sequence it returned while discovery progressed.
+    let (mut summary, validation_complete) = if arguments.oracle_enabled {
+        let validation_scan = ScanConfig {
+            max_depth: None,
+            threads: Some(1),
+            order: ScanOrder::BreadthFirst,
+            read_controls: true,
+            ..arguments.scan.clone()
+        };
+        let (validation, report) =
+            fdu_core::scan::scan_into_index(&arguments.root, &validation_scan)?;
+        (summarize_index(arguments, &validation)?, report.is_complete())
+    } else {
+        (Summary::default(), true)
+    };
+    summary.counters = counters;
+    summary.dirs_read = terminal.progress.directories_complete;
+    summary.errors = terminal.issues.retained.saturating_add(terminal.issues.omitted);
+    summary.complete = terminal.coverage == Coverage::Complete && validation_complete;
+    for commit in &commits {
+        for change in &commit.changes {
+            match change {
+                EffectiveChange::Inserted { .. } => {
+                    summary.apply.inserted = summary.apply.inserted.saturating_add(1);
+                }
+                EffectiveChange::Updated { .. } => {
+                    summary.apply.updated = summary.apply.updated.saturating_add(1);
+                }
+                EffectiveChange::Removed { .. } => {
+                    summary.apply.removed = summary.apply.removed.saturating_add(1);
+                }
+                EffectiveChange::Invalidated { .. } => {
+                    summary.apply.invalidated = summary.apply.invalidated.saturating_add(1);
+                }
+                EffectiveChange::ControlUpdated { .. } | EffectiveChange::Reclassified { .. } => {}
+            }
+        }
+    }
+    summary.commit = Some(summarize_commits(&commits));
+    Ok(ProbeOutput::new(arguments.mode, "opened", component, summary))
+}
+
+fn summarize_commits(commits: &[Commit]) -> CommitSummary {
+    let mut digest = Sha256::new();
+    digest.update(COMMIT_DIGEST_ALGORITHM.as_bytes());
+    digest.update(&[0]);
+    let mut summary = CommitSummary::default();
+    for commit in commits {
+        let record = format!("{commit:?}");
+        digest.update(&u64::try_from(record.len()).unwrap_or(u64::MAX).to_be_bytes());
+        digest.update(record.as_bytes());
+        summary.commits = summary.commits.saturating_add(1);
+        summary.changes =
+            summary.changes.saturating_add(u64::try_from(commit.changes.len()).unwrap_or(u64::MAX));
+        summary.state_transitions = summary
+            .state_transitions
+            .saturating_add(u64::try_from(commit.state.len()).unwrap_or(u64::MAX));
+        summary.observations = summary.observations.saturating_add(commit.work.observations);
+        summary.dirty_paths = summary
+            .dirty_paths
+            .saturating_add(u64::try_from(commit.impact.dirty_paths.len()).unwrap_or(u64::MAX));
+        summary.all_dirty_commits =
+            summary.all_dirty_commits.saturating_add(u64::from(commit.impact.all_dirty));
+        summary.first_clock.get_or_insert(commit.clock.0);
+        summary.last_clock = Some(commit.clock.0);
+    }
+    summary.digest = hex(&digest.finalize());
+    summary
 }
 
 fn query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
@@ -867,7 +1045,7 @@ fn query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     }
     black_box(observed);
     let component = started.elapsed();
-    let mut summary = summarize_index(&index)?;
+    let mut summary = summarize_index(arguments, &index)?;
     summary.query_iterations = u64::try_from(arguments.queries).unwrap_or(u64::MAX);
     summary.query_observations = observed;
     Ok(ProbeOutput::new(
@@ -892,6 +1070,111 @@ struct ApplySummary {
     stale: u64,
 }
 
+impl ApplySummary {
+    fn add(&mut self, stats: fdu_core::ApplyStats) {
+        self.inserted = self.inserted.saturating_add(stats.inserted);
+        self.updated = self.updated.saturating_add(stats.updated);
+        self.removed = self.removed.saturating_add(stats.removed);
+        self.unchanged = self.unchanged.saturating_add(stats.unchanged);
+        self.invalidated = self.invalidated.saturating_add(stats.invalidated);
+        self.stale = self.stale.saturating_add(stats.stale);
+    }
+}
+
+#[derive(Debug, Default)]
+struct CommitSummary {
+    commits: u64,
+    changes: u64,
+    state_transitions: u64,
+    observations: u64,
+    dirty_paths: u64,
+    all_dirty_commits: u64,
+    first_clock: Option<u64>,
+    last_clock: Option<u64>,
+    digest: String,
+}
+
+#[derive(Debug)]
+struct CounterSummary {
+    allocs: u64,
+    reallocs: u64,
+    frees: u64,
+    bytes_allocated: u64,
+    baseline_batches: u64,
+    baseline_accepted_ops: u64,
+    detached_builds: u64,
+    detached_entries: u64,
+    detached_walk_us: u64,
+    detached_finish_us: u64,
+    opened_batches: u64,
+    opened_accepted_ops: u64,
+    public_batches: u64,
+    public_accepted_ops: u64,
+    ancestry_overlay_inserts: u64,
+    ancestry_path_comparisons: u64,
+    ancestry_parent_proofs: u64,
+    effect_paths: u64,
+    effect_path_bytes: u64,
+    impact_candidates: u64,
+    impact_ancestor_visits: u64,
+    impact_retained_dirty_paths: u64,
+    impact_all_dirty: u64,
+    journal_retained_commits: u64,
+    journal_cloned_commits: u64,
+    journal_oversized_commits: u64,
+    journal_dropped_commits: u64,
+}
+
+impl CounterSummary {
+    fn since(before: &fdu_core::counters::Counts) -> Self {
+        let after = fdu_core::counters::snapshot();
+        macro_rules! delta {
+            ($field:ident) => {
+                after.$field.saturating_sub(before.$field)
+            };
+        }
+        Self {
+            allocs: delta!(allocs),
+            reallocs: delta!(reallocs),
+            frees: delta!(frees),
+            bytes_allocated: delta!(bytes_allocated),
+            baseline_batches: delta!(baseline_batches),
+            baseline_accepted_ops: delta!(baseline_accepted_ops),
+            detached_builds: delta!(detached_builds),
+            detached_entries: delta!(detached_entries),
+            detached_walk_us: delta!(detached_walk_us),
+            detached_finish_us: delta!(detached_finish_us),
+            opened_batches: delta!(opened_batches),
+            opened_accepted_ops: delta!(opened_accepted_ops),
+            public_batches: delta!(public_batches),
+            public_accepted_ops: delta!(public_accepted_ops),
+            ancestry_overlay_inserts: delta!(ancestry_overlay_inserts),
+            ancestry_path_comparisons: delta!(ancestry_path_comparisons),
+            ancestry_parent_proofs: delta!(ancestry_parent_proofs),
+            effect_paths: delta!(effect_paths),
+            effect_path_bytes: delta!(effect_path_bytes),
+            impact_candidates: delta!(impact_candidates),
+            impact_ancestor_visits: delta!(impact_ancestor_visits),
+            impact_retained_dirty_paths: delta!(impact_retained_dirty_paths),
+            impact_all_dirty: delta!(impact_all_dirty),
+            journal_retained_commits: delta!(journal_retained_commits),
+            journal_cloned_commits: delta!(journal_cloned_commits),
+            journal_oversized_commits: delta!(journal_oversized_commits),
+            journal_dropped_commits: delta!(journal_dropped_commits),
+        }
+    }
+}
+
+fn begin_component_counters() -> Option<fdu_core::counters::Counts> {
+    fdu_core::counters::enabled().then(fdu_core::counters::snapshot)
+}
+
+fn finish_component_counters(
+    before: Option<&fdu_core::counters::Counts>,
+) -> Option<CounterSummary> {
+    before.map(CounterSummary::since)
+}
+
 #[derive(Debug)]
 struct Summary {
     allocated_bytes: u128,
@@ -907,6 +1190,8 @@ struct Summary {
     content_digest: Option<String>,
     content_invalid_utf8: u64,
     content_records: u64,
+    commit: Option<CommitSummary>,
+    counters: Option<CounterSummary>,
     dirs: u64,
     dirs_read: u64,
     engine_digest: Option<String>,
@@ -941,6 +1226,8 @@ impl Default for Summary {
             content_digest: None,
             content_invalid_utf8: 0,
             content_records: 0,
+            commit: None,
+            counters: None,
             dirs: 0,
             dirs_read: 0,
             engine_digest: None,
@@ -1027,7 +1314,23 @@ impl Summary {
     }
 }
 
-fn summarize_index(index: &Index) -> ProbeResult<Summary> {
+fn summarize_index(arguments: &Arguments, index: &Index) -> ProbeResult<Summary> {
+    if !arguments.oracle_enabled {
+        let total = index.total();
+        let entries = index.len();
+        let dirs = total.dirs.saturating_add(1);
+        return Ok(Summary {
+            allocated_bytes: total.allocated.into(),
+            apparent_bytes: total.bytes.into(),
+            dirs,
+            entries,
+            files: total.files,
+            index_len: Some(entries),
+            newest_file_mtime_ns: (total.files > 0).then_some(total.newest_mtime_ns),
+            other: entries.saturating_sub(total.files).saturating_sub(dirs),
+            ..Summary::default()
+        });
+    }
     let mut summary = Summary::default();
     let mut digest = MultisetDigest::default();
     let mut stack = vec![EntryId::ROOT];
@@ -1103,19 +1406,22 @@ fn engine_record(path: &str, kind: EntryKind, attrs: &Attrs) -> ProbeResult<Vec<
 struct ProbeOutput {
     component_ns: u128,
     mode: Mode,
+    oracle_enabled: bool,
     source: &'static str,
     summary: Summary,
 }
 
 impl ProbeOutput {
     fn new(mode: Mode, source: &'static str, component: Duration, summary: Summary) -> Self {
-        Self { component_ns: component.as_nanos(), mode, source, summary }
+        Self { component_ns: component.as_nanos(), mode, oracle_enabled: true, source, summary }
     }
 
     fn render(&self) -> String {
         let summary = &self.summary;
         let digest = json_optional_string(summary.engine_digest.as_deref());
         let content_digest = json_optional_string(summary.content_digest.as_deref());
+        let commit = json_commit_summary(summary.commit.as_ref());
+        let counters = json_counter_summary(summary.counters.as_ref());
         let index_len = json_optional_u64(summary.index_len);
         let newest_file_mtime_ns = json_optional_i64(summary.newest_file_mtime_ns);
         let snapshot_bytes = json_optional_u64(summary.snapshot_bytes);
@@ -1124,7 +1430,8 @@ impl ProbeOutput {
             .map_or_else(|| "null".to_string(), |written| written.to_string());
         format!(
             concat!(
-                "{{\"component_ns\":{},\"attribution\":{},\"mode\":\"{}\",\"schema\":\"{}\",",
+                "{{\"component_ns\":{},\"attribution\":{},\"mode\":\"{}\",",
+                "\"oracle_enabled\":{},\"schema\":\"{}\",",
                 "\"scan_diagnostics\":{},\"source\":\"{}\",\"summary\":{{",
                 "\"allocated_bytes\":{},\"apparent_bytes\":{},",
                 "\"apply\":{{\"inserted\":{},\"invalidated\":{},",
@@ -1133,6 +1440,8 @@ impl ProbeOutput {
                 "\"content\":{{\"analyzed\":{},\"applied\":{},\"binary\":{},",
                 "\"cache_hits\":{},\"candidates\":{},\"digest\":{},",
                 "\"invalid_utf8\":{},\"records\":{}}},",
+                "\"commit\":{},",
+                "\"counters\":{},",
                 "\"engine_digest\":{},\"entries\":{},\"errors\":{},",
                 "\"files\":{},\"index_len\":{},\"newest_file_mtime_ns\":{},\"other\":{},",
                 "\"query_iterations\":{},\"query_observations\":{},",
@@ -1142,6 +1451,7 @@ impl ProbeOutput {
             self.component_ns,
             json_attribution(self.summary.attribution.as_ref()),
             self.mode.name(),
+            self.oracle_enabled,
             PROBE_SCHEMA,
             json_scan_diagnostics(self.summary.scan_diagnostics.as_ref()),
             self.source,
@@ -1164,6 +1474,8 @@ impl ProbeOutput {
             content_digest,
             summary.content_invalid_utf8,
             summary.content_records,
+            commit,
+            counters,
             digest,
             summary.entries,
             summary.errors,
@@ -1178,6 +1490,80 @@ impl ProbeOutput {
             summary.symlinks,
         )
     }
+}
+
+fn json_commit_summary(summary: Option<&CommitSummary>) -> String {
+    let Some(summary) = summary else {
+        return "null".into();
+    };
+    format!(
+        concat!(
+            "{{\"algorithm\":\"{}\",\"all_dirty_commits\":{},",
+            "\"changes\":{},\"commits\":{},\"digest\":\"{}\",",
+            "\"dirty_paths\":{},\"first_clock\":{},\"last_clock\":{},",
+            "\"observations\":{},\"state_transitions\":{}}}"
+        ),
+        COMMIT_DIGEST_ALGORITHM,
+        summary.all_dirty_commits,
+        summary.changes,
+        summary.commits,
+        summary.digest,
+        summary.dirty_paths,
+        json_optional_u64(summary.first_clock),
+        json_optional_u64(summary.last_clock),
+        summary.observations,
+        summary.state_transitions,
+    )
+}
+
+fn json_counter_summary(summary: Option<&CounterSummary>) -> String {
+    let Some(summary) = summary else {
+        return "null".into();
+    };
+    format!(
+        concat!(
+            "{{\"allocs\":{},\"reallocs\":{},\"frees\":{},\"bytes_allocated\":{},",
+            "\"baseline_batches\":{},\"baseline_accepted_ops\":{},",
+            "\"detached_builds\":{},\"detached_entries\":{},",
+            "\"detached_walk_us\":{},\"detached_finish_us\":{},",
+            "\"opened_batches\":{},\"opened_accepted_ops\":{},",
+            "\"public_batches\":{},\"public_accepted_ops\":{},",
+            "\"ancestry_overlay_inserts\":{},\"ancestry_path_comparisons\":{},",
+            "\"ancestry_parent_proofs\":{},\"effect_paths\":{},",
+            "\"effect_path_bytes\":{},\"impact_candidates\":{},",
+            "\"impact_ancestor_visits\":{},\"impact_retained_dirty_paths\":{},",
+            "\"impact_all_dirty\":{},",
+            "\"journal_retained_commits\":{},\"journal_cloned_commits\":{},",
+            "\"journal_oversized_commits\":{},\"journal_dropped_commits\":{}}}"
+        ),
+        summary.allocs,
+        summary.reallocs,
+        summary.frees,
+        summary.bytes_allocated,
+        summary.baseline_batches,
+        summary.baseline_accepted_ops,
+        summary.detached_builds,
+        summary.detached_entries,
+        summary.detached_walk_us,
+        summary.detached_finish_us,
+        summary.opened_batches,
+        summary.opened_accepted_ops,
+        summary.public_batches,
+        summary.public_accepted_ops,
+        summary.ancestry_overlay_inserts,
+        summary.ancestry_path_comparisons,
+        summary.ancestry_parent_proofs,
+        summary.effect_paths,
+        summary.effect_path_bytes,
+        summary.impact_candidates,
+        summary.impact_ancestor_visits,
+        summary.impact_retained_dirty_paths,
+        summary.impact_all_dirty,
+        summary.journal_retained_commits,
+        summary.journal_cloned_commits,
+        summary.journal_oversized_commits,
+        summary.journal_dropped_commits,
+    )
 }
 
 fn json_scan_diagnostics(value: Option<&fdu_core::scan::ScanDiagnostics>) -> String {
@@ -1515,6 +1901,50 @@ mod tests {
         assert!(rendered.starts_with("{\"component_ns\":7,"));
         assert!(rendered.ends_with('}'));
         assert!(rendered.contains("\"schema\":\"fdu-perf-probe-v1\""));
+        assert!(rendered.contains("\"oracle_enabled\":true"));
+    }
+
+    #[test]
+    fn no_oracle_profile_summary_does_not_walk_the_index() {
+        let arguments = Arguments::parse(
+            ["scan-index", "--root", "/root", "--no-oracle"].into_iter().map(OsString::from),
+        )
+        .expect("profile arguments");
+        let index = Index::new("/root");
+
+        let summary = summarize_index(&arguments, &index).expect("unverified summary");
+
+        assert!(!arguments.oracle_enabled);
+        assert_eq!(summary.entries, 1);
+        assert_eq!(summary.dirs, 1);
+        assert!(summary.engine_digest.is_none());
+    }
+
+    #[test]
+    fn default_tree_probe_can_retain_full_index_scan_diagnostics() {
+        let root = tempfile::tempdir().expect("root tempdir");
+        let scratch = tempfile::tempdir().expect("scratch tempdir");
+        std::fs::create_dir(root.path().join("nested")).expect("nested directory");
+        std::fs::write(root.path().join("nested/file.txt"), b"trace me").expect("file");
+        let arguments = Arguments::parse(
+            [
+                OsString::from("default-tree"),
+                OsString::from("--root"),
+                root.path().as_os_str().to_owned(),
+                OsString::from("--snapshot"),
+                scratch.path().join("snapshot.fdu").into_os_string(),
+                OsString::from("--diagnostics"),
+            ]
+            .into_iter(),
+        )
+        .expect("probe arguments");
+
+        let output = default_tree(&arguments).expect("default-tree probe");
+
+        let diagnostics = output.summary.scan_diagnostics.expect("scan diagnostics");
+        assert_eq!(diagnostics.schema, fdu_core::scan::SCAN_DIAGNOSTICS_SCHEMA);
+        assert_eq!(diagnostics.worker_policy.ready_directories_at_finish, 0);
+        assert_eq!(diagnostics.worker_policy.in_flight_directories_at_finish, 0);
     }
 
     #[test]

@@ -1,9 +1,10 @@
 //! The scan layer: walking a tree, producing observations, and applying reconciliation.
 //!
-//! A cold scan is just a large batch of upserts, and a revalidation sweep is the diff
-//! between what the index believes and what the filesystem says. Both speak the same
-//! [`Observation`] vocabulary as the watch layer, which is what lets the index be ignorant of
-//! where its changes came from.
+//! Public scans emit upsert observations, and a revalidation sweep is the diff between
+//! what the index believes and what the filesystem says. Both speak the same
+//! [`Observation`] vocabulary as the watch layer. A detached one-shot index may consume
+//! equivalent parent-first directory groups privately because no observer can see its
+//! construction; every later mutation still crosses the shared observation boundary.
 //!
 //! # Status
 //!
@@ -27,7 +28,7 @@ use crate::engine_contract::{
     Attrs, Commit, EntryKind, Error, Observation, ObservationOp, Op, PathExpectation, PathState,
     Result, ScanScope,
 };
-use crate::index::{Index, IndexHandle, collect_child_expectations};
+use crate::index::{DetachedIndexBuilder, Index, IndexHandle, collect_child_expectations};
 
 // Keep the FFI exception at the platform boundary. The rest of the engine, including
 // every consumer of these observations, remains under the workspace's unsafe-code
@@ -970,13 +971,74 @@ pub(crate) fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<
     fs::symlink_metadata(entry.path())
 }
 
+/// Owned output from the filesystem walker before it crosses a public mutation boundary.
+///
+/// Only the scan and opened-discovery producers construct this type. Their admission,
+/// depth, filesystem, and symlink checks have already selected every operation, and the
+/// index consumes the owned paths while proving their parent identities under its write
+/// boundary. Public scan callers receive an [`Observation`] instead and therefore keep
+/// the full public normalization and atomic-validation contract.
+#[derive(Debug)]
+pub(crate) struct ScannerBatch {
+    ops: Vec<ObservationOp>,
+}
+
+impl ScannerBatch {
+    pub(crate) const fn new(ops: Vec<ObservationOp>) -> Self {
+        Self { ops }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_ops(ops: Vec<Op>) -> Self {
+        Self { ops: ops.into_iter().map(ObservationOp::unconditional).collect() }
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.ops.len()
+    }
+
+    pub(crate) fn into_ops(self) -> Vec<ObservationOp> {
+        self.ops
+    }
+
+    fn into_observation(self) -> Observation {
+        Observation::from_ops(self.ops)
+    }
+}
+
+/// One direct child retained by the private detached cold-bootstrap builder.
+///
+/// The worker owns the component once. Unlike [`ScannerBatch`], this record does not
+/// manufacture a full relative path or a public observation for every entry.
+#[derive(Debug)]
+pub(crate) struct DetachedChild {
+    pub(crate) name: OsString,
+    pub(crate) kind: EntryKind,
+    pub(crate) attrs: Attrs,
+}
+
+/// One directory listing retained by a worker for detached bootstrap consolidation.
+///
+/// `path` is paid once per directory. Its children remain grouped exactly as the
+/// filesystem enumerator produced them, so consolidation resolves the parent once and
+/// never reconstructs a child path for nondirectories. A fixed control is retained
+/// separately so the consumer can install the directory's complete control state
+/// before it classifies any sibling or makes descendants visible.
+#[derive(Debug)]
+pub(crate) struct DetachedDirectory {
+    pub(crate) path: PathBuf,
+    pub(crate) children: Vec<DetachedChild>,
+    pub(crate) control: Option<Op>,
+}
+
 /// Walk `root` and emit observations describing everything found.
 pub fn scan(
     root: &Path,
     config: &ScanConfig,
     sink: &mut dyn FnMut(Observation),
 ) -> Result<ScanReport> {
-    scan_internal(root, config, sink, false, WorkerPolicyExperiment::ShippedOneShot)
+    let mut public_sink = |batch: ScannerBatch| sink(batch.into_observation());
+    scan_internal(root, config, &mut public_sink, false, WorkerPolicyExperiment::ShippedOneShot)
         .map(|(report, _diagnostics)| report)
 }
 
@@ -1001,14 +1063,15 @@ pub fn scan_with_policy_diagnostics(
     sink: &mut dyn FnMut(Observation),
     policy: WorkerPolicyExperiment,
 ) -> Result<(ScanReport, ScanDiagnostics)> {
-    let (report, diagnostics) = scan_internal(root, config, sink, true, policy)?;
+    let mut public_sink = |batch: ScannerBatch| sink(batch.into_observation());
+    let (report, diagnostics) = scan_internal(root, config, &mut public_sink, true, policy)?;
     Ok((report, diagnostics.expect("diagnostic scan creates a recorder")))
 }
 
 fn scan_internal(
     root: &Path,
     config: &ScanConfig,
-    sink: &mut dyn FnMut(Observation),
+    sink: &mut dyn FnMut(ScannerBatch),
     collect_diagnostics: bool,
     policy: WorkerPolicyExperiment,
 ) -> Result<(ScanReport, Option<ScanDiagnostics>)> {
@@ -1047,7 +1110,7 @@ fn scan_internal(
     }
     let worker_guard = diagnostics.as_ref().map(ScanDiagnosticsRecorder::worker_guard);
     let walk_started = std::time::Instant::now();
-    let mut batch: Vec<Op> = Vec::with_capacity(config.batch_size);
+    let mut batch: Vec<ObservationOp> = Vec::with_capacity(config.batch_size);
     let mut queue: VecDeque<(PathBuf, usize)> = VecDeque::from(vec![(PathBuf::new(), 0)]);
 
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
@@ -1105,10 +1168,10 @@ fn scan_internal(
             };
             if disposition == crate::admission::Disposition::ControlOnly {
                 if let Some(control) = control {
-                    batch.push(control);
+                    batch.push(ObservationOp::unconditional(control));
                     if batch.len() >= config.batch_size {
                         let send_started = std::time::Instant::now();
-                        sink(Observation::new(std::mem::take(&mut batch)));
+                        sink(ScannerBatch::new(std::mem::take(&mut batch)));
                         report.attribution.send_ns += elapsed_ns(send_started);
                         batch.reserve(config.batch_size);
                     }
@@ -1116,18 +1179,22 @@ fn scan_internal(
                 continue;
             }
             report.observe(kind, attrs);
-            batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
+            batch.push(ObservationOp::unconditional(Op::Upsert {
+                path: rel_path.clone(),
+                kind,
+                attrs,
+            }));
             if batch.len() >= config.batch_size {
                 let send_started = std::time::Instant::now();
-                sink(Observation::new(std::mem::take(&mut batch)));
+                sink(ScannerBatch::new(std::mem::take(&mut batch)));
                 report.attribution.send_ns += elapsed_ns(send_started);
                 batch.reserve(config.batch_size);
             }
             if let Some(control) = control {
-                batch.push(control);
+                batch.push(ObservationOp::unconditional(control));
                 if batch.len() >= config.batch_size {
                     let send_started = std::time::Instant::now();
-                    sink(Observation::new(std::mem::take(&mut batch)));
+                    sink(ScannerBatch::new(std::mem::take(&mut batch)));
                     report.attribution.send_ns += elapsed_ns(send_started);
                     batch.reserve(config.batch_size);
                 }
@@ -1141,7 +1208,7 @@ fn scan_internal(
 
     if !batch.is_empty() {
         let send_started = std::time::Instant::now();
-        sink(Observation::new(batch));
+        sink(ScannerBatch::new(batch));
         report.attribution.send_ns += elapsed_ns(send_started);
     }
     // A serial walk has no coordination to attribute: wall is the loop, "send" is the
@@ -1608,7 +1675,8 @@ fn atomic_update_max(target: &std::sync::atomic::AtomicUsize, value: usize) {
 }
 
 enum WalkMessage {
-    Observation(Observation),
+    Batch(ScannerBatch),
+    DetachedDirectories(Vec<DetachedDirectory>),
     ScaleUp { sender: std::sync::mpsc::Sender<Self>, target_workers: usize },
 }
 
@@ -1832,11 +1900,120 @@ fn scan_concurrent(
     root: &Path,
     config: &ScanConfig,
     root_dev: u64,
-    sink: &mut dyn FnMut(Observation),
+    sink: &mut dyn FnMut(ScannerBatch),
     pool: WorkerPool,
     diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
     policy: WorkerPolicyExperiment,
 ) -> ScanReport {
+    let mut consume = |message| match message {
+        WalkMessage::Batch(batch) => {
+            if let Some(diagnostics) = diagnostics {
+                diagnostics.handoff_received();
+            }
+            sink(batch);
+        }
+        WalkMessage::DetachedDirectories(_) => {
+            unreachable!("the streaming walker never publishes detached directories")
+        }
+        WalkMessage::ScaleUp { .. } => {
+            unreachable!("the shared runner consumes scale-up messages")
+        }
+    };
+    run_concurrent_walk(
+        root,
+        config,
+        root_dev,
+        pool,
+        diagnostics,
+        policy,
+        walk_worker,
+        &mut consume,
+    )
+}
+
+/// Parallel cold walk for a detached index that has no streaming consumer.
+///
+/// Workers publish directory-shaped facts before making their children claimable. The
+/// caller consumes those groups into a private builder while filesystem work continues,
+/// preserving parent-first causality and pipeline overlap without sending one full path
+/// or public observation per entry.
+fn scan_concurrent_detached(
+    root: &Path,
+    config: &ScanConfig,
+    root_dev: u64,
+    pool: WorkerPool,
+    diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
+    policy: WorkerPolicyExperiment,
+) -> Result<(ScanReport, DetachedIndexBuilder)> {
+    let mut builder = DetachedIndexBuilder::new(root, config.scope(), config.types_shared());
+    let mut build_error = None;
+    let output = {
+        let mut consume = |message| match message {
+            WalkMessage::Batch(_) => {
+                unreachable!("the detached walker never publishes scanner batches")
+            }
+            WalkMessage::DetachedDirectories(directories) => {
+                if let Some(diagnostics) = diagnostics {
+                    diagnostics.handoff_received();
+                }
+                if build_error.is_none() {
+                    for directory in directories {
+                        if let Err(error) = builder.push_directory(directory) {
+                            build_error = Some(error);
+                            break;
+                        }
+                    }
+                }
+            }
+            WalkMessage::ScaleUp { .. } => {
+                unreachable!("the shared runner consumes scale-up messages")
+            }
+        };
+        run_concurrent_walk(
+            root,
+            config,
+            root_dev,
+            pool,
+            diagnostics,
+            policy,
+            walk_detached_worker,
+            &mut consume,
+        )
+    };
+    if let Some(error) = build_error {
+        return Err(error);
+    }
+    Ok((output, builder))
+}
+
+type WalkWorker = fn(
+    &Path,
+    &ScanConfig,
+    u64,
+    &DirectoryQueue,
+    &std::sync::mpsc::Sender<WalkMessage>,
+    Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
+) -> ScanReport;
+
+/// Run the shared pool, scaling controller, diagnostics, and report reduction.
+///
+/// Streaming and detached scans differ only in their worker emission and main-thread
+/// consumer. Keeping orchestration here prevents fixes to termination, diagnostics, or
+/// panic handling from diverging between the two cold paths.
+#[allow(clippy::too_many_arguments)]
+fn run_concurrent_walk<C>(
+    root: &Path,
+    config: &ScanConfig,
+    root_dev: u64,
+    pool: WorkerPool,
+    diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
+    policy: WorkerPolicyExperiment,
+    worker: WalkWorker,
+    consume: &mut C,
+) -> ScanReport
+where
+    C: FnMut(WalkMessage),
+{
     let diagnostics = diagnostics.cloned();
     let queue = DirectoryQueue::new_with_policy(
         (PathBuf::new(), 0),
@@ -1856,7 +2033,7 @@ fn scan_concurrent(
                 let queue = &queue;
                 let diagnostics = diagnostics.clone();
                 scope.spawn(move || {
-                    walk_worker(root, config, root_dev, queue, &sender, diagnostics.as_ref())
+                    worker(root, config, root_dev, queue, &sender, diagnostics.as_ref())
                 })
             })
             .collect();
@@ -1866,12 +2043,6 @@ fn scan_concurrent(
         let mut spawned_workers = pool.initial;
         for message in receiver {
             match message {
-                WalkMessage::Observation(observation) => {
-                    if let Some(diagnostics) = &diagnostics {
-                        diagnostics.handoff_received();
-                    }
-                    sink(observation);
-                }
                 WalkMessage::ScaleUp { sender, target_workers }
                     if target_workers > spawned_workers =>
                 {
@@ -1882,19 +2053,13 @@ fn scan_concurrent(
                         let queue = &queue;
                         let diagnostics = diagnostics.clone();
                         handles.push(scope.spawn(move || {
-                            walk_worker(
-                                root,
-                                config,
-                                root_dev,
-                                queue,
-                                &sender,
-                                diagnostics.as_ref(),
-                            )
+                            worker(root, config, root_dev, queue, &sender, diagnostics.as_ref())
                         }));
                     }
                     spawned_workers = target_workers;
                 }
                 WalkMessage::ScaleUp { .. } => {}
+                output => consume(output),
             }
         }
 
@@ -1979,9 +2144,8 @@ fn scan_concurrent(
             match handle.join() {
                 Ok(worker) => report.absorb(worker),
                 Err(_) => {
-                    // A worker panicked. Its directories are unaccounted for, so the
-                    // scan is partial; say so rather than reporting a short tree as
-                    // complete.
+                    // A worker panic leaves directories unaccounted for. Preserve that
+                    // as a partial scan instead of reporting a short tree as complete.
                     report.errors.push(Error::io(
                         root,
                         std::io::Error::other("a scan worker thread panicked"),
@@ -1992,13 +2156,252 @@ fn scan_concurrent(
         report
     });
 
-    // Workers finish in whatever order the filesystem lets them, so a report assembled
-    // from them is only reproducible if the errors are ordered here.
+    // Workers finish in filesystem order, so normalize errors before they escape.
     report.errors.sort_by_cached_key(ToString::to_string);
     report
 }
 
-/// One worker's share of the walk: claim directories, read them, publish observations.
+/// Compile-time adapter for the one directory walker.
+///
+/// The filesystem, queue, admission, and diagnostics logic stays singular. Generic
+/// emission keeps the public streaming path and private detached path branch-free in
+/// their per-entry loops after monomorphization.
+trait WalkEmission {
+    type Directory;
+
+    fn begin_directory(&mut self, path: &Path) -> Self::Directory;
+
+    #[allow(clippy::too_many_arguments)]
+    fn record_entry(
+        &mut self,
+        root: &Path,
+        rel_dir: &Path,
+        depth: usize,
+        region: RegionId,
+        name: &OsStr,
+        kind: EntryKind,
+        attrs: Attrs,
+        root_dev: u64,
+        config: &ScanConfig,
+        directory: &mut Self::Directory,
+        discovered: &mut Vec<(PathBuf, usize, RegionId)>,
+        report: &mut ScanReport,
+        sender: &std::sync::mpsc::Sender<WalkMessage>,
+        chunk_send_ns: &mut u64,
+        diagnostics: Option<&ScanDiagnosticsRecorder>,
+    ) -> bool;
+
+    fn finish_directory(&mut self, directory: Self::Directory);
+
+    fn publish_before_discovery(
+        &mut self,
+        has_discovered: bool,
+        sender: &std::sync::mpsc::Sender<WalkMessage>,
+        chunk_send_ns: &mut u64,
+        diagnostics: Option<&ScanDiagnosticsRecorder>,
+    ) -> bool;
+
+    fn finish(
+        &mut self,
+        sender: &std::sync::mpsc::Sender<WalkMessage>,
+        report: &mut ScanReport,
+        diagnostics: Option<&ScanDiagnosticsRecorder>,
+    );
+}
+
+struct StreamingEmission {
+    batch: Vec<ObservationOp>,
+}
+
+impl StreamingEmission {
+    fn new(batch_size: usize) -> Self {
+        Self { batch: Vec::with_capacity(batch_size) }
+    }
+}
+
+impl WalkEmission for StreamingEmission {
+    type Directory = ();
+
+    fn begin_directory(&mut self, _path: &Path) {}
+
+    #[allow(clippy::too_many_arguments)]
+    fn record_entry(
+        &mut self,
+        root: &Path,
+        rel_dir: &Path,
+        depth: usize,
+        region: RegionId,
+        name: &OsStr,
+        kind: EntryKind,
+        attrs: Attrs,
+        root_dev: u64,
+        config: &ScanConfig,
+        _directory: &mut Self::Directory,
+        discovered: &mut Vec<(PathBuf, usize, RegionId)>,
+        report: &mut ScanReport,
+        sender: &std::sync::mpsc::Sender<WalkMessage>,
+        chunk_send_ns: &mut u64,
+        diagnostics: Option<&ScanDiagnosticsRecorder>,
+    ) -> bool {
+        record_walk_entry(
+            root,
+            rel_dir,
+            depth,
+            region,
+            name,
+            kind,
+            attrs,
+            root_dev,
+            config,
+            &mut self.batch,
+            discovered,
+            report,
+            sender,
+            chunk_send_ns,
+            diagnostics,
+        )
+    }
+
+    fn finish_directory(&mut self, _directory: Self::Directory) {}
+
+    fn publish_before_discovery(
+        &mut self,
+        has_discovered: bool,
+        sender: &std::sync::mpsc::Sender<WalkMessage>,
+        chunk_send_ns: &mut u64,
+        diagnostics: Option<&ScanDiagnosticsRecorder>,
+    ) -> bool {
+        if self.batch.is_empty() || !has_discovered {
+            return true;
+        }
+        let send_started = std::time::Instant::now();
+        let sent = send_scanner_batch(
+            sender,
+            ScannerBatch::new(std::mem::take(&mut self.batch)),
+            diagnostics,
+        );
+        *chunk_send_ns += elapsed_ns(send_started);
+        sent
+    }
+
+    fn finish(
+        &mut self,
+        sender: &std::sync::mpsc::Sender<WalkMessage>,
+        report: &mut ScanReport,
+        diagnostics: Option<&ScanDiagnosticsRecorder>,
+    ) {
+        if self.batch.is_empty() {
+            return;
+        }
+        let send_started = std::time::Instant::now();
+        let _ = send_scanner_batch(
+            sender,
+            ScannerBatch::new(std::mem::take(&mut self.batch)),
+            diagnostics,
+        );
+        report.attribution.send_ns += elapsed_ns(send_started);
+    }
+}
+
+#[derive(Default)]
+struct DetachedEmission {
+    directories: Vec<DetachedDirectory>,
+}
+
+impl WalkEmission for DetachedEmission {
+    type Directory = DetachedDirectory;
+
+    fn begin_directory(&mut self, path: &Path) -> Self::Directory {
+        DetachedDirectory { path: path.to_path_buf(), children: Vec::new(), control: None }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn record_entry(
+        &mut self,
+        root: &Path,
+        rel_dir: &Path,
+        depth: usize,
+        region: RegionId,
+        name: &OsStr,
+        kind: EntryKind,
+        attrs: Attrs,
+        root_dev: u64,
+        config: &ScanConfig,
+        directory: &mut Self::Directory,
+        discovered: &mut Vec<(PathBuf, usize, RegionId)>,
+        report: &mut ScanReport,
+        _sender: &std::sync::mpsc::Sender<WalkMessage>,
+        _chunk_send_ns: &mut u64,
+        _diagnostics: Option<&ScanDiagnosticsRecorder>,
+    ) -> bool {
+        record_detached_entry(
+            root,
+            rel_dir,
+            depth,
+            region,
+            name,
+            kind,
+            attrs,
+            root_dev,
+            config,
+            &mut directory.children,
+            &mut directory.control,
+            discovered,
+            report,
+        );
+        true
+    }
+
+    fn finish_directory(&mut self, directory: Self::Directory) {
+        self.directories.push(directory);
+    }
+
+    fn publish_before_discovery(
+        &mut self,
+        _has_discovered: bool,
+        sender: &std::sync::mpsc::Sender<WalkMessage>,
+        chunk_send_ns: &mut u64,
+        diagnostics: Option<&ScanDiagnosticsRecorder>,
+    ) -> bool {
+        if self.directories.is_empty() {
+            return true;
+        }
+        let send_started = std::time::Instant::now();
+        let sent =
+            send_detached_directories(sender, std::mem::take(&mut self.directories), diagnostics);
+        *chunk_send_ns += elapsed_ns(send_started);
+        sent
+    }
+
+    fn finish(
+        &mut self,
+        _sender: &std::sync::mpsc::Sender<WalkMessage>,
+        _report: &mut ScanReport,
+        _diagnostics: Option<&ScanDiagnosticsRecorder>,
+    ) {
+    }
+}
+
+fn walk_detached_worker(
+    root: &Path,
+    config: &ScanConfig,
+    root_dev: u64,
+    queue: &DirectoryQueue,
+    sender: &std::sync::mpsc::Sender<WalkMessage>,
+    diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
+) -> ScanReport {
+    walk_worker_with(
+        root,
+        config,
+        root_dev,
+        queue,
+        sender,
+        diagnostics,
+        DetachedEmission::default(),
+    )
+}
+
+/// One worker's share of the public observation walk.
 fn walk_worker(
     root: &Path,
     config: &ScanConfig,
@@ -2007,11 +2410,30 @@ fn walk_worker(
     sender: &std::sync::mpsc::Sender<WalkMessage>,
     diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
 ) -> ScanReport {
+    walk_worker_with(
+        root,
+        config,
+        root_dev,
+        queue,
+        sender,
+        diagnostics,
+        StreamingEmission::new(config.batch_size),
+    )
+}
+
+fn walk_worker_with<E: WalkEmission>(
+    root: &Path,
+    config: &ScanConfig,
+    root_dev: u64,
+    queue: &DirectoryQueue,
+    sender: &std::sync::mpsc::Sender<WalkMessage>,
+    diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
+    mut emission: E,
+) -> ScanReport {
     let _counter_guard = crate::counters::thread_flush_guard();
     let _worker_guard = diagnostics.map(ScanDiagnosticsRecorder::worker_guard);
     let worker_started = std::time::Instant::now();
     let mut report = ScanReport::default();
-    let mut batch: Vec<Op> = Vec::with_capacity(config.batch_size);
     let mut claimed: Vec<(PathBuf, usize, RegionId)> = Vec::with_capacity(DIR_CLAIM);
     let mut discovered: Vec<(PathBuf, usize, RegionId)> = Vec::new();
     let mut consumer_gone = false;
@@ -2027,6 +2449,7 @@ fn walk_worker(
         let entries_before = report.entries;
         for (rel_dir, depth, region) in claimed.drain(..) {
             let abs_dir = root.join(&rel_dir);
+            let mut directory = emission.begin_directory(&rel_dir);
             #[cfg(target_os = "macos")]
             {
                 if let Some(diagnostics) = diagnostics {
@@ -2038,7 +2461,7 @@ fn walk_worker(
                     }
                     report.dirs_read += 1;
                     for entry in entries {
-                        if !record_walk_entry(
+                        if !emission.record_entry(
                             root,
                             &rel_dir,
                             depth,
@@ -2048,7 +2471,7 @@ fn walk_worker(
                             entry.attrs,
                             root_dev,
                             config,
-                            &mut batch,
+                            &mut directory,
                             &mut discovered,
                             &mut report,
                             sender,
@@ -2059,6 +2482,7 @@ fn walk_worker(
                             break 'walk;
                         }
                     }
+                    emission.finish_directory(directory);
                     continue;
                 }
                 if let Some(diagnostics) = diagnostics {
@@ -2105,7 +2529,7 @@ fn walk_worker(
 
                 let attrs = attrs_from(&meta);
                 let kind = kind_from(&meta);
-                if !record_walk_entry(
+                if !emission.record_entry(
                     root,
                     &rel_dir,
                     depth,
@@ -2115,7 +2539,7 @@ fn walk_worker(
                     attrs,
                     root_dev,
                     config,
-                    &mut batch,
+                    &mut directory,
                     &mut discovered,
                     &mut report,
                     sender,
@@ -2127,25 +2551,20 @@ fn walk_worker(
                     break 'walk;
                 }
             }
+            emission.finish_directory(directory);
         }
-        // The batch contains the directory entries that authorize `discovered` as
-        // known ancestry. Publish it before making those directories claimable: a
-        // different worker may begin reading a child as soon as `extend` returns.
-        if !batch.is_empty() && !discovered.is_empty() {
-            let send_started = std::time::Instant::now();
-            let sent = send_observation(
-                sender,
-                Observation::new(std::mem::take(&mut batch)),
-                diagnostics.map(AsRef::as_ref),
-            );
-            chunk_send_ns += elapsed_ns(send_started);
-            if !sent {
-                report.attribution.send_ns += chunk_send_ns;
-                report.attribution.work_ns +=
-                    elapsed_ns(chunk_started).saturating_sub(chunk_send_ns);
-                consumer_gone = true;
-                break 'walk;
-            }
+        // Publish facts that authorize newly discovered directories before making
+        // those directories claimable. Both emission modes preserve this boundary.
+        if !emission.publish_before_discovery(
+            !discovered.is_empty(),
+            sender,
+            &mut chunk_send_ns,
+            diagnostics.map(AsRef::as_ref),
+        ) {
+            report.attribution.send_ns += chunk_send_ns;
+            report.attribution.work_ns += elapsed_ns(chunk_started).saturating_sub(chunk_send_ns);
+            consumer_gone = true;
+            break 'walk;
         }
         report.attribution.send_ns += chunk_send_ns;
         let chunk_work_ns = elapsed_ns(chunk_started).saturating_sub(chunk_send_ns);
@@ -2169,13 +2588,55 @@ fn walk_worker(
         }
     }
 
-    if !consumer_gone && !batch.is_empty() {
-        let send_started = std::time::Instant::now();
-        let _ = send_observation(sender, Observation::new(batch), diagnostics.map(AsRef::as_ref));
-        report.attribution.send_ns += elapsed_ns(send_started);
+    if !consumer_gone {
+        emission.finish(sender, &mut report, diagnostics.map(AsRef::as_ref));
     }
     report.attribution.wall_ns = elapsed_ns(worker_started);
     report
+}
+
+#[allow(clippy::too_many_arguments)]
+fn record_detached_entry(
+    root: &Path,
+    rel_dir: &Path,
+    depth: usize,
+    region: RegionId,
+    name: &OsStr,
+    kind: EntryKind,
+    attrs: Attrs,
+    root_dev: u64,
+    config: &ScanConfig,
+    children: &mut Vec<DetachedChild>,
+    control: &mut Option<Op>,
+    discovered: &mut Vec<(PathBuf, usize, RegionId)>,
+    report: &mut ScanReport,
+) {
+    let disposition = crate::admission::decide(name, kind, config.hidden(), config.exclude_special);
+    if disposition == crate::admission::Disposition::Reject {
+        return;
+    }
+    // Construct a full path only for the one fixed control name. The scanner's public
+    // preparation builds one for every retained entry because that path escapes in an
+    // observation; this private builder keeps ordinary children component-only.
+    if config.read_controls && name == OsStr::new(crate::control::CONTROL_FILE_NAME) {
+        let path = rel_dir.join(name);
+        match read_control_op(config, root, &path, kind) {
+            Ok(observed) => {
+                debug_assert!(control.is_none(), "one directory cannot contain duplicate names");
+                *control = observed;
+            }
+            Err(error) => report.errors.push(error),
+        }
+    }
+    if disposition != crate::admission::Disposition::Retain {
+        return;
+    }
+    report.observe(kind, attrs);
+    children.push(DetachedChild { name: name.to_os_string(), kind, attrs });
+    if should_descend(kind, attrs, depth, root_dev, config) {
+        let child_region = if depth == 0 { RegionId::UNASSIGNED } else { region };
+        discovered.push((rel_dir.join(name), depth + 1, child_region));
+    }
 }
 
 /// One filesystem entry after the scan's shared admission, control, and descent rules.
@@ -2235,7 +2696,7 @@ fn record_walk_entry(
     attrs: Attrs,
     root_dev: u64,
     config: &ScanConfig,
-    batch: &mut Vec<Op>,
+    batch: &mut Vec<ObservationOp>,
     discovered: &mut Vec<(PathBuf, usize, RegionId)>,
     report: &mut ScanReport,
     sender: &std::sync::mpsc::Sender<WalkMessage>,
@@ -2252,11 +2713,14 @@ fn record_walk_entry(
     }
     if !prepared.retained {
         if let Some(control) = prepared.control {
-            batch.push(control);
+            batch.push(ObservationOp::unconditional(control));
             if batch.len() >= config.batch_size {
                 let send_started = std::time::Instant::now();
-                let sent =
-                    send_observation(sender, Observation::new(std::mem::take(batch)), diagnostics);
+                let sent = send_scanner_batch(
+                    sender,
+                    ScannerBatch::new(std::mem::take(batch)),
+                    diagnostics,
+                );
                 *chunk_send_ns += elapsed_ns(send_started);
                 return sent;
             }
@@ -2264,21 +2728,26 @@ fn record_walk_entry(
         return true;
     }
     report.observe(kind, attrs);
-    batch.push(Op::Upsert { path: prepared.path.clone(), kind, attrs });
+    batch.push(ObservationOp::unconditional(Op::Upsert {
+        path: prepared.path.clone(),
+        kind,
+        attrs,
+    }));
     if batch.len() >= config.batch_size {
         let send_started = std::time::Instant::now();
-        let sent = send_observation(sender, Observation::new(std::mem::take(batch)), diagnostics);
+        let sent =
+            send_scanner_batch(sender, ScannerBatch::new(std::mem::take(batch)), diagnostics);
         *chunk_send_ns += elapsed_ns(send_started);
         if !sent {
             return false;
         }
     }
     if let Some(control) = prepared.control {
-        batch.push(control);
+        batch.push(ObservationOp::unconditional(control));
         if batch.len() >= config.batch_size {
             let send_started = std::time::Instant::now();
             let sent =
-                send_observation(sender, Observation::new(std::mem::take(batch)), diagnostics);
+                send_scanner_batch(sender, ScannerBatch::new(std::mem::take(batch)), diagnostics);
             *chunk_send_ns += elapsed_ns(send_started);
             if !sent {
                 return false;
@@ -2368,17 +2837,34 @@ fn open_control_file(path: &Path) -> std::io::Result<fs::File> {
     fs::File::open(path)
 }
 
-fn send_observation(
+fn send_scanner_batch(
     sender: &std::sync::mpsc::Sender<WalkMessage>,
-    observation: Observation,
+    batch: ScannerBatch,
     diagnostics: Option<&ScanDiagnosticsRecorder>,
 ) -> bool {
     if let Some(diagnostics) = diagnostics {
         diagnostics.handoff_sent();
     }
-    let sent = sender.send(WalkMessage::Observation(observation)).is_ok();
+    let sent = sender.send(WalkMessage::Batch(batch)).is_ok();
     if !sent {
         // Balance the reservation when the receiver disappeared before accepting it.
+        if let Some(diagnostics) = diagnostics {
+            diagnostics.handoff_received();
+        }
+    }
+    sent
+}
+
+fn send_detached_directories(
+    sender: &std::sync::mpsc::Sender<WalkMessage>,
+    directories: Vec<DetachedDirectory>,
+    diagnostics: Option<&ScanDiagnosticsRecorder>,
+) -> bool {
+    if let Some(diagnostics) = diagnostics {
+        diagnostics.handoff_sent();
+    }
+    let sent = sender.send(WalkMessage::DetachedDirectories(directories)).is_ok();
+    if !sent {
         if let Some(diagnostics) = diagnostics {
             diagnostics.handoff_received();
         }
@@ -2952,19 +3438,99 @@ fn record_adaptive_worker_expansion(diagnostics: Option<&std::sync::Arc<ScanDiag
     });
 }
 
+fn scan_detached_directories(
+    root: &Path,
+    config: &ScanConfig,
+    collect_diagnostics: bool,
+    policy: WorkerPolicyExperiment,
+) -> Result<(ScanReport, DetachedIndexBuilder, Option<ScanDiagnostics>)> {
+    let root_metadata = {
+        crate::counters::bump(|counts| counts.stats += 1);
+        fs::symlink_metadata(root)
+    }
+    .map_err(|error| Error::io(root, error))?;
+    if !root_metadata.is_dir() {
+        return Err(Error::io(
+            root,
+            std::io::Error::new(std::io::ErrorKind::NotADirectory, "scan root is not a directory"),
+        ));
+    }
+    let root_dev = attrs_from(&root_metadata).dev;
+    let available_parallelism =
+        std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+    let pool = config.worker_pool_for(available_parallelism);
+    let diagnostics = collect_diagnostics
+        .then(|| ScanDiagnosticsRecorder::new(pool, available_parallelism, policy));
+
+    if config.max_depth == Some(0) {
+        if let Some(diagnostics) = &diagnostics {
+            diagnostics.mark_not_run();
+            diagnostics.record_queue_finish(0, 0);
+        }
+        return Ok((
+            ScanReport::default(),
+            DetachedIndexBuilder::new(root, config.scope(), config.types_shared()),
+            diagnostics.as_ref().map(|value| value.finish()),
+        ));
+    }
+
+    let walk_started = crate::counters::enabled().then(std::time::Instant::now);
+    let (output, builder) =
+        scan_concurrent_detached(root, config, root_dev, pool, diagnostics.as_ref(), policy)?;
+    if let Some(started) = walk_started {
+        let elapsed = elapsed_ns(started) / 1_000;
+        crate::counters::bump(|counts| {
+            counts.detached_walk_us = counts.detached_walk_us.saturating_add(elapsed);
+        });
+    }
+    Ok((output, builder, diagnostics.as_ref().map(|value| value.finish())))
+}
+
+fn consolidate_detached_index(
+    output: ScanReport,
+    builder: DetachedIndexBuilder,
+) -> (Index, ScanReport) {
+    let entries = output.entries;
+    let consolidate_started = crate::counters::enabled().then(std::time::Instant::now);
+    let mut index = builder.finish();
+    if let Some(started) = consolidate_started {
+        let elapsed = elapsed_ns(started) / 1_000;
+        crate::counters::bump(|counts| {
+            counts.detached_builds = counts.detached_builds.saturating_add(1);
+            counts.detached_entries = counts.detached_entries.saturating_add(entries);
+            counts.detached_finish_us = counts.detached_finish_us.saturating_add(elapsed);
+        });
+    }
+    index.set_initial_freshness(output.is_complete());
+    (index, output)
+}
+
 /// Walk `root` and return a fully populated index.
 pub fn scan_into_index(root: &Path, config: &ScanConfig) -> Result<(Index, ScanReport)> {
     config.validate()?;
     let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
-    let mut index = Index::new_with_scope_and_types(&root, config.scope(), config.types_shared());
+    let (output, builder, _diagnostics) =
+        scan_detached_directories(&root, config, false, WorkerPolicyExperiment::ShippedOneShot)?;
+    Ok(consolidate_detached_index(output, builder))
+}
+
+#[cfg(test)]
+fn scan_into_index_via_scanner(root: &Path, config: &ScanConfig) -> Result<(Index, ScanReport)> {
+    let mut index = Index::new_with_scope_and_types(root, config.scope(), config.types_shared());
     let mut apply_error: Option<Error> = None;
-    let report = scan(&root, config, &mut |observation| {
-        if apply_error.is_none() {
-            if let Err(error) = index.apply_baseline(&observation) {
-                apply_error = Some(error);
+    let (report, _diagnostics) = scan_internal(
+        root,
+        config,
+        &mut |batch| {
+            if apply_error.is_none() {
+                if let Err(error) = index.apply_scanner_baseline(batch) {
+                    apply_error = Some(error);
+                }
             }
-        }
-    })?;
+        },
+        false,
+        WorkerPolicyExperiment::ShippedOneShot,
+    )?;
     if let Some(error) = apply_error {
         return Err(error);
     }
@@ -2993,25 +3559,9 @@ pub fn scan_into_index_with_policy_diagnostics(
 ) -> Result<(Index, ScanReport, ScanDiagnostics)> {
     config.validate()?;
     let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
-    let mut index = Index::new_with_scope_and_types(&root, config.scope(), config.types_shared());
-    let mut apply_error: Option<Error> = None;
-    let (report, diagnostics) = scan_with_policy_diagnostics(
-        &root,
-        config,
-        &mut |observation| {
-            if apply_error.is_none() {
-                if let Err(error) = index.apply_baseline(&observation) {
-                    apply_error = Some(error);
-                }
-            }
-        },
-        policy,
-    )?;
-    if let Some(error) = apply_error {
-        return Err(error);
-    }
-    index.set_initial_freshness(report.is_complete());
-    Ok((index, report, diagnostics))
+    let (output, builder, diagnostics) = scan_detached_directories(&root, config, true, policy)?;
+    let (index, report) = consolidate_detached_index(output, builder);
+    Ok((index, report, diagnostics.expect("diagnostic detached scan creates a recorder")))
 }
 
 /// Diff the filesystem against an existing index and emit conditional observations.
@@ -4826,6 +5376,93 @@ mod tests {
     }
 
     #[test]
+    fn detached_bootstrap_matches_the_streaming_reducer_for_each_worker_count() {
+        let dir = branching_tree();
+        for threads in 1..=4 {
+            let config = ScanConfig {
+                read_controls: false,
+                threads: Some(threads),
+                ..ScanConfig::default()
+            };
+            let _ = detached_and_streaming_indexes(dir.path(), &config);
+        }
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn detached_control_bootstrap_matches_the_streaming_reducer_for_each_worker_count() {
+        let dir = controlled_branching_tree();
+        for threads in 1..=4 {
+            let config = ScanConfig { threads: Some(threads), ..ScanConfig::default() };
+            let _ = detached_and_streaming_indexes(dir.path(), &config);
+        }
+    }
+
+    #[test]
+    fn detached_bootstrap_preserves_the_exact_first_mutation() {
+        let dir = branching_tree();
+        let config = ScanConfig { read_controls: false, threads: Some(4), ..ScanConfig::default() };
+        let (mut detached, mut streaming) = detached_and_streaming_indexes(dir.path(), &config);
+        let created = dir.path().join("t3/m2/after-bootstrap.rs");
+        write_file(&created, b"new fact");
+        let attrs = attrs_from(&fs::symlink_metadata(&created).expect("new file metadata"));
+        let observation = Observation::new(vec![Op::Upsert {
+            path: PathBuf::from("t3/m2/after-bootstrap.rs"),
+            kind: EntryKind::File,
+            attrs,
+        }]);
+
+        let detached_outcome = detached.apply(&observation).expect("detached mutation");
+        let streaming_outcome = streaming.apply(&observation).expect("streaming mutation");
+        assert_eq!(detached_outcome, streaming_outcome);
+        assert_indexes_equal(&detached, &streaming);
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn detached_control_bootstrap_preserves_the_exact_first_mutation() {
+        let dir = controlled_branching_tree();
+        let config = ScanConfig { threads: Some(4), ..ScanConfig::default() };
+        let (mut detached, mut streaming) = detached_and_streaming_indexes(dir.path(), &config);
+        let observation = Observation::new(vec![Op::ControlUpsert {
+            path: PathBuf::from(".gitignore"),
+            source: b"leaf-2.dat\n".to_vec(),
+        }]);
+
+        let detached_outcome = detached.apply(&observation).expect("detached control mutation");
+        let streaming_outcome = streaming.apply(&observation).expect("streaming control mutation");
+        assert_eq!(detached_outcome, streaming_outcome);
+        assert_indexes_equal(&detached, &streaming);
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn detached_control_bootstrap_matches_control_limit_failures() {
+        let pattern_dir = tempfile::tempdir().expect("pattern tempdir");
+        write_file(
+            &pattern_dir.path().join(".gitignore"),
+            &vec![b'x'; crate::control::MAX_CONTROL_PATTERN_BYTES + 1],
+        );
+        let config = ScanConfig { threads: Some(4), ..ScanConfig::default() };
+        let canonical = pattern_dir.path().canonicalize().expect("canonical pattern root");
+        let Err(detached_error) = scan_into_index(pattern_dir.path(), &config) else {
+            panic!("detached scan accepted an oversized pattern");
+        };
+        let Err(streaming_error) = scan_into_index_via_scanner(&canonical, &config) else {
+            panic!("streaming scan accepted an oversized pattern");
+        };
+        assert!(matches!(detached_error, Error::ControlPatternLimit { .. }));
+        assert_eq!(detached_error.to_string(), streaming_error.to_string());
+
+        let source_dir = tempfile::tempdir().expect("source tempdir");
+        write_file(
+            &source_dir.path().join(".gitignore"),
+            &vec![b'x'; crate::control::MAX_CONTROL_TABLE_BYTES],
+        );
+        let _ = detached_and_streaming_indexes(source_dir.path(), &config);
+    }
+
+    #[test]
     fn fingerprint_metadata_observes_mutation_after_directory_enumeration() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("changing.bin");
@@ -4864,6 +5501,18 @@ mod tests {
         dir
     }
 
+    #[cfg(feature = "gitignore")]
+    fn controlled_branching_tree() -> tempfile::TempDir {
+        let dir = branching_tree();
+        write_file(&dir.path().join(".gitignore"), b"leaf-1.dat\nt7/\n");
+        write_file(&dir.path().join("t3/.gitignore"), b"!m2/leaf-1.dat\n*.tmp\n");
+        write_file(&dir.path().join("t3/m2/generated.tmp"), b"ignored by nested control");
+        write_file(&dir.path().join("t7/.gitignore"), b"!m0/leaf-1.dat\n");
+        fs::create_dir_all(dir.path().join("t5/.gitignore")).expect("non-file control directory");
+        write_file(&dir.path().join("t5/.gitignore/ordinary.txt"), b"ordinary child");
+        dir
+    }
+
     fn index_fingerprint(index: &Index) -> Vec<(PathBuf, EntryKind, Attrs)> {
         let mut entries: Vec<(PathBuf, EntryKind, Attrs)> = Vec::new();
         let mut queue = vec![PathBuf::new()];
@@ -4883,6 +5532,50 @@ mod tests {
         }
         entries.sort_by(|left, right| left.0.cmp(&right.0));
         entries
+    }
+
+    fn detached_and_streaming_indexes(root: &Path, config: &ScanConfig) -> (Index, Index) {
+        let canonical = root.canonicalize().expect("canonical test root");
+        let (streaming, streaming_report) =
+            scan_into_index_via_scanner(&canonical, config).expect("streaming oracle");
+        let (detached, detached_report) = scan_into_index(root, config).expect("detached scan");
+
+        assert_eq!(detached_report.dirs_read, streaming_report.dirs_read);
+        assert_eq!(detached_report.entries, streaming_report.entries);
+        assert_eq!(detached_report.files_walked, streaming_report.files_walked);
+        assert_eq!(detached_report.bytes_walked, streaming_report.bytes_walked);
+        assert_eq!(
+            detached_report.errors.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            streaming_report.errors.iter().map(ToString::to_string).collect::<Vec<_>>()
+        );
+        assert_indexes_equal(&detached, &streaming);
+        (detached, streaming)
+    }
+
+    fn assert_indexes_equal(left: &Index, right: &Index) {
+        assert_eq!(index_fingerprint(left), index_fingerprint(right));
+        assert_eq!(left.total(), right.total());
+        assert_eq!(left.partition_total(), right.partition_total());
+        assert_eq!(left.scope(), right.scope());
+        assert_eq!(left.freshness(), right.freshness());
+        assert_eq!(left.state(), right.state());
+        assert_eq!(left.clock(), right.clock());
+        assert_eq!(left.len(), right.len());
+        assert_eq!(left.issues(), right.issues());
+        assert_eq!(
+            left.controls()
+                .sources()
+                .map(|(path, source)| (path, source.to_vec()))
+                .collect::<Vec<_>>(),
+            right
+                .controls()
+                .sources()
+                .map(|(path, source)| (path, source.to_vec()))
+                .collect::<Vec<_>>()
+        );
+        for (path, _, _) in index_fingerprint(left) {
+            assert_eq!(left.is_ignored(&path), right.is_ignored(&path), "{path:?}");
+        }
     }
 
     /// A small tree whose mutation crosses every structural reconciliation boundary.
@@ -6230,7 +6923,7 @@ mod tests {
         let (index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
 
         assert_eq!(index.clock(), crate::Clock::ZERO);
-        assert!(index.since(crate::Clock::ZERO).deltas.is_empty());
+        assert!(index.since(crate::Clock::ZERO).commits.is_empty());
     }
 
     #[test]

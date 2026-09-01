@@ -65,8 +65,8 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 36 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 5 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 
 ## Every experiment, including the failures
@@ -147,6 +147,37 @@ dead end.
 | 068 | [Flush the rendered report before joining the snapshot writer](#exp068--flush-the-rendered-report-before-joining-the-snapshot-writer) | H101 | `default-tree` | +1.2% | ✅ accepted |
 | 069 | [Order the content file map by path bytes instead of components](#exp069--order-the-content-file-map-by-path-bytes-instead-of-components) | H102 | `content-cache-hit` | -31.0% | ✅ accepted |
 | 070 | [Validate the separator fixes against the result they landed on](#exp070--validate-the-separator-fixes-against-the-result-they-landed-on) | — | `content-cache-hit` | -1.3% | ✅ accepted |
+| 071 | [PR #51 halves its base regression but does not restore main parity](#exp071--pr-51-halves-its-base-regression-but-does-not-restore-main-parity) | — | `cold-scan-index` | -49.5% | ✅ accepted |
+| 072 | [Attribute the PR #51 residual to path-keyed ancestry preflight](#exp072--attribute-the-pr-51-residual-to-pathkeyed-ancestry-preflight) | — | `cold-scan-index` | -66.7% | ⛔ blocked |
+| 073 | [PR #51 remains above the pre-rewrite whole-scan control](#exp073--pr-51-remains-above-the-prerewrite-wholescan-control) | — | `cold-scan-index` | +144.5% | ⛔ blocked |
+| 074 | [PR #51 residual reproduced on the current registry tree](#exp074--pr-51-residual-reproduced-on-the-current-registry-tree) | — | `default-tree` | +7.7% | 📏 baseline |
+| 075 | [Scoped counters stay below the exploratory acceptance threshold](#exp075--scoped-counters-stay-below-the-exploratory-acceptance-threshold) | — | `default-tree` | +1.9% | 📏 baseline |
+| 076 | [Correctness fixes preserve the streaming performance baseline](#exp076--correctness-fixes-preserve-the-streaming-performance-baseline) | — | `default-tree` | +0.3% | 📏 baseline |
+| 077 | [Select detached consequences once per batch](#exp077--select-detached-consequences-once-per-batch) | H91 | `default-tree` | -6.6% | ✅ accepted |
+| 078 | [Remove the eager compatibility projection](#exp078--remove-the-eager-compatibility-projection) | H92 | `delta-apply-large` | -1.6% | ✅ accepted |
+| 079 | [Resolve scanner parents before mutation](#exp079--resolve-scanner-parents-before-mutation) | H93 | `opened-discovery` | -9.5% | ✅ accepted |
+| 080 | [Skip oversized journal clones](#exp080--skip-oversized-journal-clones) | H94 | `delta-apply-large` | -3.5% | ✅ accepted |
+| 081 | [Borrow impact paths until the bounded result escapes](#exp081--borrow-impact-paths-until-the-bounded-result-escapes) | H95 | `opened-discovery` | -1.1% | ❌ rejected |
+| 082 | [Move scanner commits directly into the journal](#exp082--move-scanner-commits-directly-into-the-journal) | H96 | `opened-discovery` | -0.0% | ❌ rejected |
+| 083 | [Skip unignored roll-up maintenance in control-free scopes](#exp083--skip-unignored-rollup-maintenance-in-controlfree-scopes) | H97 | `default-tree` | -1.6% | ❌ rejected |
+| 084 | [Compact optional fixed-partition storage](#exp084--compact-optional-fixedpartition-storage) | H98 | `default-tree` | -2.6% | ❌ rejected |
+| 085 | [Compact scanner batches and optional fixed partitions](#exp085--compact-scanner-batches-and-optional-fixed-partitions) | H99 | `default-tree` | -2.6% | ❌ rejected |
+| 086 | [Scanner phase counters expose preparation without observer cost](#exp086--scanner-phase-counters-expose-preparation-without-observer-cost) | H103 | `default-tree` | -0.1% | 📏 baseline |
+| 087 | [Fuse detached control-free scanner preparation and reduction](#exp087--fuse-detached-controlfree-scanner-preparation-and-reduction) | H104 | `default-tree` | -1.1% | ❌ rejected |
+| 088 | [Coalesce causal scanner fragments in the one-shot builder](#exp088--coalesce-causal-scanner-fragments-in-the-oneshot-builder) | H105 | `default-tree` | +0.1% | ❌ rejected |
+| 089 | [Suppress causal publication in a producer-only scan](#exp089--suppress-causal-publication-in-a-produceronly-scan) | H106 | `cold-scan-producer` | +0.7% | ❌ rejected |
+| 090 | [Bound FullIndex scan-diagnostics overhead](#exp090--bound-fullindex-scandiagnostics-overhead) | H97 | `default-tree` | -3.5% | ✅ accepted |
+| 091 | [Pipeline directory-shaped detached bootstrap](#exp091--pipeline-directoryshaped-detached-bootstrap) | H86, S1b, H60 | `cold-scan-index` | +2.5% | ↩︎ superseded |
+| 092 | [Share one filesystem walker across bootstrap modes](#exp092--share-one-filesystem-walker-across-bootstrap-modes) | H86 | `cold-scan-index` | +1.1% | ✅ accepted |
+| 093 | [Use transient hashed parents and unique child insertion](#exp093--use-transient-hashed-parents-and-unique-child-insertion) | H86, S1b | `cold-scan-index` | +0.8% | ✅ accepted |
+| 094 | [Borrow completed directory roll-ups](#exp094--borrow-completed-directory-rollups) | H86, H60 | `cold-scan-index` | +0.2% | ✅ accepted |
+| 095 | [Move incoming names and retire consumed paths](#exp095--move-incoming-names-and-retire-consumed-paths) | H86, S1b, S2 | `cold-scan-index` | -0.3% | ✅ accepted |
+| 096 | [Apply fixed controls once per detached directory](#exp096--apply-fixed-controls-once-per-detached-directory) | H86 | `cold-scan-index` | -33.6% | ✅ accepted |
+| 097 | [Audit historical lifecycle parity after detached bootstrap](#exp097--audit-historical-lifecycle-parity-after-detached-bootstrap) | H86 | `cold-scan-index` | +0.9% | ⏳ in progress |
+| 098 | [Share pool orchestration through a dynamic consumer](#exp098--share-pool-orchestration-through-a-dynamic-consumer) | H86 | `cold-scan-index` | +0.8% | ❌ rejected |
+| 099 | [Monomorphize shared concurrent-walk consumption](#exp099--monomorphize-shared-concurrentwalk-consumption) | H86 | `cold-scan-index` | +0.2% | ✅ accepted |
+| 100 | [Move directory-only state out of line](#exp100--move-directoryonly-state-out-of-line) | H86 | `default-tree` | -0.8% | ❌ rejected |
+| 101 | [Compact detached child topology with local promotion](#exp101--compact-detached-child-topology-with-local-promotion) | H86 | `default-tree` | -7.7% | ✅ accepted |
 
 ## The experiments
 
@@ -2540,6 +2571,994 @@ the run bounds the fixes below the margin rather than showing a cost.
 Full record:
 [`exp-070-validate-the-separator-fixes-against-the-result-they-landed-.md`](../experiments/exp-070-validate-the-separator-fixes-against-the-result-they-landed-.md)
 
+### exp-071 — PR #51 halves its base regression but does not restore main parity
+
+✅ accepted · 2026-09-01 · no hypothesis id · commit `e8f1bed`
+
+Control: PR #51 base at 954a959
+
+Candidate: PR #51 head at e8f1bed
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1698.6 | 847.7 | -49.55% | [-51.44%, -43.36%] |
+| component (ms) | 1477.8 | 628.0 | -56.89% | [-59.10%, -50.73%] |
+| cpu (ms) | 2269.8 | 1419.2 | -37.05% | [-38.18%, -36.82%] |
+| user (ms) | 1676.8 | 841.8 | -49.61% | [-50.63%, -47.28%] |
+| system (ms) | 593.0 | 576.4 | -3.04% (n.s.) | [-9.66%, +1.28%] |
+| peak rss (MiB) | 103.0 | 101.4 | -1.30% (n.s.) | [-2.29%, +0.38%] |
+
+Cost to carry: 304 lines; no new dependencies; new failure mode: The uncontrolled host
+regime prevents a final parity claim; repeat on a quiet host for acceptance..
+
+Partial pipeline simplification; no new dependency or unsafe code.
+
+**Accepted:** The exact-result candidate removes about half of the base cost, but
+remains above the pre-rewrite control; accept the mechanisms without closing the parity
+blocker.
+
+Full record:
+[`exp-071-pr-51-halves-its-base-regression-but-does-not-restore-main-p.md`](../experiments/exp-071-pr-51-halves-its-base-regression-but-does-not-restore-main-p.md)
+
+### exp-072 — Attribute the PR #51 residual to path-keyed ancestry preflight
+
+⛔ blocked · 2026-09-01 · no hypothesis id · commit `e8f1bed`
+
+Control: PR #51 without detached publication
+
+Candidate: diagnostic PR #51 without detached publication or ancestry overlay
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 706.8 | 384.4 | -45.47% | [-48.29%, -39.43%] |
+| component (ms) | 480.5 | 160.5 | -66.65% | [-68.85%, -61.36%] |
+| cpu (ms) | 1283.4 | 949.9 | -25.30% | [-29.54%, -21.13%] |
+| user (ms) | 691.6 | 374.1 | -45.94% | [-47.01%, -42.91%] |
+| system (ms) | 579.9 | 579.1 | +0.91% (n.s.) | [-14.92%, +11.08%] |
+| peak rss (MiB) | 97.6 | 83.2 | -14.21% | [-16.10%, -12.71%] |
+
+Cost to carry: 0 lines; no new dependencies; new failure mode: The candidate omits
+ancestry validation and is evidence about cost only; applying it directly would weaken
+atomic correctness..
+
+Disposable attribution variants only; the plan requires one private resolved-parent
+proof and no second reducer.
+
+**Blocked:** Removing the path-keyed ancestry overlay closes most of the remaining
+engine gap, but the diagnostic candidate cannot ship until scanner preparation supplies
+an equivalent atomic proof.
+
+Full record:
+[`exp-072-attribute-the-pr-51-residual-to-path-keyed-ancestry-prefligh.md`](../experiments/exp-072-attribute-the-pr-51-residual-to-path-keyed-ancestry-prefligh.md)
+
+### exp-073 — PR #51 remains above the pre-rewrite whole-scan control
+
+⛔ blocked · 2026-09-01 · no hypothesis id · commit `e8f1bed`
+
+Control: pre-rewrite main at b75bf85
+
+Candidate: PR #51 head at e8f1bed
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 349.9 | 847.7 | +144.46% (regression) | [+129.73%, +165.69%] |
+| component (ms) | 132.4 | 628.0 | +386.48% (regression) | [+324.22%, +414.44%] |
+| cpu (ms) | 911.8 | 1419.2 | +55.50% (regression) | [+49.36%, +59.05%] |
+| user (ms) | 327.6 | 841.8 | +156.48% (regression) | [+150.95%, +165.65%] |
+| system (ms) | 580.6 | 576.4 | -1.80% (n.s.) | [-11.78%, +3.83%] |
+| peak rss (MiB) | 61.2 | 101.4 | +66.05% (regression) | [+57.98%, +67.43%] |
+
+Cost to carry: 0 lines; no new dependencies; new failure mode: The uncontrolled host
+regime prevents a final parity claim; repeat the finished design on a quiet host..
+
+Measurement only; implementation is owned by the linked parity plan.
+
+**Blocked:** The exact-result PR head remains about 2.4 times the control wall time and
+4.7 times its engine component, so the one-shot parity blocker remains open.
+
+Full record:
+[`exp-073-pr-51-remains-above-the-pre-rewrite-whole-scan-control.md`](../experiments/exp-073-pr-51-remains-above-the-pre-rewrite-whole-scan-control.md)
+
+### exp-074 — PR #51 residual reproduced on the current registry tree
+
+📏 baseline · 2026-09-01 · no hypothesis id · commit `e8f1bed`
+
+**`default-tree`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 59.0 |
+| component (ms) | 54.8 |
+| cpu (ms) | 310.4 |
+| user (ms) | 17.7 |
+| system (ms) | 292.8 |
+| peak rss (MiB) | 11.4 |
+
+Other jobs, wall time: `cold-scan-index` 68 ms.
+
+**Baseline:** On this 11,142-entry exploratory subject, PR #51 remained 7.68% slower on
+default-tree and 8.21% slower on cold-scan-index; the run establishes the local gap but
+is not claim-grade.
+
+Full record:
+[`exp-074-pr-51-residual-reproduced-on-the-current-registry-tree.md`](../experiments/exp-074-pr-51-residual-reproduced-on-the-current-registry-tree.md)
+
+### exp-075 — Scoped counters stay below the exploratory acceptance threshold
+
+📏 baseline · 2026-09-01 · no hypothesis id · commit `1393d31`
+
+**`default-tree`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 59.3 |
+| component (ms) | 55.2 |
+| cpu (ms) | 342.9 |
+| user (ms) | 60.9 |
+| system (ms) | 282.4 |
+| peak rss (MiB) | 14.0 |
+
+Other jobs, wall time: `cold-scan-index` 76 ms.
+
+**Baseline:** The three-pair uncontrolled screen measured +1.93% on default-tree and
+-5.59% on cold-scan-index; this is insufficient for a timing claim but bounds the
+enabled-off instrumentation below the 3% experiment bar in the slower direction.
+
+Full record:
+[`exp-075-scoped-counters-stay-below-the-exploratory-acceptance-thresh.md`](../experiments/exp-075-scoped-counters-stay-below-the-exploratory-acceptance-thresh.md)
+
+### exp-076 — Correctness fixes preserve the streaming performance baseline
+
+📏 baseline · 2026-09-01 · no hypothesis id · commit `b5d9ba4`
+
+**`default-tree`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 60.4 |
+| component (ms) | 56.2 |
+| cpu (ms) | 352.6 |
+| user (ms) | 62.3 |
+| system (ms) | 290.4 |
+| peak rss (MiB) | 14.3 |
+
+Other jobs, wall time: `cold-scan-index` 87 ms, `delta-apply-batched` 579 ms,
+`delta-apply-large` 659 ms, `opened-discovery` 362 ms.
+
+**Baseline:** All five exact jobs passed their semantic oracles; default-tree moved
++0.29%, opened discovery -2.84% wall and +0.54% component, and both public delta jobs
+stayed within 1.1% wall, with four-pair intervals crossing zero.
+
+Full record:
+[`exp-076-correctness-fixes-preserve-the-streaming-performance-baselin.md`](../experiments/exp-076-correctness-fixes-preserve-the-streaming-performance-baselin.md)
+
+### exp-077 — Select detached consequences once per batch
+
+✅ accepted · 2026-09-01 · H91 · commit `da5b8bc`
+
+Control: correctness and instrumentation baseline at 1393d31
+
+Candidate: zero-sized detached consequence sink at da5b8bc
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 59.7 | 55.6 | -6.57% | [-11.20%, -4.49%] |
+| component (ms) | 55.5 | 51.5 | -7.24% | [-11.96%, -4.86%] |
+| cpu (ms) | 346.9 | 316.0 | -6.55% | [-12.77%, -5.45%] |
+| user (ms) | 63.4 | 39.9 | -36.77% | [-37.91%, -36.27%] |
+| system (ms) | 283.5 | 276.2 | +0.18% (n.s.) | [-7.24%, +1.71%] |
+| peak rss (MiB) | 14.2 | 13.7 | -2.92% | [-4.21%, -2.34%] |
+
+Other jobs, wall time: `cold-scan-index` -3.0% (n.s.), `delta-apply-batched` +0.3%
+(n.s.), `delta-apply-large` +0.0% (n.s.), `opened-discovery` +0.0% (n.s.).
+
+Cost to carry: 281 lines; no new dependencies.
+
+One private zero-sized sink and one generic reducer; no per-entry lifecycle branch,
+dependency, unsafe block, public mode, or duplicated mutation engine.
+
+**Accepted:** default-tree improved 6.57% with a paired 95% interval of -11.20% to
+-4.49%; component time improved 7.24%, detached component allocations fell 33.7%, and
+all exact streaming controls preserved their semantic oracles without a material timing
+shift.
+
+Full record:
+[`exp-077-select-detached-consequences-once-per-batch.md`](../experiments/exp-077-select-detached-consequences-once-per-batch.md)
+
+### exp-078 — Remove the eager compatibility projection
+
+✅ accepted · 2026-09-01 · H92 · commit `db18e5e`
+
+Control: detached consequence sink at da5b8bc
+
+Candidate: single exact Commit representation at db18e5e
+
+**`delta-apply-large`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 651.6 | 641.9 | -1.55% | [-2.46%, -1.30%] |
+| component (ms) | 411.7 | 402.5 | -2.38% | [-3.65%, -2.03%] |
+| cpu (ms) | 648.6 | 638.8 | -1.50% | [-2.44%, -1.31%] |
+| user (ms) | 630.1 | 621.0 | -1.40% | [-2.35%, -1.22%] |
+| system (ms) | 17.9 | 17.2 | -5.72% (n.s.) | [-10.77%, +0.85%] |
+| blocked (ms) | 3.1 | 2.9 | -3.82% (n.s.) | [-10.60%, +2.35%] |
+| peak rss (MiB) | 169.7 | 157.7 | -7.09% | [-7.50%, -6.70%] |
+
+Other jobs, wall time: `delta-apply-batched` -1.1%, `opened-discovery` -0.8% (n.s.).
+
+Cost to carry: 288 lines; no new dependencies.
+
+Deletes 128 net lines and one unreleased public compatibility type; adds no dependency,
+unsafe block, failure mode, or alternate reducer.
+The generic 3% threshold for added complexity does not apply to a strict simplification.
+
+**Accepted:** Large-batch wall time improved 1.55% with a paired 95% interval of -2.46%
+to -1.30%, component time improved 2.38%, and peak RSS improved 7.09%; batched wall time
+also improved 1.05%, while opened wall time was noninferior and its component improved
+1.50%.
+
+Full record:
+[`exp-078-remove-the-eager-compatibility-projection.md`](../experiments/exp-078-remove-the-eager-compatibility-projection.md)
+
+### exp-079 — Resolve scanner parents before mutation
+
+✅ accepted · 2026-09-01 · H93 · commit `d9979aa`
+
+Control: single exact Commit representation at db18e5e
+
+Candidate: owned scanner batch with resolved parent proof at d9979aa
+
+**`opened-discovery`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 309.0 | 280.8 | -9.50% | [-10.89%, -8.14%] |
+| component (ms) | 156.3 | 146.4 | -6.81% | [-7.79%, -5.56%] |
+| cpu (ms) | 324.7 | 295.5 | -9.19% | [-10.78%, -7.94%] |
+| user (ms) | 173.8 | 143.2 | -17.84% | [-18.52%, -17.27%] |
+| system (ms) | 151.2 | 152.2 | +0.49% (n.s.) | [-1.24%, +2.98%] |
+| peak rss (MiB) | 36.1 | 35.4 | -2.15% | [-2.55%, -1.56%] |
+
+Other jobs, wall time: `cold-scan-index` +0.3% (n.s.), `default-tree` -0.4% (n.s.).
+
+Cost to carry: 572 lines; no new dependencies.
+
+Adds one private owned-batch/proof lane with no dependency, unsafe block, public trust
+flag, or alternate commit/fact reducer; public, refresh, and watch observations retain
+general atomic preflight.
+
+**Accepted:** Opened discovery improved 9.50% with a paired 95% interval of -10.89% to
+-8.14%; default and cold one-shot paths were noninferior, scoped allocations fell, and
+the final stack matched or beat the pre-rewrite control.
+
+Full record:
+[`exp-079-resolve-scanner-parents-before-mutation.md`](../experiments/exp-079-resolve-scanner-parents-before-mutation.md)
+
+### exp-080 — Skip oversized journal clones
+
+✅ accepted · 2026-09-01 · H94 · commit `e2ac4f9`
+
+Control: resolved-parent proof at d9979aa
+
+Candidate: journal capacity preflight at e2ac4f9
+
+**`delta-apply-large`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 677.6 | 654.9 | -3.46% | [-4.32%, -2.61%] |
+| component (ms) | 427.7 | 407.5 | -4.52% | [-5.43%, -3.99%] |
+| cpu (ms) | 674.5 | 651.5 | -3.47% | [-4.39%, -2.64%] |
+| user (ms) | 654.6 | 632.3 | -3.51% | [-3.84%, -2.68%] |
+| system (ms) | 20.9 | 19.6 | -6.29% (n.s.) | [-16.86%, +1.44%] |
+| blocked (ms) | 3.2 | 3.3 | +1.31% (n.s.) | [-8.17%, +20.25%] |
+| peak rss (MiB) | 159.0 | 142.4 | -10.49% | [-11.56%, -7.71%] |
+
+Other jobs, wall time: `delta-apply-batched` -1.6%, `opened-discovery` +0.1% (n.s.).
+
+Cost to carry: 12 lines; no new dependencies.
+
+Moves the existing journal capacity decision before cloning, deletes two net lines, and
+adds no dependency, unsafe block, public API, alternate representation, or failure mode.
+
+**Accepted:** Large exact-batch wall time improved 3.46% with a paired 95% interval of
+-4.32% to -2.61%; 100003 scoped allocations disappeared, batched exact updates also
+improved, and opened discovery was unchanged.
+
+Full record:
+[`exp-080-skip-oversized-journal-clones.md`](../experiments/exp-080-skip-oversized-journal-clones.md)
+
+### exp-081 — Borrow impact paths until the bounded result escapes
+
+❌ rejected · 2026-09-01 · H95
+
+Control: journal capacity preflight at e2ac4f9
+
+Candidate: borrowed impact-path working-tree spike
+
+**`opened-discovery`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 286.8 | 282.2 | -1.07% (n.s.) | [-4.00%, +1.82%] |
+| component (ms) | 144.8 | 142.8 | -1.49% (n.s.) | [-4.55%, +4.32%] |
+| cpu (ms) | 306.4 | 300.4 | -1.16% (n.s.) | [-3.80%, +0.98%] |
+| user (ms) | 146.1 | 145.4 | -0.95% (n.s.) | [-1.80%, +0.26%] |
+| system (ms) | 157.9 | 154.3 | -1.66% (n.s.) | [-6.27%, +3.46%] |
+| peak rss (MiB) | 34.8 | 35.0 | +0.45% (n.s.) | [-0.79%, +1.77%] |
+
+Other jobs, wall time: `delta-apply-batched` +0.8% (n.s.), `delta-apply-large` +0.9%
+(n.s.).
+
+Cost to carry: 10 lines; no new dependencies.
+
+Replaces temporary owned PathBuf values with borrowed Path references and clones only
+the bounded escaping set; adds no dependency, unsafe block, public API, or failure mode,
+but does add lifetime coupling without a demonstrated timing benefit.
+
+**Rejected:** Opened scoped allocations fell 8.2%, but wall time improved only 1.07%
+with a paired 95% interval crossing zero; large exact-batch wall time moved 0.92% slower
+and batched timing was unchanged.
+
+Full record:
+[`exp-081-borrow-impact-paths-until-the-bounded-result-escapes.md`](../experiments/exp-081-borrow-impact-paths-until-the-bounded-result-escapes.md)
+
+### exp-082 — Move scanner commits directly into the journal
+
+❌ rejected · 2026-09-01 · H96
+
+Control: journal capacity preflight at e2ac4f9
+
+Candidate: journal-owned scanner commit working-tree spike
+
+**`opened-discovery`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 284.5 | 281.2 | -0.01% (n.s.) | [-2.15%, +5.77%] |
+| component (ms) | 145.5 | 144.6 | -0.36% (n.s.) | [-1.60%, +4.85%] |
+| cpu (ms) | 299.2 | 294.3 | -0.38% (n.s.) | [-2.71%, +4.27%] |
+| user (ms) | 142.4 | 140.9 | -0.74% (n.s.) | [-1.81%, +1.24%] |
+| system (ms) | 155.3 | 152.9 | +0.69% (n.s.) | [-4.07%, +7.05%] |
+| peak rss (MiB) | 35.2 | 36.2 | +2.77% (regression) | [+1.79%, +4.67%] |
+
+Cost to carry: 53 lines; no new dependencies.
+
+Adds an internal scanner receipt and separate owned journal-retention route so discovery
+can move rather than clone commits; no public API, dependency, unsafe block, or semantic
+oracle changes, but 31 net lines and another result form are not justified by the
+timing.
+
+**Rejected:** Opened scoped allocations fell roughly 10.3% and scanner journal clones
+nearly disappeared, but wall time changed -0.01% with a paired 95% interval of -2.15% to
++5.77%; component time was also unchanged and the candidate added a second private
+result form.
+
+Full record:
+[`exp-082-move-scanner-commits-directly-into-the-journal.md`](../experiments/exp-082-move-scanner-commits-directly-into-the-journal.md)
+
+### exp-083 — Skip unignored roll-up maintenance in control-free scopes
+
+❌ rejected · 2026-09-01 · H97
+
+Control: streaming allocation guards at 3c0e1a2
+
+Candidate: optional unignored reducer working-tree spike
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 366.7 | 363.9 | -1.61% | [-2.82%, -0.14%] |
+| component (ms) | 361.8 | 359.1 | -1.61% | [-2.83%, -0.03%] |
+| cpu (ms) | 2114.0 | 2085.2 | -1.99% (n.s.) | [-3.18%, +0.82%] |
+| user (ms) | 213.0 | 189.0 | -10.66% | [-11.87%, -8.77%] |
+| system (ms) | 1893.7 | 1871.9 | -0.68% (n.s.) | [-2.32%, +1.96%] |
+| peak rss (MiB) | 85.6 | 80.5 | -6.12% | [-6.52%, -5.00%] |
+
+Other jobs, wall time: `cold-scan-index` -0.5% (n.s.).
+
+Cost to carry: 127 lines; no new dependencies.
+
+Adds lifecycle state, query-boundary projection, and first-control materialization to
+make the redundant reducer optional; exact semantics are preserved, but the new state is
+not justified by the observed wall result.
+
+**Rejected:** Scoped allocation fell by about one event and 323 requested bytes per
+entry, but default-tree improved only 1.61% and cold-scan-index 0.47%; neither met the
+3% rule, and the latter interval crossed zero.
+
+Full record:
+[`exp-083-skip-unignored-roll-up-maintenance-in-control-free-scopes.md`](../experiments/exp-083-skip-unignored-roll-up-maintenance-in-control-free-scopes.md)
+
+### exp-084 — Compact optional fixed-partition storage
+
+❌ rejected · 2026-09-01 · H98
+
+Control: streaming allocation guards at 3c0e1a2
+
+Candidate: compact optional partition working-tree composite
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 358.5 | 350.0 | -2.63% | [-3.17%, -1.19%] |
+| component (ms) | 353.5 | 345.2 | -2.48% | [-3.17%, -1.24%] |
+| cpu (ms) | 2065.9 | 2033.8 | -1.81% | [-2.19%, -0.20%] |
+| user (ms) | 206.9 | 183.9 | -10.85% | [-11.44%, -8.77%] |
+| system (ms) | 1859.2 | 1850.4 | -0.88% (n.s.) | [-1.27%, +0.81%] |
+| peak rss (MiB) | 85.6 | 70.1 | -18.16% | [-18.58%, -17.43%] |
+
+Other jobs, wall time: `cold-scan-index` -1.0% (n.s.).
+
+Cost to carry: 260 lines; no new dependencies; new failure mode: The representation
+saved one duplicate reducer per entry, but the resulting 2.628% default-tree speedup did
+not justify 260 changed lines and cold-scan-index remained inconclusive..
+
+Adds optional boxed directory state, dynamic materialization, and partition-aware merge
+paths; no dependencies or unsafe code.
+
+**Rejected:** Default-tree wall improved 2.628% with a 95% interval of -3.172% to
+-1.188%, which is real but below the pre-registered 3% structural-change gate; cold wall
+did not establish improvement.
+
+Full record:
+[`exp-084-compact-optional-fixed-partition-storage.md`](../experiments/exp-084-compact-optional-fixed-partition-storage.md)
+
+### exp-085 — Compact scanner batches and optional fixed partitions
+
+❌ rejected · 2026-09-01 · H99 · commit `3c0e1a2`
+
+Control: streaming allocation guards at 3c0e1a2
+
+Candidate: compact scanner batches plus optional fixed-partition storage
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 356.2 | 346.5 | -2.56% | [-3.33%, -0.13%] |
+| component (ms) | 351.3 | 341.7 | -2.56% | [-3.42%, -0.03%] |
+| cpu (ms) | 2053.3 | 2016.7 | -1.41% (n.s.) | [-2.35%, +0.66%] |
+| user (ms) | 206.7 | 182.3 | -12.27% | [-12.81%, -11.05%] |
+| system (ms) | 1845.1 | 1836.7 | -0.25% (n.s.) | [-1.14%, +2.08%] |
+| peak rss (MiB) | 85.7 | 69.4 | -19.11% | [-19.31%, -18.92%] |
+
+Other jobs, wall time: `cold-scan-index` -1.6% (n.s.).
+
+Cost to carry: 490 lines; no new dependencies; new failure mode: The complete composite
+fails the preregistered keep threshold despite lower allocation and retained-memory
+cost..
+
+Adds a second prepared-batch representation and optional boxed partition state with
+first-control materialization.
+
+**Rejected:** The default path improved 2.56% with CI [-3.33%, -0.13%], below the
+preregistered 3% complexity bar; cold indexing improved 1.63% with CI [-2.74%, +0.34%],
+so the composite gate failed.
+
+Full record:
+[`exp-085-compact-scanner-batches-and-optional-fixed-partitions.md`](../experiments/exp-085-compact-scanner-batches-and-optional-fixed-partitions.md)
+
+### exp-086 — Scanner phase counters expose preparation without observer cost
+
+📏 baseline · 2026-09-01 · H103 · commit `c7b2120`
+
+**`default-tree`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 364.3 |
+| component (ms) | 359.2 |
+| cpu (ms) | 2089.0 |
+| user (ms) | 210.4 |
+| system (ms) | 1880.1 |
+| peak rss (MiB) | 85.6 |
+
+Other jobs, wall time: `cold-scan-index` 584 ms.
+
+**Baseline:** With counters disabled, default-tree changed -0.12% with CI
+[-3.06%, +2.40%]; cold-scan-index changed -2.25%, below the 3% structural threshold.
+Enabled repeat-10 attribution measured 28.5 ms preparation and 82.3 ms reduction per
+scan, naming preparation as a viable next target.
+
+Full record:
+[`exp-086-scanner-phase-counters-expose-preparation-without-observer-c.md`](../experiments/exp-086-scanner-phase-counters-expose-preparation-without-observer-c.md)
+
+### exp-087 — Fuse detached control-free scanner preparation and reduction
+
+❌ rejected · 2026-09-01 · H104
+
+Control: phase-instrumented streaming control at 80e5897
+
+Candidate: fused detached reducer plus compact optional partitions
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 355.3 | 349.3 | -1.11% (n.s.) | [-2.47%, +0.40%] |
+| component (ms) | 350.3 | 344.2 | -1.06% (n.s.) | [-2.48%, +0.31%] |
+| cpu (ms) | 2063.5 | 2013.1 | -1.36% | [-2.91%, -1.02%] |
+| user (ms) | 202.1 | 174.3 | -13.60% | [-14.18%, -13.09%] |
+| system (ms) | 1856.9 | 1837.2 | -0.72% (n.s.) | [-1.73%, +0.30%] |
+| peak rss (MiB) | 85.5 | 69.5 | -18.77% | [-19.04%, -18.28%] |
+
+Other jobs, wall time: `cold-scan-index` -0.2% (n.s.).
+
+Cost to carry: 460 lines; no new dependencies; new failure mode: The fused lane is
+intentionally non-atomic and safe only while an exclusively owned index can be
+discarded.; new failure mode: Optional partition storage adds a materialization and
+rebuild transition for the first late control..
+
+The composite removed preparation and restored allocation ratios, but its wall-time
+result did not justify 460 changed lines and two internal representations.
+
+**Rejected:** Default-tree wall improved 1.11% with a 95% interval of -2.47% to +0.40%,
+missing the 3% structural gate; cold-scan-index was flat.
+
+Full record:
+[`exp-087-fuse-detached-control-free-scanner-preparation-and-reduction.md`](../experiments/exp-087-fuse-detached-control-free-scanner-preparation-and-reduction.md)
+
+### exp-088 — Coalesce causal scanner fragments in the one-shot builder
+
+❌ rejected · 2026-09-01 · H105
+
+Control: phase-instrumented streaming control at 80e5897
+
+Candidate: one-shot causal-fragment coalescer
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 362.5 | 360.4 | +0.13% (n.s.) | [-1.08%, +2.29%] |
+| component (ms) | 357.4 | 355.3 | +0.17% (n.s.) | [-1.11%, +2.30%] |
+| cpu (ms) | 2097.6 | 2130.5 | +1.90% (n.s.) | [-0.41%, +4.05%] |
+| user (ms) | 205.2 | 255.4 | +24.88% (regression) | [+2.55%, +26.55%] |
+| system (ms) | 1884.9 | 1872.6 | -0.32% (n.s.) | [-1.58%, +2.71%] |
+| peak rss (MiB) | 85.8 | 86.7 | +0.86% (n.s.) | [-0.09%, +2.19%] |
+
+Other jobs, wall time: `cold-scan-index` -0.0% (n.s.).
+
+Cost to carry: 139 lines; no new dependencies; new failure mode: The accumulator retains
+one additional scanner batch until the target or end of stream..
+
+The coalescer reduced baseline applications to near the configured minimum, but larger
+batches made causal-parent preparation more expensive and wall time stayed flat.
+
+**Rejected:** Default-tree wall changed +0.13% with a 95% interval of -1.08% to +2.29%,
+while cold-scan-index was flat; the candidate missed the 3% structural gate.
+
+Full record:
+[`exp-088-coalesce-causal-scanner-fragments-in-the-one-shot-builder.md`](../experiments/exp-088-coalesce-causal-scanner-fragments-in-the-one-shot-builder.md)
+
+### exp-089 — Suppress causal publication in a producer-only scan
+
+❌ rejected · 2026-09-01 · H106
+
+Control: phase-instrumented causal streaming control at 80e5897
+
+Candidate: unordered producer-only diagnostic
+
+**`cold-scan-producer`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 770.3 | 771.9 | +0.38% (n.s.) | [-0.12%, +0.96%] |
+| component (ms) | 314.4 | 315.5 | +0.68% (n.s.) | [-1.04%, +2.13%] |
+| cpu (ms) | 3542.3 | 3531.6 | +0.30% (n.s.) | [-0.35%, +5.25%] |
+| user (ms) | 570.3 | 556.4 | -0.89% (n.s.) | [-2.77%, +1.89%] |
+| system (ms) | 2968.5 | 2967.7 | +0.61% (regression) | [+0.25%, +5.15%] |
+| peak rss (MiB) | 76.2 | 76.7 | +0.05% (n.s.) | [-0.85%, +1.17%] |
+
+Cost to carry: 43 lines; no new dependencies; new failure mode: The diagnostic stream
+can publish children before parents and is therefore safe only for its order-insensitive
+summary sink..
+
+The diagnostic isolated causal publication with a small threaded flag, but the flat
+result rules out the much larger pending-child builder it was intended to justify.
+
+**Rejected:** Producer component time changed +0.68% with a 95% interval of -1.04% to
++2.13%, missing the 3% gate and establishing no improvement.
+
+Full record:
+[`exp-089-suppress-causal-publication-in-a-producer-only-scan.md`](../experiments/exp-089-suppress-causal-publication-in-a-producer-only-scan.md)
+
+### exp-090 — Bound FullIndex scan-diagnostics overhead
+
+✅ accepted · 2026-09-01 · H97
+
+Control: same immutable default-tree probe with diagnostics disabled
+
+Candidate: same immutable default-tree probe with diagnostics enabled
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 377.4 | 360.7 | -3.48% (n.s.) | [-11.88%, +1.43%] |
+| component (ms) | 372.5 | 355.3 | -3.63% (n.s.) | [-12.05%, +1.34%] |
+| cpu (ms) | 2163.6 | 2053.0 | -3.16% (n.s.) | [-14.63%, +1.93%] |
+| user (ms) | 211.5 | 216.4 | +0.78% (n.s.) | [-1.67%, +6.75%] |
+| system (ms) | 1923.1 | 1845.5 | -3.47% (n.s.) | [-17.20%, +1.71%] |
+| peak rss (MiB) | 85.4 | 86.0 | +0.24% (n.s.) | [-0.79%, +1.09%] |
+
+Cost to carry: 112 lines; no new dependencies.
+
+One private collection flag crosses the report/open boundary; ordinary callers retain
+the existing no-diagnostics entry point.
+
+**Accepted:** The opt-in FullIndex trace is noninferior: -3.48% median with a paired 95%
+interval of [-11.88%, +1.43%], below the predeclared +3% ceiling, with exact tallies and
+every resource gate held.
+
+Full record:
+[`exp-090-bound-fullindex-scan-diagnostics-overhead.md`](../experiments/exp-090-bound-fullindex-scan-diagnostics-overhead.md)
+
+### exp-091 — Pipeline directory-shaped detached bootstrap
+
+↩︎ superseded · 2026-09-01 · H86, S1b, H60
+
+Control: c6380f7 controls-disabled scanner reducer
+
+Candidate: pipelined directory-group builder
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 561.1 | 580.2 | +2.48% (regression) | [+0.70%, +4.23%] |
+| component (ms) | 321.6 | 329.7 | +2.24% (regression) | [+1.44%, +4.37%] |
+| cpu (ms) | 2261.9 | 2296.6 | +1.36% (regression) | [+0.23%, +3.48%] |
+| user (ms) | 412.0 | 403.9 | -1.95% | [-3.32%, -0.40%] |
+| system (ms) | 1849.7 | 1886.0 | +1.90% (regression) | [+0.85%, +3.96%] |
+| peak rss (MiB) | 77.9 | 81.0 | +3.90% (regression) | [+3.48%, +4.29%] |
+
+Cost to carry: 846 lines; no new dependencies; new failure mode: A detached builder can
+accidentally serialize construction after the walk and destroy producer-consumer
+overlap..
+
+One private builder path; the later shared-walker checkpoint removes duplicate
+filesystem traversal logic.
+
+**Superseded:** The first pipelined form regressed wall 2.48% [+0.70%, +4.23%]; later
+ownership and borrow changes retained the pipeline while recovering noninferiority.
+
+Full record:
+[`exp-091-pipeline-directory-shaped-detached-bootstrap.md`](../experiments/exp-091-pipeline-directory-shaped-detached-bootstrap.md)
+
+### exp-092 — Share one filesystem walker across bootstrap modes
+
+✅ accepted · 2026-09-01 · H86
+
+Control: c6380f7 controls-disabled scanner reducer
+
+Candidate: shared generic walker with detached emission
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 573.0 | 581.1 | +1.13% (regression) | [+0.64%, +2.31%] |
+| component (ms) | 320.2 | 330.8 | +3.21% (regression) | [+2.11%, +4.94%] |
+| cpu (ms) | 2208.3 | 2189.5 | -1.41% (n.s.) | [-2.99%, +0.21%] |
+| user (ms) | 439.3 | 401.2 | -10.60% | [-14.20%, -6.84%] |
+| system (ms) | 1764.4 | 1795.9 | +1.67% (n.s.) | [-1.39%, +2.46%] |
+| peak rss (MiB) | 78.2 | 81.2 | +3.74% (regression) | [+2.70%, +4.36%] |
+
+Cost to carry: 812 lines; no new dependencies; new failure mode: Emission adapters could
+diverge in admission or parent-before-child publication..
+
+One monomorphized walker with two small emission adapters; no per-entry dynamic
+dispatch.
+
+**Accepted:** The shared walker is noninferior at +1.13% [+0.64%, +2.31%] and removes a
+second filesystem traversal implementation.
+
+Full record:
+[`exp-092-share-one-filesystem-walker-across-bootstrap-modes.md`](../experiments/exp-092-share-one-filesystem-walker-across-bootstrap-modes.md)
+
+### exp-093 — Use transient hashed parents and unique child insertion
+
+✅ accepted · 2026-09-01 · H86, S1b
+
+Control: c6380f7 controls-disabled scanner reducer
+
+Candidate: hashed transient parent table and unique child insertion
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 573.3 | 578.7 | +0.83% (n.s.) | [-0.84%, +1.55%] |
+| component (ms) | 321.4 | 330.2 | +2.30% (n.s.) | [-1.04%, +3.85%] |
+| cpu (ms) | 2218.6 | 2210.7 | -0.22% (n.s.) | [-2.43%, +1.35%] |
+| user (ms) | 456.1 | 391.9 | -12.98% | [-16.24%, -11.07%] |
+| system (ms) | 1761.6 | 1821.5 | +3.46% (regression) | [+0.32%, +4.84%] |
+| peak rss (MiB) | 78.3 | 81.2 | +3.78% (regression) | [+2.00%, +4.04%] |
+
+Cost to carry: 829 lines; no new dependencies; new failure mode: Duplicate child facts
+must fail closed instead of silently replacing an EntryId..
+
+The retained child map remains ordered; only the private point-lookup table is hashed.
+
+**Accepted:** The transient contract is explicit and noninferior at +0.83%
+[-0.84%, +1.55%], with exact digests.
+
+Full record:
+[`exp-093-use-transient-hashed-parents-and-unique-child-insertion.md`](../experiments/exp-093-use-transient-hashed-parents-and-unique-child-insertion.md)
+
+### exp-094 — Borrow completed directory roll-ups
+
+✅ accepted · 2026-09-01 · H86, H60
+
+Control: c6380f7 controls-disabled scanner reducer
+
+Candidate: borrowed final directory roll-up merge
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 581.0 | 579.1 | +0.19% (n.s.) | [-2.96%, +1.78%] |
+| component (ms) | 330.5 | 330.0 | +0.72% (n.s.) | [-4.48%, +3.34%] |
+| cpu (ms) | 2277.2 | 2218.9 | -3.12% (n.s.) | [-7.94%, +0.85%] |
+| user (ms) | 470.9 | 388.2 | -16.00% | [-16.75%, -14.31%] |
+| system (ms) | 1802.8 | 1832.5 | +1.09% (n.s.) | [-6.29%, +4.93%] |
+| peak rss (MiB) | 78.4 | 80.9 | +3.04% (regression) | [+2.69%, +3.68%] |
+
+Cost to carry: 844 lines; no new dependencies; new failure mode: Borrowing two arena
+entries must preserve parent-before-child allocation and reject stale handles..
+
+One split-at-mut helper replaces cloning complete directory roll-ups.
+
+**Accepted:** Borrowing removes a clone from the structural path and is noninferior at
++0.19% [-2.96%, +1.78%].
+
+Full record:
+[`exp-094-borrow-completed-directory-roll-ups.md`](../experiments/exp-094-borrow-completed-directory-roll-ups.md)
+
+### exp-095 — Move incoming names and retire consumed paths
+
+✅ accepted · 2026-09-01 · H86, S1b, S2
+
+Control: c6380f7 controls-disabled scanner reducer
+
+Candidate: moved names and bounded transient directory paths
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 574.0 | 572.1 | -0.31% (n.s.) | [-7.17%, +1.22%] |
+| component (ms) | 323.1 | 324.1 | +0.49% (n.s.) | [-7.41%, +2.10%] |
+| cpu (ms) | 2197.7 | 2200.6 | +0.10% (n.s.) | [-1.36%, +3.16%] |
+| user (ms) | 448.8 | 361.6 | -18.59% | [-22.14%, -16.25%] |
+| system (ms) | 1762.1 | 1839.3 | +4.18% (regression) | [+2.34%, +10.83%] |
+| peak rss (MiB) | 78.6 | 76.4 | -2.65% | [-3.07%, -2.16%] |
+
+Cost to carry: 857 lines; no new dependencies; new failure mode: Retiring a directory
+lookup before its listing arrives must fail as unknown ancestry..
+
+Ownership follows the listing lifecycle; the ordinary retained representation still
+requires one name clone.
+
+**Accepted:** Timing is noninferior at -0.31% [-7.17%, +1.22%], while scoped allocations
+fall by about one per entry and allocated bytes fall 24%.
+
+Full record:
+[`exp-095-move-incoming-names-and-retire-consumed-paths.md`](../experiments/exp-095-move-incoming-names-and-retire-consumed-paths.md)
+
+### exp-096 — Apply fixed controls once per detached directory
+
+✅ accepted · 2026-09-01 · H86
+
+Control: c6380f7 exact scanner reducer with controls enabled
+
+Candidate: controls-aware directory-group builder
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 868.0 | 574.4 | -33.55% | [-36.41%, -33.14%] |
+| component (ms) | 622.5 | 325.7 | -47.43% | [-49.77%, -46.32%] |
+| cpu (ms) | 2654.2 | 2159.8 | -19.75% | [-21.82%, -17.32%] |
+| user (ms) | 897.7 | 375.0 | -58.59% | [-59.58%, -57.95%] |
+| system (ms) | 1748.9 | 1781.1 | +0.69% (n.s.) | [-2.77%, +3.12%] |
+| peak rss (MiB) | 96.9 | 71.7 | -25.88% | [-27.91%, -24.97%] |
+
+Cost to carry: 1025 lines; no new dependencies; new failure mode: A control applied
+after siblings or descendant publication would classify retained entries against
+incomplete state..
+
+The private one-shot builder shares filesystem traversal and pool orchestration with
+streaming; public and opened consumers retain the causal reducer.
+
+**Accepted:** Wall falls 33.55% [-36.41%, -33.14%], component falls 47.43%, peak RSS
+falls 25.88%, and exact control and mutation oracles pass.
+
+Full record:
+[`exp-096-apply-fixed-controls-once-per-detached-directory.md`](../experiments/exp-096-apply-fixed-controls-once-per-detached-directory.md)
+
+### exp-097 — Audit historical lifecycle parity after detached bootstrap
+
+⏳ in progress · 2026-09-01 · H86
+
+Control: pre-rewrite b75bf85 historical probe
+
+Candidate: controls-aware detached bootstrap candidate
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 559.2 | 574.7 | +0.93% (n.s.) | [-5.63%, +3.83%] |
+| component (ms) | 321.7 | 327.2 | -0.39% (n.s.) | [-3.02%, +4.04%] |
+| cpu (ms) | 2164.4 | 2180.9 | +2.00% (n.s.) | [-0.88%, +3.01%] |
+| user (ms) | 388.5 | 364.3 | -6.30% | [-8.21%, -4.32%] |
+| system (ms) | 1779.1 | 1806.3 | +2.92% (regression) | [+0.28%, +5.38%] |
+| peak rss (MiB) | 59.1 | 72.1 | +21.75% (regression) | [+20.67%, +22.40%] |
+
+Other jobs, wall time: `cold-open-save` +1.1% (n.s.), `cold-snapshot-save` +5.4%
+(regression), `default-tree` -0.8% (n.s.).
+
+Cost to carry: 1031 lines; no new dependencies; new failure mode: An uncontrolled host
+can make a lifecycle residual look like serialization or destruction cost..
+
+This is an attribution audit, not another production mechanism.
+
+**In-progress:** Construction and save/join medians reach practical parity, but
+quiet-host noninferiority and the 17-22% retained-memory gap remain open.
+
+Full record:
+[`exp-097-audit-historical-lifecycle-parity-after-detached-bootstrap.md`](../experiments/exp-097-audit-historical-lifecycle-parity-after-detached-bootstrap.md)
+
+### exp-098 — Share pool orchestration through a dynamic consumer
+
+❌ rejected · 2026-09-01 · H86
+
+Control: controls-aware detached builder before pool-orchestration cleanup
+
+Candidate: shared runner with dynamically dispatched message consumption
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 552.2 | 557.7 | +0.82% (regression) | [+0.45%, +3.00%] |
+| component (ms) | 323.1 | 323.1 | -0.06% (n.s.) | [-0.46%, +0.64%] |
+| cpu (ms) | 2199.5 | 2208.6 | +0.31% (n.s.) | [-0.11%, +0.97%] |
+| user (ms) | 334.7 | 340.6 | +1.44% (regression) | [+0.66%, +3.58%] |
+| system (ms) | 1864.2 | 1866.6 | -0.14% (n.s.) | [-0.56%, +0.61%] |
+| peak rss (MiB) | 72.0 | 72.3 | +0.21% (regression) | [+0.03%, +1.03%] |
+
+Other jobs, wall time: `opened-discovery` -1.2% (n.s.).
+
+Cost to carry: 140 lines; no new dependencies; new failure mode: Dynamic dispatch at
+every directory-group handoff can turn source deduplication into runtime work..
+
+Removed about 60 duplicated orchestration lines, but routed every received work message
+through a dyn FnMut boundary.
+
+**Rejected:** Whole-process wall regressed 0.82% [0.45%, 3.00%] while component time was
+unchanged; the source reduction does not justify a supported regression.
+
+Full record:
+[`exp-098-share-pool-orchestration-through-a-dynamic-consumer.md`](../experiments/exp-098-share-pool-orchestration-through-a-dynamic-consumer.md)
+
+### exp-099 — Monomorphize shared concurrent-walk consumption
+
+✅ accepted · 2026-09-01 · H86
+
+Control: controls-aware detached builder before pool-orchestration cleanup
+
+Candidate: shared generic runner with monomorphized message consumption
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 569.3 | 566.0 | +0.16% (n.s.) | [-1.46%, +0.81%] |
+| component (ms) | 330.7 | 332.2 | +0.16% (n.s.) | [-1.56%, +1.06%] |
+| cpu (ms) | 2253.0 | 2259.3 | +0.02% (n.s.) | [-1.13%, +0.78%] |
+| user (ms) | 343.3 | 340.0 | -1.11% (n.s.) | [-2.74%, +2.13%] |
+| system (ms) | 1906.6 | 1916.2 | +0.17% (n.s.) | [-1.01%, +0.96%] |
+| peak rss (MiB) | 72.0 | 72.0 | -0.10% (n.s.) | [-0.30%, +0.33%] |
+
+Cost to carry: 7 lines; no new dependencies; new failure mode: A future trait-object
+consumer at the handoff boundary could restore the rejected per-message cost..
+
+One generic bound keeps termination, scaling, diagnostics, joins, and error ordering
+singular while monomorphizing the two consumers.
+
+**Accepted:** The shared source is noninferior at +0.16% [-1.46%, +0.81%] after removing
+per-message dynamic dispatch.
+
+Full record:
+[`exp-099-monomorphize-shared-concurrent-walk-consumption.md`](../experiments/exp-099-monomorphize-shared-concurrent-walk-consumption.md)
+
+### exp-100 — Move directory-only state out of line
+
+❌ rejected · 2026-09-01 · H86
+
+Control: exact 88304cb detached builder
+
+Candidate: out-of-line directory payload with inline arena entries
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 355.9 | 350.6 | -0.83% (n.s.) | [-3.33%, +0.74%] |
+| component (ms) | 351.4 | 346.1 | -0.82% (n.s.) | [-3.33%, +0.78%] |
+| cpu (ms) | 2007.0 | 2014.3 | +1.15% (n.s.) | [-1.71%, +2.77%] |
+| user (ms) | 136.1 | 129.1 | -5.31% | [-6.63%, -1.34%] |
+| system (ms) | 1870.5 | 1887.4 | +1.61% (n.s.) | [-1.19%, +3.22%] |
+| peak rss (MiB) | 84.2 | 63.3 | -24.63% | [-25.24%, -23.84%] |
+
+Other jobs, wall time: `cold-scan-index` -3.2% (n.s.), `opened-discovery` -0.3% (n.s.).
+
+Cost to carry: 0 lines; no new dependencies; new failure mode: An extra allocation on
+every directory could trade file density for directory pointer chasing.
+
+Intermediate uncommitted checkpoint; the source line count was not preserved after the
+next test-first arm superseded it.
+
+**Rejected:** Default-tree wall changed -0.83% [-3.33%, +0.74%], missing the
+preregistered 3% gate despite 24.63% lower RSS.
+
+Full record:
+[`exp-100-move-directory-only-state-out-of-line.md`](../experiments/exp-100-move-directory-only-state-out-of-line.md)
+
+### exp-101 — Compact detached child topology with local promotion
+
+✅ accepted · 2026-09-01 · H86
+
+Control: exact 88304cb detached builder
+
+Candidate: inline entries, directory payloads, sorted detached children, and per-parent
+promotion
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 392.0 | 361.4 | -7.70% | [-10.16%, -3.77%] |
+| component (ms) | 386.4 | 356.1 | -7.71% | [-10.19%, -3.79%] |
+| cpu (ms) | 1967.8 | 1981.3 | +3.30% (n.s.) | [-2.01%, +8.05%] |
+| user (ms) | 184.7 | 169.7 | -9.36% | [-11.31%, -6.21%] |
+| system (ms) | 1777.2 | 1812.7 | +4.41% (n.s.) | [-0.68%, +9.78%] |
+| peak rss (MiB) | 84.1 | 52.0 | -37.79% | [-38.38%, -37.41%] |
+
+Other jobs, wall time: `cold-scan-index` -5.9%, `opened-discovery` -1.4% (n.s.).
+
+Cost to carry: 634 lines; no new dependencies; new failure mode: The first arbitrary
+mutation of a compact parent clones that parent’s child names into a keyed map; new
+failure mode: Compact lookup and iteration rely on detached child names being unique and
+sorted in native OsStr order.
+
+No new dependency or unsafe block; one retained fact model, two child-storage states,
+and local one-time promotion only on mutation.
+
+**Accepted:** Exploratory default-tree wall improved 7.70% [-10.16%, -3.77%] and RSS
+fell 37.79%; cold scan moved the same way and opened discovery remained within +3%,
+pending quiet-host confirmation.
+
+Full record:
+[`exp-101-compact-detached-child-topology-with-local-promotion.md`](../experiments/exp-101-compact-detached-child-topology-with-local-promotion.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -2580,6 +3599,18 @@ Baselines show one value because they measure a state rather than a change.
 | 026 | Reuse macOS bulk metadata during full reconciliation | `warm-revalidate` | 21,161.5 | 14,014.3 | -34.4% | ✅ accepted |
 | 030 | Elide unchanged entries in bounded parallel reconciliation waves | `warm-revalidate` | 14,463.4 | 5,708.1 | -59.5% | ✅ accepted |
 
+### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 083 | Skip unignored roll-up maintenance in control-free scopes | `default-tree` | 366.7 | 363.9 | -1.6% | ❌ rejected |
+| 084 | Compact optional fixed-partition storage | `default-tree` | 358.5 | 350.0 | -2.6% | ❌ rejected |
+| 085 | Compact scanner batches and optional fixed partitions | `default-tree` | 356.2 | 346.5 | -2.6% | ❌ rejected |
+| 086 | Scanner phase counters expose preparation without observer cost | `default-tree` | 364.3 | — | — | 📏 baseline |
+| 087 | Fuse detached control-free scanner preparation and reduction | `default-tree` | 355.3 | 349.3 | -1.1% | ❌ rejected |
+| 088 | Coalesce causal scanner fragments in the one-shot builder | `default-tree` | 362.5 | 360.4 | +0.1% | ❌ rejected |
+| 089 | Suppress causal publication in a producer-only scan | `cold-scan-producer` | 770.3 | 771.9 | +0.4% | ❌ rejected |
+
 ### metabrowser-20260812 (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -2600,6 +3631,34 @@ Baselines show one value because they measure a state rather than a change.
 | 016 | Move cold-scan producer paths instead of cloning | `cold-scan-index` | 336.0 | 339.9 | -0.4% | ❌ rejected |
 | 017 | Pre-create dormant workers for adaptive scan depth | `cold-scan-producer` | 494.2 | 500.7 | +2.0% | ❌ rejected |
 | 023 | Cumulative effect through adaptive scanning and macOS bulk metadata | `cold-scan-index` | 625.2 | 295.5 | -53.5% | ✅ accepted |
+
+### metabrowser-current-h86 (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 091 | Pipeline directory-shaped detached bootstrap | `cold-scan-index` | 561.1 | 580.2 | +2.5% | ↩︎ superseded |
+| 092 | Share one filesystem walker across bootstrap modes | `cold-scan-index` | 573.0 | 581.1 | +1.1% | ✅ accepted |
+| 093 | Use transient hashed parents and unique child insertion | `cold-scan-index` | 573.3 | 578.7 | +0.8% | ✅ accepted |
+| 094 | Borrow completed directory roll-ups | `cold-scan-index` | 581.0 | 579.1 | +0.2% | ✅ accepted |
+| 095 | Move incoming names and retire consumed paths | `cold-scan-index` | 574.0 | 572.1 | -0.3% | ✅ accepted |
+
+### cargo-registry-src (11,142 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 074 | PR #51 residual reproduced on the current registry tree | `default-tree` | 59.0 | — | — | 📏 baseline |
+| 075 | Scoped counters stay below the exploratory acceptance threshold | `default-tree` | 59.3 | — | — | 📏 baseline |
+| 076 | Correctness fixes preserve the streaming performance baseline | `default-tree` | 60.4 | — | — | 📏 baseline |
+| 077 | Select detached consequences once per batch | `default-tree` | 59.7 | 55.6 | -6.6% | ✅ accepted |
+
+### cargo-registry-src-v2 (11,141 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 078 | Remove the eager compatibility projection | `delta-apply-large` | 651.6 | 641.9 | -1.6% | ✅ accepted |
+| 080 | Skip oversized journal clones | `delta-apply-large` | 677.6 | 654.9 | -3.5% | ✅ accepted |
+| 081 | Borrow impact paths until the bounded result escapes | `opened-discovery` | 286.8 | 282.2 | -1.1% | ❌ rejected |
+| 082 | Move scanner commits directly into the journal | `opened-discovery` | 284.5 | 281.2 | -0.0% | ❌ rejected |
 
 ### vm450k (450,463 entries) — Linux 6.18.5-fc-v20, unrecorded, warm-steady
 
@@ -2634,6 +3693,14 @@ Baselines show one value because they measure a state rather than a change.
 | 052 | Per-layer counters cost less than the measurement can see | `cold-scan-index` | 1,891.3 | 1,870.1 | +0.0% | ✅ accepted |
 | 053 | Move instrumentation to a runtime toggle and measure all three of its costs | `cold-scan-index` | 1,858.8 | 1,847.0 | -1.3% | ✅ accepted |
 
+### rustup-toolchains (119,368 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 071 | PR #51 halves its base regression but does not restore main parity | `cold-scan-index` | 1,698.6 | 847.7 | -49.5% | ✅ accepted |
+| 072 | Attribute the PR #51 residual to path-keyed ancestry preflight | `cold-scan-index` | 706.8 | 384.4 | -45.5% | ⛔ blocked |
+| 073 | PR #51 remains above the pre-rewrite whole-scan control | `cold-scan-index` | 349.9 | 847.7 | +144.5% | ⛔ blocked |
+
 ### rustup-toolchains (175,191 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -2656,12 +3723,26 @@ Baselines show one value because they measure a state rather than a change.
 | 045 | Pipeline macOS directory opens | `rich-summary-open-pipeline` | 3,468.3 | 3,325.4 | -4.5% | ↩︎ superseded |
 | 046 | Tune a shared macOS directory-opener pool | `rich-summary-shared-openers` | 3,337.9 | 3,220.9 | -4.0% | ⏳ in progress |
 
+### metabrowser-113794 (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 100 | Move directory-only state out of line | `default-tree` | 355.9 | 350.6 | -0.8% | ❌ rejected |
+| 101 | Compact detached child topology with local promotion | `default-tree` | 392.0 | 361.4 | -7.7% | ✅ accepted |
+
 ### metabrowser-clone (60,089 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 069 | Order the content file map by path bytes instead of components | `content-cache-hit` | 577.9 | 408.9 | -31.0% | ✅ accepted |
 | 070 | Validate the separator fixes against the result they landed on | `content-cache-hit` | 452.2 | 450.8 | -1.3% | ✅ accepted |
+
+### metabrowser-h86-orchestration-cleanup (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 098 | Share pool orchestration through a dynamic consumer | `cold-scan-index` | 552.2 | 557.7 | +0.8% | ❌ rejected |
+| 099 | Monomorphize shared concurrent-walk consumption | `cold-scan-index` | 569.3 | 566.0 | +0.2% | ✅ accepted |
 
 ### pr22-macos-benchmarks (60,993 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
@@ -2736,11 +3817,35 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 012 | Breadth-first traversal order | `cold-scan-index` | 337.9 | 337.0 | -0.6% | ✅ accepted |
 
+### metabrowser-current-h86-controls (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 096 | Apply fixed controls once per detached directory | `cold-scan-index` | 868.0 | 574.4 | -33.6% | ✅ accepted |
+
+### metabrowser-h86-lifecycle-f41 (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 097 | Audit historical lifecycle parity after detached bootstrap | `cold-scan-index` | 559.2 | 574.7 | +0.9% | ⏳ in progress |
+
+### metabrowser-live (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 090 | Bound FullIndex scan-diagnostics overhead | `default-tree` | 377.4 | 360.7 | -3.5% | ✅ accepted |
+
 ### post-cli-cache-pressure-12x (720,805 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 034 | Post-composable-CLI validation under cache pressure | `cold-scan-index` | 6,699.9 | 5,154.0 | -30.5% | ✅ accepted |
+
+### resolved-parent-proof-final (11,141 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 079 | Resolve scanner parents before mutation | `opened-discovery` | 309.0 | 280.8 | -9.5% | ✅ accepted |
 
 ### selfhost-content (307 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
