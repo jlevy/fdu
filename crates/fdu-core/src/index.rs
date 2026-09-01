@@ -639,8 +639,24 @@ fn record_batch(provenance: BatchProvenance, observed: usize, stats: ApplyStats)
 #[derive(Clone, Debug)]
 struct PreparedObservation {
     ops: Vec<ObservationOp>,
+    ancestry: PreparedAncestry,
     #[cfg(test)]
     reject_before_apply: bool,
+}
+
+#[derive(Clone, Debug)]
+enum PreparedAncestry {
+    General,
+    Scanner { parents: Vec<ResolvedParent>, has_batch_parents: bool },
+}
+
+/// Parent identity proved for one operation in a private scanner batch.
+#[derive(Clone, Copy, Debug)]
+enum ResolvedParent {
+    /// The parent is already live in the index at the preparation boundary.
+    Existing(EntryId),
+    /// The parent is the directory produced by this earlier operation in the batch.
+    Earlier(usize),
 }
 
 #[derive(Default)]
@@ -878,22 +894,18 @@ impl IndexHandle {
         Ok(outcome)
     }
 
-    pub(crate) fn apply_discovery_bounded(
+    pub(crate) fn apply_scanner_discovery_bounded(
         &self,
-        observation: &Observation,
+        batch: crate::scan::ScannerBatch,
         discovery: DiscoveryCommit,
         max_files: Option<u64>,
     ) -> crate::Result<ApplyOutcome> {
-        let prepared = prepare_observation(observation)?;
-        let outcome = self.write_index()?.commit_prepared_with(
-            prepared,
-            true,
-            Some(discovery),
-            None,
-            max_files,
-            true,
-        )?;
-        record_batch(BatchProvenance::Opened, observation.len(), outcome.stats);
+        let observed = batch.len();
+        let mut index = self.write_index()?;
+        let prepared = index.prepare_scanner_batch(batch)?;
+        let outcome =
+            index.commit_prepared_with(prepared, true, Some(discovery), None, max_files, true)?;
+        record_batch(BatchProvenance::Opened, observed, outcome.stats);
         Ok(outcome)
     }
 
@@ -1485,6 +1497,16 @@ impl Index {
         track_file_progress: bool,
         effects: &mut C,
     ) -> crate::Result<ApplyStats> {
+        if matches!(prepared.ancestry, PreparedAncestry::Scanner { .. }) {
+            debug_assert!(observation.is_none());
+            return self.reduce_scanner_prepared(
+                prepared,
+                discovery,
+                max_files,
+                track_file_progress,
+                effects,
+            );
+        }
         let mut stats = ApplyStats::default();
         let mut parent_memo = ParentMemo::default();
         let accepted = self.accepted_operations(&prepared.ops);
@@ -1564,7 +1586,96 @@ impl Index {
             }
         }
 
-        self.apply_control_transition(projected_controls, &mut stats, effects);
+        self.finish_reduction(
+            projected_controls,
+            &mut stats,
+            discovery,
+            observation,
+            max_files,
+            track_file_progress,
+            effects,
+        );
+
+        Ok(stats)
+    }
+
+    /// Apply one scanner batch using only the parent identities proved above.
+    fn reduce_scanner_prepared<C: ConsequenceSink>(
+        &mut self,
+        prepared: &PreparedObservation,
+        discovery: Option<DiscoveryCommit>,
+        max_files: Option<u64>,
+        track_file_progress: bool,
+        effects: &mut C,
+    ) -> crate::Result<ApplyStats> {
+        let PreparedAncestry::Scanner { parents, has_batch_parents } = &prepared.ancestry else {
+            unreachable!("scanner reduction requires scanner ancestry");
+        };
+        debug_assert_eq!(prepared.ops.len(), parents.len());
+        let projected_controls =
+            self.projected_controls_from(prepared.ops.iter().map(|observed| &observed.op))?;
+        let mut stats = ApplyStats::default();
+        let mut applied_ids = has_batch_parents.then(|| vec![None; prepared.ops.len()]);
+
+        for (op_index, (observed, parent)) in prepared.ops.iter().zip(parents.iter()).enumerate() {
+            match &observed.op {
+                Op::Upsert { path, kind, attrs } => {
+                    if let Some(max_files) = max_files {
+                        if self.files_after_upsert(path, *kind) > max_files {
+                            stats.resource_refused = stats.resource_refused.saturating_add(1);
+                            continue;
+                        }
+                    }
+                    let parent = match parent {
+                        ResolvedParent::Existing(parent) => *parent,
+                        ResolvedParent::Earlier(parent_op) => applied_ids
+                            .as_ref()
+                            .and_then(|ids| ids.get(*parent_op))
+                            .copied()
+                            .flatten()
+                            .expect("a proved parent directory was applied earlier"),
+                    };
+                    let name = path.file_name().expect("scanner upserts are not root mutations");
+                    crate::counters::bump(|counts| counts.upserts += 1);
+                    self.upsert_beneath(parent, name, path, *kind, *attrs, &mut stats, effects);
+                    if kind.is_dir() {
+                        if let Some(ids) = &mut applied_ids {
+                            ids[op_index] = self.entry(parent).children.get(name).copied();
+                        }
+                    }
+                }
+                Op::ControlUpsert { .. } => {}
+                Op::Remove { .. } | Op::ControlRemove { .. } | Op::InvalidateSubtree { .. } => {
+                    unreachable!("scanner preparation rejects non-discovery operations");
+                }
+            }
+        }
+
+        self.finish_reduction(
+            projected_controls,
+            &mut stats,
+            discovery,
+            None,
+            max_files,
+            track_file_progress,
+            effects,
+        );
+
+        Ok(stats)
+    }
+
+    #[allow(clippy::too_many_arguments)] // One shared tail keeps both reducer lanes identical.
+    fn finish_reduction<C: ConsequenceSink>(
+        &mut self,
+        projected_controls: crate::control::ControlTable,
+        stats: &mut ApplyStats,
+        discovery: Option<DiscoveryCommit>,
+        observation: Option<ObservationTransition>,
+        max_files: Option<u64>,
+        track_file_progress: bool,
+        effects: &mut C,
+    ) {
+        self.apply_control_transition(projected_controls, stats, effects);
         let mut discovery = discovery;
         if stats.resource_refused > 0 {
             let max_files = max_files.expect("resource refusal requires a file limit");
@@ -1574,8 +1685,6 @@ impl Index {
                 Some(DiscoveryTransition::BudgetRefused(Issue::resource_budget(max_files)));
         }
         self.apply_opened_state(discovery, observation, track_file_progress, effects);
-
-        Ok(stats)
     }
 
     fn apply_opened_state<C: ConsequenceSink>(
@@ -1830,6 +1939,20 @@ impl Index {
         let mut effects = NoConsequences;
         let stats = self.reduce_prepared(&prepared, None, None, None, false, &mut effects)?;
         record_batch(BatchProvenance::Baseline, observation.len(), stats);
+        self.establish_baseline();
+        Ok(stats)
+    }
+
+    /// Apply one owned filesystem-walker batch without constructing public history.
+    pub(crate) fn apply_scanner_baseline(
+        &mut self,
+        batch: crate::scan::ScannerBatch,
+    ) -> crate::Result<ApplyStats> {
+        let observed = batch.len();
+        let prepared = self.prepare_scanner_batch(batch)?;
+        let mut effects = NoConsequences;
+        let stats = self.reduce_scanner_prepared(&prepared, None, None, false, &mut effects)?;
+        record_batch(BatchProvenance::Baseline, observed, stats);
         self.establish_baseline();
         Ok(stats)
     }
@@ -2642,6 +2765,133 @@ impl Index {
             .collect()
     }
 
+    /// Consume a walker-owned batch and prove every parent before mutation begins.
+    ///
+    /// Scanner batches contain only unconditional discoveries. The walker publishes a
+    /// directory before any worker may enumerate it, so almost every parent resolves to
+    /// an existing id. Serial batches may still contain a parent-first directory and its
+    /// children together; those children retain the earlier operation index instead.
+    /// The proof owns no duplicate paths and application performs no second path-tree
+    /// search.
+    fn prepare_scanner_batch(
+        &self,
+        batch: crate::scan::ScannerBatch,
+    ) -> crate::Result<PreparedObservation> {
+        let ops = batch.into_ops();
+        let mut parents = Vec::with_capacity(ops.len());
+        let mut last_parent: Option<(&Path, ResolvedParent)> = None;
+        let mut has_batch_parents = false;
+        let mut path_comparisons = 0_u64;
+
+        for (op_index, observed) in ops.iter().enumerate() {
+            if !matches!(observed.expectation, Expectation::Any) {
+                return Err(crate::Error::UnsupportedScanConfig(
+                    "scanner batches contain unconditional discoveries only",
+                ));
+            }
+            let op = &observed.op;
+            let path = op.path();
+            if path.as_os_str().is_empty() {
+                return Err(crate::Error::UnsupportedScanConfig(
+                    "scanner batches cannot mutate the index root",
+                ));
+            }
+            for component in path.components() {
+                match component {
+                    Component::Normal(_) => {}
+                    Component::CurDir => {
+                        return Err(crate::Error::UnsupportedScanConfig(
+                            "scanner batches require canonical relative paths",
+                        ));
+                    }
+                    Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                        return Err(crate::Error::PathEscapesRoot(path.to_path_buf()));
+                    }
+                }
+            }
+            match op {
+                Op::Upsert { .. } => {}
+                Op::ControlUpsert { .. } if crate::control::is_control_file(path) => {}
+                Op::ControlUpsert { .. } => {
+                    return Err(crate::Error::InvalidControlPath(path.to_path_buf()));
+                }
+                Op::Remove { .. } | Op::ControlRemove { .. } | Op::InvalidateSubtree { .. } => {
+                    return Err(crate::Error::UnsupportedScanConfig(
+                        "scanner batches contain discoveries only",
+                    ));
+                }
+            }
+
+            let parent_path = path.parent().expect("a non-root relative path has a parent");
+            if last_parent.is_some() {
+                path_comparisons = path_comparisons.saturating_add(1);
+            }
+            let same_parent = last_parent
+                .filter(|(previous, _)| *previous == parent_path)
+                .map(|(_, parent)| parent);
+            let parent = if let Some(parent) = same_parent {
+                parent
+            } else {
+                self.lookup(parent_path)
+                    .filter(|id| self.entry(*id).kind.is_dir())
+                    .map(ResolvedParent::Existing)
+                    .or_else(|| Self::earlier_scanner_parent(&ops, op_index, parent_path))
+                    .ok_or_else(|| crate::Error::UnknownAncestry {
+                        path: path.to_path_buf(),
+                        reconcile_from: PathBuf::new(),
+                    })?
+            };
+            if let (Op::Upsert { kind, .. }, ResolvedParent::Existing(parent)) = (op, parent) {
+                if path.file_name().is_some_and(|name| {
+                    self.entry(parent)
+                        .children
+                        .get(name)
+                        .is_some_and(|child| self.entry(*child).kind != *kind)
+                }) {
+                    // Bootstrap discovery only adds or refreshes facts. Rejecting a kind
+                    // replacement keeps every existing numeric parent stable until the
+                    // batch is consumed; refresh and watch topology stays on the public
+                    // transactional path.
+                    return Err(crate::Error::UnsupportedScanConfig(
+                        "scanner discovery cannot replace entry kinds",
+                    ));
+                }
+            }
+            has_batch_parents |= matches!(parent, ResolvedParent::Earlier(_));
+            parents.push(parent);
+            last_parent = Some((parent_path, parent));
+        }
+
+        crate::counters::bump(|counts| {
+            counts.ancestry_path_comparisons =
+                counts.ancestry_path_comparisons.saturating_add(path_comparisons);
+            counts.ancestry_parent_proofs = counts
+                .ancestry_parent_proofs
+                .saturating_add(u64::try_from(ops.len()).unwrap_or(u64::MAX));
+        });
+        Ok(PreparedObservation {
+            ops,
+            ancestry: PreparedAncestry::Scanner { parents, has_batch_parents },
+            #[cfg(test)]
+            reject_before_apply: false,
+        })
+    }
+
+    /// Resolve a parent produced earlier in the same scanner batch.
+    fn earlier_scanner_parent(
+        ops: &[ObservationOp],
+        before: usize,
+        parent_path: &Path,
+    ) -> Option<ResolvedParent> {
+        let (op_index, op) = ops[..before].iter().enumerate().rev().find(
+            |(_, observed)| matches!(&observed.op, Op::Upsert { path, .. } if path == parent_path),
+        )?;
+        let Op::Upsert { kind, .. } = &op.op else {
+            unreachable!("the search selected an upsert");
+        };
+        kind.is_dir().then_some(ResolvedParent::Earlier(op_index))
+    }
+
     /// Evaluate the complete resulting control table before any fact or reducer moves.
     ///
     /// Parsing is infallible, but the shared source bound is not. Building the projected
@@ -2651,6 +2901,17 @@ impl Index {
         &self,
         ops: &[ObservationOp],
         accepted: &[bool],
+    ) -> crate::Result<crate::control::ControlTable> {
+        self.projected_controls_from(
+            ops.iter()
+                .zip(accepted)
+                .filter_map(|(observed, accepted)| accepted.then_some(&observed.op)),
+        )
+    }
+
+    fn projected_controls_from<'a>(
+        &self,
+        ops: impl Iterator<Item = &'a Op> + Clone,
     ) -> crate::Result<crate::control::ControlTable> {
         // When the retained table is empty and the batch carries no control op of any
         // kind, projection cannot change anything: only control ops write the table, and
@@ -2665,20 +2926,16 @@ impl Index {
         // which is precisely what `control_input_fails_closed_when_the_capability_is_absent`
         // caught when this lane tested only for upserts.
         if self.controls.is_empty()
-            && !ops.iter().zip(accepted).any(|(observed, accepted)| {
-                *accepted
-                    && matches!(observed.op, Op::ControlUpsert { .. } | Op::ControlRemove { .. })
-            })
+            && !ops
+                .clone()
+                .any(|op| matches!(op, Op::ControlUpsert { .. } | Op::ControlRemove { .. }))
         {
             return Ok(self.controls.clone());
         }
         let mut projected = self.controls.clone();
         let mut structure = StructuralOverlay::default();
-        for (observed, accepted) in ops.iter().zip(accepted) {
-            if !accepted {
-                continue;
-            }
-            match &observed.op {
+        for op in ops {
+            match op {
                 Op::Upsert { path, kind, .. } => {
                     if crate::control::is_control_file(path) && *kind != EntryKind::File {
                         projected.remove(path)?;
@@ -3789,6 +4046,7 @@ fn prepare_observation(observation: &Observation) -> crate::Result<PreparedObser
     }
     Ok(PreparedObservation {
         ops,
+        ancestry: PreparedAncestry::General,
         #[cfg(test)]
         reject_before_apply: false,
     })
@@ -5365,6 +5623,46 @@ mod tests {
         assert_eq!(counts.public_batches, 0);
 
         crate::counters::test_thread_reset();
+        let mut scanner = Index::new("/root");
+        scanner
+            .apply_scanner_baseline(crate::scan::ScannerBatch::from_ops(vec![
+                upsert("a", EntryKind::Dir, Attrs::default()),
+                upsert("a/f1", EntryKind::File, file_attrs(1, 1)),
+                upsert("a/f2", EntryKind::File, file_attrs(2, 2)),
+            ]))
+            .expect("private scanner batch");
+        let counts = crate::counters::test_thread_snapshot();
+        assert_eq!(counts.baseline_batches, 1);
+        assert_eq!(counts.baseline_accepted_ops, 3);
+        assert_eq!(counts.ancestry_overlay_inserts, 0);
+        assert_eq!(counts.ancestry_path_comparisons, 2);
+        assert_eq!(counts.ancestry_parent_proofs, 3);
+        assert_eq!(counts.parent_resolutions, 0);
+        assert_eq!(counts.parent_memo_hits, 0);
+        assert_eq!(scanner.total().dirs, 1);
+        assert_eq!(scanner.total().files, 2);
+
+        crate::counters::test_thread_reset();
+        let opened_scanner = IndexHandle::new(Index::new("/root"));
+        opened_scanner
+            .apply_scanner_discovery_bounded(
+                crate::scan::ScannerBatch::from_ops(vec![
+                    upsert("a", EntryKind::Dir, Attrs::default()),
+                    upsert("a/f1", EntryKind::File, file_attrs(1, 1)),
+                    upsert("a/f2", EntryKind::File, file_attrs(2, 2)),
+                ]),
+                DiscoveryCommit::default(),
+                None,
+            )
+            .expect("opened scanner batch");
+        let counts = crate::counters::test_thread_snapshot();
+        assert_eq!(counts.opened_batches, 1);
+        assert_eq!(counts.opened_accepted_ops, 3);
+        assert_eq!(counts.ancestry_overlay_inserts, 0);
+        assert_eq!(counts.effect_paths, 3);
+        assert_eq!(counts.journal_retained_commits, 1);
+
+        crate::counters::test_thread_reset();
         let mut bounded = Index::new("/root");
         bounded.journal_capacity = 4;
         bounded.apply_ok(&Observation::new(vec![upsert("one", EntryKind::File, file_attrs(1, 1))]));
@@ -5781,6 +6079,79 @@ mod tests {
         assert_eq!(index.attrs(Path::new("deep")), Some(&deep));
         assert_eq!(index.attrs(Path::new("deep/nested")), Some(&nested));
         assert_eq!(index.attrs(Path::new("deep/nested/tree")), Some(&tree));
+    }
+
+    #[test]
+    fn scanner_parent_proof_matches_public_parent_first_application() {
+        let ops = vec![
+            upsert("deep", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("deep/nested", EntryKind::Dir, file_attrs(0, 2)),
+            upsert("deep/nested/file.txt", EntryKind::File, file_attrs(42, 3)),
+        ];
+        let mut scanner = Index::new("/root");
+        let scanner_stats = scanner
+            .apply_scanner_baseline(crate::scan::ScannerBatch::from_ops(ops.clone()))
+            .expect("scanner proof");
+        let mut public = Index::new("/root");
+        let public_stats = public.apply(&Observation::new(ops)).expect("public proof").stats;
+
+        assert_eq!(scanner_stats, public_stats);
+        assert_eq!(scanner.total(), public.total());
+        assert_eq!(scanner.len(), public.len());
+        for path in ["deep", "deep/nested", "deep/nested/file.txt"] {
+            assert_eq!(scanner.kind(Path::new(path)), public.kind(Path::new(path)));
+            assert_eq!(scanner.attrs(Path::new(path)), public.attrs(Path::new(path)));
+        }
+    }
+
+    #[test]
+    fn scanner_parent_proof_rejects_unknown_ancestry_before_mutation() {
+        let mut index = Index::new("/root");
+        let before = index.total();
+        let error = index
+            .apply_scanner_baseline(crate::scan::ScannerBatch::from_ops(vec![upsert(
+                "missing/child.txt",
+                EntryKind::File,
+                file_attrs(1, 1),
+            )]))
+            .expect_err("scanner proof must reject an unknown parent");
+
+        assert!(matches!(
+            error,
+            crate::Error::UnknownAncestry { path, .. }
+                if path == Path::new("missing/child.txt")
+        ));
+        assert_eq!(index.total(), before);
+        assert_eq!(index.len(), 1);
+        assert_eq!(index.clock(), Clock::ZERO);
+    }
+
+    #[test]
+    fn scanner_parent_proof_rejects_kind_replacement_atomically() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("a", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("a/old.txt", EntryKind::File, file_attrs(7, 1)),
+        ]));
+        let before = index.total();
+        let before_clock = index.clock();
+
+        let error = index
+            .apply_scanner_baseline(crate::scan::ScannerBatch::from_ops(vec![
+                upsert("a", EntryKind::File, file_attrs(2, 2)),
+                upsert("a/new.txt", EntryKind::File, file_attrs(3, 2)),
+            ]))
+            .expect_err("a child cannot attach after its parent became a file");
+
+        assert!(matches!(
+            error,
+            crate::Error::UnsupportedScanConfig("scanner discovery cannot replace entry kinds")
+        ));
+        assert_eq!(index.total(), before);
+        assert_eq!(index.clock(), before_clock);
+        assert_eq!(index.kind(Path::new("a")), Some(EntryKind::Dir));
+        assert!(index.lookup(Path::new("a/old.txt")).is_some());
+        assert!(index.lookup(Path::new("a/new.txt")).is_none());
     }
 
     #[test]
