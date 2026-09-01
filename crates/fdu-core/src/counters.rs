@@ -78,6 +78,14 @@ pub struct Counts {
     pub scanner_control_projection_us: u64,
     /// Wall microseconds spent reducing prepared scanner batches into the index.
     pub scanner_reduce_us: u64,
+    /// Detached cold scans that selected the directory-group builder.
+    pub detached_builds: u64,
+    /// Entries consumed by that builder.
+    pub detached_entries: u64,
+    /// Wall microseconds spent walking while the builder consumed directory groups.
+    pub detached_walk_us: u64,
+    /// Wall microseconds spent in the final directories-only roll-up pass.
+    pub detached_finish_us: u64,
     /// Owned paths retained in exact effective changes.
     pub effect_paths: u64,
     /// Native encoded bytes retained by exact effective-change paths.
@@ -148,6 +156,10 @@ impl Counts {
         scanner_prepare_us: 0,
         scanner_control_projection_us: 0,
         scanner_reduce_us: 0,
+        detached_builds: 0,
+        detached_entries: 0,
+        detached_walk_us: 0,
+        detached_finish_us: 0,
         effect_paths: 0,
         effect_path_bytes: 0,
         impact_candidates: 0,
@@ -200,6 +212,10 @@ impl Counts {
                 self.scanner_control_projection_us,
             ),
             ("mutation timing", "scanner reduction microseconds", self.scanner_reduce_us),
+            ("detached builder", "builds", self.detached_builds),
+            ("detached builder", "entries", self.detached_entries),
+            ("detached builder", "walk microseconds", self.detached_walk_us),
+            ("detached builder", "finish microseconds", self.detached_finish_us),
             ("mutation consequences", "effective paths retained", self.effect_paths),
             ("mutation consequences", "effective path bytes", self.effect_path_bytes),
             ("mutation consequences", "impact candidates", self.impact_candidates),
@@ -268,6 +284,10 @@ impl Counts {
         self.scanner_control_projection_us =
             self.scanner_control_projection_us.saturating_add(other.scanner_control_projection_us);
         self.scanner_reduce_us = self.scanner_reduce_us.saturating_add(other.scanner_reduce_us);
+        self.detached_builds = self.detached_builds.saturating_add(other.detached_builds);
+        self.detached_entries = self.detached_entries.saturating_add(other.detached_entries);
+        self.detached_walk_us = self.detached_walk_us.saturating_add(other.detached_walk_us);
+        self.detached_finish_us = self.detached_finish_us.saturating_add(other.detached_finish_us);
         self.effect_paths = self.effect_paths.saturating_add(other.effect_paths);
         self.effect_path_bytes = self.effect_path_bytes.saturating_add(other.effect_path_bytes);
         self.impact_candidates = self.impact_candidates.saturating_add(other.impact_candidates);
@@ -333,6 +353,10 @@ struct GlobalCounts {
     scanner_prepare_us: AtomicU64,
     scanner_control_projection_us: AtomicU64,
     scanner_reduce_us: AtomicU64,
+    detached_builds: AtomicU64,
+    detached_entries: AtomicU64,
+    detached_walk_us: AtomicU64,
+    detached_finish_us: AtomicU64,
     effect_paths: AtomicU64,
     effect_path_bytes: AtomicU64,
     impact_candidates: AtomicU64,
@@ -380,6 +404,10 @@ impl GlobalCounts {
             scanner_prepare_us: AtomicU64::new(0),
             scanner_control_projection_us: AtomicU64::new(0),
             scanner_reduce_us: AtomicU64::new(0),
+            detached_builds: AtomicU64::new(0),
+            detached_entries: AtomicU64::new(0),
+            detached_walk_us: AtomicU64::new(0),
+            detached_finish_us: AtomicU64::new(0),
             effect_paths: AtomicU64::new(0),
             effect_path_bytes: AtomicU64::new(0),
             impact_candidates: AtomicU64::new(0),
@@ -429,6 +457,10 @@ impl GlobalCounts {
             counts.scanner_control_projection_us,
         );
         atomic_saturating_add(&self.scanner_reduce_us, counts.scanner_reduce_us);
+        atomic_saturating_add(&self.detached_builds, counts.detached_builds);
+        atomic_saturating_add(&self.detached_entries, counts.detached_entries);
+        atomic_saturating_add(&self.detached_walk_us, counts.detached_walk_us);
+        atomic_saturating_add(&self.detached_finish_us, counts.detached_finish_us);
         atomic_saturating_add(&self.effect_paths, counts.effect_paths);
         atomic_saturating_add(&self.effect_path_bytes, counts.effect_path_bytes);
         atomic_saturating_add(&self.impact_candidates, counts.impact_candidates);
@@ -489,6 +521,10 @@ impl GlobalCounts {
                 .scanner_control_projection_us
                 .load(Ordering::Relaxed),
             scanner_reduce_us: self.scanner_reduce_us.load(Ordering::Relaxed),
+            detached_builds: self.detached_builds.load(Ordering::Relaxed),
+            detached_entries: self.detached_entries.load(Ordering::Relaxed),
+            detached_walk_us: self.detached_walk_us.load(Ordering::Relaxed),
+            detached_finish_us: self.detached_finish_us.load(Ordering::Relaxed),
             effect_paths: self.effect_paths.load(Ordering::Relaxed),
             effect_path_bytes: self.effect_path_bytes.load(Ordering::Relaxed),
             impact_candidates: self.impact_candidates.load(Ordering::Relaxed),
@@ -535,6 +571,10 @@ impl GlobalCounts {
         self.scanner_prepare_us.store(0, Ordering::Relaxed);
         self.scanner_control_projection_us.store(0, Ordering::Relaxed);
         self.scanner_reduce_us.store(0, Ordering::Relaxed);
+        self.detached_builds.store(0, Ordering::Relaxed);
+        self.detached_entries.store(0, Ordering::Relaxed);
+        self.detached_walk_us.store(0, Ordering::Relaxed);
+        self.detached_finish_us.store(0, Ordering::Relaxed);
         self.effect_paths.store(0, Ordering::Relaxed);
         self.effect_path_bytes.store(0, Ordering::Relaxed);
         self.impact_candidates.store(0, Ordering::Relaxed);

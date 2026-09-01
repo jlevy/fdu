@@ -225,6 +225,7 @@ impl Arguments {
                     repeat = next_usize(&mut arguments, "--repeat")?;
                 }
                 Some("--no-oracle") => oracle_enabled = false,
+                Some("--no-controls") => scan.read_controls = false,
                 Some("--diagnostics") => diagnostics = true,
                 Some("--worker-policy") => {
                     let value = arguments
@@ -1101,6 +1102,10 @@ struct CounterSummary {
     bytes_allocated: u64,
     baseline_batches: u64,
     baseline_accepted_ops: u64,
+    detached_builds: u64,
+    detached_entries: u64,
+    detached_walk_us: u64,
+    detached_finish_us: u64,
     opened_batches: u64,
     opened_accepted_ops: u64,
     public_batches: u64,
@@ -1135,6 +1140,10 @@ impl CounterSummary {
             bytes_allocated: delta!(bytes_allocated),
             baseline_batches: delta!(baseline_batches),
             baseline_accepted_ops: delta!(baseline_accepted_ops),
+            detached_builds: delta!(detached_builds),
+            detached_entries: delta!(detached_entries),
+            detached_walk_us: delta!(detached_walk_us),
+            detached_finish_us: delta!(detached_finish_us),
             opened_batches: delta!(opened_batches),
             opened_accepted_ops: delta!(opened_accepted_ops),
             public_batches: delta!(public_batches),
@@ -1515,6 +1524,8 @@ fn json_counter_summary(summary: Option<&CounterSummary>) -> String {
         concat!(
             "{{\"allocs\":{},\"reallocs\":{},\"frees\":{},\"bytes_allocated\":{},",
             "\"baseline_batches\":{},\"baseline_accepted_ops\":{},",
+            "\"detached_builds\":{},\"detached_entries\":{},",
+            "\"detached_walk_us\":{},\"detached_finish_us\":{},",
             "\"opened_batches\":{},\"opened_accepted_ops\":{},",
             "\"public_batches\":{},\"public_accepted_ops\":{},",
             "\"ancestry_overlay_inserts\":{},\"ancestry_path_comparisons\":{},",
@@ -1531,6 +1542,10 @@ fn json_counter_summary(summary: Option<&CounterSummary>) -> String {
         summary.bytes_allocated,
         summary.baseline_batches,
         summary.baseline_accepted_ops,
+        summary.detached_builds,
+        summary.detached_entries,
+        summary.detached_walk_us,
+        summary.detached_finish_us,
         summary.opened_batches,
         summary.opened_accepted_ops,
         summary.public_batches,
