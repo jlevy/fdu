@@ -5,15 +5,15 @@ title: "PR #48 branch is 3.6-10x slower than main: allocator churn, not I/O"
 kind: bug
 status: in_progress
 priority: 0
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
+version: 5
+spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
 labels:
   - performance
   - regression
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-31T05:19:25.577Z
-updated_at: 2026-08-31T11:14:17.637Z
+updated_at: 2026-09-01T06:33:38.198Z
 ---
 The opened-root-inventory-rewrite branch has an unreported whole-scan performance regression against main that is larger and broader than the control-table cap this epic started from. It affects trees with NO .gitignore files, so it is not control-file I/O.
 
@@ -51,25 +51,4 @@ Acceptance: bisect the branch to the commit that introduces the allocation growt
 
 ## Notes
 
-## Fixes landed on PR #51 (claude/one-shot-commit-cost, stacked on #50)
-
-Commits e8ec821 (allocation fixes) and 897d8fe (the fdu-etfj gate). make check and
-cross-lint green; 613 tests pass.
-
-Final medians, release, interleaved vs main b75bf85, five runs:
-
-    toolchains   main 0.37  tip 1.58   fixed 0.70
-    metabrowser  main 1.32  tip 11.49  fixed 3.92
-
-Counters (control-free tree): 2.23M allocs / 422k reallocs, from 4.17M / 2.79M
-(main: 983k / 138k).
-
-## What remains open on this bead
-
-The effective-change stream and per-op prepare clone: ~6 allocs/entry the one-shot
-lifecycle pays for ApplyOutcome/Commit consumers it cannot have. This is the remaining
-~1.9x wall gap and it is design work -- lifecycle-gate the commit pipeline's effect
-recording the way serving indexes are already gated -- not another local patch.
-
-Acceptance updated: the counters-based regression guard (pin allocs/entry on a fixture
-tree in make check) is still unbuilt and should land with the design fix.
+PR #51 partially removes the regression but does not meet this P0 acceptance boundary. Independent review at e8f1bed measured the head at about 2.4x main wall time and 4.7x main engine-component time on the same 119,368-entry subject; a 100,001-op public batch remained about 7.7x main. Disposable counter and timing ladders corrected the residual attribution: path-keyed StructuralOverlay ancestry preflight dominates CPU, per-batch impact publication is next, and prepare/effect/AppliedDelta path copies dominate residual allocations. The correctness-first redesign, formal profile protocol, and parity thresholds are now owned by plan-2026-08-31-fdu-streaming-performance-parity.md and epic fdu-748k. This bead remains open until fdu-lj4h proves parity and the allocation guard lands.
