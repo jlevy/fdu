@@ -659,15 +659,48 @@ struct PreparedObservation {
 }
 
 #[derive(Default)]
-struct MutationEffects {
+struct ExactConsequences {
     changes: Vec<EffectiveChange>,
     state: Vec<StateTransition>,
 }
 
-impl MutationEffects {
+impl ExactConsequences {
     fn is_empty(&self) -> bool {
         self.changes.is_empty() && self.state.is_empty()
     }
+}
+
+#[derive(Default)]
+struct NoConsequences;
+
+/// Batch-selected destination for facts that escape the shared reducer.
+///
+/// The closure is intentional: `NoConsequences` never evaluates it, so path copies and
+/// effect construction compile out of detached baseline application rather than hiding
+/// behind a branch in the per-entry loop.
+trait ConsequenceSink {
+    fn change(&mut self, change: impl FnOnce() -> EffectiveChange);
+    fn state(&mut self, transition: impl FnOnce() -> StateTransition);
+}
+
+impl ConsequenceSink for ExactConsequences {
+    #[inline]
+    fn change(&mut self, change: impl FnOnce() -> EffectiveChange) {
+        self.changes.push(change());
+    }
+
+    #[inline]
+    fn state(&mut self, transition: impl FnOnce() -> StateTransition) {
+        self.state.push(transition());
+    }
+}
+
+impl ConsequenceSink for NoConsequences {
+    #[inline]
+    fn change(&mut self, _change: impl FnOnce() -> EffectiveChange) {}
+
+    #[inline]
+    fn state(&mut self, _transition: impl FnOnce() -> StateTransition) {}
 }
 
 /// The in-memory hierarchical index.
@@ -1259,7 +1292,7 @@ impl Index {
         }
         self.controls = controls;
         let mut stats = ApplyStats::default();
-        let mut effects = MutationEffects::default();
+        let mut effects = NoConsequences;
         self.reclassify_controlled_subtrees(&[PathBuf::new()], &mut stats, &mut effects);
         Ok(())
     }
@@ -1369,25 +1402,6 @@ impl Index {
         Ok(outcome)
     }
 
-    /// [`Self::apply`] with the change-history capture optional.
-    ///
-    /// `journal: false` exists for the bootstrap path, whose history
-    /// [`Self::establish_baseline`] clears after every batch: capturing it first
-    /// cost one effective-change clone per changed entry plus one commit clone per
-    /// batch, all
-    /// freed unread. Arbitration, validation, guards, and stats are identical in
-    /// both modes; only what is retained afterwards differs.
-    fn apply_with(
-        &mut self,
-        observation: &Observation,
-        journal: bool,
-    ) -> crate::Result<ApplyOutcome> {
-        let prepared = prepare_observation(observation)?;
-        let outcome = self.commit_prepared(prepared, journal)?;
-        record_batch(BatchProvenance::Baseline, observation.len(), outcome.stats);
-        Ok(outcome)
-    }
-
     /// Arbitrate and atomically apply normalized producer input.
     fn commit_prepared(
         &mut self,
@@ -1454,8 +1468,39 @@ impl Index {
         };
 
         let observed = u64::try_from(prepared.ops.len()).unwrap_or(u64::MAX);
+        let mut effects = ExactConsequences::default();
+        let stats = self.reduce_prepared(
+            &prepared,
+            discovery,
+            observation,
+            max_files,
+            track_file_progress,
+            &mut effects,
+        )?;
+
+        if effects.is_empty() {
+            return Ok(ApplyOutcome::from_commit(stats, None));
+        }
+
+        let commit =
+            self.publish_effects(next_clock, effects, commit_work(observed, stats), journal);
+        Ok(ApplyOutcome::from_commit(stats, Some(commit)))
+    }
+
+    /// Apply one prepared batch through the shared fact and roll-up reducer.
+    ///
+    /// `C` is selected once by the caller. The exact instantiation retains closures as
+    /// commits; the detached instantiation erases them, including their path copies.
+    fn reduce_prepared<C: ConsequenceSink>(
+        &mut self,
+        prepared: &PreparedObservation,
+        discovery: Option<DiscoveryCommit>,
+        observation: Option<ObservationTransition>,
+        max_files: Option<u64>,
+        track_file_progress: bool,
+        effects: &mut C,
+    ) -> crate::Result<ApplyStats> {
         let mut stats = ApplyStats::default();
-        let mut effects = MutationEffects::default();
         let mut parent_memo = ParentMemo::default();
         let accepted = self.accepted_operations(&prepared.ops);
         stats.stale = u64::try_from(accepted.iter().filter(|accepted| !**accepted).count())
@@ -1476,14 +1521,7 @@ impl Index {
             }
             match op {
                 Op::Upsert { path, kind, attrs } => {
-                    self.apply_upsert(
-                        path,
-                        *kind,
-                        *attrs,
-                        &mut stats,
-                        &mut effects,
-                        &mut parent_memo,
-                    );
+                    self.apply_upsert(path, *kind, *attrs, &mut stats, effects, &mut parent_memo);
                 }
                 Op::Remove { path } => {
                     // A removal takes a subtree with it, so a remembered id inside that
@@ -1492,7 +1530,7 @@ impl Index {
                     // ancestor of it: the memo is refilled by the next upsert, so the
                     // cost of being conservative is one path resolution.
                     parent_memo.clear();
-                    self.apply_remove(path, &mut stats, &mut effects);
+                    self.apply_remove(path, &mut stats, effects);
                 }
                 Op::ControlUpsert { .. } | Op::ControlRemove { .. } => {
                     // The complete table was already prepared above. It is installed
@@ -1520,18 +1558,19 @@ impl Index {
                         self.retain_issue(Issue::observation_gap(path, *reason));
                     }
                     stats.invalidated += 1;
-                    effects
-                        .changes
-                        .push(EffectiveChange::Invalidated { path: path.clone(), reason: *reason });
+                    effects.change(|| EffectiveChange::Invalidated {
+                        path: path.clone(),
+                        reason: *reason,
+                    });
                     if previous != current {
-                        effects.state.push(StateTransition::Freshness {
+                        effects.state(|| StateTransition::Freshness {
                             path: path.clone(),
                             previous,
                             current,
                         });
                     }
                     if previous_index_state != self.state {
-                        effects.state.push(StateTransition::IndexState {
+                        effects.state(|| StateTransition::IndexState {
                             previous: previous_index_state,
                             current: self.state,
                         });
@@ -1540,7 +1579,7 @@ impl Index {
             }
         }
 
-        self.apply_control_transition(projected_controls, &mut stats, &mut effects);
+        self.apply_control_transition(projected_controls, &mut stats, effects);
         let mut discovery = discovery;
         if stats.resource_refused > 0 {
             let max_files = max_files.expect("resource refusal requires a file limit");
@@ -1549,23 +1588,17 @@ impl Index {
             discovery.transition =
                 Some(DiscoveryTransition::BudgetRefused(Issue::resource_budget(max_files)));
         }
-        self.apply_opened_state(discovery, observation, track_file_progress, &mut effects);
+        self.apply_opened_state(discovery, observation, track_file_progress, effects);
 
-        if effects.is_empty() {
-            return Ok(ApplyOutcome::from_commit(stats, None));
-        }
-
-        let commit =
-            self.publish_effects(next_clock, effects, commit_work(observed, stats), journal);
-        Ok(ApplyOutcome::from_commit(stats, Some(commit)))
+        Ok(stats)
     }
 
-    fn apply_opened_state(
+    fn apply_opened_state<C: ConsequenceSink>(
         &mut self,
         discovery: Option<DiscoveryCommit>,
         observation: Option<ObservationTransition>,
         track_file_progress: bool,
-        effects: &mut MutationEffects,
+        effects: &mut C,
     ) {
         if discovery.is_none() && observation.is_none() && !track_file_progress {
             return;
@@ -1582,7 +1615,7 @@ impl Index {
                     self.entry_mut(id).children_complete = true;
                     self.state.progress.directories_complete =
                         self.state.progress.directories_complete.saturating_add(1);
-                    effects.state.push(StateTransition::DirectoryComplete { path });
+                    effects.state(|| StateTransition::DirectoryComplete { path });
                 }
             }
 
@@ -1691,7 +1724,7 @@ impl Index {
         }
 
         if previous != self.state {
-            effects.state.push(StateTransition::IndexState { previous, current: self.state });
+            effects.state(|| StateTransition::IndexState { previous, current: self.state });
         }
     }
 
@@ -1730,7 +1763,7 @@ impl Index {
     fn publish_effects(
         &mut self,
         next_clock: Clock,
-        effects: MutationEffects,
+        effects: ExactConsequences,
         work: Work,
         journal: bool,
     ) -> Commit {
@@ -1804,9 +1837,16 @@ impl Index {
         &mut self,
         observation: &Observation,
     ) -> crate::Result<ApplyStats> {
-        let outcome = self.apply_with(observation, false)?;
+        let prepared = prepare_observation(observation)?;
+        #[cfg(test)]
+        if prepared.reject_before_apply {
+            return Err(crate::Error::CommitRejected("injected reducer preflight"));
+        }
+        let mut effects = NoConsequences;
+        let stats = self.reduce_prepared(&prepared, None, None, None, false, &mut effects)?;
+        record_batch(BatchProvenance::Baseline, observation.len(), stats);
         self.establish_baseline();
-        Ok(outcome.stats)
+        Ok(stats)
     }
 
     #[cfg(test)]
@@ -1880,7 +1920,7 @@ impl Index {
                     current: self.state,
                 });
             }
-            let effects = MutationEffects { state, ..MutationEffects::default() };
+            let effects = ExactConsequences { state, ..ExactConsequences::default() };
             Some(self.publish_effects(next_clock, effects, Work::default(), true))
         };
         Ok((epoch, commit))
@@ -1930,7 +1970,7 @@ impl Index {
         if state.is_empty() {
             return Ok(None);
         }
-        let effects = MutationEffects { state, ..MutationEffects::default() };
+        let effects = ExactConsequences { state, ..ExactConsequences::default() };
         Ok(Some(self.publish_effects(next_clock, effects, Work::default(), true)))
     }
 
@@ -2691,11 +2731,11 @@ impl Index {
         Ok(projected)
     }
 
-    fn apply_control_transition(
+    fn apply_control_transition<C: ConsequenceSink>(
         &mut self,
         projected: crate::control::ControlTable,
         stats: &mut ApplyStats,
-        effects: &mut MutationEffects,
+        effects: &mut C,
     ) {
         let changes = projected.changes_from(&self.controls);
         if changes.is_empty() {
@@ -2707,19 +2747,19 @@ impl Index {
             .collect();
         self.controls = projected;
         stats.controls = u64::try_from(changes.len()).unwrap_or(u64::MAX);
-        effects.changes.extend(changes.into_iter().map(|(path, previous, current)| {
-            EffectiveChange::ControlUpdated { path, previous, current }
-        }));
+        for (path, previous, current) in changes {
+            effects.change(|| EffectiveChange::ControlUpdated { path, previous, current });
+        }
         self.reclassify_controlled_subtrees(&affected, stats, effects);
     }
 
     /// Re-evaluate only subtrees governed by changed controls, then rebuild the fixed
     /// unignored reducer from the resulting facts.
-    fn reclassify_controlled_subtrees(
+    fn reclassify_controlled_subtrees<C: ConsequenceSink>(
         &mut self,
         affected: &[PathBuf],
         stats: &mut ApplyStats,
-        effects: &mut MutationEffects,
+        effects: &mut C,
     ) {
         let mut roots: Vec<PathBuf> = affected.to_vec();
         roots.sort();
@@ -2756,7 +2796,7 @@ impl Index {
                     self.move_serving_file_partition(&path, id, current, next);
                     self.entry_mut(id).ignored = next;
                     stats.reclassified += 1;
-                    effects.changes.push(EffectiveChange::Reclassified {
+                    effects.change(|| EffectiveChange::Reclassified {
                         path: path.clone(),
                         previous_ignored: current,
                         current_ignored: next,
@@ -3310,13 +3350,13 @@ impl Index {
         current
     }
 
-    fn apply_upsert(
+    fn apply_upsert<C: ConsequenceSink>(
         &mut self,
         path: &Path,
         kind: EntryKind,
         attrs: Attrs,
         stats: &mut ApplyStats,
-        effects: &mut MutationEffects,
+        effects: &mut C,
         parent_memo: &mut ParentMemo,
     ) -> bool {
         // A walker reports a directory's children consecutively, because that is the
@@ -3355,7 +3395,7 @@ impl Index {
             root.source = source;
             Self::bump_revision(root);
             stats.updated += 1;
-            effects.changes.push(EffectiveChange::Updated {
+            effects.change(|| EffectiveChange::Updated {
                 path: PathBuf::new(),
                 kind: EntryKind::Dir,
                 previous,
@@ -3377,7 +3417,7 @@ impl Index {
     /// the arbitration rules.  Every guard the delta contract requires still runs here:
     /// the caller has supplied a parent, not a decision.
     #[allow(clippy::too_many_arguments)]
-    fn upsert_beneath(
+    fn upsert_beneath<C: ConsequenceSink>(
         &mut self,
         parent: EntryId,
         name: &OsStr,
@@ -3385,7 +3425,7 @@ impl Index {
         kind: EntryKind,
         attrs: Attrs,
         stats: &mut ApplyStats,
-        effects: &mut MutationEffects,
+        effects: &mut C,
     ) -> bool {
         let source = self.applying_source;
         let existing = self.entry(parent).children.get(name).copied();
@@ -3412,7 +3452,7 @@ impl Index {
                     entry.source = source;
                     Self::bump_revision(entry);
                     stats.updated += 1;
-                    effects.changes.push(EffectiveChange::Updated {
+                    effects.change(|| EffectiveChange::Updated {
                         path: path.to_path_buf(),
                         kind,
                         previous,
@@ -3438,7 +3478,7 @@ impl Index {
                     self.recompute_newest_upward(Some(parent));
                 }
                 stats.updated += 1;
-                effects.changes.push(EffectiveChange::Updated {
+                effects.change(|| EffectiveChange::Updated {
                     path: path.to_path_buf(),
                     kind,
                     previous,
@@ -3478,7 +3518,7 @@ impl Index {
         let contribution = self.contribution(id);
         self.merge_upward(Some(parent), &contribution);
         stats.inserted += 1;
-        effects.changes.push(EffectiveChange::Inserted { path: path.to_path_buf(), kind, attrs });
+        effects.change(|| EffectiveChange::Inserted { path: path.to_path_buf(), kind, attrs });
         self.insert_serving_entry(path, kind, attrs, id);
         true
     }
@@ -3541,11 +3581,11 @@ impl Index {
         Some(id)
     }
 
-    fn apply_remove(
+    fn apply_remove<C: ConsequenceSink>(
         &mut self,
         path: &Path,
         stats: &mut ApplyStats,
-        effects: &mut MutationEffects,
+        effects: &mut C,
     ) -> bool {
         let Some(id) = self.lookup(path) else {
             stats.unchanged += 1;
@@ -3559,7 +3599,12 @@ impl Index {
         true
     }
 
-    fn remove_entry(&mut self, id: EntryId, stats: &mut ApplyStats, effects: &mut MutationEffects) {
+    fn remove_entry<C: ConsequenceSink>(
+        &mut self,
+        id: EntryId,
+        stats: &mut ApplyStats,
+        effects: &mut C,
+    ) {
         let removed_root = self.path_of(id).expect("a live entry has a path");
         self.invalidate_content(&removed_root);
         self.remove_serving_subtree_semantics(id, &removed_root);
@@ -3586,7 +3631,7 @@ impl Index {
                 queue.push_back((child, path.join(name)));
             }
             self.remove_serving_entry(&path, kind, attrs, node);
-            effects.changes.push(EffectiveChange::Removed { path, kind, attrs });
+            effects.change(|| EffectiveChange::Removed { path, kind, attrs });
             // Give the extension back before the entry itself goes, so the interner
             // holds only what the tree still contains.
             if let Some(ext_id) = ext_id {
@@ -5309,13 +5354,13 @@ mod tests {
         assert_eq!(counts.ancestry_overlay_inserts, 3);
         assert_eq!(counts.ancestry_path_comparisons, 2);
         assert_eq!(counts.ancestry_parent_proofs, 3);
-        assert_eq!(counts.effect_paths, 3);
-        assert_eq!(counts.effect_path_bytes, 9);
-        assert_eq!(counts.impact_candidates, 3);
-        assert_eq!(counts.impact_ancestor_visits, 8);
-        assert_eq!(counts.impact_retained_dirty_paths, 4);
+        assert_eq!(counts.effect_paths, 0);
+        assert_eq!(counts.effect_path_bytes, 0);
+        assert_eq!(counts.impact_candidates, 0);
+        assert_eq!(counts.impact_ancestor_visits, 0);
+        assert_eq!(counts.impact_retained_dirty_paths, 0);
         assert_eq!(counts.impact_all_dirty, 0);
-        assert_eq!(counts.applied_delta_materializations, 1);
+        assert_eq!(counts.applied_delta_materializations, 0);
         assert_eq!(counts.journal_cloned_commits, 0);
         assert_eq!(counts.journal_retained_commits, 0);
 
@@ -5361,6 +5406,80 @@ mod tests {
         assert_eq!(counts.journal_retained_commits, 2);
         assert_eq!(counts.journal_oversized_commits, 1);
         assert_eq!(counts.journal_dropped_commits, 2);
+    }
+
+    #[test]
+    fn detached_and_exact_reducers_produce_the_same_facts_and_stats() {
+        fn fact_image(index: &Index) -> Vec<(PathBuf, EntryKind, Attrs, bool, Source, bool)> {
+            let mut image = Vec::new();
+            let mut frontier = VecDeque::from([EntryId::ROOT]);
+            while let Some(id) = frontier.pop_front() {
+                let entry = index.entry(id);
+                frontier.extend(entry.children.values().copied());
+                image.push((
+                    index.path_of(id).expect("live entry path"),
+                    entry.kind,
+                    entry.attrs,
+                    entry.ignored,
+                    entry.source,
+                    entry.children_complete,
+                ));
+            }
+            image.sort_by(|left, right| left.0.cmp(&right.0));
+            image
+        }
+
+        fn assert_same_facts(detached: &Index, exact: &Index) {
+            assert_eq!(fact_image(detached), fact_image(exact));
+            assert_eq!(detached.total(), exact.total());
+            assert_eq!(detached.partition_total(), exact.partition_total());
+            let controls = |index: &Index| {
+                index
+                    .controls
+                    .sources()
+                    .map(|(path, source)| (path, source.to_vec()))
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(controls(detached), controls(exact));
+            assert_eq!(detached.state, exact.state);
+            assert_eq!(detached.issues, exact.issues);
+            let freshness = |index: &Index| {
+                index
+                    .freshness_marks
+                    .iter()
+                    .map(|(path, mark)| (path.clone(), mark.state, mark.epoch))
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(freshness(detached), freshness(exact));
+            assert_eq!(detached.verified, exact.verified);
+            assert_eq!(detached.pending_invalidations, exact.pending_invalidations);
+        }
+
+        let mut detached = Index::new("/root");
+        let mut exact = detached.clone();
+        let batches = [
+            Observation::new(vec![
+                upsert("a", EntryKind::Dir, file_attrs(0, 1)),
+                upsert("a/one.rs", EntryKind::File, file_attrs(10, 2)),
+                upsert("a/two.txt", EntryKind::File, file_attrs(20, 3)),
+            ]),
+            Observation::new(vec![
+                upsert("a/one.rs", EntryKind::File, file_attrs(30, 4)),
+                Op::Remove { path: PathBuf::from("a/two.txt") },
+                Op::InvalidateSubtree {
+                    path: PathBuf::from("a"),
+                    reason: InvalidateReason::VerificationFailed,
+                },
+            ]),
+        ];
+
+        for batch in batches {
+            let detached_stats = detached.apply_baseline(&batch).expect("detached batch");
+            let exact_outcome = exact.apply(&batch).expect("exact batch");
+            assert_eq!(detached_stats, exact_outcome.stats);
+            exact.establish_baseline();
+            assert_same_facts(&detached, &exact);
+        }
     }
 
     #[test]
