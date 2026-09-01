@@ -8,11 +8,18 @@ function baseline(overrides = new Map()) {
     [
       "crates/fdu-core/src/scan.rs",
       [
+        "fn record_detached_entry(",
         "fn record_walk_entry(",
         "let process_entry = |",
         "let mut process_entry =",
         "crate::admission::should_descend(",
         ...Array.from({ length: 5 }, () => "admission::decide("),
+        "impl WalkEmission for StreamingEmission {",
+        "  fn record_entry() { record_walk_entry(); }",
+        "}",
+        "impl WalkEmission for DetachedEmission {",
+        "  fn record_entry() { record_detached_entry(); }",
+        "}",
         ...Array.from({ length: 8 }, () => "for item in listing {\n  process_entry();\n}"),
       ].join("\n"),
     ],
@@ -57,4 +64,15 @@ test("rejects a producer loop that bypasses admission", () => {
     baseline(new Map([["crates/fdu-core/src/opened.rs", opened]])),
   );
   assert.match(result.problems[0], /bypasses the admission chokepoint/);
+});
+
+test("rejects a generic emission implementation that bypasses admission", () => {
+  const scan = baseline().get("crates/fdu-core/src/scan.rs").replace(
+    "fn record_entry() { record_detached_entry(); }",
+    "fn record_entry() { retain(entry); }",
+  );
+  const result = auditAdmissionSources(
+    baseline(new Map([["crates/fdu-core/src/scan.rs", scan]])),
+  );
+  assert.match(result.problems[0], /DetachedEmission bypasses the admission chokepoint/);
 });

@@ -294,20 +294,19 @@ impl ControlMatcher<'_> {
         if self.table.by_directory.is_empty() {
             return false;
         }
-        let mut verdict = false;
-        let mut directories: Vec<&Path> =
-            self.path.parent().into_iter().flat_map(Path::ancestors).collect();
-        directories.reverse();
-        for directory in directories {
+        // A deeper control source overrides every matching ancestor. Walk from the
+        // immediate directory toward the root and return the first opinion instead of
+        // allocating and reversing an ancestor vector for every classified entry.
+        for directory in self.path.parent().into_iter().flat_map(Path::ancestors) {
             let Some(source) = self.table.by_directory.get(directory) else {
                 continue;
             };
             let relative = self.path.strip_prefix(directory).unwrap_or(self.path);
             if let Some(ignored) = source.matcher.matches(relative, is_dir) {
-                verdict = ignored;
+                return ignored;
             }
         }
-        verdict
+        false
     }
 }
 

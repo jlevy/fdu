@@ -29,7 +29,7 @@
 //! delta contract being the only mutation path means escalating later to epoch or
 //! arc-swap snapshots stays contained rather than becoming a rewrite.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::ffi::{OsStr, OsString};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -1153,6 +1153,148 @@ impl IndexHandle {
     }
 }
 
+/// Private parent-first builder for a cold index that is not yet externally visible.
+///
+/// Directory groups arrive while filesystem workers are still running. Applying each
+/// group here overlaps structural construction with the walk without turning the cold
+/// path back into public observations or manufacturing one full path per file.
+pub(crate) struct DetachedIndexBuilder {
+    index: Index,
+    directory_ids: HashMap<PathBuf, EntryId>,
+    inserted: u64,
+}
+
+impl DetachedIndexBuilder {
+    pub(crate) fn new(
+        root_path: impl Into<PathBuf>,
+        scope: ScanScope,
+        types: std::sync::Arc<crate::classify::TypeRegistry>,
+    ) -> Self {
+        Self {
+            index: Index::new_with_scope_and_types(root_path, scope, types),
+            directory_ids: HashMap::from([(PathBuf::new(), EntryId::ROOT)]),
+            inserted: 0,
+        }
+    }
+
+    /// Consume one listing after its parent listing has already been consumed.
+    pub(crate) fn push_directory(
+        &mut self,
+        directory: crate::scan::DetachedDirectory,
+    ) -> crate::Result<()> {
+        let crate::scan::DetachedDirectory { path, children, control } = directory;
+        // A listing arrives exactly once and no descendant can become claimable until
+        // its parent's listing has been sent. Retire the lookup entry now instead of
+        // retaining every walked directory path until the end of the scan.
+        let Some(parent) = self.directory_ids.remove(&path) else {
+            return Err(crate::Error::UnknownAncestry { path, reconcile_from: PathBuf::new() });
+        };
+
+        // The worker publishes this listing before descendants become claimable. Apply
+        // its complete fixed-control state before classifying any sibling, and every
+        // later child listing will therefore inherit all governing controls without a
+        // post-build subtree reclassification pass.
+        if let Some(control) = control {
+            match control {
+                Op::ControlUpsert { path, source } => {
+                    self.index.controls.upsert(&path, source)?;
+                }
+                Op::ControlRemove { path } => {
+                    self.index.controls.remove(&path)?;
+                }
+                _ => unreachable!("detached directory retains only fixed-control operations"),
+            }
+            self.inserted = self.inserted.saturating_add(1);
+        }
+
+        let parent_ignored = self.index.entry(parent).ignored;
+        let mut match_path =
+            (!parent_ignored && !self.index.controls.is_empty()).then(|| path.clone());
+        for child in children {
+            let crate::scan::DetachedChild { name, kind, attrs } = child;
+            crate::counters::bump(|counts| counts.upserts += 1);
+            let ext_id = (kind == EntryKind::File)
+                .then(|| self.index.intern_ext(&self.index.types.ext_bucket(&name)));
+            let (ignored, child_path) = if let Some(scratch) = &mut match_path {
+                scratch.push(&name);
+                let ignored = self.index.controls.matcher_for(scratch).is_ignored(kind.is_dir());
+                let child_path = kind.is_dir().then(|| scratch.clone());
+                let popped = scratch.pop();
+                debug_assert!(popped);
+                (ignored, child_path)
+            } else {
+                (parent_ignored, kind.is_dir().then(|| path.join(&name)))
+            };
+            // The parent lookup and the entry both own their key. Move the incoming
+            // name into the entry and pay only the one clone that representation
+            // requires instead of cloning twice and then dropping the original.
+            let child_key = name.clone();
+            let child_id = self.index.alloc(Entry {
+                parent: Some(parent),
+                name,
+                ext_id,
+                ignored,
+                source: Source::Scanned,
+                kind,
+                attrs,
+                children: BTreeMap::new(),
+                rollup: InternedPartitionRollUp::default(),
+                revision: 0,
+                children_revision: 0,
+                children_complete: kind != EntryKind::Dir,
+            });
+            if !self.index.insert_unique_child(parent, child_key, child_id) {
+                return Err(crate::Error::UnsupportedScanConfig(
+                    "detached scan produced a duplicate child name",
+                ));
+            }
+            // Fold the child's own direct contribution while filesystem work is still
+            // in flight. Files are now complete; directories will add only their
+            // descendant roll-up in the short bottom-up finish pass.
+            let direct = self.index.contribution(child_id);
+            crate::counters::bump(|counts| counts.rollup_merges += 1);
+            self.index.entry_mut(parent).rollup.merge(&direct);
+            if let Some(child_path) = child_path {
+                if self.directory_ids.insert(child_path, child_id).is_some() {
+                    return Err(crate::Error::UnsupportedScanConfig(
+                        "detached scan produced a duplicate directory path",
+                    ));
+                }
+            }
+            self.inserted = self.inserted.saturating_add(1);
+        }
+        Ok(())
+    }
+
+    /// Complete the private baseline after every directory listing has arrived.
+    pub(crate) fn finish(mut self) -> Index {
+        // Parents are allocated before descendants, so reverse arena order is a valid
+        // bottom-up traversal. Direct contributions were merged during the pipelined
+        // build; only completed directory descendants remain to propagate here.
+        for slot in (1..self.index.arena.len()).rev() {
+            let id = EntryId {
+                slot: u32::try_from(slot).expect("index arena exceeded u32 capacity"),
+                generation: 0,
+            };
+            if !self.index.entry(id).kind.is_dir() {
+                continue;
+            }
+            let parent = self.index.entry(id).parent.expect("every non-root entry has a parent");
+            // The directory's own count was merged when its parent listing arrived.
+            crate::counters::bump(|counts| counts.rollup_merges += 1);
+            self.index.merge_detached_descendants(parent, id);
+        }
+
+        crate::counters::bump(|counts| {
+            counts.baseline_batches = counts.baseline_batches.saturating_add(1);
+            counts.baseline_accepted_ops =
+                counts.baseline_accepted_ops.saturating_add(self.inserted);
+        });
+        self.index.establish_baseline();
+        self.index
+    }
+}
+
 impl Index {
     /// Create an empty index rooted at `root_path`.
     pub fn new(root_path: impl Into<PathBuf>) -> Self {
@@ -1656,8 +1798,8 @@ impl Index {
                         }
                     }
                 }
-                Op::ControlUpsert { .. } => {}
-                Op::Remove { .. } | Op::ControlRemove { .. } | Op::InvalidateSubtree { .. } => {
+                Op::ControlUpsert { .. } | Op::ControlRemove { .. } => {}
+                Op::Remove { .. } | Op::InvalidateSubtree { .. } => {
                     unreachable!("scanner preparation rejects non-discovery operations");
                 }
             }
@@ -1954,6 +2096,7 @@ impl Index {
     }
 
     /// Apply one owned filesystem-walker batch without constructing public history.
+    #[cfg(test)]
     pub(crate) fn apply_scanner_baseline(
         &mut self,
         batch: crate::scan::ScannerBatch,
@@ -2835,11 +2978,12 @@ impl Index {
             }
             match op {
                 Op::Upsert { .. } => {}
-                Op::ControlUpsert { .. } if crate::control::is_control_file(path) => {}
-                Op::ControlUpsert { .. } => {
+                Op::ControlUpsert { .. } | Op::ControlRemove { .. }
+                    if crate::control::is_control_file(path) => {}
+                Op::ControlUpsert { .. } | Op::ControlRemove { .. } => {
                     return Err(crate::Error::InvalidControlPath(path.to_path_buf()));
                 }
-                Op::Remove { .. } | Op::ControlRemove { .. } | Op::InvalidateSubtree { .. } => {
+                Op::Remove { .. } | Op::InvalidateSubtree { .. } => {
                     return Err(crate::Error::UnsupportedScanConfig(
                         "scanner batches contain discoveries only",
                     ));
@@ -3236,6 +3380,43 @@ impl Index {
         let entry = self.entry_mut(parent);
         entry.children.insert(name, child);
         Self::bump_children_revision(entry);
+    }
+
+    /// Insert a cold-builder child with one tree search, rejecting a duplicate.
+    fn insert_unique_child(&mut self, parent: EntryId, name: OsString, child: EntryId) -> bool {
+        let entry = self.entry_mut(parent);
+        let inserted = match entry.children.entry(name) {
+            std::collections::btree_map::Entry::Vacant(slot) => {
+                slot.insert(child);
+                true
+            }
+            std::collections::btree_map::Entry::Occupied(_) => false,
+        };
+        if inserted {
+            Self::bump_children_revision(entry);
+        }
+        inserted
+    }
+
+    /// Merge a completed detached directory without cloning its retained roll-up.
+    fn merge_detached_descendants(&mut self, parent: EntryId, child: EntryId) {
+        debug_assert!(parent.idx() < child.idx(), "cold parents must precede descendants");
+        let (parents, children) = self.arena.split_at_mut(child.idx());
+        let child_rollup = match &children[0] {
+            Slot::Occupied { generation, entry } if *generation == child.generation => {
+                &entry.rollup
+            }
+            Slot::Occupied { .. } | Slot::Free { .. } => {
+                panic!("detached child handle must be live: {child:?}")
+            }
+        };
+        let parent_entry = match &mut parents[parent.idx()] {
+            Slot::Occupied { generation, entry } if *generation == parent.generation => entry,
+            Slot::Occupied { .. } | Slot::Free { .. } => {
+                panic!("detached parent handle must be live: {parent:?}")
+            }
+        };
+        parent_entry.rollup.merge(child_rollup);
     }
 
     fn remove_child(&mut self, parent: EntryId, name: &OsStr) {

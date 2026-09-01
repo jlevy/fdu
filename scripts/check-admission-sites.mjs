@@ -17,7 +17,12 @@ const PRODUCERS = new Map([
     "crates/fdu-core/src/scan.rs",
     {
       loops: 8,
-      routes: ["admission::decide(", "record_walk_entry(", "process_entry("],
+      routes: [
+        "admission::decide(",
+        "emission.record_entry(",
+        "record_walk_entry(",
+        "process_entry(",
+      ],
     },
   ],
   [
@@ -184,12 +189,29 @@ export function auditAdmissionSources(sources) {
 
   const scan = sources.get("crates/fdu-core/src/scan.rs") ?? "";
   for (const chokepoint of [
+    "fn record_detached_entry(",
     "fn record_walk_entry(",
     "let process_entry = |",
     "let mut process_entry =",
   ]) {
     if (!scan.includes(chokepoint)) {
       problems.push(`crates/fdu-core/src/scan.rs: missing audited admission chokepoint ${chokepoint}`);
+    }
+  }
+  const scanStructure = rustStructure(scan).split("\n");
+  for (const [implementation, route] of [
+    ["impl WalkEmission for StreamingEmission", "record_walk_entry("],
+    ["impl WalkEmission for DetachedEmission", "record_detached_entry("],
+  ]) {
+    const start = scanStructure.findIndex((line) => line.includes(implementation));
+    if (start < 0) {
+      problems.push(`crates/fdu-core/src/scan.rs: missing audited emission ${implementation}`);
+      continue;
+    }
+    if (!blockBody(scan, scanStructure, start).includes(route)) {
+      problems.push(
+        `crates/fdu-core/src/scan.rs: ${implementation} bypasses the admission chokepoint ${route}`,
+      );
     }
   }
   if ((scan.match(/admission::decide\(/g) ?? []).length < 5) {
