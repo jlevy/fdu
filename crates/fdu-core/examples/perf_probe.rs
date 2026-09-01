@@ -695,8 +695,13 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
 
     let counters = begin_component_counters();
     let started = Instant::now();
-    let (report, pending, _performance) =
-        fdu_core::prepare_report(&arguments.root, &config, &query)?;
+    let (report, pending, _performance, scan_diagnostics) = if arguments.diagnostics {
+        fdu_core::prepare_report_with_scan_diagnostics(&arguments.root, &config, &query)?
+    } else {
+        let (report, pending, performance) =
+            fdu_core::prepare_report(&arguments.root, &config, &query)?;
+        (report, pending, performance, None)
+    };
     // Rendered to a string the way the command line renders into its writer; the bytes
     // are not printed because stdout carries this probe's JSON, and `black_box` keeps the
     // render from being optimised away as an unused value.
@@ -731,6 +736,7 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     };
     summary.errors = u64::try_from(report.errors.len()).unwrap_or(u64::MAX);
     summary.counters = counters;
+    summary.scan_diagnostics = scan_diagnostics;
     summary.complete = report.complete;
     summary.entries = root.files + root.dirs;
     summary.snapshot_bytes = snapshot.metadata().ok().map(|metadata| metadata.len());
@@ -1897,6 +1903,33 @@ mod tests {
         assert_eq!(summary.entries, 1);
         assert_eq!(summary.dirs, 1);
         assert!(summary.engine_digest.is_none());
+    }
+
+    #[test]
+    fn default_tree_probe_can_retain_full_index_scan_diagnostics() {
+        let root = tempfile::tempdir().expect("root tempdir");
+        let scratch = tempfile::tempdir().expect("scratch tempdir");
+        std::fs::create_dir(root.path().join("nested")).expect("nested directory");
+        std::fs::write(root.path().join("nested/file.txt"), b"trace me").expect("file");
+        let arguments = Arguments::parse(
+            [
+                OsString::from("default-tree"),
+                OsString::from("--root"),
+                root.path().as_os_str().to_owned(),
+                OsString::from("--snapshot"),
+                scratch.path().join("snapshot.fdu").into_os_string(),
+                OsString::from("--diagnostics"),
+            ]
+            .into_iter(),
+        )
+        .expect("probe arguments");
+
+        let output = default_tree(&arguments).expect("default-tree probe");
+
+        let diagnostics = output.summary.scan_diagnostics.expect("scan diagnostics");
+        assert_eq!(diagnostics.schema, fdu_core::scan::SCAN_DIAGNOSTICS_SCHEMA);
+        assert_eq!(diagnostics.worker_policy.ready_directories_at_finish, 0);
+        assert_eq!(diagnostics.worker_policy.in_flight_directories_at_finish, 0);
     }
 
     #[test]

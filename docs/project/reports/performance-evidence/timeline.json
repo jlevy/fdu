@@ -27241,6 +27241,143 @@
    "subject": "a319238d9c29:113794:58bc2ea1deb0",
    "title": "Suppress causal publication in a producer-only scan",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same immutable default-tree probe with diagnostics enabled",
+   "change_pct": -3.476,
+   "commit": null,
+   "complexity": {
+    "lines_changed": 112,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "One private collection flag crosses the report/open boundary; ordinary callers retain the existing no-diagnostics entry point."
+   },
+   "control": "same immutable default-tree probe with diagnostics disabled",
+   "date": "2026-09-01",
+   "decision": "accepted",
+   "entries": 113794,
+   "family": "macOS:a319238d9c29",
+   "hypotheses": [
+    "H97"
+   ],
+   "id": "exp-090",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 355309937.5,
+        "control": 372463958.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -3.633,
+        "ci95_high_pct": 1.337,
+        "ci95_low_pct": -12.052,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 2053023000,
+        "control": 2163563000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -3.164,
+        "ci95_high_pct": 1.927,
+        "ci95_low_pct": -14.634,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 90185728,
+        "control": 89513984
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.236,
+        "ci95_high_pct": 1.095,
+        "ci95_low_pct": -0.794,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 1845523000,
+        "control": 1923060000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -3.468,
+        "ci95_high_pct": 1.714,
+        "ci95_low_pct": -17.2,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 216353500,
+        "control": 211529500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.782,
+        "ci95_high_pct": 6.753,
+        "ci95_low_pct": -1.665,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 360675416.5,
+        "control": 377430208.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -3.476,
+        "ci95_high_pct": 1.428,
+        "ci95_low_pct": -11.878,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 3169.546869782238,
+      "control": 3316.7847909380107
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 90,
+   "path": "exp-090-bound-fullindex-scan-diagnostics-overhead.md",
+   "platform": "macOS",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "The opt-in FullIndex trace is noninferior: -3.48% median with a paired 95% interval of [-11.88%, +1.43%], below the predeclared +3% ceiling, with exact tallies and every resource gate held.",
+   "reference_tools": [],
+   "subject": "a319238d9c29:113794:58bc2ea1deb0",
+   "title": "Bound FullIndex scan-diagnostics overhead",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-01",
@@ -27340,14 +27477,16 @@
     "exp-086",
     "exp-087",
     "exp-088",
-    "exp-089"
+    "exp-089",
+    "exp-090"
    ],
    "files": 98525,
    "filesystem": "apfs",
    "host_cpu": "Apple M1 Pro",
    "key": "a319238d9c29:113794:58bc2ea1deb0",
    "labels": [
-    "metabrowser-current"
+    "metabrowser-current",
+    "metabrowser-live"
    ],
    "os_cache": "warm-steady",
    "platform": "macOS",
@@ -27787,22 +27926,22 @@
   }
  ],
  "totals": {
-  "accepted_lines_changed": 9984,
+  "accepted_lines_changed": 10096,
   "decisions": {
-   "accepted": 42,
+   "accepted": 43,
    "baseline": 7,
    "blocked": 2,
    "in-progress": 1,
    "rejected": 36,
    "superseded": 2
   },
-  "experiments": 90,
+  "experiments": 91,
   "first_date": "2026-08-10",
   "hypotheses": 61,
   "last_date": "2026-09-01",
   "platforms": {
    "Linux": 9,
-   "macOS": 81
+   "macOS": 82
   }
  },
  "version": "fdu.performance.timeline/1"

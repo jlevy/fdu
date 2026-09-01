@@ -317,7 +317,8 @@ pub fn open_with_pending_save(
     root: &Path,
     config: &OpenConfig,
 ) -> Result<(std::sync::Arc<Index>, OpenReport, PendingSave)> {
-    open_for_report(root, config, true, SnapshotUse::ReturnedIndex)
+    open_for_report(root, config, true, SnapshotUse::ReturnedIndex, false)
+        .map(|(index, report, pending, _diagnostics)| (index, report, pending))
 }
 
 /// What may consume an admitted snapshot.
@@ -368,7 +369,8 @@ pub(crate) fn open_for_report(
     config: &OpenConfig,
     read_snapshot: bool,
     snapshot_use: SnapshotUse,
-) -> Result<(std::sync::Arc<Index>, OpenReport, PendingSave)> {
+    collect_scan_diagnostics: bool,
+) -> Result<(std::sync::Arc<Index>, OpenReport, PendingSave, Option<scan::ScanDiagnostics>)> {
     let root = root.canonicalize().map_err(|e| Error::io(root, e))?;
     let policy = config.policy;
 
@@ -425,6 +427,7 @@ pub(crate) fn open_for_report(
                 content_cache,
             },
             PendingSave::none(),
+            None,
         ));
     }
 
@@ -461,10 +464,18 @@ pub(crate) fn open_for_report(
                 content_cache,
             },
             pending,
+            None,
         ));
     }
 
-    let (mut index, scan_report) = scan::scan_into_index(&root, &config.scan)?;
+    let (mut index, scan_report, scan_diagnostics) = if collect_scan_diagnostics {
+        let (index, report, diagnostics) =
+            scan::scan_into_index_with_diagnostics(&root, &config.scan)?;
+        (index, report, Some(diagnostics))
+    } else {
+        let (index, report) = scan::scan_into_index(&root, &config.scan)?;
+        (index, report, None)
+    };
     let content_cache = load_content(&mut index, config)?;
     let analysis = config
         .analysis
@@ -482,6 +493,7 @@ pub(crate) fn open_for_report(
         index,
         OpenReport { path_taken: OpenPath::ColdScan, scan: scan_report, analysis, content_cache },
         pending,
+        scan_diagnostics,
     ))
 }
 

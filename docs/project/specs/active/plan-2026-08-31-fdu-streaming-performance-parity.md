@@ -771,7 +771,7 @@ support an explicitly labelled counter-disabled mode while timing and oracle val
 remain unchanged. The raw sampling workaround used for H106 is evidence for that
 requirement, not a replacement for a reproducible harness path.
 
-That instrumentation prerequisite is now complete.
+The counter/oracle instrumentation prerequisite is now complete.
 The profiler accepts independent `--counters` and `--oracle` switches, the probe’s
 `--no-oracle` mode summarizes a completed index from its stored root roll-up without a
 path or digest walk, and every profile artifact records both choices.
@@ -788,6 +788,16 @@ Allocator symbols accounted for 5.84% in aggregate, while the remaining scanner 
 index work was dispersed across worker, entry-recording, path, collection, and roll-up
 frames. This honest profile identifies no independent leaf optimization with enough
 reachable share to close the residual gap.
+
+The FullIndex diagnostics prerequisite is also complete.
+Cold FullIndex scans now retain the same opt-in `fdu-scan-diagnostics-v1` trace already
+available on the transient Summary plan, while the ordinary entry point still selects
+the no-diagnostics scanner.
+Exp-090 interleaved diagnostics off and on in one immutable binary over this subject:
+wall changed -3.48%, with a paired 95% interval from -11.88% to +1.43%, exact tallies,
+and every resource gate held.
+Cache-only opens perform no scan, and warm reconciliation does not use the cold-scan
+producer contract; neither emits a misleading partial trace.
 
 H104 through H106 already removed scanner preparation, application frequency, and causal
 publication independently without moving wall time.
