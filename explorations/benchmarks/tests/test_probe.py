@@ -230,7 +230,6 @@ class FduProbeTests(unittest.TestCase):
         self.assertEqual(counters["effect_paths"], 601)
         self.assertEqual(counters["impact_candidates"], 601)
         self.assertEqual(counters["impact_all_dirty"], 1)
-        self.assertEqual(counters["applied_delta_materializations"], 1)
         self.assertEqual(counters["journal_cloned_commits"], 1)
         self.assertEqual(counters["journal_retained_commits"], 1)
         self.assertGreater(counters["allocs"], 0)

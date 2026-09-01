@@ -3,8 +3,7 @@
 //! The walker, revalidator, and watch layer produce [`Observation`] batches. The index
 //! arbitrates their preconditions, removes no-ops, and creates a [`Commit`] only after
 //! every effective fact, reducer, and state change is known. The journal retains those
-//! commits. [`AppliedDelta`] is a compatibility projection; it is never a second source
-//! of change truth.
+//! commits as the only source of change truth.
 //!
 //! Three properties are load-bearing, and the rest of the crate depends on them:
 //!
@@ -1404,22 +1403,6 @@ impl EffectiveChange {
             | Self::Invalidated { path, .. } => path,
         }
     }
-
-    fn as_compatibility_op(&self) -> Option<Op> {
-        match self {
-            Self::Inserted { path, kind, attrs } => {
-                Some(Op::Upsert { path: path.clone(), kind: *kind, attrs: *attrs })
-            }
-            Self::Updated { path, kind, current, .. } => {
-                Some(Op::Upsert { path: path.clone(), kind: *kind, attrs: *current })
-            }
-            Self::Removed { path, .. } => Some(Op::Remove { path: path.clone() }),
-            Self::Invalidated { path, reason } => {
-                Some(Op::InvalidateSubtree { path: path.clone(), reason: *reason })
-            }
-            Self::ControlUpdated { .. } | Self::Reclassified { .. } => None,
-        }
-    }
 }
 
 /// A stable fdu-native answer domain that one commit may have made stale.
@@ -1561,46 +1544,6 @@ impl Commit {
             + self.state.len()
             + self.impact.dirty_paths.len()
             + usize::from(self.impact.all_dirty)
-    }
-
-    /// Project entry changes into the legacy delta vocabulary.
-    ///
-    /// State-only commits return `None`: callers needing complete history consume
-    /// commits, while legacy callers continue to see only entry-operation deltas.
-    pub fn applied_delta(&self) -> Option<AppliedDelta> {
-        let ops: Vec<Op> =
-            self.changes.iter().filter_map(EffectiveChange::as_compatibility_op).collect();
-        if ops.is_empty() {
-            return None;
-        }
-        crate::counters::bump(|counts| {
-            counts.applied_delta_materializations =
-                counts.applied_delta_materializations.saturating_add(1);
-        });
-        Some(AppliedDelta { clock: self.clock, ops })
-    }
-}
-
-/// A compatibility projection of a commit's effective entry changes.
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub struct AppliedDelta {
-    /// Logical commit clock minted for the whole batch.
-    pub clock: Clock,
-    /// Effective mutations committed at that clock.
-    pub ops: Vec<Op>,
-}
-
-impl AppliedDelta {
-    #[inline]
-    /// Whether the committed batch contains no operations.
-    pub fn is_empty(&self) -> bool {
-        self.ops.is_empty()
-    }
-
-    #[inline]
-    /// Number of effective operations in the committed batch.
-    pub fn len(&self) -> usize {
-        self.ops.len()
     }
 }
 

@@ -12,7 +12,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Initial scaffold: the architecture expressed in working, tested code.
   - **Observation/commit contract** (`types.rs`): producers submit verified, optionally
     conditional `Upsert` / `Remove` / `InvalidateSubtree` observations; the index emits
-    clocked `AppliedDelta` batches containing only effective mutations.
+    clocked `Commit` batches containing exact effective mutations and state transitions.
   - **In-memory index** (`index.rs`): parent-pointer arena with per-directory
     pre-computed roll-ups (counts, apparent and allocated bytes, newest mtime,
     per-extension tallies), O(depth) apply, generation-safe free-slot reuse, explicit

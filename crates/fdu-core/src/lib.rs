@@ -17,8 +17,7 @@
 //! walker establishes a baseline from upsert observations; the reconciler submits the
 //! conditional diff between indexed state and reality; the watch layer submits verified,
 //! coalesced observations. The index arbitrates them and re-rolls its reducers; a change
-//! feed consumes exact effective changes and state transitions. [`AppliedDelta`] remains
-//! available as an entry-only compatibility projection.
+//! feed consumes exact effective changes and state transitions from [`Commit`].
 //!
 //! A deliberate consequence: **watching is not tied to the roll-up logic.** The index
 //! knows `apply(Observation)` and nothing about filesystem events, so a batch scan, a test
@@ -97,10 +96,10 @@ pub use crate::control::{
     is_control_file,
 };
 pub use crate::engine_contract::{
-    AppliedDelta, Attrs, ChangeOutcome, ChangePoll, ChangeRequest, Clock, Commit, ContinuationId,
-    CountResult, Coverage, CoverageReason, DEFAULT_COUNT_CAP, DiscoveryProgress, EffectiveChange,
-    EngineVersion, EntryKind, EntryValue, Error, Expectation, Fingerprint, FlatPage, Freshness,
-    Impact, ImpactDomain, IndexState, InvalidateReason, Issue, IssueKind, IssueSummary, Knowledge,
+    Attrs, ChangeOutcome, ChangePoll, ChangeRequest, Clock, Commit, ContinuationId, CountResult,
+    Coverage, CoverageReason, DEFAULT_COUNT_CAP, DiscoveryProgress, EffectiveChange, EngineVersion,
+    EntryKind, EntryValue, Error, Expectation, Fingerprint, FlatPage, Freshness, Impact,
+    ImpactDomain, IndexState, InvalidateReason, Issue, IssueKind, IssueSummary, Knowledge,
     LifecyclePhase, LimitedProjection, MAX_CONTINUATION_RECORD_BYTES, MAX_COUNT_CAP,
     MAX_DIRTY_PATHS, MAX_ISSUE_MESSAGE_BYTES, MAX_ISSUE_PATH_BYTES, MAX_PAGE_ROWS, MAX_PAGE_WORK,
     MAX_READ_PROJECTIONS, MAX_REPORT_VIEWS, MAX_RETAINED_ISSUES, Observation, ObservationOp, Op,
