@@ -579,6 +579,75 @@ removed nearly every scanner journal clone and roughly 10.3% of opened scoped
 allocations, but opened wall time was unchanged and the candidate added a second result
 form. Both spikes were removed.
 
+[exp-083](../../experiments/exp-083-skip-unignored-roll-up-maintenance-in-control-free-scopes.md)
+tested the remaining whole-scan allocation gap on the 113,794-entry control-rich source
+checkout. Skipping the redundant `unignored` reducer when controls are disabled removed
+114,782 component allocations and 36.8 MB of requested allocation per scan;
+repeat-profile allocation, reallocation, and byte totals all came within 1.02 times the
+pre-rewrite control.
+The wall result did not clear the experiment rule: `default-tree` improved 1.61%, while
+`cold-scan-index` changed 0.47% with its interval crossing zero.
+The spike was removed.
+
+The larger subject also changes the campaign conclusion drawn from the first tree.
+Before exp-083, the complete branch was 5.39% slower on `default-tree` and 4.79% slower
+on `cold-scan-index`; with the rejected spike applied, a direct diagnostic against the
+pinned pre-rewrite control still measured regressions of 4.92% and 4.01%. The post-spike
+counter profile leaves roughly 0.22 extra allocation and reallocation events and 90
+requested bytes per entry.
+That evidence motivated
+[exp-084](../../experiments/exp-084-compact-optional-fixed-partition-storage.md), a
+pre-registered composite of the control-free lane and compact optional directory-only
+storage for the second reducer.
+The spike removed another exact 56 requested bytes per entry, brought whole-process
+allocation, reallocation, and byte ratios within 1.02 of the pre-rewrite control, and
+cut `default-tree` peak RSS 18.16%. Its `default-tree` wall improvement was 2.63%, with
+a paired 95% interval from -3.17% to -1.19%, while `cold-scan-index` remained
+inconclusive. That misses the 3% structural-change gate, so the 260-line optional-state
+and materialization design was removed.
+
+Allocation-stack traces after exp-084 find no remaining duplicate clone: retained
+allocations are the entry arena, names, extension interning, child maps, and roll-up
+maps also owned by the pre-rewrite engine.
+The remaining actionable difference is architectural rather than an isolated heap event:
+one-shot scans now cross the streaming producer/preparation boundary even when the
+caller requests neither controls nor consequences.
+Any next experiment must combine a compact control-free representation with one
+scan-level choice of a direct non-streaming producer/reducer lane; neither rejected
+representation alone may be smuggled into the branch.
+The composite must still clear the 3% wall gate, preserve exact digests, meet the 1.05
+allocation ratios, and prove opened-discovery non-regression.
+
+H99 (`fdu-hjez`) was that pre-registered composite.
+The completed-index heap trace identifies the boundary representation precisely: private
+scanner batches retain `Vec<ObservationOp>` even though every scanner operation has
+`Expectation::Any`. At the exp-084 high-water mark, those batch buffers retained 25.6
+MB; the pre-rewrite walker transported compact `Vec<Op>` values.
+It kept scanner batches compact, converted to conditional-capable observations only when
+the public streaming `scan` API crossed its boundary, and combined that change with
+exp-084’s compact fixed-partition storage.
+
+[exp-085](../../experiments/exp-085-compact-scanner-batches-and-optional-fixed-partitions.md)
+rejects the complete composite under its preregistered gate.
+Compact scanner transport alone was neutral on `default-tree` at +0.11%, with a 95%
+interval from -0.88% to +1.46%, and directionally improved `cold-scan-index` 1.24%, with
+its interval crossing zero.
+The composite improved `default-tree` 2.56%, with a paired interval from -3.33% to
+-0.13%, but stayed below the 3% structural threshold.
+`cold-scan-index` improved 1.63% by median, with an interval from -2.74% to +0.34%. Peak
+RSS fell 19.11%, confirming the representation benefit, but the complete 490-line spike
+was removed because its wall-time gate failed.
+
+The two rejected partition experiments and the neutral scanner-only diagnostic narrow
+the next admissible target.
+Another retained-shape edit is unlikely to supply a material wall gain.
+The remaining untested architectural option is a true one-shot producer/reducer lane
+selected once by the execution plan: it must consume scanner facts without retaining
+batch or public-observation storage, while the streaming and opened APIs continue to use
+the current batch contract.
+That lane requires a fresh profile and preregistration before implementation; it may not
+reuse either rejected optional-partition representation.
+
 After the journal preflight, the leading exact-update profile cost is the
 `StructuralOverlay` required to prove arbitrary public mutations atomically before state
 changes. Scanner discovery no longer pays for that boundary, and the remaining public
@@ -601,7 +670,7 @@ unused consequence construction as the leading detached cost.
 
 - [ ] Re-profile all five jobs and rank only mechanisms that can reach the remaining
   parity gap.
-- [x] Iterate on the leading measured cost until the one-shot thresholds pass or two
+- [ ] Iterate on the leading measured cost until the one-shot thresholds pass or two
   consecutive profiles find no mechanism capable of reaching 3%; any proposed target
   revision requires a separate design decision with evidence.
 - [ ] Add deterministic per-entry allocation guards for detached construction and opened
