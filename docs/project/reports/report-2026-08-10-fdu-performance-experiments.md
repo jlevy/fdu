@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 34 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 36 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 
@@ -176,6 +176,8 @@ dead end.
 | 097 | [Audit historical lifecycle parity after detached bootstrap](#exp097--audit-historical-lifecycle-parity-after-detached-bootstrap) | H86 | `cold-scan-index` | +0.9% | ⏳ in progress |
 | 098 | [Share pool orchestration through a dynamic consumer](#exp098--share-pool-orchestration-through-a-dynamic-consumer) | H86 | `cold-scan-index` | +0.8% | ❌ rejected |
 | 099 | [Monomorphize shared concurrent-walk consumption](#exp099--monomorphize-shared-concurrentwalk-consumption) | H86 | `cold-scan-index` | +0.2% | ✅ accepted |
+| 100 | [Move directory-only state out of line](#exp100--move-directoryonly-state-out-of-line) | H86 | `default-tree` | -0.8% | ❌ rejected |
+| 101 | [Compact detached child topology with local promotion](#exp101--compact-detached-child-topology-with-local-promotion) | H86 | `default-tree` | -7.7% | ✅ accepted |
 
 ## The experiments
 
@@ -3487,6 +3489,76 @@ per-message dynamic dispatch.
 Full record:
 [`exp-099-monomorphize-shared-concurrent-walk-consumption.md`](../experiments/exp-099-monomorphize-shared-concurrent-walk-consumption.md)
 
+### exp-100 — Move directory-only state out of line
+
+❌ rejected · 2026-09-01 · H86
+
+Control: exact 88304cb detached builder
+
+Candidate: out-of-line directory payload with inline arena entries
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 355.9 | 350.6 | -0.83% (n.s.) | [-3.33%, +0.74%] |
+| component (ms) | 351.4 | 346.1 | -0.82% (n.s.) | [-3.33%, +0.78%] |
+| cpu (ms) | 2007.0 | 2014.3 | +1.15% (n.s.) | [-1.71%, +2.77%] |
+| user (ms) | 136.1 | 129.1 | -5.31% | [-6.63%, -1.34%] |
+| system (ms) | 1870.5 | 1887.4 | +1.61% (n.s.) | [-1.19%, +3.22%] |
+| peak rss (MiB) | 84.2 | 63.3 | -24.63% | [-25.24%, -23.84%] |
+
+Other jobs, wall time: `cold-scan-index` -3.2% (n.s.), `opened-discovery` -0.3% (n.s.).
+
+Cost to carry: 0 lines; no new dependencies; new failure mode: An extra allocation on
+every directory could trade file density for directory pointer chasing.
+
+Intermediate uncommitted checkpoint; the source line count was not preserved after the
+next test-first arm superseded it.
+
+**Rejected:** Default-tree wall changed -0.83% [-3.33%, +0.74%], missing the
+preregistered 3% gate despite 24.63% lower RSS.
+
+Full record:
+[`exp-100-move-directory-only-state-out-of-line.md`](../experiments/exp-100-move-directory-only-state-out-of-line.md)
+
+### exp-101 — Compact detached child topology with local promotion
+
+✅ accepted · 2026-09-01 · H86
+
+Control: exact 88304cb detached builder
+
+Candidate: inline entries, directory payloads, sorted detached children, and per-parent
+promotion
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 392.0 | 361.4 | -7.70% | [-10.16%, -3.77%] |
+| component (ms) | 386.4 | 356.1 | -7.71% | [-10.19%, -3.79%] |
+| cpu (ms) | 1967.8 | 1981.3 | +3.30% (n.s.) | [-2.01%, +8.05%] |
+| user (ms) | 184.7 | 169.7 | -9.36% | [-11.31%, -6.21%] |
+| system (ms) | 1777.2 | 1812.7 | +4.41% (n.s.) | [-0.68%, +9.78%] |
+| peak rss (MiB) | 84.1 | 52.0 | -37.79% | [-38.38%, -37.41%] |
+
+Other jobs, wall time: `cold-scan-index` -5.9%, `opened-discovery` -1.4% (n.s.).
+
+Cost to carry: 634 lines; no new dependencies; new failure mode: The first arbitrary
+mutation of a compact parent clones that parent’s child names into a keyed map; new
+failure mode: Compact lookup and iteration rely on detached child names being unique and
+sorted in native OsStr order.
+
+No new dependency or unsafe block; one retained fact model, two child-storage states,
+and local one-time promotion only on mutation.
+
+**Accepted:** Exploratory default-tree wall improved 7.70% [-10.16%, -3.77%] and RSS
+fell 37.79%; cold scan moved the same way and opened discovery remained within +3%,
+pending quiet-host confirmation.
+
+Full record:
+[`exp-101-compact-detached-child-topology-with-local-promotion.md`](../experiments/exp-101-compact-detached-child-topology-with-local-promotion.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -3650,6 +3722,13 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 045 | Pipeline macOS directory opens | `rich-summary-open-pipeline` | 3,468.3 | 3,325.4 | -4.5% | ↩︎ superseded |
 | 046 | Tune a shared macOS directory-opener pool | `rich-summary-shared-openers` | 3,337.9 | 3,220.9 | -4.0% | ⏳ in progress |
+
+### metabrowser-113794 (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 100 | Move directory-only state out of line | `default-tree` | 355.9 | 350.6 | -0.8% | ❌ rejected |
+| 101 | Compact detached child topology with local promotion | `default-tree` | 392.0 | 361.4 | -7.7% | ✅ accepted |
 
 ### metabrowser-clone (60,089 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
