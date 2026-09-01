@@ -11,9 +11,11 @@ use std::thread::{self, JoinHandle};
 
 #[cfg(test)]
 use crate::EntryKind;
+#[cfg(test)]
+use crate::Observation;
 use crate::index::{DiscoveryCommit, DiscoveryTransition};
 use crate::scan::ReconcileControl;
-use crate::{Error, Index, IndexHandle, Observation, Op, Result, ScanConfig, SessionId};
+use crate::{Error, Index, IndexHandle, ObservationOp, Op, Result, ScanConfig, SessionId};
 
 mod continuation;
 #[cfg(all(test, feature = "watch", feature = "gitignore"))]
@@ -1128,11 +1130,11 @@ fn push_discovery_op(
     index: &IndexHandle,
     journal: &journal::JournalWait,
     batch_size: usize,
-    batch: &mut Vec<Op>,
+    batch: &mut Vec<ObservationOp>,
     op: Op,
     max_files: Option<u64>,
 ) -> Result<bool> {
-    batch.push(op);
+    batch.push(ObservationOp::unconditional(op));
     if batch.len() >= batch_size {
         return commit_discovery_batch(index, journal, batch, None, None, max_files);
     }
@@ -1142,14 +1144,14 @@ fn push_discovery_op(
 fn commit_discovery_batch(
     index: &IndexHandle,
     journal: &journal::JournalWait,
-    batch: &mut Vec<Op>,
+    batch: &mut Vec<ObservationOp>,
     directory_complete: Option<PathBuf>,
     transition: Option<DiscoveryTransition>,
     max_files: Option<u64>,
 ) -> Result<bool> {
-    let observation = Observation::new(std::mem::take(batch));
-    let outcome = index.apply_discovery_bounded(
-        &observation,
+    let scanner_batch = crate::scan::ScannerBatch::new(std::mem::take(batch));
+    let outcome = index.apply_scanner_discovery_bounded(
+        scanner_batch,
         DiscoveryCommit { directory_complete, transition },
         max_files,
     )?;

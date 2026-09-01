@@ -970,13 +970,49 @@ pub(crate) fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<
     fs::symlink_metadata(entry.path())
 }
 
+/// Owned output from the filesystem walker before it crosses a public mutation boundary.
+///
+/// Only the scan and opened-discovery producers construct this type. Their admission,
+/// depth, filesystem, and symlink checks have already selected every operation, and the
+/// index consumes the owned paths while proving their parent identities under its write
+/// boundary. Public scan callers receive an [`Observation`] instead and therefore keep
+/// the full public normalization and atomic-validation contract.
+#[derive(Debug)]
+pub(crate) struct ScannerBatch {
+    ops: Vec<ObservationOp>,
+}
+
+impl ScannerBatch {
+    pub(crate) const fn new(ops: Vec<ObservationOp>) -> Self {
+        Self { ops }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_ops(ops: Vec<Op>) -> Self {
+        Self { ops: ops.into_iter().map(ObservationOp::unconditional).collect() }
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.ops.len()
+    }
+
+    pub(crate) fn into_ops(self) -> Vec<ObservationOp> {
+        self.ops
+    }
+
+    fn into_observation(self) -> Observation {
+        Observation::from_ops(self.ops)
+    }
+}
+
 /// Walk `root` and emit observations describing everything found.
 pub fn scan(
     root: &Path,
     config: &ScanConfig,
     sink: &mut dyn FnMut(Observation),
 ) -> Result<ScanReport> {
-    scan_internal(root, config, sink, false, WorkerPolicyExperiment::ShippedOneShot)
+    let mut public_sink = |batch: ScannerBatch| sink(batch.into_observation());
+    scan_internal(root, config, &mut public_sink, false, WorkerPolicyExperiment::ShippedOneShot)
         .map(|(report, _diagnostics)| report)
 }
 
@@ -1001,14 +1037,15 @@ pub fn scan_with_policy_diagnostics(
     sink: &mut dyn FnMut(Observation),
     policy: WorkerPolicyExperiment,
 ) -> Result<(ScanReport, ScanDiagnostics)> {
-    let (report, diagnostics) = scan_internal(root, config, sink, true, policy)?;
+    let mut public_sink = |batch: ScannerBatch| sink(batch.into_observation());
+    let (report, diagnostics) = scan_internal(root, config, &mut public_sink, true, policy)?;
     Ok((report, diagnostics.expect("diagnostic scan creates a recorder")))
 }
 
 fn scan_internal(
     root: &Path,
     config: &ScanConfig,
-    sink: &mut dyn FnMut(Observation),
+    sink: &mut dyn FnMut(ScannerBatch),
     collect_diagnostics: bool,
     policy: WorkerPolicyExperiment,
 ) -> Result<(ScanReport, Option<ScanDiagnostics>)> {
@@ -1047,7 +1084,7 @@ fn scan_internal(
     }
     let worker_guard = diagnostics.as_ref().map(ScanDiagnosticsRecorder::worker_guard);
     let walk_started = std::time::Instant::now();
-    let mut batch: Vec<Op> = Vec::with_capacity(config.batch_size);
+    let mut batch: Vec<ObservationOp> = Vec::with_capacity(config.batch_size);
     let mut queue: VecDeque<(PathBuf, usize)> = VecDeque::from(vec![(PathBuf::new(), 0)]);
 
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
@@ -1105,10 +1142,10 @@ fn scan_internal(
             };
             if disposition == crate::admission::Disposition::ControlOnly {
                 if let Some(control) = control {
-                    batch.push(control);
+                    batch.push(ObservationOp::unconditional(control));
                     if batch.len() >= config.batch_size {
                         let send_started = std::time::Instant::now();
-                        sink(Observation::new(std::mem::take(&mut batch)));
+                        sink(ScannerBatch::new(std::mem::take(&mut batch)));
                         report.attribution.send_ns += elapsed_ns(send_started);
                         batch.reserve(config.batch_size);
                     }
@@ -1116,18 +1153,22 @@ fn scan_internal(
                 continue;
             }
             report.observe(kind, attrs);
-            batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
+            batch.push(ObservationOp::unconditional(Op::Upsert {
+                path: rel_path.clone(),
+                kind,
+                attrs,
+            }));
             if batch.len() >= config.batch_size {
                 let send_started = std::time::Instant::now();
-                sink(Observation::new(std::mem::take(&mut batch)));
+                sink(ScannerBatch::new(std::mem::take(&mut batch)));
                 report.attribution.send_ns += elapsed_ns(send_started);
                 batch.reserve(config.batch_size);
             }
             if let Some(control) = control {
-                batch.push(control);
+                batch.push(ObservationOp::unconditional(control));
                 if batch.len() >= config.batch_size {
                     let send_started = std::time::Instant::now();
-                    sink(Observation::new(std::mem::take(&mut batch)));
+                    sink(ScannerBatch::new(std::mem::take(&mut batch)));
                     report.attribution.send_ns += elapsed_ns(send_started);
                     batch.reserve(config.batch_size);
                 }
@@ -1141,7 +1182,7 @@ fn scan_internal(
 
     if !batch.is_empty() {
         let send_started = std::time::Instant::now();
-        sink(Observation::new(batch));
+        sink(ScannerBatch::new(batch));
         report.attribution.send_ns += elapsed_ns(send_started);
     }
     // A serial walk has no coordination to attribute: wall is the loop, "send" is the
@@ -1608,7 +1649,7 @@ fn atomic_update_max(target: &std::sync::atomic::AtomicUsize, value: usize) {
 }
 
 enum WalkMessage {
-    Observation(Observation),
+    Batch(ScannerBatch),
     ScaleUp { sender: std::sync::mpsc::Sender<Self>, target_workers: usize },
 }
 
@@ -1832,7 +1873,7 @@ fn scan_concurrent(
     root: &Path,
     config: &ScanConfig,
     root_dev: u64,
-    sink: &mut dyn FnMut(Observation),
+    sink: &mut dyn FnMut(ScannerBatch),
     pool: WorkerPool,
     diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
     policy: WorkerPolicyExperiment,
@@ -1866,11 +1907,11 @@ fn scan_concurrent(
         let mut spawned_workers = pool.initial;
         for message in receiver {
             match message {
-                WalkMessage::Observation(observation) => {
+                WalkMessage::Batch(batch) => {
                     if let Some(diagnostics) = &diagnostics {
                         diagnostics.handoff_received();
                     }
-                    sink(observation);
+                    sink(batch);
                 }
                 WalkMessage::ScaleUp { sender, target_workers }
                     if target_workers > spawned_workers =>
@@ -2011,7 +2052,7 @@ fn walk_worker(
     let _worker_guard = diagnostics.map(ScanDiagnosticsRecorder::worker_guard);
     let worker_started = std::time::Instant::now();
     let mut report = ScanReport::default();
-    let mut batch: Vec<Op> = Vec::with_capacity(config.batch_size);
+    let mut batch: Vec<ObservationOp> = Vec::with_capacity(config.batch_size);
     let mut claimed: Vec<(PathBuf, usize, RegionId)> = Vec::with_capacity(DIR_CLAIM);
     let mut discovered: Vec<(PathBuf, usize, RegionId)> = Vec::new();
     let mut consumer_gone = false;
@@ -2133,9 +2174,9 @@ fn walk_worker(
         // different worker may begin reading a child as soon as `extend` returns.
         if !batch.is_empty() && !discovered.is_empty() {
             let send_started = std::time::Instant::now();
-            let sent = send_observation(
+            let sent = send_scanner_batch(
                 sender,
-                Observation::new(std::mem::take(&mut batch)),
+                ScannerBatch::new(std::mem::take(&mut batch)),
                 diagnostics.map(AsRef::as_ref),
             );
             chunk_send_ns += elapsed_ns(send_started);
@@ -2171,7 +2212,8 @@ fn walk_worker(
 
     if !consumer_gone && !batch.is_empty() {
         let send_started = std::time::Instant::now();
-        let _ = send_observation(sender, Observation::new(batch), diagnostics.map(AsRef::as_ref));
+        let _ =
+            send_scanner_batch(sender, ScannerBatch::new(batch), diagnostics.map(AsRef::as_ref));
         report.attribution.send_ns += elapsed_ns(send_started);
     }
     report.attribution.wall_ns = elapsed_ns(worker_started);
@@ -2235,7 +2277,7 @@ fn record_walk_entry(
     attrs: Attrs,
     root_dev: u64,
     config: &ScanConfig,
-    batch: &mut Vec<Op>,
+    batch: &mut Vec<ObservationOp>,
     discovered: &mut Vec<(PathBuf, usize, RegionId)>,
     report: &mut ScanReport,
     sender: &std::sync::mpsc::Sender<WalkMessage>,
@@ -2252,11 +2294,14 @@ fn record_walk_entry(
     }
     if !prepared.retained {
         if let Some(control) = prepared.control {
-            batch.push(control);
+            batch.push(ObservationOp::unconditional(control));
             if batch.len() >= config.batch_size {
                 let send_started = std::time::Instant::now();
-                let sent =
-                    send_observation(sender, Observation::new(std::mem::take(batch)), diagnostics);
+                let sent = send_scanner_batch(
+                    sender,
+                    ScannerBatch::new(std::mem::take(batch)),
+                    diagnostics,
+                );
                 *chunk_send_ns += elapsed_ns(send_started);
                 return sent;
             }
@@ -2264,21 +2309,26 @@ fn record_walk_entry(
         return true;
     }
     report.observe(kind, attrs);
-    batch.push(Op::Upsert { path: prepared.path.clone(), kind, attrs });
+    batch.push(ObservationOp::unconditional(Op::Upsert {
+        path: prepared.path.clone(),
+        kind,
+        attrs,
+    }));
     if batch.len() >= config.batch_size {
         let send_started = std::time::Instant::now();
-        let sent = send_observation(sender, Observation::new(std::mem::take(batch)), diagnostics);
+        let sent =
+            send_scanner_batch(sender, ScannerBatch::new(std::mem::take(batch)), diagnostics);
         *chunk_send_ns += elapsed_ns(send_started);
         if !sent {
             return false;
         }
     }
     if let Some(control) = prepared.control {
-        batch.push(control);
+        batch.push(ObservationOp::unconditional(control));
         if batch.len() >= config.batch_size {
             let send_started = std::time::Instant::now();
             let sent =
-                send_observation(sender, Observation::new(std::mem::take(batch)), diagnostics);
+                send_scanner_batch(sender, ScannerBatch::new(std::mem::take(batch)), diagnostics);
             *chunk_send_ns += elapsed_ns(send_started);
             if !sent {
                 return false;
@@ -2368,15 +2418,15 @@ fn open_control_file(path: &Path) -> std::io::Result<fs::File> {
     fs::File::open(path)
 }
 
-fn send_observation(
+fn send_scanner_batch(
     sender: &std::sync::mpsc::Sender<WalkMessage>,
-    observation: Observation,
+    batch: ScannerBatch,
     diagnostics: Option<&ScanDiagnosticsRecorder>,
 ) -> bool {
     if let Some(diagnostics) = diagnostics {
         diagnostics.handoff_sent();
     }
-    let sent = sender.send(WalkMessage::Observation(observation)).is_ok();
+    let sent = sender.send(WalkMessage::Batch(batch)).is_ok();
     if !sent {
         // Balance the reservation when the receiver disappeared before accepting it.
         if let Some(diagnostics) = diagnostics {
@@ -2958,13 +3008,19 @@ pub fn scan_into_index(root: &Path, config: &ScanConfig) -> Result<(Index, ScanR
     let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
     let mut index = Index::new_with_scope_and_types(&root, config.scope(), config.types_shared());
     let mut apply_error: Option<Error> = None;
-    let report = scan(&root, config, &mut |observation| {
-        if apply_error.is_none() {
-            if let Err(error) = index.apply_baseline(&observation) {
-                apply_error = Some(error);
+    let (report, _diagnostics) = scan_internal(
+        &root,
+        config,
+        &mut |batch| {
+            if apply_error.is_none() {
+                if let Err(error) = index.apply_scanner_baseline(batch) {
+                    apply_error = Some(error);
+                }
             }
-        }
-    })?;
+        },
+        false,
+        WorkerPolicyExperiment::ShippedOneShot,
+    )?;
     if let Some(error) = apply_error {
         return Err(error);
     }
@@ -2995,23 +3051,24 @@ pub fn scan_into_index_with_policy_diagnostics(
     let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
     let mut index = Index::new_with_scope_and_types(&root, config.scope(), config.types_shared());
     let mut apply_error: Option<Error> = None;
-    let (report, diagnostics) = scan_with_policy_diagnostics(
+    let (report, diagnostics) = scan_internal(
         &root,
         config,
-        &mut |observation| {
+        &mut |batch| {
             if apply_error.is_none() {
-                if let Err(error) = index.apply_baseline(&observation) {
+                if let Err(error) = index.apply_scanner_baseline(batch) {
                     apply_error = Some(error);
                 }
             }
         },
+        true,
         policy,
     )?;
     if let Some(error) = apply_error {
         return Err(error);
     }
     index.set_initial_freshness(report.is_complete());
-    Ok((index, report, diagnostics))
+    Ok((index, report, diagnostics.expect("diagnostic scan creates a recorder")))
 }
 
 /// Diff the filesystem against an existing index and emit conditional observations.
