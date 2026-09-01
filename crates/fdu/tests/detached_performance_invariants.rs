@@ -25,30 +25,33 @@ const LARGE_DIRECTORY_COUNT: u64 = 64;
 const FILES_PER_DIRECTORY: u64 = 64;
 
 // Directory enumeration and fresh metadata use different native ownership on each
-// supported platform. These are measured *slopes*, not total-allocation allowances:
-// macOS 7.x, Linux 8.26, and Windows 14.33 allocations per added entry. Each ceiling
-// leaves less than one allocation per entry of slack, which the injected check below
-// re-proves on the runner rather than trusting this comment.
+// supported platform. These are measured *slopes*, not total-allocation allowances.
+// Compact detached storage lowers macOS from 7.x to 5.13 allocations per added entry;
+// the Linux and Windows ceilings subtract the same two removed representation
+// allocations from their last measured 8.26 and 14.33 slopes. Each ceiling leaves less
+// than one allocation per entry of slack, which the injected check below re-proves on
+// every runner rather than trusting this comment.
 #[cfg(target_os = "macos")]
-const DETACHED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 8;
+const DETACHED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 6;
 #[cfg(target_os = "linux")]
-const DETACHED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 9;
+const DETACHED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 7;
 #[cfg(target_os = "windows")]
-const DETACHED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 15;
+const DETACHED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 13;
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-const DETACHED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 9;
+const DETACHED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 7;
 
-// Progressive discovery has its own measured platform slopes: macOS 25.x, Linux
-// 26.29, and Windows 34.43 allocations per added entry. The same runtime slack proof
-// guards every ceiling.
+// Progressive discovery keeps keyed child topology but still benefits from inline arena
+// entries: macOS falls from 25.x to 24.24 allocations per added entry. The Linux and
+// Windows ceilings remove the same one arena allocation from their last measured 26.29
+// and 34.43 slopes. The same runtime slack proof guards every ceiling.
 #[cfg(target_os = "macos")]
-const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 26;
+const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 25;
 #[cfg(target_os = "linux")]
-const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 27;
+const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 26;
 #[cfg(target_os = "windows")]
-const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 35;
+const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 34;
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 27;
+const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 26;
 const OPENED_JOURNAL_CAPACITY: usize = 4 * 1024 * 1024;
 
 struct DisableCounters;

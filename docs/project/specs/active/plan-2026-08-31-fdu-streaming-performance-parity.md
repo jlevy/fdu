@@ -941,10 +941,90 @@ its apparent +16.58% change spans -20.43% to +32.37%, while that job’s wall in
 untimed setup scan that crossed the same load change.
 Peak RSS remains materially higher than the historical control: +21.75% for
 `cold-scan-index`, +19.43% for `cold-open-save`, and +16.75% for `default-tree`. The
-compact representation and promotion boundary could address that retained-memory gap,
-but no remaining wall-time defect currently justifies their complexity.
+retained-layout attribution now explains most of that gap.
+A full allocation-stack high-water capture found 113,793 live allocations of exactly 280
+bytes, or 31,862,040 bytes, matching one boxed current `Entry` for every nonroot entry.
+The current entry is 56 bytes wider than the historical entry, which accounts for
+6,372,408 bytes on this tree.
+The same capture found two equal groups of 12,846 320-byte allocations, or 4,110,720
+bytes each, consistent with the `all` and `unignored` extension-map node planes.
+The release binary’s stripped frames prevent assigning those two groups to Rust symbols,
+so that map attribution remains size-and-cardinality evidence rather than a symbolized
+proof. One wider roll-up plane plus one additional map-node plane accounts for 10.48 MB
+of the observed 10 to 13.8 MB candidate-control difference.
+
+Snapshot and report handoff do not amplify the regression.
+`cold-open-save` adds 11.7 MB over the control’s cold-scan peak and 12.5 MB over the
+candidate’s; the candidate-control difference remains 13.8 MB. The `default-tree`
+difference narrows to 10.1 MB. In clean repeated profiles, all allocator symbols account
+for 5.63% of `cold-scan-index` samples and 5.90% of `default-tree` samples, while direct
+free symbols account for 1.00% and 1.39%, respectively; no destructor-specific Rust
+frame is a hotspot. The retained entry and roll-up layout, not serialization, report
+construction, or teardown, is therefore the next memory boundary.
+
+This evidence does not relax H86’s wall-time gate.
+At this checkpoint, the preregistration treated the complete retained-layout decision as
+removing the per-entry box, storing names once, moving directory-only state off file
+entries, and avoiding a second extension-map plane where the partitions are identical.
+Repeating the rejected optional-roll-up change alone remains inadmissible.
+The current candidate has practical historical wall parity and direct index symbols
+remain below 0.5% of clean samples, so a packed representation earns a place in this
+campaign only if the complete form also clears the preregistered `default-tree` wall
+target and exact lifecycle oracles.
 Quiet-host noninferiority and the H86 RSS gate remain open; this checkpoint is not the
 final H86 verdict.
+
+The measured sequence separated the retained-layout mechanisms before adding another
+conditional roll-up representation.
+The first arm moved directory-only child, roll-up, revision, and completion state behind
+one directory allocation and stored arena entries inline instead of boxing every entry.
+Across twelve paired uncontrolled trials against the exact `88304cb` control,
+`cold-scan-index` wall changed -3.18%, with an interval from -6.81% to +0.61%, while
+`default-tree` changed -0.83%, with an interval from -3.33% to +0.74%. Peak RSS fell
+29.00% and 24.63%, respectively, but the arm failed the preregistered `default-tree`
+wall gate and is rejected as a standalone layout.
+
+The second arm keeps the same `Index` and public mutation contract while storing a
+detached directory’s children as name-sorted entry identifiers.
+The entry owns the only retained name; lookup uses binary search, ordered iteration
+borrows the name from the child, and the first arbitrary mutation promotes only the
+touched parent to the existing keyed map.
+Opened discovery and ordinary public indexes start with the keyed representation, so the
+streaming reducer does not acquire a second topology or a global promotion pass.
+The exact ordering and first-mutation fixture passes, as do the focused index, detached
+scanner, and opened-engine suites.
+
+The composite clears the local structural screen in exploratory evidence.
+`cold-scan-index` wall fell 5.87%, with a paired 95% interval from -15.86% to -3.16%,
+and peak RSS fell 45.03%. `default-tree` wall fell 7.70%, with an interval from -10.16%
+to -3.77%; its measured component fell 7.71%, and peak RSS fell 37.79%. Opened discovery
+changed -1.40%, with an interval from -3.51% to +1.95%, inside its +3% noninferiority
+bound, while peak RSS fell 15.37%. Its exact counter run recorded 4,837,756 scoped
+allocations against 4,939,511 for the control, a 0.979 ratio, with identical engine and
+commit digests and zero detached builds inside the opened route.
+The one-shot counter run removed 206,188 scoped allocations and 23,353,892 allocated
+bytes from the exact control while preserving all retained counts and the tree digest.
+On the deterministic 2,080-entry slope fixture, detached growth is now 10,671
+allocations, or 5.13 per entry, while opened growth is 50,413, or 24.24 per entry.
+The platform ceilings remove the same two detached representation allocations and one
+opened arena allocation from the prior measured slopes, and the existing injected
+one-allocation-per-entry negative case keeps every runner’s bound tight.
+
+The host was not quiet: an unrelated test process held one core and load exceeded the
+protocol limit during the composite run.
+The result therefore justifies retaining the composite for full correctness validation,
+not a claim-grade H86 verdict.
+A clean post-change sample attributes 3.82% of `cold-scan-index` and 3.94% of
+`default-tree` samples to allocator frames, down from 5.63% and 5.90%; index frames
+remain below 0.4% and filesystem work remains about 71%. Because the measured
+representation already exceeds both wall and RSS targets, adding conditional roll-up
+state now would spend complexity without a demonstrated remaining need.
+That is an evidence-driven reduction from the original four-part layout proposal, and
+the quiet-host and Linux stages remain mandatory before H86 closes.
+The source selected for validation also changes the newly allocated directory payload to
+compact storage in place rather than allocating and replacing that box.
+The exploratory binary still paid the transient replacement, so its result is
+conservative and the quiet stage must measure the final binary identity.
 
 The local structural verdict uses `c6380f7646524b51dbfcfec7e2efac49bf89d34b` as its
 immediate immutable control and `b75bf85a33edd9fe65d97df9395072797e54426e` as the
