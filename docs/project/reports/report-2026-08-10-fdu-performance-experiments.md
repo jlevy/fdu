@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 17 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 20 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 
@@ -159,6 +159,9 @@ dead end.
 | 080 | [Skip oversized journal clones](#exp080--skip-oversized-journal-clones) | H94 | `delta-apply-large` | -3.5% | ✅ accepted |
 | 081 | [Borrow impact paths until the bounded result escapes](#exp081--borrow-impact-paths-until-the-bounded-result-escapes) | H95 | `opened-discovery` | -1.1% | ❌ rejected |
 | 082 | [Move scanner commits directly into the journal](#exp082--move-scanner-commits-directly-into-the-journal) | H96 | `opened-discovery` | -0.0% | ❌ rejected |
+| 083 | [Skip unignored roll-up maintenance in control-free scopes](#exp083--skip-unignored-rollup-maintenance-in-controlfree-scopes) | H97 | `default-tree` | -1.6% | ❌ rejected |
+| 084 | [Compact optional fixed-partition storage](#exp084--compact-optional-fixedpartition-storage) | H98 | `default-tree` | -2.6% | ❌ rejected |
+| 085 | [Compact scanner batches and optional fixed partitions](#exp085--compact-scanner-batches-and-optional-fixed-partitions) | H99 | `default-tree` | -2.6% | ❌ rejected |
 
 ## The experiments
 
@@ -2927,6 +2930,110 @@ result form.
 Full record:
 [`exp-082-move-scanner-commits-directly-into-the-journal.md`](../experiments/exp-082-move-scanner-commits-directly-into-the-journal.md)
 
+### exp-083 — Skip unignored roll-up maintenance in control-free scopes
+
+❌ rejected · 2026-09-01 · H97
+
+Control: streaming allocation guards at 3c0e1a2
+
+Candidate: optional unignored reducer working-tree spike
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 366.7 | 363.9 | -1.61% | [-2.82%, -0.14%] |
+| component (ms) | 361.8 | 359.1 | -1.61% | [-2.83%, -0.03%] |
+| cpu (ms) | 2114.0 | 2085.2 | -1.99% (n.s.) | [-3.18%, +0.82%] |
+| user (ms) | 213.0 | 189.0 | -10.66% | [-11.87%, -8.77%] |
+| system (ms) | 1893.7 | 1871.9 | -0.68% (n.s.) | [-2.32%, +1.96%] |
+| peak rss (MiB) | 85.6 | 80.5 | -6.12% | [-6.52%, -5.00%] |
+
+Other jobs, wall time: `cold-scan-index` -0.5% (n.s.).
+
+Cost to carry: 127 lines; no new dependencies.
+
+Adds lifecycle state, query-boundary projection, and first-control materialization to
+make the redundant reducer optional; exact semantics are preserved, but the new state is
+not justified by the observed wall result.
+
+**Rejected:** Scoped allocation fell by about one event and 323 requested bytes per
+entry, but default-tree improved only 1.61% and cold-scan-index 0.47%; neither met the
+3% rule, and the latter interval crossed zero.
+
+Full record:
+[`exp-083-skip-unignored-roll-up-maintenance-in-control-free-scopes.md`](../experiments/exp-083-skip-unignored-roll-up-maintenance-in-control-free-scopes.md)
+
+### exp-084 — Compact optional fixed-partition storage
+
+❌ rejected · 2026-09-01 · H98
+
+Control: streaming allocation guards at 3c0e1a2
+
+Candidate: compact optional partition working-tree composite
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 358.5 | 350.0 | -2.63% | [-3.17%, -1.19%] |
+| component (ms) | 353.5 | 345.2 | -2.48% | [-3.17%, -1.24%] |
+| cpu (ms) | 2065.9 | 2033.8 | -1.81% | [-2.19%, -0.20%] |
+| user (ms) | 206.9 | 183.9 | -10.85% | [-11.44%, -8.77%] |
+| system (ms) | 1859.2 | 1850.4 | -0.88% (n.s.) | [-1.27%, +0.81%] |
+| peak rss (MiB) | 85.6 | 70.1 | -18.16% | [-18.58%, -17.43%] |
+
+Other jobs, wall time: `cold-scan-index` -1.0% (n.s.).
+
+Cost to carry: 260 lines; no new dependencies; new failure mode: The representation
+saved one duplicate reducer per entry, but the resulting 2.628% default-tree speedup did
+not justify 260 changed lines and cold-scan-index remained inconclusive..
+
+Adds optional boxed directory state, dynamic materialization, and partition-aware merge
+paths; no dependencies or unsafe code.
+
+**Rejected:** Default-tree wall improved 2.628% with a 95% interval of -3.172% to
+-1.188%, which is real but below the pre-registered 3% structural-change gate; cold wall
+did not establish improvement.
+
+Full record:
+[`exp-084-compact-optional-fixed-partition-storage.md`](../experiments/exp-084-compact-optional-fixed-partition-storage.md)
+
+### exp-085 — Compact scanner batches and optional fixed partitions
+
+❌ rejected · 2026-09-01 · H99 · commit `3c0e1a2`
+
+Control: streaming allocation guards at 3c0e1a2
+
+Candidate: compact scanner batches plus optional fixed-partition storage
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 356.2 | 346.5 | -2.56% | [-3.33%, -0.13%] |
+| component (ms) | 351.3 | 341.7 | -2.56% | [-3.42%, -0.03%] |
+| cpu (ms) | 2053.3 | 2016.7 | -1.41% (n.s.) | [-2.35%, +0.66%] |
+| user (ms) | 206.7 | 182.3 | -12.27% | [-12.81%, -11.05%] |
+| system (ms) | 1845.1 | 1836.7 | -0.25% (n.s.) | [-1.14%, +2.08%] |
+| peak rss (MiB) | 85.7 | 69.4 | -19.11% | [-19.31%, -18.92%] |
+
+Other jobs, wall time: `cold-scan-index` -1.6% (n.s.).
+
+Cost to carry: 490 lines; no new dependencies; new failure mode: The complete composite
+fails the preregistered keep threshold despite lower allocation and retained-memory
+cost..
+
+Adds a second prepared-batch representation and optional boxed partition state with
+first-control materialization.
+
+**Rejected:** The default path improved 2.56% with CI [-3.33%, -0.13%], below the
+preregistered 3% complexity bar; cold indexing improved 1.63% with CI [-2.74%, +0.34%],
+so the composite gate failed.
+
+Full record:
+[`exp-085-compact-scanner-batches-and-optional-fixed-partitions.md`](../experiments/exp-085-compact-scanner-batches-and-optional-fixed-partitions.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -3038,6 +3145,14 @@ Baselines show one value because they measure a state rather than a change.
 | 051 | Memoize the parent resolved for the previous upsert | `cold-scan-index` | 2,022.1 | 1,852.9 | -7.3% | ✅ accepted |
 | 052 | Per-layer counters cost less than the measurement can see | `cold-scan-index` | 1,891.3 | 1,870.1 | +0.0% | ✅ accepted |
 | 053 | Move instrumentation to a runtime toggle and measure all three of its costs | `cold-scan-index` | 1,858.8 | 1,847.0 | -1.3% | ✅ accepted |
+
+### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 083 | Skip unignored roll-up maintenance in control-free scopes | `default-tree` | 366.7 | 363.9 | -1.6% | ❌ rejected |
+| 084 | Compact optional fixed-partition storage | `default-tree` | 358.5 | 350.0 | -2.6% | ❌ rejected |
+| 085 | Compact scanner batches and optional fixed partitions | `default-tree` | 356.2 | 346.5 | -2.6% | ❌ rejected |
 
 ### rustup-toolchains (119,368 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
