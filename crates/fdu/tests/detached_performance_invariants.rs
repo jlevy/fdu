@@ -23,7 +23,21 @@ static ALLOCATOR: fdu_core::counters::alloc::CountingAlloc<std::alloc::System> =
 const SMALL_DIRECTORY_COUNT: u64 = 32;
 const LARGE_DIRECTORY_COUNT: u64 = 64;
 const FILES_PER_DIRECTORY: u64 = 64;
+
+// Directory enumeration and fresh metadata use different native ownership on each
+// supported platform. These are measured *slopes*, not total-allocation allowances:
+// macOS 7.x, Linux 8.26, and Windows 14.33 allocations per added entry. Each ceiling
+// leaves less than one allocation per entry of slack, which the injected check below
+// re-proves on the runner rather than trusting this comment.
+#[cfg(target_os = "macos")]
 const DETACHED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 8;
+#[cfg(target_os = "linux")]
+const DETACHED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 9;
+#[cfg(target_os = "windows")]
+const DETACHED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 15;
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+const DETACHED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 9;
+
 const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 26;
 const OPENED_JOURNAL_CAPACITY: usize = 4 * 1024 * 1024;
 
