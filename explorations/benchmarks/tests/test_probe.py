@@ -64,14 +64,17 @@ def _assert_allocation_slope(
     added_entries: int,
 ) -> None:
     """Keep per-entry growth below the recorded ownership budget."""
+    breaches = []
     for metric, per_entry_budget in _ALLOCATION_SLOPE_BUDGETS[mode].items():
         growth = larger[metric] - smaller[metric]
         allowed = per_entry_budget * added_entries
         if growth > allowed:
-            raise AssertionError(
+            breaches.append(
                 f"{mode} {metric} grew by {growth} for {added_entries} entries; "
                 f"budget is {allowed:.2f} ({per_entry_budget:.2f} per entry)"
             )
+    if breaches:
+        raise AssertionError("; ".join(breaches))
 
 
 def _assert_detached_streaming_work_is_zero(counters: Dict[str, int]) -> None:
@@ -337,7 +340,8 @@ class FduProbeTests(unittest.TestCase):
                         _assert_detached_streaming_work_is_zero(counters)
 
         for mode, by_size in measurements.items():
-            _assert_allocation_slope(mode, by_size[128], by_size[256], 128)
+            with self.subTest(mode=mode):
+                _assert_allocation_slope(mode, by_size[128], by_size[256], 128)
 
     def test_allocation_slope_guard_rejects_one_restored_allocation_per_entry(self) -> None:
         entries = 128
