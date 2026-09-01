@@ -540,7 +540,10 @@ impl Cli {
         // whole-scan slowdown (fdu-etfj, fdu-pro1). Watching keeps control state
         // because a watch session maintains the ignored partitions incrementally and
         // cannot re-derive them later. The bit is part of the scan's semantic scope, so
-        // a cache written either way is never served to the other.
+        // an Index-returning API never serves one scope as the other. A cache-only
+        // one-shot report may consume a controls-on snapshot through the engine's
+        // explicit controls-off report projection; no retained index crosses that
+        // boundary.
         #[cfg(feature = "watch")]
         let read_controls = self.watch;
         #[cfg(not(feature = "watch"))]
