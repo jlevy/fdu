@@ -276,6 +276,79 @@ one round of it.
   [The evidence-scope plan](plan-2026-08-23-experiment-evidence-scope.md) turns that
   requirement into a checked `verdict.scope`, and this is the experiment it is most
   likely to bind first.
+
+#### H86 preregistration: one decision, two evidence stages
+
+The implementation unit is one private cold-bootstrap representation, selected once
+before the walk. It is eligible only for a detached index with fixed controls disabled.
+Workers retain compact records in worker-owned storage, directory work carries a stable
+numeric parent slot, names are appended to one arena, direct children become sorted
+arena slices, and directory roll-ups are folded once from deepest to shallowest after
+the walk. The result is still a complete `Index` with the same facts, scope, provenance,
+queries, and snapshot behavior.
+If a caller later mutates that detached value, the index promotes it once to the
+ordinary mutable representation before entering the exact commit boundary.
+
+Opened discovery, public `scan`, refresh, observation, snapshot reconciliation, and
+arbitrary public mutation continue to use the current causal scanner batches and exact
+reducer. A controls-enabled cold scan falls closed to that path as well.
+The arena route reuses the shared admission, metadata, traversal, error, and
+worker-policy code; it does not acquire a second filesystem walker or a second query
+model.
+
+The differential oracle compares the arena and ordinary builders on the same immutable
+tree. It covers every explicit worker count from one through the host’s available
+parallelism, plus automatic policy, and compares the complete engine image, report,
+scope, freshness, directory completeness, every fixed roll-up partition, query semantic
+hashes, and snapshot bytes after unstable provenance fields are normalized.
+Focused fixtures cover an empty tree, a deep chain, a wide directory, non-Unicode names,
+depth and filesystem bounds, symlinks and special entries, partial I/O errors, and the
+controls-enabled fallback.
+The arena result must also survive one exact public mutation after promotion and match
+an index built and mutated through the ordinary path.
+
+The first evidence stage is the current Darwin/arm64 stacked pull request.
+Its immutable control is `c6380f7646524b51dbfcfec7e2efac49bf89d34b`; the historical
+parity control is `b75bf85a33edd9fe65d97df9395072797e54426e`. The 113,794-entry
+MetaBrowser checkout is the required real subject, and the existing nominated first
+subject remains in the parity set.
+At least twelve valid quiet, warm-steady, paired and interleaved trials must show all of
+the following:
+
+- `default-tree` improves at least 3% against the immediate control and its paired 95%
+  interval lies below zero; `cold-scan-index` moves in the same direction;
+- both one-shot jobs meet the streaming-parity plan’s median, interval, allocation,
+  reallocation, and allocated-byte limits against the historical control on both real
+  subjects;
+- peak RSS is no more than 80% of the immediate control on the MetaBrowser subject;
+- `opened-discovery` is noninferior within +3%, its scoped allocation dimensions are no
+  more than 1.05 times the immediate control, and its arena-route counter is zero;
+- exact oracles pass, no trial is invalid, and neither subject nor baseline fingerprint
+  drifts.
+
+The second evidence stage retains the original Linux floor claims; Darwin evidence does
+not silently replace them.
+On the primary 450k-entry Linux subject, the candidate must still reach index wall at or
+below 1.4 times the parallel syscall floor, aggregate wall at or below 1.25 times the
+floor on the nominated real subjects, and peak RSS at or below three times
+`arena_spike`.
+
+`arena_spike`’s denominator uses a named **low-churn warm-steady** cell: each retained
+sample follows three complete spike warmups, and no full-index builder or deliberate
+memory-churn process runs between the last warmup and the sample.
+This preparation is chosen before any timing is observed; the result is not partitioned
+after the fact. Candidate and immediate-control trials retain the ordinary interleaved
+protocol rather than being interleaved with the spike, because the index process itself
+is the memory churn known to select the spike’s other mode.
+The artifact records all raw samples, `p95/median`, and `max/min` for every arm.
+
+The candidate’s `p95/median` must be at most 1.5 and its `max/min` at most 2.0. If the
+prepared `arena_spike` cell itself has `max/min` above 2.0, its floor and RSS ratios are
+reported as unresolved and cannot accept or reject H86 until the mode has a repeatable
+preparation. A successful Darwin stage may keep the implementation provisionally in the
+stack, but `fdu-xde5` and the campaign’s Linux floor claim remain open until the Linux
+stage passes.
+
 - [ ] Post-landing re-screens, in order: `fdu-h7sw` (H85 — expect the arena to have
   consumed it; screen against −20%, not 3%), `fdu-sk7v` (H66 — the directory-only
   transient tree may be moot at 1.06×), snapshot economics (below), and the tier
