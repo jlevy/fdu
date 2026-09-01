@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 21 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 22 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 
@@ -163,6 +163,7 @@ dead end.
 | 084 | [Compact optional fixed-partition storage](#exp084--compact-optional-fixedpartition-storage) | H98 | `default-tree` | -2.6% | ❌ rejected |
 | 085 | [Compact scanner batches and optional fixed partitions](#exp085--compact-scanner-batches-and-optional-fixed-partitions) | H99 | `default-tree` | -2.6% | ❌ rejected |
 | 086 | [Scanner phase counters expose preparation without observer cost](#exp086--scanner-phase-counters-expose-preparation-without-observer-cost) | H103 | `default-tree` | -0.1% | 📏 baseline |
+| 087 | [Fuse detached control-free scanner preparation and reduction](#exp087--fuse-detached-controlfree-scanner-preparation-and-reduction) | H104 | `default-tree` | -1.1% | ❌ rejected |
 
 ## The experiments
 
@@ -3060,6 +3061,41 @@ scan, naming preparation as a viable next target.
 Full record:
 [`exp-086-scanner-phase-counters-expose-preparation-without-observer-c.md`](../experiments/exp-086-scanner-phase-counters-expose-preparation-without-observer-c.md)
 
+### exp-087 — Fuse detached control-free scanner preparation and reduction
+
+❌ rejected · 2026-09-01 · H104
+
+Control: phase-instrumented streaming control at 80e5897
+
+Candidate: fused detached reducer plus compact optional partitions
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 355.3 | 349.3 | -1.11% (n.s.) | [-2.47%, +0.40%] |
+| component (ms) | 350.3 | 344.2 | -1.06% (n.s.) | [-2.48%, +0.31%] |
+| cpu (ms) | 2063.5 | 2013.1 | -1.36% | [-2.91%, -1.02%] |
+| user (ms) | 202.1 | 174.3 | -13.60% | [-14.18%, -13.09%] |
+| system (ms) | 1856.9 | 1837.2 | -0.72% (n.s.) | [-1.73%, +0.30%] |
+| peak rss (MiB) | 85.5 | 69.5 | -18.77% | [-19.04%, -18.28%] |
+
+Other jobs, wall time: `cold-scan-index` -0.2% (n.s.).
+
+Cost to carry: 460 lines; no new dependencies; new failure mode: The fused lane is
+intentionally non-atomic and safe only while an exclusively owned index can be
+discarded.; new failure mode: Optional partition storage adds a materialization and
+rebuild transition for the first late control..
+
+The composite removed preparation and restored allocation ratios, but its wall-time
+result did not justify 460 changed lines and two internal representations.
+
+**Rejected:** Default-tree wall improved 1.11% with a 95% interval of -2.47% to +0.40%,
+missing the 3% structural gate; cold-scan-index was flat.
+
+Full record:
+[`exp-087-fuse-detached-control-free-scanner-preparation-and-reduction.md`](../experiments/exp-087-fuse-detached-control-free-scanner-preparation-and-reduction.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -3121,6 +3157,16 @@ Baselines show one value because they measure a state rather than a change.
 | 017 | Pre-create dormant workers for adaptive scan depth | `cold-scan-producer` | 494.2 | 500.7 | +2.0% | ❌ rejected |
 | 023 | Cumulative effect through adaptive scanning and macOS bulk metadata | `cold-scan-index` | 625.2 | 295.5 | -53.5% | ✅ accepted |
 
+### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 083 | Skip unignored roll-up maintenance in control-free scopes | `default-tree` | 366.7 | 363.9 | -1.6% | ❌ rejected |
+| 084 | Compact optional fixed-partition storage | `default-tree` | 358.5 | 350.0 | -2.6% | ❌ rejected |
+| 085 | Compact scanner batches and optional fixed partitions | `default-tree` | 356.2 | 346.5 | -2.6% | ❌ rejected |
+| 086 | Scanner phase counters expose preparation without observer cost | `default-tree` | 364.3 | — | — | 📏 baseline |
+| 087 | Fuse detached control-free scanner preparation and reduction | `default-tree` | 355.3 | 349.3 | -1.1% | ❌ rejected |
+
 ### cargo-registry-src (11,142 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -3138,15 +3184,6 @@ Baselines show one value because they measure a state rather than a change.
 | 080 | Skip oversized journal clones | `delta-apply-large` | 677.6 | 654.9 | -3.5% | ✅ accepted |
 | 081 | Borrow impact paths until the bounded result escapes | `opened-discovery` | 286.8 | 282.2 | -1.1% | ❌ rejected |
 | 082 | Move scanner commits directly into the journal | `opened-discovery` | 284.5 | 281.2 | -0.0% | ❌ rejected |
-
-### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 083 | Skip unignored roll-up maintenance in control-free scopes | `default-tree` | 366.7 | 363.9 | -1.6% | ❌ rejected |
-| 084 | Compact optional fixed-partition storage | `default-tree` | 358.5 | 350.0 | -2.6% | ❌ rejected |
-| 085 | Compact scanner batches and optional fixed partitions | `default-tree` | 356.2 | 346.5 | -2.6% | ❌ rejected |
-| 086 | Scanner phase counters expose preparation without observer cost | `default-tree` | 364.3 | — | — | 📏 baseline |
 
 ### vm450k (450,463 entries) — Linux 6.18.5-fc-v20, unrecorded, warm-steady
 

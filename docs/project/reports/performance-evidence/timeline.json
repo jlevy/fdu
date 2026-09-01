@@ -658,6 +658,15 @@
    "subject": "a319238d9c29:113794:58bc2ea1deb0",
    "tool": "dust",
    "wall_ns": 498544646
+  },
+  {
+   "entries": 113794,
+   "id": "exp-087",
+   "per_entry_ns": 4443.578418018525,
+   "platform": "macOS",
+   "subject": "a319238d9c29:113794:58bc2ea1deb0",
+   "tool": "dust",
+   "wall_ns": 505652562.5
   }
  ],
  "experiments": [
@@ -26579,6 +26588,259 @@
    "subject": "a319238d9c29:113794:58bc2ea1deb0",
    "title": "Scanner phase counters expose preparation without observer cost",
    "trials": 6
+  },
+  {
+   "anchored": false,
+   "candidate": "fused detached reducer plus compact optional partitions",
+   "change_pct": -1.115,
+   "commit": null,
+   "complexity": {
+    "lines_changed": 460,
+    "new_dependencies": [],
+    "new_failure_modes": [
+     "The fused lane is intentionally non-atomic and safe only while an exclusively owned index can be discarded.",
+     "Optional partition storage adds a materialization and rebuild transition for the first late control."
+    ],
+    "new_unsafe_blocks": 0,
+    "notes": "The composite removed preparation and restored allocation ratios, but its wall-time result did not justify 460 changed lines and two internal representations."
+   },
+   "control": "phase-instrumented streaming control at 80e5897",
+   "date": "2026-09-01",
+   "decision": "rejected",
+   "entries": 113794,
+   "family": "macOS:a319238d9c29",
+   "hypotheses": [
+    "H104"
+   ],
+   "id": "exp-087",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "cold-scan-index",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 324498771,
+        "control": 321180396
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.675,
+        "ci95_high_pct": 2.807,
+        "ci95_low_pct": -0.111,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 2250341000,
+        "control": 2257359000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.408,
+        "ci95_high_pct": 0.624,
+        "ci95_low_pct": -1.588,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 60342272,
+        "control": 77103104
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -21.898,
+        "ci95_high_pct": -21.373,
+        "ci95_low_pct": -22.053,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 1864123000,
+        "control": 1850686500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 1.077,
+        "ci95_high_pct": 1.359,
+        "ci95_low_pct": -0.581,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 384564000,
+        "control": 409367000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -6.089,
+        "ci95_high_pct": -4.086,
+        "ci95_low_pct": -6.335,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 559673812.5,
+        "control": 560513562.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -0.197,
+        "ci95_high_pct": 2.12,
+        "ci95_low_pct": -1.191,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 4918.306874703411,
+      "control": 4925.686437773521
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 344196416.5,
+        "control": 350343687.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -1.057,
+        "ci95_high_pct": 0.309,
+        "ci95_low_pct": -2.477,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 2013086500,
+        "control": 2063542000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -1.36,
+        "ci95_high_pct": -1.021,
+        "ci95_low_pct": -2.907,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 72851456,
+        "control": 89645056
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -18.77,
+        "ci95_high_pct": -18.283,
+        "ci95_low_pct": -19.039,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 1837174500,
+        "control": 1856869000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -0.725,
+        "ci95_high_pct": 0.299,
+        "ci95_low_pct": -1.733,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 174343500,
+        "control": 202119000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -13.604,
+        "ci95_high_pct": -13.093,
+        "ci95_low_pct": -14.175,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 349293916.5,
+        "control": 355338958.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -1.115,
+        "ci95_high_pct": 0.4,
+        "ci95_low_pct": -2.468,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 3069.5284153821817,
+      "control": 3122.651093203508
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "control",
+   "number": 87,
+   "path": "exp-087-fuse-detached-control-free-scanner-preparation-and-reduction.md",
+   "platform": "macOS",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "Default-tree wall improved 1.11% with a 95% interval of -2.47% to +0.40%, missing the 3% structural gate; cold-scan-index was flat.",
+   "reference_tools": [
+    {
+     "argv": [
+      "{binary}",
+      "-d",
+      "1",
+      "--no-progress",
+      "{root}"
+     ],
+     "name": "dust",
+     "wall_ns_median": 505652562.5
+    }
+   ],
+   "subject": "a319238d9c29:113794:58bc2ea1deb0",
+   "title": "Fuse detached control-free scanner preparation and reduction",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-01",
@@ -26691,6 +26953,28 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 2311017461,
+   "directories": 15221,
+   "entries": 113794,
+   "experiments": [
+    "exp-083",
+    "exp-084",
+    "exp-085",
+    "exp-086",
+    "exp-087"
+   ],
+   "files": 98525,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "a319238d9c29:113794:58bc2ea1deb0",
+   "labels": [
+    "metabrowser-current"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 35888409,
    "directories": 60314,
    "entries": 100001,
@@ -26749,27 +27033,6 @@
    "key": "0fc8126bf6ad:11142:51114fc9f7b6",
    "labels": [
     "cargo-registry-src"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "macOS",
-   "synthetic": false
-  },
-  {
-   "apparent_bytes": 2311017461,
-   "directories": 15221,
-   "entries": 113794,
-   "experiments": [
-    "exp-083",
-    "exp-084",
-    "exp-085",
-    "exp-086"
-   ],
-   "files": 98525,
-   "filesystem": "apfs",
-   "host_cpu": "Apple M1 Pro",
-   "key": "a319238d9c29:113794:58bc2ea1deb0",
-   "labels": [
-    "metabrowser-current"
    ],
    "os_cache": "warm-steady",
    "platform": "macOS",
@@ -27128,16 +27391,16 @@
    "baseline": 7,
    "blocked": 2,
    "in-progress": 1,
-   "rejected": 33,
+   "rejected": 34,
    "superseded": 2
   },
-  "experiments": 87,
+  "experiments": 88,
   "first_date": "2026-08-10",
-  "hypotheses": 58,
+  "hypotheses": 59,
   "last_date": "2026-09-01",
   "platforms": {
    "Linux": 9,
-   "macOS": 78
+   "macOS": 79
   }
  },
  "version": "fdu.performance.timeline/1"

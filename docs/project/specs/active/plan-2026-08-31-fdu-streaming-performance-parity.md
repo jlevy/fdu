@@ -682,6 +682,35 @@ their exact semantic and resource gates.
 The phase counters must show that preparation was eliminated rather than shifted, and
 the complete composite is removed if any gate fails.
 
+[exp-087](../../experiments/exp-087-fuse-detached-control-free-scanner-preparation-and-reduction.md)
+rejects H104. The fused-only diagnostic was neutral, and the full composite improved
+`default-tree` 1.11%, with a paired interval from -2.47% to +0.40%. `cold-scan-index`
+changed -0.20%, with an interval from -1.19% to +2.12%. Although repeat-10 counters
+reduced preparation to zero and restored allocation, reallocation, and requested-byte
+ratios versus `b75bf85` to 1.016, 1.020, and 1.005, the removed consumer work overlapped
+producer I/O and did not shorten the critical path.
+The complete 460-line composite was removed.
+
+H105 targets a simpler batching regression revealed by the same counters.
+The parent-before-child correctness fix publishes a causal scanner fragment before its
+new directories become claimable.
+On the 113,794-entry subject, that produces about 2,650 baseline applies per scan; the
+configured 1,024-operation target would require roughly 112 full batches.
+The public and opened streaming paths need the causal fragments, but a one-shot builder
+does not need to reduce each fragment separately.
+
+The experiment concatenates adjacent causal fragments only inside `scan_into_index` and
+its diagnostic twin, up to the existing configured batch target, before passing them to
+the unchanged atomic scanner reducer.
+Channel order already proves every concatenated parent precedes its child, and the
+reducer already supports parents created earlier in the same batch.
+Public `scan`, opened discovery, refresh, and watch retain their current publication
+cadence. The candidate is accepted only if `default-tree` improves at least 3% with the
+paired interval below zero, `cold-scan-index` moves in the same direction, the exact
+digest and report stay unchanged, and baseline applies fall within 10% of the
+configured-batch minimum.
+Otherwise the coalescer is removed.
+
 After the journal preflight, the leading exact-update profile cost is the
 `StructuralOverlay` required to prove arbitrary public mutations atomically before state
 changes. Scanner discovery no longer pays for that boundary, and the remaining public
