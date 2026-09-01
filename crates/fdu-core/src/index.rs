@@ -635,6 +635,10 @@ fn record_batch(provenance: BatchProvenance, observed: usize, stats: ApplyStats)
     });
 }
 
+fn elapsed_micros(started: std::time::Instant) -> u64 {
+    u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX)
+}
+
 /// Validated, canonical producer input ready for arbitration under the write guard.
 #[derive(Clone, Debug)]
 struct PreparedObservation {
@@ -1612,8 +1616,16 @@ impl Index {
             unreachable!("scanner reduction requires scanner ancestry");
         };
         debug_assert_eq!(prepared.ops.len(), parents.len());
+        let projection_started = crate::counters::enabled().then(std::time::Instant::now);
         let projected_controls =
             self.projected_controls_from(prepared.ops.iter().map(|observed| &observed.op))?;
+        if let Some(started) = projection_started {
+            let elapsed = elapsed_micros(started);
+            crate::counters::bump(|counts| {
+                counts.scanner_control_projection_us =
+                    counts.scanner_control_projection_us.saturating_add(elapsed);
+            });
+        }
         let mut stats = ApplyStats::default();
         let mut applied_ids = has_batch_parents.then(|| vec![None; prepared.ops.len()]);
 
@@ -1947,9 +1959,23 @@ impl Index {
         batch: crate::scan::ScannerBatch,
     ) -> crate::Result<ApplyStats> {
         let observed = batch.len();
+        let prepare_started = crate::counters::enabled().then(std::time::Instant::now);
         let prepared = self.prepare_scanner_batch(batch)?;
+        if let Some(started) = prepare_started {
+            let elapsed = elapsed_micros(started);
+            crate::counters::bump(|counts| {
+                counts.scanner_prepare_us = counts.scanner_prepare_us.saturating_add(elapsed);
+            });
+        }
         let mut effects = NoConsequences;
+        let reduce_started = crate::counters::enabled().then(std::time::Instant::now);
         let stats = self.reduce_scanner_prepared(&prepared, None, None, false, &mut effects)?;
+        if let Some(started) = reduce_started {
+            let elapsed = elapsed_micros(started);
+            crate::counters::bump(|counts| {
+                counts.scanner_reduce_us = counts.scanner_reduce_us.saturating_add(elapsed);
+            });
+        }
         record_batch(BatchProvenance::Baseline, observed, stats);
         self.establish_baseline();
         Ok(stats)

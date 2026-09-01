@@ -645,8 +645,42 @@ The remaining untested architectural option is a true one-shot producer/reducer 
 selected once by the execution plan: it must consume scanner facts without retaining
 batch or public-observation storage, while the streaming and opened APIs continue to use
 the current batch contract.
-That lane requires a fresh profile and preregistration before implementation; it may not
-reuse either rejected optional-partition representation.
+That lane requires a fresh profile and preregistration before implementation.
+
+The fresh H103 sampling profile assigns 48.63% of self time to kernel calls, 7.09% to
+the allocator, and only 0.99% directly to index symbols.
+The scanner-only producer component is already statistically indistinguishable from the
+pre-rewrite control, and an adaptive diagnostic confirms that both revisions use the
+same six-worker policy and APFS bulk backend.
+Sampling alone therefore cannot justify a second reducer: most index work is inlined
+into callers and appears only as inclusive time.
+
+[exp-086](../../experiments/exp-086-scanner-phase-counters-expose-preparation-without-observer-c.md)
+adds three off-by-default elapsed counters to close that visibility gap.
+With `FDU_COUNTERS=1`, ten scans spend 285,370 microseconds preparing scanner batches,
+822,869 microseconds reducing them, and 7 microseconds projecting the empty control
+table: 28.5 ms, 82.3 ms, and less than 0.001 ms per scan, respectively.
+The disabled-instrument screen is neutral on `default-tree` at -0.12%, with a paired 95%
+interval from -3.06% to +2.40%. Preparation is therefore a plausible target; control
+projection is not.
+
+H104 applies that evidence to the optional-path request.
+Only a detached, control-free index still under construction may consume a trusted
+scanner batch in one pass: it resolves each parent and mutates immediately, so a failed
+internal invariant discards the owned index instead of requiring batch-atomic rollback.
+Opened discovery, public `scan`, refresh, observation, and arbitrary public mutation
+retain the current prepared and conditional paths.
+The experiment combines that fused lane with exp-084’s compact control-free partition
+representation because the campaign’s final allocation and byte ratios cannot pass
+without it; neither rejected change may land by itself.
+
+The composite is accepted only if `default-tree` improves at least 3% versus the
+instrumented `c7b2120` control with the paired interval below zero, `cold-scan-index`
+moves in the same direction, whole-process allocation, reallocation, and requested-byte
+ratios versus `b75bf85` are at most 1.05, and public scan plus opened discovery preserve
+their exact semantic and resource gates.
+The phase counters must show that preparation was eliminated rather than shifted, and
+the complete composite is removed if any gate fails.
 
 After the journal preflight, the leading exact-update profile cost is the
 `StructuralOverlay` required to prove arbitrary public mutations atomically before state
