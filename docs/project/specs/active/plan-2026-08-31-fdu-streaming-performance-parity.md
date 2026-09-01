@@ -17,9 +17,11 @@ current branch makes them pay much of the long-lived mutation cost.
 This plan restores one-shot performance to `main` while preserving the exact streaming
 contract. It fixes two correctness defects first, then separates fact mutation from
 optional commit consequences at one lifecycle boundary.
-The implementation keeps one fact model and one reducer.
-It does not fork the engine into a fast CLI implementation and a correct streaming
-implementation.
+The implementation keeps one retained fact model and one public mutation contract.
+Detached cold bootstrap may construct that ordinary index representation directly;
+opened roots, refresh, observation, and later mutations continue through the exact
+streaming reducer. It does not fork the engine into a fast CLI implementation and a
+correct streaming implementation.
 
 The work is delivered on `codex/streaming-performance-parity`, stacked directly on
 [PR #51](https://github.com/jlevy/fdu/pull/51). PR #51 is stacked on
@@ -33,12 +35,12 @@ explicit and reviewable.
 | Question | Decision |
 | --- | --- |
 | Does streaming inherently require the one-shot regression? | No. The regression comes from constructing consequences for consumers that cannot observe them. |
-| Do we create a second fact engine for the CLI? | No. All paths use the same reducer and roll-up logic. |
-| Where is optional work selected? | Once per prepared batch, from the serving lifecycle and requested public outcome. Never from a per-entry CLI check. |
-| What does detached one-shot construction retain? | Facts, roll-ups, scope, issues, provenance required by the returned index, and `ApplyStats`. It retains no exact change stream, impact set, journal entry, or compatibility delta. |
+| Do we create a second fact engine for the CLI? | No. Detached bootstrap builds the ordinary `Index` directly with the shared admission, classification, and roll-up rules. Every subsequent mutation uses the existing reducer. |
+| Where is optional work selected? | Once at the lifecycle entry point. Detached one-shot scans choose the directory-group builder; opened and public streams choose the causal reducer. There is no per-entry CLI check. |
+| What does detached one-shot construction retain? | Facts, roll-ups, scope, issues, and provenance required by the returned index. It retains no exact change stream, impact set, journal entry, or compatibility delta. |
 | What does an opened root retain? | Exact commits, bounded impact, lifecycle state, clock, and the bounded journal required by change consumers. |
 | What does arbitrary public mutation retain? | Exact atomic validation and an exact commit outcome. It does not receive scanner-only trust. |
-| How does the scanner avoid the ancestry overlay? | A private prepared-batch type proves canonical owned paths and parent resolution before mutation. Public observations cannot construct it. |
+| How does the one-shot builder avoid the ancestry overlay? | Parent-first directory groups carry one parent path and component-only children. A transient path-to-identity map resolves each group once; public observations cannot construct this private input. |
 | Is `AppliedDelta` kept? | No eager compatibility projection. As of the plan date there is no repository tag, GitHub release, crates.io package, PyPI project, or non-test repository consumer. Streaming consumers use exact `Commit` values. |
 | How is parity decided? | Paired, interleaved release measurements against the pre-rewrite `main` control, with exact-result oracles and allocation counters. |
 | Is wall-clock timing added to `make check`? | No. Deterministic allocation and zero-work guards enter the gate; timing remains in the controlled performance loop. |
@@ -815,11 +817,134 @@ limits.
 
 That preregistration is now fixed in
 [the campaign-2 H86 section](plan-2026-08-23-fdu-performance-campaign-2.md#h86-preregistration-one-decision-two-evidence-stages).
-The optimized route is one private, controls-disabled, detached cold-bootstrap choice.
-It retains a complete compact index and promotes once to the ordinary mutable layout if
-a later public commit requires mutation; it is not a report-only approximation.
-All causal and exact streaming producers remain on the existing scanner-batch reducer,
-and a controls-enabled or otherwise unproved request falls closed to that path.
+The initial preregistration limited the optimized route to one private,
+controls-disabled, detached cold-bootstrap choice.
+It proposed retaining a complete compact index and promoting once to the ordinary
+mutable layout if a later public commit required mutation; it was not a report-only
+approximation. All causal and exact streaming producers remained on the existing
+scanner-batch reducer, and the initial checkpoint fell closed to that path for
+controls-enabled or otherwise unproved requests.
+The separately preregistered controls checkpoint below later proved the same private
+directory-group boundary for controls-enabled one-shot scans without changing those
+public producers.
+
+The first implementation checkpoint validates the lifecycle split but is not the H86
+verdict. A naive detached builder retained every directory group until worker join and
+then constructed the index.
+It removed per-file paths and reduced roll-up merges, but also serialized work that the
+current producer and consumer overlap; steady exploratory `cold-scan-index` samples
+moved from roughly 270 ms to 410 ms.
+That form is rejected.
+
+The replacement publishes one parent path with component-only children before making
+those child directories claimable.
+A private builder consumes the groups while the same generic filesystem walker
+continues. Direct file and directory-self contributions fold during the walk; the final
+reverse pass visits directories only and borrows their retained roll-ups instead of
+cloning them. At this checkpoint, controls-enabled scans and all public or opened
+streaming paths still use the scanner-batch reducer.
+
+On the 113,794-entry MetaBrowser subject, the latest twelve-pair uncontrolled
+controls-disabled exploratory run changed `cold-scan-index` wall time -0.31% by median,
+with a paired 95% interval from -7.17% to +1.22%, against the immediate `c6380f7`
+control. This is practical timing parity, not claim-grade acceptance.
+Moving each incoming name into its entry instead of cloning it twice and retiring
+directory lookup keys as soon as their listings arrived removed another allocation per
+entry. Scoped counters now show 923,671 allocations against 1,107,018, 101,952
+reallocations against 212,083, 164,601,289 allocated bytes against 217,146,323, and
+129,013 roll-up merges against 1,217,448. Peak RSS moved -2.65% in the exploratory pair.
+The compact retained entry layout, single name arena, sorted child slices, promotion
+boundary, `default-tree` gate, opened-path non-regression, historical controls, quiet
+Darwin verdict, and Linux stage remain open.
+The raw artifacts are under `/tmp/fdu-streaming-parity/results/`; temporary absolute
+paths are evidence locations, not durable repository references.
+
+The next checkpoint extends the private builder to a controls-enabled one-shot scan;
+this extension is preregistered before its implementation.
+A fresh controls-rich run on the same subject retained only 51 control sources but
+crossed 2,654 scanner batches, 6,024,294 scoped allocations, 601,749 reallocations, and
+491,242,604 allocated bytes.
+Control projection alone recorded 399,849 microseconds.
+The repeated projection and subtree reclassification, rather than reading the 51 small
+files, is therefore the named mechanism.
+
+Each detached directory group will carry its optional verified control operation.
+The consumer applies that directory’s complete control state before inserting any
+sibling; the existing parent-before-child publication barrier then guarantees that every
+descendant sees all governing controls.
+Each entry is classified once from its retained parent and the complete table.
+Controls-disabled work still pays no control path, while opened discovery, refresh,
+observation, and arbitrary public mutation remain on the causal scanner reducer.
+
+The checkpoint must match the exact scanner reducer at explicit worker counts one
+through four, including retained facts, control identities, ignored classifications, all
+and unignored roll-ups, report completeness and errors, scope, freshness, state, clock,
+and the first public mutation after bootstrap.
+Fixtures cover root and nested rules, negation, an ignored parent, a non-file control
+path, source and pattern limits, and the capability-disabled build.
+Before it can be kept, a twelve-pair controls-rich `cold-scan-index` comparison against
+`c6380f7` must improve wall and component time by at least 3% with both paired intervals
+below zero; the predeclared reachable-share prediction is at least 25%. Scanner batches
+and scanner control-projection time must be zero on the private route, the detached
+build count must be one, exact/public routes must record zero detached builds, and no
+resource metric may cross the existing H86 limits.
+This checkpoint does not relax the final historical-parity, default-command,
+compact-layout, RSS, quiet-host, or Linux gates.
+
+The controls-aware checkpoint passes its predeclared exploratory screen.
+Across twelve paired uncontrolled trials, controls-rich `cold-scan-index` wall time fell
+33.55%, with a paired 95% interval from -36.41% to -33.14%; component time fell 47.43%.
+Scoped allocations fell from 6,024,294 to 987,134, reallocations from 601,749 to
+104,398, and allocated bytes from 491,242,604 to 133,101,059. Scanner projection,
+preparation, and reduction counters were zero, the private detached build count was one,
+and the exact tree digest matched.
+The fixture matrix and both all-feature and capability-disabled scanner suites pass.
+
+The differential fixture also exposed a correctness defect in the specialized scanner
+oracle: a non-file `.gitignore` correctly produces the documented `ControlRemove`, but
+baseline preparation rejected that operation even though it accepted a control upsert at
+the same fixed path.
+Preparation now validates and accepts the fixed-path removal as control-only work, while
+an invalid removal path still fails.
+The detached builder and the scanner oracle agree on the non-file source, control
+limits, ignored state, reports, and the first exact public mutation at worker counts one
+through four.
+
+The final complexity pass also shares worker-pool setup, adaptive scaling, termination,
+diagnostics, panic handling, joins, and error ordering between streaming and detached
+walks.
+[Exp-098](../../experiments/exp-098-share-pool-orchestration-through-a-dynamic-consumer.md)
+rejects the first trait-object consumer after whole-process wall regressed 0.82%, with a
+paired interval from +0.45% to +3.00%, even though scan component time was unchanged.
+[Exp-099](../../experiments/exp-099-monomorphize-shared-concurrent-walk-consumption.md)
+keeps the shared source with a generic consumer: wall changed +0.16%, with an interval
+from -1.46% to +0.81%, and component time changed +0.16%, with an interval from -1.56%
+to +1.06%. The accepted form is a complexity decision under the +3% noninferiority
+margin, not a speed claim.
+
+A fresh exploratory lifecycle comparison separates construction, save/join,
+serialization, and the default report.
+Against the preserved pre-rewrite binary, `cold-scan-index` wall changed +0.93%, with a
+paired 95% interval from -5.63% to +3.83%; component time changed -0.39%, with an
+interval from -3.02% to +4.04%. `cold-open-save` wall changed +1.11%, with an interval
+from -0.53% to +3.40%. Those medians are practical parity, while their intervals
+narrowly miss the final +3% noninferiority bound.
+A clean sampling profile attributes about 69% of both `cold-scan-index` and
+`default-tree` samples to `open` and `getattrlistbulk`, about 6% to allocator symbols,
+and less than 0.5% to index symbols; it identifies no independent CPU hotspot capable of
+moving wall by 3%.
+
+The run began under an uncontrolled load and ended at 100% host CPU, so its
+`default-tree` interval is too wide for a verdict: wall changed -0.84%, with an interval
+from -19.32% to +10.08%. The isolated snapshot-save component also remains inconclusive;
+its apparent +16.58% change spans -20.43% to +32.37%, while that job’s wall includes an
+untimed setup scan that crossed the same load change.
+Peak RSS remains materially higher than the historical control: +21.75% for
+`cold-scan-index`, +19.43% for `cold-open-save`, and +16.75% for `default-tree`. The
+compact representation and promotion boundary could address that retained-memory gap,
+but no remaining wall-time defect currently justifies their complexity.
+Quiet-host noninferiority and the H86 RSS gate remain open; this checkpoint is not the
+final H86 verdict.
 
 The local structural verdict uses `c6380f7646524b51dbfcfec7e2efac49bf89d34b` as its
 immediate immutable control and `b75bf85a33edd9fe65d97df9395072797e54426e` as the
@@ -829,7 +954,7 @@ the 113,794-entry MetaBrowser checkout: `default-tree` must improve at least 3% 
 paired interval below zero, `cold-scan-index` must move in the same direction, peak RSS
 must fall at least 20%, the two one-shot jobs must meet this plan’s historical parity
 limits on both real subjects, and opened discovery must remain within the +3%
-noninferiority and 1.05 allocation bounds while recording zero arena-route uses.
+noninferiority and 1.05 allocation bounds while recording zero detached-builder uses.
 Exact engine, report, scope, snapshot, and worker-count differential oracles remain
 mandatory.
 
@@ -850,13 +975,13 @@ changes. Scanner discovery no longer pays for that boundary, and the remaining p
 path has different correctness obligations; changing it is outside this campaign unless
 a profile and independent model identify a simpler proof with a material remaining gap.
 
-A separate 12-pair comparison with the preserved pre-rewrite binary measures the whole
-stack rather than attributing one commit.
+A separate earlier 12-pair comparison with the preserved pre-rewrite binary measured the
+whole stack rather than attributing one commit.
 On this corpus, `default-tree` is 6.07% faster, with a paired 95% interval from -7.68%
 to -0.59%; `cold-scan-index` is 1.50% faster by median, with an interval from -5.64% to
 +0.17%. This reaches the one-shot wall-time parity target on the first pinned subject.
-The second subject, deterministic allocation guards, and full handoff gates remain open
-before the campaign’s final parity bead can close.
+At that checkpoint, the second subject, deterministic allocation guards, and full
+handoff gates remained open before the campaign’s final parity bead could close.
 
 Phase 2 passes when detached streaming counters are zero, exact commit and journal
 oracles remain unchanged, and profiles no longer identify ancestry-path comparison or
@@ -869,10 +994,12 @@ unused consequence construction as the leading detached cost.
 - [ ] Iterate on the leading measured cost until the one-shot thresholds pass or two
   consecutive profiles find no mechanism capable of reaching 3%; any proposed target
   revision requires a separate design decision with evidence.
-- [ ] Add deterministic per-entry allocation guards for detached construction and opened
-  discovery, including a negative fixture that proves each guard fails.
-- [ ] Add zero-work assertions for detached effect, impact, journal, delta, and ancestry
-  counters to `make check` without adding a timing gate.
+- [x] Add deterministic per-entry allocation guards for detached construction and opened
+  discovery, including injected negative cases that prove one extra allocation per entry
+  fails each ceiling.
+- [x] Add zero-work assertions for detached effect, impact, journal, delta, and ancestry
+  counters to `make check` without adding a timing gate; the same test proves opened
+  discovery records no detached-builder work.
 - [ ] Run `make check`, `make cross-lint`, the exact-commit independent model,
   opened-root goldens, and the paired performance protocol.
 - [ ] Record every accepted and rejected experiment, update the opened-root plan’s live

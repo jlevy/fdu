@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 25 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 34 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 
@@ -167,6 +167,15 @@ dead end.
 | 088 | [Coalesce causal scanner fragments in the one-shot builder](#exp088--coalesce-causal-scanner-fragments-in-the-oneshot-builder) | H105 | `default-tree` | +0.1% | ❌ rejected |
 | 089 | [Suppress causal publication in a producer-only scan](#exp089--suppress-causal-publication-in-a-produceronly-scan) | H106 | `cold-scan-producer` | +0.7% | ❌ rejected |
 | 090 | [Bound FullIndex scan-diagnostics overhead](#exp090--bound-fullindex-scandiagnostics-overhead) | H97 | `default-tree` | -3.5% | ✅ accepted |
+| 091 | [Pipeline directory-shaped detached bootstrap](#exp091--pipeline-directoryshaped-detached-bootstrap) | H86, S1b, H60 | `cold-scan-index` | +2.5% | ↩︎ superseded |
+| 092 | [Share one filesystem walker across bootstrap modes](#exp092--share-one-filesystem-walker-across-bootstrap-modes) | H86 | `cold-scan-index` | +1.1% | ✅ accepted |
+| 093 | [Use transient hashed parents and unique child insertion](#exp093--use-transient-hashed-parents-and-unique-child-insertion) | H86, S1b | `cold-scan-index` | +0.8% | ✅ accepted |
+| 094 | [Borrow completed directory roll-ups](#exp094--borrow-completed-directory-rollups) | H86, H60 | `cold-scan-index` | +0.2% | ✅ accepted |
+| 095 | [Move incoming names and retire consumed paths](#exp095--move-incoming-names-and-retire-consumed-paths) | H86, S1b, S2 | `cold-scan-index` | -0.3% | ✅ accepted |
+| 096 | [Apply fixed controls once per detached directory](#exp096--apply-fixed-controls-once-per-detached-directory) | H86 | `cold-scan-index` | -33.6% | ✅ accepted |
+| 097 | [Audit historical lifecycle parity after detached bootstrap](#exp097--audit-historical-lifecycle-parity-after-detached-bootstrap) | H86 | `cold-scan-index` | +0.9% | ⏳ in progress |
+| 098 | [Share pool orchestration through a dynamic consumer](#exp098--share-pool-orchestration-through-a-dynamic-consumer) | H86 | `cold-scan-index` | +0.8% | ❌ rejected |
+| 099 | [Monomorphize shared concurrent-walk consumption](#exp099--monomorphize-shared-concurrentwalk-consumption) | H86 | `cold-scan-index` | +0.2% | ✅ accepted |
 
 ## The experiments
 
@@ -3195,6 +3204,289 @@ every resource gate held.
 Full record:
 [`exp-090-bound-fullindex-scan-diagnostics-overhead.md`](../experiments/exp-090-bound-fullindex-scan-diagnostics-overhead.md)
 
+### exp-091 — Pipeline directory-shaped detached bootstrap
+
+↩︎ superseded · 2026-09-01 · H86, S1b, H60
+
+Control: c6380f7 controls-disabled scanner reducer
+
+Candidate: pipelined directory-group builder
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 561.1 | 580.2 | +2.48% (regression) | [+0.70%, +4.23%] |
+| component (ms) | 321.6 | 329.7 | +2.24% (regression) | [+1.44%, +4.37%] |
+| cpu (ms) | 2261.9 | 2296.6 | +1.36% (regression) | [+0.23%, +3.48%] |
+| user (ms) | 412.0 | 403.9 | -1.95% | [-3.32%, -0.40%] |
+| system (ms) | 1849.7 | 1886.0 | +1.90% (regression) | [+0.85%, +3.96%] |
+| peak rss (MiB) | 77.9 | 81.0 | +3.90% (regression) | [+3.48%, +4.29%] |
+
+Cost to carry: 846 lines; no new dependencies; new failure mode: A detached builder can
+accidentally serialize construction after the walk and destroy producer-consumer
+overlap..
+
+One private builder path; the later shared-walker checkpoint removes duplicate
+filesystem traversal logic.
+
+**Superseded:** The first pipelined form regressed wall 2.48% [+0.70%, +4.23%]; later
+ownership and borrow changes retained the pipeline while recovering noninferiority.
+
+Full record:
+[`exp-091-pipeline-directory-shaped-detached-bootstrap.md`](../experiments/exp-091-pipeline-directory-shaped-detached-bootstrap.md)
+
+### exp-092 — Share one filesystem walker across bootstrap modes
+
+✅ accepted · 2026-09-01 · H86
+
+Control: c6380f7 controls-disabled scanner reducer
+
+Candidate: shared generic walker with detached emission
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 573.0 | 581.1 | +1.13% (regression) | [+0.64%, +2.31%] |
+| component (ms) | 320.2 | 330.8 | +3.21% (regression) | [+2.11%, +4.94%] |
+| cpu (ms) | 2208.3 | 2189.5 | -1.41% (n.s.) | [-2.99%, +0.21%] |
+| user (ms) | 439.3 | 401.2 | -10.60% | [-14.20%, -6.84%] |
+| system (ms) | 1764.4 | 1795.9 | +1.67% (n.s.) | [-1.39%, +2.46%] |
+| peak rss (MiB) | 78.2 | 81.2 | +3.74% (regression) | [+2.70%, +4.36%] |
+
+Cost to carry: 812 lines; no new dependencies; new failure mode: Emission adapters could
+diverge in admission or parent-before-child publication..
+
+One monomorphized walker with two small emission adapters; no per-entry dynamic
+dispatch.
+
+**Accepted:** The shared walker is noninferior at +1.13% [+0.64%, +2.31%] and removes a
+second filesystem traversal implementation.
+
+Full record:
+[`exp-092-share-one-filesystem-walker-across-bootstrap-modes.md`](../experiments/exp-092-share-one-filesystem-walker-across-bootstrap-modes.md)
+
+### exp-093 — Use transient hashed parents and unique child insertion
+
+✅ accepted · 2026-09-01 · H86, S1b
+
+Control: c6380f7 controls-disabled scanner reducer
+
+Candidate: hashed transient parent table and unique child insertion
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 573.3 | 578.7 | +0.83% (n.s.) | [-0.84%, +1.55%] |
+| component (ms) | 321.4 | 330.2 | +2.30% (n.s.) | [-1.04%, +3.85%] |
+| cpu (ms) | 2218.6 | 2210.7 | -0.22% (n.s.) | [-2.43%, +1.35%] |
+| user (ms) | 456.1 | 391.9 | -12.98% | [-16.24%, -11.07%] |
+| system (ms) | 1761.6 | 1821.5 | +3.46% (regression) | [+0.32%, +4.84%] |
+| peak rss (MiB) | 78.3 | 81.2 | +3.78% (regression) | [+2.00%, +4.04%] |
+
+Cost to carry: 829 lines; no new dependencies; new failure mode: Duplicate child facts
+must fail closed instead of silently replacing an EntryId..
+
+The retained child map remains ordered; only the private point-lookup table is hashed.
+
+**Accepted:** The transient contract is explicit and noninferior at +0.83%
+[-0.84%, +1.55%], with exact digests.
+
+Full record:
+[`exp-093-use-transient-hashed-parents-and-unique-child-insertion.md`](../experiments/exp-093-use-transient-hashed-parents-and-unique-child-insertion.md)
+
+### exp-094 — Borrow completed directory roll-ups
+
+✅ accepted · 2026-09-01 · H86, H60
+
+Control: c6380f7 controls-disabled scanner reducer
+
+Candidate: borrowed final directory roll-up merge
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 581.0 | 579.1 | +0.19% (n.s.) | [-2.96%, +1.78%] |
+| component (ms) | 330.5 | 330.0 | +0.72% (n.s.) | [-4.48%, +3.34%] |
+| cpu (ms) | 2277.2 | 2218.9 | -3.12% (n.s.) | [-7.94%, +0.85%] |
+| user (ms) | 470.9 | 388.2 | -16.00% | [-16.75%, -14.31%] |
+| system (ms) | 1802.8 | 1832.5 | +1.09% (n.s.) | [-6.29%, +4.93%] |
+| peak rss (MiB) | 78.4 | 80.9 | +3.04% (regression) | [+2.69%, +3.68%] |
+
+Cost to carry: 844 lines; no new dependencies; new failure mode: Borrowing two arena
+entries must preserve parent-before-child allocation and reject stale handles..
+
+One split-at-mut helper replaces cloning complete directory roll-ups.
+
+**Accepted:** Borrowing removes a clone from the structural path and is noninferior at
++0.19% [-2.96%, +1.78%].
+
+Full record:
+[`exp-094-borrow-completed-directory-roll-ups.md`](../experiments/exp-094-borrow-completed-directory-roll-ups.md)
+
+### exp-095 — Move incoming names and retire consumed paths
+
+✅ accepted · 2026-09-01 · H86, S1b, S2
+
+Control: c6380f7 controls-disabled scanner reducer
+
+Candidate: moved names and bounded transient directory paths
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 574.0 | 572.1 | -0.31% (n.s.) | [-7.17%, +1.22%] |
+| component (ms) | 323.1 | 324.1 | +0.49% (n.s.) | [-7.41%, +2.10%] |
+| cpu (ms) | 2197.7 | 2200.6 | +0.10% (n.s.) | [-1.36%, +3.16%] |
+| user (ms) | 448.8 | 361.6 | -18.59% | [-22.14%, -16.25%] |
+| system (ms) | 1762.1 | 1839.3 | +4.18% (regression) | [+2.34%, +10.83%] |
+| peak rss (MiB) | 78.6 | 76.4 | -2.65% | [-3.07%, -2.16%] |
+
+Cost to carry: 857 lines; no new dependencies; new failure mode: Retiring a directory
+lookup before its listing arrives must fail as unknown ancestry..
+
+Ownership follows the listing lifecycle; the ordinary retained representation still
+requires one name clone.
+
+**Accepted:** Timing is noninferior at -0.31% [-7.17%, +1.22%], while scoped allocations
+fall by about one per entry and allocated bytes fall 24%.
+
+Full record:
+[`exp-095-move-incoming-names-and-retire-consumed-paths.md`](../experiments/exp-095-move-incoming-names-and-retire-consumed-paths.md)
+
+### exp-096 — Apply fixed controls once per detached directory
+
+✅ accepted · 2026-09-01 · H86
+
+Control: c6380f7 exact scanner reducer with controls enabled
+
+Candidate: controls-aware directory-group builder
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 868.0 | 574.4 | -33.55% | [-36.41%, -33.14%] |
+| component (ms) | 622.5 | 325.7 | -47.43% | [-49.77%, -46.32%] |
+| cpu (ms) | 2654.2 | 2159.8 | -19.75% | [-21.82%, -17.32%] |
+| user (ms) | 897.7 | 375.0 | -58.59% | [-59.58%, -57.95%] |
+| system (ms) | 1748.9 | 1781.1 | +0.69% (n.s.) | [-2.77%, +3.12%] |
+| peak rss (MiB) | 96.9 | 71.7 | -25.88% | [-27.91%, -24.97%] |
+
+Cost to carry: 1025 lines; no new dependencies; new failure mode: A control applied
+after siblings or descendant publication would classify retained entries against
+incomplete state..
+
+The private one-shot builder shares filesystem traversal and pool orchestration with
+streaming; public and opened consumers retain the causal reducer.
+
+**Accepted:** Wall falls 33.55% [-36.41%, -33.14%], component falls 47.43%, peak RSS
+falls 25.88%, and exact control and mutation oracles pass.
+
+Full record:
+[`exp-096-apply-fixed-controls-once-per-detached-directory.md`](../experiments/exp-096-apply-fixed-controls-once-per-detached-directory.md)
+
+### exp-097 — Audit historical lifecycle parity after detached bootstrap
+
+⏳ in progress · 2026-09-01 · H86
+
+Control: pre-rewrite b75bf85 historical probe
+
+Candidate: controls-aware detached bootstrap candidate
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 559.2 | 574.7 | +0.93% (n.s.) | [-5.63%, +3.83%] |
+| component (ms) | 321.7 | 327.2 | -0.39% (n.s.) | [-3.02%, +4.04%] |
+| cpu (ms) | 2164.4 | 2180.9 | +2.00% (n.s.) | [-0.88%, +3.01%] |
+| user (ms) | 388.5 | 364.3 | -6.30% | [-8.21%, -4.32%] |
+| system (ms) | 1779.1 | 1806.3 | +2.92% (regression) | [+0.28%, +5.38%] |
+| peak rss (MiB) | 59.1 | 72.1 | +21.75% (regression) | [+20.67%, +22.40%] |
+
+Other jobs, wall time: `cold-open-save` +1.1% (n.s.), `cold-snapshot-save` +5.4%
+(regression), `default-tree` -0.8% (n.s.).
+
+Cost to carry: 1031 lines; no new dependencies; new failure mode: An uncontrolled host
+can make a lifecycle residual look like serialization or destruction cost..
+
+This is an attribution audit, not another production mechanism.
+
+**In-progress:** Construction and save/join medians reach practical parity, but
+quiet-host noninferiority and the 17-22% retained-memory gap remain open.
+
+Full record:
+[`exp-097-audit-historical-lifecycle-parity-after-detached-bootstrap.md`](../experiments/exp-097-audit-historical-lifecycle-parity-after-detached-bootstrap.md)
+
+### exp-098 — Share pool orchestration through a dynamic consumer
+
+❌ rejected · 2026-09-01 · H86
+
+Control: controls-aware detached builder before pool-orchestration cleanup
+
+Candidate: shared runner with dynamically dispatched message consumption
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 552.2 | 557.7 | +0.82% (regression) | [+0.45%, +3.00%] |
+| component (ms) | 323.1 | 323.1 | -0.06% (n.s.) | [-0.46%, +0.64%] |
+| cpu (ms) | 2199.5 | 2208.6 | +0.31% (n.s.) | [-0.11%, +0.97%] |
+| user (ms) | 334.7 | 340.6 | +1.44% (regression) | [+0.66%, +3.58%] |
+| system (ms) | 1864.2 | 1866.6 | -0.14% (n.s.) | [-0.56%, +0.61%] |
+| peak rss (MiB) | 72.0 | 72.3 | +0.21% (regression) | [+0.03%, +1.03%] |
+
+Other jobs, wall time: `opened-discovery` -1.2% (n.s.).
+
+Cost to carry: 140 lines; no new dependencies; new failure mode: Dynamic dispatch at
+every directory-group handoff can turn source deduplication into runtime work..
+
+Removed about 60 duplicated orchestration lines, but routed every received work message
+through a dyn FnMut boundary.
+
+**Rejected:** Whole-process wall regressed 0.82% [0.45%, 3.00%] while component time was
+unchanged; the source reduction does not justify a supported regression.
+
+Full record:
+[`exp-098-share-pool-orchestration-through-a-dynamic-consumer.md`](../experiments/exp-098-share-pool-orchestration-through-a-dynamic-consumer.md)
+
+### exp-099 — Monomorphize shared concurrent-walk consumption
+
+✅ accepted · 2026-09-01 · H86
+
+Control: controls-aware detached builder before pool-orchestration cleanup
+
+Candidate: shared generic runner with monomorphized message consumption
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 569.3 | 566.0 | +0.16% (n.s.) | [-1.46%, +0.81%] |
+| component (ms) | 330.7 | 332.2 | +0.16% (n.s.) | [-1.56%, +1.06%] |
+| cpu (ms) | 2253.0 | 2259.3 | +0.02% (n.s.) | [-1.13%, +0.78%] |
+| user (ms) | 343.3 | 340.0 | -1.11% (n.s.) | [-2.74%, +2.13%] |
+| system (ms) | 1906.6 | 1916.2 | +0.17% (n.s.) | [-1.01%, +0.96%] |
+| peak rss (MiB) | 72.0 | 72.0 | -0.10% (n.s.) | [-0.30%, +0.33%] |
+
+Cost to carry: 7 lines; no new dependencies; new failure mode: A future trait-object
+consumer at the handoff boundary could restore the rejected per-message cost..
+
+One generic bound keeps termination, scaling, diagnostics, joins, and error ordering
+singular while monomorphizing the two consumers.
+
+**Accepted:** The shared source is noninferior at +0.16% [-1.46%, +0.81%] after removing
+per-message dynamic dispatch.
+
+Full record:
+[`exp-099-monomorphize-shared-concurrent-walk-consumption.md`](../experiments/exp-099-monomorphize-shared-concurrent-walk-consumption.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -3267,6 +3559,16 @@ Baselines show one value because they measure a state rather than a change.
 | 016 | Move cold-scan producer paths instead of cloning | `cold-scan-index` | 336.0 | 339.9 | -0.4% | ❌ rejected |
 | 017 | Pre-create dormant workers for adaptive scan depth | `cold-scan-producer` | 494.2 | 500.7 | +2.0% | ❌ rejected |
 | 023 | Cumulative effect through adaptive scanning and macOS bulk metadata | `cold-scan-index` | 625.2 | 295.5 | -53.5% | ✅ accepted |
+
+### metabrowser-current-h86 (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 091 | Pipeline directory-shaped detached bootstrap | `cold-scan-index` | 561.1 | 580.2 | +2.5% | ↩︎ superseded |
+| 092 | Share one filesystem walker across bootstrap modes | `cold-scan-index` | 573.0 | 581.1 | +1.1% | ✅ accepted |
+| 093 | Use transient hashed parents and unique child insertion | `cold-scan-index` | 573.3 | 578.7 | +0.8% | ✅ accepted |
+| 094 | Borrow completed directory roll-ups | `cold-scan-index` | 581.0 | 579.1 | +0.2% | ✅ accepted |
+| 095 | Move incoming names and retire consumed paths | `cold-scan-index` | 574.0 | 572.1 | -0.3% | ✅ accepted |
 
 ### cargo-registry-src (11,142 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
@@ -3356,6 +3658,13 @@ Baselines show one value because they measure a state rather than a change.
 | 069 | Order the content file map by path bytes instead of components | `content-cache-hit` | 577.9 | 408.9 | -31.0% | ✅ accepted |
 | 070 | Validate the separator fixes against the result they landed on | `content-cache-hit` | 452.2 | 450.8 | -1.3% | ✅ accepted |
 
+### metabrowser-h86-orchestration-cleanup (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 098 | Share pool orchestration through a dynamic consumer | `cold-scan-index` | 552.2 | 557.7 | +0.8% | ❌ rejected |
+| 099 | Monomorphize shared concurrent-walk consumption | `cold-scan-index` | 569.3 | 566.0 | +0.2% | ✅ accepted |
+
 ### pr22-macos-benchmarks (60,993 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -3428,6 +3737,18 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 012 | Breadth-first traversal order | `cold-scan-index` | 337.9 | 337.0 | -0.6% | ✅ accepted |
+
+### metabrowser-current-h86-controls (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 096 | Apply fixed controls once per detached directory | `cold-scan-index` | 868.0 | 574.4 | -33.6% | ✅ accepted |
+
+### metabrowser-h86-lifecycle-f41 (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 097 | Audit historical lifecycle parity after detached bootstrap | `cold-scan-index` | 559.2 | 574.7 | +0.9% | ⏳ in progress |
 
 ### metabrowser-live (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
