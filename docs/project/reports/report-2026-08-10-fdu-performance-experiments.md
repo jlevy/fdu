@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 23 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 24 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 
@@ -165,6 +165,7 @@ dead end.
 | 086 | [Scanner phase counters expose preparation without observer cost](#exp086--scanner-phase-counters-expose-preparation-without-observer-cost) | H103 | `default-tree` | -0.1% | 📏 baseline |
 | 087 | [Fuse detached control-free scanner preparation and reduction](#exp087--fuse-detached-controlfree-scanner-preparation-and-reduction) | H104 | `default-tree` | -1.1% | ❌ rejected |
 | 088 | [Coalesce causal scanner fragments in the one-shot builder](#exp088--coalesce-causal-scanner-fragments-in-the-oneshot-builder) | H105 | `default-tree` | +0.1% | ❌ rejected |
+| 089 | [Suppress causal publication in a producer-only scan](#exp089--suppress-causal-publication-in-a-produceronly-scan) | H106 | `cold-scan-producer` | +0.7% | ❌ rejected |
 
 ## The experiments
 
@@ -3130,6 +3131,38 @@ while cold-scan-index was flat; the candidate missed the 3% structural gate.
 Full record:
 [`exp-088-coalesce-causal-scanner-fragments-in-the-one-shot-builder.md`](../experiments/exp-088-coalesce-causal-scanner-fragments-in-the-one-shot-builder.md)
 
+### exp-089 — Suppress causal publication in a producer-only scan
+
+❌ rejected · 2026-09-01 · H106
+
+Control: phase-instrumented causal streaming control at 80e5897
+
+Candidate: unordered producer-only diagnostic
+
+**`cold-scan-producer`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 770.3 | 771.9 | +0.38% (n.s.) | [-0.12%, +0.96%] |
+| component (ms) | 314.4 | 315.5 | +0.68% (n.s.) | [-1.04%, +2.13%] |
+| cpu (ms) | 3542.3 | 3531.6 | +0.30% (n.s.) | [-0.35%, +5.25%] |
+| user (ms) | 570.3 | 556.4 | -0.89% (n.s.) | [-2.77%, +1.89%] |
+| system (ms) | 2968.5 | 2967.7 | +0.61% (regression) | [+0.25%, +5.15%] |
+| peak rss (MiB) | 76.2 | 76.7 | +0.05% (n.s.) | [-0.85%, +1.17%] |
+
+Cost to carry: 43 lines; no new dependencies; new failure mode: The diagnostic stream
+can publish children before parents and is therefore safe only for its order-insensitive
+summary sink..
+
+The diagnostic isolated causal publication with a small threaded flag, but the flat
+result rules out the much larger pending-child builder it was intended to justify.
+
+**Rejected:** Producer component time changed +0.68% with a 95% interval of -1.04% to
++2.13%, missing the 3% gate and establishing no improvement.
+
+Full record:
+[`exp-089-suppress-causal-publication-in-a-producer-only-scan.md`](../experiments/exp-089-suppress-causal-publication-in-a-producer-only-scan.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -3170,17 +3203,6 @@ Baselines show one value because they measure a state rather than a change.
 | 026 | Reuse macOS bulk metadata during full reconciliation | `warm-revalidate` | 21,161.5 | 14,014.3 | -34.4% | ✅ accepted |
 | 030 | Elide unchanged entries in bounded parallel reconciliation waves | `warm-revalidate` | 14,463.4 | 5,708.1 | -59.5% | ✅ accepted |
 
-### metabrowser-20260812 (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 027 | Cumulative effect through bulk reconciliation | `cold-scan-index` | 586.9 | 275.4 | -52.8% | ✅ accepted |
-| 028 | Reuse macOS bulk directory staging allocations | `cold-scan-index` | 382.2 | 307.8 | +0.2% | ❌ rejected |
-| 029 | Increase macOS bulk metadata buffer to 256 KiB | `cold-scan-index` | 311.0 | 321.5 | -1.8% | ❌ rejected |
-| 031 | Increase immutable-baseline reconciliation waves to 4096 directories | `warm-revalidate` | 477.6 | 482.5 | +1.6% | ❌ rejected |
-| 032 | Cumulative effect through bounded parallel reconciliation | `cold-scan-index` | 635.4 | 289.6 | -54.5% | ✅ accepted |
-| 033 | Post-composable-CLI integration validation | `warm-revalidate` | 844.7 | 481.9 | -42.3% | ✅ accepted |
-
 ### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -3191,6 +3213,18 @@ Baselines show one value because they measure a state rather than a change.
 | 086 | Scanner phase counters expose preparation without observer cost | `default-tree` | 364.3 | — | — | 📏 baseline |
 | 087 | Fuse detached control-free scanner preparation and reduction | `default-tree` | 355.3 | 349.3 | -1.1% | ❌ rejected |
 | 088 | Coalesce causal scanner fragments in the one-shot builder | `default-tree` | 362.5 | 360.4 | +0.1% | ❌ rejected |
+| 089 | Suppress causal publication in a producer-only scan | `cold-scan-producer` | 770.3 | 771.9 | +0.4% | ❌ rejected |
+
+### metabrowser-20260812 (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 027 | Cumulative effect through bulk reconciliation | `cold-scan-index` | 586.9 | 275.4 | -52.8% | ✅ accepted |
+| 028 | Reuse macOS bulk directory staging allocations | `cold-scan-index` | 382.2 | 307.8 | +0.2% | ❌ rejected |
+| 029 | Increase macOS bulk metadata buffer to 256 KiB | `cold-scan-index` | 311.0 | 321.5 | -1.8% | ❌ rejected |
+| 031 | Increase immutable-baseline reconciliation waves to 4096 directories | `warm-revalidate` | 477.6 | 482.5 | +1.6% | ❌ rejected |
+| 032 | Cumulative effect through bounded parallel reconciliation | `cold-scan-index` | 635.4 | 289.6 | -54.5% | ✅ accepted |
+| 033 | Post-composable-CLI integration validation | `warm-revalidate` | 844.7 | 481.9 | -42.3% | ✅ accepted |
 
 ### metabrowser (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
