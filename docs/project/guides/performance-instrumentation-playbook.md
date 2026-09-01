@@ -199,6 +199,13 @@ The probe enables it explicitly; the installed CLI uses `FDU_SCAN_DIAGNOSTICS=1`
 tagged stderr record so stable output does not change.
 exp-056 measured the complete enabled path at -0.55% [-1.09%, +0.17%], which accepts the
 instrument while making no claim that its cost is literally zero.
+That first measurement exercised the transient Summary plan.
+Exp-090 extended the same trace to cold FullIndex scans, including the default tree
+path, and measured diagnostics-on at -3.48% with a paired 95% interval from -11.88% to
++1.43% against the same immutable binary with diagnostics off.
+Exact tallies matched and every resource gate held.
+Cache-only opens emit no trace because they perform no scan; warm reconciliation is a
+different operation and does not claim the cold-scan trace contract.
 
 ### A counter that reads zero is worse than no counter
 

@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 24 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 25 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 
@@ -166,6 +166,7 @@ dead end.
 | 087 | [Fuse detached control-free scanner preparation and reduction](#exp087--fuse-detached-controlfree-scanner-preparation-and-reduction) | H104 | `default-tree` | -1.1% | ❌ rejected |
 | 088 | [Coalesce causal scanner fragments in the one-shot builder](#exp088--coalesce-causal-scanner-fragments-in-the-oneshot-builder) | H105 | `default-tree` | +0.1% | ❌ rejected |
 | 089 | [Suppress causal publication in a producer-only scan](#exp089--suppress-causal-publication-in-a-produceronly-scan) | H106 | `cold-scan-producer` | +0.7% | ❌ rejected |
+| 090 | [Bound FullIndex scan-diagnostics overhead](#exp090--bound-fullindex-scandiagnostics-overhead) | H97 | `default-tree` | -3.5% | ✅ accepted |
 
 ## The experiments
 
@@ -3163,6 +3164,37 @@ result rules out the much larger pending-child builder it was intended to justif
 Full record:
 [`exp-089-suppress-causal-publication-in-a-producer-only-scan.md`](../experiments/exp-089-suppress-causal-publication-in-a-producer-only-scan.md)
 
+### exp-090 — Bound FullIndex scan-diagnostics overhead
+
+✅ accepted · 2026-09-01 · H97
+
+Control: same immutable default-tree probe with diagnostics disabled
+
+Candidate: same immutable default-tree probe with diagnostics enabled
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 377.4 | 360.7 | -3.48% (n.s.) | [-11.88%, +1.43%] |
+| component (ms) | 372.5 | 355.3 | -3.63% (n.s.) | [-12.05%, +1.34%] |
+| cpu (ms) | 2163.6 | 2053.0 | -3.16% (n.s.) | [-14.63%, +1.93%] |
+| user (ms) | 211.5 | 216.4 | +0.78% (n.s.) | [-1.67%, +6.75%] |
+| system (ms) | 1923.1 | 1845.5 | -3.47% (n.s.) | [-17.20%, +1.71%] |
+| peak rss (MiB) | 85.4 | 86.0 | +0.24% (n.s.) | [-0.79%, +1.09%] |
+
+Cost to carry: 112 lines; no new dependencies.
+
+One private collection flag crosses the report/open boundary; ordinary callers retain
+the existing no-diagnostics entry point.
+
+**Accepted:** The opt-in FullIndex trace is noninferior: -3.48% median with a paired 95%
+interval of [-11.88%, +1.43%], below the predeclared +3% ceiling, with exact tallies and
+every resource gate held.
+
+Full record:
+[`exp-090-bound-fullindex-scan-diagnostics-overhead.md`](../experiments/exp-090-bound-fullindex-scan-diagnostics-overhead.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -3396,6 +3428,12 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 012 | Breadth-first traversal order | `cold-scan-index` | 337.9 | 337.0 | -0.6% | ✅ accepted |
+
+### metabrowser-live (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 090 | Bound FullIndex scan-diagnostics overhead | `default-tree` | 377.4 | 360.7 | -3.5% | ✅ accepted |
 
 ### post-cli-cache-pressure-12x (720,805 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

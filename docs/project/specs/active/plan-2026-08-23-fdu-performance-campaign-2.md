@@ -183,11 +183,22 @@ Phases 0 and A–C are parallel where their beads say so; D and E follow their g
   practical anchor) with the regime difference recorded.
   That is a decision this plan should make deliberately rather than let a harness make
   by falling back.
-- [ ] `fdu-5yjk` — extend scan diagnostics to the FullIndex plan, the plan users run and
+- [x] `fdu-5yjk` — extend scan diagnostics to the FullIndex plan, the plan users run and
   the one Phase B rebuilds; instrument before restructuring.
-- [ ] `fdu-4xtm` — a `--no-oracle` probe mode and engine-phase counter scoping, so
+  **Landed.** Cold FullIndex scans now retain the same bounded `fdu-scan-diagnostics-v1`
+  trace when explicitly requested, and both the installed command and `default-tree`
+  probe exercise that route.
+  Exp-090 measured diagnostics-on at -3.48% with a paired 95% interval from -11.88% to
+  +1.43%, inside the +3% overhead ceiling, with exact tallies and every resource gate
+  held. Cache-only opens have no scan to trace; warm reconciliation remains outside the
+  cold-scan trace contract.
+- [x] `fdu-4xtm` — a `--no-oracle` probe mode and engine-phase counter scoping, so
   attribution runs stop counting the harness (the oracle is ~39% of probe instructions
   and 46% of its allocation events).
+  **Landed.** The profiler records independent counter and oracle switches, ordinary
+  timing rejects an explicitly disabled oracle, and the no-oracle probe summarizes an
+  index from its stored root roll-up rather than walking every path and digesting every
+  entry. The first clean capture reduced the harness/oracle layer to 0.06% of samples.
 - [ ] `fdu-c65j` — adopt samply so Linux profiling stops depending on callgrind’s
   serialized world.
 - [x] `fdu-mx1w` — a ledger job for the **default command**, `fdu <dir>`: scan, index,
