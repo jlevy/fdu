@@ -3622,26 +3622,6 @@ fn normalize(path: &Path) -> Option<Vec<&OsStr>> {
     Some(parts)
 }
 
-/// Whether a path is relative and never ascends, so joining it cannot leave a base.
-///
-/// Every component must be `Normal` or `CurDir`. That rejects `..`, a root, and a
-/// Windows prefix, which is both what an index keyed on relative paths can store and
-/// what keeps a joined path inside the directory it was joined to.
-///
-/// Deliberately *not* named for representability. This project already uses
-/// "representable" for a different question — whether a native path has a canonical
-/// UTF-8 portable form, which is what decides whether an entry appears in portable
-/// projections. That predicate is [`crate::opened::read::portable_path`]. A path can
-/// satisfy one and fail the other in either direction, so one word for both invites
-/// exactly the confusion it caused.
-///
-/// The same rule as [`normalize`] without building anything: validation asks a yes or
-/// no question, and answering it by constructing a component list and dropping it was
-/// pure allocation.
-pub(crate) fn path_is_relative_normal(path: &Path) -> bool {
-    path.components().all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
-}
-
 fn prepare_observation(observation: &Observation) -> crate::Result<PreparedObservation> {
     let mut ops = Vec::with_capacity(observation.len());
     for observed in &observation.ops {
@@ -3673,18 +3653,17 @@ fn prepare_observation(observation: &Observation) -> crate::Result<PreparedObser
 }
 
 fn canonical_relative_path(path: &Path) -> crate::Result<PathBuf> {
-    if !path_is_relative_normal(path) {
-        return Err(crate::Error::PathEscapesRoot(path.to_path_buf()));
+    let mut canonical = PathBuf::with_capacity(path.as_os_str().as_encoded_bytes().len());
+    for component in path.components() {
+        match component {
+            Component::Normal(part) => canonical.push(part),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(crate::Error::PathEscapesRoot(path.to_path_buf()));
+            }
+        }
     }
-    // A path whose every component is `Normal` rebuilds to itself, so copy it in one
-    // allocation instead of reconstructing it component-by-component -- `collect` on a
-    // `PathBuf` grows by repeated push, which showed up as the dominant reallocation on
-    // whole-scan profiles (fdu-pro1). Every path fdu's own walker produces takes this
-    // lane; only input that actually contains `.` pays the rebuild.
-    if path.components().all(|component| matches!(component, Component::Normal(_))) {
-        return Ok(path.to_path_buf());
-    }
-    Ok(normalize(path).expect("representable paths normalize").into_iter().collect::<PathBuf>())
+    Ok(canonical)
 }
 
 fn derive_impact(changes: &[EffectiveChange], state: &[StateTransition]) -> Impact {
@@ -4858,6 +4837,50 @@ mod tests {
 
         assert_eq!(outcome.stats.inserted, 2);
         assert_eq!(outcome.stats.stale, 0);
+    }
+
+    #[test]
+    fn public_observation_outputs_use_canonical_encoded_paths() {
+        let separator = std::path::MAIN_SEPARATOR;
+        let dotted = PathBuf::from(format!("dotted{separator}.{separator}file.txt"));
+        let dotted_canonical = PathBuf::from(format!("dotted{separator}file.txt"));
+        let repeated = PathBuf::from(format!("repeated{separator}{separator}file.txt"));
+        let repeated_canonical = PathBuf::from(format!("repeated{separator}file.txt"));
+        let mut index = Index::new("/root");
+
+        let outcome = index.apply_ok(&Observation::new(vec![
+            upsert("dotted", EntryKind::Dir, file_attrs(0, 1)),
+            Op::Upsert { path: dotted, kind: EntryKind::File, attrs: file_attrs(10, 2) },
+            upsert("repeated", EntryKind::Dir, file_attrs(0, 3)),
+            Op::Upsert { path: repeated, kind: EntryKind::File, attrs: file_attrs(20, 4) },
+        ]));
+        let commit = outcome.commit.as_ref().expect("one exact commit");
+        let applied = outcome.applied().expect("one compatibility delta");
+
+        for (actual, canonical) in [
+            (commit.changes[1].path(), dotted_canonical.as_path()),
+            (commit.changes[3].path(), repeated_canonical.as_path()),
+            (applied.ops[1].path(), dotted_canonical.as_path()),
+            (applied.ops[3].path(), repeated_canonical.as_path()),
+        ] {
+            assert_eq!(
+                actual.as_os_str().as_encoded_bytes(),
+                canonical.as_os_str().as_encoded_bytes()
+            );
+        }
+
+        for canonical in [&dotted_canonical, &repeated_canonical] {
+            let dirty = commit
+                .impact
+                .dirty_paths
+                .iter()
+                .find(|candidate| candidate.as_path() == canonical)
+                .expect("changed path is dirty");
+            assert_eq!(
+                dirty.as_os_str().as_encoded_bytes(),
+                canonical.as_os_str().as_encoded_bytes()
+            );
+        }
     }
 
     #[test]

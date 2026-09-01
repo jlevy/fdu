@@ -662,9 +662,8 @@ pub struct PageRequest {
 /// and a second completeness flag on [`TreePage`] to describe what it could not name; all
 /// three are gone.
 ///
-/// Distinct from the crate-internal `path_is_relative_normal`, which asks the unrelated
-/// structural question of whether a path is relative and never ascends. A path can
-/// satisfy either and fail the other.
+/// Distinct from the unrelated structural question of whether a path is relative and
+/// never ascends. A path can satisfy either condition and fail the other.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PortablePath(String);
 

@@ -232,6 +232,12 @@ sessions without weakening public index ownership.
 Public observation paths always run the complete relative-path validator and normalizer.
 Their tests cover `.` components, repeated separators, parent traversal, absolute paths,
 empty paths, non-Unicode components, and platform separators.
+The public boundary performs one component pass into a path buffer pre-sized from the
+input’s encoded length.
+It skips current-directory components, collapses repeated separators through component
+iteration, and rejects parent, root, or platform-prefix components during that same
+pass. This keeps the empty root path available where the engine contract uses it and
+preserves non-Unicode native components without a temporary component vector.
 
 The scanner does not send encoded path strings through that public API. It constructs a
 private `ScannerBatch` from directory entries and already canonical parent paths.
@@ -444,9 +450,9 @@ rather than invented here.
   `CachePolicy::Only`, covering both report-only consumption and public index return.
 - [x] Require exact scope for returned indexes; keep or remove report-only directional
   reuse based on a measured, explicit projection.
-- [ ] Add encoded-byte path tests for current-directory components and repeated
+- [x] Add encoded-byte path tests for current-directory components and repeated
   separators, plus existing escape, non-Unicode, and platform cases.
-- [ ] Restore complete public path normalization and introduce no scanner fast lane
+- [x] Restore complete public path normalization and introduce no scanner fast lane
   until its private invariant is tested.
 - [ ] Add the five performance jobs and consequence/provenance counters needed to
   distinguish detached, opened, and arbitrary public work.
@@ -463,7 +469,12 @@ The final boundary keeps public ownership exact, uses cold fallback for scanning
 reports, and limits the directional projection to no-scan reports.
 A multi-view parity test compares that projection with a cold controls-off report.
 The complete `make check` handoff gate passed after the projection fix.
-The encoded-path fix, instrumentation, and baselines remain open.
+The encoded-path regression then failed on the inherited fast lane: the exact commit
+retained `dotted/./file.txt` bytes even though path equality matched `dotted/file.txt`.
+The replacement canonicalizer validates and rebuilds in one pre-sized pass, and the
+regression checks exact commit changes, compatibility operations, and dirty impact paths
+in encoded form. The minimal and all-feature `fdu-core` suites pass after the fix.
+Instrumentation and baselines remain open.
 
 Phase 1 passes when the focused tests fail on PR #51, pass on the branch, all existing
 engine and opened-root model tests pass, and the baseline evidence can assign every
