@@ -389,7 +389,8 @@ cheaper:
 - ancestry preflight overlay inserts, path comparisons, and resolved-parent proofs;
 - effect paths recorded and their owned bytes;
 - impact candidates, ancestor visits, retained dirty paths, and `all_dirty` transitions;
-- `AppliedDelta` materializations;
+- compatibility-projection materializations until exp-078 removes both the projection
+  and its now-dead counter;
 - journal retained, cloned, oversized, and dropped commits;
 - allocation events, reallocations, allocated bytes, and frees scoped to the engine
   component.
@@ -426,8 +427,9 @@ changes cannot hide a regression:
 - allocation events, reallocations, and allocated bytes are each at most 1.05 times the
   control after fixed harness cost is removed;
 - exact digest, report, exit, scope, and filesystem-state oracles agree;
-- detached counters report zero effect paths, impact derivations, compatibility deltas,
-  journal clones, and path-keyed ancestry-overlay inserts.
+- detached counters report zero effect paths, impact derivations, and journal clones;
+  the compatibility projection is absent; and path-keyed ancestry-overlay inserts are
+  zero.
 
 Each individual tuning experiment still follows the project accept rule: at least a 3%
 median improvement and a 95% interval entirely below zero.
@@ -454,9 +456,9 @@ rather than invented here.
   separators, plus existing escape, non-Unicode, and platform cases.
 - [x] Restore complete public path normalization and introduce no scanner fast lane
   until its private invariant is tested.
-- [ ] Add the five performance jobs and consequence/provenance counters needed to
+- [x] Add the five performance jobs and consequence/provenance counters needed to
   distinguish detached, opened, and arbitrary public work.
-- [ ] Record fresh `main`, PR #51, and correctness-fixed baselines under the performance
+- [x] Record fresh `main`, PR #51, and correctness-fixed baselines under the performance
   protocol.
 
 On 2026-09-01, the four initial scope tests failed against the unrestricted directional
@@ -474,7 +476,47 @@ retained `dotted/./file.txt` bytes even though path equality matched `dotted/fil
 The replacement canonicalizer validates and rebuilds in one pre-sized pass, and the
 regression checks exact commit changes, compatibility operations, and dirty impact paths
 in encoded form. The minimal and all-feature `fdu-core` suites pass after the fix.
-Instrumentation and baselines remain open.
+
+The Phase 1 harness now has five exact jobs: `default-tree`, `cold-scan-index`,
+`opened-discovery`, `delta-apply-large`, and `delta-apply-batched`. The two synthetic
+delta jobs use an independent Python oracle for the final index and commit shape; opened
+discovery validates its final index with an independent filesystem scan.
+The pre-rewrite control supports the two one-shot jobs, while PR #51 and this branch
+support all five. Three exploratory interleaved records establish the local baseline:
+
+- [exp-074](../../experiments/exp-074-pr-51-residual-reproduced-on-the-current-registry-tree.md)
+  reproduces the PR #51 regression on the current 11,142-entry Cargo registry tree:
+  `default-tree` is 7.68% slower and `cold-scan-index` is 8.21% slower than the
+  pre-rewrite control by median wall time.
+- [exp-075](../../experiments/exp-075-scoped-counters-stay-below-the-exploratory-acceptance-thresh.md)
+  screens the runtime-gated instrumentation itself.
+  Three uncontrolled pairs move in opposite directions across the two jobs, with the
+  slower result below the 3% experiment threshold; this is a bound for attribution, not
+  a timing claim.
+- [exp-076](../../experiments/exp-076-correctness-fixes-preserve-the-streaming-performance-baselin.md)
+  compares instrumented PR #51 with the correctness-fixed branch.
+  Every semantic oracle passes, and the four-pair intervals for the five jobs cross
+  zero, so Phase 2 treats PR #51 and the correctness-fixed branch as the same
+  performance baseline.
+
+Scoped counters identify work by lifecycle rather than by call site.
+A detached cold scan of 11,141 observed entries builds 11,141 effective paths, visits
+66,903 impact ancestors, retains 15,914 dirty paths, and materializes 338 compatibility
+deltas even though it retains no journal commit.
+One exact 100,001-operation public commit builds the same number of effective and impact
+paths, then clones the commit before the journal rejects it as oversized.
+The equivalent 4,096-operation batching case retains 25 commits and drops nine older
+ones, so it remains the control for bounded exact history rather than sharing the
+oversized shortcut.
+
+Sampling profiles confirm that these counts name material CPU mechanisms.
+On `cold-scan-index`, path iteration and comparison account for 7.67% of all samples and
+allocator work for another 6.21%; the path share alone is the size of the local
+wall-time gap. On `delta-apply-large`, the path layer is 45.47% of samples, led by
+component iteration and comparison, while `opened-discovery` spends 16.09% in the path
+layer and 7.23% in the allocator.
+Probe-side digesting is reported separately and is outside the component timer; profiles
+are attribution evidence only, never timing verdicts.
 
 Phase 1 passes when the focused tests fail on PR #51, pass on the branch, all existing
 engine and opened-root model tests pass, and the baseline evidence can assign every
@@ -482,9 +524,9 @@ large cost to a named component.
 
 ### Phase 2: Lifecycle specialization and ownership
 
-- [ ] Add the private consequence sink and make detached application stats-only without
+- [x] Add the private consequence sink and make detached application stats-only without
   duplicating the reducer.
-- [ ] Remove eager `AppliedDelta` construction and migrate exact consumers to `Commit`.
+- [x] Remove eager `AppliedDelta` construction and migrate exact consumers to `Commit`.
 - [ ] Add the private owned scanner batch with resolved-parent proof; remove the
   path-keyed `StructuralOverlay` from detached and opened discovery.
 - [ ] Move prepared scanner paths across boundaries once and stop recording effect paths
@@ -492,6 +534,23 @@ large cost to a named component.
 - [ ] Bound impact accumulation and avoid cloning journal entries that exceed capacity.
 - [ ] Run and record one experiment after each independently measurable change; reject
   any abstraction that does not improve the named job or simplify a proven boundary.
+
+[exp-077](../../experiments/exp-077-select-detached-consequences-once-per-batch.md)
+accepts one private, batch-selected consequence sink.
+Detached scoped allocations fell 33.7% and allocated bytes fell 24.5%; `default-tree`
+wall and component time improved 6.57% and 7.24%. The detached path now constructs no
+effective-change path, impact, commit, or journal state, while the exact jobs preserve
+their independent engine and commit digests.
+
+[exp-078](../../experiments/exp-078-remove-the-eager-compatibility-projection.md)
+accepts removing the unreleased `AppliedDelta` projection.
+A 100,001-operation exact batch eliminates 100,002 scoped allocations, improves wall
+time 1.55% with a paired 95% interval entirely below zero, improves component time
+2.38%, and reduces peak RSS 7.09%. The generic harness classifies the sub-3% wall result
+as too small for added complexity; the operator accepts it because the candidate deletes
+128 net lines and a duplicate owned path vector.
+Python `since()` preserves its existing entry-operation output by projecting exact
+changes only when crossing the language boundary.
 
 Phase 2 passes when detached streaming counters are zero, exact commit and journal
 oracles remain unchanged, and profiles no longer identify ancestry-path comparison or

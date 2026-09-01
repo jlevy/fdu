@@ -578,9 +578,9 @@ The metadata core and opt-in content layer retain separate state:
 | **Derived report** | Exact minimum state for a proven one-shot composition; otherwise the planner falls back to the index |
 
 Metadata producers submit observations; the index alone removes no-ops, advances the
-metadata clock, and mints `Commit`. Content workers submit fingerprint-checked
-analysis observations to the optional derived tier without changing metadata truth or
-snapshot compatibility.
+metadata clock, and mints `Commit`. Content workers submit fingerprint-checked analysis
+observations to the optional derived tier without changing metadata truth or snapshot
+compatibility.
 
 Two invariants are non-negotiable, because a cache that lies is worse than no cache.
 Content-reuse fingerprints are size, mtime, ctime, and inode, never mtime alone, because

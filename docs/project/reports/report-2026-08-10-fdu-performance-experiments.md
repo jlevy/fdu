@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 8 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 13 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 
@@ -150,6 +150,11 @@ dead end.
 | 071 | [PR #51 halves its base regression but does not restore main parity](#exp071--pr-51-halves-its-base-regression-but-does-not-restore-main-parity) | — | `cold-scan-index` | -49.5% | ✅ accepted |
 | 072 | [Attribute the PR #51 residual to path-keyed ancestry preflight](#exp072--attribute-the-pr-51-residual-to-pathkeyed-ancestry-preflight) | — | `cold-scan-index` | -66.7% | ⛔ blocked |
 | 073 | [PR #51 remains above the pre-rewrite whole-scan control](#exp073--pr-51-remains-above-the-prerewrite-wholescan-control) | — | `cold-scan-index` | +144.5% | ⛔ blocked |
+| 074 | [PR #51 residual reproduced on the current registry tree](#exp074--pr-51-residual-reproduced-on-the-current-registry-tree) | — | `default-tree` | +7.7% | 📏 baseline |
+| 075 | [Scoped counters stay below the exploratory acceptance threshold](#exp075--scoped-counters-stay-below-the-exploratory-acceptance-threshold) | — | `default-tree` | +1.9% | 📏 baseline |
+| 076 | [Correctness fixes preserve the streaming performance baseline](#exp076--correctness-fixes-preserve-the-streaming-performance-baseline) | — | `default-tree` | +0.3% | 📏 baseline |
+| 077 | [Select detached consequences once per batch](#exp077--select-detached-consequences-once-per-batch) | H91 | `default-tree` | -6.6% | ✅ accepted |
+| 078 | [Remove the eager compatibility projection](#exp078--remove-the-eager-compatibility-projection) | H92 | `delta-apply-large` | -1.6% | ✅ accepted |
 
 ## The experiments
 
@@ -2637,6 +2642,150 @@ Measurement only; implementation is owned by the linked parity plan.
 Full record:
 [`exp-073-pr-51-remains-above-the-pre-rewrite-whole-scan-control.md`](../experiments/exp-073-pr-51-remains-above-the-pre-rewrite-whole-scan-control.md)
 
+### exp-074 — PR #51 residual reproduced on the current registry tree
+
+📏 baseline · 2026-09-01 · no hypothesis id · commit `e8f1bed`
+
+**`default-tree`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 59.0 |
+| component (ms) | 54.8 |
+| cpu (ms) | 310.4 |
+| user (ms) | 17.7 |
+| system (ms) | 292.8 |
+| peak rss (MiB) | 11.4 |
+
+Other jobs, wall time: `cold-scan-index` 68 ms.
+
+**Baseline:** On this 11,142-entry exploratory subject, PR #51 remained 7.68% slower on
+default-tree and 8.21% slower on cold-scan-index; the run establishes the local gap but
+is not claim-grade.
+
+Full record:
+[`exp-074-pr-51-residual-reproduced-on-the-current-registry-tree.md`](../experiments/exp-074-pr-51-residual-reproduced-on-the-current-registry-tree.md)
+
+### exp-075 — Scoped counters stay below the exploratory acceptance threshold
+
+📏 baseline · 2026-09-01 · no hypothesis id · commit `1393d31`
+
+**`default-tree`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 59.3 |
+| component (ms) | 55.2 |
+| cpu (ms) | 342.9 |
+| user (ms) | 60.9 |
+| system (ms) | 282.4 |
+| peak rss (MiB) | 14.0 |
+
+Other jobs, wall time: `cold-scan-index` 76 ms.
+
+**Baseline:** The three-pair uncontrolled screen measured +1.93% on default-tree and
+-5.59% on cold-scan-index; this is insufficient for a timing claim but bounds the
+enabled-off instrumentation below the 3% experiment bar in the slower direction.
+
+Full record:
+[`exp-075-scoped-counters-stay-below-the-exploratory-acceptance-thresh.md`](../experiments/exp-075-scoped-counters-stay-below-the-exploratory-acceptance-thresh.md)
+
+### exp-076 — Correctness fixes preserve the streaming performance baseline
+
+📏 baseline · 2026-09-01 · no hypothesis id · commit `b5d9ba4`
+
+**`default-tree`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 60.4 |
+| component (ms) | 56.2 |
+| cpu (ms) | 352.6 |
+| user (ms) | 62.3 |
+| system (ms) | 290.4 |
+| peak rss (MiB) | 14.3 |
+
+Other jobs, wall time: `cold-scan-index` 87 ms, `delta-apply-batched` 579 ms,
+`delta-apply-large` 659 ms, `opened-discovery` 362 ms.
+
+**Baseline:** All five exact jobs passed their semantic oracles; default-tree moved
++0.29%, opened discovery -2.84% wall and +0.54% component, and both public delta jobs
+stayed within 1.1% wall, with four-pair intervals crossing zero.
+
+Full record:
+[`exp-076-correctness-fixes-preserve-the-streaming-performance-baselin.md`](../experiments/exp-076-correctness-fixes-preserve-the-streaming-performance-baselin.md)
+
+### exp-077 — Select detached consequences once per batch
+
+✅ accepted · 2026-09-01 · H91 · commit `da5b8bc`
+
+Control: correctness and instrumentation baseline at 1393d31
+
+Candidate: zero-sized detached consequence sink at da5b8bc
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 59.7 | 55.6 | -6.57% | [-11.20%, -4.49%] |
+| component (ms) | 55.5 | 51.5 | -7.24% | [-11.96%, -4.86%] |
+| cpu (ms) | 346.9 | 316.0 | -6.55% | [-12.77%, -5.45%] |
+| user (ms) | 63.4 | 39.9 | -36.77% | [-37.91%, -36.27%] |
+| system (ms) | 283.5 | 276.2 | +0.18% (n.s.) | [-7.24%, +1.71%] |
+| peak rss (MiB) | 14.2 | 13.7 | -2.92% | [-4.21%, -2.34%] |
+
+Other jobs, wall time: `cold-scan-index` -3.0% (n.s.), `delta-apply-batched` +0.3%
+(n.s.), `delta-apply-large` +0.0% (n.s.), `opened-discovery` +0.0% (n.s.).
+
+Cost to carry: 281 lines; no new dependencies.
+
+One private zero-sized sink and one generic reducer; no per-entry lifecycle branch,
+dependency, unsafe block, public mode, or duplicated mutation engine.
+
+**Accepted:** default-tree improved 6.57% with a paired 95% interval of -11.20% to
+-4.49%; component time improved 7.24%, detached component allocations fell 33.7%, and
+all exact streaming controls preserved their semantic oracles without a material timing
+shift.
+
+Full record:
+[`exp-077-select-detached-consequences-once-per-batch.md`](../experiments/exp-077-select-detached-consequences-once-per-batch.md)
+
+### exp-078 — Remove the eager compatibility projection
+
+✅ accepted · 2026-09-01 · H92 · commit `db18e5e`
+
+Control: detached consequence sink at da5b8bc
+
+Candidate: single exact Commit representation at db18e5e
+
+**`delta-apply-large`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 651.6 | 641.9 | -1.55% | [-2.46%, -1.30%] |
+| component (ms) | 411.7 | 402.5 | -2.38% | [-3.65%, -2.03%] |
+| cpu (ms) | 648.6 | 638.8 | -1.50% | [-2.44%, -1.31%] |
+| user (ms) | 630.1 | 621.0 | -1.40% | [-2.35%, -1.22%] |
+| system (ms) | 17.9 | 17.2 | -5.72% (n.s.) | [-10.77%, +0.85%] |
+| blocked (ms) | 3.1 | 2.9 | -3.82% (n.s.) | [-10.60%, +2.35%] |
+| peak rss (MiB) | 169.7 | 157.7 | -7.09% | [-7.50%, -6.70%] |
+
+Other jobs, wall time: `delta-apply-batched` -1.1%, `opened-discovery` -0.8% (n.s.).
+
+Cost to carry: 288 lines; no new dependencies.
+
+Deletes 128 net lines and one unreleased public compatibility type; adds no dependency,
+unsafe block, failure mode, or alternate reducer.
+The generic 3% threshold for added complexity does not apply to a strict simplification.
+
+**Accepted:** Large-batch wall time improved 1.55% with a paired 95% interval of -2.46%
+to -1.30%, component time improved 2.38%, and peak RSS improved 7.09%; batched wall time
+also improved 1.05%, while opened wall time was noninferior and its component improved
+1.50%.
+
+Full record:
+[`exp-078-remove-the-eager-compatibility-projection.md`](../experiments/exp-078-remove-the-eager-compatibility-projection.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -2697,6 +2846,15 @@ Baselines show one value because they measure a state rather than a change.
 | 016 | Move cold-scan producer paths instead of cloning | `cold-scan-index` | 336.0 | 339.9 | -0.4% | ❌ rejected |
 | 017 | Pre-create dormant workers for adaptive scan depth | `cold-scan-producer` | 494.2 | 500.7 | +2.0% | ❌ rejected |
 | 023 | Cumulative effect through adaptive scanning and macOS bulk metadata | `cold-scan-index` | 625.2 | 295.5 | -53.5% | ✅ accepted |
+
+### cargo-registry-src (11,142 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 074 | PR #51 residual reproduced on the current registry tree | `default-tree` | 59.0 | — | — | 📏 baseline |
+| 075 | Scoped counters stay below the exploratory acceptance threshold | `default-tree` | 59.3 | — | — | 📏 baseline |
+| 076 | Correctness fixes preserve the streaming performance baseline | `default-tree` | 60.4 | — | — | 📏 baseline |
+| 077 | Select detached consequences once per batch | `default-tree` | 59.7 | 55.6 | -6.6% | ✅ accepted |
 
 ### vm450k (450,463 entries) — Linux 6.18.5-fc-v20, unrecorded, warm-steady
 
@@ -2780,6 +2938,12 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 065 | Validate the content roll-up change on a dense real tree | `content-cache-hit` | 270.7 | 201.9 | -25.8% | ✅ accepted |
+
+### cargo-registry-src-v2 (11,141 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 078 | Remove the eager compatibility projection | `delta-apply-large` | 651.6 | 641.9 | -1.6% | ✅ accepted |
 
 ### diagnostics-overhead (100,001 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
