@@ -214,6 +214,22 @@ class Sample:
 #: reason, not a check silently skipped.
 _ORACLES = {
     "index-digest": reference_tree.probe_agrees,
+    "synthetic-delta-batched": lambda fingerprint, summary: (
+        reference_tree.synthetic_delta_probe_agrees(
+            fingerprint,
+            summary,
+            operations=100_000,
+            batch_size=4_096,
+        )
+    ),
+    "synthetic-delta-large": lambda fingerprint, summary: (
+        reference_tree.synthetic_delta_probe_agrees(
+            fingerprint,
+            summary,
+            operations=100_000,
+            batch_size=None,
+        )
+    ),
     "tallies": reference_tree.probe_tallies_agree,
 }
 
@@ -378,6 +394,49 @@ PROBE_JOBS: Dict[str, Job] = {
         start_state="cold",
         description="Full walk with metadata into a complete index. No snapshot.",
         parallel_cpu=True,
+    ),
+    "opened-discovery": Job(
+        id="opened-discovery",
+        argv=("{binary}", "opened-discovery", "--root", "{root}"),
+        start_state="cold",
+        description=(
+            "Progressively discover a real tree through exact commits, drain its journal, "
+            "join its worker, and validate the final index independently."
+        ),
+        parallel_cpu=True,
+    ),
+    "delta-apply-large": Job(
+        id="delta-apply-large",
+        argv=(
+            "{binary}",
+            "delta-apply-large",
+            "--root",
+            "{root}",
+            "--operations",
+            "100000",
+        ),
+        start_state="cold",
+        description="Atomically apply one deterministic 100,001-op arbitrary public batch.",
+        oracle="synthetic-delta-large",
+    ),
+    "delta-apply-batched": Job(
+        id="delta-apply-batched",
+        argv=(
+            "{binary}",
+            "delta-apply-batched",
+            "--root",
+            "{root}",
+            "--operations",
+            "100000",
+            "--batch-size",
+            "4096",
+        ),
+        start_state="cold",
+        description=(
+            "Apply the same deterministic public delta in realistic repeated batches, "
+            "crossing the bounded-impact threshold in every commit."
+        ),
+        oracle="synthetic-delta-batched",
     ),
     "cold-scan-producer": Job(
         id="cold-scan-producer",

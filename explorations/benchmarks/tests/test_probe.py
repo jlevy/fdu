@@ -143,6 +143,99 @@ class FduProbeTests(unittest.TestCase):
             self.assertIsNone(backend["macos_bulk_attempts"])
             self.assertTrue(backend["unavailable_reason"])
 
+    def test_streaming_campaign_modes_report_exact_commit_oracles(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory) / "tree"
+            (root / "nested").mkdir(parents=True)
+            (root / "a.txt").write_text("a", encoding="utf-8")
+            (root / "nested" / "b.txt").write_text("bb", encoding="utf-8")
+            filesystem_oracle = tree.fingerprint(root, label="opened-probe")
+
+            def run(*arguments: str, counters: bool = False) -> Dict[str, Any]:
+                environment = os.environ.copy()
+                if counters:
+                    environment["FDU_COUNTERS"] = "1"
+                completed = subprocess.run(
+                    [str(self.probe), *arguments, "--root", str(root)],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    env=environment,
+                )
+                return json.loads(completed.stdout)
+
+            large = run("delta-apply-large", "--operations", "600")
+            batched = run(
+                "delta-apply-batched",
+                "--operations",
+                "600",
+                "--batch-size",
+                "300",
+            )
+            opened = run("opened-discovery", "--batch-size", "2")
+            counted = run(
+                "delta-apply-large",
+                "--operations",
+                "600",
+                counters=True,
+            )
+
+        self.assertEqual(large["summary"]["engine_digest"], batched["summary"]["engine_digest"])
+        self.assertEqual(large["summary"]["apply"]["inserted"], 601)
+        self.assertEqual(large["summary"]["commit"]["commits"], 1)
+        self.assertEqual(large["summary"]["commit"]["changes"], 601)
+        self.assertEqual(large["summary"]["commit"]["all_dirty_commits"], 1)
+        self.assertEqual(batched["summary"]["commit"]["commits"], 3)
+        self.assertEqual(batched["summary"]["commit"]["changes"], 601)
+        self.assertEqual(batched["summary"]["commit"]["all_dirty_commits"], 2)
+        self.assertEqual(batched["summary"]["commit"]["dirty_paths"], 3)
+        self.assertEqual(len(large["summary"]["commit"]["digest"]), 64)
+        self.assertEqual(len(batched["summary"]["commit"]["digest"]), 64)
+        self.assertNotEqual(
+            large["summary"]["commit"]["digest"],
+            batched["summary"]["commit"]["digest"],
+        )
+        self.assertIsNone(
+            tree.synthetic_delta_probe_agrees(
+                {},
+                large["summary"],
+                operations=600,
+                batch_size=None,
+            )
+        )
+        self.assertIsNone(
+            tree.synthetic_delta_probe_agrees(
+                {},
+                batched["summary"],
+                operations=600,
+                batch_size=300,
+            )
+        )
+
+        disagreement = tree.probe_agrees(filesystem_oracle, opened["summary"])
+        self.assertIsNone(disagreement)
+        self.assertGreater(opened["summary"]["commit"]["commits"], 0)
+        self.assertGreaterEqual(opened["summary"]["commit"]["changes"], 3)
+        self.assertGreater(opened["summary"]["commit"]["state_transitions"], 0)
+        self.assertEqual(opened["summary"]["commit"]["first_clock"], 1)
+        self.assertEqual(len(opened["summary"]["commit"]["digest"]), 64)
+
+        counters = counted["summary"]["counters"]
+        self.assertEqual(counters["public_batches"], 1)
+        self.assertEqual(counters["public_accepted_ops"], 601)
+        self.assertEqual(counters["ancestry_overlay_inserts"], 601)
+        self.assertEqual(counters["ancestry_path_comparisons"], 600)
+        self.assertEqual(counters["ancestry_parent_proofs"], 601)
+        self.assertEqual(counters["effect_paths"], 601)
+        self.assertEqual(counters["impact_candidates"], 601)
+        self.assertEqual(counters["impact_all_dirty"], 1)
+        self.assertEqual(counters["applied_delta_materializations"], 1)
+        self.assertEqual(counters["journal_cloned_commits"], 1)
+        self.assertEqual(counters["journal_retained_commits"], 1)
+        self.assertGreater(counters["allocs"], 0)
+        self.assertGreater(counters["bytes_allocated"], 0)
+
     def _oracle_forensics(
         self,
         root: Path,

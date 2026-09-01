@@ -23,6 +23,8 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
+import struct
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -236,6 +238,118 @@ def probe_agrees(fingerprint_document: Dict[str, Any], summary: Any) -> Optional
         got = summary.get(field)
         if got != want:
             return f"probe {field}={got!r} disagrees with oracle {want!r}"
+    return None
+
+
+@lru_cache(maxsize=8)
+def _synthetic_delta_oracle(operations: int) -> Dict[str, Any]:
+    """Build the public-delta probe's deterministic index oracle independently."""
+    engine = _SemanticAccumulator(algorithm=ENGINE_DIGEST_ALGORITHM)
+    engine.add_bytes(_synthetic_engine_record(".", 1, (0, 0, 0, 0, 0, 0)))
+    engine.add_bytes(_synthetic_engine_record("synthetic", 1, (0, 0, 0, 0, 0, 0)))
+    for index in range(operations):
+        engine.add_bytes(
+            _synthetic_engine_record(
+                f"synthetic/entry-{index:09}.dat",
+                0,
+                (index % 4096, 4096, index, index, index, 1),
+            )
+        )
+    cycles, remainder = divmod(operations, 4096)
+    apparent = cycles * (4095 * 4096 // 2) + remainder * (remainder - 1) // 2
+    return {
+        "allocated_bytes": operations * 4096,
+        "apparent_bytes": apparent,
+        "dirs": 2,
+        "engine_digest": engine.finish(),
+        "entries": operations + 2,
+        "files": operations,
+        "index_len": operations + 2,
+        "newest_file_mtime_ns": operations - 1 if operations else None,
+        "other": 0,
+        "symlinks": 0,
+    }
+
+
+def _synthetic_engine_record(
+    path: str,
+    kind: int,
+    attrs: tuple[int, int, int, int, int, int],
+) -> bytes:
+    encoded = path.encode("utf-8")
+    return b"".join(
+        (
+            struct.pack(">I", len(encoded)),
+            encoded,
+            bytes((kind,)),
+            struct.pack(">QQqqQQ", *attrs),
+        )
+    )
+
+
+def synthetic_delta_probe_agrees(
+    _fingerprint_document: Dict[str, Any],
+    summary: Any,
+    *,
+    operations: int,
+    batch_size: Optional[int],
+) -> Optional[str]:
+    """Check final facts and exact commit shape for a deterministic public delta."""
+    if not isinstance(summary, dict):
+        return "delta probe emitted no summary to check against its oracle"
+    for field, expected in _synthetic_delta_oracle(operations).items():
+        if summary.get(field) != expected:
+            return f"delta probe {field}={summary.get(field)!r} disagrees with oracle {expected!r}"
+    apply = summary.get("apply")
+    expected_apply = {
+        "inserted": operations + 1,
+        "invalidated": 0,
+        "removed": 0,
+        "stale": 0,
+        "unchanged": 0,
+        "updated": 0,
+    }
+    if apply != expected_apply:
+        return f"delta probe apply summary {apply!r} disagrees with oracle {expected_apply!r}"
+
+    total = operations + 1
+    effective_batch_size = total if batch_size is None else batch_size
+    remaining = total
+    ordinal = 0
+    commits = 0
+    all_dirty_commits = 0
+    dirty_paths = 0
+    while remaining:
+        batch = min(remaining, effective_batch_size)
+        files = batch - 1 if ordinal == 0 else batch
+        unique_dirty_paths = files + 2
+        if unique_dirty_paths > 256:
+            all_dirty_commits += 1
+        else:
+            dirty_paths += unique_dirty_paths
+        remaining -= batch
+        ordinal += 1
+        commits += 1
+    expected_commit = {
+        "algorithm": "fdu-commit-debug-v1/sha256-sequence-v1",
+        "all_dirty_commits": all_dirty_commits,
+        "changes": total,
+        "commits": commits,
+        "dirty_paths": dirty_paths,
+        "first_clock": 1,
+        "last_clock": commits,
+        "observations": total,
+        "state_transitions": 0,
+    }
+    commit = summary.get("commit")
+    if not isinstance(commit, dict):
+        return "delta probe emitted no exact commit summary"
+    for field, expected in expected_commit.items():
+        if commit.get(field) != expected:
+            return f"delta commit {field}={commit.get(field)!r} disagrees with oracle {expected!r}"
+    digest = commit.get("digest")
+    if not isinstance(digest, str) or len(digest) != 64:
+        return "delta probe emitted no valid exact commit digest"
     return None
 
 

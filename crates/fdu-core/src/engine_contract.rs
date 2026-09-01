@@ -1570,7 +1570,14 @@ impl Commit {
     pub fn applied_delta(&self) -> Option<AppliedDelta> {
         let ops: Vec<Op> =
             self.changes.iter().filter_map(EffectiveChange::as_compatibility_op).collect();
-        (!ops.is_empty()).then_some(AppliedDelta { clock: self.clock, ops })
+        if ops.is_empty() {
+            return None;
+        }
+        crate::counters::bump(|counts| {
+            counts.applied_delta_materializations =
+                counts.applied_delta_materializations.saturating_add(1);
+        });
+        Some(AppliedDelta { clock: self.clock, ops })
     }
 }
 
