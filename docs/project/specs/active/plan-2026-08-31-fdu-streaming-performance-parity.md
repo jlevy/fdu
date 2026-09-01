@@ -771,6 +771,38 @@ support an explicitly labelled counter-disabled mode while timing and oracle val
 remain unchanged. The raw sampling workaround used for H106 is evidence for that
 requirement, not a replacement for a reproducible harness path.
 
+That instrumentation prerequisite is now complete.
+The profiler accepts independent `--counters` and `--oracle` switches, the probe’s
+`--no-oracle` mode summarizes a completed index from its stored root roll-up without a
+path or digest walk, and every profile artifact records both choices.
+Timing runs reject an explicitly disabled oracle, while old immutable controls without
+the new label remain valid.
+The default enabled mode still produced the exact subject digest and engine-scoped
+component counters.
+
+The first supported clean capture sampled 23,663 stacks over the same 113,794-entry
+subject with both switches disabled.
+The probe/oracle layer fell to 0.06% of samples; the two leading symbols were `__open`
+at 34.21% and `getattrlistbulk` at 33.91%, followed by semaphore waiting at 6.91%.
+Allocator symbols accounted for 5.84% in aggregate, while the remaining scanner and
+index work was dispersed across worker, entry-recording, path, collection, and roll-up
+frames. This honest profile identifies no independent leaf optimization with enough
+reachable share to close the residual gap.
+
+H104 through H106 already removed scanner preparation, application frequency, and causal
+publication independently without moving wall time.
+The next admissible experiment is therefore the existing H86 structural bootstrap
+representation (`fdu-xde5`), not another boundary micro-tuning pass.
+For a detached one-shot build, it combines batch-shaped parent/name records, compact
+arena storage, directory child slices, and one bottom-up roll-up; opened discovery,
+refresh, observation, and arbitrary public mutation retain the exact streaming reducer
+and commit path. H86 is evaluated as one preregistered structural decision because
+partial forms retain conversion costs the completed representation removes.
+Before implementation, its bimodal arena ceiling must name the comparison mode, and its
+accept set must include this real subject, byte-identical engine digests across worker
+counts, opened-path non-regression, the current 3% wall gate, and the parity allocation
+limits.
+
 After the journal preflight, the leading exact-update profile cost is the
 `StructuralOverlay` required to prove arbitrary public mutations atomically before state
 changes. Scanner discovery no longer pays for that boundary, and the remaining public

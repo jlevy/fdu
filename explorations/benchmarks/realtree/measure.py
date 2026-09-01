@@ -1160,6 +1160,11 @@ def _read_probe_output(
         return {}, ["probe output was not a JSON object"]
     if document.get("schema") != "fdu-perf-probe-v1":
         reasons.append(f"unexpected probe schema {document.get('schema')!r}")
+    # Older immutable control probes predate this field and always run their oracle.
+    # An explicit false value is the attribution-only mode and must never become timing
+    # evidence, even when a caller smuggles the flag through --extra-arg.
+    if document.get("oracle_enabled") is False:
+        reasons.append("probe oracle was disabled in a timing run")
     summary = document.get("summary")
     if isinstance(summary, dict):
         if summary.get("complete") is not True and not allow_incomplete:

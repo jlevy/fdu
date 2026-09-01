@@ -54,12 +54,16 @@ def capture(
     repeat: int = 20,
     label: str = "",
     require_diagnostics: bool = False,
+    counters_enabled: bool = True,
+    oracle_enabled: bool = True,
 ) -> Dict[str, Any]:
     """Sample ``argv`` and return a ranked self-time attribution.
 
     ``repeat`` makes the process live long enough to be sampled properly. It is the
     probe's ``--repeat``, so the work is genuinely re-executed rather than the
-    process being padded with sleep.
+    process being padded with sleep. Counters and the semantic oracle default to on for
+    backward compatibility. Disable both for the cleanest engine attribution; the
+    returned artifact labels that unverified mode, and timing runs reject it.
     """
     if sys.platform != "darwin":
         raise ProfileError(
@@ -75,17 +79,12 @@ def capture(
     if seconds < 1 or repeat < 1:
         raise ProfileError("profile seconds and repeat must be positive")
 
-    command = list(argv) + ["--repeat", str(repeat)]
+    command = _profile_command(argv, repeat=repeat, oracle_enabled=oracle_enabled)
     with tempfile.TemporaryDirectory(prefix="fdu-profile-") as scratch:
         report = Path(scratch) / "sample.txt"
         stdout_path = Path(scratch) / "stdout"
         stderr_path = Path(scratch) / "stderr"
-        environment = {
-            "FDU_COUNTERS": "1",
-            "LANG": "C",
-            "LC_ALL": "C",
-            "TZ": "UTC",
-        }
+        environment = _profile_environment(counters_enabled=counters_enabled)
         with stdout_path.open("xb") as stdout_file, stderr_path.open("xb") as stderr_file:
             process = subprocess.Popen(
                 command,
@@ -141,16 +140,44 @@ def capture(
         "binary_sha256": _sha256_file(resolved_binary),
         "binary_size_bytes": resolved_binary.stat().st_size,
         "command": _redacted_command(command, binary),
+        "counters_enabled": counters_enabled,
         "counters": parse_counter_report(stderr.decode("utf-8", errors="replace")),
         "counter_report_bytes": len(stderr),
         "counter_report_sha256": hashlib.sha256(stderr).hexdigest(),
         "seconds": seconds,
         "repeat": repeat,
+        "oracle_enabled": oracle_enabled,
         "probe": probe,
         "total_samples": frames["total_samples"],
         "self_time": frames["self_time"],
         "by_layer": frames["by_layer"],
         "threads": frames["threads"],
+    }
+
+
+def _profile_command(
+    argv: Sequence[str], *, repeat: int, oracle_enabled: bool
+) -> List[str]:
+    """Build the repeated probe command while labelling attribution-only runs."""
+    command = list(argv)
+    if oracle_enabled and "--no-oracle" in command:
+        raise ProfileError(
+            "profile argv disables the oracle; select `--oracle disabled` so the "
+            "attribution artifact records that choice"
+        )
+    if not oracle_enabled and "--no-oracle" not in command:
+        command.append("--no-oracle")
+    command.extend(("--repeat", str(repeat)))
+    return command
+
+
+def _profile_environment(*, counters_enabled: bool) -> Dict[str, str]:
+    """Return a complete, stable environment for one sampling run."""
+    return {
+        "FDU_COUNTERS": "1" if counters_enabled else "0",
+        "LANG": "C",
+        "LC_ALL": "C",
+        "TZ": "UTC",
     }
 
 
@@ -200,6 +227,7 @@ def _probe_evidence(stdout: bytes) -> Dict[str, Any]:
             "attribution",
             "component_ns",
             "mode",
+            "oracle_enabled",
             "scan_diagnostics",
             "schema",
             "source",
