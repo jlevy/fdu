@@ -1,10 +1,12 @@
 //! Deterministic structural guards for one-shot and progressive index construction.
 //!
 //! This is a separate test binary so its counting allocator observes no concurrent test
-//! traffic. The guard constrains work rather than elapsed time and is therefore suitable
-//! for shared CI.
+//! traffic. Allocation growth is measured between two fixture sizes, which cancels
+//! platform-specific fixed costs while constraining per-entry ownership without a
+//! shared-runner timing threshold.
 
 use std::fs;
+use std::path::Path;
 use std::time::Duration;
 
 use fdu_core::counters::Counts;
@@ -18,79 +20,94 @@ use fdu_core::{
 static ALLOCATOR: fdu_core::counters::alloc::CountingAlloc<std::alloc::System> =
     fdu_core::counters::system_allocator();
 
-const DIRECTORY_COUNT: u64 = 64;
+const SMALL_DIRECTORY_COUNT: u64 = 32;
+const LARGE_DIRECTORY_COUNT: u64 = 64;
 const FILES_PER_DIRECTORY: u64 = 64;
-const FIXED_ALLOCATION_ALLOWANCE: u64 = 512;
-const DETACHED_ALLOCATIONS_PER_ENTRY: u64 = 8;
-const OPENED_ALLOCATIONS_PER_ENTRY: u64 = 26;
+const DETACHED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 8;
+const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 26;
 const OPENED_JOURNAL_CAPACITY: usize = 4 * 1024 * 1024;
+
+struct DisableCounters;
+
+impl Drop for DisableCounters {
+    fn drop(&mut self) {
+        fdu_core::counters::enable(false);
+        fdu_core::counters::reset();
+    }
+}
 
 #[test]
 fn construction_routes_keep_their_allocation_and_work_boundaries() {
-    struct DisableCounters;
+    let small = fixture(SMALL_DIRECTORY_COUNT);
+    let large = fixture(LARGE_DIRECTORY_COUNT);
+    let config = ScanConfig { read_controls: false, threads: Some(1), ..ScanConfig::default() };
+    let _disable = DisableCounters;
 
-    impl Drop for DisableCounters {
-        fn drop(&mut self) {
-            fdu_core::counters::enable(false);
-            fdu_core::counters::reset();
-        }
-    }
+    let small_entries = fixture_entries(SMALL_DIRECTORY_COUNT);
+    let large_entries = fixture_entries(LARGE_DIRECTORY_COUNT);
+    let added_entries = large_entries - small_entries;
 
-    let root = tempfile::tempdir().expect("detached invariant root");
-    for directory in 0..DIRECTORY_COUNT {
+    let small_detached = measure_detached(small.path(), &config, small_entries);
+    let large_detached = measure_detached(large.path(), &config, large_entries);
+    assert_route_is_detached(&small_detached, small_entries);
+    assert_route_is_detached(&large_detached, large_entries);
+    assert_allocation_slope(
+        "detached",
+        small_detached.allocs,
+        large_detached.allocs,
+        added_entries,
+        DETACHED_ALLOCATIONS_PER_ADDED_ENTRY,
+    );
+
+    let small_opened = measure_opened(small.path(), small_entries);
+    let large_opened = measure_opened(large.path(), large_entries);
+    assert_route_is_opened(&small_opened, small_entries);
+    assert_route_is_opened(&large_opened, large_entries);
+    assert_allocation_slope(
+        "opened",
+        small_opened.allocs,
+        large_opened.allocs,
+        added_entries,
+        OPENED_ALLOCATIONS_PER_ADDED_ENTRY,
+    );
+}
+
+fn fixture(directory_count: u64) -> tempfile::TempDir {
+    let root = tempfile::tempdir().expect("construction invariant root");
+    for directory in 0..directory_count {
         let directory = root.path().join(format!("d{directory}"));
         fs::create_dir(&directory).expect("fixture directory");
         for file in 0..FILES_PER_DIRECTORY {
             fs::write(directory.join(format!("f{file}.dat")), []).expect("fixture file");
         }
     }
-    let config = ScanConfig { read_controls: false, threads: Some(1), ..ScanConfig::default() };
+    root
+}
 
-    fdu_core::counters::enable(true);
+const fn fixture_entries(directory_count: u64) -> u64 {
+    directory_count + directory_count * FILES_PER_DIRECTORY
+}
+
+fn measure_detached(root: &Path, config: &ScanConfig, expected_entries: u64) -> Counts {
     fdu_core::counters::reset();
-    let _disable = DisableCounters;
-    let (index, report) = scan_into_index(root.path(), &config).expect("detached scan");
+    fdu_core::counters::enable(true);
+    let (index, report) = scan_into_index(root, config).expect("detached scan");
     fdu_core::counters::flush_thread();
     let counts = fdu_core::counters::snapshot();
     fdu_core::counters::enable(false);
 
-    let entries = DIRECTORY_COUNT + DIRECTORY_COUNT * FILES_PER_DIRECTORY;
-    assert_eq!(report.entries, entries);
-    assert_eq!(index.len(), entries + 1);
-    assert_eq!(counts.detached_builds, 1);
-    assert_eq!(counts.detached_entries, entries);
-    assert_eq!(counts.baseline_batches, 1);
-    assert_eq!(counts.baseline_accepted_ops, entries);
-
-    let violations = detached_guard_violations(&counts, entries);
-    assert!(violations.is_empty(), "detached guard violations: {violations:?}");
-
-    // Prove the allocation ceiling has less than one allocation of slack per entry.
-    // A reintroduced per-entry path or name clone must make this fixture fail.
-    let mut one_extra_allocation_per_entry = counts;
-    one_extra_allocation_per_entry.allocs =
-        one_extra_allocation_per_entry.allocs.saturating_add(entries);
-    assert!(
-        detached_guard_violations(&one_extra_allocation_per_entry, entries)
-            .contains(&"allocation ceiling"),
-        "the allocation guard must reject one extra allocation per entry"
-    );
-
-    // Prove the zero-work half is active rather than a list of counters that happens to
-    // read zero in the current implementation.
-    let mut one_exact_consequence = counts;
-    one_exact_consequence.effect_paths = 1;
-    assert!(
-        detached_guard_violations(&one_exact_consequence, entries).contains(&"exact mutation work"),
-        "the zero-work guard must reject an exact consequence"
-    );
-
+    assert_eq!(report.entries, expected_entries);
+    assert_eq!(index.len(), expected_entries + 1);
     drop(index);
+    counts
+}
+
+fn measure_opened(root: &Path, expected_entries: u64) -> Counts {
     fdu_core::counters::reset();
     fdu_core::counters::enable(true);
     let options =
         OpenOptions { journal_capacity: OPENED_JOURNAL_CAPACITY, ..OpenOptions::default() };
-    let opened = OpenedIndex::open(root.path(), options).expect("opened discovery");
+    let opened = OpenedIndex::open(root, options).expect("opened discovery");
     let initial = opened.read(ReadRequest::default()).expect("initial opened read");
     let mut cursor = EngineVersion { sequence: Clock::ZERO, ..initial.version };
     loop {
@@ -115,38 +132,72 @@ fn construction_routes_keep_their_allocation_and_work_boundaries() {
     }
     opened.close().expect("close opened discovery");
     fdu_core::counters::flush_thread();
-    let opened_counts = fdu_core::counters::snapshot();
+    let counts = fdu_core::counters::snapshot();
     fdu_core::counters::enable(false);
+    assert_eq!(counts.opened_accepted_ops, expected_entries);
+    counts
+}
 
-    assert_eq!(opened_counts.opened_accepted_ops, entries);
-    let violations = opened_guard_violations(&opened_counts, entries);
-    assert!(violations.is_empty(), "opened guard violations: {violations:?}");
-
-    let mut one_extra_allocation_per_entry = opened_counts;
-    one_extra_allocation_per_entry.allocs =
-        one_extra_allocation_per_entry.allocs.saturating_add(entries);
+fn assert_allocation_slope(
+    route: &str,
+    smaller: u64,
+    larger: u64,
+    added_entries: u64,
+    allocations_per_added_entry: u64,
+) {
+    let growth = larger.checked_sub(smaller).unwrap_or_else(|| {
+        panic!("{route} allocations shrank from {smaller} to {larger} on the larger fixture")
+    });
+    let limit = added_entries.saturating_mul(allocations_per_added_entry);
     assert!(
-        opened_guard_violations(&one_extra_allocation_per_entry, entries)
-            .contains(&"allocation ceiling"),
-        "the opened allocation guard must reject one extra allocation per entry"
+        growth <= limit,
+        "{route} allocations grew by {growth} for {added_entries} entries; limit is {limit}"
     );
 
-    let mut one_detached_build = opened_counts;
+    // Prove this ceiling has less than one allocation of slack per added entry. A
+    // reintroduced path or name clone must make the measured fixture fail.
+    let restored = growth.saturating_add(added_entries);
+    assert!(
+        restored > limit,
+        "{route} allocation ceiling has at least one allocation per entry of slack: \
+         growth {growth}, restored {restored}, limit {limit}"
+    );
+}
+
+fn assert_route_is_detached(counts: &Counts, entries: u64) {
+    assert_eq!(counts.detached_builds, 1);
+    assert_eq!(counts.detached_entries, entries);
+    assert_eq!(counts.baseline_batches, 1);
+    assert_eq!(counts.baseline_accepted_ops, entries);
+
+    let violations = detached_guard_violations(counts);
+    assert!(violations.is_empty(), "detached guard violations: {violations:?}");
+
+    // Prove the zero-work half is active rather than a list of counters that happens to
+    // read zero in the current implementation.
+    let mut one_exact_consequence = *counts;
+    one_exact_consequence.effect_paths = 1;
+    assert!(
+        detached_guard_violations(&one_exact_consequence).contains(&"exact mutation work"),
+        "the zero-work guard must reject an exact consequence"
+    );
+}
+
+fn assert_route_is_opened(counts: &Counts, entries: u64) {
+    assert_eq!(counts.opened_accepted_ops, entries);
+    let violations = opened_guard_violations(counts);
+    assert!(violations.is_empty(), "opened guard violations: {violations:?}");
+
+    let mut one_detached_build = *counts;
     one_detached_build.detached_builds = 1;
     assert!(
-        opened_guard_violations(&one_detached_build, entries).contains(&"detached builder work"),
+        opened_guard_violations(&one_detached_build).contains(&"detached builder work"),
         "the opened route guard must reject detached-builder work"
     );
 }
 
-fn detached_guard_violations(counts: &Counts, entries: u64) -> Vec<&'static str> {
-    let allocation_limit = entries
-        .saturating_mul(DETACHED_ALLOCATIONS_PER_ENTRY)
-        .saturating_add(FIXED_ALLOCATION_ALLOWANCE);
+fn detached_guard_violations(counts: &Counts) -> Vec<&'static str> {
     let mut violations = Vec::new();
-    if counts.allocs > allocation_limit {
-        violations.push("allocation ceiling");
-    }
     if counts.scanner_prepare_us != 0
         || counts.scanner_control_projection_us != 0
         || counts.scanner_reduce_us != 0
@@ -174,14 +225,8 @@ fn detached_guard_violations(counts: &Counts, entries: u64) -> Vec<&'static str>
     violations
 }
 
-fn opened_guard_violations(counts: &Counts, entries: u64) -> Vec<&'static str> {
-    let allocation_limit = entries
-        .saturating_mul(OPENED_ALLOCATIONS_PER_ENTRY)
-        .saturating_add(FIXED_ALLOCATION_ALLOWANCE);
+fn opened_guard_violations(counts: &Counts) -> Vec<&'static str> {
     let mut violations = Vec::new();
-    if counts.allocs > allocation_limit {
-        violations.push("allocation ceiling");
-    }
     if counts.detached_builds != 0
         || counts.detached_entries != 0
         || counts.detached_walk_us != 0
