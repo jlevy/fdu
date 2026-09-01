@@ -711,6 +711,24 @@ digest and report stay unchanged, and baseline applies fall within 10% of the
 configured-batch minimum.
 Otherwise the coalescer is removed.
 
+[exp-088](../../experiments/exp-088-coalesce-causal-scanner-fragments-in-the-one-shot-builder.md)
+rejects H105. The coalescer reduced baseline applications from about 2,670 to about 124
+per scan, but `default-tree` changed +0.13%, with a paired 95% interval from -1.08% to
++2.29%, and `cold-scan-index` was flat.
+Preparation rose from about 31.7 ms to 105.7 ms per scan because the earlier-parent
+proof reverse-scans a larger prepared batch.
+The candidate was removed.
+Together with producer-only parity, this result rules out causal publication frequency
+and reducer-call count as the primary remaining wall-time cost.
+
+The next experiment must first attribute per-entry baseline mutation costs that exist
+after the rewrite but not in the pre-rewrite control.
+In particular, initial revision bookkeeping is a candidate only if counters show it runs
+at corpus scale and a differential profile or bounded diagnostic can account for a
+material share of the remaining gap.
+Streaming and arbitrary public mutation must retain revision semantics; any one-shot
+specialization must leave the completed baseline in a valid initial revision state.
+
 After the journal preflight, the leading exact-update profile cost is the
 `StructuralOverlay` required to prove arbitrary public mutations atomically before state
 changes. Scanner discovery no longer pays for that boundary, and the remaining public
