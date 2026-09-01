@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 13 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 14 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 
@@ -155,6 +155,7 @@ dead end.
 | 076 | [Correctness fixes preserve the streaming performance baseline](#exp076--correctness-fixes-preserve-the-streaming-performance-baseline) | — | `default-tree` | +0.3% | 📏 baseline |
 | 077 | [Select detached consequences once per batch](#exp077--select-detached-consequences-once-per-batch) | H91 | `default-tree` | -6.6% | ✅ accepted |
 | 078 | [Remove the eager compatibility projection](#exp078--remove-the-eager-compatibility-projection) | H92 | `delta-apply-large` | -1.6% | ✅ accepted |
+| 079 | [Resolve scanner parents before mutation](#exp079--resolve-scanner-parents-before-mutation) | H93 | `opened-discovery` | -9.5% | ✅ accepted |
 
 ## The experiments
 
@@ -2786,6 +2787,40 @@ also improved 1.05%, while opened wall time was noninferior and its component im
 Full record:
 [`exp-078-remove-the-eager-compatibility-projection.md`](../experiments/exp-078-remove-the-eager-compatibility-projection.md)
 
+### exp-079 — Resolve scanner parents before mutation
+
+✅ accepted · 2026-09-01 · H93 · commit `d9979aa`
+
+Control: single exact Commit representation at db18e5e
+
+Candidate: owned scanner batch with resolved parent proof at d9979aa
+
+**`opened-discovery`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 309.0 | 280.8 | -9.50% | [-10.89%, -8.14%] |
+| component (ms) | 156.3 | 146.4 | -6.81% | [-7.79%, -5.56%] |
+| cpu (ms) | 324.7 | 295.5 | -9.19% | [-10.78%, -7.94%] |
+| user (ms) | 173.8 | 143.2 | -17.84% | [-18.52%, -17.27%] |
+| system (ms) | 151.2 | 152.2 | +0.49% (n.s.) | [-1.24%, +2.98%] |
+| peak rss (MiB) | 36.1 | 35.4 | -2.15% | [-2.55%, -1.56%] |
+
+Other jobs, wall time: `cold-scan-index` +0.3% (n.s.), `default-tree` -0.4% (n.s.).
+
+Cost to carry: 572 lines; no new dependencies.
+
+Adds one private owned-batch/proof lane with no dependency, unsafe block, public trust
+flag, or alternate commit/fact reducer; public, refresh, and watch observations retain
+general atomic preflight.
+
+**Accepted:** Opened discovery improved 9.50% with a paired 95% interval of -10.89% to
+-8.14%; default and cold one-shot paths were noninferior, scoped allocations fell, and
+the final stack matched or beat the pre-rewrite control.
+
+Full record:
+[`exp-079-resolve-scanner-parents-before-mutation.md`](../experiments/exp-079-resolve-scanner-parents-before-mutation.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -3010,6 +3045,12 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 034 | Post-composable-CLI validation under cache pressure | `cold-scan-index` | 6,699.9 | 5,154.0 | -30.5% | ✅ accepted |
+
+### resolved-parent-proof-final (11,141 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 079 | Resolve scanner parents before mutation | `opened-discovery` | 309.0 | 280.8 | -9.5% | ✅ accepted |
 
 ### selfhost-content (307 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

@@ -527,9 +527,9 @@ large cost to a named component.
 - [x] Add the private consequence sink and make detached application stats-only without
   duplicating the reducer.
 - [x] Remove eager `AppliedDelta` construction and migrate exact consumers to `Commit`.
-- [ ] Add the private owned scanner batch with resolved-parent proof; remove the
+- [x] Add the private owned scanner batch with resolved-parent proof; remove the
   path-keyed `StructuralOverlay` from detached and opened discovery.
-- [ ] Move prepared scanner paths across boundaries once and stop recording effect paths
+- [x] Move prepared scanner paths across boundaries once and stop recording effect paths
   when the selected sink cannot expose them.
 - [ ] Bound impact accumulation and avoid cloning journal entries that exceed capacity.
 - [ ] Run and record one experiment after each independently measurable change; reject
@@ -552,6 +552,24 @@ as too small for added complexity; the operator accepts it because the candidate
 Python `since()` preserves its existing entry-operation output by projecting exact
 changes only when crossing the language boundary.
 
+[exp-079](../../experiments/exp-079-resolve-scanner-parents-before-mutation.md) accepts
+a private owned scanner batch and resolved-parent proof.
+On the stable 11,141-entry corpus, opened-discovery wall time improved 9.50%, with a
+paired 95% interval from -10.89% to -8.14%, while scoped allocations fell from 489,514
+to 405,751. Cold scoped allocations fell from 162,071 to 109,568; default and cold wall
+time were noninferior to the immediate control.
+The scanner paths record zero ancestry-overlay insertions, while public, refresh, and
+watch observations retain the general atomic preflight.
+Exact engine and commit digests remain unchanged.
+
+A separate 12-pair comparison with the preserved pre-rewrite binary measures the whole
+stack rather than attributing one commit.
+On this corpus, `default-tree` is 6.07% faster, with a paired 95% interval from -7.68%
+to -0.59%; `cold-scan-index` is 1.50% faster by median, with an interval from -5.64% to
++0.17%. This reaches the one-shot wall-time parity target on the first pinned subject.
+The second subject, deterministic allocation guards, and full handoff gates remain open
+before the campaign’s final parity bead can close.
+
 Phase 2 passes when detached streaming counters are zero, exact commit and journal
 oracles remain unchanged, and profiles no longer identify ancestry-path comparison or
 unused consequence construction as the leading detached cost.
@@ -560,7 +578,7 @@ unused consequence construction as the leading detached cost.
 
 - [ ] Re-profile all five jobs and rank only mechanisms that can reach the remaining
   parity gap.
-- [ ] Iterate on the leading measured cost until the one-shot thresholds pass or two
+- [x] Iterate on the leading measured cost until the one-shot thresholds pass or two
   consecutive profiles find no mechanism capable of reaching 3%; any proposed target
   revision requires a separate design decision with evidence.
 - [ ] Add deterministic per-entry allocation guards for detached construction and opened
