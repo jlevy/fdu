@@ -4,7 +4,7 @@
 //! through the production coalescer, admission policy, filesystem verification, exact
 //! commit boundary, and recovery path, so it cannot inject an index fact.
 
-use std::path::Path;
+use std::path::{Component, Path};
 
 use notify::EventKind;
 use notify::event::{CreateKind, Flag, ModifyKind, RemoveKind, RenameMode};
@@ -70,7 +70,10 @@ fn event_for(
     let mut paths = Vec::with_capacity(wanted);
     for argument in arguments {
         let relative = Path::new(argument);
-        if !crate::index::path_is_relative_normal(relative) {
+        if !relative
+            .components()
+            .all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
+        {
             return Err(format!(
                 "line {line}: {argument:?} escapes the watch root; script paths are relative to \
                  it so a script stays portable"
