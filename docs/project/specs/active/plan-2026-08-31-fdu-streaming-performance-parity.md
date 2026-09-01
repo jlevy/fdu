@@ -729,6 +729,48 @@ material share of the remaining gap.
 Streaming and arbitrary public mutation must retain revision semantics; any one-shot
 specialization must leave the completed baseline in a valid initial revision state.
 
+The H106 source comparison rejects revision bookkeeping as that candidate: both the
+pre-rewrite and current engines increment the same parent `children_revision` on each
+insert.
+Matched eight-second sampling runs with counters disabled instead put the current
+main-thread consumer in `scan_into_index` for 1,182 samples, versus 822 for the
+pre-rewrite control.
+Scanner preparation accounts for 345 current samples, but H104 already showed that
+eliminating this consumer work alone does not shorten the critical path.
+The differential therefore points to the interaction between consumer work and the
+parent-before-child publication barrier, not to a new per-entry revision operation.
+
+H106 first tests that interaction without designing a second reducer.
+A producer-only diagnostic suppresses the early fragment flush before discovered
+directories become claimable, while retaining the configured batch limit.
+Its order-insensitive compact summary must still match a separate exact causal
+validation scan; no index is built from the unordered diagnostic stream.
+The diagnostic earns a correctness-preserving one-shot builder experiment only if
+`cold-scan-producer` component time improves at least 3% with the paired 95% interval
+below zero and publication batches fall toward the configured-batch minimum.
+Otherwise the spike is removed and unordered publication is ruled out as a material
+mechanism. Any follow-up builder must remain private to a detached control-free scan,
+buffer children until their real parent arrives, preserve exact digests and reports,
+keep every public and opened stream causal, and independently clear the normal 3%
+`default-tree` gate.
+
+[exp-089](../../experiments/exp-089-suppress-causal-publication-in-a-producer-only-scan.md)
+rejects H106. Suppressing the causal early flush changed `cold-scan-producer` component
+time +0.68%, with a paired 95% interval from -1.04% to +2.13%; whole-process wall
+changed +0.38%, with an interval from -0.12% to +0.96%. Every unordered compact summary
+matched its separate exact causal validation scan.
+The spike was removed, and the pending-child one-shot reducer it was meant to justify
+will not be built. H104 through H106 now rule out scanner preparation, reducer-call
+frequency, and causal publication as separate 3%-class mechanisms.
+
+The counter-disabled differential also exposes an instrumentation defect: the profile
+command forces counters on, and H103’s per-batch elapsed timers add work to the very
+consumer profile used to select the next experiment.
+Before the campaign attempts a larger structural representation change, profiling must
+support an explicitly labelled counter-disabled mode while timing and oracle validation
+remain unchanged. The raw sampling workaround used for H106 is evidence for that
+requirement, not a replacement for a reproducible harness path.
+
 After the journal preflight, the leading exact-update profile cost is the
 `StructuralOverlay` required to prove arbitrary public mutations atomically before state
 changes. Scanner discovery no longer pays for that boundary, and the remaining public

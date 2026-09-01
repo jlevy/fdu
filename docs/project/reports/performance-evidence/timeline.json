@@ -27102,6 +27102,145 @@
    "subject": "a319238d9c29:113794:58bc2ea1deb0",
    "title": "Coalesce causal scanner fragments in the one-shot builder",
    "trials": 6
+  },
+  {
+   "anchored": false,
+   "candidate": "unordered producer-only diagnostic",
+   "change_pct": 0.68,
+   "commit": null,
+   "complexity": {
+    "lines_changed": 43,
+    "new_dependencies": [],
+    "new_failure_modes": [
+     "The diagnostic stream can publish children before parents and is therefore safe only for its order-insensitive summary sink."
+    ],
+    "new_unsafe_blocks": 0,
+    "notes": "The diagnostic isolated causal publication with a small threaded flag, but the flat result rules out the much larger pending-child builder it was intended to justify."
+   },
+   "control": "phase-instrumented causal streaming control at 80e5897",
+   "date": "2026-09-01",
+   "decision": "rejected",
+   "entries": 113794,
+   "family": "macOS:a319238d9c29",
+   "hypotheses": [
+    "H106"
+   ],
+   "id": "exp-089",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "cold-scan-producer",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 315546750,
+        "control": 314397874.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.68,
+        "ci95_high_pct": 2.13,
+        "ci95_low_pct": -1.041,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 3531647000,
+        "control": 3542338000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.296,
+        "ci95_high_pct": 5.254,
+        "ci95_low_pct": -0.352,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 80445440,
+        "control": 79953920
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.051,
+        "ci95_high_pct": 1.171,
+        "ci95_low_pct": -0.852,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 2967689500,
+        "control": 2968456000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.614,
+        "ci95_high_pct": 5.146,
+        "ci95_low_pct": 0.254,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 556374000,
+        "control": 570276000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -0.886,
+        "ci95_high_pct": 1.889,
+        "ci95_low_pct": -2.768,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 771909104,
+        "control": 770273166.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.376,
+        "ci95_high_pct": 0.963,
+        "ci95_low_pct": -0.121,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 6783.390196319665,
+      "control": 6769.013889132994
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "control",
+   "number": 89,
+   "path": "exp-089-suppress-causal-publication-in-a-producer-only-scan.md",
+   "platform": "macOS",
+   "primary_job": "cold-scan-producer",
+   "primary_metric": "component_ns",
+   "reason": "Producer component time changed +0.68% with a 95% interval of -1.04% to +2.13%, missing the 3% gate and establishing no improvement.",
+   "reference_tools": [],
+   "subject": "a319238d9c29:113794:58bc2ea1deb0",
+   "title": "Suppress causal publication in a producer-only scan",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-01",
@@ -27200,7 +27339,8 @@
     "exp-085",
     "exp-086",
     "exp-087",
-    "exp-088"
+    "exp-088",
+    "exp-089"
    ],
    "files": 98525,
    "filesystem": "apfs",
@@ -27653,16 +27793,16 @@
    "baseline": 7,
    "blocked": 2,
    "in-progress": 1,
-   "rejected": 35,
+   "rejected": 36,
    "superseded": 2
   },
-  "experiments": 89,
+  "experiments": 90,
   "first_date": "2026-08-10",
-  "hypotheses": 60,
+  "hypotheses": 61,
   "last_date": "2026-09-01",
   "platforms": {
    "Linux": 9,
-   "macOS": 80
+   "macOS": 81
   }
  },
  "version": "fdu.performance.timeline/1"
