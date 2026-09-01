@@ -531,8 +531,8 @@ large cost to a named component.
   path-keyed `StructuralOverlay` from detached and opened discovery.
 - [x] Move prepared scanner paths across boundaries once and stop recording effect paths
   when the selected sink cannot expose them.
-- [ ] Bound impact accumulation and avoid cloning journal entries that exceed capacity.
-- [ ] Run and record one experiment after each independently measurable change; reject
+- [x] Bound impact accumulation and avoid cloning journal entries that exceed capacity.
+- [x] Run and record one experiment after each independently measurable change; reject
   any abstraction that does not improve the named job or simplify a proven boundary.
 
 [exp-077](../../experiments/exp-077-select-detached-consequences-once-per-batch.md)
@@ -561,6 +561,29 @@ time were noninferior to the immediate control.
 The scanner paths record zero ancestry-overlay insertions, while public, refresh, and
 watch observations retain the general atomic preflight.
 Exact engine and commit digests remain unchanged.
+
+[exp-080](../../experiments/exp-080-skip-oversized-journal-clones.md) moves the existing
+journal-capacity decision ahead of commit cloning.
+The 100,001-operation job eliminates 100,003 scoped allocations and improves wall time
+3.46%, with a paired 95% interval from -4.32% to -2.61%; component time improves 4.71%.
+The batched retained-history case also improves, while opened discovery is unchanged.
+The journal still retains every commit that fits, but no longer copies a commit it must
+reject immediately.
+
+Two follow-up ownership reductions were rejected.
+[exp-081](../../experiments/exp-081-borrow-impact-paths-until-the-bounded-result-escapes.md)
+removed 8.2% of opened scoped allocations but produced no supported wall-time gain and
+regressed the large exact-update component.
+[exp-082](../../experiments/exp-082-move-scanner-commits-directly-into-the-journal.md)
+removed nearly every scanner journal clone and roughly 10.3% of opened scoped
+allocations, but opened wall time was unchanged and the candidate added a second result
+form. Both spikes were removed.
+
+After the journal preflight, the leading exact-update profile cost is the
+`StructuralOverlay` required to prove arbitrary public mutations atomically before state
+changes. Scanner discovery no longer pays for that boundary, and the remaining public
+path has different correctness obligations; changing it is outside this campaign unless
+a profile and independent model identify a simpler proof with a material remaining gap.
 
 A separate 12-pair comparison with the preserved pre-rewrite binary measures the whole
 stack rather than attributing one commit.

@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 14 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 17 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 
@@ -156,6 +156,9 @@ dead end.
 | 077 | [Select detached consequences once per batch](#exp077--select-detached-consequences-once-per-batch) | H91 | `default-tree` | -6.6% | ✅ accepted |
 | 078 | [Remove the eager compatibility projection](#exp078--remove-the-eager-compatibility-projection) | H92 | `delta-apply-large` | -1.6% | ✅ accepted |
 | 079 | [Resolve scanner parents before mutation](#exp079--resolve-scanner-parents-before-mutation) | H93 | `opened-discovery` | -9.5% | ✅ accepted |
+| 080 | [Skip oversized journal clones](#exp080--skip-oversized-journal-clones) | H94 | `delta-apply-large` | -3.5% | ✅ accepted |
+| 081 | [Borrow impact paths until the bounded result escapes](#exp081--borrow-impact-paths-until-the-bounded-result-escapes) | H95 | `opened-discovery` | -1.1% | ❌ rejected |
+| 082 | [Move scanner commits directly into the journal](#exp082--move-scanner-commits-directly-into-the-journal) | H96 | `opened-discovery` | -0.0% | ❌ rejected |
 
 ## The experiments
 
@@ -2821,6 +2824,109 @@ the final stack matched or beat the pre-rewrite control.
 Full record:
 [`exp-079-resolve-scanner-parents-before-mutation.md`](../experiments/exp-079-resolve-scanner-parents-before-mutation.md)
 
+### exp-080 — Skip oversized journal clones
+
+✅ accepted · 2026-09-01 · H94 · commit `e2ac4f9`
+
+Control: resolved-parent proof at d9979aa
+
+Candidate: journal capacity preflight at e2ac4f9
+
+**`delta-apply-large`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 677.6 | 654.9 | -3.46% | [-4.32%, -2.61%] |
+| component (ms) | 427.7 | 407.5 | -4.52% | [-5.43%, -3.99%] |
+| cpu (ms) | 674.5 | 651.5 | -3.47% | [-4.39%, -2.64%] |
+| user (ms) | 654.6 | 632.3 | -3.51% | [-3.84%, -2.68%] |
+| system (ms) | 20.9 | 19.6 | -6.29% (n.s.) | [-16.86%, +1.44%] |
+| blocked (ms) | 3.2 | 3.3 | +1.31% (n.s.) | [-8.17%, +20.25%] |
+| peak rss (MiB) | 159.0 | 142.4 | -10.49% | [-11.56%, -7.71%] |
+
+Other jobs, wall time: `delta-apply-batched` -1.6%, `opened-discovery` +0.1% (n.s.).
+
+Cost to carry: 12 lines; no new dependencies.
+
+Moves the existing journal capacity decision before cloning, deletes two net lines, and
+adds no dependency, unsafe block, public API, alternate representation, or failure mode.
+
+**Accepted:** Large exact-batch wall time improved 3.46% with a paired 95% interval of
+-4.32% to -2.61%; 100003 scoped allocations disappeared, batched exact updates also
+improved, and opened discovery was unchanged.
+
+Full record:
+[`exp-080-skip-oversized-journal-clones.md`](../experiments/exp-080-skip-oversized-journal-clones.md)
+
+### exp-081 — Borrow impact paths until the bounded result escapes
+
+❌ rejected · 2026-09-01 · H95
+
+Control: journal capacity preflight at e2ac4f9
+
+Candidate: borrowed impact-path working-tree spike
+
+**`opened-discovery`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 286.8 | 282.2 | -1.07% (n.s.) | [-4.00%, +1.82%] |
+| component (ms) | 144.8 | 142.8 | -1.49% (n.s.) | [-4.55%, +4.32%] |
+| cpu (ms) | 306.4 | 300.4 | -1.16% (n.s.) | [-3.80%, +0.98%] |
+| user (ms) | 146.1 | 145.4 | -0.95% (n.s.) | [-1.80%, +0.26%] |
+| system (ms) | 157.9 | 154.3 | -1.66% (n.s.) | [-6.27%, +3.46%] |
+| peak rss (MiB) | 34.8 | 35.0 | +0.45% (n.s.) | [-0.79%, +1.77%] |
+
+Other jobs, wall time: `delta-apply-batched` +0.8% (n.s.), `delta-apply-large` +0.9%
+(n.s.).
+
+Cost to carry: 10 lines; no new dependencies.
+
+Replaces temporary owned PathBuf values with borrowed Path references and clones only
+the bounded escaping set; adds no dependency, unsafe block, public API, or failure mode,
+but does add lifetime coupling without a demonstrated timing benefit.
+
+**Rejected:** Opened scoped allocations fell 8.2%, but wall time improved only 1.07%
+with a paired 95% interval crossing zero; large exact-batch wall time moved 0.92% slower
+and batched timing was unchanged.
+
+Full record:
+[`exp-081-borrow-impact-paths-until-the-bounded-result-escapes.md`](../experiments/exp-081-borrow-impact-paths-until-the-bounded-result-escapes.md)
+
+### exp-082 — Move scanner commits directly into the journal
+
+❌ rejected · 2026-09-01 · H96
+
+Control: journal capacity preflight at e2ac4f9
+
+Candidate: journal-owned scanner commit working-tree spike
+
+**`opened-discovery`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 284.5 | 281.2 | -0.01% (n.s.) | [-2.15%, +5.77%] |
+| component (ms) | 145.5 | 144.6 | -0.36% (n.s.) | [-1.60%, +4.85%] |
+| cpu (ms) | 299.2 | 294.3 | -0.38% (n.s.) | [-2.71%, +4.27%] |
+| user (ms) | 142.4 | 140.9 | -0.74% (n.s.) | [-1.81%, +1.24%] |
+| system (ms) | 155.3 | 152.9 | +0.69% (n.s.) | [-4.07%, +7.05%] |
+| peak rss (MiB) | 35.2 | 36.2 | +2.77% (regression) | [+1.79%, +4.67%] |
+
+Cost to carry: 53 lines; no new dependencies.
+
+Adds an internal scanner receipt and separate owned journal-retention route so discovery
+can move rather than clone commits; no public API, dependency, unsafe block, or semantic
+oracle changes, but 31 net lines and another result form are not justified by the
+timing.
+
+**Rejected:** Opened scoped allocations fell roughly 10.3% and scanner journal clones
+nearly disappeared, but wall time changed -0.01% with a paired 95% interval of -2.15% to
++5.77%; component time was also unchanged and the candidate added a second private
+result form.
+
+Full record:
+[`exp-082-move-scanner-commits-directly-into-the-journal.md`](../experiments/exp-082-move-scanner-commits-directly-into-the-journal.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -2890,6 +2996,15 @@ Baselines show one value because they measure a state rather than a change.
 | 075 | Scoped counters stay below the exploratory acceptance threshold | `default-tree` | 59.3 | — | — | 📏 baseline |
 | 076 | Correctness fixes preserve the streaming performance baseline | `default-tree` | 60.4 | — | — | 📏 baseline |
 | 077 | Select detached consequences once per batch | `default-tree` | 59.7 | 55.6 | -6.6% | ✅ accepted |
+
+### cargo-registry-src-v2 (11,141 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 078 | Remove the eager compatibility projection | `delta-apply-large` | 651.6 | 641.9 | -1.6% | ✅ accepted |
+| 080 | Skip oversized journal clones | `delta-apply-large` | 677.6 | 654.9 | -3.5% | ✅ accepted |
+| 081 | Borrow impact paths until the bounded result escapes | `opened-discovery` | 286.8 | 282.2 | -1.1% | ❌ rejected |
+| 082 | Move scanner commits directly into the journal | `opened-discovery` | 284.5 | 281.2 | -0.0% | ❌ rejected |
 
 ### vm450k (450,463 entries) — Linux 6.18.5-fc-v20, unrecorded, warm-steady
 
@@ -2973,12 +3088,6 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 065 | Validate the content roll-up change on a dense real tree | `content-cache-hit` | 270.7 | 201.9 | -25.8% | ✅ accepted |
-
-### cargo-registry-src-v2 (11,141 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 078 | Remove the eager compatibility projection | `delta-apply-large` | 651.6 | 641.9 | -1.6% | ✅ accepted |
 
 ### diagnostics-overhead (100,001 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
