@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 20 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 21 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 
@@ -162,6 +162,7 @@ dead end.
 | 083 | [Skip unignored roll-up maintenance in control-free scopes](#exp083--skip-unignored-rollup-maintenance-in-controlfree-scopes) | H97 | `default-tree` | -1.6% | ❌ rejected |
 | 084 | [Compact optional fixed-partition storage](#exp084--compact-optional-fixedpartition-storage) | H98 | `default-tree` | -2.6% | ❌ rejected |
 | 085 | [Compact scanner batches and optional fixed partitions](#exp085--compact-scanner-batches-and-optional-fixed-partitions) | H99 | `default-tree` | -2.6% | ❌ rejected |
+| 086 | [Scanner phase counters expose preparation without observer cost](#exp086--scanner-phase-counters-expose-preparation-without-observer-cost) | H103 | `default-tree` | -0.1% | 📏 baseline |
 
 ## The experiments
 
@@ -3034,6 +3035,31 @@ so the composite gate failed.
 Full record:
 [`exp-085-compact-scanner-batches-and-optional-fixed-partitions.md`](../experiments/exp-085-compact-scanner-batches-and-optional-fixed-partitions.md)
 
+### exp-086 — Scanner phase counters expose preparation without observer cost
+
+📏 baseline · 2026-09-01 · H103 · commit `c7b2120`
+
+**`default-tree`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 364.3 |
+| component (ms) | 359.2 |
+| cpu (ms) | 2089.0 |
+| user (ms) | 210.4 |
+| system (ms) | 1880.1 |
+| peak rss (MiB) | 85.6 |
+
+Other jobs, wall time: `cold-scan-index` 584 ms.
+
+**Baseline:** With counters disabled, default-tree changed -0.12% with CI
+[-3.06%, +2.40%]; cold-scan-index changed -2.25%, below the 3% structural threshold.
+Enabled repeat-10 attribution measured 28.5 ms preparation and 82.3 ms reduction per
+scan, naming preparation as a viable next target.
+
+Full record:
+[`exp-086-scanner-phase-counters-expose-preparation-without-observer-c.md`](../experiments/exp-086-scanner-phase-counters-expose-preparation-without-observer-c.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -3113,6 +3139,15 @@ Baselines show one value because they measure a state rather than a change.
 | 081 | Borrow impact paths until the bounded result escapes | `opened-discovery` | 286.8 | 282.2 | -1.1% | ❌ rejected |
 | 082 | Move scanner commits directly into the journal | `opened-discovery` | 284.5 | 281.2 | -0.0% | ❌ rejected |
 
+### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 083 | Skip unignored roll-up maintenance in control-free scopes | `default-tree` | 366.7 | 363.9 | -1.6% | ❌ rejected |
+| 084 | Compact optional fixed-partition storage | `default-tree` | 358.5 | 350.0 | -2.6% | ❌ rejected |
+| 085 | Compact scanner batches and optional fixed partitions | `default-tree` | 356.2 | 346.5 | -2.6% | ❌ rejected |
+| 086 | Scanner phase counters expose preparation without observer cost | `default-tree` | 364.3 | — | — | 📏 baseline |
+
 ### vm450k (450,463 entries) — Linux 6.18.5-fc-v20, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -3145,14 +3180,6 @@ Baselines show one value because they measure a state rather than a change.
 | 051 | Memoize the parent resolved for the previous upsert | `cold-scan-index` | 2,022.1 | 1,852.9 | -7.3% | ✅ accepted |
 | 052 | Per-layer counters cost less than the measurement can see | `cold-scan-index` | 1,891.3 | 1,870.1 | +0.0% | ✅ accepted |
 | 053 | Move instrumentation to a runtime toggle and measure all three of its costs | `cold-scan-index` | 1,858.8 | 1,847.0 | -1.3% | ✅ accepted |
-
-### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 083 | Skip unignored roll-up maintenance in control-free scopes | `default-tree` | 366.7 | 363.9 | -1.6% | ❌ rejected |
-| 084 | Compact optional fixed-partition storage | `default-tree` | 358.5 | 350.0 | -2.6% | ❌ rejected |
-| 085 | Compact scanner batches and optional fixed partitions | `default-tree` | 356.2 | 346.5 | -2.6% | ❌ rejected |
 
 ### rustup-toolchains (119,368 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 

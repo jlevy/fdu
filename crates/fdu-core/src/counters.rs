@@ -72,6 +72,12 @@ pub struct Counts {
     pub ancestry_path_comparisons: u64,
     /// Parent chains proved during ancestry preflight, including memo hits.
     pub ancestry_parent_proofs: u64,
+    /// Wall microseconds spent preparing trusted scanner batches.
+    pub scanner_prepare_us: u64,
+    /// Wall microseconds spent projecting controls for trusted scanner batches.
+    pub scanner_control_projection_us: u64,
+    /// Wall microseconds spent reducing prepared scanner batches into the index.
+    pub scanner_reduce_us: u64,
     /// Owned paths retained in exact effective changes.
     pub effect_paths: u64,
     /// Native encoded bytes retained by exact effective-change paths.
@@ -139,6 +145,9 @@ impl Counts {
         ancestry_overlay_inserts: 0,
         ancestry_path_comparisons: 0,
         ancestry_parent_proofs: 0,
+        scanner_prepare_us: 0,
+        scanner_control_projection_us: 0,
+        scanner_reduce_us: 0,
         effect_paths: 0,
         effect_path_bytes: 0,
         impact_candidates: 0,
@@ -184,6 +193,13 @@ impl Counts {
             ("mutation preflight", "ancestry overlay inserts", self.ancestry_overlay_inserts),
             ("mutation preflight", "same-parent path comparisons", self.ancestry_path_comparisons),
             ("mutation preflight", "parent chains proved", self.ancestry_parent_proofs),
+            ("mutation timing", "scanner preparation microseconds", self.scanner_prepare_us),
+            (
+                "mutation timing",
+                "scanner control projection microseconds",
+                self.scanner_control_projection_us,
+            ),
+            ("mutation timing", "scanner reduction microseconds", self.scanner_reduce_us),
             ("mutation consequences", "effective paths retained", self.effect_paths),
             ("mutation consequences", "effective path bytes", self.effect_path_bytes),
             ("mutation consequences", "impact candidates", self.impact_candidates),
@@ -248,6 +264,10 @@ impl Counts {
             self.ancestry_path_comparisons.saturating_add(other.ancestry_path_comparisons);
         self.ancestry_parent_proofs =
             self.ancestry_parent_proofs.saturating_add(other.ancestry_parent_proofs);
+        self.scanner_prepare_us = self.scanner_prepare_us.saturating_add(other.scanner_prepare_us);
+        self.scanner_control_projection_us =
+            self.scanner_control_projection_us.saturating_add(other.scanner_control_projection_us);
+        self.scanner_reduce_us = self.scanner_reduce_us.saturating_add(other.scanner_reduce_us);
         self.effect_paths = self.effect_paths.saturating_add(other.effect_paths);
         self.effect_path_bytes = self.effect_path_bytes.saturating_add(other.effect_path_bytes);
         self.impact_candidates = self.impact_candidates.saturating_add(other.impact_candidates);
@@ -310,6 +330,9 @@ struct GlobalCounts {
     ancestry_overlay_inserts: AtomicU64,
     ancestry_path_comparisons: AtomicU64,
     ancestry_parent_proofs: AtomicU64,
+    scanner_prepare_us: AtomicU64,
+    scanner_control_projection_us: AtomicU64,
+    scanner_reduce_us: AtomicU64,
     effect_paths: AtomicU64,
     effect_path_bytes: AtomicU64,
     impact_candidates: AtomicU64,
@@ -354,6 +377,9 @@ impl GlobalCounts {
             ancestry_overlay_inserts: AtomicU64::new(0),
             ancestry_path_comparisons: AtomicU64::new(0),
             ancestry_parent_proofs: AtomicU64::new(0),
+            scanner_prepare_us: AtomicU64::new(0),
+            scanner_control_projection_us: AtomicU64::new(0),
+            scanner_reduce_us: AtomicU64::new(0),
             effect_paths: AtomicU64::new(0),
             effect_path_bytes: AtomicU64::new(0),
             impact_candidates: AtomicU64::new(0),
@@ -397,6 +423,12 @@ impl GlobalCounts {
         atomic_saturating_add(&self.ancestry_overlay_inserts, counts.ancestry_overlay_inserts);
         atomic_saturating_add(&self.ancestry_path_comparisons, counts.ancestry_path_comparisons);
         atomic_saturating_add(&self.ancestry_parent_proofs, counts.ancestry_parent_proofs);
+        atomic_saturating_add(&self.scanner_prepare_us, counts.scanner_prepare_us);
+        atomic_saturating_add(
+            &self.scanner_control_projection_us,
+            counts.scanner_control_projection_us,
+        );
+        atomic_saturating_add(&self.scanner_reduce_us, counts.scanner_reduce_us);
         atomic_saturating_add(&self.effect_paths, counts.effect_paths);
         atomic_saturating_add(&self.effect_path_bytes, counts.effect_path_bytes);
         atomic_saturating_add(&self.impact_candidates, counts.impact_candidates);
@@ -452,6 +484,11 @@ impl GlobalCounts {
             ancestry_overlay_inserts: self.ancestry_overlay_inserts.load(Ordering::Relaxed),
             ancestry_path_comparisons: self.ancestry_path_comparisons.load(Ordering::Relaxed),
             ancestry_parent_proofs: self.ancestry_parent_proofs.load(Ordering::Relaxed),
+            scanner_prepare_us: self.scanner_prepare_us.load(Ordering::Relaxed),
+            scanner_control_projection_us: self
+                .scanner_control_projection_us
+                .load(Ordering::Relaxed),
+            scanner_reduce_us: self.scanner_reduce_us.load(Ordering::Relaxed),
             effect_paths: self.effect_paths.load(Ordering::Relaxed),
             effect_path_bytes: self.effect_path_bytes.load(Ordering::Relaxed),
             impact_candidates: self.impact_candidates.load(Ordering::Relaxed),
@@ -495,6 +532,9 @@ impl GlobalCounts {
         self.ancestry_overlay_inserts.store(0, Ordering::Relaxed);
         self.ancestry_path_comparisons.store(0, Ordering::Relaxed);
         self.ancestry_parent_proofs.store(0, Ordering::Relaxed);
+        self.scanner_prepare_us.store(0, Ordering::Relaxed);
+        self.scanner_control_projection_us.store(0, Ordering::Relaxed);
+        self.scanner_reduce_us.store(0, Ordering::Relaxed);
         self.effect_paths.store(0, Ordering::Relaxed);
         self.effect_path_bytes.store(0, Ordering::Relaxed);
         self.impact_candidates.store(0, Ordering::Relaxed);
