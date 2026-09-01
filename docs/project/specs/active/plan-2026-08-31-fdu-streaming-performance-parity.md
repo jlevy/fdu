@@ -1,6 +1,6 @@
 # Feature: Streaming Performance Parity Without One-Shot Overhead
 
-**Date:** 2026-08-31 (last updated 2026-08-31)
+**Date:** 2026-08-31 (last updated 2026-09-01)
 
 **Author:** fdu project, with Codex assistance
 
@@ -219,10 +219,13 @@ Snapshot loading distinguishes two operations:
   only if the report path projects away control state and retags the consumed view
   before exact reconciliation or return.
 
-The simplest correct implementation is exact scope for every public `Index`-returning
-path and directional reuse only inside the report-only executor.
-If projection adds more code or cost than a cold fallback saves, the report path also
-uses exact scope. The performance loop decides; correctness does not depend on reuse.
+The implementation requires exact scope for every public `Index`-returning path.
+A controls-off `Auto` report scans cold when only a controls-on snapshot exists because
+it must reconcile. A no-scan `Only` report may consume the stronger snapshot: every
+report view reads the all-entry facts rather than control state or the ignored
+partition, no `Index` escapes, and the returned report is retagged with the requested
+controls-off scope. This explicit projection preserves cache-only reads after watch
+sessions without weakening public index ownership.
 
 ### Separate public normalization from scanner preparation
 
@@ -437,9 +440,9 @@ rather than invented here.
 
 ### Phase 1: Correctness and a trustworthy baseline
 
-- [ ] Add failing controls-on to controls-off snapshot tests for `CachePolicy::Auto` and
+- [x] Add failing controls-on to controls-off snapshot tests for `CachePolicy::Auto` and
   `CachePolicy::Only`, covering both report-only consumption and public index return.
-- [ ] Require exact scope for returned indexes; keep or remove report-only directional
+- [x] Require exact scope for returned indexes; keep or remove report-only directional
   reuse based on a measured, explicit projection.
 - [ ] Add encoded-byte path tests for current-directory components and repeated
   separators, plus existing escape, non-Unicode, and platform cases.
@@ -449,6 +452,18 @@ rather than invented here.
   distinguish detached, opened, and arbitrary public work.
 - [ ] Record fresh `main`, PR #51, and correctness-fixed baselines under the performance
   protocol.
+
+On 2026-09-01, the four initial scope tests failed against the unrestricted directional
+admission rule: `Auto` reached reconciliation and returned `ScanScopeMismatch`, while
+the public `Only` API served the incompatible index.
+Exact public admission fixed both.
+The full gate then exposed the report-only constraint: watch sessions write controls-on
+snapshots that ordinary CLI cache-only reports must still consume.
+The final boundary keeps public ownership exact, uses cold fallback for scanning
+reports, and limits the directional projection to no-scan reports.
+A multi-view parity test compares that projection with a cold controls-off report.
+The complete `make check` handoff gate passed after the projection fix.
+The encoded-path fix, instrumentation, and baselines remain open.
 
 Phase 1 passes when the focused tests fail on PR #51, pass on the branch, all existing
 engine and opened-root model tests pass, and the baseline evidence can assign every

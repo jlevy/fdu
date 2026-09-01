@@ -318,7 +318,37 @@ pub fn open_with_pending_save(
     root: &Path,
     config: &OpenConfig,
 ) -> Result<(std::sync::Arc<Index>, OpenReport, PendingSave)> {
-    open_for_report(root, config, true)
+    open_for_report(root, config, true, SnapshotUse::ReturnedIndex)
+}
+
+/// What may consume an admitted snapshot.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum SnapshotUse {
+    /// The detached index crosses the API boundary and must match its requested scope.
+    ReturnedIndex,
+    /// A one-shot report consumes the index without exposing it.
+    ReportOnly,
+}
+
+/// Whether `stored` can answer `wanted` for this consumer and cache policy.
+fn snapshot_scope_serves(
+    stored: ScanScope,
+    wanted: ScanScope,
+    policy: CachePolicy,
+    snapshot_use: SnapshotUse,
+) -> bool {
+    if stored == wanted {
+        return true;
+    }
+    // A no-scan report consumes only the all-entry facts, never the control table or
+    // ignored partition. It may therefore project controls-on to controls-off and retag
+    // the report before return. Any path that exposes the index remains exact, and any
+    // path that will reconcile treats the mismatch as a miss and scans cold.
+    snapshot_use == SnapshotUse::ReportOnly
+        && !policy.scans()
+        && ScanScope { ignore_rules_fingerprint: wanted.ignore_rules_fingerprint, ..stored }
+            == wanted
+        && wanted.ignore_rules_fingerprint == 0
 }
 
 /// [`open_with_pending_save`] with the snapshot read under the caller's control.
@@ -334,21 +364,11 @@ pub fn open_with_pending_save(
 ///
 /// A policy that cannot scan reads regardless of the flag — for [`CachePolicy::Only`]
 /// the snapshot is the contract, not a cost choice.
-/// Whether a retained snapshot with scope `stored` can answer a request with scope
-/// `wanted`. Equality, plus one directional allowance: everything equal except the
-/// stored side also observed control state.
-fn scope_serves(stored: ScanScope, wanted: ScanScope) -> bool {
-    if stored == wanted {
-        return true;
-    }
-    ScanScope { ignore_rules_fingerprint: wanted.ignore_rules_fingerprint, ..stored } == wanted
-        && wanted.ignore_rules_fingerprint == 0
-}
-
 pub(crate) fn open_for_report(
     root: &Path,
     config: &OpenConfig,
     read_snapshot: bool,
+    snapshot_use: SnapshotUse,
 ) -> Result<(std::sync::Arc<Index>, OpenReport, PendingSave)> {
     let root = root.canonicalize().map_err(|e| Error::io(root, e))?;
     let policy = config.policy;
@@ -359,15 +379,18 @@ pub(crate) fn open_for_report(
                 // A snapshot describing another root or a different scan scope is not this
                 // tree's answer; treat it as absent rather than as data.
                 //
-                // Acceptance is "can this snapshot answer this request", which is
-                // directional, not symmetric. A snapshot written with control
-                // observation on retains a superset of what a controls-off request
-                // needs -- the identical rows plus ignore state the report never reads
-                // -- so a watch-maintained cache still serves a plain `fdu <dir>`. The
-                // reverse stays refused: a controls-off snapshot lacks state a
-                // controls-on consumer would silently miss.
+                // Public index ownership requires exact scope. A report-only cache read
+                // may consume the controls-independent all-entry facts under the narrow
+                // projection proved above; the report executor retags the result before
+                // it crosses the API boundary.
                 .filter(|index| {
-                    index.root_path() == root && scope_serves(index.scope(), config.scan.scope())
+                    index.root_path() == root
+                        && snapshot_scope_serves(
+                            index.scope(),
+                            config.scan.scope(),
+                            policy,
+                            snapshot_use,
+                        )
                 })
         }
         _ => None,
@@ -678,6 +701,60 @@ mod tests {
             fs::create_dir_all(parent).expect("create parent");
         }
         fs::write(path, contents).expect("write");
+    }
+
+    #[cfg(feature = "gitignore")]
+    fn controls_config(
+        policy: CachePolicy,
+        snapshot_path: PathBuf,
+        read_controls: bool,
+    ) -> OpenConfig {
+        OpenConfig {
+            scan: ScanConfig { read_controls, ..ScanConfig::default() },
+            cache_path: Some(snapshot_path),
+            policy,
+            ..OpenConfig::default()
+        }
+    }
+
+    #[cfg(feature = "gitignore")]
+    fn seed_controls_snapshot(root: &Path, snapshot_path: PathBuf) {
+        let seed = controls_config(CachePolicy::Auto, snapshot_path, true);
+        let (index, report) = open(root, &seed).expect("seed controls-on snapshot");
+        assert_eq!(report.path_taken, OpenPath::ColdScan);
+        assert!(!index.controls().is_empty(), "the fixture must retain a control source");
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn controls_on_snapshot_does_not_serve_controls_off_auto_open() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        write_file(&root.path().join(".gitignore"), b"ignored.log\n");
+        write_file(&root.path().join("ignored.log"), b"ignored");
+        seed_controls_snapshot(root.path(), snapshot_path.clone());
+
+        let controls_off = controls_config(CachePolicy::Auto, snapshot_path, false);
+        let (index, report) = open(root.path(), &controls_off).expect("controls-off cold fallback");
+
+        assert_eq!(report.path_taken, OpenPath::ColdScan);
+        assert_eq!(index.scope(), controls_off.scan.scope());
+        assert!(index.controls().is_empty());
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn controls_on_snapshot_does_not_serve_controls_off_cache_only_open() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        write_file(&root.path().join(".gitignore"), b"ignored.log\n");
+        write_file(&root.path().join("ignored.log"), b"ignored");
+        seed_controls_snapshot(root.path(), snapshot_path.clone());
+
+        let controls_off = controls_config(CachePolicy::Only, snapshot_path, false);
+        assert!(matches!(open(root.path(), &controls_off), Err(Error::Snapshot(_))));
     }
 
     /// Supplied rules reach the answer, and invalidate a snapshot taken under others.
