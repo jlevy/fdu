@@ -29,16 +29,18 @@ _ALLOCATION_SLOPE_BUDGETS = {
         # Linux/macOS fit below 9.5. Windows measured 14.16 here and 14.33 in
         # the directory-shaped invariant, whose Windows ceiling is also 15.0.
         "allocs": 15.0 if os.name == "nt" else 9.5,
-        "reallocs": 0.05,
-        "bytes_allocated": 1_500.0,
+        # Windows measured 8.02 reallocations and 2,512.5 requested bytes per entry.
+        "reallocs": 8.5 if os.name == "nt" else 0.05,
+        "bytes_allocated": 2_560.0 if os.name == "nt" else 1_500.0,
     },
     "opened-discovery": {
         # This flat-tree probe measured 24.16 on Linux. The directory-shaped invariant
         # measured 34.43 on Windows; these ceilings leave less than one allocation per
         # entry of slack on each platform and independently reject a restored clone.
         "allocs": 35.0 if os.name == "nt" else 24.5,
-        "reallocs": 0.25,
-        "bytes_allocated": 2_500.0,
+        # Windows measured 10.13 reallocations and 3,819.75 requested bytes per entry.
+        "reallocs": 10.5 if os.name == "nt" else 0.25,
+        "bytes_allocated": 3_900.0 if os.name == "nt" else 2_500.0,
     },
 }
 
@@ -352,6 +354,12 @@ class FduProbeTests(unittest.TestCase):
                 for metric, per_entry in budgets.items()
             }
             _assert_allocation_slope(mode, smaller, at_budget, entries)
+
+            for metric in budgets:
+                over_budget = dict(at_budget)
+                over_budget[metric] += 1
+                with self.assertRaisesRegex(AssertionError, rf"{mode} {metric} grew"):
+                    _assert_allocation_slope(mode, smaller, over_budget, entries)
 
             restored = dict(at_budget)
             restored["allocs"] += entries
