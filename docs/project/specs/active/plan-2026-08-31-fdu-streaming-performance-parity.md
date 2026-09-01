@@ -813,6 +813,37 @@ accept set must include this real subject, byte-identical engine digests across 
 counts, opened-path non-regression, the current 3% wall gate, and the parity allocation
 limits.
 
+That preregistration is now fixed in
+[the campaign-2 H86 section](plan-2026-08-23-fdu-performance-campaign-2.md#h86-preregistration-one-decision-two-evidence-stages).
+The optimized route is one private, controls-disabled, detached cold-bootstrap choice.
+It retains a complete compact index and promotes once to the ordinary mutable layout if
+a later public commit requires mutation; it is not a report-only approximation.
+All causal and exact streaming producers remain on the existing scanner-batch reducer,
+and a controls-enabled or otherwise unproved request falls closed to that path.
+
+The local structural verdict uses `c6380f7646524b51dbfcfec7e2efac49bf89d34b` as its
+immediate immutable control and `b75bf85a33edd9fe65d97df9395072797e54426e` as the
+historical parity control.
+It requires at least twelve valid quiet, warm-steady, paired and interleaved trials on
+the 113,794-entry MetaBrowser checkout: `default-tree` must improve at least 3% with its
+paired interval below zero, `cold-scan-index` must move in the same direction, peak RSS
+must fall at least 20%, the two one-shot jobs must meet this plan’s historical parity
+limits on both real subjects, and opened discovery must remain within the +3%
+noninferiority and 1.05 allocation bounds while recording zero arena-route uses.
+Exact engine, report, scope, snapshot, and worker-count differential oracles remain
+mandatory.
+
+The original Linux floor and RSS claims are a second evidence stage, not relaxed local
+targets. Its `arena_spike` reference uses a preregistered low-churn warm-steady
+preparation: three complete spike warmups immediately before every retained sample and
+no intervening full-index or deliberate memory-churn process.
+Every arm records both `p95/median` and `max/min`; H86 requires candidate ratios at or
+below 1.5 and 2.0, respectively.
+If the prepared spike still has `max/min` above 2.0, the floor ratios stay unresolved
+instead of selecting one timing cluster after the run.
+A Darwin acceptance may keep the implementation in this stacked pull request, but it
+does not close the Linux H86 epic.
+
 After the journal preflight, the leading exact-update profile cost is the
 `StructuralOverlay` required to prove arbitrary public mutations atomically before state
 changes. Scanner discovery no longer pays for that boundary, and the remaining public
