@@ -1885,15 +1885,12 @@ impl Index {
         };
         self.clock = next_clock;
         if journal {
-            crate::counters::bump(|counts| {
-                counts.journal_cloned_commits = counts.journal_cloned_commits.saturating_add(1);
-            });
-            self.retain_commit(commit.clone());
+            self.retain_commit(&commit);
         }
         commit
     }
 
-    fn retain_commit(&mut self, commit: Commit) {
+    fn retain_commit(&mut self, commit: &Commit) {
         let cost = commit.retained_cost();
         if cost > self.journal_capacity {
             let dropped = u64::try_from(self.journal.len()).unwrap_or(u64::MAX);
@@ -1920,8 +1917,9 @@ impl Index {
             }
         }
         self.journal_cost += cost;
-        self.journal.push_back(commit);
+        self.journal.push_back(commit.clone());
         crate::counters::bump(|counts| {
+            counts.journal_cloned_commits = counts.journal_cloned_commits.saturating_add(1);
             counts.journal_retained_commits = counts.journal_retained_commits.saturating_add(1);
         });
     }
@@ -5674,7 +5672,7 @@ mod tests {
             file_attrs(3, 3),
         )]));
         let counts = crate::counters::test_thread_snapshot();
-        assert_eq!(counts.journal_cloned_commits, 3);
+        assert_eq!(counts.journal_cloned_commits, 2);
         assert_eq!(counts.journal_retained_commits, 2);
         assert_eq!(counts.journal_oversized_commits, 1);
         assert_eq!(counts.journal_dropped_commits, 2);
