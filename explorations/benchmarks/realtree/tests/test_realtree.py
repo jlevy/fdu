@@ -268,6 +268,19 @@ class StatisticsTests(unittest.TestCase):
         self.assertEqual(reasons, [])
         self.assertEqual(document["scan_diagnostics"]["schema"], "fdu-scan-diagnostics-v1")
 
+    def test_timing_rejects_explicitly_disabled_probe_oracle(self) -> None:
+        document = json.loads(self._diagnostic_probe())
+        document["oracle_enabled"] = False
+
+        _, reasons = measure._read_probe_output(json.dumps(document).encode())
+
+        self.assertIn("probe oracle was disabled in a timing run", reasons)
+
+    def test_timing_accepts_legacy_probe_without_oracle_label(self) -> None:
+        _, reasons = measure._read_probe_output(self._diagnostic_probe())
+
+        self.assertEqual(reasons, [])
+
     def test_claim_grade_scan_rejects_truncated_or_unobservable_policy(self) -> None:
         encoded = self._diagnostic_probe("undecided")
         document = json.loads(encoded)
@@ -908,6 +921,34 @@ Call graph:
                 "4",
             ],
         )
+
+    def test_profile_command_labels_counter_free_oracle_free_attribution(self) -> None:
+        command = profile._profile_command(
+            ["/tmp/bin/perf_probe", "scan-index", "--root", "/private/subject"],
+            repeat=4,
+            oracle_enabled=False,
+        )
+        environment = profile._profile_environment(counters_enabled=False)
+
+        self.assertEqual(command[-3:], ["--no-oracle", "--repeat", "4"])
+        self.assertEqual(environment["FDU_COUNTERS"], "0")
+
+    def test_profile_command_does_not_duplicate_no_oracle(self) -> None:
+        command = profile._profile_command(
+            ["perf_probe", "scan-index", "--no-oracle"],
+            repeat=2,
+            oracle_enabled=False,
+        )
+
+        self.assertEqual(command.count("--no-oracle"), 1)
+
+    def test_profile_command_rejects_an_unlabelled_disabled_oracle(self) -> None:
+        with self.assertRaisesRegex(profile.ProfileError, "oracle disabled"):
+            profile._profile_command(
+                ["perf_probe", "scan-index", "--no-oracle"],
+                repeat=2,
+                oracle_enabled=True,
+            )
 
     def test_layers_partition_the_samples(self) -> None:
         parsed = profile.parse(self.SAMPLE)
