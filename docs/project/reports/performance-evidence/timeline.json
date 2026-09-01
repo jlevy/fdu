@@ -667,6 +667,15 @@
    "subject": "a319238d9c29:113794:58bc2ea1deb0",
    "tool": "dust",
    "wall_ns": 505652562.5
+  },
+  {
+   "entries": 113794,
+   "id": "exp-088",
+   "per_entry_ns": 3990.858661265093,
+   "platform": "macOS",
+   "subject": "a319238d9c29:113794:58bc2ea1deb0",
+   "tool": "dust",
+   "wall_ns": 454135770.5
   }
  ],
  "experiments": [
@@ -26841,6 +26850,258 @@
    "subject": "a319238d9c29:113794:58bc2ea1deb0",
    "title": "Fuse detached control-free scanner preparation and reduction",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "one-shot causal-fragment coalescer",
+   "change_pct": 0.126,
+   "commit": null,
+   "complexity": {
+    "lines_changed": 139,
+    "new_dependencies": [],
+    "new_failure_modes": [
+     "The accumulator retains one additional scanner batch until the target or end of stream."
+    ],
+    "new_unsafe_blocks": 0,
+    "notes": "The coalescer reduced baseline applications to near the configured minimum, but larger batches made causal-parent preparation more expensive and wall time stayed flat."
+   },
+   "control": "phase-instrumented streaming control at 80e5897",
+   "date": "2026-09-01",
+   "decision": "rejected",
+   "entries": 113794,
+   "family": "macOS:a319238d9c29",
+   "hypotheses": [
+    "H105"
+   ],
+   "id": "exp-088",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "cold-scan-index",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 337474937,
+        "control": 341060000
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -0.197,
+        "ci95_high_pct": 2.105,
+        "ci95_low_pct": -2.644,
+        "evidence": "unclear",
+        "pairs": 6,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 2387478500,
+        "control": 2400452000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.023,
+        "ci95_high_pct": 1.574,
+        "ci95_low_pct": -1.377,
+        "evidence": "unclear",
+        "pairs": 6,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 79609856,
+        "control": 77881344
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 2.023,
+        "ci95_high_pct": 4.38,
+        "ci95_low_pct": 0.987,
+        "evidence": "regressed",
+        "pairs": 6,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 1889734000,
+        "control": 1955755000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -2.67,
+        "ci95_high_pct": -1.406,
+        "ci95_low_pct": -4.194,
+        "evidence": "improved",
+        "pairs": 6,
+        "significant": true
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 489165500,
+        "control": 440324000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 9.042,
+        "ci95_high_pct": 21.962,
+        "ci95_low_pct": 5.882,
+        "evidence": "regressed",
+        "pairs": 6,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 580982979,
+        "control": 584853375
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -0.005,
+        "ci95_high_pct": 1.416,
+        "ci95_low_pct": -2.049,
+        "evidence": "unclear",
+        "pairs": 6,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 5105.567771587254,
+      "control": 5139.580074520625
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 355333041.5,
+        "control": 357393458
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.166,
+        "ci95_high_pct": 2.297,
+        "ci95_low_pct": -1.109,
+        "evidence": "unclear",
+        "pairs": 6,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 2130547000,
+        "control": 2097619500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 1.904,
+        "ci95_high_pct": 4.048,
+        "ci95_low_pct": -0.406,
+        "evidence": "unclear",
+        "pairs": 6,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 90931200,
+        "control": 89997312
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.863,
+        "ci95_high_pct": 2.191,
+        "ci95_low_pct": -0.091,
+        "evidence": "unclear",
+        "pairs": 6,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 1872572500,
+        "control": 1884873000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -0.321,
+        "ci95_high_pct": 2.71,
+        "ci95_low_pct": -1.579,
+        "evidence": "unclear",
+        "pairs": 6,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 255417500,
+        "control": 205248500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 24.876,
+        "ci95_high_pct": 26.547,
+        "ci95_low_pct": 2.55,
+        "evidence": "regressed",
+        "pairs": 6,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 360405187.5,
+        "control": 362488145.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.126,
+        "ci95_high_pct": 2.288,
+        "ci95_low_pct": -1.08,
+        "evidence": "unclear",
+        "pairs": 6,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 3167.1721487951913,
+      "control": 3185.476787001072
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "control",
+   "number": 88,
+   "path": "exp-088-coalesce-causal-scanner-fragments-in-the-one-shot-builder.md",
+   "platform": "macOS",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "Default-tree wall changed +0.13% with a 95% interval of -1.08% to +2.29%, while cold-scan-index was flat; the candidate missed the 3% structural gate.",
+   "reference_tools": [
+    {
+     "argv": [
+      "{binary}",
+      "-d",
+      "1",
+      "--no-progress",
+      "{root}"
+     ],
+     "name": "dust",
+     "wall_ns_median": 454135770.5
+    }
+   ],
+   "subject": "a319238d9c29:113794:58bc2ea1deb0",
+   "title": "Coalesce causal scanner fragments in the one-shot builder",
+   "trials": 6
   }
  ],
  "prepared": "2026-09-01",
@@ -26930,6 +27191,29 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 2311017461,
+   "directories": 15221,
+   "entries": 113794,
+   "experiments": [
+    "exp-083",
+    "exp-084",
+    "exp-085",
+    "exp-086",
+    "exp-087",
+    "exp-088"
+   ],
+   "files": 98525,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "a319238d9c29:113794:58bc2ea1deb0",
+   "labels": [
+    "metabrowser-current"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 179605080,
    "directories": 2240,
    "entries": 11141,
@@ -26947,28 +27231,6 @@
    "labels": [
     "cargo-registry-src-v2",
     "resolved-parent-proof-final"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "macOS",
-   "synthetic": false
-  },
-  {
-   "apparent_bytes": 2311017461,
-   "directories": 15221,
-   "entries": 113794,
-   "experiments": [
-    "exp-083",
-    "exp-084",
-    "exp-085",
-    "exp-086",
-    "exp-087"
-   ],
-   "files": 98525,
-   "filesystem": "apfs",
-   "host_cpu": "Apple M1 Pro",
-   "key": "a319238d9c29:113794:58bc2ea1deb0",
-   "labels": [
-    "metabrowser-current"
    ],
    "os_cache": "warm-steady",
    "platform": "macOS",
@@ -27391,16 +27653,16 @@
    "baseline": 7,
    "blocked": 2,
    "in-progress": 1,
-   "rejected": 34,
+   "rejected": 35,
    "superseded": 2
   },
-  "experiments": 88,
+  "experiments": 89,
   "first_date": "2026-08-10",
-  "hypotheses": 59,
+  "hypotheses": 60,
   "last_date": "2026-09-01",
   "platforms": {
    "Linux": 9,
-   "macOS": 79
+   "macOS": 80
   }
  },
  "version": "fdu.performance.timeline/1"

@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 22 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 23 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 
@@ -164,6 +164,7 @@ dead end.
 | 085 | [Compact scanner batches and optional fixed partitions](#exp085--compact-scanner-batches-and-optional-fixed-partitions) | H99 | `default-tree` | -2.6% | ❌ rejected |
 | 086 | [Scanner phase counters expose preparation without observer cost](#exp086--scanner-phase-counters-expose-preparation-without-observer-cost) | H103 | `default-tree` | -0.1% | 📏 baseline |
 | 087 | [Fuse detached control-free scanner preparation and reduction](#exp087--fuse-detached-controlfree-scanner-preparation-and-reduction) | H104 | `default-tree` | -1.1% | ❌ rejected |
+| 088 | [Coalesce causal scanner fragments in the one-shot builder](#exp088--coalesce-causal-scanner-fragments-in-the-oneshot-builder) | H105 | `default-tree` | +0.1% | ❌ rejected |
 
 ## The experiments
 
@@ -3096,6 +3097,39 @@ missing the 3% structural gate; cold-scan-index was flat.
 Full record:
 [`exp-087-fuse-detached-control-free-scanner-preparation-and-reduction.md`](../experiments/exp-087-fuse-detached-control-free-scanner-preparation-and-reduction.md)
 
+### exp-088 — Coalesce causal scanner fragments in the one-shot builder
+
+❌ rejected · 2026-09-01 · H105
+
+Control: phase-instrumented streaming control at 80e5897
+
+Candidate: one-shot causal-fragment coalescer
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 362.5 | 360.4 | +0.13% (n.s.) | [-1.08%, +2.29%] |
+| component (ms) | 357.4 | 355.3 | +0.17% (n.s.) | [-1.11%, +2.30%] |
+| cpu (ms) | 2097.6 | 2130.5 | +1.90% (n.s.) | [-0.41%, +4.05%] |
+| user (ms) | 205.2 | 255.4 | +24.88% (regression) | [+2.55%, +26.55%] |
+| system (ms) | 1884.9 | 1872.6 | -0.32% (n.s.) | [-1.58%, +2.71%] |
+| peak rss (MiB) | 85.8 | 86.7 | +0.86% (n.s.) | [-0.09%, +2.19%] |
+
+Other jobs, wall time: `cold-scan-index` -0.0% (n.s.).
+
+Cost to carry: 139 lines; no new dependencies; new failure mode: The accumulator retains
+one additional scanner batch until the target or end of stream..
+
+The coalescer reduced baseline applications to near the configured minimum, but larger
+batches made causal-parent preparation more expensive and wall time stayed flat.
+
+**Rejected:** Default-tree wall changed +0.13% with a 95% interval of -1.08% to +2.29%,
+while cold-scan-index was flat; the candidate missed the 3% structural gate.
+
+Full record:
+[`exp-088-coalesce-causal-scanner-fragments-in-the-one-shot-builder.md`](../experiments/exp-088-coalesce-causal-scanner-fragments-in-the-one-shot-builder.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -3147,16 +3181,6 @@ Baselines show one value because they measure a state rather than a change.
 | 032 | Cumulative effect through bounded parallel reconciliation | `cold-scan-index` | 635.4 | 289.6 | -54.5% | ✅ accepted |
 | 033 | Post-composable-CLI integration validation | `warm-revalidate` | 844.7 | 481.9 | -42.3% | ✅ accepted |
 
-### metabrowser (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 013 | Region-scheduled breadth-first traversal | `cold-scan-index` | 308.7 | 297.0 | -4.8% | ✅ accepted |
-| 014 | What the breadth-first default costs, on the shipped scheduler | `cold-scan-producer` | 489.4 | — | — | 📏 baseline |
-| 016 | Move cold-scan producer paths instead of cloning | `cold-scan-index` | 336.0 | 339.9 | -0.4% | ❌ rejected |
-| 017 | Pre-create dormant workers for adaptive scan depth | `cold-scan-producer` | 494.2 | 500.7 | +2.0% | ❌ rejected |
-| 023 | Cumulative effect through adaptive scanning and macOS bulk metadata | `cold-scan-index` | 625.2 | 295.5 | -53.5% | ✅ accepted |
-
 ### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -3166,6 +3190,17 @@ Baselines show one value because they measure a state rather than a change.
 | 085 | Compact scanner batches and optional fixed partitions | `default-tree` | 356.2 | 346.5 | -2.6% | ❌ rejected |
 | 086 | Scanner phase counters expose preparation without observer cost | `default-tree` | 364.3 | — | — | 📏 baseline |
 | 087 | Fuse detached control-free scanner preparation and reduction | `default-tree` | 355.3 | 349.3 | -1.1% | ❌ rejected |
+| 088 | Coalesce causal scanner fragments in the one-shot builder | `default-tree` | 362.5 | 360.4 | +0.1% | ❌ rejected |
+
+### metabrowser (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 013 | Region-scheduled breadth-first traversal | `cold-scan-index` | 308.7 | 297.0 | -4.8% | ✅ accepted |
+| 014 | What the breadth-first default costs, on the shipped scheduler | `cold-scan-producer` | 489.4 | — | — | 📏 baseline |
+| 016 | Move cold-scan producer paths instead of cloning | `cold-scan-index` | 336.0 | 339.9 | -0.4% | ❌ rejected |
+| 017 | Pre-create dormant workers for adaptive scan depth | `cold-scan-producer` | 494.2 | 500.7 | +2.0% | ❌ rejected |
+| 023 | Cumulative effect through adaptive scanning and macOS bulk metadata | `cold-scan-index` | 625.2 | 295.5 | -53.5% | ✅ accepted |
 
 ### cargo-registry-src (11,142 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
