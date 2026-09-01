@@ -10,8 +10,8 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 use fdu_core::{
-    AppliedDelta, ApplyOutcome, ApplyStats, Attrs, Clock, Commit, EffectiveChange, EntryKind,
-    ExtTally, Freshness, Impact, ImpactDomain, Index, IndexState, InvalidateReason, Observation,
+    ApplyOutcome, ApplyStats, Attrs, Clock, Commit, EffectiveChange, EntryKind, ExtTally,
+    Freshness, Impact, ImpactDomain, Index, IndexState, InvalidateReason, Observation,
     ObservationOp, Op, PathExpectation, PathState, RollUp, StateTransition,
 };
 
@@ -240,7 +240,7 @@ impl Model {
             }
         }
         if changes.is_empty() && transitions.is_empty() {
-            return ApplyOutcome { stats, commit: None, applied: None };
+            return ApplyOutcome { stats, commit: None };
         }
         self.clock = self.clock.checked_next().expect("model clock");
         let commit = Commit {
@@ -251,8 +251,7 @@ impl Model {
             work: model_work(observed, stats),
         };
         self.retain(commit.clone());
-        let applied = model_applied_delta(&commit);
-        ApplyOutcome { stats, commit: Some(commit), applied }
+        ApplyOutcome { stats, commit: Some(commit) }
     }
 
     fn upsert(
@@ -516,11 +515,10 @@ impl Model {
         self.journal.push_back(commit);
     }
 
-    fn since(&self, clock: Clock) -> (Vec<Commit>, Vec<AppliedDelta>, bool) {
+    fn since(&self, clock: Clock) -> (Vec<Commit>, bool) {
         let commits: Vec<Commit> =
             self.journal.iter().filter(|commit| commit.clock > clock).cloned().collect();
-        let deltas = commits.iter().filter_map(model_applied_delta).collect();
-        (commits, deltas, clock < self.journal_floor)
+        (commits, clock < self.journal_floor)
     }
 
     fn take_pending_invalidations(&mut self) -> Vec<(PathBuf, InvalidateReason)> {
@@ -533,27 +531,6 @@ fn model_commit_cost(commit: &Commit) -> usize {
         + commit.state.len()
         + commit.impact.dirty_paths.len()
         + usize::from(commit.impact.all_dirty)
-}
-
-fn model_applied_delta(commit: &Commit) -> Option<AppliedDelta> {
-    let ops = commit
-        .changes
-        .iter()
-        .filter_map(|change| match change {
-            EffectiveChange::Inserted { path, kind, attrs } => {
-                Some(Op::Upsert { path: path.clone(), kind: *kind, attrs: *attrs })
-            }
-            EffectiveChange::Updated { path, kind, current, .. } => {
-                Some(Op::Upsert { path: path.clone(), kind: *kind, attrs: *current })
-            }
-            EffectiveChange::Removed { path, .. } => Some(Op::Remove { path: path.clone() }),
-            EffectiveChange::Invalidated { path, reason } => {
-                Some(Op::InvalidateSubtree { path: path.clone(), reason: *reason })
-            }
-            EffectiveChange::ControlUpdated { .. } | EffectiveChange::Reclassified { .. } => None,
-        })
-        .collect::<Vec<_>>();
-    (!ops.is_empty()).then_some(AppliedDelta { clock: commit.clock, ops })
 }
 
 fn is_observation_gap(reason: InvalidateReason) -> bool {
@@ -767,9 +744,8 @@ fn assert_equivalent(index: &mut Index, model: &mut Model, seed: u64, trace: &[S
     );
 
     let actual_since = index.since(Clock::ZERO);
-    let (model_commits, model_deltas, model_truncated) = model.since(Clock::ZERO);
+    let (model_commits, model_truncated) = model.since(Clock::ZERO);
     assert_eq!(actual_since.commits, model_commits, "commit journal mismatch\n{}", context());
-    assert_eq!(actual_since.deltas, model_deltas, "journal mismatch\n{}", context());
     assert_eq!(actual_since.truncated, model_truncated, "journal floor mismatch\n{}", context());
     assert_eq!(
         index.take_pending_invalidations(),
@@ -1047,10 +1023,9 @@ fn reconciliation_state_only_commits_match_the_independent_model() {
 
     assert!(report.is_complete());
     let actual = index.since(before);
-    let (expected_commits, expected_deltas, expected_truncated) = model.since(Clock::ZERO);
+    let (expected_commits, expected_truncated) = model.since(Clock::ZERO);
     assert_eq!(observed_commits, expected_commits);
     assert_eq!(actual.commits, expected_commits);
-    assert_eq!(actual.deltas, expected_deltas);
     assert_eq!(actual.truncated, expected_truncated);
 }
 
@@ -1097,7 +1072,7 @@ fn delayed_observations_reject_present_and_absent_aba() {
 
     assert_eq!(actual, expected);
     assert_eq!(actual.stats.stale, 2);
-    assert!(actual.applied().is_none());
+    assert!(actual.commit.is_none());
     assert_equivalent(&mut index, &mut model, 0xaba, &["named ABA regression".into()]);
 }
 
@@ -1207,12 +1182,11 @@ fn bounded_journal_reports_loss_at_the_same_clock_as_the_model() {
     }
 
     let actual = index.since(Clock::ZERO);
-    let (expected_commits, expected_deltas, expected_truncated) = model.since(Clock::ZERO);
+    let (expected_commits, expected_truncated) = model.since(Clock::ZERO);
     assert_eq!(actual.truncated, expected_truncated);
     assert_eq!(actual.commits, expected_commits);
-    assert_eq!(actual.deltas, expected_deltas);
     assert!(actual.truncated);
-    assert!(!actual.deltas.is_empty());
+    assert!(!actual.commits.is_empty());
 }
 
 #[cfg(unix)]

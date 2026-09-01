@@ -39,11 +39,11 @@ use crate::content::{
     ContentRollUp,
 };
 use crate::engine_contract::{
-    AppliedDelta, Attrs, Clock, Commit, Coverage, CoverageReason, DiscoveryProgress,
-    EffectiveChange, EntryIdentity, EntryKind, Expectation, Freshness, Impact, ImpactDomain,
-    IndexState, InvalidateReason, Issue, LifecyclePhase, MAX_DIRTY_PATHS, MAX_RETAINED_ISSUES,
-    Observation, ObservationOp, Op, PathExpectation, PathState, Provenance, ScanScope, Source,
-    StateTransition, Status, Work,
+    Attrs, Clock, Commit, Coverage, CoverageReason, DiscoveryProgress, EffectiveChange,
+    EntryIdentity, EntryKind, Expectation, Freshness, Impact, ImpactDomain, IndexState,
+    InvalidateReason, Issue, LifecyclePhase, MAX_DIRTY_PATHS, MAX_RETAINED_ISSUES, Observation,
+    ObservationOp, Op, PathExpectation, PathState, Provenance, ScanScope, Source, StateTransition,
+    Status, Work,
 };
 
 /// Verification intervals kept before the oldest are dropped.
@@ -518,10 +518,6 @@ fn retained_parent(arena: &[Slot], id: EntryId) -> Option<EntryId> {
 pub struct Since {
     /// Exact commits applied strictly after the requested clock, oldest first.
     pub commits: Vec<Commit>,
-    /// Deltas applied strictly after the requested clock, oldest first.
-    ///
-    /// This is derived from `commits` for compatibility and excludes state-only commits.
-    pub deltas: Vec<AppliedDelta>,
     /// Terminal clock captured under the same read boundary as `commits`.
     pub clock: Clock,
     /// Complete public state at `clock`.
@@ -575,8 +571,6 @@ pub struct ApplyOutcome {
     pub stats: ApplyStats,
     /// Present only when at least one exact fact or state transition was committed.
     pub commit: Option<Commit>,
-    /// Legacy entry-operation projection derived from `commit`.
-    pub applied: Option<AppliedDelta>,
 }
 
 /// One direct child captured from a shared index at a single read boundary.
@@ -611,16 +605,7 @@ impl std::ops::Deref for ApplyOutcome {
 
 impl ApplyOutcome {
     fn from_commit(stats: ApplyStats, commit: Option<Commit>) -> Self {
-        let applied = commit.as_ref().and_then(Commit::applied_delta);
-        Self { stats, commit, applied }
-    }
-
-    /// Borrow the legacy entry-operation projection derived from the exact commit.
-    ///
-    /// Existing callers may continue to read the public [`Self::applied`] field. This
-    /// method is useful when code wants to make the derivation explicit.
-    pub fn applied(&self) -> Option<&AppliedDelta> {
-        self.applied.as_ref()
+        Self { stats, commit }
     }
 }
 
@@ -1021,7 +1006,7 @@ impl IndexHandle {
         Ok(self.read_index()?.expectation(path))
     }
 
-    /// Owned exact commits and legacy deltas after `clock`.
+    /// Owned exact commits after `clock`.
     pub fn since(&self, clock: Clock) -> crate::Result<Since> {
         Ok(self.read_index()?.since(clock))
     }
@@ -2017,12 +2002,11 @@ impl Index {
         PathExpectation::new(self.path_state(path), self.entry_identity(path), None)
     }
 
-    /// Exact commits and legacy deltas applied since `clock`, oldest first.
+    /// Exact commits applied since `clock`, oldest first.
     pub fn since(&self, clock: Clock) -> Since {
         let commits: Vec<Commit> =
             self.journal.iter().filter(|commit| commit.clock > clock).cloned().collect();
         Since {
-            deltas: commits.iter().filter_map(Commit::applied_delta).collect(),
             commits,
             clock: self.clock,
             state: self.state,
@@ -3056,8 +3040,7 @@ impl Index {
     ///
     /// A completed reconciliation records one clocked [`StateTransition::Verified`]
     /// for its subtree, including when every entry was unchanged. Consumers of exact
-    /// commits therefore observe the same provenance movement as readers of this view;
-    /// the legacy [`AppliedDelta`] projection intentionally remains entry-only.
+    /// commits therefore observe the same provenance movement as readers of this view.
     pub fn provenance(&self, path: &Path) -> Option<Provenance> {
         let id = self.lookup(path)?;
         Some(self.provenance_of(id))
@@ -4571,7 +4554,7 @@ mod tests {
 
         assert_eq!(outcome.inserted, 1);
         assert_eq!(retained_total.files, 3);
-        assert!(!retained_history.deltas.is_empty());
+        assert!(!retained_history.commits.is_empty());
         assert_eq!(retained_children.expect("src directory").len(), 2);
         assert!(retained_snapshot.lookup(Path::new("concurrent.txt")).is_none());
         assert!(handle.kind(Path::new("concurrent.txt")).expect("query").is_some());
@@ -4644,12 +4627,8 @@ mod tests {
 
         let mut committed_clocks: Vec<u64> = Vec::with_capacity(writer_count);
         for (path, outcome) in result_rx {
-            let applied: AppliedDelta = outcome
-                .expect("writer apply")
-                .applied()
-                .cloned()
-                .expect("unique upsert must commit");
-            committed_clocks.push(applied.clock.0);
+            let commit = outcome.expect("writer apply").commit.expect("unique upsert must commit");
+            committed_clocks.push(commit.clock.0);
             assert!(handle.kind(Path::new(&path)).expect("query committed path").is_some());
         }
         committed_clocks.sort_unstable();
@@ -4662,9 +4641,9 @@ mod tests {
         let journal_clocks: Vec<u64> = handle
             .since(Clock::ZERO)
             .expect("journal")
-            .deltas
+            .commits
             .iter()
-            .map(|delta| delta.clock.0)
+            .map(|commit| commit.clock.0)
             .collect();
         assert_eq!(journal_clocks, expected_clocks);
     }
@@ -4819,9 +4798,9 @@ mod tests {
             .expect("a rejected stale observation needs no new clock");
 
         assert_eq!(no_op.unchanged, 1);
-        assert!(no_op.applied().is_none());
+        assert!(no_op.commit.is_none());
         assert_eq!(stale.stale, 1);
-        assert!(stale.applied().is_none());
+        assert!(stale.commit.is_none());
         assert_eq!(index.clock(), Clock(u64::MAX));
         assert_eq!(index.len(), before_len);
         assert_eq!(index.total(), before_total);
@@ -4851,7 +4830,7 @@ mod tests {
         let outcome = index.apply_ok(&delayed);
 
         assert_eq!(outcome.stats.stale, 1);
-        assert!(outcome.applied().is_none());
+        assert!(outcome.commit.is_none());
         assert_eq!(index.attrs(Path::new("file.txt")).expect("file").size, 30);
     }
 
@@ -4873,7 +4852,7 @@ mod tests {
         let outcome = index.apply_ok(&delayed);
 
         assert_eq!(outcome.stats.stale, 1);
-        assert!(outcome.applied().is_none());
+        assert!(outcome.commit.is_none());
         assert_eq!(index.kind(Path::new("parent")), Some(EntryKind::File));
         assert!(index.lookup(Path::new("parent/child.txt")).is_none());
     }
@@ -4905,7 +4884,7 @@ mod tests {
         let outcome = index.apply_ok(&delayed);
 
         assert_eq!(outcome.stats.stale, 1);
-        assert!(outcome.applied().is_none());
+        assert!(outcome.commit.is_none());
         assert_eq!(index.attrs(Path::new("file.txt")).expect("file").size, 10);
     }
 
@@ -4927,7 +4906,7 @@ mod tests {
         let outcome = index.apply_ok(&delayed);
 
         assert_eq!(outcome.stats.stale, 1);
-        assert!(outcome.applied().is_none());
+        assert!(outcome.commit.is_none());
         assert!(index.lookup(Path::new("file.txt")).is_none());
     }
 
@@ -5051,13 +5030,10 @@ mod tests {
             Op::Upsert { path: repeated, kind: EntryKind::File, attrs: file_attrs(20, 4) },
         ]));
         let commit = outcome.commit.as_ref().expect("one exact commit");
-        let applied = outcome.applied().expect("one compatibility delta");
 
         for (actual, canonical) in [
             (commit.changes[1].path(), dotted_canonical.as_path()),
             (commit.changes[3].path(), repeated_canonical.as_path()),
-            (applied.ops[1].path(), dotted_canonical.as_path()),
-            (applied.ops[3].path(), repeated_canonical.as_path()),
         ] {
             assert_eq!(
                 actual.as_os_str().as_encoded_bytes(),
@@ -5305,11 +5281,11 @@ mod tests {
         assert_eq!(stats.updated, 0);
         assert_eq!(index.total(), before);
         assert_eq!(index.clock(), mark);
-        assert!(index.since(mark).deltas.is_empty());
+        assert!(index.since(mark).commits.is_empty());
     }
 
     #[test]
-    fn applied_delta_contains_only_effective_mutations() {
+    fn commit_contains_only_effective_mutations() {
         let mut index = index_with_sample_tree();
         let outcome = index.apply_ok(&Observation::new(vec![
             upsert("src/main.rs", EntryKind::File, file_attrs(100, 10)),
@@ -5318,9 +5294,9 @@ mod tests {
         ]));
 
         assert_eq!(outcome.stats.unchanged, 2);
-        let applied = outcome.applied().expect("one effective insert");
-        assert_eq!(applied.len(), 1);
-        assert_eq!(applied.ops[0].path(), Path::new("new.txt"));
+        let commit = outcome.commit.expect("one effective insert");
+        assert_eq!(commit.changes.len(), 1);
+        assert_eq!(commit.changes[0].path(), Path::new("new.txt"));
     }
 
     #[test]
@@ -5360,7 +5336,6 @@ mod tests {
         assert_eq!(counts.impact_ancestor_visits, 0);
         assert_eq!(counts.impact_retained_dirty_paths, 0);
         assert_eq!(counts.impact_all_dirty, 0);
-        assert_eq!(counts.applied_delta_materializations, 0);
         assert_eq!(counts.journal_cloned_commits, 0);
         assert_eq!(counts.journal_retained_commits, 0);
 
@@ -5373,7 +5348,6 @@ mod tests {
         assert_eq!(counts.public_batches, 1);
         assert_eq!(counts.public_accepted_ops, 3);
         assert_eq!(counts.effect_paths, 3);
-        assert_eq!(counts.applied_delta_materializations, 1);
         assert_eq!(counts.journal_cloned_commits, 1);
         assert_eq!(counts.journal_retained_commits, 1);
         assert_eq!(counts.journal_oversized_commits, 0);
@@ -5881,7 +5855,7 @@ mod tests {
     }
 
     #[test]
-    fn since_returns_deltas_after_a_clock() {
+    fn since_returns_commits_after_a_clock() {
         let mut index = Index::new("/root");
         index.apply_ok(&Observation::new(vec![upsert("a.txt", EntryKind::File, file_attrs(1, 1))]));
         let mark = index.clock();
@@ -5889,10 +5863,10 @@ mod tests {
 
         let since = index.since(mark);
         assert!(!since.truncated);
-        assert_eq!(since.deltas.len(), 1);
-        assert_eq!(since.deltas[0].ops[0].path(), Path::new("b.txt"));
+        assert_eq!(since.commits.len(), 1);
+        assert_eq!(since.commits[0].changes[0].path(), Path::new("b.txt"));
 
-        assert_eq!(index.since(index.clock()).deltas.len(), 0);
+        assert_eq!(index.since(index.clock()).commits.len(), 0);
     }
 
     #[test]
@@ -5904,10 +5878,10 @@ mod tests {
             upsert("c.txt", EntryKind::File, file_attrs(3, 3)),
         ]));
 
-        assert_eq!(outcome.applied().as_ref().expect("committed").len(), 3);
+        assert_eq!(outcome.commit.as_ref().expect("committed").changes.len(), 3);
         let since = index.since(Clock::ZERO);
         assert!(since.truncated);
-        assert!(since.deltas.is_empty());
+        assert!(since.commits.is_empty());
     }
 
     #[test]
@@ -5924,9 +5898,9 @@ mod tests {
 
         let since = index.since(Clock::ZERO);
         assert!(since.truncated);
-        assert_eq!(since.deltas.len(), 1);
-        assert_eq!(since.deltas[0].len(), 2);
-        assert_eq!(since.deltas[0].ops[0].path(), Path::new("c.txt"));
+        assert_eq!(since.commits.len(), 1);
+        assert_eq!(since.commits[0].changes.len(), 2);
+        assert_eq!(since.commits[0].changes[0].path(), Path::new("c.txt"));
     }
 
     #[test]

@@ -84,8 +84,6 @@ pub struct Counts {
     pub impact_retained_dirty_paths: u64,
     /// Impact derivations that crossed the dirty-path bound.
     pub impact_all_dirty: u64,
-    /// Legacy `AppliedDelta` values materialized from exact commits.
-    pub applied_delta_materializations: u64,
     /// Exact commits retained in the bounded journal.
     pub journal_retained_commits: u64,
     /// Exact commits cloned for attempted journal retention.
@@ -147,7 +145,6 @@ impl Counts {
         impact_ancestor_visits: 0,
         impact_retained_dirty_paths: 0,
         impact_all_dirty: 0,
-        applied_delta_materializations: 0,
         journal_retained_commits: 0,
         journal_cloned_commits: 0,
         journal_oversized_commits: 0,
@@ -197,11 +194,6 @@ impl Counts {
                 self.impact_retained_dirty_paths,
             ),
             ("mutation consequences", "impact all-dirty transitions", self.impact_all_dirty),
-            (
-                "mutation consequences",
-                "AppliedDelta materializations",
-                self.applied_delta_materializations,
-            ),
             ("mutation journal", "commits retained", self.journal_retained_commits),
             ("mutation journal", "commits cloned", self.journal_cloned_commits),
             ("mutation journal", "oversized commits", self.journal_oversized_commits),
@@ -264,9 +256,6 @@ impl Counts {
         self.impact_retained_dirty_paths =
             self.impact_retained_dirty_paths.saturating_add(other.impact_retained_dirty_paths);
         self.impact_all_dirty = self.impact_all_dirty.saturating_add(other.impact_all_dirty);
-        self.applied_delta_materializations = self
-            .applied_delta_materializations
-            .saturating_add(other.applied_delta_materializations);
         self.journal_retained_commits =
             self.journal_retained_commits.saturating_add(other.journal_retained_commits);
         self.journal_cloned_commits =
@@ -327,7 +316,6 @@ struct GlobalCounts {
     impact_ancestor_visits: AtomicU64,
     impact_retained_dirty_paths: AtomicU64,
     impact_all_dirty: AtomicU64,
-    applied_delta_materializations: AtomicU64,
     journal_retained_commits: AtomicU64,
     journal_cloned_commits: AtomicU64,
     journal_oversized_commits: AtomicU64,
@@ -372,7 +360,6 @@ impl GlobalCounts {
             impact_ancestor_visits: AtomicU64::new(0),
             impact_retained_dirty_paths: AtomicU64::new(0),
             impact_all_dirty: AtomicU64::new(0),
-            applied_delta_materializations: AtomicU64::new(0),
             journal_retained_commits: AtomicU64::new(0),
             journal_cloned_commits: AtomicU64::new(0),
             journal_oversized_commits: AtomicU64::new(0),
@@ -419,10 +406,6 @@ impl GlobalCounts {
             counts.impact_retained_dirty_paths,
         );
         atomic_saturating_add(&self.impact_all_dirty, counts.impact_all_dirty);
-        atomic_saturating_add(
-            &self.applied_delta_materializations,
-            counts.applied_delta_materializations,
-        );
         atomic_saturating_add(&self.journal_retained_commits, counts.journal_retained_commits);
         atomic_saturating_add(&self.journal_cloned_commits, counts.journal_cloned_commits);
         atomic_saturating_add(&self.journal_oversized_commits, counts.journal_oversized_commits);
@@ -475,9 +458,6 @@ impl GlobalCounts {
             impact_ancestor_visits: self.impact_ancestor_visits.load(Ordering::Relaxed),
             impact_retained_dirty_paths: self.impact_retained_dirty_paths.load(Ordering::Relaxed),
             impact_all_dirty: self.impact_all_dirty.load(Ordering::Relaxed),
-            applied_delta_materializations: self
-                .applied_delta_materializations
-                .load(Ordering::Relaxed),
             journal_retained_commits: self.journal_retained_commits.load(Ordering::Relaxed),
             journal_cloned_commits: self.journal_cloned_commits.load(Ordering::Relaxed),
             journal_oversized_commits: self.journal_oversized_commits.load(Ordering::Relaxed),
@@ -521,7 +501,6 @@ impl GlobalCounts {
         self.impact_ancestor_visits.store(0, Ordering::Relaxed);
         self.impact_retained_dirty_paths.store(0, Ordering::Relaxed);
         self.impact_all_dirty.store(0, Ordering::Relaxed);
-        self.applied_delta_materializations.store(0, Ordering::Relaxed);
         self.journal_retained_commits.store(0, Ordering::Relaxed);
         self.journal_cloned_commits.store(0, Ordering::Relaxed);
         self.journal_oversized_commits.store(0, Ordering::Relaxed);
