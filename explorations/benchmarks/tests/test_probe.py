@@ -18,6 +18,64 @@ from benchmarks.schema import load_scenario_set
 REPOSITORY = Path(__file__).resolve().parents[3]
 SCENARIOS = REPOSITORY / "explorations" / "benchmarks" / "scenarios.json"
 
+# Incremental component-allocation budgets for the fixed 128 -> 256 entry fixture below.
+# The allocation count budgets deliberately leave less than one event per added entry:
+# restoring one path clone per entry must fail even when fixed process and tree costs do
+# not move. Requested-byte and reallocation limits keep less obvious growth visible too.
+_ALLOCATION_SLOPE_BUDGETS = {
+    "scan-index": {
+        "allocs": 9.5,
+        "reallocs": 0.05,
+        "bytes_allocated": 1_500.0,
+    },
+    "opened-discovery": {
+        "allocs": 23.75,
+        "reallocs": 0.25,
+        "bytes_allocated": 2_500.0,
+    },
+}
+
+_DETACHED_STREAMING_COUNTERS = (
+    "ancestry_overlay_inserts",
+    "effect_paths",
+    "effect_path_bytes",
+    "impact_candidates",
+    "impact_ancestor_visits",
+    "impact_retained_dirty_paths",
+    "impact_all_dirty",
+    "journal_retained_commits",
+    "journal_cloned_commits",
+    "journal_oversized_commits",
+    "journal_dropped_commits",
+)
+
+
+def _assert_allocation_slope(
+    mode: str,
+    smaller: Dict[str, int],
+    larger: Dict[str, int],
+    added_entries: int,
+) -> None:
+    """Keep per-entry growth below the recorded ownership budget."""
+    for metric, per_entry_budget in _ALLOCATION_SLOPE_BUDGETS[mode].items():
+        growth = larger[metric] - smaller[metric]
+        allowed = per_entry_budget * added_entries
+        if growth > allowed:
+            raise AssertionError(
+                f"{mode} {metric} grew by {growth} for {added_entries} entries; "
+                f"budget is {allowed:.2f} ({per_entry_budget:.2f} per entry)"
+            )
+
+
+def _assert_detached_streaming_work_is_zero(counters: Dict[str, int]) -> None:
+    restored = {
+        name: counters[name]
+        for name in _DETACHED_STREAMING_COUNTERS
+        if counters[name] != 0
+    }
+    if restored:
+        raise AssertionError(f"detached construction performed streaming work: {restored}")
+
 
 def _probe_path() -> Path:
     target = Path(os.environ.get("CARGO_TARGET_DIR", REPOSITORY / "target"))
@@ -234,6 +292,68 @@ class FduProbeTests(unittest.TestCase):
         self.assertEqual(counters["journal_retained_commits"], 1)
         self.assertGreater(counters["allocs"], 0)
         self.assertGreater(counters["bytes_allocated"], 0)
+
+    def test_streaming_allocation_slopes_and_detached_zero_work_are_bounded(self) -> None:
+        measurements: Dict[str, Dict[int, Dict[str, int]]] = {
+            mode: {} for mode in _ALLOCATION_SLOPE_BUDGETS
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            base = Path(temporary_directory)
+            for entries in (128, 256):
+                root = base / f"tree-{entries}"
+                root.mkdir()
+                for index in range(entries):
+                    (root / f"entry-{index:04}.dat").write_bytes(b"x")
+
+                for mode in _ALLOCATION_SLOPE_BUDGETS:
+                    environment = {**os.environ, "FDU_COUNTERS": "1"}
+                    completed = subprocess.run(
+                        [
+                            str(self.probe),
+                            mode,
+                            "--root",
+                            str(root),
+                            "--threads",
+                            "1",
+                            "--batch-size",
+                            "64",
+                        ],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                        env=environment,
+                    )
+                    counters = json.loads(completed.stdout)["summary"]["counters"]
+                    measurements[mode][entries] = counters
+                    if mode == "scan-index":
+                        _assert_detached_streaming_work_is_zero(counters)
+
+        for mode, by_size in measurements.items():
+            _assert_allocation_slope(mode, by_size[128], by_size[256], 128)
+
+    def test_allocation_slope_guard_rejects_one_restored_allocation_per_entry(self) -> None:
+        entries = 128
+        for mode, budgets in _ALLOCATION_SLOPE_BUDGETS.items():
+            smaller = {metric: 10_000 for metric in budgets}
+            at_budget = {
+                metric: smaller[metric] + int(per_entry * entries)
+                for metric, per_entry in budgets.items()
+            }
+            _assert_allocation_slope(mode, smaller, at_budget, entries)
+
+            restored = dict(at_budget)
+            restored["allocs"] += entries
+            with self.assertRaisesRegex(AssertionError, rf"{mode} allocs grew"):
+                _assert_allocation_slope(mode, smaller, restored, entries)
+
+    def test_detached_zero_work_guard_rejects_one_restored_effect_path(self) -> None:
+        counters = {name: 0 for name in _DETACHED_STREAMING_COUNTERS}
+        _assert_detached_streaming_work_is_zero(counters)
+
+        counters["effect_paths"] = 1
+        with self.assertRaisesRegex(AssertionError, "effect_paths"):
+            _assert_detached_streaming_work_is_zero(counters)
 
     def _oracle_forensics(
         self,
