@@ -5,7 +5,7 @@ title: "H86: consumer representation as one structural experiment"
 kind: epic
 status: in_progress
 priority: 1
-version: 17
+version: 18
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 delegate: codex@spud10.local
 labels:
@@ -27,11 +27,11 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-08-15T02:41:38.411Z
-updated_at: 2026-09-01T16:55:01.355Z
+updated_at: 2026-09-01T18:30:39.421Z
 started_at: 2026-09-01T15:11:35.154Z
 ---
 One representation decision currently wearing seven hypothesis numbers: worker-local arena entries (fixed-width records), single name arena, children as sorted arena slices, batch-shaped observations carrying parent EntryId, and a one-pass bottom-up roll-up for the cold bootstrap. Measured ceiling on the 450k Linux rig: arena_spike.rs retains an index-shaped result in ~199ms / <=23MiB vs fdu tree view ~849ms / ~279MiB (dut 179ms), tallies exact. Gate with the differential harness (assert_same_image at every worker count), exp-022 precedent for one large structural verdict. Absorbs/supersedes the piecemeal forms in fdu-2ubt, fdu-prph (H19-22), fdu-weey (H60), fdu-fnfc/fdu-uv0s; composes with H85 (arenas make frees thread-local). Pre-registered signal: cold-scan-index wall down >=50% on the 450k Linux subject; peak RSS down >=60%; engine digests byte-identical at 1..N workers.
 
 ## Notes
 
-2026-09-01 disk pressure is resolved and validation resumed. The pipelined directory-group builder now supports controls by carrying the verified fixed-path control operation with each complete directory and installing it before siblings become visible. A controls-rich 12-pair uncontrolled exploratory screen versus c6380f7 improved cold-scan-index wall 33.55% (95% interval -36.41% to -33.14%), component 47.43%, allocations 6,024,294 to 987,134, reallocations 601,749 to 104,398, allocated bytes 491,242,604 to 133,101,059, and peak RSS 25.88%. Scanner projection/preparation/reduction counters are zero on the private route and the exact digest matches. Differential worker counts 1..4, controls limits, non-file controls, first public mutation, 92 all-feature scanner tests, and 83 no-default-feature scanner tests pass. The work also fixed a pre-existing specialized-baseline bug that rejected the documented ControlRemove for a non-file .gitignore. A fresh historical run puts cold construction at component parity (331.2 ms candidate vs 332.0 ms pre-rewrite), but default-tree remains about 8% slower by noisy paired median and RSS about 19% higher. Full compact retained layout, promotion, default-tree gate, quiet Darwin verdict, and Linux floor remain open.
+2026-09-01 checkpoint: the pipelined directory-group builder now handles controls and reaches practical historical cold-construction parity. Controls-rich wall improved 33.55% (95% interval -36.41% to -33.14%), component 47.43%, allocations 6.02M to 0.99M, allocated bytes 491 MB to 133 MB, and peak RSS 25.88%, with exact digests and zero scanner preparation/projection/reduction. The generic shared orchestration is retained after exp-099 measured wall +0.16% (interval -1.46% to +0.81%); exp-098 records the rejected dynamic form. Negative-tested allocation and zero-work guards pass, as do full/capability-disabled suites, clippy, docs, MSRV, and cross-lint. A valid historical run gives cold wall +0.93% (interval -5.63% to +3.83%) and component -0.39% (interval -3.02% to +4.04%); peak RSS remains about 17-22% higher. Quiet-host strict noninferiority, retained-layout/RSS attribution, promotion, Linux evidence, and clean stacked-PR CI remain open.
