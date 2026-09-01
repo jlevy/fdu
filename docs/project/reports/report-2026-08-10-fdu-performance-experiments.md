@@ -65,8 +65,8 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 8 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 5 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 
 ## Every experiment, including the failures
@@ -147,6 +147,9 @@ dead end.
 | 068 | [Flush the rendered report before joining the snapshot writer](#exp068--flush-the-rendered-report-before-joining-the-snapshot-writer) | H101 | `default-tree` | +1.2% | ✅ accepted |
 | 069 | [Order the content file map by path bytes instead of components](#exp069--order-the-content-file-map-by-path-bytes-instead-of-components) | H102 | `content-cache-hit` | -31.0% | ✅ accepted |
 | 070 | [Validate the separator fixes against the result they landed on](#exp070--validate-the-separator-fixes-against-the-result-they-landed-on) | — | `content-cache-hit` | -1.3% | ✅ accepted |
+| 071 | [PR #51 halves its base regression but does not restore main parity](#exp071--pr-51-halves-its-base-regression-but-does-not-restore-main-parity) | — | `cold-scan-index` | -49.5% | ✅ accepted |
+| 072 | [Attribute the PR #51 residual to path-keyed ancestry preflight](#exp072--attribute-the-pr-51-residual-to-pathkeyed-ancestry-preflight) | — | `cold-scan-index` | -66.7% | ⛔ blocked |
+| 073 | [PR #51 remains above the pre-rewrite whole-scan control](#exp073--pr-51-remains-above-the-prerewrite-wholescan-control) | — | `cold-scan-index` | +144.5% | ⛔ blocked |
 
 ## The experiments
 
@@ -2540,6 +2543,100 @@ the run bounds the fixes below the margin rather than showing a cost.
 Full record:
 [`exp-070-validate-the-separator-fixes-against-the-result-they-landed-.md`](../experiments/exp-070-validate-the-separator-fixes-against-the-result-they-landed-.md)
 
+### exp-071 — PR #51 halves its base regression but does not restore main parity
+
+✅ accepted · 2026-09-01 · no hypothesis id · commit `e8f1bed`
+
+Control: PR #51 base at 954a959
+
+Candidate: PR #51 head at e8f1bed
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1698.6 | 847.7 | -49.55% | [-51.44%, -43.36%] |
+| component (ms) | 1477.8 | 628.0 | -56.89% | [-59.10%, -50.73%] |
+| cpu (ms) | 2269.8 | 1419.2 | -37.05% | [-38.18%, -36.82%] |
+| user (ms) | 1676.8 | 841.8 | -49.61% | [-50.63%, -47.28%] |
+| system (ms) | 593.0 | 576.4 | -3.04% (n.s.) | [-9.66%, +1.28%] |
+| peak rss (MiB) | 103.0 | 101.4 | -1.30% (n.s.) | [-2.29%, +0.38%] |
+
+Cost to carry: 304 lines; no new dependencies; new failure mode: The uncontrolled host
+regime prevents a final parity claim; repeat on a quiet host for acceptance..
+
+Partial pipeline simplification; no new dependency or unsafe code.
+
+**Accepted:** The exact-result candidate removes about half of the base cost, but
+remains above the pre-rewrite control; accept the mechanisms without closing the parity
+blocker.
+
+Full record:
+[`exp-071-pr-51-halves-its-base-regression-but-does-not-restore-main-p.md`](../experiments/exp-071-pr-51-halves-its-base-regression-but-does-not-restore-main-p.md)
+
+### exp-072 — Attribute the PR #51 residual to path-keyed ancestry preflight
+
+⛔ blocked · 2026-09-01 · no hypothesis id · commit `e8f1bed`
+
+Control: PR #51 without detached publication
+
+Candidate: diagnostic PR #51 without detached publication or ancestry overlay
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 706.8 | 384.4 | -45.47% | [-48.29%, -39.43%] |
+| component (ms) | 480.5 | 160.5 | -66.65% | [-68.85%, -61.36%] |
+| cpu (ms) | 1283.4 | 949.9 | -25.30% | [-29.54%, -21.13%] |
+| user (ms) | 691.6 | 374.1 | -45.94% | [-47.01%, -42.91%] |
+| system (ms) | 579.9 | 579.1 | +0.91% (n.s.) | [-14.92%, +11.08%] |
+| peak rss (MiB) | 97.6 | 83.2 | -14.21% | [-16.10%, -12.71%] |
+
+Cost to carry: 0 lines; no new dependencies; new failure mode: The candidate omits
+ancestry validation and is evidence about cost only; applying it directly would weaken
+atomic correctness..
+
+Disposable attribution variants only; the plan requires one private resolved-parent
+proof and no second reducer.
+
+**Blocked:** Removing the path-keyed ancestry overlay closes most of the remaining
+engine gap, but the diagnostic candidate cannot ship until scanner preparation supplies
+an equivalent atomic proof.
+
+Full record:
+[`exp-072-attribute-the-pr-51-residual-to-path-keyed-ancestry-prefligh.md`](../experiments/exp-072-attribute-the-pr-51-residual-to-path-keyed-ancestry-prefligh.md)
+
+### exp-073 — PR #51 remains above the pre-rewrite whole-scan control
+
+⛔ blocked · 2026-09-01 · no hypothesis id · commit `e8f1bed`
+
+Control: pre-rewrite main at b75bf85
+
+Candidate: PR #51 head at e8f1bed
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 349.9 | 847.7 | +144.46% (regression) | [+129.73%, +165.69%] |
+| component (ms) | 132.4 | 628.0 | +386.48% (regression) | [+324.22%, +414.44%] |
+| cpu (ms) | 911.8 | 1419.2 | +55.50% (regression) | [+49.36%, +59.05%] |
+| user (ms) | 327.6 | 841.8 | +156.48% (regression) | [+150.95%, +165.65%] |
+| system (ms) | 580.6 | 576.4 | -1.80% (n.s.) | [-11.78%, +3.83%] |
+| peak rss (MiB) | 61.2 | 101.4 | +66.05% (regression) | [+57.98%, +67.43%] |
+
+Cost to carry: 0 lines; no new dependencies; new failure mode: The uncontrolled host
+regime prevents a final parity claim; repeat the finished design on a quiet host..
+
+Measurement only; implementation is owned by the linked parity plan.
+
+**Blocked:** The exact-result PR head remains about 2.4 times the control wall time and
+4.7 times its engine component, so the one-shot parity blocker remains open.
+
+Full record:
+[`exp-073-pr-51-remains-above-the-pre-rewrite-whole-scan-control.md`](../experiments/exp-073-pr-51-remains-above-the-pre-rewrite-whole-scan-control.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -2633,6 +2730,14 @@ Baselines show one value because they measure a state rather than a change.
 | 051 | Memoize the parent resolved for the previous upsert | `cold-scan-index` | 2,022.1 | 1,852.9 | -7.3% | ✅ accepted |
 | 052 | Per-layer counters cost less than the measurement can see | `cold-scan-index` | 1,891.3 | 1,870.1 | +0.0% | ✅ accepted |
 | 053 | Move instrumentation to a runtime toggle and measure all three of its costs | `cold-scan-index` | 1,858.8 | 1,847.0 | -1.3% | ✅ accepted |
+
+### rustup-toolchains (119,368 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 071 | PR #51 halves its base regression but does not restore main parity | `cold-scan-index` | 1,698.6 | 847.7 | -49.5% | ✅ accepted |
+| 072 | Attribute the PR #51 residual to path-keyed ancestry preflight | `cold-scan-index` | 706.8 | 384.4 | -45.5% | ⛔ blocked |
+| 073 | PR #51 remains above the pre-rewrite whole-scan control | `cold-scan-index` | 349.9 | 847.7 | +144.5% | ⛔ blocked |
 
 ### rustup-toolchains (175,191 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 

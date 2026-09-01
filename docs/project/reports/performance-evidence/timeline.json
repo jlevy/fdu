@@ -21849,9 +21849,420 @@
    "subject": "dbd79ed9c898:60089:f7150a975da1",
    "title": "Validate the separator fixes against the result they landed on",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "PR #51 head at e8f1bed",
+   "change_pct": -49.545,
+   "commit": "e8f1bed",
+   "complexity": {
+    "lines_changed": 304,
+    "new_dependencies": [],
+    "new_failure_modes": [
+     "The uncontrolled host regime prevents a final parity claim; repeat on a quiet host for acceptance."
+    ],
+    "new_unsafe_blocks": 0,
+    "notes": "Partial pipeline simplification; no new dependency or unsafe code."
+   },
+   "control": "PR #51 base at 954a959",
+   "date": "2026-09-01",
+   "decision": "accepted",
+   "entries": 119368,
+   "family": "macOS:63a6945ccbaf",
+   "hypotheses": [],
+   "id": "exp-071",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "cold-scan-index",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 627993187.5,
+        "control": 1477819666.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -56.889,
+        "ci95_high_pct": -50.735,
+        "ci95_low_pct": -59.098,
+        "evidence": "improved",
+        "pairs": 6,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1419174000,
+        "control": 2269800000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -37.047,
+        "ci95_high_pct": -36.819,
+        "ci95_low_pct": -38.178,
+        "evidence": "improved",
+        "pairs": 6,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 106348544,
+        "control": 107962368
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -1.296,
+        "ci95_high_pct": 0.379,
+        "ci95_low_pct": -2.285,
+        "evidence": "unclear",
+        "pairs": 6,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 576405500,
+        "control": 593006000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -3.043,
+        "ci95_high_pct": 1.28,
+        "ci95_low_pct": -9.661,
+        "evidence": "unclear",
+        "pairs": 6,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 841823000,
+        "control": 1676795000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -49.61,
+        "ci95_high_pct": -47.277,
+        "ci95_low_pct": -50.627,
+        "evidence": "improved",
+        "pairs": 6,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 847697812.5,
+        "control": 1698578395.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -49.545,
+        "ci95_high_pct": -43.363,
+        "ci95_low_pct": -51.436,
+        "evidence": "improved",
+        "pairs": 6,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 7101.549933818109,
+      "control": 14229.763382983714
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 71,
+   "path": "exp-071-pr-51-halves-its-base-regression-but-does-not-restore-main-p.md",
+   "platform": "macOS",
+   "primary_job": "cold-scan-index",
+   "primary_metric": "wall_ns",
+   "reason": "The exact-result candidate removes about half of the base cost, but remains above the pre-rewrite control; accept the mechanisms without closing the parity blocker.",
+   "reference_tools": [],
+   "subject": "63a6945ccbaf:119368:594842ccb17c",
+   "title": "PR #51 halves its base regression but does not restore main parity",
+   "trials": 6
+  },
+  {
+   "anchored": false,
+   "candidate": "diagnostic PR #51 without detached publication or ancestry overlay",
+   "change_pct": -66.653,
+   "commit": "e8f1bed",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [
+     "The candidate omits ancestry validation and is evidence about cost only; applying it directly would weaken atomic correctness."
+    ],
+    "new_unsafe_blocks": 0,
+    "notes": "Disposable attribution variants only; the plan requires one private resolved-parent proof and no second reducer."
+   },
+   "control": "PR #51 without detached publication",
+   "date": "2026-09-01",
+   "decision": "blocked",
+   "entries": 119368,
+   "family": "macOS:63a6945ccbaf",
+   "hypotheses": [],
+   "id": "exp-072",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "cold-scan-index",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 160526604.5,
+        "control": 480484896
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -66.653,
+        "ci95_high_pct": -61.364,
+        "ci95_low_pct": -68.854,
+        "evidence": "improved",
+        "pairs": 6,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 949871000,
+        "control": 1283354000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -25.295,
+        "ci95_high_pct": -21.129,
+        "ci95_low_pct": -29.537,
+        "evidence": "improved",
+        "pairs": 6,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 87195648,
+        "control": 102383616
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -14.214,
+        "ci95_high_pct": -12.709,
+        "ci95_low_pct": -16.098,
+        "evidence": "improved",
+        "pairs": 6,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 579062000,
+        "control": 579912000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.909,
+        "ci95_high_pct": 11.078,
+        "ci95_low_pct": -14.919,
+        "evidence": "unclear",
+        "pairs": 6,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 374146500,
+        "control": 691634500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -45.941,
+        "ci95_high_pct": -42.913,
+        "ci95_low_pct": -47.012,
+        "evidence": "improved",
+        "pairs": 6,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 384383270.5,
+        "control": 706822062.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -45.473,
+        "ci95_high_pct": -39.429,
+        "ci95_low_pct": -48.29,
+        "evidence": "improved",
+        "pairs": 6,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 3220.153395382347,
+      "control": 5921.369734769787
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "control",
+   "number": 72,
+   "path": "exp-072-attribute-the-pr-51-residual-to-path-keyed-ancestry-prefligh.md",
+   "platform": "macOS",
+   "primary_job": "cold-scan-index",
+   "primary_metric": "component_ns",
+   "reason": "Removing the path-keyed ancestry overlay closes most of the remaining engine gap, but the diagnostic candidate cannot ship until scanner preparation supplies an equivalent atomic proof.",
+   "reference_tools": [],
+   "subject": "63a6945ccbaf:119368:594842ccb17c",
+   "title": "Attribute the PR #51 residual to path-keyed ancestry preflight",
+   "trials": 6
+  },
+  {
+   "anchored": false,
+   "candidate": "PR #51 head at e8f1bed",
+   "change_pct": 144.455,
+   "commit": "e8f1bed",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [
+     "The uncontrolled host regime prevents a final parity claim; repeat the finished design on a quiet host."
+    ],
+    "new_unsafe_blocks": 0,
+    "notes": "Measurement only; implementation is owned by the linked parity plan."
+   },
+   "control": "pre-rewrite main at b75bf85",
+   "date": "2026-09-01",
+   "decision": "blocked",
+   "entries": 119368,
+   "family": "macOS:63a6945ccbaf",
+   "hypotheses": [],
+   "id": "exp-073",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "cold-scan-index",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 627993187.5,
+        "control": 132360021
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 386.479,
+        "ci95_high_pct": 414.438,
+        "ci95_low_pct": 324.221,
+        "evidence": "regressed",
+        "pairs": 6,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1419174000,
+        "control": 911816000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 55.497,
+        "ci95_high_pct": 59.054,
+        "ci95_low_pct": 49.363,
+        "evidence": "regressed",
+        "pairs": 6,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 106348544,
+        "control": 64143360
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 66.054,
+        "ci95_high_pct": 67.434,
+        "ci95_low_pct": 57.983,
+        "evidence": "regressed",
+        "pairs": 6,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 576405500,
+        "control": 580564500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -1.799,
+        "ci95_high_pct": 3.825,
+        "ci95_low_pct": -11.778,
+        "evidence": "unclear",
+        "pairs": 6,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 841823000,
+        "control": 327581000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 156.476,
+        "ci95_high_pct": 165.653,
+        "ci95_low_pct": 150.948,
+        "evidence": "regressed",
+        "pairs": 6,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 847697812.5,
+        "control": 349866375
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 144.455,
+        "ci95_high_pct": 165.69,
+        "ci95_low_pct": 129.733,
+        "evidence": "regressed",
+        "pairs": 6,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 7101.549933818109,
+      "control": 2930.989670598485
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "control",
+   "number": 73,
+   "path": "exp-073-pr-51-remains-above-the-pre-rewrite-whole-scan-control.md",
+   "platform": "macOS",
+   "primary_job": "cold-scan-index",
+   "primary_metric": "wall_ns",
+   "reason": "The exact-result PR head remains about 2.4 times the control wall time and 4.7 times its engine component, so the one-shot parity blocker remains open.",
+   "reference_tools": [],
+   "subject": "63a6945ccbaf:119368:594842ccb17c",
+   "title": "PR #51 remains above the pre-rewrite whole-scan control",
+   "trials": 6
   }
  ],
- "prepared": "2026-08-24",
+ "prepared": "2026-08-31",
  "subjects": [
   {
    "apparent_bytes": 1082046346,
@@ -22084,6 +22495,26 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 3630247080,
+   "directories": 3775,
+   "entries": 119368,
+   "experiments": [
+    "exp-071",
+    "exp-072",
+    "exp-073"
+   ],
+   "files": 115593,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "63a6945ccbaf:119368:594842ccb17c",
+   "labels": [
+    "rustup-toolchains"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 16537501222,
    "directories": 110369,
    "entries": 901963,
@@ -22307,21 +22738,22 @@
   }
  ],
  "totals": {
-  "accepted_lines_changed": 8527,
+  "accepted_lines_changed": 8831,
   "decisions": {
-   "accepted": 37,
+   "accepted": 38,
    "baseline": 3,
+   "blocked": 2,
    "in-progress": 1,
    "rejected": 28,
    "superseded": 2
   },
-  "experiments": 71,
+  "experiments": 74,
   "first_date": "2026-08-10",
   "hypotheses": 54,
-  "last_date": "2026-08-24",
+  "last_date": "2026-09-01",
   "platforms": {
    "Linux": 9,
-   "macOS": 62
+   "macOS": 65
   }
  },
  "version": "fdu.performance.timeline/1"
