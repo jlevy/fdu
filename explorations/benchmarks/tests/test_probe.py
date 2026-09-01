@@ -19,20 +19,24 @@ REPOSITORY = Path(__file__).resolve().parents[3]
 SCENARIOS = REPOSITORY / "explorations" / "benchmarks" / "scenarios.json"
 
 # Incremental component-allocation budgets for the fixed 128 -> 256 entry fixture below.
-# The allocation count budgets deliberately leave less than one event per added entry:
-# restoring one path clone per entry must fail even when fixed process and tree costs do
-# not move. Requested-byte and reallocation limits keep less obvious growth visible too.
+# The allocation count budgets deliberately leave less than one event per added entry
+# above each measured platform slope: restoring one path clone per entry must fail even
+# when fixed process and tree costs do not move. Windows' filesystem backend has a
+# higher slope, independently reproduced by the directory-shaped Rust invariant.
+# Requested-byte and reallocation limits keep less obvious growth visible too.
 _ALLOCATION_SLOPE_BUDGETS = {
     "scan-index": {
-        "allocs": 9.5,
+        # Linux/macOS fit below 9.5. Windows measured 14.16 here and 14.33 in
+        # the directory-shaped invariant, whose Windows ceiling is also 15.0.
+        "allocs": 15.0 if os.name == "nt" else 9.5,
         "reallocs": 0.05,
         "bytes_allocated": 1_500.0,
     },
     "opened-discovery": {
-        # The directory-tree invariant independently checks a tighter platform-specific
-        # slope. This flat-tree probe measured 24.16 on the Linux CI runner; 24.5 keeps
-        # less than one allocation per entry of slack while avoiding a false failure.
-        "allocs": 24.5,
+        # This flat-tree probe measured 24.16 on Linux. The directory-shaped invariant
+        # measured 34.43 on Windows; these ceilings leave less than one allocation per
+        # entry of slack on each platform and independently reject a restored clone.
+        "allocs": 35.0 if os.name == "nt" else 24.5,
         "reallocs": 0.25,
         "bytes_allocated": 2_500.0,
     },
