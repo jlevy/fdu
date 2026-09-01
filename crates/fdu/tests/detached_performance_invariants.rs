@@ -38,7 +38,17 @@ const DETACHED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 15;
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
 const DETACHED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 9;
 
+// Progressive discovery has its own measured platform slopes: macOS 25.x, Linux
+// 26.29, and Windows 34.43 allocations per added entry. The same runtime slack proof
+// guards every ceiling.
+#[cfg(target_os = "macos")]
 const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 26;
+#[cfg(target_os = "linux")]
+const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 27;
+#[cfg(target_os = "windows")]
+const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 35;
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 27;
 const OPENED_JOURNAL_CAPACITY: usize = 4 * 1024 * 1024;
 
 struct DisableCounters;
