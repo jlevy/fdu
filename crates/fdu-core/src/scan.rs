@@ -993,12 +993,10 @@ impl ScannerBatch {
         Self { ops: ops.into_iter().map(ObservationOp::unconditional).collect() }
     }
 
-    #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.ops.len()
     }
 
-    #[cfg(test)]
     pub(crate) fn into_ops(self) -> Vec<ObservationOp> {
         self.ops
     }
