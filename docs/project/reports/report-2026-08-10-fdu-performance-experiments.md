@@ -68,6 +68,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Darwin 25.5.0, apfs | bare-metal | warm-steady | 36 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
+| Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
 
 ## Every experiment, including the failures
 
@@ -178,6 +179,7 @@ dead end.
 | 099 | [Monomorphize shared concurrent-walk consumption](#exp099--monomorphize-shared-concurrentwalk-consumption) | H86 | `cold-scan-index` | +0.2% | ✅ accepted |
 | 100 | [Move directory-only state out of line](#exp100--move-directoryonly-state-out-of-line) | H86 | `default-tree` | -0.8% | ❌ rejected |
 | 101 | [Compact detached child topology with local promotion](#exp101--compact-detached-child-topology-with-local-promotion) | H86 | `default-tree` | -7.7% | ✅ accepted |
+| 102 | [H86 Linux evidence stage: relative gates pass, floor gates fail](#exp102--h86-linux-evidence-stage-relative-gates-pass-floor-gates-fail) | H86 | `cold-scan-index` | -18.2% | ❌ rejected |
 
 ## The experiments
 
@@ -3559,6 +3561,43 @@ pending quiet-host confirmation.
 Full record:
 [`exp-101-compact-detached-child-topology-with-local-promotion.md`](../experiments/exp-101-compact-detached-child-topology-with-local-promotion.md)
 
+### exp-102 — H86 Linux evidence stage: relative gates pass, floor gates fail
+
+❌ rejected · 2026-09-02 · H86 · commit `5d7b86fe6d031e76843fe0b8dbcf8663a0d2b53f`
+
+Control: c6380f7 immediate immutable control
+
+Candidate: 5d7b86f H86 consumer representation (codex/streaming-performance-parity)
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1905.6 | 1537.0 | -18.16% | [-24.25%, -13.72%] |
+| component (ms) | 854.3 | 614.5 | -25.84% | [-34.41%, -19.06%] |
+| cpu (ms) | 3470.7 | 2844.1 | -17.97% | [-21.47%, -13.14%] |
+| user (ms) | 1948.2 | 1564.6 | -20.50% | [-25.03%, -16.16%] |
+| system (ms) | 1519.6 | 1317.6 | -12.20% | [-21.93%, -3.17%] |
+| peak rss (MiB) | 303.6 | 153.5 | -49.16% | [-52.61%, -46.16%] |
+
+Other jobs, wall time: `default-tree` -31.7%, `opened-discovery` -10.7%.
+
+Cost to carry: 0 lines; no new dependencies; new failure mode: absolute floor ratio, not
+paired regression.
+
+No code change proposed or made; this is an evidence stage against an existing
+candidate.
+
+**Rejected:** Relative gates pass (cold-scan-index -18.16% [-24.25,-13.72], default-tree
+-31.70%, RSS -49.4%/-35.9%, tails inside 1.5/2.0), but the pre-registered Linux floor
+gates fail: index wall 4.86x the parfloor syscall floor against a 1.4x gate and 5.03x
+arena_spike RSS against a 3x gate.
+Both floor cells are stable (max/min 1.204 and 1.391), so the ratios are resolved and
+reject rather than unresolved.
+
+Full record:
+[`exp-102-h86-linux-evidence-stage-relative-gates-pass-floor-gates-fai.md`](../experiments/exp-102-h86-linux-evidence-stage-relative-gates-pass-floor-gates-fai.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -3792,6 +3831,12 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 043 | Retune workers for transient summary | `rich-summary-report` | 2,210.5 | 2,258.4 | +0.7% | ❌ rejected |
+
+### linux-450k (450,001 entries) — Linux 6.18.44-fc-v22, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 102 | H86 Linux evidence stage: relative gates pass, floor gates fail | `cold-scan-index` | 1,905.6 | 1,537.0 | -18.2% | ❌ rejected |
 
 ### live-workspace-exp038 (1,008,723 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

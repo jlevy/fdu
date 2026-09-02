@@ -29827,6 +29827,347 @@
    "subject": "a319238d9c29:113794:9110fef5c406",
    "title": "Compact detached child topology with local promotion",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "5d7b86f H86 consumer representation (codex/streaming-performance-parity)",
+   "change_pct": -18.165,
+   "commit": "5d7b86fe6d031e76843fe0b8dbcf8663a0d2b53f",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [
+     "absolute floor ratio, not paired regression"
+    ],
+    "new_unsafe_blocks": 0,
+    "notes": "No code change proposed or made; this is an evidence stage against an existing candidate."
+   },
+   "control": "c6380f7 immediate immutable control",
+   "date": "2026-09-02",
+   "decision": "rejected",
+   "entries": 450001,
+   "family": "Linux:65b45ec72356",
+   "hypotheses": [
+    "H86"
+   ],
+   "id": "exp-102",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "cold-scan-index",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 614503395.5,
+        "control": 854276236.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -25.838,
+        "ci95_high_pct": -19.059,
+        "ci95_low_pct": -34.415,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 2844123000,
+        "control": 3470719000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -17.971,
+        "ci95_high_pct": -13.139,
+        "ci95_low_pct": -21.474,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 161003520,
+        "control": 318380032
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -49.163,
+        "ci95_high_pct": -46.158,
+        "ci95_low_pct": -52.606,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 1317559500,
+        "control": 1519554500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -12.201,
+        "ci95_high_pct": -3.168,
+        "ci95_low_pct": -21.926,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 1564570500,
+        "control": 1948230000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -20.496,
+        "ci95_high_pct": -16.158,
+        "ci95_low_pct": -25.032,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1537022159.5,
+        "control": 1905623645
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -18.165,
+        "ci95_high_pct": -13.719,
+        "ci95_low_pct": -24.254,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 3415.59720867287,
+      "control": 4234.709800644888
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 803657035,
+        "control": 1081785914.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -26.685,
+        "ci95_high_pct": -24.005,
+        "ci95_low_pct": -29.923,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 2119954500,
+        "control": 2769353500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -19.946,
+        "ci95_high_pct": -17.303,
+        "ci95_low_pct": -23.879,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 210688000,
+        "control": 328824832
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -35.048,
+        "ci95_high_pct": -33.123,
+        "ci95_low_pct": -37.681,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 1347282500,
+        "control": 1514813500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -7.961,
+        "ci95_high_pct": -5.166,
+        "ci95_low_pct": -12.691,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 803619500,
+        "control": 1230775500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -36.439,
+        "ci95_high_pct": -28.87,
+        "ci95_low_pct": -39.325,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 821671459.5,
+        "control": 1189662207.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -31.704,
+        "ci95_high_pct": -29.153,
+        "ci95_low_pct": -34.313,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1825.9325190388465,
+      "control": 2643.687919582401
+     },
+     "start_state": "warm"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "opened-discovery",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 20507452819,
+        "control": 21665766319.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -5.465,
+        "ci95_high_pct": -2.387,
+        "ci95_low_pct": -7.888,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 29809111000,
+        "control": 32085253500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -7.195,
+        "ci95_high_pct": -3.771,
+        "ci95_low_pct": -10.028,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 1084055552,
+        "control": 1264730112
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -14.283,
+        "ci95_high_pct": -14.26,
+        "ci95_low_pct": -14.294,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 8765304000,
+        "control": 10043974500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -11.158,
+        "ci95_high_pct": -9.119,
+        "ci95_low_pct": -14.88,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 21005891000,
+        "control": 22163574500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -5.318,
+        "ci95_high_pct": -2.065,
+        "ci95_low_pct": -8.517,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 26082340091,
+        "control": 29410223182
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -10.728,
+        "ci95_high_pct": -8.239,
+        "ci95_low_pct": -13.967,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 57960.62695638454,
+      "control": 65355.90628020826
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "control",
+   "number": 102,
+   "path": "exp-102-h86-linux-evidence-stage-relative-gates-pass-floor-gates-fai.md",
+   "platform": "Linux",
+   "primary_job": "cold-scan-index",
+   "primary_metric": "wall_ns",
+   "reason": "Relative gates pass (cold-scan-index -18.16% [-24.25,-13.72], default-tree -31.70%, RSS -49.4%/-35.9%, tails inside 1.5/2.0), but the pre-registered Linux floor gates fail: index wall 4.86x the parfloor syscall floor against a 1.4x gate and 5.03x arena_spike RSS against a 3x gate. Both floor cells are stable (max/min 1.204 and 1.391), so the ratios are resolved and reject rather than unresolved.",
+   "reference_tools": [],
+   "subject": "65b45ec72356:450001:e6da049852a2",
+   "title": "H86 Linux evidence stage: relative gates pass, floor gates fail",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-01",
@@ -30452,6 +30793,24 @@
    "os_cache": "warm-steady",
    "platform": "macOS",
    "synthetic": false
+  },
+  {
+   "apparent_bytes": 358665192,
+   "directories": 56251,
+   "entries": 450001,
+   "experiments": [
+    "exp-102"
+   ],
+   "files": 393750,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+   "key": "65b45ec72356:450001:e6da049852a2",
+   "labels": [
+    "linux-450k"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
   }
  ],
  "totals": {
@@ -30461,15 +30820,15 @@
    "baseline": 7,
    "blocked": 2,
    "in-progress": 2,
-   "rejected": 38,
+   "rejected": 39,
    "superseded": 3
   },
-  "experiments": 102,
+  "experiments": 103,
   "first_date": "2026-08-10",
   "hypotheses": 64,
-  "last_date": "2026-09-01",
+  "last_date": "2026-09-02",
   "platforms": {
-   "Linux": 9,
+   "Linux": 10,
    "macOS": 93
   }
  },
