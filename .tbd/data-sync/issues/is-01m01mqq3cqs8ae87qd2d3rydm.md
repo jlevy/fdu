@@ -5,7 +5,7 @@ title: "H86: consumer representation as one structural experiment"
 kind: epic
 status: in_progress
 priority: 1
-version: 19
+version: 20
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 delegate: codex@spud10.local
 labels:
@@ -27,11 +27,21 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-08-15T02:41:38.411Z
-updated_at: 2026-09-01T19:30:51.473Z
+updated_at: 2026-09-02T15:44:55.506Z
 started_at: 2026-09-01T15:11:35.154Z
 ---
 One representation decision currently wearing seven hypothesis numbers: worker-local arena entries (fixed-width records), single name arena, children as sorted arena slices, batch-shaped observations carrying parent EntryId, and a one-pass bottom-up roll-up for the cold bootstrap. Measured ceiling on the 450k Linux rig: arena_spike.rs retains an index-shaped result in ~199ms / <=23MiB vs fdu tree view ~849ms / ~279MiB (dut 179ms), tallies exact. Gate with the differential harness (assert_same_image at every worker count), exp-022 precedent for one large structural verdict. Absorbs/supersedes the piecemeal forms in fdu-2ubt, fdu-prph (H19-22), fdu-weey (H60), fdu-fnfc/fdu-uv0s; composes with H85 (arenas make frees thread-local). Pre-registered signal: cold-scan-index wall down >=50% on the 450k Linux subject; peak RSS down >=60%; engine digests byte-identical at 1..N workers.
 
 ## Notes
 
-2026-09-01 checkpoint: the pipelined directory-group builder handles controls and reaches practical historical cold-construction parity. Controls-rich wall improved 33.55% (95% interval -36.41% to -33.14%), component 47.43%, allocations 6.02M to 0.99M, allocated bytes 491 MB to 133 MB, and peak RSS 25.88%, with exact digests and zero scanner preparation/projection/reduction. Generic monomorphized orchestration is retained after exp-099 measured wall +0.16% (interval -1.46% to +0.81%); exp-098 records the rejected dynamic form. The valid historical run gives cold wall +0.93% (interval -5.63% to +3.83%) and component -0.39% (interval -3.02% to +4.04%); peak RSS remains about 17-22% higher. Negative-tested platform-calibrated allocation and zero-work guards pass. Commit 88304cb is green across the complete Ubuntu/macOS/Windows stacked-PR CI matrix in run 33549100437. Quiet-host strict noninferiority, retained-layout/RSS attribution, promotion, and Linux evidence remain open.
+2026-09-02 Linux evidence stage (exp-102), run on a 4-core KVM Linux VM against the 450,001-entry generated subject.
+
+Relative gates PASS against immediate control c6380f7 over twelve paired interleaved trials, zero invalid samples, exact engine digests at workers 1-4, no post-run tree drift: cold-scan-index wall -18.16% [-24.25%, -13.72%] with peak RSS -49.4%; default-tree wall -31.70% [-34.31%, -29.15%] with peak RSS -35.9%; opened-discovery -10.73% [-13.97%, -8.24%] against a +3% noninferiority bound. Candidate p95/median <= 1.109 and max/min <= 1.324, inside the 1.5/2.0 bounds.
+
+Floor gates FAIL. parfloor stat gives a 316.4 ms parallel syscall floor; arena_spike under the preregistered low-churn warm-steady cell gives 362.8 ms / 30.5 MiB. Candidate cold-scan-index is 4.86x the syscall floor (gate 1.4x) and 5.03x spike RSS (gate 3x); default-tree is 2.60x and 6.59x. Control was 6.02x/9.96x and 3.76x/10.28x, so H86 moved these a long way without reaching them.
+
+The escape hatch does not apply: arena_spike max/min 1.204 and parfloor 1.391 are both well under 2.0, so the ratios are resolved and reject rather than abstain.
+
+Reusable mechanism: parfloor 316 ms vs arena_spike 363 ms means an index-shaped retained result costs only ~15% over raw parallel enumeration, so the residual 2.6x on default-tree is consumer-side and not in the syscall layer.
+
+Caveat: exploratory stage, uncontrolled shared KVM host. Sufficient to reject a floor ratio against same-session denominators; NOT a quiet-host verdict. The Linux floor claim and this epic remain open. Evidence: docs/project/experiments/exp-102-*.md and docs/project/research/research-2026-09-02-linux-floor-cell-for-h86.md
