@@ -1049,6 +1049,33 @@ instead of selecting one timing cluster after the run.
 A Darwin acceptance may keep the implementation in this stacked pull request, but it
 does not close the Linux H86 epic.
 
+The Linux stage has now run, and it rejects.
+[exp-102](../../experiments/exp-102-h86-linux-evidence-stage-relative-gates-pass-floor-gates-fai.md)
+measured candidate `5d7b86f` against the immediate control `c6380f7` on the
+450,001-entry generated subject over twelve paired interleaved trials with zero invalid
+samples, exact engine digests at worker counts one through four, and no post-run tree
+drift. The relative gates pass: `cold-scan-index` wall fell 18.16% (95% interval -24.25%
+to -13.72%) with peak RSS down 49.4%, `default-tree` wall fell 31.70% (-34.31% to
+-29.15%) with peak RSS down 35.9%, `opened-discovery` improved 10.73% against a +3%
+noninferiority bound, and every candidate `p95/median` is at or below 1.109 with
+`max/min` at or below 1.324. The floor gates fail.
+Against a `parfloor stat` parallel syscall floor of 316.4 ms and an `arena_spike` cell
+of 362.8 ms and 30.5 MiB, the candidate’s `cold-scan-index` is 4.86x the syscall floor
+against the 1.4x gate and 5.03x spike RSS against the 3x gate, and `default-tree` is
+2.60x and 6.59x. Both floor cells are stable -- `arena_spike` `max/min` 1.204 and
+`parfloor` 1.391 -- so the unresolved-ratio escape hatch does not apply and the ratios
+reject rather than abstain.
+The cell, its preparation, and its raw samples are recorded in
+[the Linux floor cell note](../../research/research-2026-09-02-linux-floor-cell-for-h86.md).
+That note also carries the reusable mechanism: `parfloor` at 316 ms against
+`arena_spike` at 363 ms means an index-shaped retained result costs about 15% over raw
+parallel enumeration, so the remaining 2.6x on `default-tree` is consumer-side and is
+not in the syscall layer.
+The run is `exploratory` stage on an `uncontrolled` shared KVM host, which is sufficient
+to reject a floor ratio measured against same-session denominators and is not a
+quiet-host verdict; the quiet-host stage remains open, and `fdu-xde5` and the campaign’s
+Linux floor claim remain open with it.
+
 After the journal preflight, the leading exact-update profile cost is the
 `StructuralOverlay` required to prove arbitrary public mutations atomically before state
 changes. Scanner discovery no longer pays for that boundary, and the remaining public
