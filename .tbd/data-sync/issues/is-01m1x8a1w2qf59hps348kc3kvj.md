@@ -5,15 +5,17 @@ title: Enable shipped control semantics in performance builds
 kind: bug
 status: closed
 priority: 1
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
 labels: []
 dependencies:
   - type: blocks
     target: is-01m1dtr903vj783j9ajaxfnczf
+  - type: blocks
+    target: is-01m1xawdxr2v87f7km4jabmd8x
 parent_id: is-01m1dtq2kd9dex87vs7mzajejc
 created_at: 2026-09-07T06:18:53.686Z
-updated_at: 2026-09-07T06:46:47.819Z
+updated_at: 2026-09-07T07:12:58.350Z
 closed_at: 2026-09-07T06:46:47.802Z
 close_reason: 1a39be9 passed all 19 CI checks, the complete fresh-target make check, and both installed cross-lint targets. The guard and CI preserve minimal-library testing and require control-capable performance binaries.
 resolution: null
