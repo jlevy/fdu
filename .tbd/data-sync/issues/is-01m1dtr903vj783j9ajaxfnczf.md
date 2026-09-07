@@ -5,7 +5,7 @@ title: Prove one-shot parity and add deterministic regression guards
 kind: task
 status: in_progress
 priority: 0
-version: 18
+version: 19
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
 delegate: codex@spud10.local
 labels:
@@ -25,11 +25,11 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-09-01T06:33:23.201Z
-updated_at: 2026-09-07T06:36:38.777Z
+updated_at: 2026-09-07T06:51:57.084Z
 started_at: 2026-09-01T11:13:09.191Z
 ---
 Re-profile after every accepted experiment, close only profile-named residual costs, meet the plan wall/component/allocation thresholds on control-free and control-rich real trees, add negative-tested per-entry allocation and detached zero-work guards, run the full and cross-platform gates, and record every experiment.
 
 ## Notes
 
-Preregistered final cells remain unchanged: fixed 12 pairs, 3 warmups, quiet warm-steady, dense stable-Rust 72,026-entry control-free tree and dense 97,587-entry control-rich source tree; historical b75bf85 (also current main), structural c638 plus matched oracle115ff4f, allocation-only historical2010fa3. A premeasurement version check invalidated the initial candidate release artifact: Cargo reported a fresh build in the shared target, but the unqualified perf_probe output still identified the structural checkout115ff4f. No timing or allocation result has been accepted from these preliminary artifacts. Revise build protocol to a dedicated target per source checkout, reuse download caches only, rebuild every measured binary from a fresh target, and rerun the final local gate in its own validation target. The obsolete task-owned shared target may be staged in Trash after live-writer checks. Candidate code remains1a39be9; no production change is inferred from this build-cache finding.
+Fresh-target final gate and cross-lint passed; 1a39be9 CI all 19 passed. All four release artifacts now verify against their own clean revisions with claim-grade provenance (manifest e191bbe062bf90a3c9f4819f8f7cdf8a0af85dd3d2737988a3010f121976ed61). Five profiles completed with the actual controls-enabled candidate. Detached cold/default profiles show zero effects, impacts, journal clones and ancestry overlays, with bulk metadata reads/open dominating raw symbols. Opened records no detached-builder work. Public large/batched mutation still has material path-comparison self time; summarize_commits diagnostic work also appears outside the component interval, so attribution must distinguish harness work. First historical-Rust timing attempt was refused before sampling by the unchanged quiet-host preflight (CPU busy34.8% >25%). No trial exists from that attempt; wait for host quiet and retry the preregistered cell without changing N or thresholds. Profile and refusal artifacts are preserved in the final run directory.
