@@ -5,7 +5,7 @@ title: Prove one-shot parity and add deterministic regression guards
 kind: task
 status: in_progress
 priority: 0
-version: 15
+version: 16
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
 delegate: codex@spud10.local
 labels:
@@ -25,11 +25,11 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-09-01T06:33:23.201Z
-updated_at: 2026-09-07T05:05:45.700Z
+updated_at: 2026-09-07T06:15:09.367Z
 started_at: 2026-09-01T11:13:09.191Z
 ---
 Re-profile after every accepted experiment, close only profile-named residual costs, meet the plan wall/component/allocation thresholds on control-free and control-rich real trees, add negative-tested per-entry allocation and detached zero-work guards, run the full and cross-platform gates, and record every experiment.
 
 ## Notes
 
-2026-09-01 final checkpoint: correctness and deterministic regression guards are complete. The detached one-shot route matches the scanner oracle at worker counts 1-4 across controls, limits, non-file controls, ignored state, reports, and the first public mutation; it also fixes fixed-path ControlRemove acceptance. Controls-rich wall is -33.55% and component -47.43% versus c6380f7, with allocations 6.02M to 0.99M and exact digest stability. Historical cold construction is at practical median parity: wall +0.93% (95% interval -5.63% to +3.83%) and component -0.39% (interval -3.02% to +4.04%). Exp-098 rejects dynamic shared orchestration; exp-099 accepts monomorphized sharing at wall +0.16% (interval -1.46% to +0.81%). Allocation-slope and detached-zero-work guards are negative-tested; Windows-specific allocator slopes are measured rather than inferred. Commit 88304cb passes the complete stacked-PR CI matrix in run 33549100437, including Ubuntu, macOS, Windows, MSRV, feature boundaries, docs, audit, Python, and performance evidence. Quiet-host strict +3% proof, elevated historical RSS, Linux H86 evidence, and final performance handoff remain open.
+2026-09-06 final review: review defects fixed and stack refreshed through 95cd4b0; all 19 checks passed on every restacked descendant. Cross-revision provenance fix 0bfb2cf passed local make check (224 realtree tests), CI pending with one Windows action-fetch failure being retried. Exact historical timing control b75bf85 is preserved. Measurement-only controls: historical allocation boundaries 2010fa3 (5 probe tests), c638 structural baseline plus corrected opened oracle 115ff4f (11 tests). No new timing claims yet. Fresh eligibility audit: live source tree 97,587 entries qualifies; Rust minimal toolchain 298 entries and pnpm content store 24,339 are too small; SDK/CommandLineTools exceed density limit; uv archive 176,105 is dense but includes 14 control files. Checking a naturally control-free dependency subtree next. No criterion relaxed; source checkouts share one Cargo target. Prior exp099/101 remain exploratory rather than final proof.
