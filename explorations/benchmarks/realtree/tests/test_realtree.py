@@ -15,6 +15,7 @@ import statistics
 import sys
 import tempfile
 import unittest
+from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -267,6 +268,19 @@ class StatisticsTests(unittest.TestCase):
 
         self.assertEqual(reasons, [])
         self.assertEqual(document["scan_diagnostics"]["schema"], "fdu-scan-diagnostics-v1")
+
+    def test_timing_rejects_explicitly_disabled_probe_oracle(self) -> None:
+        document = json.loads(self._diagnostic_probe())
+        document["oracle_enabled"] = False
+
+        _, reasons = measure._read_probe_output(json.dumps(document).encode())
+
+        self.assertIn("probe oracle was disabled in a timing run", reasons)
+
+    def test_timing_accepts_legacy_probe_without_oracle_label(self) -> None:
+        _, reasons = measure._read_probe_output(self._diagnostic_probe())
+
+        self.assertEqual(reasons, [])
 
     def test_claim_grade_scan_rejects_truncated_or_unobservable_policy(self) -> None:
         encoded = self._diagnostic_probe("undecided")
@@ -909,12 +923,66 @@ Call graph:
             ],
         )
 
+    def test_profile_command_labels_counter_free_oracle_free_attribution(self) -> None:
+        command = profile._profile_command(
+            ["/tmp/bin/perf_probe", "scan-index", "--root", "/private/subject"],
+            repeat=4,
+            oracle_enabled=False,
+        )
+        environment = profile._profile_environment(counters_enabled=False)
+
+        self.assertEqual(command[-3:], ["--no-oracle", "--repeat", "4"])
+        self.assertEqual(environment["FDU_COUNTERS"], "0")
+
+    def test_profile_command_does_not_duplicate_no_oracle(self) -> None:
+        command = profile._profile_command(
+            ["perf_probe", "scan-index", "--no-oracle"],
+            repeat=2,
+            oracle_enabled=False,
+        )
+
+        self.assertEqual(command.count("--no-oracle"), 1)
+
+    def test_profile_command_rejects_an_unlabelled_disabled_oracle(self) -> None:
+        with self.assertRaisesRegex(profile.ProfileError, "oracle disabled"):
+            profile._profile_command(
+                ["perf_probe", "scan-index", "--no-oracle"],
+                repeat=2,
+                oracle_enabled=True,
+            )
+
     def test_layers_partition_the_samples(self) -> None:
         parsed = profile.parse(self.SAMPLE)
         self.assertEqual(
             sum(layer["samples"] for layer in parsed["by_layer"]),
             parsed["total_samples"],
         )
+
+    def test_layers_recognize_current_and_legacy_engine_symbols(self) -> None:
+        for module in ("scan", "index", "snapshot", "content"):
+            for crate, mangled_crate in (("fdu", "3fdu"), ("fdu_core", "8fdu_core")):
+                for symbol in (
+                    f"{crate}::{module}::worker",
+                    f"_RNvNtC0{mangled_crate}{len(module)}{module}6worker",
+                ):
+                    with self.subTest(symbol=symbol):
+                        layers = profile._layers(Counter({symbol: 7}), 7)
+                        self.assertEqual(
+                            layers,
+                            [{"layer": f"fdu::{module}", "samples": 7, "percent": 100.0}],
+                        )
+
+    def test_layers_recognize_bulk_metadata_and_preserve_helper_precedence(self) -> None:
+        cases = {
+            "getattrlistbulk": "kernel/syscall",
+            "__getattrlistbulk": "kernel/syscall",
+            "malloc": "allocator",
+            "std::path::Components::next": "path",
+            "perf_probe::summarize_index<fdu_core::index::Index>": "probe/oracle",
+        }
+        for symbol, expected in cases.items():
+            with self.subTest(symbol=symbol):
+                self.assertEqual(profile._layers(Counter({symbol: 3}), 3)[0]["layer"], expected)
 
     def test_empty_input_does_not_divide_by_zero(self) -> None:
         parsed = profile.parse("no frames here")

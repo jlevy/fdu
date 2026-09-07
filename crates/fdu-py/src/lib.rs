@@ -483,31 +483,38 @@ impl PyIndex {
     fn since<'py>(&self, py: Python<'py>, clock: u64) -> PyResult<Bound<'py, PyDict>> {
         let since = self.inner.since(fdu_core::Clock(clock));
         let ops = PyList::empty(py);
-        for delta in &since.deltas {
-            for op in &delta.ops {
-                let item = PyDict::new(py);
-                item.set_item("clock", delta.clock.0)?;
-                item.set_item("path", op.path().as_os_str())?;
-                match op {
-                    fdu_core::Op::Upsert { kind, attrs, .. } => {
+        for commit in &since.commits {
+            for change in &commit.changes {
+                let item = match change {
+                    fdu_core::EffectiveChange::Inserted { path, kind, attrs }
+                    | fdu_core::EffectiveChange::Updated { path, kind, current: attrs, .. } => {
+                        let item = PyDict::new(py);
+                        item.set_item("clock", commit.clock.0)?;
+                        item.set_item("path", path.as_os_str())?;
                         item.set_item("op", "upsert")?;
                         item.set_item("kind", entry_kind_label(*kind))?;
                         item.set_item("bytes", attrs.size)?;
                         item.set_item("mtime_ns", attrs.mtime_ns)?;
+                        item
                     }
-                    fdu_core::Op::Remove { .. } => {
+                    fdu_core::EffectiveChange::Removed { path, .. } => {
+                        let item = PyDict::new(py);
+                        item.set_item("clock", commit.clock.0)?;
+                        item.set_item("path", path.as_os_str())?;
                         item.set_item("op", "remove")?;
+                        item
                     }
-                    fdu_core::Op::InvalidateSubtree { reason, .. } => {
+                    fdu_core::EffectiveChange::Invalidated { path, reason } => {
+                        let item = PyDict::new(py);
+                        item.set_item("clock", commit.clock.0)?;
+                        item.set_item("path", path.as_os_str())?;
                         item.set_item("op", "invalidate_subtree")?;
                         item.set_item("reason", format!("{reason:?}"))?;
+                        item
                     }
-                    fdu_core::Op::ControlUpsert { .. } | fdu_core::Op::ControlRemove { .. } => {
-                        // Exact control changes live only in `Commit`; the legacy delta
-                        // projection intentionally excludes them.
-                        continue;
-                    }
-                }
+                    fdu_core::EffectiveChange::ControlUpdated { .. }
+                    | fdu_core::EffectiveChange::Reclassified { .. } => continue,
+                };
                 ops.append(item)?;
             }
         }

@@ -137,6 +137,31 @@ Three questions, three A/Bs:
 Keep a way to build without it even when the cost is nil, so the idle-cost question
 stays answerable later.
 
+### Separate attribution from validation
+
+A sampling profile and a timing verdict need different harness settings.
+The timing loop must run the semantic oracle on every sample; otherwise it can reward a
+faster wrong answer.
+A repeated sampling run may omit work outside the measured component when that work
+obscures the stacks the profile exists to attribute.
+
+The real-tree profiler therefore has two explicit modes:
+
+- `--counters enabled --oracle enabled` is the backward-compatible diagnostic mode.
+  It connects logical counts with one verified result, but per-batch timers and the
+  repeated digest can perturb the stack distribution.
+- `--counters disabled --oracle disabled` is clean attribution mode.
+  It records `counters_enabled: false` and `oracle_enabled: false`, and the probe omits
+  the full-index digest walk.
+  Use it to choose a hypothesis, never to claim speed or correctness.
+
+Ordinary measurement runs reject a probe that explicitly reports
+`oracle_enabled: false`. Legacy immutable controls without the field remain valid
+because they predate the switch and always ran the oracle.
+Component counter deltas in the probe summary are scoped from immediately before the
+engine call to immediately after it; the process-wide stderr report may include harness
+work and is not an engine allocation total.
+
 ### What to count
 
 Aim at the layers where systems actually spend time, not at whatever is easy to reach:
@@ -174,6 +199,13 @@ The probe enables it explicitly; the installed CLI uses `FDU_SCAN_DIAGNOSTICS=1`
 tagged stderr record so stable output does not change.
 exp-056 measured the complete enabled path at -0.55% [-1.09%, +0.17%], which accepts the
 instrument while making no claim that its cost is literally zero.
+That first measurement exercised the transient Summary plan.
+Exp-090 extended the same trace to cold FullIndex scans, including the default tree
+path, and measured diagnostics-on at -3.48% with a paired 95% interval from -11.88% to
++1.43% against the same immutable binary with diagnostics off.
+Exact tallies matched and every resource gate held.
+Cache-only opens emit no trace because they perform no scan; warm reconciliation is a
+different operation and does not claim the cold-scan trace contract.
 
 ### A counter that reads zero is worse than no counter
 
@@ -258,8 +290,10 @@ This happened twice here.
 Re-screen the queue after every landing rather than working down the list.
 
 **The harness in the profile.** A probe’s own verification digest measured 38.8% of one
-profile. Subtract the harness before quoting any percentage, or you will attribute its
-cost to the system.
+profile. Prefer a profile explicitly captured with the oracle disabled over manually
+subtracting flat percentages.
+Keep the verified timing run beside it, and never treat attribution-only output as a
+performance result.
 
 **Flat profiles.** They attribute cost to a function, not to a reason.
 `malloc` at the top tells you nothing you can act on; the caller tree tells you which

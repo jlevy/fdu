@@ -155,3 +155,27 @@ fn installed_summary_measurements_can_emit_the_versioned_scan_trace() {
     assert!(run(None).stderr.is_empty(), "ordinary summary emitted a trace");
     assert!(run(Some("0")).stderr.is_empty(), "falsey toggle emitted a trace");
 }
+
+#[test]
+fn installed_full_index_measurements_can_emit_the_versioned_scan_trace() {
+    let root = tempfile::tempdir().expect("tempdir");
+    fs::create_dir(root.path().join("nested")).expect("create nested directory");
+    fs::write(root.path().join("nested/file.txt"), b"trace me").expect("write file");
+
+    let completed = Command::new(env!("CARGO_BIN_EXE_fdu"))
+        .args(["--cache", "off", "--view", "tree", "--format", "json", "--color", "never"])
+        .env("FDU_SCAN_DIAGNOSTICS", "1")
+        .arg(root.path())
+        .output()
+        .expect("run full-index report");
+
+    assert!(completed.status.success());
+    let stderr = String::from_utf8(completed.stderr).expect("diagnostic trace is UTF-8");
+    let trace = stderr
+        .strip_prefix("__FDU_SCAN_DIAGNOSTICS__=")
+        .expect("measurement trace prefix")
+        .trim_end();
+    assert!(trace.contains("\"schema\":\"fdu-scan-diagnostics-v1\""), "{trace}");
+    assert!(trace.contains("\"worker_policy\":"), "{trace}");
+    assert!(trace.contains("\"backend\":"), "{trace}");
+}

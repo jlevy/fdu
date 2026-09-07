@@ -574,13 +574,13 @@ The metadata core and opt-in content layer retain separate state:
 | **Content index** | Optional sparse per-file analysis records and derived roll-ups, allocated only after `--analyze` opts in |
 | **Content sidecar** | Separately versioned, analyzer-set-scoped persistence for unchanged content records; never loaded by metadata-only requests |
 | **Observation** | Verified producer input, optionally conditional on the indexed path state |
-| **AppliedDelta** | A clocked batch of effective committed changes for the bounded change feed |
+| **Commit** | A clocked batch of exact effective changes and state transitions for the bounded change feed |
 | **Derived report** | Exact minimum state for a proven one-shot composition; otherwise the planner falls back to the index |
 
 Metadata producers submit observations; the index alone removes no-ops, advances the
-metadata clock, and mints `AppliedDelta`. Content workers submit fingerprint-checked
-analysis observations to the optional derived tier without changing metadata truth or
-snapshot compatibility.
+metadata clock, and mints `Commit`. Content workers submit fingerprint-checked analysis
+observations to the optional derived tier without changing metadata truth or snapshot
+compatibility.
 
 Two invariants are non-negotiable, because a cache that lies is worse than no cache.
 Content-reuse fingerprints are size, mtime, ctime, and inode, never mtime alone, because
