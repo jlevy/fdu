@@ -3,9 +3,9 @@ type: is
 id: is-01m1wy9h39n1yem588vxwxanh4
 title: Make allocation regression guards accept reductions in work
 kind: bug
-status: in_progress
+status: closed
 priority: 2
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
 labels:
   - review
@@ -17,7 +17,11 @@ dependencies:
     target: is-01m1x444e4rnksjs8v8p37padv
 parent_id: is-01m1dtq2kd9dex87vs7mzajejc
 created_at: 2026-09-07T03:23:50.760Z
-updated_at: 2026-09-07T05:31:46.761Z
+updated_at: 2026-09-07T05:48:55.146Z
+closed_at: 2026-09-07T05:48:55.146Z
+close_reason: Implemented in 1aa9ba5; red-green regressions, full isolated make check and cross-lint passed. All 19 CI checks passed in run 34087670872, including macOS/Linux/Windows probe tests. Spec and PR body reconciled; final performance proof remains separate.
+resolution: null
+duplicate_of: null
 ---
 PR 52 final review R2, head 5d7b86f: crates/fdu/tests/detached_performance_invariants.rs:175-191 rejects allocation growth below limit minus one allocation per entry, in addition to its upper bound. A future allocation reduction can therefore fail make check on one or more platforms. Keep upper-bound regression checks monotonic in improvement; test the checker independently using known over-budget inputs and show lower or zero growth is accepted. Keep exact zero-work assertions for unnecessary streaming effects, but do not encode a minimum amount of work or freeze a storage representation.
 
