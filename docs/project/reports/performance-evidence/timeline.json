@@ -721,6 +721,15 @@
    "subject": "a319238d9c29:113794:9110fef5c406",
    "tool": "dust",
    "wall_ns": 431777770.5
+  },
+  {
+   "entries": 97587,
+   "id": "exp-102",
+   "per_entry_ns": 1987.3531669177246,
+   "platform": "macOS",
+   "subject": "a319238d9c29:97587:7ec24464a1b5",
+   "tool": "dust",
+   "wall_ns": 193939833.5
   }
  ],
  "experiments": [
@@ -29827,9 +29836,287 @@
    "subject": "a319238d9c29:113794:9110fef5c406",
    "title": "Compact detached child topology with local promotion",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "ad52469 standard hash-map overlay with unchanged ownership and contracts",
+   "change_pct": -49.785,
+   "commit": "ad52469d7d16fee3135a515fd07a43c5bab8ba11",
+   "complexity": {
+    "lines_changed": 129,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "One private container substitution, two explanatory lines, and 125 lines of contract tests; no new dependency, unsafe code, failure mode or caller restriction."
+   },
+   "control": "64c6e61 exact public preflight with an owned ordered overlay",
+   "date": "2026-09-07",
+   "decision": "accepted",
+   "entries": 97587,
+   "family": "macOS:a319238d9c29",
+   "hypotheses": [],
+   "id": "exp-102",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "delta-apply-batched",
+     "metrics": {
+      "blocked_ns": {
+       "absolute": {
+        "candidate": 3190145.5,
+        "control": 3400062
+       },
+       "metric": "blocked_ns",
+       "paired": {
+        "change_pct": -10.22,
+        "ci95_high_pct": 12.921,
+        "ci95_low_pct": -15.555,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "component_ns": {
+       "absolute": {
+        "candidate": 106353229.5,
+        "control": 328768229
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -67.707,
+        "ci95_high_pct": -67.587,
+        "ci95_low_pct": -67.759,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 335744500,
+        "control": 556554500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -39.817,
+        "ci95_high_pct": -39.313,
+        "ci95_low_pct": -40.136,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 98385920,
+        "control": 99442688
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.447,
+        "ci95_high_pct": 1.111,
+        "ci95_low_pct": -1.344,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 11834000,
+        "control": 12319500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -2.956,
+        "ci95_high_pct": 0.141,
+        "ci95_low_pct": -11.295,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 324311500,
+        "control": 544272000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -40.478,
+        "ci95_high_pct": -40.001,
+        "ci95_low_pct": -40.789,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 339018062.5,
+        "control": 560069458.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -39.754,
+        "ci95_high_pct": -39.048,
+        "ci95_low_pct": -39.909,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 3474.0084488712637,
+      "control": 5739.1810230870915
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "delta-apply-large",
+     "metrics": {
+      "blocked_ns": {
+       "absolute": {
+        "candidate": 2959125,
+        "control": 3453791.5
+       },
+       "metric": "blocked_ns",
+       "paired": {
+        "change_pct": -13.356,
+        "ci95_high_pct": -3.219,
+        "ci95_low_pct": -23.571,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "component_ns": {
+       "absolute": {
+        "candidate": 91865458,
+        "control": 419943791.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -77.844,
+        "ci95_high_pct": -77.734,
+        "ci95_low_pct": -78.114,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 322199000,
+        "control": 647368500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -49.999,
+        "ci95_high_pct": -49.545,
+        "ci95_low_pct": -50.494,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 130220032,
+        "control": 133521408
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -2.454,
+        "ci95_high_pct": -0.516,
+        "ci95_low_pct": -4.08,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 14018000,
+        "control": 15511000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -8.419,
+        "ci95_high_pct": -2.094,
+        "ci95_low_pct": -14.858,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 308353500,
+        "control": 631325500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -50.949,
+        "ci95_high_pct": -50.679,
+        "ci95_low_pct": -51.497,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 325046729,
+        "control": 652120271
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -49.785,
+        "ci95_high_pct": -49.344,
+        "ci95_low_pct": -50.306,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 3330.8404705544795,
+      "control": 6682.45023415004
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 102,
+   "path": "exp-102-point-lookup-for-public-mutation-preflight.md",
+   "platform": "macOS",
+   "primary_job": "delta-apply-large",
+   "primary_metric": "wall_ns",
+   "reason": "Retain for quiet-host confirmation: fixed twelve-pair exploratory large and repeated public mutations improve wall 49.78% and 39.75%, with both wall/component intervals below zero, exact oracles, and resource ratios within 1.05. Batched allocated bytes rise 4.95%, a recorded tradeoff. This uncontrolled screen does not close final one-shot or opened parity.",
+   "reference_tools": [
+    {
+     "argv": [
+      "{binary}",
+      "-d",
+      "1",
+      "--no-progress",
+      "{root}"
+     ],
+     "name": "dust",
+     "wall_ns_median": 193939833.5
+    }
+   ],
+   "subject": "a319238d9c29:97587:7ec24464a1b5",
+   "title": "Point lookup for public mutation preflight",
+   "trials": 12
   }
  ],
- "prepared": "2026-09-01",
+ "prepared": "2026-09-07",
  "subjects": [
   {
    "apparent_bytes": 1082046346,
@@ -30452,25 +30739,43 @@
    "os_cache": "warm-steady",
    "platform": "macOS",
    "synthetic": false
+  },
+  {
+   "apparent_bytes": 949087546,
+   "directories": 5679,
+   "entries": 97587,
+   "experiments": [
+    "exp-102"
+   ],
+   "files": 91897,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "a319238d9c29:97587:7ec24464a1b5",
+   "labels": [
+    "metabrowser-final-parity"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
   }
  ],
  "totals": {
-  "accepted_lines_changed": 15104,
+  "accepted_lines_changed": 15233,
   "decisions": {
-   "accepted": 50,
+   "accepted": 51,
    "baseline": 7,
    "blocked": 2,
    "in-progress": 2,
    "rejected": 38,
    "superseded": 3
   },
-  "experiments": 102,
+  "experiments": 103,
   "first_date": "2026-08-10",
   "hypotheses": 64,
-  "last_date": "2026-09-01",
+  "last_date": "2026-09-07",
   "platforms": {
    "Linux": 9,
-   "macOS": 93
+   "macOS": 94
   }
  },
  "version": "fdu.performance.timeline/1"

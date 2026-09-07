@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 36 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 37 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 
@@ -178,6 +178,7 @@ dead end.
 | 099 | [Monomorphize shared concurrent-walk consumption](#exp099--monomorphize-shared-concurrentwalk-consumption) | H86 | `cold-scan-index` | +0.2% | ✅ accepted |
 | 100 | [Move directory-only state out of line](#exp100--move-directoryonly-state-out-of-line) | H86 | `default-tree` | -0.8% | ❌ rejected |
 | 101 | [Compact detached child topology with local promotion](#exp101--compact-detached-child-topology-with-local-promotion) | H86 | `default-tree` | -7.7% | ✅ accepted |
+| 102 | [Point lookup for public mutation preflight](#exp102--point-lookup-for-public-mutation-preflight) | — | `delta-apply-large` | -49.8% | ✅ accepted |
 
 ## The experiments
 
@@ -3559,6 +3560,43 @@ pending quiet-host confirmation.
 Full record:
 [`exp-101-compact-detached-child-topology-with-local-promotion.md`](../experiments/exp-101-compact-detached-child-topology-with-local-promotion.md)
 
+### exp-102 — Point lookup for public mutation preflight
+
+✅ accepted · 2026-09-07 · no hypothesis id · commit
+`ad52469d7d16fee3135a515fd07a43c5bab8ba11`
+
+Control: 64c6e61 exact public preflight with an owned ordered overlay
+
+Candidate: ad52469 standard hash-map overlay with unchanged ownership and contracts
+
+**`delta-apply-large`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 652.1 | 325.0 | -49.78% | [-50.31%, -49.34%] |
+| component (ms) | 419.9 | 91.9 | -77.84% | [-78.11%, -77.73%] |
+| cpu (ms) | 647.4 | 322.2 | -50.00% | [-50.49%, -49.55%] |
+| user (ms) | 631.3 | 308.4 | -50.95% | [-51.50%, -50.68%] |
+| system (ms) | 15.5 | 14.0 | -8.42% | [-14.86%, -2.09%] |
+| blocked (ms) | 3.5 | 3.0 | -13.36% | [-23.57%, -3.22%] |
+| peak rss (MiB) | 127.3 | 124.2 | -2.45% | [-4.08%, -0.52%] |
+
+Other jobs, wall time: `delta-apply-batched` -39.8%.
+
+Cost to carry: 129 lines; no new dependencies.
+
+One private container substitution, two explanatory lines, and 125 lines of contract
+tests; no new dependency, unsafe code, failure mode or caller restriction.
+
+**Accepted:** Retain for quiet-host confirmation: fixed twelve-pair exploratory large
+and repeated public mutations improve wall 49.78% and 39.75%, with both wall/component
+intervals below zero, exact oracles, and resource ratios within 1.05. Batched allocated
+bytes rise 4.95%, a recorded tradeoff.
+This uncontrolled screen does not close final one-shot or opened parity.
+
+Full record:
+[`exp-102-point-lookup-for-public-mutation-preflight.md`](../experiments/exp-102-point-lookup-for-public-mutation-preflight.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -3822,6 +3860,12 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 096 | Apply fixed controls once per detached directory | `cold-scan-index` | 868.0 | 574.4 | -33.6% | ✅ accepted |
+
+### metabrowser-final-parity (97,587 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 102 | Point lookup for public mutation preflight | `delta-apply-large` | 652.1 | 325.0 | -49.8% | ✅ accepted |
 
 ### metabrowser-h86-lifecycle-f41 (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 

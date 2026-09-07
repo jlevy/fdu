@@ -1201,6 +1201,26 @@ warmups, with the usual 3% wall/component improvement and paired-interval gates,
 state and commit oracles, a 1.05 resource ceiling, and one-shot/opened noninferiority.
 The profile selects the experiment; it is not timing evidence that accepts it.
 
+The resulting
+[exp-102](../../experiments/exp-102-point-lookup-for-public-mutation-preflight.md)
+passes the fixed-size exploratory mutation screen.
+Large-batch wall time falls 49.78% and component time 77.84%; repeated-batch wall time
+falls 39.75% and component time 67.71%, with all four paired intervals below zero.
+Exact summaries and commits agree, peak RSS stays within its bound, and reallocation
+counts are unchanged.
+Allocated bytes rise 2.39% for the large batch and 4.95% for repeated batches, close to
+the 5% ceiling; that tradeoff is retained in the record rather than described as an
+allocation-volume improvement.
+A counter-disabled post-change call tree puts ancestry validation at about 29% of
+inclusive apply samples, versus 83% before the change.
+The candidate adds no ordering restriction or dependency.
+
+This remains uncontrolled exploratory evidence.
+Final quiet-host one-shot and opened comparisons are still required, and the campaign is
+not ready for merge.
+The separate corrected-probe allocation checks pass on both nominated trees, but do not
+substitute for elapsed-time evidence.
+
 Cleanup bead `fdu-iyg0` is complete: the source documents and measurement evidence are
 small and retained. Only disposable task-owned build output was previously staged in
 Trash; no active worktree or agent log was removed.
