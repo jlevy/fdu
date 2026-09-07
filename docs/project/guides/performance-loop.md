@@ -588,6 +588,14 @@ dependent decision inconclusive.
 Release comparisons add two more proofs.
 A claim-grade provenance manifest binds a clean source revision, lockfiles, build argv,
 artifact hashes, host, filesystem, and collectors.
+For a cross-revision comparison, supply `--artifact-source control=$CONTROL_SOURCE` to
+provenance capture, provenance verification, and `realtree measure`, using the manifest
+artifact’s label and the checkout that built it.
+Repeat the option for each artifact built outside the primary checkout.
+The primary checkout identifies the harness and any artifact without an override; each
+explicit checkout must remain clean and match its binary’s recorded revision, lockfiles,
+and toolchain throughout verification.
+Checkout paths stay local and are not serialized into the manifest.
 An installation attestation then proves the native Cargo or wheel-installed command, its
 effective bash/zsh resolution, its native payload, and a real cache-off scan.
 The competitor adapter must establish exact work before any timing is accepted.

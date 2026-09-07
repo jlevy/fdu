@@ -1106,7 +1106,8 @@ boundary at a time.
 | `fdu-dtb6` | P2 | Make allocation ceilings accept improvements | — |
 | `fdu-b49n` | P2 | Reconcile acceptance criteria and durable architecture | — |
 | `fdu-qoro` | P1 | Incorporate the latest parent fix through formal GitHub stack #53 | `fdu-9o4u`, `fdu-dtb6`, `fdu-b49n` |
-| `fdu-lj4h` | P0 | Prove final-binary one-shot parity on both real subjects | `fdu-1jz6`, `fdu-9o4u`, `fdu-dtb6`, `fdu-b49n`, `fdu-qoro` |
+| `fdu-jsbz` | P1 | Bind each cross-revision performance artifact to its own verified source | `fdu-9o4u` |
+| `fdu-lj4h` | P0 | Prove final-binary one-shot parity on both real subjects | `fdu-1jz6`, `fdu-9o4u`, `fdu-dtb6`, `fdu-b49n`, `fdu-qoro`, `fdu-jsbz` |
 | `fdu-rx0d` | P1 | Complete isolated gates, final review, push, and CI handoff | `fdu-lj4h` |
 
 Existing regression bead `fdu-pro1` now points to this spec and remains open until
@@ -1142,14 +1143,26 @@ The final review found two test-infrastructure defects, each reproduced before f
 
 The final comparison uses the +3% paired-interval margin in the acceptance section, not
 the inconsistent +5% wording from the initial draft.
-Formal stack #53 must first incorporate PR #48’s latest paging fix through PRs #50, #51,
-and #52, so the measured binary is the integrated merge candidate.
-The Linux H86 floor campaign remains separately tracked; it is not implicitly closed by
-a Darwin result for this stack.
+Formal stack #53 now incorporates PR #48’s latest paging fix through PRs #50, #51, and
+#52. The restacked review-fix commit is `95cd4b0`. Final measurements must follow the
+integrated branch’s gates and CI. The Linux H86 floor campaign remains separately
+tracked; it is not implicitly closed by a Darwin result for this stack.
+
+Preparation also reproduced a provenance defect: capture assigned the primary checkout’s
+revision to every binary, so the supported claim-grade path rejected an honest
+historical-control/current-candidate comparison.
+`fdu-jsbz` adds explicit per-artifact source checkouts to capture, verification, and
+measurement. Verification re-derives each selected artifact’s origin and resolves its
+toolchain in that checkout, rejects changed or dirty sources, and retains path
+redaction. The fix changes no acceptance margin, metric, or performance result.
+Its regression tests include the measurement entry point, missing source attribution,
+source drift, dirty sources, invalid labels, and checkout-local toolchain resolution.
 
 Cleanup bead `fdu-iyg0` is complete: the source documents and measurement evidence are
 small and retained. Only disposable task-owned build output was previously staged in
 Trash; no active worktree or agent log was removed.
+Restacking also required staging one obsolete Git worktree registration in Trash after
+verifying that its checkout no longer existed; its branch and recovery metadata remain.
 
 ## Testing Strategy
 
