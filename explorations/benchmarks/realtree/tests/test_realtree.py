@@ -15,6 +15,7 @@ import statistics
 import sys
 import tempfile
 import unittest
+from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -956,6 +957,32 @@ Call graph:
             sum(layer["samples"] for layer in parsed["by_layer"]),
             parsed["total_samples"],
         )
+
+    def test_layers_recognize_current_and_legacy_engine_symbols(self) -> None:
+        for module in ("scan", "index", "snapshot", "content"):
+            for crate, mangled_crate in (("fdu", "3fdu"), ("fdu_core", "8fdu_core")):
+                for symbol in (
+                    f"{crate}::{module}::worker",
+                    f"_RNvNtC0{mangled_crate}{len(module)}{module}6worker",
+                ):
+                    with self.subTest(symbol=symbol):
+                        layers = profile._layers(Counter({symbol: 7}), 7)
+                        self.assertEqual(
+                            layers,
+                            [{"layer": f"fdu::{module}", "samples": 7, "percent": 100.0}],
+                        )
+
+    def test_layers_recognize_bulk_metadata_and_preserve_helper_precedence(self) -> None:
+        cases = {
+            "getattrlistbulk": "kernel/syscall",
+            "__getattrlistbulk": "kernel/syscall",
+            "malloc": "allocator",
+            "std::path::Components::next": "path",
+            "perf_probe::summarize_index<fdu_core::index::Index>": "probe/oracle",
+        }
+        for symbol, expected in cases.items():
+            with self.subTest(symbol=symbol):
+                self.assertEqual(profile._layers(Counter({symbol: 3}), 3)[0]["layer"], expected)
 
     def test_empty_input_does_not_divide_by_zero(self) -> None:
         parsed = profile.parse("no frames here")

@@ -688,7 +688,9 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let snapshot = arguments.snapshot()?.to_path_buf();
     let identity_before = snapshot_identity(&snapshot);
     let config = OpenConfig {
-        scan: arguments.scan.clone(),
+        // The non-watch CLI counts every entry but does not consume ignore state.
+        // Keep control discovery enabled for the index-returning and opened probes.
+        scan: ScanConfig { read_controls: false, ..arguments.scan.clone() },
         cache_path: Some(snapshot.clone()),
         policy: CachePolicy::Auto,
         analysis: AnalysisRequest::default(),
@@ -2107,6 +2109,44 @@ mod tests {
 
         assert_eq!(counts.allocs, 100, "only the 30 validation allocations are excluded");
         assert_eq!(counts.opened_accepted_ops, 7, "late worker folds remain engine work");
+    }
+
+    #[test]
+    #[cfg(feature = "gitignore")]
+    fn default_tree_snapshot_matches_the_non_watch_cli_scope() {
+        let root = tempfile::tempdir().expect("root tempdir");
+        let scratch = tempfile::tempdir().expect("scratch tempdir");
+        let snapshot = scratch.path().join("snapshot.fdu");
+        std::fs::write(root.path().join(".gitignore"), b"ignored.txt\n").expect("control");
+        std::fs::write(root.path().join("ignored.txt"), b"still counted").expect("file");
+        let arguments = Arguments::parse(
+            [
+                OsString::from("default-tree"),
+                OsString::from("--root"),
+                root.path().as_os_str().to_owned(),
+                OsString::from("--snapshot"),
+                snapshot.as_os_str().to_owned(),
+            ]
+            .into_iter(),
+        )
+        .expect("probe arguments");
+
+        let output = default_tree(&arguments).expect("default-tree probe");
+
+        assert_eq!(output.summary.files, 2, "the CLI still counts ignored files");
+        assert!(arguments.scan.read_controls, "other probe modes retain control discovery");
+        let mut config = OpenConfig {
+            scan: ScanConfig { read_controls: false, ..arguments.scan.clone() },
+            cache_path: Some(snapshot),
+            policy: CachePolicy::Only,
+            analysis: AnalysisRequest::default(),
+        };
+        // Index-returning cache-only open requires the exact stored scope. Report-only
+        // projection would hide a controls-on snapshot and fail to test the CLI path.
+        let (_, report) = fdu_core::open(root.path(), &config).expect("non-watch CLI scope");
+        assert!(report.is_complete());
+        config.scan.read_controls = true;
+        assert!(fdu_core::open(root.path(), &config).is_err(), "controls were not observed");
     }
 
     #[test]

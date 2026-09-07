@@ -1,6 +1,6 @@
 # Feature: Streaming Performance Parity Without One-Shot Overhead
 
-**Date:** 2026-08-31 (last updated 2026-09-01)
+**Date:** 2026-08-31 (last updated 2026-09-07)
 
 **Author:** fdu project, with Codex assistance
 
@@ -1108,7 +1108,10 @@ boundary at a time.
 | `fdu-qoro` | P1 | Incorporate the latest parent fix through formal GitHub stack #53 | `fdu-9o4u`, `fdu-dtb6`, `fdu-b49n` |
 | `fdu-jsbz` | P1 | Bind each cross-revision performance artifact to its own verified source | `fdu-9o4u` |
 | `fdu-by5y` | P1 | Measure with shipped control semantics enabled | — |
-| `fdu-lj4h` | P0 | Prove final-binary one-shot parity on both real subjects | `fdu-1jz6`, `fdu-9o4u`, `fdu-dtb6`, `fdu-b49n`, `fdu-qoro`, `fdu-jsbz`, `fdu-by5y` |
+| `fdu-ht5q` | P1 | Match the default-command probe to the non-watch CLI control scope | `fdu-by5y` |
+| `fdu-ttpf` | P2 | Classify bulk syscalls and current engine symbols in profiles | — |
+| `fdu-0q6w` | P1 | Remove profile-confirmed ordered path-map work from public preflight | `fdu-ht5q` |
+| `fdu-lj4h` | P0 | Prove final-binary one-shot parity on both real subjects | `fdu-1jz6`, `fdu-9o4u`, `fdu-dtb6`, `fdu-b49n`, `fdu-qoro`, `fdu-jsbz`, `fdu-by5y`, `fdu-ht5q`, `fdu-0q6w` |
 | `fdu-rx0d` | P1 | Complete isolated gates, final review, push, and CI handoff | `fdu-lj4h` |
 
 Existing regression bead `fdu-pro1` now points to this spec and remains open until
@@ -1168,6 +1171,35 @@ Final candidate and structural-control measurements use this same feature scope;
 historical `b75bf85` predates the capability and is labelled accordingly.
 Earlier results without an explicit feature record do not establish controls-enabled
 performance. This correction changes the measured coverage, not the acceptance margins.
+
+Enabling the capability exposed a second scope mismatch in the default-command probe: it
+inherited `ScanConfig::default().read_controls = true`, while the non-watch CLI
+explicitly sets it to `false`. `fdu-ht5q` makes only `default-tree` select that CLI
+scope; index-returning cold scans and opened discovery still retain control state.
+The regression test writes a snapshot through the probe and requires an exact-scope
+public cache-only open to admit it for controls-off and reject it for controls-on.
+Report-only snapshot projection cannot hide the mismatch from that test.
+Both measurement arms must use the corrected scope.
+The preliminary `1a39be9` default-tree profile measured a controls-on report, not the
+non-watch CLI; it is retained with that qualification and will not support a CLI claim.
+No final timing samples were collected before this correction: two attempts were refused
+by the unchanged quiet-host CPU preflight before sampling.
+
+The same profiles exposed presentation drift: `getattrlistbulk` and current `fdu_core`
+symbols fell into the “other” layer.
+`fdu-ttpf` adds tested current and historical symbol recognition without changing raw
+samples or timing metrics.
+
+Public large-batch preflight remains a measured cost.
+A counter-disabled call-tree capture at `1a39be9` places 1,936 of 2,358 inclusive
+`Index::apply` samples in ancestry validation, primarily in ordered-map lookups and
+inserts that repeatedly compare path components.
+`fdu-0q6w` tests replacing only the private temporary overlay with a standard hash map;
+the overlay has no ordered iteration contract.
+The bead fixes the public-mutation comparison at twelve interleaved pairs and three
+warmups, with the usual 3% wall/component improvement and paired-interval gates, exact
+state and commit oracles, a 1.05 resource ceiling, and one-shot/opened noninferiority.
+The profile selects the experiment; it is not timing evidence that accepts it.
 
 Cleanup bead `fdu-iyg0` is complete: the source documents and measurement evidence are
 small and retained. Only disposable task-owned build output was previously staged in

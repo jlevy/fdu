@@ -598,6 +598,9 @@ and toolchain throughout verification.
 Checkout paths stay local and are not serialized into the manifest.
 Performance builds enable `gitignore`, including on a tree with no control files, so the
 measured binary retains the shipped control semantics.
+The default-command probe selects `read_controls = false`, as the non-watch CLI does;
+index-returning cold scans and opened discovery keep control discovery enabled.
+Compile-time capability and per-request scope are separate parts of the work contract.
 The watch feature is unnecessary for these jobs: opened discovery does not attach an OS
 watcher. Minimal-library probe tests remain separate.
 Record each artifact’s exact build arguments; a historical revision without the
