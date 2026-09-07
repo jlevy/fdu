@@ -94,6 +94,7 @@ content-selfcheck: build
 
 performance-probe:
 	$(CARGO) build --locked -p fdu-core --example perf_probe --no-default-features
+	$(CARGO) test --locked -p fdu-core --example perf_probe --no-default-features
 
 test-performance: performance-probe
 	PYTHONPATH=explorations $(UV) run --no-project python -m unittest discover -s explorations/benchmarks/tests -p 'test_*.py'

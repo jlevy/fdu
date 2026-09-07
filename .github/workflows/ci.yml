@@ -99,6 +99,8 @@ jobs:
         run: npm run test:golden
       - name: Build the repository-only performance probe
         run: cargo build --locked -p fdu-core --example perf_probe --no-default-features
+      - name: Test the performance probe's semantic oracle
+        run: cargo test --locked -p fdu-core --example perf_probe --no-default-features
       # `env:` rather than a `PYTHONPATH=... cmd` prefix: this job also runs on the
       # Windows runner, whose shell is PowerShell, where that POSIX prefix form is a
       # parse error rather than an assignment. The harness package is still

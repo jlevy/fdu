@@ -425,7 +425,8 @@ changes cannot hide a regression:
 
 - median `default-tree` and `cold-scan-index` wall and component ratios are at most
   1.03;
-- the 95% interval’s upper bound is at most +5%, so parity is not a lucky median;
+- the paired 95% interval’s upper bound is at most +3% for both wall and component time,
+  matching the performance loop’s noninferiority margin;
 - allocation events, reallocations, and allocated bytes are each at most 1.05 times the
   control after fixed harness cost is removed;
 - exact digest, report, exit, scope, and filesystem-state oracles agree;
@@ -1007,8 +1008,9 @@ bytes from the exact control while preserving all retained counts and the tree d
 On the deterministic 2,080-entry slope fixture, detached growth is now 10,671
 allocations, or 5.13 per entry, while opened growth is 50,413, or 24.24 per entry.
 The platform ceilings remove the same two detached representation allocations and one
-opened arena allocation from the prior measured slopes, and the existing injected
-one-allocation-per-entry negative case keeps every runner’s bound tight.
+opened arena allocation from the prior measured slopes.
+They are upper bounds, not required allocation levels: a subsequent improvement must
+continue to pass without changing a ceiling.
 
 The host was not quiet: an unrelated test process held one core and load exceeded the
 protocol limit during the composite run.
@@ -1075,8 +1077,8 @@ unused consequence construction as the leading detached cost.
   consecutive profiles find no mechanism capable of reaching 3%; any proposed target
   revision requires a separate design decision with evidence.
 - [x] Add deterministic per-entry allocation guards for detached construction and opened
-  discovery, including injected negative cases that prove one extra allocation per entry
-  fails each ceiling.
+  discovery, including injected over-ceiling cases and positive cases for reduced or
+  zero growth.
 - [x] Add zero-work assertions for detached effect, impact, journal, delta, and ancestry
   counters to `make check` without adding a timing gate; the same test proves opened
   discovery records no detached-builder work.
@@ -1100,10 +1102,54 @@ boundary at a time.
 | `fdu-wy89` | P0 | Make detached application skip exact commit consequences | `fdu-01d0` |
 | `fdu-nrdl` | P0 | Replace scanner ancestry overlay with a resolved-parent proof | `fdu-wy89` |
 | `fdu-1jz6` | P1 | Remove duplicate path ownership from exact impact and journal publication | `fdu-nrdl` |
-| `fdu-lj4h` | P0 | Prove one-shot parity and add deterministic regression guards | `fdu-1jz6` |
+| `fdu-9o4u` | P1 | Validate the measured opened index, not a replacement scan | — |
+| `fdu-dtb6` | P2 | Make allocation ceilings accept improvements | — |
+| `fdu-b49n` | P2 | Reconcile acceptance criteria and durable architecture | — |
+| `fdu-qoro` | P1 | Incorporate the latest parent fix through formal GitHub stack #53 | `fdu-9o4u`, `fdu-dtb6`, `fdu-b49n` |
+| `fdu-lj4h` | P0 | Prove final-binary one-shot parity on both real subjects | `fdu-1jz6`, `fdu-9o4u`, `fdu-dtb6`, `fdu-b49n`, `fdu-qoro` |
+| `fdu-rx0d` | P1 | Complete isolated gates, final review, push, and CI handoff | `fdu-lj4h` |
 
 Existing regression bead `fdu-pro1` now points to this spec and remains open until
 `fdu-lj4h` proves its acceptance criteria.
+
+### Final review checkpoint, 2026-09-06
+
+The reviewed head is `5d7b86f`, with exploratory evidence through
+[exp-101](../../experiments/exp-101-compact-detached-child-topology-with-local-promotion.md).
+That experiment supports retaining the layout for validation; it is not the final
+historical parity result, and it predates the final in-place directory initialization.
+The earlier exp-099 RSS checkpoint is not the current representation’s measurement.
+
+The final review found two test-infrastructure defects, each reproduced before fixing:
+
+- The opened probe attached a digest from a separate detached scan.
+  A deliberately narrowed opened scope retained one file while the reported summary
+  contained two, so the independent harness accepted an unmeasured state.
+  The probe now reads the actual retained root and every flat page at the terminal
+  version, checks those rows against the maintained totals, and sends their digest to
+  the independent Python fingerprint oracle.
+  Validation precedes joined close but is excluded from component time and
+  calling-thread counters.
+  Worker counts remain included even if they fold after the ready transition.
+  Exact causal behavior remains checked by the independent engine model and session
+  goldens; the probe’s batching-dependent debug digest is diagnostic only.
+  Earlier opened-discovery results do not establish final oracle-verified parity and
+  must be rerun with the same corrected probe on both arms.
+- The allocation guard required a minimum slope as well as a maximum.
+  Saving one allocation per entry failed it.
+  The corrected guard accepts reduced, zero, or negative growth and rejects a known
+  over-ceiling input. Exact zero-work checks remain in place.
+
+The final comparison uses the +3% paired-interval margin in the acceptance section, not
+the inconsistent +5% wording from the initial draft.
+Formal stack #53 must first incorporate PR #48’s latest paging fix through PRs #50, #51,
+and #52, so the measured binary is the integrated merge candidate.
+The Linux H86 floor campaign remains separately tracked; it is not implicitly closed by
+a Darwin result for this stack.
+
+Cleanup bead `fdu-iyg0` is complete: the source documents and measurement evidence are
+small and retained. Only disposable task-owned build output was previously staged in
+Trash; no active worktree or agent log was removed.
 
 ## Testing Strategy
 
@@ -1124,8 +1170,9 @@ Correctness uses red-green tests at the public boundary:
 - the default CLI goldens remain byte-for-byte unchanged.
 
 Performance tests use exact semantic oracles.
-Allocation guards use a fixture large enough that fixed harness allocations cannot hide
-one extra allocation per entry.
+Allocation guards compare two fixture sizes to cancel fixed harness costs.
+They constrain excessive work without prescribing a minimum allocation count or freezing
+the private storage representation.
 The large public batch and repeated-batch jobs separately expose one-time overflow
 behavior and per-batch path-set behavior.
 
@@ -1138,7 +1185,7 @@ The GitHub stack is:
 3. PR #51, first whole-scan allocation fixes and control-observation gate;
 4. `codex/streaming-performance-parity`, this plan and its implementation.
 
-The fourth pull request remains draft until Phase 1 correctness passes.
+The fourth pull request remains draft until final correctness and parity gates pass.
 Commits remain reviewable in this order:
 
 1. plan, experiment baseline, and bead graph;
@@ -1179,8 +1226,8 @@ preserving one reviewable functional delta.
   meet the stated parity thresholds against `main` on both nominated real subjects.
 - Every structural performance decision has a before profile, semantic oracle, paired
   comparison, and experiment-ledger entry.
-- Deterministic guards fail when one per-entry allocation or one detached streaming path
-  is deliberately restored.
+- Deterministic guards reject over-ceiling allocation growth and deliberately restored
+  detached streaming work, while accepting further allocation reductions.
 - `make check`, `make cross-lint`, and stacked-PR CI pass.
 
 ## Open Questions

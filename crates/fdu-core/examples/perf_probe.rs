@@ -20,8 +20,9 @@ use fdu_core::content::{AnalysisRequest, AnalysisSet, CoverageReason};
 use fdu_core::query::{Provenance, Query, ReportSource, ViewSpec};
 use fdu_core::{
     Attrs, CachePolicy, ChangeOutcome, ChangeRequest, Clock, Commit, Coverage, EffectiveChange,
-    EntryId, EntryKind, Index, LifecyclePhase, Observation, Op, OpenConfig, OpenOptions,
-    OpenedIndex, ReadRequest, ScanConfig, ScanOrder,
+    EngineVersion, EntryId, EntryKind, Index, Knowledge, LifecyclePhase, Observation, Op,
+    OpenConfig, OpenOptions, OpenedIndex, PageRequest, ProjectionResult, ReadProjection,
+    ReadRequest, RowShape, ScanConfig, ScanOrder,
 };
 
 const PROBE_SCHEMA: &str = "fdu-perf-probe-v1";
@@ -919,6 +920,13 @@ fn opened_discovery(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         journal_capacity: OPENED_PROBE_JOURNAL_CAPACITY,
         ..OpenOptions::default()
     };
+    opened_discovery_with_options(arguments, options)
+}
+
+fn opened_discovery_with_options(
+    arguments: &Arguments,
+    options: OpenOptions,
+) -> ProbeResult<ProbeOutput> {
     let counters = begin_component_counters();
     let started = Instant::now();
     let opened = OpenedIndex::open(&arguments.root, options)?;
@@ -950,31 +958,35 @@ fn opened_discovery(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
             break poll.state;
         }
     };
-    opened.close()?;
-    let component = started.elapsed();
-    let counters = finish_component_counters(counters.as_ref());
-
-    // The independent exact tree oracle is deliberately outside the component timer.
-    // The timed opened path is held to both this final digest and the exact public
-    // commit sequence it returned while discovery progressed.
-    let (mut summary, validation_complete) = if arguments.oracle_enabled {
-        let validation_scan = ScanConfig {
-            max_depth: None,
-            threads: Some(1),
-            order: ScanOrder::BreadthFirst,
-            read_controls: true,
-            ..arguments.scan.clone()
-        };
-        let (validation, report) =
-            fdu_core::scan::scan_into_index(&arguments.root, &validation_scan)?;
-        (summarize_index(arguments, &validation)?, report.is_complete())
+    // Read the measured index before closing it. A separate scan can be correct while
+    // this backend silently drops facts, so only these rows reach the parent harness's
+    // independent tree oracle. The commit digest below is diagnostic, not that oracle.
+    let validation_started = Instant::now();
+    let validation_before = counters.map(|_| fdu_core::counters::thread_snapshot());
+    let summary = if arguments.oracle_enabled {
+        summarize_opened(&opened, cursor)
     } else {
-        (Summary::default(), true)
+        Ok(Summary::default())
     };
+    let validation_after = counters.map(|_| fdu_core::counters::thread_snapshot());
+    let validation_time = validation_started.elapsed();
+    // Shutdown remains measured and joined even if validation failed. Worker counter
+    // folds can arrive after Ready; excluding a process-wide validation delta would
+    // accidentally subtract that engine work too. Only the read thread is excluded.
+    opened.close()?;
+    let component = started.elapsed().saturating_sub(validation_time);
+    let counters = counters.as_ref().map(|before| {
+        CounterSummary::between(
+            before,
+            &fdu_core::counters::snapshot(),
+            validation_before.as_ref().zip(validation_after.as_ref()),
+        )
+    });
+    let mut summary = summary?;
     summary.counters = counters;
     summary.dirs_read = terminal.progress.directories_complete;
     summary.errors = terminal.issues.retained.saturating_add(terminal.issues.omitted);
-    summary.complete = terminal.coverage == Coverage::Complete && validation_complete;
+    summary.complete = terminal.coverage == Coverage::Complete;
     for commit in &commits {
         for change in &commit.changes {
             match change {
@@ -996,6 +1008,63 @@ fn opened_discovery(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     }
     summary.commit = Some(summarize_commits(&commits));
     Ok(ProbeOutput::new(arguments.mode, "opened", component, summary))
+}
+
+fn summarize_opened(opened: &OpenedIndex, version: EngineVersion) -> ProbeResult<Summary> {
+    let root = opened.read(ReadRequest {
+        projections: vec![
+            ReadProjection::Lookup { path: PathBuf::new() },
+            ReadProjection::Diagnostics,
+        ],
+        expected: Some(version),
+    })?;
+    let [
+        ProjectionResult::Lookup(Knowledge::Present(root)),
+        ProjectionResult::Diagnostics(diagnostics),
+    ] = root.results.as_slice()
+    else {
+        return Err(ProbeError("opened oracle could not read its retained root".into()));
+    };
+    let total =
+        root.rollup.ok_or_else(|| ProbeError("opened oracle root had no roll-up".into()))?.all;
+    let mut summary = Summary::default();
+    let mut digest = MultisetDigest::default();
+    summary.observe_entry(root.kind, &root.attrs);
+    digest.add(&engine_record(&normalized_path(&root.path)?, root.kind, &root.attrs)?);
+
+    // Flat excludes the root and includes both ignored partitions. Drain every page
+    // at the terminal version; the bound limits temporary rows, not corpus size.
+    let page = PageRequest { limit: fdu_core::MAX_PAGE_ROWS, max_work: fdu_core::MAX_PAGE_WORK };
+    let mut projection = ReadProjection::Flat {
+        selection: fdu_core::query::EntrySelection::default(),
+        shape: RowShape::Compact,
+        page,
+    };
+    loop {
+        let response =
+            opened.read(ReadRequest { projections: vec![projection], expected: Some(version) })?;
+        let [ProjectionResult::Flat(rows)] = response.results.as_slice() else {
+            return Err(ProbeError("opened oracle could not read a complete flat page".into()));
+        };
+        for row in &rows.rows {
+            summary.observe_entry(row.kind, &row.attrs);
+            digest.add(&engine_record(&normalized_path(&row.path)?, row.kind, &row.attrs)?);
+        }
+        let Some(continuation) = rows.next else { break };
+        projection = ReadProjection::Continue { continuation, page };
+    }
+    if summary.entries != diagnostics.entries
+        || summary.files != total.files
+        || summary.dirs != total.dirs.saturating_add(1)
+        || summary.apparent_bytes != u128::from(total.bytes)
+        || summary.allocated_bytes != u128::from(total.allocated)
+        || summary.newest_file_mtime_ns != total.newest_mtime_ns
+    {
+        return Err(ProbeError("opened oracle rows disagreed with retained totals".into()));
+    }
+    summary.index_len = Some(diagnostics.entries);
+    summary.engine_digest = Some(digest.finish());
+    Ok(summary)
 }
 
 fn summarize_commits(commits: &[Commit]) -> CommitSummary {
@@ -1126,11 +1195,16 @@ struct CounterSummary {
 }
 
 impl CounterSummary {
-    fn since(before: &fdu_core::counters::Counts) -> Self {
-        let after = fdu_core::counters::snapshot();
+    fn between(
+        before: &fdu_core::counters::Counts,
+        after: &fdu_core::counters::Counts,
+        excluded: Option<(&fdu_core::counters::Counts, &fdu_core::counters::Counts)>,
+    ) -> Self {
         macro_rules! delta {
             ($field:ident) => {
-                after.$field.saturating_sub(before.$field)
+                after.$field.saturating_sub(before.$field).saturating_sub(
+                    excluded.map_or(0, |(start, end)| end.$field.saturating_sub(start.$field)),
+                )
             };
         }
         Self {
@@ -1172,7 +1246,7 @@ fn begin_component_counters() -> Option<fdu_core::counters::Counts> {
 fn finish_component_counters(
     before: Option<&fdu_core::counters::Counts>,
 ) -> Option<CounterSummary> {
-    before.map(CounterSummary::since)
+    before.map(|before| CounterSummary::between(before, &fdu_core::counters::snapshot(), None))
 }
 
 #[derive(Debug)]
@@ -1294,22 +1368,25 @@ impl Summary {
             let Op::Upsert { kind, attrs, .. } = &observed.op else {
                 continue;
             };
-            self.entries = self.entries.saturating_add(1);
-            match kind {
-                EntryKind::File => {
-                    self.files = self.files.saturating_add(1);
-                    self.apparent_bytes = self.apparent_bytes.saturating_add(attrs.size.into());
-                    self.allocated_bytes =
-                        self.allocated_bytes.saturating_add(attrs.allocated.into());
-                    self.newest_file_mtime_ns = Some(
-                        self.newest_file_mtime_ns
-                            .map_or(attrs.mtime_ns, |newest| newest.max(attrs.mtime_ns)),
-                    );
-                }
-                EntryKind::Dir => self.dirs = self.dirs.saturating_add(1),
-                EntryKind::Symlink => self.symlinks = self.symlinks.saturating_add(1),
-                EntryKind::Other => self.other = self.other.saturating_add(1),
+            self.observe_entry(*kind, attrs);
+        }
+    }
+
+    fn observe_entry(&mut self, kind: EntryKind, attrs: &Attrs) {
+        self.entries = self.entries.saturating_add(1);
+        match kind {
+            EntryKind::File => {
+                self.files = self.files.saturating_add(1);
+                self.apparent_bytes = self.apparent_bytes.saturating_add(attrs.size.into());
+                self.allocated_bytes = self.allocated_bytes.saturating_add(attrs.allocated.into());
+                self.newest_file_mtime_ns = Some(
+                    self.newest_file_mtime_ns
+                        .map_or(attrs.mtime_ns, |newest| newest.max(attrs.mtime_ns)),
+                );
             }
+            EntryKind::Dir => self.dirs = self.dirs.saturating_add(1),
+            EntryKind::Symlink => self.symlinks = self.symlinks.saturating_add(1),
+            EntryKind::Other => self.other = self.other.saturating_add(1),
         }
     }
 }
@@ -1918,6 +1995,118 @@ mod tests {
         assert_eq!(summary.entries, 1);
         assert_eq!(summary.dirs, 1);
         assert!(summary.engine_digest.is_none());
+    }
+
+    #[test]
+    fn opened_oracle_reports_the_measured_state_not_a_fresh_scan() {
+        let root = tempfile::tempdir().expect("opened oracle root");
+        std::fs::write(root.path().join("visible.txt"), b"visible").expect("visible file");
+        std::fs::write(root.path().join(".hidden.txt"), b"hidden").expect("hidden file");
+        let arguments = Arguments::parse(
+            [
+                OsString::from("opened-discovery"),
+                OsString::from("--root"),
+                root.path().as_os_str().to_owned(),
+            ]
+            .into_iter(),
+        )
+        .expect("probe arguments");
+        let expected = scan_index(&arguments).expect("independent full scan").summary;
+        let options = OpenOptions {
+            // Stand in for a backend bug that silently omits a retained entry. The
+            // probe must expose that difference to the independent corpus oracle.
+            hidden: Some(std::sync::Arc::new(fdu_core::HiddenPolicy::prune_hidden(
+                Vec::<OsString>::new(),
+            ))),
+            ..OpenOptions::default()
+        };
+
+        let actual =
+            opened_discovery_with_options(&arguments, options).expect("opened discovery").summary;
+
+        assert!(actual.complete);
+        assert_eq!(expected.files, 2);
+        assert_eq!(actual.files, 1, "summary must describe the measured opened index");
+        assert_ne!(actual.engine_digest, expected.engine_digest);
+        assert!(validate_producer_summary(&actual, &expected).is_err());
+    }
+
+    #[test]
+    fn opened_oracle_matches_detached_rows_across_pages_and_on_an_empty_tree() {
+        let root = tempfile::tempdir().expect("opened oracle root");
+        let arguments = Arguments::parse(
+            [
+                OsString::from("opened-discovery"),
+                OsString::from("--root"),
+                root.path().as_os_str().to_owned(),
+            ]
+            .into_iter(),
+        )
+        .expect("probe arguments");
+        for file_count in [0, fdu_core::MAX_PAGE_ROWS + 1] {
+            for file in 0..file_count {
+                std::fs::write(root.path().join(format!("file-{file}.txt")), b"row")
+                    .expect("fixture file");
+            }
+            let expected = scan_index(&arguments).expect("independent scan").summary;
+            let actual = opened_discovery(&arguments).expect("opened discovery").summary;
+
+            assert!(actual.complete);
+            assert_eq!(actual.files, u64::try_from(file_count).expect("file count"));
+            assert_eq!(actual.index_len, expected.index_len);
+            assert_eq!(actual.engine_digest, expected.engine_digest);
+            validate_producer_summary(&actual, &expected).expect("exact totals");
+        }
+    }
+
+    #[test]
+    fn opened_oracle_rejects_an_unavailable_version() {
+        let root = tempfile::tempdir().expect("opened oracle root");
+        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("open");
+        let initial = opened.read(ReadRequest::default()).expect("initial read");
+        let unavailable = EngineVersion { sequence: Clock(u64::MAX), ..initial.version };
+
+        let result = summarize_opened(&opened, unavailable);
+
+        opened.close().expect("close");
+        assert!(result.is_err(), "validation must not read a different committed version");
+    }
+
+    #[test]
+    fn opened_profile_can_skip_validation_without_claiming_a_digest() {
+        let root = tempfile::tempdir().expect("opened profile root");
+        let arguments = Arguments::parse(
+            [
+                OsString::from("opened-discovery"),
+                OsString::from("--root"),
+                root.path().as_os_str().to_owned(),
+                OsString::from("--no-oracle"),
+            ]
+            .into_iter(),
+        )
+        .expect("probe arguments");
+
+        let output = execute_repeated(&arguments).expect("unverified profile");
+
+        assert!(!output.oracle_enabled);
+        assert!(output.summary.engine_digest.is_none());
+        assert!(output.summary.complete);
+    }
+
+    #[test]
+    fn component_counters_exclude_validation_but_retain_late_worker_counts() {
+        use fdu_core::counters::Counts;
+
+        let before = Counts { allocs: 10, ..Counts::default() };
+        let validation_before = Counts { allocs: 5, ..Counts::default() };
+        let validation_after = Counts { allocs: 35, ..Counts::default() };
+        let after = Counts { allocs: 140, opened_accepted_ops: 7, ..Counts::default() };
+
+        let counts =
+            CounterSummary::between(&before, &after, Some((&validation_before, &validation_after)));
+
+        assert_eq!(counts.allocs, 100, "only the 30 validation allocations are excluded");
+        assert_eq!(counts.opened_accepted_ops, 7, "late worker folds remain engine work");
     }
 
     #[test]
