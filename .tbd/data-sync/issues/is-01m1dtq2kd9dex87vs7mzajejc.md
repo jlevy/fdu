@@ -5,7 +5,7 @@ title: "Spec: streaming performance parity without one-shot overhead"
 kind: epic
 status: in_progress
 priority: 0
-version: 25
+version: 26
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
 labels:
   - performance
@@ -31,10 +31,10 @@ child_order_hints:
   - is-01m1xawdxr2v87f7km4jabmd8x
   - is-01m1xbp9qy40ymd7wvyaw0ckp8
 created_at: 2026-09-01T06:32:43.884Z
-updated_at: 2026-09-07T07:46:37.835Z
+updated_at: 2026-09-07T08:48:14.746Z
 ---
 Restore detached one-shot performance to the pre-rewrite main control while preserving exact opened-root and public mutation semantics. Correctness fixes precede profiling and lifecycle specialization. The linked plan is the design and acceptance authority.
 
 ## Notes
 
-Final review fixes are pushed through formal draft stack #53 (#48, #50, #51, #52). Head 64c6e61 passes full isolated make check, cross-lint and all 19 CI checks. Closed review beads cover the actual opened-state oracle, improvement-friendly allocation ceilings, architecture/spec reconciliation, stack refresh, per-artifact provenance, capability-enabled probes, default CLI scope and current profile classification. Exploratory evidence through exp-101 is retained, but historical final-binary timing remains unproved. Corrected scoped allocation checks on both nominated real trees match exact summaries/digests and stay below all allocation/reallocation/byte ceilings. fdu-0q6w now tests the profile-confirmed public ancestry preflight hotspot, with independent-model and control-pruning tests; fdu-lj4h then owns unchanged final quiet-host parity and fdu-rx0d owns final handoff. Linux H86 remains separate. Cleanup fdu-iyg0 retained source docs, evidence, active worktrees and agent logs; only disposable task-owned cache and a stale absent-checkout registration were staged in Trash. Builds now use per-checkout targets to avoid stale shared-target artifacts.
+Head afbb2ee (engine ad52469) is pushed in formal draft stack #53 (#48, #50, #51, #52), with a clean primary worktree, full isolated make check, cross-lint and all 19 CI checks passing. Review fixes cover the actual opened-state oracle, improvement-friendly allocation ceilings, per-artifact provenance, capability-enabled probes, default CLI scope, profile classification and architecture/spec reconciliation. Exp-102 records the profile-confirmed private public-mutation lookup change, with large/repeated-batch wall improvements of 49.78%/39.75% and exact oracles in an uncontrolled exploratory screen; allocated bytes rise 2.39%/4.95%, and no final-parity claim is made. Final allocation/oracle checks on both nominated real trees pass. fdu-0q6w and fdu-lj4h await quiet-host confirmation and unchanged final historical/structural/opened gates; latest preflight refused at 26.9% busy and a later host snapshot was 39.86%. fdu-rx0d remains blocked on those gates; Linux H86 stays separate. Cleanup fdu-iyg0 is complete: 6.1 GiB of previously staged disposable build output plus 88 KiB stale absent-checkout metadata were verified in Trash, not emptied. No active worktree, source branch/document, agent/Codex log or unique evidence was removed. Final audit found about 16 GiB physical free; docs/evidence total only 4.9 MiB and remain needed.
