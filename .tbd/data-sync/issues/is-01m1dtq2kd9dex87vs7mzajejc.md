@@ -5,7 +5,7 @@ title: "Spec: streaming performance parity without one-shot overhead"
 kind: epic
 status: in_progress
 priority: 0
-version: 19
+version: 21
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
 labels:
   - performance
@@ -26,11 +26,12 @@ child_order_hints:
   - is-01m1x4444ma3vw81wx5bm4k0g4
   - is-01m1x444e4rnksjs8v8p37padv
   - is-01m1x444q4jz0680n8a057r5z8
+  - is-01m1x5t3acttkxkwfybncp9ssb
 created_at: 2026-09-01T06:32:43.884Z
-updated_at: 2026-09-07T05:05:45.700Z
+updated_at: 2026-09-07T05:35:13.739Z
 ---
 Restore detached one-shot performance to the pre-rewrite main control while preserving exact opened-root and public mutation semantics. Correctness fixes precede profiling and lifecycle specialization. The linked plan is the design and acceptance authority.
 
 ## Notes
 
-Formal stacked draft PR: https://github.com/jlevy/fdu/pull/52 on codex/streaming-performance-parity, based on PR #51. Correctness fixes, scoped profiling, detached consequence suppression, ancestry-path removal, directory-shaped one-shot construction, controls support, generic monomorphized walker sharing, and negative-tested deterministic allocation/zero-work guards are implemented. Controls-rich wall improved 33.55% and component 47.43% versus c6380f7. A valid historical comparison puts cold construction at practical median parity but narrowly misses the strict +3% interval and retains about 17-22% higher RSS. Experiments through exp-099 are recorded. Commit 88304cb passes all stacked-PR CI jobs on Ubuntu, macOS, and Windows in run 33549100437. Quiet-host/RSS verdict, Linux H86 evidence, and final handoff remain open; the PR stays draft.
+Final review at 5d7b86f: formal draft PR #52 remains in GitHub stack #53. Exploratory evidence is current through exp-101: compact detached topology with inline entries improves default-tree wall 7.70% and RSS 37.79%, cold wall 5.87% and RSS 45.03% versus its immediate layout control. These are not historical parity or final-binary claims. The old exp-099 17-22% RSS checkpoint is superseded for representation decisions. Review reproduced an opened probe oracle bug and an allocation guard that rejects improvements; fdu-9o4u and fdu-dtb6 now have red-green fixes. fdu-b49n reconciles the final +3% paired CI upper bound and architecture. fdu-qoro incorporates PR #48 paging through the formal stack; fdu-lj4h then measures exact final binaries on both real subjects; fdu-rx0d owns final gates and CI. Linux H86 remains separate. Disk audit fdu-iyg0 is closed: documents/evidence retained, no active worktrees or logs trashed, one shared task build target used.
