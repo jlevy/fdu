@@ -93,8 +93,9 @@ content-selfcheck: build
 	$(NODE) scripts/content-selfcheck.mjs
 
 performance-probe:
-	$(CARGO) build --locked -p fdu-core --example perf_probe --no-default-features
 	$(CARGO) test --locked -p fdu-core --example perf_probe --no-default-features
+	$(CARGO) build --locked -p fdu-core --example perf_probe --no-default-features --features gitignore
+	$(CARGO) test --locked -p fdu-core --example perf_probe --no-default-features --features gitignore
 
 test-performance: performance-probe
 	PYTHONPATH=explorations $(UV) run --no-project python -m unittest discover -s explorations/benchmarks/tests -p 'test_*.py'
@@ -430,10 +431,10 @@ PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 .PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check
 
 perf-probe-release:
-	$(CARGO) build --locked --release -p fdu-core --example perf_probe --no-default-features
+	$(CARGO) build --locked --release -p fdu-core --example perf_probe --no-default-features --features gitignore
 
 perf-probe-profiling:
-	$(CARGO) build --locked --profile profiling -p fdu-core --example perf_probe --no-default-features
+	$(CARGO) build --locked --profile profiling -p fdu-core --example perf_probe --no-default-features --features gitignore
 
 # Record what the tree looks like now, so later runs can prove they measured the same one.
 perf-baseline:

@@ -1107,7 +1107,8 @@ boundary at a time.
 | `fdu-b49n` | P2 | Reconcile acceptance criteria and durable architecture | — |
 | `fdu-qoro` | P1 | Incorporate the latest parent fix through formal GitHub stack #53 | `fdu-9o4u`, `fdu-dtb6`, `fdu-b49n` |
 | `fdu-jsbz` | P1 | Bind each cross-revision performance artifact to its own verified source | `fdu-9o4u` |
-| `fdu-lj4h` | P0 | Prove final-binary one-shot parity on both real subjects | `fdu-1jz6`, `fdu-9o4u`, `fdu-dtb6`, `fdu-b49n`, `fdu-qoro`, `fdu-jsbz` |
+| `fdu-by5y` | P1 | Measure with shipped control semantics enabled | — |
+| `fdu-lj4h` | P0 | Prove final-binary one-shot parity on both real subjects | `fdu-1jz6`, `fdu-9o4u`, `fdu-dtb6`, `fdu-b49n`, `fdu-qoro`, `fdu-jsbz`, `fdu-by5y` |
 | `fdu-rx0d` | P1 | Complete isolated gates, final review, push, and CI handoff | `fdu-lj4h` |
 
 Existing regression bead `fdu-pro1` now points to this spec and remains open until
@@ -1157,6 +1158,16 @@ toolchain in that checkout, rejects changed or dirty sources, and retains path
 redaction. The fix changes no acceptance margin, metric, or performance result.
 Its regression tests include the measurement entry point, missing source attribution,
 source drift, dirty sources, invalid labels, and checkout-local toolchain resolution.
+
+The final build audit found that the performance recipes used `--no-default-features`
+without `gitignore`. A control-rich filesystem alone does not exercise control handling
+when the capability is compiled out.
+`fdu-by5y` enables it in release, profiling, and tested probe builds, while preserving
+the minimal-library test.
+Final candidate and structural-control measurements use this same feature scope; the
+historical `b75bf85` predates the capability and is labelled accordingly.
+Earlier results without an explicit feature record do not establish controls-enabled
+performance. This correction changes the measured coverage, not the acceptance margins.
 
 Cleanup bead `fdu-iyg0` is complete: the source documents and measurement evidence are
 small and retained. Only disposable task-owned build output was previously staged in

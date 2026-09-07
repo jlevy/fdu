@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
 import subprocess
 import sys
@@ -355,6 +356,34 @@ class ProvenanceTests(unittest.TestCase):
             command.assert_called_once_with(["rustc", "-vV"], cwd=root)
             with self.assertRaises(FileNotFoundError):
                 provenance._source_facts(root / "missing-source")
+
+    @unittest.skipUnless(shutil.which("make"), "Make is required to inspect build recipes")
+    def test_performance_builds_enable_shipped_control_semantics(self) -> None:
+        for target in ("perf-probe-release", "perf-probe-profiling", "performance-probe"):
+            with self.subTest(target=target):
+                result = subprocess.run(
+                    ["make", "--dry-run", "CARGO=cargo", target],
+                    cwd=provenance.PROJECT_ROOT,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                builds = [
+                    line for line in result.stdout.splitlines() if line.startswith("cargo build ")
+                ]
+                self.assertTrue(builds, "the recipe must build the measured executable")
+                for build in builds:
+                    argv = shlex.split(build)
+                    features = set()
+                    for index, argument in enumerate(argv):
+                        if argument in {"--features", "-F"}:
+                            features.update(argv[index + 1].replace(",", " ").split())
+                        elif argument.startswith("--features="):
+                            features.update(argument.split("=", 1)[1].replace(",", " ").split())
+                    self.assertTrue(
+                        "--all-features" in argv or features & {"gitignore", "fdu-core/gitignore"},
+                        f"{target} compiles out control semantics: {build}",
+                    )
 
     def test_remote_normalization_removes_credentials_and_git_suffix(self) -> None:
         self.assertEqual(

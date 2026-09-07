@@ -596,6 +596,12 @@ The primary checkout identifies the harness and any artifact without an override
 explicit checkout must remain clean and match its binary’s recorded revision, lockfiles,
 and toolchain throughout verification.
 Checkout paths stay local and are not serialized into the manifest.
+Performance builds enable `gitignore`, including on a tree with no control files, so the
+measured binary retains the shipped control semantics.
+The watch feature is unnecessary for these jobs: opened discovery does not attach an OS
+watcher. Minimal-library probe tests remain separate.
+Record each artifact’s exact build arguments; a historical revision without the
+capability must be identified as such, not presented as a controls-enabled control.
 An installation attestation then proves the native Cargo or wheel-installed command, its
 effective bash/zsh resolution, its native payload, and a real cache-off scan.
 The competitor adapter must establish exact work before any timing is accepted.
