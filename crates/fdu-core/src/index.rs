@@ -2541,6 +2541,26 @@ impl Index {
         ops: &[ObservationOp],
         accepted: &[bool],
     ) -> crate::Result<crate::control::ControlTable> {
+        // When the retained table is empty and the batch carries no control op of any
+        // kind, projection cannot change anything: only control ops write the table, and
+        // there is nothing retained for a structural removal to prune. A cold scan of a
+        // tree without control files takes this lane for every batch, instead of paying
+        // one structural-overlay insertion per op to project a table that was empty onto
+        // a table that stays empty (fdu-pro1).
+        //
+        // Both control op kinds disqualify, not just upserts: with the capability
+        // compiled out, `ControlTable::remove` is what rejects a `ControlRemove`, and a
+        // fast lane that skipped it would accept input the slow lane fails closed on --
+        // which is precisely what `control_input_fails_closed_when_the_capability_is_absent`
+        // caught when this lane tested only for upserts.
+        if self.controls.is_empty()
+            && !ops.iter().zip(accepted).any(|(observed, accepted)| {
+                *accepted
+                    && matches!(observed.op, Op::ControlUpsert { .. } | Op::ControlRemove { .. })
+            })
+        {
+            return Ok(self.controls.clone());
+        }
         let mut projected = self.controls.clone();
         let mut structure = StructuralOverlay::default();
         for (observed, accepted) in ops.iter().zip(accepted) {
@@ -2688,6 +2708,16 @@ impl Index {
     ) -> Vec<(PathBuf, PathBuf)> {
         let mut structure = StructuralOverlay::default();
         let mut unknown = Vec::new();
+        // The last directory this pass proved, with every ancestor of it. A producer
+        // emits a directory's children together, so consecutive ops overwhelmingly
+        // share a parent, and re-proving the same chain per op was the largest single
+        // allocation cost of a cold scan (fdu-pro1): one component vector plus one
+        // ancestor path rebuilt push-by-push, per entry, for an answer that had not
+        // changed since the previous entry. The memo is invalidated wherever this loop
+        // learns something that could change an answer -- a non-directory upsert or a
+        // removal -- exactly like `ParentMemo` in the apply loop below.
+        let mut proven_dir: Option<PathBuf> = None;
+        let mut ancestor = PathBuf::new();
         for (observed, accepted) in ops.iter().zip(accepted) {
             if !accepted {
                 continue;
@@ -2696,28 +2726,58 @@ impl Index {
                 Op::Upsert { path, .. } | Op::ControlUpsert { path, .. }
                     if !path.as_os_str().is_empty() =>
                 {
-                    let mut reconcile_from = PathBuf::new();
-                    let mut ancestry_known = true;
-                    let parts = normalize(path).expect("prepared paths are canonical");
-                    let (_, ancestors) = parts.split_last().expect("non-root path has a name");
-                    let mut ancestor = PathBuf::new();
-                    for part in ancestors {
-                        ancestor.push(part);
-                        if structure.kind(self, &ancestor) != Some(EntryKind::Dir) {
-                            unknown.push((path.clone(), reconcile_from));
-                            ancestry_known = false;
-                            break;
+                    let same_proven_parent = matches!(
+                        (path.parent(), proven_dir.as_deref()),
+                        (Some(parent), Some(proven)) if parent == proven
+                    );
+                    if !same_proven_parent {
+                        let mut reconcile_from = PathBuf::new();
+                        let mut ancestry_known = true;
+                        let parts = normalize(path).expect("prepared paths are canonical");
+                        let (_, ancestors) = parts.split_last().expect("non-root path has a name");
+                        ancestor.clear();
+                        for part in ancestors {
+                            ancestor.push(part);
+                            if structure.kind(self, &ancestor) != Some(EntryKind::Dir) {
+                                unknown.push((path.clone(), reconcile_from));
+                                ancestry_known = false;
+                                break;
+                            }
+                            reconcile_from.clone_from(&ancestor);
                         }
-                        reconcile_from.clone_from(&ancestor);
+                        if !ancestry_known {
+                            proven_dir = None;
+                            continue;
+                        }
+                        match &mut proven_dir {
+                            Some(proven) => {
+                                proven.clear();
+                                path.parent().unwrap_or(Path::new("")).clone_into(proven);
+                            }
+                            None => {
+                                proven_dir =
+                                    Some(path.parent().unwrap_or(Path::new("")).to_path_buf());
+                            }
+                        }
                     }
-                    if ancestry_known {
-                        if let Op::Upsert { kind, .. } = &observed.op {
-                            structure.upsert(self, path, *kind);
+                    if let Op::Upsert { kind, .. } = &observed.op {
+                        structure.upsert(self, path, *kind);
+                        if !kind.is_dir() {
+                            // This path may itself have been somebody's proven ancestor
+                            // only if it was a directory before; the overlay knows, but
+                            // the memo does not, so it forgets rather than reasons.
+                            if proven_dir.as_deref().is_some_and(|proven| proven.starts_with(path))
+                            {
+                                proven_dir = None;
+                            }
                         }
                     }
                 }
                 Op::Remove { path } if !path.as_os_str().is_empty() => {
                     structure.remove(self, path);
+                    if proven_dir.as_deref().is_some_and(|proven| proven.starts_with(path)) {
+                        proven_dir = None;
+                    }
                 }
                 Op::Upsert { .. }
                 | Op::Remove { .. }
@@ -3615,6 +3675,14 @@ fn prepare_observation(observation: &Observation) -> crate::Result<PreparedObser
 fn canonical_relative_path(path: &Path) -> crate::Result<PathBuf> {
     if !path_is_relative_normal(path) {
         return Err(crate::Error::PathEscapesRoot(path.to_path_buf()));
+    }
+    // A path whose every component is `Normal` rebuilds to itself, so copy it in one
+    // allocation instead of reconstructing it component-by-component -- `collect` on a
+    // `PathBuf` grows by repeated push, which showed up as the dominant reallocation on
+    // whole-scan profiles (fdu-pro1). Every path fdu's own walker produces takes this
+    // lane; only input that actually contains `.` pays the rebuild.
+    if path.components().all(|component| matches!(component, Component::Normal(_))) {
+        return Ok(path.to_path_buf());
     }
     Ok(normalize(path).expect("representable paths normalize").into_iter().collect::<PathBuf>())
 }

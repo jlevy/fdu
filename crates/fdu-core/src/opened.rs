@@ -150,6 +150,10 @@ impl OpenOptions {
             threads: Some(1),
             order: crate::ScanOrder::BreadthFirst,
             types: self.types,
+            // The opened root exists to serve interactive consumers, and its
+            // ignored/unignored partitions are part of that contract, so control
+            // observation is never optional here.
+            read_controls: true,
         };
         (scan, self.budget, self.journal_capacity)
     }
