@@ -5,7 +5,7 @@ title: Prove one-shot parity and add deterministic regression guards
 kind: task
 status: in_progress
 priority: 0
-version: 20
+version: 21
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
 delegate: codex@spud10.local
 labels:
@@ -26,11 +26,11 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-09-01T06:33:23.201Z
-updated_at: 2026-09-07T06:58:00.040Z
+updated_at: 2026-09-07T07:39:30.422Z
 started_at: 2026-09-01T11:13:09.191Z
 ---
 Re-profile after every accepted experiment, close only profile-named residual costs, meet the plan wall/component/allocation thresholds on control-free and control-rich real trees, add negative-tested per-entry allocation and detached zero-work guards, run the full and cross-platform gates, and record every experiment.
 
 ## Notes
 
-Fresh-target final gate and cross-lint passed; 1a39be9 CI all 19 passed. All four release artifacts now verify against their own clean revisions with claim-grade provenance (manifest e191bbe062bf90a3c9f4819f8f7cdf8a0af85dd3d2737988a3010f121976ed61). Five profiles completed with the actual controls-enabled candidate. Detached cold/default profiles show zero effects, impacts, journal clones and ancestry overlays, with bulk metadata reads/open dominating raw symbols. Opened records no detached-builder work. Public large/batched mutation still has material path-comparison self time; summarize_commits diagnostic work also appears outside the component interval, so attribution must distinguish harness work. First historical-Rust timing attempt was refused before sampling by the unchanged quiet-host preflight (CPU busy34.8% >25%). No trial exists from that attempt; wait for host quiet and retry the preregistered cell without changing N or thresholds. Profile and refusal artifacts are preserved in the final run directory.
+64c6e61 is pushed in formal stack #53 and passes full isolated make check, cross-lint and all 19 CI checks. Scope/profile fixes fdu-ht5q and fdu-ttpf are closed. Corrected candidate 64c6e61, unchanged historical b75, allocation-only 2010fa3 and structural control 1981747 verify in claim-grade manifest bfa3f00322999b3f3d73718121738e1b641f6ab42195059ff17d66134444aff5. Scoped allocation checks on both nominated subjects match all compared summary fields/digests. Default allocation ratios versus historical are 0.6463 Rust and 0.6674 source; byte ratios 0.9472 and 0.9146. Cold and opened allocation/reallocation/byte ceilings also pass this instrumented check, not a timing verdict. Timing remains unsampled: two original attempts refused before trials; a later read-only pressure snapshot was 53.97% busy. Another project workload and indexing are active; neither was interrupted. fdu-0q6w owns the confirmed public preflight hotspot before final-binary timing. Preserve fixed 12 pairs, 3 warmups and all original final quiet-host/CI thresholds.
