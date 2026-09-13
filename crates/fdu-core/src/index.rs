@@ -2081,7 +2081,10 @@ impl Index {
     }
 
     fn remove_serving_file_semantics(&mut self, path: &Path, id: EntryId, attrs: Attrs) {
-        if self.serving.is_none() {
+        // Only a regular file is interned and tallied (`insert_serving_entry`). A symlink
+        // or special entry of the same classification would otherwise find a real file's
+        // type and subtract from its tally, or find none and panic under the write guard.
+        if self.serving.is_none() || self.entry(id).kind != EntryKind::File {
             return;
         }
         let name = self.classify(path).file_type.as_str().to_string();
@@ -3248,7 +3251,9 @@ impl Index {
                 }
                 let previous_attrs = entry.attrs;
                 self.invalidate_content(path);
-                self.remove_serving_file_semantics(path, id, previous_attrs);
+                if kind == EntryKind::File {
+                    self.remove_serving_file_semantics(path, id, previous_attrs);
+                }
                 self.remove_serving_entry(path, kind, previous_attrs, id);
                 let old = self.contribution(id);
                 self.unmerge_upward(Some(parent), &old);
@@ -3923,12 +3928,64 @@ mod tests {
             vec!["dir/a", "replace/child"]
         );
 
+        // Same-kind attribute updates of entries that hold no semantic tally: a symlink
+        // re-created in place (`ln -sfn`) and a special entry replaced by another. Every
+        // file here is extensionless, so each non-file shares its classification with a
+        // real file, and a non-file update that touched semantics would move that file's
+        // tally rather than fail loudly.
+        index.apply_ok(&Observation::new(vec![
+            upsert("dir/current", EntryKind::Symlink, file_attrs(5, 5)),
+            upsert("dir/pipe", EntryKind::Other, file_attrs(6, 6)),
+        ]));
+        assert_serving_indexes(&index);
+        index.apply_ok(&Observation::new(vec![
+            upsert("dir/current", EntryKind::Symlink, file_attrs(7, 7)),
+            upsert("dir/pipe", EntryKind::Other, file_attrs(8, 8)),
+        ]));
+        assert_serving_indexes(&index);
+
         index.apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("replace") }]));
         assert_serving_indexes(&index);
         assert_eq!(
             index.portable_entries().keys().map(crate::PortablePath::as_str).collect::<Vec<_>>(),
-            vec!["dir", "dir/a"]
+            vec!["dir", "dir/a", "dir/current", "dir/pipe"]
         );
+    }
+
+    /// A symlink or special entry holds no semantic tally, so updating one must neither
+    /// panic looking for a tally it never had nor subtract from a real file's.
+    ///
+    /// Both failures were reachable from ordinary filesystem churn on an opened root. With
+    /// no file of the same classification, the update panicked inside the commit while the
+    /// index write guard was held, poisoning the root. With one, it silently subtracted the
+    /// link's attributes from that file's tally and released the file's interned type, so
+    /// the file's own later removal panicked instead.
+    #[test]
+    fn non_file_attrs_updates_leave_file_semantics_untouched() {
+        for kind in [EntryKind::Symlink, EntryKind::Other] {
+            let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+                "/root",
+                ScanScope::default(),
+                crate::classify::TypeRegistry::compiled_shared(),
+                DEFAULT_JOURNAL_CAPACITY,
+            );
+            index.apply_ok(&Observation::new(vec![upsert("current", kind, file_attrs(1, 1))]));
+            assert_serving_indexes(&index);
+            index.apply_ok(&Observation::new(vec![upsert("current", kind, file_attrs(1, 2))]));
+            assert_serving_indexes(&index);
+
+            index.apply_ok(&Observation::new(vec![upsert(
+                "notes",
+                EntryKind::File,
+                file_attrs(5, 3),
+            )]));
+            assert_serving_indexes(&index);
+            index.apply_ok(&Observation::new(vec![upsert("current", kind, file_attrs(4, 4))]));
+            assert_serving_indexes(&index);
+
+            index.apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("notes") }]));
+            assert_serving_indexes(&index);
+        }
     }
 
     /// Escaping touches exactly two things and leaves everything else byte-identical.
