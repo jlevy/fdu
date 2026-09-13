@@ -5,7 +5,7 @@ title: "[bug] Gitignore bind walks the whole tree at open, even cache-only"
 kind: bug
 status: open
 priority: 1
-version: 11
+version: 12
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -23,7 +23,7 @@ labels:
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T20:45:09.518Z
-updated_at: 2026-08-26T07:01:50.826Z
+updated_at: 2026-09-13T22:34:27.844Z
 closed_at: null
 close_reason: null
 resolution: null
@@ -98,3 +98,5 @@ Two of the three findings in the d58d9c5 review land on this bead, and both are 
    to reject it. The save/load asymmetry they report -- load caps at one million while
    save writes any count, so churn can produce a snapshot fdu refuses on its own next
    open -- I have taken as reported and not independently verified.
+
+2026-09-13 (PR #48 review CLASS-8, deferred here as the reduced residual of this bead): the bind walk this bead filed is fixed on #48, but two correct-yet-wasteful passes remain. Every snapshot load BFS-walks the whole tree, allocating a PathBuf per entry, even when the control table is empty (crates/fdu-core/src/index.rs, the control install walk after load, around the ControlTable install in the snapshot load path); and every warm reconcile re-reads every .gitignore regardless of unchanged attrs (crates/fdu-core/src/scan.rs, read_control_op called from the reconcile walk). Review fix: return early on an empty control table, and skip control files whose attributes are unchanged. Review: https://github.com/jlevy/fdu/pull/48#pullrequestreview-5192314101

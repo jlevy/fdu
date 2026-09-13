@@ -5,7 +5,7 @@ title: Complete the coherent read envelope and version-pinned paging
 kind: bug
 status: open
 priority: 1
-version: 35
+version: 36
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -30,7 +30,7 @@ dependencies:
     target: is-01m0tdy9ceep2byvbtyvwc2vky
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.445Z
-updated_at: 2026-08-26T07:01:50.826Z
+updated_at: 2026-09-13T22:34:25.239Z
 closed_at: null
 close_reason: null
 resolution: null
@@ -103,3 +103,5 @@ a scope choice rather than an observable behaviour, on the grounds that the vers
 check separates two opens first. That reasoning holds for two separately *constructed*
 indexes and does not hold for two clones, which is exactly the hole. The comment needs
 correcting along with the code.
+
+2026-09-13 (PR #48 review READ-8, deferred here): a nonterminal page whose continuation record would exceed MAX_CONTINUATION_RECORD_BYTES (64 KiB) fails the entire ReadRequest with ContinuationRecordLimit (crates/fdu-core/src/opened/read.rs, the table.insert(...)? in tree_projection and flat_projection), discarding the assembled rows and every other projection in the read. Reachable only with very long paths or a very large EntrySelection. Review fix: refuse that page, typed and per projection, rather than the whole read. The same review's READ-2 (a full flat page discarded when the look-ahead exhausted max_work) and READ-3 (Tree answered Absent and RollUp answered Unknown for a present file) were fixed on #48 as fdu-8u26 and fdu-q2oj. Review: https://github.com/jlevy/fdu/pull/48#pullrequestreview-5192314101
