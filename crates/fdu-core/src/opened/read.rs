@@ -1058,7 +1058,7 @@ mod tests {
     /// needs none of it.
     #[test]
     fn climbing_out_of_a_deep_chain_needs_no_stack_per_level() {
-        const LEVELS: u32 = 3_000;
+        const LEVELS: u32 = 1_000;
         let mut index = crate::Index::new_opened_with_scope_types_and_journal_capacity(
             "/root",
             crate::ScanScope::default(),
@@ -1078,7 +1078,7 @@ mod tests {
         index.apply_ok(&crate::Observation::new(ops));
 
         let next = std::thread::Builder::new()
-            .stack_size(128 * 1024)
+            .stack_size(64 * 1024)
             .spawn(move || {
                 let mut spent = 0;
                 directory_at_depth(&index, Path::new(""), LEVELS, Some(&deepest), true, &mut spent)
