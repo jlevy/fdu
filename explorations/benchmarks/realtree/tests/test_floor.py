@@ -195,6 +195,62 @@ class ReconcilesDefinitionalDifferences(unittest.TestCase):
     def test_the_reconciliation_says_why(self):
         self.assertIn("root", floor.INSTRUMENTS["index"].tally_notes)
 
+    def test_the_reconciliations_arithmetic_adds_up(self):
+        """Review FLOOR-13: the note added the root on top of a count that held it."""
+        note = " ".join(floor.INSTRUMENTS["index"].tally_notes.split())
+        match = re.search(r"([\d,]+) entries -- ([\d,]+) directories, the root among them, "
+                          r"plus ([\d,]+) files and ([\d,]+) symlinks -- where parfloor "
+                          r"counted ([\d,]+) directories", note)
+        self.assertIsNotNone(match, note)
+        total, directories, files, symlinks, parfloor = (
+            int(group.replace(",", "")) for group in match.groups()
+        )
+        self.assertEqual(total, directories + files + symlinks)
+        self.assertEqual(parfloor, directories - 1)
+
+
+class CountsEntriesTheWayPerfSubjectsDoes(unittest.TestCase):
+    """One word, one count, across the campaign.
+
+    Review FLOOR-6: the scoreboard's "entries" was directories plus files, while
+    `perf-subjects` -- which applies the 50,000-entry deciding bar -- counts the root,
+    symlinks and other kinds too: 75,976 against 84,536 on /usr.
+    """
+
+    def test_entries_include_the_root_symlinks_and_other_kinds(self):
+        subject, _ = run_subject(CONSISTENT)
+        # 10 directories and 50 files under the root, 3 symlinks, and the root itself.
+        self.assertEqual(subject["entries"], 64)
+        self.assertEqual(subject["dirs_and_files"], 60)
+
+    def test_the_count_matches_perf_subjects_on_a_real_tree(self):
+        from benchmarks.realtree import tree
+
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch) / "subject"
+            (root / "a" / "b").mkdir(parents=True)
+            (root / "top.txt").write_text("x")
+            (root / "a" / "inner.txt").write_text("yy")
+            (root / "link").symlink_to("top.txt")
+            expected = tree.fingerprint(root, label="t")["counts"]["total"]
+            # What parfloor stat reports for this tree: directories below the root, regular
+            # files, and everything else in `other`.
+            parfloor = {"dirs": 2, "files": 2, "other": 1}
+        self.assertEqual(floor.entries_from_floor(parfloor), expected)
+
+    def test_the_per_entry_column_names_its_narrower_denominator(self):
+        subject = summarized_subject({"parfloor-stat": 40_000_000, "aggregate": 60_000_000})
+        subject.update(entries=84_536, dirs_and_files=75_976)
+        scored = floor.score(subject)
+        rows = {row["instrument"]: row for row in scored["rows"]}
+        self.assertAlmostEqual(rows["aggregate"]["ns_per_dir_or_file"], 60_000_000 / 75_976, 1)
+        self.assertNotIn("ns_per_entry", rows["aggregate"])
+        document = scored_document({"parfloor-stat": 40_000_000})
+        document["subjects"][0]["scored"] = scored
+        rendered = floor.render(document)
+        self.assertIn("ns/(dir+file)", rendered)
+        self.assertIn("84,536 entries (75,976 directories and files)", rendered)
+
 
 class EveryInstrumentRunsTheSamePool(unittest.TestCase):
     """A floor is a lower bound for a parallel walker only at the pool size it runs.
@@ -547,7 +603,7 @@ class FlagsASpreadNoMedianCanSummarize(unittest.TestCase):
 def summarized_subject(medians, *, suspect=()):
     """A measured subject as `score` reads it, one median per instrument."""
     return {
-        "label": "usr-tree", "entries": 75_976,
+        "label": "usr-tree", "entries": 84_536, "dirs_and_files": 75_976,
         "instruments": {
             name: {
                 "role": floor.INSTRUMENTS[name].role,

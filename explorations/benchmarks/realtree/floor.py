@@ -117,6 +117,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from benchmarks.realtree import measure
+from benchmarks.realtree.subjects import MINIMUM_DECIDING_ENTRIES
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SPIKES = PROJECT_ROOT / "explorations" / "benchmarks" / "spikes"
@@ -214,8 +215,10 @@ INSTRUMENTS: Dict[str, Instrument] = {
         role="floor",
         description="Raw getdents64 + statx per entry into four accumulators. The floor.",
         argv=("{parfloor}", "stat", "{root}", "{workers}"),
-        tally_map={"dirs": "dirs", "files": "files", "bytes": "apparent_bytes",
-                   "allocated": "allocated_bytes"},
+        # `other` -- symlinks and every other non-regular kind -- faces no oracle, since
+        # fdu's tiers do not report it; it completes the subject's entry count.
+        tally_map={"dirs": "dirs", "files": "files", "other": "other",
+                   "bytes": "apparent_bytes", "allocated": "allocated_bytes"},
     ),
     "parfloor-enum": Instrument(
         id="parfloor-enum",
@@ -256,8 +259,9 @@ INSTRUMENTS: Dict[str, Instrument] = {
             "An index retains the root directory as an entry of its own -- the tree root "
             "node, with an identity and a roll-up -- while a tallying walk counts only what "
             "it enumerates inside the root. Measured on two subjects the difference is "
-            "exactly one directory, and index_len confirms the decomposition: on /usr, "
-            "84,536 = 7,843 dirs + 68,134 files + 8,559 symlinks + the root."
+            "exactly one directory, and index_len confirms the decomposition: on /usr the "
+            "index held 84,536 entries -- 7,843 directories, the root among them, plus "
+            "68,134 files and 8,559 symlinks -- where parfloor counted 7,842 directories."
         ),
         elapsed_key="component_ns",
         payload_key="summary",
@@ -616,6 +620,18 @@ def _balanced_block(count: int) -> tuple:
     return tuple(block)
 
 
+def entries_from_floor(tallies: Mapping[str, int]) -> int:
+    """A subject's entry count as `perf-subjects` counts it, from `parfloor stat`'s tallies.
+
+    `subjects.py` applies the campaign's deciding bar to the fingerprint's total: the root,
+    every directory, file and symlink, and any other kind. `parfloor stat` reports the
+    same tree as directories below the root, regular files, and everything else in
+    `other`, so the two agree once the root is added back. Directories and files alone,
+    which is all fdu's tiers report, undercount a tree like /usr by about a tenth.
+    """
+    return tallies["dirs"] + tallies["files"] + tallies["other"] + 1
+
+
 def measure_subject(
     *,
     root: Path,
@@ -632,7 +648,7 @@ def measure_subject(
 
     Interleaving is not a nicety here. Run sequentially, the first instrument pays the
     page-cache miss for the whole tree and every later one reads a warm cache: measured
-    that way on a 76k-entry subject, the *ceiling* came out 1.6x faster than the floor it
+    that way on an 85k-entry subject, the *ceiling* came out 1.6x faster than the floor it
     is supposed to sit above. Rounds plus discarded warmups are what make the ratio a
     property of the programs rather than of their order -- and the rounds follow
     `schedule`, so no instrument inherits one predecessor's leftovers every time.
@@ -644,6 +660,7 @@ def measure_subject(
     disagreements: List[str] = []
     invalid_trials = 0
     invalid_reasons: List[str] = []
+    entries: Optional[int] = None
 
     rounds = schedule(instruments, trials=trials, warmups=warmups)
     with contextlib.ExitStack() as stack:
@@ -660,6 +677,8 @@ def measure_subject(
                     warmup=warmup,
                     regime=regime,
                 )
+                if entries is None and instrument.id == FLOOR_INSTRUMENT:
+                    entries = entries_from_floor(trial.tallies)
                 if not warmup:
                     trials_by_instrument[instrument.id].append(trial)
                     if not trial.valid:
@@ -694,7 +713,11 @@ def measure_subject(
     }
     return {
         "label": label,
-        "entries": (oracle or {}).get("dirs", 0) + (oracle or {}).get("files", 0),
+        # The count `perf-subjects` applies the deciding bar to, so "entries" means one
+        # thing across the campaign; None without the floor instrument, which reports it.
+        "entries": entries,
+        # What fdu's tiers report, and the denominator of the per-entry cost column.
+        "dirs_and_files": (oracle or {}).get("dirs", 0) + (oracle or {}).get("files", 0),
         "oracle": oracle,
         "oracle_source": oracle_source,
         "oracle_disagreements": disagreements,
@@ -780,7 +803,7 @@ def score(subject: Mapping[str, Any]) -> Dict[str, Any]:
     floor = instruments.get(FLOOR_INSTRUMENT, {}).get("elapsed_ns", {}).get("median")
     if not floor:
         raise FloorError(f"{subject['label']}: no floor measurement to divide by")
-    entries = subject["entries"] or 1
+    dirs_and_files = subject["dirs_and_files"] or 1
     rows = []
     for name, result in instruments.items():
         median = result["elapsed_ns"]["median"]
@@ -793,7 +816,10 @@ def score(subject: Mapping[str, Any]) -> Dict[str, Any]:
             "role": result["role"],
             "median_ms": round(median / 1e6, 2),
             "x_floor": round(ratio, 3),
-            "ns_per_entry": round(median / entries, 1),
+            # Per directory or file, not per entry: that is what every instrument's tallies
+            # agree on, and it is the denominator the recorded scoreboards used. It runs
+            # about a tenth above a per-entry cost on a tree with /usr's symlinks.
+            "ns_per_dir_or_file": round(median / dirs_and_files, 1),
             "p95_over_median": result["elapsed_ns"]["p95_over_median"],
             "spread": result["spread"],
             "spread_suspect": result["spread_suspect"],
@@ -810,6 +836,7 @@ def score(subject: Mapping[str, Any]) -> Dict[str, Any]:
         })
     rows.sort(key=lambda row: row["x_floor"])
     return {"label": subject["label"], "entries": subject["entries"],
+            "dirs_and_files": subject["dirs_and_files"],
             "floor_ns": floor, "rows": rows}
 
 
@@ -839,7 +866,10 @@ def render(document: Mapping[str, Any]) -> str:
 
     for subject in document["subjects"]:
         scored = subject["scored"]
-        lines.append(f"## {scored['label']} — {scored['entries']:,} entries")
+        entries = (f"{scored['entries']:,} entries" if scored["entries"] is not None
+                   else "entries not counted")
+        lines.append(f"## {scored['label']} — {entries} "
+                     f"({scored['dirs_and_files']:,} directories and files)")
         lines.append("")
         if subject["oracle_disagreements"]:
             lines.append("> **The oracle disagreed. These numbers do not compare.**")
@@ -847,7 +877,8 @@ def render(document: Mapping[str, Any]) -> str:
                 lines.append(f"> - {reason}")
             lines.append("")
         lines.append(
-            "| Instrument | Role | Median | ×floor | ns/entry | spread | p95/median | Peak RSS |"
+            "| Instrument | Role | Median | ×floor | ns/(dir+file) | spread | p95/median "
+            "| Peak RSS |"
         )
         lines.append("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |")
         for row in scored["rows"]:
@@ -864,7 +895,7 @@ def render(document: Mapping[str, Any]) -> str:
                       else f"{row['spread']:.2f}" if row["spread"] else "—")
             lines.append(
                 f"| `{row['instrument']}` | {row['role']} | {row['median_ms']:.2f} ms | "
-                f"**{row['x_floor']:.2f}**{mark} | {row['ns_per_entry']:.0f} | "
+                f"**{row['x_floor']:.2f}**{mark} | {row['ns_per_dir_or_file']:.0f} | "
                 f"{spread} | {row['p95_over_median'] or '—'} | {rss} |"
             )
         lines.append("")
@@ -949,8 +980,12 @@ def main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="benchmarks.realtree.floor", description=__doc__.splitlines()[0]
     )
-    parser.add_argument("--subject", action="append", default=[], metavar="LABEL=PATH",
-                        help="a tree to score; repeat. Deciding subjects are dense and >=50k entries.")
+    parser.add_argument(
+        "--subject", action="append", default=[], metavar="LABEL=PATH",
+        help=("a tree to score; repeat. A subject decides only if it is dense and holds at "
+              f"least {MINIMUM_DECIDING_ENTRIES:,} entries as perf-subjects counts them -- "
+              "the root, directories, files and symlinks -- and smaller ones screen."),
+    )
     parser.add_argument(
         "--workers", type=int, default=None,
         help=("the fixed pool every instrument runs; default: the CPUs this process may "
