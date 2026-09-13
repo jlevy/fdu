@@ -3,9 +3,9 @@ type: is
 id: is-01m2eafpfpe8k5c9z9dhrqvy2y
 title: "Address review: PR #51 — commit-pipeline optimizations and the control-observation gate"
 kind: task
-status: open
+status: closed
 priority: 1
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels: []
 dependencies: []
@@ -15,7 +15,11 @@ child_order_hints:
   - is-01m2eag6gyvzzt41f6xagdz2ap
   - is-01m2eag6x0a7xr583z56k4ve7v
 created_at: 2026-09-13T21:24:01.127Z
-updated_at: 2026-09-13T21:24:17.951Z
+updated_at: 2026-09-13T22:08:34.793Z
+closed_at: 2026-09-13T22:08:34.792Z
+close_reason: "All seven findings fixed on PR #51 (c0729ce, 50e6ca5, 6d2d964, 046c9ec, a69b95e, b36d5aa, 51154f9); CI 19/19 green at 51154f9; dispositions posted on #51 and #50. COMMIT-1/COMMIT-4 tracked on fdu-vev7/fdu-lksd, COMMIT-3 on fdu-etfj (closes at merge). Opened-root/open/--watch abort on control volume deferred to fdu-1onj."
+resolution: null
+duplicate_of: null
 ---
 Formal review 5192254822 on PR #51 (https://github.com/jlevy/fdu/pull/51#pullrequestreview-5192254822) at head 19c0d73, plus PR #50 review 5192254897 (https://github.com/jlevy/fdu/pull/50#pullrequestreview-5192254897), whose single finding is the same PLAN-3 and whose text now lives on #51's branch.
 

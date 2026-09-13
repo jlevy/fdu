@@ -3,15 +3,19 @@ type: is
 id: is-01m2eag6x0a7xr583z56k4ve7v
 title: "PR #51/#50 review PLAN-3: the plan names the CLI, not the shared planner, as where control observation is decided"
 kind: task
-status: open
+status: closed
 priority: 2
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels: []
 dependencies: []
 parent_id: is-01m2eafpfpe8k5c9z9dhrqvy2y
 created_at: 2026-09-13T21:24:17.951Z
-updated_at: 2026-09-13T21:24:17.951Z
+updated_at: 2026-09-13T22:08:00.970Z
+closed_at: 2026-09-13T22:08:00.968Z
+close_reason: "Fixed in b36d5aa on PR #51: the fdu-etfj row names crates/fdu-core/src/execution.rs plan_report and prepare_report, matching the COMMIT-3 fix (a69b95e). Answers PR #50 review PLAN-3 as well; nothing pushed to #50's branch."
+resolution: null
+duplicate_of: null
 ---
 PR #51 review PLAN-3 and PR #50 review PLAN-3 (Medium), https://github.com/jlevy/fdu/pull/50#pullrequestreview-5192254897. The fdu-etfj implementation row (plan line 2185 at 19c0d73) names crates/fdu/src/cli.rs (and at #50's head, crates/fdu/Cargo.toml and scan.rs) as where the policy is decided, never execution::plan_report / prepare_report, the one-shot planner the CLI and Python both call.
 
