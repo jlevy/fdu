@@ -3010,6 +3010,82 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// A full page is an answer, whatever the budget left over after filling it.
+    ///
+    /// The page used to keep scanning past its last row for the next *admitted* entry to
+    /// name as its cursor, charging the budget as it went, and a budget that ran out during
+    /// that look-ahead returned `Limit` and threw the finished page away. The same request at
+    /// the same budget did the same thing forever, so a fixed-budget client could not page
+    /// past a run of unselected entries. Swept rather than named, because the defect lived
+    /// in a band of budgets rather than at one value.
+    #[test]
+    fn a_full_flat_page_survives_any_budget_that_filled_it() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        let file = |name: &str| Op::Upsert {
+            path: PathBuf::from(name),
+            kind: EntryKind::File,
+            attrs: crate::Attrs::default(),
+        };
+        let mut ops = vec![file("a0.rs"), file("a1.rs")];
+        ops.extend((0..5).map(|i| file(&format!("b{i}.txt"))));
+        ops.push(file("c.rs"));
+        opened.state.index.apply(&Observation::new(ops)).expect("seed entries");
+        let selection = crate::query::EntrySelection {
+            query: crate::query::Selection {
+                include: vec![crate::query::Pattern::parse("*.rs").expect("pattern")],
+                ..crate::query::Selection::default()
+            },
+            ..crate::query::EntrySelection::default()
+        };
+        let rows = |page: &crate::FlatPage| {
+            page.rows.iter().map(|row| row.portable_path.as_str().to_string()).collect::<Vec<_>>()
+        };
+
+        for max_work in 1..=12 {
+            let first = opened
+                .read(crate::ReadRequest {
+                    projections: vec![crate::ReadProjection::Flat {
+                        selection: selection.clone(),
+                        shape: crate::RowShape::Compact,
+                        page: crate::PageRequest { limit: 2, max_work },
+                    }],
+                    ..crate::ReadRequest::default()
+                })
+                .expect("first page");
+            if max_work < 2 {
+                // Too small to fill the page: no position to name, so a typed limit.
+                assert!(
+                    matches!(first.results[0], crate::ProjectionResult::Limit(_)),
+                    "max_work {max_work}: {:?}",
+                    first.results[0]
+                );
+                continue;
+            }
+            let crate::ProjectionResult::Flat(first_page) = &first.results[0] else {
+                panic!("max_work {max_work}: a full page was refused: {:?}", first.results[0]);
+            };
+            assert_eq!(rows(first_page), ["a0.rs", "a1.rs"], "max_work {max_work}");
+            assert!(first.work.rows_visited <= max_work, "max_work {max_work}: {:?}", first.work);
+            let continuation = first_page.next.expect("the page stopped with rows left");
+
+            let second = opened
+                .read(crate::ReadRequest {
+                    projections: vec![crate::ReadProjection::Continue {
+                        continuation,
+                        page: crate::PageRequest { limit: 2, max_work: crate::MAX_PAGE_WORK },
+                    }],
+                    expected: Some(first.version),
+                })
+                .expect("second page");
+            let crate::ProjectionResult::Flat(second_page) = &second.results[0] else {
+                panic!("max_work {max_work}: continued flat page: {:?}", second.results[0]);
+            };
+            assert_eq!(rows(second_page), ["c.rs"], "max_work {max_work}");
+            assert!(second_page.next.is_none(), "max_work {max_work}");
+        }
+        opened.close().expect("close");
+    }
+
     /// Two reads proceed together: a page in progress does not hold the lifecycle lock.
     ///
     /// `read()` used to bind the lifecycle guard and project as its tail expression, so the
@@ -3249,11 +3325,13 @@ mod tests {
         ));
 
         let retryable = new_token();
+        // Two rows on a budget of one: the budget runs out before the page fills, so there
+        // is no position to name. A one-row page would fill on its first entry and return.
         let limited = opened
             .read(crate::ReadRequest {
                 projections: vec![crate::ReadProjection::Continue {
                     continuation: retryable,
-                    page: crate::PageRequest { limit: 1, max_work: 1 },
+                    page: crate::PageRequest { limit: 2, max_work: 1 },
                 }],
                 ..crate::ReadRequest::default()
             })

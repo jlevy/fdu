@@ -329,6 +329,8 @@ fn coherent_projections_and_continuations() -> SessionTrace {
     trace.record("result.changes.future", &future_result);
     trace.observe_poll(&future_result);
 
+    // Two rows on a budget of one, so the budget runs out before the page fills. A one-row
+    // page fills on its first entry and is an answer, whatever the budget has left.
     let limited = read(
         &opened,
         &mut trace,
@@ -336,7 +338,7 @@ fn coherent_projections_and_continuations() -> SessionTrace {
             projections: vec![ReadProjection::Flat {
                 selection: crate::query::EntrySelection::default(),
                 shape: RowShape::Compact,
-                page: PageRequest { limit: 1, max_work: 1 },
+                page: PageRequest { limit: 2, max_work: 1 },
             }],
             expected: None,
         },

@@ -598,6 +598,15 @@ fn flat_projection(
     let mut spent = 0_u64;
     let mut next = None;
     for (portable, id) in iterator {
+        // A full page stops at the first entry it has not looked at, admitted or not, and
+        // before charging for it. Resuming includes that entry and re-evaluates it. Looking
+        // ahead for the next *admitted* entry instead spent budget after the page was
+        // already an answer, and a budget exhausted by that look-ahead discarded the page as
+        // a limit -- identically on every retry, so the position could never be passed.
+        if rows.len() == page.limit {
+            next = Some(portable.clone());
+            break;
+        }
         spent = spent.saturating_add(1);
         if spent > page.max_work {
             work.rows_visited = work.rows_visited.saturating_add(page.max_work);
@@ -621,10 +630,6 @@ fn flat_projection(
         };
         if !selection.admits(&candidate, row.ignored) {
             continue;
-        }
-        if rows.len() == page.limit {
-            next = Some(portable.clone());
-            break;
         }
         if shape == crate::RowShape::Compact {
             row.rollup = None;
