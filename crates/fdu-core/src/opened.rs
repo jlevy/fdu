@@ -933,6 +933,75 @@ enum DiscoveryStep {
     Stopped,
 }
 
+/// How the index answered one discovery commit.
+///
+/// Discovery walks a tree other producers are free to change underneath it, so a refused
+/// commit is usually news about the world rather than a failure of the walk. Only an
+/// engine failure -- a poisoned lock, an exhausted clock, a malformed observation -- is
+/// returned as an error and ends discovery.
+#[derive(Clone, Debug)]
+enum DiscoveryAnswer {
+    /// Committed, or verified to change nothing; the listing continues.
+    Accepted,
+    /// The root is terminal: this commit's upsert crossed the shared file budget, or an
+    /// earlier commit had already stopped or failed the root.
+    Stopped,
+    /// The commit named a directory the index no longer holds, or a child whose ancestry
+    /// it no longer holds. A refresh or the observer verified that part of the tree after
+    /// this directory was queued, so the frontier entry is stale and the newer commit
+    /// stands; whichever producer next verifies the path records what is there now.
+    Stale,
+    /// The index refused this directory's listing on a resource bound that does not stop
+    /// the root. The directory stays incomplete and the refusal is retained as an issue.
+    Refused(crate::Issue),
+}
+
+/// Classify a refused discovery commit, keeping engine failures fatal.
+fn discovery_rejection(error: Error) -> Result<DiscoveryAnswer> {
+    match error {
+        Error::OpenedIndexStopped => Ok(DiscoveryAnswer::Stopped),
+        Error::InvalidDirectoryCompletion(_) | Error::UnknownAncestry { .. } => {
+            Ok(DiscoveryAnswer::Stale)
+        }
+        Error::ControlSourceLimit { .. } | Error::ControlPatternLimit { .. } => {
+            Ok(DiscoveryAnswer::Refused(crate::Issue::from_error(&error)))
+        }
+        error => Err(error),
+    }
+}
+
+/// Stop listing one directory whose commit the index did not accept.
+///
+/// Nothing discovered in the abandoned listing is queued: its subdirectories either left
+/// with the stale parent or were never committed, and a directory whose listing was cut
+/// short is never marked complete, so absence below it stays unknown. A refusal keeps the
+/// issues the listing had already gathered, since the refused batch may have carried them.
+fn abandon_directory(
+    index: &IndexHandle,
+    journal: &journal::JournalWait,
+    frontier: &DiscoveryFrontier,
+    answer: DiscoveryAnswer,
+    mut issues: Vec<crate::Issue>,
+    mut omitted: u64,
+) -> Result<DiscoveryStep> {
+    match answer {
+        DiscoveryAnswer::Accepted | DiscoveryAnswer::Stale => Ok(DiscoveryStep::Continue),
+        DiscoveryAnswer::Stopped => {
+            frontier.stop();
+            Ok(DiscoveryStep::Stopped)
+        }
+        DiscoveryAnswer::Refused(issue) => {
+            retain_local_issue(&mut issues, &mut omitted, issue);
+            publish_discovery_transition(
+                index,
+                journal,
+                DiscoveryTransition::Inaccessible { issues, omitted },
+            )?;
+            Ok(DiscoveryStep::Continue)
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn discover_directory(
     root: &Path,
@@ -950,6 +1019,20 @@ fn discover_directory(
     crate::counters::bump(|c| c.dir_opens += 1);
     let listing = match std::fs::read_dir(&absolute) {
         Ok(listing) => listing,
+        // Removed or replaced after its parent was listed -- a build cache, an editor's
+        // temporary directory. That is stale frontier work, not an inaccessible boundary:
+        // marking the root inaccessible for it would outlive every later verification
+        // that the path is simply gone. The root itself is never stale work; losing it is
+        // a failure of the whole walk.
+        Err(source)
+            if !directory.path.as_os_str().is_empty()
+                && matches!(
+                    source.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                ) =>
+        {
+            return Ok(DiscoveryStep::Continue);
+        }
         Err(source) => {
             let error = Error::io(&absolute, source);
             publish_discovery_transition(
@@ -972,7 +1055,7 @@ fn discover_directory(
 
     for item in listing {
         if cancellation.is_cancelled() {
-            commit_discovery_batch(
+            let answer = commit_discovery_batch(
                 index,
                 journal,
                 &mut batch,
@@ -980,6 +1063,10 @@ fn discover_directory(
                 Some(DiscoveryTransition::Cancelled),
                 budget.max_files,
             )?;
+            if matches!(answer, DiscoveryAnswer::Stale | DiscoveryAnswer::Refused(_)) {
+                // The refused batch carried the transition with it.
+                publish_discovery_transition(index, journal, DiscoveryTransition::Cancelled)?;
+            }
             frontier.stop();
             return Ok(DiscoveryStep::Stopped);
         }
@@ -1035,43 +1122,50 @@ fn discover_directory(
         }
         if !retained {
             if let Some(control) = control {
-                if push_discovery_op(
+                let answer = push_discovery_op(
                     index,
                     journal,
                     scan.batch_size,
                     &mut batch,
                     control,
                     budget.max_files,
-                )? {
-                    frontier.stop();
-                    return Ok(DiscoveryStep::Stopped);
+                )?;
+                if !matches!(answer, DiscoveryAnswer::Accepted) {
+                    return abandon_directory(
+                        index,
+                        journal,
+                        frontier,
+                        answer,
+                        issues,
+                        omitted_issues,
+                    );
                 }
             }
             continue;
         }
 
-        if push_discovery_op(
+        let answer = push_discovery_op(
             index,
             journal,
             scan.batch_size,
             &mut batch,
             Op::Upsert { path: path.clone(), kind, attrs },
             budget.max_files,
-        )? {
-            frontier.stop();
-            return Ok(DiscoveryStep::Stopped);
+        )?;
+        if !matches!(answer, DiscoveryAnswer::Accepted) {
+            return abandon_directory(index, journal, frontier, answer, issues, omitted_issues);
         }
         if let Some(control) = control {
-            if push_discovery_op(
+            let answer = push_discovery_op(
                 index,
                 journal,
                 scan.batch_size,
                 &mut batch,
                 control,
                 budget.max_files,
-            )? {
-                frontier.stop();
-                return Ok(DiscoveryStep::Stopped);
+            )?;
+            if !matches!(answer, DiscoveryAnswer::Accepted) {
+                return abandon_directory(index, journal, frontier, answer, issues, omitted_issues);
             }
         }
         if descend {
@@ -1080,12 +1174,15 @@ fn discover_directory(
     }
 
     let incomplete = !issues.is_empty() || omitted_issues > 0;
-    let transition =
-        incomplete.then_some(DiscoveryTransition::Inaccessible { issues, omitted: omitted_issues });
+    let transition = incomplete.then(|| DiscoveryTransition::Inaccessible {
+        issues: issues.clone(),
+        omitted: omitted_issues,
+    });
     let complete = (!incomplete).then(|| directory.path.clone());
-    if commit_discovery_batch(index, journal, &mut batch, complete, transition, budget.max_files)? {
-        frontier.stop();
-        return Ok(DiscoveryStep::Stopped);
+    let answer =
+        commit_discovery_batch(index, journal, &mut batch, complete, transition, budget.max_files)?;
+    if !matches!(answer, DiscoveryAnswer::Accepted) {
+        return abandon_directory(index, journal, frontier, answer, issues, omitted_issues);
     }
     frontier.extend(discovered);
     Ok(DiscoveryStep::Continue)
@@ -1127,12 +1224,12 @@ fn push_discovery_op(
     batch: &mut Vec<Op>,
     op: Op,
     max_files: Option<u64>,
-) -> Result<bool> {
+) -> Result<DiscoveryAnswer> {
     batch.push(op);
     if batch.len() >= batch_size {
         return commit_discovery_batch(index, journal, batch, None, None, max_files);
     }
-    Ok(false)
+    Ok(DiscoveryAnswer::Accepted)
 }
 
 fn commit_discovery_batch(
@@ -1142,25 +1239,41 @@ fn commit_discovery_batch(
     directory_complete: Option<PathBuf>,
     transition: Option<DiscoveryTransition>,
     max_files: Option<u64>,
-) -> Result<bool> {
+) -> Result<DiscoveryAnswer> {
     let observation = Observation::new(std::mem::take(batch));
-    let outcome = index.apply_discovery_bounded(
+    let outcome = match index.apply_discovery_bounded(
         &observation,
         DiscoveryCommit { directory_complete, transition },
         max_files,
-    )?;
+    ) {
+        Ok(outcome) => outcome,
+        Err(error) => return discovery_rejection(error),
+    };
     if outcome.commit.is_some() {
         journal.notify_commit();
     }
-    Ok(outcome.stats.resource_refused > 0)
+    Ok(if outcome.stats.resource_refused > 0 {
+        DiscoveryAnswer::Stopped
+    } else {
+        DiscoveryAnswer::Accepted
+    })
 }
 
+/// Publish a state-only discovery transition.
+///
+/// A root that has already stopped or failed refuses every discovery commit, and a
+/// transition it refuses has nothing left to say: the terminal state it would have
+/// replaced is the answer.
 fn publish_discovery_transition(
     index: &IndexHandle,
     journal: &journal::JournalWait,
     transition: DiscoveryTransition,
 ) -> Result<()> {
-    let outcome = index.transition_discovery(transition)?;
+    let outcome = match index.transition_discovery(transition) {
+        Ok(outcome) => outcome,
+        Err(Error::OpenedIndexStopped) => return Ok(()),
+        Err(error) => return Err(error),
+    };
     if outcome.commit.is_some() {
         journal.notify_commit();
     }
@@ -1747,6 +1860,29 @@ mod tests {
                 return state;
             }
             assert!(std::time::Instant::now() < deadline, "discovery did not settle");
+            std::thread::yield_now();
+        }
+    }
+
+    /// Block until every worker registered under `name` has returned, without closing.
+    ///
+    /// A state that should stay put cannot be awaited by polling for a change, so this
+    /// waits for the worker that might change it to finish instead.
+    fn wait_for_worker_exit(opened: &OpenedIndex, name: &str) {
+        let deadline = std::time::Instant::now() + TEST_GATE_TIMEOUT;
+        loop {
+            let (registered, finished) = {
+                let lifecycle = opened.state.lock_lifecycle();
+                let named = lifecycle.guard.workers.iter().filter(|worker| worker.name == name);
+                named.fold((0, 0), |(registered, finished), worker| {
+                    (registered + 1, finished + usize::from(worker.handle.is_finished()))
+                })
+            };
+            assert!(registered > 0, "no worker named {name}");
+            if registered == finished {
+                return;
+            }
+            assert!(std::time::Instant::now() < deadline, "worker {name} did not exit");
             std::thread::yield_now();
         }
     }
@@ -4243,6 +4379,168 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// A directory another producer removed while it waited in the frontier is stale work.
+    ///
+    /// Discovery queues `sub` from the root listing. While it waits -- minutes, on a wide
+    /// breadth-first walk -- `sub` is deleted, a refresh commits the removal, and `sub` is
+    /// recreated. Discovery then lists the new directory and commits it beneath a parent the
+    /// index no longer holds. That rejection used to end discovery as `Failed`, so
+    /// observation never started and `close()` reported a worker failure. Both commit shapes
+    /// are covered: with a batch of one the first flush fails on the child's ancestry, and
+    /// with the default batch the final commit fails naming the directory complete.
+    #[test]
+    fn a_refresh_racing_discovery_leaves_the_queued_directory_as_stale_work() {
+        for batch_size in [1, OpenOptions::default().batch_size] {
+            let controls = Arc::new(TestControls::default());
+            controls.gate(TestPoint::AfterRootDirectory).arm();
+            let root = tempfile::tempdir().expect("temp root");
+            std::fs::create_dir(root.path().join("sub")).expect("sub");
+            std::fs::write(root.path().join("sub/inner.txt"), b"x").expect("fixture");
+            let opened = OpenedIndex::open_for_test(
+                root.path(),
+                OpenOptions { batch_size, ..OpenOptions::default() },
+                Arc::clone(&controls),
+            )
+            .expect("open");
+            controls.gate(TestPoint::AfterRootDirectory).wait_reached();
+            assert_eq!(
+                opened.state.index.kind(Path::new("sub")).expect("lookup"),
+                Some(EntryKind::Dir),
+                "the root listing queued `sub`"
+            );
+
+            std::fs::remove_dir_all(root.path().join("sub")).expect("remove sub");
+            let refreshed = opened.refresh(&[PathBuf::from("sub")]).expect("refresh");
+            assert_eq!(refreshed.accepted, vec![PathBuf::from("sub")]);
+            std::fs::create_dir(root.path().join("sub")).expect("recreate sub");
+            std::fs::write(root.path().join("sub/again.txt"), b"y").expect("fixture");
+            controls.gate(TestPoint::AfterRootDirectory).release();
+
+            let state = wait_until_settled(&opened);
+            assert_eq!(state.phase, crate::LifecyclePhase::Ready, "batch size {batch_size}");
+            assert_eq!(state.coverage, crate::Coverage::Complete, "batch size {batch_size}");
+            assert_eq!(state.issues.retained, 0, "batch size {batch_size}");
+            // The refresh's verified removal stands. The recreated directory belongs to the
+            // next producer that verifies the path, not to a frontier entry older than it.
+            assert_eq!(opened.state.index.kind(Path::new("sub")).expect("lookup"), None);
+            opened.close().unwrap_or_else(|error| panic!("batch size {batch_size}: {error}"));
+        }
+    }
+
+    /// A directory removed or replaced between its parent's listing and its own is stale
+    /// work, not an inaccessible boundary that outlives every later verification.
+    #[test]
+    fn a_directory_that_vanishes_during_discovery_is_not_inaccessible() {
+        for replace_with_file in [false, true] {
+            let controls = Arc::new(TestControls::default());
+            controls.gate(TestPoint::AfterRootDirectory).arm();
+            let root = tempfile::tempdir().expect("temp root");
+            std::fs::create_dir(root.path().join("sub")).expect("sub");
+            std::fs::write(root.path().join("sub/inner.txt"), b"x").expect("fixture");
+            std::fs::write(root.path().join("keep.txt"), b"k").expect("fixture");
+            let opened = OpenedIndex::open_for_test(
+                root.path(),
+                OpenOptions::default(),
+                Arc::clone(&controls),
+            )
+            .expect("open");
+            controls.gate(TestPoint::AfterRootDirectory).wait_reached();
+            std::fs::remove_dir_all(root.path().join("sub")).expect("remove sub");
+            if replace_with_file {
+                std::fs::write(root.path().join("sub"), b"now a file").expect("replacement");
+            }
+            controls.gate(TestPoint::AfterRootDirectory).release();
+
+            let state = wait_until_settled(&opened);
+            let case = if replace_with_file { "replaced by a file" } else { "removed" };
+            assert_eq!(state.phase, crate::LifecyclePhase::Ready, "{case}");
+            assert_eq!(state.coverage, crate::Coverage::Complete, "{case}");
+            assert_eq!(state.freshness, crate::Freshness::Fresh, "{case}");
+            assert_eq!(state.issues.retained, 0, "{case}");
+            opened.close().unwrap_or_else(|error| panic!("{case}: {error}"));
+        }
+    }
+
+    /// A budget stop is terminal even when it lands in the middle of discovery.
+    ///
+    /// A refresh trips the shared budget while discovery still has a file-less directory
+    /// queued. Nothing that directory holds is refused, so discovery used to run on to
+    /// `Finish`, which set the phase `Ready` unconditionally: `prioritize` succeeded again and
+    /// an observer could have reached `Watching` with budget-partial coverage.
+    #[test]
+    fn a_budget_stop_during_discovery_stays_terminal() {
+        let controls = Arc::new(TestControls::default());
+        controls.gate(TestPoint::AfterRootDirectory).arm();
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::write(root.path().join("a.txt"), b"a").expect("fixture");
+        std::fs::create_dir(root.path().join("emptydir")).expect("fixture");
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            OpenOptions {
+                budget: DiscoveryBudget { max_files: Some(1) },
+                ..OpenOptions::default()
+            },
+            Arc::clone(&controls),
+        )
+        .expect("open");
+        controls.gate(TestPoint::AfterRootDirectory).wait_reached();
+        std::fs::write(root.path().join("b.txt"), b"b").expect("over budget");
+        let refreshed = opened.refresh(&[PathBuf::from("b.txt")]).expect("refresh");
+        assert_eq!(refreshed.work.resource_refused, 1);
+        assert_eq!(refreshed.state.phase, crate::LifecyclePhase::Stopped);
+        controls.gate(TestPoint::AfterRootDirectory).release();
+
+        wait_for_worker_exit(&opened, "discovery");
+        let state = opened.state.index.state().expect("state");
+        assert_eq!(state.phase, crate::LifecyclePhase::Stopped);
+        assert_eq!(state.coverage, crate::Coverage::Partial(crate::CoverageReason::Budget));
+        assert_eq!(
+            opened.state.index.directory_complete(Path::new("emptydir")).expect("lookup"),
+            Some(false),
+            "a listing that arrives after the stop must not land"
+        );
+        assert!(matches!(
+            opened.prioritize(&[PathBuf::from("emptydir")]),
+            Err(Error::OpenedIndexStopped)
+        ));
+        opened.close().expect("close");
+    }
+
+    /// A control-table bound refuses one directory's listing; it does not end discovery.
+    ///
+    /// Pins the interim behavior until control bounds degrade precisely (`fdu-1onj`): the
+    /// refused directory stays incomplete, its refusal is a retained issue, coverage is
+    /// partial, and every other directory is still discovered.
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn a_control_bound_refuses_one_directory_without_ending_discovery() {
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::create_dir(root.path().join("a")).expect("fixture");
+        let mut line = vec![b'x'; crate::control::MAX_CONTROL_PATTERN_BYTES + 1];
+        line.push(b'\n');
+        std::fs::write(root.path().join("a").join(crate::control::CONTROL_FILE_NAME), &line)
+            .expect("oversized control");
+        std::fs::write(root.path().join("a/inside.txt"), b"i").expect("fixture");
+        std::fs::create_dir(root.path().join("b")).expect("fixture");
+        std::fs::write(root.path().join("b/kept.txt"), b"k").expect("fixture");
+
+        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("open");
+        let state = wait_until_settled(&opened);
+        assert_eq!(state.phase, crate::LifecyclePhase::Ready);
+        assert_eq!(state.coverage, crate::Coverage::Partial(crate::CoverageReason::Inaccessible));
+        let issues = opened.state.index.issues().expect("issues");
+        assert!(
+            issues.iter().any(|issue| issue.message.contains("control pattern requires")),
+            "{issues:?}"
+        );
+        assert_eq!(opened.state.index.directory_complete(Path::new("a")).expect("a"), Some(false));
+        assert_eq!(
+            opened.state.index.kind(Path::new("b/kept.txt")).expect("lookup"),
+            Some(EntryKind::File)
+        );
+        opened.close().expect("close");
+    }
+
     #[test]
     fn refresh_rejects_an_unbounded_input_before_filesystem_work() {
         let root = tempfile::tempdir().expect("temp root");
@@ -4404,6 +4702,95 @@ mod tests {
         assert_eq!(state.coverage, crate::Coverage::Partial(crate::CoverageReason::Inaccessible));
         assert_eq!(state.freshness, crate::Freshness::Partial);
         assert!(state.issues.retained > 0);
+        opened.close().expect("close");
+    }
+
+    /// A boundary discovery could not read, and the handoff then read cleanly, is gone.
+    ///
+    /// Discovery records `blocked` as inaccessible; it becomes readable before the
+    /// observation handoff, whose full pass then lists it without an error. `Finish` only
+    /// ever upgraded a building root and `Watching` never upgraded coverage at all, so the
+    /// root stayed partial for the life of the session after a pass proving otherwise.
+    #[cfg(all(unix, feature = "watch"))]
+    #[test]
+    fn watching_after_a_clean_handoff_rederives_complete_coverage() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"").expect("script");
+        let blocked = root.path().join("blocked");
+        std::fs::create_dir(&blocked).expect("blocked directory");
+        std::fs::write(blocked.join("secret"), b"secret").expect("fixture");
+        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o000))
+            .expect("make directory inaccessible");
+        let controls = Arc::new(TestControls::default());
+        controls.gate(TestPoint::BeforeObservationHandoff).arm();
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            scripted_options(&script),
+            Arc::clone(&controls),
+        )
+        .expect("open");
+        controls.gate(TestPoint::BeforeObservationHandoff).wait_reached();
+        let discovered = opened.state.index.state().expect("state after discovery");
+        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o700))
+            .expect("restore directory permissions");
+        controls.gate(TestPoint::BeforeObservationHandoff).release();
+
+        let state = wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+        assert_eq!(
+            discovered.coverage,
+            crate::Coverage::Partial(crate::CoverageReason::Inaccessible)
+        );
+        assert_eq!(state.coverage, crate::Coverage::Complete);
+        assert_eq!(state.freshness, crate::Freshness::Fresh);
+        assert_eq!(
+            opened.state.index.kind(Path::new("blocked/secret")).expect("lookup"),
+            Some(EntryKind::File),
+            "the handoff read the formerly inaccessible directory"
+        );
+        opened.close().expect("close");
+    }
+
+    /// A directory deleted during discovery leaves a watched root complete.
+    #[cfg(feature = "watch")]
+    #[test]
+    fn a_directory_that_vanishes_during_discovery_leaves_a_watched_root_complete() {
+        let controls = Arc::new(TestControls::default());
+        controls.gate(TestPoint::AfterRootDirectory).arm();
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"").expect("script");
+        std::fs::create_dir(root.path().join("sub")).expect("sub");
+        std::fs::write(root.path().join("sub/inner.txt"), b"x").expect("fixture");
+        std::fs::write(root.path().join("keep.txt"), b"k").expect("fixture");
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            scripted_options(&script),
+            Arc::clone(&controls),
+        )
+        .expect("open");
+        controls.gate(TestPoint::AfterRootDirectory).wait_reached();
+        std::fs::remove_dir_all(root.path().join("sub")).expect("remove sub during discovery");
+        controls.gate(TestPoint::AfterRootDirectory).release();
+
+        let state = wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+        assert_eq!(state.coverage, crate::Coverage::Complete);
+        assert_eq!(state.freshness, crate::Freshness::Fresh);
+        assert_eq!(state.issues.retained, 0);
+        assert_eq!(
+            opened.state.index.kind(Path::new("sub")).expect("lookup"),
+            None,
+            "the handoff pass removed the vanished directory"
+        );
+        assert_eq!(opened.state.index.directory_complete(Path::new("")).expect("root"), Some(true));
         opened.close().expect("close");
     }
 

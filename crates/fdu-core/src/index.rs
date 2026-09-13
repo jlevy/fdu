@@ -1359,6 +1359,17 @@ impl Index {
             return Ok(ApplyOutcome::default());
         }
 
+        // A stopped or failed root is terminal for discovery. A listing that lands after
+        // the stop -- a refresh can trip the shared budget while discovery is mid-walk --
+        // may neither expand the retained set nor carry a transition that reopens the
+        // phase: `Finish` would declare the root `Ready`, and an inaccessible boundary
+        // would relabel why its coverage is partial.
+        if discovery.is_some()
+            && matches!(self.state.phase, LifecyclePhase::Stopped | LifecyclePhase::Failed)
+        {
+            return Err(crate::Error::OpenedIndexStopped);
+        }
+
         if let Some(path) =
             discovery.as_ref().and_then(|discovery| discovery.directory_complete.as_ref())
         {
@@ -1617,6 +1628,13 @@ impl Index {
                             }
                             self.state.issues.omitted =
                                 self.state.issues.omitted.saturating_add(omitted);
+                        } else if self.state.coverage
+                            == Coverage::Partial(CoverageReason::Inaccessible)
+                        {
+                            // The handoff has just read the whole root without one error, so
+                            // a boundary discovery could not read no longer exists. Coverage
+                            // says what can be known now; the cause stays a retained issue.
+                            self.state.coverage = Coverage::Complete;
                         }
                         self.state.freshness = self.freshness();
                         if self.state.coverage != Coverage::Complete {
@@ -5258,6 +5276,67 @@ mod tests {
         assert_eq!(outcome.commit, None);
         assert_eq!(handle.state().expect("terminal state"), stopped);
         assert_eq!(handle.clock().expect("terminal clock"), clock);
+    }
+
+    /// Once a root has stopped or failed, discovery can neither expand it nor reopen it.
+    #[test]
+    fn a_terminal_root_refuses_every_discovery_commit() {
+        let terminals = [
+            DiscoveryTransition::BudgetRefused(Issue::resource_budget(1)),
+            DiscoveryTransition::Failed(Issue::from_error(&crate::Error::OpenedIndexClosed)),
+        ];
+        for terminal in terminals {
+            let handle = IndexHandle::new(Index::new("/root"));
+            handle.transition_discovery(DiscoveryTransition::Begin).expect("begin");
+            handle
+                .apply_discovery(
+                    &Observation::new(vec![upsert("dir", EntryKind::Dir, Attrs::default())]),
+                    DiscoveryCommit::default(),
+                )
+                .expect("listing before the stop");
+            handle.transition_discovery(terminal.clone()).expect("terminal transition");
+            let state = handle.state().expect("terminal state");
+            let clock = handle.clock().expect("terminal clock");
+
+            let late = [
+                (
+                    vec![upsert("dir/late.txt", EntryKind::File, file_attrs(1, 1))],
+                    DiscoveryCommit {
+                        directory_complete: Some(PathBuf::from("dir")),
+                        transition: None,
+                    },
+                ),
+                (
+                    Vec::new(),
+                    DiscoveryCommit {
+                        directory_complete: None,
+                        transition: Some(DiscoveryTransition::Finish),
+                    },
+                ),
+                (
+                    Vec::new(),
+                    DiscoveryCommit {
+                        directory_complete: None,
+                        transition: Some(DiscoveryTransition::Inaccessible {
+                            issues: vec![Issue::resource_budget(2)],
+                            omitted: 0,
+                        }),
+                    },
+                ),
+            ];
+            for (ops, discovery) in late {
+                assert!(
+                    matches!(
+                        handle.apply_discovery(&Observation::new(ops), discovery.clone()),
+                        Err(crate::Error::OpenedIndexStopped)
+                    ),
+                    "after {terminal:?}, {discovery:?} was accepted"
+                );
+            }
+            assert_eq!(handle.state().expect("state"), state, "after {terminal:?}");
+            assert_eq!(handle.clock().expect("clock"), clock, "after {terminal:?}");
+            assert_eq!(handle.kind(Path::new("dir/late.txt")).expect("lookup"), None);
+        }
     }
 
     #[test]
