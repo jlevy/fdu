@@ -360,8 +360,13 @@ PERF_LABEL ?= benchmarks-self-contained
 PERF_RESULTS ?= /tmp/fdu-realtree/results
 PERF_SCRATCH ?= /tmp/fdu-realtree/scratch
 PERF_BASELINE ?= $(PERF_RESULTS)/tree-$(PERF_LABEL).json
-PERF_RELEASE := target/release/examples/perf_probe
-PERF_PROFILING := target/profiling/examples/perf_probe
+# Where cargo writes build output, asked of cargo rather than assumed to be `target/`:
+# CARGO_TARGET_DIR and build.target-dir both move it, and a binary left behind at the
+# assumed path would then be measured in place of the one just built. `target` is only
+# the fallback for a cargo that cannot answer, and then the build before it fails first.
+PERF_TARGET_DIR = $(or $(shell $(CARGO) metadata --format-version 1 --no-deps 2>/dev/null | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p'),target)
+PERF_RELEASE = $(PERF_TARGET_DIR)/release/examples/perf_probe
+PERF_PROFILING = $(PERF_TARGET_DIR)/profiling/examples/perf_probe
 # Evidence qualifiers default to exploration. A held-out run must opt into a controlled
 # host regime and provide the manifests that make its source, corpus, and installation
 # independently verifiable.
@@ -513,15 +518,24 @@ perf-subjects-check:
 #
 # SUBJECTS takes repeated LABEL=PATH pairs; a subject decides only if it is dense and at
 # least 50,000 entries, and smaller ones screen.
+#
+# The probe is the one `perf-probe-release` builds, handed over by path, so a scoreboard
+# and a verdict run always score the same binary.
+#
+# The regime defaults to quiet. PERF_HOST_REGIME overrides it only when set on the command
+# line or in the environment: its file default above is `uncontrolled`, which would
+# otherwise always win.
 PERF_FLOOR_OUT ?= /tmp/fdu-floor
 PERF_FLOOR_SUBJECT_ARGS = $(foreach subject,$(SUBJECTS),--subject $(subject))
-perf-floor:
+PERF_FLOOR_HOST_REGIME = $(if $(filter command line environment environment override,$(origin PERF_HOST_REGIME)),$(PERF_HOST_REGIME),quiet)
+perf-floor: perf-probe-release
 	@test -n "$(SUBJECTS)" || \
 		{ echo "SUBJECTS must name at least one LABEL=PATH tree to score" >&2; exit 2; }
 	$(PERF_UV) python -m benchmarks.realtree.floor \
+		--probe "$(PERF_RELEASE)" \
 		$(PERF_FLOOR_SUBJECT_ARGS) \
 		--trials $(or $(TRIALS),30) --warmups $(or $(WARMUPS),3) \
-		--host-regime $(or $(PERF_HOST_REGIME),quiet) \
+		--host-regime $(PERF_FLOOR_HOST_REGIME) \
 		--output $(PERF_FLOOR_OUT)/scoreboard-$(or $(NAME),latest).json \
 		--markdown $(PERF_FLOOR_OUT)/scoreboard-$(or $(NAME),latest).md
 

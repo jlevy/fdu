@@ -9,7 +9,11 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -112,21 +116,33 @@ def run_subject(outputs, *, instruments=floor.DEFAULT_INSTRUMENTS, trials=2, war
 
 
 def run_document(*, outputs=CONSISTENT, snapshots=(QUIET,), host_regime="uncontrolled",
-                 trials=2, warmups=1, subjects=(("t", Path("/r")),)):
-    """Run the real `run` end to end with nothing built, spawned, or sampled for real."""
+                 trials=2, warmups=1, subjects=(("t", Path("/r")),), spawned=None):
+    """Run the real `run` end to end with nothing built, spawned, or sampled for real.
+
+    The probe is a real executable file, because `run` refuses a probe that is not one.
+    Every spawned argv is appended to `spawned` when a list is given.
+    """
 
     def fake_spawn(argv, *, timeout_seconds):
+        if spawned is not None:
+            spawned.append(list(argv))
         return {"stdout": outputs[instrument_key(argv)] + "\n", "spawn_wall_ns": 7_000_000,
                 "max_rss_bytes": 1 << 20}
 
-    with mock.patch.object(floor, "require_linux"), \
-            mock.patch.object(floor, "build_instruments", return_value=dict(BINARIES)), \
-            mock.patch.object(floor, "_spawn", fake_spawn), \
-            mock.patch.object(floor.time, "sleep"), \
-            mock.patch("benchmarks.realtree.measure._host_pressure_snapshot",
-                       side_effect=pressure_sequence(*snapshots)):
-        return floor.run(subjects=list(subjects), workers=4, trials=trials, warmups=warmups,
-                         build_dir=Path("/b"), host_regime=host_regime)
+    spikes = {name: path for name, path in BINARIES.items() if name != "probe"}
+    with tempfile.TemporaryDirectory() as scratch:
+        probe = Path(scratch) / "perf_probe"
+        probe.write_text("#!/bin/sh\n")
+        probe.chmod(0o755)
+        with mock.patch.object(floor, "require_linux"), \
+                mock.patch.object(floor, "build_instruments", return_value=spikes), \
+                mock.patch.object(floor, "_spawn", fake_spawn), \
+                mock.patch.object(floor.time, "sleep"), \
+                mock.patch("benchmarks.realtree.measure._host_pressure_snapshot",
+                           side_effect=pressure_sequence(*snapshots)):
+            return floor.run(subjects=list(subjects), workers=4, trials=trials,
+                             warmups=warmups, build_dir=Path("/b"), probe=probe,
+                             host_regime=host_regime)
 
 
 class ReadsInstrumentOutput(unittest.TestCase):
@@ -221,7 +237,8 @@ class EveryInstrumentRunsTheSamePool(unittest.TestCase):
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr), \
                 mock.patch.object(floor, "run", side_effect=AssertionError("must refuse first")):
-            status = floor.main(["--subject", "t=/", "--workers", str(floor.MAX_WORKERS + 1)])
+            status = floor.main(["--subject", "t=/", "--probe", "/b/perf_probe",
+                                 "--workers", str(floor.MAX_WORKERS + 1)])
         self.assertEqual(status, 2)
         self.assertIn(str(floor.MAX_WORKERS), stderr.getvalue())
 
@@ -303,6 +320,105 @@ class RefusesRatherThanSubstituting(unittest.TestCase):
         message = str(raised.exception)
         self.assertIn("getattrlistbulk", message)
         self.assertIn("fdu-33ri", message)
+
+
+class ScoresTheProbeMakeBuilt(unittest.TestCase):
+    """The scoreboard and a verdict run must score the same probe.
+
+    Review FLOOR-5: the harness built its own probe with a copy of the
+    `perf-probe-release` cargo line, which PR #52 changes, after which the two would
+    build different binaries into the same path. Review FLOOR-11: that path assumed
+    `target/`, and the spike build directory sat at a predictable path in `/tmp`.
+    """
+
+    MAKEFILE = (floor.PROJECT_ROOT / "Makefile").read_text()
+
+    def _recipe(self, target):
+        match = re.search(rf"^{re.escape(target)}:(.*)\n((?:\t.*\n|\s*\n)*)", self.MAKEFILE, re.M)
+        self.assertIsNotNone(match, target)
+        return match.group(1).split(), match.group(2)
+
+    def test_the_harness_builds_only_the_spikes(self):
+        builds = []
+        with tempfile.TemporaryDirectory() as scratch, \
+                mock.patch.object(floor.shutil, "which", return_value="/usr/bin/tool"), \
+                mock.patch.object(floor, "_run_build",
+                                  side_effect=lambda argv, **_: builds.append(list(argv))):
+            binaries = floor.build_instruments(Path(scratch))
+        self.assertEqual(set(binaries), {"parfloor", "arena_spike"})
+        self.assertEqual([argv[0] for argv in builds], ["gcc", "rustc"])
+
+    def test_make_hands_over_the_probe_perf_probe_release_built(self):
+        prerequisites, recipe = self._recipe("perf-floor")
+        self.assertIn("perf-probe-release", prerequisites)
+        self.assertIn('--probe "$(PERF_RELEASE)"', recipe)
+        self.assertNotIn("$(CARGO)", recipe)
+
+    def test_run_scores_the_probe_it_is_handed(self):
+        spawned = []
+        run_document(spawned=spawned)
+        probes = {argv[0] for argv in spawned if argv[1] in ("summary", "scan-index")}
+        self.assertEqual(len(probes), 1)
+        self.assertEqual(Path(probes.pop()).name, "perf_probe")
+
+    def test_a_probe_that_is_not_there_is_refused_naming_its_build(self):
+        with mock.patch.object(floor, "require_linux"), \
+                mock.patch.object(floor, "build_instruments", return_value={}):
+            with self.assertRaises(floor.FloorError) as raised:
+                floor.run(subjects=[("t", Path("/r"))], workers=4, trials=1, warmups=0,
+                          build_dir=Path("/b"), probe=Path("/nonexistent/perf_probe"),
+                          host_regime="uncontrolled")
+        self.assertIn("make perf-probe-release", str(raised.exception))
+
+    def test_the_probe_path_is_required(self):
+        with contextlib.redirect_stderr(io.StringIO()), \
+                mock.patch.object(floor, "run", side_effect=AssertionError("must refuse first")):
+            with self.assertRaises(SystemExit) as raised:
+                floor.main(["--subject", "t=/"])
+        self.assertEqual(raised.exception.code, 2)
+
+    def _dry_run(self, *assignments):
+        """`make -n perf-floor`, with a cargo that answers nothing, so nothing runs."""
+        if shutil.which("make") is None:
+            self.skipTest("make is not installed")
+        environment = {key: value for key, value in os.environ.items()
+                       if key not in {"PERF_HOST_REGIME", "MAKEFLAGS", "MAKELEVEL", "MFLAGS"}}
+        return subprocess.run(
+            ["make", "--no-print-directory", "-n", "perf-floor", "SUBJECTS=t=/nonexistent",
+             "CARGO=false", *assignments],
+            cwd=str(floor.PROJECT_ROOT), env=environment, capture_output=True, text=True,
+            check=True,
+        ).stdout
+
+    def test_make_requests_the_quiet_regime_unless_told_otherwise(self):
+        """The recipe meant quiet, but the file default of PERF_HOST_REGIME always won."""
+        self.assertIn("--host-regime quiet", self._dry_run())
+        self.assertIn("--host-regime uncontrolled", self._dry_run("PERF_HOST_REGIME=uncontrolled"))
+
+    def test_make_locates_the_probe_where_cargo_writes_it(self):
+        """A literal `target/` is wrong under CARGO_TARGET_DIR or build.target-dir."""
+        self.assertIsNotNone(
+            re.search(r"(?m)^PERF_TARGET_DIR = .*\$\(CARGO\) metadata", self.MAKEFILE),
+            "PERF_TARGET_DIR must ask cargo where it writes build output",
+        )
+        self.assertIsNotNone(
+            re.search(r"(?m)^PERF_RELEASE = \$\(PERF_TARGET_DIR\)/release/examples/perf_probe$",
+                      self.MAKEFILE),
+            "PERF_RELEASE must sit under PERF_TARGET_DIR",
+        )
+
+    def test_the_spike_build_directory_defaults_under_cargos_target_directory(self):
+        metadata = json.dumps({"target_directory": "/elsewhere/target", "packages": []})
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout=metadata, stderr="")
+        with mock.patch.object(floor.subprocess, "run", return_value=completed) as run:
+            self.assertEqual(floor.default_build_dir(), Path("/elsewhere/target/fdu-floor"))
+        self.assertIn("metadata", run.call_args.args[0])
+
+    def test_a_target_directory_cargo_cannot_name_is_a_refusal(self):
+        failed = subprocess.CompletedProcess(args=[], returncode=101, stdout="", stderr="no")
+        with mock.patch.object(floor.subprocess, "run", return_value=failed):
+            with self.assertRaises(floor.FloorError):
+                floor.default_build_dir()
 
 
 class HoldsEveryTrialToTheQuietBar(unittest.TestCase):

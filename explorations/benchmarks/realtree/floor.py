@@ -311,11 +311,15 @@ def require_linux() -> None:
         )
 
 
-def build_instruments(destination: Path, *, cargo: str = "cargo") -> Dict[str, Path]:
-    """Compile the spikes and the probe, and say which compiler produced each.
+def build_instruments(destination: Path) -> Dict[str, Path]:
+    """Compile the two spikes into `destination`.
 
     The spikes are single files outside the workspace on purpose -- they take no
     dependencies and are not shipped -- so they are built here rather than by cargo.
+    The probe is not: it is whatever `make perf-probe-release` built, handed to `run` by
+    path, so a scoreboard and a verdict run score one binary. A second copy of that cargo
+    line here would build a different probe the moment the make target changes, into the
+    same output path.
     """
     destination.mkdir(parents=True, exist_ok=True)
     binaries: Dict[str, Path] = {}
@@ -337,20 +341,38 @@ def build_instruments(destination: Path, *, cargo: str = "cargo") -> Dict[str, P
         what="arena_spike",
     )
     binaries["arena_spike"] = arena
-
-    # The probe is built exactly as `make perf-probe-release` builds it, so a scoreboard
-    # and a verdict run are scoring the same binary shape.
-    _run_build(
-        [cargo, "build", "--locked", "--release", "-p", "fdu-core",
-         "--example", "perf_probe", "--no-default-features"],
-        what="perf_probe",
-        cwd=PROJECT_ROOT,
-    )
-    probe = PROJECT_ROOT / "target" / "release" / "examples" / "perf_probe"
-    if not probe.is_file():
-        raise FloorError(f"perf_probe did not appear at {probe}")
-    binaries["probe"] = probe
     return binaries
+
+
+def default_build_dir() -> Path:
+    """Where the spikes are built unless `--build-dir` says otherwise: under cargo's own
+    target directory.
+
+    Asked of cargo rather than assumed to be `target/`, because `CARGO_TARGET_DIR` and
+    `build.target-dir` move it. And not a fixed path in `/tmp`, where anyone on the host
+    could create the directory first and replace a binary between its build and its run.
+    """
+    try:
+        completed = subprocess.run(
+            ["cargo", "metadata", "--format-version", "1", "--no-deps"],
+            cwd=str(PROJECT_ROOT), capture_output=True, text=True,
+        )
+    except OSError as error:
+        raise FloorError(f"cannot ask cargo for its target directory: {error}") from error
+    target = None
+    if completed.returncode == 0:
+        try:
+            document = json.loads(completed.stdout)
+        except ValueError:
+            document = None
+        if isinstance(document, dict):
+            target = document.get("target_directory")
+    if not isinstance(target, str) or not target:
+        raise FloorError(
+            "cargo metadata did not name a target directory, so there is no safe default "
+            f"for the spike build; pass --build-dir. {completed.stderr.strip()[-500:]}"
+        )
+    return Path(target) / "fdu-floor"
 
 
 def _run_build(argv: Sequence[str], *, what: str, cwd: Optional[Path] = None) -> None:
@@ -873,13 +895,21 @@ def run(
     workers: int,
     trials: int,
     warmups: int,
-    build_dir: Path,
+    build_dir: Optional[Path],
+    probe: Path,
     host_regime: str,
     instruments: Sequence[str] = DEFAULT_INSTRUMENTS,
     quiet_wait_seconds: float = QUIET_WAIT_SECONDS,
 ) -> Dict[str, Any]:
     require_linux()
-    binaries = build_instruments(build_dir)
+    if not probe.is_file() or not os.access(probe, os.X_OK):
+        raise FloorError(
+            f"no executable probe at {probe}. The scoreboard scores the probe "
+            "`make perf-probe-release` builds, so that a scoreboard and a verdict run "
+            "score one binary; `make perf-floor` builds it first."
+        )
+    binaries = build_instruments(build_dir if build_dir is not None else default_build_dir())
+    binaries["probe"] = probe
     selected = [INSTRUMENTS[name] for name in instruments]
     measured = []
     for label, root in subjects:
@@ -928,8 +958,14 @@ def main(argv: Sequence[str]) -> int:
     )
     parser.add_argument("--trials", type=int, default=DEFAULT_TRIALS)
     parser.add_argument("--warmups", type=int, default=DEFAULT_WARMUPS)
-    parser.add_argument("--build-dir", type=Path,
-                        default=Path("/tmp/fdu-floor/bin"))
+    parser.add_argument(
+        "--probe", type=Path, required=True,
+        help="the perf_probe to score: the one `make perf-probe-release` built",
+    )
+    parser.add_argument(
+        "--build-dir", type=Path, default=None,
+        help="where to build the spikes; default: fdu-floor under cargo's target directory",
+    )
     parser.add_argument("--host-regime", choices=("quiet", "uncontrolled"), default="quiet")
     parser.add_argument(
         "--quiet-wait", type=float, default=QUIET_WAIT_SECONDS, metavar="SECONDS",
@@ -970,6 +1006,7 @@ def main(argv: Sequence[str]) -> int:
         document = run(
             subjects=subjects, workers=workers, trials=arguments.trials,
             warmups=arguments.warmups, build_dir=arguments.build_dir,
+            probe=arguments.probe.expanduser().resolve(),
             host_regime=arguments.host_regime, quiet_wait_seconds=arguments.quiet_wait,
         )
     except FloorError as error:
