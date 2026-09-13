@@ -1238,6 +1238,29 @@ priority = 100
         assert_ne!(compact.fingerprint(), changed.fingerprint());
     }
 
+    /// A key moved between classification tiers changes what files are, so it changes
+    /// identity. Without array boundaries in the hash the two registries below shared one
+    /// fingerprint, and a snapshot recorded under either was served under the other.
+    #[test]
+    fn file_rollup_registry_identity_sees_a_key_move_between_tiers() {
+        let registry = |extensions: &str, filenames: &str| {
+            TypeRegistry::from_manifest(&format!(
+                "schema_version = 3\nregistry_revision = 1\nmax_extension_components = 2\n\n\
+                 [[group]]\nid = \"other\"\nlabel = \"Other\"\norder = 10\n\n\
+                 [[kind]]\nid = \"notes\"\ngroup = \"other\"\ncontent_family = \"prose\"\n\
+                 extensions = [{extensions}]\nfilenames = [{filenames}]\nshebangs = []\n\
+                 priority = 100\n"
+            ))
+            .expect("File Rollup v3 registry parses")
+        };
+        let as_extension = registry("\"md\"", "");
+        let as_filename = registry("", "\"md\"");
+
+        assert_eq!(as_extension.classify_name(OsStr::new("README.md")).kind_id(), Some("notes"));
+        assert_eq!(as_filename.classify_name(OsStr::new("README.md")).kind_id(), None);
+        assert_ne!(as_extension.fingerprint(), as_filename.fingerprint());
+    }
+
     /// A name that is not valid UTF-8 must classify as unknown, as it did when the tier
     /// compared raw `OsStr` bytes against an all-ASCII rules table.
     #[test]
