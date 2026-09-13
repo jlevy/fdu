@@ -784,6 +784,18 @@ class FlagsASpreadNoMedianCanSummarize(unittest.TestCase):
         self.assertLess(summary["elapsed_ns"]["p95_over_median"], 1.5)
         self.assertTrue(summary["spread_suspect"])
 
+    def test_two_modes_closer_than_the_bar_go_unflagged(self):
+        """What the flag cannot see, and why it claims no modality."""
+        self.assertFalse(self._summary([40_000_000] * 15 + [70_000_000] * 15)["spread_suspect"])
+
+    def test_the_p95_index_and_the_empty_and_zero_cases(self):
+        self.assertEqual(self._summary(list(range(1, 31)))["elapsed_ns"]["p95"], 29)
+        empty = self._summary([])
+        self.assertIsNone(empty["elapsed_ns"]["median"])
+        self.assertIsNone(empty["spread"])
+        self.assertFalse(empty["spread_suspect"])
+        self.assertIsNone(self._summary([0, 5])["spread"])
+
     def test_the_bar_compares_the_ratio_not_its_rounded_display(self):
         summary = self._summary([100_000_000, 199_500_000])
         self.assertEqual(summary["spread"], 2.0)  # what the table shows
