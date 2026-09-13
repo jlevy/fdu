@@ -5,7 +5,7 @@ title: "Address review: PR #52 — one-shot parity without weakening streaming"
 kind: task
 status: in_progress
 priority: 1
-version: 12
+version: 13
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
 labels: []
 dependencies: []
@@ -22,6 +22,10 @@ child_order_hints:
   - is-01m2eegcapyzyrx7qngtzdhmtm
   - is-01m2eegfhjtav56tk3amg3bp4q
 created_at: 2026-09-13T22:33:30.985Z
-updated_at: 2026-09-13T22:35:46.552Z
+updated_at: 2026-09-13T23:40:53.755Z
 ---
 Formal review 5192264318 on PR #52 (https://github.com/jlevy/fdu/pull/52#pullrequestreview-5192264318) at head afbb2ee. Findings: BUILD-1 and BUILD-2 (High), PERF-1 and PERF-2 (Medium), BUILD-3 and PERF-3 through PERF-8 (Low). Scope is this PR's own findings; the carried COMMIT-2, COMMIT-3, and READ-1 are fixed at their origin PRs and arrive with the later stack propagation. PERF-2 is covered by existing fdu-x16g (#54 renumbered its artifact to exp-103 in 86d2a6a). No local Rust builds on this host (disk below the build floor); CI is the gate.
+
+## Notes
+
+All eleven findings have code or documentation dispositions on PR #52 through 8640758 (BUILD-3 correction 8640758 follows e3b5103). PERF-2 is tracked on fdu-x16g; PERF-7's re-capture with binary hashes on fdu-0q6w; the head-engine requirement for final checks on fdu-lj4h. Verification so far: realtree harness 229 tests, provenance tests, admission checker tests, docs format, ledger and report drift checks all pass locally; cargo check and clippy -D warnings pass for fdu-core --all-targets --features gitignore,watch; an independent read-only review found nothing that would fail CI. Still open: no Rust test has executed and CI has not run, because GitHub runs no pull_request workflow while #52 conflicts with #51's moved base. The coordinator asked for #51 to be merged in, but the permission system denied the merge preview (git merge-tree) and a cargo clippy run on the fdu crate, so the merge was not attempted. Close this bead after the merge lands, CI is green, and the disposition map is posted.
