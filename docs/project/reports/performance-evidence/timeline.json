@@ -30118,8 +30118,8 @@
   {
    "anchored": false,
    "candidate": "5d7b86f H86 consumer representation (codex/streaming-performance-parity)",
-   "change_pct": -18.165,
-   "commit": "5d7b86fe6d031e76843fe0b8dbcf8663a0d2b53f",
+   "change_pct": -31.704,
+   "commit": null,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -30448,9 +30448,9 @@
    "number": 103,
    "path": "exp-103-h86-linux-evidence-stage-relative-gates-pass-floor-gates-fai.md",
    "platform": "Linux",
-   "primary_job": "cold-scan-index",
+   "primary_job": "default-tree",
    "primary_metric": "wall_ns",
-   "reason": "Relative gates pass (cold-scan-index -18.16% [-24.25,-13.72], default-tree -31.70%, RSS -49.4%/-35.9%, tails inside 1.5/2.0), but the pre-registered Linux floor gates fail: index wall 4.86x the parfloor syscall floor against a 1.4x gate and 5.03x arena_spike RSS against a 3x gate. Both floor cells are stable (max/min 1.204 and 1.391), so the ratios are resolved and reject rather than unresolved.",
+   "reason": "The pre-registered Linux floor gates fail on the index tier: default-tree wall is 2.60x the parfloor syscall floor against a 1.4x gate and its peak RSS 6.59x arena_spike against a 3x gate (cold-scan-index 4.86x and 5.03x). Both floor cells are stable (max/min 1.204 and 1.391), so the ratios reject rather than abstain, even though the relative gates pass: default-tree wall -31.70% [-34.31%, -29.15%], cold-scan-index -18.16% [-24.25%, -13.72%], paired peak RSS -35.05% and -49.16%.",
    "reference_tools": [],
    "subject": "65b45ec72356:450001:e6da049852a2",
    "title": "H86 Linux evidence stage: relative gates pass, floor gates fail",

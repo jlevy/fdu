@@ -404,51 +404,160 @@ experiment:
     notes: No code change proposed or made; this is an evidence stage against an existing candidate.
   verdict:
     decision: rejected
-    primary_job: cold-scan-index
+    primary_job: default-tree
     primary_metric: wall_ns
-    change_pct: -18.165
-    reason: "Relative gates pass (cold-scan-index -18.16% [-24.25,-13.72], default-tree -31.70%, RSS -49.4%/-35.9%, tails inside 1.5/2.0), but the pre-registered Linux floor gates fail: index wall 4.86x the parfloor syscall floor against a 1.4x gate and 5.03x arena_spike RSS against a 3x gate. Both floor cells are stable (max/min 1.204 and 1.391), so the ratios are resolved and reject rather than unresolved."
-    commit: 5d7b86fe6d031e76843fe0b8dbcf8663a0d2b53f
+    change_pct: -31.704
+    reason: "The pre-registered Linux floor gates fail on the index tier: default-tree wall is 2.60x the parfloor syscall floor against a 1.4x gate and its peak RSS 6.59x arena_spike against a 3x gate (cold-scan-index 4.86x and 5.03x). Both floor cells are stable (max/min 1.204 and 1.391), so the ratios reject rather than abstain, even though the relative gates pass: default-tree wall -31.70% [-34.31%, -29.15%], cold-scan-index -18.16% [-24.25%, -13.72%], paired peak RSS -35.05% and -49.16%."
+    commit: null
 ---
-The Linux second evidence stage for H86, run on the 450,001-entry generated `balanced`
-subject (56,251 directories / 393,750 files) on a 4-core KVM Xeon.
-It is the stage the campaign has owed since the arena_spike ceiling was measured, and
-the delegate’s macOS host could not supply it while blocked at 127 MiB free.
+# H86 Linux Evidence Stage: Relative Gates Pass, Floor Gates Fail
 
-The relative gates pass and pass well.
-Against the immediate control `c6380f7`, across twelve paired interleaved trials with
-zero invalid samples: `cold-scan-index` wall fell 18.16% (95% interval -24.25% to
--13.72%) with peak RSS down 49.4%; `default-tree` wall fell 31.70% (-34.31% to -29.15%)
-with peak RSS down 35.9%; and `opened-discovery`, which only had to stay noninferior
-within +3%, improved 10.73% (-13.97% to -8.24%). The candidate’s tail ratios are inside
-the pre-registered bounds everywhere: `p95/median` at most 1.109 and `max/min` at most
-1.324, against limits of 1.5 and 2.0. The engine digest was verified identical across
-all three binaries at worker counts one through four before any timing, and the post-run
-tree digest is unchanged.
+## Stage and Subject
 
-The absolute floor gates fail, and that is the finding.
-`parfloor stat` at four workers gives a parallel syscall floor of 316.4 ms;
+H86 is pre-registered as one decision with two evidence stages, and this is the second:
+the original Linux floor claims, which a Darwin acceptance does not replace
+([campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md#h86-preregistration-one-decision-two-evidence-stages)).
+It ran on a 4-core KVM Xeon against the 450,001-entry generated `balanced` corpus
+subject (56,251 directories, 393,750 files), because the delegate’s macOS host could not
+supply it while blocked at 127 MiB free.
+The two floor cells it is judged against, with their preparation and raw samples, are in
+[the Linux floor-cell note](../research/research-2026-09-02-linux-floor-cell-for-h86.md).
+
+## What Was Measured, and What Ships
+
+Candidate `5d7b86f` ran against the immediate immutable control `c6380f7`. Both commits
+come from #52’s branch as it stood before a restack, and neither is an ancestor of that
+branch now; the restacked equivalents are `f972250` and `a74ac2a`. The tags
+`perf/h86-linux-candidate` and `perf/h86-linux-control` keep the measured source
+reachable. `verdict.commit` is null because this experiment neither landed nor reverted
+code.
+
+The measured binaries are not the ones #52 ships:
+
+- **Features:** the binaries record no feature set, and the release-probe recipe at
+  `5d7b86f` built with `--no-default-features` alone, which compiles `gitignore` out.
+  Since `1a39be9`, performance builds enable it.
+- **Probe scope:** at `5d7b86f` the `default-tree` probe requested control discovery.
+  Since `64c6e61` it matches the non-watch CLI’s controls-off scope.
+- **Engine:** `ad52469` adds the point-lookup mutation preflight on top.
+
+None of these is a plausible route to the gates.
+Passing would take `default-tree` finishing in 443 ms against the 822 ms measured, and
+peak RSS at or below 91.5 MiB against the 200.9 MiB and 153.5 MiB the two jobs measured.
+Compiling `gitignore` in adds control reading rather than removing work; with it
+compiled out, the probe’s control request read no control files; and the preflight
+change targets public mutation, which exp-102 measured on `delta-apply` jobs.
+The absolute figures below still describe a binary no branch ships, so the quiet-host
+stage has to measure the final one.
+
+## The Relative Gates Pass
+
+Twelve paired interleaved trials per job, with zero invalid samples.
+Engine digests were identical across all three binaries at worker counts one through
+four before any timing, and the post-run tree digest is unchanged.
+
+| Job | Paired wall change | 95% interval | Paired peak RSS change |
+| --- | --- | --- | --- |
+| `default-tree` | -31.70% | [-34.31%, -29.15%] | -35.05% |
+| `cold-scan-index` | -18.16% | [-24.25%, -13.72%] | -49.16% |
+| `opened-discovery` | -10.73% | [-13.97%, -8.24%] | -14.28% |
+
+`opened-discovery` only had to stay noninferior within +3%. Every candidate wall
+`p95/median` is at or below 1.109, inside the 1.5 limit; across every recorded metric
+the largest is 1.137, `default-tree` CPU.
+
+## The Floor Gates Fail
+
+`parfloor stat` at four workers gives a parallel syscall floor of 316.4 ms, and
 `arena_spike` under its pre-registered low-churn warm-steady cell gives 362.8 ms and
-30.5 MiB. The candidate’s `cold-scan-index` is 1,537.0 ms, or 4.86x the syscall floor
-against a 1.4x gate, and 153.5 MiB, or 5.03x spike RSS against a 3x gate.
-`default-tree` is 2.60x the floor and 6.59x spike RSS. H86 moved these a long way -- the
-control measured 6.02x/9.96x and 3.76x/10.28x -- but not to the gate.
+30.5 MiB. The campaign-2 plan and the floor report measure the index tier with
+`default-tree`, so it carries the verdict:
 
-The rejection is not an artifact of a noisy denominator.
-The plan’s escape hatch applies only when the prepared spike cell itself has `max/min`
-above 2.0, and both floor cells are tight: `arena_spike` 1.204 and `parfloor` 1.391. The
-ratios are therefore resolved and can reject.
+| Job | Variant | Wall | × syscall floor | Peak RSS | × spike RSS |
+| --- | --- | --- | --- | --- | --- |
+| `default-tree` | control | 1,189.7 ms | 3.76 | 313.6 MiB | 10.28 |
+| `default-tree` | candidate | 821.7 ms | **2.60** | 200.9 MiB | **6.59** |
+| `cold-scan-index` | control | 1,905.6 ms | 6.02 | 303.6 MiB | 9.96 |
+| `cold-scan-index` | candidate | 1,537.0 ms | 4.86 | 153.5 MiB | 5.03 |
 
-The mechanism this leaves behind is the reusable part.
-`parfloor` at 316 ms and `arena_spike` at 363 ms differ by only about 15%, so retaining
-an index-shaped result over raw parallel enumeration is nearly free at the floor.
-The candidate’s `default-tree` is 822 ms.
-About 2.6x of consumer-side headroom therefore remains on Linux, and none of it is in
-the syscall layer -- which is where the campaign has repeatedly been tempted to look.
+The gates are 1.4× on index wall and 3× on peak RSS, and the candidate fails both on
+both jobs. `cold-scan-index` supports the verdict rather than headlining it: its wall
+also times the probe’s post-scan summary of the index, outside the measured component
+(614.5 ms of 1,537.0 ms), so its 4.86× overstates the index tier’s distance from the
+gate.
 
-Threat to validity, declared before measuring rather than after: this is a shared cloud
-KVM with the agent process resident, recorded as `exploratory` stage and `uncontrolled`
-host regime. It is strong enough to reject an absolute floor claim, which is a ratio
-against denominators measured on the same host in the same session.
+## Why the Rejection Stands
+
+The plan voids the floor and RSS ratios only when the prepared `arena_spike` cell has
+`max/min` above 2.0. It measured 1.204, and `parfloor` 1.391, so the ratios can reject.
+
+The host regime cannot carry the rejection on its own.
+This ran on a shared cloud KVM with the agent process resident, and the experiment
+schema has no host-pressure field, so the `uncontrolled` regime, and the floor cells
+running on the same host in the same session as the fdu arms, are the operator’s account
+rather than recorded values.
+[The performance loop](../guides/performance-loop.md) limits an uncontrolled run to
+exploration and discovery.
+The rejection rests on its margins instead:
+
+- **Worst floor sample:** against the slowest retained `parfloor` sample, 424.4 ms,
+  `default-tree` is still 1.94× the floor.
+  Against the largest `arena_spike` RSS sample, 30.6 MiB, its peak RSS is still 6.57×,
+  and `cold-scan-index`’s 5.02×.
+- **Candidate spread:** to reach the wall gate against that slowest floor sample, a
+  `default-tree` trial would have to run 27.7% under the candidate’s median.
+  To reach the RSS gate against the largest spike sample, a `cold-scan-index` trial
+  would need 40% less peak RSS than its median, and a `default-tree` trial 54% less.
+  The candidate’s lower tail was not recorded (see below), but its `default-tree` wall
+  `p95/median` is 1.089.
+
 It is not a quiet-host verdict and does not substitute for one, and per
-platform-tuning.md it makes no bare-metal claim.
+[the platform tuning guide](../guides/platform-tuning.md) it makes no bare-metal claim.
+
+## Records That Did Not Survive
+
+The pre-registration requires all raw samples, `p95/median`, and `max/min` for every
+arm. For the fdu arms only derived figures exist:
+
+- **Raw samples:** `run_artifact` names the run JSON on the measurement VM, which no
+  longer exists, and the file was never committed.
+  Every per-trial wall, CPU, and RSS sample for both arms of all three jobs went with
+  it, so the paired intervals above cannot be recomputed.
+- **Derived figures:** what `make perf-record` derived from that file survives here:
+  per-arm medians, `p95/median`, paired changes, and intervals.
+- **`max/min`:** the experiment schema has no such field, so the candidate’s
+  pre-registered `max/min` at or below 2.0 is unverified.
+  It cannot change the decision, because failing it would only add a second failure to a
+  stage that already fails.
+  Recording the field is tracked as `fdu-c4jr`.
+
+The floor cells’ raw samples are intact in the floor-cell note.
+
+## Deviations from the Pre-Registration
+
+Three, each detailed in the floor-cell note:
+
+- The aggregate gate, at most 1.25× the floor on the nominated real subjects, was not
+  evaluated.
+- The subject is a new 450,001-entry corpus tree, not the pre-registered 450,463-entry
+  primary subject. Both are generated trees, which the campaign-2 plan’s corpus rule
+  found understate fdu’s distance from the floor.
+- fdu’s worker count was neither pinned nor recorded.
+  The automatic policy starts four workers on this host, matching the floor tools, only
+  because the host has fewer cores than fdu’s six-worker cap.
+
+## What the Floor Cells Say about the Residual
+
+`parfloor` at 316 ms and `arena_spike` at 363 ms differ by about 15% in wall time, so on
+this tree retaining an index-shaped result adds little over raw parallel enumeration.
+The candidate’s `default-tree` is 822 ms: 2.60× the floor in total, 1.60× above it.
+That points the residual at the consumer, and
+[the earlier syscall census](../research/research-2026-08-13-linux-first-measurements.md),
+in which fdu issued the same syscall counts as `dut` and `diskus`, supports that
+direction. This cell cannot locate the residual, though: it recorded no CPU for either
+floor tool, and the candidate’s `default-tree` spends about 64% of its CPU time in the
+kernel.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

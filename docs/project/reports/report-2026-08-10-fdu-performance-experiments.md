@@ -180,7 +180,7 @@ dead end.
 | 100 | [Move directory-only state out of line](#exp100--move-directoryonly-state-out-of-line) | H86 | `default-tree` | -0.8% | ❌ rejected |
 | 101 | [Compact detached child topology with local promotion](#exp101--compact-detached-child-topology-with-local-promotion) | H86 | `default-tree` | -7.7% | ✅ accepted |
 | 102 | [Point lookup for public mutation preflight](#exp102--point-lookup-for-public-mutation-preflight) | — | `delta-apply-large` | -49.8% | ✅ accepted |
-| 103 | [H86 Linux evidence stage: relative gates pass, floor gates fail](#exp103--h86-linux-evidence-stage-relative-gates-pass-floor-gates-fail) | H86 | `cold-scan-index` | -18.2% | ❌ rejected |
+| 103 | [H86 Linux evidence stage: relative gates pass, floor gates fail](#exp103--h86-linux-evidence-stage-relative-gates-pass-floor-gates-fail) | H86 | `default-tree` | -31.7% | ❌ rejected |
 
 ## The experiments
 
@@ -3601,24 +3601,24 @@ Full record:
 
 ### exp-103 — H86 Linux evidence stage: relative gates pass, floor gates fail
 
-❌ rejected · 2026-09-02 · H86 · commit `5d7b86fe6d031e76843fe0b8dbcf8663a0d2b53f`
+❌ rejected · 2026-09-02 · H86
 
 Control: c6380f7 immediate immutable control
 
 Candidate: 5d7b86f H86 consumer representation (codex/streaming-performance-parity)
 
-**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+**`default-tree`** (warm start) — the comparison the verdict rests on
 
 | metric | control | candidate | change | 95% interval |
 | --- | ---: | ---: | ---: | --- |
-| wall (ms) | 1905.6 | 1537.0 | -18.16% | [-24.25%, -13.72%] |
-| component (ms) | 854.3 | 614.5 | -25.84% | [-34.41%, -19.06%] |
-| cpu (ms) | 3470.7 | 2844.1 | -17.97% | [-21.47%, -13.14%] |
-| user (ms) | 1948.2 | 1564.6 | -20.50% | [-25.03%, -16.16%] |
-| system (ms) | 1519.6 | 1317.6 | -12.20% | [-21.93%, -3.17%] |
-| peak rss (MiB) | 303.6 | 153.5 | -49.16% | [-52.61%, -46.16%] |
+| wall (ms) | 1189.7 | 821.7 | -31.70% | [-34.31%, -29.15%] |
+| component (ms) | 1081.8 | 803.7 | -26.68% | [-29.92%, -24.00%] |
+| cpu (ms) | 2769.4 | 2120.0 | -19.95% | [-23.88%, -17.30%] |
+| user (ms) | 1230.8 | 803.6 | -36.44% | [-39.33%, -28.87%] |
+| system (ms) | 1514.8 | 1347.3 | -7.96% | [-12.69%, -5.17%] |
+| peak rss (MiB) | 313.6 | 200.9 | -35.05% | [-37.68%, -33.12%] |
 
-Other jobs, wall time: `default-tree` -31.7%, `opened-discovery` -10.7%.
+Other jobs, wall time: `cold-scan-index` -18.2%, `opened-discovery` -10.7%.
 
 Cost to carry: 0 lines; no new dependencies; new failure mode: absolute floor ratio, not
 paired regression.
@@ -3626,12 +3626,12 @@ paired regression.
 No code change proposed or made; this is an evidence stage against an existing
 candidate.
 
-**Rejected:** Relative gates pass (cold-scan-index -18.16% [-24.25,-13.72], default-tree
--31.70%, RSS -49.4%/-35.9%, tails inside 1.5/2.0), but the pre-registered Linux floor
-gates fail: index wall 4.86x the parfloor syscall floor against a 1.4x gate and 5.03x
-arena_spike RSS against a 3x gate.
-Both floor cells are stable (max/min 1.204 and 1.391), so the ratios are resolved and
-reject rather than unresolved.
+**Rejected:** The pre-registered Linux floor gates fail on the index tier: default-tree
+wall is 2.60x the parfloor syscall floor against a 1.4x gate and its peak RSS 6.59x
+arena_spike against a 3x gate (cold-scan-index 4.86x and 5.03x). Both floor cells are
+stable (max/min 1.204 and 1.391), so the ratios reject rather than abstain, even though
+the relative gates pass: default-tree wall -31.70% [-34.31%, -29.15%], cold-scan-index
+-18.16% [-24.25%, -13.72%], paired peak RSS -35.05% and -49.16%.
 
 Full record:
 [`exp-103-h86-linux-evidence-stage-relative-gates-pass-floor-gates-fai.md`](../experiments/exp-103-h86-linux-evidence-stage-relative-gates-pass-floor-gates-fai.md)
@@ -3874,7 +3874,7 @@ Baselines show one value because they measure a state rather than a change.
 
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
-| 103 | H86 Linux evidence stage: relative gates pass, floor gates fail | `cold-scan-index` | 1,905.6 | 1,537.0 | -18.2% | ❌ rejected |
+| 103 | H86 Linux evidence stage: relative gates pass, floor gates fail | `default-tree` | 1,189.7 | 821.7 | -31.7% | ❌ rejected |
 
 ### live-workspace-exp038 (1,008,723 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
