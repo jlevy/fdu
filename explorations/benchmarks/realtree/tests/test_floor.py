@@ -23,6 +23,70 @@ BINARIES = {
 }
 
 
+def probe_line(dirs, files, *, apparent=1000, allocated=2000, component_ns=5_000_000):
+    return json.dumps({"component_ns": component_ns, "mode": "x", "summary": {
+        "dirs": dirs, "files": files, "apparent_bytes": apparent, "allocated_bytes": allocated,
+    }})
+
+
+def parfloor_line(dirs, files, *, other=3, apparent=1000, allocated=2000, wall_ns=1_000_000,
+                  variant="stat"):
+    return json.dumps({"variant": variant, "threads": 4, "dirs": dirs, "files": files,
+                       "other": other, "bytes": apparent, "allocated": allocated,
+                       "wall_ns": wall_ns})
+
+
+def arena_line(dirs, files, *, apparent=1000, allocated=2000, wall_ms=2.5):
+    return json.dumps({"files": files, "dirs": dirs, "bytes": apparent,
+                       "allocated": allocated, "wall_ms": wall_ms})
+
+
+#: One tree as each instrument reports it: 10 directories under the root, 50 files and 3
+#: symlinks. `parfloor enum` makes no metadata call, so it counts directories only, and
+#: the index retains the root as an entry of its own (11 - 1 == 10).
+CONSISTENT = {
+    "parfloor-stat": parfloor_line(10, 50),
+    "parfloor-enum": parfloor_line(10, 0, other=0, variant="enum"),
+    "arena-spike": arena_line(10, 50),
+    "aggregate": probe_line(10, 50),
+    "index": probe_line(11, 50),
+}
+
+
+def instrument_key(argv):
+    name = Path(argv[0]).name
+    if name == "parfloor":
+        return f"parfloor-{argv[1]}"
+    if name == "arena_spike":
+        return "arena-spike"
+    return {"summary": "aggregate", "scan-index": "index"}[argv[1]]
+
+
+def run_subject(outputs, *, instruments=floor.DEFAULT_INSTRUMENTS, trials=2, warmups=1,
+                **overrides):
+    """Run the real `measure_subject` with only process spawning replaced.
+
+    Adapted from the proof tests published with the PR #49 review.
+    """
+    order = []
+
+    def fake_spawn(argv, *, timeout_seconds):
+        key = instrument_key(argv)
+        order.append(key)
+        return {"stdout": outputs[key] + "\n", "spawn_wall_ns": 7_000_000,
+                "max_rss_bytes": 1 << 20}
+
+    arguments = dict(
+        root=Path("/r"), label="t", binaries=BINARIES,
+        instruments=[floor.INSTRUMENTS[name] for name in instruments],
+        workers=4, trials=trials, warmups=warmups, quiet=False,
+    )
+    arguments.update(overrides)
+    with mock.patch.object(floor, "_spawn", fake_spawn):
+        subject = floor.measure_subject(**arguments)
+    return subject, order
+
+
 class ReadsInstrumentOutput(unittest.TestCase):
     def test_parfloor_tallies_and_timer(self):
         line = json.dumps({
@@ -133,6 +197,60 @@ class EveryInstrumentRunsTheSamePool(unittest.TestCase):
             "trials": 30, "warmups": 3, "subjects": [],
         }
         self.assertIn("fixed pool of 4 workers", floor.render(document))
+
+
+class EveryInstrumentMeetsEveryPredecessor(unittest.TestCase):
+    """What the previous process left behind is a predecessor effect, and the order
+    decides whose effect each instrument inherits.
+
+    Review FLOOR-2: every round ran the same order, so each instrument followed the same
+    predecessor in every round and that effect was baked into its median. A rotation by
+    the round's ordinal does not fix it: a cyclic shift keeps adjacent pairs adjacent.
+    """
+
+    @staticmethod
+    def _adjacency(rounds, names):
+        sequence = [name for order in rounds for name in order]
+        counts = {(before, after): 0 for before in names for after in names if before != after}
+        repeats = 0
+        for before, after in zip(sequence, sequence[1:]):
+            if before == after:
+                repeats += 1
+            else:
+                counts[(before, after)] += 1
+        return counts, repeats
+
+    def test_every_round_runs_every_instrument_once(self):
+        for count in range(1, 6):
+            names = [f"i{k}" for k in range(count)]
+            rounds = floor.schedule(names, trials=7, warmups=2)
+            self.assertEqual([ordinal for ordinal, _ in rounds], list(range(-2, 7)))
+            for _, order in rounds:
+                self.assertEqual(sorted(order), names)
+
+    def test_every_instrument_follows_every_other_equally_often(self):
+        for count in range(2, 6):
+            names = [f"i{k}" for k in range(count)]
+            for trials in (1, 4, 11, 30):
+                with self.subTest(instruments=count, trials=trials):
+                    rounds = [order for _, order in floor.schedule(names, trials=trials, warmups=3)]
+                    counts, repeats = self._adjacency(rounds, names)
+                    self.assertEqual(repeats, 0, "an instrument followed itself")
+                    self.assertLessEqual(max(counts.values()) - min(counts.values()), 1, counts)
+
+    def test_no_instrument_keeps_a_single_predecessor(self):
+        _, order = run_subject(CONSISTENT, trials=7, warmups=1)
+        for name in floor.DEFAULT_INSTRUMENTS:
+            with self.subTest(instrument=name):
+                predecessors = {before for before, after in zip(order, order[1:]) if after == name}
+                self.assertEqual(len(predecessors), len(floor.DEFAULT_INSTRUMENTS) - 1)
+
+    def test_the_run_follows_the_schedule_it_records(self):
+        subject, order = run_subject(CONSISTENT, trials=3, warmups=1)
+        recorded = subject["schedule"]
+        self.assertEqual(recorded["scheme"], floor.SCHEDULE_SCHEME)
+        self.assertEqual(len(recorded["rounds"]), 4)
+        self.assertEqual([name for names in recorded["rounds"] for name in names], order)
 
 
 class RefusesRatherThanSubstituting(unittest.TestCase):

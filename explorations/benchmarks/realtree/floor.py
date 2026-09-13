@@ -78,6 +78,8 @@ here rather than treated as drift.
 
 from __future__ import annotations
 
+import functools
+import itertools
 import json
 import os
 import platform
@@ -229,9 +231,12 @@ INSTRUMENTS: Dict[str, Instrument] = {
     ),
 }
 
-#: The order the scoreboard runs and prints them in: denominator first, so a reader of
-#: the raw sample list sees the number everything else is divided by before the ratios.
+#: The instruments a scoreboard runs, denominator first. This is the order of the first
+#: round only; later rounds follow `schedule`, and the table sorts rows by ratio.
 DEFAULT_INSTRUMENTS = ("parfloor-stat", "parfloor-enum", "arena-spike", "aggregate", "index")
+
+#: Names the ordering `schedule` produces, recorded with every subject.
+SCHEDULE_SCHEME = "carryover-balanced-v1"
 
 
 # --------------------------------------------------------------------------------------
@@ -467,6 +472,72 @@ def _require_quiet(pressure: Mapping[str, Any]) -> None:
         )
 
 
+def schedule(instruments: Sequence[Any], *, trials: int, warmups: int) -> List[tuple]:
+    """The order of every round, warmups first, as `(ordinal, instruments)` pairs.
+
+    Every instrument runs once per round, and across rounds every instrument follows
+    every other equally often -- round boundaries included, since the first process of a
+    round runs straight after the last one of the round before -- and never follows
+    itself. Over any stretch of rounds, how often one instrument follows another differs
+    by at most one between pairs.
+
+    That is the property a fixed order lacks: it gives each instrument the same
+    predecessor in every round, and whatever that predecessor leaves behind -- memory
+    churned, page cache displaced -- lands on the same instrument's median every time. A
+    rotation by the round's ordinal does not supply it either. A cyclic shift keeps
+    adjacent instruments adjacent, so each would still follow one predecessor in all but
+    one round of every n.
+    """
+    block = _balanced_block(len(instruments))
+    return [
+        (ordinal, [instruments[index] for index in block[(ordinal + warmups) % len(block)]])
+        for ordinal in range(-warmups, trials)
+    ]
+
+
+@functools.lru_cache(maxsize=None)
+def _balanced_block(count: int) -> tuple:
+    """`count - 1` orderings that, repeated end to end, balance every predecessor.
+
+    Concatenated and read cyclically, the block has every ordered pair of distinct
+    instruments adjacent exactly once, and no instrument adjacent to itself: `count - 1`
+    rounds of `count - 1` pairs each, plus the `count - 1` boundaries between rounds,
+    is exactly the `count * (count - 1)` ordered pairs there are. The first ordering is
+    the declared one.
+
+    Found by a depth-first search rather than a formula, because the closed forms cover
+    only some counts (stepping by k modulo a prime count, for one) and a scoreboard can
+    be handed any subset of the catalogue. The search is exhaustive and returns at once
+    at these sizes -- well under a second through eight instruments.
+    """
+    if count < 2:
+        return (tuple(range(count)),)
+    declared = tuple(range(count))
+    orderings = list(itertools.permutations(range(count)))
+    used = set(zip(declared, declared[1:]))
+    block = [declared]
+
+    def extend() -> bool:
+        if len(block) == count - 1:
+            closing = (block[-1][-1], block[0][0])
+            return closing[0] != closing[1] and closing not in used
+        for ordering in orderings:
+            pairs = [(block[-1][-1], ordering[0]), *zip(ordering, ordering[1:])]
+            if any(before == after or (before, after) in used for before, after in pairs):
+                continue
+            used.update(pairs)
+            block.append(ordering)
+            if extend():
+                return True
+            block.pop()
+            used.difference_update(pairs)
+        return False
+
+    if not extend():
+        raise FloorError(f"no predecessor-balanced order exists for {count} instruments")
+    return tuple(block)
+
+
 def measure_subject(
     *,
     root: Path,
@@ -483,8 +554,9 @@ def measure_subject(
     Interleaving is not a nicety here. Run sequentially, the first instrument pays the
     page-cache miss for the whole tree and every later one reads a warm cache: measured
     that way on a 76k-entry subject, the *ceiling* came out 1.6x faster than the floor it
-    is supposed to sit above. Round-robin plus discarded warmups is what makes the ratio
-    a property of the programs rather than of their order.
+    is supposed to sit above. Rounds plus discarded warmups are what make the ratio a
+    property of the programs rather than of their order -- and the rounds follow
+    `schedule`, so no instrument inherits one predecessor's leftovers every time.
     """
     pressure_before = _host_pressure()
     if quiet:
@@ -495,9 +567,10 @@ def measure_subject(
     oracle_source: Optional[str] = None
     disagreements: List[str] = []
 
-    for ordinal in range(-warmups, trials):
+    rounds = schedule(instruments, trials=trials, warmups=warmups)
+    for ordinal, order in rounds:
         warmup = ordinal < 0
-        for instrument in instruments:
+        for instrument in order:
             trial = run_cell(
                 instrument,
                 binaries=binaries,
@@ -540,6 +613,12 @@ def measure_subject(
         "workers": workers,
         "trials": trials,
         "warmups": warmups,
+        # Every round's order, warmups first, so a reader can see which instrument ran
+        # after which rather than trusting that the balance held.
+        "schedule": {
+            "scheme": SCHEDULE_SCHEME,
+            "rounds": [[instrument.id for instrument in order] for _, order in rounds],
+        },
         "host_pressure_before": pressure_before,
         "host_pressure_after": pressure_after,
         "instruments": results,
