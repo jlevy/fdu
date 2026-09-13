@@ -519,7 +519,14 @@ mod tests {
         );
         assert_eq!(performance.walked_files, 1, "the walk still happened");
 
-        let (_, open_report) = crate::open(root.path(), &auto).expect("library open");
+        // A report's snapshot carries the controls-off scope whatever the caller passed,
+        // so the `open` that shares it asks for that scope. A default `open` observes
+        // control state the snapshot never held, and scans cold instead.
+        let shared = OpenConfig {
+            scan: ScanConfig { read_controls: false, ..ScanConfig::default() },
+            ..auto
+        };
+        let (_, open_report) = crate::open(root.path(), &shared).expect("library open");
         assert_eq!(
             open_report.path_taken,
             OpenPath::WarmRevalidate,
@@ -715,7 +722,13 @@ mod tests {
         assert_eq!(performance.walked_files, 2);
         assert_eq!(performance.walked_bytes, 14);
 
-        let (index, open_report) = crate::open(root.path(), &off).expect("indexed scan");
+        // The report ran with control observation off, as every one-shot report does, so
+        // the index it must match exactly is opened under that scope too.
+        let indexed_config = OpenConfig {
+            scan: ScanConfig { read_controls: false, ..ScanConfig::default() },
+            ..off
+        };
+        let (index, open_report) = crate::open(root.path(), &indexed_config).expect("indexed scan");
         let indexed = report(
             &index,
             &query,

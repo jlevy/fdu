@@ -184,8 +184,8 @@ pub struct ScanConfig {
     pub types: Option<std::sync::Arc<crate::classify::TypeRegistry>>,
     /// Observe `.gitignore` control files and retain ignore classification.
     ///
-    /// On by default, so an [`Index`](crate::Index) from [`crate::open`] or a scan keeps
-    /// the exact control state it exposes and a watch maintains. Off, the scan performs
+    /// On by default, so an [`Index`] from [`crate::open`] or a scan keeps the exact
+    /// control state it exposes and a watch maintains. Off, the scan performs
     /// no control-file I/O and retains no control table: the semantics an absent
     /// `gitignore` feature gives, stamped into [`ScanScope`] the same way, so an
     /// index-returning call never serves a snapshot taken one way as the other.
