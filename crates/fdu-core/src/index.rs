@@ -2327,7 +2327,8 @@ impl Index {
         }
         let mut effects = NoConsequences;
         let reduce_started = crate::counters::enabled().then(std::time::Instant::now);
-        let stats = self.reduce_scanner_prepared(&prepared, None, None, false, &mut effects)?;
+        // Dispatch on the prepared lane: a batch that replaces a kind is general.
+        let stats = self.reduce_prepared(&prepared, None, None, None, false, &mut effects)?;
         if let Some(started) = reduce_started {
             let elapsed = elapsed_micros(started);
             crate::counters::bump(|counts| {
@@ -3152,6 +3153,13 @@ impl Index {
     /// children together; those children retain the earlier operation index instead.
     /// The proof owns no duplicate paths and application performs no second path-tree
     /// search.
+    ///
+    /// A discovery can also find an entry whose kind the index no longer agrees with: a
+    /// concurrent refresh may have replaced it after its directory was listed. Replacing a
+    /// kind drops a subtree, so the parent ids proved here would not survive the batch.
+    /// That rare batch is prepared for the general lane instead, which proves ancestry in
+    /// operation order and replaces the entry as it would for any verified observation;
+    /// the next observation of the path repairs a stale one.
     fn prepare_scanner_batch(
         &self,
         batch: crate::scan::ScannerBatch,
@@ -3161,6 +3169,7 @@ impl Index {
         let mut last_parent: Option<(&Path, ResolvedParent)> = None;
         let mut has_batch_parents = false;
         let mut path_comparisons = 0_u64;
+        let mut replaces_kind = false;
 
         for (op_index, observed) in ops.iter().enumerate() {
             if !matches!(observed.expectation, Expectation::Any) {
@@ -3201,6 +3210,11 @@ impl Index {
                     ));
                 }
             }
+            if replaces_kind {
+                // The general lane proves every remaining parent. Only the scanner input
+                // contract above still applies to the rest of the batch.
+                continue;
+            }
 
             let parent_path = path.parent().expect("a non-root relative path has a parent");
             if last_parent.is_some() {
@@ -3225,18 +3239,17 @@ impl Index {
                 if path.file_name().is_some_and(|name| {
                     self.child(parent, name).is_some_and(|child| self.entry(child).kind != *kind)
                 }) {
-                    // Bootstrap discovery only adds or refreshes facts. Rejecting a kind
-                    // replacement keeps every existing numeric parent stable until the
-                    // batch is consumed; refresh and watch topology stays on the public
-                    // transactional path.
-                    return Err(crate::Error::UnsupportedScanConfig(
-                        "scanner discovery cannot replace entry kinds",
-                    ));
+                    replaces_kind = true;
+                    continue;
                 }
             }
             has_batch_parents |= matches!(parent, ResolvedParent::Earlier(_));
             parents.push(parent);
             last_parent = Some((parent_path, parent));
+        }
+
+        if replaces_kind {
+            return prepare_observation(&Observation::from_ops(ops));
         }
 
         crate::counters::bump(|counts| {
@@ -6792,7 +6805,7 @@ mod tests {
     }
 
     #[test]
-    fn scanner_parent_proof_rejects_kind_replacement_atomically() {
+    fn scanner_kind_replacement_is_proved_by_the_general_lane() {
         let mut index = Index::new("/root");
         index.apply_ok(&Observation::new(vec![
             upsert("a", EntryKind::Dir, file_attrs(0, 1)),
@@ -6801,6 +6814,8 @@ mod tests {
         let before = index.total();
         let before_clock = index.clock();
 
+        // Once `a` is a file nothing can attach below it, and the batch is refused before
+        // any fact moves, exactly as a public observation would be.
         let error = index
             .apply_scanner_baseline(crate::scan::ScannerBatch::from_ops(vec![
                 upsert("a", EntryKind::File, file_attrs(2, 2)),
@@ -6810,13 +6825,61 @@ mod tests {
 
         assert!(matches!(
             error,
-            crate::Error::UnsupportedScanConfig("scanner discovery cannot replace entry kinds")
+            crate::Error::UnknownAncestry { path, .. } if path == Path::new("a/new.txt")
         ));
         assert_eq!(index.total(), before);
         assert_eq!(index.clock(), before_clock);
         assert_eq!(index.kind(Path::new("a")), Some(EntryKind::Dir));
         assert!(index.lookup(Path::new("a/old.txt")).is_some());
         assert!(index.lookup(Path::new("a/new.txt")).is_none());
+
+        // The replacement on its own is an ordinary verified observation.
+        index
+            .apply_scanner_baseline(crate::scan::ScannerBatch::from_ops(vec![upsert(
+                "a",
+                EntryKind::File,
+                file_attrs(2, 2),
+            )]))
+            .expect("a scanner batch can replace an entry's kind");
+        assert_eq!(index.kind(Path::new("a")), Some(EntryKind::File));
+        assert!(index.lookup(Path::new("a/old.txt")).is_none());
+        let total = index.total();
+        assert_eq!((total.files, total.dirs, total.bytes), (1, 0, 2));
+    }
+
+    #[test]
+    fn scanner_discovery_survives_a_kind_changed_by_a_concurrent_refresh() {
+        let handle = IndexHandle::new(Index::new("/root"));
+        handle
+            .apply_scanner_discovery_bounded(
+                crate::scan::ScannerBatch::from_ops(vec![upsert(
+                    "p",
+                    EntryKind::Dir,
+                    Attrs::default(),
+                )]),
+                DiscoveryCommit::default(),
+                None,
+            )
+            .expect("root listing");
+        // A refresh, on the general lane, saw that p/d is now a file on disk.
+        handle
+            .apply(&Observation::new(vec![upsert("p/d", EntryKind::File, file_attrs(1, 1))]))
+            .expect("refresh insert");
+        // Discovery's pending batch still carries the directory observation it listed.
+        let outcome = handle.apply_scanner_discovery_bounded(
+            crate::scan::ScannerBatch::from_ops(vec![upsert(
+                "p/d",
+                EntryKind::Dir,
+                Attrs::default(),
+            )]),
+            DiscoveryCommit { directory_complete: Some(PathBuf::from("p")), transition: None },
+            None,
+        );
+        assert!(outcome.is_ok(), "discovery must not die on a kind race: {outcome:?}");
+        // The listed observation replaces the entry, as any verified observation does, and
+        // the directory it came from is complete.
+        assert_eq!(handle.kind(Path::new("p/d")).expect("kind read"), Some(EntryKind::Dir));
+        assert_eq!(handle.directory_complete(Path::new("p")).expect("read"), Some(true));
     }
 
     #[test]
