@@ -168,7 +168,7 @@ stdout is unchanged, because counters describe an implementation rather than the
 measurement contract.
 
 ```shell
-cargo build --release -p fdu --example perf_probe
+make perf-probe-release  # the probe lives in fdu-core and is built with gitignore
 FDU_COUNTERS=1 ./target/release/examples/perf_probe scan-index --root TREE 2>&1 >/dev/null
 ```
 
