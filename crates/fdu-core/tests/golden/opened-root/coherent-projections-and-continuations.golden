@@ -35,4 +35,5 @@ result.read: Ok(ReadResponse { version: EngineVersion { session: SessionId(sessi
 action.close: close()
 result.close: Ok(())
 result.read.after-close: Err(OpenedIndexClosed)
-final: joined=true workers=0 waiters=0 continuations=0
+final: session=SessionId(session-1) joined=true workers=0 waiters=0 continuations=0 close=Ok(())
+final: session=SessionId(session-2) joined=true workers=0 waiters=0 continuations=0 close=Ok(())

@@ -772,6 +772,69 @@ impl Drop for OpenedState {
     }
 }
 
+/// What one opened root still retains, read from its own state.
+///
+/// The session goldens' `final` record is derived from this rather than written as a
+/// literal: a regression that left a worker, a blocked poll, or a page record behind a
+/// closed root would otherwise print the same text as a clean shutdown.
+#[cfg(all(test, feature = "watch", feature = "gitignore"))]
+pub(super) struct RetainedOwnership {
+    session: SessionId,
+    /// Shutdown finished: every worker was joined before its outcome was stored.
+    joined: bool,
+    workers: usize,
+    waiters: usize,
+    continuations: usize,
+    /// The outcome every later `close()` replays, once shutdown has stored one.
+    close: Option<Result<()>>,
+}
+
+#[cfg(all(test, feature = "watch", feature = "gitignore"))]
+impl RetainedOwnership {
+    pub(super) fn is_released(&self) -> bool {
+        self.joined && self.workers == 0 && self.waiters == 0 && self.continuations == 0
+    }
+}
+
+#[cfg(all(test, feature = "watch", feature = "gitignore"))]
+impl std::fmt::Display for RetainedOwnership {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "session={:?} joined={} workers={} waiters={} continuations={} close=",
+            self.session, self.joined, self.workers, self.waiters, self.continuations
+        )?;
+        match &self.close {
+            Some(outcome) => write!(formatter, "{outcome:?}"),
+            None => formatter.write_str("none"),
+        }
+    }
+}
+
+#[cfg(all(test, feature = "watch", feature = "gitignore"))]
+impl OpenedState {
+    pub(super) fn retained_ownership(&self) -> RetainedOwnership {
+        let (joined, workers, close) = {
+            let lifecycle = self.lock_lifecycle().guard;
+            (
+                lifecycle.phase == OwnerPhase::Closed,
+                lifecycle.workers.len(),
+                lifecycle.terminal.as_ref().map(CloseOutcome::to_result),
+            )
+        };
+        let continuations =
+            self.continuations.lock().unwrap_or_else(std::sync::PoisonError::into_inner).len();
+        RetainedOwnership {
+            session: self.session,
+            joined,
+            workers,
+            waiters: self.journal.waiters(),
+            continuations,
+            close,
+        }
+    }
+}
+
 fn bind_root(
     root: &Path,
     options: OpenOptions,
