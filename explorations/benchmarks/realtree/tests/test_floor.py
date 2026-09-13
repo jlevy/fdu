@@ -65,7 +65,7 @@ def instrument_key(argv):
         return f"parfloor-{argv[1]}"
     if name == "arena_spike":
         return "arena-spike"
-    return {"summary": "aggregate", "scan-index": "index"}[argv[1]]
+    return {"summary": "aggregate", "scan-index": "index"}.get(argv[1], argv[1])
 
 
 def pressure(load_per_cpu):
@@ -106,7 +106,8 @@ def run_subject(outputs, *, instruments=floor.DEFAULT_INSTRUMENTS, trials=2, war
 
     arguments = dict(
         root=Path("/r"), label="t", binaries=BINARIES,
-        instruments=[floor.INSTRUMENTS[name] for name in instruments],
+        instruments=[floor.INSTRUMENTS[item] if isinstance(item, str) else item
+                     for item in instruments],
         workers=4, trials=trials, warmups=warmups, quiet=False,
     )
     arguments.update(overrides)
@@ -303,6 +304,110 @@ class ReconcilesDefinitionalDifferences(unittest.TestCase):
         )
         self.assertEqual(total, directories + files + symlinks)
         self.assertEqual(parfloor, directories - 1)
+
+
+class HoldsEveryReportedTallyToTheOracle(unittest.TestCase):
+    """Any two instruments that disagree about the tree mean one of them is broken.
+
+    Review FLOOR-10: the oracle's keys were those of the first trial, so a run opening
+    with an instrument that reports fewer tallies never compared the rest.
+    """
+
+    DIRS_ONLY = floor.Instrument(
+        id="dirs-only", role="tier", description="reports directories and nothing else",
+        argv=("{probe}", "dirs-only"), tally_map={"dirs": "dirs"},
+        elapsed_key="component_ns", payload_key="summary",
+    )
+
+    def test_a_consistent_tree_passes(self):
+        subject, _ = run_subject(CONSISTENT)
+        self.assertEqual(subject["oracle_disagreements"], [])
+        self.assertEqual(subject["dropped_instruments"], {})
+        self.assertEqual(set(subject["oracle"]), set(floor.ORACLE_KEYS))
+
+    def test_a_key_the_opening_instrument_lacked_is_still_compared(self):
+        outputs = {"dirs-only": probe_line(10, 0), "aggregate": probe_line(10, 999),
+                   "index": probe_line(11, 50)}
+        subject, _ = run_subject(outputs, instruments=(self.DIRS_ONLY, "aggregate", "index"))
+        self.assertEqual(subject["oracle_sources"]["dirs"], "dirs-only")
+        self.assertEqual(subject["oracle_sources"]["files"], "aggregate")
+        self.assertTrue(any("index" in reason and "files" in reason
+                            for reason in subject["oracle_disagreements"]))
+
+    def test_every_trial_faces_the_oracle_including_warmups(self):
+        outputs = dict(CONSISTENT, **{"arena-spike": arena_line(10, 51)})
+        subject, _ = run_subject(outputs, trials=2, warmups=1)
+        arena = [reason for reason in subject["oracle_disagreements"]
+                 if reason.startswith("arena-spike")]
+        self.assertEqual(len(arena), 3)
+
+
+class DropsAReferenceRowRatherThanVetoing(unittest.TestCase):
+    """A reference row is context; a denominator and the tiers are the scoreboard.
+
+    Review FLOOR-12: `parfloor enum` descends only where `getdents64` reports `DT_DIR`,
+    and `parfloor` skips a directory it cannot open without counting it -- definitional
+    gaps that vetoed the whole subject as if the tree or the tiers were broken.
+    """
+
+    #: What `parfloor enum` reports on a filesystem that leaves `d_type` unknown.
+    BLIND_ENUM = dict(CONSISTENT, **{"parfloor-enum": parfloor_line(0, 0, other=0, variant="enum")})
+
+    def test_a_reference_that_disagrees_is_dropped_not_a_veto(self):
+        subject, _ = run_subject(self.BLIND_ENUM)
+        self.assertEqual(subject["oracle_disagreements"], [])
+        self.assertIn("dirs", subject["dropped_instruments"]["parfloor-enum"])
+        self.assertNotIn("parfloor-enum", subject["instruments"])
+        scored = floor.score(subject)
+        self.assertNotIn("parfloor-enum", [row["instrument"] for row in scored["rows"]])
+
+    def test_a_reference_never_seeds_the_oracle(self):
+        subject, _ = run_subject(
+            self.BLIND_ENUM, instruments=("parfloor-enum", "parfloor-stat", "aggregate", "index"),
+        )
+        self.assertEqual(subject["oracle_disagreements"], [])
+        self.assertEqual(subject["oracle_sources"]["dirs"], "parfloor-stat")
+
+    def test_the_table_says_which_row_it_dropped_and_why(self):
+        subject, _ = run_subject(self.BLIND_ENUM)
+        subject["scored"] = floor.score(subject)
+        document = scored_document({"parfloor-stat": 1})
+        document["subjects"] = [subject]
+        rendered = floor.render(document)
+        self.assertIn("`parfloor-enum` dropped", rendered)
+
+    def test_the_floor_cannot_be_dropped_so_an_unreadable_directory_still_vetoes(self):
+        """The documented limitation: parfloor skips a directory it cannot open."""
+        outputs = dict(CONSISTENT, **{"parfloor-stat": parfloor_line(9, 50)})
+        subject, _ = run_subject(outputs, trials=2, warmups=1)
+        self.assertTrue(subject["oracle_disagreements"])
+        self.assertNotIn("parfloor-stat", subject["dropped_instruments"])
+
+    def test_a_long_veto_says_how_much_it_left_out(self):
+        outputs = dict(CONSISTENT, **{"parfloor-stat": parfloor_line(9, 50)})
+        subject, _ = run_subject(outputs, trials=4, warmups=0)
+        subject["scored"] = floor.score(subject)
+        document = scored_document({"parfloor-stat": 1})
+        document["subjects"] = [subject]
+        hidden = len(subject["oracle_disagreements"]) - 5
+        self.assertGreater(hidden, 0)
+        self.assertIn(f"and {hidden} more", floor.render(document))
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root can read anything")
+    def test_an_unreadable_subject_root_is_refused_before_anything_runs(self):
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as scratch:
+            locked = Path(scratch) / "locked"
+            locked.mkdir()
+            locked.chmod(0)
+            try:
+                with contextlib.redirect_stderr(stderr), \
+                        mock.patch.object(floor, "run", side_effect=AssertionError("must refuse first")):
+                    status = floor.main(["--subject", f"t={locked}", "--probe", "/b/perf_probe"])
+            finally:
+                locked.chmod(0o755)
+        self.assertEqual(status, 2)
+        self.assertIn("not readable", stderr.getvalue())
 
 
 class CountsEntriesTheWayPerfSubjectsDoes(unittest.TestCase):

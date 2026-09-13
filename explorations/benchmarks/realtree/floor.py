@@ -75,6 +75,21 @@ subject this loop is expected to be handed.
 fdu excludes from `files`/`dirs` entirely; that difference is structural and reconciled
 here rather than treated as drift.
 
+The oracle holds every tally some instrument reports, each taken from the first trial that
+reported it, so a run opening with an instrument that reports fewer tallies still compares
+the rest. A *reference* row neither sets it nor vetoes the subject. `parfloor enum` makes
+no metadata call, so it descends only where `getdents64` reports `DT_DIR`, and on a
+filesystem that leaves `d_type` unknown it undercounts directories -- a fact about that
+instrument, not about the tree or the tiers. A reference that disagrees is dropped from
+the table, with the reason.
+
+`parfloor stat` is the floor and cannot be dropped, which leaves one known gap as a
+limitation of the scoreboard: a directory it cannot open is skipped without being
+counted, while fdu and `arena_spike` count it. **A subject with any directory the
+running user cannot read is refused by the oracle**, so score subjects that are readable
+throughout. A subject root it cannot open would print a wrapped directory count, so an
+unreadable root is refused before anything runs.
+
 ## The host regime
 
 The scoreboard divides two absolute numbers measured minutes apart, so it is *more*
@@ -677,9 +692,7 @@ def measure_subject(
     """
     regime_name = "quiet" if quiet else "uncontrolled"
     trials_by_instrument: Dict[str, List[Trial]] = {item.id: [] for item in instruments}
-    oracle: Optional[Dict[str, int]] = None
-    oracle_source: Optional[str] = None
-    disagreements: List[str] = []
+    ran: List[Trial] = []
     invalid_trials = 0
     invalid_reasons: List[str] = []
     entries: Optional[int] = None
@@ -699,6 +712,7 @@ def measure_subject(
                     warmup=warmup,
                     regime=regime,
                 )
+                ran.append(trial)
                 if entries is None and instrument.id == FLOOR_INSTRUMENT:
                     entries = entries_from_floor(trial.tallies)
                 if not warmup:
@@ -708,30 +722,14 @@ def measure_subject(
                         invalid_reasons.extend(
                             reason for reason in trial.reasons if reason not in invalid_reasons
                         )
-
-                # Every trial faces the oracle, not just the first: a subject that changes
-                # underneath the run is the failure mode this catches, and it can start at
-                # any point. `parfloor enum` contributes only `dirs` -- it makes no
-                # metadata call, so it has no byte counts to agree about.
-                comparable = {k: v for k, v in trial.tallies.items() if k in ORACLE_KEYS}
-                if oracle is None:
-                    oracle, oracle_source = dict(comparable), instrument.id
-                else:
-                    shared = set(comparable) & set(oracle)
-                    differing = {k: (oracle[k], comparable[k]) for k in shared
-                                 if oracle[k] != comparable[k]}
-                    if differing:
-                        disagreements.append(
-                            f"{instrument.id} trial {ordinal} disagrees with {oracle_source}: "
-                            + ", ".join(
-                                f"{k} {a} vs {b}" for k, (a, b) in sorted(differing.items())
-                            )
-                        )
         pressure_after = measure._host_pressure_snapshot(regime)
 
+    verdict = _hold_to_oracle(ran, {instrument.id: instrument for instrument in instruments})
+    oracle = verdict["oracle"]
     results = {
         instrument.id: _summarize(trials_by_instrument[instrument.id], instrument)
         for instrument in instruments
+        if instrument.id not in verdict["dropped"]
     }
     return {
         "label": label,
@@ -739,10 +737,12 @@ def measure_subject(
         # thing across the campaign; None without the floor instrument, which reports it.
         "entries": entries,
         # What fdu's tiers report, and the denominator of the per-entry cost column.
-        "dirs_and_files": (oracle or {}).get("dirs", 0) + (oracle or {}).get("files", 0),
+        "dirs_and_files": oracle.get("dirs", 0) + oracle.get("files", 0),
         "oracle": oracle,
-        "oracle_source": oracle_source,
-        "oracle_disagreements": disagreements,
+        "oracle_sources": verdict["sources"],
+        "oracle_disagreements": verdict["disagreements"],
+        # Reference rows left out of the table because they disagreed, and why.
+        "dropped_instruments": verdict["dropped"],
         "workers": workers,
         "trials": trials,
         "warmups": warmups,
@@ -760,6 +760,48 @@ def measure_subject(
         "host_pressure_after": pressure_after,
         "instruments": results,
     }
+
+
+def _hold_to_oracle(
+    trials: Sequence[Trial], instruments: Mapping[str, Instrument]
+) -> Dict[str, Any]:
+    """Establish the tallies every instrument must agree on, and hold every trial to them.
+
+    Every trial faces the oracle, warmups included, not just the first: a subject that
+    changes underneath the run is the failure mode this catches, and it can start at any
+    point. The oracle takes each key from the first trial that reported it -- keys the
+    opening instrument lacks included -- but never from a reference row. A reference that
+    disagrees is dropped, recorded with its first disagreement, rather than vetoing the
+    subject; any other disagreement is a veto.
+    """
+    oracle: Dict[str, int] = {}
+    sources: Dict[str, str] = {}
+    for trial in trials:
+        if instruments[trial.instrument].role == "reference":
+            continue
+        for key in ORACLE_KEYS:
+            if key in trial.tallies and key not in oracle:
+                oracle[key], sources[key] = trial.tallies[key], trial.instrument
+
+    disagreements: List[str] = []
+    dropped: Dict[str, str] = {}
+    for trial in trials:
+        differing = sorted(
+            (key, value) for key, value in trial.tallies.items()
+            if key in oracle and value != oracle[key]
+        )
+        if not differing:
+            continue
+        reason = f"{trial.instrument} trial {trial.ordinal} disagrees: " + ", ".join(
+            f"{key} {value}, where {sources[key]} reported {oracle[key]}"
+            for key, value in differing
+        )
+        if instruments[trial.instrument].role == "reference":
+            dropped.setdefault(trial.instrument, reason)
+        else:
+            disagreements.append(reason)
+    return {"oracle": oracle, "sources": sources, "disagreements": disagreements,
+            "dropped": dropped}
 
 
 def _summarize(trials: Sequence[Trial], instrument: Instrument) -> Dict[str, Any]:
@@ -895,8 +937,12 @@ def render(document: Mapping[str, Any]) -> str:
         lines.append("")
         if subject["oracle_disagreements"]:
             lines.append("> **The oracle disagreed. These numbers do not compare.**")
-            for reason in subject["oracle_disagreements"][:5]:
+            shown = subject["oracle_disagreements"][:5]
+            for reason in shown:
                 lines.append(f"> - {reason}")
+            hidden = len(subject["oracle_disagreements"]) - len(shown)
+            if hidden:
+                lines.append(f"> - and {hidden} more, in the JSON document")
             lines.append("")
         lines.append(
             "| Instrument | Role | Median | ×floor | ns/(dir+file) | spread | p95/median "
@@ -921,6 +967,10 @@ def render(document: Mapping[str, Any]) -> str:
                 f"{spread} | {row['p95_over_median'] or '—'} | {rss} |"
             )
         lines.append("")
+        for name, reason in sorted(subject.get("dropped_instruments", {}).items()):
+            lines.append(f"`{name}` dropped: a reference row that disagreed is left out "
+                         f"rather than vetoing the subject. {reason}.")
+            lines.append("")
         if any(row["spread_suspect"] for row in scored["rows"]):
             lines.append(
                 f"⚠ max/min at or past {SPREAD_SUSPECT:.0f}×: the samples span more than "
@@ -1056,6 +1106,11 @@ def main(argv: Sequence[str]) -> int:
         resolved = Path(path).expanduser().resolve()
         if not resolved.is_dir():
             print(f"subject {label!r} is not a directory: {resolved}", file=sys.stderr)
+            return 2
+        if not os.access(resolved, os.R_OK | os.X_OK):
+            print(f"subject {label!r} is not readable: {resolved}. parfloor cannot open a "
+                  "directory it cannot read, and prints a wrapped count when that "
+                  "directory is the root", file=sys.stderr)
             return 2
         subjects.append((label, resolved))
 
