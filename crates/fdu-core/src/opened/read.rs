@@ -400,6 +400,8 @@ fn tree_projection(
     start: Option<&ChildPosition>,
     work: &mut Work,
 ) -> Result<ProjectionResult> {
+    #[cfg(test)]
+    opened.state.test_controls.reach(super::TestPoint::DuringTreeProjection);
     let path_work = path.components().count() as u64 + 1;
     if path_work > page.max_work {
         work.rows_visited = work.rows_visited.saturating_add(page.max_work);

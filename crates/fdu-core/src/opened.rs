@@ -263,14 +263,14 @@ impl OpenedIndex {
     }
 
     /// Return requested projections from one committed version and state boundary.
+    ///
+    /// The lifecycle lock guards only the phase check. The projection's coherence comes
+    /// from the index read boundary, which any number of readers share, so holding the
+    /// lifecycle lock across it would serialize every read with every other read and with
+    /// refresh, worker registration, and the start of close. A read that races close cannot
+    /// leave state behind: the continuation table refuses records once shutdown clears it.
     pub fn read(&self, request: crate::ReadRequest) -> Result<crate::ReadResponse> {
-        let locked = self.state.lock_lifecycle();
-        if locked.poisoned {
-            return Err(Error::OpenedLifecyclePoisoned);
-        }
-        if locked.guard.phase != OwnerPhase::Open {
-            return Err(Error::OpenedIndexClosed);
-        }
+        self.ensure_open()?;
         read::read(self, request)
     }
 
@@ -701,8 +701,8 @@ impl OpenedState {
                     drop(lifecycle);
                     self.journal.close();
                     match self.continuations.lock() {
-                        Ok(mut continuations) => continuations.clear(),
-                        Err(poisoned) => poisoned.into_inner().clear(),
+                        Ok(mut continuations) => continuations.close(),
+                        Err(poisoned) => poisoned.into_inner().close(),
                     }
                     self.lifecycle_changed.notify_all();
                     break workers;
@@ -1716,6 +1716,7 @@ enum TestPoint {
     AfterRootDirectory,
     BeforeJournalWait,
     AfterRefreshVerification,
+    DuringTreeProjection,
     #[cfg(feature = "watch")]
     BeforeObservationHandoff,
     #[cfg(feature = "watch")]
@@ -1735,6 +1736,7 @@ struct TestControls {
     after_root_directory: TestGate,
     before_journal_wait: TestGate,
     after_refresh_verification: TestGate,
+    during_tree_projection: TestGate,
     #[cfg(feature = "watch")]
     before_observation_handoff: TestGate,
     #[cfg(feature = "watch")]
@@ -1764,6 +1766,7 @@ impl TestControls {
             TestPoint::AfterRootDirectory => &self.after_root_directory,
             TestPoint::BeforeJournalWait => &self.before_journal_wait,
             TestPoint::AfterRefreshVerification => &self.after_refresh_verification,
+            TestPoint::DuringTreeProjection => &self.during_tree_projection,
             #[cfg(feature = "watch")]
             TestPoint::BeforeObservationHandoff => &self.before_observation_handoff,
             #[cfg(feature = "watch")]
@@ -2806,6 +2809,109 @@ mod tests {
         assert!(second_page.next.is_none());
         assert!(second.work.rows_visited <= 2, "continuation resumed from retained position");
         opened.close().expect("close");
+    }
+
+    /// Two reads proceed together: a page in progress does not hold the lifecycle lock.
+    ///
+    /// `read()` used to bind the lifecycle guard and project as its tail expression, so the
+    /// guard lived until the page returned. Every read then excluded every other read, and
+    /// refresh, worker registration, and the start of close, for up to a full page of work.
+    #[test]
+    fn a_read_proceeds_while_another_read_is_projecting() {
+        let controls = Arc::new(TestControls::default());
+        let (_root, opened) = opened(Arc::clone(&controls));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![Op::Upsert {
+                path: PathBuf::from("a.txt"),
+                kind: EntryKind::File,
+                attrs: crate::Attrs::default(),
+            }]))
+            .expect("seed entry");
+        controls.gate(TestPoint::DuringTreeProjection).arm();
+        let tree_reader = opened.clone();
+        let tree = thread::spawn(move || {
+            tree_reader.read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Tree {
+                    path: PathBuf::new(),
+                    depth: crate::query::Bound::Limit(1),
+                    include_ignored: true,
+                    page: crate::PageRequest { limit: 16, max_work: 64 },
+                }],
+                ..crate::ReadRequest::default()
+            })
+        });
+        controls.gate(TestPoint::DuringTreeProjection).wait_reached();
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let lookup_reader = opened.clone();
+        let lookup = thread::spawn(move || {
+            let _ = sender.send(lookup_reader.read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Lookup { path: PathBuf::from("a.txt") }],
+                ..crate::ReadRequest::default()
+            }));
+        });
+        let concurrent = receiver.recv_timeout(TEST_GATE_TIMEOUT);
+        controls.gate(TestPoint::DuringTreeProjection).release();
+        let concurrent = concurrent.expect("a second read finished while the first projected");
+        assert!(matches!(
+            concurrent.expect("lookup").results[0],
+            crate::ProjectionResult::Lookup(crate::Knowledge::Present(_))
+        ));
+        lookup.join().expect("lookup thread");
+        tree.join().expect("tree thread").expect("tree page");
+        opened.close().expect("close");
+    }
+
+    /// A page that finishes after close began cannot leave a continuation in a closed root.
+    #[test]
+    fn a_read_racing_close_leaves_no_continuation_behind() {
+        let controls = Arc::new(TestControls::default());
+        let (_root, opened) = opened(Arc::clone(&controls));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("a.txt"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("b.txt"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs::default(),
+                },
+            ]))
+            .expect("seed entries");
+        controls.gate(TestPoint::DuringTreeProjection).arm();
+        let reader = opened.clone();
+        let page = thread::spawn(move || {
+            reader.read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Tree {
+                    path: PathBuf::new(),
+                    depth: crate::query::Bound::Limit(1),
+                    include_ignored: true,
+                    page: crate::PageRequest { limit: 1, max_work: 64 },
+                }],
+                ..crate::ReadRequest::default()
+            })
+        });
+        controls.gate(TestPoint::DuringTreeProjection).wait_reached();
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let closer = opened.clone();
+        let close = thread::spawn(move || {
+            let _ = sender.send(closer.close());
+        });
+        let closed = receiver.recv_timeout(TEST_GATE_TIMEOUT);
+        controls.gate(TestPoint::DuringTreeProjection).release();
+        closed.expect("close did not wait for a read in progress").expect("close");
+        close.join().expect("close thread");
+
+        assert!(matches!(page.join().expect("page thread"), Err(Error::OpenedIndexClosed)));
+        assert_eq!(opened.state.continuations.lock().expect("continuations").len(), 0);
     }
 
     #[test]
