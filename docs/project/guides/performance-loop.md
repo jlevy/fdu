@@ -696,6 +696,12 @@ wrong once and each fails silently.
   in with ordinary work.
 - **A rejected candidate is not the product’s state.** Anything plotting “where we are
   now” must read the kept arm, which is the candidate only for an accepted experiment.
+  An experiment that decides a claim about code it did not propose has no kept arm:
+  exp-103 rejected H86’s Linux floor claim while the candidate stayed in the stack.
+  `CLAIM_ONLY_EXPERIMENTS` in
+  [`timeline.py`](../../../explorations/benchmarks/realtree/timeline.py) lists these by
+  hand, so a new one must be added or the page will draw its control as the current
+  cost.
 
 A new figure belongs in `report_html.py` beside the others, drawn as inline SVG from the
 projection.

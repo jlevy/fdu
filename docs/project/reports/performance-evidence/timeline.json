@@ -30444,7 +30444,7 @@
      "start_state": "cold"
     }
    ],
-   "kept": "control",
+   "kept": null,
    "number": 103,
    "path": "exp-103-h86-linux-evidence-stage-relative-gates-pass-floor-gates-fai.md",
    "platform": "Linux",
@@ -31115,7 +31115,7 @@
    ],
    "os_cache": "warm-steady",
    "platform": "Linux",
-   "synthetic": false
+   "synthetic": true
   }
  ],
  "totals": {
