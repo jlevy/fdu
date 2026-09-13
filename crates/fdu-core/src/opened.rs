@@ -819,64 +819,106 @@ struct DiscoveryFrontier {
     state: Mutex<FrontierState>,
 }
 
+/// Pending directories, grouped by the first priority each one serves.
+///
+/// The next directory is the earliest queued one serving the earliest priority, and
+/// otherwise the earliest queued one. Which priority a directory serves depends only on
+/// its path and the priority list, so it is decided once -- when the directory is queued,
+/// or when the priorities change -- rather than on every pop. Rescanning the whole queue
+/// against every priority per pop made one breadth-first level of width `w` cost
+/// `O(w² · priorities)`: 4,000 pops under 64 priorities took 40 seconds.
 struct FrontierState {
-    pending: VecDeque<PendingDirectory>,
+    /// Directories serving no priority, in queue order.
+    unprioritized: VecDeque<QueuedDirectory>,
+    /// `serving[k]` holds the directories whose first matching priority is
+    /// `priorities[k]`, in queue order.
+    serving: Vec<VecDeque<QueuedDirectory>>,
     priorities: Vec<PathBuf>,
+    /// Queue order, kept so that changing priorities regroups without reordering.
+    next_sequence: u64,
     stopped: bool,
+}
+
+struct QueuedDirectory {
+    sequence: u64,
+    directory: PendingDirectory,
+}
+
+impl FrontierState {
+    fn enqueue(&mut self, queued: QueuedDirectory) {
+        let path = &queued.directory.path;
+        match self
+            .priorities
+            .iter()
+            .position(|priority| priority.starts_with(path) || path.starts_with(priority))
+        {
+            Some(priority) => self.serving[priority].push_back(queued),
+            None => self.unprioritized.push_back(queued),
+        }
+    }
 }
 
 impl DiscoveryFrontier {
     fn new() -> Self {
         Self {
             state: Mutex::new(FrontierState {
-                pending: VecDeque::from([PendingDirectory { path: PathBuf::new(), depth: 0 }]),
+                unprioritized: VecDeque::from([QueuedDirectory {
+                    sequence: 0,
+                    directory: PendingDirectory { path: PathBuf::new(), depth: 0 },
+                }]),
+                serving: Vec::new(),
                 priorities: Vec::new(),
+                next_sequence: 1,
                 stopped: false,
             }),
         }
     }
 
     fn pop(&self) -> Option<PendingDirectory> {
-        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut guard = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let state = &mut *guard;
         if state.stopped {
             return None;
         }
-        let selected = state
-            .pending
-            .iter()
-            .enumerate()
-            .filter_map(|(position, pending)| {
-                state
-                    .priorities
-                    .iter()
-                    .position(|priority| {
-                        priority.starts_with(&pending.path) || pending.path.starts_with(priority)
-                    })
-                    .map(|priority| (priority, position))
-            })
-            .min()
-            .map_or(0, |(_, position)| position);
-        state.pending.remove(selected)
+        if let Some(queue) = state.serving.iter_mut().find(|queue| !queue.is_empty()) {
+            return queue.pop_front().map(|queued| queued.directory);
+        }
+        state.unprioritized.pop_front().map(|queued| queued.directory)
     }
 
     fn extend(&self, directories: impl IntoIterator<Item = PendingDirectory>) {
         let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        if !state.stopped {
-            state.pending.extend(directories);
+        if state.stopped {
+            return;
+        }
+        for directory in directories {
+            let sequence = state.next_sequence;
+            state.next_sequence = sequence.wrapping_add(1);
+            state.enqueue(QueuedDirectory { sequence, directory });
         }
     }
 
     fn prioritize(&self, priorities: Vec<PathBuf>) {
-        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        if !state.stopped {
-            state.priorities = priorities;
+        let mut guard = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let state = &mut *guard;
+        if state.stopped {
+            return;
+        }
+        let mut queued: Vec<_> =
+            state.unprioritized.drain(..).chain(state.serving.drain(..).flatten()).collect();
+        queued.sort_unstable_by_key(|queued| queued.sequence);
+        state.serving = priorities.iter().map(|_| VecDeque::new()).collect();
+        state.priorities = priorities;
+        for directory in queued {
+            state.enqueue(directory);
         }
     }
 
     fn stop(&self) {
         let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         state.stopped = true;
-        state.pending.clear();
+        state.unprioritized.clear();
+        state.serving.clear();
         state.priorities.clear();
     }
 }
@@ -2263,6 +2305,88 @@ mod tests {
             .expect("child file commit");
         assert_eq!(first_file, PathBuf::from("target/leaf"));
         opened.close().expect("close");
+    }
+
+    /// Grouping by priority changes what a pop costs, never which directory it returns.
+    ///
+    /// The reference is the per-pop scan the frontier used to run: the pending directory
+    /// whose first matching priority is earliest, ties broken by queue position, and
+    /// otherwise the front of the queue. A deterministic mix of pops that queue children,
+    /// arbitrary extends, and priority changes must pop the same sequence from both.
+    #[test]
+    fn the_grouped_frontier_pops_in_the_order_the_scan_chose() {
+        fn reference_pop(
+            pending: &mut VecDeque<PendingDirectory>,
+            priorities: &[PathBuf],
+        ) -> Option<PendingDirectory> {
+            let selected = pending
+                .iter()
+                .enumerate()
+                .filter_map(|(position, entry)| {
+                    priorities
+                        .iter()
+                        .position(|priority| {
+                            priority.starts_with(&entry.path) || entry.path.starts_with(priority)
+                        })
+                        .map(|priority| (priority, position))
+                })
+                .min()
+                .map_or(0, |(_, position)| position);
+            pending.remove(selected)
+        }
+
+        const PATHS: [&str; 7] = ["a", "b", "a/b", "b/a", "a/b/c", "c", "c/a/b"];
+        let mut seed = 0x2545_f491_4f6c_dd1d_u64;
+        let mut next = move |bound: usize| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            usize::try_from(seed % u64::try_from(bound).expect("small bound")).expect("fits")
+        };
+        let frontier = DiscoveryFrontier::new();
+        let mut reference = VecDeque::from([PendingDirectory { path: PathBuf::new(), depth: 0 }]);
+        let mut priorities = Vec::new();
+        for step in 0..4_000 {
+            match next(10) {
+                0..=4 => {
+                    let expected = reference_pop(&mut reference, &priorities);
+                    let actual = frontier.pop();
+                    assert_eq!(
+                        actual.as_ref().map(|directory| &directory.path),
+                        expected.as_ref().map(|directory| &directory.path),
+                        "step {step}"
+                    );
+                    if let Some(parent) = expected {
+                        let children: Vec<_> = (0..next(3))
+                            .map(|child| PendingDirectory {
+                                path: parent.path.join(["a", "b", "c"][child]),
+                                depth: parent.depth + 1,
+                            })
+                            .collect();
+                        reference.extend(children.iter().cloned());
+                        frontier.extend(children);
+                    }
+                }
+                5..=7 => {
+                    let directory =
+                        PendingDirectory { path: PathBuf::from(PATHS[next(7)]), depth: 1 };
+                    reference.push_back(directory.clone());
+                    frontier.extend([directory]);
+                }
+                _ => {
+                    let mut chosen: Vec<_> =
+                        (0..next(4)).map(|_| PathBuf::from(PATHS[next(7)])).collect();
+                    chosen.sort();
+                    chosen.dedup();
+                    frontier.prioritize(chosen.clone());
+                    priorities = chosen;
+                }
+            }
+        }
+        while let Some(expected) = reference_pop(&mut reference, &priorities) {
+            assert_eq!(frontier.pop().map(|directory| directory.path), Some(expected.path));
+        }
+        assert!(frontier.pop().is_none());
     }
 
     #[test]
