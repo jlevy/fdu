@@ -87,8 +87,8 @@ fn construction_routes_keep_their_allocation_and_work_boundaries() {
 
     let small_detached = measure_detached(small.path(), &config, small_entries);
     let large_detached = measure_detached(large.path(), &config, large_entries);
-    assert_route_is_detached(&small_detached, small_entries);
-    assert_route_is_detached(&large_detached, large_entries);
+    assert_route_is_detached(&small_detached, small_entries, 0);
+    assert_route_is_detached(&large_detached, large_entries, 0);
     assert_allocation_slope(
         "detached",
         small_detached.allocs,
@@ -108,6 +108,33 @@ fn construction_routes_keep_their_allocation_and_work_boundaries() {
         added_entries,
         OPENED_ALLOCATIONS_PER_ADDED_ENTRY,
     );
+
+    // Here rather than in a test of its own: the allocator and counters are process-wide.
+    #[cfg(feature = "gitignore")]
+    assert_controlled_route_is_detached();
+}
+
+/// The controls-enabled detached route keeps the same work boundary.
+///
+/// Its digest-equality tests would pass just as well if that route silently went back
+/// through the streaming reducer; these counters would not. Only the route is asserted:
+/// an allocation ceiling for control parsing needs its own measurement on each platform.
+#[cfg(feature = "gitignore")]
+fn assert_controlled_route_is_detached() {
+    let root = fixture(SMALL_DIRECTORY_COUNT);
+    // One root control ignoring a whole directory, so classification and both partitions
+    // do real work on every listing.
+    fs::write(root.path().join(".gitignore"), "d0/\n").expect("fixture control");
+    let config = ScanConfig { read_controls: true, threads: Some(1), ..ScanConfig::default() };
+    // The control file is itself a retained entry, and installing it is one accepted op.
+    let entries = fixture_entries(SMALL_DIRECTORY_COUNT) + 1;
+
+    let counts = measure_detached(root.path(), &config, entries);
+    assert_route_is_detached(&counts, entries, 1);
+
+    let (index, _report) = scan_into_index(root.path(), &config).expect("controlled scan");
+    assert_eq!(index.is_ignored(Path::new("d0/f0.dat")), Some(true));
+    assert_eq!(index.is_ignored(Path::new("d1/f0.dat")), Some(false));
 }
 
 fn fixture(directory_count: u64) -> tempfile::TempDir {
@@ -191,11 +218,11 @@ fn assert_allocation_slope(
     );
 }
 
-fn assert_route_is_detached(counts: &Counts, entries: u64) {
+fn assert_route_is_detached(counts: &Counts, entries: u64, controls: u64) {
     assert_eq!(counts.detached_builds, 1);
     assert_eq!(counts.detached_entries, entries);
     assert_eq!(counts.baseline_batches, 1);
-    assert_eq!(counts.baseline_accepted_ops, entries);
+    assert_eq!(counts.baseline_accepted_ops, entries + controls);
 
     let violations = detached_guard_violations(counts);
     assert!(violations.is_empty(), "detached guard violations: {violations:?}");
