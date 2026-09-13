@@ -4883,6 +4883,46 @@ mod tests {
         }
     }
 
+    /// The trailing spellings `Path::components` hides reach public values canonically.
+    ///
+    /// `a/b/` and `a/b/.` compare equal to `a/b` component by component, so lookups never
+    /// notice a preserved spelling; only a value that carries the bytes out does. The
+    /// reproduction this pins is an unknown-ancestry error that named `a/b/` (PR #51
+    /// review COMMIT-4).
+    #[test]
+    fn trailing_path_spellings_leave_errors_and_changes_canonical() {
+        let separator = std::path::MAIN_SEPARATOR;
+        let canonical = format!("a{separator}b");
+        for spelling in [format!("a{separator}b{separator}"), format!("a{separator}b{separator}.")]
+        {
+            let file = |mtime_ns| Op::Upsert {
+                path: PathBuf::from(&spelling),
+                kind: EntryKind::File,
+                attrs: file_attrs(1, mtime_ns),
+            };
+            let mut index = Index::new("/root");
+
+            let error = index
+                .apply(&Observation::new(vec![file(1)]))
+                .expect_err("a child of an unknown directory is refused");
+            let crate::Error::UnknownAncestry { path, .. } = error else {
+                panic!("expected unknown ancestry for {spelling:?}, got {error}");
+            };
+            assert_eq!(path.as_os_str().as_encoded_bytes(), canonical.as_bytes(), "{spelling:?}");
+
+            let outcome = index.apply_ok(&Observation::new(vec![
+                upsert("a", EntryKind::Dir, file_attrs(0, 1)),
+                file(2),
+            ]));
+            let commit = outcome.commit.as_ref().expect("one exact commit");
+            assert_eq!(
+                commit.changes[1].path().as_os_str().as_encoded_bytes(),
+                canonical.as_bytes(),
+                "{spelling:?}"
+            );
+        }
+    }
+
     #[test]
     fn malformed_batch_is_rejected_before_any_index_mutation() {
         let invalid_paths = [
