@@ -2656,6 +2656,64 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// A tree page and a roll-up on a retained file both say it is not a directory.
+    ///
+    /// They used to contradict the lookup of the same path on a complete root: the tree
+    /// answered `Absent`, which claims coverage proves the path missing, and the roll-up
+    /// answered `Unknown { reason: Building }`, which a caller polling for an answer would
+    /// wait on forever.
+    #[test]
+    fn directory_projections_on_a_present_file_say_it_is_not_a_directory() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![Op::Upsert {
+                path: PathBuf::from("README.md"),
+                kind: EntryKind::File,
+                attrs: crate::Attrs { size: 5, ..crate::Attrs::default() },
+            }]))
+            .expect("seed file");
+        let state = opened.state.index.state().expect("state");
+        assert_eq!(state.coverage, crate::Coverage::Complete);
+        let read = |projection| {
+            opened.read(crate::ReadRequest {
+                projections: vec![projection],
+                ..crate::ReadRequest::default()
+            })
+        };
+
+        assert!(matches!(
+            read(crate::ReadProjection::Lookup { path: PathBuf::from("README.md") })
+                .expect("lookup")
+                .results[0],
+            crate::ProjectionResult::Lookup(crate::Knowledge::Present(_))
+        ));
+        let tree = read(crate::ReadProjection::Tree {
+            path: PathBuf::from("README.md"),
+            depth: crate::query::Bound::Limit(1),
+            include_ignored: true,
+            page: crate::PageRequest { limit: 16, max_work: 64 },
+        });
+        assert!(
+            matches!(&tree, Err(Error::NotADirectory(path)) if path == Path::new("README.md")),
+            "{tree:?}"
+        );
+        let rollup = read(crate::ReadProjection::RollUp { path: PathBuf::from("README.md") });
+        assert!(
+            matches!(&rollup, Err(Error::NotADirectory(path)) if path == Path::new("README.md")),
+            "{rollup:?}"
+        );
+        // Below a file nothing can exist, and a complete root can say so.
+        assert!(matches!(
+            read(crate::ReadProjection::RollUp { path: PathBuf::from("README.md/inner") })
+                .expect("rollup below a file")
+                .results[0],
+            crate::ProjectionResult::RollUp(crate::Knowledge::Absent)
+        ));
+        opened.close().expect("close");
+    }
+
     #[test]
     fn mixed_read_preserves_projection_order_and_uses_maintained_rollups() {
         let (_root, opened) = opened(Arc::new(TestControls::default()));

@@ -1754,6 +1754,15 @@ pub enum Error {
     #[error("tree page depth must be at least one level")]
     TreeDepthZero,
 
+    /// A tree page or roll-up named a retained path that is not a directory.
+    ///
+    /// A lookup of the same path answers `Present`, so neither of the other answers fits:
+    /// `Absent` claims coverage proves the path missing, and `Unknown` claims coverage
+    /// cannot tell, which for a retained path never resolves. A file has no children to
+    /// page and no descendants to roll up, so both projections say which it is instead.
+    #[error("{0:?} is not a directory; tree pages and roll-ups describe directories")]
+    NotADirectory(PathBuf),
+
     /// A flat page attempted to use presentation axes whose ordering is not resumable.
     #[error(
         "flat opened-index pages use fixed portable path order; selection cannot set depth, limit, sort, or reverse"

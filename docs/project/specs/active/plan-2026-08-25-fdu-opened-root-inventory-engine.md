@@ -828,20 +828,16 @@ This is what a browser means by hiding ignored content, it is cheaper than filte
 rows a caller will never see, and stating it prevents one provider pruning while another
 filters.
 
-**Ordered pages are drawn from representable entries.** Tree, flat, catalog, and recent
-rows come from the maintained portable structures, so an entry whose native path has no
-canonical representation is absent from all four.
-It is not silently dropped: it remains in native facts and roll-ups, and its count and
-examples reach the caller through the portable-path issue and per-directory completeness
-already defined above.
-Ordered projections and native roll-ups therefore answer over deliberately different
-populations, and a conformance case pins that difference rather than letting it read as
-a defect.
+**Ordered pages are drawn from every retained entry.** Tree, flat, catalog, and recent
+rows come from the maintained portable structures, and because the portable encoding is
+total, every retained entry has a canonical name in them.
+Ordered projections and native roll-ups therefore answer over one population, as the
+encoding section above establishes; there is no omission count, portable-path issue, or
+second completeness flag to consult.
 
 The tree projection pays through the retained hierarchy and two bounded child
 partitions. The flat projection pays through a commit-maintained ordered index of
-representable portable paths; it never materializes and sorts the full catalog per
-request. The recent projection pays through the maintained timestamp-ordered set, which
+portable paths; it never materializes and sorts the full catalog per request. The recent projection pays through the maintained timestamp-ordered set, which
 is what makes a ranked slice proportional to the row bound instead of to the tree.
 Other resumable sort orders are deferred until a measured client need justifies their
 own maintained index.

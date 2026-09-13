@@ -69,6 +69,9 @@ pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadRes
                             work.rows_returned = work.rows_returned.saturating_add(1);
                             Knowledge::Present(rollup)
                         }
+                        None if index.kind(&path).is_some() => {
+                            return Err(Error::NotADirectory(path));
+                        }
                         None if absence_is_known(index, &path) => Knowledge::Absent,
                         None => Knowledge::Unknown {
                             reason: match state.coverage {
@@ -420,8 +423,7 @@ fn tree_projection(
         }));
     };
     if !directory.kind.is_dir() {
-        work.rows_visited = work.rows_visited.saturating_add(path_work);
-        return Ok(ProjectionResult::Tree(Knowledge::Absent));
+        return Err(Error::NotADirectory(path.to_path_buf()));
     }
 
     // Levels below `path` that may be emitted. A parent at depth `d` produces rows at
