@@ -1353,6 +1353,9 @@ impl IndexHandle {
 pub(crate) struct DetachedIndexBuilder {
     index: Index,
     directory_ids: HashMap<PathBuf, EntryId>,
+    /// Directories whose name one listing repeated. The walker lists each of them, and
+    /// everything below it, once per observation.
+    repeated_directories: Vec<PathBuf>,
     inserted: u64,
 }
 
@@ -1365,19 +1368,34 @@ impl DetachedIndexBuilder {
         let mut index = Index::new_with_scope_and_types(root_path, scope, types);
         index.entry_mut(EntryId::ROOT).directory_mut().children =
             DirectoryChildren::Sorted(Vec::new());
-        Self { index, directory_ids: HashMap::from([(PathBuf::new(), EntryId::ROOT)]), inserted: 0 }
+        Self {
+            index,
+            directory_ids: HashMap::from([(PathBuf::new(), EntryId::ROOT)]),
+            repeated_directories: Vec::new(),
+            inserted: 0,
+        }
     }
 
     /// Consume one listing after its parent listing has already been consumed.
+    ///
+    /// An enumerator can repeat a name while its directory is modified, which the
+    /// streaming reducer absorbs as a re-upsert. Here a listing keeps the last observation
+    /// of each name. A directory observed twice is also listed twice, and so is everything
+    /// below it: the first listing to arrive for each such directory builds it, and a
+    /// repeat is accepted without being applied again. A filesystem race must not fail
+    /// the scan.
     pub(crate) fn push_directory(
         &mut self,
         directory: crate::scan::DetachedDirectory,
     ) -> crate::Result<()> {
-        let crate::scan::DetachedDirectory { path, children, control } = directory;
-        // A listing arrives exactly once and no descendant can become claimable until
-        // its parent's listing has been sent. Retire the lookup entry now instead of
-        // retaining every walked directory path until the end of the scan.
+        let crate::scan::DetachedDirectory { path, mut children, control } = directory;
+        // No descendant can become claimable until its parent's listing has been sent,
+        // so the first listing of a directory finds its lookup entry. Retire the entry
+        // now instead of retaining every walked directory path until the end of the scan.
         let Some(parent) = self.directory_ids.remove(&path) else {
+            if self.repeated_directories.iter().any(|repeated| path.starts_with(repeated)) {
+                return Ok(());
+            }
             return Err(crate::Error::UnknownAncestry { path, reconcile_from: PathBuf::new() });
         };
 
@@ -1398,12 +1416,33 @@ impl DetachedIndexBuilder {
             self.inserted = self.inserted.saturating_add(1);
         }
 
+        // Allocate in name order, the order the directory retains its children in, keeping
+        // the last observation of a repeated name. The sort is unstable so that it needs
+        // no scratch allocation; the enumeration position is what keeps "last" exact.
+        children.sort_unstable_by(|left, right| {
+            left.name.cmp(&right.name).then(left.position.cmp(&right.position))
+        });
+        let repeated_directories = &mut self.repeated_directories;
+        children.dedup_by(|later, kept| {
+            if later.name != kept.name {
+                return false;
+            }
+            if later.kind.is_dir() || kept.kind.is_dir() {
+                let repeated = path.join(&kept.name);
+                if repeated_directories.last() != Some(&repeated) {
+                    repeated_directories.push(repeated);
+                }
+            }
+            std::mem::swap(later, kept);
+            true
+        });
+
         let parent_ignored = self.index.entry(parent).ignored;
         let mut match_path =
             (!parent_ignored && !self.index.controls.is_empty()).then(|| path.clone());
         self.index.reserve_detached_children(parent, children.len());
         for child in children {
-            let crate::scan::DetachedChild { name, kind, attrs } = child;
+            let crate::scan::DetachedChild { name, kind, attrs, .. } = child;
             crate::counters::bump(|counts| counts.upserts += 1);
             let ext_id = (kind == EntryKind::File)
                 .then(|| self.index.intern_ext(&self.index.types.ext_bucket(&name)));
@@ -1437,18 +1476,9 @@ impl DetachedIndexBuilder {
             crate::counters::bump(|counts| counts.rollup_merges += 1);
             self.index.entry_mut(parent).rollup_mut().merge(&direct);
             if let Some(child_path) = child_path {
-                if self.directory_ids.insert(child_path, child_id).is_some() {
-                    return Err(crate::Error::UnsupportedScanConfig(
-                        "detached scan produced a duplicate directory path",
-                    ));
-                }
+                self.directory_ids.insert(child_path, child_id);
             }
             self.inserted = self.inserted.saturating_add(1);
-        }
-        if !self.index.sort_detached_children(parent) {
-            return Err(crate::Error::UnsupportedScanConfig(
-                "detached scan produced a duplicate child name",
-            ));
         }
         Ok(())
     }
@@ -3625,23 +3655,6 @@ impl Index {
         Self::bump_children_revision(entry);
     }
 
-    fn sort_detached_children(&mut self, parent: EntryId) -> bool {
-        let mut children = match &mut self.entry_mut(parent).directory_mut().children {
-            DirectoryChildren::Sorted(children) => std::mem::take(children),
-            DirectoryChildren::Mutable(_) => {
-                unreachable!("detached directories retain sorted child storage")
-            }
-        };
-        children.sort_unstable_by(|left, right| {
-            self.entry(*left).name.as_os_str().cmp(self.entry(*right).name.as_os_str())
-        });
-        let unique = children.windows(2).all(|pair| {
-            self.entry(pair[0]).name.as_os_str() != self.entry(pair[1]).name.as_os_str()
-        });
-        self.entry_mut(parent).directory_mut().children = DirectoryChildren::Sorted(children);
-        unique
-    }
-
     /// Merge a completed detached directory without cloning its retained roll-up.
     fn merge_detached_descendants(&mut self, parent: EntryId, child: EntryId) {
         debug_assert!(parent.idx() < child.idx(), "cold parents must precede descendants");
@@ -4670,11 +4683,13 @@ mod tests {
                         name: OsString::from("dir"),
                         kind: EntryKind::Dir,
                         attrs: Attrs::default(),
+                        position: 0,
                     },
                     crate::scan::DetachedChild {
                         name: OsString::from("z.txt"),
                         kind: EntryKind::File,
                         attrs: file_attrs(1, 1),
+                        position: 1,
                     },
                 ],
                 control: None,
@@ -4688,11 +4703,13 @@ mod tests {
                         name: OsString::from("z.txt"),
                         kind: EntryKind::File,
                         attrs: file_attrs(2, 2),
+                        position: 0,
                     },
                     crate::scan::DetachedChild {
                         name: OsString::from("a.txt"),
                         kind: EntryKind::File,
                         attrs: file_attrs(3, 3),
+                        position: 1,
                     },
                 ],
                 control: None,
@@ -4728,6 +4745,111 @@ mod tests {
                 .collect::<Vec<_>>(),
             [OsString::from("a.txt"), OsString::from("m.txt"), OsString::from("z.txt")]
         );
+    }
+
+    #[test]
+    fn detached_builder_tolerates_a_duplicate_readdir_name() {
+        let mut builder = DetachedIndexBuilder::new(
+            "/root",
+            ScanScope::default(),
+            crate::classify::TypeRegistry::compiled_shared(),
+        );
+        let twice = |position, mtime_ns| crate::scan::DetachedChild {
+            name: OsString::from("twice.txt"),
+            kind: EntryKind::File,
+            attrs: file_attrs(1, mtime_ns),
+            position,
+        };
+        let result = builder.push_directory(crate::scan::DetachedDirectory {
+            path: PathBuf::new(),
+            children: vec![twice(0, 1), twice(1, 2)],
+            control: None,
+        });
+        assert!(result.is_ok(), "a duplicate listing name must not fail the scan: {result:?}");
+        let detached = builder.finish();
+        assert_eq!(detached.total().files, 1);
+        assert_eq!(detached.attrs(Path::new("twice.txt")), Some(&file_attrs(1, 2)));
+
+        // The streaming reducer tolerates the same input, and keeps the same observation.
+        let mut streaming = Index::new("/root");
+        streaming
+            .apply_scanner_baseline(crate::scan::ScannerBatch::from_ops(vec![
+                upsert("twice.txt", EntryKind::File, file_attrs(1, 1)),
+                upsert("twice.txt", EntryKind::File, file_attrs(1, 2)),
+            ]))
+            .expect("streaming tolerates a re-upsert");
+        assert_eq!(streaming.total(), detached.total());
+        assert_eq!(streaming.attrs(Path::new("twice.txt")), detached.attrs(Path::new("twice.txt")));
+    }
+
+    #[test]
+    fn detached_builder_accepts_the_repeated_walk_of_a_duplicated_directory() {
+        let child = |name: &str, kind, attrs, position| crate::scan::DetachedChild {
+            name: OsString::from(name),
+            kind,
+            attrs,
+            position,
+        };
+        let listing = |path: &str, children| crate::scan::DetachedDirectory {
+            path: PathBuf::from(path),
+            children,
+            control: None,
+        };
+        let mut builder = DetachedIndexBuilder::new(
+            "/root",
+            ScanScope::default(),
+            crate::classify::TypeRegistry::compiled_shared(),
+        );
+        // The enumerator returned `dir` twice, and `swapped` first as a directory and then
+        // as the file that replaced it.
+        builder
+            .push_directory(listing(
+                "",
+                vec![
+                    child("dir", EntryKind::Dir, file_attrs(0, 1), 0),
+                    child("swapped", EntryKind::Dir, file_attrs(0, 1), 1),
+                    child("dir", EntryKind::Dir, file_attrs(0, 2), 2),
+                    child("swapped", EntryKind::File, file_attrs(5, 2), 3),
+                ],
+            ))
+            .expect("root listing with repeated names");
+        // The walker lists `dir`, and everything below it, once per observation.
+        for _ in 0..2 {
+            builder
+                .push_directory(listing(
+                    "dir",
+                    vec![child("nested", EntryKind::Dir, file_attrs(0, 3), 0)],
+                ))
+                .expect("each walk of the repeated directory");
+            builder
+                .push_directory(listing(
+                    "dir/nested",
+                    vec![child("file.txt", EntryKind::File, file_attrs(4, 4), 0)],
+                ))
+                .expect("each walk below the repeated directory");
+        }
+        // It also lists the directory observation that the file superseded.
+        builder
+            .push_directory(listing(
+                "swapped",
+                vec![child("stale.txt", EntryKind::File, file_attrs(6, 5), 0)],
+            ))
+            .expect("the superseded directory's walk");
+        // A listing that no repeated name explains is still an ancestry failure.
+        let error = builder
+            .push_directory(listing("elsewhere", Vec::new()))
+            .expect_err("a listing whose parent was never listed");
+        assert!(matches!(
+            error,
+            crate::Error::UnknownAncestry { path, .. } if path == Path::new("elsewhere")
+        ));
+
+        let index = builder.finish();
+        assert_eq!(index.attrs(Path::new("dir")), Some(&file_attrs(0, 2)));
+        assert_eq!(index.kind(Path::new("swapped")), Some(EntryKind::File));
+        assert!(index.lookup(Path::new("swapped/stale.txt")).is_none());
+        let total = index.total();
+        assert_eq!((total.files, total.dirs, total.bytes), (2, 2, 9));
     }
 
     fn file_attrs(size: u64, mtime_ns: i64) -> Attrs {

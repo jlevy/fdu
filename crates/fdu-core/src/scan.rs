@@ -1015,6 +1015,10 @@ pub(crate) struct DetachedChild {
     pub(crate) name: OsString,
     pub(crate) kind: EntryKind,
     pub(crate) attrs: Attrs,
+    /// Enumeration order within the listing. An enumerator can repeat a name while its
+    /// directory is modified, and the builder keeps the later observation, as a
+    /// streaming re-upsert does.
+    pub(crate) position: u32,
 }
 
 /// One directory listing retained by a worker for detached bootstrap consolidation.
@@ -2621,10 +2625,9 @@ fn record_detached_entry(
     if config.read_controls && name == OsStr::new(crate::control::CONTROL_FILE_NAME) {
         let path = rel_dir.join(name);
         match read_control_op(config, root, &path, kind) {
-            Ok(observed) => {
-                debug_assert!(control.is_none(), "one directory cannot contain duplicate names");
-                *control = observed;
-            }
+            // A listing can repeat the control name while the directory changes. The
+            // later read wins, as the builder keeps the later observation of the entry.
+            Ok(observed) => *control = observed,
             Err(error) => report.errors.push(error),
         }
     }
@@ -2632,7 +2635,9 @@ fn record_detached_entry(
         return;
     }
     report.observe(kind, attrs);
-    children.push(DetachedChild { name: name.to_os_string(), kind, attrs });
+    // Positions only order repeated names, and no real listing reaches `u32::MAX` entries.
+    let position = u32::try_from(children.len()).unwrap_or(u32::MAX);
+    children.push(DetachedChild { name: name.to_os_string(), kind, attrs, position });
     if should_descend(kind, attrs, depth, root_dev, config) {
         let child_region = if depth == 0 { RegionId::UNASSIGNED } else { region };
         discovered.push((rel_dir.join(name), depth + 1, child_region));
