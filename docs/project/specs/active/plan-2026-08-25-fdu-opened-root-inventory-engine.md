@@ -1759,30 +1759,41 @@ concurrent opened-root mutation on the one-shot cold scan: ancestry re-proved pe
 already-canonical paths rebuilt per op, and an empty control table projected per op.
 The named fixes landed with these medians, release, interleaved, five runs against
 `main`: `~/.rustup/toolchains` 1.58 s to 0.70 s (main 0.37 s); a 304-`.gitignore`
-working tree 11.49 s to 3.92 s (main 1.32 s).
+working tree 11.49 s to 3.92 s (main 1.32 s). The medians predate one correction: the
+canonical-path copy lane they measured kept non-canonical spellings such as `a//b` and
+`a/b/`, and was replaced by a single canonicalizing pass into a pre-sized buffer, which
+has not been re-measured.
 
 #### Control observation is scan policy, and the design as landed
 
 Whether a scan observes control state is decided by its consumer, not by the compiled
-feature set. `ScanConfig::read_controls` defaults to on, so library callers keep exact
-control state; the one-shot report consumes no ignore classification, so the command
-line turns it off for plain reports and on for `--watch`, and the opened root always
-observes it because its ignored/unignored partitions are the contract it serves.
+feature set. `ScanConfig::read_controls` defaults to on, so an index returned by `open`
+keeps the exact control state it exposes and a watch maintains.
+A one-shot report consumes no ignore classification, so the shared one-shot planner —
+`plan_report` and `prepare_report` in `crates/fdu-core/src/execution.rs` — turns
+observation off for every report, whatever the caller passed.
+The command line and the Python package both run reports through that planner, so
+neither front end decides the policy and neither can drift from the other.
+`--watch` and `fdu.open` keep the default, and the opened root always observes because
+its ignored and unignored partitions are the contract it serves.
 
 Three rules keep the switch honest:
 
-- All scan-side observation funnels through one gated `read_control_op`, so the policy
-  cannot be forgotten at a walk site; watching bypasses it by name.
+- Every control observation funnels through one gated `read_control_op`: each walk and
+  reconcile site, and the watch layer’s verification.
+  The policy cannot be forgotten at any of them, and a watch honors the same gate as the
+  scan it continues, so a controls-off index never acquires a partial rule set from
+  events.
 - The bit is semantic.
   A runtime opt-out and the compiled-out `gitignore` capability mean the same thing --
   no control reads, no classification -- and share one identity in
   `ScanScope::ignore_rules_fingerprint`, with no snapshot format change.
-- Snapshot acceptance is directional, not symmetric.
-  A controls-on snapshot retains a strict superset of what a controls-off read needs --
-  identical rows plus ignore state the report never reads -- so a watch-maintained cache
-  still serves a plain report.
-  The reverse stays refused, because a controls-off snapshot lacks state a controls-on
-  consumer would silently miss.
+- Snapshot acceptance is exact wherever an index is returned or reconciled.
+  The one directional path is a report under `--cache only`: it never scans, reads only
+  the all-entry facts, and names the requested scope, so it may answer a controls-off
+  request from a controls-on snapshot such as a watch leaves.
+  Every scanning policy treats a scope mismatch as no usable snapshot and scans cold, so
+  `open` does not warm-start from a report’s snapshot.
 
 #### The open redesign question this phase leaves
 
@@ -1805,12 +1816,17 @@ before anything tunes what that state costs.
   the two measured trees, from 1.58 s / 11.49 s. The residual effect-stream cost stays
   on `fdu-pro1` as the lifecycle design question above.
 - [x] Gate control observation on a runtime capability rather than the `gitignore`
-  compile feature alone (`fdu-etfj`). Landed as `ScanConfig::read_controls` with the
-  shared scope identity and directional snapshot acceptance described above; a default
-  roll-up performs no control-file I/O and retains no control state.
-- [ ] Replace the abort with degradation: on crossing the budget, stop retaining further
-  control sources, mark coverage partial with a typed control-budget issue that names
-  the affected directories, and keep the roll-up answer (`fdu-1onj`).
+  compile feature alone (`fdu-etfj`). Landed as `ScanConfig::read_controls`, decided for
+  one-shot reports by the shared planner, with the scope identity and snapshot
+  acceptance described above.
+  Acceptance by surface: a command-line one-shot report and a Python `fdu.report`
+  perform no control-file I/O and retain no control state, because both run through
+  `prepare_report`. The opened root, `open`, and `--watch` still observe exact control
+  state, so they can still abort on control volume until `fdu-1onj` lands.
+- [ ] Replace the abort with degradation: on crossing the table budget or the per-line
+  pattern bound, stop retaining further control sources, mark coverage partial with a
+  typed control-budget issue that names the affected directories, and keep the roll-up
+  answer (`fdu-1onj`).
 - [ ] Deduplicate retained sources by the `ControlIdentity` fingerprint already
   computed, so identical control files are charged and compiled once (`fdu-szkg`).
 - [ ] Split the constant into a strict snapshot-parser guard and a separate, larger
@@ -1832,8 +1848,9 @@ result instead of an error.
 
 Acceptance for Phase 4:
 
-- a default CLI roll-up of `~` and of `~/wrk` completes on macOS, performing no
-  control-file I/O and retaining no control state;
+- a default one-shot roll-up of `~` and of `~/wrk`, from the command line or from
+  `fdu.report`, completes on macOS, performing no control-file I/O and retaining no
+  control state;
 - opened-root and inventory consumers still receive exact, removal-aware control state,
   and the `--no-default-features` build is unaffected;
 - crossing the runtime retention budget produces a usable roll-up plus an explicit
@@ -2182,8 +2199,8 @@ green.
 | Bead and files | Work | Acceptance |
 | --- | --- | --- |
 | `fdu-pro1`: whole-scan allocation regression | Done for the attributed mechanisms: bisect placed the growth across the exact-commit pipeline (the suspected portable-path commits were exonerated by timeline), and the ancestry, canonical-path, and control-projection fixes landed. Remaining: lifecycle-gate the effective-change stream, and add the counters-based per-entry allocation check to `make check`. | Ultimately: the measured trees land within noise of `main`, with per-entry allocations back to main’s order. Currently about 1.9 times wall on both measured trees, attributed to the effect stream. |
-| `fdu-etfj`: `crates/fdu-core/src/scan.rs` `read_control_op` and `ScanConfig`, `crates/fdu-core/src/lib.rs` snapshot acceptance, `crates/fdu/src/cli.rs` | Done. `ScanConfig::read_controls` (default on) gates one observation funnel; the CLI turns it off for one-shot reports and on for `--watch`; the opened root always observes. The bit shares the compiled-out capability’s identity in `ScanScope::ignore_rules_fingerprint`, and snapshot acceptance is directional, so a controls-on cache serves a controls-off read and never the reverse. | Met and verified: a default roll-up performs no control-file I/O (counters show zero file opens on a 304-`.gitignore` tree) and retains no control state; inventory consumers still receive exact control state; the `--no-default-features` build is unaffected. |
-| `fdu-1onj`: `crates/fdu-core/src/control.rs` `upsert`, `crates/fdu-core/src/index.rs` `install_controls` | Replace `Err(ControlSourceLimit)` with degradation to partial coverage carrying a typed control-budget issue, matching the resource-budget contract this plan already states for `max_files`. | Crossing the budget yields a usable roll-up and a stated partial boundary; no scan aborts on control state alone. |
+| `fdu-etfj`: `crates/fdu-core/src/execution.rs` `plan_report` and `prepare_report`, `crates/fdu-core/src/scan.rs` `read_control_op` and `ScanConfig`, `crates/fdu-core/src/lib.rs` snapshot acceptance | Done. `ScanConfig::read_controls` (default on) gates the one observation funnel that scans and watch verification share. The shared one-shot planner, which the command line and the Python package both call, turns observation off for every report whatever the caller passed, so no front end decides it. `open` and `--watch` keep the default; the opened root always observes. The bit shares the compiled-out capability’s identity in `ScanScope::ignore_rules_fingerprint`. Snapshot acceptance is exact except for a no-scan `--cache only` report, which may read a controls-on snapshot for a controls-off request. | By surface. Command-line one-shot and Python `fdu.report`: no control-file I/O and no retained control state, proven at the planner by an engine test over control sources that cannot be read or retained without an error. The binding reaches that planner through `fdu_core::prepare_report` and cannot override it; the Python and parity CI jobs cover that it still builds and answers as the command line does. The `file_opens` counter is not evidence here, because it counts only content-analysis opens. Opened root, `open`, and `--watch`: exact control state, and still able to abort on control volume until `fdu-1onj`. The `--no-default-features` build is unaffected. |
+| `fdu-1onj`: `crates/fdu-core/src/control.rs` `upsert`, `crates/fdu-core/src/index.rs` `install_controls` | Replace `Err(ControlSourceLimit)` and `Err(ControlPatternLimit)` — the 4 MiB table bound and the 16 KiB per-line bound, both fatal today — with degradation to partial coverage carrying a typed control-budget issue, matching the resource-budget contract this plan already states for `max_files`. One-shot reports no longer reach either bound; the opened root, `open`, and `--watch` still do. | Crossing either bound yields a usable roll-up and a stated partial boundary; no scan aborts on control state alone. |
 | `fdu-szkg`: `crates/fdu-core/src/control.rs` `retained_source_cost`, `ControlSource` | Deduplicate retained sources by the `ControlIdentity` fingerprint already computed, so identical control files are compiled and charged once. | Removal semantics unchanged and tested; measured retention on `~/wrk` falls from 9.93 MiB toward the deduplicated 3.81 MiB. |
 | `fdu-okne`: `crates/fdu-core/src/control.rs`, `crates/fdu-core/src/snapshot.rs`, `crates/fdu/src/cli.rs` | Split the constant into a strict snapshot-parser guard and a separate, larger runtime retention budget. Expose the runtime budget where it is stated and name it in the diagnostic. | The bound is liftable by a flag; the parser guard stays strict against untrusted `u32` lengths on load. |
 | `fdu-6o5o`: macOS `~/Library` memory investigation | Establish whether peak memory grows unbounded on deep, wide, many-small-file trees and bound whatever accumulates. Keep this separate from TCC-induced slowness, which is not fdu’s. | Peak memory is bounded and measured, or the SIGKILL is attributed outside fdu with evidence. |
