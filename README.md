@@ -191,8 +191,9 @@ A snapshot is usable only under the scan scope that wrote it, and a root has one
 path.
 `fdu PATH` observes no `.gitignore` control state while `fdu --watch PATH` does, so
 the two keep snapshots of different scope at that path, and each run replaces the
-other’s. A watch started after a one-shot report therefore begins with a cold scan, and
-so does a one-shot run that reads the snapshot, such as `--analyze`, after a watch.
+other’s. A watch started after `fdu PATH` therefore begins with a cold scan, and so does
+a one-shot run that reads the snapshot, such as `--analyze`, after a watch; a
+summary-only `fdu --view summary PATH` saves no snapshot and replaces none.
 `--cache only` still answers a report from a watch’s snapshot.
 
 ### How performance work is done here
