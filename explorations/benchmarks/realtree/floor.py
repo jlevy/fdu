@@ -74,10 +74,34 @@ subject this loop is expected to be handed.
 `parfloor` counts symlinks and other non-regular entries in its own `other` bucket, which
 fdu excludes from `files`/`dirs` entirely; that difference is structural and reconciled
 here rather than treated as drift.
+
+## The host regime
+
+The scoreboard divides two absolute numbers measured minutes apart, so it is *more*
+exposed to host drift than a paired comparison, not less: interleaving spreads drift
+across instruments, but nothing cancels a host that was quiet for the denominator and
+busy for the numerator.
+
+So `quiet` here is the loop's contract rather than a local variant of it. `measure`'s own
+gate -- on Linux, a one-minute load average of at most 0.25 per core -- must hold before
+and after every trial, and a load average that cannot be read refuses the regime rather
+than passing it. A trial that breaches the gate is invalid, and one invalid measured trial
+anywhere downgrades the whole scoreboard to `uncontrolled`: a table cannot say quiet when
+one of its samples was not. It is still written, as the screening-grade table
+`--host-regime uncontrolled` would have recorded.
+
+Before each subject's first trial the harness waits, within a stated bound
+(`--quiet-wait`), for a settling host to meet the gate, because `make perf-floor` builds
+the probe immediately beforehand and a load average remembers a build for minutes. The
+wait decides when measurement starts, never what it accepts. A load average also
+remembers this harness's own instruments, which run N workers back to back, so a long run
+on few cores can cross the gate on its own load and be downgraded; `measure` shares that
+property on Linux.
 """
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import itertools
 import json
@@ -92,6 +116,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from benchmarks.realtree import measure
+
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SPIKES = PROJECT_ROOT / "explorations" / "benchmarks" / "spikes"
 
@@ -102,11 +128,17 @@ DEFAULT_TRIALS = 8
 DEFAULT_WARMUPS = 2
 DEFAULT_TIMEOUT_SECONDS = 900.0
 
-#: Refuse to start above this per-core load. The scoreboard is a ratio of two absolute
-#: numbers measured minutes apart, so it is *more* exposed to host drift than a paired
-#: comparison, not less: interleaving cancels drift between arms, but nothing cancels a
-#: host that was quiet for the denominator and busy for the numerator.
-QUIET_LOAD_PER_CPU = 0.25
+#: How long `--host-regime quiet` waits for a settling host before it refuses.
+#:
+#: A load average is a one-minute exponential average, so after load stops it stays over
+#: a 0.25-per-core bar for ln(load per core / 0.25) minutes: 83 s after a build that held
+#: every core busy, 125 s after one that ran twice oversubscribed. `make perf-floor` builds
+#: the probe immediately before this starts. Three minutes covers a build of up to five
+#: runnable threads per core; `--quiet-wait` lifts it.
+QUIET_WAIT_SECONDS = 180.0
+
+#: How often that wait re-reads the load average, which the kernel updates every 5 s.
+QUIET_POLL_SECONDS = 5.0
 
 #: max/min past which a median is summarizing more than one population. See `_summarize`.
 SPREAD_SUSPECT = 2.0
@@ -342,6 +374,9 @@ class Trial:
     spawn_wall_ns: int
     max_rss_bytes: Optional[int]
     tallies: Dict[str, int]
+    #: Whether the host regime's gate held before and after this trial, and why not.
+    valid: bool = True
+    reasons: List[str] = field(default_factory=list)
 
 
 def _spawn(argv: Sequence[str], *, timeout_seconds: float) -> Dict[str, Any]:
@@ -426,11 +461,15 @@ def run_cell(
     workers: int,
     ordinal: int,
     warmup: bool,
+    regime: measure.HostRegime,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> Trial:
     argv = instrument.command(binaries=binaries, root=root, workers=workers)
+    pressure_before = measure._host_pressure_snapshot(regime)
     outcome = _spawn(argv, timeout_seconds=timeout_seconds)
+    pressure_after = measure._host_pressure_snapshot(regime)
     parsed = instrument.read(outcome["stdout"])
+    reasons = measure._host_pressure_reasons(regime, pressure_before, pressure_after)
     return Trial(
         instrument=instrument.id,
         ordinal=ordinal,
@@ -439,6 +478,8 @@ def run_cell(
         spawn_wall_ns=outcome["spawn_wall_ns"],
         max_rss_bytes=outcome["max_rss_bytes"],
         tallies=parsed["tallies"],
+        valid=not reasons,
+        reasons=reasons,
     )
 
 
@@ -447,29 +488,43 @@ def run_cell(
 # --------------------------------------------------------------------------------------
 
 
-def _host_pressure() -> Dict[str, Any]:
-    cpu_count = os.cpu_count() or 1
+def _await_quiet(wait_seconds: float) -> bool:
+    """Give a host that is only settling up to `wait_seconds` to meet the quiet gate.
+
+    Returns whether it waited at all. It judges nothing: the regime entry that follows is
+    `measure`'s own check and refuses a host that did not settle, and every trial is
+    still held to the gate. A load average that cannot be read is not waited for, since
+    time will not make it readable.
+    """
+    regime = measure.HostRegime(name="quiet", initial={})
+    started = time.monotonic()
+    waited = False
+    while True:
+        snapshot = measure._host_pressure_snapshot(regime)
+        if snapshot.get("load_1m_per_cpu") is None:
+            return waited
+        if not measure._host_pressure_reasons(regime, snapshot, snapshot):
+            return waited
+        if time.monotonic() - started >= wait_seconds:
+            return waited
+        time.sleep(QUIET_POLL_SECONDS)
+        waited = True
+
+
+def _enter_regime(
+    stack: contextlib.ExitStack, name: str, wait_seconds: float
+) -> measure.HostRegime:
+    """Enter `measure`'s host regime, after a settling host has had its bounded wait."""
+    waited = _await_quiet(wait_seconds) if name == "quiet" else False
     try:
-        load_1m, load_5m, _ = os.getloadavg()
-    except (AttributeError, OSError):
-        return {"logical_cpu_count": cpu_count, "load_1m": None, "load_1m_per_cpu": None}
-    return {
-        "logical_cpu_count": cpu_count,
-        "load_1m": round(load_1m, 3),
-        "load_5m": round(load_5m, 3),
-        "load_1m_per_cpu": round(load_1m / cpu_count, 4),
-    }
-
-
-def _require_quiet(pressure: Mapping[str, Any]) -> None:
-    per_cpu = pressure.get("load_1m_per_cpu")
-    if per_cpu is not None and per_cpu > QUIET_LOAD_PER_CPU:
+        return stack.enter_context(measure._host_regime(name, 0))
+    except measure.MeasureError as error:
+        after = f", after waiting up to {wait_seconds:.0f} s for it to settle" if waited else ""
         raise FloorError(
-            f"host is {per_cpu:.0%} busy per core, over the {QUIET_LOAD_PER_CPU:.0%} bar. "
-            "The scoreboard divides two absolute numbers measured minutes apart, so host "
-            "drift does not cancel the way it does in a paired run. Wait, or pass "
-            "--host-regime uncontrolled to record a screening-grade table."
-        )
+            f"{error}{after}. The scoreboard divides two absolute numbers measured minutes "
+            "apart, so host drift does not cancel the way it does in a paired run. Wait, "
+            "or pass --host-regime uncontrolled to record a screening-grade table."
+        ) from error
 
 
 def schedule(instruments: Sequence[Any], *, trials: int, warmups: int) -> List[tuple]:
@@ -548,6 +603,7 @@ def measure_subject(
     trials: int,
     warmups: int,
     quiet: bool,
+    quiet_wait_seconds: float = QUIET_WAIT_SECONDS,
 ) -> Dict[str, Any]:
     """Run every instrument over one subject, interleaved, and enforce the oracle.
 
@@ -558,48 +614,57 @@ def measure_subject(
     property of the programs rather than of their order -- and the rounds follow
     `schedule`, so no instrument inherits one predecessor's leftovers every time.
     """
-    pressure_before = _host_pressure()
-    if quiet:
-        _require_quiet(pressure_before)
-
+    regime_name = "quiet" if quiet else "uncontrolled"
     trials_by_instrument: Dict[str, List[Trial]] = {item.id: [] for item in instruments}
     oracle: Optional[Dict[str, int]] = None
     oracle_source: Optional[str] = None
     disagreements: List[str] = []
+    invalid_trials = 0
+    invalid_reasons: List[str] = []
 
     rounds = schedule(instruments, trials=trials, warmups=warmups)
-    for ordinal, order in rounds:
-        warmup = ordinal < 0
-        for instrument in order:
-            trial = run_cell(
-                instrument,
-                binaries=binaries,
-                root=root,
-                workers=workers,
-                ordinal=ordinal,
-                warmup=warmup,
-            )
-            if not warmup:
-                trials_by_instrument[instrument.id].append(trial)
+    with contextlib.ExitStack() as stack:
+        regime = _enter_regime(stack, regime_name, quiet_wait_seconds)
+        for ordinal, order in rounds:
+            warmup = ordinal < 0
+            for instrument in order:
+                trial = run_cell(
+                    instrument,
+                    binaries=binaries,
+                    root=root,
+                    workers=workers,
+                    ordinal=ordinal,
+                    warmup=warmup,
+                    regime=regime,
+                )
+                if not warmup:
+                    trials_by_instrument[instrument.id].append(trial)
+                    if not trial.valid:
+                        invalid_trials += 1
+                        invalid_reasons.extend(
+                            reason for reason in trial.reasons if reason not in invalid_reasons
+                        )
 
-            # Every trial faces the oracle, not just the first: a subject that changes
-            # underneath the run is the failure mode this catches, and it can start at
-            # any point. `parfloor enum` contributes only `dirs` -- it makes no metadata
-            # call, so it has no byte counts to agree about.
-            comparable = {k: v for k, v in trial.tallies.items() if k in ORACLE_KEYS}
-            if oracle is None:
-                oracle, oracle_source = dict(comparable), instrument.id
-            else:
-                shared = set(comparable) & set(oracle)
-                differing = {k: (oracle[k], comparable[k]) for k in shared
-                             if oracle[k] != comparable[k]}
-                if differing:
-                    disagreements.append(
-                        f"{instrument.id} trial {ordinal} disagrees with {oracle_source}: "
-                        + ", ".join(f"{k} {a} vs {b}" for k, (a, b) in sorted(differing.items()))
-                    )
+                # Every trial faces the oracle, not just the first: a subject that changes
+                # underneath the run is the failure mode this catches, and it can start at
+                # any point. `parfloor enum` contributes only `dirs` -- it makes no
+                # metadata call, so it has no byte counts to agree about.
+                comparable = {k: v for k, v in trial.tallies.items() if k in ORACLE_KEYS}
+                if oracle is None:
+                    oracle, oracle_source = dict(comparable), instrument.id
+                else:
+                    shared = set(comparable) & set(oracle)
+                    differing = {k: (oracle[k], comparable[k]) for k in shared
+                                 if oracle[k] != comparable[k]}
+                    if differing:
+                        disagreements.append(
+                            f"{instrument.id} trial {ordinal} disagrees with {oracle_source}: "
+                            + ", ".join(
+                                f"{k} {a} vs {b}" for k, (a, b) in sorted(differing.items())
+                            )
+                        )
+        pressure_after = measure._host_pressure_snapshot(regime)
 
-    pressure_after = _host_pressure()
     results = {
         instrument.id: _summarize(trials_by_instrument[instrument.id], instrument)
         for instrument in instruments
@@ -619,7 +684,11 @@ def measure_subject(
             "scheme": SCHEDULE_SCHEME,
             "rounds": [[instrument.id for instrument in order] for _, order in rounds],
         },
-        "host_pressure_before": pressure_before,
+        "host_regime": regime_name,
+        # Measured trials whose regime gate did not hold, and the distinct reasons why.
+        "invalid_trials": invalid_trials,
+        "invalid_reasons": invalid_reasons,
+        "host_pressure_before": regime.initial,
         "host_pressure_after": pressure_after,
         "instruments": results,
     }
@@ -722,7 +791,17 @@ def render(document: Mapping[str, Any]) -> str:
                  f"Every instrument ran a fixed pool of {document['workers']} workers.")
     lines.append(f"Recorded {document['recorded_at']} from commit {document['commit']}.")
     lines.append("")
-    lines.append(f"Regime: **{document['host_regime']}**. "
+    regime = f"Regime: **{document['host_regime']}**"
+    requested = document.get("host_regime_requested", document["host_regime"])
+    if requested != document["host_regime"]:
+        reasons = []
+        for subject in document["subjects"]:
+            reasons.extend(r for r in subject.get("invalid_reasons", []) if r not in reasons)
+        breached = document.get("invalid_trials", 0)
+        regime += (f" ({requested} was requested, and {breached} measured "
+                   f"{'trial' if breached == 1 else 'trials'} breached it: "
+                   f"{'; '.join(reasons)}; this table is screening-grade)")
+    lines.append(f"{regime}. "
                  f"{document['trials']} trials, {document['warmups']} warmups, interleaved.")
     lines.append("")
 
@@ -785,6 +864,7 @@ def run(
     build_dir: Path,
     host_regime: str,
     instruments: Sequence[str] = DEFAULT_INSTRUMENTS,
+    quiet_wait_seconds: float = QUIET_WAIT_SECONDS,
 ) -> Dict[str, Any]:
     require_linux()
     binaries = build_instruments(build_dir)
@@ -794,10 +874,11 @@ def run(
         subject = measure_subject(
             root=root, label=label, binaries=binaries, instruments=selected,
             workers=workers, trials=trials, warmups=warmups,
-            quiet=(host_regime == "quiet"),
+            quiet=(host_regime == "quiet"), quiet_wait_seconds=quiet_wait_seconds,
         )
         subject["scored"] = score(subject)
         measured.append(subject)
+    breached = sum(subject["invalid_trials"] for subject in measured)
     return {
         "schema": "fdu-floor-scoreboard-v1",
         "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -808,7 +889,11 @@ def run(
             "logical_cpu_count": os.cpu_count(),
             "kernel": platform.release(),
         },
-        "host_regime": host_regime,
+        # The regime the table can claim rather than the one requested: one measured trial
+        # that breached the gate makes the whole table screening-grade.
+        "host_regime": "uncontrolled" if breached else host_regime,
+        "host_regime_requested": host_regime,
+        "invalid_trials": breached,
         "workers": workers,
         "trials": trials,
         "warmups": warmups,
@@ -834,6 +919,11 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument("--build-dir", type=Path,
                         default=Path("/tmp/fdu-floor/bin"))
     parser.add_argument("--host-regime", choices=("quiet", "uncontrolled"), default="quiet")
+    parser.add_argument(
+        "--quiet-wait", type=float, default=QUIET_WAIT_SECONDS, metavar="SECONDS",
+        help=("under --host-regime quiet, how long to wait for a settling host before "
+              "refusing (default: %(default)s)"),
+    )
     parser.add_argument("--output", type=Path, help="write the scoreboard JSON here")
     parser.add_argument("--markdown", type=Path, help="write the rendered table here")
     arguments = parser.parse_args(list(argv))
@@ -868,7 +958,7 @@ def main(argv: Sequence[str]) -> int:
         document = run(
             subjects=subjects, workers=workers, trials=arguments.trials,
             warmups=arguments.warmups, build_dir=arguments.build_dir,
-            host_regime=arguments.host_regime,
+            host_regime=arguments.host_regime, quiet_wait_seconds=arguments.quiet_wait,
         )
     except FloorError as error:
         # A refused scoreboard is the harness doing its job. It should read as a verdict
