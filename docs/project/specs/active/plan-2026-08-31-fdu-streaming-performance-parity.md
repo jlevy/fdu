@@ -1052,7 +1052,7 @@ A Darwin acceptance may keep the implementation in this stacked pull request, bu
 does not close the Linux H86 epic.
 
 The Linux stage has now run, and it rejects.
-[exp-102](../../experiments/exp-102-h86-linux-evidence-stage-relative-gates-pass-floor-gates-fai.md)
+[exp-103](../../experiments/exp-103-h86-linux-evidence-stage-relative-gates-pass-floor-gates-fai.md)
 measured candidate `5d7b86f` against the immediate control `c6380f7` on the
 450,001-entry generated subject over twelve paired interleaved trials with zero invalid
 samples, exact engine digests at worker counts one through four, and no post-run tree

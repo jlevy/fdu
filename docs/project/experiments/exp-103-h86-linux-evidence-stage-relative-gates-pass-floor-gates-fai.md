@@ -6,7 +6,7 @@ softschema:
   envelope: experiment
   status: enforced
 experiment:
-  id: exp-102
+  id: exp-103
   title: "H86 Linux evidence stage: relative gates pass, floor gates fail"
   date: "2026-09-02"
   hypotheses:

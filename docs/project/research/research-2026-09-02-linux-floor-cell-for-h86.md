@@ -5,7 +5,7 @@ Subject: the generated `balanced` recipe at 450,001 entries (56,251 directories,
 files), engine digest `e6da0498…`.
 
 This note records the two denominators that
-[exp-102](../experiments/exp-102-h86-linux-evidence-stage-relative-gates-pass-floor-gates-fai.md)
+[exp-103](../experiments/exp-103-h86-linux-evidence-stage-relative-gates-pass-floor-gates-fai.md)
 rejects against, because they are reusable beyond that one verdict and because a floor
 claim is only as good as the cell its denominator was measured in.
 
