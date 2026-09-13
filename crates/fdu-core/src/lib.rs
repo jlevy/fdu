@@ -152,6 +152,16 @@ pub struct OpenConfig {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum CachePolicy {
     /// Read the snapshot, revalidate it, and write it back when the scan is complete.
+    ///
+    /// A root has one cache path, and its snapshot carries the scan scope that wrote it.
+    /// A read under another scope treats that snapshot as absent and scans cold, and the
+    /// scan then writes its own scope over it. The one-shot `fdu <dir>` observes no control
+    /// state while `fdu --watch <dir>` and a default [`open`] do, so the two keep snapshots
+    /// of different scope at one cache path and each replaces the other's. An index opened
+    /// after a one-shot report therefore takes [`OpenPath::ColdScan`], and so does a
+    /// one-shot report that reads the snapshot, as content analysis does, after an index
+    /// was saved. A one-shot report answers from a controls-on snapshot only under
+    /// [`CachePolicy::Only`].
     #[default]
     Auto,
     /// Ignore any snapshot, scan cold, and rewrite it. The benchmark control.
