@@ -319,14 +319,16 @@ class FduProbeTests(unittest.TestCase):
 
                 for mode in _ALLOCATION_SLOPE_BUDGETS:
                     environment = {**os.environ, "FDU_COUNTERS": "1"}
+                    # An opened root always discovers with one producer and has no worker
+                    # setting, so the probe refuses one there rather than ignoring it.
+                    workers = ["--threads", "1"] if mode == "scan-index" else []
                     completed = subprocess.run(
                         [
                             str(self.probe),
                             mode,
                             "--root",
                             str(root),
-                            "--threads",
-                            "1",
+                            *workers,
                             "--batch-size",
                             "64",
                         ],

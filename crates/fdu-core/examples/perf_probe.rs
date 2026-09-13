@@ -210,6 +210,9 @@ impl Arguments {
         let mut diagnostics = false;
         let mut worker_policy = fdu_core::scan::WorkerPolicyExperiment::ShippedOneShot;
         let mut scan = ScanConfig::default();
+        // A walk setting that an opened root has no option for, so opened discovery would
+        // silently measure something other than what the command line asked for.
+        let mut walk_only_flag = None;
         while let Some(flag) = arguments.next() {
             match flag.to_str() {
                 Some("--root") => root = Some(next_path(&mut arguments, "--root")?),
@@ -226,7 +229,10 @@ impl Arguments {
                     repeat = next_usize(&mut arguments, "--repeat")?;
                 }
                 Some("--no-oracle") => oracle_enabled = false,
-                Some("--no-controls") => scan.read_controls = false,
+                Some("--no-controls") => {
+                    scan.read_controls = false;
+                    walk_only_flag = Some("--no-controls");
+                }
                 Some("--diagnostics") => diagnostics = true,
                 Some("--worker-policy") => {
                     let value = arguments
@@ -254,12 +260,15 @@ impl Arguments {
                         Some("depth-first") => ScanOrder::DepthFirst,
                         _ => return Err(ProbeError(format!("unknown order {value:?}"))),
                     };
+                    walk_only_flag = Some("--order");
                 }
                 Some("--threads") => {
                     scan.threads = Some(next_usize(&mut arguments, "--threads")?);
+                    walk_only_flag = Some("--threads");
                 }
                 Some("--max-depth") => {
                     scan.max_depth = Some(next_usize(&mut arguments, "--max-depth")?);
+                    walk_only_flag = Some("--max-depth");
                 }
                 _ => return Err(ProbeError(format!("unknown argument {flag:?}"))),
             }
@@ -271,8 +280,16 @@ impl Arguments {
         if repeat == 0 {
             return Err(ProbeError("--repeat must be nonzero".into()));
         }
+        let mode = Mode::parse(&mode)?;
+        if let (Mode::OpenedDiscovery, Some(flag)) = (mode, walk_only_flag) {
+            // OpenOptions has no such setting: an opened root discovers its whole scope
+            // with one breadth-first producer and always observes control state.
+            return Err(ProbeError(format!(
+                "{flag} does not apply to opened-discovery, whose walk is fixed by the opened root"
+            )));
+        }
         Ok(Self {
-            mode: Mode::parse(&mode)?,
+            mode,
             root,
             snapshot,
             operations,
@@ -2093,6 +2110,41 @@ mod tests {
         assert!(!output.oracle_enabled);
         assert!(output.summary.engine_digest.is_none());
         assert!(output.summary.complete);
+    }
+
+    #[test]
+    fn opened_discovery_refuses_walk_flags_it_cannot_apply() {
+        let walk_only: [&[&str]; 4] = [
+            &["--threads", "1"],
+            &["--no-controls"],
+            &["--max-depth", "2"],
+            &["--order", "depth-first"],
+        ];
+        for flag in walk_only {
+            let error = Arguments::parse(
+                ["opened-discovery", "--root", "/root"]
+                    .into_iter()
+                    .chain(flag.iter().copied())
+                    .map(OsString::from),
+            )
+            .expect_err("opened discovery has no option for this walk setting");
+            assert!(error.0.contains(flag[0]), "{}", error.0);
+
+            // The same setting still reaches the modes that apply it.
+            Arguments::parse(
+                ["scan-index", "--root", "/root"]
+                    .into_iter()
+                    .chain(flag.iter().copied())
+                    .map(OsString::from),
+            )
+            .expect("a detached scan applies this walk setting");
+        }
+        Arguments::parse(
+            ["opened-discovery", "--root", "/root", "--batch-size", "2"]
+                .into_iter()
+                .map(OsString::from),
+        )
+        .expect("opened discovery applies its batch size");
     }
 
     #[test]
