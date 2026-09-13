@@ -226,6 +226,51 @@ class ProvenanceTests(unittest.TestCase):
 
         self.assertIn("does not identify the current source revision", "\n".join(reasons))
 
+    def test_dirty_development_binary_is_rejected_from_a_clean_checkout(self) -> None:
+        # Build with uncommitted edits, keep the binary, revert the edits: the checkout is
+        # clean at the stamped revision, so only the binary's own marker records that it
+        # is not the code at that commit.
+        source = {**self.source, "tags_at_commit": []}
+        revision = "a" * 9
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            artifact = provenance.ArtifactSpec(
+                label="native",
+                kind="native-fdu",
+                executable=Path(sys.executable),
+                build_argv=("cargo", "install", "$SOURCE/crates/fdu"),
+            )
+            _source_patch, host_patch, filesystem_patch, collector_patch = self._patches()
+            with (
+                host_patch,
+                filesystem_patch,
+                collector_patch,
+                mock.patch.object(provenance, "_source_facts", return_value=source),
+                mock.patch.object(
+                    provenance, "_version", return_value=f"fdu 0.1.0-dev+g{revision}.dirty"
+                ),
+            ):
+                document = provenance.capture(
+                    source_root=root, subject_root=root, artifacts=[artifact]
+                )
+
+        self.assertFalse(document["claim_grade"])
+        self.assertIn("dirty source tree", "\n".join(document["invalidation_reasons"]))
+
+    def test_development_binary_revision_binds_its_stamp_exactly(self) -> None:
+        source = {**self.source, "tags_at_commit": []}
+        for version, bound in (
+            ("fdu 0.1.0-dev+g" + "a" * 9, True),
+            # Git lengthens an abbreviation that nine characters would leave ambiguous.
+            ("fdu 0.1.0-dev+g" + "a" * 12, True),
+            ("fdu 0.1.0-dev+g" + "a" * 9 + ".dirty", False),
+            ("fdu 0.1.0-dev+g" + "a" * 9 + "-patched", False),
+            ("fdu 0.1.0-dev+g" + "a" * 8, False),
+        ):
+            with self.subTest(version=version):
+                reasons = provenance._fdu_revision_reasons(version, source)
+                self.assertEqual(reasons == [], bound, reasons)
+
     def test_exact_release_tag_can_identify_a_release_binary(self) -> None:
         source = {**self.source, "tags_at_commit": ["v0.1.0"]}
 
