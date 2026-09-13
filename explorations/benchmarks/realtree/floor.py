@@ -30,8 +30,8 @@ the choice is `fdu-33ri`; the blocked half is tracked as `fdu-9hdc`.
   `getdents64` plus one `statx` per entry into four integer accumulators. No index, no
   retained paths, no per-entry allocation, no delta contract.
 - **`arena_spike`** is the measured ceiling for the representation change: it retains an
-  index-shaped result and is what H86 (`fdu-xde5`) is trying to reach. It is a reference
-  row, never a denominator.
+  index-shaped result and is what H86 (`fdu-xde5`) is trying to reach. It is context for
+  the tiers, never a denominator.
 - **fdu's own tiers**, through `perf_probe`, which is the thing being scored.
 
 `peerwalk` is deliberately absent. It takes third-party dependencies the shipped crate
@@ -75,9 +75,9 @@ subject this loop is expected to be handed.
 fdu excludes from `files`/`dirs` entirely; that difference is structural and reconciled
 here rather than treated as drift.
 
-The oracle holds every tally some instrument reports, each taken from the first trial that
-reported it, so a run opening with an instrument that reports fewer tallies still compares
-the rest. A *reference* row neither sets it nor vetoes the subject. `parfloor enum` makes
+The oracle holds each of those four that any instrument reports, taken from the first trial
+that reported it, so a run opening with an instrument that reports fewer tallies still
+compares the rest. A *reference* row neither sets it nor vetoes the subject. `parfloor enum` makes
 no metadata call, so it descends only where `getdents64` reports `DT_DIR`, and on a
 filesystem that leaves `d_type` unknown it undercounts directories -- a fact about that
 instrument, not about the tree or the tiers. A reference that disagrees is dropped from
@@ -176,7 +176,9 @@ class Instrument:
     """One measured program: how to run it, and how to read its answer."""
 
     id: str
-    role: str  # "floor", "ceiling", or "tier"
+    #: "floor", "ceiling", "tier", or "reference". Only a reference row may be dropped
+    #: from a subject when it disagrees with the oracle; see `_hold_to_oracle`.
+    role: str
     description: str
     argv: Sequence[str]
     #: Maps this instrument's own JSON keys onto ORACLE_KEYS.
