@@ -292,6 +292,15 @@ impl OpenReport {
 /// before being returned. Errors are represented as partial freshness and the previous
 /// complete snapshot is left untouched; callers must inspect [`OpenReport::is_complete`]
 /// or [`Index::freshness`] before treating totals as complete.
+///
+/// The index observes control state as [`ScanConfig::read_controls`] says, and the
+/// default is on: the index exposes [`Index::controls`] and [`Index::is_ignored`], and a
+/// watch over it maintains them, so `open` cannot assume its caller will not read them.
+/// A one-shot report from [`prepare_report`] always runs with observation off, so the two
+/// keep snapshots of different scope at one cache path. `open` scans cold instead of
+/// starting from a report's snapshot, and a report consumes an `open` snapshot only under
+/// [`CachePolicy::Only`]. A caller wanting a single answer should use
+/// [`prepare_report`]; one wanting an index without control state turns the field off.
 pub fn open(root: &Path, config: &OpenConfig) -> Result<(Index, OpenReport)> {
     let (index, report, pending) = open_with_pending_save(root, config)?;
     // Joining first is what makes the unwrap infallible: the writer held the only other

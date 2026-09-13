@@ -184,13 +184,16 @@ pub struct ScanConfig {
     pub types: Option<std::sync::Arc<crate::classify::TypeRegistry>>,
     /// Observe `.gitignore` control files and retain ignore classification.
     ///
-    /// On by default so library callers keep exact control state. A consumer that never
-    /// reads ignore state -- the one-shot size report consumes none of it -- turns this
-    /// off and the scan performs no control-file I/O and retains no control table,
-    /// which is the same semantics the `gitignore` feature being absent gives, and is
-    /// stamped into [`ScanScope`] the same way so the two lifecycles cannot share a
-    /// snapshot (fdu-etfj: every `fdu <dir>` read and retained every `.gitignore` in
-    /// the tree, then could die on a budget for state its report never consumed).
+    /// On by default, so an [`Index`](crate::Index) from [`crate::open`] or a scan keeps
+    /// the exact control state it exposes and a watch maintains. Off, the scan performs
+    /// no control-file I/O and retains no control table: the semantics an absent
+    /// `gitignore` feature gives, stamped into [`ScanScope`] the same way, so an
+    /// index-returning call never serves a snapshot taken one way as the other.
+    ///
+    /// A one-shot report ([`crate::prepare_report`]) does not read this field; its
+    /// planner always runs with observation off, because no report view reads ignore
+    /// classification (fdu-etfj: every `fdu <dir>` read and retained every `.gitignore`
+    /// in the tree, then could die on a budget for state its report never consumed).
     pub read_controls: bool,
 }
 
