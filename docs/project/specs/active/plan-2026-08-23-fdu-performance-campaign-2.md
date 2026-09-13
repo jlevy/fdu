@@ -321,8 +321,10 @@ the following:
   reallocation, and allocated-byte limits against the historical control on both real
   subjects;
 - peak RSS is no more than 80% of the immediate control on the MetaBrowser subject;
-- `opened-discovery` is noninferior within +3%, its scoped allocation dimensions are no
-  more than 1.05 times the immediate control, and its arena-route counter is zero;
+- `opened-discovery` is noninferior within +3% on paired `component_ns`, since its wall
+  time includes the probe’s in-process oracle and commit summary; its scoped allocation
+  dimensions are no more than 1.05 times the immediate control, and its arena-route
+  counter is zero;
 - exact oracles pass, no trial is invalid, and neither subject nor baseline fingerprint
   drifts.
 

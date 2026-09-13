@@ -1036,7 +1036,11 @@ the 113,794-entry MetaBrowser checkout: `default-tree` must improve at least 3% 
 paired interval below zero, `cold-scan-index` must move in the same direction, peak RSS
 must fall at least 20%, the two one-shot jobs must meet this plan’s historical parity
 limits on both real subjects, and opened discovery must remain within the +3%
-noninferiority and 1.05 allocation bounds while recording zero detached-builder uses.
+noninferiority bound on paired `component_ns` and the 1.05 allocation bounds while
+recording zero detached-builder uses.
+Opened discovery’s wall time is recorded but not gated: the probe’s commit summary and
+paged oracle run inside the same process and dilute a paired wall percentage toward
+zero, while `component_ns` excludes the oracle and ends before the commit summary.
 Exact engine, report, scope, snapshot, and worker-count differential oracles remain
 mandatory.
 
