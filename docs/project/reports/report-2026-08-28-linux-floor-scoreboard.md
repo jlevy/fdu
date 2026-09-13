@@ -56,12 +56,13 @@ not small — see below.
 ## The numbers
 
 Host: 4 vCPU x86_64 Linux container, 15 GiB, kernel 6.18.44. 30 trials, 3 warmups,
-interleaved, quiet regime (load < 0.05/core at entry).
-Commit `b75bf85`.
+interleaved in a fixed order, quiet regime checked once at entry (load < 0.05/core).
+Commit `b75bf85`. These numbers predate the harness fixes the
+[review addendum](#review-addendum-2026-09-13) describes.
 
-### `/usr` — 75,976 entries
+### `/usr` — 84,536 entries (75,976 directories and files)
 
-| Instrument | Role | Median | ×floor | ns/entry | spread | Peak RSS |
+| Instrument | Role | Median | ×floor | ns/(dir+file) | spread | Peak RSS |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
 | `parfloor-enum` | reference | 17.89 ms | 0.46 | 236 | 1.21 | 15 MiB |
 | `parfloor-stat` | **floor** | 39.26 ms | **1.00** | 517 | 1.20 | 15 MiB |
@@ -69,9 +70,9 @@ Commit `b75bf85`.
 | `index` | tier | 110.60 ms | **2.82** | 1,456 | 1.46 | 53 MiB |
 | `arena-spike` | ceiling | 153.75 ms | 3.92 | 2,024 | **4.25 ⚠** | 15 MiB |
 
-### `/opt` — 47,819 entries
+### `/opt` — 47,819 directories and files
 
-| Instrument | Role | Median | ×floor | ns/entry | spread | Peak RSS |
+| Instrument | Role | Median | ×floor | ns/(dir+file) | spread | Peak RSS |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
 | `parfloor-enum` | reference | 17.09 ms | 0.58 | 357 | 1.17 | 15 MiB |
 | `parfloor-stat` | **floor** | 29.53 ms | **1.00** | 618 | 1.15 | 15 MiB |
@@ -94,9 +95,12 @@ That is H86’s case restated on a third host.
 
 **`arena_spike` is bimodal on the larger subject, and that is new.** On `/opt` it
 measures 1.09× — within noise of the 1.06× the floor report recorded, so the ceiling
-reproduces too. On `/usr` it splits into a ~63 ms mode and a ~150 ms mode, selected by
-how much memory the preceding process churned, and its median is then whichever mode the
-run landed in more often.
+reproduces too.
+On `/usr` it splits into a ~63 ms mode and a ~150 ms mode, and its median
+is then whichever mode the run landed in more often.
+This session attributed the modes to how much memory the preceding process churned, but
+the run could not test that: its fixed order put `parfloor-enum` before `arena_spike` in
+every round, so the predecessor never varied.
 This matters because H86’s pre-registered targets include peak RSS ≤3× `arena_spike` and
 a tail-spread bound: if the ceiling itself has two modes on a subject of this size, both
 targets need to name which mode they mean.
@@ -105,8 +109,10 @@ The scoreboard flags it rather than quoting it.
 `p95/median` — the tail statistic the loop already records — reads a reassuring **1.16**
 for that same distribution, because both humps are individually narrow.
 `max/min` reads **4.25**. A median describes a distribution with one hump, and the cheap
-tell that there are two is the spread, so the harness reports it and marks anything at
-or past 2×.
+tell that one number does not describe the samples is the spread, so the harness reports
+it and flags anything at or past 2×. The flag names a spread, not a second mode: a
+single outlier trips it too, which is why the two modes here were read off the samples
+rather than off the flag.
 
 **Harness cost is larger than engine cost on the index tier.** The `index` job’s spawn
 wall exceeds its own component timer by **149 ms against a 110 ms component** on `/usr`
@@ -174,9 +180,43 @@ difference, not merely inflated by a constant.
   comparison; `perf-compare` decides whether a change is kept and this does not.
 - **No peer ranking.** `peerwalk` is not run here.
 - **Neither subject is nominated.** `/usr` and `/opt` are the dense real trees this
-  container has. `/usr` clears the deciding bar on size (75,976 ≥ 50,000); `/opt` does
-  not (47,819) and screens.
+  container has. `/usr` clears the deciding bar on size: 84,536 entries as
+  `perf-subjects` counts them, root and symlinks included.
+  `/opt`’s count under that definition was not recorded (47,819 is its directories and
+  files alone), so this report does not classify it.
   Neither is in a committed nominations document, because the nominations file is
   per-host and gitignored and this host is ephemeral.
   The ratios are reproducible from any Linux host with the same command; the absolute
   milliseconds are not.
+
+## Review addendum (2026-09-13)
+
+[The review of PR #49](https://github.com/jlevy/fdu/pull/49#pullrequestreview-5192251516)
+found the oracle, its root offset, the component timers and the median-over-median
+arithmetic sound, and found gaps in what the harness controlled.
+The harness now closes them.
+The numbers above were recorded before, so they carry these qualifications:
+
+- **fdu ran its automatic worker pool.** The probe tiers were given no `--threads`. On
+  this 4-vCPU host that pool starts at four workers, the floor’s own count, and grows
+  only when its calibration finds a slow path.
+  The harness now runs every instrument at one fixed pool of N workers.
+- **The order was fixed.** Every round ran the instruments in the same order, so each
+  always followed the same predecessor.
+  Rounds now follow a schedule in which every instrument follows every other equally
+  often.
+- **Quiet was checked once, at entry.** Every trial is now held to the loop’s quiet
+  gate, before and after, and one breaching trial downgrades the whole table to
+  `uncontrolled`. Separately, `make perf-floor` requested `uncontrolled` by default,
+  because the file default of `PERF_HOST_REGIME` overrode the recipe’s `quiet`; the
+  regime above is as this session recorded it, and the recipe now defaults to `quiet`.
+- **“Entries” counted directories and files.** The headings above now give the count
+  `perf-subjects` applies the deciding bar to, where it was recorded, and the per-cost
+  column is labeled with what it divides by.
+
+Whether any of these moved the recorded ratios is for a re-run under the fixed harness
+to say; this addendum does not claim it either way.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->
