@@ -760,6 +760,11 @@ pub(crate) enum ObservationTransition {
     /// Persistent inaccessible boundaries do not prevent observation of the readable
     /// scope, but they keep coverage partial and their causes remain inspectable.
     Watching { issues: Vec<Issue>, omitted: u64 },
+    /// A reconciliation while watching could not read part of the scope.
+    ///
+    /// The subtree it covered is already partial and is not retried on every later event,
+    /// so its causes are retained here, where partial freshness can be explained.
+    Unreadable { issues: Vec<Issue>, omitted: u64 },
     /// Observation could not establish or retain a trustworthy live boundary.
     Failed(Issue),
 }
@@ -1640,6 +1645,15 @@ impl Index {
                         if self.state.coverage != Coverage::Complete {
                             self.state.freshness = Freshness::Partial;
                         }
+                    }
+                }
+                ObservationTransition::Unreadable { issues, omitted } => {
+                    if self.state.phase == LifecyclePhase::Watching {
+                        for issue in issues {
+                            self.retain_issue(issue);
+                        }
+                        self.state.issues.omitted =
+                            self.state.issues.omitted.saturating_add(omitted);
                     }
                 }
                 ObservationTransition::Failed(issue) => {

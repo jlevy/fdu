@@ -1421,7 +1421,24 @@ fn run_observation(
             &control,
             &mut |_commit| journal.notify_commit(),
         ) {
-            Ok(_) => {}
+            Ok(Some(report)) => {
+                // The reconciliation already left what it could not read partial, and that
+                // boundary is settled rather than retried on every later event. Retaining
+                // the causes is what lets a consumer see why.
+                let mut unreadable = HandoffEvidence::default();
+                unreadable.retain(&report.reconciliation);
+                if !unreadable.issues.is_empty() || unreadable.omitted > 0 {
+                    publish_observation_transition(
+                        index,
+                        journal,
+                        crate::index::ObservationTransition::Unreadable {
+                            issues: unreadable.issues,
+                            omitted: unreadable.omitted,
+                        },
+                    )?;
+                }
+            }
+            Ok(None) => {}
             Err(Error::OpenedIndexClosed) if cancellation.is_cancelled() => return Ok(()),
             Err(error) => return Err(error),
         }
@@ -5127,6 +5144,98 @@ mod tests {
                 .expect("issues")
                 .iter()
                 .any(|issue| issue.kind == crate::IssueKind::ObservationGap)
+        );
+        opened.close().expect("close");
+    }
+
+    #[cfg(all(unix, feature = "watch"))]
+    fn reconciles_of(opened: &OpenedIndex, since: crate::EngineVersion, path: &Path) -> usize {
+        opened
+            .state
+            .index
+            .since(since.sequence)
+            .expect("journal")
+            .commits
+            .iter()
+            .flat_map(|commit| commit.state.iter())
+            .filter(|transition| {
+                matches!(
+                    transition,
+                    crate::StateTransition::Freshness { path: marked, current, .. }
+                        if marked == path && *current == crate::Freshness::Reconciling
+                )
+            })
+            .count()
+    }
+
+    /// A gap over an unreadable directory is walked once, and its cause is retained.
+    ///
+    /// The walk's permission error made the reconciliation incomplete, so the invalidation
+    /// was restored, and the observer drains that queue after every event: each unrelated
+    /// event re-walked the same unreadable subtree, forever -- a full-tree walk per event
+    /// for a root escalation. The report was then discarded, so the resulting partial
+    /// freshness had no issue to explain it.
+    #[cfg(all(unix, feature = "watch"))]
+    #[test]
+    fn an_unreadable_gap_is_walked_once_and_explains_itself() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"").expect("script");
+        let blocked = root.path().join("blocked");
+        std::fs::create_dir(&blocked).expect("blocked");
+        std::fs::write(blocked.join("secret"), b"s").expect("fixture");
+        let controls = Arc::new(TestControls::default());
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            scripted_options(&script),
+            Arc::clone(&controls),
+        )
+        .expect("open scripted observer");
+        let watching = wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+        assert_eq!(watching.freshness, crate::Freshness::Fresh);
+        let start = current_version(&opened);
+
+        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o000))
+            .expect("make directory inaccessible");
+        controls.send_observation_hints("rescan\tblocked\n");
+        let deadline = std::time::Instant::now() + TEST_GATE_TIMEOUT;
+        while reconciles_of(&opened, start, Path::new("blocked")) < 1 {
+            assert!(std::time::Instant::now() < deadline, "the gap was not reconciled");
+            std::thread::yield_now();
+        }
+
+        // Two later events elsewhere. Once the second has landed, the drain that followed
+        // the first has finished, so any re-walk it did is already in the journal.
+        for name in ["live.txt", "marker.txt"] {
+            std::fs::write(root.path().join(name), name).expect("unrelated mutation");
+            controls.send_observation_hints(&format!("create\t{name}\n"));
+            let deadline = std::time::Instant::now() + TEST_GATE_TIMEOUT;
+            while opened.state.index.kind(Path::new(name)).expect("lookup") != Some(EntryKind::File)
+            {
+                assert!(std::time::Instant::now() < deadline, "{name} was not applied");
+                std::thread::yield_now();
+            }
+        }
+
+        let walks = reconciles_of(&opened, start, Path::new("blocked"));
+        let state = opened.state.index.state().expect("state");
+        let issues = opened.state.index.issues().expect("issues");
+        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o700))
+            .expect("restore directory permissions");
+        assert_eq!(walks, 1, "an unreadable subtree must not be re-walked per unrelated event");
+        assert_eq!(state.phase, crate::LifecyclePhase::Watching);
+        assert_eq!(state.freshness, crate::Freshness::Partial);
+        assert!(
+            issues.iter().any(|issue| issue.kind == crate::IssueKind::Permission
+                && issue.path.as_deref().is_some_and(|path| path.ends_with("blocked"))),
+            "{issues:?}"
         );
         opened.close().expect("close");
     }
