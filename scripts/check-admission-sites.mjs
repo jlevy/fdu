@@ -41,6 +41,14 @@ const NON_INVENTORY_READERS = new Map([
   ["crates/fdu-core/src/scan/macos_bulk.rs", "platform adapter reference tests"],
 ]);
 
+// Every generic walk emission and the admission chokepoint its entries must reach. An
+// implementation not named here fails closed until it is audited and added.
+const EMISSIONS = new Map([
+  ["StreamingEmission", "record_walk_entry("],
+  ["DetachedEmission", "record_detached_entry("],
+]);
+const EMISSION_IMPLEMENTATION = /\bimpl\b[^;{]*?\bWalkEmission\s+for\s+([^\s{]+)/g;
+
 const WATCH_PATH = "crates/fdu-core/src/watch.rs";
 const LISTING_LOOP = /^\s*for\s+[A-Za-z_][A-Za-z0-9_]*\s+in\s+(?:listing|entries)\s*\{\s*$/;
 
@@ -132,8 +140,9 @@ function rustStructure(source) {
   return result;
 }
 
-function blockBody(source, structuralLines, start) {
-  const sourceLines = source.split("\n");
+// The block's structural lines, with comments and string contents blanked, so that a
+// route named only in a comment or a string cannot satisfy a containment check.
+function blockBody(structuralLines, start) {
   let depth = 0;
   const collected = [];
   for (let index = start; index < structuralLines.length; index += 1) {
@@ -141,7 +150,7 @@ function blockBody(source, structuralLines, start) {
       if (character === "{") depth += 1;
       if (character === "}") depth -= 1;
     }
-    if (index > start) collected.push(sourceLines[index]);
+    if (index > start) collected.push(structuralLines[index]);
     if (depth === 0 && index > start) break;
   }
   return collected.join("\n");
@@ -171,7 +180,7 @@ export function auditAdmissionSources(sources) {
     for (const [index, line] of structuralLines.entries()) {
       if (!LISTING_LOOP.test(line)) continue;
       loops += 1;
-      const body = blockBody(source, structuralLines, index);
+      const body = blockBody(structuralLines, index);
       if (!policy.routes.some((call) => body.includes(call))) {
         problems.push(
           `${path}:${index + 1}: ${line.trim()} bypasses the admission chokepoint`,
@@ -198,20 +207,33 @@ export function auditAdmissionSources(sources) {
       problems.push(`crates/fdu-core/src/scan.rs: missing audited admission chokepoint ${chokepoint}`);
     }
   }
-  const scanStructure = rustStructure(scan).split("\n");
-  for (const [implementation, route] of [
-    ["impl WalkEmission for StreamingEmission", "record_walk_entry("],
-    ["impl WalkEmission for DetachedEmission", "record_detached_entry("],
-  ]) {
-    const start = scanStructure.findIndex((line) => line.includes(implementation));
-    if (start < 0) {
-      problems.push(`crates/fdu-core/src/scan.rs: missing audited emission ${implementation}`);
-      continue;
+  const auditedEmissions = new Set();
+  for (const [path, source] of sources) {
+    if (!source.includes("WalkEmission")) continue;
+    const structure = rustStructure(source);
+    const structuralLines = structure.split("\n");
+    for (const implementation of structure.matchAll(EMISSION_IMPLEMENTATION)) {
+      const name = implementation[1];
+      const start = structure.slice(0, implementation.index).split("\n").length - 1;
+      const route = EMISSIONS.get(name);
+      if (route === undefined) {
+        problems.push(
+          `${path}:${start + 1}: unaudited emission implementation ${name}; ` +
+            "name the admission chokepoint it routes through in EMISSIONS",
+        );
+        continue;
+      }
+      auditedEmissions.add(name);
+      if (!blockBody(structuralLines, start).includes(route)) {
+        problems.push(
+          `${path}: impl WalkEmission for ${name} bypasses the admission chokepoint ${route}`,
+        );
+      }
     }
-    if (!blockBody(scan, scanStructure, start).includes(route)) {
-      problems.push(
-        `crates/fdu-core/src/scan.rs: ${implementation} bypasses the admission chokepoint ${route}`,
-      );
+  }
+  for (const name of EMISSIONS.keys()) {
+    if (!auditedEmissions.has(name)) {
+      problems.push(`crates/fdu-core/src/scan.rs: missing audited emission impl WalkEmission for ${name}`);
     }
   }
   if ((scan.match(/admission::decide\(/g) ?? []).length < 5) {

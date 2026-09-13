@@ -66,6 +66,47 @@ test("rejects a producer loop that bypasses admission", () => {
   assert.match(result.problems[0], /bypasses the admission chokepoint/);
 });
 
+test("does not accept a route named only in a comment or a string", () => {
+  for (const mention of [
+    "  // prepare_walk_entry();",
+    "  /// prepare_walk_entry(",
+    "  /* prepare_walk_entry() */",
+    '  let route = "prepare_walk_entry(";',
+  ]) {
+    const opened = ["read_dir(root);", "for item in listing {", mention, "  retain(item);", "}"].join(
+      "\n",
+    );
+    const result = auditAdmissionSources(
+      baseline(new Map([["crates/fdu-core/src/opened.rs", opened]])),
+    );
+    assert.match(result.problems[0] ?? "", /bypasses the admission chokepoint/, mention);
+  }
+});
+
+test("does not accept an emission route named only in a comment", () => {
+  const scan = baseline().get("crates/fdu-core/src/scan.rs").replace(
+    "fn record_entry() { record_detached_entry(); }",
+    "fn record_entry() { retain(entry); } // record_detached_entry();",
+  );
+  const result = auditAdmissionSources(
+    baseline(new Map([["crates/fdu-core/src/scan.rs", scan]])),
+  );
+  assert.match(result.problems[0] ?? "", /DetachedEmission bypasses the admission chokepoint/);
+});
+
+test("rejects an emission implementation the audit does not name", () => {
+  const scan = [
+    baseline().get("crates/fdu-core/src/scan.rs"),
+    "impl WalkEmission for ShadowEmission {",
+    "  fn record_entry() { record_walk_entry(); }",
+    "}",
+  ].join("\n");
+  const result = auditAdmissionSources(
+    baseline(new Map([["crates/fdu-core/src/scan.rs", scan]])),
+  );
+  assert.match(result.problems[0] ?? "", /unaudited emission implementation ShadowEmission/);
+});
+
 test("rejects a generic emission implementation that bypasses admission", () => {
   const scan = baseline().get("crates/fdu-core/src/scan.rs").replace(
     "fn record_entry() { record_detached_entry(); }",
