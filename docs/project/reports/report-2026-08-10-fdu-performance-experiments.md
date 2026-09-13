@@ -65,10 +65,9 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 36 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 37 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
-| Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
 
 ## Every experiment, including the failures
 
@@ -179,7 +178,7 @@ dead end.
 | 099 | [Monomorphize shared concurrent-walk consumption](#exp099--monomorphize-shared-concurrentwalk-consumption) | H86 | `cold-scan-index` | +0.2% | ✅ accepted |
 | 100 | [Move directory-only state out of line](#exp100--move-directoryonly-state-out-of-line) | H86 | `default-tree` | -0.8% | ❌ rejected |
 | 101 | [Compact detached child topology with local promotion](#exp101--compact-detached-child-topology-with-local-promotion) | H86 | `default-tree` | -7.7% | ✅ accepted |
-| 102 | [H86 Linux evidence stage: relative gates pass, floor gates fail](#exp102--h86-linux-evidence-stage-relative-gates-pass-floor-gates-fail) | H86 | `cold-scan-index` | -18.2% | ❌ rejected |
+| 102 | [Point lookup for public mutation preflight](#exp102--point-lookup-for-public-mutation-preflight) | — | `delta-apply-large` | -49.8% | ✅ accepted |
 
 ## The experiments
 
@@ -3561,42 +3560,42 @@ pending quiet-host confirmation.
 Full record:
 [`exp-101-compact-detached-child-topology-with-local-promotion.md`](../experiments/exp-101-compact-detached-child-topology-with-local-promotion.md)
 
-### exp-102 — H86 Linux evidence stage: relative gates pass, floor gates fail
+### exp-102 — Point lookup for public mutation preflight
 
-❌ rejected · 2026-09-02 · H86 · commit `5d7b86fe6d031e76843fe0b8dbcf8663a0d2b53f`
+✅ accepted · 2026-09-07 · no hypothesis id · commit
+`ad52469d7d16fee3135a515fd07a43c5bab8ba11`
 
-Control: c6380f7 immediate immutable control
+Control: 64c6e61 exact public preflight with an owned ordered overlay
 
-Candidate: 5d7b86f H86 consumer representation (codex/streaming-performance-parity)
+Candidate: ad52469 standard hash-map overlay with unchanged ownership and contracts
 
-**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+**`delta-apply-large`** (cold start) — the comparison the verdict rests on
 
 | metric | control | candidate | change | 95% interval |
 | --- | ---: | ---: | ---: | --- |
-| wall (ms) | 1905.6 | 1537.0 | -18.16% | [-24.25%, -13.72%] |
-| component (ms) | 854.3 | 614.5 | -25.84% | [-34.41%, -19.06%] |
-| cpu (ms) | 3470.7 | 2844.1 | -17.97% | [-21.47%, -13.14%] |
-| user (ms) | 1948.2 | 1564.6 | -20.50% | [-25.03%, -16.16%] |
-| system (ms) | 1519.6 | 1317.6 | -12.20% | [-21.93%, -3.17%] |
-| peak rss (MiB) | 303.6 | 153.5 | -49.16% | [-52.61%, -46.16%] |
+| wall (ms) | 652.1 | 325.0 | -49.78% | [-50.31%, -49.34%] |
+| component (ms) | 419.9 | 91.9 | -77.84% | [-78.11%, -77.73%] |
+| cpu (ms) | 647.4 | 322.2 | -50.00% | [-50.49%, -49.55%] |
+| user (ms) | 631.3 | 308.4 | -50.95% | [-51.50%, -50.68%] |
+| system (ms) | 15.5 | 14.0 | -8.42% | [-14.86%, -2.09%] |
+| blocked (ms) | 3.5 | 3.0 | -13.36% | [-23.57%, -3.22%] |
+| peak rss (MiB) | 127.3 | 124.2 | -2.45% | [-4.08%, -0.52%] |
 
-Other jobs, wall time: `default-tree` -31.7%, `opened-discovery` -10.7%.
+Other jobs, wall time: `delta-apply-batched` -39.8%.
 
-Cost to carry: 0 lines; no new dependencies; new failure mode: absolute floor ratio, not
-paired regression.
+Cost to carry: 129 lines; no new dependencies.
 
-No code change proposed or made; this is an evidence stage against an existing
-candidate.
+One private container substitution, two explanatory lines, and 125 lines of contract
+tests; no new dependency, unsafe code, failure mode or caller restriction.
 
-**Rejected:** Relative gates pass (cold-scan-index -18.16% [-24.25,-13.72], default-tree
--31.70%, RSS -49.4%/-35.9%, tails inside 1.5/2.0), but the pre-registered Linux floor
-gates fail: index wall 4.86x the parfloor syscall floor against a 1.4x gate and 5.03x
-arena_spike RSS against a 3x gate.
-Both floor cells are stable (max/min 1.204 and 1.391), so the ratios are resolved and
-reject rather than unresolved.
+**Accepted:** Retain for quiet-host confirmation: fixed twelve-pair exploratory large
+and repeated public mutations improve wall 49.78% and 39.75%, with both wall/component
+intervals below zero, exact oracles, and resource ratios within 1.05. Batched allocated
+bytes rise 4.95%, a recorded tradeoff.
+This uncontrolled screen does not close final one-shot or opened parity.
 
 Full record:
-[`exp-102-h86-linux-evidence-stage-relative-gates-pass-floor-gates-fai.md`](../experiments/exp-102-h86-linux-evidence-stage-relative-gates-pass-floor-gates-fai.md)
+[`exp-102-point-lookup-for-public-mutation-preflight.md`](../experiments/exp-102-point-lookup-for-public-mutation-preflight.md)
 
 ## Absolute timings
 
@@ -3832,12 +3831,6 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 043 | Retune workers for transient summary | `rich-summary-report` | 2,210.5 | 2,258.4 | +0.7% | ❌ rejected |
 
-### linux-450k (450,001 entries) — Linux 6.18.44-fc-v22, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 102 | H86 Linux evidence stage: relative gates pass, floor gates fail | `cold-scan-index` | 1,905.6 | 1,537.0 | -18.2% | ❌ rejected |
-
 ### live-workspace-exp038 (1,008,723 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -3867,6 +3860,12 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 096 | Apply fixed controls once per detached directory | `cold-scan-index` | 868.0 | 574.4 | -33.6% | ✅ accepted |
+
+### metabrowser-final-parity (97,587 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 102 | Point lookup for public mutation preflight | `delta-apply-large` | 652.1 | 325.0 | -49.8% | ✅ accepted |
 
 ### metabrowser-h86-lifecycle-f41 (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 

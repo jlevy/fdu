@@ -28,9 +28,9 @@ const FILES_PER_DIRECTORY: u64 = 64;
 // supported platform. These are measured *slopes*, not total-allocation allowances.
 // Compact detached storage lowers macOS from 7.x to 5.13 allocations per added entry;
 // the Linux and Windows ceilings subtract the same two removed representation
-// allocations from their last measured 8.26 and 14.33 slopes. Each ceiling leaves less
-// than one allocation per entry of slack, which the injected check below re-proves on
-// every runner rather than trusting this comment.
+// allocations from their last measured 8.26 and 14.33 slopes. These are upper bounds:
+// a lower slope is an improvement, not a reason for the test to fail. Tighten a ceiling
+// only after measuring a new baseline on the corresponding platform.
 #[cfg(target_os = "macos")]
 const DETACHED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 6;
 #[cfg(target_os = "linux")]
@@ -43,7 +43,7 @@ const DETACHED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 7;
 // Progressive discovery keeps keyed child topology but still benefits from inline arena
 // entries: macOS falls from 25.x to 24.24 allocations per added entry. The Linux and
 // Windows ceilings remove the same one arena allocation from their last measured 26.29
-// and 34.43 slopes. The same runtime slack proof guards every ceiling.
+// and 34.43 slopes. Lower allocation counts remain valid here too.
 #[cfg(target_os = "macos")]
 const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 25;
 #[cfg(target_os = "linux")]
@@ -65,6 +65,17 @@ impl Drop for DisableCounters {
 
 #[test]
 fn construction_routes_keep_their_allocation_and_work_boundaries() {
+    // Exercise the arithmetic before enabling the allocator, in the same test thread:
+    // concurrent should-panic tests would contaminate the measured construction runs.
+    assert_allocation_slope("one allocation saved per entry", 1_000, 1_000 + 8_591, 2_080, 6);
+    assert_allocation_slope("zero growth", 1_000, 1_000, 2_080, 6);
+    assert_allocation_slope("lower total", 1_000, 900, 2_080, 6);
+    assert_allocation_slope("at ceiling", 1_000, 1_000 + 12_480, 2_080, 6);
+    let over_ceiling = std::panic::catch_unwind(|| {
+        assert_allocation_slope("over ceiling", 1_000, 1_000 + 12_481, 2_080, 6);
+    });
+    assert!(over_ceiling.is_err(), "the allocation ceiling must still reject regressions");
+
     let small = fixture(SMALL_DIRECTORY_COUNT);
     let large = fixture(LARGE_DIRECTORY_COUNT);
     let config = ScanConfig { read_controls: false, threads: Some(1), ..ScanConfig::default() };
@@ -172,22 +183,11 @@ fn assert_allocation_slope(
     added_entries: u64,
     allocations_per_added_entry: u64,
 ) {
-    let growth = larger.checked_sub(smaller).unwrap_or_else(|| {
-        panic!("{route} allocations shrank from {smaller} to {larger} on the larger fixture")
-    });
+    let growth = larger.saturating_sub(smaller);
     let limit = added_entries.saturating_mul(allocations_per_added_entry);
     assert!(
         growth <= limit,
         "{route} allocations grew by {growth} for {added_entries} entries; limit is {limit}"
-    );
-
-    // Prove this ceiling has less than one allocation of slack per added entry. A
-    // reintroduced path or name clone must make the measured fixture fail.
-    let restored = growth.saturating_add(added_entries);
-    assert!(
-        restored > limit,
-        "{route} allocation ceiling has at least one allocation per entry of slack: \
-         growth {growth}, restored {restored}, limit {limit}"
     );
 }
 

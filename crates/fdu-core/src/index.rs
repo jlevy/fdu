@@ -4426,7 +4426,9 @@ impl ParentMemo {
 /// Structural effects of accepted operations evaluated before the real mutation.
 #[derive(Default)]
 struct StructuralOverlay {
-    entries: BTreeMap<PathBuf, EntryKind>,
+    // Only point lookup and subtree retention use these keys; no iteration order is
+    // observed. Ordering every path on lookup and insert dominated public preflight.
+    entries: HashMap<PathBuf, EntryKind>,
     removed_roots: Vec<PathBuf>,
 }
 
@@ -7127,6 +7129,54 @@ mod tests {
         }]));
         assert!(index.controls().is_empty());
         assert_eq!(index.is_ignored(Path::new("docs/keep.log")), Some(false));
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn replacing_batch_ancestors_prunes_retained_and_transient_controls() {
+        let mut index = Index::new("/root");
+        index
+            .apply(&Observation::new(vec![
+                upsert("docs", EntryKind::Dir, file_attrs(0, 1)),
+                upsert("docs/.gitignore", EntryKind::File, file_attrs(6, 2)),
+                Op::ControlUpsert { path: "docs/.gitignore".into(), source: b"*.log\n".to_vec() },
+            ]))
+            .expect("retained control");
+
+        let outcome = index
+            .apply(&Observation::new(vec![
+                upsert("scratch", EntryKind::Dir, file_attrs(0, 3)),
+                upsert("scratch/.gitignore", EntryKind::File, file_attrs(6, 4)),
+                Op::ControlUpsert {
+                    path: "scratch/.gitignore".into(),
+                    source: b"*.log\n".to_vec(),
+                },
+                upsert("scratch", EntryKind::File, file_attrs(1, 5)),
+                upsert("scratch", EntryKind::Dir, file_attrs(0, 6)),
+                upsert("scratch/new.log", EntryKind::File, file_attrs(7, 7)),
+                Op::Remove { path: "docs".into() },
+                upsert("docs", EntryKind::Dir, file_attrs(0, 8)),
+                upsert("docs/new.log", EntryKind::File, file_attrs(9, 9)),
+            ]))
+            .expect("mixed control and structural batch");
+
+        assert!(index.controls().is_empty());
+        assert_eq!(index.is_ignored(Path::new("scratch/new.log")), Some(false));
+        assert_eq!(index.is_ignored(Path::new("docs/new.log")), Some(false));
+        assert_eq!(outcome.stats.controls, 1, "only the retained control has a net change");
+        let controls = outcome
+            .commit
+            .as_ref()
+            .expect("one exact commit")
+            .changes
+            .iter()
+            .filter(|change| matches!(change, EffectiveChange::ControlUpdated { .. }))
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            controls.as_slice(),
+            [EffectiveChange::ControlUpdated { path, previous: Some(_), current: None }]
+                if path == Path::new("docs/.gitignore")
+        ));
     }
 
     #[cfg(feature = "gitignore")]

@@ -18,7 +18,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from benchmarks import corpus as corpus_tools
 from benchmarks.realtree import ledger, measure, profile, provenance, tree
@@ -75,6 +75,13 @@ def main(argv: Sequence[str]) -> int:
         "--provenance-manifest",
         type=Path,
         help="verified clean probe/build/host manifest; required for held-out evidence",
+    )
+    run.add_argument(
+        "--artifact-source",
+        action="append",
+        default=[],
+        metavar="LABEL=PATH",
+        help="source checkout for a provenance artifact built from another revision; repeat",
     )
     run.add_argument("--scratch", type=Path, default=DEFAULT_SCRATCH)
     run.add_argument("--output-dir", type=Path, default=DEFAULT_RESULTS)
@@ -188,6 +195,12 @@ def _baseline(arguments: argparse.Namespace) -> int:
 def _measure(arguments: argparse.Namespace) -> int:
     _require_external(arguments.root, arguments.scratch, description="scratch directory")
     _require_external(arguments.root, arguments.output_dir, description="result directory")
+    if arguments.artifact_source and not arguments.provenance_manifest:
+        raise SystemExit("--artifact-source requires --provenance-manifest")
+    try:
+        artifact_sources = provenance.parse_artifact_sources(arguments.artifact_source)
+    except provenance.ProvenanceError as error:
+        raise SystemExit(f"cannot parse artifact sources: {error}") from error
     variants = [_variant(item, kind="fdu-probe") for item in arguments.variant]
     references = [_variant(item, kind="reference") for item in arguments.reference]
     jobs = [
@@ -209,6 +222,7 @@ def _measure(arguments: argparse.Namespace) -> int:
             arguments.provenance_manifest,
             arguments.root,
             variants,
+            artifact_sources,
         )
         if arguments.provenance_manifest
         else None
@@ -298,6 +312,7 @@ def _verified_measurement_provenance(
     manifest_path: Path,
     root: Path,
     variants: Sequence[measure.Variant],
+    artifact_sources: Optional[Mapping[str, Path]] = None,
 ) -> Dict[str, Any]:
     """Match every measured probe hash to a verified provenance artifact."""
     try:
@@ -330,6 +345,7 @@ def _verified_measurement_provenance(
             source_root=provenance.PROJECT_ROOT,
             subject_root=root,
             artifacts=selected,
+            artifact_sources=artifact_sources,
             require_claim_grade=True,
         )
     except (

@@ -15,9 +15,12 @@ The engine has one fact model and two additive serving lifecycles:
   explicit refresh, scheduling hints, optional observation, and joined shutdown.
 
 Opened roots are therefore one part of the engine architecture, not a parallel
-subsystem. Both lifecycles use the same entry facts, reducers, query vocabulary, and
-commit rules. A streaming feature that needs a second inventory, mutation path, or query
-algebra is misplaced.
+subsystem.
+Both lifecycles use the same entry facts, reducer semantics, query vocabulary,
+and public mutation contract.
+Private construction of an unpublished baseline need not materialize a change stream.
+A streaming feature that needs a second authoritative inventory or query algebra is
+misplaced.
 
 This is the durable authority for engine structure and behavior.
 [The design principles](fdu-design-principles.md) own the reasons and non-negotiable
@@ -61,7 +64,10 @@ They do not redefine the architecture.
 
 The filesystem and compatible snapshots supply evidence.
 Producers verify and normalize that evidence.
-The index alone arbitrates it, updates derived state, and creates exact commits.
+The index alone arbitrates observable mutations, updates derived state, and creates
+exact commits.
+Private baseline construction establishes the same facts and derived state
+before publishing an index, without constructing unobservable history.
 Serving lifecycles decide how long to retain that state; query and formatting layers
 only read it.
 
@@ -73,7 +79,7 @@ snapshot ---- load/validate ---+--> verified producers
                                       v
                              Index + reducers
                                       |
-                              exact atomic Commit
+                           baseline or atomic Commit
                                       |
                      +----------------+----------------+
                      |                                 |
@@ -102,8 +108,11 @@ second source of filesystem truth.
 
 `Index` is the authoritative in-memory representation of retained filesystem facts,
 control state, classification, directory completeness, and roll-ups.
-Cold scans, snapshot reconciliation, explicit refresh, and optional observer-backed
-updates all submit evidence to the same mutation boundary.
+Snapshot reconciliation, explicit refresh, and optional observer-backed updates submit
+evidence to the same mutation boundary.
+Detached cold scans may use a private builder that shares admission, classification, and
+reducer rules and returns an ordinary `Index`. Subsequent public mutations use the exact
+reducer without a separate engine or a caller-asserted trust flag.
 
 One-shot execution may retain less state only when the complete request proves that no
 cache, later query, live lifecycle, content analysis, or second view can consume the
@@ -129,10 +138,10 @@ the final public handle alive.
 
 #### One exact commit is the truth consumers observe
 
-Every verified fact change and observable lifecycle transition lands through one atomic
-commit path.
-A `Commit` contains its version, exact effective changes, fdu-native impact,
-resulting state, and bounded work.
+Every observable fact change and lifecycle transition lands through one atomic commit
+path. Constructing an unpublished detached baseline is not an observable transition.
+A `Commit` contains its version, exact effective changes, fdu-native impact, resulting
+state, and bounded work.
 
 Producers submit verified observations or state transitions.
 They do not copy requested operations into a journal, independently advance a clock, or
@@ -188,6 +197,14 @@ Content analysis is opt-in and separately persisted.
 Core does not acquire an async runtime, web stack, transport serialization framework, or
 token-signing dependency for the live API.
 
+Backend replacement is constrained by facts, queries, scope, and the public causal
+contract, not by a particular arena, child container, worker count, or minimum
+allocation count.
+The command line and language adapters consume these contracts; they do
+not choose internal storage or mutation strategies.
+Keep implementation choices private until a second backend demonstrates a boundary that
+needs an interface.
+
 ### Core Values and Ownership
 
 #### Detached index
@@ -199,6 +216,14 @@ state, control state, provenance, directory completeness, and snapshot metadata.
 A detached index may retain bounded exact history for a nonblocking `since` API. That
 history has no live session identity, waiter, worker, or continuation authority and is
 never persisted. A cloned `Index` is a separate value.
+
+The current storage keeps entries inline and directory payloads separate from file
+facts. A detached builder stores each directory’s children as sorted entry identifiers,
+borrowing names from those entries.
+A structural mutation promotes only the affected directory to keyed mutable children; it
+does not rebuild the index or change the public mutation contract.
+These are private representation choices, not requirements on callers or future
+backends.
 
 `IndexHandle` remains a short-write coordination primitive for reconciliation and
 compatibility paths.
@@ -214,8 +239,8 @@ transition. It orders changes with a monotonic process-local version and carries
 - lifecycle, coverage, freshness, and recovery state after the transition;
 - bounded work and issues associated with the transition.
 
-Facts, reducers, state, version, and journal publication move together.
-There is no route that changes one without the others.
+For observable mutations, facts, reducers, state, version, and journal publication move
+together. There is no route that changes one without the others.
 
 #### Persisted snapshot
 
@@ -430,7 +455,11 @@ stores application query names.
 #### Cold scan and progressive discovery
 
 A cold scan establishes a historyless baseline through the normal index mutation rules.
-The detached lifecycle may publish only the complete result to its caller.
+The detached builder consumes parent-first directory groups through the shared scanner
+and admission rules, then finishes roll-ups before returning the index and its coverage.
+It constructs no effective-change paths, impact sets, or journal entries; no consumer
+can observe the intermediate state.
+Partial scans remain explicitly partial rather than becoming a complete baseline.
 The opened lifecycle publishes bounded parent-first commits so a client can render
 useful shallow structure while deeper work continues.
 

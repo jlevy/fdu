@@ -775,6 +775,16 @@ pub fn snapshot() -> Counts {
     total
 }
 
+/// The calling thread's unflushed counts, without consuming them.
+///
+/// Use paired reads to attribute synchronous diagnostic work without also counting
+/// workers that finish during it. A [`flush_thread`] between reads starts a new local
+/// interval; these are not lifetime totals. No other thread's counts are included.
+#[must_use]
+pub fn thread_snapshot() -> Counts {
+    LOCAL.try_with(|local| local.counts.get()).unwrap_or_default()
+}
+
 /// Clear process totals and the calling thread's local counts.
 ///
 /// Call only when other instrumented workers are quiescent: another thread may still
@@ -861,7 +871,7 @@ pub(crate) fn test_serial() -> std::sync::MutexGuard<'static, ()> {
 /// Calling-thread counts for exact unit tests that must ignore unrelated workers.
 #[cfg(test)]
 pub(crate) fn test_thread_snapshot() -> Counts {
-    LOCAL.try_with(|local| local.counts.get()).unwrap_or_default()
+    thread_snapshot()
 }
 
 /// Clear only the calling test thread's counts.
@@ -885,6 +895,24 @@ mod tests {
         // Other ordinary tests can perform instrumented work while this process-wide
         // toggle is on, so only the worker's lower bound is deterministic here.
         assert!(snapshot().dir_opens >= 7);
+        reset();
+        enable(false);
+    }
+
+    #[test]
+    fn thread_snapshot_excludes_workers_without_clearing_local_counts() {
+        let _serial = test_serial();
+        enable(true);
+        reset();
+        bump(|counts| counts.dir_opens = 3);
+
+        std::thread::spawn(|| bump(|counts| counts.dir_opens = 7)).join().expect("worker");
+
+        assert_eq!(thread_snapshot().dir_opens, 3);
+        assert_eq!(thread_snapshot().dir_opens, 3, "reading must not consume counts");
+        assert!(snapshot().dir_opens >= 10);
+        flush_thread();
+        assert_eq!(thread_snapshot().dir_opens, 0);
         reset();
         enable(false);
     }

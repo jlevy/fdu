@@ -323,8 +323,8 @@ def _clean(symbol: str) -> str:
 #: mangled Rust symbols does not tell you whether to attack syscalls or allocation;
 #: "58% kernel, 21% allocator" does.
 #: Order matters: the first pattern that matches wins. Rust symbols arrive in v0
-#: mangled form (``_RNv...3fdu5index...``) as often as demangled, so every layer
-#: matches both spellings.
+#: mangled form (``_RNv...8fdu_core5index...``) as often as demangled, so every layer
+#: matches both spellings and the historical pre-split ``3fdu`` crate name.
 #:
 #: ``probe/oracle`` is listed first on purpose. The probe hashes the whole index to
 #: prove it saw the same tree the oracle saw, and under ``--repeat`` it does that on
@@ -335,15 +335,32 @@ _LAYERS = (
     ("probe/oracle", (r"Sha256", r"sha2", r"summarize_index", r"10perf_probe")),
     (
         "kernel/syscall",
-        (r"^__", r"syscall", r"mach_", r"kevent", r"getdirentries", r"fstatat", r"^_platform_"),
+        (
+            r"^__",
+            r"syscall",
+            r"mach_",
+            r"kevent",
+            r"getdirentries",
+            r"getattrlistbulk",
+            r"fstatat",
+            r"^_platform_",
+        ),
     ),
     ("allocator", (r"malloc", r"free", r"realloc", r"nanov2", r"szone", r"tiny_", r"xzm")),
-    ("fdu::scan", (r"fdu::scan", r"3fdu4scan", r"scan_into_index", r"metadata_for_fingerprint")),
+    (
+        "fdu::scan",
+        (
+            r"fdu(?:_core)?::scan",
+            r"(?:3fdu|8fdu_core)4scan",
+            r"scan_into_index",
+            r"metadata_for_fingerprint",
+        ),
+    ),
     (
         "fdu::index",
         (
-            r"fdu::index",
-            r"3fdu5index",
+            r"fdu(?:_core)?::index",
+            r"(?:3fdu|8fdu_core)5index",
             r"Index<",
             r"apply_baseline",
             r"apply_validated",
@@ -354,10 +371,15 @@ _LAYERS = (
             r"RollUp",
         ),
     ),
-    ("fdu::snapshot", (r"fdu::snapshot", r"3fdu8snapshot")),
+    ("fdu::snapshot", (r"fdu(?:_core)?::snapshot", r"(?:3fdu|8fdu_core)8snapshot")),
     (
         "fdu::content",
-        (r"fdu::content", r"3fdu7content", r"BasicAccumulator", r"analyze_candidate"),
+        (
+            r"fdu(?:_core)?::content",
+            r"(?:3fdu|8fdu_core)7content",
+            r"BasicAccumulator",
+            r"analyze_candidate",
+        ),
     ),
     ("std::fs", (r"std::fs", r"std::sys", r"ReadDir", r"DirEntry", r"2fs", r"3sys")),
     ("collections", (r"BTreeMap", r"HashMap", r"btree", r"hashbrown", r"7btree", r"4hash")),

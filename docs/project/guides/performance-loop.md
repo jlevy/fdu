@@ -588,6 +588,23 @@ dependent decision inconclusive.
 Release comparisons add two more proofs.
 A claim-grade provenance manifest binds a clean source revision, lockfiles, build argv,
 artifact hashes, host, filesystem, and collectors.
+For a cross-revision comparison, supply `--artifact-source control=$CONTROL_SOURCE` to
+provenance capture, provenance verification, and `realtree measure`, using the manifest
+artifact’s label and the checkout that built it.
+Repeat the option for each artifact built outside the primary checkout.
+The primary checkout identifies the harness and any artifact without an override; each
+explicit checkout must remain clean and match its binary’s recorded revision, lockfiles,
+and toolchain throughout verification.
+Checkout paths stay local and are not serialized into the manifest.
+Performance builds enable `gitignore`, including on a tree with no control files, so the
+measured binary retains the shipped control semantics.
+The default-command probe selects `read_controls = false`, as the non-watch CLI does;
+index-returning cold scans and opened discovery keep control discovery enabled.
+Compile-time capability and per-request scope are separate parts of the work contract.
+The watch feature is unnecessary for these jobs: opened discovery does not attach an OS
+watcher. Minimal-library probe tests remain separate.
+Record each artifact’s exact build arguments; a historical revision without the
+capability must be identified as such, not presented as a controls-enabled control.
 An installation attestation then proves the native Cargo or wheel-installed command, its
 effective bash/zsh resolution, its native payload, and a real cache-off scan.
 The competitor adapter must establish exact work before any timing is accepted.
