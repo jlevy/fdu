@@ -28,9 +28,7 @@ the choice is `fdu-33ri`; the blocked half is tracked as `fdu-9hdc`.
 
 - **`parfloor stat`** is the denominator: N threads over a shared directory queue, raw
   `getdents64` plus one `statx` per entry into four integer accumulators. No index, no
-  retained paths, no per-entry allocation, no delta contract. Every tier is read against
-  it at the same thread count, because a one-thread floor is not a lower bound for a
-  parallel walker.
+  retained paths, no per-entry allocation, no delta contract.
 - **`arena_spike`** is the measured ceiling for the representation change: it retains an
   index-shaped result and is what H86 (`fdu-xde5`) is trying to reach. It is a reference
   row, never a denominator.
@@ -39,6 +37,23 @@ the choice is `fdu-33ri`; the blocked half is tracked as `fdu-9hdc`.
 `peerwalk` is deliberately absent. It takes third-party dependencies the shipped crate
 does not have, and its README says it is never built by `make`; the ecosystem anchor is a
 question for the floor *report*, not for a scoreboard that has to run unattended.
+
+## The pool: a fixed N for every instrument
+
+A one-thread floor is not a lower bound for a parallel walker, and a floor at N threads
+is a lower bound only for a walker that also runs N. So every instrument runs a fixed
+pool of the same N workers: the floor and the ceiling take N as an argument, and fdu's
+tiers take `--threads N`.
+
+That makes the scoreboard a reading of fdu *at a fixed pool of N*, not of its shipped
+automatic pool, which starts at a capped share of the cores and grows when calibration
+finds a slow path. The two readings coincide only where the automatic pool would pick N
+and never grow; anywhere else, leaving fdu's pool to its policy would divide one pool
+size by another.
+
+N defaults to the CPUs this process may run on -- its affinity mask, not the host's CPU
+count, which a pinned container does not shrink -- and may not exceed `MAX_WORKERS`,
+fdu's own clamp, above which fdu would quietly run fewer workers than the floor.
 
 ## What is timed
 
@@ -93,6 +108,12 @@ QUIET_LOAD_PER_CPU = 0.25
 
 #: max/min past which a median is summarizing more than one population. See `_summarize`.
 SPREAD_SUSPECT = 2.0
+
+#: The largest pool every instrument runs exactly. fdu clamps `--threads` to
+#: `MAX_SCAN_THREADS` (`crates/fdu-core/src/scan.rs`) without saying so, parfloor clamps
+#: at 64, and arena_spike does not clamp -- so fdu's is the clamp that binds, and above
+#: it the floor would run more workers than the tiers divided by it.
+MAX_WORKERS = 32
 
 
 class FloorError(RuntimeError):
@@ -182,7 +203,7 @@ INSTRUMENTS: Dict[str, Instrument] = {
         id="aggregate",
         role="tier",
         description="fdu aggregate tier: five exact tallies, no retained index.",
-        argv=("{probe}", "summary", "--root", "{root}"),
+        argv=("{probe}", "summary", "--root", "{root}", "--threads", "{workers}"),
         tally_map={"dirs": "dirs", "files": "files", "apparent_bytes": "apparent_bytes",
                    "allocated_bytes": "allocated_bytes"},
         elapsed_key="component_ns",
@@ -192,7 +213,7 @@ INSTRUMENTS: Dict[str, Instrument] = {
         id="index",
         role="tier",
         description="fdu index tier: full walk with metadata into a complete index.",
-        argv=("{probe}", "scan-index", "--root", "{root}"),
+        argv=("{probe}", "scan-index", "--root", "{root}", "--threads", "{workers}"),
         tally_map={"dirs": "dirs", "files": "files", "apparent_bytes": "apparent_bytes",
                    "allocated_bytes": "allocated_bytes"},
         tally_offsets={"dirs": -1},
@@ -216,6 +237,24 @@ DEFAULT_INSTRUMENTS = ("parfloor-stat", "parfloor-enum", "arena-spike", "aggrega
 # --------------------------------------------------------------------------------------
 # Building the instruments
 # --------------------------------------------------------------------------------------
+
+
+def default_workers() -> int:
+    """The CPUs this process may run on, capped at the pool every instrument runs exactly.
+
+    The affinity mask rather than `os.cpu_count()`, which counts the host's CPUs even for
+    a process pinned to fewer. `os.process_cpu_count()` reads that mask on Python 3.13
+    and later; `sched_getaffinity` reads it before that, where the platform has one.
+    """
+    process_cpu_count = getattr(os, "process_cpu_count", None)
+    count = process_cpu_count() if process_cpu_count is not None else None
+    if count is None:
+        affinity = getattr(os, "sched_getaffinity", None)
+        if affinity is not None:
+            count = len(affinity(0))
+    if count is None:
+        count = os.cpu_count()
+    return max(1, min(count or 1, MAX_WORKERS))
 
 
 def require_linux() -> None:
@@ -600,8 +639,8 @@ def render(document: Mapping[str, Any]) -> str:
     lines.append("# The floor scoreboard")
     lines.append("")
     lines.append(f"Host: {document['host']['system']} {document['host']['machine']}, "
-                 f"{document['host']['logical_cpu_count']} logical CPUs, "
-                 f"{document['workers']} workers.")
+                 f"{document['host']['logical_cpu_count']} logical CPUs. "
+                 f"Every instrument ran a fixed pool of {document['workers']} workers.")
     lines.append(f"Recorded {document['recorded_at']} from commit {document['commit']}.")
     lines.append("")
     lines.append(f"Regime: **{document['host_regime']}**. "
@@ -706,7 +745,11 @@ def main(argv: Sequence[str]) -> int:
     )
     parser.add_argument("--subject", action="append", default=[], metavar="LABEL=PATH",
                         help="a tree to score; repeat. Deciding subjects are dense and >=50k entries.")
-    parser.add_argument("--workers", type=int, default=os.cpu_count() or 4)
+    parser.add_argument(
+        "--workers", type=int, default=None,
+        help=("the fixed pool every instrument runs; default: the CPUs this process may "
+              f"run on, at most {MAX_WORKERS}"),
+    )
     parser.add_argument("--trials", type=int, default=DEFAULT_TRIALS)
     parser.add_argument("--warmups", type=int, default=DEFAULT_WARMUPS)
     parser.add_argument("--build-dir", type=Path,
@@ -715,6 +758,16 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument("--output", type=Path, help="write the scoreboard JSON here")
     parser.add_argument("--markdown", type=Path, help="write the rendered table here")
     arguments = parser.parse_args(list(argv))
+
+    workers = arguments.workers if arguments.workers is not None else default_workers()
+    if not 1 <= workers <= MAX_WORKERS:
+        print(
+            f"--workers must be between 1 and {MAX_WORKERS}: fdu clamps its pool at "
+            f"{MAX_WORKERS} without saying so, so a larger pool would leave the floor "
+            "running more workers than the tiers divided by it",
+            file=sys.stderr,
+        )
+        return 2
 
     if not arguments.subject:
         print("at least one --subject LABEL=PATH is required", file=sys.stderr)
@@ -734,7 +787,7 @@ def main(argv: Sequence[str]) -> int:
 
     try:
         document = run(
-            subjects=subjects, workers=arguments.workers, trials=arguments.trials,
+            subjects=subjects, workers=workers, trials=arguments.trials,
             warmups=arguments.warmups, build_dir=arguments.build_dir,
             host_regime=arguments.host_regime,
         )

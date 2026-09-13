@@ -6,11 +6,21 @@ something other than what its column heading says.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
+import re
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from benchmarks.realtree import floor
+
+BINARIES = {
+    "parfloor": Path("/b/parfloor"),
+    "arena_spike": Path("/b/arena_spike"),
+    "probe": Path("/b/perf_probe"),
+}
 
 
 class ReadsInstrumentOutput(unittest.TestCase):
@@ -62,6 +72,67 @@ class ReconcilesDefinitionalDifferences(unittest.TestCase):
 
     def test_the_reconciliation_says_why(self):
         self.assertIn("root", floor.INSTRUMENTS["index"].tally_notes)
+
+
+class EveryInstrumentRunsTheSamePool(unittest.TestCase):
+    """A floor is a lower bound for a parallel walker only at the pool size it runs.
+
+    Review FLOOR-1: the probe tiers were given no `--threads`, so fdu ran its automatic
+    pool while the floor ran one worker per CPU, and every ratio was biased wherever
+    the two differ.
+    """
+
+    def test_every_instrument_is_handed_the_worker_count(self):
+        for instrument in floor.INSTRUMENTS.values():
+            with self.subTest(instrument=instrument.id):
+                argv = instrument.command(binaries=BINARIES, root=Path("/r"), workers=7)
+                self.assertIn("7", argv)
+
+    def test_the_probe_tiers_pin_fdus_pool_rather_than_its_automatic_policy(self):
+        for name in ("aggregate", "index"):
+            with self.subTest(instrument=name):
+                argv = floor.INSTRUMENTS[name].command(binaries=BINARIES, root=Path("/r"), workers=7)
+                self.assertEqual(argv[argv.index("--threads") + 1], "7")
+
+    def test_the_default_counts_the_cpus_this_process_may_run_on(self):
+        with mock.patch.object(floor.os, "process_cpu_count", create=True, return_value=3), \
+                mock.patch.object(floor.os, "cpu_count", return_value=16):
+            self.assertEqual(floor.default_workers(), 3)
+
+    def test_without_process_cpu_count_the_affinity_mask_decides(self):
+        """Python before 3.13, and the case the review names: a container whose
+        affinity mask is narrower than the host's CPU count."""
+        with mock.patch.object(floor.os, "process_cpu_count", None, create=True), \
+                mock.patch.object(floor.os, "sched_getaffinity", create=True, return_value={0, 1}), \
+                mock.patch.object(floor.os, "cpu_count", return_value=16):
+            self.assertEqual(floor.default_workers(), 2)
+
+    def test_the_default_never_exceeds_what_fdu_will_actually_run(self):
+        with mock.patch.object(floor.os, "process_cpu_count", create=True, return_value=96):
+            self.assertEqual(floor.default_workers(), floor.MAX_WORKERS)
+
+    def test_a_pool_fdu_would_silently_clamp_is_refused(self):
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), \
+                mock.patch.object(floor, "run", side_effect=AssertionError("must refuse first")):
+            status = floor.main(["--subject", "t=/", "--workers", str(floor.MAX_WORKERS + 1)])
+        self.assertEqual(status, 2)
+        self.assertIn(str(floor.MAX_WORKERS), stderr.getvalue())
+
+    def test_the_cap_is_fdus_own_clamp(self):
+        """Read from the engine, so the two cannot drift apart unnoticed."""
+        scan = (floor.PROJECT_ROOT / "crates" / "fdu-core" / "src" / "scan.rs").read_text()
+        match = re.search(r"const MAX_SCAN_THREADS: usize = (\d+);", scan)
+        self.assertIsNotNone(match)
+        self.assertEqual(int(match.group(1)), floor.MAX_WORKERS)
+
+    def test_the_table_names_the_regime_it_measured(self):
+        document = {
+            "host": {"system": "Linux", "machine": "x86_64", "logical_cpu_count": 8},
+            "workers": 4, "recorded_at": "t", "commit": "c", "host_regime": "quiet",
+            "trials": 30, "warmups": 3, "subjects": [],
+        }
+        self.assertIn("fixed pool of 4 workers", floor.render(document))
 
 
 class RefusesRatherThanSubstituting(unittest.TestCase):
