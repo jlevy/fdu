@@ -385,7 +385,11 @@ and commit digests, after removing only the implementation-specific counters.
 
 The counter-disabled call trees put ancestry validation at 1,993 of 2,391 inclusive
 `Index::apply` samples in the engine-unchanged `1a39be9` profile, versus 345 of 1,192 in
-`ad52469`: about 83% versus 29%. These are attribution samples, not elapsed-time ratios.
+`ad52469`: about 83% versus 29%. Both counts sum every call site of each function.
+These are attribution samples, not elapsed-time ratios.
+Neither call tree recorded its profiling binary’s hash, and those binaries were not
+retained, so the revision attributions rest on the session record rather than the
+artifact. The identity note beside each tree states what is and is not known.
 The post-change profile’s largest whole-process leaf is now `summarize_commits`, a probe
 diagnostic outside the component interval.
 It must not be charged to the engine.

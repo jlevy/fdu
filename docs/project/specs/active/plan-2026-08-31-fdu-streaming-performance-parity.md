@@ -1191,11 +1191,13 @@ symbols fell into the “other” layer.
 samples or timing metrics.
 
 Public large-batch preflight remains a measured cost.
-A counter-disabled call-tree capture at `1a39be9` places 1,936 of 2,358 inclusive
+A counter-disabled call-tree capture at `1a39be9` places 1,993 of 2,391 inclusive
 `Index::apply` samples in ancestry validation, primarily in ordered-map lookups and
 inserts that repeatedly compare path components.
-`fdu-0q6w` tests replacing only the private temporary overlay with a standard hash map;
-the overlay has no ordered iteration contract.
+Both counts sum every call site, the reading
+[exp-102](../../experiments/exp-102-point-lookup-for-public-mutation-preflight.md) uses
+for the same tree. `fdu-0q6w` tests replacing only the private temporary overlay with a
+standard hash map; the overlay has no ordered iteration contract.
 The bead fixes the public-mutation comparison at twelve interleaved pairs and three
 warmups, with the usual 3% wall/component improvement and paired-interval gates, exact
 state and commit oracles, a 1.05 resource ceiling, and one-shot/opened noninferiority.
