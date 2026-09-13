@@ -2295,13 +2295,14 @@ fn record_walk_entry(
     true
 }
 
-/// Read one fixed control source without allowing a raced or hostile file to allocate
-/// beyond the index-wide control budget.
 /// Observe one control file if the scan's policy asks for control state at all.
 ///
-/// Every scan-side observation goes through here so the policy cannot be forgotten at
-/// one walk site; watching bypasses it via [`read_control_op_unconditional`] because a
-/// watch session always maintains control state.
+/// Every control observation goes through here -- each walk and reconcile site, and the
+/// watch layer's verification -- so the policy cannot be forgotten at one of them. A
+/// watch must honor it like a scan does: its scope has to equal the index's, the scope
+/// carries this bit, and a verifier that read control files regardless would grow a
+/// partial rule set, from whichever sources events touched, under a scope that says
+/// there is none.
 pub(crate) fn read_control_op(
     config: &ScanConfig,
     root: &Path,
@@ -2316,21 +2317,18 @@ pub(crate) fn read_control_op(
 
 #[cfg(not(feature = "gitignore"))]
 #[allow(clippy::unnecessary_wraps)] // The feature-enabled implementation performs I/O.
-pub(crate) fn read_control_op_unconditional(
-    root: &Path,
-    path: &Path,
-    kind: EntryKind,
-) -> Result<Option<Op>> {
+fn read_control_op_unconditional(root: &Path, path: &Path, kind: EntryKind) -> Result<Option<Op>> {
     let _ = (root, path, kind);
     Ok(None)
 }
 
+/// Read one fixed control source without allowing a raced or hostile file to allocate
+/// beyond the index-wide control budget.
+///
+/// Private to this module, so no caller elsewhere can step around the policy gate in
+/// `read_control_op`.
 #[cfg(feature = "gitignore")]
-pub(crate) fn read_control_op_unconditional(
-    root: &Path,
-    path: &Path,
-    kind: EntryKind,
-) -> Result<Option<Op>> {
+fn read_control_op_unconditional(root: &Path, path: &Path, kind: EntryKind) -> Result<Option<Op>> {
     if !crate::control::is_control_file(path) {
         return Ok(None);
     }
