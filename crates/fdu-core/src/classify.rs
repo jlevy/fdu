@@ -285,7 +285,7 @@ impl NameClassification {
         self.logical_extension.as_deref()
     }
 
-    /// Registry-owned canonical extension.
+    /// The declared extension that matched, or `None` when none did.
     pub fn canonical_extension(&self) -> Option<&str> {
         self.canonical_extension.as_deref()
     }
@@ -549,28 +549,34 @@ impl TypeRegistry {
         self.by_extension.len()
     }
 
-    /// Registry-normalized extension used for classification and aggregate buckets.
+    /// The declared extension a name matched, per File Rollup Format: `None` when no
+    /// extension declaration wins, including when an exact basename wins first.
     ///
     /// A file name owns its [`logical_ext`], which may retain two trailing components.
-    /// The registry owns the canonical level: a logical extension claimed whole stays
-    /// whole, while an unclaimed compound tail falls back to its final component. Thus
-    /// `archive.tar.gz` remains `.tar.gz`, while `release.v2.zip` becomes `.zip` when the
-    /// registry claims `zip` but not `v2.zip`.
+    /// The registry owns the canonical level: a logical extension declared whole stays
+    /// whole, and otherwise its longest declared suffix matches. Thus `archive.tar.gz`
+    /// remains `.tar.gz`, while `release.v2.zip` becomes `.zip` when the registry declares
+    /// `zip` but not `v2.zip`. An undeclared extension has no canonical form:
+    /// `release.v2.widget` answers `None` here exactly as its
+    /// [`NameClassification::canonical_extension`] does, so a row and a registry lookup
+    /// cannot disagree about the same name.
     pub fn canonical_ext(&self, name: &OsStr) -> Option<String> {
-        let logical = logical_ext(name)?;
-        let key = logical.strip_prefix('.').expect("a logical extension starts with a dot");
-        if self.by_extension.contains_key(key) {
-            return Some(logical);
+        if name.to_str().and_then(|name| self.by_filename(name)).is_some() {
+            return None;
         }
-        match key.rsplit_once('.') {
-            Some((_, final_component)) => Some(format!(".{final_component}")),
-            None => Some(logical),
-        }
+        self.extension_match(name).map(|(extension, _)| extension)
     }
 
-    /// Extension roll-up bucket under this registry.
-    pub fn ext_bucket(&self, name: &OsStr) -> String {
-        self.canonical_ext(name).unwrap_or_else(|| NO_EXTENSION.to_string())
+    /// The declared extension a name's logical extension matches, and its rule: the whole
+    /// logical extension first, then its final component.
+    fn extension_match(&self, name: &OsStr) -> Option<(String, &TypeRule)> {
+        let logical = logical_ext(name)?;
+        let key = logical.strip_prefix('.').expect("a logical extension starts with a dot");
+        if let Some(rule) = self.by_extension(key) {
+            return Some((logical, rule));
+        }
+        let (_, suffix) = key.rsplit_once('.')?;
+        self.by_extension(suffix).map(|rule| (format!(".{suffix}"), rule))
     }
 
     /// Every stable type identifier it can produce, in manifest order.
@@ -582,14 +588,7 @@ impl TypeRegistry {
     pub fn classify_name(&self, name: &OsStr) -> NameClassification {
         let logical_extension = logical_ext(name);
         let filename_rule = name.to_str().and_then(|name| self.by_filename(name));
-        let extension_match = filename_rule.is_none().then(|| {
-            let logical = logical_extension.as_deref()?;
-            let key = logical.strip_prefix('.').expect("a logical extension starts with a dot");
-            self.by_extension(key).map(|rule| (logical.to_string(), rule)).or_else(|| {
-                let (_, suffix) = key.rsplit_once('.')?;
-                self.by_extension(suffix).map(|rule| (format!(".{suffix}"), rule))
-            })
-        });
+        let extension_match = filename_rule.is_none().then(|| self.extension_match(name));
         let (canonical_extension, rule) = match (filename_rule, extension_match.flatten()) {
             (Some(rule), _) => (None, Some(rule)),
             (None, Some((extension, rule))) => (Some(extension), Some(rule)),
@@ -735,36 +734,37 @@ pub fn classify_with(
         );
     }
 
-    let extension = registry.canonical_ext(name);
-    if let Some(extension) = extension.as_deref() {
+    if let Some((extension, rule)) = registry.extension_match(name) {
         let key = extension.strip_prefix('.').expect("derived extensions start with a dot");
-        if let Some(rule) = registry.by_extension(key) {
-            let source = if key.contains('.') {
-                DetectionSource::CompoundExtension
-            } else {
-                DetectionSource::Extension
-            };
-            let classification = if key == "h" {
-                prefix
-                    .and_then(file_type_detection::resolve_c_header)
-                    .and_then(|id| registry.by_id(id))
-                    .map_or_else(
-                        || classified(rule, source, DetectionConfidence::Certain),
-                        |cpp| {
-                            classified(
-                                cpp,
-                                DetectionSource::AmbiguousContent,
-                                DetectionConfidence::High,
-                            )
-                        },
-                    )
-            } else {
-                classified(rule, source, DetectionConfidence::Certain)
-            };
-            return with_flags(path, prefix, classification);
-        }
+        let source = if key.contains('.') {
+            DetectionSource::CompoundExtension
+        } else {
+            DetectionSource::Extension
+        };
+        let classification = if key == "h" {
+            prefix
+                .and_then(file_type_detection::resolve_c_header)
+                .and_then(|id| registry.by_id(id))
+                .map_or_else(
+                    || classified(rule, source, DetectionConfidence::Certain),
+                    |cpp| {
+                        classified(
+                            cpp,
+                            DetectionSource::AmbiguousContent,
+                            DetectionConfidence::High,
+                        )
+                    },
+                )
+        } else {
+            classified(rule, source, DetectionConfidence::Certain)
+        };
+        return with_flags(path, prefix, classification);
     }
 
+    // An unrecognized type keeps the name's raw extension in its label, as it always has:
+    // `unknown:.c++` and `unknown:.tar.lz4` are the piles the types view and the content
+    // cache already know. Only declared matches follow the File Rollup eligibility rule.
+    let extension = derive_ext(name);
     let unknown = || Classification {
         file_type: FileTypeId(
             extension
@@ -860,8 +860,9 @@ fn with_flags(
 /// twelve characters. A leading dot belongs to the basename, and an ineligible final
 /// component means the name has no logical extension.
 ///
-/// This is the value a portable entry row reports. Classification and aggregate buckets
-/// use [`TypeRegistry::canonical_ext`] instead.
+/// This is the value a portable entry row reports, and the one declared extensions are
+/// matched against ([`TypeRegistry::canonical_ext`]). The extension view's aggregate
+/// buckets and an unrecognized type's label use the raw [`derive_ext`] instead.
 ///
 /// ```
 /// use std::ffi::OsStr;
@@ -875,16 +876,42 @@ pub fn logical_ext(name: &OsStr) -> Option<String> {
     logical_ext_native(name)
 }
 
-/// Return the compiled registry's canonical extension.
+/// Extract the compound-tail extension from a file name, lowercased and including the
+/// leading dot.
 ///
-/// This preserves the original public helper's answer while making the distinction
-/// explicit for new callers. Registry-aware code should call
-/// [`TypeRegistry::canonical_ext`] directly.
+/// "Compound tail" means `archive.tar.gz` yields `.tar.gz` rather than `.gz`, because
+/// the pair is what a human means by the file's type. Only `.tar` is folded this way;
+/// generalizing to an arbitrary set of compound stems belongs in the rule dialect, not
+/// in a hand-maintained list here.
+///
+/// Returns `None` for names with no usable extension, including dotfiles like
+/// `.gitignore` — a leading dot marks a hidden file, it does not introduce an extension.
+///
+/// This is the raw extension, and it is deliberately not the File Rollup one: any final
+/// component counts, whatever its bytes or length, so `file.c++` is `.c++` here while
+/// [`logical_ext`] and [`TypeRegistry::canonical_ext`] give it none. It names the extension
+/// view's piles and the label of an unrecognized type, and it keeps the answer it had
+/// before registries existed for the detached and command-line callers that depend on it.
+///
+/// ```
+/// use std::ffi::OsStr;
+/// use fdu_core::classify::derive_ext;
+///
+/// assert_eq!(derive_ext(OsStr::new("archive.tar.gz")).as_deref(), Some(".tar.gz"));
+/// assert_eq!(derive_ext(OsStr::new("notes.MD")).as_deref(), Some(".md"));
+/// assert_eq!(derive_ext(OsStr::new("file.c++")).as_deref(), Some(".c++"));
+/// assert_eq!(derive_ext(OsStr::new(".gitignore")), None);
+/// assert_eq!(derive_ext(OsStr::new("README")), None);
+/// ```
 pub fn derive_ext(name: &OsStr) -> Option<String> {
-    TypeRegistry::compiled().canonical_ext(name)
+    derive_ext_native(name)
 }
 
 /// Label of the extension bucket a file belongs to, including the one for no extension.
+///
+/// This is the raw-extension pile every index tallies, whatever registry it classifies
+/// with: canonical extensions are a classification concept, derived per row at the read
+/// boundary from [`TypeRegistry::canonical_ext`] rather than retained as a second tally.
 ///
 /// [`derive_ext`] answers "what is this name's extension", and `None` is the right answer
 /// for `Makefile`. A roll-up asks a different question — "which pile does this file's
@@ -905,7 +932,7 @@ pub fn derive_ext(name: &OsStr) -> Option<String> {
 /// assert_eq!(ext_bucket(OsStr::new(".gitignore")), NO_EXTENSION);
 /// ```
 pub fn ext_bucket(name: &OsStr) -> String {
-    TypeRegistry::compiled().ext_bucket(name)
+    derive_ext(name).unwrap_or_else(|| NO_EXTENSION.to_string())
 }
 
 /// Extension-view label for files whose name carries no extension.
@@ -913,6 +940,89 @@ pub fn ext_bucket(name: &OsStr) -> String {
 /// Parenthesised so it reads as a category rather than as a filename, and dot-free so it
 /// cannot be mistaken for — or collide with — an extension [`derive_ext`] produced.
 pub const NO_EXTENSION: &str = "(none)";
+
+#[cfg(unix)]
+fn derive_ext_native(name: &OsStr) -> Option<String> {
+    use std::os::unix::ffi::OsStrExt;
+
+    derive_ext_units(name.as_bytes(), b'.', |unit| unit.to_ascii_lowercase())
+        .and_then(|units| String::from_utf8(units).ok())
+}
+
+#[cfg(windows)]
+fn derive_ext_native(name: &OsStr) -> Option<String> {
+    use std::os::windows::ffi::OsStrExt;
+
+    let units: Vec<u16> = name.encode_wide().collect();
+    derive_ext_units(&units, u16::from(b'.'), |unit| {
+        // Lowercase the units that are single bytes and leave the rest alone. Asking
+        // `try_from` whether it fits says that directly, where a comparison plus an
+        // `expect` made the caller argue the bound was already checked.
+        match u8::try_from(unit) {
+            Ok(byte) => u16::from(byte.to_ascii_lowercase()),
+            Err(_) => unit,
+        }
+    })
+    .and_then(|extension| String::from_utf16(&extension).ok())
+}
+
+#[cfg(not(any(unix, windows)))]
+fn derive_ext_native(name: &OsStr) -> Option<String> {
+    derive_ext_str(name.to_str()?)
+}
+
+fn derive_ext_units<T: Copy + Eq + From<u8>>(
+    name: &[T],
+    dot: T,
+    lowercase: impl Fn(T) -> T,
+) -> Option<Vec<T>> {
+    let searchable = if name.first() == Some(&dot) { &name[1..] } else { name };
+    let dot_index = searchable.iter().rposition(|unit| *unit == dot)?;
+    let (stem, last) = searchable.split_at(dot_index);
+    if last.len() <= 1 {
+        return None;
+    }
+
+    let mut extension = Vec::new();
+    if let Some(inner_dot) = stem.iter().rposition(|unit| *unit == dot) {
+        let inner = &stem[inner_dot..];
+        let tar = [
+            dot,
+            lowercase_ascii_unit(b't', &lowercase),
+            lowercase_ascii_unit(b'a', &lowercase),
+            lowercase_ascii_unit(b'r', &lowercase),
+        ];
+        if inner.len() == tar.len() && inner.iter().copied().map(&lowercase).eq(tar) {
+            extension.extend(inner.iter().copied().map(&lowercase));
+        }
+    }
+    extension.extend(last.iter().copied().map(lowercase));
+    Some(extension)
+}
+
+fn lowercase_ascii_unit<T: Copy + From<u8>>(byte: u8, lowercase: &impl Fn(T) -> T) -> T {
+    lowercase(T::from(byte))
+}
+
+#[cfg(not(any(unix, windows)))]
+fn derive_ext_str(name: &str) -> Option<String> {
+    // Skip a leading dot so dotfiles are not read as all-extension.
+    let searchable = name.strip_prefix('.').unwrap_or(name);
+    let dot = searchable.rfind('.')?;
+    let (stem, last) = searchable.split_at(dot);
+    if last.len() <= 1 {
+        // A trailing dot with nothing after it is not an extension.
+        return None;
+    }
+
+    if let Some(inner_dot) = stem.rfind('.') {
+        if stem[inner_dot..].eq_ignore_ascii_case(".tar") {
+            return Some(format!(".tar{}", last.to_ascii_lowercase()));
+        }
+    }
+
+    Some(last.to_ascii_lowercase())
+}
 
 #[cfg(unix)]
 fn logical_ext_native(name: &OsStr) -> Option<String> {
@@ -986,9 +1096,9 @@ fn logical_ext_units<T: Copy + Eq + From<u8>>(
 mod tests {
     use super::type_rule_manifest::{MANIFEST_FAMILIES, ManifestRule, parse_manifest};
     use super::{
-        ContentFamily, DetectionConfidence, DetectionSource, TypeRegistry, classify_path,
-        classify_path_with_prefix, classify_with, derive_ext, family_from_name, logical_ext,
-        type_rule_fingerprint,
+        ContentFamily, DetectionConfidence, DetectionSource, NO_EXTENSION, TypeRegistry,
+        classify_path, classify_path_with_prefix, classify_with, derive_ext, ext_bucket,
+        family_from_name, logical_ext, type_rule_fingerprint,
     };
     use super::{GENERATED_RULES, human_language_name};
     use std::ffi::OsStr;
@@ -1213,6 +1323,11 @@ priority = 100
         let unknown = registry.classify_name(OsStr::new("release.v2.widget"));
         assert_eq!(unknown.logical_extension(), Some(".v2.widget"));
         assert_eq!(unknown.canonical_extension(), None);
+        // One canonical answer: the registry lookup agrees with the row for an undeclared
+        // compound, a declared one, and a basename match.
+        assert_eq!(registry.canonical_ext(OsStr::new("release.v2.widget")), None);
+        assert_eq!(registry.canonical_ext(OsStr::new("bundle.js.map")).as_deref(), Some(".js.map"));
+        assert_eq!(registry.canonical_ext(OsStr::new("Makefile")), None);
         assert_eq!(unknown.kind_id(), None);
         assert_eq!(unknown.family_id(), None);
         assert_eq!(unknown.group_id(), Some("other"));
@@ -1281,25 +1396,44 @@ priority = 100
         assert_eq!(derive_ext(OsStr::new("Photo.JPEG")).as_deref(), Some(".jpeg"));
     }
 
+    /// Three extensions answer three questions, and these names are where they part.
+    ///
+    /// `logical_ext` is the File Rollup observation, `canonical_ext` the declared extension
+    /// that matched, and `derive_ext` the raw extension the extension view and unknown type
+    /// labels have always used. The eligibility rule once leaked into `derive_ext`, moving
+    /// `file.c++` and `résumé.tëxt` into `(none)` while its documentation said nothing had
+    /// changed; and a registry lookup once gave an undeclared extension a canonical form
+    /// that the same name's row did not have.
     #[test]
-    fn logical_and_canonical_extensions_are_distinct_without_changing_legacy_answers() {
+    fn logical_canonical_and_raw_extensions_answer_different_questions() {
         let rules = TypeRegistry::compiled();
-        for (name, logical, canonical) in [
-            ("archive.tar.gz", Some(".tar.gz"), Some(".tar.gz")),
-            ("release.v2.zip", Some(".v2.zip"), Some(".zip")),
-            ("bundle.umd.min.js", Some(".min.js"), Some(".js")),
-            (".eslintrc.json", Some(".json"), Some(".json")),
-            (".gitignore", None, None),
-            ("trailing.", None, None),
+        for (name, logical, canonical, raw) in [
+            ("archive.tar.gz", Some(".tar.gz"), Some(".tar.gz"), Some(".tar.gz")),
+            ("release.v2.zip", Some(".v2.zip"), Some(".zip"), Some(".zip")),
+            ("bundle.umd.min.js", Some(".min.js"), Some(".js"), Some(".js")),
+            (".eslintrc.json", Some(".json"), Some(".json"), Some(".json")),
+            (".gitignore", None, None, None),
+            ("trailing.", None, None, None),
+            // Undeclared compound: no canonical form; the raw extension is its final part.
+            ("release.v2.widget", Some(".v2.widget"), None, Some(".widget")),
+            // Ineligible for File Rollup, yet each is still a raw extension of its own.
+            ("file.c++", None, None, Some(".c++")),
+            ("notes.tar.gz~", None, None, Some(".tar.gz~")),
+            ("a.b-c", None, None, Some(".b-c")),
+            ("x.py_", None, None, Some(".py_")),
+            ("x.abcdefghijklm", None, None, Some(".abcdefghijklm")),
+            ("résumé.tëxt", None, None, Some(".tëxt")),
         ] {
             let name = OsStr::new(name);
             assert_eq!(logical_ext(name).as_deref(), logical, "logical {name:?}");
             assert_eq!(rules.canonical_ext(name).as_deref(), canonical, "canonical {name:?}");
             assert_eq!(
-                derive_ext(name).as_deref(),
+                rules.classify_name(name).canonical_extension(),
                 canonical,
-                "the existing public helper keeps its compiled-registry answer for {name:?}"
+                "a row and a registry lookup agree about {name:?}"
             );
+            assert_eq!(derive_ext(name).as_deref(), raw, "raw {name:?}");
+            assert_eq!(ext_bucket(name), raw.unwrap_or(NO_EXTENSION), "bucket {name:?}");
         }
     }
 
@@ -1344,6 +1478,8 @@ priority = 100
         let unknown = classify_path(Path::new("sample.widget"));
         assert_eq!(unknown.file_type.as_str(), "unknown:.widget");
         assert_eq!(unknown.family, ContentFamily::Unknown);
+        // An unrecognized type keeps its raw extension, even one File Rollup cannot name.
+        assert_eq!(classify_path(Path::new("file.c++")).file_type.as_str(), "unknown:.c++");
         assert_ne!(type_rule_fingerprint(), 0);
     }
 

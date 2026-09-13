@@ -3320,7 +3320,7 @@ impl Index {
         }
 
         let ext_id =
-            (kind == EntryKind::File).then(|| self.intern_ext(&self.types.ext_bucket(name)));
+            (kind == EntryKind::File).then(|| self.intern_ext(&crate::classify::ext_bucket(name)));
         let ignored =
             self.entry(parent).ignored || self.controls.matcher_for(path).is_ignored(kind.is_dir());
         let id = self.alloc(Entry {
@@ -3378,7 +3378,7 @@ impl Index {
         }
         let source = self.applying_source;
         let ext_id =
-            (kind == EntryKind::File).then(|| self.intern_ext(&self.types.ext_bucket(&name)));
+            (kind == EntryKind::File).then(|| self.intern_ext(&crate::classify::ext_bucket(&name)));
         let id = self.alloc(Entry {
             parent: Some(parent),
             name: name.clone(),
