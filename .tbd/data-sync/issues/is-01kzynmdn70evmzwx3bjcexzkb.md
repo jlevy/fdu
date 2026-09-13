@@ -3,9 +3,9 @@ type: is
 id: is-01kzynmdn70evmzwx3bjcexzkb
 title: "Clarify and validate PR #15 content performance layers"
 kind: task
-status: in_progress
+status: open
 priority: 1
-version: 29
+version: 31
 labels: []
 dependencies: []
 child_order_hints:
@@ -29,9 +29,11 @@ child_order_hints:
   - is-01kzyzpjp5rz94mz5ma25t0tdz
   - is-01kzz1krveqzt0ap63a4wjk961
 created_at: 2026-08-13T22:59:35.718Z
-updated_at: 2026-08-23T05:42:48.583Z
+updated_at: 2026-09-13T16:50:53.914Z
 ---
 
 ## Notes
 
 Flagged stale at the 2026-08-23 handoff: left in_progress by a session that ended without closing it, last touched 8-13 days earlier. Status not changed because this session could not verify whether the work landed. Triage before trusting the in_progress marker -- either close it or restart it deliberately.
+
+2026-09-13: status moved in_progress -> open during a PR-stack organization pass, because no session has touched this since the flag above and in_progress was asserting ownership nobody holds. Correction to an earlier version of this note written minutes before: it attributed the claim to the 2026-08-23 overnight loop, which was wrong -- the claim predates that run, which only flagged it. STILL UNVERIFIED: whether the work actually landed. If it did, close this rather than restarting it.
