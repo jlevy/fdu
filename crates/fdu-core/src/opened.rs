@@ -3240,7 +3240,7 @@ mod tests {
             .read(crate::ReadRequest {
                 projections: vec![crate::ReadProjection::Continue {
                     continuation: first_page.next.expect("continuation"),
-                    page: crate::PageRequest { limit: 1, max_work: 1 },
+                    page: crate::PageRequest { limit: 1, max_work: 2 },
                 }],
                 expected: Some(first.version),
             })
@@ -3250,7 +3250,10 @@ mod tests {
         };
         assert_eq!(second_page.rows[0].portable_path.as_str(), "c.rs");
         assert!(second_page.next.is_none());
-        assert_eq!(second.work.rows_visited, 1);
+        // The full first page stopped at `b.txt`, the first entry it had not examined, so
+        // the resumed page is the one that pays to re-evaluate and skip it under the
+        // retained `*.rs` selection before reaching `c.rs`.
+        assert_eq!(second.work.rows_visited, 2);
         opened.close().expect("close");
     }
 
