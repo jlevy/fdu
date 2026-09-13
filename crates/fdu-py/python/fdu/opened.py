@@ -1182,6 +1182,15 @@ def _opened_call(function: Callable[..., Any], /, *args: object, **kwargs: objec
         raise FilesystemError(error.errno, error.strerror, error.filename) from error
     except ValueError as error:
         raise InvalidArgumentError(str(error)) from error
+    except OverflowError as error:
+        # Raised while converting an integer the native side cannot represent, such as a
+        # negative id in a hand-built `EngineVersion` or `Continuation`: an argument error.
+        raise InvalidArgumentError(str(error)) from error
+    except RuntimeError as error:
+        # Any other operational failure of an accepted call, as `_call` maps it: without
+        # this arm it escaped as a bare `RuntimeError` that `except OpenedIndexError`,
+        # the documented recovery pattern, does not catch.
+        raise OpenedIndexError(str(error)) from error
 
 
 class OpenedIndex:
@@ -1190,6 +1199,14 @@ class OpenedIndex:
     All substantial native work releases the GIL. Async applications should adapt the
     blocking methods with their own executor policy so task lifetime remains owned by
     the application rather than hidden inside this package.
+
+    Every failure of an accepted call raises ``OpenedIndexError`` or one of its
+    subclasses. The exception is a panic inside the native engine on the calling thread,
+    which surfaces as ``pyo3_runtime.PanicException``: a ``BaseException``, so neither
+    ``except Exception`` nor ``except FduError`` catches it. A panic while the engine held
+    its index write lock also poisons the root: every later operation on it raises
+    ``OpenedIndexError``, and so does ``close()``, which still cancels and joins the root's
+    work before reporting the poison.
     """
 
     __slots__ = ("_native",)
