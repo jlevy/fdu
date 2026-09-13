@@ -140,7 +140,8 @@ QUIET_WAIT_SECONDS = 180.0
 #: How often that wait re-reads the load average, which the kernel updates every 5 s.
 QUIET_POLL_SECONDS = 5.0
 
-#: max/min past which a median is summarizing more than one population. See `_summarize`.
+#: max/min at or past which the samples span more than a median can stand for. See
+#: `_summarize`.
 SPREAD_SUSPECT = 2.0
 
 #: The largest pool every instrument runs exactly. fdu clamps `--threads` to
@@ -701,20 +702,24 @@ def _summarize(trials: Sequence[Trial], instrument: Instrument) -> Dict[str, Any
     median = statistics.median(elapsed) if elapsed else None
     p95 = elapsed[min(len(elapsed) - 1, int(round(0.95 * (len(elapsed) - 1))))] if elapsed else None
     # A median describes a distribution with one hump. `arena_spike` on a shared
-    # four-core container has two -- a ~63 ms mode and a ~150 ms mode, selected by how
-    # much memory the preceding process churned -- and its median is then whichever mode
-    # the run happened to land in more often, reported with a reassuringly tight
-    # p95/median because both humps are individually narrow. `spread` is max/min, and it
-    # is the cheap tell: a unimodal instrument on a quiet host sits near 1.2, and
-    # anything past `SPREAD_SUSPECT` means the median is summarizing two populations and
-    # should not be quoted as one number.
-    spread = round(elapsed[-1] / elapsed[0], 2) if elapsed and elapsed[0] else None
+    # four-core container had two -- a ~63 ms mode and a ~150 ms mode -- and its median
+    # was then whichever mode the run happened to land in more often, reported with a
+    # reassuringly tight p95/median because both humps are individually narrow. `spread`
+    # is max/min, and it is the cheap tell that a median may not stand for its samples: a
+    # unimodal instrument on a quiet host sits near 1.2, and at or past `SPREAD_SUSPECT`
+    # the samples span more than one number can summarize.
+    #
+    # It says that much and no more. It cannot tell a second mode from one wild sample --
+    # a single outlier among thirty trips it, and two modes closer than 2x do not -- so
+    # the flag is named for what it measures. It compares the ratio itself, not the
+    # two-decimal figure the table prints, which would let 1.995 trip a 2.0 bar.
+    ratio = elapsed[-1] / elapsed[0] if elapsed and elapsed[0] else None
     return {
         "role": instrument.role,
         "description": instrument.description,
         "samples": len(elapsed),
-        "spread": spread,
-        "multimodal_suspect": (spread is not None and spread >= SPREAD_SUSPECT),
+        "spread": round(ratio, 2) if ratio is not None else None,
+        "spread_suspect": ratio is not None and ratio >= SPREAD_SUSPECT,
         "elapsed_ns": {
             "median": median,
             "min": elapsed[0] if elapsed else None,
@@ -769,12 +774,17 @@ def score(subject: Mapping[str, Any]) -> Dict[str, Any]:
             "ns_per_entry": round(median / entries, 1),
             "p95_over_median": result["elapsed_ns"]["p95_over_median"],
             "spread": result["spread"],
-            "multimodal_suspect": result["multimodal_suspect"],
+            "spread_suspect": result["spread_suspect"],
             "max_rss_bytes": result["max_rss_bytes"],
             "threshold": threshold,
             # A tier is closed when it reaches its threshold. Only tiers have one; the
             # floor, the ceiling and the enum reference are context, not contestants.
-            "meets_threshold": (ratio <= threshold) if threshold else None,
+            # A tier whose samples spread past SPREAD_SUSPECT is left undecided: its
+            # median is whichever mode or outlier it landed near, and that must not
+            # close a tier -- or keep one open -- by the luck of a run.
+            "meets_threshold": (
+                None if not threshold or result["spread_suspect"] else ratio <= threshold
+            ),
         })
     rows.sort(key=lambda row: row["x_floor"])
     return {"label": subject["label"], "entries": subject["entries"],
@@ -826,7 +836,9 @@ def render(document: Mapping[str, Any]) -> str:
                 mark = f" ✓≤{row['threshold']}"
             elif row["meets_threshold"] is False:
                 mark = f" ✗>{row['threshold']}"
-            spread = (f"{row['spread']:.2f}⚠" if row["multimodal_suspect"]
+            elif row["threshold"]:
+                mark = f" ?≤{row['threshold']}"
+            spread = (f"{row['spread']:.2f}⚠" if row["spread_suspect"]
                       else f"{row['spread']:.2f}" if row["spread"] else "—")
             lines.append(
                 f"| `{row['instrument']}` | {row['role']} | {row['median_ms']:.2f} ms | "
@@ -834,12 +846,12 @@ def render(document: Mapping[str, Any]) -> str:
                 f"{spread} | {row['p95_over_median'] or '—'} | {rss} |"
             )
         lines.append("")
-        if any(row["multimodal_suspect"] for row in scored["rows"]):
+        if any(row["spread_suspect"] for row in scored["rows"]):
             lines.append(
-                "⚠ max/min at or past "
-                f"{SPREAD_SUSPECT:.0f}×: the median summarizes more than one "
-                "population and is not a single number about this instrument. "
-                "Read it as a range, or re-run where the modes can be separated."
+                f"⚠ max/min at or past {SPREAD_SUSPECT:.0f}×: the samples span more than "
+                "the median can stand for -- a second mode or an outlier; the spread "
+                "cannot say which. Read that row as a range, and a tier marked ? as "
+                "neither closed nor open, or re-run where the cause can be separated."
             )
             lines.append("")
     return "\n".join(lines) + "\n"

@@ -378,8 +378,13 @@ class HoldsEveryTrialToTheQuietBar(unittest.TestCase):
         self.assertNotIn("was requested", floor.render(document))
 
 
-class FlagsMoreThanOnePopulation(unittest.TestCase):
-    """A median describes one hump. `arena_spike` on a shared container has two."""
+class FlagsASpreadNoMedianCanSummarize(unittest.TestCase):
+    """A median describes one hump. `arena_spike` on a shared container had two.
+
+    Review FLOOR-8: max/min is a spread, and the flag claimed modality it cannot see --
+    one outlier among thirty trips it, and two modes closer than 2x do not -- while
+    rounding let a 1.995 ratio trip a 2.0 bar.
+    """
 
     def _summary(self, samples):
         trials = [
@@ -393,37 +398,70 @@ class FlagsMoreThanOnePopulation(unittest.TestCase):
     def test_bimodal_samples_are_flagged(self):
         # The two modes actually measured on a four-core container: ~63 ms and ~150 ms.
         summary = self._summary([63e6, 64e6, 150e6, 152e6, 63e6, 151e6])
-        self.assertTrue(summary["multimodal_suspect"])
+        self.assertTrue(summary["spread_suspect"])
         self.assertGreaterEqual(summary["spread"], floor.SPREAD_SUSPECT)
 
     def test_a_tight_unimodal_instrument_is_not_flagged(self):
         summary = self._summary([38e6, 39e6, 40e6, 39e6, 41e6])
-        self.assertFalse(summary["multimodal_suspect"])
+        self.assertFalse(summary["spread_suspect"])
 
     def test_p95_over_median_can_look_calm_while_spread_does_not(self):
         """Both humps are individually narrow, so the tail ratio reassures wrongly."""
         summary = self._summary([150e6, 151e6, 152e6, 63e6, 64e6, 65e6])
         self.assertLess(summary["elapsed_ns"]["p95_over_median"], 1.5)
-        self.assertTrue(summary["multimodal_suspect"])
+        self.assertTrue(summary["spread_suspect"])
+
+    def test_the_bar_compares_the_ratio_not_its_rounded_display(self):
+        summary = self._summary([100_000_000, 199_500_000])
+        self.assertEqual(summary["spread"], 2.0)  # what the table shows
+        self.assertFalse(summary["spread_suspect"])  # what the samples are: 1.995
+
+    def test_the_flag_names_a_spread_and_claims_no_modality(self):
+        """One outlier trips it; the banner must not call that two populations."""
+        summary = self._summary([40_000_000] * 29 + [81_000_000])
+        self.assertTrue(summary["spread_suspect"])
+        self.assertNotIn("multimodal_suspect", summary)
+        banner = next(line for line in floor.render(scored_document(
+            {"parfloor-stat": 40_000_000, "index": 90_000_000}, suspect=("index",)
+        )).splitlines() if line.startswith("⚠"))
+        self.assertNotIn("population", banner)
+        self.assertIn("outlier", banner)
+
+
+def summarized_subject(medians, *, suspect=()):
+    """A measured subject as `score` reads it, one median per instrument."""
+    return {
+        "label": "usr-tree", "entries": 75_976,
+        "instruments": {
+            name: {
+                "role": floor.INSTRUMENTS[name].role,
+                "description": "", "samples": 30,
+                "spread": 4.25 if name in suspect else 1.2,
+                "spread_suspect": name in suspect,
+                "elapsed_ns": {"median": value, "min": value, "max": value,
+                               "p95": value, "p95_over_median": 1.0},
+                "spawn_wall_ns": {"median": value}, "harness_overhead_ns": 0,
+                "max_rss_bytes": None,
+            }
+            for name, value in medians.items()
+        },
+    }
+
+
+def scored_document(medians, *, suspect=()):
+    """A whole scoreboard document around one scored subject, as `render` reads it."""
+    return {
+        "host": {"system": "Linux", "machine": "x86_64", "logical_cpu_count": 4},
+        "workers": 4, "recorded_at": "t", "commit": "c", "host_regime": "quiet",
+        "trials": 30, "warmups": 3,
+        "subjects": [{"scored": floor.score(summarized_subject(medians, suspect=suspect)),
+                      "oracle_disagreements": []}],
+    }
 
 
 class ScoresAgainstTheFloor(unittest.TestCase):
     def _subject(self, medians):
-        return {
-            "label": "usr-tree", "entries": 75_976,
-            "instruments": {
-                name: {
-                    "role": floor.INSTRUMENTS[name].role,
-                    "description": "", "samples": 30, "spread": 1.2,
-                    "multimodal_suspect": False,
-                    "elapsed_ns": {"median": value, "min": value, "max": value,
-                                   "p95": value, "p95_over_median": 1.0},
-                    "spawn_wall_ns": {"median": value}, "harness_overhead_ns": 0,
-                    "max_rss_bytes": None,
-                }
-                for name, value in medians.items()
-            },
-        }
+        return summarized_subject(medians)
 
     def test_ratios_divide_by_the_floor_instrument(self):
         scored = floor.score(self._subject({
@@ -455,6 +493,51 @@ class ScoresAgainstTheFloor(unittest.TestCase):
     def test_no_floor_measurement_is_refused(self):
         with self.assertRaises(floor.FloorError):
             floor.score(self._subject({"aggregate": 62_210_000}))
+
+    def test_a_zero_floor_median_is_refused(self):
+        with self.assertRaises(floor.FloorError):
+            floor.score(self._subject({"parfloor-stat": 0, "aggregate": 1}))
+
+    def test_the_threshold_compares_the_unrounded_ratio(self):
+        rows = {row["instrument"]: row for row in floor.score(self._subject(
+            {"parfloor-stat": 100_000_000, "aggregate": 125_040_000}))["rows"]}
+        self.assertEqual(rows["aggregate"]["x_floor"], 1.25)
+        self.assertFalse(rows["aggregate"]["meets_threshold"])
+
+
+class LeavesASpreadTierUndecided(unittest.TestCase):
+    """A tier is closed when its median reaches its threshold, and a median whose
+    samples spread past `SPREAD_SUSPECT` is not one number to hold to a threshold.
+
+    Review FLOOR-4: such a tier was still marked as meeting its threshold whenever the
+    median landed in the lower mode, and the JSON's `meets_threshold` is the
+    machine-readable tier-closed signal.
+    """
+
+    def _rows(self, medians, suspect):
+        return {row["instrument"]: row
+                for row in floor.score(summarized_subject(medians, suspect=suspect))["rows"]}
+
+    def test_a_flagged_tier_under_its_threshold_is_not_called_closed(self):
+        rows = self._rows({"parfloor-stat": 40_000_000, "index": 50_000_000}, ("index",))
+        self.assertTrue(rows["index"]["spread_suspect"])
+        self.assertIsNone(rows["index"]["meets_threshold"])
+        self.assertEqual(rows["index"]["threshold"], floor.THRESHOLDS["index"])
+
+    def test_a_flagged_tier_over_its_threshold_is_not_called_open_either(self):
+        rows = self._rows({"parfloor-stat": 40_000_000, "index": 90_000_000}, ("index",))
+        self.assertIsNone(rows["index"]["meets_threshold"])
+
+    def test_the_table_marks_it_undecided_rather_than_closed(self):
+        line = next(line for line in floor.render(scored_document(
+            {"parfloor-stat": 40_000_000, "index": 50_000_000}, suspect=("index",)
+        )).splitlines() if "`index`" in line)
+        self.assertNotIn("✓", line)
+        self.assertIn("?", line)
+
+    def test_an_unflagged_tier_is_still_decided(self):
+        rows = self._rows({"parfloor-stat": 40_000_000, "index": 50_000_000}, ())
+        self.assertTrue(rows["index"]["meets_threshold"])
 
 
 if __name__ == "__main__":
