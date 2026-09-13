@@ -7,6 +7,7 @@ something other than what its column heading says.
 from __future__ import annotations
 
 import contextlib
+import gc
 import io
 import json
 import os
@@ -15,6 +16,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import warnings
 from pathlib import Path
 from unittest import mock
 
@@ -174,6 +176,100 @@ class ReadsInstrumentOutput(unittest.TestCase):
         })
         parsed = floor.INSTRUMENTS["aggregate"].read(line)
         self.assertEqual(parsed["elapsed_ns"], 62_210_000)
+
+
+class RefusesOutputItCannotRead(unittest.TestCase):
+    """An instrument that printed something else has measured nothing this table can use,
+    and `main` promises a refusal, not a traceback.
+
+    Review FLOOR-9: empty output raised IndexError, a missing field KeyError and a stray
+    line JSONDecodeError; the timeout path left Popen believing its child still ran; and
+    output was decoded with the locale's encoding.
+    """
+
+    def _refused(self, name, stdout):
+        with self.assertRaises(floor.FloorError) as raised:
+            floor.INSTRUMENTS[name].read(stdout)
+        self.assertIn(name, str(raised.exception))
+
+    def test_empty_output(self):
+        self._refused("aggregate", "")
+
+    def test_a_missing_field(self):
+        self._refused("aggregate", json.dumps({"component_ns": 1, "summary": {"dirs": 1}}))
+
+    def test_a_line_that_is_not_json(self):
+        self._refused("parfloor-stat", "parfloor: out of memory\n")
+
+    def test_a_payload_of_the_wrong_shape(self):
+        self._refused("aggregate", json.dumps({"component_ns": 1, "summary": [1, 2]}))
+
+    def test_a_timer_that_is_not_a_number(self):
+        line = json.loads(parfloor_line(1, 1))
+        line["wall_ns"] = "soon"
+        self._refused("parfloor-stat", json.dumps(line))
+
+    def test_a_tally_that_is_not_a_count(self):
+        line = json.loads(parfloor_line(1, 1))
+        line["dirs"] = "10"
+        self._refused("parfloor-stat", json.dumps(line))
+
+    def test_the_command_line_reports_it_as_a_refusal(self):
+        outputs = dict(CONSISTENT, index="")
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as scratch:
+            probe = Path(scratch) / "perf_probe"
+            probe.write_text("#!/bin/sh\n")
+            probe.chmod(0o755)
+            spikes = {name: path for name, path in BINARIES.items() if name != "probe"}
+            with contextlib.redirect_stderr(stderr), \
+                    mock.patch.object(floor, "require_linux"), \
+                    mock.patch.object(floor, "build_instruments", return_value=spikes), \
+                    mock.patch.object(floor, "_spawn", lambda argv, **_: {
+                        "stdout": outputs[instrument_key(argv)], "spawn_wall_ns": 1,
+                        "max_rss_bytes": None}), \
+                    mock.patch("benchmarks.realtree.measure._host_pressure_snapshot",
+                               return_value=QUIET):
+                status = floor.main(["--subject", f"t={scratch}", "--probe", str(probe),
+                                     "--build-dir", scratch, "--host-regime", "uncontrolled",
+                                     "--trials", "1", "--warmups", "0"])
+        self.assertEqual(status, 1)
+        self.assertIn("floor scoreboard refused: index", stderr.getvalue())
+
+
+class SpawnsAndReapsOneChild(unittest.TestCase):
+    """`_spawn` for real, on commands every POSIX host has.
+
+    Adapted from the proof tests published with the PR #49 review.
+    """
+
+    def test_a_child_is_reaped_with_its_own_rusage(self):
+        outcome = floor._spawn(["/bin/sh", "-c", "echo '{\"a\":1}'"], timeout_seconds=10)
+        self.assertEqual(outcome["stdout"].strip(), '{"a":1}')
+        self.assertIsInstance(outcome["max_rss_bytes"], int)
+
+    def test_a_nonzero_exit_is_a_refusal_carrying_stderr(self):
+        with self.assertRaises(floor.FloorError) as raised:
+            floor._spawn(["/bin/sh", "-c", "echo boom >&2; exit 7"], timeout_seconds=10)
+        self.assertIn("exited 7", str(raised.exception))
+        self.assertIn("boom", str(raised.exception))
+
+    def test_output_that_is_not_utf8_is_still_read(self):
+        with self.assertRaises(floor.FloorError) as raised:
+            floor._spawn(["/bin/sh", "-c", "printf 'bad \\377\\376' >&2; exit 3"],
+                         timeout_seconds=10)
+        self.assertIn("exited 3", str(raised.exception))
+        self.assertIn("bad", str(raised.exception))
+
+    def test_a_timeout_kills_the_child_and_leaves_nothing_running(self):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with self.assertRaises(floor.FloorError) as raised:
+                floor._spawn(["/bin/sleep", "5"], timeout_seconds=0.3)
+            gc.collect()
+        self.assertIn("exceeded", str(raised.exception))
+        leaks = [str(w.message) for w in caught if issubclass(w.category, ResourceWarning)]
+        self.assertEqual(leaks, [])
 
 
 class ReconcilesDefinitionalDifferences(unittest.TestCase):

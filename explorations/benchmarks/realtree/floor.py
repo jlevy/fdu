@@ -190,20 +190,37 @@ class Instrument:
         ]
 
     def read(self, stdout: str) -> Dict[str, Any]:
-        """Pull the tallies and the internal timer out of one run's JSON line."""
-        document = json.loads(stdout.strip().splitlines()[-1])
-        elapsed_source = document
-        payload = document[self.payload_key] if self.payload_key else document
-        tallies = {target: payload[source] for source, target in self.tally_map.items()}
+        """Pull the tallies and the internal timer out of one run's JSON line.
+
+        Output of any other shape is a refusal naming the instrument, never a traceback:
+        an instrument that printed something else has measured nothing a table can use.
+        """
+        lines = stdout.strip().splitlines()
+        if not lines:
+            raise FloorError(f"{self.id}: printed nothing where its JSON line belongs")
+        try:
+            document = json.loads(lines[-1])
+            payload = document[self.payload_key] if self.payload_key else document
+            tallies = {target: payload[source] for source, target in self.tally_map.items()}
+            elapsed = document.get(self.elapsed_key)
+            if elapsed is None:
+                elapsed = payload.get(self.elapsed_key)
+            elapsed_ns = None if elapsed is None else int(float(elapsed) * self.elapsed_scale)
+        except (ValueError, KeyError, TypeError, AttributeError) as error:
+            raise FloorError(
+                f"{self.id}: output is not the JSON line it should print "
+                f"({type(error).__name__}: {error}): {lines[-1][:200]!r}"
+            ) from error
+        if elapsed_ns is None:
+            raise FloorError(f"{self.id}: no {self.elapsed_key} in its output")
+        malformed = sorted(key for key, value in tallies.items()
+                           if isinstance(value, bool) or not isinstance(value, int))
+        if malformed:
+            raise FloorError(f"{self.id}: tallies that are not counts: {', '.join(malformed)}")
         for key, offset in self.tally_offsets.items():
             if key in tallies:
                 tallies[key] += offset
-        elapsed = elapsed_source.get(self.elapsed_key)
-        if elapsed is None:
-            elapsed = payload.get(self.elapsed_key)
-        if elapsed is None:
-            raise FloorError(f"{self.id}: no {self.elapsed_key} in its output")
-        return {"tallies": tallies, "elapsed_ns": int(float(elapsed) * self.elapsed_scale)}
+        return {"tallies": tallies, "elapsed_ns": elapsed_ns}
 
 
 #: `parfloor enum` is included because the gap between it and `stat` is the price of the
@@ -444,11 +461,16 @@ def _spawn(argv: Sequence[str], *, timeout_seconds: float) -> Dict[str, Any]:
             if waiter.is_alive():
                 process.kill()
                 waiter.join(10.0)
+                # `wait4` reaps the killed child, and Popen cannot know it: without a
+                # returncode it would warn, when collected, that the child still runs.
+                process.returncode = state.exit_code if state.exit_code is not None else -9
                 raise FloorError(f"{Path(argv[0]).name} exceeded {timeout_seconds}s")
         # `wait4` already reaped it; keep Popen from trying to do so again at exit.
         process.returncode = state.exit_code if state.exit_code is not None else -1
-        stdout = out_path.read_text()
-        stderr_text = err_path.read_text()
+        # Decoded as UTF-8 whatever the locale says, and never fatally: an instrument's
+        # bytes are evidence about the run, and a refusal should be able to quote them.
+        stdout = out_path.read_text(encoding="utf-8", errors="replace")
+        stderr_text = err_path.read_text(encoding="utf-8", errors="replace")
 
     if state.error:
         raise FloorError(f"{Path(argv[0]).name}: {state.error}")
