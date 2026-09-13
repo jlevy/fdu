@@ -837,8 +837,9 @@ second completeness flag to consult.
 
 The tree projection pays through the retained hierarchy and two bounded child
 partitions. The flat projection pays through a commit-maintained ordered index of
-portable paths; it never materializes and sorts the full catalog per request. The recent projection pays through the maintained timestamp-ordered set, which
-is what makes a ranked slice proportional to the row bound instead of to the tree.
+portable paths; it never materializes and sorts the full catalog per request.
+The recent projection pays through the maintained timestamp-ordered set, which is what
+makes a ranked slice proportional to the row bound instead of to the tree.
 Other resumable sort orders are deferred until a measured client need justifies their
 own maintained index.
 
