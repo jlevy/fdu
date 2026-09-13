@@ -2905,9 +2905,9 @@ mod tests {
         let close = thread::spawn(move || {
             let _ = sender.send(closer.close());
         });
-        let closed = receiver.recv_timeout(TEST_GATE_TIMEOUT);
+        let shutdown = receiver.recv_timeout(TEST_GATE_TIMEOUT);
         controls.gate(TestPoint::DuringTreeProjection).release();
-        closed.expect("close did not wait for a read in progress").expect("close");
+        shutdown.expect("close did not wait for a read in progress").expect("close");
         close.join().expect("close thread");
 
         assert!(matches!(page.join().expect("page thread"), Err(Error::OpenedIndexClosed)));
