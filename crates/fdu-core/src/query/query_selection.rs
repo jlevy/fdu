@@ -298,10 +298,10 @@ impl EntrySelection {
     /// dot, a compound suffix such as `.tar.gz`, or a value holding a separator.
     pub fn admit_terminal_extension(&mut self, value: impl Into<String>) -> Result<()> {
         let value = value.into();
-        check_terminal_extension(&value)?;
         if self.terminal_extensions.contains(&value) {
-            return Err(refusal("terminal extension", &value, TERMINAL_UNIQUE));
+            return Err(refusal(TERMINAL_KIND, &value, TERMINAL_UNIQUE));
         }
+        check_value(TERMINAL_KIND, &value, TERMINAL_RULES)?;
         self.terminal_extensions.push(value);
         Ok(())
     }
@@ -314,10 +314,10 @@ impl EntrySelection {
     /// holding `/` or `\`.
     pub fn admit_ancestor_name(&mut self, value: impl Into<String>) -> Result<()> {
         let value = value.into();
-        check_ancestor_name(&value)?;
         if self.ancestor_names.contains(&value) {
-            return Err(refusal("ancestor name", &value, ANCESTOR_UNIQUE));
+            return Err(refusal(ANCESTOR_KIND, &value, ANCESTOR_UNIQUE));
         }
+        check_value(ANCESTOR_KIND, &value, ANCESTOR_RULES)?;
         self.ancestor_names.push(value);
         Ok(())
     }
@@ -329,17 +329,13 @@ impl EntrySelection {
     ///
     /// # Errors
     ///
-    /// The first refusal [`Self::admit_terminal_extension`] or
-    /// [`Self::admit_ancestor_name`] would have returned.
+    /// The refusal `MetaBrowser`'s `CatalogQuery` and the Python `EntrySelection` raise
+    /// first, in their order: terminal extensions before ancestor names, and within each
+    /// list uniqueness first, then each rule across the whole list. A list wrong in two
+    /// ways therefore gets the same message on every surface.
     pub fn validate(&self) -> Result<()> {
-        let mut checked = Self::default();
-        for value in &self.terminal_extensions {
-            checked.admit_terminal_extension(value.as_str())?;
-        }
-        for value in &self.ancestor_names {
-            checked.admit_ancestor_name(value.as_str())?;
-        }
-        Ok(())
+        check_list(TERMINAL_KIND, &self.terminal_extensions, TERMINAL_UNIQUE, TERMINAL_RULES)?;
+        check_list(ANCESTOR_KIND, &self.ancestor_names, ANCESTOR_UNIQUE, ANCESTOR_RULES)
     }
 
     /// Heap payload retained when an opened-root continuation owns this selection.
@@ -431,42 +427,69 @@ impl EntrySelection {
     }
 }
 
+const TERMINAL_KIND: &str = "terminal extension";
+const ANCESTOR_KIND: &str = "ancestor name";
 const TERMINAL_UNIQUE: &str = "terminal_extensions entries must be unique";
 const ANCESTOR_UNIQUE: &str = "ancestor_names entries must be unique";
+
+/// One `CatalogQuery` rule: whether a value breaks it, and the message that says so.
+type Rule = (fn(&str) -> bool, &'static str);
+
+/// The `MetaBrowser` `CatalogQuery` rules for terminal suffixes, in its order.
+///
+/// Each rule may assume the ones before it held for every value in the list: the last
+/// slices past a leading dot the first one proved.
+const TERMINAL_RULES: &[Rule] = &[
+    (undotted, "terminal_extensions entries must start with a dot"),
+    (not_lowercase, "terminal_extensions entries must be lowercase"),
+    (not_terminal_suffix, "terminal_extensions entries must be canonical terminal suffixes"),
+];
+
+/// The `MetaBrowser` `CatalogQuery` rule for ancestor names.
+const ANCESTOR_RULES: &[Rule] =
+    &[(not_path_component, "ancestor_names entries must be exact path-component names")];
+
+fn undotted(value: &str) -> bool {
+    !value.starts_with('.')
+}
+
+/// Unicode lowering, as the contract's `str.lower` check is: an uppercase letter outside
+/// ASCII is refused too, even though matching folds only ASCII.
+fn not_lowercase(value: &str) -> bool {
+    value.to_lowercase() != value
+}
+
+fn not_terminal_suffix(value: &str) -> bool {
+    value.chars().count() < 2 || value.contains(['/', '\\']) || value[1..].contains('.')
+}
+
+fn not_path_component(value: &str) -> bool {
+    value.is_empty() || value == "." || value == ".." || value.contains(['/', '\\'])
+}
 
 fn refusal(kind: &'static str, value: &str, hint: &str) -> Error {
     Error::InvalidValue { kind, value: value.to_owned(), hint: hint.to_owned() }
 }
 
-/// The `MetaBrowser` `CatalogQuery` rule for one terminal suffix, in its order.
-fn check_terminal_extension(value: &str) -> Result<()> {
-    let kind = "terminal extension";
-    if !value.starts_with('.') {
-        return Err(refusal(kind, value, "terminal_extensions entries must start with a dot"));
+/// Refuse one value by the first rule it breaks.
+fn check_value(kind: &'static str, value: &str, rules: &[Rule]) -> Result<()> {
+    match rules.iter().find(|(breaks, _)| breaks(value)) {
+        Some((_, hint)) => Err(refusal(kind, value, hint)),
+        None => Ok(()),
     }
-    // Unicode lowering, as the contract's `str.lower` check is: an uppercase letter outside
-    // ASCII is refused too, even though matching folds only ASCII.
-    if value.to_lowercase() != value {
-        return Err(refusal(kind, value, "terminal_extensions entries must be lowercase"));
-    }
-    if value.chars().count() < 2 || value.contains(['/', '\\']) || value[1..].contains('.') {
-        return Err(refusal(
-            kind,
-            value,
-            "terminal_extensions entries must be canonical terminal suffixes",
-        ));
-    }
-    Ok(())
 }
 
-/// The `MetaBrowser` `CatalogQuery` rule for one ancestor name.
-fn check_ancestor_name(value: &str) -> Result<()> {
-    if value.is_empty() || value == "." || value == ".." || value.contains(['/', '\\']) {
-        return Err(refusal(
-            "ancestor name",
-            value,
-            "ancestor_names entries must be exact path-component names",
-        ));
+/// Refuse a whole list the way `CatalogQuery.__post_init__` does: uniqueness first, then
+/// each rule across every value before the next rule is tried.
+fn check_list(kind: &'static str, values: &[String], unique: &str, rules: &[Rule]) -> Result<()> {
+    let mut seen = std::collections::HashSet::with_capacity(values.len());
+    if let Some(repeated) = values.iter().find(|value| !seen.insert(value.as_str())) {
+        return Err(refusal(kind, repeated, unique));
+    }
+    for (breaks, hint) in rules {
+        if let Some(value) = values.iter().find(|value| breaks(value)) {
+            return Err(refusal(kind, value, hint));
+        }
     }
     Ok(())
 }
@@ -689,6 +712,42 @@ mod tests {
             }
             .validate(),
         );
+    }
+
+    /// A list wrong in two ways gets the refusal `CatalogQuery` and the Python
+    /// `EntrySelection` raise, so every surface names the same fault: uniqueness before
+    /// shape, and each rule across the whole list before the next rule.
+    #[test]
+    fn a_list_wrong_twice_is_refused_in_the_catalog_query_order() {
+        let hint_of = |selection: EntrySelection| match selection.validate() {
+            Err(Error::InvalidValue { hint, .. }) => hint,
+            other => panic!("expected a refusal, got {other:?}"),
+        };
+        let terminal = |values: &[&str]| EntrySelection {
+            terminal_extensions: values.iter().map(ToString::to_string).collect(),
+            ..Default::default()
+        };
+        let ancestors = |values: &[&str]| EntrySelection {
+            ancestor_names: values.iter().map(ToString::to_string).collect(),
+            ..Default::default()
+        };
+        for (selection, hint) in [
+            (terminal(&["rs", "rs"]), TERMINAL_UNIQUE),
+            (terminal(&[".RS", ".RS"]), TERMINAL_UNIQUE),
+            (terminal(&[".RS", "rs"]), "terminal_extensions entries must start with a dot"),
+            (terminal(&[".tar.gz", ".RS"]), "terminal_extensions entries must be lowercase"),
+            (ancestors(&["..", ".."]), ANCESTOR_UNIQUE),
+            (
+                EntrySelection {
+                    terminal_extensions: vec!["rs".to_string()],
+                    ancestor_names: vec!["src".to_string(), "src".to_string()],
+                    ..Default::default()
+                },
+                "terminal_extensions entries must start with a dot",
+            ),
+        ] {
+            assert_eq!(hint_of(selection), hint);
+        }
     }
 
     #[test]

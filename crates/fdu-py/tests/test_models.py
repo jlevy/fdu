@@ -82,6 +82,10 @@ def test_opened_entry_selection_composes_the_stable_query_selection() -> None:
     ("arguments", "message"),
     [
         ({"terminal_extensions": (".rs", ".rs")}, "terminal_extensions entries must be unique"),
+        # Wrong twice: the same fault as the Rust `validate` names, in CatalogQuery's order.
+        ({"terminal_extensions": ("rs", "rs")}, "terminal_extensions entries must be unique"),
+        ({"terminal_extensions": (".RS", "rs")}, "must start with a dot"),
+        ({"terminal_extensions": (".tar.gz", ".RS")}, "must be lowercase"),
         ({"terminal_extensions": ("rs",)}, "must start with a dot"),
         ({"terminal_extensions": (".RS",)}, "must be lowercase"),
         ({"terminal_extensions": (".\u00c9e",)}, "must be lowercase"),
@@ -90,6 +94,7 @@ def test_opened_entry_selection_composes_the_stable_query_selection() -> None:
         ({"terminal_extensions": (".a/b",)}, "canonical terminal suffixes"),
         ({"terminal_extensions": (".a\\b",)}, "canonical terminal suffixes"),
         ({"ancestor_names": ("src", "src")}, "ancestor_names entries must be unique"),
+        ({"ancestor_names": ("..", "..")}, "ancestor_names entries must be unique"),
         ({"ancestor_names": ("",)}, "exact path-component names"),
         ({"ancestor_names": (".",)}, "exact path-component names"),
         ({"ancestor_names": ("..",)}, "exact path-component names"),
