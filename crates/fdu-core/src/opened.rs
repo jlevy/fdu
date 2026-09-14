@@ -4581,6 +4581,64 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// Every row path of one unbounded tree page from the root.
+    fn tree_rows(opened: &OpenedIndex, include_ignored: bool) -> Vec<String> {
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Tree {
+                    path: PathBuf::new(),
+                    depth: crate::query::Bound::All,
+                    include_ignored,
+                    page: crate::PageRequest {
+                        limit: crate::MAX_PAGE_ROWS,
+                        max_work: crate::MAX_PAGE_WORK,
+                    },
+                }],
+                ..crate::ReadRequest::default()
+            })
+            .expect("tree read");
+        let crate::ProjectionResult::Tree(crate::Knowledge::Present(page)) = &response.results[0]
+        else {
+            panic!("tree page");
+        };
+        page.rows.iter().map(|row| row.portable_path.as_str().to_owned()).collect()
+    }
+
+    /// A tree read that excludes ignored entries reads each row's ignore bit without the
+    /// observation check `Index::is_ignored` makes, on the invariant that an opened root
+    /// observes control state whenever the build can. Both halves are pinned here: a
+    /// `gitignore` build's opened root observes, and a build without the feature, which
+    /// observes nothing and so ignores nothing, answers the read with every row rather
+    /// than refusing it (`fdu-x3yt` owns whether it should say "not observed" instead).
+    #[test]
+    fn an_opened_tree_read_excluding_ignored_entries_answers_in_every_build() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("src"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("src/main.rs"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs { size: 1, ..crate::Attrs::default() },
+                },
+            ]))
+            .expect("seed tree");
+
+        let image = opened.state.index.snapshot().expect("snapshot");
+        assert_eq!(image.observes_controls(), cfg!(feature = "gitignore"));
+        let excluded = tree_rows(&opened, false);
+        assert_eq!(excluded, ["src", "src/main.rs"]);
+        assert_eq!(excluded, tree_rows(&opened, true));
+
+        opened.close().expect("close");
+    }
+
     /// Excluding ignored entries prunes the subtree, not merely the row.
     ///
     /// Filtering the row and descending anyway is an equally reasonable reading of an
@@ -4623,34 +4681,11 @@ mod tests {
             ]))
             .expect("seed tree");
 
-        let rows = |include_ignored: bool| -> Vec<String> {
-            let response = opened
-                .read(crate::ReadRequest {
-                    projections: vec![crate::ReadProjection::Tree {
-                        path: PathBuf::new(),
-                        depth: crate::query::Bound::All,
-                        include_ignored,
-                        page: crate::PageRequest {
-                            limit: crate::MAX_PAGE_ROWS,
-                            max_work: crate::MAX_PAGE_WORK,
-                        },
-                    }],
-                    ..crate::ReadRequest::default()
-                })
-                .expect("tree read");
-            let crate::ProjectionResult::Tree(crate::Knowledge::Present(page)) =
-                &response.results[0]
-            else {
-                panic!("tree page");
-            };
-            page.rows.iter().map(|row| row.portable_path.as_str().to_owned()).collect()
-        };
-
-        let included = rows(true);
+        let included = tree_rows(&opened, true);
         assert!(included.iter().any(|row| row == "vendor"));
         assert!(included.iter().any(|row| row == "vendor/keep.txt"));
 
-        let excluded = rows(false);
+        let excluded = tree_rows(&opened, false);
         assert!(!excluded.iter().any(|row| row == "vendor"), "the row is gone");
         assert!(
             !excluded.iter().any(|row| row == "vendor/keep.txt"),

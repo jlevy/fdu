@@ -818,7 +818,9 @@ fn collect_children(
         // became `x%25FF`. These names are portable by construction, so they are for
         // ordering and resumption, never for addressing.
         let path = index.path_of(*id).unwrap_or_else(|| parent.join(name));
-        if !include_ignored && matches!(index.is_ignored(&path), Ok(Some(true))) {
+        // An opened root observes control state whenever the build can; see
+        // `Index::opened_is_ignored` for the featureless build.
+        if !include_ignored && index.opened_is_ignored(*id) {
             continue;
         }
         // Noticed in passing, not searched for: this row is a directory one level down,
@@ -848,7 +850,7 @@ fn first_directory_child(
     for (name, id) in iterator {
         *spent = spent.saturating_add(1);
         let path = index.path_of(*id).unwrap_or_else(|| parent.join(name));
-        if !include_ignored && matches!(index.is_ignored(&path), Ok(Some(true))) {
+        if !include_ignored && index.opened_is_ignored(*id) {
             // Pruning the subtree, not the row: an excluded directory is never expanded,
             // so none of its descendants can reach a later level either.
             continue;

@@ -2853,10 +2853,32 @@ impl Index {
         &self,
         path: &Path,
     ) -> Option<PartitionRollUpSummary> {
+        self.debug_assert_opened_observes_controls();
         self.lookup(path)
             .map(|id| self.entry(id))
             .filter(|entry| entry.kind.is_dir())
             .map(|entry| partition_summary(entry.rollup()))
+    }
+
+    /// Whether a live entry is ignored, for the opened-root tree projection, without the
+    /// observation check [`Self::is_ignored`] makes.
+    ///
+    /// The same invariant as [`Self::opened_partition_rollup_summary`]: an opened root
+    /// observes control state whenever the build can, so in a `gitignore` build this is the
+    /// exact classification. Without the feature no rule was read and no entry is ignored,
+    /// so an `include_ignored: false` read keeps every row rather than failing (`fdu-x3yt`
+    /// decides whether it should say "not observed" instead).
+    pub(crate) fn opened_is_ignored(&self, id: EntryId) -> bool {
+        self.debug_assert_opened_observes_controls();
+        self.entry(id).ignored
+    }
+
+    /// The invariant both opened-root accessors rely on, checked where it is cheap to.
+    fn debug_assert_opened_observes_controls(&self) {
+        debug_assert!(
+            self.observes_controls() || !cfg!(feature = "gitignore"),
+            "an opened root observes control state whenever the build can"
+        );
     }
 
     /// Capture one retained entry without repeating path lookup in a consumer.
