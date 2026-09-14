@@ -1115,11 +1115,11 @@ mod tests {
     #[test]
     fn climbing_out_of_a_deep_chain_needs_no_stack_per_level() {
         const LEVELS: u32 = 1_000;
-        let mut index = crate::Index::new_opened_with_scope_types_and_journal_capacity(
+        let mut index = crate::Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
             crate::ScanScope::default(),
             crate::classify::TypeRegistry::compiled_shared(),
-            crate::DEFAULT_JOURNAL_CAPACITY,
+            crate::DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
         let mut deepest = PathBuf::new();
         let mut ops = Vec::new();

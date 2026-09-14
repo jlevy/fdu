@@ -51,6 +51,7 @@ fn to_py_err(err: fdu_core::Error) -> PyErr {
         | fdu_core::Error::ScanScopeMismatch { .. }
         | fdu_core::Error::SubtreeOutsideScanScope { .. }
         | fdu_core::Error::InvalidValue { .. }
+        | fdu_core::Error::JournalCapacityTooSmall { .. }
         | fdu_core::Error::WatchRootMismatch { .. }) => PyValueError::new_err(error.to_string()),
 
         // Everything else is the operation failing on its own terms: the cache had no

@@ -16,7 +16,7 @@ use fdu_core::{
 };
 
 /// Contractual journal budget in bytes, checked independently of the production default.
-const JOURNAL_CAPACITY: usize = 8 * 1024 * 1024;
+const JOURNAL_CAPACITY_BYTES: usize = 8 * 1024 * 1024;
 /// Contractual dirty-path bound checked independently of the production constant.
 const EXPECTED_DIRTY_PATH_LIMIT: usize = 256;
 /// Contractual retained-issue bound checked independently of the production constant.
@@ -520,13 +520,13 @@ impl Model {
 
     fn retain(&mut self, commit: Commit) {
         let cost = model_commit_cost(&commit);
-        if cost > JOURNAL_CAPACITY {
+        if cost > JOURNAL_CAPACITY_BYTES {
             self.journal.clear();
             self.journal_cost = 0;
             self.journal_floor = commit.clock;
             return;
         }
-        while self.journal_cost + cost > JOURNAL_CAPACITY {
+        while self.journal_cost + cost > JOURNAL_CAPACITY_BYTES {
             let dropped = self.journal.pop_front().expect("over-capacity model journal");
             self.journal_cost -= model_commit_cost(&dropped);
             self.journal_floor = dropped.clock;

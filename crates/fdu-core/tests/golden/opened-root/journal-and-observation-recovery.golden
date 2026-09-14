@@ -1,5 +1,5 @@
 scenario: schema=1 name=journal-and-observation-recovery
-action.open: OpenOptions { batch_size: 1024, follow_symlinks: false, one_filesystem: false, hidden: None, exclude_special: false, types: None, budget: DiscoveryBudget { max_files: None }, observation: Some(WatchConfig { settle: 1ms, max_hold: 10ms, relist_new_dirs: true, event_capacity: 4096, batch_path_capacity: 4096, intent_capacity: 16 }), observation_script: Some("$SCRIPT_ROOT/events.script"), journal_capacity: 8192 }
+action.open: OpenOptions { batch_size: 1024, follow_symlinks: false, one_filesystem: false, hidden: None, exclude_special: false, types: None, budget: DiscoveryBudget { max_files: None }, observation: Some(WatchConfig { settle: 1ms, max_hold: 10ms, relist_new_dirs: true, event_capacity: 4096, batch_path_capacity: 4096, intent_capacity: 16 }), observation_script: Some("$SCRIPT_ROOT/events.script"), journal_capacity_bytes: 8192 }
 result.open: OpenedIndex { session: SessionId(session-1), root: "$ROOT", .. }
 barrier: reached before-discovery
 action.fixture: write baseline.txt size=23

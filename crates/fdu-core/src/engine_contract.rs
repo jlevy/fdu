@@ -1626,6 +1626,14 @@ const RETAINED_COMMIT_BYTES: usize = 256;
 /// Bytes [`Commit::retained_cost`] charges for each retained change, transition, or dirty
 /// path, before the bytes of the path it names.
 const RETAINED_ITEM_BYTES: usize = 128;
+/// Smallest journal budget, in bytes, an opened root accepts: the least
+/// [`Commit::retained_cost`] can charge a commit that carries anything.
+///
+/// Every change and transition dirties its own path, so the least a commit can hold is one
+/// item at the root and the root as its dirty path. A smaller budget retains no commit, and
+/// every change poll would answer [`ChangeOutcome::Reset`] for a cause the caller cannot
+/// see: most likely a count passed where bytes are expected.
+pub const MIN_JOURNAL_CAPACITY_BYTES: usize = RETAINED_COMMIT_BYTES + 2 * RETAINED_ITEM_BYTES;
 
 /// One atomic, exact index transition.
 ///
@@ -1656,11 +1664,10 @@ impl Commit {
     ///
     /// The estimate is a fixed allowance for the commit's own frame plus, for every
     /// change, transition, and dirty path, a fixed allowance for the item and the bytes of
-    /// the path it names. Paths are the part that varies: a journal that charged one unit
-    /// per item held tens of mebibytes of long paths under a budget that read as 64 KiB,
-    /// and every change poll cloned all of it. Charging bytes makes
-    /// [`crate::DEFAULT_JOURNAL_CAPACITY`] mean what it says, whatever the tree's paths
-    /// look like. The allowances are fixed rather than measured with `size_of` so the
+    /// the path it names. Paths are the part that varies, so charging their bytes makes
+    /// [`crate::DEFAULT_JOURNAL_CAPACITY_BYTES`] mean what it says whatever the tree's paths
+    /// look like; a charge per item would let long paths hold many times the budget, and
+    /// every change poll clones what the journal holds. The allowances are fixed rather than measured with `size_of` so the
     /// budget means the same on every target: the retained types differ in size by
     /// platform, and a recorded journal work count would otherwise differ with them.
     pub fn retained_cost(&self) -> usize {
@@ -1747,6 +1754,18 @@ pub enum Error {
          ignored nor accepts control input; open it with read_controls to observe it"
     )]
     ControlStateNotObserved,
+
+    /// An opened root's journal budget cannot retain a single commit.
+    #[error(
+        "journal_capacity_bytes is {requested} bytes, below the {minimum} bytes one commit \
+         needs; set it to at least {minimum} bytes, or leave it unset for the default"
+    )]
+    JournalCapacityTooSmall {
+        /// The budget requested, in bytes.
+        requested: usize,
+        /// [`MIN_JOURNAL_CAPACITY_BYTES`].
+        minimum: usize,
+    },
 
     /// Requested scan semantics differ from the index's immutable scope.
     #[error("scan scope mismatch: index has {indexed:?}, requested {requested:?}")]

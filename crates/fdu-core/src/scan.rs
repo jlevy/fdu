@@ -1036,42 +1036,96 @@ pub(crate) fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<
 }
 
 #[cfg(test)]
-pub(crate) type ChildMetadataHook = Box<dyn FnMut(&Path) -> Option<std::io::Error>>;
+type ChildMetadataHook = std::sync::Arc<dyn Fn(&Path) -> Option<std::io::Error> + Send + Sync>;
+
+/// Hooks run before each listed child's metadata lookup, each for the paths under its root.
+///
+/// Process-wide, because a parallel walk looks children up on its worker threads; keyed
+/// by root, because tests run in parallel and each walks its own temporary directory.
+#[cfg(test)]
+static CHILD_METADATA_HOOKS: std::sync::RwLock<Vec<(Vec<PathBuf>, ChildMetadataHook)>> =
+    std::sync::RwLock::new(Vec::new());
+
+/// Removes its hook from [`CHILD_METADATA_HOOKS`] when dropped.
+#[cfg(test)]
+#[must_use = "the hook is removed as soon as the guard is dropped"]
+pub(crate) struct ChildMetadataHookGuard(ChildMetadataHook);
 
 #[cfg(test)]
-std::thread_local! {
-    /// Runs before each listed child's metadata lookup in a reconciliation on this
-    /// thread, with the child's absolute path. An error it returns stands in for the
-    /// lookup's; it may also change the tree first. Per thread, because tests run in
-    /// parallel and a reconciliation runs on its caller's thread.
-    static CHILD_METADATA_HOOK: std::cell::RefCell<Option<ChildMetadataHook>> =
-        const { std::cell::RefCell::new(None) };
+impl Drop for ChildMetadataHookGuard {
+    fn drop(&mut self) {
+        CHILD_METADATA_HOOKS
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .retain(|(_, hook)| !std::sync::Arc::ptr_eq(hook, &self.0));
+    }
 }
 
-/// Install [`CHILD_METADATA_HOOK`] for the calling thread.
+/// Run `hook` before every listed child's metadata lookup under `root`, on any thread,
+/// until the guard drops.
+///
+/// The hook receives the child's absolute path. An error it returns stands in for the
+/// lookup's; it may also change the tree first. `root` matches as given and canonical,
+/// since an opened root and a detached scan walk the canonical path.
 #[cfg(test)]
-pub(crate) fn set_child_metadata_hook(hook: impl FnMut(&Path) -> Option<std::io::Error> + 'static) {
-    CHILD_METADATA_HOOK.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+pub(crate) fn install_child_metadata_hook(
+    root: &Path,
+    hook: impl Fn(&Path) -> Option<std::io::Error> + Send + Sync + 'static,
+) -> ChildMetadataHookGuard {
+    let mut roots = vec![root.to_path_buf()];
+    if let Ok(canonical) = root.canonicalize() {
+        roots.push(canonical);
+    }
+    let hook: ChildMetadataHook = std::sync::Arc::new(hook);
+    CHILD_METADATA_HOOKS
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push((roots, std::sync::Arc::clone(&hook)));
+    ChildMetadataHookGuard(hook)
 }
 
-/// Remove the calling thread's [`CHILD_METADATA_HOOK`].
+/// The hook installed for a root containing `path`, if any.
 #[cfg(test)]
-pub(crate) fn clear_child_metadata_hook() {
-    CHILD_METADATA_HOOK.with(|slot| *slot.borrow_mut() = None);
+fn child_metadata_hook(path: &Path) -> Option<ChildMetadataHook> {
+    CHILD_METADATA_HOOKS
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter()
+        .find(|(roots, _)| roots.iter().any(|root| path.starts_with(root)))
+        .map(|(_, hook)| std::sync::Arc::clone(hook))
 }
 
-/// Metadata for one entry a reconciliation's listing returned.
-fn listed_child_metadata(entry: &fs::DirEntry) -> std::io::Result<fs::Metadata> {
+/// Metadata for one entry a directory listing returned, or `None` when it is gone.
+///
+/// `NotFound` for a name the listing just returned means the entry was deleted in
+/// between, and every walk records it as it records a name the listing never returned: a
+/// cold walk has nothing to record, and a reconciliation removes what its baseline held.
+/// Reported as an error, it would make a walk over a tree being cleaned partial, and in a
+/// reconciliation it would settle as a phantom entry with permanent partial freshness.
+/// Any other error means the entry is present but unreadable.
+pub(crate) fn listed_child_metadata(entry: &fs::DirEntry) -> std::io::Result<Option<fs::Metadata>> {
     #[cfg(test)]
     {
         let path = entry.path();
-        let injected = CHILD_METADATA_HOOK
-            .with(|slot| slot.borrow_mut().as_mut().and_then(|hook| hook(&path)));
-        if let Some(error) = injected {
-            return Err(error);
+        if let Some(error) = child_metadata_hook(&path).and_then(|hook| hook(&path)) {
+            return missing_as_none(Err(error));
         }
     }
-    metadata_for_fingerprint(entry)
+    missing_as_none(metadata_for_fingerprint(entry))
+}
+
+fn missing_as_none(lookup: std::io::Result<fs::Metadata>) -> std::io::Result<Option<fs::Metadata>> {
+    match lookup {
+        Ok(metadata) => Ok(Some(metadata)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+/// Whether a test hook observes lookups under `path`, which a bulk read would not make.
+#[cfg(all(test, target_os = "macos"))]
+fn child_metadata_hook_covers(path: &Path) -> bool {
+    child_metadata_hook(path).is_some()
 }
 
 /// Owned output from the filesystem walker before it crosses a public mutation boundary.
@@ -1251,8 +1305,9 @@ fn scan_internal(
             crate::counters::bump(|c| c.dir_entries += 1);
             let name = item.file_name();
             let rel_path = rel_dir.join(&name);
-            let meta = match metadata_for_fingerprint(&item) {
-                Ok(meta) => meta,
+            let meta = match listed_child_metadata(&item) {
+                Ok(Some(meta)) => meta,
+                Ok(None) => continue,
                 Err(e) => {
                     report.errors.push(Error::io(item.path(), e));
                     continue;
@@ -2626,8 +2681,9 @@ fn walk_worker_with<E: WalkEmission>(
                 };
                 crate::counters::bump(|c| c.dir_entries += 1);
                 let name = item.file_name();
-                let meta = match metadata_for_fingerprint(&item) {
-                    Ok(meta) => meta,
+                let meta = match listed_child_metadata(&item) {
+                    Ok(Some(meta)) => meta,
+                    Ok(None) => continue,
                     Err(e) => {
                         report.errors.push(Error::io(item.path(), e));
                         continue;
@@ -3761,16 +3817,30 @@ pub fn revalidate(
             // lookup fails. Record it before any fallible per-entry work so an
             // operational error cannot become a false removal in the missing sweep.
             seen.insert(name.clone());
-            control_seen |= name == crate::control::CONTROL_FILE_NAME;
             let rel_path = rel_dir.join(&name);
             let baseline = index.relaxed_expectation(&rel_path);
-            let meta = match metadata_for_fingerprint(&item) {
-                Ok(meta) => meta,
+            let meta = match listed_child_metadata(&item) {
+                Ok(Some(meta)) => meta,
+                Ok(None) => {
+                    // Gone since the listing. A vanished control file stays unseen, so the
+                    // closing sweep drops its rules.
+                    if baseline.state != PathState::Absent {
+                        batch
+                            .push(ObservationOp::if_state(Op::Remove { path: rel_path }, baseline));
+                        if batch.len() >= batch_limit {
+                            sink(Observation::from_ops(std::mem::take(&mut batch)));
+                            batch.reserve(batch_limit);
+                        }
+                    }
+                    continue;
+                }
                 Err(e) => {
+                    control_seen |= name == crate::control::CONTROL_FILE_NAME;
                     report.errors.push(Error::io(item.path(), e));
                     continue;
                 }
             };
+            control_seen |= name == crate::control::CONTROL_FILE_NAME;
 
             let kind = kind_from(&meta);
             let attrs = attrs_from(&meta);
@@ -4008,9 +4078,9 @@ fn reconcile_paths_target(
         opened.push((subtree, started_at));
     }
 
-    // Each subtree closes on its own walk's outcome. One flag for the whole set marked a
-    // verified sibling partial because another subtree could not be read, and withheld
-    // the completeness its listing had earned.
+    // Each subtree closes on its own walk's outcome, so a subtree that could not be read
+    // neither marks a verified sibling partial nor withholds the completeness its listing
+    // earned.
     let mut failure = None;
     let mut completed = Vec::with_capacity(opened.len());
     for (subtree, _) in &opened {
@@ -4379,14 +4449,10 @@ fn reconcile_target_inner(
                     None => target.expectation(&rel_dir.join(&name))?,
                 };
                 let meta = match listed_child_metadata(&item) {
-                    Ok(meta) => meta,
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                        // The listing named it and the lookup found nothing: it was
-                        // deleted in between. That is an observation, not an error;
-                        // recorded as an error it settled as a phantom entry with
-                        // permanent partial freshness. A vanished control file is not
-                        // marked seen, so the listing's closing removals drop its
-                        // rules with it.
+                    Ok(Some(meta)) => meta,
+                    Ok(None) => {
+                        // Gone since the listing. A vanished control file is not marked
+                        // seen, so the listing's closing removals drop its rules.
                         if baseline.state != PathState::Absent {
                             batch.push(ObservationOp::if_state(
                                 Op::Remove { path: rel_dir.join(&name) },
@@ -4652,6 +4718,7 @@ fn reconcile_wave_worker(
             let mut control_seen = false;
             let mut listing_complete = true;
             let mut control_errors = Vec::new();
+            let mut vanished = Vec::new();
 
             {
                 let mut process_entry =
@@ -4800,15 +4867,24 @@ fn reconcile_wave_worker(
                             }
                         };
                         let name = item.file_name();
-                        control_seen |= name == crate::control::CONTROL_FILE_NAME;
                         // Match the serial path: an entry whose name was enumerated is
                         // not missing merely because its metadata could not be read.
                         let baseline = known
                             .remove(&name)
                             .unwrap_or_else(|| index.expectation(&rel_dir.join(&name)));
-                        let meta = match metadata_for_fingerprint(&item) {
-                            Ok(meta) => meta,
+                        let meta = match listed_child_metadata(&item) {
+                            Ok(Some(meta)) => meta,
+                            Ok(None) => {
+                                // Gone since the listing: removed once this directory's
+                                // listing is done. A vanished control file stays unseen, so
+                                // the closing removals drop its rules.
+                                if baseline.state != PathState::Absent {
+                                    vanished.push(name);
+                                }
+                                continue;
+                            }
                             Err(error) => {
+                                control_seen |= name == crate::control::CONTROL_FILE_NAME;
                                 result.scan.errors.push(Error::io(item.path(), error));
                                 continue;
                             }
@@ -4824,6 +4900,15 @@ fn reconcile_wave_worker(
                 }
             }
             result.scan.errors.append(&mut control_errors);
+            for name in vanished {
+                defer_reconcile_op(
+                    Op::Remove { path: rel_dir.join(name) },
+                    &mut result.operations,
+                    deferred_count,
+                    overflowed,
+                    max_deferred_ops,
+                );
+            }
             if listing_complete {
                 for (name, _) in known {
                     defer_reconcile_op(
@@ -7873,38 +7958,133 @@ mod tests {
         assert!(observed_after_apply);
     }
 
-    /// A name the listing returned that is gone by the time it is stat'd was deleted. The
-    /// walk removes it; recorded as an error, it settled as a phantom entry with permanent
-    /// partial freshness that no later event healed.
-    #[test]
-    fn a_child_deleted_between_listing_and_stat_is_removed_rather_than_reported() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        write_file(&dir.path().join("keep.txt"), b"keep");
-        let victim = dir.path().join("gone.txt");
-        write_file(&victim, b"gone");
-        let config = ScanConfig { threads: Some(1), ..ScanConfig::default() };
-        let (mut index, _) = scan_into_index(dir.path(), &config).expect("scan");
-        assert!(index.lookup(Path::new("gone.txt")).is_some());
-
-        index.apply_ok(&Observation::new(vec![Op::InvalidateSubtree {
-            path: PathBuf::new(),
-            reason: crate::InvalidateReason::Requested,
-        }]));
-        set_child_metadata_hook(move |path| {
-            if path.file_name() == Some(OsStr::new("gone.txt")) {
-                fs::remove_file(&victim).expect("delete between listing and stat");
+    /// Delete `name` under `root` from inside its own metadata lookup, after the listing
+    /// returned it, on whichever thread performs the lookup.
+    fn delete_between_listing_and_stat(root: &Path, name: &'static str) -> ChildMetadataHookGuard {
+        install_child_metadata_hook(root, move |path| {
+            if path.file_name() == Some(OsStr::new(name)) {
+                fs::remove_file(path).expect("delete between listing and stat");
             }
             None
-        });
-        let report = reconcile_pending(&mut index, &config, &mut |_| {});
-        clear_child_metadata_hook();
-        let report = report.expect("reconcile");
+        })
+    }
 
-        assert!(report.is_complete(), "{:?}", report.scan.errors);
-        assert_eq!(report.apply.removed, 1);
+    /// A name the listing returned that is gone by the time it is stat'd was deleted, on
+    /// the serial path and on the parallel waves a full-root pass takes by default. The
+    /// walk removes it; recorded as an error, it would settle as a phantom entry with
+    /// permanent partial freshness.
+    #[test]
+    fn a_child_deleted_between_listing_and_stat_is_removed_rather_than_reported() {
+        for threads in [1, 4] {
+            let dir = tempfile::tempdir().expect("tempdir");
+            write_file(&dir.path().join("keep.txt"), b"keep");
+            write_file(&dir.path().join("gone.txt"), b"gone");
+            let config = ScanConfig { threads: Some(threads), ..ScanConfig::default() };
+            let (mut index, _) = scan_into_index(dir.path(), &config).expect("scan");
+            assert!(index.lookup(Path::new("gone.txt")).is_some());
+
+            index.apply_ok(&Observation::new(vec![Op::InvalidateSubtree {
+                path: PathBuf::new(),
+                reason: crate::InvalidateReason::Requested,
+            }]));
+            let hook = delete_between_listing_and_stat(dir.path(), "gone.txt");
+            let report = reconcile_pending(&mut index, &config, &mut |_| {});
+            drop(hook);
+            let report = report.expect("reconcile");
+
+            assert!(report.is_complete(), "threads {threads}: {:?}", report.scan.errors);
+            assert_eq!(report.apply.removed, 1, "threads {threads}");
+            assert!(index.lookup(Path::new("gone.txt")).is_none(), "threads {threads}");
+            assert!(index.lookup(Path::new("keep.txt")).is_some(), "threads {threads}");
+            assert_eq!(index.freshness(), crate::Freshness::Fresh, "threads {threads}");
+        }
+    }
+
+    /// A vanished control file takes its rules with it on both reconcile paths.
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn a_control_file_deleted_between_listing_and_stat_takes_its_rules_with_it() {
+        for threads in [1, 4] {
+            let dir = tempfile::tempdir().expect("tempdir");
+            write_file(&dir.path().join(".gitignore"), b"*.log\n");
+            write_file(&dir.path().join("a.log"), b"log");
+            let config =
+                ScanConfig { read_controls: true, threads: Some(threads), ..ScanConfig::default() };
+            let (mut index, _) = scan_into_index(dir.path(), &config).expect("scan");
+            assert_eq!(
+                index.is_ignored(Path::new("a.log")).expect("control state observed"),
+                Some(true)
+            );
+
+            index.apply_ok(&Observation::new(vec![Op::InvalidateSubtree {
+                path: PathBuf::new(),
+                reason: crate::InvalidateReason::Requested,
+            }]));
+            let hook = delete_between_listing_and_stat(dir.path(), ".gitignore");
+            let report = reconcile_pending(&mut index, &config, &mut |_| {});
+            drop(hook);
+            let report = report.expect("reconcile");
+
+            assert!(report.is_complete(), "threads {threads}: {:?}", report.scan.errors);
+            assert!(index.lookup(Path::new(".gitignore")).is_none(), "threads {threads}");
+            assert!(
+                !index
+                    .controls()
+                    .expect("control state observed")
+                    .contains(Path::new(".gitignore")),
+                "threads {threads}"
+            );
+            assert_eq!(
+                index.is_ignored(Path::new("a.log")).expect("control state observed"),
+                Some(false),
+                "threads {threads}"
+            );
+        }
+    }
+
+    /// A cold walk records a name gone by its stat as it records a name the listing never
+    /// returned: not at all, and without an error that would make the walk partial.
+    #[test]
+    fn a_cold_walk_omits_a_child_deleted_between_listing_and_stat() {
+        for threads in [1, 4] {
+            let dir = tempfile::tempdir().expect("tempdir");
+            write_file(&dir.path().join("keep.txt"), b"keep");
+            write_file(&dir.path().join("gone.txt"), b"gone");
+            let config = ScanConfig { threads: Some(threads), ..ScanConfig::default() };
+
+            let hook = delete_between_listing_and_stat(dir.path(), "gone.txt");
+            let scanned = scan_into_index_via_scanner(dir.path(), &config);
+            drop(hook);
+            let (index, report) = scanned.expect("scan");
+
+            assert!(report.is_complete(), "threads {threads}: {:?}", report.errors);
+            assert!(index.lookup(Path::new("gone.txt")).is_none(), "threads {threads}");
+            assert!(index.lookup(Path::new("keep.txt")).is_some(), "threads {threads}");
+        }
+    }
+
+    /// Revalidation emits the removal a reconciliation would apply.
+    #[test]
+    fn revalidation_removes_a_child_deleted_between_listing_and_stat() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join("keep.txt"), b"keep");
+        write_file(&dir.path().join("gone.txt"), b"gone");
+        let (mut index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
+
+        let hook = delete_between_listing_and_stat(dir.path(), "gone.txt");
+        let mut observations = Vec::new();
+        let report = revalidate(&index, &ScanConfig::default(), &mut |observation| {
+            observations.push(observation);
+        });
+        drop(hook);
+        let report = report.expect("revalidate");
+        for observation in &observations {
+            index.apply_ok(observation);
+        }
+
+        assert!(report.is_complete(), "{:?}", report.errors);
         assert!(index.lookup(Path::new("gone.txt")).is_none());
         assert!(index.lookup(Path::new("keep.txt")).is_some());
-        assert_eq!(index.freshness(), crate::Freshness::Fresh);
     }
 
     #[test]

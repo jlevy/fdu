@@ -28,7 +28,7 @@ use fdu_core::{
 const PROBE_SCHEMA: &str = "fdu-perf-probe-v1";
 const DIGEST_ALGORITHM: &str = "fdu-index-record-v1/sha256-multiset-v1";
 const COMMIT_DIGEST_ALGORITHM: &str = "fdu-commit-debug-v1/sha256-sequence-v1";
-const OPENED_PROBE_JOURNAL_CAPACITY: usize = 4 * 1024 * 1024;
+const OPENED_PROBE_JOURNAL_CAPACITY_BYTES: usize = 4 * 1024 * 1024;
 
 /// Count what the run allocates.
 ///
@@ -999,7 +999,7 @@ fn opened_discovery(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         hidden: arguments.scan.hidden.clone(),
         exclude_special: arguments.scan.exclude_special,
         types: arguments.scan.types.clone(),
-        journal_capacity: OPENED_PROBE_JOURNAL_CAPACITY,
+        journal_capacity_bytes: OPENED_PROBE_JOURNAL_CAPACITY_BYTES,
         ..OpenOptions::default()
     };
     opened_discovery_with_options(arguments, options)
