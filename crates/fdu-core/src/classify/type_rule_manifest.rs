@@ -1,6 +1,6 @@
-// NOTE: `//!` is impossible here -- `build.rs` includes this file into the middle of
-// its own module, where an inner doc comment is a parse error. The module's rustdoc
-// lives on the owning `classify` module.
+// NOTE: `//!` is impossible here -- `build.rs` includes this file into a module of its
+// own, where an inner doc comment is a parse error. The module's rustdoc lives on the
+// owning `classify` module.
 // The `[[kind]]` manifest dialect, parsed and validated by one implementation.
 //
 // This file is compiled into the crate *and* `include!`d by `build.rs`, so the rules a
@@ -9,15 +9,18 @@
 // mean one thing to the compiler and another to a consumer, and neither is wrong on its
 // own terms.
 //
-// Being shared with a build script constrains it: no `use` statements, because
-// `build.rs` has its own and a duplicate import is an error; and nothing from `crate::`,
-// because a build script has no crate to reach into. The dialect's own vocabulary
-// (`family` as a string, for one) survives here for the same reason — mapping it onto
-// engine types is the caller's job on either side.
+// Being shared with a build script constrains it: nothing from `crate::`, because a
+// build script has no crate to reach into, and nothing from `super::` but the sibling
+// `manifest_toml`, which `build.rs` includes beside it under the same name. The dialect's
+// own vocabulary (`family` as a string, for one) survives here for the same reason —
+// mapping it onto engine types is the caller's job on either side.
 //
 // The dialect is deliberately a subset of TOML rather than TOML: `[[kind]]` tables of
-// quoted strings, string arrays, and one integer. A real TOML parser would accept more
-// than the dialect means and cost a dependency on the engine's always-on list.
+// strings, string arrays, and one integer. A real TOML parser would accept more than the
+// dialect means and cost a dependency on the engine's always-on list. The TOML it is
+// written in is read by `manifest_toml`, the same cursor that reads the File Rollup
+// registry, so a comment after a value, a comma inside a string, or an escaped quote
+// means here what it means there.
 
 /// Default tie-break weight when a rule omits `priority`.
 const DEFAULT_MANIFEST_PRIORITY: u16 = 100;
@@ -59,16 +62,19 @@ pub(crate) const MANIFEST_FAMILIES: &[&str] =
 /// Errors name a line number: a manifest is something a person edits, and "expected a
 /// quoted string" without a location is a worse message than no message.
 pub(crate) fn parse_manifest(source: &str) -> Result<Vec<ManifestRule>, String> {
+    let source = source.strip_prefix(super::manifest_toml::BYTE_ORDER_MARK).unwrap_or(source);
+    let mut document = super::manifest_toml::Document::new(source);
     let mut rules = Vec::new();
     let mut current: Option<ManifestRule> = None;
     let mut seen_fields = 0_u8;
-    for (line_index, raw) in source.lines().enumerate() {
-        let line_number = line_index + 1;
-        let line = raw.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if line == "[[kind]]" {
+    while document.next_line() {
+        let line_number = document.line;
+        if document.peek() == Some(b'[') {
+            let name = document.table_header("[[kind]]")?;
+            if name != "kind" {
+                return Err(format!("line {line_number}: unknown table [[{name}]]"));
+            }
+            document.end_of_line("header")?;
             if let Some(rule) = current.take() {
                 rules.push(rule);
             }
@@ -82,11 +88,10 @@ pub(crate) fn parse_manifest(source: &str) -> Result<Vec<ManifestRule>, String> 
         let rule = current
             .as_mut()
             .ok_or_else(|| format!("line {line_number}: field appears before [[kind]]"))?;
-        let (key, value) = line
-            .split_once('=')
-            .ok_or_else(|| format!("line {line_number}: expected key = value"))?;
-        let key = key.trim();
-        let value = value.trim();
+        let key = document.key()?;
+        // Read the value before judging the key, so an unknown field is reported as one
+        // rather than as whatever its value happens to be.
+        let value = document.value();
         let field = match key {
             "id" => FIELD_ID,
             "family" => FIELD_FAMILY,
@@ -101,42 +106,20 @@ pub(crate) fn parse_manifest(source: &str) -> Result<Vec<ManifestRule>, String> 
         }
         seen_fields |= field;
         match key {
-            "id" => rule.id = parse_manifest_string(value, line_number)?,
-            "family" => rule.family = parse_manifest_string(value, line_number)?,
-            "extensions" => rule.extensions = parse_manifest_array(value, line_number)?,
-            "filenames" => rule.filenames = parse_manifest_array(value, line_number)?,
-            "shebangs" => rule.shebangs = parse_manifest_array(value, line_number)?,
-            "priority" => {
-                rule.priority = value
-                    .parse()
-                    .map_err(|_| format!("line {line_number}: priority must fit u16"))?;
-            }
+            "id" => rule.id = value?.string(line_number)?,
+            "family" => rule.family = value?.string(line_number)?,
+            "extensions" => rule.extensions = value?.strings(line_number)?,
+            "filenames" => rule.filenames = value?.strings(line_number)?,
+            "shebangs" => rule.shebangs = value?.strings(line_number)?,
+            "priority" => rule.priority = value?.integer(line_number)?,
             _ => unreachable!("field name was resolved above"),
         }
+        document.end_of_line("value")?;
     }
     if let Some(rule) = current {
         rules.push(rule);
     }
     Ok(rules)
-}
-
-fn parse_manifest_string(value: &str, line: usize) -> Result<String, String> {
-    value
-        .strip_prefix('"')
-        .and_then(|value| value.strip_suffix('"'))
-        .map(str::to_owned)
-        .ok_or_else(|| format!("line {line}: expected a quoted string"))
-}
-
-fn parse_manifest_array(value: &str, line: usize) -> Result<Vec<String>, String> {
-    let inner = value
-        .strip_prefix('[')
-        .and_then(|value| value.strip_suffix(']'))
-        .ok_or_else(|| format!("line {line}: expected a string array"))?;
-    if inner.trim().is_empty() {
-        return Ok(Vec::new());
-    }
-    inner.split(',').map(|item| parse_manifest_string(item.trim(), line)).collect()
 }
 
 /// Reject a manifest that would classify ambiguously or name something the engine cannot.
@@ -236,4 +219,186 @@ pub(crate) fn manifest_fingerprint(rules: &[ManifestRule]) -> u64 {
         bytes(&mut hash, &rule.priority.to_le_bytes());
     }
     hash
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The smallest manifest that sets every field, in the plainest spelling.
+    const PLAIN: &str = r#"[[kind]]
+id = "notes"
+family = "prose"
+extensions = ["md", "txt"]
+filenames = ["readme"]
+shebangs = []
+priority = 90
+"#;
+
+    fn plain() -> Vec<ManifestRule> {
+        parse_manifest(PLAIN).expect("the plain manifest parses")
+    }
+
+    /// `PLAIN` with each `(from, to)` replaced once, so a case says only what it changes.
+    fn spelled(replacements: &[(&str, &str)]) -> String {
+        replacements.iter().fold(PLAIN.to_string(), |source, (from, to)| {
+            assert_eq!(source.matches(from).count(), 1, "{from:?} names one place in PLAIN");
+            source.replacen(from, to, 1)
+        })
+    }
+
+    /// The same form table as the File Rollup registry's, because one cursor reads both.
+    #[test]
+    fn each_toml_spelling_of_a_manifest_reads_as_the_plain_one() {
+        let cases: &[(&str, String)] = &[
+            ("a byte-order mark", format!("\u{feff}{PLAIN}")),
+            ("CRLF line endings", PLAIN.replace('\n', "\r\n")),
+            ("no final line ending", PLAIN.trim_end().to_string()),
+            (
+                "comments after headers and values",
+                spelled(&[
+                    ("[[kind]]", "[[kind]] # a rule"),
+                    ("id = \"notes\"", "id = \"notes\" # \"x\""),
+                    ("extensions = [\"md\", \"txt\"]", "extensions = [\"md\", \"txt\"] # ]"),
+                    ("priority = 90", "priority = 90# no space before the comment"),
+                ]),
+            ),
+            ("spaces inside a header", spelled(&[("[[kind]]", "[[ kind ]]")])),
+            (
+                "arrays over several lines",
+                spelled(&[
+                    (
+                        "extensions = [\"md\", \"txt\"]",
+                        "extensions = [\n  \"md\", # Markdown\n\n  \"txt\", # trailing comma\n]",
+                    ),
+                    ("shebangs = []", "shebangs = [\n  # none yet\n]"),
+                ]),
+            ),
+            (
+                "literal strings",
+                spelled(&[
+                    ("family = \"prose\"", "family = 'prose'"),
+                    ("extensions = [\"md\", \"txt\"]", "extensions = ['md', \"txt\"]"),
+                ]),
+            ),
+            (
+                "multi-line basic strings",
+                spelled(&[
+                    ("id = \"notes\"", "id = \"\"\"\nnotes\"\"\""),
+                    ("family = \"prose\"", "family = \"\"\"pro\\\n\n      se\"\"\""),
+                ]),
+            ),
+            (
+                "a multi-line literal string",
+                spelled(&[("family = \"prose\"", "family = '''prose'''")]),
+            ),
+            (
+                "unicode escapes",
+                spelled(&[
+                    ("id = \"notes\"", "id = \"n\\u006Ftes\""),
+                    ("family = \"prose\"", "family = \"\\U00000070rose\""),
+                ]),
+            ),
+            ("digit separators and a sign", spelled(&[("priority = 90", "priority = +9_0")])),
+        ];
+        for (form, source) in cases {
+            assert_eq!(parse_manifest(source).as_ref(), Ok(&plain()), "{form}");
+        }
+    }
+
+    /// Each value is one TOML string: a comma or bracket inside it is not a separator, and
+    /// an escape is decoded rather than kept.
+    #[test]
+    fn strings_decode_escapes_and_keep_their_separators() {
+        let cases = [
+            (r#""say \"hi\" \\ \t \u00e9 \U0001F600""#, "say \"hi\" \\ \t \u{e9} \u{1f600}"),
+            (r#""\b\f\n\r""#, "\u{8}\u{c}\n\r"),
+            (r#""C# notes""#, "C# notes"),
+            (r#""a,b""#, "a,b"),
+            (r#""]""#, "]"),
+            (r#"'C:\dir\"x'"#, r#"C:\dir\"x"#),
+            (r#""""quoted ""end""""""#, r#"quoted ""end"""#),
+            (r"'''it's ''quoted'''''", r"it's ''quoted''"),
+        ];
+        for (written, shebang) in cases {
+            let line = format!("shebangs = [{written}]");
+            let source = spelled(&[("shebangs = []", line.as_str())]);
+            let rules =
+                parse_manifest(&source).unwrap_or_else(|error| panic!("{written}: {error}"));
+            assert_eq!(rules[0].shebangs, [shebang], "{written}");
+        }
+        let rules = parse_manifest(&spelled(&[("shebangs = []", "shebangs = [\"a,b\", 'c']")]))
+            .expect("two items, one with a comma");
+        assert_eq!(rules[0].shebangs, ["a,b", "c"]);
+    }
+
+    #[test]
+    fn forms_the_manifest_does_not_need_are_rejected_by_name() {
+        let cases = [
+            (("[[kind]]", "[kind]"), "single-bracket tables are not supported; use [[kind]]"),
+            (("[[kind]]", "[[widget]]"), "unknown table [[widget]]"),
+            (("[[kind]]", "[[kind]] id = \"notes\""), "unexpected text after the header"),
+            (("[[kind]]", "[[kind.sub]]"), "dotted keys are not supported"),
+            (("id = \"notes\"", "\"id\" = \"notes\""), "quoted keys are not supported"),
+            (("family = \"prose\"", "family.name = \"prose\""), "dotted keys are not supported"),
+            (
+                ("family = \"prose\"", "family = { name = \"prose\" }"),
+                "inline tables are not supported",
+            ),
+            (
+                ("extensions = [\"md\", \"txt\"]", "extensions = [[\"md\"], \"txt\"]"),
+                "nested arrays",
+            ),
+            (
+                ("extensions = [\"md\", \"txt\"]", "extensions = [\"md\" \"txt\"]"),
+                "expected , or ]",
+            ),
+            (
+                ("extensions = [\"md\", \"txt\"]", "extensions = [\"md\", 1]"),
+                "expected a string array",
+            ),
+            (("extensions = [\"md\", \"txt\"]", "extensions = \"md\""), "expected a string array"),
+            (("id = \"notes\"", "id = notes"), "expected a quoted string"),
+            (("id = \"notes\"", "id ="), "expected a value"),
+            (("id = \"notes\"", "name = \"notes\""), "unknown field \"name\""),
+            (("priority = 90", "priority = 90\npriority = 80"), "duplicate field \"priority\""),
+            (("priority = 90", "priority = 0x5A"), "hexadecimal, octal, and binary integers"),
+            (("priority = 90", "priority = 090"), "expected a nonnegative integer"),
+            (("priority = 90", "priority = 9__0"), "expected a nonnegative integer"),
+            (("priority = 90", "priority = -90"), "expected a nonnegative integer"),
+            (("priority = 90", "priority = \"90\""), "expected a nonnegative integer"),
+            (("priority = 90", "priority = 70000"), "70000 is out of range for this field"),
+            (("family = \"prose\"", "family = \"pro\\qse\""), "invalid escape \\q"),
+            (
+                ("family = \"prose\"", "family = \"\\uD800\""),
+                "\\uD800 is not a Unicode scalar value",
+            ),
+            (("family = \"prose\"", "family = \"\\u12\""), "\\u needs 4 hexadecimal digits"),
+            (("family = \"prose\"", "family = \"prose"), "unterminated string"),
+            (("family = \"prose\"", "family = \"pro\u{1}se\""), "control characters in strings"),
+            (
+                ("family = \"prose\"", "family = \"prose\" \"again\""),
+                "unexpected text after the value",
+            ),
+            (("family = \"prose\"", "family = \"\"\"never closed"), "unterminated string"),
+        ];
+        for ((from, to), message) in cases {
+            let error = parse_manifest(&spelled(&[(from, to)])).expect_err(to);
+            assert!(error.contains(message), "{to:?} gave {error:?}, not {message:?}");
+        }
+        let error =
+            parse_manifest(&PLAIN.replace("shebangs = []\npriority = 90\n", "shebangs = [\n"))
+                .expect_err("an array open at the end of the document");
+        assert!(error.contains("unterminated array"), "{error}");
+        let error = parse_manifest(&format!("id = \"early\"\n{PLAIN}")).expect_err("no rule yet");
+        assert!(error.contains("line 1: field appears before [[kind]]"), "{error}");
+    }
+
+    /// An error names the line it is on, not the line its value started on.
+    #[test]
+    fn an_error_inside_a_multi_line_array_names_its_own_line() {
+        let source = spelled(&[("shebangs = []", "shebangs = [\n  \"sh\"\n  \"bash\"\n]")]);
+        let error = parse_manifest(&source).expect_err("a missing comma");
+        assert!(error.starts_with("line 8: expected , or ]"), "{error}");
+    }
 }

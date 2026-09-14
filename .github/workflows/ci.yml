@@ -119,6 +119,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.97.1
         with:
           toolchain: 1.97.1
+          components: clippy
       # Library consumers take `default-features = false`. Without this job, that path
       # would only ever be compiled by them.
       - run: cargo test --locked -p fdu-core --no-default-features
@@ -128,7 +129,12 @@ jobs:
       - run: cargo test --locked -p fdu-core --no-default-features --features watch,gitignore
       # The command line promises to build without `watch`, which keeps that layer
       # deletable. Nothing compiled the shape until it had already stopped building.
-      - run: cargo check --locked -p fdu --no-default-features --all-targets
+      # Clippy rather than check, because the pedantic lints are clippy's and the Clippy
+      # job lints only all features.
+      - run: cargo clippy --locked -p fdu --no-default-features --all-targets -- -D warnings
+      # Compiling a test is not running it: the guide named `--watch` to a binary without
+      # it while every build of this shape passed.
+      - run: cargo test --locked -p fdu --no-default-features --lib
 
   msrv:
     name: MSRV (1.85)

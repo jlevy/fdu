@@ -12,6 +12,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
+use type_rule_manifest::{ManifestRule, manifest_fingerprint, parse_manifest, validate_manifest};
+
 const RULES_PATH: &str = "rules/file-types.toml";
 const GENERATED_NAME: &str = "file_type_rules.rs";
 /// The dialect's one parser, compiled into the crate and included here.
@@ -20,13 +22,23 @@ const GENERATED_NAME: &str = "file_type_rules.rs";
 /// the code that read this repository's manifest at build time, so the two cannot come
 /// to disagree about what `[[kind]]` means.
 const MANIFEST_PARSER_PATH: &str = "src/classify/type_rule_manifest.rs";
+/// The TOML cursor that parser reads with, which the File Rollup registry shares.
+const MANIFEST_TOML_PATH: &str = "src/classify/manifest_toml.rs";
 
-include!("src/classify/type_rule_manifest.rs");
+// Each file keeps its crate module name, so the parser's `super::manifest_toml` resolves
+// here exactly as it does in `classify`.
+mod manifest_toml {
+    include!("src/classify/manifest_toml.rs");
+}
+mod type_rule_manifest {
+    include!("src/classify/type_rule_manifest.rs");
+}
 
 fn main() {
     emit_version();
     println!("cargo:rerun-if-changed={RULES_PATH}");
     println!("cargo:rerun-if-changed={MANIFEST_PARSER_PATH}");
+    println!("cargo:rerun-if-changed={MANIFEST_TOML_PATH}");
     let source = fs::read_to_string(RULES_PATH).expect("read file-type rules");
     let rules = parse_manifest(&source).unwrap_or_else(|error| panic!("{RULES_PATH}: {error}"));
     validate_manifest(&rules).unwrap_or_else(|error| panic!("{RULES_PATH}: {error}"));
