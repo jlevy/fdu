@@ -1,11 +1,11 @@
 ---
 type: is
 id: is-01m0tra5gw0ap6nbbzgt7egvr4
-title: "[bug] Gitignore bind walks the whole tree at open, even cache-only"
+title: Controls-on reconcile re-reads every .gitignore even when its attrs are unchanged
 kind: bug
 status: open
 priority: 1
-version: 13
+version: 15
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -23,8 +23,10 @@ labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
+child_order_hints:
+  - is-01m2exj373p2d2ma725h7pz393
 created_at: 2026-08-24T20:45:09.518Z
-updated_at: 2026-09-14T01:49:45.552Z
+updated_at: 2026-09-14T02:58:21.993Z
 closed_at: null
 close_reason: null
 resolution: null
@@ -101,3 +103,14 @@ Two of the three findings in the d58d9c5 review land on this bead, and both are 
    open -- I have taken as reported and not independently verified.
 
 2026-09-13 (PR #48 review CLASS-8, deferred here as the reduced residual of this bead): the bind walk this bead filed is fixed on #48, but two correct-yet-wasteful passes remain. Every snapshot load BFS-walks the whole tree, allocating a PathBuf per entry, even when the control table is empty (crates/fdu-core/src/index.rs, the control install walk after load, around the ControlTable install in the snapshot load path); and every warm reconcile re-reads every .gitignore regardless of unchanged attrs (crates/fdu-core/src/scan.rs, read_control_op called from the reconcile walk). Review fix: return early on an empty control table, and skip control files whose attributes are unchanged. Review: https://github.com/jlevy/fdu/pull/48#pullrequestreview-5192314101
+
+2026-09-14 (fixer, at afe0f89 on codex/opened-root-inventory-rewrite). The description and the first two note rounds describe code that is gone: rebind_tag_rules, adopt_tag_rules, adopt_pruned_control_dirs and MAX_CONTROL_DIRS have no match under crates/. Retitled to the one live residual.
+
+Snapshot half: fixed in afe0f89. install_controls (crates/fdu-core/src/index.rs:1228-1250@afe0f89) returns before the reclassification walk when both the loaded table and the one it replaces are empty, since no ignored bit can move then. Test loading_a_snapshot_without_controls_skips_the_reclassification_walk counts walk visits through a test-only per-thread probe: 0 with the early-out and 65 with it removed (mutation run). A snapshot that does carry a control still walks and reclassifies.
+
+Reconcile half: left open. Skipping read_control_op when the entry's attrs equal its baseline is not exact with the facts the index carries today. The table stores a content identity (ControlSource.identity, a hash of the bytes), not the attrs it was read at. So "attrs unchanged" proves the table is current only if every writer that commits a .gitignore entry's attrs also commits its content. Three writers do not:
+1. A read error. The listing walk pushes the upsert, then reads (scan.rs:3617-3631@afe0f89). If the file became unreadable, the new attrs commit and the old source stays. Today the next reconcile reads again, reports the error, and stays partial. With the skip it would find the attrs unchanged, read nothing, report complete, and mark the path Fresh with the stale rules: a silent lie.
+2. A batch split. The upsert can flush at the batch bound before the ControlUpsert is pushed. The ControlUpsert is conditioned on the pre-upsert baseline, so it is rejected as stale. The retry then sees unchanged attrs and would skip the very read the retry exists to perform.
+3. A subtree rooted at the file. Reconciling a retained .gitignore as its own subtree never reads the control at all (fdu-uzzv, reproduced). The next full walk is what repairs that today; with the skip, nothing would.
+
+Making the skip exact needs a design decision, not an early-out. Option (a): record in the index, through the commit path, the attrs at which each control source was admitted, and skip only when those equal the observed attrs. Option (b): make every writer commit a .gitignore's attrs and content atomically, and withhold the attrs when the read fails. Either removes all three cases. Measure the read cost on a real tree before choosing: it is one open plus one read per .gitignore, against one stat per entry.

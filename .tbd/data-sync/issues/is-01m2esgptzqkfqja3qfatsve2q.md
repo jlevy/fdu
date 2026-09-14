@@ -5,14 +5,14 @@ title: Key snapshots by scan scope so report, open, and --watch snapshots stop e
 kind: feature
 status: open
 priority: 2
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-09-14T01:46:42.910Z
-updated_at: 2026-09-14T01:47:10.951Z
+updated_at: 2026-09-14T02:53:08.186Z
 ---
 One cause behind two stack follow-ups: PR #51 review COMMIT-3's cache split (fdu-etfj) and PR #52 review BUILD-3 (fdu-ughl, closed as documented). The fixer's recommended fix is to key snapshots by scan scope.
 
@@ -32,3 +32,9 @@ One cause behind two stack follow-ups: PR #51 review COMMIT-3's cache split (fdu
 - Add the parity case COMMIT-3 asked for: CLI and Python `report` against one cache path, in both orders. #51 covered it only at engine level, because the binding could not be built on that host.
 
 Reviews: https://github.com/jlevy/fdu/pull/51#pullrequestreview-5192254822 and https://github.com/jlevy/fdu/pull/52#pullrequestreview-5192264318
+
+## Notes
+
+2026-09-14 (fix wave, PR #51 2237a70): the command-line half is cured without keying. `fdu --watch` now scans with read_controls: false (crates/fdu/src/cli.rs:536-552@2237a70) because no CLI view reads control state (fdu-1onj), so its snapshot carries the one-shot scope. A watch after a report that saved its snapshot now takes WarmRevalidate, and so does an analyzing report after a watch; a plain metadata `fdu PATH` still never reads under Auto, by the planner's cost rule rather than by scope. Pinned by crates/fdu/tests/watch_controls.rs a_watch_and_a_one_shot_report_start_warm_from_each_others_snapshot (red before the change: cold_scan after a watch).
+
+What remains: open / fdu.open versus report still keep different scopes at one cache path and replace each other (pending fdu-agb6, or keying here); the CLI-and-Python report parity case in both orders is still owed. The README and CachePolicy::Auto wording from e3b5103/8640758 exists only on #52 (README.md:190-197 and crates/fdu-core/src/lib.rs:156-165 at ba83690) and becomes wrong when #51 propagates: it says `fdu --watch PATH` observes control state and that a watch after `fdu PATH` starts cold. The propagation pass must rewrite both to say that `fdu PATH` and `fdu --watch PATH` share the controls-off scope and warm-start from each other, and that only a default open / fdu.open keeps the controls-on scope. Not revised on #51 because that text is not there.

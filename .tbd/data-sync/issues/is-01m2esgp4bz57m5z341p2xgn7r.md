@@ -3,16 +3,20 @@ type: is
 id: is-01m2esgp4bz57m5z341p2xgn7r
 title: Typed Python Tree cannot request depth or include_ignored, and OpenedOptions has no registry field
 kind: bug
-status: open
+status: closed
 priority: 2
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2ebb348tnqdeqn4fddykv4s
 created_at: 2026-09-14T01:46:42.186Z
-updated_at: 2026-09-14T01:46:42.186Z
+updated_at: 2026-09-14T02:59:03.753Z
+closed_at: 2026-09-14T02:59:03.751Z
+close_reason: "77e3afa: Tree gains depth (int | Bound, default 1) and include_ignored (default True) with __post_init__ validation and wire encoding; OpenedOptions gains type_rules (registry document text) passed through the binding into OpenOptions.types, parse failures raising InvalidArgumentError; value-model tests, wheel smoke checks, and the strict typecheck consumer cover both."
+resolution: null
+duplicate_of: null
 ---
 From PR #48 review 5192314101, "Prior findings". The two typed-Python gaps in the MetaBrowser notes of 2026-09-01 (https://github.com/jlevy/fdu/pull/48#issuecomment-5497607702) are still present. No finding ID was assigned, and the #48 disposition map does not mention them.
 

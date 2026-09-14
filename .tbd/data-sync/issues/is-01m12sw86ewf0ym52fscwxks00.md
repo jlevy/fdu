@@ -3,15 +3,19 @@ type: is
 id: is-01m12sw86ewf0ym52fscwxks00
 title: Untrusted sidecar path validated with is_absolute in content_cache.rs
 kind: bug
-status: open
+status: closed
 priority: 2
-version: 4
+version: 5
 labels:
   - engine-correctness
   - stack-followup
 dependencies: []
 created_at: 2026-08-27T23:46:26.125Z
-updated_at: 2026-09-14T01:49:45.652Z
+updated_at: 2026-09-14T02:59:03.389Z
+closed_at: 2026-09-14T02:59:03.388Z
+close_reason: "f00bad5, 324048c: the sidecar parser rejects any record whose path has a component other than Normal or CurDir (private record_path_stays_inside_root in content_cache.rs, not the index helper #51 removes), so .., rooted-without-drive and drive-relative paths make the sidecar a clean miss; fixture test covers absolute, .., nested .., and on Windows drive-absolute, rooted and drive-relative paths plus a restoring relative path."
+resolution: null
+duplicate_of: null
 ---
 crates/fdu-core/src/content/content_cache.rs validates an untrusted sidecar path with relative_path.is_absolute(). This is the same defective question PR #47 commit 5ace86c corrected elsewhere: is_absolute answers false for a Windows rooted path with no drive prefix, and '..' slips past it on every platform including Unix.
 

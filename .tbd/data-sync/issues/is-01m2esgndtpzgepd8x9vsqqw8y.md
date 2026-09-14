@@ -3,16 +3,20 @@ type: is
 id: is-01m2esgndtpzgepd8x9vsqqw8y
 title: One-shot and shared reconcile still re-queue unclosable invalidations after LIFE-2
 kind: bug
-status: open
+status: closed
 priority: 2
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2ebb348tnqdeqn4fddykv4s
 created_at: 2026-09-14T01:46:41.465Z
-updated_at: 2026-09-14T01:46:41.465Z
+updated_at: 2026-09-14T02:56:50.144Z
+closed_at: 2026-09-14T02:56:50.143Z
+close_reason: "baf6c00: the shared reconcile target (Watcher::apply_next, so fdu --watch and Python Index.watch()) now queues an incomplete reconciliation again only for a lost race; a scan error settles, the subtree stays partial, and the watcher retains the cause as a root-relative Unreadable issue. reconcile_pending (Direct) keeps its retry; both entry points document the split. Tests: partial_shared_pending_reconciliation_settles_instead_of_retrying, apply_next_walks_an_unreadable_gap_once_and_retains_its_cause (3 walks before, 1 after). CI green: https://github.com/jlevy/fdu/actions/runs/34800532388"
+resolution: null
+duplicate_of: null
 ---
 Scope gap left by PR #48 review LIFE-2, which was fixed for opened roots only (fdu-e6vi, f276cb5). Recorded by the fixer. The disposition map says "The one-shot and shared reconcile APIs keep their documented retry."
 

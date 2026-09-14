@@ -5,7 +5,7 @@ title: Control-table budget aborts the scan instead of degrading to partial
 kind: bug
 status: open
 priority: 0
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - scale
@@ -14,7 +14,7 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-30T07:12:14.310Z
-updated_at: 2026-09-14T02:43:29.754Z
+updated_at: 2026-09-14T02:53:06.801Z
 ---
 ControlTable::upsert (crates/fdu-core/src/control.rs:120) returns Err(ControlSourceLimit) when the cumulative retained cost crosses MAX_CONTROL_TABLE_BYTES, and index.rs:1203 does the same on install. The error propagates and kills the whole scan - the user gets nothing after minutes of walking.
 
@@ -41,3 +41,7 @@ For opened roots, a control-bound error no longer kills discovery; it now degrad
 What still fails on a control bound, which the CLASS-1 disposition understated (FIX48-7). The discovery improvement reaches only roots that do not observe. (a) A watched root -- MetaBrowser's mode, and fdu_core::open / fdu.open / --watch by default -- still ends Failed: discovery degrades past the refused directory and reaches Ready, then the observation handoff's full reconcile (reconcile_paths_handle_controlled over the root) applies the same control, gets the same ControlSourceLimit or ControlPatternLimit as an error, and run_observation returns it, so the root fails later, after an extra full walk, and close() names the observation worker instead of discovery. (b) In steady state, once the cumulative table bound has been reached, the first event touching any .gitignore-bearing directory fails the observer the same way: reconcile_pending_target propagates the commit error (scan.rs reconcile_pending_target Err arm), apply_next_controlled returns it, and the observation worker ends with the root Failed. Acceptance for this bead should include both: a watched root over the bound reaches Watching with a typed partial marker, and a steady-state event over a control-bearing directory degrades instead of failing the observer.
 
 Interim changes on PR #48 (commits 9c29e6f for FIX48-2 and FIX48-5): item (1) above is narrowed -- a refusal now still queues the subdirectories that earlier batches of the same listing had committed, so only the refused batch's entries and the rest of that listing are lost, not subtrees nothing refused. Item (2) is narrowed -- the refusal is retained as a ResourceBudget issue whose path is the root-relative directory whose control crossed the bound, rather than a pathless ProviderFailure; the coverage reason is still Inaccessible, and the issue names the directory, not the control file. Still owned here: retrying the refused batch without its control op (the review's preferred option for FIX48-2), so the directory's ordinary entries survive and the directory can complete with a typed marker, plus items (3)-(5) and (a)-(b). Review: https://github.com/jlevy/fdu/pull/48#pullrequestreview-5193206420
+
+2026-09-14 (fix wave, PR #51 2237a70): `fdu --watch` no longer reaches either bound. The command line's scan configuration now sets read_controls: false (crates/fdu/src/cli.rs:536-552@2237a70). Verified first that nothing under --watch consumes control state: the session drops ControlUpdated and Reclassified (watch_session.rs:202), the CLI Selection and every report view and renderer read no ignore classification (EntrySelection.exclude_ignored is opened-root only), nothing under crates/fdu/src calls is_ignored or controls(), and no golden depends on it. Pinned by crates/fdu/tests/watch_controls.rs, which drives the binary and was red before the change with "control pattern requires 16385 bytes; limit is 16384 bytes": a watch over one 16,385-byte rule serves a complete initial report, and a watch whose .gitignore is edited past the bound keeps applying later changes and saves a snapshot the next watch starts warm from. All 125 goldens pass unchanged. The opened-root plan's Phase 4 statements that --watch observes control state and can abort on it are corrected.
+
+Still owned here, unchanged by that commit: fdu_core::open / open_with_pending_save, fdu.open, fdu.scan, and Python Index.watch() over such an index observe by default (the default is fdu-agb6) and still abort on either bound in the blocking scan_into_index path (pinned by scan.rs detached_control_bootstrap_matches_control_limit_failures); the opened root's residuals (1)-(5) and the watched-root failures (a)-(b) above. Side effect for fdu-okne: no command-line surface reaches a control bound any more, so its 'liftable from the command line' half has no CLI caller until something on the CLI observes control state again.

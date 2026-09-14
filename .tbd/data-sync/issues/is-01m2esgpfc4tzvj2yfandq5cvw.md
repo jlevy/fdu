@@ -5,14 +5,14 @@ title: Decide whether open and fdu.open observe control state by default
 kind: task
 status: open
 priority: 2
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2eafpfpe8k5c9z9dhrqvy2y
 created_at: 2026-09-14T01:46:42.539Z
-updated_at: 2026-09-14T01:47:10.640Z
+updated_at: 2026-09-14T02:53:10.784Z
 ---
 Open decision left by PR #51 review COMMIT-3 (fixed in a69b95e; tracked on fdu-etfj), recorded by the fixer.
 
@@ -31,3 +31,7 @@ The review said defaulting on is "defensible" provided the split is documented, 
 **Acceptance.** The decision is recorded in the opened-root plan's Phase 4 section and on `open` / `fdu.open`. If the default changes, the parity corpus gets the cases, the Python and CLI goldens are updated, and the planner tests are adjusted.
 
 Review: https://github.com/jlevy/fdu/pull/51#pullrequestreview-5192254822. Disposition: https://github.com/jlevy/fdu/pull/51#issuecomment-5656491635
+
+## Notes
+
+2026-09-14 (fix wave, PR #51 2237a70): the command line no longer depends on this decision. `fdu --watch` now sets read_controls: false itself (crates/fdu/src/cli.rs:536-552@2237a70) because no CLI view reads control state, and one-shot reports were already off through the planner, so no `fdu` invocation observes control state or reaches a control bound whatever open's default is. Library callers still do: fdu_core::open / open_with_pending_save, fdu.open and fdu.scan (crates/fdu-py/src/lib.rs builds ScanConfig::default()), and Python Index.watch() over such an index keep observing by default and still abort on the 4 MiB table bound and the 16 KiB per-line bound (fdu-1onj). The defaults were not changed. The decision is now purely about the library API: exact controls()/is_ignored() by default, versus a shared report/open snapshot scope and an open that reaches no control bound.
