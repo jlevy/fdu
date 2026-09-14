@@ -548,7 +548,8 @@ mod tests {
 
         assert_eq!(matcher.matches(Path::new(&"z".repeat(255)), false), None);
         assert_eq!(matcher.matches(Path::new("[z"), false), Some(true));
-        assert_eq!(matcher.matches(Path::new("a:z"), false), Some(true));
+        // No `:` here: Windows parses `a:` at the start of a path as a drive.
+        assert_eq!(matcher.matches(Path::new("xaz"), false), Some(true));
         assert_eq!(matcher.matches(Path::new("bz"), false), None);
     }
 
