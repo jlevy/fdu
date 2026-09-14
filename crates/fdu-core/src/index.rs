@@ -766,7 +766,8 @@ pub(crate) enum ObservationTransition {
     /// A reconciliation while watching could not read part of the scope.
     ///
     /// The subtree it covered is already partial and is not retried on every later event,
-    /// so its causes are retained here, where partial freshness can be explained.
+    /// so its causes are retained here, where partial freshness can be explained. Both
+    /// watch drivers publish it: the opened root's observer and `Watcher::apply_next`.
     Unreadable { issues: Vec<Issue>, omitted: u64 },
     /// Observation could not establish or retain a trustworthy live boundary.
     Failed(Issue),
@@ -1666,7 +1667,10 @@ impl Index {
                     }
                 }
                 ObservationTransition::Unreadable { issues, omitted } => {
-                    if self.state.phase == LifecyclePhase::Watching {
+                    // `Ready` is a shared index watched without an opened-root lifecycle,
+                    // which never leaves that phase; a stopped or failed root keeps nothing.
+                    if matches!(self.state.phase, LifecyclePhase::Watching | LifecyclePhase::Ready)
+                    {
                         for issue in issues {
                             self.retain_issue(issue);
                         }

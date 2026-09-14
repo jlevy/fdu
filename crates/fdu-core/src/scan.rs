@@ -928,16 +928,20 @@ impl ReconcileTarget<'_> {
 
     /// Whether an invalidation whose reconciliation came back incomplete is queued again.
     ///
-    /// A caller of the one-shot and shared APIs drains the queue when it chooses, so an
-    /// unreadable subtree stays queued for it to retry. An opened root drains it after
-    /// every observed event, where that retry is a full walk of the same unreadable subtree
-    /// per unrelated event, for the life of the session. There only a lost race is worth
-    /// retrying -- a stale conditional commit, or one the budget refused. A scan error is a
-    /// settled boundary: the subtree stays partial, as it does at the observation handoff.
+    /// A caller of the one-shot API owns its index exclusively and drains the queue when it
+    /// chooses, so an unreadable subtree stays queued for it to retry. The shared API and an
+    /// opened root are drained after every observed event -- by `Watcher::apply_next` and by
+    /// the opened root's observer -- where that retry is a full walk of the same unreadable
+    /// subtree per unrelated event, for the life of the session. There only a lost race is
+    /// worth retrying: a stale conditional commit, or one the budget refused. A scan error
+    /// is a settled boundary: the subtree stays partial, as it does at the observation
+    /// handoff, and the report names the error once.
     fn retries_incomplete(&self, report: &ReconcileReport) -> bool {
         match self {
-            Self::Direct(_) | Self::Shared(_) => !report.is_complete(),
-            Self::Controlled { .. } => report.apply.stale > 0 || report.apply.resource_refused > 0,
+            Self::Direct(_) => !report.is_complete(),
+            Self::Shared(_) | Self::Controlled { .. } => {
+                report.apply.stale > 0 || report.apply.resource_refused > 0
+            }
         }
     }
 
@@ -4174,6 +4178,12 @@ fn flush_direct_reconcile_batch(
 }
 
 /// Drain and reconcile every pending invalidation, collapsing nested requests.
+///
+/// An invalidation whose reconciliation comes back incomplete -- a subtree that could not
+/// be read, or a conditional commit that lost a race -- is queued again, so the next call
+/// retries it. That suits a caller that drains when it chooses. A caller that drains after
+/// every event would re-walk an unreadable subtree each time, and belongs on
+/// [`reconcile_pending_handle`], which settles it instead.
 pub fn reconcile_pending(
     index: &mut Index,
     config: &ScanConfig,
@@ -4184,6 +4194,14 @@ pub fn reconcile_pending(
 }
 
 /// Drain and reconcile invalidations on a shared index.
+///
+/// Unlike [`reconcile_pending`], a subtree that could not be read is not queued again.
+/// `Watcher::apply_next` drains after every event, and a retry there re-walks the same
+/// unreadable subtree on each unrelated one, for the life of the watch. The error is a
+/// settled boundary instead: the subtree stays [`crate::Freshness::Partial`], the returned
+/// report names the error once, and the watcher retains its cause as an issue. Only a lost
+/// race -- a stale conditional commit -- is queued for the next call. Invalidate the subtree
+/// again to retry it deliberately.
 pub fn reconcile_pending_handle(
     handle: &IndexHandle,
     config: &ScanConfig,
@@ -6959,6 +6977,43 @@ mod tests {
             vec![(PathBuf::from("blocked"), crate::InvalidateReason::VerificationFailed)]
         );
         assert_eq!(index.freshness_at(Path::new("blocked")), crate::Freshness::Partial);
+    }
+
+    /// The shared API settles an unreadable subtree instead of queueing it again.
+    ///
+    /// Its per-event driver, `Watcher::apply_next`, drains after every event, so a retry
+    /// re-walked the same unreadable subtree on each unrelated event, forever. The subtree
+    /// stays partial and the report still names the error, once.
+    #[cfg(unix)]
+    #[test]
+    fn partial_shared_pending_reconciliation_settles_instead_of_retrying() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join("blocked/known.txt"), b"known");
+        let (index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
+        let handle = crate::IndexHandle::new(index);
+        let blocked = dir.path().join("blocked");
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).expect("deny reads");
+        handle
+            .apply(&Observation::new(vec![Op::InvalidateSubtree {
+                path: PathBuf::from("blocked"),
+                reason: crate::InvalidateReason::VerificationFailed,
+            }]))
+            .expect("invalidate");
+
+        let report = reconcile_pending_handle(&handle, &ScanConfig::default(), &mut |_| {})
+            .expect("permission failure is a partial report");
+        let pending = handle.take_pending_invalidations().expect("pending");
+        let freshness = handle.freshness_at(Path::new("blocked")).expect("freshness");
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).expect("restore reads");
+        if report.is_complete() {
+            return; // Privileged test environments can read mode-000 directories.
+        }
+
+        assert!(pending.is_empty(), "{pending:?}");
+        assert_eq!(freshness, crate::Freshness::Partial);
+        assert!(!report.scan.errors.is_empty());
     }
 
     #[test]
