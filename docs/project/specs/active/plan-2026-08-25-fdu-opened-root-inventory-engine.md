@@ -1831,15 +1831,14 @@ A request that reads no ignore classification opts out: `ScanConfig::read_contro
 Rust, `ScanOptions(read_controls=False)` in Python.
 Its `fdu_core::open`, `open_with_pending_save`, `fdu.open`, or `fdu.scan`, and a watch
 over that index, read no control file, share the one-shot snapshot scope, and reach no
-control bound.
-An index built without observation cannot classify, and says so: `Index::is_ignored`,
-`Index::controls`, `Index::partition_total`, `Index::partition_rollup`, and
-`Index::partition_rollup_summary` return `Error::ControlStateNotObserved` rather than
-calling every entry unignored or handing back an empty table, and a shared
-`ChildSnapshot` leaves its ignore bit and partitions as `None`. Nor does it accept
-control input: `Index::apply` refuses a `ControlUpsert` or `ControlRemove` with the same
-error, and a snapshot load refuses a control table under a scope that observed none, so
-an index’s scope and its table cannot disagree.
+control bound. An index built without observation cannot classify, and says so:
+`Index::is_ignored`, `Index::controls`, `Index::partition_total`,
+`Index::partition_rollup`, and `Index::partition_rollup_summary` return
+`Error::ControlStateNotObserved` rather than calling every entry unignored or handing
+back an empty table, and a shared `ChildSnapshot` leaves its ignore bit and partitions
+as `None`. Nor does it accept control input: `Index::apply` refuses a `ControlUpsert` or
+`ControlRemove` with the same error, and a snapshot load refuses a control table under a
+scope that observed none, so an index’s scope and its table cannot disagree.
 A one-shot report consumes no ignore classification, so the shared one-shot planner —
 `plan_report` and `prepare_report` in `crates/fdu-core/src/execution.rs` — turns
 observation off for every report, whatever the caller passed.

@@ -73,6 +73,39 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of accepting an asserted identity.
   This intentionally invalidates earlier snapshots and content sidecars once; the next
   complete run rebuilds them under the verified registry identity.
+- An index that did not observe `.gitignore` control state says so instead of calling
+  every entry unignored.
+  `ScanConfig::read_controls`, and `ScanOptions.read_controls` in Python, is on by
+  default, and a request can turn it off for `open`, `open_with_pending_save`,
+  `fdu.open`, `fdu.scan`, and a watch over their index.
+  On an index that observes none, which includes every index in a build without the
+  `gitignore` feature, `Index::is_ignored`, `controls`, `partition_total`,
+  `partition_rollup`, and `partition_rollup_summary` return
+  `Error::ControlStateNotObserved`, `ChildSnapshot` carries no ignore bit or partitions,
+  and `Index::apply` refuses control input with the same error.
+  Breaking: those five accessors return `Result`, and `ChildSnapshot.ignored` is
+  `Option<bool>`.
+- One projection of an opened-root read can refuse while the rest of the read answers.
+  `ProjectionResult::Refused`, `RefusedResult` in Python, names why: a `Tree` or roll-up
+  of a path that is not a directory, a page whose continuation record would exceed its
+  bound, or a `Continue` for a continuation this root consumed or evicted.
+  Breaking: `Error::NotADirectory` and `Error::ContinuationRecordLimit` are removed, a
+  Python `Tree` of a non-directory returns a `RefusedResult` instead of raising
+  `InvalidArgumentError`, and `Error::ContinuationUnavailable` fails a whole read only
+  for a token from another root or one this root never issued.
+- Every selection axis in an opened-root read matches the portable path a page row
+  carries, including a report projection’s `Selection` globs, so a path taken from a
+  page can be passed back as a filter.
+  The native spelling of an escaped name, such as `100%.txt` for `100%25.txt`, matches
+  nothing there; one-shot command-line globs keep native paths.
+  Breaking: `EntrySelection` refuses terminal suffixes and ancestor names that could
+  never match, in Rust and in Python, and a read carrying such a selection fails with
+  `Error::InvalidValue`.
+- The File Rollup registry reader accepts `schema_version` 4 as well as 3. An `icon` on
+  a group or family must be a string and, like `hue`, stays out of the type-rule
+  fingerprint, so a schema-3 registry and its schema-4 form share one fingerprint.
+  An `icon` under schema 3, and any other schema version, is refused with an error that
+  names the supported versions.
 
 ### Known limitations
 
