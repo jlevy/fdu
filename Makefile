@@ -9,14 +9,18 @@ UV ?= uv
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test test-golden golden-invocations portability parity-venv test-parity parity-check parity-update content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse clean cli perf-help verify-beads
+.PHONY: help build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names admission-sites fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
 	@echo "make release    Optimized build of the core library and CLI"
 	@echo "make test       Run Rust, CLI golden, and performance-harness tests"
+	@echo "make reference-model  Compare generated index transitions with the independent model"
 	@echo "make test-golden  Build and compare the CLI golden contract"
+	@echo "make opened-root-golden  Compare the five transparent opened-root sessions"
+	@echo "make opened-root-golden-update SCENARIO=name  Update one opened-root session"
 	@echo "make golden-invocations  Check the corpus never resolves fdu through PATH"
+	@echo "make golden-observability  Reject goldens that hide product output behind parsers"
 	@echo "make portability  Check committed test data names no machine"
 	@echo "make test-parity  Replay the corpus against the Python surface"
 	@echo "make parity-update  Re-record the Python surface deviations"
@@ -26,6 +30,7 @@ help:
 	@echo "make check      Handoff gate: tests, audits, docs, and installed-wheel smoke"
 	@echo "make supply-chain  Verify release age, provenance, pins, and CI trust controls"
 	@echo "make rust-module-names  Check Rust source filenames for ambiguity"
+	@echo "make admission-sites  Check every filesystem producer routes through admission"
 	@echo "make msrv       Compile all features and test the core contract on Rust $(MSRV)"
 	@echo "make fix        Apply formatting and machine-applicable lint fixes"
 	@echo "make audit      Dependency advisory and license audit (needs cargo-deny)"
@@ -56,6 +61,28 @@ test: rust-test test-golden content-selfcheck yaml-selfcheck test-performance
 rust-test:
 	$(CARGO) test --locked --all-features
 
+reference-model:
+	$(CARGO) test --locked -p fdu-core --test reference_model --no-default-features
+
+opened-root-golden:
+	$(CARGO) test --locked -p fdu-core --all-features \
+		opened::golden_tests::opened_root_session_goldens -- --exact
+	$(MAKE) opened-root-golden-lint
+
+opened-root-golden-lint:
+	$(NODE) --test scripts/check-opened-root-goldens.test.mjs
+	$(NODE) scripts/check-opened-root-goldens.mjs
+
+opened-root-golden-update:
+	@test -n "$(SCENARIO)" || { \
+		echo "error: SCENARIO is required; refusing to update the full opened-root corpus"; \
+		exit 2; \
+	}
+	$(NODE) scripts/check-opened-root-goldens.mjs --scenario "$(SCENARIO)"
+	FDU_UPDATE_OPENED_ROOT_GOLDEN="$(SCENARIO)" $(CARGO) test --locked -p fdu-core \
+		--all-features opened::golden_tests::opened_root_session_goldens -- --exact
+	$(MAKE) opened-root-golden
+
 test-golden: build $(NODE_INSTALL_STAMP)
 	$(NPM) run test:golden
 
@@ -66,7 +93,9 @@ content-selfcheck: build
 	$(NODE) scripts/content-selfcheck.mjs
 
 performance-probe:
-	$(CARGO) build --locked -p fdu-core --example perf_probe --no-default-features
+	$(CARGO) test --locked -p fdu-core --example perf_probe --no-default-features
+	$(CARGO) build --locked -p fdu-core --example perf_probe --no-default-features --features gitignore
+	$(CARGO) test --locked -p fdu-core --example perf_probe --no-default-features --features gitignore
 
 test-performance: performance-probe
 	PYTHONPATH=explorations $(UV) run --no-project python -m unittest discover -s explorations/benchmarks/tests -p 'test_*.py'
@@ -82,7 +111,7 @@ $(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
 	$(NPM) ci
 
 # Everything CI enforces, in the order that fails fastest.
-check: uv-version supply-chain rust-module-names golden-invocations portability fmt-check clippy test docs docs-format-check perf-test perf-schema-check perf-ledger-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check release-test
+check: uv-version supply-chain rust-module-names admission-sites golden-invocations golden-observability opened-root-golden-lint portability fmt-check clippy test docs docs-format-check perf-test perf-schema-check perf-ledger-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check release-test
 
 # The uv.toml files express the supply-chain cool-off as a relative `exclude-newer`
 # ("14 days"). uv releases older than this cannot parse that form: they abort with
@@ -134,7 +163,7 @@ uv-version:
 # configuration. Keep this list aligned with the recipe-coverage test.
 UV_BACKED_TARGETS := test-performance python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse docs-format docs-format-check \
 	perf-baseline perf-profile perf-content-profile perf-compare perf-content-compare \
-	perf-compare-tools perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check
+	perf-compare-tools perf-floor perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check
 
 $(UV_BACKED_TARGETS): uv-version
 
@@ -155,10 +184,18 @@ rust-module-names:
 	$(NODE) --test scripts/check-rust-module-names.test.mjs
 	$(NODE) scripts/check-rust-module-names.mjs
 
+admission-sites:
+	$(NODE) --test scripts/check-admission-sites.test.mjs
+	$(NODE) scripts/check-admission-sites.mjs
+
 # The corpus selects its binary by full path. This keeps a bare `fdu` -- which PATH
 # would happily resolve to an installed build -- from creeping back in (fdu-9h2w).
 golden-invocations:
 	$(NODE) scripts/check-golden-invocations.mjs
+
+golden-observability:
+	$(NODE) --test scripts/check-golden-observability.test.mjs
+	$(NODE) scripts/check-golden-observability.mjs
 
 # Committed test data must not name the machine that recorded it. `tryscript run --update`
 # writes what it saw, so it expands named patterns into literals -- which passes forever
@@ -233,19 +270,33 @@ cross-lint:
 docs:
 	RUSTDOCFLAGS="-D warnings" $(CARGO) doc --locked --no-deps --all-features
 
-# How library consumers build: `default-features = false` for the minimal core, then the
-# additive watch layer, neither relying on what the binary enables. The dependency guard
-# proves the crate split stuck -- a library that pulls in an argument parser has back the
-# dependency the split removed.
+# How library consumers build: the minimal core, then the additive watch and gitignore
+# layers, without relying on what the binary enables. Explicit `--no-default-features`
+# pins the empty feature floor as a contract. The dependency guard proves the crate split
+# stuck -- a library that pulls in an argument parser has back the dependency the split
+# removed.
 #
 # The guard captures `cargo tree` before testing it, rather than piping straight into
 # grep. A pipeline's status is its last command's, so a failing `cargo tree` -- renamed
 # package, manifest error, resolver failure -- would hand grep empty input, grep would
 # return 1, `!` would invert it to 0, and the check that proves the split would report
 # success having checked nothing (fdu-cqtk).
+#
+# The command line makes the same promise from the other side: crates/fdu/Cargo.toml
+# says it builds without `watch`, which is what keeps that layer deletable. Nothing
+# compiled the featureless command line, so it quietly stopped building (fdu-2wlp). A
+# clippy run over every target holds the promise and lints the shape too, since the
+# workspace's pedantic lints are clippy's and the Clippy job lints only all features
+# (fdu-kaog); it stays cheap because nothing links. The library's own tests then run in
+# that shape, because compiling a test is not running it: the guide named `--watch` to a
+# binary without it while every featureless build passed (fdu-224p).
 lib-only:
 	$(CARGO) test --locked -p fdu-core --no-default-features
+	$(CARGO) test --locked -p fdu-core --no-default-features --features gitignore
 	$(CARGO) test --locked -p fdu-core --no-default-features --features watch
+	$(CARGO) test --locked -p fdu-core --no-default-features --features watch,gitignore
+	$(CARGO) clippy --locked -p fdu --no-default-features --all-targets -- -D warnings
+	$(CARGO) test --locked -p fdu --no-default-features --lib
 	@tree="$$($(CARGO) tree -p fdu-core --all-features --prefix none)" || exit 1; \
 		! printf '%s\n' "$$tree" | grep -qE '^(clap|anyhow) ' \
 		|| { echo 'fdu-core must not depend on clap or anyhow; they belong to fdu'; exit 1; }
@@ -360,8 +411,13 @@ PERF_LABEL ?= benchmarks-self-contained
 PERF_RESULTS ?= /tmp/fdu-realtree/results
 PERF_SCRATCH ?= /tmp/fdu-realtree/scratch
 PERF_BASELINE ?= $(PERF_RESULTS)/tree-$(PERF_LABEL).json
-PERF_RELEASE := target/release/examples/perf_probe
-PERF_PROFILING := target/profiling/examples/perf_probe
+# Where cargo writes build output, asked of cargo rather than assumed to be `target/`:
+# CARGO_TARGET_DIR and build.target-dir both move it, and a binary left behind at the
+# assumed path would then be measured in place of the one just built. `target` is only
+# the fallback for a cargo that cannot answer, and then the build before it fails first.
+PERF_TARGET_DIR = $(or $(shell $(CARGO) metadata --format-version 1 --no-deps 2>/dev/null | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p'),target)
+PERF_RELEASE = $(PERF_TARGET_DIR)/release/examples/perf_probe
+PERF_PROFILING = $(PERF_TARGET_DIR)/profiling/examples/perf_probe
 # Evidence qualifiers default to exploration. A held-out run must opt into a controlled
 # host regime and provide the manifests that make its source, corpus, and installation
 # independently verifiable.
@@ -388,13 +444,13 @@ PERF_TOOL_EVIDENCE_ARGS = $(PERF_EVIDENCE_ARGS) \
 PERF_UV := PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=explorations $(UV) run --project explorations/benchmarks --frozen
 PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 
-.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check
+.PHONY: perf-floor perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check
 
 perf-probe-release:
-	$(CARGO) build --locked --release -p fdu-core --example perf_probe --no-default-features
+	$(CARGO) build --locked --release -p fdu-core --example perf_probe --no-default-features --features gitignore
 
 perf-probe-profiling:
-	$(CARGO) build --locked --profile profiling -p fdu-core --example perf_probe --no-default-features
+	$(CARGO) build --locked --profile profiling -p fdu-core --example perf_probe --no-default-features --features gitignore
 
 # Record what the tree looks like now, so later runs can prove they measured the same one.
 perf-baseline:
@@ -494,6 +550,45 @@ perf-subjects:
 # before they compare last month's number with today's.
 perf-subjects-check:
 	$(PERF_RUN) subjects --check $(PERF_SUBJECTS)
+
+# The tier-by-subject floor scoreboard: where each tier sits against what the machine
+# charges for the work fdu cannot avoid. Campaign 2 orders work by that distance, so this
+# is the scoreboard every accepted change re-runs, and what makes its termination
+# criteria checkable rather than asserted.
+#
+# Not in `check`, and not a verdict harness: `perf-compare` decides whether a change is
+# kept, under the paired accept rule. This divides two absolute numbers to say where a
+# tier stands, which is a different question and needs the host to itself just as much.
+#
+# Linux only, and it refuses rather than falling back: `parfloor.c` is the denominator
+# every x-floor threshold is defined against and it issues SYS_getdents64 and statx
+# directly. A macOS scoreboard needs a getattrlistbulk floor (fdu-9hdc) or a different
+# floor set with the regime difference recorded -- a decision for the campaign plan
+# rather than one a harness makes by substituting a denominator and printing the same
+# column heading. See fdu-33ri.
+#
+# SUBJECTS takes repeated LABEL=PATH pairs; a subject decides only if it is dense and at
+# least 50,000 entries, and smaller ones screen.
+#
+# The probe is the one `perf-probe-release` builds, handed over by path, so a scoreboard
+# and a verdict run always score the same binary.
+#
+# The regime defaults to quiet. PERF_HOST_REGIME overrides it only when set on the command
+# line or in the environment: its file default above is `uncontrolled`, which would
+# otherwise always win.
+PERF_FLOOR_OUT ?= /tmp/fdu-floor
+PERF_FLOOR_SUBJECT_ARGS = $(foreach subject,$(SUBJECTS),--subject $(subject))
+PERF_FLOOR_HOST_REGIME = $(if $(filter command line environment environment override,$(origin PERF_HOST_REGIME)),$(PERF_HOST_REGIME),quiet)
+perf-floor: perf-probe-release
+	@test -n "$(SUBJECTS)" || \
+		{ echo "SUBJECTS must name at least one LABEL=PATH tree to score" >&2; exit 2; }
+	$(PERF_UV) python -m benchmarks.realtree.floor \
+		--probe "$(PERF_RELEASE)" \
+		$(PERF_FLOOR_SUBJECT_ARGS) \
+		--trials $(or $(TRIALS),30) --warmups $(or $(WARMUPS),3) \
+		--host-regime $(PERF_FLOOR_HOST_REGIME) \
+		--output $(PERF_FLOOR_OUT)/scoreboard-$(or $(NAME),latest).json \
+		--markdown $(PERF_FLOOR_OUT)/scoreboard-$(or $(NAME),latest).md
 
 perf-record:
 	$(PERF_UV) --group dev python -m benchmarks.realtree.record $(ARGS)

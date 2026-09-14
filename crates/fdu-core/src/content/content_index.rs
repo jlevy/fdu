@@ -253,8 +253,14 @@ impl ContentIndex {
         // Keep a wider tier intact when a narrower request arrives: its records already
         // answer the narrower question, and overwriting the stored set with the request's
         // would discard analyzers the records still carry.
+        //
+        // The incoming provenance carries the rules now in effect, so the comparison is
+        // held-against-incoming rather than held-against-a-global: different rules mean
+        // the stored records answer a different question and must go.
         let retained = self.profile.is_some_and(|stored| {
-            self.provenance.as_ref().is_some_and(|held| held.satisfies(stored, profile))
+            self.provenance.as_ref().is_some_and(|held| {
+                held.satisfies(stored, profile, provenance.type_rules_fingerprint)
+            })
         });
         if retained {
             return;
@@ -301,10 +307,13 @@ mod tests {
             fingerprint: Fingerprint::default(),
             bytes: 10,
             profile: AnalysisSet::NONE.with_lines(),
-            provenance: ContentProvenance::for_request(AnalysisRequest {
-                profile: AnalysisSet::NONE.with_lines(),
-                ..AnalysisRequest::default()
-            }),
+            provenance: ContentProvenance::for_request(
+                AnalysisRequest {
+                    profile: AnalysisSet::NONE.with_lines(),
+                    ..AnalysisRequest::default()
+                },
+                crate::classify::type_rule_fingerprint(),
+            ),
             metrics: MetricValues {
                 physical_lines: lines,
                 nonblank_lines: lines,

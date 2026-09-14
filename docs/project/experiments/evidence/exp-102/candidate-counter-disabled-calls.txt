@@ -1,0 +1,815 @@
+Call graph:
+    2973 Thread_2678267   DispatchQueue_1: com.apple.main-thread  (serial)
+      2971 start  (in dyld) + 6992  [0x188407e00]
+      + 2971 main  (in candidate-controls-profiling-probe) + 872  [0x1023f8130]
+      +   2971 _RINvNtNtCsa9BKTri5B3M_3std3sys9backtrace28___rust_begin_short_backtraceFENtNtB6_7process8ExitCodeB19_ECsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 12  [0x1023da730]  backtrace.rs:166
+      +     2971 _RNvCsjw2UvaLTkTO_10perf_probe4main  (in candidate-controls-profiling-probe) + 8312  [0x1023e3f58]  perf_probe.rs:54
+      +       1587 _RNvCsjw2UvaLTkTO_10perf_probe7execute  (in candidate-controls-profiling-probe) + 11288  [0x1023ea1d8]  perf_probe.rs:365
+      +       ! 1104 _RNvCsjw2UvaLTkTO_10perf_probe17summarize_commits  (in candidate-controls-profiling-probe) + 880,1048,...  [0x1023df6d8,0x1023df780,...]  perf_probe.rs:1080
+      +       ! 483 _RNvCsjw2UvaLTkTO_10perf_probe17summarize_commits  (in candidate-controls-profiling-probe) + 404  [0x1023df4fc]  perf_probe.rs:1078
+      +       !   483 _RNvNvNtCslJsSqIQKwiA_5alloc3fmt6format12format_inner  (in candidate-controls-profiling-probe) + 304  [0x1023f8bfc]  fmt.rs:654
+      +       !     483 _RNvNtCsgtPOCBgevO_4core3fmt5write  (in candidate-controls-profiling-probe) + 96  [0x1023f91e8]  mod.rs:1687
+      +       !       483 _RNvXs1g_NtCsgtPOCBgevO_4core3fmtRNtNtCs33snLMdjP9A_8fdu_core15engine_contract6CommitNtB6_5Debug3fmtCsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 196  [0x1023f6714]  mod.rs:2872
+      +       !         483 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter26debug_struct_field5_finish  (in candidate-controls-profiling-probe) + 204  [0x1023fbbfc]  mod.rs:2555
+      +       !           483 _RNvMs1_NtNtCsgtPOCBgevO_4core3fmt8buildersNtB5_11DebugStruct5field  (in candidate-controls-profiling-probe) + 196  [0x1023fb0dc]  builders.rs:133
+      +       !             477 _RNvXsq_NtCslJsSqIQKwiA_5alloc3vecINtB5_3VecNtNtCs33snLMdjP9A_8fdu_core15engine_contract15EffectiveChangeENtNtCsgtPOCBgevO_4core3fmt5Debug3fmtCsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 332  [0x1023f781c]  mod.rs:4305
+      +       !             | 218 _RNvXs1g_NtCsgtPOCBgevO_4core3fmtRNtNtCs33snLMdjP9A_8fdu_core15engine_contract15EffectiveChangeNtB6_5Debug3fmtCsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 2152  [0x1023f5c88]  mod.rs:2872
+      +       !             | + 197 _RNvMs1_NtNtCsgtPOCBgevO_4core3fmt8buildersNtB5_11DebugStruct5field  (in candidate-controls-profiling-probe) + 196  [0x1023fb0dc]  builders.rs:133
+      +       !             | + ! 192 _RNvXs1g_NtCsgtPOCBgevO_4core3fmtRNtNtCs33snLMdjP9A_8fdu_core15engine_contract5AttrsNtB6_5Debug3fmtCsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 136  [0x1023f6644]  mod.rs:2872
+      +       !             | + ! : 64 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter26debug_struct_fields_finish  (in candidate-controls-profiling-probe) + 516  [0x1023fbeb4]  mod.rs:2575
+      +       !             | + ! : | 12 _RNvXsX_NtNtCsgtPOCBgevO_4core3fmt3numyNtB7_5Debug3fmt  (in candidate-controls-profiling-probe) + 232  [0x1023f72ec]  num.rs:0
+      +       !             | + ! : | + 3 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter12pad_integral  (in candidate-controls-profiling-probe) + 80,72  [0x1023f9e9c,0x1023f9e94]  mod.rs:1830
+      +       !             | + ! : | + 3 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | + ! : | + ! 3 _platform_memmove  (in libsystem_platform.dylib) + 436,448,...  [0x1887cf514,0x1887cf520,...]
+      +       !             | + ! : | + 2 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter12pad_integral  (in candidate-controls-profiling-probe) + 136  [0x1023f9ed4]  mod.rs:1858
+      +       !             | + ! : | + 2 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 28,48  [0x1023f8db0,0x1023f8dc4]  string.rs:3358
+      +       !             | + ! : | + 1 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter12pad_integral  (in candidate-controls-profiling-probe) + 24  [0x1023f9e64]  mod.rs:1826
+      +       !             | + ! : | + 1 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter12pad_integral  (in candidate-controls-profiling-probe) + 136  [0x1023f9ed4]  mod.rs:1858
+      +       !             | + ! : | +   1 _RNvNvMsa_NtCsgtPOCBgevO_4core3fmtNtB7_9Formatter12pad_integral12write_prefix  (in candidate-controls-profiling-probe) + 32  [0x1023fa3e4]  mod.rs:1848
+      +       !             | + ! : | 9 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter12pad_integral  (in candidate-controls-profiling-probe) + 176  [0x1023f9efc]  mod.rs:1859
+      +       !             | + ! : | 9 _RNvXsX_NtNtCsgtPOCBgevO_4core3fmt3numyNtB7_5Debug3fmt  (in candidate-controls-profiling-probe) + 60  [0x1023f7240]  num.rs:91
+      +       !             | + ! : | + 3 _RNvMsf_NtNtNtCsgtPOCBgevO_4core3fmt3num3impy10__fmt_inner  (in candidate-controls-profiling-probe) + 200  [0x1023fa60c]  num.rs:216
+      +       !             | + ! : | + 2 _RNvMsf_NtNtNtCsgtPOCBgevO_4core3fmt3num3impy10__fmt_inner  (in candidate-controls-profiling-probe) + 80,120  [0x1023fa594,0x1023fa5bc]  num.rs:213
+      +       !             | + ! : | + 2 _RNvMsf_NtNtNtCsgtPOCBgevO_4core3fmt3num3impy10__fmt_inner  (in candidate-controls-profiling-probe) + 300  [0x1023fa670]  num.rs:236
+      +       !             | + ! : | + 1 _RNvMsf_NtNtNtCsgtPOCBgevO_4core3fmt3num3impy10__fmt_inner  (in candidate-controls-profiling-probe) + 144  [0x1023fa5d4]  num.rs:214
+      +       !             | + ! : | + 1 _RNvMsf_NtNtNtCsgtPOCBgevO_4core3fmt3num3impy10__fmt_inner  (in candidate-controls-profiling-probe) + 176  [0x1023fa5f4]  num.rs:215
+      +       !             | + ! : | 8 _RNvXsR_NtNtCsgtPOCBgevO_4core3fmt3numxNtB7_5Debug3fmt  (in candidate-controls-profiling-probe) + 244  [0x1023f71f0]  num.rs:0
+      +       !             | + ! : | + 3 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | + ! : | + ! 3 _platform_memmove  (in libsystem_platform.dylib) + 452,12  [0x1887cf524,0x1887cf36c]
+      +       !             | + ! : | + 2 _RNvNvMsa_NtCsgtPOCBgevO_4core3fmtNtB7_9Formatter12pad_integral12write_prefix  (in candidate-controls-profiling-probe) + 116  [0x1023fa438]  mod.rs:1852
+      +       !             | + ! : | + 2 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 28  [0x1023f8db0]  string.rs:3358
+      +       !             | + ! : | + 1 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter12pad_integral  (in candidate-controls-profiling-probe) + 72  [0x1023f9e94]  mod.rs:1830
+      +       !             | + ! : | 7 _RNvXs1g_NtCsgtPOCBgevO_4core3fmtRyNtB6_5Debug3fmtCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 236  [0x102416428]  mod.rs:2872
+      +       !             | + ! : | + 3 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | + ! : | + ! 2 _platform_memmove  (in libsystem_platform.dylib) + 12,460  [0x1887cf36c,0x1887cf52c]
+      +       !             | + ! : | + ! 1 DYLD-STUB$$memcpy  (in candidate-controls-profiling-probe) + 4  [0x102588f10]
+      +       !             | + ! : | + 2 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 44,48  [0x1023f8dc0,0x1023f8dc4]  string.rs:3358
+      +       !             | + ! : | + 1 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter12pad_integral  (in candidate-controls-profiling-probe) + 64  [0x1023f9e8c]  mod.rs:1830
+      +       !             | + ! : | + 1 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter12pad_integral  (in candidate-controls-profiling-probe) + 136  [0x1023f9ed4]  mod.rs:1858
+      +       !             | + ! : | +   1 _RNvNvMsa_NtCsgtPOCBgevO_4core3fmtNtB7_9Formatter12pad_integral12write_prefix  (in candidate-controls-profiling-probe) + 32  [0x1023fa3e4]  mod.rs:1848
+      +       !             | + ! : | 6 _RNvXsR_NtNtCsgtPOCBgevO_4core3fmt3numxNtB7_5Debug3fmt  (in candidate-controls-profiling-probe) + 68  [0x1023f7140]  num.rs:91
+      +       !             | + ! : | + 2 _RNvMsf_NtNtNtCsgtPOCBgevO_4core3fmt3num3impy10__fmt_inner  (in candidate-controls-profiling-probe) + 0  [0x1023fa544]  num.rs:190
+      +       !             | + ! : | + 2 _RNvMsf_NtNtNtCsgtPOCBgevO_4core3fmt3num3impy10__fmt_inner  (in candidate-controls-profiling-probe) + 156,176  [0x1023fa5e0,0x1023fa5f4]  num.rs:215
+      +       !             | + ! : | + 1 _RNvMsf_NtNtNtCsgtPOCBgevO_4core3fmt3num3impy10__fmt_inner  (in candidate-controls-profiling-probe) + 144  [0x1023fa5d4]  num.rs:214
+      +       !             | + ! : | + 1 _RNvMsf_NtNtNtCsgtPOCBgevO_4core3fmt3num3impy10__fmt_inner  (in candidate-controls-profiling-probe) + 200  [0x1023fa60c]  num.rs:216
+      +       !             | + ! : | 4 _RNvXs1g_NtCsgtPOCBgevO_4core3fmtRyNtB6_5Debug3fmtCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 28,40,...  [0x102416358,0x102416364,...]  mod.rs:2872
+      +       !             | + ! : | 3 _RNvXs1g_NtCsgtPOCBgevO_4core3fmtRyNtB6_5Debug3fmtCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 64  [0x10241637c]  mod.rs:2872
+      +       !             | + ! : | + 2 _RNvMsf_NtNtNtCsgtPOCBgevO_4core3fmt3num3impy10__fmt_inner  (in candidate-controls-profiling-probe) + 328  [0x1023fa68c]  num.rs:253
+      +       !             | + ! : | + 1 _RNvMsf_NtNtNtCsgtPOCBgevO_4core3fmt3num3impy10__fmt_inner  (in candidate-controls-profiling-probe) + 240  [0x1023fa634]  num.rs:0
+      +       !             | + ! : | 3 _RNvXsR_NtNtCsgtPOCBgevO_4core3fmt3numxNtB7_5Debug3fmt  (in candidate-controls-profiling-probe) + 24  [0x1023f7114]  num.rs:86
+      +       !             | + ! : | 2 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 84  [0x1023f8de8]  string.rs:3360
+      +       !             | + ! : | 1 _RNvXsX_NtNtCsgtPOCBgevO_4core3fmt3numyNtB7_5Debug3fmt  (in candidate-controls-profiling-probe) + 228  [0x1023f72e8]  num.rs:0
+      +       !             | + ! : 26 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter26debug_struct_fields_finish  (in candidate-controls-profiling-probe) + 504,456,...  [0x1023fbea8,0x1023fbe78,...]  mod.rs:2575
+      +       !             | + ! : 20 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter26debug_struct_fields_finish  (in candidate-controls-profiling-probe) + 472  [0x1023fbe88]  mod.rs:2575
+      +       !             | + ! : | 20 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | + ! : |   18 _platform_memmove  (in libsystem_platform.dylib) + 428,424,...  [0x1887cf50c,0x1887cf508,...]
+      +       !             | + ! : |   2 DYLD-STUB$$memcpy  (in candidate-controls-profiling-probe) + 4  [0x102588f10]
+      +       !             | + ! : 17 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter26debug_struct_fields_finish  (in candidate-controls-profiling-probe) + 448  [0x1023fbe70]  mod.rs:2575
+      +       !             | + ! : | 10 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 48,28,...  [0x1023f8dc4,0x1023f8db0,...]  string.rs:3358
+      +       !             | + ! : | 7 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | + ! : |   4 DYLD-STUB$$memcpy  (in candidate-controls-profiling-probe) + 4  [0x102588f10]
+      +       !             | + ! : |   3 _platform_memmove  (in libsystem_platform.dylib) + 436,448  [0x1887cf514,0x1887cf520]
+      +       !             | + ! : 14 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter26debug_struct_fields_finish  (in candidate-controls-profiling-probe) + 200  [0x1023fbd78]  mod.rs:2575
+      +       !             | + ! : | 6 _RNvXsX_NtNtCsgtPOCBgevO_4core3fmt3numyNtB7_5Debug3fmt  (in candidate-controls-profiling-probe) + 232  [0x1023f72ec]  num.rs:0
+      +       !             | + ! : | + 2 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter12pad_integral  (in candidate-controls-profiling-probe) + 64,72  [0x1023f9e8c,0x1023f9e94]  mod.rs:1830
+      +       !             | + ! : | + 2 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter12pad_integral  (in candidate-controls-profiling-probe) + 136  [0x1023f9ed4]  mod.rs:1858
+      +       !             | + ! : | + 2 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 112  [0x1023f8e04]  string.rs:3358
+      +       !             | + ! : | +   2 _RINvNvMs2_NtCslJsSqIQKwiA_5alloc7raw_vecINtB8_11RawVecInnerpE7reserve21do_reserve_and_handleNtNtBa_5alloc6GlobalEBa_  (in candidate-controls-profiling-probe) + 68  [0x10257cea0]  mod.rs:668
+      +       !             | + ! : | +     2 _RNvMs4_NtCslJsSqIQKwiA_5alloc7raw_vecNtB5_11RawVecInner11finish_growB7_  (in candidate-controls-profiling-probe) + 488  [0x10257d0bc]  mod.rs:556
+      +       !             | + ! : | +       2 _realloc  (in libsystem_malloc.dylib) + 452  [0x1885f2e90]
+      +       !             | + ! : | +         2 _malloc_zone_realloc  (in libsystem_malloc.dylib) + 148  [0x1885f2674]
+      +       !             | + ! : | +           2 xzm_realloc  (in libsystem_malloc.dylib) + 832  [0x1885e2e34]
+      +       !             | + ! : | +             2 mach_vm_copy  (in libsystem_kernel.dylib) + 116  [0x188789bf8]
+      +       !             | + ! : | +               2 mach_msg2_internal  (in libsystem_kernel.dylib) + 76  [0x188794574]
+      +       !             | + ! : | +                 2 mach_msg2_trap  (in libsystem_kernel.dylib) + 8  [0x188781c34]
+      +       !             | + ! : | 5 _RNvXsX_NtNtCsgtPOCBgevO_4core3fmt3numyNtB7_5Debug3fmt  (in candidate-controls-profiling-probe) + 60  [0x1023f7240]  num.rs:91
+      +       !             | + ! : | + 2 _RNvMsf_NtNtNtCsgtPOCBgevO_4core3fmt3num3impy10__fmt_inner  (in candidate-controls-profiling-probe) + 0  [0x1023fa544]  num.rs:190
+      +       !             | + ! : | + 2 _RNvMsf_NtNtNtCsgtPOCBgevO_4core3fmt3num3impy10__fmt_inner  (in candidate-controls-profiling-probe) + 120  [0x1023fa5bc]  num.rs:213
+      +       !             | + ! : | + 1 _RNvMsf_NtNtNtCsgtPOCBgevO_4core3fmt3num3impy10__fmt_inner  (in candidate-controls-profiling-probe) + 200  [0x1023fa60c]  num.rs:216
+      +       !             | + ! : | 2 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter12pad_integral  (in candidate-controls-profiling-probe) + 176  [0x1023f9efc]  mod.rs:1859
+      +       !             | + ! : | 1 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 84  [0x1023f8de8]  string.rs:3360
+      +       !             | + ! : 11 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 84  [0x1023f8de8]  string.rs:3360
+      +       !             | + ! : 10 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter26debug_struct_fields_finish  (in candidate-controls-profiling-probe) + 496  [0x1023fbea0]  mod.rs:2575
+      +       !             | + ! : | 5 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | + ! : | + 3 _platform_memmove  (in libsystem_platform.dylib) + 452,12  [0x1887cf524,0x1887cf36c]
+      +       !             | + ! : | + 2 DYLD-STUB$$memcpy  (in candidate-controls-profiling-probe) + 4  [0x102588f10]
+      +       !             | + ! : | 5 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 28,48  [0x1023f8db0,0x1023f8dc4]  string.rs:3358
+      +       !             | + ! : 6 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter26debug_struct_fields_finish  (in candidate-controls-profiling-probe) + 128  [0x1023fbd30]  mod.rs:2575
+      +       !             | + ! : | 4 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | + ! : | + 3 _platform_memmove  (in libsystem_platform.dylib) + 12,436,...  [0x1887cf36c,0x1887cf514,...]
+      +       !             | + ! : | + 1 DYLD-STUB$$memcpy  (in candidate-controls-profiling-probe) + 4  [0x102588f10]
+      +       !             | + ! : | 2 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 48  [0x1023f8dc4]  string.rs:3358
+      +       !             | + ! : 6 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter26debug_struct_fields_finish  (in candidate-controls-profiling-probe) + 152  [0x1023fbd48]  mod.rs:2575
+      +       !             | + ! : | 4 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | + ! : | + 3 _platform_memmove  (in libsystem_platform.dylib) + 452,448  [0x1887cf524,0x1887cf520]
+      +       !             | + ! : | + 1 DYLD-STUB$$memcpy  (in candidate-controls-profiling-probe) + 4  [0x102588f10]
+      +       !             | + ! : | 2 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 28  [0x1023f8db0]  string.rs:3358
+      +       !             | + ! : 5 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter26debug_struct_fields_finish  (in candidate-controls-profiling-probe) + 80  [0x1023fbd00]  mod.rs:2573
+      +       !             | + ! : | 5 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | + ! : |   5 _platform_memmove  (in libsystem_platform.dylib) + 436,452  [0x1887cf514,0x1887cf524]
+      +       !             | + ! : 4 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter26debug_struct_fields_finish  (in candidate-controls-profiling-probe) + 716  [0x1023fbf7c]  mod.rs:2577
+      +       !             | + ! : | 3 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 28  [0x1023f8db0]  string.rs:3358
+      +       !             | + ! : | 1 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | + ! : |   1 _platform_memmove  (in libsystem_platform.dylib) + 452  [0x1887cf524]
+      +       !             | + ! : 4 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter26debug_struct_fields_finish  (in candidate-controls-profiling-probe) + 660,712  [0x1023fbf44,0x1023fbf78]  mod.rs:2577
+      +       !             | + ! : 2 _RNvXsR_NtNtCsgtPOCBgevO_4core3fmt3numxNtB7_5Debug3fmt  (in candidate-controls-profiling-probe) + 252  [0x1023f71f8]  num.rs:93
+      +       !             | + ! : 1 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter26debug_struct_fields_finish  (in candidate-controls-profiling-probe) + 72  [0x1023fbcf8]  mod.rs:2573
+      +       !             | + ! : 1 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter26debug_struct_fields_finish  (in candidate-controls-profiling-probe) + 180  [0x1023fbd64]  mod.rs:2575
+      +       !             | + ! : | 1 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | + ! : |   1 _platform_memmove  (in libsystem_platform.dylib) + 452  [0x1887cf524]
+      +       !             | + ! : 1 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter26debug_struct_fields_finish  (in candidate-controls-profiling-probe) + 396  [0x1023fbe3c]  result.rs:0
+      +       !             | + ! 3 _RNvXs1g_NtCsgtPOCBgevO_4core3fmtRNtNtCs33snLMdjP9A_8fdu_core15engine_contract5AttrsNtB6_5Debug3fmtCsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 120,76  [0x1023f6634,0x1023f6608]  mod.rs:2872
+      +       !             | + ! 2 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter26debug_struct_fields_finish  (in candidate-controls-profiling-probe) + 744  [0x1023fbf98]  mod.rs:2578
+      +       !             | + 10 _RNvMs1_NtNtCsgtPOCBgevO_4core3fmt8buildersNtB5_11DebugStruct5field  (in candidate-controls-profiling-probe) + 152  [0x1023fb0b0]  builders.rs:133
+      +       !             | + ! 6 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 112  [0x1023f8e04]  string.rs:3358
+      +       !             | + ! : 6 _RINvNvMs2_NtCslJsSqIQKwiA_5alloc7raw_vecINtB8_11RawVecInnerpE7reserve21do_reserve_and_handleNtNtBa_5alloc6GlobalEBa_  (in candidate-controls-profiling-probe) + 68  [0x10257cea0]  mod.rs:668
+      +       !             | + ! :   6 _RNvMs4_NtCslJsSqIQKwiA_5alloc7raw_vecNtB5_11RawVecInner11finish_growB7_  (in candidate-controls-profiling-probe) + 488  [0x10257d0bc]  mod.rs:556
+      +       !             | + ! :     6 _realloc  (in libsystem_malloc.dylib) + 452  [0x1885f2e90]
+      +       !             | + ! :       6 _malloc_zone_realloc  (in libsystem_malloc.dylib) + 148  [0x1885f2674]
+      +       !             | + ! :         6 xzm_realloc  (in libsystem_malloc.dylib) + 852  [0x1885e2e48]
+      +       !             | + ! :           6 _platform_memmove  (in libsystem_platform.dylib) + 88  [0x1887cf3b8]
+      +       !             | + ! 2 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | + ! : 2 _platform_memmove  (in libsystem_platform.dylib) + 0,428  [0x1887cf360,0x1887cf50c]
+      +       !             | + ! 2 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 44  [0x1023f8dc0]  string.rs:3358
+      +       !             | + 5 _RNvMs1_NtNtCsgtPOCBgevO_4core3fmt8buildersNtB5_11DebugStruct5field  (in candidate-controls-profiling-probe) + 120,152,...  [0x1023fb090,0x1023fb0b0,...]  builders.rs:133
+      +       !             | + 4 _RNvMs1_NtNtCsgtPOCBgevO_4core3fmt8buildersNtB5_11DebugStruct5field  (in candidate-controls-profiling-probe) + 180  [0x1023fb0cc]  builders.rs:133
+      +       !             | + ! 4 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | + !   2 DYLD-STUB$$memcpy  (in candidate-controls-profiling-probe) + 4  [0x102588f10]
+      +       !             | + !   2 _platform_memmove  (in libsystem_platform.dylib) + 436,448  [0x1887cf514,0x1887cf520]
+      +       !             | + 2 _RNvMs1_NtNtCsgtPOCBgevO_4core3fmt8buildersNtB5_11DebugStruct5field  (in candidate-controls-profiling-probe) + 128  [0x1023fb098]  builders.rs:133
+      +       !             | +   1 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | +   : 1 _platform_memmove  (in libsystem_platform.dylib) + 12  [0x1887cf36c]
+      +       !             | +   1 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 76  [0x1023f8de0]  string.rs:3360
+      +       !             | 197 _RNvXs1g_NtCsgtPOCBgevO_4core3fmtRNtNtCs33snLMdjP9A_8fdu_core15engine_contract15EffectiveChangeNtB6_5Debug3fmtCsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 552  [0x1023f5648]  mod.rs:2872
+      +       !             | + 98 _RNvXs0_NtNtCsgtPOCBgevO_4core3str5lossyNtB5_5DebugNtNtB9_3fmt5Debug3fmt  (in candidate-controls-profiling-probe) + 392  [0x1023fdb84]  lossy.rs:125
+      +       !             | + ! 22 _RNvMNtNtCsgtPOCBgevO_4core4char7methodsc16escape_debug_ext  (in candidate-controls-profiling-probe) + 104  [0x1023fa714]  methods.rs:475
+      +       !             | + ! 20 _RNvMNtNtCsgtPOCBgevO_4core4char7methodsc16escape_debug_ext  (in candidate-controls-profiling-probe) + 392  [0x1023fa834]  methods.rs:486
+      +       !             | + ! : 12 _RNvNtNtCsgtPOCBgevO_4core7unicode9printable12is_printable  (in candidate-controls-profiling-probe) + 0  [0x1023fa938]  printable.rs:39
+      +       !             | + ! : 8 _RNvNtNtCsgtPOCBgevO_4core7unicode9printable12is_printable  (in candidate-controls-profiling-probe) + 24  [0x1023fa950]  printable.rs:46
+      +       !             | + ! 18 _RNvMNtNtCsgtPOCBgevO_4core4char7methodsc16escape_debug_ext  (in candidate-controls-profiling-probe) + 144  [0x1023fa73c]  methods.rs:483
+      +       !             | + ! 15 _RNvMNtNtCsgtPOCBgevO_4core4char7methodsc16escape_debug_ext  (in candidate-controls-profiling-probe) + 8  [0x1023fa6b4]  methods.rs:474
+      +       !             | + ! 13 _RNvMNtNtCsgtPOCBgevO_4core4char7methodsc16escape_debug_ext  (in candidate-controls-profiling-probe) + 376  [0x1023fa824]  methods.rs:0
+      +       !             | + ! 10 _RNvMNtNtCsgtPOCBgevO_4core4char7methodsc16escape_debug_ext  (in candidate-controls-profiling-probe) + 392  [0x1023fa834]  methods.rs:486
+      +       !             | + 25 _RNvXs0_NtNtCsgtPOCBgevO_4core3str5lossyNtB5_5DebugNtNtB9_3fmt5Debug3fmt  (in candidate-controls-profiling-probe) + 260,280  [0x1023fdb00,0x1023fdb14]  lossy.rs:124
+      +       !             | + 19 _RNvXs0_NtNtCsgtPOCBgevO_4core3str5lossyNtB5_5DebugNtNtB9_3fmt5Debug3fmt  (in candidate-controls-profiling-probe) + 140  [0x1023fda88]  lossy.rs:118
+      +       !             | + ! 18 _RNvXs2_NtNtCsgtPOCBgevO_4core3str5lossyNtB5_10Utf8ChunksNtNtNtNtB9_4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 52  [0x1023fdda0]  lossy.rs:214
+      +       !             | + ! 1 _RNvXs2_NtNtCsgtPOCBgevO_4core3str5lossyNtB5_10Utf8ChunksNtNtNtNtB9_4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 440  [0x1023fdf24]  lossy.rs:204
+      +       !             | + 15 _RNvXs0_NtNtCsgtPOCBgevO_4core3str5lossyNtB5_5DebugNtNtB9_3fmt5Debug3fmt  (in candidate-controls-profiling-probe) + 756  [0x1023fdcf0]  lossy.rs:139
+      +       !             | + ! 14 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | + ! : 14 _platform_memmove  (in libsystem_platform.dylib) + 420,428,...  [0x1887cf504,0x1887cf50c,...]
+      +       !             | + ! 1 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 28  [0x1023f8db0]  string.rs:3358
+      +       !             | + 12 _RNvMNtNtCsgtPOCBgevO_4core4char7methodsc16escape_debug_ext  (in candidate-controls-profiling-probe) + 640  [0x1023fa92c]  methods.rs:489
+      +       !             | + 11 _RNvXs0_NtNtCsgtPOCBgevO_4core3str5lossyNtB5_5DebugNtNtB9_3fmt5Debug3fmt  (in candidate-controls-profiling-probe) + 396  [0x1023fdb88]  lossy.rs:131
+      +       !             | + 7 _RNvXs0_NtNtCsgtPOCBgevO_4core3str5lossyNtB5_5DebugNtNtB9_3fmt5Debug3fmt  (in candidate-controls-profiling-probe) + 624,756,...  [0x1023fdc6c,0x1023fdcf0,...]  lossy.rs:139
+      +       !             | + 4 _RNvXs0_NtNtCsgtPOCBgevO_4core3str5lossyNtB5_5DebugNtNtB9_3fmt5Debug3fmt  (in candidate-controls-profiling-probe) + 824  [0x1023fdd34]  lossy.rs:148
+      +       !             | + ! 4 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write10write_char.400  (in candidate-controls-profiling-probe) + 52  [0x1023f8e44]  string.rs:3364
+      +       !             | + 2 _RNvXs0_NtNtCsgtPOCBgevO_4core3str5lossyNtB5_5DebugNtNtB9_3fmt5Debug3fmt  (in candidate-controls-profiling-probe) + 132,144  [0x1023fda80,0x1023fda8c]  lossy.rs:118
+      +       !             | + 1 _RNvXs0_NtNtCsgtPOCBgevO_4core3str5lossyNtB5_5DebugNtNtB9_3fmt5Debug3fmt  (in candidate-controls-profiling-probe) + 64  [0x1023fda3c]  lossy.rs:116
+      +       !             | + ! 1 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write10write_char.400  (in candidate-controls-profiling-probe) + 56  [0x1023f8e48]  string.rs:3364
+      +       !             | + 1 _RNvXs0_NtNtCsgtPOCBgevO_4core3str5lossyNtB5_5DebugNtNtB9_3fmt5Debug3fmt  (in candidate-controls-profiling-probe) + 48  [0x1023fda2c]  lossy.rs:116
+      +       !             | + 1 _RNvXs0_NtNtCsgtPOCBgevO_4core3str5lossyNtB5_5DebugNtNtB9_3fmt5Debug3fmt  (in candidate-controls-profiling-probe) + 820  [0x1023fdd30]  lossy.rs:148
+      +       !             | + 1 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 84  [0x1023f8de8]  string.rs:3360
+      +       !             | 13 _RNvXs1g_NtCsgtPOCBgevO_4core3fmtRNtNtCs33snLMdjP9A_8fdu_core15engine_contract15EffectiveChangeNtB6_5Debug3fmtCsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 2144,548,...  [0x1023f5c80,0x1023f5644,...]  mod.rs:2872
+      +       !             | 9 _RNvXs1g_NtCsgtPOCBgevO_4core3fmtRNtNtCs33snLMdjP9A_8fdu_core15engine_contract15EffectiveChangeNtB6_5Debug3fmtCsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 480  [0x1023f5600]  mod.rs:2872
+      +       !             | + 5 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | + ! 3 _platform_memmove  (in libsystem_platform.dylib) + 456,436  [0x1887cf528,0x1887cf514]
+      +       !             | + ! 2 DYLD-STUB$$memcpy  (in candidate-controls-profiling-probe) + 4  [0x102588f10]
+      +       !             | + 4 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 48,68  [0x1023f8dc4,0x1023f8dd8]  string.rs:3358
+      +       !             | 9 _RNvXs1g_NtCsgtPOCBgevO_4core3fmtRNtNtCs33snLMdjP9A_8fdu_core15engine_contract15EffectiveChangeNtB6_5Debug3fmtCsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 508  [0x1023f561c]  mod.rs:2872
+      +       !             | + 5 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | + ! 4 _platform_memmove  (in libsystem_platform.dylib) + 452,448  [0x1887cf524,0x1887cf520]
+      +       !             | + ! 1 DYLD-STUB$$memcpy  (in candidate-controls-profiling-probe) + 4  [0x102588f10]
+      +       !             | + 4 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 60,68  [0x1023f8dd0,0x1023f8dd8]  string.rs:3358
+      +       !             | 6 _RNvXs1g_NtCsgtPOCBgevO_4core3fmtRNtNtCs33snLMdjP9A_8fdu_core15engine_contract15EffectiveChangeNtB6_5Debug3fmtCsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 1316  [0x1023f5944]  mod.rs:2872
+      +       !             | + 4 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | + ! 2 DYLD-STUB$$memcpy  (in candidate-controls-profiling-probe) + 4  [0x102588f10]
+      +       !             | + ! 2 _platform_memmove  (in libsystem_platform.dylib) + 0,448  [0x1887cf360,0x1887cf520]
+      +       !             | + 1 _RNvXsE_NtCs33snLMdjP9A_8fdu_core15engine_contractNtB5_9EntryKindNtNtCsgtPOCBgevO_4core3fmt5Debug3fmt  (in candidate-controls-profiling-probe) + 32  [0x1023f6ee4]  engine_contract.rs:47
+      +       !             | + 1 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 44  [0x1023f8dc0]  string.rs:3358
+      +       !             | 6 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 84  [0x1023f8de8]  string.rs:3360
+      +       !             | 5 _RNvXs1g_NtCsgtPOCBgevO_4core3fmtRNtNtCs33snLMdjP9A_8fdu_core15engine_contract15EffectiveChangeNtB6_5Debug3fmtCsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 428  [0x1023f55cc]  mod.rs:2872
+      +       !             | + 4 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | + ! 3 _platform_memmove  (in libsystem_platform.dylib) + 12,424,...  [0x1887cf36c,0x1887cf508,...]
+      +       !             | + ! 1 DYLD-STUB$$memcpy  (in candidate-controls-profiling-probe) + 4  [0x102588f10]
+      +       !             | + 1 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 48  [0x1023f8dc4]  string.rs:3358
+      +       !             | 4 _RNvXs1g_NtCsgtPOCBgevO_4core3fmtRNtNtCs33snLMdjP9A_8fdu_core15engine_contract15EffectiveChangeNtB6_5Debug3fmtCsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 1272  [0x1023f5918]  mod.rs:2872
+      +       !             | + 4 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | +   4 _platform_memmove  (in libsystem_platform.dylib) + 452,436,...  [0x1887cf524,0x1887cf514,...]
+      +       !             | 4 _RNvXs1g_NtCsgtPOCBgevO_4core3fmtRNtNtCs33snLMdjP9A_8fdu_core15engine_contract15EffectiveChangeNtB6_5Debug3fmtCsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 1300  [0x1023f5934]  mod.rs:2872
+      +       !             | + 4 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | +   2 DYLD-STUB$$memcpy  (in candidate-controls-profiling-probe) + 4  [0x102588f10]
+      +       !             | +   2 _platform_memmove  (in libsystem_platform.dylib) + 12,448  [0x1887cf36c,0x1887cf520]
+      +       !             | 3 _RNvXs1g_NtCsgtPOCBgevO_4core3fmtRNtNtCs33snLMdjP9A_8fdu_core15engine_contract15EffectiveChangeNtB6_5Debug3fmtCsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 536  [0x1023f5638]  mod.rs:2872
+      +       !             | + 3 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | +   2 DYLD-STUB$$memcpy  (in candidate-controls-profiling-probe) + 4  [0x102588f10]
+      +       !             | +   1 _platform_memmove  (in libsystem_platform.dylib) + 436  [0x1887cf514]
+      +       !             | 2 _RNvXs1g_NtCsgtPOCBgevO_4core3fmtRNtNtCs33snLMdjP9A_8fdu_core15engine_contract15EffectiveChangeNtB6_5Debug3fmtCsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 2672  [0x1023f5e90]  mod.rs:2872
+      +       !             | + 2 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             | +   2 _platform_memmove  (in libsystem_platform.dylib) + 12,448  [0x1887cf36c,0x1887cf520]
+      +       !             | 1 _RNvXs1g_NtCsgtPOCBgevO_4core3fmtRNtNtCs33snLMdjP9A_8fdu_core15engine_contract15EffectiveChangeNtB6_5Debug3fmtCsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 1244  [0x1023f58fc]  mod.rs:2872
+      +       !             |   1 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 28  [0x1023f8db0]  string.rs:3358
+      +       !             3 _RNvXsq_NtCslJsSqIQKwiA_5alloc3vecINtB5_3VecNtNtCs33snLMdjP9A_8fdu_core15engine_contract15EffectiveChangeENtNtCsgtPOCBgevO_4core3fmt5Debug3fmtCsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 316  [0x1023f780c]  mod.rs:4305
+      +       !             | 3 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       !             |   3 _platform_memmove  (in libsystem_platform.dylib) + 0,460  [0x1887cf360,0x1887cf52c]
+      +       !             2 _RNvXsq_NtCslJsSqIQKwiA_5alloc3vecINtB5_3VecNtNtCs33snLMdjP9A_8fdu_core15engine_contract15EffectiveChangeENtNtCsgtPOCBgevO_4core3fmt5Debug3fmtCsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 300  [0x1023f77fc]  mod.rs:4305
+      +       !             1 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 84  [0x1023f8de8]  string.rs:3360
+      +       1192 _RNvCsjw2UvaLTkTO_10perf_probe7execute  (in candidate-controls-profiling-probe) + 4200  [0x1023e8628]  perf_probe.rs:365
+      +       ! 1122 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index5apply  (in candidate-controls-profiling-probe) + 236  [0x1024dd734]  index.rs:1728
+      +       ! : 1066 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index20commit_prepared_with  (in candidate-controls-profiling-probe) + 472  [0x102418364]  index.rs:1800
+      +       ! : | 663 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index15reduce_preparedNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 6344  [0x10241cd40]  index.rs:1862
+      +       ! : | + 159 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2464  [0x10242c430]  index.rs:4205
+      +       ! : | + ! 100 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12insert_child  (in candidate-controls-profiling-probe) + 200,248,...  [0x102456824,0x102456854,...]  index.rs:3607
+      +       ! : | + ! 47 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12insert_child  (in candidate-controls-profiling-probe) + 220  [0x102456838]  index.rs:3607
+      +       ! : | + ! : 35 _platform_memcmp  (in libsystem_platform.dylib) + 8,128,...  [0x1887ccf18,0x1887ccf90,...]
+      +       ! : | + ! : 12 DYLD-STUB$$memcmp  (in candidate-controls-profiling-probe) + 4,8  [0x102588f04,0x102588f08]
+      +       ! : | + ! 5 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12insert_child  (in candidate-controls-profiling-probe) + 980  [0x102456b30]  index.rs:3607
+      +       ! : | + ! : 2 <deduplicated_symbol>  (in libsystem_malloc.dylib) + 112,212  [0x1885e2144,0x1885e21a8]
+      +       ! : | + ! : 1 _RNvCs9wFQrvczXsK_7___rustc12___rust_alloc  (in candidate-controls-profiling-probe) + 188  [0x1023db130]  perf_probe.rs:40
+      +       ! : | + ! : 1 _malloc_zone_malloc  (in libsystem_malloc.dylib) + 12  [0x1885f2044]
+      +       ! : | + ! : 1 _xzm_xzone_malloc_tiny  (in libsystem_malloc.dylib) + 420  [0x1885e8078]
+      +       ! : | + ! 2 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12insert_child  (in candidate-controls-profiling-probe) + 1092  [0x102456ba0]  index.rs:3607
+      +       ! : | + ! : 1 DYLD-STUB$$memcpy  (in candidate-controls-profiling-probe) + 4  [0x102588f10]
+      +       ! : | + ! : 1 _platform_memmove  (in libsystem_platform.dylib) + 12  [0x1887cf36c]
+      +       ! : | + ! 1 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12insert_child  (in candidate-controls-profiling-probe) + 48  [0x10245678c]  index.rs:3601
+      +       ! : | + ! 1 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12insert_child  (in candidate-controls-profiling-probe) + 64  [0x10245679c]  index.rs:3602
+      +       ! : | + ! : 1 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index16promote_children  (in candidate-controls-profiling-probe) + 88  [0x10243b0d4]  index.rs:3586
+      +       ! : | + ! 1 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12insert_child  (in candidate-controls-profiling-probe) + 1600  [0x102456d9c]  index.rs:3607
+      +       ! : | + ! : 1 <deduplicated_symbol>  (in libsystem_malloc.dylib) + 212  [0x1885e21a8]
+      +       ! : | + ! 1 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12insert_child  (in candidate-controls-profiling-probe) + 1704  [0x102456e04]  index.rs:3607
+      +       ! : | + ! : 1 DYLD-STUB$$memcpy  (in candidate-controls-profiling-probe) + 4  [0x102588f10]
+      +       ! : | + ! 1 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12insert_child  (in candidate-controls-profiling-probe) + 1720  [0x102456e14]  index.rs:3607
+      +       ! : | + !   1 DYLD-STUB$$memcpy  (in candidate-controls-profiling-probe) + 4  [0x102588f10]
+      +       ! : | + 146 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 116  [0x10242bb04]  index.rs:4121
+      +       ! : | + ! 84 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index5child  (in candidate-controls-profiling-probe) + 196,224,...  [0x102417f08,0x102417f24,...]  index.rs:3572
+      +       ! : | + ! 55 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index5child  (in candidate-controls-profiling-probe) + 168  [0x102417eec]  index.rs:3572
+      +       ! : | + ! : 33 _platform_memcmp  (in libsystem_platform.dylib) + 128,8,...  [0x1887ccf90,0x1887ccf18,...]
+      +       ! : | + ! : 22 DYLD-STUB$$memcmp  (in candidate-controls-profiling-probe) + 4,8  [0x102588f04,0x102588f08]
+      +       ! : | + ! 5 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index5child  (in candidate-controls-profiling-probe) + 628,632  [0x1024180b8,0x1024180bc]  mod.rs:0
+      +       ! : | + ! 1 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index5child  (in candidate-controls-profiling-probe) + 24  [0x102417e5c]  index.rs:3565
+      +       ! : | + ! 1 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index5child  (in candidate-controls-profiling-probe) + 84  [0x102417e98]  index.rs:3566
+      +       ! : | + 68 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2744  [0x10242c548]  index.rs:0
+      +       ! : | + ! 35 _RINvNtCsgtPOCBgevO_4core3ptr9drop_glueNtNtCs33snLMdjP9A_8fdu_core5index23InternedPartitionRollUpEBE_  (in candidate-controls-profiling-probe) + 156  [0x10241545c]  mod.rs:825
+      +       ! : | + ! : 29 _RNvMsz_NtNtNtCslJsSqIQKwiA_5alloc11collections5btree3mapINtB5_8IntoIterNtNtBb_6string6StringmE10dying_nextCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 964  [0x1024108d8]  map.rs:1936
+      +       ! : | + ! : | 15 _xzm_free  (in libsystem_malloc.dylib) + 1048  [0x1885e3484]
+      +       ! : | + ! : | + 15 mach_absolute_time  (in libsystem_kernel.dylib) + 108,16,...  [0x18878210c,0x1887820b0,...]
+      +       ! : | + ! : | 9 _xzm_free  (in libsystem_malloc.dylib) + 128,232,...  [0x1885e30ec,0x1885e3154,...]
+      +       ! : | + ! : | 3 _xzm_free  (in libsystem_malloc.dylib) + 352  [0x1885e31cc]
+      +       ! : | + ! : | + 2 __bzero  (in libsystem_platform.dylib) + 24  [0x1887cf048]
+      +       ! : | + ! : | + 1 _platform_memset  (in libsystem_platform.dylib) + 132  [0x1887cf114]
+      +       ! : | + ! : | 2 _free  (in libsystem_malloc.dylib) + 44  [0x1885f2c78]
+      +       ! : | + ! : 5 _RNvMsz_NtNtNtCslJsSqIQKwiA_5alloc11collections5btree3mapINtB5_8IntoIterNtNtBb_6string6StringmE10dying_nextCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 40  [0x10241053c]  map.rs:1935
+      +       ! : | + ! : 1 _xzm_free  (in libsystem_malloc.dylib) + 1552  [0x1885e367c]
+      +       ! : | + ! 25 _RINvNtCsgtPOCBgevO_4core3ptr9drop_glueNtNtCs33snLMdjP9A_8fdu_core5index23InternedPartitionRollUpEBE_  (in candidate-controls-profiling-probe) + 84  [0x102415414]  mod.rs:825
+      +       ! : | + ! : 18 _RNvMsz_NtNtNtCslJsSqIQKwiA_5alloc11collections5btree3mapINtB5_8IntoIterNtNtBb_6string6StringmE10dying_nextCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 964  [0x1024108d8]  map.rs:1936
+      +       ! : | + ! : | 12 _xzm_free  (in libsystem_malloc.dylib) + 196,996,...  [0x1885e3130,0x1885e3450,...]
+      +       ! : | + ! : | 4 _free  (in libsystem_malloc.dylib) + 0,44,...  [0x1885f2c4c,0x1885f2c78,...]
+      +       ! : | + ! : | 2 _xzm_free  (in libsystem_malloc.dylib) + 352  [0x1885e31cc]
+      +       ! : | + ! : |   2 _platform_memset  (in libsystem_platform.dylib) + 132,140  [0x1887cf114,0x1887cf11c]
+      +       ! : | + ! : 5 _RNvMsz_NtNtNtCslJsSqIQKwiA_5alloc11collections5btree3mapINtB5_8IntoIterNtNtBb_6string6StringmE10dying_nextCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 104,140,...  [0x10241057c,0x1024105a0,...]  map.rs:1936
+      +       ! : | + ! : 1 _RNvMsz_NtNtNtCslJsSqIQKwiA_5alloc11collections5btree3mapINtB5_8IntoIterNtNtBb_6string6StringmE10dying_nextCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 40  [0x10241053c]  map.rs:1935
+      +       ! : | + ! : 1 _RNvMsz_NtNtNtCslJsSqIQKwiA_5alloc11collections5btree3mapINtB5_8IntoIterNtNtBb_6string6StringmE10dying_nextCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 384  [0x102410694]  map.rs:1940
+      +       ! : | + ! 5 _RINvNtCsgtPOCBgevO_4core3ptr9drop_glueNtNtCs33snLMdjP9A_8fdu_core5index23InternedPartitionRollUpEBE_  (in candidate-controls-profiling-probe) + 156,68,...  [0x10241545c,0x102415404,...]  mod.rs:825
+      +       ! : | + ! 3 _RNvMsz_NtNtNtCslJsSqIQKwiA_5alloc11collections5btree3mapINtB5_8IntoIterNtNtBb_6string6StringmE10dying_nextCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 976,988,...  [0x1024108e4,0x1024108f0,...]  map.rs:1942
+      +       ! : | + 61 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 408  [0x10242bc28]  index.rs:4190
+      +       ! : | + ! 39 _RNvMs6_NtCs33snLMdjP9A_8fdu_core8classifyNtB5_12TypeRegistry13canonical_ext  (in candidate-controls-profiling-probe) + 60  [0x102446048]  classify.rs:560
+      +       ! : | + ! : 19 _RNvNtCs33snLMdjP9A_8fdu_core8classify11logical_ext  (in candidate-controls-profiling-probe) + 360  [0x1024472bc]  classify.rs:875
+      +       ! : | + ! : | 17 _RNvMs3_NtCslJsSqIQKwiA_5alloc7raw_vecINtB5_6RawVechE8grow_oneB7_  (in candidate-controls-profiling-probe) + 52  [0x10257d1c0]  mod.rs:188
+      +       ! : | + ! : | + 16 _RNvMs4_NtCslJsSqIQKwiA_5alloc7raw_vecNtB5_11RawVecInner11finish_growB7_  (in candidate-controls-profiling-probe) + 576  [0x10257d114]  mod.rs:559
+      +       ! : | + ! : | + ! 11 _xzm_xzone_malloc_tiny  (in libsystem_malloc.dylib) + 420,268,...  [0x1885e8078,0x1885e7fe0,...]
+      +       ! : | + ! : | + ! 2 _malloc_zone_malloc  (in libsystem_malloc.dylib) + 12,100  [0x1885f2044,0x1885f209c]
+      +       ! : | + ! : | + ! 2 _xzm_xzone_malloc  (in libsystem_malloc.dylib) + 24,336  [0x1885e28d8,0x1885e2a10]
+      +       ! : | + ! : | + ! 1 DYLD-STUB$$malloc  (in candidate-controls-profiling-probe) + 4  [0x102588ef8]
+      +       ! : | + ! : | + 1 _RNvMs4_NtCslJsSqIQKwiA_5alloc7raw_vecNtB5_11RawVecInner11finish_growB7_  (in candidate-controls-profiling-probe) + 568  [0x10257d10c]  mod.rs:559
+      +       ! : | + ! : | 2 _RNvMs3_NtCslJsSqIQKwiA_5alloc7raw_vecINtB5_6RawVechE8grow_oneB7_  (in candidate-controls-profiling-probe) + 44  [0x10257d1b8]  mod.rs:188
+      +       ! : | + ! : 15 _RNvNtCs33snLMdjP9A_8fdu_core8classify11logical_ext  (in candidate-controls-profiling-probe) + 232,244,...  [0x10244723c,0x102447248,...]  classify.rs:875
+      +       ! : | + ! : 5 _RNvNtCs33snLMdjP9A_8fdu_core8classify11logical_ext  (in candidate-controls-profiling-probe) + 764  [0x102447450]  classify.rs:875
+      +       ! : | + ! :   4 _RNvNtNtCsgtPOCBgevO_4core3str8converts9from_utf8  (in candidate-controls-profiling-probe) + 84,52,...  [0x1023fadf8,0x1023fadd8,...]  converts.rs:91
+      +       ! : | + ! :   1 _RNvNtNtCsgtPOCBgevO_4core3str8converts9from_utf8  (in candidate-controls-profiling-probe) + 528  [0x1023fafb4]  converts.rs:0
+      +       ! : | + ! 10 _RNvMs6_NtCs33snLMdjP9A_8fdu_core8classifyNtB5_12TypeRegistry13canonical_ext  (in candidate-controls-profiling-probe) + 124  [0x102446088]  classify.rs:562
+      +       ! : | + ! : 4 _RINvYNtNtNtCsa9BKTri5B3M_3std4hash6random11RandomStateNtNtCsgtPOCBgevO_4core4hash11BuildHasher8hash_oneReECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 164,188,...  [0x1024470d0,0x1024470e8,...]  mod.rs:701
+      +       ! : | + ! : 3 _RINvYNtNtNtCsa9BKTri5B3M_3std4hash6random11RandomStateNtNtCsgtPOCBgevO_4core4hash11BuildHasher8hash_oneReECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 56,48  [0x102447064,0x10244705c]  mod.rs:699
+      +       ! : | + ! : 3 _RINvYNtNtNtCsa9BKTri5B3M_3std4hash6random11RandomStateNtNtCsgtPOCBgevO_4core4hash11BuildHasher8hash_oneReECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 100  [0x102447090]  mod.rs:700
+      +       ! : | + ! :   1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 20  [0x1024013e4]  sip.rs:0
+      +       ! : | + ! :   1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 12  [0x1024013dc]  sip.rs:262
+      +       ! : | + ! :   1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 204  [0x10240149c]  sip.rs:265
+      +       ! : | + ! 5 _RNvMs6_NtCs33snLMdjP9A_8fdu_core8classifyNtB5_12TypeRegistry13canonical_ext  (in candidate-controls-profiling-probe) + 336  [0x10244615c]  classify.rs:565
+      +       ! : | + ! : 3 _RNvXs0_NtNtCsgtPOCBgevO_4core3str7patternNtB5_12CharSearcherNtB5_15ReverseSearcher15next_match_back  (in candidate-controls-profiling-probe) + 128  [0x102446db4]  pattern.rs:509
+      +       ! : | + ! : | 2 _RNvNtNtCsgtPOCBgevO_4core5slice6memchr7memrchr  (in candidate-controls-profiling-probe) + 236  [0x1023fcfe8]  memchr.rs:161
+      +       ! : | + ! : | 1 _RNvNtNtCsgtPOCBgevO_4core5slice6memchr7memrchr  (in candidate-controls-profiling-probe) + 212  [0x1023fcfd0]  memchr.rs:160
+      +       ! : | + ! : 2 _RNvXs0_NtNtCsgtPOCBgevO_4core3str7patternNtB5_12CharSearcherNtB5_15ReverseSearcher15next_match_back  (in candidate-controls-profiling-probe) + 36  [0x102446d58]  pattern.rs:0
+      +       ! : | + ! 3 _RNvNtCs33snLMdjP9A_8fdu_core8classify11logical_ext  (in candidate-controls-profiling-probe) + 984  [0x10244752c]  classify.rs:876
+      +       ! : | + ! 1 _RINvYNtNtNtCsa9BKTri5B3M_3std4hash6random11RandomStateNtNtCsgtPOCBgevO_4core4hash11BuildHasher8hash_oneReECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 288  [0x10244714c]  mod.rs:702
+      +       ! : | + ! 1 _RNvMs6_NtCs33snLMdjP9A_8fdu_core8classifyNtB5_12TypeRegistry13canonical_ext  (in candidate-controls-profiling-probe) + 80  [0x10244605c]  classify.rs:561
+      +       ! : | + ! 1 _RNvMs6_NtCs33snLMdjP9A_8fdu_core8classifyNtB5_12TypeRegistry13canonical_ext  (in candidate-controls-profiling-probe) + 108  [0x102446078]  classify.rs:562
+      +       ! : | + ! 1 _RNvXs0_NtNtCsgtPOCBgevO_4core3str7patternNtB5_12CharSearcherNtB5_15ReverseSearcher15next_match_back  (in candidate-controls-profiling-probe) + 344  [0x102446e8c]  pattern.rs:548
+      +       ! : | + 43 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2484  [0x10242c444]  index.rs:4206
+      +       ! : | + ! 24 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12contribution  (in candidate-controls-profiling-probe) + 232  [0x102433628]  index.rs:3939
+      +       ! : | + ! : 20 _RNvMs4_NtNtNtNtCslJsSqIQKwiA_5alloc11collections5btree3map5entryINtB5_11VacantEntrymNtNtCs33snLMdjP9A_8fdu_core5index8ExtTallyE12insert_entryB1o_  (in candidate-controls-profiling-probe) + 280  [0x10243f484]  entry.rs:386
+      +       ! : | + ! : | 8 _xzm_xzone_malloc_tiny  (in libsystem_malloc.dylib) + 420,96,...  [0x1885e8078,0x1885e7f34,...]
+      +       ! : | + ! : | 4 <deduplicated_symbol>  (in libsystem_malloc.dylib) + 212,112  [0x1885e21a8,0x1885e2144]
+      +       ! : | + ! : | 4 _malloc_zone_malloc  (in libsystem_malloc.dylib) + 44,12,...  [0x1885f2064,0x1885f2044,...]
+      +       ! : | + ! : | 2 DYLD-STUB$$malloc  (in candidate-controls-profiling-probe) + 4  [0x102588ef8]
+      +       ! : | + ! : | 2 _xzm_xzone_malloc  (in libsystem_malloc.dylib) + 184  [0x1885e2978]
+      +       ! : | + ! : 2 _RNvMs4_NtNtNtNtCslJsSqIQKwiA_5alloc11collections5btree3map5entryINtB5_11VacantEntrymNtNtCs33snLMdjP9A_8fdu_core5index8ExtTallyE12insert_entryB1o_  (in candidate-controls-profiling-probe) + 104  [0x10243f3d4]  entry.rs:385
+      +       ! : | + ! : 1 _RNvMs4_NtNtNtNtCslJsSqIQKwiA_5alloc11collections5btree3map5entryINtB5_11VacantEntrymNtNtCs33snLMdjP9A_8fdu_core5index8ExtTallyE12insert_entryB1o_  (in candidate-controls-profiling-probe) + 44  [0x10243f398]  entry.rs:382
+      +       ! : | + ! : 1 _RNvMs4_NtNtNtNtCslJsSqIQKwiA_5alloc11collections5btree3map5entryINtB5_11VacantEntrymNtNtCs33snLMdjP9A_8fdu_core5index8ExtTallyE12insert_entryB1o_  (in candidate-controls-profiling-probe) + 2492  [0x10243fd28]  entry.rs:405
+      +       ! : | + ! 13 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12contribution  (in candidate-controls-profiling-probe) + 352  [0x1024336a0]  index.rs:3948
+      +       ! : | + ! : 6 _RINvNvXs0_NtNtNtCslJsSqIQKwiA_5alloc11collections5btree3mapINtB8_8BTreeMappppENtNtCsgtPOCBgevO_4core5clone5Clone5clone13clone_subtreemNtNtCs33snLMdjP9A_8fdu_core5index8ExtTallyNtNtBe_5alloc6GlobalEB2c_  (in candidate-controls-profiling-probe) + 1016  [0x10243f12c]  map.rs:239
+      +       ! : | + ! : | 3 _malloc_zone_malloc  (in libsystem_malloc.dylib) + 44,64,...  [0x1885f2064,0x1885f2078,...]
+      +       ! : | + ! : | 2 _xzm_xzone_malloc_tiny  (in libsystem_malloc.dylib) + 88,824  [0x1885e7f2c,0x1885e820c]
+      +       ! : | + ! : | 1 DYLD-STUB$$malloc  (in candidate-controls-profiling-probe) + 4  [0x102588ef8]
+      +       ! : | + ! : 6 _RINvNvXs0_NtNtNtCslJsSqIQKwiA_5alloc11collections5btree3mapINtB8_8BTreeMappppENtNtCsgtPOCBgevO_4core5clone5Clone5clone13clone_subtreemNtNtCs33snLMdjP9A_8fdu_core5index8ExtTallyNtNtBe_5alloc6GlobalEB2c_  (in candidate-controls-profiling-probe) + 1112,1060,...  [0x10243f18c,0x10243f158,...]  map.rs:257
+      +       ! : | + ! : 1 _RINvNvXs0_NtNtNtCslJsSqIQKwiA_5alloc11collections5btree3mapINtB8_8BTreeMappppENtNtCsgtPOCBgevO_4core5clone5Clone5clone13clone_subtreemNtNtCs33snLMdjP9A_8fdu_core5index8ExtTallyNtNtBe_5alloc6GlobalEB2c_  (in candidate-controls-profiling-probe) + 844  [0x10243f080]  map.rs:239
+      +       ! : | + ! 2 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12contribution  (in candidate-controls-profiling-probe) + 320,332  [0x102433680,0x10243368c]  index.rs:3948
+      +       ! : | + ! 1 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12contribution  (in candidate-controls-profiling-probe) + 76  [0x10243358c]  index.rs:3918
+      +       ! : | + ! 1 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12contribution  (in candidate-controls-profiling-probe) + 164  [0x1024335e4]  index.rs:3930
+      +       ! : | + ! 1 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12contribution  (in candidate-controls-profiling-probe) + 212  [0x102433614]  index.rs:3939
+      +       ! : | + ! 1 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12contribution  (in candidate-controls-profiling-probe) + 396  [0x1024336cc]  index.rs:3949
+      +       ! : | + 40 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2500  [0x10242c454]  index.rs:4207
+      +       ! : | + ! 15 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12merge_upward  (in candidate-controls-profiling-probe) + 304  [0x102451a58]  index.rs:3966
+      +       ! : | + ! : 4 _RNvMs3_NtCs33snLMdjP9A_8fdu_core5indexNtB5_14InternedRollUp5merge  (in candidate-controls-profiling-probe) + 100,92,...  [0x102459f84,0x102459f7c,...]  index.rs:270
+      +       ! : | + ! : 4 _RNvMs3_NtCs33snLMdjP9A_8fdu_core5indexNtB5_14InternedRollUp5merge  (in candidate-controls-profiling-probe) + 176,184  [0x102459fd0,0x102459fd8]  index.rs:274
+      +       ! : | + ! : 3 _RNvMs3_NtCs33snLMdjP9A_8fdu_core5indexNtB5_14InternedRollUp5merge  (in candidate-controls-profiling-probe) + 40  [0x102459f48]  index.rs:258
+      +       ! : | + ! : 2 _RNvMs3_NtCs33snLMdjP9A_8fdu_core5indexNtB5_14InternedRollUp5merge  (in candidate-controls-profiling-probe) + 68  [0x102459f64]  index.rs:264
+      +       ! : | + ! : 2 _RNvMs3_NtCs33snLMdjP9A_8fdu_core5indexNtB5_14InternedRollUp5merge  (in candidate-controls-profiling-probe) + 388,392  [0x10245a0a4,0x10245a0a8]  index.rs:271
+      +       ! : | + ! 14 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12merge_upward  (in candidate-controls-profiling-probe) + 292  [0x102451a4c]  index.rs:3966
+      +       ! : | + ! : 8 _RNvMs3_NtCs33snLMdjP9A_8fdu_core5indexNtB5_14InternedRollUp5merge  (in candidate-controls-profiling-probe) + 92,100,...  [0x102459f7c,0x102459f84,...]  index.rs:270
+      +       ! : | + ! : 5 _RNvMs3_NtCs33snLMdjP9A_8fdu_core5indexNtB5_14InternedRollUp5merge  (in candidate-controls-profiling-probe) + 388,392,...  [0x10245a0a4,0x10245a0a8,...]  index.rs:271
+      +       ! : | + ! : 1 _RNvMs3_NtCs33snLMdjP9A_8fdu_core5indexNtB5_14InternedRollUp5merge  (in candidate-controls-profiling-probe) + 184  [0x102459fd8]  index.rs:274
+      +       ! : | + ! 4 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12merge_upward  (in candidate-controls-profiling-probe) + 232  [0x102451a10]  counters.rs:0
+      +       ! : | + ! 2 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12merge_upward  (in candidate-controls-profiling-probe) + 76  [0x102451974]  index.rs:0
+      +       ! : | + ! : 2 _tlv_get_addr  (in libdyld.dylib) + 4  [0x1883d038c]
+      +       ! : | + ! 2 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12merge_upward  (in candidate-controls-profiling-probe) + 96  [0x102451988]  index.rs:0
+      +       ! : | + ! : 2 _tlv_get_addr  (in libdyld.dylib) + 4  [0x1883d038c]
+      +       ! : | + ! 2 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12merge_upward  (in candidate-controls-profiling-probe) + 32,320  [0x102451948,0x102451a68]  index.rs:3961
+      +       ! : | + ! 1 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12merge_upward  (in candidate-controls-profiling-probe) + 260  [0x102451a2c]  index.rs:3965
+      +       ! : | + 22 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2376  [0x10242c3d8]  index.rs:4193
+      +       ! : | + ! 16 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index5alloc  (in candidate-controls-profiling-probe) + 508,516,...  [0x10245666c,0x102456674,...]  index.rs:3705
+      +       ! : | + ! 5 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index5alloc  (in candidate-controls-profiling-probe) + 488  [0x102456658]  index.rs:3705
+      +       ! : | + ! : 5 _RNvMs3_NtCslJsSqIQKwiA_5alloc7raw_vecINtB5_6RawVecNtNtCs33snLMdjP9A_8fdu_core4scan18WorkerPolicyWindowE8grow_oneBQ_  (in candidate-controls-profiling-probe) + 60  [0x1025800b0]  mod.rs:188
+      +       ! : | + ! :   5 _RNvMs4_NtCslJsSqIQKwiA_5alloc7raw_vecNtB5_11RawVecInner11finish_growCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 92  [0x10257fa0c]  mod.rs:556
+      +       ! : | + ! :     5 _realloc  (in libsystem_malloc.dylib) + 452  [0x1885f2e90]
+      +       ! : | + ! :       5 _malloc_zone_realloc  (in libsystem_malloc.dylib) + 148  [0x1885f2674]
+      +       ! : | + ! :         4 xzm_realloc  (in libsystem_malloc.dylib) + 832  [0x1885e2e34]
+      +       ! : | + ! :         | 4 mach_vm_copy  (in libsystem_kernel.dylib) + 116  [0x188789bf8]
+      +       ! : | + ! :         |   4 mach_msg2_internal  (in libsystem_kernel.dylib) + 76  [0x188794574]
+      +       ! : | + ! :         |     4 mach_msg2_trap  (in libsystem_kernel.dylib) + 8  [0x188781c34]
+      +       ! : | + ! :         1 xzm_realloc  (in libsystem_malloc.dylib) + 852  [0x1885e2e48]
+      +       ! : | + ! :           1 _platform_memmove  (in libsystem_platform.dylib) + 88  [0x1887cf3b8]
+      +       ! : | + ! 1 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index5alloc  (in candidate-controls-profiling-probe) + 200  [0x102456538]  index.rs:3693
+      +       ! : | + 18 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2532  [0x10242c474]  index.rs:4209
+      +       ! : | + ! 6 _xzm_xzone_malloc_tiny  (in libsystem_malloc.dylib) + 40,420,...  [0x1885e7efc,0x1885e8078,...]
+      +       ! : | + ! 4 <deduplicated_symbol>  (in libsystem_malloc.dylib) + 112,212  [0x1885e2144,0x1885e21a8]
+      +       ! : | + ! 4 _malloc_zone_malloc  (in libsystem_malloc.dylib) + 12,80  [0x1885f2044,0x1885f2088]
+      +       ! : | + ! 3 _xzm_xzone_malloc  (in libsystem_malloc.dylib) + 8,184,...  [0x1885e28c8,0x1885e2978,...]
+      +       ! : | + ! 1 _RNvCs9wFQrvczXsK_7___rustc12___rust_alloc  (in candidate-controls-profiling-probe) + 32  [0x1023db094]  perf_probe.rs:40
+      +       ! : | + 18 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2636,2604,...  [0x10242c4dc,0x10242c4bc,...]  index.rs:4209
+      +       ! : | + 15 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2400  [0x10242c3f0]  index.rs:4205
+      +       ! : | + ! 9 _xzm_xzone_malloc_tiny  (in libsystem_malloc.dylib) + 40,536,...  [0x1885e7efc,0x1885e80ec,...]
+      +       ! : | + ! 2 <deduplicated_symbol>  (in libsystem_malloc.dylib) + 112,164  [0x1885e2144,0x1885e2178]
+      +       ! : | + ! 2 _malloc_zone_malloc  (in libsystem_malloc.dylib) + 44,100  [0x1885f2064,0x1885f209c]
+      +       ! : | + ! 1 DYLD-STUB$$malloc  (in candidate-controls-profiling-probe) + 4  [0x102588ef8]
+      +       ! : | + ! 1 _xzm_xzone_malloc  (in libsystem_malloc.dylib) + 184  [0x1885e2978]
+      +       ! : | + 12 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2084  [0x10242c2b4]  index.rs:4190
+      +       ! : | + ! 7 _xzm_free  (in libsystem_malloc.dylib) + 996,232,...  [0x1885e3450,0x1885e3154,...]
+      +       ! : | + ! 5 _free  (in libsystem_malloc.dylib) + 0,12,...  [0x1885f2c4c,0x1885f2c58,...]
+      +       ! : | + 12 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2188  [0x10242c31c]  index.rs:4196
+      +       ! : | + ! 8 _xzm_xzone_malloc_tiny  (in libsystem_malloc.dylib) + 40,284,...  [0x1885e7efc,0x1885e7ff0,...]
+      +       ! : | + ! 2 _malloc_zone_malloc  (in libsystem_malloc.dylib) + 12,100  [0x1885f2044,0x1885f209c]
+      +       ! : | + ! 1 <deduplicated_symbol>  (in libsystem_malloc.dylib) + 212  [0x1885e21a8]
+      +       ! : | + ! 1 _xzm_xzone_malloc_freelist_outlined  (in libsystem_malloc.dylib) + 324  [0x1885e977c]
+      +       ! : | + !   1 _xzm_xzone_find_and_malloc_from_freelist_chunk  (in libsystem_malloc.dylib) + 860  [0x1885ea270]
+      +       ! : | + !     1 xzm_chunk_mark_used  (in libsystem_malloc.dylib) + 188  [0x1885caecc]
+      +       ! : | + !       1 _xzm_reclaim_mark_used  (in libsystem_malloc.dylib) + 124  [0x1885caf7c]
+      +       ! : | + !         1 _xzm_reclaim_mark_used_locked  (in libsystem_malloc.dylib) + 60  [0x1885cda50]
+      +       ! : | + !           1 mach_vm_reclaim_try_cancel  (in libsystem_kernel.dylib) + 260  [0x1887952c8]
+      +       ! : | + !             1 mach_absolute_time  (in libsystem_kernel.dylib) + 108  [0x18878210c]
+      +       ! : | + 6 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2208  [0x10242c330]  index.rs:4196
+      +       ! : | + ! 4 _platform_memmove  (in libsystem_platform.dylib) + 428,444,...  [0x1887cf50c,0x1887cf51c,...]
+      +       ! : | + ! 2 DYLD-STUB$$memcpy  (in candidate-controls-profiling-probe) + 4  [0x102588f10]
+      +       ! : | + 5 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2552  [0x10242c488]  index.rs:4209
+      +       ! : | + ! 5 _platform_memmove  (in libsystem_platform.dylib) + 452,0,...  [0x1887cf524,0x1887cf360,...]
+      +       ! : | + 5 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2624  [0x10242c4d0]  index.rs:4209
+      +       ! : | + ! 5 _RNvMs3_NtCslJsSqIQKwiA_5alloc7raw_vecINtB5_6RawVecNtNtCs33snLMdjP9A_8fdu_core15engine_contract15EffectiveChangeE8grow_oneBQ_  (in candidate-controls-profiling-probe) + 60  [0x10257fb94]  mod.rs:188
+      +       ! : | + !   5 _RNvMs4_NtCslJsSqIQKwiA_5alloc7raw_vecNtB5_11RawVecInner11finish_growCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 92  [0x10257fa0c]  mod.rs:556
+      +       ! : | + !     5 _realloc  (in libsystem_malloc.dylib) + 452  [0x1885f2e90]
+      +       ! : | + !       5 _malloc_zone_realloc  (in libsystem_malloc.dylib) + 148  [0x1885f2674]
+      +       ! : | + !         3 xzm_realloc  (in libsystem_malloc.dylib) + 852  [0x1885e2e48]
+      +       ! : | + !         : 3 _platform_memmove  (in libsystem_platform.dylib) + 88  [0x1887cf3b8]
+      +       ! : | + !         1 xzm_realloc  (in libsystem_malloc.dylib) + 640  [0x1885e2d74]
+      +       ! : | + !         : 1 xzm_segment_group_try_realloc_huge_chunk  (in libsystem_malloc.dylib) + 628  [0x1885cd61c]
+      +       ! : | + !         :   1 mvm_allocate_plat  (in libsystem_malloc.dylib) + 276  [0x1885d5558]
+      +       ! : | + !         :     1 mach_vm_map  (in libsystem_kernel.dylib) + 128  [0x1887819d0]
+      +       ! : | + !         :       1 _kernelrpc_mach_vm_map_trap  (in libsystem_kernel.dylib) + 8  [0x188781acc]
+      +       ! : | + !         1 xzm_realloc  (in libsystem_malloc.dylib) + 832  [0x1885e2e34]
+      +       ! : | + !           1 mach_vm_copy  (in libsystem_kernel.dylib) + 116  [0x188789bf8]
+      +       ! : | + !             1 mach_msg2_internal  (in libsystem_kernel.dylib) + 76  [0x188794574]
+      +       ! : | + !               1 mach_msg2_trap  (in libsystem_kernel.dylib) + 8  [0x188781c34]
+      +       ! : | + 3 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2364  [0x10242c3cc]  index.rs:4193
+      +       ! : | + ! 1 _RNvMs6_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Entry3new  (in candidate-controls-profiling-probe) + 56  [0x102456254]  index.rs:386
+      +       ! : | + ! 1 _RNvMs6_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Entry3new  (in candidate-controls-profiling-probe) + 380  [0x102456398]  index.rs:387
+      +       ! : | + ! 1 _RNvMs6_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Entry3new  (in candidate-controls-profiling-probe) + 420  [0x1024563c0]  index.rs:398
+      +       ! : | + 3 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2344,2336  [0x10242c3b8,0x10242c3b0]  index.rs:4194
+      +       ! : | + 3 _RNvMs6_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Entry3new  (in candidate-controls-profiling-probe) + 448,436  [0x1024563dc,0x1024563d0]  index.rs:398
+      +       ! : | + 2 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 1388  [0x10242bffc]  index.rs:4190
+      +       ! : | + ! 2 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index10intern_ext  (in candidate-controls-profiling-probe) + 104  [0x10245512c]  index.rs:3848
+      +       ! : | + !   1 DYLD-STUB$$memcmp  (in candidate-controls-profiling-probe) + 4  [0x102588f04]
+      +       ! : | + !   1 _platform_memcmp  (in libsystem_platform.dylib) + 180  [0x1887ccfc4]
+      +       ! : | + 2 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2176  [0x10242c310]  index.rs:4196
+      +       ! : | + 2 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2420  [0x10242c404]  index.rs:4205
+      +       ! : | + ! 2 _platform_memmove  (in libsystem_platform.dylib) + 428,452  [0x1887cf50c,0x1887cf524]
+      +       ! : | + 2 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2404,2432  [0x10242c3f4,0x10242c410]  index.rs:4205
+      +       ! : | + 2 _RNvMs0_NtCs33snLMdjP9A_8fdu_core7controlNtB5_14ControlMatcher10is_ignored  (in candidate-controls-profiling-probe) + 2512  [0x102455ed0]  control.rs:310
+      +       ! : | + 2 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12merge_upward  (in candidate-controls-profiling-probe) + 444  [0x102451ae4]  index.rs:3969
+      +       ! : | + 2 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index5child  (in candidate-controls-profiling-probe) + 648,656  [0x1024180cc,0x1024180d4]  index.rs:3574
+      +       ! : | + 2 _xzm_free  (in libsystem_malloc.dylib) + 1560  [0x1885e3684]
+      +       ! : | + 1 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2076  [0x10242c2ac]  index.rs:4190
+      +       ! : | + 1 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2224  [0x10242c340]  index.rs:4192
+      +       ! : | + 1 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2260  [0x10242c364]  index.rs:4195
+      +       ! : | + 1 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2468  [0x10242c434]  index.rs:4206
+      +       ! : | + 1 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2716  [0x10242c52c]  index.rs:4210
+      +       ! : | + 1 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index10intern_ext  (in candidate-controls-profiling-probe) + 1000  [0x1024554ac]  index.rs:3867
+      +       ! : | + 1 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index12insert_child  (in candidate-controls-profiling-probe) + 2900  [0x1024572b0]  index.rs:3609
+      +       ! : | + 1 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index5alloc  (in candidate-controls-profiling-probe) + 600  [0x1024566c8]  index.rs:3707
+      +       ! : | 348 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index15reduce_preparedNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 1992  [0x10241bc40]  index.rs:1846
+      +       ! : | + 259 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index23validate_known_ancestry  (in candidate-controls-profiling-probe) + 2120  [0x10242d35c]  index.rs:3101
+      +       ! : | + ! 141 _RNvMsr_NtCs33snLMdjP9A_8fdu_core5indexNtB5_17StructuralOverlay6upsert  (in candidate-controls-profiling-probe) + 64  [0x10242346c]  index.rs:4445
+      +       ! : | + ! : 91 _RNvMsr_NtCs33snLMdjP9A_8fdu_core5indexNtB5_17StructuralOverlay4kind  (in candidate-controls-profiling-probe) + 420  [0x1024233a8]  index.rs:4437
+      +       ! : | + ! : | 52 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index6lookup  (in candidate-controls-profiling-probe) + 56  [0x102417ba4]  index.rs:2512
+      +       ! : | + ! : | + 25 _RNvNtCs33snLMdjP9A_8fdu_core5index9normalize  (in candidate-controls-profiling-probe) + 196  [0x10242e7f4]  index.rs:4467
+      +       ! : | + ! : | + ! 24 _RNvMs3_NtCslJsSqIQKwiA_5alloc7raw_vecINtB5_6RawVecNtNtCs33snLMdjP9A_8fdu_core5index7EntryIdE8grow_oneBQ_  (in candidate-controls-profiling-probe) + 60  [0x10257fd60]  mod.rs:188
+      +       ! : | + ! : | + ! : 23 _RNvMs4_NtCslJsSqIQKwiA_5alloc7raw_vecNtB5_11RawVecInner11finish_growCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 120  [0x10257fa28]  mod.rs:559
+      +       ! : | + ! : | + ! : | 14 _xzm_xzone_malloc_tiny  (in libsystem_malloc.dylib) + 88,104,...  [0x1885e7f2c,0x1885e7f3c,...]
+      +       ! : | + ! : | + ! : | 4 _malloc_zone_malloc  (in libsystem_malloc.dylib) + 12,64  [0x1885f2044,0x1885f2078]
+      +       ! : | + ! : | + ! : | 3 <deduplicated_symbol>  (in libsystem_malloc.dylib) + 112,164,...  [0x1885e2144,0x1885e2178,...]
+      +       ! : | + ! : | + ! : | 1 _RNvCs9wFQrvczXsK_7___rustc12___rust_alloc  (in candidate-controls-profiling-probe) + 32  [0x1023db094]  perf_probe.rs:40
+      +       ! : | + ! : | + ! : | 1 _xzm_xzone_malloc  (in libsystem_malloc.dylib) + 24  [0x1885e28d8]
+      +       ! : | + ! : | + ! : 1 _RNvMs4_NtCslJsSqIQKwiA_5alloc7raw_vecNtB5_11RawVecInner11finish_growCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 56  [0x10257f9e8]  mod.rs:548
+      +       ! : | + ! : | + ! 1 _RNvMs3_NtCslJsSqIQKwiA_5alloc7raw_vecINtB5_6RawVecNtNtCs33snLMdjP9A_8fdu_core5index7EntryIdE8grow_oneBQ_  (in candidate-controls-profiling-probe) + 44  [0x10257fd50]  mod.rs:188
+      +       ! : | + ! : | + 22 _RNvNtCs33snLMdjP9A_8fdu_core5index9normalize  (in candidate-controls-profiling-probe) + 128  [0x10242e7b0]  index.rs:4465
+      +       ! : | + ! : | + ! 16 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 404,416,...  [0x102570a58,0x102570a64,...]  path.rs:928
+      +       ! : | + ! : | + ! 3 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 20,280  [0x1025708d8,0x1025709dc]  path.rs:0
+      +       ! : | + ! : | + ! 2 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 304,388  [0x1025709f4,0x102570a48]  path.rs:925
+      +       ! : | + ! : | + ! 1 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 8  [0x1025708cc]  path.rs:923
+      +       ! : | + ! : | + 3 _RNvNtCs33snLMdjP9A_8fdu_core5index9normalize  (in candidate-controls-profiling-probe) + 128,116  [0x10242e7b0,0x10242e7a4]  index.rs:4465
+      +       ! : | + ! : | + 1 _RNvMs3_NtCslJsSqIQKwiA_5alloc7raw_vecINtB5_6RawVecNtNtCs33snLMdjP9A_8fdu_core5index7EntryIdE8grow_oneBQ_  (in candidate-controls-profiling-probe) + 84  [0x10257fd78]  mod.rs:189
+      +       ! : | + ! : | + 1 _RNvNtCs33snLMdjP9A_8fdu_core5index9normalize  (in candidate-controls-profiling-probe) + 36  [0x10242e754]  index.rs:4464
+      +       ! : | + ! : | 22 _xzm_free  (in libsystem_malloc.dylib) + 1048  [0x1885e3484]
+      +       ! : | + ! : | + 21 mach_absolute_time  (in libsystem_kernel.dylib) + 108,112,...  [0x18878210c,0x188782110,...]
+      +       ! : | + ! : | + 1 DYLD-STUB$$mach_absolute_time  (in libsystem_malloc.dylib) + 8  [0x1885fab14]
+      +       ! : | + ! : | 5 _RNvNtCs33snLMdjP9A_8fdu_core5index9normalize  (in candidate-controls-profiling-probe) + 416  [0x10242e8d0]  index.rs:4473
+      +       ! : | + ! : | 5 _xzm_free  (in libsystem_malloc.dylib) + 996,352,...  [0x1885e3450,0x1885e31cc,...]
+      +       ! : | + ! : | 2 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index6lookup  (in candidate-controls-profiling-probe) + 112  [0x102417bdc]  index.rs:2513
+      +       ! : | + ! : | + 1 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index5child  (in candidate-controls-profiling-probe) + 56  [0x102417e7c]  index.rs:3566
+      +       ! : | + ! : | + 1 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index5child  (in candidate-controls-profiling-probe) + 108  [0x102417eb0]  index.rs:3572
+      +       ! : | + ! : | 2 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index6lookup  (in candidate-controls-profiling-probe) + 100  [0x102417bd0]  index.rs:2513
+      +       ! : | + ! : | 2 _free  (in libsystem_malloc.dylib) + 12,44  [0x1885f2c58,0x1885f2c78]
+      +       ! : | + ! : | 1 _xzm_free  (in libsystem_malloc.dylib) + 352  [0x1885e31cc]
+      +       ! : | + ! : |   1 _platform_memset  (in libsystem_platform.dylib) + 160  [0x1887cf130]
+      +       ! : | + ! : 34 _RNvMsr_NtCs33snLMdjP9A_8fdu_core5indexNtB5_17StructuralOverlay4kind  (in candidate-controls-profiling-probe) + 80  [0x102423254]  index.rs:4437
+      +       ! : | + ! : | 31 _RINvYNtNtNtCsa9BKTri5B3M_3std4hash6random11RandomStateNtNtCsgtPOCBgevO_4core4hash11BuildHasher8hash_oneRNtNtB9_4path4PathECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 80  [0x10244d530]  mod.rs:700
+      +       ! : | + ! : | + 8 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 116,104  [0x102401740,0x102401734]  path.rs:0
+      +       ! : | + ! : | + 8 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 492  [0x1024018b8]  path.rs:3839
+      +       ! : | + ! : | + ! 4 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 92,100,...  [0x10240142c,0x102401434,...]  sip.rs:298
+      +       ! : | + ! : | + ! 2 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 236,288  [0x1024014bc,0x1024014f0]  sip.rs:271
+      +       ! : | + ! : | + ! 1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 12  [0x1024013dc]  sip.rs:262
+      +       ! : | + ! : | + ! 1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 164  [0x102401474]  sip.rs:265
+      +       ! : | + ! : | + 7 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 472  [0x1024018a4]  path.rs:0
+      +       ! : | + ! : | + ! 2 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 288  [0x1024014f0]  sip.rs:271
+      +       ! : | + ! : | + ! 1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 20  [0x1024013e4]  sip.rs:0
+      +       ! : | + ! : | + ! 1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 144  [0x102401460]  sip.rs:265
+      +       ! : | + ! : | + ! 1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 208  [0x1024014a0]  sip.rs:266
+      +       ! : | + ! : | + ! 1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 372  [0x102401544]  sip.rs:292
+      +       ! : | + ! : | + ! 1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 452  [0x102401594]  sip.rs:298
+      +       ! : | + ! : | + 3 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 128,236,...  [0x10240174c,0x1024017b8,...]  path.rs:3807
+      +       ! : | + ! : | + 2 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 172  [0x102401778]  path.rs:3813
+      +       ! : | + ! : | + ! 2 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 400,480  [0x102401560,0x1024015b0]  sip.rs:298
+      +       ! : | + ! : | + 2 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 176,200  [0x10240177c,0x102401794]  path.rs:3823
+      +       ! : | + ! : | + 1 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 84  [0x102401720]  path.rs:3808
+      +       ! : | + ! : | 2 _RINvYNtNtNtCsa9BKTri5B3M_3std4hash6random11RandomStateNtNtCsgtPOCBgevO_4core4hash11BuildHasher8hash_oneRNtNtB9_4path4PathECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 264  [0x10244d5e8]  mod.rs:702
+      +       ! : | + ! : | 1 _RINvYNtNtNtCsa9BKTri5B3M_3std4hash6random11RandomStateNtNtCsgtPOCBgevO_4core4hash11BuildHasher8hash_oneRNtNtB9_4path4PathECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 160  [0x10244d580]  mod.rs:701
+      +       ! : | + ! : 13 _RNvMsr_NtCs33snLMdjP9A_8fdu_core5indexNtB5_17StructuralOverlay4kind  (in candidate-controls-profiling-probe) + 300,336,...  [0x102423330,0x102423354,...]  index.rs:4437
+      +       ! : | + ! : 3 _RNvMsr_NtCs33snLMdjP9A_8fdu_core5indexNtB5_17StructuralOverlay4kind  (in candidate-controls-profiling-probe) + 252  [0x102423300]  index.rs:4437
+      +       ! : | + ! :   2 _RNvXsl_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtCsgtPOCBgevO_4core3cmp9PartialEq2eq  (in candidate-controls-profiling-probe) + 204  [0x102417a58]  path.rs:1048
+      +       ! : | + ! :   + 2 _RNvXsj_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits12double_ended19DoubleEndedIterator9next_back  (in candidate-controls-profiling-probe) + 560  [0x10255301c]  path.rs:980
+      +       ! : | + ! :   +   1 _RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components25parse_next_component_back  (in candidate-controls-profiling-probe) + 68  [0x10256f2d4]  path.rs:796
+      +       ! : | + ! :   +   1 _RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components25parse_next_component_back  (in candidate-controls-profiling-probe) + 248  [0x10256f388]  path.rs:801
+      +       ! : | + ! :   1 _RNvXsl_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtCsgtPOCBgevO_4core3cmp9PartialEq2eq  (in candidate-controls-profiling-probe) + 168  [0x102417a34]  path.rs:1048
+      +       ! : | + ! :     1 _RNvXsj_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits12double_ended19DoubleEndedIterator9next_back  (in candidate-controls-profiling-probe) + 560  [0x10255301c]  path.rs:980
+      +       ! : | + ! :       1 _RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components25parse_next_component_back  (in candidate-controls-profiling-probe) + 68  [0x10256f2d4]  path.rs:796
+      +       ! : | + ! 50 _RNvMsr_NtCs33snLMdjP9A_8fdu_core5indexNtB5_17StructuralOverlay6upsert  (in candidate-controls-profiling-probe) + 784  [0x10242373c]  index.rs:4448
+      +       ! : | + ! : 45 _RINvMs6_NtCs9nAj5kJTqSU_9hashbrown3rawINtB6_8RawTableTNtNtCsa9BKTri5B3M_3std4path7PathBufNtNtCs33snLMdjP9A_8fdu_core15engine_contract9EntryKindEE14reserve_rehashNCINvNtB8_3map11make_hasherBQ_B1p_NtNtNtBU_4hash6random11RandomStateE0EB1t_  (in candidate-controls-profiling-probe) + 896  [0x10257df1c]  raw.rs:962
+      +       ! : | + ! : | 39 _RINvYNtNtNtCsa9BKTri5B3M_3std4hash6random11RandomStateNtNtCsgtPOCBgevO_4core4hash11BuildHasher8hash_oneRNtNtB9_4path7PathBufECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 80  [0x102401608]  mod.rs:700
+      +       ! : | + ! : | + 10 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 116  [0x102401740]  path.rs:0
+      +       ! : | + ! : | + 9 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 128,384  [0x10240174c,0x10240184c]  path.rs:3807
+      +       ! : | + ! : | + 8 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 472  [0x1024018a4]  path.rs:0
+      +       ! : | + ! : | + ! 1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 20  [0x1024013e4]  sip.rs:0
+      +       ! : | + ! : | + ! 1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 12  [0x1024013dc]  sip.rs:262
+      +       ! : | + ! : | + ! 1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 204  [0x10240149c]  sip.rs:265
+      +       ! : | + ! : | + ! 1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 288  [0x1024014f0]  sip.rs:271
+      +       ! : | + ! : | + ! 1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 308  [0x102401504]  sip.rs:282
+      +       ! : | + ! : | + ! 1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 388  [0x102401554]  sip.rs:289
+      +       ! : | + ! : | + ! 1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 372  [0x102401544]  sip.rs:292
+      +       ! : | + ! : | + ! 1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 444  [0x10240158c]  sip.rs:298
+      +       ! : | + ! : | + 5 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 492  [0x1024018b8]  path.rs:3839
+      +       ! : | + ! : | + ! 3 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 100,92  [0x102401434,0x10240142c]  sip.rs:298
+      +       ! : | + ! : | + ! 2 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 20  [0x1024013e4]  sip.rs:0
+      +       ! : | + ! : | + 2 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 172  [0x102401778]  path.rs:3813
+      +       ! : | + ! : | + ! 2 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 400,480  [0x102401560,0x1024015b0]  sip.rs:298
+      +       ! : | + ! : | + 1 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 24  [0x1024016e4]  path.rs:3789
+      +       ! : | + ! : | + 1 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 148  [0x102401760]  path.rs:3812
+      +       ! : | + ! : | + 1 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 176  [0x10240177c]  path.rs:3823
+      +       ! : | + ! : | + 1 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 444  [0x102401888]  path.rs:3832
+      +       ! : | + ! : | + 1 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 472  [0x1024018a4]  path.rs:3839
+      +       ! : | + ! : | 2 _RINvYNtNtNtCsa9BKTri5B3M_3std4hash6random11RandomStateNtNtCsgtPOCBgevO_4core4hash11BuildHasher8hash_oneRNtNtB9_4path7PathBufECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 52,60  [0x1024015ec,0x1024015f4]  mod.rs:699
+      +       ! : | + ! : | 2 _RINvYNtNtNtCsa9BKTri5B3M_3std4hash6random11RandomStateNtNtCsgtPOCBgevO_4core4hash11BuildHasher8hash_oneRNtNtB9_4path7PathBufECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 160,196  [0x102401658,0x10240167c]  mod.rs:701
+      +       ! : | + ! : | 2 _RINvYNtNtNtCsa9BKTri5B3M_3std4hash6random11RandomStateNtNtCsgtPOCBgevO_4core4hash11BuildHasher8hash_oneRNtNtB9_4path7PathBufECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 264  [0x1024016c0]  mod.rs:702
+      +       ! : | + ! : 5 _RINvMs6_NtCs9nAj5kJTqSU_9hashbrown3rawINtB6_8RawTableTNtNtCsa9BKTri5B3M_3std4path7PathBufNtNtCs33snLMdjP9A_8fdu_core15engine_contract9EntryKindEE14reserve_rehashNCINvNtB8_3map11make_hasherBQ_B1p_NtNtNtBU_4hash6random11RandomStateE0EB1t_  (in candidate-controls-profiling-probe) + 932,836,...  [0x10257df40,0x10257dee0,...]  raw.rs:962
+      +       ! : | + ! 39 _RNvMsr_NtCs33snLMdjP9A_8fdu_core5indexNtB5_17StructuralOverlay6upsert  (in candidate-controls-profiling-probe) + 176  [0x1024234dc]  index.rs:4448
+      +       ! : | + ! : 37 _RINvYNtNtNtCsa9BKTri5B3M_3std4hash6random11RandomStateNtNtCsgtPOCBgevO_4core4hash11BuildHasher8hash_oneRNtNtB9_4path7PathBufECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 80  [0x102401608]  mod.rs:700
+      +       ! : | + ! : | 17 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 116  [0x102401740]  path.rs:0
+      +       ! : | + ! : | 6 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 172  [0x102401778]  path.rs:3813
+      +       ! : | + ! : | + 2 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 348  [0x10240152c]  sip.rs:289
+      +       ! : | + ! : | + 2 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 444,480  [0x10240158c,0x1024015b0]  sip.rs:298
+      +       ! : | + ! : | + 1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 12  [0x1024013dc]  sip.rs:262
+      +       ! : | + ! : | + 1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 376  [0x102401548]  sip.rs:282
+      +       ! : | + ! : | 5 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 472  [0x1024018a4]  path.rs:0
+      +       ! : | + ! : | + 1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 12  [0x1024013dc]  sip.rs:262
+      +       ! : | + ! : | + 1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 144  [0x102401460]  sip.rs:265
+      +       ! : | + ! : | + 1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 288  [0x1024014f0]  sip.rs:271
+      +       ! : | + ! : | + 1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 376  [0x102401548]  sip.rs:282
+      +       ! : | + ! : | + 1 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 348  [0x10240152c]  sip.rs:289
+      +       ! : | + ! : | 5 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 492  [0x1024018b8]  path.rs:3839
+      +       ! : | + ! : | + 3 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 288,236  [0x1024014f0,0x1024014bc]  sip.rs:271
+      +       ! : | + ! : | + 2 _RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 164,204  [0x102401474,0x10240149c]  sip.rs:265
+      +       ! : | + ! : | 3 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 236,128  [0x1024017b8,0x10240174c]  path.rs:3807
+      +       ! : | + ! : | 1 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 80  [0x10240171c]  mod.rs:0
+      +       ! : | + ! : 1 _RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 508  [0x1024018c8]  path.rs:3840
+      +       ! : | + ! : 1 _RINvYNtNtNtCsa9BKTri5B3M_3std4hash6random11RandomStateNtNtCsgtPOCBgevO_4core4hash11BuildHasher8hash_oneRNtNtB9_4path7PathBufECs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 264  [0x1024016c0]  mod.rs:702
+      +       ! : | + ! 21 _RNvMsr_NtCs33snLMdjP9A_8fdu_core5indexNtB5_17StructuralOverlay6upsert  (in candidate-controls-profiling-probe) + 456,240,...  [0x1024235f4,0x10242351c,...]  index.rs:4448
+      +       ! : | + ! 5 _RNvMsr_NtCs33snLMdjP9A_8fdu_core5indexNtB5_17StructuralOverlay6upsert  (in candidate-controls-profiling-probe) + 128  [0x1024234ac]  index.rs:4448
+      +       ! : | + ! : 2 _xzm_xzone_malloc_tiny  (in libsystem_malloc.dylib) + 4,420  [0x1885e7ed8,0x1885e8078]
+      +       ! : | + ! : 1 DYLD-STUB$$malloc  (in candidate-controls-profiling-probe) + 0  [0x102588ef4]
+      +       ! : | + ! : 1 _malloc_zone_malloc  (in libsystem_malloc.dylib) + 36  [0x1885f205c]
+      +       ! : | + ! : 1 _xzm_xzone_malloc_freelist_outlined  (in libsystem_malloc.dylib) + 324  [0x1885e977c]
+      +       ! : | + ! :   1 _xzm_xzone_find_and_malloc_from_freelist_chunk  (in libsystem_malloc.dylib) + 860  [0x1885ea270]
+      +       ! : | + ! :     1 xzm_chunk_mark_used  (in libsystem_malloc.dylib) + 188  [0x1885caecc]
+      +       ! : | + ! :       1 _xzm_reclaim_mark_used  (in libsystem_malloc.dylib) + 124  [0x1885caf7c]
+      +       ! : | + ! :         1 _xzm_reclaim_mark_used_locked  (in libsystem_malloc.dylib) + 60  [0x1885cda50]
+      +       ! : | + ! :           1 mach_vm_reclaim_try_cancel  (in libsystem_kernel.dylib) + 260  [0x1887952c8]
+      +       ! : | + ! :             1 mach_absolute_time  (in libsystem_kernel.dylib) + 108  [0x18878210c]
+      +       ! : | + ! 2 _RNvMsr_NtCs33snLMdjP9A_8fdu_core5indexNtB5_17StructuralOverlay6upsert  (in candidate-controls-profiling-probe) + 52  [0x102423460]  index.rs:4444
+      +       ! : | + ! 1 _RNvMsr_NtCs33snLMdjP9A_8fdu_core5indexNtB5_17StructuralOverlay6upsert  (in candidate-controls-profiling-probe) + 148  [0x1024234c0]  index.rs:4448
+      +       ! : | + !   1 _platform_memmove  (in libsystem_platform.dylib) + 452  [0x1887cf524]
+      +       ! : | + 38 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index23validate_known_ancestry  (in candidate-controls-profiling-probe) + 2192  [0x10242d3a4]  index.rs:3101
+      +       ! : | + ! 19 _RNvMs16_NtCsa9BKTri5B3M_3std4pathNtB6_4Path12__starts_with  (in candidate-controls-profiling-probe) + 180  [0x1025764e4]  path.rs:2817
+      +       ! : | + ! : 9 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 404,416,...  [0x102570a58,0x102570a64,...]  path.rs:928
+      +       ! : | + ! : 2 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 20,56  [0x1025708d8,0x1025708fc]  path.rs:0
+      +       ! : | + ! : 2 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 396  [0x102570a50]  path.rs:927
+      +       ! : | + ! : 2 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 320  [0x102570a04]  path.rs:947
+      +       ! : | + ! : 1 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 8  [0x1025708cc]  path.rs:923
+      +       ! : | + ! : 1 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 296  [0x1025709ec]  path.rs:924
+      +       ! : | + ! : 1 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 388  [0x102570a48]  path.rs:925
+      +       ! : | + ! : 1 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 552  [0x102570aec]  path.rs:929
+      +       ! : | + ! 10 _RNvMs16_NtCsa9BKTri5B3M_3std4pathNtB6_4Path12__starts_with  (in candidate-controls-profiling-probe) + 168  [0x1025764d8]  path.rs:2817
+      +       ! : | + ! : 4 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 404,528  [0x102570a58,0x102570ad4]  path.rs:928
+      +       ! : | + ! : 2 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 320,340  [0x102570a04,0x102570a18]  path.rs:947
+      +       ! : | + ! : 1 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 280  [0x1025709dc]  path.rs:0
+      +       ! : | + ! : 1 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 8  [0x1025708cc]  path.rs:923
+      +       ! : | + ! : 1 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 388  [0x102570a48]  path.rs:925
+      +       ! : | + ! : 1 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 396  [0x102570a50]  path.rs:927
+      +       ! : | + ! 5 _RNvMs16_NtCsa9BKTri5B3M_3std4pathNtB6_4Path12__starts_with  (in candidate-controls-profiling-probe) + 152,220,...  [0x1025764c8,0x10257650c,...]  path.rs:2817
+      +       ! : | + ! 3 _RNvMs16_NtCsa9BKTri5B3M_3std4pathNtB6_4Path12__starts_with  (in candidate-controls-profiling-probe) + 268  [0x10257653c]  path.rs:2817
+      +       ! : | + ! : 2 _RNvXs1Y_NtCsa9BKTri5B3M_3std4pathNtB6_9ComponentNtNtCsgtPOCBgevO_4core3cmp9PartialEq2eq  (in candidate-controls-profiling-probe) + 232  [0x102570cd4]  path.rs:0
+      +       ! : | + ! : | 1 DYLD-STUB$$memcmp  (in candidate-controls-profiling-probe) + 4  [0x102588f04]
+      +       ! : | + ! : | 1 _platform_memcmp  (in libsystem_platform.dylib) + 280  [0x1887cd028]
+      +       ! : | + ! : 1 _RNvXs1Y_NtCsa9BKTri5B3M_3std4pathNtB6_9ComponentNtNtCsgtPOCBgevO_4core3cmp9PartialEq2eq  (in candidate-controls-profiling-probe) + 52  [0x102570c20]  path.rs:525
+      +       ! : | + ! 1 _RNvXs1Y_NtCsa9BKTri5B3M_3std4pathNtB6_9ComponentNtNtCsgtPOCBgevO_4core3cmp9PartialEq2eq  (in candidate-controls-profiling-probe) + 252  [0x102570ce8]  path.rs:525
+      +       ! : | + 23 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index23validate_known_ancestry  (in candidate-controls-profiling-probe) + 3792  [0x10242d9e4]  index.rs:3101
+      +       ! : | + ! 17 _RINvNtCsgtPOCBgevO_4core3ptr9drop_glueNtNtCs33snLMdjP9A_8fdu_core5index17StructuralOverlayEBE_  (in candidate-controls-profiling-probe) + 228  [0x102422a34]  mod.rs:825
+      +       ! : | + ! : 10 _xzm_free  (in libsystem_malloc.dylib) + 996,128,...  [0x1885e3450,0x1885e30ec,...]
+      +       ! : | + ! : 5 _free  (in libsystem_malloc.dylib) + 96,12,...  [0x1885f2cac,0x1885f2c58,...]
+      +       ! : | + ! : 1 DYLD-STUB$$free  (in candidate-controls-profiling-probe) + 4  [0x102588e80]
+      +       ! : | + ! : 1 _xzm_free  (in libsystem_malloc.dylib) + 352  [0x1885e31cc]
+      +       ! : | + ! :   1 _platform_memset  (in libsystem_platform.dylib) + 180  [0x1887cf144]
+      +       ! : | + ! 4 _RINvNtCsgtPOCBgevO_4core3ptr9drop_glueNtNtCs33snLMdjP9A_8fdu_core5index17StructuralOverlayEBE_  (in candidate-controls-profiling-probe) + 248,292,...  [0x102422a48,0x102422a74,...]  mod.rs:825
+      +       ! : | + ! 2 _xzm_free  (in libsystem_malloc.dylib) + 1560  [0x1885e3684]
+      +       ! : | + 10 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index23validate_known_ancestry  (in candidate-controls-profiling-probe) + 608  [0x10242cd74]  index.rs:3101
+      +       ! : | + ! 8 _RNvXsj_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits12double_ended19DoubleEndedIterator9next_back  (in candidate-controls-profiling-probe) + 560  [0x10255301c]  path.rs:980
+      +       ! : | + ! : 7 _RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components25parse_next_component_back  (in candidate-controls-profiling-probe) + 68,52  [0x10256f2d4,0x10256f2c4]  path.rs:796
+      +       ! : | + ! : 1 _RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components25parse_next_component_back  (in candidate-controls-profiling-probe) + 136  [0x10256f318]  path.rs:801
+      +       ! : | + ! 1 _RNvXsj_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits12double_ended19DoubleEndedIterator9next_back  (in candidate-controls-profiling-probe) + 456  [0x102552fb4]  path.rs:0
+      +       ! : | + ! 1 _RNvXsj_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits12double_ended19DoubleEndedIterator9next_back  (in candidate-controls-profiling-probe) + 488  [0x102552fd4]  path.rs:979
+      +       ! : | + 7 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index23validate_known_ancestry  (in candidate-controls-profiling-probe) + 488,592,...  [0x10242ccfc,0x10242cd64,...]  index.rs:3101
+      +       ! : | + 6 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index23validate_known_ancestry  (in candidate-controls-profiling-probe) + 632  [0x10242cd8c]  index.rs:3101
+      +       ! : | + ! 4 _RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components7as_path  (in candidate-controls-profiling-probe) + 432  [0x1025533c0]  path.rs:734
+      +       ! : | + ! : 2 _RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components25parse_next_component_back  (in candidate-controls-profiling-probe) + 80  [0x10256f2e0]  path.rs:796
+      +       ! : | + ! : 1 _RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components25parse_next_component_back  (in candidate-controls-profiling-probe) + 268  [0x10256f39c]  path.rs:795
+      +       ! : | + ! : 1 _RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components25parse_next_component_back  (in candidate-controls-profiling-probe) + 252  [0x10256f38c]  path.rs:802
+      +       ! : | + ! 1 _RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components7as_path  (in candidate-controls-profiling-probe) + 28  [0x10255322c]  path.rs:729
+      +       ! : | + ! 1 _RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components7as_path  (in candidate-controls-profiling-probe) + 32  [0x102553230]  path.rs:730
+      +       ! : | + 2 _RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components7as_path  (in candidate-controls-profiling-probe) + 496  [0x102553400]  path.rs:737
+      +       ! : | + 2 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index23validate_known_ancestry  (in candidate-controls-profiling-probe) + 1720  [0x10242d1cc]  index.rs:3101
+      +       ! : | + ! 2 _RNvXsl_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtCsgtPOCBgevO_4core3cmp9PartialEq2eq  (in candidate-controls-profiling-probe) + 108  [0x1024179f8]  path.rs:1042
+      +       ! : | + !   2 _platform_memcmp  (in libsystem_platform.dylib) + 140,260  [0x1887ccf9c,0x1887cd014]
+      +       ! : | + 1 _RNvXsl_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtCsgtPOCBgevO_4core3cmp9PartialEq2eq  (in candidate-controls-profiling-probe) + 468  [0x102417b60]  path.rs:1049
+      +       ! : | 13 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index15reduce_preparedNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 3540  [0x10241c24c]  index.rs:1862
+      +       ! : | + 10 _RNvXsj_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits12double_ended19DoubleEndedIterator9next_back  (in candidate-controls-profiling-probe) + 560  [0x10255301c]  path.rs:980
+      +       ! : | + ! 7 _RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components25parse_next_component_back  (in candidate-controls-profiling-probe) + 80,24,...  [0x10256f2e0,0x10256f2a8,...]  path.rs:796
+      +       ! : | + ! 3 _RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components25parse_next_component_back  (in candidate-controls-profiling-probe) + 252  [0x10256f38c]  path.rs:802
+      +       ! : | + 1 _RNvXsj_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits12double_ended19DoubleEndedIterator9next_back  (in candidate-controls-profiling-probe) + 92  [0x102552e48]  path.rs:977
+      +       ! : | + 1 _RNvXsj_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits12double_ended19DoubleEndedIterator9next_back  (in candidate-controls-profiling-probe) + 448  [0x102552fac]  path.rs:978
+      +       ! : | + 1 _RNvXsj_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits12double_ended19DoubleEndedIterator9next_back  (in candidate-controls-profiling-probe) + 612  [0x102553050]  path.rs:982
+      +       ! : | 11 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index15reduce_preparedNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 3840  [0x10241c378]  index.rs:1862
+      +       ! : | + 7 _RNvXsl_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtCsgtPOCBgevO_4core3cmp9PartialEq2eq  (in candidate-controls-profiling-probe) + 108  [0x1024179f8]  path.rs:1042
+      +       ! : | + ! 7 _platform_memcmp  (in libsystem_platform.dylib) + 140,256,...  [0x1887ccf9c,0x1887cd010,...]
+      +       ! : | + 3 _RNvXsl_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtCsgtPOCBgevO_4core3cmp9PartialEq2eq  (in candidate-controls-profiling-probe) + 36  [0x1024179b0]  path.rs:1034
+      +       ! : | + 1 _RNvXsl_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtCsgtPOCBgevO_4core3cmp9PartialEq2eq  (in candidate-controls-profiling-probe) + 68  [0x1024179d0]  path.rs:1035
+      +       ! : | 7 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index15reduce_preparedNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 3524,3720,...  [0x10241c23c,0x10241c300,...]  index.rs:1862
+      +       ! : | 6 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index15reduce_preparedNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 3460  [0x10241c1fc]  index.rs:1862
+      +       ! : | + 5 _RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components7as_path  (in candidate-controls-profiling-probe) + 432  [0x1025533c0]  path.rs:734
+      +       ! : | + ! 3 _RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components25parse_next_component_back  (in candidate-controls-profiling-probe) + 80  [0x10256f2e0]  path.rs:796
+      +       ! : | + ! 1 _RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components25parse_next_component_back  (in candidate-controls-profiling-probe) + 124  [0x10256f30c]  path.rs:0
+      +       ! : | + ! 1 _RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components25parse_next_component_back  (in candidate-controls-profiling-probe) + 144  [0x10256f320]  path.rs:801
+      +       ! : | + 1 _RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components7as_path  (in candidate-controls-profiling-probe) + 184  [0x1025532c8]  path.rs:0
+      +       ! : | 5 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index15reduce_preparedNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 228  [0x10241b55c]  index.rs:1843
+      +       ! : | + 5 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index19accepted_operations  (in candidate-controls-profiling-probe) + 140,108,...  [0x10242c734,0x10242c714,...]  index.rs:3114
+      +       ! : | 5 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index15reduce_preparedNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 3436  [0x10241c1e4]  index.rs:1862
+      +       ! : | + 3 _RNvXsj_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits12double_ended19DoubleEndedIterator9next_back  (in candidate-controls-profiling-probe) + 560  [0x10255301c]  path.rs:980
+      +       ! : | + ! 2 _RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components25parse_next_component_back  (in candidate-controls-profiling-probe) + 68  [0x10256f2d4]  path.rs:796
+      +       ! : | + ! 1 _RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components25parse_next_component_back  (in candidate-controls-profiling-probe) + 0  [0x10256f290]  path.rs:793
+      +       ! : | + 1 _RNvXsj_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits12double_ended19DoubleEndedIterator9next_back  (in candidate-controls-profiling-probe) + 72  [0x102552e34]  path.rs:0
+      +       ! : | + 1 _RNvXsj_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits12double_ended19DoubleEndedIterator9next_back  (in candidate-controls-profiling-probe) + 488  [0x102552fd4]  path.rs:979
+      +       ! : | 4 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index15reduce_preparedNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2084  [0x10241bc9c]  index.rs:1847
+      +       ! : | + 4 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index18projected_controls  (in candidate-controls-profiling-probe) + 104,108,...  [0x10242e178,0x10242e17c,...]  index.rs:3252
+      +       ! : | 1 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index15reduce_preparedNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 2552  [0x10241be70]  index.rs:1860
+      +       ! : | 1 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index15reduce_preparedNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 4736  [0x10241c6f8]  index.rs:1862
+      +       ! : | + 1 _RINvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB6_5Index14upsert_beneathNtB6_17ExactConsequencesEB8_  (in candidate-controls-profiling-probe) + 1388  [0x10242bffc]  index.rs:4190
+      +       ! : | +   1 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index10intern_ext  (in candidate-controls-profiling-probe) + 732  [0x1024553a0]  index.rs:3862
+      +       ! : | +     1 _RNvMs3_NtCslJsSqIQKwiA_5alloc7raw_vecINtB5_6RawVecNtNtCs33snLMdjP9A_8fdu_core4scan8RegionIdE8grow_oneBQ_  (in candidate-controls-profiling-probe) + 60  [0x102580480]  mod.rs:188
+      +       ! : | +       1 _RNvMs4_NtCslJsSqIQKwiA_5alloc7raw_vecNtB5_11RawVecInner11finish_growCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 120  [0x10257fa28]  mod.rs:559
+      +       ! : | +         1 _xzm_xzone_malloc_freelist_outlined  (in libsystem_malloc.dylib) + 324  [0x1885e977c]
+      +       ! : | +           1 _xzm_xzone_find_and_malloc_from_freelist_chunk  (in libsystem_malloc.dylib) + 144  [0x1885e9fa4]
+      +       ! : | 1 _RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components7as_path  (in candidate-controls-profiling-probe) + 496  [0x102553400]  path.rs:737
+      +       ! : | 1 _RNvXsj_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits12double_ended19DoubleEndedIterator9next_back  (in candidate-controls-profiling-probe) + 56  [0x102552e24]  path.rs:1019
+      +       ! : 33 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index20commit_prepared_with  (in candidate-controls-profiling-probe) + 1720  [0x102418844]  index.rs:1816
+      +       ! : | 32 _RINvNtCsgtPOCBgevO_4core3ptr9drop_glueSNtNtCs33snLMdjP9A_8fdu_core15engine_contract13ObservationOpEBF_  (in candidate-controls-profiling-probe) + 192  [0x10240a2a0]  mod.rs:825
+      +       ! : | + 22 _xzm_free  (in libsystem_malloc.dylib) + 320,336,...  [0x1885e31ac,0x1885e31bc,...]
+      +       ! : | + 9 _xzm_free  (in libsystem_malloc.dylib) + 352  [0x1885e31cc]
+      +       ! : | + ! 7 _platform_memset  (in libsystem_platform.dylib) + 208,180  [0x1887cf160,0x1887cf144]
+      +       ! : | + ! 2 DYLD-STUB$$_platform_bzero  (in libsystem_malloc.dylib) + 8  [0x1885fa7f4]
+      +       ! : | + 1 _xzm_chunk_list_slot_push  (in libsystem_malloc.dylib) + 16  [0x1885eb920]
+      +       ! : | 1 _xzm_free  (in libsystem_malloc.dylib) + 1560  [0x1885e3684]
+      +       ! : 23 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index20commit_prepared_with  (in candidate-controls-profiling-probe) + 1516  [0x102418778]  index.rs:1814
+      +       ! :   6 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index15publish_effects  (in candidate-controls-profiling-probe) + 484,504,...  [0x10241deb4,0x10241dec8,...]  index.rs:2220
+      +       ! :   5 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index15publish_effects  (in candidate-controls-profiling-probe) + 596  [0x10241df24]  index.rs:2220
+      +       ! :   + 5 _RNvMsi_NtNtNtCslJsSqIQKwiA_5alloc11collections5btree3mapINtB5_8BTreeMapNtNtCs33snLMdjP9A_8fdu_core15engine_contract12ImpactDomainNtNtB7_7set_val9SetValZSTE6insertB1b_  (in candidate-controls-profiling-probe) + 112,40  [0x10241f0a8,0x10241f060]  map.rs:1049
+      +       ! :   4 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index15publish_effects  (in candidate-controls-profiling-probe) + 572  [0x10241df0c]  index.rs:2220
+      +       ! :   + 4 _RNvMsi_NtNtNtCslJsSqIQKwiA_5alloc11collections5btree3mapINtB5_8BTreeMapNtNtCs33snLMdjP9A_8fdu_core15engine_contract12ImpactDomainNtNtB7_7set_val9SetValZSTE6insertB1b_  (in candidate-controls-profiling-probe) + 120,108,...  [0x10241f0b0,0x10241f0a4,...]  map.rs:1049
+      +       ! :   3 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index15publish_effects  (in candidate-controls-profiling-probe) + 608  [0x10241df30]  index.rs:2220
+      +       ! :   + 3 _RNvMsi_NtNtNtCslJsSqIQKwiA_5alloc11collections5btree3mapINtB5_8BTreeMapNtNtCs33snLMdjP9A_8fdu_core15engine_contract12ImpactDomainNtNtB7_7set_val9SetValZSTE6insertB1b_  (in candidate-controls-profiling-probe) + 112,116  [0x10241f0a8,0x10241f0ac]  map.rs:1049
+      +       ! :   2 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index15publish_effects  (in candidate-controls-profiling-probe) + 500  [0x10241dec4]  index.rs:2220
+      +       ! :   + 2 _RNvNtCs33snLMdjP9A_8fdu_core5index22insert_dirty_ancestors  (in candidate-controls-profiling-probe) + 324  [0x10241f904]  index.rs:4616
+      +       ! :   +   2 _RNvMsi_NtNtNtCslJsSqIQKwiA_5alloc11collections5btree3mapINtB5_8BTreeMapNtNtCsa9BKTri5B3M_3std4path7PathBufNtNtB7_7set_val9SetValZSTE6insertCs33snLMdjP9A_8fdu_core  (in candidate-controls-profiling-probe) + 204  [0x102421828]  map.rs:1049
+      +       ! :   +     1 _RNvNtCsa9BKTri5B3M_3std4path18compare_components  (in candidate-controls-profiling-probe) + 156  [0x102578d5c]  path.rs:1090
+      +       ! :   +     1 _RNvNtCsa9BKTri5B3M_3std4path18compare_components  (in candidate-controls-profiling-probe) + 300  [0x102578dec]  path.rs:1100
+      +       ! :   +       1 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 404  [0x102570a58]  path.rs:928
+      +       ! :   1 _RNvMsi_NtNtNtCslJsSqIQKwiA_5alloc11collections5btree3mapINtB5_8BTreeMapNtNtCs33snLMdjP9A_8fdu_core15engine_contract12ImpactDomainNtNtB7_7set_val9SetValZSTE6insertB1b_  (in candidate-controls-profiling-probe) + 388  [0x10241f1bc]  map.rs:1056
+      +       ! :   1 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index15publish_effects  (in candidate-controls-profiling-probe) + 584  [0x10241df18]  index.rs:2220
+      +       ! :   + 1 _RNvMsi_NtNtNtCslJsSqIQKwiA_5alloc11collections5btree3mapINtB5_8BTreeMapNtNtCs33snLMdjP9A_8fdu_core15engine_contract12ImpactDomainNtNtB7_7set_val9SetValZSTE6insertB1b_  (in candidate-controls-profiling-probe) + 112  [0x10241f0a8]  map.rs:1049
+      +       ! :   1 _RNvNtCs33snLMdjP9A_8fdu_core5index22insert_dirty_ancestors  (in candidate-controls-profiling-probe) + 844  [0x10241fb0c]  index.rs:4623
+      +       ! 70 _RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index5apply  (in candidate-controls-profiling-probe) + 60  [0x1024dd684]  index.rs:1727
+      +       !   59 _RNvNtCs33snLMdjP9A_8fdu_core5index19prepare_observation  (in candidate-controls-profiling-probe) + 272  [0x10246b484]  index.rs:4478
+      +       !   | 25 _RNvNtCs33snLMdjP9A_8fdu_core5index23canonical_relative_path  (in candidate-controls-profiling-probe) + 60  [0x1024192c8]  index.rs:4507
+      +       !   | + 15 _xzm_xzone_malloc_tiny  (in libsystem_malloc.dylib) + 40,536,...  [0x1885e7efc,0x1885e80ec,...]
+      +       !   | + 3 <deduplicated_symbol>  (in libsystem_malloc.dylib) + 112,212  [0x1885e2144,0x1885e21a8]
+      +       !   | + 3 _malloc_zone_malloc  (in libsystem_malloc.dylib) + 12,100  [0x1885f2044,0x1885f209c]
+      +       !   | + 2 DYLD-STUB$$malloc  (in candidate-controls-profiling-probe) + 4  [0x102588ef8]
+      +       !   | + 2 _xzm_xzone_malloc_freelist_outlined  (in libsystem_malloc.dylib) + 756  [0x1885e992c]
+      +       !   | 13 _RNvNtCs33snLMdjP9A_8fdu_core5index23canonical_relative_path  (in candidate-controls-profiling-probe) + 148  [0x102419320]  index.rs:4508
+      +       !   | + 7 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 416,404  [0x102570a64,0x102570a58]  path.rs:928
+      +       !   | + 2 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 8  [0x1025708cc]  path.rs:923
+      +       !   | + 2 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 304  [0x1025709f4]  path.rs:925
+      +       !   | + 1 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 320  [0x102570a04]  path.rs:947
+      +       !   | + 1 _RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next  (in candidate-controls-profiling-probe) + 40  [0x1025708ec]  path.rs:971
+      +       !   | 13 _RNvNtCs33snLMdjP9A_8fdu_core5index23canonical_relative_path  (in candidate-controls-profiling-probe) + 196  [0x102419350]  index.rs:4510
+      +       !   | + 5 _RNvMsr_NtCsa9BKTri5B3M_3std4pathNtB5_7PathBuf5__push  (in candidate-controls-profiling-probe) + 176  [0x1025786bc]  path.rs:1419
+      +       !   | + ! 5 _platform_memmove  (in libsystem_platform.dylib) + 428,0,...  [0x1887cf50c,0x1887cf360,...]
+      +       !   | + 3 _RNvMsr_NtCsa9BKTri5B3M_3std4pathNtB5_7PathBuf5__push  (in candidate-controls-profiling-probe) + 160,108  [0x1025786ac,0x102578678]  path.rs:1419
+      +       !   | + 2 _RNvMsr_NtCsa9BKTri5B3M_3std4pathNtB5_7PathBuf5__push  (in candidate-controls-profiling-probe) + 184  [0x1025786c4]  path.rs:1420
+      +       !   | + 1 _RNvMsr_NtCsa9BKTri5B3M_3std4pathNtB5_7PathBuf5__push  (in candidate-controls-profiling-probe) + 28  [0x102578628]  path.rs:1343
+      +       !   | + 1 _RNvMsr_NtCsa9BKTri5B3M_3std4pathNtB5_7PathBuf5__push  (in candidate-controls-profiling-probe) + 44  [0x102578638]  path.rs:1344
+      +       !   | + 1 _RNvMsr_NtCsa9BKTri5B3M_3std4pathNtB5_7PathBuf5__push  (in candidate-controls-profiling-probe) + 72  [0x102578654]  path.rs:1362
+      +       !   | 3 _RNvNtCs33snLMdjP9A_8fdu_core5index23canonical_relative_path  (in candidate-controls-profiling-probe) + 48,56  [0x1024192bc,0x1024192c4]  index.rs:4507
+      +       !   | 2 _RNvNtCs33snLMdjP9A_8fdu_core5index23canonical_relative_path  (in candidate-controls-profiling-probe) + 136  [0x102419314]  index.rs:4508
+      +       !   | 1 _RNvMsr_NtCsa9BKTri5B3M_3std4pathNtB5_7PathBuf5__push  (in candidate-controls-profiling-probe) + 192  [0x1025786cc]  path.rs:1420
+      +       !   | 1 _RNvNtCs33snLMdjP9A_8fdu_core5index23canonical_relative_path  (in candidate-controls-profiling-probe) + 160  [0x10241932c]  index.rs:4509
+      +       !   | 1 _RNvNtCs33snLMdjP9A_8fdu_core5index23canonical_relative_path  (in candidate-controls-profiling-probe) + 280  [0x1024193a4]  index.rs:4517
+      +       !   6 _RNvNtCs33snLMdjP9A_8fdu_core5index19prepare_observation  (in candidate-controls-profiling-probe) + 952,148,...  [0x10246b72c,0x10246b408,...]  index.rs:4496
+      +       !   4 _RNvNtCs33snLMdjP9A_8fdu_core5index23canonical_relative_path  (in candidate-controls-profiling-probe) + 300  [0x1024193b8]  index.rs:4518
+      +       !   1 _RNvNtCs33snLMdjP9A_8fdu_core5index19prepare_observation  (in candidate-controls-profiling-probe) + 288  [0x10246b494]  index.rs:4479
+      +       88 _RNvCsjw2UvaLTkTO_10perf_probe7execute  (in candidate-controls-profiling-probe) + 180  [0x1023e7674]  perf_probe.rs:365
+      +       ! 72 _RNvCsjw2UvaLTkTO_10perf_probe20synthetic_operations  (in candidate-controls-profiling-probe) + 616  [0x1023e0bf4]  perf_probe.rs:899
+      +       ! : 48 _RNvNvNtCslJsSqIQKwiA_5alloc3fmt6format12format_inner  (in candidate-controls-profiling-probe) + 304  [0x1023f8bfc]  fmt.rs:654
+      +       ! : | 29 _RNvNtCsgtPOCBgevO_4core3fmt5write  (in candidate-controls-profiling-probe) + 324  [0x1023f92cc]  mod.rs:1735
+      +       ! : | + 23 _RNvXsi_NtNtNtCsgtPOCBgevO_4core3fmt3num3impjNtB9_7Display3fmt  (in candidate-controls-profiling-probe) + 68  [0x1023fa3b4]  num.rs:143
+      +       ! : | + ! 6 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter12pad_integral  (in candidate-controls-profiling-probe) + 440  [0x1023fa004]  mod.rs:1866
+      +       ! : | + ! : 6 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write10write_char.400  (in candidate-controls-profiling-probe) + 52,68  [0x1023f8e44,0x1023f8e54]  string.rs:3364
+      +       ! : | + ! 5 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter12pad_integral  (in candidate-controls-profiling-probe) + 424,408  [0x1023f9ff4,0x1023f9fe4]  mod.rs:1866
+      +       ! : | + ! 3 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter12pad_integral  (in candidate-controls-profiling-probe) + 600  [0x1023fa0a4]  mod.rs:1867
+      +       ! : | + ! : 3 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       ! : | + ! :   3 _platform_memmove  (in libsystem_platform.dylib) + 452,12  [0x1887cf524,0x1887cf36c]
+      +       ! : | + ! 2 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter12pad_integral  (in candidate-controls-profiling-probe) + 580  [0x1023fa090]  mod.rs:1867
+      +       ! : | + ! 2 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write10write_char.400  (in candidate-controls-profiling-probe) + 264  [0x1023f8f18]  string.rs:3366
+      +       ! : | + ! 2 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 84  [0x1023f8de8]  string.rs:3360
+      +       ! : | + ! 1 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter12pad_integral  (in candidate-controls-profiling-probe) + 96  [0x1023f9eac]  mod.rs:1855
+      +       ! : | + ! 1 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter12pad_integral  (in candidate-controls-profiling-probe) + 364  [0x1023f9fb8]  mod.rs:1865
+      +       ! : | + ! 1 _RNvNvMsa_NtCsgtPOCBgevO_4core3fmtNtB7_9Formatter12pad_integral12write_prefix  (in candidate-controls-profiling-probe) + 116  [0x1023fa438]  mod.rs:1852
+      +       ! : | + 3 _RNvMsa_NtCsgtPOCBgevO_4core3fmtNtB5_9Formatter12pad_integral  (in candidate-controls-profiling-probe) + 628,620  [0x1023fa0c0,0x1023fa0b8]  mod.rs:1878
+      +       ! : | + 3 _RNvXsi_NtNtNtCsgtPOCBgevO_4core3fmt3num3impjNtB9_7Display3fmt  (in candidate-controls-profiling-probe) + 36  [0x1023fa394]  num.rs:143
+      +       ! : | +   2 _RNvMsk_NtNtNtCsgtPOCBgevO_4core3fmt3num3impj10__fmt_inner  (in candidate-controls-profiling-probe) + 620  [0x1023fa350]  num.rs:248
+      +       ! : | +   1 _RNvMsk_NtNtNtCsgtPOCBgevO_4core3fmt3num3impj10__fmt_inner  (in candidate-controls-profiling-probe) + 84  [0x1023fa138]  num.rs:215
+      +       ! : | 11 _RNvNtCsgtPOCBgevO_4core3fmt5write  (in candidate-controls-profiling-probe) + 144  [0x1023f9218]  mod.rs:1665
+      +       ! : | + 10 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 64  [0x1023f8dd4]  string.rs:3358
+      +       ! : | + ! 7 _platform_memmove  (in libsystem_platform.dylib) + 452,12,...  [0x1887cf524,0x1887cf36c,...]
+      +       ! : | + ! 3 DYLD-STUB$$memcpy  (in candidate-controls-profiling-probe) + 4  [0x102588f10]
+      +       ! : | + 1 _RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.399  (in candidate-controls-profiling-probe) + 28  [0x1023f8db0]  string.rs:3358
+      +       ! : | 2 _RNvNtCsgtPOCBgevO_4core3fmt5write  (in candidate-controls-profiling-probe) + 104  [0x1023f91f0]  mod.rs:1648
+      +       ! : | 1 _RNvNtCsgtPOCBgevO_4core3fmt5write  (in candidate-controls-profiling-probe) + 116  [0x1023f91fc]  mod.rs:1649
+      +       ! : | 1 _RNvNtCsgtPOCBgevO_4core3fmt5write  (in candidate-controls-profiling-probe) + 124  [0x1023f9204]  mod.rs:1661
+      +       ! : | 1 _RNvNtCsgtPOCBgevO_4core3fmt5write  (in candidate-controls-profiling-probe) + 144  [0x1023f9218]  mod.rs:1665
+      +       ! : | 1 _RNvNtCsgtPOCBgevO_4core3fmt5write  (in candidate-controls-profiling-probe) + 156  [0x1023f9224]  mod.rs:1666
+      +       ! : | 1 _RNvNtCsgtPOCBgevO_4core3fmt5write  (in candidate-controls-profiling-probe) + 188  [0x1023f9244]  mod.rs:1705
+      +       ! : | 1 _RNvNtCsgtPOCBgevO_4core3fmt5write  (in candidate-controls-profiling-probe) + 408  [0x1023f9320]  mod.rs:1740
+      +       ! : 16 _RNvNvNtCslJsSqIQKwiA_5alloc3fmt6format12format_inner  (in candidate-controls-profiling-probe) + 252  [0x1023f8bc8]  fmt.rs:652
+      +       ! : | 9 _xzm_xzone_malloc_tiny  (in libsystem_malloc.dylib) + 40,12,...  [0x1885e7efc,0x1885e7ee0,...]
+      +       ! : | 3 _malloc_zone_malloc  (in libsystem_malloc.dylib) + 12,44  [0x1885f2044,0x1885f2064]
+      +       ! : | 2 <deduplicated_symbol>  (in libsystem_malloc.dylib) + 112,164  [0x1885e2144,0x1885e2178]
+      +       ! : | 1 _xzm_xzone_malloc  (in libsystem_malloc.dylib) + 24  [0x1885e28d8]
+      +       ! : | 1 _xzm_xzone_malloc_freelist_outlined  (in libsystem_malloc.dylib) + 248  [0x1885e9730]
+      +       ! : |   1 _xzm_xzone_malloc_from_freelist_chunk  (in libsystem_malloc.dylib) + 116  [0x1885e9b8c]
+      +       ! : 3 _RNvNtCsgtPOCBgevO_4core3fmt5write  (in candidate-controls-profiling-probe) + 424,420  [0x1023f9330,0x1023f932c]  mod.rs:1740
+      +       ! : 3 _RNvNvNtCslJsSqIQKwiA_5alloc3fmt6format12format_inner  (in candidate-controls-profiling-probe) + 80,188  [0x1023f8b1c,0x1023f8b88]  fmt.rs:651
+      +       ! : 2 _RNvNvNtCslJsSqIQKwiA_5alloc3fmt6format12format_inner  (in candidate-controls-profiling-probe) + 12  [0x1023f8ad8]  fmt.rs:650
+      +       ! 16 _RNvCsjw2UvaLTkTO_10perf_probe20synthetic_operations  (in candidate-controls-profiling-probe) + 668,656  [0x1023e0c28,0x1023e0c1c]  perf_probe.rs:899
+      +       45 _RNvCsjw2UvaLTkTO_10perf_probe7execute  (in candidate-controls-profiling-probe) + 11600  [0x1023ea310]  perf_probe.rs:365
+      +       ! 45 _RINvNtCsgtPOCBgevO_4core3ptr9drop_glueNtNtCs33snLMdjP9A_8fdu_core5index5IndexECsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 276  [0x1023d74cc]  mod.rs:825
+      +       !   21 _RINvNtCsgtPOCBgevO_4core3ptr9drop_glueINtNtCslJsSqIQKwiA_5alloc3vec3VecNtNtCs33snLMdjP9A_8fdu_core5index4SlotEECsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 196  [0x1023d0f28]  mod.rs:825
+      +       !   : 13 _RINvNtCsgtPOCBgevO_4core3ptr9drop_glueINtNtB4_6option6OptionINtNtCslJsSqIQKwiA_5alloc5boxed3BoxNtNtCs33snLMdjP9A_8fdu_core5index14DirectoryEntryEEECsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 408  [0x1023cd3f4]  mod.rs:825
+      +       !   : | 11 _xzm_free  (in libsystem_malloc.dylib) + 564,996,...  [0x1885e32a0,0x1885e3450,...]
+      +       !   : | 1 _RINvNtCsgtPOCBgevO_4core3ptr9drop_glueINtNtB4_6option6OptionINtNtCslJsSqIQKwiA_5alloc5boxed3BoxNtNtCs33snLMdjP9A_8fdu_core5index14DirectoryEntryEEECsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 408  [0x1023cd3f4]  mod.rs:825
+      +       !   : | + 1 _free  (in libsystem_malloc.dylib) + 12  [0x1885f2c58]
+      +       !   : | 1 _xzm_xzone_madvise_batch  (in libsystem_malloc.dylib) + 456  [0x1885eb030]
+      +       !   : |   1 xzm_reclaim_mark_free_locked  (in libsystem_malloc.dylib) + 116  [0x1885ca94c]
+      +       !   : |     1 mach_vm_reclaim_try_enter  (in libsystem_kernel.dylib) + 296  [0x18879514c]
+      +       !   : |       1 mach_absolute_time  (in libsystem_kernel.dylib) + 108  [0x18878210c]
+      +       !   : 5 _RINvNtCsgtPOCBgevO_4core3ptr9drop_glueINtNtB4_6option6OptionINtNtCslJsSqIQKwiA_5alloc5boxed3BoxNtNtCs33snLMdjP9A_8fdu_core5index14DirectoryEntryEEECsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 608  [0x1023cd4bc]  mod.rs:825
+      +       !   : | 3 _xzm_free  (in libsystem_malloc.dylib) + 684,692,...  [0x1885e3318,0x1885e3320,...]
+      +       !   : | 2 _xzm_xzone_madvise_batch  (in libsystem_malloc.dylib) + 456  [0x1885eb030]
+      +       !   : |   2 xzm_reclaim_mark_free_locked  (in libsystem_malloc.dylib) + 116  [0x1885ca94c]
+      +       !   : |     2 mach_vm_reclaim_try_enter  (in libsystem_kernel.dylib) + 296  [0x18879514c]
+      +       !   : |       2 mach_absolute_time  (in libsystem_kernel.dylib) + 108  [0x18878210c]
+      +       !   : 3 _RINvNtCsgtPOCBgevO_4core3ptr9drop_glueINtNtB4_6option6OptionINtNtCslJsSqIQKwiA_5alloc5boxed3BoxNtNtCs33snLMdjP9A_8fdu_core5index14DirectoryEntryEEECsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 408,484,...  [0x1023cd3f4,0x1023cd440,...]  mod.rs:825
+      +       !   14 _RINvNtCsgtPOCBgevO_4core3ptr9drop_glueINtNtCslJsSqIQKwiA_5alloc3vec3VecNtNtCs33snLMdjP9A_8fdu_core5index4SlotEECsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 188  [0x1023d0f20]  mod.rs:825
+      +       !   : 8 _xzm_free  (in libsystem_malloc.dylib) + 684,40,...  [0x1885e3318,0x1885e3094,...]
+      +       !   : 2 _free  (in libsystem_malloc.dylib) + 36,64  [0x1885f2c70,0x1885f2c8c]
+      +       !   : 2 _xzm_free  (in libsystem_malloc.dylib) + 352  [0x1885e31cc]
+      +       !   : | 1 DYLD-STUB$$_platform_bzero  (in libsystem_malloc.dylib) + 8  [0x1885fa7f4]
+      +       !   : | 1 _platform_memset  (in libsystem_platform.dylib) + 180  [0x1887cf144]
+      +       !   : 1 _xzm_chunk_batch_list_push  (in libsystem_malloc.dylib) + 44  [0x1885eab68]
+      +       !   : 1 _xzm_xzone_madvise_batch  (in libsystem_malloc.dylib) + 456  [0x1885eb030]
+      +       !   :   1 xzm_reclaim_mark_free_locked  (in libsystem_malloc.dylib) + 232  [0x1885ca9c0]
+      +       !   :     1 mach_vm_reclaim_ring_resize  (in libsystem_kernel.dylib) + 88  [0x188794f94]
+      +       !   :       1 mach_vm_deferred_reclamation_buffer_resize  (in libsystem_kernel.dylib) + 140  [0x1887aa4d0]
+      +       !   :         1 mach_msg2_internal  (in libsystem_kernel.dylib) + 76  [0x188794574]
+      +       !   :           1 mach_msg2_trap  (in libsystem_kernel.dylib) + 8  [0x188781c34]
+      +       !   9 _RINvNtCsgtPOCBgevO_4core3ptr9drop_glueINtNtCslJsSqIQKwiA_5alloc3vec3VecNtNtCs33snLMdjP9A_8fdu_core5index4SlotEECsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 188,200,...  [0x1023d0f20,0x1023d0f2c,...]  mod.rs:825
+      +       !   1 _RINvNtCsgtPOCBgevO_4core3ptr9drop_glueINtNtB4_6option6OptionINtNtCslJsSqIQKwiA_5alloc5boxed3BoxNtNtCs33snLMdjP9A_8fdu_core5index14DirectoryEntryEEECsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 116  [0x1023cd2d0]  mod.rs:825
+      +       32 _RNvCsjw2UvaLTkTO_10perf_probe7execute  (in candidate-controls-profiling-probe) + 11616  [0x1023ea320]  perf_probe.rs:365
+      +       ! 21 _xzm_free  (in libsystem_malloc.dylib) + 232,304,...  [0x1885e3154,0x1885e319c,...]
+      +       ! 7 _xzm_free  (in libsystem_malloc.dylib) + 352  [0x1885e31cc]
+      +       ! : 6 _platform_memset  (in libsystem_platform.dylib) + 180,208,...  [0x1887cf144,0x1887cf160,...]
+      +       ! : 1 DYLD-STUB$$_platform_bzero  (in libsystem_malloc.dylib) + 8  [0x1885fa7f4]
+      +       ! 4 _RNvCsjw2UvaLTkTO_10perf_probe7execute  (in candidate-controls-profiling-probe) + 11616  [0x1023ea320]  perf_probe.rs:365
+      +       !   4 _free  (in libsystem_malloc.dylib) + 64,104  [0x1885f2c8c,0x1885f2cb4]
+      +       17 _RNvCsjw2UvaLTkTO_10perf_probe7execute  (in candidate-controls-profiling-probe) + 11444  [0x1023ea274]  perf_probe.rs:365
+      +       ! 13 _RINvNtCsgtPOCBgevO_4core3ptr9drop_glueINtNtCslJsSqIQKwiA_5alloc3vec3VecNtNtCs33snLMdjP9A_8fdu_core15engine_contract15EffectiveChangeEECsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 188  [0x1023d043c]  mod.rs:825
+      +       ! : 8 _xzm_free  (in libsystem_malloc.dylib) + 232,1240,...  [0x1885e3154,0x1885e3544,...]
+      +       ! : 2 _free  (in libsystem_malloc.dylib) + 12,36  [0x1885f2c58,0x1885f2c70]
+      +       ! : 2 _xzm_free  (in libsystem_malloc.dylib) + 352  [0x1885e31cc]
+      +       ! : | 2 _platform_memset  (in libsystem_platform.dylib) + 180,188  [0x1887cf144,0x1887cf14c]
+      +       ! : 1 DYLD-STUB$$free  (in candidate-controls-profiling-probe) + 4  [0x102588e80]
+      +       ! 3 _RINvNtCsgtPOCBgevO_4core3ptr9drop_glueINtNtCslJsSqIQKwiA_5alloc3vec3VecNtNtCs33snLMdjP9A_8fdu_core15engine_contract15EffectiveChangeEECsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 180,284  [0x1023d0434,0x1023d049c]  mod.rs:825
+      +       ! 1 _xzm_free  (in libsystem_malloc.dylib) + 1560  [0x1885e3684]
+      +       8 _RNvCsjw2UvaLTkTO_10perf_probe7execute  (in candidate-controls-profiling-probe) + 192  [0x1023e7680]  perf_probe.rs:365
+      +       ! 7 _RNvMsi_NtCs33snLMdjP9A_8fdu_core15engine_contractNtB5_11Observation3new  (in candidate-controls-profiling-probe) + 200,192  [0x10246b130,0x10246b128]  engine_contract.rs:1310
+      +       ! 1 _RNvMsi_NtCs33snLMdjP9A_8fdu_core15engine_contractNtB5_11Observation3new  (in candidate-controls-profiling-probe) + 460  [0x10246b234]  engine_contract.rs:1310
+      +       !   1 _xzm_free_outlined  (in libsystem_malloc.dylib) + 628  [0x1885eb688]
+      +       1 _RNvCsjw2UvaLTkTO_10perf_probe7execute  (in candidate-controls-profiling-probe) + 11608  [0x1023ea318]  perf_probe.rs:365
+      +       1 _xzm_free  (in libsystem_malloc.dylib) + 1560  [0x1885e3684]
+      1 ???  (in <unknown binary>)  [0xbad708000]
+      + 1 _RINvNtCsgtPOCBgevO_4core3ptr9drop_glueINtNtB4_6option6OptionINtNtCslJsSqIQKwiA_5alloc5boxed3BoxNtNtCs33snLMdjP9A_8fdu_core5index14DirectoryEntryEEECsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 408  [0x1023cd3f4]  mod.rs:825
+      +   1 _xzm_free  (in libsystem_malloc.dylib) + 28  [0x1885e3088]
+      1 ???  (in <unknown binary>)  [0xbadfac000]
+        1 _RINvNtCsgtPOCBgevO_4core3ptr9drop_glueINtNtB4_6option6OptionINtNtCslJsSqIQKwiA_5alloc5boxed3BoxNtNtCs33snLMdjP9A_8fdu_core5index14DirectoryEntryEEECsjw2UvaLTkTO_10perf_probe  (in candidate-controls-profiling-probe) + 408  [0x1023cd3f4]  mod.rs:825
+          1 _xzm_free  (in libsystem_malloc.dylib) + 28  [0x1885e3088]

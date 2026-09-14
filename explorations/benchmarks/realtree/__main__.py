@@ -18,7 +18,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from benchmarks import corpus as corpus_tools
 from benchmarks.realtree import ledger, measure, profile, provenance, tree
@@ -76,6 +76,13 @@ def main(argv: Sequence[str]) -> int:
         type=Path,
         help="verified clean probe/build/host manifest; required for held-out evidence",
     )
+    run.add_argument(
+        "--artifact-source",
+        action="append",
+        default=[],
+        metavar="LABEL=PATH",
+        help="source checkout for a provenance artifact built from another revision; repeat",
+    )
     run.add_argument("--scratch", type=Path, default=DEFAULT_SCRATCH)
     run.add_argument("--output-dir", type=Path, default=DEFAULT_RESULTS)
     run.add_argument("--name", default="", help="short slug for the output files")
@@ -116,6 +123,18 @@ def main(argv: Sequence[str]) -> int:
     profiled.add_argument("--job", action="append", default=[], choices=sorted(measure.PROBE_JOBS))
     profiled.add_argument("--seconds", type=int, default=profile.DEFAULT_SAMPLE_SECONDS)
     profiled.add_argument("--repeat", type=int, default=40)
+    profiled.add_argument(
+        "--counters",
+        choices=("enabled", "disabled"),
+        default="enabled",
+        help="collect logical counters during sampling; disable when timers perturb stacks",
+    )
+    profiled.add_argument(
+        "--oracle",
+        choices=("enabled", "disabled"),
+        default="enabled",
+        help="run the probe oracle on every repeat or omit it for labelled attribution only",
+    )
     profiled.add_argument(
         "--extra-arg",
         action="append",
@@ -176,6 +195,12 @@ def _baseline(arguments: argparse.Namespace) -> int:
 def _measure(arguments: argparse.Namespace) -> int:
     _require_external(arguments.root, arguments.scratch, description="scratch directory")
     _require_external(arguments.root, arguments.output_dir, description="result directory")
+    if arguments.artifact_source and not arguments.provenance_manifest:
+        raise SystemExit("--artifact-source requires --provenance-manifest")
+    try:
+        artifact_sources = provenance.parse_artifact_sources(arguments.artifact_source)
+    except provenance.ProvenanceError as error:
+        raise SystemExit(f"cannot parse artifact sources: {error}") from error
     variants = [_variant(item, kind="fdu-probe") for item in arguments.variant]
     references = [_variant(item, kind="reference") for item in arguments.reference]
     jobs = [
@@ -197,6 +222,7 @@ def _measure(arguments: argparse.Namespace) -> int:
             arguments.provenance_manifest,
             arguments.root,
             variants,
+            artifact_sources,
         )
         if arguments.provenance_manifest
         else None
@@ -286,6 +312,7 @@ def _verified_measurement_provenance(
     manifest_path: Path,
     root: Path,
     variants: Sequence[measure.Variant],
+    artifact_sources: Optional[Mapping[str, Path]] = None,
 ) -> Dict[str, Any]:
     """Match every measured probe hash to a verified provenance artifact."""
     try:
@@ -318,6 +345,7 @@ def _verified_measurement_provenance(
             source_root=provenance.PROJECT_ROOT,
             subject_root=root,
             artifacts=selected,
+            artifact_sources=artifact_sources,
             require_claim_grade=True,
         )
     except (
@@ -399,6 +427,8 @@ def _profile(arguments: argparse.Namespace) -> int:
             repeat=arguments.repeat,
             label=f"{arguments.label or 'profile'} / {job.id}",
             require_diagnostics=job.require_scan_diagnostics,
+            counters_enabled=arguments.counters == "enabled",
+            oracle_enabled=arguments.oracle == "enabled",
         )
         if job.require_scan_diagnostics:
             probe_document = entry.get("probe") or {}

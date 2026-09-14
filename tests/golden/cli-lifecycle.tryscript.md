@@ -74,7 +74,7 @@ No cached snapshots.
 
 ```console
 $ fdu --cache only --view summary project
-fdu: snapshot is not usable: no usable snapshot for this root and scan scope
+fdu: snapshot is not usable: no usable snapshot for this root and scan scope; the `only` cache policy never scans, so use `auto`, which scans when none serves
 ? 1
 ```
 

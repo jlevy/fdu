@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::classify::{
     Classification, ClassificationFlags, ContentFamily, DetectionConfidence, DetectionSource,
@@ -124,7 +124,8 @@ pub fn load_content_cache(
         return Ok(ContentCacheLoad::default());
     }
     let image = fs::read(path).map_err(|error| Error::io(path, error))?;
-    let Some(records) = parse(&image, index.root_path(), request) else {
+    let Some(records) = parse(&image, index.root_path(), request, index.types().fingerprint())
+    else {
         return Ok(ContentCacheLoad::default());
     };
     index.prepare_content_analysis(request);
@@ -203,6 +204,7 @@ fn parse(
     image: &[u8],
     expected_root: &Path,
     request: AnalysisRequest,
+    type_rules_fingerprint: u64,
 ) -> Option<Vec<(PathBuf, FileAnalysis)>> {
     let payload = integrity_payload(image)?;
     let mut reader = Reader::new(payload.get(MAGIC.len()..)?);
@@ -215,7 +217,7 @@ fn parse(
         options_fingerprint: super::OptionsFingerprint(reader.u64()?),
         analyzers: read_analyzers(&mut reader)?,
     };
-    if !provenance.satisfies(profile, request.profile) {
+    if !provenance.satisfies(profile, request.profile, type_rules_fingerprint) {
         return None;
     }
     if reader.os_string()?.as_os_str() != expected_root.as_os_str() {
@@ -228,7 +230,7 @@ fn parse(
     let mut records = Vec::with_capacity(usize::try_from(count).ok()?);
     for _ in 0..count {
         let relative_path = PathBuf::from(reader.os_string()?);
-        if relative_path.is_absolute() {
+        if !record_path_stays_inside_root(&relative_path) {
             return None;
         }
         let fingerprint = read_fingerprint(&mut reader)?;
@@ -262,6 +264,21 @@ fn parse(
         ));
     }
     reader.is_empty().then_some(records)
+}
+
+/// Whether a sidecar record's path is relative and never ascends, so it names an entry
+/// under the root the sidecar claims.
+///
+/// The sidecar is untrusted input: anything on disk can have written it. So the question
+/// is asked of components, where every one must be `Normal` or `CurDir`, rather than of
+/// `is_absolute`, which answers it wrongly. `..` is not absolute on any platform, and on
+/// Windows neither is a rooted path with no drive (`\x`) nor a drive-relative one
+/// (`C:x`), yet each names a path outside the root.
+///
+/// Private and stated here rather than borrowed from the index, whose own path
+/// validation is free to change shape: this guard's contract is the untrusted image.
+fn record_path_stays_inside_root(path: &Path) -> bool {
+    path.components().all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
 }
 
 fn integrity_payload(image: &[u8]) -> Option<&[u8]> {
@@ -700,6 +717,83 @@ mod tests {
             load_content_cache(&mut restored, request, &cache).expect("load"),
             ContentCacheLoad::default()
         );
+    }
+
+    /// Re-address the sidecar's one record, leaving the image otherwise valid.
+    ///
+    /// The path is swapped in its stored encoding and the checksum recomputed, so the only
+    /// thing wrong with the result is where the record claims to live.
+    fn readdress_record(image: &[u8], from: &Path, to: &Path) -> Vec<u8> {
+        let encode = |path: &Path| {
+            let mut bytes = Vec::new();
+            crate::snapshot::put_os_str(&mut bytes, path.as_os_str()).expect("encode");
+            bytes
+        };
+        let (from, to) = (encode(from), encode(to));
+        let payload = integrity_payload(image).expect("a valid sidecar");
+        let at = payload.windows(from.len()).position(|window| window == from).expect("the path");
+        assert_eq!(
+            payload.windows(from.len()).rposition(|window| window == from),
+            Some(at),
+            "the record's path must appear once, or the rewrite is ambiguous"
+        );
+        let mut rewritten = [&payload[..at], to.as_slice(), &payload[at + from.len()..]].concat();
+        let checksum = crate::snapshot::crc32c(&rewritten);
+        rewritten.extend_from_slice(&checksum.to_le_bytes());
+        rewritten.extend_from_slice(TRAILER);
+        rewritten
+    }
+
+    /// A sidecar is untrusted, and each record names a path under the root it claims.
+    ///
+    /// The guard used to ask `is_absolute`, which is the wrong question for "does this stay
+    /// inside". `..` is not absolute on any platform, and on Windows neither is a rooted
+    /// path with no drive (`\rooted`) or a drive-relative one (`C:relative`). A record that
+    /// leaves the root now makes the whole sidecar a clean miss, like any other malformed
+    /// image, while an ordinary relative record still restores.
+    #[test]
+    fn a_record_that_leaves_the_root_is_a_clean_miss() {
+        // (record path, whether the sidecar restores)
+        let mut cases =
+            vec![("notes.md", true), ("../escape.md", false), ("nested/../../escape.md", false)];
+        #[cfg(unix)]
+        cases.push(("/absolute.md", false));
+        #[cfg(windows)]
+        cases.extend([
+            (r"C:\absolute.md", false),
+            (r"\rooted-without-drive.md", false),
+            ("C:drive-relative.md", false),
+        ]);
+
+        for (record_path, restores) in cases {
+            // The rule the parser asks, on the bare path: every component must be normal.
+            assert_eq!(
+                record_path_stays_inside_root(Path::new(record_path)),
+                restores,
+                "{record_path:?}"
+            );
+
+            let (root, index, request) = analyzed_index();
+            let cache = root.path().join("content.cache");
+            save_content_cache(&index, request, &cache).expect("save");
+            let image = fs::read(&cache).expect("read");
+            let rewritten = readdress_record(&image, Path::new("notes.md"), Path::new(record_path));
+            fs::write(&cache, rewritten).expect("re-address");
+
+            let (mut restored, _) =
+                crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+            let loaded = load_content_cache(&mut restored, request, &cache).expect("load");
+            if restores {
+                assert!(loaded.usable, "{record_path:?} must restore: {loaded:?}");
+                assert_eq!(loaded.hits, 1, "{record_path:?} must restore: {loaded:?}");
+            } else {
+                assert_eq!(
+                    loaded,
+                    ContentCacheLoad::default(),
+                    "{record_path:?} leaves the root, so the sidecar must be a clean miss"
+                );
+            }
+        }
     }
 
     #[test]

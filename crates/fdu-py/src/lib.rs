@@ -33,6 +33,8 @@ use fdu_core::watch_session::{ChangeKind, Session};
 use fdu_core::{CachePolicy, EntryKind, Freshness, IndexHandle, OpenConfig, RollUp, ScanConfig};
 use std::time::{Duration, SystemTime};
 
+mod opened_binding;
+
 fn to_py_err(err: fdu_core::Error) -> PyErr {
     match err {
         fdu_core::Error::Io { path, source } => PyOSError::new_err((
@@ -340,7 +342,8 @@ impl PyIndex {
         size: &str,
         words_per_page: u64,
     ) -> PyResult<PyWatch> {
-        let query = build_query(
+        let query = build_query_at(
+            SystemTime::now(),
             self.analysis.profile,
             Some(ViewSpec::Files),
             views,
@@ -480,26 +483,38 @@ impl PyIndex {
     fn since<'py>(&self, py: Python<'py>, clock: u64) -> PyResult<Bound<'py, PyDict>> {
         let since = self.inner.since(fdu_core::Clock(clock));
         let ops = PyList::empty(py);
-        for delta in &since.deltas {
-            for op in &delta.ops {
-                let item = PyDict::new(py);
-                item.set_item("clock", delta.clock.0)?;
-                item.set_item("path", op.path().as_os_str())?;
-                match op {
-                    fdu_core::Op::Upsert { kind, attrs, .. } => {
+        for commit in &since.commits {
+            for change in &commit.changes {
+                let item = match change {
+                    fdu_core::EffectiveChange::Inserted { path, kind, attrs }
+                    | fdu_core::EffectiveChange::Updated { path, kind, current: attrs, .. } => {
+                        let item = PyDict::new(py);
+                        item.set_item("clock", commit.clock.0)?;
+                        item.set_item("path", path.as_os_str())?;
                         item.set_item("op", "upsert")?;
                         item.set_item("kind", entry_kind_label(*kind))?;
                         item.set_item("bytes", attrs.size)?;
                         item.set_item("mtime_ns", attrs.mtime_ns)?;
+                        item
                     }
-                    fdu_core::Op::Remove { .. } => {
+                    fdu_core::EffectiveChange::Removed { path, .. } => {
+                        let item = PyDict::new(py);
+                        item.set_item("clock", commit.clock.0)?;
+                        item.set_item("path", path.as_os_str())?;
                         item.set_item("op", "remove")?;
+                        item
                     }
-                    fdu_core::Op::InvalidateSubtree { reason, .. } => {
+                    fdu_core::EffectiveChange::Invalidated { path, reason } => {
+                        let item = PyDict::new(py);
+                        item.set_item("clock", commit.clock.0)?;
+                        item.set_item("path", path.as_os_str())?;
                         item.set_item("op", "invalidate_subtree")?;
                         item.set_item("reason", format!("{reason:?}"))?;
+                        item
                     }
-                }
+                    fdu_core::EffectiveChange::ControlUpdated { .. }
+                    | fdu_core::EffectiveChange::Reclassified { .. } => continue,
+                };
                 ops.append(item)?;
             }
         }
@@ -537,7 +552,8 @@ impl PyIndex {
         // `now` is the report's own generated_at as well as the clock the time bounds are
         // resolved against, so both come from one reading rather than two.
         let now = SystemTime::now();
-        let query = build_query(
+        let query = build_query_at(
+            now,
             self.analysis.profile,
             None,
             views,
@@ -1076,7 +1092,8 @@ impl PyWatch {
 /// Extracted so the session path and the one-shot cannot disagree about what a request
 /// means. Every value grammar here belongs to the library and is called, not restated.
 #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
-fn build_query(
+fn build_query_at(
+    now: SystemTime,
     profile: AnalysisSet,
     default_view: Option<ViewSpec>,
     views: Option<Vec<String>>,
@@ -1093,7 +1110,6 @@ fn build_query(
     size: &str,
     words_per_page: u64,
 ) -> PyResult<Query> {
-    let now = SystemTime::now();
     let mut selection =
         Selection { reverse, size: parse_size_metric(size)?, ..Selection::default() };
     if let Some(value) = depth {
@@ -1238,7 +1254,8 @@ fn report_once(
         policy: parse_cache_policy(cache)?,
         analysis,
     };
-    let query = build_query(
+    let query = build_query_at(
+        SystemTime::now(),
         analysis.profile,
         None,
         views,
@@ -1589,6 +1606,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(scan, m)?)?;
     m.add_function(wrap_pyfunction!(main, m)?)?;
     m.add_function(wrap_pyfunction!(contract, m)?)?;
+    opened_binding::register(m)?;
 
     Ok(())
 }

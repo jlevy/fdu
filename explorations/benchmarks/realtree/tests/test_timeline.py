@@ -9,9 +9,16 @@ from __future__ import annotations
 import unittest
 from typing import Any, Dict, List
 
-from benchmarks.realtree.report_html import STYLE, axis_ticks, figure_absolute, render
+from benchmarks.realtree.report_html import (
+    STYLE,
+    axis_ticks,
+    figure_absolute,
+    figure_per_entry,
+    render,
+)
 from benchmarks.realtree.timeline import (
     BASELINE_COMMIT,
+    CLAIM_ONLY_EXPERIMENTS,
     SYNTHETIC_SUBJECTS,
     is_synthetic,
     kept_variant,
@@ -117,6 +124,14 @@ class KeptVariantTests(unittest.TestCase):
         for decision in ("rejected", "superseded", "in-progress", "baseline"):
             self.assertEqual(kept_variant(decision), "control", decision)
 
+    def test_a_claim_only_experiment_keeps_no_arm(self) -> None:
+        # exp-103 rejected H86's Linux floor claim about a candidate that stays in the
+        # stack, so reading `control` off its decision named the pre-H86 binary as the
+        # product. Neither arm is the shipped binary, so it names none.
+        self.assertIn("exp-103", CLAIM_ONLY_EXPERIMENTS)
+        self.assertIsNone(kept_variant("rejected", "exp-103"))
+        self.assertEqual(kept_variant("rejected", "exp-100"), "control")
+
 
 class SubjectIdentityTests(unittest.TestCase):
     def test_two_trees_sharing_a_path_are_not_one_subject(self) -> None:
@@ -174,6 +189,19 @@ class SyntheticSubjectTests(unittest.TestCase):
         for label in ("meta450k", "vm450k", "spike-15977"):
             with self.subTest(label=label):
                 self.assertIn(label, SYNTHETIC_SUBJECTS)
+
+    def test_the_corpus_generated_linux_subject_is_covered(self) -> None:
+        """exp-103's tree came from the corpus generator, whose recipe names no script.
+
+        Its provenance reads "Generated balanced recipe, 450,001 entries ...", which the
+        `gen_tree.py` check cannot see, so the page drew a generated tree as a real Linux
+        subject.
+        """
+        subject = {
+            "tree_label": "linux-450k",
+            "tree_provenance": "Generated balanced recipe, 450,001 entries, manifest 65aa72b5",
+        }
+        self.assertTrue(is_synthetic(subject))
 
     def test_one_label_marking_a_subject_marks_it_everywhere(self) -> None:
         dataset = project(
@@ -331,6 +359,31 @@ class RenderTests(unittest.TestCase):
         self.assertFalse(points[1]["baseline"])
         figure = figure_absolute(dataset)
         self.assertIn("exp-006", figure)
+
+    def test_a_claim_only_experiment_is_not_drawn_as_the_trees_current_cost(self) -> None:
+        # The per-entry figure plots the arm that stayed in the product. exp-103 is
+        # recorded `rejected` because H86's Linux floor claim failed, but the candidate it
+        # measured stays in the stack, so drawing its control put the pre-H86 binary on
+        # the page as Linux's current cost: 4.23 us per entry where the candidate
+        # measured 3.42.
+        dataset = project(
+            [
+                experiment("exp-101"),
+                experiment(
+                    "exp-103",
+                    decision="rejected",
+                    system="Linux 6.18.44-fc-v22",
+                    root="c" * 64,
+                    entries=450001,
+                    wall=metric(1905.6e6, 1537.0e6, -18.2, -24.3, -13.7),
+                ),
+            ]
+        )
+        record = next(item for item in dataset["experiments"] if item["id"] == "exp-103")
+        self.assertIsNone(record["kept"])
+        figure = figure_per_entry(dataset)
+        self.assertIn("exp-101", figure)
+        self.assertNotIn("exp-103", figure)
 
     def test_no_figure_overflows_its_plot(self) -> None:
         # A bar drawn past the plot lands in the value column and reads as a number

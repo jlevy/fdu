@@ -8,6 +8,7 @@ import json
 import os
 import platform
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -27,6 +28,10 @@ ARTIFACT_KINDS = {
     "native-fdu",
     "python-fdu",
 }
+# The version build.rs stamps on a development binary: <semver>-dev+g<revision>, with
+# .dirty when the tree it was built from had uncommitted changes. Git lengthens the
+# nine-character abbreviation when nine would be ambiguous.
+DEVELOPMENT_STAMP = re.compile(r"-dev\+g(?P<revision>[0-9a-f]{9,40})(?P<dirty>\.dirty)?\Z")
 
 
 class ProvenanceError(RuntimeError):
@@ -49,6 +54,7 @@ def capture(
     source_root: Path,
     subject_root: Path,
     artifacts: Sequence[ArtifactSpec],
+    artifact_sources: Optional[Mapping[str, Path]] = None,
 ) -> Dict[str, Any]:
     """Capture an honest manifest; dirty or incomplete inputs remain exploratory."""
     if not artifacts:
@@ -56,6 +62,7 @@ def capture(
     labels = [artifact.label for artifact in artifacts]
     if len(labels) != len(set(labels)):
         raise ProvenanceError("artifact labels must be unique")
+    artifact_sources = _checked_artifact_sources(artifact_sources, labels)
 
     source = _source_facts(source_root)
     host = _host_facts()
@@ -66,9 +73,15 @@ def capture(
     for artifact in artifacts:
         if artifact.kind not in ARTIFACT_KINDS:
             raise ProvenanceError(f"unsupported artifact kind {artifact.kind!r}")
-        entry, entry_reasons = _artifact_facts(artifact, source_root, source)
+        artifact_root = artifact_sources.get(artifact.label, source_root)
+        artifact_source = (
+            _source_facts(artifact_root) if artifact.label in artifact_sources else source
+        )
+        entry, entry_reasons = _artifact_facts(artifact, artifact_root, artifact_source)
         captured[artifact.label] = entry
         reasons.extend(f"{artifact.label}: {reason}" for reason in entry_reasons)
+        if artifact.kind != "homebrew-dust" and not artifact_source["clean"]:
+            reasons.append(f"{artifact.label}: fdu source tree is dirty")
 
     if not source["clean"] and any(
         artifact.kind in {"fdu-perf-probe", "native-fdu", "python-fdu"} for artifact in artifacts
@@ -114,6 +127,7 @@ def verify(
     subject_root: Path,
     artifacts: Mapping[str, Path],
     supporting_files: Optional[Mapping[str, Sequence[Path]]] = None,
+    artifact_sources: Optional[Mapping[str, Path]] = None,
     require_claim_grade: bool = True,
 ) -> Dict[str, Any]:
     """Recheck a manifest against current source, host, filesystem, and binaries."""
@@ -130,6 +144,7 @@ def verify(
         raise ProvenanceError("provenance artifacts are missing")
     if not set(artifacts).issubset(recorded_artifacts):
         raise ProvenanceError("provided artifact labels are absent from the manifest")
+    artifact_sources = _checked_artifact_sources(artifact_sources, list(recorded_artifacts))
     supporting_files = supporting_files or {}
     for label, executable in artifacts.items():
         recorded = recorded_artifacts[label]
@@ -160,6 +175,33 @@ def verify(
     if require_claim_grade and current_source["clean"] is not True:
         raise ProvenanceError("source tree is no longer clean")
 
+    # The primary checkout identifies the harness and its default artifact source.
+    # A cross-revision control must be checked against its own checkout, not relabelled
+    # with the candidate's HEAD. Re-derive the origin rather than trusting supplied IDs.
+    for label, executable in artifacts.items():
+        recorded = recorded_artifacts[label]
+        if recorded["kind"] == "homebrew-dust":
+            continue
+        artifact_root = artifact_sources.get(label, source_root)
+        artifact_source = (
+            _source_facts(artifact_root) if label in artifact_sources else current_source
+        )
+        observed, reasons = _artifact_facts(
+            ArtifactSpec(
+                label=label,
+                kind=recorded["kind"],
+                executable=Path(executable),
+                supporting_files=tuple(map(Path, supporting_files.get(label, ()))),
+                build_argv=tuple(recorded["build_argv"]),
+            ),
+            artifact_root,
+            artifact_source,
+        )
+        if observed["origin"] != recorded.get("origin"):
+            raise ProvenanceError(f"artifact {label!r} source origin no longer matches")
+        if require_claim_grade and reasons:
+            raise ProvenanceError(f"artifact {label!r} source is unverified: " + "; ".join(reasons))
+
     current_host = _host_facts()
     if (document.get("host") or {}).get("class_id") != current_host["class_id"]:
         raise ProvenanceError("anonymous host class no longer matches")
@@ -186,6 +228,7 @@ def load_and_verify(
     subject_root: Path,
     artifacts: Mapping[str, Path],
     supporting_files: Optional[Mapping[str, Sequence[Path]]] = None,
+    artifact_sources: Optional[Mapping[str, Path]] = None,
     require_claim_grade: bool = True,
 ) -> Dict[str, Any]:
     try:
@@ -200,6 +243,7 @@ def load_and_verify(
         subject_root=subject_root,
         artifacts=artifacts,
         supporting_files=supporting_files,
+        artifact_sources=artifact_sources,
         require_claim_grade=require_claim_grade,
     )
 
@@ -262,7 +306,7 @@ def _source_facts(source_root: Path) -> Dict[str, Any]:
     commit = _git(root, "rev-parse", "HEAD")
     status = _git(root, "status", "--porcelain=v1", "--untracked-files=all")
     remote = _git(root, "remote", "get-url", "origin")
-    rust_toolchain = _command(["rustc", "-vV"])
+    rust_toolchain = _command(["rustc", "-vV"], cwd=root)
     rust_target = next(
         (
             line.split(":", 1)[1].strip()
@@ -285,17 +329,28 @@ def _source_facts(source_root: Path) -> Dict[str, Any]:
 
 
 def _fdu_revision_reasons(version: str, source: Mapping[str, Any]) -> list[str]:
-    """Bind a development binary to HEAD, or a release binary to an exact tag."""
+    """Bind a clean development binary to HEAD, or a release binary to an exact tag.
+
+    The binary's own stamp is the only record of the tree it was built from. A checkout
+    that is clean now may have held uncommitted edits when the binary was built, so the
+    stamp must name the revision exactly and must not carry the dirty marker.
+    """
     commit = source.get("commit")
     tags = source.get("tags_at_commit")
     if not isinstance(commit, str) or len(commit) < 9 or not isinstance(tags, list):
         return ["source revision cannot be matched to the executable version"]
-    if f"g{commit[:9]}" in version:
-        return []
     version_token = version.rsplit(maxsplit=1)[-1] if version else ""
-    if version_token and f"v{version_token}" in tags:
-        return []
-    return ["executable version does not identify the current source revision"]
+    stamp = DEVELOPMENT_STAMP.search(version_token)
+    if stamp is None:
+        if version_token and f"v{version_token}" in tags:
+            return []
+        return ["executable version does not identify the current source revision"]
+    reasons = []
+    if not commit.startswith(stamp["revision"]):
+        reasons.append("executable version does not identify the current source revision")
+    if stamp["dirty"]:
+        reasons.append("executable was built from a dirty source tree")
+    return reasons
 
 
 def _homebrew_dust_facts(executable: Path) -> Tuple[Dict[str, Any], list[str]]:
@@ -594,6 +649,27 @@ def _parse_labeled(value: str) -> Tuple[str, str]:
     return label, raw
 
 
+def parse_artifact_sources(values: Sequence[str]) -> Dict[str, Path]:
+    """Parse explicit source checkouts without persisting their private paths."""
+    sources: Dict[str, Path] = {}
+    for value in values:
+        label, raw = _parse_labeled(value)
+        if label in sources:
+            raise ProvenanceError(f"source checkout repeats artifact label {label!r}")
+        sources[label] = Path(raw)
+    return sources
+
+
+def _checked_artifact_sources(
+    sources: Optional[Mapping[str, Path]], labels: Sequence[str]
+) -> Mapping[str, Path]:
+    sources = sources or {}
+    unknown = set(sources) - set(labels)
+    if unknown:
+        raise ProvenanceError(f"source checkouts name unknown artifacts: {sorted(unknown)}")
+    return sources
+
+
 def _parse_build_argv(raw: str) -> Tuple[str, ...]:
     value = json.loads(raw)
     if (
@@ -612,6 +688,7 @@ def main(argv: Sequence[str]) -> int:
     captured.add_argument("--source-root", type=Path, default=PROJECT_ROOT)
     captured.add_argument("--subject-root", type=Path, required=True)
     captured.add_argument("--artifact", action="append", required=True)
+    captured.add_argument("--artifact-source", action="append", default=[], metavar="LABEL=PATH")
     captured.add_argument("--supporting", action="append", default=[])
     captured.add_argument("--build-argv", action="append", default=[])
     captured.add_argument("--output", type=Path, required=True)
@@ -621,6 +698,7 @@ def main(argv: Sequence[str]) -> int:
     checked.add_argument("--source-root", type=Path, default=PROJECT_ROOT)
     checked.add_argument("--subject-root", type=Path, required=True)
     checked.add_argument("--artifact", action="append", required=True)
+    checked.add_argument("--artifact-source", action="append", default=[], metavar="LABEL=PATH")
     checked.add_argument("--supporting", action="append", default=[])
     checked.add_argument("--manifest", type=Path, required=True)
     checked.add_argument("--allow-exploratory", action="store_true")
@@ -628,6 +706,7 @@ def main(argv: Sequence[str]) -> int:
 
     try:
         parsed = [_parse_artifact(value) for value in arguments.artifact]
+        artifact_sources = parse_artifact_sources(arguments.artifact_source)
         supporting: Dict[str, list[Path]] = {}
         for value in arguments.supporting:
             label, raw = _parse_labeled(value)
@@ -652,6 +731,7 @@ def main(argv: Sequence[str]) -> int:
                 source_root=arguments.source_root,
                 subject_root=arguments.subject_root,
                 artifacts=specs,
+                artifact_sources=artifact_sources,
             )
             if arguments.require_claim_grade and not document["claim_grade"]:
                 raise ProvenanceError(
@@ -668,6 +748,7 @@ def main(argv: Sequence[str]) -> int:
                 subject_root=arguments.subject_root,
                 artifacts={artifact.label: artifact.executable for artifact in parsed},
                 supporting_files=supporting,
+                artifact_sources=artifact_sources,
                 require_claim_grade=not arguments.allow_exploratory,
             )
     except (OSError, ProvenanceError, TypeError, ValueError, json.JSONDecodeError) as error:

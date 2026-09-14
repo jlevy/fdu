@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
 
 use crate::Index;
-use crate::classify::{ContentFamily, classify_path_with_prefix};
+use crate::classify::{ContentFamily, TypeRegistry, classify_with};
 
 use super::{
     AnalysisApplyOutcome, AnalysisCandidate, AnalysisObservation, AnalysisRequest,
@@ -86,6 +86,9 @@ pub fn analyze_index(index: &mut Index, request: AnalysisRequest) -> AnalysisRep
     }
 
     let started = std::time::Instant::now();
+    // Cloned out before the scope: the workers need the index's rules while the receive
+    // loop holds the index mutably, and an `Arc` is what lets both be true.
+    let types = index.types_shared();
     let workers = worker_count(request.workers, candidates.len());
     let next = AtomicUsize::new(0);
     let candidates = Arc::new(candidates);
@@ -96,12 +99,13 @@ pub fn analyze_index(index: &mut Index, request: AnalysisRequest) -> AnalysisRep
             let sender = sender.clone();
             let candidates = Arc::clone(&candidates);
             let next = &next;
+            let types = &types;
             scope.spawn(move || {
                 let _counter_guard = crate::counters::thread_flush_guard();
                 loop {
                     let slot = next.fetch_add(1, Ordering::Relaxed);
                     let Some(candidate) = candidates.get(slot).cloned() else { break };
-                    if sender.send(analyze_candidate(candidate, request)).is_err() {
+                    if sender.send(analyze_candidate(types, candidate, request)).is_err() {
                         break;
                     }
                 }
@@ -132,12 +136,14 @@ fn worker_count(requested: usize, candidates: usize) -> usize {
 }
 
 fn analyze_candidate(
+    types: &TypeRegistry,
     candidate: AnalysisCandidate,
     request: AnalysisRequest,
 ) -> (AnalysisObservation, u64) {
     let (analysis, bytes_read) = if candidate.classification.family == ContentFamily::Binary {
         (
             record(
+                types,
                 &candidate,
                 request,
                 candidate.classification.clone(),
@@ -147,27 +153,29 @@ fn analyze_candidate(
             0,
         )
     } else {
-        analyze_open_file(&candidate, request)
+        analyze_open_file(types, &candidate, request)
     };
     (AnalysisObservation { candidate, analysis }, bytes_read)
 }
 
 fn analyze_open_file(
+    types: &TypeRegistry,
     candidate: &AnalysisCandidate,
     request: AnalysisRequest,
 ) -> (FileAnalysis, u64) {
     crate::counters::bump(|c| c.file_opens += 1);
     let mut file = match File::open(&candidate.absolute_path) {
         Ok(file) => file,
-        Err(error) => return (io_record(candidate, request, &error), 0),
+        Err(error) => return (io_record(types, candidate, request, &error), 0),
     };
     let before = match file.metadata() {
         Ok(metadata) => crate::scan::attrs_from(&metadata).fingerprint(),
-        Err(error) => return (io_record(candidate, request, &error), 0),
+        Err(error) => return (io_record(types, candidate, request, &error), 0),
     };
     if before != candidate.attrs.fingerprint() {
         return (
             record(
+                types,
                 candidate,
                 request,
                 candidate.classification.clone(),
@@ -209,7 +217,7 @@ fn analyze_open_file(
                 }
                 if prefix.len() >= 8 && candidate.classification.family == ContentFamily::Unknown {
                     let classification =
-                        classify_path_with_prefix(&candidate.relative_path, Some(&prefix));
+                        classify_with(types, &candidate.relative_path, Some(&prefix));
                     if classification.family == ContentFamily::Binary {
                         early_binary = Some(classification);
                         break;
@@ -235,11 +243,12 @@ fn analyze_open_file(
 
     let after = match file.metadata() {
         Ok(metadata) => crate::scan::attrs_from(&metadata).fingerprint(),
-        Err(error) => return (io_record(candidate, request, &error), bytes_read),
+        Err(error) => return (io_record(types, candidate, request, &error), bytes_read),
     };
     if before != after {
         return (
             record(
+                types,
                 candidate,
                 request,
                 candidate.classification.clone(),
@@ -250,18 +259,18 @@ fn analyze_open_file(
         );
     }
     if let Some(error) = read_failure {
-        return (io_record(candidate, request, &error), bytes_read);
+        return (io_record(types, candidate, request, &error), bytes_read);
     }
     if let Some(classification) = early_binary {
         return (
-            record(candidate, request, classification, CoverageReason::Binary, None),
+            record(types, candidate, request, classification, CoverageReason::Binary, None),
             bytes_read,
         );
     }
-    let classification = classify_path_with_prefix(&candidate.relative_path, Some(&prefix));
+    let classification = classify_with(types, &candidate.relative_path, Some(&prefix));
     if classification.family == ContentFamily::Binary {
         return (
-            record(candidate, request, classification, CoverageReason::Binary, None),
+            record(types, candidate, request, classification, CoverageReason::Binary, None),
             bytes_read,
         );
     }
@@ -293,6 +302,7 @@ fn analyze_open_file(
                 let Some(code) = code_accumulator else {
                     return (
                         record(
+                            types,
                             candidate,
                             request,
                             classification,
@@ -318,19 +328,20 @@ fn analyze_open_file(
                     metrics.paragraphs = visible.paragraphs;
                 }
             }
-            analyzed_record(candidate, request, classification, metrics)
+            analyzed_record(types, candidate, request, classification, metrics)
         }
         TextAdmission::Binary => {
-            record(candidate, request, classification, CoverageReason::Binary, None)
+            record(types, candidate, request, classification, CoverageReason::Binary, None)
         }
         TextAdmission::InvalidUtf8 => {
-            record(candidate, request, classification, CoverageReason::InvalidUtf8, None)
+            record(types, candidate, request, classification, CoverageReason::InvalidUtf8, None)
         }
     };
     (analysis, bytes_read)
 }
 
 fn analyzed_record(
+    types: &TypeRegistry,
     candidate: &AnalysisCandidate,
     request: AnalysisRequest,
     classification: crate::classify::Classification,
@@ -338,11 +349,12 @@ fn analyzed_record(
 ) -> FileAnalysis {
     FileAnalysis {
         metrics,
-        ..record(candidate, request, classification, CoverageReason::Analyzed, None)
+        ..record(types, candidate, request, classification, CoverageReason::Analyzed, None)
     }
 }
 
 fn io_record(
+    types: &TypeRegistry,
     candidate: &AnalysisCandidate,
     request: AnalysisRequest,
     error: &std::io::Error,
@@ -350,6 +362,7 @@ fn io_record(
     let mut detail = error.to_string();
     detail.truncate(char_boundary_at_or_before(&detail, MAX_ERROR_BYTES));
     record(
+        types,
         candidate,
         request,
         candidate.classification.clone(),
@@ -367,6 +380,7 @@ fn char_boundary_at_or_before(value: &str, limit: usize) -> usize {
 }
 
 fn record(
+    types: &TypeRegistry,
     candidate: &AnalysisCandidate,
     request: AnalysisRequest,
     classification: crate::classify::Classification,
@@ -378,7 +392,7 @@ fn record(
         fingerprint: candidate.attrs.fingerprint(),
         bytes: candidate.attrs.size,
         profile: request.profile,
-        provenance: ContentProvenance::for_request(request),
+        provenance: ContentProvenance::for_request(request, types.fingerprint()),
         metrics: MetricValues::default(),
         coverage,
         error,
@@ -757,7 +771,13 @@ mod tests {
         assert_eq!(analysis.candidates, 0);
         let content = index.content().expect("the requested derived tier remains explicit");
         assert_eq!(content.profile(), Some(request.profile));
-        assert_eq!(content.provenance(), Some(&ContentProvenance::for_request(request)));
+        assert_eq!(
+            content.provenance(),
+            Some(&ContentProvenance::for_request(
+                request,
+                crate::classify::type_rule_fingerprint()
+            ))
+        );
     }
 
     #[test]

@@ -66,8 +66,8 @@ METRICS = {
 #: A tree built by this generator is generated, whatever it is labelled.
 #:
 #: `tree_provenance` is the general answer and needs no list, which is why it is checked
-#: first. The list below only has to cover the artifacts recorded before that field
-#: existed.
+#: first. The list below covers the artifacts recorded before that field existed, and
+#: those whose provenance describes a generated tree without naming this script.
 TREE_GENERATOR = "gen_tree.py"
 
 #: Subjects that are not a sample of ordinary work and must never be averaged with one.
@@ -83,14 +83,36 @@ TREE_GENERATOR = "gen_tree.py"
 #: with the real ones on the normalised axis. That is the same mistake the floor report
 #: measured at about 15 points of fdu's distance from the floor, made by the page that
 #: exists to report it.
+#:
+#: `linux-450k` shows the provenance check is not complete either. exp-103's tree came
+#: from the corpus generator, and its provenance names the recipe ("Generated balanced
+#: recipe, ...") rather than a script, so only this list marks it.
 SYNTHETIC_SUBJECTS = {
     "adaptive-fast-slow-100k",
     "diagnostics-overhead",
     "generated-markdown-2000",
+    "linux-450k",
     "meta450k",
     "spike-15977",
     "threshold-boundary-2x",
     "vm450k",
+}
+
+#: Experiments whose verdict decides a claim about code they did not propose.
+#:
+#: :func:`kept_variant` reads the kept arm off the decision, which is right whenever the
+#: candidate is a proposed change: rejecting it leaves the control in the product.
+#: exp-103 proposed nothing. It tested H86's pre-registered Linux floor claim against a
+#: candidate that stays in the stack on its Darwin acceptance, so its rejection retired
+#: the claim and left the code, and reading `control` off it drew the pre-H86 binary as
+#: Linux's current cost. The candidate is not the shipped binary either, so these name
+#: no kept arm at all.
+#:
+#: Hand-maintained, like the list above, so the same warning applies: a new evidence
+#: stage recorded against code that ships regardless of its verdict belongs here. A
+#: decision value for that case is the durable fix, and belongs to the contract.
+CLAIM_ONLY_EXPERIMENTS = {
+    "exp-103",
 }
 
 
@@ -104,8 +126,9 @@ def is_synthetic(subject: Mapping[str, Any]) -> bool:
     Asked of the recorded provenance first, because that is a property of the run and
     cannot fall behind: a recipe naming the generator describes a generated tree. The
     label set is the fallback for the artifacts recorded before `tree_provenance`
-    existed, and a hand-maintained set is exactly why this needed fixing — three
-    `gen_tree.py` subjects were never added to it.
+    existed, and for a provenance that names a recipe rather than `gen_tree.py`; a
+    hand-maintained set is exactly why this needed fixing — three `gen_tree.py`
+    subjects were never added to it.
     """
     if TREE_GENERATOR in str(subject.get("tree_provenance") or ""):
         return True
@@ -122,7 +145,7 @@ def platform_of(subject: Mapping[str, Any]) -> str:
     return system.split()[0] if system else "unknown"
 
 
-def kept_variant(decision: str) -> str:
+def kept_variant(decision: str, identifier: str = "") -> Optional[str]:
     """Which measured arm remained in the product after the verdict.
 
     Derived rather than stored. The abandoned white-paper branch added a `kept_variant`
@@ -134,7 +157,12 @@ def kept_variant(decision: str) -> str:
     `superseded` resolves to the control deliberately. A superseded candidate did ship
     briefly, but a later experiment replaced it, so the arm that describes the product's
     lasting state is the one it started from.
+
+    `None` for an experiment in :data:`CLAIM_ONLY_EXPERIMENTS`, whose verdict decided a
+    claim and neither kept nor dropped the code it measured.
     """
+    if identifier in CLAIM_ONLY_EXPERIMENTS:
+        return None
     return "candidate" if decision == "accepted" else "control"
 
 
@@ -275,7 +303,7 @@ def project(experiments: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
                 "title": experiment["title"],
                 "hypotheses": experiment.get("hypotheses") or [],
                 "decision": decision,
-                "kept": kept_variant(decision),
+                "kept": kept_variant(decision, str(experiment["id"])),
                 "primary_job": verdict.get("primary_job"),
                 "primary_metric": verdict.get("primary_metric"),
                 "change_pct": verdict.get("change_pct"),

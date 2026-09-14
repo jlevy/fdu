@@ -58,6 +58,40 @@ $ node bin/watch-capture.mjs tree
 ? 0
 ```
 
+## Selection Filters the Stream, Not What Is Watched
+
+Scope flags are refused under `--watch`, because a watcher cannot filter backend events
+against a narrowed boundary.
+Selection flags are accepted: they filter the retained index, so they decide what the
+stream reports and leave what is observed untouched.
+This is the accepted half of that rule; the refusals are in the command-line surface
+session.
+
+Given `--min-size`, the helper adds `--min-size 100 --size apparent` to the stream
+above. The bound is on apparent bytes because the default metric, allocated bytes, gives
+a four-byte file a whole filesystem block.
+It creates a file under the bound, then one over it, then removes the first.
+The file under the bound is printed with whatever the stream said about it before the
+next record arrived, which is nothing: a record that leaked through the selection would
+appear under its label.
+Its removal is reported all the same, because a removal carries no size to filter on,
+and hiding it would hide the disappearance of something the caller was watching.
+
+```console
+$ node -e "require('node:fs').mkdirSync('sized'); require('node:fs').writeFileSync('sized/seed.txt', 'seed')"
+? 0
+```
+
+```console
+$ node bin/watch-capture.mjs --min-size sized
+# create a file under the bound
+# create a file over the bound
+{"schema": "fdu.stream/1", "record": "change", "op": "upsert", "path": "b-large.txt", "clock": [CLOCK], "kind": "file", "bytes": 200, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS]}
+# remove the file under the bound
+{"schema": "fdu.stream/1", "record": "change", "op": "remove", "path": "a-small.txt", "clock": [CLOCK]}
+? 0
+```
+
 ## Text Repaints Are Separated From One Another
 
 JSONL frames every repaint for free: each is a fresh envelope carrying its own
@@ -75,6 +109,19 @@ byte-identical to the same query run without `--watch`.
 The capture needs a tree of its own: the change stream above leaves its own behind with
 a directory in it, and this section’s expectations are written against a tree holding
 nothing but the seed file.
+
+One record is excluded from the capture rather than pinned here.
+The engine reconciles the root when its optimistic apply loop loses three times — it
+reads the clock, verifies a sample with filesystem I/O outside the index lock, then
+commits only if the clock has not moved — and that reconciliation renders as an empty
+path followed by `invalidate`. Doing the I/O under the lock or letting a stale sample
+win would both be worse, so this is correct behavior rather than a defect, and the
+product is not changed to hide it.
+Whether it happens at all depends on how commits interleave, which is not something a
+golden can pin.
+What this section pins is where the separator falls, so the capture drops
+those lines and leaves the change vocabulary to the stream section above, whose helper
+matches each record by exact path and operation and is therefore already immune.
 
 ```console
 $ node -e "require('node:fs').mkdirSync('repaint'); require('node:fs').writeFileSync('repaint/seed.txt', 'seed')"
