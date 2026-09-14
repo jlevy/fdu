@@ -259,12 +259,13 @@ class OpenedOptions:
     max_files: int | None = None
     observe: bool = False
     journal_capacity: int | None = None
-    #: The file-type registry document's text, or ``None`` for the rules compiled into
-    #: fdu. Either dialect is accepted: a File Rollup registry or a ``[[kind]]`` manifest.
-    #: The engine parses and validates it at open and derives
-    #: ``SemanticIdentity.type_rules_fingerprint`` from what it parsed, so the identity a
-    #: read reports always describes this document. A document that does not parse raises
-    #: ``InvalidArgumentError`` before discovery starts.
+    #: The file-type registry: the text of the File Rollup registry document (what
+    #: MetaBrowser calls "the registry", ``recommended-file-types.toml``), or ``None`` for
+    #: the rules compiled into fdu. A ``[[kind]]`` type-rule manifest is also accepted.
+    #: The name follows the identity it produces: the engine parses and validates the
+    #: document at open and derives ``SemanticIdentity.type_rules_fingerprint`` from what
+    #: it parsed, so the fingerprint a read reports identifies this registry. A document
+    #: that does not parse raises ``InvalidArgumentError`` before discovery starts.
     type_rules: str | None = None
 
     def __post_init__(self) -> None:
