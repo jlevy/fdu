@@ -41,6 +41,12 @@ name = "watch_persistence"
 path = "tests/watch_persistence.rs"
 required-features = ["watch"]
 
+# Drives the real binary in watch mode over trees whose control state would bound it.
+[[test]]
+name = "watch_controls"
+path = "tests/watch_controls.rs"
+required-features = ["watch"]
+
 [features]
 # The shipped command watches and maintains gitignore partitions; embedding consumers
 # can remove either capability independently.

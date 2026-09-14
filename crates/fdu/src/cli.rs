@@ -533,15 +533,20 @@ impl Cli {
         query
             .validate_analysis(analysis.profile)
             .map_err(|message| usage(&anyhow::anyhow!(message)))?;
-        // Control observation is deliberately not decided here. The engine default
-        // observes control state, which `--watch` needs to maintain ignored partitions;
-        // a one-shot report goes through `prepare_report`, whose planner turns
-        // observation off for every surface because no report view reads it (fdu-etfj).
-        // Deciding it in this front end once left the Python package observing it.
+        // No command-line view reads control state, so no run of this command observes
+        // it. A one-shot report would not anyway: `prepare_report`'s planner turns
+        // observation off for every surface for that reason (fdu-etfj), and the setting
+        // here does not reach it. `--watch` opens an index instead, whose engine default
+        // observes, and its session drops control and reclassification effects because
+        // it only repaints the same query. Observing there bought nothing but the control
+        // bounds, and a bound must not end a command that never uses what it bounds
+        // (fdu-1onj). Off, a watch also shares the one-shot snapshot scope, so each starts
+        // warm from the other's snapshot (fdu-w3l5).
         let config = OpenConfig {
             scan: ScanConfig {
                 max_depth: self.scan_depth,
                 one_filesystem: self.one_filesystem,
+                read_controls: false,
                 ..ScanConfig::default()
             },
             cache_path: default_cache_path(path),
