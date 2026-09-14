@@ -632,6 +632,25 @@ Overrun is reported, not refused.
 
 What no projection may do is stop with rows left and no continuation, or relabel a
 partial calculation as exact.
+
+A failure belongs to the smallest thing it invalidates (`fdu-l89e`).
+Three conditions fail the whole request, because each makes every projection in it
+untrustworthy: a request whose shape is invalid, including a continuation the root does
+not retain; a closed root; and a version pin, by `expected` or by a continuation, that
+the index no longer holds.
+Everything else one projection meets at the pinned version is a typed refusal in that
+projection’s position, beside the query-limit result, and the other projections still
+answer:
+
+- a tree page or roll-up that names a retained path that is not a directory refuses
+  with `not_a_directory`, so a path that changed kind since an earlier page costs only
+  its own projection, and an adapter never has to prove a path is a directory before it
+  batches the question;
+- a page that stops with rows left and whose continuation record would exceed its bound
+  refuses with `continuation_record_limit`, rather than returning rows without a way to
+  continue; a refused continued page keeps its continuation for a retry.
+
+A refusal charges the work it did and returns no rows.
 And a budget decides where a page stops, never whether it starts: every page emits at
 least one row or ends the traversal, or the bound stops meaning work per page and starts
 meaning no page ever finishes.
@@ -1005,6 +1024,11 @@ defend the current prototype contract.
   completeness value answers for both.
 - Add a deterministic work budget to potentially scanning queries and a typed
   query-limit result. Output bounds alone do not protect event-loop latency.
+- Add a typed per-projection refusal beside the query-limit result, with the two reasons
+  the read envelope defines: `not_a_directory` and `continuation_record_limit`.
+  A batched request fails as a whole only for an invalid request, a closed root, or a
+  version pin the provider no longer holds; both providers refuse the one projection and
+  answer the rest, so the coordinator never splits a batch to protect a lookup.
 - Add an exact-or-capped count result.
   Recency, navigation, and catalog totals use the maintained indexes named above; an
   unmaintained compound total returns `at_least(n)` at the request cap rather than

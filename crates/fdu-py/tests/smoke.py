@@ -44,6 +44,7 @@ from fdu.opened import (
     OpenedOptions,
     Page,
     ReadResponse,
+    RefusalReason,
     ReportProjection,
     Tree,
     VersionUnavailableError,
@@ -520,6 +521,34 @@ def main() -> None:
     else:
         raise AssertionError("a foreign change cursor must raise its typed error")
     foreign.close()
+
+    # A projection that meets a path of the wrong kind refuses alone. A directory a caller
+    # paged earlier can become a file between reads; its tree page refuses, a roll-up of a
+    # file refuses, and the lookup beside them still answers in the same read.
+    kinds_root = pathlib.Path(tempfile.mkdtemp(prefix="fdu-opened-kinds-"))
+    (kinds_root / "a").write_text("a")
+    (kinds_root / "README.md").write_text("readme")
+    (kinds_root / "dir").mkdir()
+    (kinds_root / "dir" / "inner.txt").write_text("inner")
+    with OpenedIndex.open(kinds_root) as kinds:
+        for _ in range(40):
+            if kinds.state().state.coverage.kind is CoverageKind.COMPLETE:
+                break
+            kinds.changes(kinds.state().change_cursor, timeout=0.25)
+        assert kinds.read(Tree("dir")).results[0].kind == "tree"
+        (kinds_root / "dir" / "inner.txt").unlink()
+        (kinds_root / "dir").rmdir()
+        (kinds_root / "dir").write_text("now a file")
+        kinds.refresh(("dir",))
+        mixed = kinds.read(Lookup("a"), Tree("dir"), DirectoryRollUp("README.md"))
+        lookup_a, tree_dir, rollup_readme = mixed.results
+        assert lookup_a.kind == "lookup" and lookup_a.value.kind is KnowledgeKind.PRESENT, mixed
+        assert tree_dir.kind == "refused", tree_dir
+        assert tree_dir.reason is RefusalReason.NOT_A_DIRECTORY, tree_dir
+        assert tree_dir.path == pathlib.Path("dir"), tree_dir
+        assert rollup_readme.kind == "refused", rollup_readme
+        assert rollup_readme.reason is RefusalReason.NOT_A_DIRECTORY, rollup_readme
+        assert rollup_readme.path == pathlib.Path("README.md"), rollup_readme
 
     before_refresh = response.change_cursor
     (opened_root / "added.md").write_text("added")

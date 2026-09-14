@@ -970,6 +970,42 @@ pub struct ReadRequest {
     pub expected: Option<EngineVersion>,
 }
 
+/// Why one projection of a read refused, while every other projection still answered.
+///
+/// A read fails as a whole only when no projection in it can be trusted: the request's
+/// shape is invalid, the root is closed, or the version it pinned is not the one the index
+/// holds. A refusal is narrower. It depends on what one projection found at that version,
+/// so the lookup of a path beside a tree page that refused the same path still answers,
+/// and a caller never has to prove a path is a directory before it may batch the question.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum ProjectionRefusal {
+    /// A tree page or roll-up named a retained path that is not a directory.
+    ///
+    /// A lookup of the same path answers `Present`, so neither three-valued answer fits:
+    /// `Absent` claims coverage proves the path missing, and `Unknown` claims coverage
+    /// cannot tell, which for a retained path never resolves. It depends on index state:
+    /// the same projection answers while the path is a directory and refuses once it has
+    /// become a file, so a path taken from an earlier page can start refusing between
+    /// reads.
+    NotADirectory {
+        /// The normalized path the projection named.
+        path: PathBuf,
+    },
+    /// A page stopped with rows left, and the record that would resume it exceeds
+    /// [`MAX_CONTINUATION_RECORD_BYTES`].
+    ///
+    /// The page is refused rather than returned without a way to continue, which would
+    /// present a truncated page as a finished one. Only very long paths or a very large
+    /// selection reach it. A refused continued page keeps its continuation, so the caller
+    /// may retry it with a different page bound.
+    ContinuationRecordLimit {
+        /// Structural payload bytes the record would retain.
+        attempted: usize,
+        /// Maximum structural payload retained by one record.
+        limit: usize,
+    },
+}
+
 /// One projection result, in the same position as its request.
 #[derive(Clone, Debug)]
 pub enum ProjectionResult {
@@ -989,6 +1025,8 @@ pub enum ProjectionResult {
     Diagnostics(ReadDiagnostics),
     /// A bounded projection stopped without returning a misleading partial answer.
     Limit(QueryLimit),
+    /// This projection refused; the rest of the read answered.
+    Refused(ProjectionRefusal),
 }
 
 /// One coherent opened-root response.
@@ -1774,22 +1812,6 @@ pub enum Error {
     #[error("tree page depth must be at least one level")]
     TreeDepthZero,
 
-    /// A tree page or roll-up named a retained path that is not a directory.
-    ///
-    /// A lookup of the same path answers `Present`, so neither of the other answers fits:
-    /// `Absent` claims coverage proves the path missing, and `Unknown` claims coverage
-    /// cannot tell, which for a retained path never resolves. A file has no children to
-    /// page and no descendants to roll up, so both projections say which it is instead.
-    ///
-    /// Unlike the request-shape errors beside it, this one depends on index state at the
-    /// version the read pinned: the same request succeeds while the path is a directory and
-    /// fails once it has become a file, so a path taken from an earlier page can start
-    /// failing between reads. It fails the whole read, including projections in the same
-    /// request that would have answered, such as a lookup of that path. Whether it should
-    /// instead be a result of the one projection is an open decision (`fdu-l89e`).
-    #[error("{0:?} is not a directory; tree pages and roll-ups describe directories")]
-    NotADirectory(PathBuf),
-
     /// A flat page attempted to use presentation axes whose ordering is not resumable.
     #[error(
         "flat opened-index pages use fixed portable path order; selection cannot set depth, limit, sort, or reverse"
@@ -1817,15 +1839,6 @@ pub enum Error {
     /// A continuation belongs to another handle or is no longer retained.
     #[error("the page continuation is unavailable for this opened index")]
     ContinuationUnavailable,
-
-    /// A resumable query would retain more payload than one continuation permits.
-    #[error("continuation record requires {attempted} bytes; limit is {limit} bytes")]
-    ContinuationRecordLimit {
-        /// Structural payload bytes the record would retain.
-        attempted: usize,
-        /// Maximum structural payload retained by one record.
-        limit: usize,
-    },
 
     /// No further handle-local continuation identifier can be represented.
     #[error("the opened index continuation identity space is exhausted")]

@@ -92,6 +92,8 @@ __all__ = [
     "ReadResponse",
     "RefreshReceipt",
     "RefreshRejection",
+    "RefusalReason",
+    "RefusedResult",
     "RejectedRefreshPath",
     "Report",
     "ReportProjection",
@@ -209,6 +211,17 @@ class LimitedProjection(StrEnum):
     FLAT = "flat"
     REPORT = "report"
     AGGREGATE = "aggregate"
+
+
+class RefusalReason(StrEnum):
+    """Why one projection of a read refused while the rest of the read answered."""
+
+    #: A ``Tree`` or ``DirectoryRollUp`` named a retained path that is not a directory. It
+    #: depends on the index: the same projection answers while the path is a directory.
+    NOT_A_DIRECTORY = "not_a_directory"
+    #: A page stopped with rows left, and the record that would resume it is larger than
+    #: one continuation may retain. A refused ``Continue`` keeps its continuation.
+    CONTINUATION_RECORD_LIMIT = "continuation_record_limit"
 
 
 class EffectiveChangeKind(StrEnum):
@@ -648,6 +661,25 @@ class LimitResult:
     rows_visited: int
 
 
+@dataclass(frozen=True, slots=True)
+class RefusedResult:
+    """One projection refused; every other projection in the same read still answered.
+
+    A read raises only when none of its projections can be trusted: an invalid request, a
+    closed root, or an ``expected`` version the root no longer holds. Anything one
+    projection finds at that version is this result instead, in that projection's place.
+    """
+
+    kind: Literal["refused"]
+    reason: RefusalReason
+    #: The path a ``NOT_A_DIRECTORY`` projection named, as the engine normalized it.
+    path: Path | None = None
+    #: For ``CONTINUATION_RECORD_LIMIT``, the bytes the record would retain.
+    attempted: int | None = None
+    #: For ``CONTINUATION_RECORD_LIMIT``, the most one record may retain.
+    limit: int | None = None
+
+
 type ProjectionResult = (
     LookupResult
     | RollUpResult
@@ -657,6 +689,7 @@ type ProjectionResult = (
     | ReportResult
     | DiagnosticsResult
     | LimitResult
+    | RefusedResult
 )
 
 
@@ -995,6 +1028,15 @@ def _projection_result(value: object) -> ProjectionResult:
             max_work=int(limit["max_work"]),
             rows_visited=int(limit["rows_visited"]),
         )
+    if kind == "refused":
+        refusal = _mapping(payload, "projection refusal")
+        return RefusedResult(
+            "refused",
+            reason=RefusalReason(str(refusal["reason"])),
+            path=Path(refusal["path"]) if refusal.get("path") is not None else None,
+            attempted=int(refusal["attempted"]) if refusal.get("attempted") is not None else None,
+            limit=int(refusal["limit"]) if refusal.get("limit") is not None else None,
+        )
     raise TypeError(f"unknown native projection result kind {kind!r}")
 
 
@@ -1318,7 +1360,14 @@ class OpenedIndex:
         *projections: Projection,
         expected: EngineVersion | None = None,
     ) -> ReadResponse:
-        """Return all requested projections from one coherent committed boundary."""
+        """Return all requested projections from one coherent committed boundary.
+
+        The call raises only for an invalid request, a closed root, or an ``expected``
+        version the root no longer holds. A projection that cannot answer at that version
+        -- a ``Tree`` or ``DirectoryRollUp`` of a path that is not a directory, or a page
+        whose continuation is too large to keep -- returns a :class:`RefusedResult` in its
+        own position, and every other projection still answers.
+        """
 
         raw = _opened_call(
             self._native.read,

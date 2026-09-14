@@ -8,9 +8,17 @@ use super::OpenedIndex;
 use super::continuation::{ChildPartition, ChildPosition, ContinuationKind, ContinuationRecord};
 use crate::{
     Coverage, CoverageReason, EngineVersion, EntryId, Error, Knowledge, LimitedProjection,
-    PageRequest, ProjectionResult, QueryLimit, ReadRequest, ReadResponse, Result, TreePage, Work,
+    PageRequest, ProjectionRefusal, ProjectionResult, QueryLimit, ReadRequest, ReadResponse,
+    Result, TreePage, Work,
 };
 
+/// Answer every projection of one request at one version.
+///
+/// Three things fail the whole request, because each makes every projection in it
+/// untrustworthy: a request whose shape is invalid, a closed root, and a version pin the
+/// index cannot honour. Anything one projection finds at that version -- a path of the
+/// wrong kind, or a page whose continuation would be too large to keep -- is that
+/// projection's [`ProjectionRefusal`], and the rest of the request still answers.
 pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadResponse> {
     if request.projections.len() > crate::MAX_READ_PROJECTIONS {
         return Err(Error::ReadProjectionLimit {
@@ -70,7 +78,10 @@ pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadRes
                             Knowledge::Present(rollup)
                         }
                         None if index.kind(&path).is_some() => {
-                            return Err(Error::NotADirectory(path));
+                            results.push(ProjectionResult::Refused(
+                                ProjectionRefusal::NotADirectory { path },
+                            ));
+                            continue;
                         }
                         None if absence_is_known(index, &path) => Knowledge::Absent,
                         None => Knowledge::Unknown {
@@ -142,7 +153,14 @@ pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadRes
                             &mut work,
                         ),
                     };
-                    if result.is_err() || matches!(result, Ok(ProjectionResult::Limit(_))) {
+                    // A page that did not come back as a page leaves its position where it
+                    // was, so the same continuation can be retried.
+                    if result.is_err()
+                        || matches!(
+                            result,
+                            Ok(ProjectionResult::Limit(_) | ProjectionResult::Refused(_))
+                        )
+                    {
                         let mut table = opened
                             .state
                             .continuations
@@ -423,7 +441,10 @@ fn tree_projection(
         }));
     };
     if !directory.kind.is_dir() {
-        return Err(Error::NotADirectory(path.to_path_buf()));
+        work.rows_visited = work.rows_visited.saturating_add(path_work);
+        return Ok(ProjectionResult::Refused(ProjectionRefusal::NotADirectory {
+            path: path.to_path_buf(),
+        }));
     }
 
     // Levels below `path` that may be emitted. A parent at depth `d` produces rows at
@@ -537,16 +558,11 @@ fn tree_projection(
     // work, so it is charged once above and excluded here.
     work.maintained_index_work =
         work.maintained_index_work.saturating_add(spent.saturating_sub(path_work));
-    // Plus one: a tree page returns the directory itself beside its rows, and a caller
-    // counting what it received counts that too.
-    work.rows_returned = work
-        .rows_returned
-        .saturating_add(u64::try_from(rows.len()).unwrap_or(u64::MAX).saturating_add(1));
 
     let continuation = if let Some(position) = next {
         let mut table =
             opened.state.continuations.lock().map_err(|_| Error::OpenedLifecyclePoisoned)?;
-        Some(table.insert(
+        match table.insert(
             opened.state.session,
             ContinuationRecord {
                 version,
@@ -557,10 +573,19 @@ fn tree_projection(
                     next: position,
                 },
             },
-        )?)
+        )? {
+            Ok(continuation) => Some(continuation),
+            // The work was done and stays charged; the rows are not returned.
+            Err(refusal) => return Ok(ProjectionResult::Refused(refusal)),
+        }
     } else {
         None
     };
+    // Plus one: a tree page returns the directory itself beside its rows, and a caller
+    // counting what it received counts that too.
+    work.rows_returned = work
+        .rows_returned
+        .saturating_add(u64::try_from(rows.len()).unwrap_or(u64::MAX).saturating_add(1));
 
     // One completeness, because there is now one population. While a portable name was
     // optional this had to distinguish "the native child set is authoritative" from
@@ -640,12 +665,10 @@ fn flat_projection(
 
     work.rows_visited = work.rows_visited.saturating_add(spent);
     work.maintained_index_work = work.maintained_index_work.saturating_add(spent);
-    work.rows_returned =
-        work.rows_returned.saturating_add(u64::try_from(rows.len()).unwrap_or(u64::MAX));
     let continuation = if let Some(next) = next {
         let mut table =
             opened.state.continuations.lock().map_err(|_| Error::OpenedLifecyclePoisoned)?;
-        Some(table.insert(
+        match table.insert(
             opened.state.session,
             ContinuationRecord {
                 version,
@@ -655,10 +678,16 @@ fn flat_projection(
                     next,
                 },
             },
-        )?)
+        )? {
+            Ok(continuation) => Some(continuation),
+            // The work was done and stays charged; the rows are not returned.
+            Err(refusal) => return Ok(ProjectionResult::Refused(refusal)),
+        }
     } else {
         None
     };
+    work.rows_returned =
+        work.rows_returned.saturating_add(u64::try_from(rows.len()).unwrap_or(u64::MAX));
     Ok(ProjectionResult::Flat(crate::FlatPage { rows, next: continuation }))
 }
 

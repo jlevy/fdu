@@ -20,9 +20,9 @@ use fdu_core::{
     ChangeOutcome, ChangePoll, ChangeRequest, ContinuationId, CountResult, Coverage,
     CoverageReason, EffectiveChange, EngineVersion, EntryKind, EntryValue, Freshness, Impact,
     ImpactDomain, IndexState, Issue, IssueKind, Knowledge, LifecyclePhase, LimitedProjection,
-    OpenOptions, OpenedIndex, PageRequest, ProjectionResult, ReadDiagnostics, ReadProjection,
-    ReadRequest, ReadResponse, RefreshResult, RollUpSummary, RowShape, ScopeIdentity,
-    SemanticIdentity, Source, StateTransition, Work,
+    OpenOptions, OpenedIndex, PageRequest, ProjectionRefusal, ProjectionResult, ReadDiagnostics,
+    ReadProjection, ReadRequest, ReadResponse, RefreshResult, RollUpSummary, RowShape,
+    ScopeIdentity, SemanticIdentity, Source, StateTransition, Work,
 };
 
 create_exception!(fdu, OpenedIndexError, PyRuntimeError);
@@ -52,8 +52,7 @@ fn opened_py_err(error: fdu_core::Error) -> PyErr {
         | fdu_core::Error::PageRowLimit { .. }
         | fdu_core::Error::PageWorkLimit { .. }
         | fdu_core::Error::CountCapLimit { .. }
-        | fdu_core::Error::ReportViewLimit { .. }
-        | fdu_core::Error::ContinuationRecordLimit { .. } => {
+        | fdu_core::Error::ReportViewLimit { .. } => {
             OpenedIndexLimitError::new_err(error.to_string())
         }
         // A poisoned index belongs with the lifecycle and journal poison beside it: after a
@@ -66,9 +65,9 @@ fn opened_py_err(error: fdu_core::Error) -> PyErr {
         | fdu_core::Error::OpenedWorkerPanicked { .. }
         | fdu_core::Error::OpenedWorkerFailed { .. }
         | fdu_core::Error::OpenedWorkerSpawn { .. } => OpenedIndexError::new_err(error.to_string()),
-        fdu_core::Error::UnsupportedFlatSelection
-        | fdu_core::Error::TreeDepthZero
-        | fdu_core::Error::NotADirectory(_) => PyValueError::new_err(error.to_string()),
+        fdu_core::Error::UnsupportedFlatSelection | fdu_core::Error::TreeDepthZero => {
+            PyValueError::new_err(error.to_string())
+        }
         other => super::to_py_err(other),
     }
 }
@@ -911,6 +910,22 @@ fn projection_result_dict<'py>(
             limit.set_item("max_work", value.max_work)?;
             limit.set_item("rows_visited", value.rows_visited)?;
             out.set_item("value", limit)?;
+        }
+        ProjectionResult::Refused(refusal) => {
+            out.set_item("kind", "refused")?;
+            let value = PyDict::new(py);
+            match refusal {
+                ProjectionRefusal::NotADirectory { path } => {
+                    value.set_item("reason", "not_a_directory")?;
+                    value.set_item("path", path.as_os_str())?;
+                }
+                ProjectionRefusal::ContinuationRecordLimit { attempted, limit } => {
+                    value.set_item("reason", "continuation_record_limit")?;
+                    value.set_item("attempted", attempted)?;
+                    value.set_item("limit", limit)?;
+                }
+            }
+            out.set_item("value", value)?;
         }
     }
     Ok(out)

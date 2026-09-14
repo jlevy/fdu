@@ -50,14 +50,10 @@ class FduError(RuntimeError):
 class InvalidArgumentError(FduError, ValueError):
     """A public option or query is invalid.
 
-    Almost every cause is the shape of the call itself, and the same call fails the same
-    way every time. One cause depends on the index instead: an ``OpenedIndex.read`` whose
-    ``Tree`` or ``DirectoryRollUp`` names a retained path that is not a directory. That
-    request succeeds while the path is a directory and raises once it has become a file, so
-    a path taken from an earlier page can start raising between reads. The error fails the
-    whole read, including projections in the same call that would have answered, such as a
-    ``Lookup`` of that path. Whether it should become a result of that one projection
-    instead is an open decision.
+    Every cause is the shape of the call itself, so the same call fails the same way every
+    time. What an index holds never raises it: an ``OpenedIndex.read`` whose ``Tree`` or
+    ``DirectoryRollUp`` names a path that is not a directory returns a ``RefusedResult``
+    for that projection, and the rest of the read answers.
     """
 
 

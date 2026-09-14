@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::path::PathBuf;
 
-use crate::{ContinuationId, EngineVersion, Error, Result, SessionId};
+use crate::{ContinuationId, EngineVersion, Error, ProjectionRefusal, Result, SessionId};
 
 /// Maximum resumable page positions retained by one opened root.
 pub(super) const MAX_CONTINUATIONS: usize = 128;
@@ -102,20 +102,25 @@ impl Default for ContinuationTable {
 }
 
 impl ContinuationTable {
+    /// Retain a record, or say why this one page cannot have one.
+    ///
+    /// The outer error ends the whole read: the root closed, or no identifier is left. The
+    /// inner refusal belongs to the one page whose record is too large, and every other
+    /// projection in the read still answers.
     pub(super) fn insert(
         &mut self,
         session: SessionId,
         record: ContinuationRecord,
-    ) -> Result<ContinuationId> {
+    ) -> Result<std::result::Result<ContinuationId, ProjectionRefusal>> {
         if self.closed {
             return Err(Error::OpenedIndexClosed);
         }
         let retained_bytes = record.retained_bytes();
         if retained_bytes > crate::MAX_CONTINUATION_RECORD_BYTES {
-            return Err(Error::ContinuationRecordLimit {
+            return Ok(Err(ProjectionRefusal::ContinuationRecordLimit {
                 attempted: retained_bytes,
                 limit: crate::MAX_CONTINUATION_RECORD_BYTES,
-            });
+            }));
         }
         let ordinal = self.next;
         self.next = self.next.checked_add(1).ok_or(Error::ContinuationIdentityExhausted)?;
@@ -128,7 +133,7 @@ impl ContinuationTable {
         }
         self.records.insert(ordinal, record);
         self.order.push_back(ordinal);
-        Ok(ContinuationId { session, ordinal })
+        Ok(Ok(ContinuationId { session, ordinal }))
     }
 
     pub(super) fn take(
@@ -244,9 +249,10 @@ mod tests {
                     },
                 },
             )
+            .expect("open table")
             .expect("small record");
 
-        let error = table
+        let refusal = table
             .insert(
                 session,
                 ContinuationRecord {
@@ -260,16 +266,17 @@ mod tests {
                     },
                 },
             )
+            .expect("open table")
             .expect_err("oversized record");
         assert!(matches!(
-            error,
-            Error::ContinuationRecordLimit { attempted, limit }
+            refusal,
+            ProjectionRefusal::ContinuationRecordLimit { attempted, limit }
                 if attempted > limit && limit == crate::MAX_CONTINUATION_RECORD_BYTES
         ));
 
         let expanded =
             crate::query::Pattern::parse(&"{a,b}".repeat(10)).expect("bounded pattern expansion");
-        let query_error = table
+        let query_refusal = table
             .insert(
                 session,
                 ContinuationRecord {
@@ -287,8 +294,9 @@ mod tests {
                     },
                 },
             )
+            .expect("open table")
             .expect_err("expanded query record");
-        assert!(matches!(query_error, Error::ContinuationRecordLimit { .. }));
+        assert!(matches!(query_refusal, ProjectionRefusal::ContinuationRecordLimit { .. }));
         assert_eq!(table.records.len(), 1);
         assert_eq!(table.next, first.ordinal + 1);
         table.take(session, first).expect("existing record was not evicted");
@@ -312,6 +320,7 @@ mod tests {
                     },
                 },
             )
+            .expect("open table")
             .expect("retained record");
         table.close();
         assert!(table.records.is_empty() && table.order.is_empty());
@@ -341,18 +350,27 @@ mod tests {
         let mut table = ContinuationTable::default();
         let ids = (0..MAX_CONTINUATIONS)
             .map(|position| {
-                table.insert(session, flat_record(session, &format!("r{position}"))).expect("fill")
+                table
+                    .insert(session, flat_record(session, &format!("r{position}")))
+                    .expect("open table")
+                    .expect("fill")
             })
             .collect::<Vec<_>>();
         assert_eq!(table.len(), MAX_CONTINUATIONS);
 
         let taken_id = ids[MAX_CONTINUATIONS / 2];
         let taken = table.take(session, taken_id).expect("take");
-        table.insert(session, flat_record(session, "other page")).expect("insert while taken");
+        table
+            .insert(session, flat_record(session, "other page"))
+            .expect("open table")
+            .expect("insert while taken");
         table.restore(taken_id, taken);
         assert_eq!(table.len(), MAX_CONTINUATIONS, "a restore may not overshoot the bound");
         for position in 0..16 {
-            table.insert(session, flat_record(session, &format!("later{position}"))).expect("page");
+            table
+                .insert(session, flat_record(session, &format!("later{position}")))
+                .expect("open table")
+                .expect("page");
             assert_eq!(table.len(), MAX_CONTINUATIONS);
         }
         // A restored record is the oldest by design, so it is the one a full table gives up.
@@ -363,7 +381,10 @@ mod tests {
     fn a_restored_record_is_retryable_while_the_table_has_room() {
         let session = SessionId::from_opaque(1).expect("nonzero session");
         let mut table = ContinuationTable::default();
-        let id = table.insert(session, flat_record(session, "next")).expect("insert");
+        let id = table
+            .insert(session, flat_record(session, "next"))
+            .expect("open table")
+            .expect("insert");
         let record = table.take(session, id).expect("take");
         table.restore(id, record);
         assert_eq!(table.len(), 1);
@@ -376,7 +397,10 @@ mod tests {
     fn a_closed_table_refuses_records_that_race_shutdown() {
         let session = SessionId::from_opaque(1).expect("nonzero session");
         let mut table = ContinuationTable::default();
-        let id = table.insert(session, flat_record(session, "before close")).expect("insert");
+        let id = table
+            .insert(session, flat_record(session, "before close"))
+            .expect("open table")
+            .expect("insert");
         let record = table.take(session, id).expect("take");
         table.close();
 

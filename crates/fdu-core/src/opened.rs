@@ -270,6 +270,16 @@ impl OpenedIndex {
 
     /// Return requested projections from one committed version and state boundary.
     ///
+    /// # Errors
+    ///
+    /// The whole read fails only when no projection in it can be trusted: the request's
+    /// shape is invalid (a bound out of range, too many projections, a path that escapes the
+    /// root, a continuation this root does not retain), the root is closed, or
+    /// [`crate::ReadRequest::expected`] or a continuation pins a version the index no longer
+    /// holds. What one projection finds at the pinned
+    /// version is that projection's [`crate::ProjectionRefusal`] instead, returned in its
+    /// position while every other projection answers.
+    ///
     /// The lifecycle lock guards only the phase check. The projection's coherence comes
     /// from the index read boundary, which any number of readers share, so holding the
     /// lifecycle lock across it would serialize every read with every other read and with
@@ -2934,61 +2944,155 @@ mod tests {
         opened.close().expect("close");
     }
 
-    /// A tree page and a roll-up on a retained file both say it is not a directory.
+    /// A tree page and a roll-up on a retained file refuse that projection, and only it.
     ///
     /// They used to contradict the lookup of the same path on a complete root: the tree
     /// answered `Absent`, which claims coverage proves the path missing, and the roll-up
     /// answered `Unknown { reason: Building }`, which a caller polling for an answer would
-    /// wait on forever.
+    /// wait on forever. Then they failed the whole read, so a mixed request lost the
+    /// lookup beside them because one path had changed kind since an earlier page
+    /// (`fdu-l89e`).
     #[test]
-    fn directory_projections_on_a_present_file_say_it_is_not_a_directory() {
+    fn a_path_of_the_wrong_kind_refuses_its_projection_and_the_read_still_answers() {
         let (_root, opened) = opened(Arc::new(TestControls::default()));
+        let file = |path: &str| Op::Upsert {
+            path: PathBuf::from(path),
+            kind: EntryKind::File,
+            attrs: crate::Attrs { size: 5, ..crate::Attrs::default() },
+        };
         opened
             .state
             .index
-            .apply(&Observation::new(vec![Op::Upsert {
-                path: PathBuf::from("README.md"),
-                kind: EntryKind::File,
-                attrs: crate::Attrs { size: 5, ..crate::Attrs::default() },
-            }]))
-            .expect("seed file");
-        let state = opened.state.index.state().expect("state");
-        assert_eq!(state.coverage, crate::Coverage::Complete);
-        let read = |projection| {
-            opened.read(crate::ReadRequest {
-                projections: vec![projection],
-                ..crate::ReadRequest::default()
-            })
-        };
-
-        assert!(matches!(
-            read(crate::ReadProjection::Lookup { path: PathBuf::from("README.md") })
-                .expect("lookup")
-                .results[0],
-            crate::ProjectionResult::Lookup(crate::Knowledge::Present(_))
-        ));
-        let tree = read(crate::ReadProjection::Tree {
-            path: PathBuf::from("README.md"),
+            .apply(&Observation::new(vec![
+                file("a"),
+                file("README.md"),
+                Op::Upsert {
+                    path: PathBuf::from("dir"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+            ]))
+            .expect("seed tree");
+        let page = crate::PageRequest { limit: 16, max_work: 64 };
+        let tree = |path: &str| crate::ReadProjection::Tree {
+            path: PathBuf::from(path),
             depth: crate::query::Bound::Limit(1),
             include_ignored: true,
-            page: crate::PageRequest { limit: 16, max_work: 64 },
-        });
-        assert!(
-            matches!(&tree, Err(Error::NotADirectory(path)) if path == Path::new("README.md")),
-            "{tree:?}"
-        );
-        let rollup = read(crate::ReadProjection::RollUp { path: PathBuf::from("README.md") });
-        assert!(
-            matches!(&rollup, Err(Error::NotADirectory(path)) if path == Path::new("README.md")),
-            "{rollup:?}"
-        );
+            page,
+        };
+        // The directory answers while it is one: the path a caller holds is a good path.
+        let before = opened
+            .read(crate::ReadRequest { projections: vec![tree("dir")], ..Default::default() })
+            .expect("tree of a directory");
+        assert!(matches!(
+            before.results.as_slice(),
+            [crate::ProjectionResult::Tree(crate::Knowledge::Present(_))]
+        ));
+
+        opened.state.index.apply(&Observation::new(vec![file("dir")])).expect("dir became a file");
+        assert_eq!(opened.state.index.state().expect("state").coverage, crate::Coverage::Complete);
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![
+                    crate::ReadProjection::Lookup { path: PathBuf::from("a") },
+                    tree("dir"),
+                    crate::ReadProjection::RollUp { path: PathBuf::from("README.md") },
+                    crate::ReadProjection::Lookup { path: PathBuf::from("dir") },
+                ],
+                ..crate::ReadRequest::default()
+            })
+            .expect("a refusal does not fail the read");
+        match response.results.as_slice() {
+            [
+                crate::ProjectionResult::Lookup(crate::Knowledge::Present(a)),
+                crate::ProjectionResult::Refused(crate::ProjectionRefusal::NotADirectory {
+                    path: tree_path,
+                }),
+                crate::ProjectionResult::Refused(crate::ProjectionRefusal::NotADirectory {
+                    path: rollup_path,
+                }),
+                crate::ProjectionResult::Lookup(crate::Knowledge::Present(dir)),
+            ] => {
+                assert_eq!(a.path, Path::new("a"));
+                assert_eq!(tree_path, Path::new("dir"));
+                assert_eq!(rollup_path, Path::new("README.md"));
+                assert_eq!(dir.kind, EntryKind::File);
+            }
+            other => panic!("each projection answers for itself: {other:?}"),
+        }
+        assert_eq!(response.work.rows_returned, 2, "a refusal returns no rows");
+
         // Below a file nothing can exist, and a complete root can say so.
         assert!(matches!(
-            read(crate::ReadProjection::RollUp { path: PathBuf::from("README.md/inner") })
+            opened
+                .read(crate::ReadRequest {
+                    projections: vec![crate::ReadProjection::RollUp {
+                        path: PathBuf::from("README.md/inner"),
+                    }],
+                    ..crate::ReadRequest::default()
+                })
                 .expect("rollup below a file")
                 .results[0],
             crate::ProjectionResult::RollUp(crate::Knowledge::Absent)
         ));
+        opened.close().expect("close");
+    }
+
+    /// A page whose resume state is too large to retain refuses that page, and only it.
+    ///
+    /// The page has rows left, so returning them with no continuation would present a
+    /// truncated page as a finished one. Failing the read instead discarded every other
+    /// projection in it (READ-8).
+    #[test]
+    fn a_page_whose_continuation_cannot_be_retained_refuses_alone() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        let file = |path: &str| Op::Upsert {
+            path: PathBuf::from(path),
+            kind: EntryKind::File,
+            attrs: crate::Attrs { size: 1, ..crate::Attrs::default() },
+        };
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![file("a.txt"), file("b.txt")]))
+            .expect("seed tree");
+        // A selection this large is valid, and admits both files; it is only too large to
+        // carry into a continuation record.
+        let mut exact_names = vec!["a.txt".to_string(), "b.txt".to_string()];
+        exact_names.extend((0..4_000).map(|number| format!("unused-{number:05}.txt")));
+        let selection = crate::query::EntrySelection { exact_names, ..Default::default() };
+        let flat = crate::ReadProjection::Flat {
+            selection,
+            shape: crate::RowShape::Compact,
+            page: crate::PageRequest { limit: 1, max_work: 64 },
+        };
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![
+                    flat,
+                    crate::ReadProjection::Lookup { path: PathBuf::from("b.txt") },
+                ],
+                ..crate::ReadRequest::default()
+            })
+            .expect("a refused page does not fail the read");
+        match response.results.as_slice() {
+            [
+                crate::ProjectionResult::Refused(
+                    crate::ProjectionRefusal::ContinuationRecordLimit { attempted, limit },
+                ),
+                crate::ProjectionResult::Lookup(crate::Knowledge::Present(_)),
+            ] => {
+                assert_eq!(*limit, crate::MAX_CONTINUATION_RECORD_BYTES);
+                assert!(attempted > limit, "{attempted} > {limit}");
+            }
+            other => panic!("the page refuses and the lookup answers: {other:?}"),
+        }
+        assert_eq!(response.work.rows_returned, 1, "the refused page returns no rows");
+        assert_eq!(
+            opened.state.continuations.lock().expect("table").len(),
+            0,
+            "a refused page retains nothing"
+        );
         opened.close().expect("close");
     }
 

@@ -67,6 +67,7 @@ const REQUIRED_CONTRACT_OUTCOMES: &[&str] = &[
     "projection.report",
     "projection.diagnostics",
     "projection.limit",
+    "projection.refused",
     "change.inserted",
     "change.updated",
     "change.removed",
@@ -347,6 +348,37 @@ fn coherent_projections_and_continuations() -> SessionTrace {
         limited,
         Ok(ReadResponse { results, .. })
             if matches!(results.as_slice(), [ProjectionResult::Limit(_)])
+    ));
+
+    // A projection that names a file where a directory belongs refuses alone: the lookup
+    // before it and the roll-up after it answer in the same read.
+    let mixed = read(
+        &opened,
+        &mut trace,
+        ReadRequest {
+            projections: vec![
+                ReadProjection::Lookup { path: PathBuf::from("a.txt") },
+                ReadProjection::Tree {
+                    path: PathBuf::from("a.txt"),
+                    depth: crate::query::Bound::Limit(1),
+                    include_ignored: true,
+                    page,
+                },
+                ReadProjection::RollUp { path: PathBuf::from("dir") },
+            ],
+            expected: None,
+        },
+    );
+    assert!(matches!(
+        mixed,
+        Ok(ReadResponse { results, .. }) if matches!(
+            results.as_slice(),
+            [
+                ProjectionResult::Lookup(Knowledge::Present(_)),
+                ProjectionResult::Refused(crate::ProjectionRefusal::NotADirectory { .. }),
+                ProjectionResult::RollUp(Knowledge::Present(_)),
+            ]
+        )
     ));
     final_read(&opened, &mut trace);
     close(&opened, &mut trace);
