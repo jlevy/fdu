@@ -3,14 +3,18 @@ type: is
 id: is-01m2exb1z54reakkxnbzn8zjtg
 title: The fdu crate's own tests and clippy do not build without the watch feature
 kind: bug
-status: open
+status: closed
 priority: 3
-version: 2
+version: 3
 labels:
   - stack-followup
 dependencies: []
 created_at: 2026-09-14T02:53:31.986Z
-updated_at: 2026-09-14T03:05:10.873Z
+updated_at: 2026-09-14T03:54:42.817Z
+closed_at: 2026-09-14T03:54:42.816Z
+close_reason: "8961280: lib-only, in CI and make, now runs clippy -p fdu --no-default-features --all-targets with -D warnings in place of the check, plus the fdu lib tests in that shape. The watch-only tests and imports this bead names were already gated by 078f6fa on #48. CI run 34803813981 ran both steps green."
+resolution: null
+duplicate_of: null
 ---
 Found while fixing fdu-1onj on PR #51 (2237a70); pre-existing on main (b75bf85), not introduced by the stack.
 

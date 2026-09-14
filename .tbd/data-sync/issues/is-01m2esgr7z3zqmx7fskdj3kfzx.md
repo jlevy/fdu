@@ -5,14 +5,14 @@ title: Linux quiet gate may count the benchmark's own workers in the one-minute 
 kind: bug
 status: open
 priority: 2
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2ebb3axt3ktj0rqkj0pw7bt
 created_at: 2026-09-14T01:46:44.351Z
-updated_at: 2026-09-14T01:46:44.351Z
+updated_at: 2026-09-14T04:38:28.064Z
 ---
 Suspected defect in the quiet gate PR #49 now relies on, recorded by the #49 fixer. **Unverified.**
 
@@ -28,3 +28,7 @@ Suspected defect in the quiet gate PR #49 now relies on, recorded by the #49 fix
 3. Add a test with a synthetic snapshot sequence showing a self-induced load tail does not invalidate a trial.
 
 Review: https://github.com/jlevy/fdu/pull/49#pullrequestreview-5192251516. Disposition: https://github.com/jlevy/fdu/pull/49#issuecomment-5656540687
+
+## Notes
+
+2026-09-14 (PR #49 delta review PR49-DELTA-1, https://github.com/jlevy/fdu/pull/49#pullrequestreview-5193948340): confirmed by reading, still not measured. On an N-core host, back-to-back N-worker trials push Linux's 1-minute load average past 0.25 per core within roughly 17-42 s. Every later trial is then invalid, and the table downgrades itself to uncontrolled on an idle machine. The recorded /usr run (~18-20 s) sits at that boundary. The 450k H86 subject (>=100 s per run) trips it for most of the table, so quiet is unreachable for the deciding subjects. floor.py:534-538, 547, 705-726, 1041; measure.py:575-589, 728-736 at 6e018a0. Step 1 of the to-do list, the Linux run, settles it.

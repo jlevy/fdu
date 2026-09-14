@@ -3,16 +3,20 @@ type: is
 id: is-01m2ew7g4hvrgk341tvpay3epj
 title: gitignore matcher splits at an escaped slash, where git matches a literal separator
 kind: bug
-status: open
+status: closed
 priority: 4
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2ebb348tnqdeqn4fddykv4s
 created_at: 2026-09-14T02:34:06.864Z
-updated_at: 2026-09-14T02:34:06.864Z
+updated_at: 2026-09-14T03:54:35.802Z
+closed_at: 2026-09-14T03:54:35.802Z
+close_reason: "777dc6f: an escaped slash now splits like a plain one; a leading escaped slash drops the line; a double star before an escaped separator matches one or more directories (DoubleStarOneOrMore); a trailing slash is directory-only whether escaped or not. The new 18-row ESCAPED_SLASH_CASES table was recorded from check-ignore 2.50.1 with the live oracle and fails on the old matcher."
+resolution: null
+duplicate_of: null
 ---
 Found while fixing fdu-s0xg (PR #48 review CLASS-5) at 154e4d7. Not a bracket form, so left out of that fix.
 

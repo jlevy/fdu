@@ -3,16 +3,20 @@ type: is
 id: is-01m2ex9y978m63k9yzdt5esfqa
 title: Compact [[kind]] manifest reader misreads trailing comments, commas in strings, and escapes
 kind: bug
-status: open
+status: closed
 priority: 3
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2ebb348tnqdeqn4fddykv4s
 created_at: 2026-09-14T02:52:55.462Z
-updated_at: 2026-09-14T02:52:55.462Z
+updated_at: 2026-09-14T03:54:31.358Z
+closed_at: 2026-09-14T03:54:31.357Z
+close_reason: "f4a7131: the compact [[kind]] reader now reads with the File Rollup registry's TOML cursor, moved to classify/manifest_toml.rs and included by build.rs beside the parser, so both dialects accept the same TOML and refuse the same forms by name. The registry's form table is added for the compact dialect and fails on the old reader. The default manifest fingerprint is unchanged."
+resolution: null
+duplicate_of: null
 ---
 Found while fixing fdu-m5zj (PR #48 review CLASS-7) at 4da6d60. That fix replaced the File Rollup registry reader. The compact `[[kind]]` dialect has the same defect and was left alone.
 

@@ -3,14 +3,18 @@ type: is
 id: is-01m2ewjkmv0bvwq81pw9tshd4e
 title: The featureless command line's --docs guide names --watch, which that binary does not have
 kind: bug
-status: open
+status: closed
 priority: 3
-version: 2
+version: 3
 labels:
   - stack-followup
 dependencies: []
 created_at: 2026-09-14T02:40:10.887Z
-updated_at: 2026-09-14T02:40:23.968Z
+updated_at: 2026-09-14T03:54:40.670Z
+closed_at: 2026-09-14T03:54:40.669Z
+close_reason: "0989b72: --docs is composed per build by docs_guide!, so a build without watch leaves out the --watch example, the --interval note, and --watch in the Mode axis. Chose gating the guide over hidden stub flags: stubs would keep the guide advertising a capability that build lacks, and keep a vestige of the layer the feature makes deletable. The watch build's guide is byte-identical. 8961280 runs the fdu lib tests featureless in lib-only, so the flag test now guards this. --skill split out as fdu-8rfd."
+resolution: null
+duplicate_of: null
 ---
 Found while fixing fdu-2wlp, at commit 078f6fa on codex/opened-root-inventory-rewrite.
 
