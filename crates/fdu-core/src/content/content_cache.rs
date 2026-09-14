@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::classify::{
     Classification, ClassificationFlags, ContentFamily, DetectionConfidence, DetectionSource,
@@ -230,9 +230,7 @@ fn parse(
     let mut records = Vec::with_capacity(usize::try_from(count).ok()?);
     for _ in 0..count {
         let relative_path = PathBuf::from(reader.os_string()?);
-        // Components, not `is_absolute`: `..` is not absolute anywhere, and on Windows
-        // neither `\rooted` nor `C:relative` is, yet each names a path outside the root.
-        if !crate::index::path_is_relative_normal(&relative_path) {
+        if !record_path_stays_inside_root(&relative_path) {
             return None;
         }
         let fingerprint = read_fingerprint(&mut reader)?;
@@ -266,6 +264,21 @@ fn parse(
         ));
     }
     reader.is_empty().then_some(records)
+}
+
+/// Whether a sidecar record's path is relative and never ascends, so it names an entry
+/// under the root the sidecar claims.
+///
+/// The sidecar is untrusted input: anything on disk can have written it. So the question
+/// is asked of components, where every one must be `Normal` or `CurDir`, rather than of
+/// `is_absolute`, which answers it wrongly. `..` is not absolute on any platform, and on
+/// Windows neither is a rooted path with no drive (`\x`) nor a drive-relative one
+/// (`C:x`), yet each names a path outside the root.
+///
+/// Private and stated here rather than borrowed from the index, whose own path
+/// validation is free to change shape: this guard's contract is the untrusted image.
+fn record_path_stays_inside_root(path: &Path) -> bool {
+    path.components().all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
 }
 
 fn integrity_payload(image: &[u8]) -> Option<&[u8]> {
@@ -755,7 +768,7 @@ mod tests {
         for (record_path, restores) in cases {
             // The rule the parser asks, on the bare path: every component must be normal.
             assert_eq!(
-                crate::index::path_is_relative_normal(Path::new(record_path)),
+                record_path_stays_inside_root(Path::new(record_path)),
                 restores,
                 "{record_path:?}"
             );
