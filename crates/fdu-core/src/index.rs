@@ -2560,12 +2560,13 @@ impl Index {
 
     /// Close one reconciliation opened by [`Self::begin_reconcile`].
     ///
-    /// `listed_incomplete` names the directories the pass listed in full that the index did
-    /// not hold as complete when it listed them. When the whole pass completed, each is
-    /// recorded as complete in this commit, exactly as discovery's listing commit records
-    /// the directories it lists, unless a producer invalidated or began verifying it after
-    /// this pass started: that producer's own pass owns its listing now. Only an opened root
-    /// passes any, since only an opened root serves completeness.
+    /// `listed_incomplete` names the directories the pass listed in full, with no error
+    /// inside them, that the index did not hold as complete when it listed them. Each is
+    /// recorded as complete in this commit whether or not the whole pass completed, exactly
+    /// as discovery's listing commit records the directories it lists, unless a producer
+    /// invalidated or began verifying it after this pass started: that producer's own pass
+    /// owns its listing now. Only an opened root passes any, since only an opened root
+    /// serves completeness, and it passes none when a conditional commit lost a race.
     pub(crate) fn finish_reconcile(
         &mut self,
         path: &Path,
@@ -2579,6 +2580,21 @@ impl Index {
         let previous = self.freshness_at(&path);
         self.freshness_marks
             .retain(|marked, mark| !marked.starts_with(&path) || mark.epoch > started_at);
+        // Each listed directory is recorded on its own listing, complete pass or not: the
+        // walk names only those it listed in full with no error inside them, as discovery
+        // decides per directory, and the caller passes none when a commit lost a race. A
+        // directory another producer invalidated or began verifying after this pass
+        // started is left to that producer's pass, so decide here, before this pass's own
+        // partial mark below would read as such a newer claim.
+        let recordable: Vec<&PathBuf> = listed_incomplete
+            .iter()
+            .filter(|directory| {
+                directory.starts_with(&path)
+                    && !self.freshness_marks.iter().any(|(marked, mark)| {
+                        mark.epoch > started_at && directory.starts_with(marked)
+                    })
+            })
+            .collect();
         let mut state = Vec::new();
         if complete {
             // A completed sweep stat'd every entry beneath `path`, including the ones
@@ -2593,29 +2609,22 @@ impl Index {
                 self.verified.drain(..excess);
             }
             state.push(StateTransition::Verified { path: path.clone() });
-            for directory in listed_incomplete {
-                if !directory.starts_with(&path)
-                    || self.freshness_marks.iter().any(|(marked, mark)| {
-                        mark.epoch > started_at && directory.starts_with(marked)
-                    })
-                {
-                    continue;
-                }
-                let Some(id) = self.lookup(directory) else {
-                    continue;
-                };
-                let entry = self.entry_mut(id);
-                if entry.kind != EntryKind::Dir || entry.directory().children_complete {
-                    continue;
-                }
-                entry.directory_mut().children_complete = true;
-                self.state.progress.directories_complete =
-                    self.state.progress.directories_complete.saturating_add(1);
-                state.push(StateTransition::DirectoryComplete { path: directory.clone() });
-            }
             self.drop_disproven_issues(&path, started_at);
         } else {
             self.mark_unfresh(&path, Freshness::Partial);
+        }
+        for directory in recordable {
+            let Some(id) = self.lookup(directory) else {
+                continue;
+            };
+            let entry = self.entry_mut(id);
+            if entry.kind != EntryKind::Dir || entry.directory().children_complete {
+                continue;
+            }
+            entry.directory_mut().children_complete = true;
+            self.state.progress.directories_complete =
+                self.state.progress.directories_complete.saturating_add(1);
+            state.push(StateTransition::DirectoryComplete { path: directory.clone() });
         }
 
         let current = self.freshness_at(&path);

@@ -5504,6 +5504,57 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// One transient child error no longer withholds completeness from every directory
+    /// the pass listed. Each is recorded on its own listing, as discovery decides, so a
+    /// directory first listed by such a pass answers Absent below it instead of staying
+    /// Unknown { Building } under a complete root.
+    #[test]
+    fn refresh_records_completeness_per_listed_directory_despite_a_child_error() {
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::create_dir(root.path().join("steady")).expect("steady directory");
+        std::fs::write(root.path().join("steady/kept"), b"kept").expect("steady fixture");
+        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("open");
+        let settled = wait_until_settled(&opened);
+        assert_eq!(settled.coverage, crate::Coverage::Complete);
+        std::fs::create_dir(root.path().join("fresh")).expect("fresh directory");
+        std::fs::write(root.path().join("fresh/new"), b"new").expect("fresh fixture");
+
+        crate::scan::set_child_metadata_hook(|path| {
+            (path.file_name() == Some(std::ffi::OsStr::new("kept"))).then(|| {
+                std::io::Error::new(std::io::ErrorKind::PermissionDenied, "injected child error")
+            })
+        });
+        let receipt = opened.refresh(&[PathBuf::new()]);
+        crate::scan::clear_child_metadata_hook();
+        let receipt = receipt.expect("refresh");
+
+        assert_eq!(receipt.issues.len(), 1, "{:?}", receipt.issues);
+        let index = &opened.state.index;
+        assert_eq!(
+            index.freshness_at(Path::new("")).expect("freshness"),
+            crate::Freshness::Partial
+        );
+        assert_eq!(index.directory_complete(Path::new("fresh")).expect("lookup"), Some(true));
+        assert_eq!(index.directory_complete(Path::new("steady")).expect("lookup"), Some(true));
+        let lookup = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Lookup {
+                    path: PathBuf::from("fresh/missing"),
+                }],
+                ..crate::ReadRequest::default()
+            })
+            .expect("lookup")
+            .results
+            .into_iter()
+            .next()
+            .expect("lookup result");
+        assert!(
+            matches!(lookup, crate::ProjectionResult::Lookup(crate::Knowledge::Absent)),
+            "{lookup:?}"
+        );
+        opened.close().expect("close");
+    }
+
     #[test]
     fn close_cancels_verified_refresh_before_its_conditional_commit() {
         let controls = Arc::new(TestControls::default());

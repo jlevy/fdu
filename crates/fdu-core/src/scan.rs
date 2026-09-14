@@ -822,11 +822,14 @@ pub struct ReconcileReport {
     /// Exact producer operations considered, including no-op controls that do not
     /// increment an effect counter or create a commit.
     pub(crate) observations: u64,
-    /// Directories this pass listed in full that the index did not yet hold as complete.
+    /// Directories this pass listed in full, with no error inside them, that the index did
+    /// not yet hold as complete.
     ///
-    /// Collected only for an opened root, where completeness is served: once the whole pass
-    /// completes, its closing commit records each one's child set as authoritative, as
-    /// discovery's own listing commit does.
+    /// Collected only for an opened root, where completeness is served. The closing commit
+    /// records each one's child set as authoritative, as discovery's own listing commit
+    /// does, whether or not the rest of the pass completed: one transient child error
+    /// elsewhere used to keep every directory the pass listed incomplete, and a directory
+    /// first listed by such a pass stayed `Unknown { Building }` under a complete root.
     pub(crate) listed_incomplete: Vec<PathBuf>,
 }
 
@@ -835,6 +838,16 @@ impl ReconcileReport {
     /// a race with another producer.
     pub fn is_complete(&self) -> bool {
         self.scan.is_complete() && self.apply.stale == 0 && self.apply.resource_refused == 0
+    }
+
+    /// The directories whose listings this pass can vouch for, taken out of the report.
+    ///
+    /// None when a conditional commit lost a race or was refused: a child of any listed
+    /// directory may then be missing from the index until the retry that race earns, and
+    /// the retry records completeness for what it lists.
+    pub(crate) fn take_recordable_completeness(&mut self) -> Vec<PathBuf> {
+        let listed = std::mem::take(&mut self.listed_incomplete);
+        if self.apply.stale > 0 || self.apply.resource_refused > 0 { Vec::new() } else { listed }
     }
 }
 
@@ -3996,8 +4009,9 @@ fn reconcile_paths_target(
             continue;
         }
         match reconcile_target_inner(target, subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
-            Ok(reconciliation) => {
+            Ok(mut reconciliation) => {
                 completed.push(reconciliation.is_complete());
+                reconciliation.listed_incomplete = reconciliation.take_recordable_completeness();
                 merge_reconcile_report(&mut report.reconciliation, reconciliation);
             }
             Err(error) => {
@@ -4089,7 +4103,7 @@ fn reconcile_target(
     }
     match reconcile_target_inner(target, &subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
         Ok(mut report) => {
-            let listed_incomplete = std::mem::take(&mut report.listed_incomplete);
+            let listed_incomplete = report.take_recordable_completeness();
             let finished = target.finish_reconcile(
                 &subtree,
                 started_at,
@@ -4231,6 +4245,7 @@ fn reconcile_target_inner(
     let mut bulk_reader = (config.worker_threads() > 1).then(macos_bulk::Reader::new);
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
         let (mut known, records_completeness) = target.listing_baseline(&rel_dir)?;
+        let errors_before = report.scan.errors.len();
         let abs_dir = root.join(&rel_dir);
         let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
         let had_control = target.has_control(&control_path)?;
@@ -4413,7 +4428,10 @@ fn reconcile_target_inner(
                     baseline,
                 ));
             }
-            if records_completeness {
+            // Only a directory with no error inside its own processing vouches for its
+            // child set; an error under a sibling or a descendant is that directory's
+            // to answer for, as discovery decides completeness per directory.
+            if records_completeness && report.scan.errors.len() == errors_before {
                 report.listed_incomplete.push(rel_dir);
             }
         }
