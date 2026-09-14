@@ -1,16 +1,16 @@
 ---
 type: is
 id: is-01m2gtp61gh3c4j4frh1q9sw88
-title: "Remove the gitignore cargo feature: ignore handling is always compiled in, and read_controls alone decides whether .gitignore is read"
+title: "Remove the gitignore build feature: ignore handling is always compiled in, and read_controls alone decides whether .gitignore is read"
 kind: task
 status: open
 priority: 1
-version: 1
+version: 2
 labels:
   - stack-followup
 dependencies: []
 created_at: 2026-09-14T20:45:39.759Z
-updated_at: 2026-09-14T20:45:39.759Z
+updated_at: 2026-09-14T21:00:51.606Z
 ---
 DECISION (user, 2026-09-14): the gitignore feature makes no sense as a compile-time option. It is a built-in capability and always compiled in. Whether a scan reads .gitignore control state is decided only at runtime, by ScanConfig::read_controls (default off for one-shot reports and library open after #57; the opened root always on). watch is a different kind of thing, with a real dependency tree (notify plus its platform backends) and a stated deletability principle, and stays a feature.
 
