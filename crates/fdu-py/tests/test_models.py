@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from fdu import (
     Analysis,
     AnalysisOptions,
+    Bound,
     CachePolicy,
     EntryKind,
     Query,
@@ -20,7 +22,7 @@ from fdu import (
 )
 from fdu._api import FduError, FilesystemError, InvalidArgumentError, _call, _query_kwargs
 from fdu._models import report_from_dict
-from fdu.opened import _opened_call
+from fdu.opened import _opened_call, _projection_wire
 
 
 def test_public_options_are_typed_immutable_values() -> None:
@@ -72,6 +74,57 @@ def test_opened_entry_selection_composes_the_stable_query_selection() -> None:
     assert projection.selection.query.kinds == (EntryKind.FILE,)
     assert projection.selection.max_size == 100
     assert projection.selection.exact_names == ("makefile",)
+
+
+def test_opened_tree_defaults_to_one_visible_level_and_encodes_its_shape() -> None:
+    # The binding's defaults when a field is absent, so a caller who says nothing gets
+    # the same page with or without these fields.
+    default = opened.Tree()
+    assert (default.depth, default.include_ignored) == (1, True)
+    assert _projection_wire(default) == {
+        "kind": "tree",
+        "path": "",
+        "depth": 1,
+        "include_ignored": True,
+        "page": {"limit": 256, "max_work": 100_000},
+    }
+
+    deep = _projection_wire(opened.Tree("src", depth=Bound.ALL, include_ignored=False))
+    # The native grammar spells an unbounded depth the way `--depth all` does.
+    assert (deep["depth"], deep["include_ignored"]) == ("all", False)
+    assert _projection_wire(opened.Tree(depth=3))["depth"] == 3
+
+
+@pytest.mark.parametrize(
+    ("depth", "error"),
+    [
+        (0, ValueError),
+        (-1, ValueError),
+        # `bool` is an `int`, so without the guard `True` would silently mean one level.
+        (True, TypeError),
+        ("all", TypeError),
+        (1.5, TypeError),
+    ],
+)
+def test_opened_tree_depth_fails_before_crossing_native_boundary(
+    depth: object,
+    error: type[Exception],
+) -> None:
+    with pytest.raises(error, match="depth"):
+        opened.Tree(depth=depth)  # type: ignore[arg-type]
+
+
+def test_opened_tree_include_ignored_must_be_a_bool() -> None:
+    with pytest.raises(TypeError, match="include_ignored"):
+        opened.Tree(include_ignored="no")  # type: ignore[arg-type]
+
+
+def test_opened_options_take_the_registry_document_not_its_path() -> None:
+    assert opened.OpenedOptions().type_rules is None
+    document = '[[kind]]\nid = "notes"\nfamily = "prose"\nextensions = ["rs"]\n'
+    assert opened.OpenedOptions(type_rules=document).type_rules == document
+    with pytest.raises(TypeError, match="type_rules"):
+        opened.OpenedOptions(type_rules=Path("registry.toml"))  # type: ignore[arg-type]
 
 
 def test_bare_strings_are_rejected_for_sequence_fields() -> None:

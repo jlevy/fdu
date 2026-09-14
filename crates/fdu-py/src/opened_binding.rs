@@ -1015,7 +1015,8 @@ impl PyOpenedIndex {
         exclude_special = false,
         max_files = None,
         observe = false,
-        journal_capacity = None
+        journal_capacity = None,
+        type_rules = None
     ))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn open(
@@ -1030,6 +1031,7 @@ impl PyOpenedIndex {
         max_files: Option<u64>,
         observe: bool,
         journal_capacity: Option<usize>,
+        type_rules: Option<String>,
     ) -> PyResult<Self> {
         let allowed = hidden_allow.unwrap_or_default();
         if !prune_hidden && !allowed.is_empty() {
@@ -1051,7 +1053,18 @@ impl PyOpenedIndex {
         if let Some(value) = journal_capacity {
             options.journal_capacity = value;
         }
-        let inner = py.detach(move || OpenedIndex::open(&root, options)).map_err(opened_py_err)?;
+        let inner = py
+            .detach(move || {
+                // The document, never a fingerprint beside it: the engine derives the
+                // identity it reports from what it parsed. A document that does not parse
+                // is an argument error, raised before any discovery starts.
+                if let Some(source) = type_rules {
+                    options.types =
+                        Some(Arc::new(fdu_core::classify::TypeRegistry::from_manifest(&source)?));
+                }
+                OpenedIndex::open(&root, options)
+            })
+            .map_err(opened_py_err)?;
         Ok(Self { inner })
     }
 

@@ -25,7 +25,7 @@ import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-from fdu import Format, Query, View
+from fdu import Bound, Format, InvalidArgumentError, Query, View
 from fdu import _native as fdu_py
 from fdu.opened import (
     Aggregate,
@@ -43,6 +43,7 @@ from fdu.opened import (
     OpenedIndexClosedError,
     OpenedOptions,
     Page,
+    ReadResponse,
     ReportProjection,
     Tree,
     VersionUnavailableError,
@@ -531,6 +532,76 @@ def main() -> None:
         for commit in changed.outcome.commits
         for change in commit.changes
     ), changed
+
+    # A tree page's depth and ignore pruning, and the registry a root classifies with,
+    # reach the engine only through these typed values: the MetaBrowser adapter has no
+    # other way to ask for a deeper page, a pruned one, or its own registry.
+    shaped_root = pathlib.Path(tempfile.mkdtemp(prefix="fdu-opened-shape-"))
+    (shaped_root / ".gitignore").write_text("build/\n")
+    (shaped_root / "build").mkdir()
+    (shaped_root / "build" / "out.o").write_text("object")
+    (shaped_root / "src").mkdir()
+    (shaped_root / "src" / "main.rs").write_text("fn main() {}")
+
+    def settled(handle: OpenedIndex) -> ReadResponse:
+        current = handle.state()
+        cursor = current.change_cursor
+        for _ in range(40):
+            if current.state.coverage.kind is CoverageKind.COMPLETE:
+                return current
+            cursor = handle.changes(cursor, timeout=0.25).cursor
+            current = handle.state()
+        raise AssertionError(f"discovery did not complete: {current}")
+
+    def tree_rows(handle: OpenedIndex, projection: Tree) -> set[str]:
+        result = handle.read(projection).results[0]
+        assert result.kind == "tree", result
+        assert result.value.kind is KnowledgeKind.PRESENT, result
+        page = result.value.value
+        assert page is not None and page.next is None, page
+        return {row.portable_path for row in page.rows}
+
+    registry = '[[kind]]\nid = "notes"\nfamily = "prose"\nextensions = ["rs"]\n'
+    with (
+        OpenedIndex.open(shaped_root) as compiled_rules,
+        OpenedIndex.open(shaped_root, OpenedOptions(type_rules=registry)) as custom_rules,
+    ):
+        compiled_state = settled(compiled_rules)
+        custom_state = settled(custom_rules)
+
+        full = Page(limit=100, max_work=100_000)
+        one_level = tree_rows(compiled_rules, Tree("", page=full))
+        assert {"build", "src"} <= one_level and "src/main.rs" not in one_level, one_level
+        two_levels = tree_rows(compiled_rules, Tree("", page=full, depth=2))
+        assert {"build/out.o", "src/main.rs"} <= two_levels, two_levels
+        assert tree_rows(compiled_rules, Tree("", page=full, depth=Bound.ALL)) == two_levels
+        pruned = tree_rows(
+            compiled_rules, Tree("", page=full, depth=Bound.ALL, include_ignored=False)
+        )
+        # Pruning drops the ignored directory and everything under it, not only its row.
+        assert "src/main.rs" in pruned, pruned
+        assert not {"build", "build/out.o"} & pruned, pruned
+
+        assert (
+            custom_state.version.semantics.type_rules_fingerprint
+            != compiled_state.version.semantics.type_rules_fingerprint
+        ), "the reported identity must describe the registry the root was opened with"
+        kinds = []
+        for handle in (compiled_rules, custom_rules):
+            lookup = handle.read(Lookup("src/main.rs")).results[0]
+            assert lookup.kind == "lookup" and lookup.value.value is not None, lookup
+            classification = lookup.value.value.classification
+            assert classification is not None, lookup
+            kinds.append(classification.kind_id)
+        assert kinds[1] == "notes" and kinds[0] != "notes", kinds
+
+    # A registry that does not parse is the caller's argument, rejected before discovery.
+    try:
+        OpenedIndex.open(shaped_root, OpenedOptions(type_rules="[[kind]]\nid = \n"))
+    except InvalidArgumentError:
+        pass
+    else:
+        raise AssertionError("an unparseable registry must raise InvalidArgumentError")
 
     opened.close()
     opened.close()
