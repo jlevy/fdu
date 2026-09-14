@@ -684,7 +684,7 @@ These counters describe one run and are not benchmark claims.
 
 ### The Watch Layer Stays Deletable
 
-It sits behind a feature flag and is strictly additive: removing it leaves scan, index,
+It sits behind a build feature and is strictly additive: removing it leaves scan, index,
 snapshot, CLI, and Python surfaces working.
 The index must never learn what a filesystem event is.
 
