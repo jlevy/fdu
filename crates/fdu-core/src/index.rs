@@ -2609,7 +2609,11 @@ impl Index {
                 self.verified.drain(..excess);
             }
             state.push(StateTransition::Verified { path: path.clone() });
-            self.drop_disproven_issues(&path, started_at);
+            // A failed root's issues explain the state it is in; a clean walk below one of
+            // their paths cannot un-fail the root, so it disproves none of them.
+            if self.state.phase != LifecyclePhase::Failed {
+                self.drop_disproven_issues(&path, started_at);
+            }
         } else {
             self.mark_unfresh(&path, Freshness::Partial);
         }

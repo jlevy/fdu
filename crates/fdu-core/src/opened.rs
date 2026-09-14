@@ -5555,6 +5555,43 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// A refresh on a Failed root keeps the issue that explains the failure. The failure
+    /// is the state the root is in, so a clean walk below the issue's path disproves
+    /// nothing; dropping it left a Failed root with no retained cause.
+    #[test]
+    fn refresh_on_a_failed_root_keeps_the_issue_that_explains_it() {
+        let (root, opened) = opened(Arc::default());
+        std::fs::create_dir(root.path().join("sub")).expect("fixture directory");
+        opened
+            .state
+            .index
+            .transition_discovery(DiscoveryTransition::Begin)
+            .expect("begin discovery");
+        let failure = crate::Issue::from_error_under(
+            root.path(),
+            &Error::io(root.path().join("sub"), std::io::Error::other("provider failed here")),
+        );
+        opened
+            .state
+            .index
+            .transition_discovery(DiscoveryTransition::Failed(failure))
+            .expect("fail discovery");
+        let failed = opened.state.index.state().expect("state");
+        assert_eq!(failed.phase, crate::LifecyclePhase::Failed);
+        assert_eq!(failed.issues.retained, 1);
+
+        let receipt = opened.refresh(&[PathBuf::from("sub")]).expect("refresh on a failed root");
+        assert_eq!(receipt.work.stale, 0);
+
+        let after = opened.state.index.state().expect("state");
+        assert_eq!(after.phase, crate::LifecyclePhase::Failed);
+        let issues = opened.state.index.issues().expect("issues");
+        assert_eq!(issues.len(), 1, "{issues:?}");
+        assert_eq!(issues[0].path.as_deref(), Some(Path::new("sub")));
+        assert_eq!(after.issues.retained, 1);
+        opened.close().expect("close");
+    }
+
     #[test]
     fn close_cancels_verified_refresh_before_its_conditional_commit() {
         let controls = Arc::new(TestControls::default());
