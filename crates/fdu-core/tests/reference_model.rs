@@ -546,21 +546,22 @@ impl Model {
     }
 }
 
-/// The bytes one commit is charged: its inline size, plus each retained item's inline size
-/// and the bytes of the path it names. Stated here from the public types, not read back
-/// from the engine.
+/// The bytes one commit is charged: a fixed 256 for its frame, plus 128 for each retained
+/// change, transition, or dirty path and the bytes of the path it names. Stated here
+/// independently, not read back from the engine, and fixed rather than measured so the
+/// budget means the same on every target.
 fn model_commit_cost(commit: &Commit) -> usize {
-    let mut cost = std::mem::size_of::<Commit>();
+    let mut cost = 256;
     for change in &commit.changes {
-        cost += std::mem::size_of::<EffectiveChange>() + change.path().as_os_str().len();
+        cost += 128 + change.path().as_os_str().len();
     }
     for transition in &commit.state {
-        cost += std::mem::size_of::<StateTransition>() + transition.path().as_os_str().len();
+        cost += 128 + transition.path().as_os_str().len();
     }
     for path in &commit.impact.dirty_paths {
-        cost += std::mem::size_of::<PathBuf>() + path.as_os_str().len();
+        cost += 128 + path.as_os_str().len();
     }
-    cost + commit.impact.domains.len() * std::mem::size_of::<ImpactDomain>()
+    cost
 }
 
 fn is_observation_gap(reason: InvalidateReason) -> bool {
