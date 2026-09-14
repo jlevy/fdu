@@ -17,8 +17,9 @@ use crate::{
 /// Three things fail the whole request, because each makes every projection in it
 /// untrustworthy: a request whose shape is invalid, a closed root, and a version pin the
 /// index cannot honour. Anything one projection finds at that version -- a path of the
-/// wrong kind, or a page whose continuation would be too large to keep -- is that
-/// projection's [`ProjectionRefusal`], and the rest of the request still answers.
+/// wrong kind, a page whose continuation would be too large to keep, or a continuation
+/// this root issued and no longer retains -- is that projection's [`ProjectionRefusal`],
+/// and the rest of the request still answers.
 pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadResponse> {
     if request.projections.len() > crate::MAX_READ_PROJECTIONS {
         return Err(Error::ReadProjectionLimit {
@@ -120,6 +121,13 @@ pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadRes
                             .lock()
                             .map_err(|_| Error::OpenedLifecyclePoisoned)?;
                         table.take(opened.state.session, continuation)?
+                    };
+                    let record = match record {
+                        Ok(record) => record,
+                        Err(refusal) => {
+                            results.push(ProjectionResult::Refused(refusal));
+                            continue;
+                        }
                     };
                     if record.version != version {
                         return Err(Error::ContinuationStale {

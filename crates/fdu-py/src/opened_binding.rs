@@ -932,6 +932,9 @@ fn projection_result_dict<'py>(
                     value.set_item("attempted", attempted)?;
                     value.set_item("limit", limit)?;
                 }
+                ProjectionRefusal::ContinuationUnavailable => {
+                    value.set_item("reason", "continuation_unavailable")?;
+                }
             }
             out.set_item("value", value)?;
         }

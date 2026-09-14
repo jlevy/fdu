@@ -277,11 +277,12 @@ impl OpenedIndex {
     ///
     /// The whole read fails only when no projection in it can be trusted: the request's
     /// shape is invalid (a bound out of range, too many projections, a path that escapes the
-    /// root, a continuation this root does not retain), the root is closed, or
-    /// [`crate::ReadRequest::expected`] or a continuation pins a version the index no longer
-    /// holds. What one projection finds at the pinned
-    /// version is that projection's [`crate::ProjectionRefusal`] instead, returned in its
-    /// position while every other projection answers.
+    /// root, a continuation another root issued or this one never did), the root is closed,
+    /// or [`crate::ReadRequest::expected`] or a continuation pins a version the index no
+    /// longer holds. What one projection finds at the pinned version -- including a
+    /// continuation this root issued and has since consumed or evicted -- is that
+    /// projection's [`crate::ProjectionRefusal`] instead, returned in its position while
+    /// every other projection answers.
     ///
     /// The lifecycle lock guards only the phase check. The projection's coherence comes
     /// from the index read boundary, which any number of readers share, so holding the
@@ -3996,6 +3997,8 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// A consumed or evicted token refuses its `Continue` and the rest of the read answers;
+    /// a foreign token or a version it no longer holds still fails the read (`fdu-l89e`).
     #[test]
     fn continuations_are_single_use_version_pinned_handle_local_and_bounded() {
         let (_root, opened) = opened(Arc::new(TestControls::default()));
@@ -4033,6 +4036,29 @@ mod tests {
             result.next.expect("continuation")
         };
 
+        // A token this root issued and no longer holds costs only its own projection: the
+        // lookup beside it still answers.
+        let refuses_beside_a_lookup = |continuation| {
+            let response = opened
+                .read(crate::ReadRequest {
+                    projections: vec![
+                        crate::ReadProjection::Continue { continuation, page },
+                        crate::ReadProjection::Lookup { path: PathBuf::from("a") },
+                    ],
+                    ..crate::ReadRequest::default()
+                })
+                .expect("a refused continuation does not fail the read");
+            matches!(
+                response.results.as_slice(),
+                [
+                    crate::ProjectionResult::Refused(
+                        crate::ProjectionRefusal::ContinuationUnavailable
+                    ),
+                    crate::ProjectionResult::Lookup(crate::Knowledge::Present(_)),
+                ]
+            )
+        };
+
         let replay = new_token();
         opened
             .read(crate::ReadRequest {
@@ -4040,13 +4066,7 @@ mod tests {
                 ..crate::ReadRequest::default()
             })
             .expect("first continuation use");
-        assert!(matches!(
-            opened.read(crate::ReadRequest {
-                projections: vec![crate::ReadProjection::Continue { continuation: replay, page }],
-                ..crate::ReadRequest::default()
-            }),
-            Err(Error::ContinuationUnavailable)
-        ));
+        assert!(refuses_beside_a_lookup(replay), "a consumed token refuses its page");
 
         let stale = new_token();
         opened
@@ -4107,13 +4127,7 @@ mod tests {
         for _ in 0..super::continuation::MAX_CONTINUATIONS {
             let _ = new_token();
         }
-        assert!(matches!(
-            opened.read(crate::ReadRequest {
-                projections: vec![crate::ReadProjection::Continue { continuation: oldest, page }],
-                ..crate::ReadRequest::default()
-            }),
-            Err(Error::ContinuationUnavailable)
-        ));
+        assert!(refuses_beside_a_lookup(oldest), "an evicted token refuses its page");
         other.close().expect("close other");
         opened.close().expect("close");
     }

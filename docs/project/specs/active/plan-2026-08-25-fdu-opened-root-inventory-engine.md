@@ -660,9 +660,9 @@ partial calculation as exact.
 
 A failure belongs to the smallest thing it invalidates (`fdu-l89e`). Three conditions
 fail the whole request, because each makes every projection in it untrustworthy: a
-request whose shape is invalid, including a continuation the root does not retain; a
-closed root; and a version pin, by `expected` or by a continuation, that the index no
-longer holds. Everything else one projection meets at the pinned version is a typed
+request whose shape is invalid, including a continuation another root issued or this one
+never did; a closed root; and a version pin, by `expected` or by a continuation, that the
+index no longer holds. Everything else one projection meets at the pinned version is a typed
 refusal in that projection’s position, beside the query-limit result, and the other
 projections still answer:
 
@@ -672,7 +672,11 @@ projections still answer:
   batches the question;
 - a page that stops with rows left and whose continuation record would exceed its bound
   refuses with `continuation_record_limit`, rather than returning rows without a way to
-  continue; a refused continued page keeps its continuation for a retry.
+  continue; a refused continued page keeps its continuation for a retry;
+- a `Continue` whose continuation this root issued but no longer retains, because an
+  earlier page consumed it or the retained-continuation bound evicted it, refuses with
+  `continuation_unavailable`, since what other pages did to the table is state and not
+  request shape.
 
 A refusal charges the work it did and returns no rows.
 And a budget decides where a page stops, never whether it starts: every page emits at
@@ -1048,8 +1052,9 @@ defend the current prototype contract.
   completeness value answers for both.
 - Add a deterministic work budget to potentially scanning queries and a typed
   query-limit result. Output bounds alone do not protect event-loop latency.
-- Add a typed per-projection refusal beside the query-limit result, with the two reasons
-  the read envelope defines: `not_a_directory` and `continuation_record_limit`. A
+- Add a typed per-projection refusal beside the query-limit result, with the three
+  reasons the read envelope defines: `not_a_directory`, `continuation_record_limit`, and
+  `continuation_unavailable`. A
   batched request fails as a whole only for an invalid request, a closed root, or a
   version pin the provider no longer holds; both providers refuse the one projection and
   answer the rest, so the coordinator never splits a batch to protect a lookup.
@@ -2579,8 +2584,9 @@ An exhaustive matcher over public contract enums defines the required set:
 - every exact change and impact domain;
 - immediate, idle, blocking, reset, unavailable, and closed poll outcomes; future and
   foreign cursors share the public `ChangeCursorUnavailable` result;
-- live, stale, unavailable, and closed continuation outcomes; foreign and evicted tokens
-  share the public `ContinuationUnavailable` result;
+- live, stale, unavailable, and closed continuation outcomes; foreign and never-issued
+  tokens share the public `ContinuationUnavailable` error, and consumed and evicted
+  tokens share the `continuation_unavailable` refusal;
 - provider gap, consumer reset, query limit, resource refusal, worker failure, and
   joined close.
 

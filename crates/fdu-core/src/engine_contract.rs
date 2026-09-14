@@ -1007,6 +1007,15 @@ pub enum ProjectionRefusal {
         /// Maximum structural payload retained by one record.
         limit: usize,
     },
+    /// A `Continue` named a continuation this root issued but no longer retains.
+    ///
+    /// An earlier page consumed it, or the root's bound on retained continuations evicted
+    /// it to make room for newer pages. Both depend on what other pages did, not on the
+    /// request, so a token that worked a moment ago costs only its own projection. Start
+    /// the page again from its first request. A token from another opened root, or one
+    /// this root never issued, still fails the whole read with
+    /// [`Error::ContinuationUnavailable`].
+    ContinuationUnavailable,
 }
 
 /// One projection result, in the same position as its request.
@@ -1863,8 +1872,13 @@ pub enum Error {
         limit: usize,
     },
 
-    /// A continuation belongs to another handle or is no longer retained.
-    #[error("the page continuation is unavailable for this opened index")]
+    /// A continuation belongs to another opened root, or names an ordinal this root never
+    /// issued.
+    ///
+    /// Either is a malformed request, so the whole read fails. A token this root issued and
+    /// no longer retains -- consumed or evicted -- refuses only its own projection with
+    /// [`ProjectionRefusal::ContinuationUnavailable`].
+    #[error("the page continuation was not issued by this opened index")]
     ContinuationUnavailable,
 
     /// No further handle-local continuation identifier can be represented.

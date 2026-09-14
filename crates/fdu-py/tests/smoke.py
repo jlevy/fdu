@@ -31,7 +31,6 @@ from fdu.opened import (
     Aggregate,
     ChangeCursorUnavailableError,
     ChangeOutcomeKind,
-    ContinuationUnavailableError,
     Continue,
     CoverageKind,
     Diagnostics,
@@ -493,12 +492,10 @@ def main() -> None:
     assert page is not None and len(page.rows) == 1 and page.next is not None, page
     continued = opened.read(Continue(page.next))
     assert continued.results[0].kind == "tree", continued
-    try:
-        opened.read(Continue(page.next))
-    except ContinuationUnavailableError:
-        pass
-    else:
-        raise AssertionError("a consumed continuation must raise its typed error")
+    replayed = opened.read(Continue(page.next), Lookup("alpha.txt"))
+    assert replayed.results[0].kind == "refused", replayed
+    assert replayed.results[0].reason is RefusalReason.CONTINUATION_UNAVAILABLE, replayed
+    assert replayed.results[1].kind == "lookup", replayed
     assert response.results[5].kind == "report", response.results[5]
     opened_report = response.results[5].value
     assert json.loads(opened_report.render(Format.JSON)) == opened_report.as_dict()

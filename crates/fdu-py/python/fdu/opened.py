@@ -133,7 +133,12 @@ class VersionUnavailableError(OpenedIndexError):
 
 
 class ContinuationUnavailableError(OpenedIndexError):
-    """A page continuation is foreign, consumed, evicted, or unavailable."""
+    """A page continuation came from another root, was never issued, or is stale.
+
+    A continuation this root issued and has since consumed or evicted does not raise: its
+    ``Continue`` returns a :class:`RefusedResult` with
+    ``RefusalReason.CONTINUATION_UNAVAILABLE`` and the rest of the read answers.
+    """
 
 
 class ChangeCursorUnavailableError(OpenedIndexError):
@@ -222,6 +227,9 @@ class RefusalReason(StrEnum):
     #: A page stopped with rows left, and the record that would resume it is larger than
     #: one continuation may retain. A refused ``Continue`` keeps its continuation.
     CONTINUATION_RECORD_LIMIT = "continuation_record_limit"
+    #: A ``Continue`` named a continuation this root issued but no longer retains: an
+    #: earlier page consumed it, or newer pages evicted it. Start the page again.
+    CONTINUATION_UNAVAILABLE = "continuation_unavailable"
 
 
 class EffectiveChangeKind(StrEnum):
@@ -1404,9 +1412,10 @@ class OpenedIndex:
 
         The call raises only for an invalid request, a closed root, or an ``expected``
         version the root no longer holds. A projection that cannot answer at that version
-        -- a ``Tree`` or ``DirectoryRollUp`` of a path that is not a directory, or a page
-        whose continuation is too large to keep -- returns a :class:`RefusedResult` in its
-        own position, and every other projection still answers.
+        -- a ``Tree`` or ``DirectoryRollUp`` of a path that is not a directory, a page
+        whose continuation is too large to keep, or a ``Continue`` whose continuation was
+        consumed or evicted -- returns a :class:`RefusedResult` in its own position, and
+        every other projection still answers.
         """
 
         raw = _opened_call(
