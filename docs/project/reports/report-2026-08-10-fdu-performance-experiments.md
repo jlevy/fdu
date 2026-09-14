@@ -3640,7 +3640,7 @@ Full record:
 
 ### exp-104 — Hash the content roll-up map by path bytes instead of components
 
-❌ rejected · 2026-09-14 · H103 · commit `dda7e6af5b7bd4a088a816f1c449cf56c22a8a62`
+❌ rejected · 2026-09-14 · H103
 
 Control: main at dda7e6af
 
@@ -3667,7 +3667,7 @@ Reverted.
 
 **Rejected:** Mechanism confirmed, effect absent: instructions -1.69% on the decisive
 subject and -3.18% on a small dense one, but wall +0.05% [-0.82%, +0.86%] over 40 pairs.
-The warm content open is not instruction-bound.
+On this virtualized Linux host the warm content open is not instruction-bound.
 
 Full record:
 [`exp-104-hash-the-content-roll-up-map-by-path-bytes-instead-of-compon.md`](../experiments/exp-104-hash-the-content-roll-up-map-by-path-bytes-instead-of-compon.md)

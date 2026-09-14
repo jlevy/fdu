@@ -30460,7 +30460,7 @@
    "anchored": false,
    "candidate": "ContentIndex::rollups keyed by byte-hashed PathKey under an in-crate FxHash-style hasher",
    "change_pct": 0.054,
-   "commit": "dda7e6af5b7bd4a088a816f1c449cf56c22a8a62",
+   "commit": null,
    "complexity": {
     "lines_changed": 66,
     "new_dependencies": [],
@@ -30602,14 +30602,14 @@
    "platform": "Linux",
    "primary_job": "content-cache-hit",
    "primary_metric": "wall_ns",
-   "reason": "Mechanism confirmed, effect absent: instructions -1.69% on the decisive subject and -3.18% on a small dense one, but wall +0.05% [-0.82%, +0.86%] over 40 pairs. The warm content open is not instruction-bound.",
+   "reason": "Mechanism confirmed, effect absent: instructions -1.69% on the decisive subject and -3.18% on a small dense one, but wall +0.05% [-0.82%, +0.86%] over 40 pairs. On this virtualized Linux host the warm content open is not instruction-bound.",
    "reference_tools": [],
    "subject": "951be6806409:102318:1a63921c7b9d",
    "title": "Hash the content roll-up map by path bytes instead of components",
    "trials": 40
   }
  ],
- "prepared": "2026-09-07",
+ "prepared": "2026-09-14",
  "subjects": [
   {
    "apparent_bytes": 1082046346,

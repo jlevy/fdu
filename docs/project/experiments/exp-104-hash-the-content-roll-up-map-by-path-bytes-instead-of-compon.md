@@ -196,8 +196,8 @@ experiment:
     primary_job: content-cache-hit
     primary_metric: wall_ns
     change_pct: 0.054
-    reason: "Mechanism confirmed, effect absent: instructions -1.69% on the decisive subject and -3.18% on a small dense one, but wall +0.05% [-0.82%, +0.86%] over 40 pairs. The warm content open is not instruction-bound."
-    commit: dda7e6af5b7bd4a088a816f1c449cf56c22a8a62
+    reason: "Mechanism confirmed, effect absent: instructions -1.69% on the decisive subject and -3.18% on a small dense one, but wall +0.05% [-0.82%, +0.86%] over 40 pairs. On this virtualized Linux host the warm content open is not instruction-bound."
+    commit: null
 ---
 ## What was tried
 
@@ -217,6 +217,14 @@ in-crate FxHash-style mixer.
 No new dependency and no `unsafe`; the change is 66 lines inside `content_index.rs` and
 touches no public signature.
 
+Keying by bytes also made the candidate route `rollup()` through `normalized()`, as
+`file()` already does.
+A byte-keyed map needs that on Windows, where a slash and a backslash both separate
+components but are different bytes.
+The shipped `HashMap<PathBuf, _>` does not: `Path`’s `Hash` skips separator bytes and
+its `Eq` compares components, so either spelling finds the same roll-up.
+Any later byte-keyed `rollups` has to keep the normalization.
+
 ## What happened
 
 The mechanism does exactly what it claims, and it does not matter.
@@ -226,10 +234,11 @@ The mechanism does exactly what it claims, and it does not matter.
 | cargo registry checkout | 3,077 | 188,692,572 → 182,691,359 | **−3.18%** |
 | linux kernel checkout | 102,318 | 12,931,638,512 → 12,712,583,220 | **−1.69%** |
 
-Wall time on the decisive subject, 40 interleaved pairs:
+Paired changes (median of the per-pair differences) on the decisive subject, 40
+interleaved pairs:
 
 - `content-cache-hit` wall **+0.05%**, 95% interval **[−0.82%, +0.86%]** — REJECT.
-- component **+0.28%** (1,723.1 ms → 1,727.9 ms), peak RSS flat.
+- component **+0.07%**, 95% interval **[−0.77%, +1.00%]**; peak RSS flat.
 - Content digest and engine digest byte-identical on every trial; 95,933 cache hits
   both.
 
@@ -241,38 +250,47 @@ this record should not have to relearn.
 
 Three things are worth carrying forward.
 
-**The warm content open is no longer instruction-bound.** Removing 219 million
+**On this host, the warm content open is not instruction-bound.** Removing 219 million
 instructions from a 12.9 billion instruction run moved wall time by nothing measurable,
 and CPU time did not move either.
-The instructions H103 removed are high-IPC (SipHash rounds and component parsing are
-tight, well-predicted loops); what remains is memory-stalled.
-Any future hypothesis on this tier whose mechanism is “fewer instructions” should expect
-the same answer, and should be screened against this result rather than against the 3%
-bar in the abstract.
-The tier’s remaining cost is layout and allocation — which is what H78/H83 and the
-structural form in `fdu-jxhk` already say.
+Both intervals, wall [−0.82%, +0.86%] and CPU [−0.81%, +0.90%], exclude the −1.69% a
+saving proportional to instructions would have produced.
+The regime is one virtualized 4-core Xeon under Linux, warm-steady on ext4; Apple
+Silicon and bare metal are unmeasured.
+A plausible explanation, not a measured one, since no cycle or IPC counts were recorded:
+the instructions H103 removed are high-IPC (SipHash rounds and component parsing are
+tight, well-predicted loops), and what remains is memory-stalled.
+A later hypothesis on this tier whose mechanism is “fewer instructions” should therefore
+be screened against this result rather than against the 3% bar in the abstract.
+That points the tier’s remaining cost at layout and allocation, which is what H78/H83
+and the structural form in `fdu-jxhk` already say.
 
-One correctness item came out of reading this map as well: `rollup()` looks up the
-caller’s raw path in a map whose keys are all normalized, which is unreachable on unix
-and a silently missing roll-up on Windows.
-The rejected candidate fixed it incidentally and took the fix with it when it was
-reverted; filed as `fdu-cfpa`.
+**The saving’s share is subject-shaped.** −3.18% on a 3,077-entry tree became −1.69% on
+a 102,318-entry one.
+Per entry, the saving was nearly the same on both subjects, 1,950 and 2,141
+instructions; what differed was everything else the run cost per entry, about 61,000
+instructions on the registry subject and 126,000 on the kernel checkout.
+The trees differ in shape as well as size, a registry of many small crates against one C
+source tree, and only the registry subject was profiled, so what makes up that doubling
+is not established. A snapshot parse that grows faster than the roll-up hashing is one
+plausible reading. Either way, a screening subject would have overstated this saving by
+roughly 2×. That is the same lesson exp-065 recorded from the other side, and it is the
+reason the loop requires 50,000 entries before a subject may decide.
 
-**The saving is subject-shaped, and shrinks with scale.** −3.18% on a 3k-entry tree
-became −1.69% on a 102k-entry one, because the snapshot parse grows faster than the
-roll-up hashing does.
-A screening subject would have overstated this by roughly 2×. That is the same lesson
-exp-065 recorded from the other side, and it is the reason the loop requires 50,000
-entries before a subject may decide.
-
-**The 8% estimate in H102’s registry entry was measured on the wrong denominator.** That
-entry said “Next increment: `Path::hash` and SipHash on the roll-up map (8%)”. A
-caller-tree profile of a warm content open puts `<Path as Hash>::hash` at 3.98% of the
-profile and 5.2% of the engine, with the surrounding hashbrown probing bringing
-`merge_ancestors` to 9.66% of the profile.
-The 8% was the whole of `merge_ancestors`’ map work, not the part a hashing change can
-take — and it was a share of a profile that still included the probe’s own oracle digest
-at 21.06%. Corrected below.
+**The 8% in H102’s registry entry covered two maps, and H103 changed one.** exp-069
+named `Path::hash` and SipHash as the next 8% of its warm profile across both the
+roll-up `HashMap` and the candidate map the sidecar loader builds (`content_cache.rs`,
+one insert and one remove per file).
+H102’s registry row carried the figure forward as the roll-up map alone.
+H103 removed the roll-up half and measured no wall effect; the loader half is untested.
+At two full-path hashes per file, against one hash per ancestor per file for the
+roll-ups, it is expected to be smaller, which is a prediction and not a result.
+This experiment’s caller-tree profile, on the registry subject, puts
+`<Path as Hash>::hash` at 3.98% of the profile and 5.2% of the engine, and
+`merge_ancestors` with its hashbrown probing at 9.66% of the profile.
+exp-069’s 8% came from a different subject and profile, so the two shares are not
+directly comparable.
+H102’s registry row now says this.
 
 ## Harness cost in this profile
 
