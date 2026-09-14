@@ -47,6 +47,10 @@ use std::sync::{Arc, LazyLock};
 mod file_rollup_manifest;
 mod file_type_detection;
 
+// The TOML cursor both manifest dialects read with. `include!`d by `build.rs` beside
+// `type_rule_manifest`, so it follows that file's rules for sharing with a build script.
+mod manifest_toml;
+
 // Compiled into the crate and `include!`d by `build.rs`, so rules supplied at run time
 // are read by exactly the code that read this repository's own manifest at build time.
 // This is an implementation detail of `TypeRegistry::from_manifest`, not a second public
