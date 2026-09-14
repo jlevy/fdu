@@ -156,11 +156,14 @@ pub enum CachePolicy {
     /// A root has one cache path, and its snapshot carries the scan scope that wrote it.
     /// A read under another scope treats that snapshot as absent and scans cold, and the
     /// scan then writes its own scope over it. The one-shot `fdu <dir>` observes no control
-    /// state while `fdu --watch <dir>` and a default [`open`] do, so the two keep snapshots
-    /// of different scope at one cache path and each replaces the other's. An index opened
-    /// after a one-shot report saved its snapshot therefore takes [`OpenPath::ColdScan`],
-    /// and so does a one-shot report that reads the snapshot, as content analysis does,
-    /// after an index was saved. A summary-only report saves nothing and replaces nothing.
+    /// state while a default [`open`] does, so the two keep snapshots of different scope at
+    /// one cache path and each replaces the other's. `fdu --watch <dir>` opens its index
+    /// with observation off, so it shares the one-shot scope: a watch starts warm from a
+    /// one-shot report's snapshot, and a report that reads the snapshot starts warm from a
+    /// watch's. A default [`open`] after a one-shot report saved its snapshot therefore
+    /// takes [`OpenPath::ColdScan`], and so does a one-shot report that reads the snapshot,
+    /// as content analysis does, after a default [`open`] saved one. A summary-only report
+    /// saves nothing and replaces nothing.
     /// A one-shot report answers from a controls-on snapshot only under
     /// [`CachePolicy::Only`].
     #[default]
@@ -307,10 +310,12 @@ impl OpenReport {
 /// default is on: the index exposes [`Index::controls`] and [`Index::is_ignored`], and a
 /// watch over it maintains them, so `open` cannot assume its caller will not read them.
 /// A one-shot report from [`prepare_report`] always runs with observation off, so the two
-/// keep snapshots of different scope at one cache path. `open` scans cold instead of
-/// starting from a report's snapshot, and a report consumes an `open` snapshot only under
-/// [`CachePolicy::Only`]. A caller wanting a single answer should use
-/// [`prepare_report`]; one wanting an index without control state turns the field off.
+/// keep snapshots of different scope at one cache path. `open` never starts from a
+/// report's snapshot: a policy that scans treats it as a miss and scans cold, and
+/// [`CachePolicy::Only`], which never scans, fails with an error naming the remedy. A
+/// report consumes an `open` snapshot only under [`CachePolicy::Only`]. A caller wanting a
+/// single answer should use [`prepare_report`]; one wanting an index without control
+/// state turns the field off.
 pub fn open(root: &Path, config: &OpenConfig) -> Result<(Index, OpenReport)> {
     let (index, report, pending) = open_with_pending_save(root, config)?;
     // Joining first is what makes the unwrap infallible: the writer held the only other
@@ -371,6 +376,39 @@ fn snapshot_scope_serves(
         && wanted.ignore_rules_fingerprint == 0
 }
 
+/// Why a policy that cannot scan has no snapshot to answer from, and what recovers.
+///
+/// [`CachePolicy::Only`] is the one policy that cannot fall back to a scan, so its failure
+/// is the only place a caller learns that the snapshot is missing or of another scope. The
+/// common mismatch is control state: a one-shot report never observes it and an index does
+/// by default, so a cache-only index after a report would otherwise fail with no hint that
+/// a snapshot exists at all.
+fn unusable_snapshot_message(refused: Option<ScanScope>, wanted: ScanScope) -> String {
+    // Not "run once under `auto` to write one": a compact summary scans without retaining
+    // an index and writes nothing, so that remedy would fail again for exactly that query.
+    const PREFIX: &str = "no usable snapshot for this root and scan scope";
+    const NEVER_SCANS: &str = "the `only` cache policy never scans";
+    let lacks_only_control_state = |stored: ScanScope| {
+        stored.ignore_rules_fingerprint == 0
+            && ScanScope { ignore_rules_fingerprint: wanted.ignore_rules_fingerprint, ..stored }
+                == wanted
+    };
+    match refused {
+        None => format!("{PREFIX}; {NEVER_SCANS}, so use `auto`, which scans when none serves"),
+        // Only an index asks for control state, and a complete index scan under `auto` is
+        // always saved, so here the second remedy works as well as the first.
+        Some(stored) if lacks_only_control_state(stored) => format!(
+            "{PREFIX}: the cached snapshot has no control state, as a one-shot report writes \
+             it, and this request needs it; {NEVER_SCANS}, so use `auto`, or first open an \
+             index under `auto` to write a snapshot that has it"
+        ),
+        Some(_) => format!(
+            "{PREFIX}: the cached snapshot has a different scan scope; {NEVER_SCANS}, so use \
+             `auto`, which scans when none serves"
+        ),
+    }
+}
+
 /// [`open_with_pending_save`] with the snapshot read under the caller's control.
 ///
 /// `read_snapshot: false` skips loading an existing snapshot and takes the cold-scan
@@ -394,6 +432,9 @@ pub(crate) fn open_for_report(
     let root = root.canonicalize().map_err(|e| Error::io(root, e))?;
     let policy = config.policy;
 
+    // The scope of a snapshot for this root that could not serve, kept so a policy that
+    // cannot scan says why it has no answer rather than only that it has none.
+    let mut refused_scope = None;
     let loaded = match ((read_snapshot || !policy.scans()) && policy.reads(), &config.cache_path) {
         (true, Some(cache_path)) => {
             snapshot::load_with_types(cache_path, config.scan.types_shared())?
@@ -405,13 +446,19 @@ pub(crate) fn open_for_report(
                 // projection proved above; the report executor retags the result before
                 // it crosses the API boundary.
                 .filter(|index| {
-                    index.root_path() == root
-                        && snapshot_scope_serves(
-                            index.scope(),
-                            config.scan.scope(),
-                            policy,
-                            snapshot_use,
-                        )
+                    if index.root_path() != root {
+                        return false;
+                    }
+                    let serves = snapshot_scope_serves(
+                        index.scope(),
+                        config.scan.scope(),
+                        policy,
+                        snapshot_use,
+                    );
+                    if !serves {
+                        refused_scope = Some(index.scope());
+                    }
+                    serves
                 })
         }
         _ => None,
@@ -419,9 +466,10 @@ pub(crate) fn open_for_report(
 
     if !policy.scans() {
         let Some(mut index) = loaded else {
-            return Err(Error::Snapshot(
-                "no usable snapshot for this root and scan scope".to_string(),
-            ));
+            return Err(Error::Snapshot(unusable_snapshot_message(
+                refused_scope,
+                config.scan.scope(),
+            )));
         };
         // Deliberately no reconciliation: this tier never touches the tree. The index is
         // marked unverified so the answer cannot claim a currency it has not earned — a
@@ -785,7 +833,12 @@ mod tests {
         seed_controls_snapshot(root.path(), snapshot_path.clone());
 
         let controls_off = controls_config(CachePolicy::Only, snapshot_path, false);
-        assert!(matches!(open(root.path(), &controls_off), Err(Error::Snapshot(_))));
+        let Err(Error::Snapshot(message)) = open(root.path(), &controls_off) else {
+            panic!("a snapshot of another scope must not serve a cache-only open");
+        };
+        assert!(message.contains("different scan scope"), "names the cause: {message}");
+        assert!(!message.contains("control state"), "the stored snapshot has it: {message}");
+        assert!(message.contains("`auto`"), "names the remedy: {message}");
     }
 
     /// Supplied rules reach the answer, and invalidate a snapshot taken under others.
@@ -1029,7 +1082,12 @@ mod tests {
             policy: CachePolicy::Only,
             ..OpenConfig::default()
         };
-        assert!(matches!(open(dir.path(), &only), Err(Error::Snapshot(_))));
+        let Err(Error::Snapshot(message)) = open(dir.path(), &only) else {
+            panic!("a cache-only open with no snapshot must fail");
+        };
+        // A diagnostic names its remedy: `only` is the one policy that cannot recover, so
+        // the message says which policy can.
+        assert!(message.contains("`auto`"), "names the remedy: {message}");
     }
 
     #[test]

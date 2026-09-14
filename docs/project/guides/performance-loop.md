@@ -600,7 +600,7 @@ Performance builds enable `gitignore`, including on a tree with no control files
 measured binary retains the shipped control semantics.
 The default-command and summary probes run through the one-shot report planner, which
 turns control observation off for every report whatever the caller passes, so they
-measure the command line’s controls-off scope and `--no-controls` does not change them;
+measure the command line’s controls-off scope and refuse the no-op `--no-controls`;
 index-returning cold scans and opened discovery keep control discovery enabled.
 Compile-time capability and per-request scope are separate parts of the work contract.
 The watch feature is unnecessary for these jobs: opened discovery does not attach an OS

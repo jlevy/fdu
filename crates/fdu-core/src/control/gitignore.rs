@@ -2,10 +2,22 @@
 //!
 //! This is intentionally not a general pattern API. It implements the path semantics
 //! the `MetaBrowser` client already exercises—comments and escapes, negation, rooted and
-//! basename patterns, directory patterns, `*`, `?`, character classes, and `**`—without
+//! basename patterns, directory patterns, `*`, `?`, bracket expressions, and `**`—without
 //! adding the regex/glob dependency stack to every shipped binary. Matching is byte
 //! exact and case-sensitive on every platform; it does not inherit Git's repository-local
 //! `core.ignorecase` setting.
+//!
+//! **Bracket expressions** are read the way git's `wildmatch` reads them, and a table of
+//! verdicts recorded from `git check-ignore` pins each rule: `!` or `^` negation, a
+//! leading `]` as a member, backslash escapes, ranges, and the twelve `[:name:]` classes
+//! `alnum`, `alpha`, `blank`, `cntrl`, `digit`, `graph`, `lower`, `print`, `punct`,
+//! `space`, `upper`, and `xdigit`. The classes are git's own ASCII-only ones, so the
+//! locale never matters and no byte of a non-ASCII name is in any class. A class, like
+//! `?`, matches one byte, so a multi-byte UTF-8 character needs one per byte. Collating
+//! symbols such as `[.a.]` and equivalence classes such as `[=a=]` are not special, as in
+//! git. A `/` inside a bracket expression is a member of the set, not a separator. An
+//! expression that never closes, or that names an unknown class, makes its whole line
+//! match nothing, which is also git's answer.
 
 use std::path::{Component, Path};
 
@@ -47,9 +59,13 @@ impl Gitignore {
                 | Component::Prefix(_) => None,
             })
             .collect();
+        self.matches_components(&components, is_dir)
+    }
+
+    fn matches_components(&self, components: &[&[u8]], is_dir: bool) -> Option<bool> {
         self.patterns
             .iter()
-            .filter(|pattern| pattern.matches(&components, is_dir))
+            .filter(|pattern| pattern.matches(components, is_dir))
             .map(|pattern| pattern.ignored)
             .next_back()
     }
@@ -86,7 +102,9 @@ impl Pattern {
 
         let matches_path = anchored || body.contains(&b'/');
         let mut segments = Vec::new();
-        for segment in body.split(|byte| *byte == b'/').filter(|segment| !segment.is_empty()) {
+        // A malformed bracket expression aborts git's match wherever it appears, so the
+        // line can never match anything and is dropped as if it were a comment.
+        for segment in split_segments(body)?.into_iter().filter(|segment| !segment.is_empty()) {
             let segment = if matches_path && segment == b"**" {
                 Segment::DoubleStar
             } else {
@@ -120,6 +138,32 @@ impl Pattern {
     }
 }
 
+/// Split a pattern body at each `/` git treats as a separator.
+///
+/// A `/` inside a bracket expression is a member of the set, which no path component can
+/// contain, not a separator. A backslash hides the byte after it from bracket parsing, but
+/// an escaped `/` still splits, as it always has here. `None` means a bracket expression
+/// is malformed, which aborts git's whole match.
+fn split_segments(body: &[u8]) -> Option<Vec<&[u8]>> {
+    let mut segments = Vec::new();
+    let mut start = 0;
+    let mut position = 0;
+    while position < body.len() {
+        match body[position] {
+            b'/' => {
+                segments.push(&body[start..position]);
+                start = position + 1;
+                position += 1;
+            }
+            b'\\' if body.get(position + 1).is_some_and(|next| *next != b'/') => position += 2,
+            b'[' => position += class_match(&body[position..], 0)?.1,
+            _ => position += 1,
+        }
+    }
+    segments.push(&body[start..]);
+    Some(segments)
+}
+
 fn normalize_glob(pattern: &[u8]) -> Vec<u8> {
     let mut normalized = Vec::with_capacity(pattern.len());
     let mut position = 0;
@@ -128,6 +172,13 @@ fn normalize_glob(pattern: &[u8]) -> Vec<u8> {
         if pattern[position] == b'\\' && position + 1 < pattern.len() {
             normalized.extend_from_slice(&pattern[position..=position + 1]);
             position += 2;
+            previous_wildcard = false;
+        } else if pattern[position] == b'[' {
+            // A `*` inside a class is a member, so a class is copied unchanged. The
+            // pattern was validated when it was split, so the class always closes.
+            let length = class_match(&pattern[position..], 0).map_or(1, |(_, length)| length);
+            normalized.extend_from_slice(&pattern[position..position + length]);
+            position += length;
             previous_wildcard = false;
         } else {
             let byte = pattern[position];
@@ -198,8 +249,12 @@ fn glob_matches(pattern: &[u8], text: &[u8]) -> bool {
                 Some((text[text_at] == pattern[pattern_at + 1], 2))
             }
             Some(b'?') => Some((true, 1)),
-            Some(b'[') => class_match(&pattern[pattern_at..], Some(text[text_at]))
-                .or(Some((text[text_at] == b'[', 1))),
+            Some(b'[') => {
+                let Some(class) = class_match(&pattern[pattern_at..], text[text_at]) else {
+                    return false;
+                };
+                Some(class)
+            }
             Some(literal) => Some((text[text_at] == *literal, 1)),
             None => None,
         };
@@ -223,30 +278,108 @@ fn glob_matches(pattern: &[u8], text: &[u8]) -> bool {
     pattern_at == pattern.len()
 }
 
-fn class_match(pattern: &[u8], candidate: Option<u8>) -> Option<(bool, usize)> {
-    let candidate = candidate?;
+/// Read the bracket expression opening `pattern` the way git's `wildmatch` does.
+///
+/// Returns whether `candidate` is in the set and how many pattern bytes the expression
+/// spans. The whole expression is always read, whatever the candidate, so the length does
+/// not depend on it. `None` is git's abort: the expression never closes, or it names a
+/// `[:class:]` git does not know, and either way the pattern can match nothing.
+///
+/// The rules, each checked against `git check-ignore`: `!` or `^` first negates; the first
+/// element can be `]`, which is then a member; a backslash makes the byte after it a
+/// member; `x-y` adds the bytes from `x` to `y`, where `x` has already been added as a
+/// member, so a reversed range adds nothing more; `-` first, last, or right after a range
+/// or class is a member; `[:name:]` adds a class; and a `[` that does not open a
+/// well-formed `[:name:]` is a member.
+fn class_match(pattern: &[u8], candidate: u8) -> Option<(bool, usize)> {
+    debug_assert_eq!(pattern.first(), Some(&b'['));
     let mut position = 1;
     let negated = matches!(pattern.get(position), Some(b'!' | b'^'));
     if negated {
         position += 1;
     }
-    let terminator_at = position + usize::from(pattern.get(position) == Some(&b']'));
-    let end = pattern.iter().enumerate().skip(terminator_at).find(|(_, byte)| **byte == b']')?.0;
-    if end == position {
-        return None;
-    }
     let mut matched = false;
-    while position < end {
-        let start = pattern[position];
-        if position + 2 < end && pattern[position + 1] == b'-' {
-            matched |= (start..=pattern[position + 2]).contains(&candidate);
-            position += 3;
-        } else {
-            matched |= start == candidate;
-            position += 1;
+    // The byte a following `-` would start a range from. Git clears it after a range or a
+    // class, which makes a `-` there a member.
+    let mut range_start: Option<u8> = None;
+    // The first `]` at or after the last `[:` name start. Git rescans for it at every
+    // `[:`, which a line of repeated `[:` makes quadratic; a later `[:` that starts before
+    // this one reuses it, so one evaluation reads each byte a bounded number of times.
+    let mut name_close: Option<usize> = None;
+    let mut first = true;
+    loop {
+        let byte = *pattern.get(position)?;
+        if byte == b']' && !first {
+            return Some((matched != negated, position + 1));
         }
+        first = false;
+        match byte {
+            b'\\' => {
+                position += 1;
+                let escaped = *pattern.get(position)?;
+                matched |= escaped == candidate;
+                range_start = Some(escaped);
+            }
+            b'-' if range_start.is_some()
+                && pattern.get(position + 1).is_some_and(|next| *next != b']') =>
+            {
+                position += 1;
+                let mut end = pattern[position];
+                if end == b'\\' {
+                    position += 1;
+                    end = *pattern.get(position)?;
+                }
+                matched |= range_start.is_some_and(|start| (start..=end).contains(&candidate));
+                range_start = None;
+            }
+            b'[' if pattern.get(position + 1) == Some(&b':') => {
+                let name_start = position + 2;
+                let close = match name_close {
+                    Some(close) if close >= name_start => close,
+                    _ => {
+                        name_start
+                            + pattern.get(name_start..)?.iter().position(|byte| *byte == b']')?
+                    }
+                };
+                name_close = Some(close);
+                if close > name_start && pattern[close - 1] == b':' {
+                    matched |= posix_class(&pattern[name_start..close - 1])?(candidate);
+                    range_start = None;
+                    position = close;
+                } else {
+                    // Not `[:name:]`: the `[` is a member and reading resumes at the `:`.
+                    matched |= candidate == b'[';
+                    range_start = Some(b'[');
+                }
+            }
+            literal => {
+                matched |= literal == candidate;
+                range_start = Some(literal);
+            }
+        }
+        position += 1;
     }
-    Some((matched != negated, end + 1))
+}
+
+/// Git's `[:name:]` classes, which are ASCII-only and use git's own ctype rather than the
+/// locale's: no byte at or above 0x80 is in any class, and `space` is tab, line feed,
+/// carriage return, and space, without the vertical tab and form feed C's `isspace` adds.
+fn posix_class(name: &[u8]) -> Option<fn(u8) -> bool> {
+    Some(match name {
+        b"alnum" => |byte: u8| byte.is_ascii_alphanumeric(),
+        b"alpha" => |byte: u8| byte.is_ascii_alphabetic(),
+        b"blank" => |byte: u8| matches!(byte, b' ' | b'\t'),
+        b"cntrl" => |byte: u8| byte.is_ascii_control(),
+        b"digit" => |byte: u8| byte.is_ascii_digit(),
+        b"graph" => |byte: u8| byte.is_ascii_graphic(),
+        b"lower" => |byte: u8| byte.is_ascii_lowercase(),
+        b"print" => |byte: u8| byte.is_ascii_graphic() || byte == b' ',
+        b"punct" => |byte: u8| byte.is_ascii_punctuation(),
+        b"space" => |byte: u8| matches!(byte, b'\t' | b'\n' | b'\r' | b' '),
+        b"upper" => |byte: u8| byte.is_ascii_uppercase(),
+        b"xdigit" => |byte: u8| byte.is_ascii_hexdigit(),
+        _ => return None,
+    })
 }
 
 fn trim_unescaped_spaces(mut line: &[u8]) -> &[u8] {
@@ -399,5 +532,193 @@ mod tests {
         path.push('b');
 
         assert_eq!(Gitignore::parse(&source).matches(Path::new(&path), false), None);
+    }
+
+    #[test]
+    fn repeated_class_name_openers_have_bounded_matching_work() {
+        // Each `[:` looks ahead for a closing `]`, finds `a]` rather than `:]`, and makes
+        // its `[` a member. Rescanning from every one, as git does, would read this line's
+        // bytes thousands of times for each byte of the name. The short forms of both
+        // shapes are in `BRACKET_CASES`.
+        let openers = crate::control::MAX_CONTROL_PATTERN_BYTES / 2 - 4;
+        let mut source = b"*[".to_vec();
+        source.extend(b"[:".repeat(openers));
+        source.extend_from_slice(b"a]z\n");
+        let matcher = Gitignore::parse(&source);
+
+        assert_eq!(matcher.matches(Path::new(&"z".repeat(255)), false), None);
+        assert_eq!(matcher.matches(Path::new("[z"), false), Some(true));
+        // No `:` here: Windows parses `a:` at the start of a path as a drive.
+        assert_eq!(matcher.matches(Path::new("xaz"), false), Some(true));
+        assert_eq!(matcher.matches(Path::new("bz"), false), None);
+    }
+
+    /// One `.gitignore` line with the names real git ignored and kept for it.
+    ///
+    /// Every verdict was recorded from `git -c core.ignorecase=false check-ignore
+    /// --no-index -v -z --stdin` (git 2.50.1), with the pattern as the only line and the
+    /// user's and system's git configuration out of the way. The live oracle re-asks
+    /// whichever git the test host has. No candidate name starts with `:`, which
+    /// `check-ignore` would read as pathspec magic.
+    struct BracketCase {
+        pattern: &'static [u8],
+        ignored: &'static [&'static [u8]],
+        kept: &'static [&'static [u8]],
+    }
+
+    #[rustfmt::skip]
+    const BRACKET_CASES: &[BracketCase] = &[
+            // POSIX classes, which git reads with its own ASCII-only ctype.
+            BracketCase { pattern: b"x[[:alpha:]]", ignored: &[b"xa", b"xZ"], kept: &[b"x1", b"x_", b"x[", b"x:", b"x]", b"xa]"] },
+            BracketCase { pattern: b"[[:digit:]]", ignored: &[b"5"], kept: &[b"a"] },
+            BracketCase { pattern: b"[[:alnum:]]", ignored: &[b"a", b"5"], kept: &[b"-"] },
+            BracketCase { pattern: b"[[:upper:]]", ignored: &[b"A"], kept: &[b"a"] },
+            BracketCase { pattern: b"[[:lower:]]", ignored: &[b"a"], kept: &[b"A"] },
+            BracketCase { pattern: b"[[:space:]]x", ignored: &[b" x", b"\x09x", b"\x0dx", b"\x0ax"], kept: &[b"\x0bx", b"\x0cx", b"ax"] },
+            BracketCase { pattern: b"[[:blank:]]x", ignored: &[b" x", b"\x09x"], kept: &[b"\x0ax", b"\x0bx"] },
+            BracketCase { pattern: b"[[:punct:]]", ignored: &[b"!", b"~", b"_"], kept: &[b"a"] },
+            BracketCase { pattern: b"[[:xdigit:]]", ignored: &[b"f", b"F", b"9"], kept: &[b"g"] },
+            BracketCase { pattern: b"[[:cntrl:]]", ignored: &[b"\x01", b"\x7f"], kept: &[b"a", b" "] },
+            BracketCase { pattern: b"[[:graph:]]", ignored: &[b"a", b"~"], kept: &[b" "] },
+            BracketCase { pattern: b"[[:print:]]x", ignored: &[b" x", b"ax"], kept: &[b"\x7fx"] },
+            BracketCase { pattern: b"[![:alpha:]][![:alpha:]]", ignored: &[b"\xc3\xa9", b"12"], kept: &[b"ab", b"1a"] },
+            BracketCase { pattern: b"[[:alpha:]][[:alpha:]]", ignored: &[b"ab"], kept: &[b"\xc3\xa9"] },
+            BracketCase { pattern: b"[[:bogus:]]", ignored: &[], kept: &[b"b", b"[", b"[[:bogus:]]"] },
+            BracketCase { pattern: b"[[:alpha:]0-9]", ignored: &[b"a", b"5"], kept: &[b"-"] },
+            BracketCase { pattern: b"x[[:alpha]", ignored: &[b"xa", b"x[", b"x:"], kept: &[b"x]", b"xb"] },
+            BracketCase { pattern: b"[[:alpha:]", ignored: &[], kept: &[b"a", b"[", b"[[:alpha:]"] },
+            BracketCase { pattern: b"x[!:alpha:]", ignored: &[b"xb"], kept: &[b"xa", b"x:"] },
+            BracketCase { pattern: b"[[:alpha:]-z]", ignored: &[b"-", b"b"], kept: &[b"5"] },
+            BracketCase { pattern: b"x[[:]]", ignored: &[b"x[]", b"x:]"], kept: &[b"x]"] },
+            BracketCase { pattern: b"x[[::]]", ignored: &[], kept: &[b"x:", b"x["] },
+            BracketCase { pattern: b"x[[:-z]", ignored: &[b"x[", b"xa", b"x:"], kept: &[b"x9"] },
+            BracketCase { pattern: b"x[[:alpha:][:digit:]]", ignored: &[b"xa", b"x5"], kept: &[b"x-"] },
+            BracketCase { pattern: b"x[[.a.]]", ignored: &[b"xa]", b"x.]", b"x[]"], kept: &[b"xa"] },
+            BracketCase { pattern: b"x[[=a=]]", ignored: &[b"xa]", b"x=]"], kept: &[b"xa"] },
+            BracketCase { pattern: b"x[a-**]", ignored: &[b"x*", b"xa"], kept: &[b"xb"] },
+            BracketCase { pattern: b"*[[:[:a]z", ignored: &[b"[z", b"a:z"], kept: &[b"bz"] },
+            BracketCase { pattern: b"*[[:[:]z", ignored: &[], kept: &[b"[z", b"a:z"] },
+            // Escapes inside a class.
+            BracketCase { pattern: b"[a\\-z]", ignored: &[b"a", b"-", b"z"], kept: &[b"b", b"\\"] },
+            BracketCase { pattern: b"[\\]]", ignored: &[b"]"], kept: &[b"\\", b"\\]"] },
+            BracketCase { pattern: b"[\\\\]", ignored: &[b"\\"], kept: &[b"]"] },
+            BracketCase { pattern: b"[\\a-c]", ignored: &[b"b"], kept: &[b"\\", b"-"] },
+            BracketCase { pattern: b"[a-\\c]", ignored: &[b"b"], kept: &[b"\\", b"-"] },
+            BracketCase { pattern: b"[\\!a]", ignored: &[b"!", b"a"], kept: &[b"b"] },
+            BracketCase { pattern: b"[x\\", ignored: &[], kept: &[b"x", b"[x\\"] },
+            BracketCase { pattern: b"\\[a]", ignored: &[b"[a]"], kept: &[b"a"] },
+            BracketCase { pattern: b"[a-\\]]", ignored: &[b"a"], kept: &[b"]", b"b"] },
+            // A `]` first in the class is a member, not the terminator.
+            BracketCase { pattern: b"[]]", ignored: &[b"]"], kept: &[] },
+            BracketCase { pattern: b"[]a]", ignored: &[b"]", b"a"], kept: &[b"b"] },
+            BracketCase { pattern: b"[!]]", ignored: &[b"a"], kept: &[b"]"] },
+            BracketCase { pattern: b"[^]]", ignored: &[b"a"], kept: &[b"]"] },
+            BracketCase { pattern: b"[]-a]", ignored: &[b"^"], kept: &[b"\\", b"b"] },
+            BracketCase { pattern: b"[]", ignored: &[], kept: &[b"]", b"[]"] },
+            BracketCase { pattern: b"[a-]]", ignored: &[b"a]", b"-]"], kept: &[b"b]"] },
+            // `!` and `^` negate only in first position.
+            BracketCase { pattern: b"[!a-c]", ignored: &[b"d"], kept: &[b"a"] },
+            BracketCase { pattern: b"[^a-c]", ignored: &[b"d"], kept: &[b"a"] },
+            BracketCase { pattern: b"[a!]", ignored: &[b"!"], kept: &[b"b"] },
+            BracketCase { pattern: b"[!!]", ignored: &[b"a"], kept: &[b"!"] },
+            // Ranges: the start byte is itself a member, and a reversed range adds nothing.
+            BracketCase { pattern: b"[a-c]", ignored: &[b"a", b"b", b"c"], kept: &[b"d"] },
+            BracketCase { pattern: b"[c-a]", ignored: &[b"c"], kept: &[b"a", b"b"] },
+            BracketCase { pattern: b"[a-]", ignored: &[b"-", b"a"], kept: &[b"b"] },
+            BracketCase { pattern: b"[-a]", ignored: &[b"-", b"a"], kept: &[] },
+            BracketCase { pattern: b"[a-c-e]", ignored: &[b"-", b"e"], kept: &[b"d"] },
+            BracketCase { pattern: b"[a-a]", ignored: &[b"a"], kept: &[b"b"] },
+            // An unterminated class makes the whole pattern match nothing.
+            BracketCase { pattern: b"[abc", ignored: &[], kept: &[b"[abc", b"a"] },
+            BracketCase { pattern: b"foo[", ignored: &[], kept: &[b"foo[", b"foo"] },
+            BracketCase { pattern: b"[!", ignored: &[], kept: &[b"[!", b"a"] },
+            BracketCase { pattern: b"*[", ignored: &[], kept: &[b"x[", b"x"] },
+            BracketCase { pattern: b"*[0-9]", ignored: &[b"file1"], kept: &[b"file"] },
+            // A `/` inside a class is a set member, not a segment separator.
+            BracketCase { pattern: b"a[b/c]", ignored: &[b"ab", b"ac"], kept: &[b"a[b/c]"] },
+            BracketCase { pattern: b"[/]", ignored: &[], kept: &[b"a", b"x"] },
+            BracketCase { pattern: b"**/[[:digit:]]", ignored: &[b"d/5", b"5"], kept: &[b"d/a"] },
+    ];
+
+    fn verdict_bytes(source: &[u8], path: &[u8]) -> bool {
+        let components: Vec<&[u8]> = path.split(|byte| *byte == b'/').collect();
+        Gitignore::parse(source).matches_components(&components, false).unwrap_or(false)
+    }
+
+    #[test]
+    fn bracket_expressions_answer_as_git_check_ignore_does() {
+        for case in BRACKET_CASES {
+            let mut source = case.pattern.to_vec();
+            source.push(b'\n');
+            for (names, expected) in [(case.ignored, true), (case.kept, false)] {
+                for name in names {
+                    assert_eq!(
+                        verdict_bytes(&source, name),
+                        expected,
+                        "pattern {} against {}",
+                        case.pattern.escape_ascii(),
+                        name.escape_ascii()
+                    );
+                }
+            }
+        }
+        #[cfg(unix)]
+        git_bracket_oracle(BRACKET_CASES);
+    }
+
+    /// Re-ask the host's git for every recorded bracket verdict, when git is installed.
+    ///
+    /// Unix only: the names carry `\` and control bytes, which Windows paths cannot.
+    #[cfg(unix)]
+    fn git_bracket_oracle(cases: &[BracketCase]) {
+        use std::io::Write as _;
+        use std::process::{Command, Stdio};
+
+        let git = |root: &Path| {
+            let mut command = Command::new("git");
+            command
+                .current_dir(root)
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .args(["-c", "core.ignorecase=false", "-c", "core.excludesFile=/dev/null"]);
+            command
+        };
+        let root = tempfile::tempdir().expect("bracket oracle root");
+        match git(root.path()).args(["init", "--quiet"]).status() {
+            Ok(status) => assert!(status.success(), "initialize bracket oracle"),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+            Err(error) => panic!("start git bracket oracle: {error}"),
+        }
+        for case in cases {
+            let mut source = case.pattern.to_vec();
+            source.push(b'\n');
+            std::fs::write(root.path().join(".gitignore"), &source).expect("oracle control");
+            let mut child = git(root.path())
+                .args(["check-ignore", "--no-index", "-z", "--stdin"])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .expect("run git bracket oracle");
+            let mut names = Vec::new();
+            for name in case.ignored.iter().chain(case.kept) {
+                names.extend_from_slice(name);
+                names.push(0);
+            }
+            child.stdin.take().expect("oracle stdin").write_all(&names).expect("oracle names");
+            let output = child.wait_with_output().expect("finish git bracket oracle");
+            assert!(
+                matches!(output.status.code(), Some(0 | 1)),
+                "git check-ignore failed for {}: {}",
+                case.pattern.escape_ascii(),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let mut observed: Vec<&[u8]> =
+                output.stdout.split(|byte| *byte == 0).filter(|name| !name.is_empty()).collect();
+            observed.sort_unstable();
+            let mut recorded = case.ignored.to_vec();
+            recorded.sort_unstable();
+            assert_eq!(observed, recorded, "git oracle for {}", case.pattern.escape_ascii());
+        }
     }
 }

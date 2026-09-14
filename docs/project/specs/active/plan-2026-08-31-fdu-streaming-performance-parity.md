@@ -226,8 +226,8 @@ A controls-off `Auto` report scans cold when only a controls-on snapshot exists 
 it must reconcile. A no-scan `Only` report may consume the stronger snapshot: every
 report view reads the all-entry facts rather than control state or the ignored
 partition, no `Index` escapes, and the returned report is retagged with the requested
-controls-off scope. This explicit projection preserves cache-only reads after watch
-sessions without weakening public index ownership.
+controls-off scope. This explicit projection preserves cache-only reads after a
+controls-on `open` without weakening public index ownership.
 
 ### Separate public normalization from scanner preparation
 

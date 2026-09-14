@@ -53,6 +53,15 @@ use crate::engine_contract::{
 /// `Cached`, so the bound costs precision, never correctness.
 const MAX_VERIFIED_INTERVALS: usize = 256;
 
+#[cfg(test)]
+std::thread_local! {
+    /// Entries the control reclassification walk has visited on this thread.
+    ///
+    /// The walk changes nothing when no bit moves, so a test cannot see it through the
+    /// index. Per thread, because tests run in parallel and a load runs on its caller's.
+    pub(crate) static RECLASSIFY_VISITS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
 /// Maximum retained-cost units in the exact commit history used by [`Index::since`].
 ///
 /// Bounded on purpose: an unbounded journal is a memory leak in a long-lived server. A
@@ -863,6 +872,9 @@ pub struct Index {
     state: IndexState,
     /// Bounded diagnostic details summarized by `state.issues`.
     issues: Vec<Issue>,
+    /// The freshness epoch at which each retained issue was last observed, in step with
+    /// `issues`. A reconciliation only disproves an issue observed before it began.
+    issue_epochs: Vec<u64>,
     /// Optional commit-maintained state for interactive opened-root projections.
     ///
     /// Detached indexes deliberately carry `None`, including the standalone CLI's
@@ -1016,7 +1028,8 @@ pub(crate) enum ObservationTransition {
     /// A reconciliation while watching could not read part of the scope.
     ///
     /// The subtree it covered is already partial and is not retried on every later event,
-    /// so its causes are retained here, where partial freshness can be explained.
+    /// so its causes are retained here, where partial freshness can be explained. Both
+    /// watch drivers publish it: the opened root's observer and `Watcher::apply_next`.
     Unreadable { issues: Vec<Issue>, omitted: u64 },
     /// Observation could not establish or retain a trustworthy live boundary.
     Failed(Issue),
@@ -1267,6 +1280,16 @@ impl IndexHandle {
         Ok(collect_child_expectations(&index, path))
     }
 
+    /// Child baselines for one opened-root listing, with whether the index does not yet
+    /// hold that directory's child set as complete, read at one boundary.
+    pub(crate) fn listing_baseline(
+        &self,
+        path: &Path,
+    ) -> crate::Result<(BTreeMap<OsString, PathExpectation>, bool)> {
+        let index = self.read_index()?;
+        Ok((collect_child_expectations(&index, path), index.directory_complete(path) != Some(true)))
+    }
+
     pub(crate) fn has_control(&self, path: &Path) -> crate::Result<bool> {
         Ok(self.read_index()?.controls().contains(path))
     }
@@ -1294,8 +1317,9 @@ impl IndexHandle {
         path: &Path,
         started_at: u64,
         complete: bool,
+        listed_incomplete: &[PathBuf],
     ) -> crate::Result<Option<Commit>> {
-        self.write_index()?.finish_reconcile(path, started_at, complete)
+        self.write_index()?.finish_reconcile(path, started_at, complete, listed_incomplete)
     }
 
     #[cfg(feature = "watch")]
@@ -1617,6 +1641,7 @@ impl Index {
             freshness_marks: BTreeMap::new(),
             state: IndexState::default(),
             issues: Vec::new(),
+            issue_epochs: Vec::new(),
             serving,
             applying_source: Source::Scanned,
             scanned_at_ns: Self::now_unix_nanos(),
@@ -1653,7 +1678,14 @@ impl Index {
                 limit: crate::control::MAX_CONTROL_TABLE_BYTES,
             });
         }
+        // Every entry's ignored bit agrees with the table it replaces, so when neither table
+        // governs anything no bit can move. Walking the tree to confirm it allocated a path
+        // per entry on every snapshot load, including the common load with no controls.
+        let unchanged = controls.is_empty() && self.controls.is_empty();
         self.controls = controls;
+        if unchanged {
+            return Ok(());
+        }
         let mut stats = ApplyStats::default();
         let mut effects = NoConsequences;
         self.reclassify_controlled_subtrees(&[PathBuf::new()], &mut stats, &mut effects);
@@ -2117,6 +2149,7 @@ impl Index {
                             issues: crate::IssueSummary::default(),
                         };
                         self.issues.clear();
+                        self.issue_epochs.clear();
                     }
                     DiscoveryTransition::Finish => {
                         self.state.phase = LifecyclePhase::Ready;
@@ -2190,7 +2223,9 @@ impl Index {
                         {
                             // The handoff has just read the whole root without one error, so
                             // a boundary discovery could not read no longer exists. Coverage
-                            // says what can be known now; the cause stays a retained issue.
+                            // says what can be known now. That complete pass has already
+                            // dropped the issues it disproved and recorded completeness for
+                            // every directory it listed, so nothing below contradicts it.
                             self.state.coverage = Coverage::Complete;
                         }
                         self.state.freshness = self.freshness();
@@ -2200,7 +2235,10 @@ impl Index {
                     }
                 }
                 ObservationTransition::Unreadable { issues, omitted } => {
-                    if self.state.phase == LifecyclePhase::Watching {
+                    // `Ready` is a shared index watched without an opened-root lifecycle,
+                    // which never leaves that phase; a stopped or failed root keeps nothing.
+                    if matches!(self.state.phase, LifecyclePhase::Watching | LifecyclePhase::Ready)
+                    {
                         for issue in issues {
                             self.retain_issue(issue);
                         }
@@ -2242,13 +2280,57 @@ impl Index {
         current_total.saturating_sub(removed).saturating_add(u64::from(kind == EntryKind::File))
     }
 
+    /// Retain one issue, once per cause.
+    ///
+    /// A cause is its kind and path: a boundary a producer meets again on every re-walk --
+    /// an unreadable directory, a gap the observer keeps reporting at one place -- is one
+    /// issue. Without a key, routine repeats filled the bounded list and every later
+    /// distinct issue was omitted with no text. A repeat only records that the cause was
+    /// seen again, which a later reconciliation needs; the retained text stays as it was,
+    /// since changing what a read returns without a commit would let one version answer two
+    /// ways. An issue without a path has nothing to key on, so only an identical one counts
+    /// as a repeat.
     fn retain_issue(&mut self, issue: Issue) {
-        if self.issues.len() < MAX_RETAINED_ISSUES {
+        let repeat = self.issues.iter().position(|retained| {
+            retained.kind == issue.kind
+                && retained.path == issue.path
+                && (issue.path.is_some() || *retained == issue)
+        });
+        if let Some(position) = repeat {
+            self.issue_epochs[position] = self.freshness_epoch;
+        } else if self.issues.len() < MAX_RETAINED_ISSUES {
             self.issues.push(issue);
+            self.issue_epochs.push(self.freshness_epoch);
             self.state.issues.retained = u64::try_from(self.issues.len()).unwrap_or(u64::MAX);
         } else {
             self.state.issues.omitted = self.state.issues.omitted.saturating_add(1);
         }
+    }
+
+    /// Drop the retained issues a complete reconciliation of `path` has disproved.
+    ///
+    /// An issue about a path at or below `path`, observed before the pass began, described
+    /// something the pass has just read without an error: a directory that could not be
+    /// listed, an entry whose metadata could not be read, a control the index refused. It is
+    /// no longer true, and keeping it would explain a state the root is not in. Two kinds of
+    /// issue survive. An observation gap records that the observer lost precision and had to
+    /// recover, which the recovery does not undo. And an issue without a path cannot be
+    /// placed under the pass. The omitted count stays: what it counted was never retained.
+    fn drop_disproven_issues(&mut self, path: &Path, started_at: u64) {
+        let mut position = 0;
+        while position < self.issues.len() {
+            let issue = &self.issues[position];
+            let disproven = issue.kind != crate::IssueKind::ObservationGap
+                && issue.path.as_deref().is_some_and(|issue_path| issue_path.starts_with(path))
+                && self.issue_epochs[position] < started_at;
+            if disproven {
+                self.issues.remove(position);
+                self.issue_epochs.remove(position);
+            } else {
+                position += 1;
+            }
+        }
+        self.state.issues.retained = u64::try_from(self.issues.len()).unwrap_or(u64::MAX);
     }
 
     /// Mint and optionally retain one fully evaluated transition.
@@ -2449,11 +2531,20 @@ impl Index {
         Ok((epoch, commit))
     }
 
+    /// Close one reconciliation opened by [`Self::begin_reconcile`].
+    ///
+    /// `listed_incomplete` names the directories the pass listed in full that the index did
+    /// not hold as complete when it listed them. When the whole pass completed, each is
+    /// recorded as complete in this commit, exactly as discovery's listing commit records
+    /// the directories it lists, unless a producer invalidated or began verifying it after
+    /// this pass started: that producer's own pass owns its listing now. Only an opened root
+    /// passes any, since only an opened root serves completeness.
     pub(crate) fn finish_reconcile(
         &mut self,
         path: &Path,
         started_at: u64,
         complete: bool,
+        listed_incomplete: &[PathBuf],
     ) -> crate::Result<Option<Commit>> {
         let path = canonical_relative_path(path)?;
         let next_clock = self.clock.checked_next().ok_or(crate::Error::ClockExhausted)?;
@@ -2475,6 +2566,27 @@ impl Index {
                 self.verified.drain(..excess);
             }
             state.push(StateTransition::Verified { path: path.clone() });
+            for directory in listed_incomplete {
+                if !directory.starts_with(&path)
+                    || self.freshness_marks.iter().any(|(marked, mark)| {
+                        mark.epoch > started_at && directory.starts_with(marked)
+                    })
+                {
+                    continue;
+                }
+                let Some(id) = self.lookup(directory) else {
+                    continue;
+                };
+                let entry = self.entry_mut(id);
+                if entry.kind != EntryKind::Dir || entry.directory().children_complete {
+                    continue;
+                }
+                entry.directory_mut().children_complete = true;
+                self.state.progress.directories_complete =
+                    self.state.progress.directories_complete.saturating_add(1);
+                state.push(StateTransition::DirectoryComplete { path: directory.clone() });
+            }
+            self.drop_disproven_issues(&path, started_at);
         } else {
             self.mark_unfresh(&path, Freshness::Partial);
         }
@@ -3450,6 +3562,8 @@ impl Index {
                 .collect();
             let mut queue = VecDeque::from(children);
             while let Some((path, id)) = queue.pop_front() {
+                #[cfg(test)]
+                RECLASSIFY_VISITS.with(|visits| visits.set(visits.get() + 1));
                 let entry = self.entry(id);
                 let parent_ignored = entry.parent.is_some_and(|parent| self.entry(parent).ignored);
                 let current = entry.ignored;
@@ -6683,7 +6797,7 @@ mod tests {
         );
 
         let finish = index
-            .finish_reconcile(Path::new("src"), started, true)
+            .finish_reconcile(Path::new("src"), started, true, &[])
             .expect("finish")
             .expect("finish commit");
         assert!(finish.changes.is_empty());
@@ -7622,7 +7736,7 @@ mod tests {
                 attrs: file_attrs(9, 2),
             },
         ]));
-        index.finish_reconcile(Path::new(""), 0, true).expect("finish reconciliation");
+        index.finish_reconcile(Path::new(""), 0, true, &[]).expect("finish reconciliation");
 
         let kept = index.provenance(Path::new("a/kept.txt")).expect("present");
         let changed = index.provenance(Path::new("a/changed.txt")).expect("present");
@@ -7656,7 +7770,7 @@ mod tests {
             "nothing has checked it yet"
         );
         // A completed sweep then covers the whole tree.
-        index.finish_reconcile(Path::new(""), 0, true).expect("finish reconciliation");
+        index.finish_reconcile(Path::new(""), 0, true, &[]).expect("finish reconciliation");
         let path = Path::new("a/file.txt");
         assert_eq!(
             index.provenance(path).expect("present").source,
@@ -7688,7 +7802,7 @@ mod tests {
         let mut index = Index::new("/root");
         for which in 0..(MAX_VERIFIED_INTERVALS * 2) {
             index
-                .finish_reconcile(&PathBuf::from(format!("dir-{which}")), 0, true)
+                .finish_reconcile(&PathBuf::from(format!("dir-{which}")), 0, true, &[])
                 .expect("finish reconciliation");
         }
         assert!(

@@ -397,6 +397,40 @@ The root binding is session-local and platform-native.
 Portable cross-provider path identity is a projection and remains separate from the
 native root identity.
 
+### Classification and Extension Levels
+
+Classification resolves a file’s type from one validated type registry: the compiled
+default, or a registry document a caller supplies once at setup.
+A file name has up to three extensions, one per question, and the public API keeps them
+apart:
+
+- **Raw**, from `classify::derive_ext` and `classify::ext_bucket`, is any final dotted
+  component, whatever its bytes or length, with a `.tar` before it kept.
+  The extension view, per-directory extension tallies, and an unrecognized type’s label
+  use it, so detached and command-line answers stay the ones fdu gave before registries
+  existed.
+- **Logical**, from `classify::logical_ext`, is File Rollup Format’s name-owned
+  extension: up to two trailing components, each ASCII alphanumeric and at most twelve
+  bytes. A portable entry row reports it.
+- **Canonical**, from `TypeRegistry::canonical_ext` and `TypeRegistry::classify_name`,
+  is the declared extension the logical one matched, whole or by its final component.
+  It is absent when nothing declared matches, or when an exact filename wins first.
+
+With the compiled registry, the levels part at these names:
+
+| Name | Raw | Bucket | Logical | Canonical |
+| --- | --- | --- | --- | --- |
+| `archive.tar.gz` | `.tar.gz` | `.tar.gz` | `.tar.gz` | `.tar.gz` |
+| `release.v2.zip` | `.zip` | `.zip` | `.v2.zip` | `.zip` |
+| `file.c++` | `.c++` | `.c++` | none | none |
+| `.gitignore` | none | `(none)` | none | none |
+| `notes.` | none | `(none)` | none | none |
+
+The same table is in the `classify` module documentation, where the unit test
+`module_documentation_extension_table_matches_the_functions` checks every cell.
+The `cli-axes` golden pins the command line’s extension view at the raw level with the
+`extension-levels` fixture, whose names would bucket differently at the logical level.
+
 ### Trust, Coverage, and Lifecycle State
 
 Every returned value carries enough context to calibrate it:

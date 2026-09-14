@@ -52,6 +52,30 @@ const EMISSION_IMPLEMENTATION = /\bimpl\b[^;{]*?\bWalkEmission\s+for\s+([^\s{]+)
 const WATCH_PATH = "crates/fdu-core/src/watch.rs";
 const LISTING_LOOP = /^\s*for\s+[A-Za-z_][A-Za-z0-9_]*\s+in\s+(?:listing|entries)\s*\{\s*$/;
 
+// The longest escape a character literal can hold, `'\u{10FFFF}'`, quotes included.
+const LONGEST_CHARACTER_LITERAL = 12;
+
+// The length in UTF-16 units of the character or byte literal whose opening quote is at
+// `index`, or 0 when that quote begins a lifetime or a loop label instead.
+//
+// Without this, `'"'` opened string state and blanked real code up to the next double
+// quote, and `'}'` closed a block early. A lifetime is the one other use of the quote, and
+// it never closes with one: `'a'` is a literal, while `'a` and `'static` are not.
+function characterLiteralLength(source, index) {
+  if (source[index + 1] === "\\") {
+    // `'\''`, `'\\'`, `'\n'`, `'\x7f'`, `'\u{..}'`. The escaped character may itself be a
+    // quote, so the closing quote is searched for after it.
+    const close = source.indexOf("'", index + 3);
+    const length = close - index + 1;
+    if (close === -1 || length > LONGEST_CHARACTER_LITERAL) return 0;
+    return source.slice(index, close).includes("\n") ? 0 : length;
+  }
+  const codePoint = source.codePointAt(index + 1);
+  if (codePoint === undefined || codePoint === 0x0a) return 0;
+  const width = codePoint > 0xffff ? 2 : 1;
+  return source[index + 1 + width] === "'" ? width + 2 : 0;
+}
+
 function rustStructure(source) {
   let result = "";
   const state = { kind: "code", blockDepth: 0, rawHashes: 0 };
@@ -119,6 +143,15 @@ function rustStructure(source) {
       state.kind = "block-comment";
       state.blockDepth = 1;
       continue;
+    }
+    if (character === "'") {
+      const length = characterLiteralLength(source, index);
+      if (length > 0) {
+        result += " ".repeat(length);
+        index += length - 1;
+        continue;
+      }
+      // Otherwise a lifetime or a loop label, which is code.
     }
     if (character === '"') {
       result += " ";
