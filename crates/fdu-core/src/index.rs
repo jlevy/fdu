@@ -2837,24 +2837,11 @@ impl Index {
         path: &Path,
     ) -> crate::Result<Option<PartitionRollUpSummary>> {
         self.require_observed_controls()?;
-        Ok(self.opened_partition_rollup_summary(path))
-    }
-
-    /// Partition summary for the opened-root roll-up projection, without the observation
-    /// check.
-    ///
-    /// An opened root observes control state whenever the build can. A build without the
-    /// `gitignore` feature reads no ignore rules at all, so its opened roots never
-    /// observe, and refusing here would fail every roll-up in such a build; there the
-    /// unignored partition is the whole subtree, as it was before observation was gated.
-    pub(crate) fn opened_partition_rollup_summary(
-        &self,
-        path: &Path,
-    ) -> Option<PartitionRollUpSummary> {
-        self.lookup(path)
+        Ok(self
+            .lookup(path)
             .map(|id| self.entry(id))
             .filter(|entry| entry.kind.is_dir())
-            .map(|entry| partition_summary(entry.rollup()))
+            .map(|entry| partition_summary(entry.rollup())))
     }
 
     /// Capture one retained entry without repeating path lookup in a consumer.
