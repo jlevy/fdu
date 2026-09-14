@@ -3,14 +3,18 @@ type: is
 id: is-01m2ewpg54kkvfkq2pn3gne0r8
 title: "Stacked merge fails to compile: #48 f00bad5 calls index::path_is_relative_normal, which #51 50e6ca5 removed"
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 1
+version: 2
 labels:
   - stack-followup
 dependencies: []
 created_at: 2026-09-14T02:42:18.403Z
-updated_at: 2026-09-14T02:42:18.403Z
+updated_at: 2026-09-14T04:47:54.409Z
+closed_at: 2026-09-14T04:47:54.408Z
+close_reason: "Fixed in 324048c on #48 (the sidecar guard is a private function in content_cache.rs, not the index helper #51 removed). The stacked merges compile and every PR is 19/19 green (#51 5d60aba, #52 ddd2b7d, #54 e77b1d9)."
+resolution: null
+duplicate_of: null
 ---
 Found while waiting for CI on PR #52 at ba83690 (run https://github.com/jlevy/fdu/actions/runs/34799679785). Every Rust-compiling job (15 of 19) failed with one error, and none came from #52's own changes:
 
