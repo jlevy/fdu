@@ -505,6 +505,19 @@ impl Issue {
         }
     }
 
+    /// Describe a directory listing the index refused on a control-state resource bound.
+    ///
+    /// A control bound is a resource bound, not a provider failure, and the directory whose
+    /// control file crossed it is known where the refusal is classified.
+    pub(crate) fn control_refusal(directory: &Path, error: &Error) -> Self {
+        Self {
+            kind: IssueKind::ResourceBudget,
+            path: bounded_issue_path(directory),
+            message: bounded_issue_message(error.to_string()),
+            os_error: None,
+        }
+    }
+
     /// Describe the first file refused by an opened-root resource budget.
     pub(crate) fn resource_budget(max_files: u64) -> Self {
         Self {

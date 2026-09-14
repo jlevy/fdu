@@ -1057,19 +1057,21 @@ enum DiscoveryAnswer {
     /// stands; whichever producer next verifies the path records what is there now.
     Stale,
     /// The index refused this directory's listing on a resource bound that does not stop
-    /// the root. The directory stays incomplete and the refusal is retained as an issue.
+    /// the root. The directory stays incomplete and the refusal is retained as an issue
+    /// naming it.
     Refused(crate::Issue),
 }
 
-/// Classify a refused discovery commit, keeping engine failures fatal.
-fn discovery_rejection(error: Error) -> Result<DiscoveryAnswer> {
+/// Classify a refused discovery commit for `directory`'s listing, keeping engine failures
+/// fatal.
+fn discovery_rejection(error: Error, directory: &Path) -> Result<DiscoveryAnswer> {
     match error {
         Error::OpenedIndexStopped => Ok(DiscoveryAnswer::Stopped),
         Error::InvalidDirectoryCompletion(_) | Error::UnknownAncestry { .. } => {
             Ok(DiscoveryAnswer::Stale)
         }
         Error::ControlSourceLimit { .. } | Error::ControlPatternLimit { .. } => {
-            Ok(DiscoveryAnswer::Refused(crate::Issue::from_error(&error)))
+            Ok(DiscoveryAnswer::Refused(crate::Issue::control_refusal(directory, &error)))
         }
         error => Err(error),
     }
@@ -1077,15 +1079,25 @@ fn discovery_rejection(error: Error) -> Result<DiscoveryAnswer> {
 
 /// Stop listing one directory whose commit the index did not accept.
 ///
-/// Nothing discovered in the abandoned listing is queued: its subdirectories either left
-/// with the stale parent or were never committed, and a directory whose listing was cut
-/// short is never marked complete, so absence below it stays unknown. A refusal keeps the
-/// issues the listing had already gathered, since the refused batch may have carried them.
+/// A directory whose listing was cut short is never marked complete, so absence below it
+/// stays unknown. `committed` holds the subdirectories whose upserts batches before the
+/// unaccepted one had already committed, and what becomes of them depends on the answer:
+///
+/// - `Stale`: the index no longer holds the directory or an ancestor, so those
+///   subdirectories left with it, and the producer that replaced it records what is there.
+/// - `Refused`: the directory is still retained, and so is every subdirectory in
+///   `committed`. Nothing refused those, so they are queued like any other; only the
+///   refused batch's entries and the rest of the listing are dropped. Retrying the refused
+///   batch without its control belongs to the control-degradation design (`fdu-1onj`). A
+///   refusal also keeps the issues the listing had gathered, since that batch may have
+///   carried them.
+/// - `Stopped`: the root is terminal and nothing more is queued.
 fn abandon_directory(
     index: &IndexHandle,
     journal: &journal::JournalWait,
     frontier: &DiscoveryFrontier,
     answer: DiscoveryAnswer,
+    committed: Vec<PendingDirectory>,
     mut issues: Vec<crate::Issue>,
     mut omitted: u64,
 ) -> Result<DiscoveryStep> {
@@ -1096,6 +1108,7 @@ fn abandon_directory(
             Ok(DiscoveryStep::Stopped)
         }
         DiscoveryAnswer::Refused(issue) => {
+            frontier.extend(committed);
             retain_local_issue(&mut issues, &mut omitted, issue);
             publish_discovery_transition(
                 index,
@@ -1154,7 +1167,11 @@ fn discover_directory(
     #[cfg(test)]
     let listing = test_directory_listing(listing, deterministic_discovery_order);
     let mut batch = Vec::with_capacity(scan.batch_size);
+    // Subdirectories to queue once the listing commits. The first `committed` of them are
+    // already in the index, carried by a batch this listing flushed: an accepted push that
+    // leaves the batch empty has committed everything pushed before it.
     let mut discovered = Vec::new();
+    let mut committed = 0_usize;
     let mut issues = Vec::new();
     let mut omitted_issues = 0_u64;
 
@@ -1164,6 +1181,7 @@ fn discover_directory(
                 index,
                 journal,
                 &mut batch,
+                &directory.path,
                 None,
                 Some(DiscoveryTransition::Cancelled),
                 budget.max_files,
@@ -1232,33 +1250,60 @@ fn discover_directory(
                     journal,
                     scan.batch_size,
                     &mut batch,
+                    &directory.path,
                     control,
                     budget.max_files,
                 )?;
                 if !matches!(answer, DiscoveryAnswer::Accepted) {
+                    discovered.truncate(committed);
                     return abandon_directory(
                         index,
                         journal,
                         frontier,
                         answer,
+                        discovered,
                         issues,
                         omitted_issues,
                     );
+                }
+                if batch.is_empty() {
+                    committed = discovered.len();
                 }
             }
             continue;
         }
 
+        // Queued before its upsert is pushed, so the batch that carries the upsert is the
+        // one whose commit moves it into the committed prefix.
+        if descend {
+            discovered.push(PendingDirectory {
+                path: path.clone(),
+                depth: directory.depth.saturating_add(1),
+            });
+        }
         let answer = push_discovery_op(
             index,
             journal,
             scan.batch_size,
             &mut batch,
-            Op::Upsert { path: path.clone(), kind, attrs },
+            &directory.path,
+            Op::Upsert { path, kind, attrs },
             budget.max_files,
         )?;
         if !matches!(answer, DiscoveryAnswer::Accepted) {
-            return abandon_directory(index, journal, frontier, answer, issues, omitted_issues);
+            discovered.truncate(committed);
+            return abandon_directory(
+                index,
+                journal,
+                frontier,
+                answer,
+                discovered,
+                issues,
+                omitted_issues,
+            );
+        }
+        if batch.is_empty() {
+            committed = discovered.len();
         }
         if let Some(control) = control {
             let answer = push_discovery_op(
@@ -1266,15 +1311,25 @@ fn discover_directory(
                 journal,
                 scan.batch_size,
                 &mut batch,
+                &directory.path,
                 control,
                 budget.max_files,
             )?;
             if !matches!(answer, DiscoveryAnswer::Accepted) {
-                return abandon_directory(index, journal, frontier, answer, issues, omitted_issues);
+                discovered.truncate(committed);
+                return abandon_directory(
+                    index,
+                    journal,
+                    frontier,
+                    answer,
+                    discovered,
+                    issues,
+                    omitted_issues,
+                );
             }
-        }
-        if descend {
-            discovered.push(PendingDirectory { path, depth: directory.depth.saturating_add(1) });
+            if batch.is_empty() {
+                committed = discovered.len();
+            }
         }
     }
 
@@ -1284,10 +1339,26 @@ fn discover_directory(
         omitted: omitted_issues,
     });
     let complete = (!incomplete).then(|| directory.path.clone());
-    let answer =
-        commit_discovery_batch(index, journal, &mut batch, complete, transition, budget.max_files)?;
+    let answer = commit_discovery_batch(
+        index,
+        journal,
+        &mut batch,
+        &directory.path,
+        complete,
+        transition,
+        budget.max_files,
+    )?;
     if !matches!(answer, DiscoveryAnswer::Accepted) {
-        return abandon_directory(index, journal, frontier, answer, issues, omitted_issues);
+        discovered.truncate(committed);
+        return abandon_directory(
+            index,
+            journal,
+            frontier,
+            answer,
+            discovered,
+            issues,
+            omitted_issues,
+        );
     }
     frontier.extend(discovered);
     Ok(DiscoveryStep::Continue)
@@ -1327,20 +1398,23 @@ fn push_discovery_op(
     journal: &journal::JournalWait,
     batch_size: usize,
     batch: &mut Vec<Op>,
+    directory: &Path,
     op: Op,
     max_files: Option<u64>,
 ) -> Result<DiscoveryAnswer> {
     batch.push(op);
     if batch.len() >= batch_size {
-        return commit_discovery_batch(index, journal, batch, None, None, max_files);
+        return commit_discovery_batch(index, journal, batch, directory, None, None, max_files);
     }
     Ok(DiscoveryAnswer::Accepted)
 }
 
+/// Commit one batch of `directory`'s listing.
 fn commit_discovery_batch(
     index: &IndexHandle,
     journal: &journal::JournalWait,
     batch: &mut Vec<Op>,
+    directory: &Path,
     directory_complete: Option<PathBuf>,
     transition: Option<DiscoveryTransition>,
     max_files: Option<u64>,
@@ -1352,7 +1426,7 @@ fn commit_discovery_batch(
         max_files,
     ) {
         Ok(outcome) => outcome,
-        Err(error) => return discovery_rejection(error),
+        Err(error) => return discovery_rejection(error, directory),
     };
     if outcome.commit.is_some() {
         journal.notify_commit();
@@ -1875,7 +1949,7 @@ struct TestControls {
 
 #[cfg(test)]
 impl TestControls {
-    #[cfg(all(feature = "watch", feature = "gitignore"))]
+    #[cfg(feature = "gitignore")]
     fn use_deterministic_discovery_order(&self) {
         self.deterministic_discovery_order.store(true, Ordering::Release);
     }
@@ -4987,6 +5061,72 @@ mod tests {
             opened.state.index.kind(Path::new("b/kept.txt")).expect("lookup"),
             Some(EntryKind::File)
         );
+        opened.close().expect("close");
+    }
+
+    /// A refused control abandons only what its own batch carried.
+    ///
+    /// `a` lists `-early/`, then a `.gitignore` over the per-line bound, then `zzz.txt`, one
+    /// entry per batch. The `-early` upsert commits before the control is refused, so
+    /// `-early` is a retained directory nothing refused; it used to be left unqueued and
+    /// incomplete, its subtree silently missing and its roll-up answering an empty
+    /// `Present`. The refusal also used to be retained as a pathless provider failure.
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn a_refused_control_still_queues_subdirectories_its_listing_committed() {
+        let controls = Arc::new(TestControls::default());
+        controls.use_deterministic_discovery_order();
+        let root = tempfile::tempdir().expect("temp root");
+        let a = root.path().join("a");
+        std::fs::create_dir_all(a.join("-early")).expect("fixture");
+        std::fs::write(a.join("-early").join("leaf.txt"), b"l").expect("fixture");
+        let mut line = vec![b'x'; crate::control::MAX_CONTROL_PATTERN_BYTES + 1];
+        line.push(b'\n');
+        std::fs::write(a.join(crate::control::CONTROL_FILE_NAME), &line).expect("control");
+        std::fs::write(a.join("zzz.txt"), b"z").expect("fixture");
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            OpenOptions { batch_size: 1, ..OpenOptions::default() },
+            Arc::clone(&controls),
+        )
+        .expect("open");
+        let state = wait_until_settled(&opened);
+        assert_eq!(state.phase, crate::LifecyclePhase::Ready);
+        assert_eq!(state.coverage, crate::Coverage::Partial(crate::CoverageReason::Inaccessible));
+
+        let index = &opened.state.index;
+        assert_eq!(index.directory_complete(Path::new("a")).expect("lookup"), Some(false));
+        assert_eq!(index.kind(Path::new("a/-early")).expect("lookup"), Some(EntryKind::Dir));
+        assert_eq!(index.directory_complete(Path::new("a/-early")).expect("lookup"), Some(true));
+        assert_eq!(
+            index.kind(Path::new("a/-early/leaf.txt")).expect("lookup"),
+            Some(EntryKind::File)
+        );
+        // The refused batch and everything after it in the listing are still dropped.
+        assert_eq!(index.kind(Path::new("a/zzz.txt")).expect("lookup"), None);
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::RollUp {
+                    path: PathBuf::from("a/-early"),
+                }],
+                ..crate::ReadRequest::default()
+            })
+            .expect("read");
+        assert!(
+            matches!(
+                &response.results[0],
+                crate::ProjectionResult::RollUp(crate::Knowledge::Present(summary))
+                    if summary.all.files == 1
+            ),
+            "{:?}",
+            response.results[0]
+        );
+
+        let issues = index.issues().expect("issues");
+        assert_eq!(issues.len(), 1, "{issues:?}");
+        assert_eq!(issues[0].kind, crate::IssueKind::ResourceBudget, "{issues:?}");
+        assert_eq!(issues[0].path.as_deref(), Some(Path::new("a")), "{issues:?}");
+        assert!(issues[0].message.contains("control pattern requires"), "{issues:?}");
         opened.close().expect("close");
     }
 
