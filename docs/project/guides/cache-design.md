@@ -24,10 +24,16 @@ One file per root, under the user cache directory, named by a hash of the canoni
 path so two trees never collide.
 
 It holds entry records from which loading rebuilds per-directory roll-ups, and it is
-invalidated wholesale by an engine fingerprint: a format version, and a hash of the
-configuration that would change what the records mean.
+invalidated wholesale by an engine fingerprint of the crate version, the format version,
+and the classification-rules version.
 A snapshot written by an incompatible build is not migrated and not repaired — it is
-treated as absent.
+treated as absent. Because the crate version is part of the fingerprint, every release
+invalidates every existing snapshot; nothing that must outlive an upgrade belongs in
+this cache.
+
+The file also records the scan scope it was built under.
+A snapshot whose scope cannot serve the request is a miss as well, and under a
+write-permitting policy the next complete indexed scan replaces it.
 
 Three rules keep it honest:
 
@@ -149,9 +155,8 @@ with nothing in the output to say which happened — is worse than no fast path.
 Every report carries `source`, `freshness`, `complete`, and `errors` in every format, so
 no policy can silently serve old or partial data as current.
 
-These are the policies on `main` at `b75bf85a33ed` (reviewed 2026-09-13), as implemented
-by [`plan_report`](../../../crates/fdu-core/src/execution.rs) and
-[`open_for_report`](../../../crates/fdu-core/src/lib.rs).
+[`plan_report`](../../../crates/fdu-core/src/execution.rs) and
+[`open_for_report`](../../../crates/fdu-core/src/lib.rs) implement these policies.
 The transient summary path and snapshot-read bypass mean that `--cache auto` does not
 promise a reusable baseline after an arbitrary command.
 `--allow-partial` changes exit acceptance; it does not make a partial scan cacheable.
@@ -162,25 +167,20 @@ promise a reusable baseline after an arbitrary command.
   Persisted aggregates and indexed blocks could make bounded summary queries avoid
   materializing every entry; that cost must be measured with validation and persistence
   included.
-- **Journal-scoped revalidation.** On macOS the FSEvents journal can name which scopes
-  need fresh observations.
-  The current snapshot does not store a resume cursor, and reducing filesystem work
+- **FSEvents history replay.** On macOS, the persistent FSEvents history can name which
+  scopes need fresh observations.
+  The current snapshot does not store a replay cursor, and reducing filesystem work
   alone would still leave full-image load/save costs.
 - **Durable checkpoints and comparison.** The cache replaces the latest inventory for a
   root; it does not retain a user-selected baseline.
-  `since(clock)` history is process local and is reset on load.
+  The index journal behind `since(clock)` is process local and starts empty on load.
   The
   [disk-usage checkpoint plan](../specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md)
-  specifies immutable before/after states, repeatable deltas, journal refresh, and
-  checkpoint-aware retention.
+  specifies immutable checkpoints in a store separate from this cache, repeatable
+  deltas, history-replay refresh, and checkpoint-aware retention.
 - **Cache retention.** Nothing prunes snapshots for roots never queried again, and
   nothing bounds the derived layer’s total size.
   `--cache-clear` is the only reclaim today.
-
-* * *
-
-*Part of the fdu project documentation.
-See [AGENTS.md](../../../AGENTS.md).*
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

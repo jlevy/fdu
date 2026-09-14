@@ -6,11 +6,6 @@
 
 **Status:** Proposed
 
-**Latest workflow review:**
-[Daily Disk-Usage Comparison (2026-09-13)](#daily-disk-usage-comparison-2026-09-13)
-separates shipped cache behavior from the checkpoint feature and updates the replay
-evidence needed for next-day checks.
-
 ## Overview
 
 The [original engine research](research-2026-08-06-file-rollup-engine.md) chose the
@@ -797,8 +792,6 @@ settles how the journal-resume module should be built:
   `fsevent-sys` plus reviewed missing declarations.
   Generated `objc2-core-services`, `objc2-core-foundation`, and `dispatch2` bindings are
   the fallback if that surface becomes harder to maintain.
-  The earlier review recommended objc2 independently; it did not supersede the plan’s
-  dependency decision.
   Recheck available bindings and the supply-chain policy at implementation time.
   Extended-data inode values may help attribution, but cannot alone prove a rename or
   replace fresh metadata observations.
@@ -1225,86 +1218,6 @@ repository, measuring cold derive, fingerprint-cached rerun, and 1%-churn rerun 
 scc/tokei cold-every-time as references — validating the derived-store shape before the
 reducer registry (`fdu-a6dz`) freezes interfaces.
 
-## Daily Disk-Usage Comparison (2026-09-13)
-
-The practical question is: after saving an inventory today, can a later visit explain
-where several gigabytes appeared without another full home-folder walk?
-FDU has useful inventory and reducer machinery, but no durable named baseline or
-built-in comparison command.
-The [checkpoint plan](../specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md)
-defines the missing workflow and its delivery slices.
-
-**Source review:** `main` at `b75bf85a33ed`; the unmerged engine stack through
-`afbb2eef01e9` in [PR #52](https://github.com/jlevy/fdu/pull/52). Current snapshots hold
-the latest inventory per root, load the full entry set, and do not persist the
-process-local change history or an FSEvents cursor.
-Default one-shot metadata reports can skip snapshot reads and scan afresh.
-The open stack improves opened-root refresh and one-shot costs, but its version 3 format
-does not add durable checkpoints or journal resume.
-Its final performance acceptance remains open; do not describe it as shipped.
-
-**Spotlight is a discovery aid, not the accounting source.** Apple’s
-[query documentation](https://developer.apple.com/library/archive/documentation/Carbon/Conceptual/SpotlightQuery/Concepts/QueryingMetadata.html)
-describes asynchronous queries and user-controlled scope exclusions; its
-[metadata architecture](https://developer.apple.com/library/archive/documentation/Carbon/Conceptual/MetadataIntro/Concepts/HowDoesItWork.html)
-uses asynchronous import.
-A query for recently modified indexed files omits deleted paths and their old sizes, and
-does not establish allocated-block usage.
-Comparing two complete retained inventories supplies that before-state.
-FSEvents can reduce the work needed to refresh it, including changes made while FDU is
-not running, as described in Apple’s
-[persistent event guide](https://developer.apple.com/library/archive/documentation/Darwin/Conceptual/FSEvents_ProgGuide/UsingtheFSEventsFramework/UsingtheFSEventsFramework.html).
-
-A bounded local check on 2026-09-13 found zero Spotlight results under a populated
-`$HOME/.cache/uv` and 134,544 under `$HOME/.codex`, using
-`mdfind -onlyin ROOT -count 'kMDItemFSName == "*"'`. This is evidence that coverage
-varies, not that all hidden directories are excluded or that the positive result is
-complete. The cache-status inspection found no existing home-folder baseline.
-No controlled home-folder delta benchmark was run, and summing files by modification
-date cannot establish how much storage grew during that interval.
-
-**Replay needs reproducible evidence.** The August scratch spike was not committed and
-its exact stream flags were not retained.
-The installed macOS 26.5 SDK’s `FSEvents.h` documents
-`kFSEventStreamCreateFlagFullHistory` (macOS 10.15+, value `0x80`): it returns the
-entire first historical chunk, including IDs below the requested fence, to avoid
-boundary losses near an unclean restart.
-Commit a probe that compares this flag with the historical configuration, records
-pre-mutation fences, and checks the result against independent full scans.
-Its overlap must remain idempotent.
-It does not restore expired history, and neither UUID equality nor `HistoryDone` proves
-completeness. The
-[FSEvents plan](../specs/active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
-retains distinct journal-scoped provenance and sweep fallback.
-
-The plan’s provisional 24-hour cursor-age limit is a direct obstacle to a first refresh
-on the next day. Measure 1-hour, 24-hour, 48-hour, and 7-day gaps before changing it;
-track applied-cursor age separately from immutable baseline age and last full
-verification.
-The historical 17 empty-replay trials ranged from about 9–33 ms in one mode
-to 193–487 ms in another, and old-cursor replay reached about 2 seconds.
-These are replay-component observations, not evidence for a fixed whole-command latency.
-
-**The persistent representation matters as much as replay.** A flat O(N) load and
-rewrite cannot become O(changes) merely by avoiding stats.
-Reuse the planned indexed block format, persisted aggregates, and bounded mutation
-storage; keep pinned baselines outside ordinary cache eviction.
-A quiet refresh should touch the state needed for replayed events, dirty-directory
-entries, affected ancestors, and requested output.
-Measure broad-directory relists, journal traffic outside the selected root, store
-growth, compaction, and fallback as well as scan savings.
-Do not replace the block plan with a row-per-file relational hot path without evidence;
-the existing snapshot research already records that tradeoff.
-
-The comparison contract is net signed allocated/apparent bytes and counts between
-immutable checkpoints A and B. Refresh creates a new revision; it never silently
-advances A. Repeating A→B reads the same answer without rescanning.
-Compute deltas before ranking, preserve both growth and shrinkage, and treat denied
-scopes as unknown. Include hidden build artifacts, prevent overlapping-root double
-counting, separate the monitor’s own store, and report physical free-space change
-alongside per-entry sums.
-APFS sharing and snapshots mean those sums are not a promise of reclaimable space.
-
 ### The Motivating Use Case: Whole-Drive Usage on a Mac
 
 The scenario that exercises every rung at once, and the clearest product win available:
@@ -1429,6 +1342,89 @@ The experiments below do not follow this order, and deliberately so: experiments
 cheap *measurements*, and the platform spikes (2, 4) exist precisely to price rung 3
 before anyone commits to it.
 Measure early, implement in ladder order.
+
+### Daily Disk-Usage Comparison (2026-09-13)
+
+The practical question is: after saving an inventory today, can a later visit explain
+where several gigabytes appeared without another full home-folder walk?
+fdu has useful inventory and reducer machinery, but no durable checkpoint or built-in
+comparison command. The
+[checkpoint plan](../specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md) defines
+the missing workflow and its delivery slices.
+
+**What `main` provides.** Snapshots, at format version 3, hold the latest inventory per
+root and load the full entry set.
+Their fingerprint includes the crate version, so every release discards them, and a
+scope mismatch replaces them.
+They persist neither the opened root’s process-local index journal nor an FSEvents
+replay cursor.
+Default one-shot metadata reports can skip snapshot reads and scan afresh.
+The opened-root lifecycle improves refresh and one-shot costs, but adds neither durable
+checkpoints nor history replay.
+
+**Spotlight is a discovery aid, not the accounting source.** Apple’s
+[query documentation](https://developer.apple.com/library/archive/documentation/Carbon/Conceptual/SpotlightQuery/Concepts/QueryingMetadata.html)
+describes asynchronous queries and user-controlled scope exclusions; its
+[metadata architecture](https://developer.apple.com/library/archive/documentation/Carbon/Conceptual/MetadataIntro/Concepts/HowDoesItWork.html)
+uses asynchronous import.
+A query for recently modified indexed files omits deleted paths and their old sizes, and
+does not establish allocated-block usage.
+Comparing two complete retained inventories supplies that before-state.
+FSEvents can reduce the work needed to refresh it, including changes made while fdu is
+not running, as described in Apple’s
+[persistent event guide](https://developer.apple.com/library/archive/documentation/Darwin/Conceptual/FSEvents_ProgGuide/UsingtheFSEventsFramework/UsingtheFSEventsFramework.html).
+
+A bounded local check on 2026-09-13 found zero Spotlight results under a populated
+`$HOME/.cache/uv` and 134,544 under `$HOME/.codex`, using
+`mdfind -onlyin ROOT -count 'kMDItemFSName == "*"'`. This is evidence that coverage
+varies, not that all hidden directories are excluded or that the positive result is
+complete. No controlled home-folder delta benchmark was run, and summing files by
+modification date cannot establish how much storage grew during that interval.
+
+**Replay needs reproducible evidence.** The August scratch spike was not committed and
+its exact stream flags were not retained.
+The installed macOS 26.5 SDK’s `FSEvents.h` documents
+`kFSEventStreamCreateFlagFullHistory` (macOS 10.15+, value `0x80`): it returns the
+entire first historical chunk, including IDs below the requested fence, to avoid
+boundary losses near an unclean restart.
+Commit a probe that compares this flag with the historical configuration, records
+pre-mutation fences, and checks the result against independent full scans.
+Its overlap must remain idempotent.
+It does not restore expired history, and neither UUID equality nor `HistoryDone` proves
+completeness. The
+[FSEvents plan](../specs/active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
+retains distinct journal-scoped provenance and sweep fallback.
+
+The plan’s provisional 24-hour cursor-age limit is a direct obstacle to a first refresh
+on the next day. Measure 1-hour, 24-hour, 48-hour, and 7-day gaps before changing it;
+track applied-cursor age separately from checkpoint age and last full verification.
+The historical 17 empty-replay trials ranged from about 9–33 ms in one mode to 193–487
+ms in another, and old-cursor replay reached about 2 seconds.
+These are replay-component observations, not evidence for a fixed whole-command latency.
+
+**The persistent representation matters as much as replay.** A flat O(N) load and
+rewrite cannot become O(changes) merely by avoiding stats.
+Reuse the planned indexed block format, persisted aggregates, and bounded mutation
+storage; keep checkpoints in a store separate from the replaceable cache.
+A quiet refresh should touch the state needed for replayed events, dirty-directory
+entries, affected ancestors, and requested output.
+Measure broad-directory relists, FSEvents traffic outside the selected root, store
+growth, compaction, and fallback as well as scan savings.
+Do not replace the block plan with a row-per-file relational hot path without evidence;
+the existing snapshot research already records that tradeoff.
+
+The comparison contract is net signed byte and count changes between two checkpoints
+addressed by immutable id.
+Refresh creates a new checkpoint and never alters an existing one; moving a label never
+changes what an id refers to.
+Repeating a comparison of the same ids reads the same answer without rescanning.
+Compute deltas before ranking, preserve both growth and shrinkage, and record denied
+subtrees as typed gaps rather than removals.
+Include hidden build artifacts, prevent overlapping-root double counting, exclude the
+checkpoint store, and report physical free-space change alongside entry sums.
+Per-path sums count every hard link in full unless files are counted once per
+`(dev, inode)`, and APFS clones and snapshots share blocks that no per-entry sum sees,
+so those sums are not a promise of reclaimable space.
 
 ## Key Insights
 

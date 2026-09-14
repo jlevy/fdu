@@ -10,41 +10,49 @@ document.
 
 Save an inventory of a home folder or selected roots, return a day later, and identify
 which directories gained or lost bytes without enumerating millions of unchanged files.
-Comparing the same two saved checkpoints must return the same net changes.
+Comparing the same two checkpoints, identified by their immutable ids, must return the
+same net changes or refuse explicitly; it must never return a different answer.
 
 The first inventory requires a scan.
 Subsequent refreshes should verify changed scopes, update their ancestors, and read or
 write only the persisted state they need.
 The performance target covers the whole command, including loading and saving state.
 
+## Terminology
+
+Three different change records appear in this plan:
+
+- **Index journal:** the bounded, process-local commit history that an opened root keeps
+  for `since(clock)` and change polling
+  ([`opened/journal.rs`](../../../../crates/fdu-core/src/opened/journal.rs)). It exists
+  on `main` and starts empty whenever a snapshot is loaded.
+- **FSEvents history:** the per-volume event store that macOS `fseventsd` keeps on disk
+  across process exits and reboots.
+- **History replay:** the planned mechanism that reads FSEvents history from a stored
+  per-volume **replay cursor** to nominate scopes for fresh observation.
+
+`Source::JournalScoped` is the engine’s provenance for values that history replay scoped
+and nothing re-verified.
+
 ## What Exists Today
 
-Reviewed against `main` at `b75bf85` and the open engine stack through `afbb2ee` on
-2026-09-13. The installed CLI identified itself as `0.1.0-dev+gb75bf85a3`, matching
-`main`; it must not be confused with the newer checkout.
-
-| Capability | Current behavior | Consequence for daily comparison |
+| Capability | Behavior on `main` | Consequence for daily comparison |
 | --- | --- | --- |
-| Metadata inventory | Stores apparent and allocated bytes, fingerprints, and directory roll-ups | Reuse these facts and reducers |
-| Default one-shot metadata report | Usually chooses a fresh scan instead of loading and revalidating the snapshot | A cache does not currently avoid the next traversal |
-| `open()` with a compatible cache | Loads the image and reconciles every entry before returning | Reuse is still proportional to tree size |
-| `--cache only` | Loads saved facts without filesystem verification; labels them stale | Useful for viewing an old inventory, not discovering changes |
-| Snapshot persistence | One replaceable image per root; flat format v2 on `main` | No named historical baseline; loading materializes the full index |
-| Native watch and `since(clock)` | Incremental updates and bounded process-local history | Does not recover a day of changes after process exit |
-| FSEvents historical replay | Planned, with a recorded exploratory spike | No `journal` implementation or stored replay cursor yet |
-| Partial scans | Report errors; incomplete scans do not replace the complete snapshot | `--allow-partial` does not make a denied home-folder scan cacheable |
+| Metadata inventory | Each entry retains apparent and allocated bytes, mtime, ctime, inode, and device (`Attrs`); the index maintains directory roll-ups. No link count or clone identity is retained | Reuse these facts and reducers; hard links are detectable only by grouping `(dev, inode)` across an inventory |
+| Default one-shot metadata report | `plan_report` reads the snapshot under `auto` and `read-only` only when content analysis is requested; a summary-only query retains no index and writes no snapshot | A cache does not currently avoid the next traversal |
+| `open()` with a usable snapshot | Loads the image and reconciles every entry before returning | Reuse is still proportional to tree size |
+| `--cache only` | Loads saved facts without filesystem verification and labels them stale | Useful for viewing an old inventory, not for discovering changes |
+| Snapshot persistence | One replaceable flat image per root, format version 3. `engine_fingerprint` mixes the crate version, format version, and classification version; a mismatch, or a stored scan scope that cannot serve the request, is a miss, and the next complete indexed scan replaces the image | No baseline survives an upgrade, a rules change, or a scope change; loading materializes the full index |
+| Opened roots | Bounded change polling, verified multi-path refresh, and `since(clock)` over the index journal | The history is process-local; it does not recover a day of changes after process exit |
+| FSEvents history replay | Planned in the FSEvents plan, with an uncommitted exploratory spike | No replay module and no replay cursor in the snapshot format |
+| Partial scans | Report errors; `snapshot::save` refuses an incomplete index | `--allow-partial` changes exit acceptance only; a denied home-folder scan is not cacheable |
 
 Source: [execution planning](../../../../crates/fdu-core/src/execution.rs),
 [open and cache policy](../../../../crates/fdu-core/src/lib.rs),
-[snapshot format](../../../../crates/fdu-core/src/snapshot.rs), and
+[snapshot format](../../../../crates/fdu-core/src/snapshot.rs),
+[engine contract](../../../../crates/fdu-core/src/engine_contract.rs), and
 [cache guide](../../guides/cache-design.md).
 
-[PR #48](https://github.com/jlevy/fdu/pull/48) adds the opened-root lifecycle, bounded
-change polling, and verified multi-path refresh.
-The stack through [PR #52](https://github.com/jlevy/fdu/pull/52) improves its one-shot
-costs; at the reviewed head its CI passes but final performance acceptance remains open.
-Its versioned change history is still process-local, and its v3 snapshot change does not
-implement the FSEvents cursor described by the older plan.
 Build this feature through the engine and mirror it in CLI and Python; do not make a
 Python inventory replica or persist an opened handle’s session identity.
 
@@ -52,26 +60,52 @@ Python inventory replica or persist an opened handle’s session identity.
 
 The operations below define behavior, not committed command syntax.
 
-1. **Capture a named baseline.** Scan the selected scope, show coverage and filesystem
-   free space, and save immutable checkpoint A. Refuse a duplicate name unless the
-   caller explicitly requests replacement.
-2. **Refresh on the next visit.** Resume the working inventory from its last applied
-   filesystem-event boundary.
-   Reconcile changed scopes, then publish checkpoint B. If replay is unavailable or
-   insufficient, run the ordinary scan and retain A.
+1. **Capture a checkpoint.** Scan the selected scope, show coverage and filesystem free
+   space, and publish checkpoint A with a newly minted immutable id.
+   Optionally attach a label such as `before-upgrade`.
+2. **Refresh on the next visit.** Resume the working inventory from its replay cursor,
+   reconcile changed scopes, then publish checkpoint B with its own id.
+   If replay is unavailable or insufficient, run the ordinary scan.
+   A is unaffected either way.
 3. **Compare A with B.** Show the largest positive and negative directory deltas,
    before/after bytes, file-count changes, and coverage.
    Expand a directory for the files or child directories responsible.
 4. **Reuse or advance deliberately.** Re-reading A→B performs no refresh and produces
    the same answer. A separate refresh creates C; comparing A→C leaves A unchanged.
-   Updating a rolling baseline is an explicit operation.
+   Moving a label, for example `yesterday` from A to C, is an explicit operation.
+
+### Checkpoint Identity
+
+A checkpoint id is minted when the checkpoint is published and is never reused.
+It is independent of `Clock`, `EngineVersion`, and session identity, whose reset rules
+belong to a live process.
+
+A label is a movable name for an id:
+
+- A comparison may be requested by label or by id.
+  The engine resolves labels to ids at request time, and every result records both
+  resolved ids.
+- Reading the same pair of ids again returns the same rows, or refuses with a typed
+  error if either checkpoint is no longer retained.
+  It never substitutes another checkpoint.
+- Moving a label never modifies a checkpoint.
+  The previous checkpoint stays addressable by id until retention removes it.
+- A checkpoint is pinned while a label points to it or the caller has pinned it
+  explicitly. Retention never removes a pinned checkpoint.
+
+Refusing to reuse a label is the alternative; see [Open Questions](#open-questions).
+
+### Delta Ranking
 
 The default question is “which directories account for the largest storage changes?”
-Rank by absolute signed allocated-byte change, with a deterministic path tie-breaker.
-Keep increases and decreases visible, provide apparent-byte selection, and expose every
-output bound.
-Compute deltas before selecting the largest rows; comparing yesterday’s top
-ten with today’s top ten loses directories that newly became large.
+Rank by the absolute signed change in unique allocated bytes, defined under
+[Delta Accounting](#delta-accounting), with a deterministic path tie-breaker.
+Keep increases and decreases visible, offer per-path allocated and apparent bytes as
+alternative rankings, name the measure in every output, and expose every output bound.
+Compute deltas before selecting the largest rows; comparing yesterday’s top ten with
+today’s top ten loses directories that newly became large.
+
+### Interim Workflow
 
 An immediately usable interim workflow is to save complete, dated directory reports:
 
@@ -85,13 +119,13 @@ paths present in only one report.
 Check `complete` and `errors` before subtraction.
 Keep the reports outside the measured root.
 Both sizes are already present in JSON. This supplies a baseline today, but both
-captures still scan the selected tree and fdu does not yet provide the comparison
-command.
-`--modified-since` filters present files; it cannot recover old sizes or deleted
-files. `--depth` and `--exclude` are report controls, not a promise to avoid scanning
+captures still scan the selected tree, the sums count hard links and clones in full, and
+fdu does not yet provide the comparison command.
+`--modified-since` filters present files; it cannot recover old sizes or deleted files.
+`--depth` and `--exclude` are report controls, not a promise to avoid scanning
 descendants.
 
-## Scope and Accounting
+## Scope
 
 Start with independently refreshable roots such as `$HOME/.cache`, `$HOME/.codex`,
 `$HOME/.claude`, `$HOME/Library/Caches`, and the workspace directory.
@@ -99,49 +133,109 @@ Add the home folder once the same contract is measured at that scale.
 A home inventory and a nested root may be alternative views, but their totals must not
 be added together.
 
-Persist root and volume identity, symlink and filesystem-boundary policies, hidden-file
-and exclusion rules, and the size-accounting version.
-Comparisons require compatible scope.
+Each checkpoint records the identities that decide whether two checkpoints can be
+compared; see [Checkpoint Store and Compatibility](#checkpoint-store-and-compatibility).
 Include hidden and Git-ignored build artifacts: those are often the growth being
-investigated. Use one filesystem per inventory initially, with symlinks not followed.
+investigated. Control-state observation classifies entries; it never removes them from
+byte totals. Use one filesystem per inventory initially, with symlinks not followed.
 
 Include Trash when measuring the whole home folder.
 Moving a cache to Trash decreases its source directory and increases Trash; it does not
 by itself free the blocks.
-Exclude the monitor’s own managed store explicitly from the inventory and report its
-bytes separately, so writing a checkpoint does not create an endless stream of
-self-generated usage deltas.
-This requires an actual engine scan-scope exclusion, not only a display filter.
+Exclude the checkpoint store explicitly from the inventory and report its bytes
+separately, so writing a checkpoint does not create an endless stream of self-generated
+usage deltas. This requires an actual engine scan-scope exclusion, not only a display
+filter.
 
-Measure both apparent and allocated bytes.
-Current roll-ups count file entries; they do not promise unique physical ownership of
-APFS clones or hardlinks.
-Keep the accounting policy stable across checkpoints; the deterministic hardlink policy
-remains tracked in `fdu-579b`. Record `statvfs`/`df` free space alongside each
-checkpoint. Changes in snapshots, sharing, purgeable data, open deleted files, and files
-outside the scope can prevent a directory sum from matching that physical delta.
+## Delta Accounting
+
+Each measure is computed per checkpoint and then subtracted:
+
+| Measure | Counts | Hard links | APFS clones |
+| --- | --- | --- | --- |
+| Apparent bytes | `size` of every path entry | each path in full | each clone in full |
+| Per-path allocated bytes | `allocated` of every path entry, as today’s roll-ups do | each path in full | each clone in full |
+| Unique allocated bytes | `allocated` once per `(dev, inode)` within one checkpoint | once per inode | each clone in full |
+
+**Hard links.** Within one checkpoint, regular-file entries that share `(dev, inode)`
+are one file, so unique allocated bytes count it once.
+A package manager that links an existing file into a new environment therefore does not
+grow the checkpoint total.
+Attributing that file to one directory needs a deterministic rule.
+Slice 2 attributes it to the in-scope entry whose root-relative path sorts first by
+bytes, and marks every directory row whose subtree holds a shared inode, including one
+whose other links lie outside the scope.
+That rule is stable across two complete captures, but a new link that sorts earlier
+moves the attribution: the delta shows a decrease at the old directory and an increase
+at the new one, with net zero at their common ancestor.
+The durable rule, which must also survive incremental updates, is `fdu-579b`.
+`(dev, inode)` is compared only within one checkpoint: device numbers are not stable
+across reboots, and inode numbers are reused.
+
+The engine retains no link count, so grouping would otherwise have to hash every regular
+file by `(dev, inode)`. Slice 2 therefore adds the link count to the retained entry
+facts in `fdu-core`, so only files with more than one link enter the group.
+The metadata calls the scanner already makes can supply it: `st_nlink` from `stat`, and
+`ATTR_FILE_LINKCOUNT`, which `getattrlistbulk` can request.
+
+**APFS clones.** A clone is a distinct inode that shares blocks with its source, and
+each reports its full allocated size.
+The engine cannot see that sharing today, so for clone creation and deletion both
+allocated measures are an upper bound on the physical change.
+uv, which clones from its cache into environments by default on macOS, can show an
+environment’s full size as growth while few blocks were written.
+The bound runs one way only: a write into a cloned file can allocate new blocks without
+changing its reported allocated size.
+The macOS attribute API documents extended attributes that bear on this:
+`ATTR_CMNEXT_PRIVATESIZE` (bytes not shared with a clone or snapshot, freed immediately
+if the file were deleted), `ATTR_CMNEXT_CLONEID`, `ATTR_CMNEXT_CLONE_REFCNT`, and
+`EF_MAY_SHARE_BLOCKS` in `ATTR_CMNEXT_EXT_FLAGS`. Whether `getattrlistbulk` returns them
+on the target volumes, and at what cost, is unmeasured; using them is outside slice 2.
+
+The default ranking is honest about these limits:
+
+- Every comparison shows the volume free-space change recorded with each checkpoint
+  (`statvfs`), labeled volume-wide.
+- Rows whose subtree contains a shared inode are marked shared.
+- On APFS, the output states that clone sharing is not visible and that allocated deltas
+  can overstate physical change.
+- A directory sum is not a promise of reclaimable space.
+  Snapshots, purgeable data, open deleted files, and changes outside the scope can make
+  it differ from the free-space change.
+
+## Coverage and Denied Subtrees
 
 Permission loss is unknown state, not removal.
-A disappearance is established only by a successful reconciliation of its containing
-scope. For the first slice, retain the current complete-only snapshot rule and offer
-smaller readable roots when a home scan is partial.
-Persisting partial coverage requires a separately versioned format and unknown-subtree
-semantics; it cannot be added by weakening the existing complete flag.
+
+- A subtree that a capture or refresh cannot read is recorded as a typed gap: its path,
+  the error kind, and when it was last observed.
+  A gap is unknown, not empty.
+- A capture with gaps publishes a partial checkpoint marked with its gap list.
+  The command’s exit status follows the existing partial-result acceptance
+  (`--allow-partial`).
+- A comparison shows a gap in either checkpoint as unknown for that subtree and marks
+  every ancestor’s delta partial.
+- A disappearance is established only by a successful reconciliation of its containing
+  scope. A gap is cleared only by a complete scan of its subtree, never by replay,
+  because events delivered while it was unreadable were not applied.
+
+The snapshot cache keeps its complete-only rule.
+Typed gaps belong to the checkpoint format from slice 2. The working inventory needs the
+same semantics, in its own format version, before slice 3 can advance a replay cursor
+past a gap; neither change weakens the existing complete flag.
 
 ## Persistent State and Idempotence
 
-Keep three identities separate:
+Keep three kinds of state separate:
 
 | State | Lifetime and meaning |
 | --- | --- |
-| Working inventory | Latest reconciled entry facts and persisted directory aggregates |
-| Applied FSEvents cursor | Per-volume progress used to discover work since the last refresh |
-| Named checkpoint | Immutable comparison baseline with scope, coverage, capture interval, and durable revision identity |
+| Working inventory | Latest reconciled entry facts, typed gaps, and persisted directory aggregates; replaced by each refresh |
+| Replay cursor | Per-volume FSEvents progress used to discover work since the last refresh |
+| Checkpoint | Immutable comparison baseline with its id, recorded identities, coverage, capture interval, and free space; labels point to it |
 
-A week-old baseline may be compared using a recently refreshed cursor.
-The baseline’s age must not force replay from a week ago.
-Persisted checkpoint IDs must be independent of `Clock` or `EngineVersion`, whose
-identity and reset rules belong to a live process.
+A week-old checkpoint may be compared using a recently refreshed cursor.
+The checkpoint’s age must not force replay from a week ago.
 
 Replay events nominate work; they are not byte increments.
 Coalesce overlapping scopes, observe current filesystem facts, and apply conditional
@@ -155,16 +249,22 @@ intermediate churn is a different feature.
 Rename detection is optional attribution.
 A move contributes a decrease at the old path and an increase at the new one, with net
 zero at their shared ancestor when allocation is unchanged.
-Inode matches alone do not prove a rename across long gaps because of reuse and
-hardlinks. Compute ancestor deltas from the same facts without adding both a parent’s
+Inode matches alone do not prove a rename across long gaps because of reuse and hard
+links. Compute ancestor deltas from the same facts without adding both a parent’s
 recursive total and its children’s totals to a grand total.
 
 Capture a filesystem-event fence before a full scan.
 Publish the resulting inventory and that conservative cursor together.
 For a scoped refresh, advance the cursor only through work reconciled and committed;
 overlapping historical events remain safe to reobserve.
-Cancellation, denied paths, or failed persistence must not publish a cursor past
-unapplied work. Preserve hints arriving during refresh for the next pass.
+Cancellation, an exhausted work budget, and failed persistence must not publish a cursor
+past unapplied work.
+A denied subtree is applied work once the committed inventory records it as a typed gap,
+so the cursor advances past events inside it.
+An age-forced sweep that meets the same denial still publishes its gap-marked inventory
+and pre-scan cursor, and the refresh still publishes its partial checkpoint.
+A persistently denied subtree therefore cannot hold the cursor back indefinitely.
+Preserve hints arriving during refresh for the next pass.
 
 Each committed working revision, its cursor, checkpoint references, and aggregate
 changes need one recoverable publication boundary.
@@ -172,14 +272,89 @@ Define crash durability explicitly; atomic rename alone is only atomic visibilit
 Concurrent refresh writers for the same root must serialize or conflict by revision.
 Checkpoint reads remain immutable.
 
-Named baselines are retained user state, even when their inventory blocks originated in
-a cache. Ordinary cache eviction must not silently destroy them.
-Share unchanged blocks between revisions or retain a compact change log; avoid one full
-million-file copy per day.
+Share unchanged blocks between checkpoints or retain a compact change log; avoid one
+full million-file copy per day.
 Compaction preserves pinned checkpoints and atomically publishes its replacement.
 Bound unpinned history by a stated retention policy; refuse an over-budget save rather
-than silently evicting a named baseline.
+than silently removing a pinned checkpoint.
 Final policy values require measurements.
+
+## Checkpoint Store and Compatibility
+
+The snapshot cache is built to be discarded.
+`engine_fingerprint` includes the crate version, so every release misses every existing
+snapshot, and a scope mismatch cold-scans and replaces the root’s single image.
+A checkpoint keyed the same way would be lost on every upgrade, every classification
+change, and every alternation between report and opened-root scopes (`fdu-w3l5`), none
+of which a user would recognize as eviction.
+
+**Separate store.** Checkpoints live in a store under the user data directory, not the
+cache directory that users and cleanup tools treat as disposable.
+The cache path, `engine_fingerprint`, and `--cache-clear` never address it.
+A checkpoint may be captured from any complete or gap-marked index, but once published
+it depends on no cache image.
+Blocks shared with the working inventory (slice 4) follow the store’s lifecycle, not the
+cache’s.
+
+**Own format version.** The store has a checkpoint format version, independent of the
+snapshot `FORMAT_VERSION`, the crate version, and `CLASSIFICATION_VERSION`. Each
+checkpoint records its format version, id, root path and volume identity,
+`ScopeIdentity`, `SemanticIdentity`, classification version, accounting version (which
+measures it recorded), capture interval, coverage, and free space.
+It also records the writing engine version, as information only.
+
+**Upgrades.** Before any release writes checkpoints, a development build refuses an
+older development format and says so.
+Once a release writes checkpoints, they are user-owned data:
+
+- The reader keeps every released checkpoint format readable for the comparison facts,
+  and never rewrites a checkpoint in place.
+- Compaction, which already republishes blocks atomically, may re-encode what it copies
+  in the current format, provided the A→B result of every retained id pair is unchanged.
+- A checkpoint in a newer format than the reader knows is refused with an error naming
+  its id and version, and the remedy: use a release that reads it, or remove it
+  explicitly.
+- Retiring a released format requires a release that has re-encoded every retained
+  checkpoint in that format, and a release note.
+
+**Scope and classification changes.** Whether a comparison is valid is decided per
+measure, from the recorded identities:
+
+- A different root or volume identity, or a different `ScopeIdentity` (depth, symlink
+  policy, filesystem boundary, hidden-entry policy, special files), refuses the
+  comparison with a typed error naming the differing field.
+  The two checkpoints admitted different entries, so no byte delta between them means
+  anything.
+- A different `SemanticIdentity` or classification version leaves the filesystem facts
+  comparable: path, kind, apparent bytes, allocated bytes, and counts.
+  Measures derived from classification, such as ignored and unignored partitions and
+  type tallies, are reported as not comparable, with the reason, rather than as zero.
+  For example, observing `.gitignore` control state by default on every surface
+  (`fdu-elnn`) changes a report’s ignore-rules fingerprint without changing any byte
+  count.
+- A checkpoint captured without control observation has no ignored partition, and
+  comparisons report that measure as not observed.
+- A measure recorded in only one of the two checkpoints, such as unique allocated bytes
+  from before link counts were retained, is unavailable for that pair.
+  Ranking by it is refused with a remedy; the other measures remain available.
+- The crate version and the snapshot `FORMAT_VERSION` never affect comparability.
+
+**Backward compatibility requirements:**
+
+- **Internal code:** DO NOT MAINTAIN. Nothing outside the repository depends on
+  checkpoint internals.
+- **Library APIs:** N/A. The plan adds engine, CLI, and Python APIs and changes none.
+- **Server APIs:** N/A.
+- **Plugin and extension APIs:** N/A.
+- **File formats:** The snapshot cache stays VERSION + FAIL FAST, where a mismatch is a
+  clean miss. The checkpoint store is VERSION + FAIL FAST until a release writes it, then
+  SUPPORT BOTH at the reader for released versions.
+  The protected data is retained checkpoints.
+  Tests keep a stored checkpoint pair in each released format and assert its recorded
+  A→B result. Support for a format ends when a release has re-encoded every retained
+  checkpoint in it.
+- **Persisted client state:** Labels and pins follow the checkpoint store.
+- **Database schemas:** N/A.
 
 ## Refresh Mechanism and Cost
 
@@ -193,8 +368,8 @@ The
 records the source and local evidence behind that decision.
 
 ```text
-previous inventory + applied cursor
-             | FSEvents replay
+working inventory + replay cursor
+             | FSEvents history replay
              v
       normalized dirty scopes
              | fresh metadata observations
@@ -202,7 +377,7 @@ previous inventory + applied cursor
   engine updates facts and ancestor totals
              | atomic durable publication
              v
-new inventory + applied cursor + checkpoint B
+working inventory + replay cursor + checkpoint B
              |
              + checkpoint A --> signed directory/file deltas
 ```
@@ -216,8 +391,8 @@ open needed state + replay(E) + reconcile(D) + update(A)
     + persist changed state + produce requested delta rows
 ```
 
-The current flat loader and writer still cost O(N). A journal alone therefore cannot
-deliver an end-to-end O(changes) claim.
+The current flat loader and writer still cost O(N). History replay alone therefore
+cannot deliver an end-to-end O(changes) claim.
 Reuse the planned block format and durable mutation storage (`fdu-xihx`, `fdu-pdra`,
 `fdu-3dtq`), including persisted roll-ups and lazy access.
 A flat-format replay prototype is useful for measuring avoided traversal, but must
@@ -232,7 +407,7 @@ cheaper. Queries over arbitrary old checkpoints may have to scan their retained 
 range; fast stored comparisons and bounded top-change queries need their own measured
 read path.
 
-FSEvents results retain `JournalScoped` confidence.
+Replay-scoped results carry `Source::JournalScoped` provenance.
 A successful `HistoryDone`, matching UUID, or age bound does not prove complete history.
 A requested fully verified result uses the scan path.
 If a command’s work budget is exhausted, preserve its baseline and report incomplete
@@ -243,16 +418,19 @@ work; do not relabel the old answer as current.
 | Slice | Deliverable | Acceptance |
 | --- | --- | --- |
 | 1. Reproducible replay probe (`fdu-uwhl`) | Commit the probe, exact flags, cursor fences, and machine-readable results; compare with and without `FullHistory` | Deep append, deletion, move, restart, overlap, and controlled loss agree with an independent scan or produce a declared degraded result |
-| 2. Checkpoint and comparison contract (`fdu-8ybz`) | Engine-native immutable baselines and signed net comparisons, initially using complete scanned state | Repeated A→B reads are identical; refresh never advances A; native, CLI, and Python surfaces agree |
-| 3. Incremental macOS refresh | Cursor encoding/gates (`fdu-2cdv`), replay (`fdu-3tun`), scoped reconciliation (`fdu-rvje`) | Persist/restart/refresh tests and failure injection prove no lost cursor work or duplicate accounting |
+| 2. Checkpoint store and comparison contract (`fdu-8ybz`) | Engine-native store with ids, labels, pins, typed gaps, recorded identities, and the three accounting measures, including retained link counts; initially from scanned state | Repeated reads of one id pair are identical; moving a label or refreshing never changes a checkpoint; a removed checkpoint is refused, not substituted; an incompatible scope is refused; the hard-link, clone, and denied-subtree cases below produce their expected deltas; native, CLI, and Python surfaces agree |
+| 3. Incremental macOS refresh | Cursor encoding and gates (`fdu-2cdv`), replay (`fdu-3tun`), scoped reconciliation (`fdu-rvje`), and typed gaps in the working inventory | Persist/restart/refresh tests and failure injection prove no lost cursor work or duplicate accounting, and a persistently denied subtree does not stop the cursor advancing |
 | 4. Bounded persistent access | Block/lazy inventory and durable changes with checkpoint-aware compaction | Quiet refresh does not decode or rewrite all N entries; retained state stays within its declared budget |
 | 5. Large-home workflow | Measure full capture, day-gap refresh, delta read, and fallback at realistic churn | Publish paired results against a fresh scan, with all work and coverage reported |
 
 Slice 2 can provide useful comparisons before the replay optimization.
 Slice 4 is needed before claiming fast whole-home refresh independent of inventory size.
-Reconcile the format and lifecycle changes with the open PR stack before implementation;
-do not turn this docs plan into an implicit dependency on an unmerged performance
-result.
+The slices build on the merged opened-root lifecycle.
+Two open pull requests change adjacent contracts:
+[#56](https://github.com/jlevy/fdu/pull/56) bounds the index journal in bytes
+(`journal_capacity_bytes`), and [#57](https://github.com/jlevy/fdu/pull/57) adds a typed
+not-observed control state.
+Confirm their merged shape before slice 2 fixes its API.
 
 Use the existing [performance loop](../../guides/performance-loop.md) and predeclare
 accept rules before trials.
@@ -272,13 +450,61 @@ observation rather than a simultaneous filesystem snapshot.
 
 Correctness cases include in-place append with unchanged directory mtimes,
 allocated-only changes, file and subtree deletion, rename across sibling and monitored
-roots, duplicate/overlapping events, hardlinks, sparse/cloned files, ignored and hidden
-paths, permission loss and restoration, volume identity changes, event loss, concurrent
-writers, and crashes before and after cursor publication.
-Compaction and retention must preserve every pinned A→B result.
+roots, duplicate/overlapping events, sparse files, ignored and hidden paths, permission
+loss and restoration, volume identity changes, event loss, concurrent writers, and
+crashes before and after cursor publication.
+Accounting cases have stated expected deltas:
+
+- **Hard link added to an existing file:** per-path allocated grows by the file’s
+  allocated size at the new link’s directory; unique allocated is unchanged in total.
+- **Last remaining link removed:** both allocated measures shrink by the file’s
+  allocated size.
+- **Clone of an existing file:** both allocated measures grow by the clone’s allocated
+  size; the recorded free-space change can be near zero.
+- **Write into a cloned file without changing its size:** allocated measures are
+  unchanged; free space can decrease.
+- **Subtree denied at B but readable at A:** the subtree and its ancestors report
+  unknown or partial deltas, not removal.
+
+Compaction and retention must preserve every pinned checkpoint and the A→B result of
+every retained id pair.
 Exercise failure without materializing cloud-only files.
 A resident observer is an optional later optimization; it does not replace the
 cross-process, next-day acceptance test.
+
+## Follow-Ups
+
+- `fdu-b9d5`: the `Source::JournalScoped` rustdoc still states that FSEvents silently
+  drops history; align it with the interpretation the FSEvents plan’s Phase 0 findings
+  support, using slice 1’s evidence.
+- `fdu-579b`: the durable hard-link attribution rule that survives incremental updates.
+- `fdu-w3l5`: scope-keyed snapshots, which reduce cache churn but do not make the cache
+  a checkpoint store.
+
+## Open Questions
+
+These need a decision from the user.
+The plan above follows each recommendation.
+
+1. **Default delta measure.** Recommendation: unique allocated bytes, with per-path
+   allocated and apparent bytes selectable and the free-space change always shown.
+   Case against: it needs retained link counts, which change the engine’s entry facts
+   and snapshot format, and its directory attribution can move when a link is added;
+   per-path allocated bytes are what the roll-ups already report and cost nothing new.
+   On clone-populated macOS caches neither allocated measure removes the overstatement.
+2. **Label reuse.** Recommendation: labels move and comparisons bind to ids.
+   Case against: refusing to reuse a name makes a name an id and removes the resolution
+   step, but forces dated names on the rolling `yesterday` workflow and still needs a
+   separate notion of the latest checkpoint.
+3. **Released checkpoint formats.** Recommendation: keep each released format readable
+   and never rewrite a checkpoint in place.
+   Case against: migrating on upgrade keeps one reader, at the cost of rewriting
+   user-owned data, which then has to be atomic and verified against earlier comparison
+   results.
+4. **Partial checkpoints.** Recommendation: publish a gap-marked partial checkpoint and
+   let `--allow-partial` decide the exit status.
+   Case against: requiring an explicit opt-in keeps every stored checkpoint complete, at
+   the cost of no baseline at all for a home folder with one protected subtree.
 
 ## References
 

@@ -11,14 +11,18 @@ every entry regardless of what the snapshot holds — measured twice — so a jo
 one warm optimization among several but the only mechanism that goes under the stat
 floor at all.
 
-**Review (2026-09-13):** This feature is not implemented on `main` at `b75bf85a33ed`, or
-in the open engine stack through [PR #52](https://github.com/jlevy/fdu/pull/52). The
-[disk-usage checkpoint plan](plan-2026-09-13-fdu-disk-usage-checkpoints.md) supplies the
-durable before/after workflow that this refresh mechanism alone does not provide.
-The historical spike below remains evidence to reproduce: its source and exact stream
-flags were not retained.
-In particular, `FullHistory` changes the interpretation of the old-cursor result, and
-the proposed 24-hour gate does not yet meet the next-day goal.
+Nothing here is implemented on `main`: the snapshot format has no replay cursor, and
+`fdu-core` has no FSEvents replay module.
+The [disk-usage checkpoint plan](plan-2026-09-13-fdu-disk-usage-checkpoints.md) supplies
+the durable before/after comparison that this refresh mechanism alone does not provide.
+
+**Terminology.** In this plan, *journal* means an operating system’s persistent change
+journal: FSEvents history on macOS, or the USN journal on Windows.
+It is unrelated to the engine’s index journal
+([`opened/journal.rs`](../../../../crates/fdu-core/src/opened/journal.rs)), the bounded,
+process-local commit history behind `since(clock)`. Proposed code uses history-replay
+names (the `history_replay` module, `ReplayCursor`, and the `history-replay` build
+feature) so the two never share an identifier.
 
 ## Overview
 
@@ -46,8 +50,7 @@ on retained history and volume traffic.
 The current flat snapshot still incurs O(tree) loading when nothing changed; when a save
 is needed, it rewrites the full image.
 The Background section replaces that original serial comparison with exp-030’s current
-bounded-parallel rung-1 baseline and states where the journal is transformative rather
-than incremental.
+bounded-parallel rung-1 baseline and states where journal refresh could help.
 
 This is rung 2 of the warm ladder in the
 [performance-frontier research](../../research/research-2026-08-10-performance-frontier.md)
@@ -88,11 +91,10 @@ fails closed on every row, and why the full sweep remains the backstop on every 
   fast there. The two investments are complements, not alternatives.
 - Changing what is cached or where.
   This feature accelerates revalidation.
-  Durable named baselines, comparison, and retention belong to the linked checkpoint
-  plan. Current content-sidecar reuse and portable full sweeps remain available
-  independently.
+  Durable checkpoints, comparison, and retention belong to the linked checkpoint plan.
+  Current content-sidecar reuse and portable full sweeps remain available independently.
 - Touching the live watch layer.
-  The watcher (rung 3) already exists behind the `watch` feature; this is the
+  The watcher (rung 3) already exists behind the `watch` build feature; this is the
   between-runs story, not the resident one.
 - Spotlight or any other time-indexed query source.
   A query for currently indexed recent files cannot recover deleted paths or their old
@@ -150,7 +152,7 @@ expected events from an old cursor without a warning.
 Its exact flags were not retained, so it does not distinguish expired history from
 boundary behavior without `FullHistory`. Apple documents FSEvents as advisory;
 `HistoryDone` only marks the end of delivered history.
-The gate and proposed `Source::JournalScoped` provenance preserve that limit.
+The gate and the engine’s `Source::JournalScoped` provenance preserve that limit.
 
 The journal does carry exactly the information directory mtimes do not: a content edit
 to `a/b/c/file.txt` produces an event, because `fseventsd` logs operations rather than
@@ -224,7 +226,7 @@ The workspace denies `unsafe_code`; this FFI module carries a scoped
 The exp-022/026 `getattrlistbulk` work has established the same pattern for the scan
 boundary: an exact already-locked binding, unsafe confined to one leaf module, and
 byte-for-byte portable parity tests.
-The FSEvents module remains behind a non-default feature on one platform.
+The FSEvents module remains behind a non-default build feature on one platform.
 
 Replay semantics that the implementation and its tests must honor, from Apple’s
 documentation and Watchman’s source (mechanics only — see the Overview’s honesty note on
@@ -317,11 +319,11 @@ CoreServices. Every row falls closed to the sweep:
 
 | # | Condition | Decision |
 | --- | --- | --- |
-| G1 | Not macOS, feature off, or `--revalidate=full` | full sweep |
+| G1 | Not macOS, build feature off, or `--revalidate=full` | full sweep |
 | G2 | Snapshot has no cursor (older format, or first save) | full sweep; persist its pre-scan cursor with the snapshot |
 | G3 | Root’s current volume UUID ≠ stored UUID (moved disk, container change, UUID unreadable) | full sweep |
 | G4 | Stored event ID > current volume event ID (regression: journal purged, clock wrapped) | full sweep |
-| G5 | Applied cursor older than `max_journal_age` (provisional default **24 hours**) | full sweep; an age limit bounds exposure but does not prove retained history is complete |
+| G5 | Applied cursor older than `max_cursor_age` (provisional default **24 hours**) | full sweep; an age limit bounds exposure but does not prove retained history is complete |
 | G6 | Stream creation fails, or replay exceeds the G11 budget without `HistoryDone` | full sweep |
 | G7 | Replay reports `EventIdsWrapped`, `RootChanged`, `Mount`, `Unmount`, `UserDropped`, or `KernelDropped` | full sweep |
 | G8 | Replay reports `MustScanSubDirs(path)` | scoped: `InvalidateSubtree(path)`, journal continues for the rest |
@@ -330,8 +332,8 @@ CoreServices. Every row falls closed to the sweep:
 | G11 | Replay wall exceeds a budget scaled to the estimated sweep cost (measured: replay runs ~200 ms typical, up to 2 s from an old cursor) | abandon replay, full sweep |
 | G12 | Every Nth warm open (provisional default 20), regardless of what the journal reports | full sweep; also define and measure an elapsed-time verification limit |
 
-The cursor age, last full-verification time, and user baseline age are separate values.
-A week-old pinned baseline can be compared against a freshly maintained inventory.
+The cursor age, last full-verification time, and checkpoint age are separate values.
+A week-old checkpoint can be compared against a freshly maintained inventory.
 Conversely, a first refresh after 24 hours currently hits G5: this is an unresolved
 daily workflow constraint, not evidence that next-day refresh is already fast.
 Phase 0 must test 1-hour, 24-hour, 48-hour, and 7-day gaps before changing either risk
@@ -350,14 +352,13 @@ information: a snapshot whose scan crossed devices simply never carries a cursor
 
 ### Snapshot format
 
-Use the next available format version at integration time.
-`main` uses version 2; the open engine stack already uses version 3 for unrelated fields
-and has no journal cursor.
-Do not assign the same version to incompatible layouts.
+`main` writes snapshot format version 3, which has no replay cursor.
+Use the next available format version at integration time, and do not assign one version
+to incompatible layouts.
 After the scope header, propose one new optional section:
 
 ```
-journal_cursor: u8 tag        0 = none, 1 = fsevents-v1  (room for usn-v1 = 2)
+replay_cursor: u8 tag         0 = none, 1 = fsevents-v1  (room for usn-v1 = 2)
 if fsevents-v1:
   volume_uuid: 16 bytes
   event_id:    u64            applied fence; initially sampled before the full scan
@@ -376,15 +377,15 @@ boundary ahead of the reconciled data.
 
 ### Components
 
-- `crates/fdu-core/src/journal/mod.rs` — platform-neutral surface: `JournalCursor`
+- `crates/fdu-core/src/history_replay/mod.rs` — platform-neutral surface: `ReplayCursor`
   (encode/decode), `GateDecision`, the gate function, changed-set normalization.
   Compiles everywhere; no FFI.
-- `crates/fdu-core/src/journal/fsevents.rs` — `#[cfg(target_os = "macos")]`, feature
-  `journal`. The FFI module: current event ID, volume UUID for a device, and historical
-  replay via the non-deprecated dispatch-queue API (create stream with `sinceWhen`,
-  `FSEventStreamSetDispatchQueue` onto a private queue, start, receive marshalled
-  `(path, flags, event_id)` records over a channel until `HistoryDone` or the G6
-  deadline, then stop/invalidate/release).
+- `crates/fdu-core/src/history_replay/fsevents.rs` — `#[cfg(target_os = "macos")]`,
+  build feature `history-replay`. The FFI module: current event ID, volume UUID for a
+  device, and historical replay via the non-deprecated dispatch-queue API (create stream
+  with `sinceWhen`, `FSEventStreamSetDispatchQueue` onto a private queue, start, receive
+  marshalled `(path, flags, event_id)` records over a channel until `HistoryDone` or the
+  G6 deadline, then stop/invalidate/release).
   Unsafe is confined to this leaf module, following the existing scan-boundary pattern.
 - `crates/fdu-core/src/scan.rs` — `revalidate_dirs(index, dirs, config, sink)`: the
   bounded sweep. Reuses the existing per-directory emission; no new op kinds.
@@ -395,44 +396,45 @@ boundary ahead of the reconciled data.
   CLI and Python delegate to the same engine capability.
   The CLI may expose `--revalidate=auto|full` after the engine policy exists (`full`
   forces the sweep). `--cache off` remains the explicit full-scan, no-snapshot policy and
-  bypasses the journal path unchanged.
-- Feature `journal` in `crates/fdu-core/Cargo.toml`: gates `dep:fsevent-sys` (macOS only
-  via target-conditional dependency) and the FFI module.
+  bypasses the history-replay path unchanged.
+- Build feature `history-replay` in `crates/fdu-core/Cargo.toml`: gates
+  `dep:fsevent-sys` (macOS only via target-conditional dependency) and the FFI module.
   Off by default initially; the CLI enables it once the evidence is in.
-  On non-macOS targets the feature compiles to the gate returning G1, so
+  On non-macOS targets the build feature compiles to the gate returning G1, so
   `--no-default-features` and Linux/Windows builds are unaffected.
 
 ### API changes
 
 Additive only. `snapshot::save`/`load` signatures stay unchanged: the index carries the
 optional pre-scan or replay-advanced cursor, `save` encodes it, and `load` restores it.
-New public surface: `JournalCursor`, `GateDecision`, and `scan::revalidate_dirs`, all
+New public surface: `ReplayCursor`, `GateDecision`, and `scan::revalidate_dirs`, all
 documented as macOS-accelerator plumbing with the sweep as the portable contract.
 
 ### Packaging and platform fallback
 
-One source tree, one feature name, correct behavior on every platform without the
+One source tree, one build feature name, correct behavior on every platform without the
 consumer doing anything:
 
-- The `journal` feature exists on **all** platforms.
+- The `history-replay` build feature exists on **all** platforms.
   On macOS it compiles the FFI module and the gate can return scoped decisions;
   elsewhere it compiles only the platform-neutral gate, whose first row (G1) answers
-  “full sweep.” Enabling the feature is therefore never a build error and never changes
-  non-macOS behavior — the fallback is the same code path Linux runs today, not a stub.
+  “full sweep.” Enabling it is therefore never a build error and never changes non-macOS
+  behavior — the fallback is the same code path Linux runs today, not a stub.
 - The dependency is target-conditional:
   `[target.'cfg(target_os = "macos")'.dependencies] fsevent-sys = { version = "4.1", optional = true }`.
-  Linux and Windows builds with `--features journal` pull no new crates at all.
+  Linux and Windows builds with `--features history-replay` pull no new crates at all.
 - **Cargo consumers**: `default-features = false` builds are unaffected; the CLI build
-  turns the feature on once the evidence gate passes.
+  turns the build feature on once the evidence gate passes.
 - **PyPI / uv consumers**: `fdu-py` wheels are built per-platform by maturin, so the
-  macOS wheels carry the journal path and the manylinux wheels carry the fallback, from
-  the same source with no Python-side conditionals, extras, or environment markers.
+  macOS wheels carry the history-replay path and the manylinux wheels carry the
+  fallback, from the same source with no Python-side conditionals, extras, or
+  environment markers.
   `uv pip install fdu` (or `uvx fdu`) gets the right behavior on either OS because the
   platform selection already happened at wheel-build time — the same mechanism that
   ships every other platform difference today.
 - Both distribution channels are exercised in CI: the existing test matrix
-  (ubuntu/macos/windows) proves the feature compiles and falls back everywhere, and the
-  wheel legs install the built wheel and run the warm-path smoke on each OS.
+  (ubuntu/macos/windows) proves the build feature compiles and falls back everywhere,
+  and the wheel legs install the built wheel and run the warm-path smoke on each OS.
 
 ## Implementation Plan
 
@@ -664,7 +666,9 @@ known saved pre-mutation fence and the exact flags, including `FullHistory`, wer
 retained. Apple’s SDK header documents that without `FullHistory`, events near
 `sinceWhen` may be skipped; with it, the first historical chunk overlaps the cursor.
 Neither that flag nor UUID equality restores expired history or proves complete
-delivery.
+delivery. The engine’s `Source::JournalScoped` rustdoc still states the purge
+interpretation as fact; `fdu-b9d5` aligns it with this record, using the committed
+probe’s evidence (`fdu-uwhl`).
 
 The 2026-08-10 response was to propose a 24-hour age bound, a replay deadline, and a
 full sweep every 20 warm opens.
@@ -674,7 +678,7 @@ An age bound cannot establish correctness, and the current bound leaves the firs
 next-day refresh outside the fast path.
 
 **Disposition:** proceed with a reproducible probe and the format/gate work; do not
-claim size-independent warm opens or enable journal refresh by default from this record.
+claim size-independent warm opens or enable history replay by default from this record.
 Full-scan oracle comparisons, replay-gap measurements, and whole-command cost are the
 acceptance evidence still needed.
 
@@ -682,23 +686,24 @@ acceptance evidence still needed.
 
 - [ ] Next available snapshot format version: cursor section, encode-side cursor field
   stub (writes `none` on all platforms), load-side decode, corrupt-cursor fails closed
-- [ ] `journal/mod.rs`: cursor types, gate decision table as a pure function,
+- [ ] `history_replay/mod.rs`: cursor types, gate decision table as a pure function,
   changed-set normalization; exhaustive unit tests for every gate row
 - [ ] Round-trip tests for the new version; explicit predecessor migration or clean-miss
-  tests, including the unrelated version 3 layout in the open engine stack
+  tests, including the current version 3 layout
 - [ ] Snapshot header records this tree’s observed scan cost (µs/entry) and entry count,
   so the cache carries its own cost model; a header without timing falls back to a
   conservative default
-- [ ] Engine-owned refresh planning: compare measured full-scan and journal paths while
-  preserving the baseline and respecting freshness policy; test decisions without OS
-  APIs
+- [ ] Engine-owned refresh planning: compare measured full-scan and history-replay paths
+  while preserving the baseline and respecting freshness policy; test decisions without
+  OS APIs
 - [ ] Treat cache-capacity probes as optional performance diagnostics; do not use one
   host’s capacity as a correctness gate or universal threshold
 
 ### Phase 2: Replay and scoped revalidation (macOS)
 
-- [ ] `journal/fsevents.rs`: FFI declarations, current-event-id, volume UUID, historical
-  replay with deadline; scoped `#[allow(unsafe_code)]` with per-call safety comments
+- [ ] `history_replay/fsevents.rs`: FFI declarations, current-event-id, volume UUID,
+  historical replay with deadline; scoped `#[allow(unsafe_code)]` with per-call safety
+  comments
 - [ ] `revalidate_dirs` orchestration in scan.rs, feeding changed roots into exp-026’s
   bulk-backed subtree reconciler, plus `InvalidateSubtree` resolution for G8
 - [ ] Engine: gate wiring, capture the cursor immediately before a full scan, and commit
@@ -707,15 +712,15 @@ acceptance evidence still needed.
 - [ ] Integration tests (macOS CI leg): mutate-then-journal-revalidate equals fresh scan
   by engine digest; UUID mismatch, event-ID regression, and forced `MustScanSubDirs`
   each degrade correctly
-- [ ] Cross-platform packaging: target-conditional dependency, `journal` feature
-  compiling on every platform with the G1 fallback, ubuntu CI leg running the fallback
-  end-to-end with digest equality, wheel smoke exercising a warm open through Python on
-  both OSes
-- [ ] Performance loop: new `warm-revalidate-journal` job; the one-deep-edit acceptance
+- [ ] Cross-platform packaging: target-conditional dependency, `history-replay` build
+  feature compiling on every platform with the G1 fallback, ubuntu CI leg running the
+  fallback end-to-end with digest equality, wheel smoke exercising a warm open through
+  Python on both OSes
+- [ ] Performance loop: new `warm-revalidate-replay` job; the one-deep-edit acceptance
   scenario on the reference tree (quiet, one-file-touched at depth ≥ 10, and
   one-file-deleted rows, full sweep as the paired control) and a churn transition
   (measure replay, dirty-scope work, full-image costs, and total wall — H43/H38); ledger
-  entries either way; feature stays off by default until the loop accepts
+  entries either way; the build feature stays off by default until the loop accepts
 
 ## Testing Strategy
 
@@ -729,12 +734,12 @@ Degradations are forced, not simulated: a wrong stored UUID, a stored event ID a
 current, an undersized `max_changed_fraction`. The performance harness needs no changes
 to verify correctness: its oracle already digests every trial’s index, so a journal-path
 trial that skips a real change fails the run loudly.
-Linux and Windows CI prove the feature compiles away cleanly.
+Linux and Windows CI prove the build feature compiles away cleanly.
 
 ## Rollout Plan
 
-Feature `journal`, off by default, on for the CLI build once both phases pass the gate
-*and* the loop’s experiments accept.
+Build feature `history-replay`, off by default, on for the CLI build once both phases
+pass the gate *and* the loop’s experiments accept.
 The README and skill text may only claim what the ledger shows, per the existing
 no-unmeasured-claims convention.
 
@@ -745,7 +750,7 @@ no-unmeasured-claims convention.
   bounds the damage if the answer is unfavorable.
 - Cursor-per-volume for multi-volume scans: deferred behind G2 + `one_filesystem` now;
   the tag byte leaves room for a multi-cursor section later.
-- Should `--revalidate=journal` exist (fail rather than sweep when the gate refuses)?
+- Should `--revalidate=replay` exist (fail rather than sweep when the gate refuses)?
   Useful for testing; possibly confusing as a user surface.
   Deferred until the integration tests want it.
 
