@@ -19,7 +19,6 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::{OsStr, OsString};
 use std::fmt::Write as _;
 use std::fs;
-#[cfg(feature = "gitignore")]
 use std::io::Read as _;
 use std::path::{Component, Path, PathBuf};
 
@@ -63,12 +62,10 @@ const RECONCILE_WAVE_DIRECTORIES: usize =
     crate::platform_tuning::tuning().reconcile_wave_directories.get();
 
 /// Identity of the current fixed `.gitignore` control semantics.
-#[cfg(feature = "gitignore")]
+///
+/// Zero is reserved for a scope that observed no control state, which is what
+/// [`ScanScope::observes_controls`] tests.
 const IGNORE_RULES_FINGERPRINT: u64 = 2;
-
-/// A build without the capability performs no control reads or classification.
-#[cfg(not(feature = "gitignore"))]
-const IGNORE_RULES_FINGERPRINT: u64 = 0;
 
 /// Identity of the fixed stat-tier reducer set.
 const REDUCERS_FINGERPRINT: u64 = 1;
@@ -186,9 +183,8 @@ pub struct ScanConfig {
     /// Observe `.gitignore` control files and retain ignore classification.
     ///
     /// Off by default. Off, the scan performs no control-file I/O and retains no control
-    /// table: the semantics an absent `gitignore` feature gives, stamped into
-    /// [`ScanScope`] the same way, so an index-returning call never serves a snapshot
-    /// taken one way as the other. An [`Index`] built that way answers
+    /// table, and that is stamped into [`ScanScope`], so an index-returning call never
+    /// serves a snapshot taken one way as the other. An [`Index`] built that way answers
     /// [`Index::is_ignored`] and [`Index::controls`] with
     /// [`crate::Error::ControlStateNotObserved`], never
     /// with "not ignored", and no default scan can end on a control bound.
@@ -286,10 +282,8 @@ impl ScanConfig {
             one_filesystem: self.one_filesystem,
             hidden_fingerprint: self.hidden().fingerprint(),
             exclude_special: self.exclude_special,
-            // Runtime opt-out and compiled-out capability are one semantic identity:
-            // both mean no control reads and no ignore classification, so they must
-            // share a fingerprint or two equivalent indexes would refuse each other's
-            // snapshots.
+            // Zero means no control reads and no ignore classification, which is what
+            // `ScanScope::observes_controls` tests.
             ignore_rules_fingerprint: if self.read_controls { IGNORE_RULES_FINGERPRINT } else { 0 },
             type_rules_fingerprint: self.types().fingerprint(),
             reducers_fingerprint: REDUCERS_FINGERPRINT,
@@ -2895,19 +2889,11 @@ pub(crate) fn read_control_op(
     read_control_op_unconditional(root, path, kind)
 }
 
-#[cfg(not(feature = "gitignore"))]
-#[allow(clippy::unnecessary_wraps)] // The feature-enabled implementation performs I/O.
-fn read_control_op_unconditional(root: &Path, path: &Path, kind: EntryKind) -> Result<Option<Op>> {
-    let _ = (root, path, kind);
-    Ok(None)
-}
-
 /// Read one fixed control source without allowing a raced or hostile file to allocate
 /// beyond the index-wide control budget.
 ///
 /// Private to this module, so no caller elsewhere can step around the policy gate in
 /// `read_control_op`.
-#[cfg(feature = "gitignore")]
 fn read_control_op_unconditional(root: &Path, path: &Path, kind: EntryKind) -> Result<Option<Op>> {
     if !crate::control::is_control_file(path) {
         return Ok(None);
@@ -2934,14 +2920,14 @@ fn read_control_op_unconditional(root: &Path, path: &Path, kind: EntryKind) -> R
     Ok(Some(Op::ControlUpsert { path: path.to_path_buf(), source }))
 }
 
-#[cfg(all(feature = "gitignore", unix))]
+#[cfg(unix)]
 fn open_control_file(path: &Path) -> std::io::Result<fs::File> {
     use std::os::unix::fs::OpenOptionsExt as _;
 
     fs::OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW).open(path)
 }
 
-#[cfg(all(feature = "gitignore", not(unix)))]
+#[cfg(not(unix))]
 fn open_control_file(path: &Path) -> std::io::Result<fs::File> {
     fs::File::open(path)
 }
@@ -5565,7 +5551,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn detached_control_bootstrap_matches_the_streaming_reducer_for_each_worker_count() {
         let dir = controlled_branching_tree();
@@ -5596,7 +5581,6 @@ mod tests {
         assert_indexes_equal(&detached, &streaming);
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn detached_control_bootstrap_preserves_the_exact_first_mutation() {
         let dir = controlled_branching_tree();
@@ -5613,7 +5597,6 @@ mod tests {
         assert_indexes_equal(&detached, &streaming);
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn detached_control_bootstrap_matches_control_limit_failures() {
         let pattern_dir = tempfile::tempdir().expect("pattern tempdir");
@@ -5679,7 +5662,6 @@ mod tests {
         dir
     }
 
-    #[cfg(feature = "gitignore")]
     fn controlled_branching_tree() -> tempfile::TempDir {
         let dir = branching_tree();
         write_file(&dir.path().join(".gitignore"), b"leaf-1.dat\nt7/\n");
@@ -6871,7 +6853,6 @@ mod tests {
         assert_eq!(src.dirs, 1);
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn cold_scan_routes_control_sources_through_both_walkers() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -6905,7 +6886,7 @@ mod tests {
         }
     }
 
-    #[cfg(all(feature = "gitignore", unix))]
+    #[cfg(unix)]
     #[test]
     fn raced_fifo_control_source_is_rejected_without_blocking() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -6932,7 +6913,6 @@ mod tests {
         assert!(matches!(result, Some(Op::ControlRemove { .. })));
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn hidden_admission_keeps_exact_allowlist_and_control_signals_only() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -7025,7 +7005,6 @@ mod tests {
         assert_eq!(index_fingerprint(&serial), index_fingerprint(&parallel));
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn control_sources_respect_a_single_operation_batch_bound() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -7050,7 +7029,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn cold_scan_matches_the_metabrowser_nested_control_fixture() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -7095,7 +7073,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn reconciliation_observes_same_metadata_control_edits_and_last_deletion() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -7790,7 +7767,6 @@ mod tests {
     /// A retained `.gitignore` reconciled as the root of its own walk re-reads its rules.
     /// A file does not descend, so the subtree-root branch was the only place that could
     /// read them, and it did not: the table kept `*.log` while the pass reported complete.
-    #[cfg(feature = "gitignore")]
     #[test]
     fn reconciling_a_retained_control_file_as_the_subtree_root_rereads_its_rules() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -7820,7 +7796,7 @@ mod tests {
 
     /// The same walk over a control file it cannot read keeps the old rules and does not
     /// claim the path fresh.
-    #[cfg(all(unix, feature = "gitignore"))]
+    #[cfg(unix)]
     #[test]
     fn reconciling_an_unreadable_control_file_root_keeps_its_rules_and_stays_partial() {
         use std::os::unix::fs::PermissionsExt;

@@ -2342,7 +2342,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "gitignore")]
     fn default_tree_snapshot_matches_the_non_watch_cli_scope() {
         let root = tempfile::tempdir().expect("root tempdir");
         let scratch = tempfile::tempdir().expect("scratch tempdir");

@@ -1330,7 +1330,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn round_trip_preserves_exact_controls_and_fixed_partitions() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -1380,7 +1379,6 @@ mod tests {
         assert_eq!(partitions.unignored.files, 2);
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn removing_the_last_control_before_save_round_trips_an_empty_table() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -1415,7 +1413,6 @@ mod tests {
         assert_eq!(partitions.all, partitions.unignored);
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn a_control_table_at_its_shared_bound_round_trips() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -1481,36 +1478,35 @@ mod tests {
 
         assert_eq!(visits, 0, "an empty control table has nothing to reclassify");
         assert!(restored.control_table().is_empty());
-        // Whether the build observes control state or not, the load answers as the
-        // saved index did.
+        // The load still answers as the saved index did.
         assert_eq!(
-            restored.is_ignored(Path::new("src/file-00.rs")).ok(),
-            original.is_ignored(Path::new("src/file-00.rs")).ok()
+            restored.is_ignored(Path::new("src/file-00.rs")).expect("control state observed"),
+            Some(false)
         );
-        assert_eq!(restored.partition_total().ok(), original.partition_total().ok());
+        assert_eq!(
+            restored.partition_total().expect("control state observed"),
+            original.partition_total().expect("control state observed")
+        );
 
         // The probe sees the walk when there is something to walk for.
-        #[cfg(feature = "gitignore")]
-        {
-            original.apply_ok(&Observation::new(vec![Op::ControlUpsert {
-                path: PathBuf::from("src/.gitignore"),
-                source: b"file-0*.rs\n".to_vec(),
-            }]));
-            let controlled = dir.path().join("controlled.fdu");
-            save(&original, &controlled).expect("save");
+        original.apply_ok(&Observation::new(vec![Op::ControlUpsert {
+            path: PathBuf::from("src/.gitignore"),
+            source: b"file-0*.rs\n".to_vec(),
+        }]));
+        let controlled = dir.path().join("controlled.fdu");
+        save(&original, &controlled).expect("save");
 
-            let (visits, restored) = visits_while_loading(&controlled);
+        let (visits, restored) = visits_while_loading(&controlled);
 
-            assert!(visits > 64, "{visits}");
-            assert_eq!(
-                restored.is_ignored(Path::new("src/file-00.rs")).expect("control state observed"),
-                Some(true)
-            );
-            assert_eq!(
-                restored.is_ignored(Path::new("src/file-10.rs")).expect("control state observed"),
-                Some(false)
-            );
-        }
+        assert!(visits > 64, "{visits}");
+        assert_eq!(
+            restored.is_ignored(Path::new("src/file-00.rs")).expect("control state observed"),
+            Some(true)
+        );
+        assert_eq!(
+            restored.is_ignored(Path::new("src/file-10.rs")).expect("control state observed"),
+            Some(false)
+        );
     }
 
     #[test]

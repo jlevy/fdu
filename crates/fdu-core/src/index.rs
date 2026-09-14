@@ -1706,11 +1706,9 @@ impl Index {
     /// says no rule was read: `is_ignored` refused over classification the index held, and
     /// a snapshot saved from it loaded into a default open as an exact scope match
     /// (`fdu-agb6`). Every operation counts, accepted or stale, so the refusal does not
-    /// depend on the index's state. Without the `gitignore` feature the control table
-    /// refuses control input itself, with the error that names the missing capability.
+    /// depend on the index's state.
     fn carries_unobserved_control_input(&self, ops: &[ObservationOp]) -> bool {
-        cfg!(feature = "gitignore")
-            && !self.observes_controls()
+        !self.observes_controls()
             && ops.iter().any(|observed| {
                 matches!(observed.op, Op::ControlUpsert { .. } | Op::ControlRemove { .. })
             })
@@ -3626,11 +3624,8 @@ impl Index {
         // one structural-overlay insertion per op to project a table that was empty onto
         // a table that stays empty (fdu-pro1).
         //
-        // Both control op kinds disqualify, not just upserts: with the capability
-        // compiled out, `ControlTable::remove` is what rejects a `ControlRemove`, and a
-        // fast lane that skipped it would accept input the slow lane fails closed on --
-        // which is precisely what `control_input_fails_closed_when_the_capability_is_absent`
-        // caught when this lane tested only for upserts.
+        // Both control op kinds disqualify, not just upserts, so every control op reaches
+        // the table and this lane never has to decide which control input is inert.
         if self.controls.is_empty()
             && !ops
                 .clone()
@@ -3662,14 +3657,6 @@ impl Index {
                     projected.upsert(path, source.clone())?;
                 }
                 Op::ControlRemove { path } => {
-                    #[cfg(not(feature = "gitignore"))]
-                    {
-                        let _ = path;
-                        return Err(crate::Error::UnsupportedScanConfig(
-                            "control observations require the fdu-core `gitignore` feature",
-                        ));
-                    }
-                    #[cfg(feature = "gitignore")]
                     projected.remove(path)?;
                 }
                 Op::InvalidateSubtree { .. } => {}
@@ -7812,20 +7799,17 @@ mod tests {
         }
         assert!(matches!(index.controls(), Err(crate::Error::ControlStateNotObserved)));
 
-        #[cfg(feature = "gitignore")]
-        {
-            let mut observed =
-                Index::new_with_scope("/root", crate::test_support::observing_controls());
-            assert!(observed.observes_controls());
-            observed.apply_ok(&Observation::new(vec![upsert(
-                "debug.log",
-                EntryKind::File,
-                file_attrs(10, 1),
-            )]));
-            assert_eq!(observed.is_ignored(Path::new("debug.log")).ok(), Some(Some(false)));
-            assert_eq!(observed.is_ignored(Path::new("absent.log")).ok(), Some(None));
-            assert!(observed.controls().is_ok_and(crate::control::ControlTable::is_empty));
-        }
+        let mut observed =
+            Index::new_with_scope("/root", crate::test_support::observing_controls());
+        assert!(observed.observes_controls());
+        observed.apply_ok(&Observation::new(vec![upsert(
+            "debug.log",
+            EntryKind::File,
+            file_attrs(10, 1),
+        )]));
+        assert_eq!(observed.is_ignored(Path::new("debug.log")).ok(), Some(Some(false)));
+        assert_eq!(observed.is_ignored(Path::new("absent.log")).ok(), Some(None));
+        assert!(observed.controls().is_ok_and(crate::control::ControlTable::is_empty));
     }
 
     /// Control input to an index that observes no control state is refused, typed, and
@@ -7834,7 +7818,6 @@ mod tests {
     /// index held and a snapshot saved from it loaded into a default open as an exact
     /// match (`fdu-agb6`). A stale conditional control op is refused as well: the refusal
     /// is about the index's scope, not its state.
-    #[cfg(feature = "gitignore")]
     #[test]
     fn an_index_that_does_not_observe_controls_refuses_control_input() {
         let mut index = Index::new("/root");
@@ -7946,41 +7929,31 @@ mod tests {
         assert_eq!(children[0].partitions, None);
         assert_eq!(children[0].rollup.as_ref().map(|rollup| rollup.files), Some(1));
 
-        #[cfg(feature = "gitignore")]
-        {
-            let mut observed =
-                Index::new_with_scope("/root", crate::test_support::observing_controls());
-            observed.apply_ok(&tree);
-            assert_eq!(
-                observed.partition_total().expect("control state observed").unignored.files,
-                1
-            );
-            assert!(
-                observed
-                    .partition_rollup(Path::new("dir"))
-                    .expect("control state observed")
-                    .is_some()
-            );
-            assert_eq!(
-                observed
-                    .partition_rollup_summary(Path::new("dir/debug.log"))
-                    .expect("control state observed"),
-                None,
-                "a file has no partitions"
-            );
-            let children = IndexHandle::new(observed)
-                .children(Path::new(""))
-                .expect("children read")
-                .expect("root directory");
-            assert_eq!(children[0].ignored, Some(false));
-            assert_eq!(
-                children[0].partitions.as_ref().map(|partitions| partitions.unignored.files),
-                Some(1)
-            );
-        }
+        let mut observed =
+            Index::new_with_scope("/root", crate::test_support::observing_controls());
+        observed.apply_ok(&tree);
+        assert_eq!(observed.partition_total().expect("control state observed").unignored.files, 1);
+        assert!(
+            observed.partition_rollup(Path::new("dir")).expect("control state observed").is_some()
+        );
+        assert_eq!(
+            observed
+                .partition_rollup_summary(Path::new("dir/debug.log"))
+                .expect("control state observed"),
+            None,
+            "a file has no partitions"
+        );
+        let children = IndexHandle::new(observed)
+            .children(Path::new(""))
+            .expect("children read")
+            .expect("root directory");
+        assert_eq!(children[0].ignored, Some(false));
+        assert_eq!(
+            children[0].partitions.as_ref().map(|partitions| partitions.unignored.files),
+            Some(1)
+        );
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn control_changes_atomically_move_fixed_partitions_without_changing_all() {
         let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
@@ -8031,7 +8004,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn serving_semantics_follow_ignore_reclassification_exactly() {
         let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
@@ -8060,7 +8032,6 @@ mod tests {
         assert_serving_indexes(&index);
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn nested_negation_edit_and_last_control_deletion_reclassify_exactly() {
         let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
@@ -8114,7 +8085,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn replacing_batch_ancestors_prunes_retained_and_transient_controls() {
         let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
@@ -8168,7 +8138,6 @@ mod tests {
         ));
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn control_bound_failure_is_atomic_with_ordinary_entry_work() {
         let mut index = Index::new_opened_with_scope_types_and_journal_capacity(

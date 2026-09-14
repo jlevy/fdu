@@ -1569,7 +1569,6 @@ mod tests {
         ));
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn control_verification_emits_exact_source_with_the_entry_fact() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -1637,7 +1636,7 @@ mod tests {
         assert_eq!(index.scope(), config.scope());
     }
 
-    #[cfg(all(unix, feature = "gitignore"))]
+    #[cfg(unix)]
     #[test]
     fn applying_verification_uses_the_index_admission_scope() {
         use std::os::unix::net::UnixListener;

@@ -110,7 +110,6 @@ fn construction_routes_keep_their_allocation_and_work_boundaries() {
     );
 
     // Here rather than in a test of its own: the allocator and counters are process-wide.
-    #[cfg(feature = "gitignore")]
     assert_controlled_route_is_detached();
 }
 
@@ -119,7 +118,6 @@ fn construction_routes_keep_their_allocation_and_work_boundaries() {
 /// Its digest-equality tests would pass just as well if that route silently went back
 /// through the streaming reducer; these counters would not. Only the route is asserted:
 /// an allocation ceiling for control parsing needs its own measurement on each platform.
-#[cfg(feature = "gitignore")]
 fn assert_controlled_route_is_detached() {
     let root = fixture(SMALL_DIRECTORY_COUNT);
     // One root control ignoring a whole directory, so classification and both partitions

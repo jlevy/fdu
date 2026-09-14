@@ -20,7 +20,7 @@ struct WaitState {
     closed: bool,
     /// Polls blocked in the wait right now, so a session golden can observe that none
     /// outlives close instead of asserting it.
-    #[cfg(all(test, feature = "watch", feature = "gitignore"))]
+    #[cfg(all(test, feature = "watch"))]
     waiters: usize,
 }
 
@@ -49,7 +49,7 @@ impl JournalWait {
         self.changed.notify_all();
     }
 
-    #[cfg(all(test, feature = "watch", feature = "gitignore"))]
+    #[cfg(all(test, feature = "watch"))]
     pub(super) fn waiters(&self) -> usize {
         self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner).waiters
     }
@@ -108,7 +108,7 @@ pub(super) fn poll(opened: &OpenedIndex, request: ChangeRequest) -> Result<Chang
         }
         #[cfg(test)]
         opened.state.test_controls.reach(super::TestPoint::BeforeJournalWait);
-        #[cfg(all(test, feature = "watch", feature = "gitignore"))]
+        #[cfg(all(test, feature = "watch"))]
         {
             wait.waiters += 1;
         }
@@ -119,7 +119,7 @@ pub(super) fn poll(opened: &OpenedIndex, request: ChangeRequest) -> Result<Chang
             .wait_timeout(wait, remaining)
             .map_err(|_| Error::OpenedJournalPoisoned)?;
         wait = next;
-        #[cfg(all(test, feature = "watch", feature = "gitignore"))]
+        #[cfg(all(test, feature = "watch"))]
         {
             wait.waiters -= 1;
         }

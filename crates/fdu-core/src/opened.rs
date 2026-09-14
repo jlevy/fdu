@@ -18,9 +18,9 @@ use crate::scan::ReconcileControl;
 use crate::{Error, Index, IndexHandle, ObservationOp, Op, Result, ScanConfig, SessionId};
 
 mod continuation;
-#[cfg(all(test, feature = "watch", feature = "gitignore"))]
+#[cfg(all(test, feature = "watch"))]
 mod golden_support;
-#[cfg(all(test, feature = "watch", feature = "gitignore"))]
+#[cfg(all(test, feature = "watch"))]
 mod golden_tests;
 mod journal;
 pub(crate) mod read;
@@ -821,7 +821,7 @@ impl Drop for OpenedState {
 /// The session goldens' `final` record is derived from this rather than written as a
 /// literal: a regression that left a worker, a blocked poll, or a page record behind a
 /// closed root would otherwise print the same text as a clean shutdown.
-#[cfg(all(test, feature = "watch", feature = "gitignore"))]
+#[cfg(all(test, feature = "watch"))]
 pub(super) struct RetainedOwnership {
     session: SessionId,
     /// Shutdown finished: every worker was joined before its outcome was stored.
@@ -833,14 +833,14 @@ pub(super) struct RetainedOwnership {
     close: Option<Result<()>>,
 }
 
-#[cfg(all(test, feature = "watch", feature = "gitignore"))]
+#[cfg(all(test, feature = "watch"))]
 impl RetainedOwnership {
     pub(super) fn is_released(&self) -> bool {
         self.joined && self.workers == 0 && self.waiters == 0 && self.continuations == 0
     }
 }
 
-#[cfg(all(test, feature = "watch", feature = "gitignore"))]
+#[cfg(all(test, feature = "watch"))]
 impl std::fmt::Display for RetainedOwnership {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -855,7 +855,7 @@ impl std::fmt::Display for RetainedOwnership {
     }
 }
 
-#[cfg(all(test, feature = "watch", feature = "gitignore"))]
+#[cfg(all(test, feature = "watch"))]
 impl OpenedState {
     pub(super) fn retained_ownership(&self) -> RetainedOwnership {
         let (joined, workers, close) = {
@@ -2055,7 +2055,6 @@ struct TestControls {
 
 #[cfg(test)]
 impl TestControls {
-    #[cfg(feature = "gitignore")]
     fn use_deterministic_discovery_order(&self) {
         self.deterministic_discovery_order.store(true, Ordering::Release);
     }
@@ -4586,9 +4585,6 @@ mod tests {
     /// Filtering the row and descending anyway is an equally reasonable reading of an
     /// unstated rule, and it is observably different: it would still return
     /// `vendor/keep.txt` while hiding the directory that explains where it came from.
-    // The ignore partition is only populated when the feature that reads control files is
-    // compiled in; without it nothing is ignored and the fixture cannot express the case.
-    #[cfg(feature = "gitignore")]
     #[test]
     fn excluding_ignored_prunes_the_subtree() {
         let (_root, opened) = opened(Arc::new(TestControls::default()));
@@ -4676,7 +4672,6 @@ mod tests {
     ///
     /// So the ignored directory sorts first and is given enough children that expanding
     /// it cannot hide in the noise.
-    #[cfg(feature = "gitignore")]
     #[test]
     fn the_remembered_descent_skips_a_pruned_first_child() {
         let (_root, opened) = opened(Arc::new(TestControls::default()));
@@ -5650,7 +5645,6 @@ mod tests {
     /// Pins the interim behavior until control bounds degrade precisely (`fdu-1onj`): the
     /// refused directory stays incomplete, its refusal is a retained issue, coverage is
     /// partial, and every other directory is still discovered.
-    #[cfg(feature = "gitignore")]
     #[test]
     fn a_control_bound_refuses_one_directory_without_ending_discovery() {
         let root = tempfile::tempdir().expect("temp root");
@@ -5687,7 +5681,6 @@ mod tests {
     /// `-early` is a retained directory nothing refused; it used to be left unqueued and
     /// incomplete, its subtree silently missing and its roll-up answering an empty
     /// `Present`. The refusal also used to be retained as a pathless provider failure.
-    #[cfg(feature = "gitignore")]
     #[test]
     fn a_refused_control_still_queues_subdirectories_its_listing_committed() {
         let controls = Arc::new(TestControls::default());
@@ -6023,7 +6016,6 @@ mod tests {
         opened.close().expect("repeat close");
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn refresh_tracks_hidden_control_creation_edit_and_deletion() {
         let root = tempfile::tempdir().expect("temp root");

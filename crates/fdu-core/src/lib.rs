@@ -46,14 +46,16 @@
 //! # Ok::<(), fdu_core::Error>(())
 //! ```
 //!
-//! # Feature flags
+//! # Build features
 //!
 //! - `watch` — the OS-native watch layer.
-//! - `gitignore` — exact `.gitignore` control state and fixed unignored roll-ups.
 //!
-//! `fdu-core` has no default features. The command and Python packages opt into the
-//! capabilities they expose, while embedding consumers can retain the smaller one-shot
-//! engine.
+//! `fdu-core` has no default build features. The command and Python packages opt into
+//! watch, while embedding consumers can retain the smaller one-shot engine.
+//!
+//! `.gitignore` handling is not a build feature: it has no dependency, so it is always
+//! compiled in, and whether a scan reads control files is decided at runtime by
+//! [`ScanConfig::read_controls`].
 
 pub mod admission;
 pub mod cache;
@@ -786,7 +788,6 @@ mod tests {
         fs::write(path, contents).expect("write");
     }
 
-    #[cfg(feature = "gitignore")]
     fn controls_config(
         policy: CachePolicy,
         snapshot_path: PathBuf,
@@ -800,7 +801,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "gitignore")]
     fn seed_controls_snapshot(root: &Path, snapshot_path: PathBuf) {
         let seed = controls_config(CachePolicy::Auto, snapshot_path, true);
         let (index, report) = open(root, &seed).expect("seed controls-on snapshot");
@@ -814,7 +814,6 @@ mod tests {
     /// A default `open` reads no control file, so a control line no index could retain does
     /// not end it, and the index says it cannot classify ignored entries rather than
     /// calling every entry unignored. Asking for control state makes the answers exact.
-    #[cfg(feature = "gitignore")]
     #[test]
     fn a_default_open_observes_no_control_state_and_an_opt_in_answers_exactly() {
         let root = tempfile::tempdir().expect("tempdir");
@@ -865,7 +864,6 @@ mod tests {
         assert_eq!(index.partition_total().expect("control state observed").unignored.files, 2);
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn controls_on_snapshot_does_not_serve_controls_off_auto_open() {
         let root = tempfile::tempdir().expect("tempdir");
@@ -883,7 +881,6 @@ mod tests {
         assert!(matches!(index.controls(), Err(Error::ControlStateNotObserved)));
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn controls_on_snapshot_does_not_serve_controls_off_cache_only_open() {
         let root = tempfile::tempdir().expect("tempdir");

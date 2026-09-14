@@ -29,12 +29,16 @@ required-features = ["watch"]
 default = []
 # Gates the OS-native watch layer. Strictly additive: without it, scan, index, and
 # snapshot are all fully functional, just without live updates -- which is what keeps
-# the watch layer deletable rather than merely optional.
+# the watch layer deletable rather than merely optional. It is a build feature because
+# it has a real dependency tree (notify and its platform backends) that a consumer
+# should not pay for unless it watches.
 watch = ["dep:notify"]
-# Gates exact `.gitignore` control state and fixed ignored/unignored partitioning.
-# The matcher is in-tree and dependency-free; the gate keeps both its code and its
-# filesystem reads removable for embedding consumers that do not need the capability.
-gitignore = []
+# `.gitignore` handling is deliberately not a build feature. The matcher is in-tree and
+# pulls in no dependency, so a gate would remove nothing but code. What a consumer may
+# want removed is the filesystem reads, and `ScanConfig::read_controls` is already the
+# per-request switch for those. A compile-time gate as well would give "observes
+# controls" a second meaning that depends on the build.
+
 [dependencies]
 thiserror = "2.0"
 

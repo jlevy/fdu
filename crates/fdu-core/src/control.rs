@@ -18,23 +18,7 @@
 //! bytes are retained against the table bound. Matching is case-sensitive regardless of
 //! `core.ignorecase`.
 
-#[cfg(feature = "gitignore")]
 mod gitignore;
-
-#[cfg(not(feature = "gitignore"))]
-mod gitignore {
-    use std::path::Path;
-
-    #[derive(Clone, Debug, Default)]
-    pub(super) struct Gitignore;
-
-    impl Gitignore {
-        pub(super) const fn matches(&self, _relative: &Path, _is_dir: bool) -> Option<bool> {
-            let _ = self;
-            None
-        }
-    }
-}
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -78,7 +62,6 @@ struct ControlSource {
 }
 
 impl ControlSource {
-    #[cfg(feature = "gitignore")]
     fn new(bytes: Vec<u8>, retained_cost: usize) -> Self {
         let identity = identity(&bytes);
         let matcher = Gitignore::parse(&bytes);
@@ -100,58 +83,43 @@ impl ControlTable {
     /// `path` names the control file relative to the index root. The source is retained
     /// exactly, while matching state is derived once here rather than per entry.
     pub fn upsert(&mut self, path: &Path, source: Vec<u8>) -> crate::Result<bool> {
-        #[cfg(not(feature = "gitignore"))]
+        let directory = control_directory(path)?;
+        if let Some(line) =
+            source.split(|byte| *byte == b'\n').find(|line| line.len() > MAX_CONTROL_PATTERN_BYTES)
         {
-            let _ = (path, source);
-            Err(crate::Error::UnsupportedScanConfig(
-                "control observations require the fdu-core `gitignore` feature",
-            ))
+            return Err(crate::Error::ControlPatternLimit {
+                attempted: line.len(),
+                limit: MAX_CONTROL_PATTERN_BYTES,
+            });
         }
-        #[cfg(feature = "gitignore")]
-        {
-            let directory = control_directory(path)?;
-            if let Some(line) = source
-                .split(|byte| *byte == b'\n')
-                .find(|line| line.len() > MAX_CONTROL_PATTERN_BYTES)
-            {
-                return Err(crate::Error::ControlPatternLimit {
-                    attempted: line.len(),
-                    limit: MAX_CONTROL_PATTERN_BYTES,
-                });
-            }
-            let replaced = self.by_directory.get(directory).map_or(0, |value| value.retained_cost);
-            let incoming_cost = retained_source_cost(directory, &source);
-            let next = self
-                .retained_cost
-                .checked_sub(replaced)
-                .and_then(|bytes| bytes.checked_add(incoming_cost))
-                .ok_or(crate::Error::ControlSourceLimit {
-                    attempted: usize::MAX,
-                    limit: MAX_CONTROL_TABLE_BYTES,
-                })?;
-            if next > MAX_CONTROL_TABLE_BYTES {
-                return Err(crate::Error::ControlSourceLimit {
-                    attempted: next,
-                    limit: MAX_CONTROL_TABLE_BYTES,
-                });
-            }
+        let replaced = self.by_directory.get(directory).map_or(0, |value| value.retained_cost);
+        let incoming_cost = retained_source_cost(directory, &source);
+        let next = self
+            .retained_cost
+            .checked_sub(replaced)
+            .and_then(|bytes| bytes.checked_add(incoming_cost))
+            .ok_or(crate::Error::ControlSourceLimit {
+                attempted: usize::MAX,
+                limit: MAX_CONTROL_TABLE_BYTES,
+            })?;
+        if next > MAX_CONTROL_TABLE_BYTES {
+            return Err(crate::Error::ControlSourceLimit {
+                attempted: next,
+                limit: MAX_CONTROL_TABLE_BYTES,
+            });
+        }
 
-            let incoming = ControlSource::new(source, incoming_cost);
-            if self
-                .by_directory
-                .get(directory)
-                .is_some_and(|current| current.bytes == incoming.bytes)
-            {
-                return Ok(false);
-            }
-            let previous = self.by_directory.insert(directory.to_path_buf(), incoming);
-            self.source_bytes = self
-                .source_bytes
-                .saturating_sub(previous.as_ref().map_or(0, |value| value.bytes.len()))
-                .saturating_add(self.by_directory[directory].bytes.len());
-            self.retained_cost = next;
-            Ok(true)
+        let incoming = ControlSource::new(source, incoming_cost);
+        if self.by_directory.get(directory).is_some_and(|current| current.bytes == incoming.bytes) {
+            return Ok(false);
         }
+        let previous = self.by_directory.insert(directory.to_path_buf(), incoming);
+        self.source_bytes = self
+            .source_bytes
+            .saturating_sub(previous.as_ref().map_or(0, |value| value.bytes.len()))
+            .saturating_add(self.by_directory[directory].bytes.len());
+        self.retained_cost = next;
+        Ok(true)
     }
 
     /// Remove one control source. Missing sources are no-ops.
@@ -338,7 +306,6 @@ fn control_path(directory: &Path) -> PathBuf {
     directory.join(CONTROL_FILE_NAME)
 }
 
-#[cfg(feature = "gitignore")]
 fn identity(bytes: &[u8]) -> ControlIdentity {
     const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
     const FNV_PRIME: u64 = 0x100_0000_01b3;
@@ -351,7 +318,6 @@ fn identity(bytes: &[u8]) -> ControlIdentity {
     ControlIdentity { bytes: u64::try_from(bytes.len()).unwrap_or(u64::MAX), fingerprint }
 }
 
-#[cfg(feature = "gitignore")]
 fn retained_source_cost(directory: &Path, source: &[u8]) -> usize {
     let (newlines, segment_shells) = source.iter().fold((0usize, 0usize), |counts, byte| {
         (counts.0 + usize::from(*byte == b'\n'), counts.1 + usize::from(*byte == b'/'))
@@ -365,7 +331,7 @@ fn retained_source_cost(directory: &Path, source: &[u8]) -> usize {
         .saturating_add(segment_shells.saturating_mul(24))
 }
 
-#[cfg(all(test, feature = "gitignore"))]
+#[cfg(test)]
 pub(crate) fn source_at_test_limit() -> Vec<u8> {
     let mut source = Vec::new();
     loop {
@@ -383,7 +349,7 @@ pub(crate) fn source_at_test_limit() -> Vec<u8> {
     source
 }
 
-#[cfg(all(test, feature = "gitignore"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -466,26 +432,5 @@ mod tests {
 
         assert!(table.is_ignored(Path::new("vendor"), true));
         assert!(table.is_ignored(Path::new("vendor/keep.txt"), false));
-    }
-}
-
-#[cfg(all(test, not(feature = "gitignore")))]
-mod disabled_tests {
-    use super::*;
-
-    #[test]
-    fn control_input_fails_closed_when_the_capability_is_absent() {
-        let error = ControlTable::default()
-            .upsert(Path::new(".gitignore"), b"*.log\n".to_vec())
-            .expect_err("a disabled capability must not mean an empty answer");
-        assert!(matches!(error, crate::Error::UnsupportedScanConfig(_)));
-
-        let mut index = crate::Index::new("/root");
-        let error = index
-            .apply(&crate::Observation::new(vec![crate::Op::ControlRemove {
-                path: PathBuf::from(".gitignore"),
-            }]))
-            .expect_err("removal input also requires the capability");
-        assert!(matches!(error, crate::Error::UnsupportedScanConfig(_)));
     }
 }

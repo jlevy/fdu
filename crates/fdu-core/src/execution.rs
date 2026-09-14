@@ -353,7 +353,6 @@ mod tests {
         OpenConfig { scan: ScanConfig::default(), cache_path, policy, ..OpenConfig::default() }
     }
 
-    #[cfg(feature = "gitignore")]
     fn controls_config(
         policy: CachePolicy,
         cache_path: PathBuf,
@@ -367,7 +366,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "gitignore")]
     fn seed_controls_snapshot(root: &Path, cache_path: PathBuf) {
         fs::write(root.join(".gitignore"), b"ignored.log\n").expect("control file");
         fs::write(root.join("ignored.log"), b"ignored").expect("ignored file");
@@ -560,7 +558,6 @@ mod tests {
         assert!(diagnostics.is_none(), "a cache-only open has no scan trace");
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn controls_on_snapshot_projects_to_an_equivalent_controls_off_cache_only_report() {
         let root = tempfile::tempdir().expect("tempdir");
@@ -606,7 +603,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn controls_on_snapshot_does_not_serve_controls_off_auto_report() {
         let root = tempfile::tempdir().expect("tempdir");
@@ -637,7 +633,6 @@ mod tests {
     /// build; the nested source is at the table bound, so reading it fails in either tier
     /// and makes the report partial. A report that stays complete over this tree
     /// performed no control observation.
-    #[cfg(feature = "gitignore")]
     fn write_unobservable_controls(root: &Path) {
         let mut rule = vec![b'a'; crate::control::MAX_CONTROL_PATTERN_BYTES + 1];
         rule.push(b'\n');
@@ -650,7 +645,6 @@ mod tests {
         .expect("oversized source");
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn a_one_shot_report_observes_no_control_state_whatever_the_caller_configured() {
         // No report view reads ignore classification, so a one-shot report must not pay
@@ -682,7 +676,6 @@ mod tests {
         assert!(matches!(saved.controls(), Err(Error::ControlStateNotObserved)));
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn one_shot_reports_share_one_cache_whichever_surface_wrote_it() {
         // The command line and the Python package reach this planner with different scan
@@ -737,7 +730,6 @@ mod tests {
         ));
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn a_cache_only_open_that_opts_into_control_state_refuses_a_reports_snapshot() {
         // A report's snapshot holds no control state, so an `open` that asks for it cannot
