@@ -1,0 +1,470 @@
+[
+  {
+    "binary": "candidate-controls-profiling-probe",
+    "binary_sha256": "4cc1649d391093546091c4c33ee711838f3c3f5e283a883a0bb88be2a4bcd243",
+    "binary_size_bytes": 2715864,
+    "by_layer": [
+      {
+        "layer": "kernel/syscall",
+        "percent": 63.92,
+        "samples": 6291
+      },
+      {
+        "layer": "other",
+        "percent": 14.88,
+        "samples": 1464
+      },
+      {
+        "layer": "fdu::scan",
+        "percent": 10.82,
+        "samples": 1065
+      },
+      {
+        "layer": "allocator",
+        "percent": 5.01,
+        "samples": 493
+      },
+      {
+        "layer": "std::fs",
+        "percent": 3.14,
+        "samples": 309
+      },
+      {
+        "layer": "fdu::index",
+        "percent": 1.34,
+        "samples": 132
+      },
+      {
+        "layer": "path",
+        "percent": 0.53,
+        "samples": 52
+      },
+      {
+        "layer": "collections",
+        "percent": 0.28,
+        "samples": 28
+      },
+      {
+        "layer": "probe/oracle",
+        "percent": 0.08,
+        "samples": 8
+      }
+    ],
+    "command": [
+      "{binary}",
+      "scan-index",
+      "--root",
+      "{root}",
+      "--no-oracle",
+      "--repeat",
+      "20"
+    ],
+    "counter_report_bytes": 2953,
+    "counter_report_sha256": "386232c551db7ed1306a60becdcc208bcbd9138f19b03dd1a8762780b5dd3fa2",
+    "counters": {
+      "groups": {
+        "adaptive scan policy": {
+          "calibration chunks": 4735,
+          "calibration entries": 331424,
+          "calibration worker microseconds": 1847495,
+          "reserve expansions": 0,
+          "walks left undecided": 0
+        },
+        "detached builder": {
+          "builds": 20,
+          "entries": 1951720,
+          "finish microseconds": 20134,
+          "walk microseconds": 2082443
+        },
+        "filesystem operations": {
+          "bytes read from files": 0,
+          "directory entries enumerated": 1951720,
+          "directory opens": 113580,
+          "file opens": 0,
+          "file read calls": 0,
+          "metadata stats": 1951740
+        },
+        "index": {
+          "index entries allocated": 1951720,
+          "parent memo hits": 0,
+          "parent path resolutions": 0,
+          "roll-up merges": 2065280,
+          "upserts applied": 1951720
+        },
+        "memory": {
+          "allocations": 12669327,
+          "bytes allocated": 1635350722,
+          "frees": 12669321,
+          "reallocations": 925658
+        },
+        "mutation consequences": {
+          "effective path bytes": 0,
+          "effective paths retained": 0,
+          "impact all-dirty transitions": 0,
+          "impact ancestor visits": 0,
+          "impact candidates": 0,
+          "impact dirty paths retained": 0
+        },
+        "mutation journal": {
+          "commits cloned": 0,
+          "commits retained": 0,
+          "older commits dropped": 0,
+          "oversized commits": 0
+        },
+        "mutation preflight": {
+          "ancestry overlay inserts": 0,
+          "parent chains proved": 0,
+          "same-parent path comparisons": 0
+        },
+        "mutation provenance": {
+          "baseline accepted ops": 1952100,
+          "baseline batches": 20,
+          "opened accepted ops": 0,
+          "opened batches": 0,
+          "public accepted ops": 0,
+          "public batches": 0
+        },
+        "mutation timing": {
+          "scanner control projection microseconds": 0,
+          "scanner preparation microseconds": 0,
+          "scanner reduction microseconds": 0
+        },
+        "process (macOS proc_taskinfo)": {
+          "page faults": 17446,
+          "page-ins": 0,
+          "syscalls (total)": 484051
+        }
+      },
+      "schema": "fdu-counter-report-v1",
+      "unavailable_reason": null
+    },
+    "counters_enabled": true,
+    "label": "profile / cold-scan-index",
+    "oracle_enabled": false,
+    "probe": {
+      "attribution": {
+        "claims": 1471,
+        "lock_contended": 28,
+        "lock_ops": 3857,
+        "lock_wait_ns": 97169,
+        "send_ns": 3022144,
+        "starved_ns": 7195500,
+        "wall_ns": 664899416,
+        "work_ns": 653833477
+      },
+      "component_ns": 112471125,
+      "mode": "scan-index",
+      "oracle_enabled": false,
+      "scan_diagnostics": null,
+      "schema": "fdu-perf-probe-v1",
+      "source": "scan",
+      "summary": {
+        "allocated_bytes": 1179123712,
+        "apparent_bytes": 949087546,
+        "apply": {
+          "inserted": 0,
+          "invalidated": 0,
+          "removed": 0,
+          "stale": 0,
+          "unchanged": 0,
+          "updated": 0
+        },
+        "commit": null,
+        "complete": true,
+        "content": {
+          "analyzed": 0,
+          "applied": 0,
+          "binary": 0,
+          "cache_hits": 0,
+          "candidates": 0,
+          "digest": null,
+          "invalid_utf8": 0,
+          "records": 0
+        },
+        "counters": {
+          "allocs": 633325,
+          "ancestry_overlay_inserts": 0,
+          "ancestry_parent_proofs": 0,
+          "ancestry_path_comparisons": 0,
+          "baseline_accepted_ops": 97605,
+          "baseline_batches": 1,
+          "bytes_allocated": 81753677,
+          "detached_builds": 1,
+          "detached_entries": 97586,
+          "detached_finish_us": 1315,
+          "detached_walk_us": 110937,
+          "effect_path_bytes": 0,
+          "effect_paths": 0,
+          "frees": 514665,
+          "impact_all_dirty": 0,
+          "impact_ancestor_visits": 0,
+          "impact_candidates": 0,
+          "impact_retained_dirty_paths": 0,
+          "journal_cloned_commits": 0,
+          "journal_dropped_commits": 0,
+          "journal_oversized_commits": 0,
+          "journal_retained_commits": 0,
+          "opened_accepted_ops": 0,
+          "opened_batches": 0,
+          "public_accepted_ops": 0,
+          "public_batches": 0,
+          "reallocs": 46284
+        },
+        "dirs": 5679,
+        "dirs_read": 5679,
+        "engine_digest": null,
+        "entries": 97587,
+        "errors": 0,
+        "files": 91897,
+        "index_len": 97587,
+        "newest_file_mtime_ns": 1788510076644476800,
+        "other": 11,
+        "query_iterations": 0,
+        "query_observations": 0,
+        "snapshot_bytes": null,
+        "snapshot_written": null,
+        "symlinks": 0
+      }
+    },
+    "repeat": 20,
+    "schema": "fdu-realtree-profile-v1",
+    "seconds": 3,
+    "self_time": [
+      {
+        "percent": 32.65,
+        "samples": 3213,
+        "symbol": "getattrlistbulk"
+      },
+      {
+        "percent": 28.02,
+        "samples": 2758,
+        "symbol": "__open"
+      },
+      {
+        "percent": 4.9,
+        "samples": 482,
+        "symbol": "semaphore_wait_trap"
+      },
+      {
+        "percent": 3.73,
+        "samples": 367,
+        "symbol": "_RNvMNtNtCs33snLMdjP9A_8fdu_core4scan10macos_bulkNtB2_6Reader4read"
+      },
+      {
+        "percent": 2.81,
+        "samples": 277,
+        "symbol": "_RNvNtCs33snLMdjP9A_8fdu_core4scan20walk_detached_worker"
+      },
+      {
+        "percent": 1.5,
+        "samples": 148,
+        "symbol": "__psynch_cvwait"
+      },
+      {
+        "percent": 1.13,
+        "samples": 111,
+        "symbol": "_xzm_free"
+      },
+      {
+        "percent": 1.07,
+        "samples": 105,
+        "symbol": "close"
+      },
+      {
+        "percent": 1.05,
+        "samples": 103,
+        "symbol": "_RNvMsj_NtCsa9BKTri5B3M_3std2fsNtB5_11OpenOptions5__open"
+      },
+      {
+        "percent": 1.04,
+        "samples": 102,
+        "symbol": "_RNvMsi_NtNtNtCsa9BKTri5B3M_3std3sys2fs4unixNtB5_4File6open_c"
+      },
+      {
+        "percent": 1.04,
+        "samples": 102,
+        "symbol": "open"
+      },
+      {
+        "percent": 0.98,
+        "samples": 96,
+        "symbol": "_RINvNtNtCsa9BKTri5B3M_3std3sys9backtrace28___rust_begin_short_backtraceNCNCINvNtCs33snLMdjP9A_8fdu_core4scan19run_concurrent_walkNCNvB1e_15scan_concurrent0E0s_0NtB1e_10ScanReportEB1g_"
+      },
+      {
+        "percent": 0.98,
+        "samples": 96,
+        "symbol": "_RNSNvYNCINvNtNtCsa9BKTri5B3M_3std6thread9lifecycle15spawn_uncheckedNCNCINvNtCs33snLMdjP9A_8fdu_core4scan19run_concurrent_walkNCNvB1a_15scan_concurrent0E0s_0NtB1a_10ScanReportEs_0INtNtNtCsgtPOCBgevO_4core3ops8function6FnOnceuE9call_once6vtableB1c_"
+      },
+      {
+        "percent": 0.98,
+        "samples": 96,
+        "symbol": "_RNvNvMs0_NtNtNtCsa9BKTri5B3M_3std3sys6thread4unixNtB7_6Thread3new12thread_start"
+      },
+      {
+        "percent": 0.98,
+        "samples": 96,
+        "symbol": "_pthread_start"
+      },
+      {
+        "percent": 0.98,
+        "samples": 96,
+        "symbol": "thread_start"
+      },
+      {
+        "percent": 0.91,
+        "samples": 90,
+        "symbol": "_RNvXsf_NtCs33snLMdjP9A_8fdu_core4scanNtB5_16DetachedEmissionNtB5_12WalkEmission12record_entry"
+      },
+      {
+        "percent": 0.87,
+        "samples": 86,
+        "symbol": "_xzm_xzone_malloc_tiny"
+      },
+      {
+        "percent": 0.68,
+        "samples": 67,
+        "symbol": "_platform_memmove"
+      },
+      {
+        "percent": 0.65,
+        "samples": 64,
+        "symbol": "_tlv_get_addr"
+      },
+      {
+        "percent": 0.63,
+        "samples": 62,
+        "symbol": "xzm_realloc"
+      },
+      {
+        "percent": 0.63,
+        "samples": 62,
+        "symbol": "_RNvMsk_NtCs33snLMdjP9A_8fdu_core4scanNtB5_14DirectoryQueue5claim"
+      },
+      {
+        "percent": 0.63,
+        "samples": 62,
+        "symbol": "_pthread_cond_wait"
+      },
+      {
+        "percent": 0.58,
+        "samples": 57,
+        "symbol": "_RNvNtNtCs33snLMdjP9A_8fdu_core7control9gitignore12glob_matches"
+      },
+      {
+        "percent": 0.54,
+        "samples": 53,
+        "symbol": "_platform_memcmp"
+      },
+      {
+        "percent": 0.5,
+        "samples": 49,
+        "symbol": "_xzm_xzone_malloc"
+      },
+      {
+        "percent": 0.47,
+        "samples": 46,
+        "symbol": "_realloc"
+      },
+      {
+        "percent": 0.43,
+        "samples": 42,
+        "symbol": "_RNvMs3_NtCslJsSqIQKwiA_5alloc7raw_vecINtB5_6RawVecNtNtCs33snLMdjP9A_8fdu_core15engine_contract15StateTransitionE8grow_oneBQ_"
+      },
+      {
+        "percent": 0.43,
+        "samples": 42,
+        "symbol": "_malloc_zone_realloc"
+      },
+      {
+        "percent": 0.42,
+        "samples": 41,
+        "symbol": "_RNvNtNtCsgtPOCBgevO_4core5slice6memchr6memchr"
+      },
+      {
+        "percent": 0.4,
+        "samples": 39,
+        "symbol": "_RNCINvNtCs33snLMdjP9A_8fdu_core4scan19run_concurrent_walkNCNvB4_24scan_concurrent_detached0E0B6_"
+      },
+      {
+        "percent": 0.38,
+        "samples": 37,
+        "symbol": "<deduplicated_symbol>"
+      },
+      {
+        "percent": 0.35,
+        "samples": 34,
+        "symbol": "semaphore_signal_trap"
+      },
+      {
+        "percent": 0.34,
+        "samples": 33,
+        "symbol": "_free"
+      },
+      {
+        "percent": 0.34,
+        "samples": 33,
+        "symbol": "mach_absolute_time"
+      },
+      {
+        "percent": 0.33,
+        "samples": 32,
+        "symbol": "_RNvMs4_NtCslJsSqIQKwiA_5alloc7raw_vecNtB5_11RawVecInner11finish_growCs33snLMdjP9A_8fdu_core"
+      },
+      {
+        "percent": 0.3,
+        "samples": 30,
+        "symbol": "_RNvMs3_NtCs33snLMdjP9A_8fdu_core5indexNtB5_14InternedRollUp5merge"
+      },
+      {
+        "percent": 0.25,
+        "samples": 25,
+        "symbol": "_RNvMsp_NtCs33snLMdjP9A_8fdu_core5indexNtB5_5Index10intern_ext"
+      },
+      {
+        "percent": 0.22,
+        "samples": 22,
+        "symbol": "_RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next"
+      },
+      {
+        "percent": 0.22,
+        "samples": 22,
+        "symbol": "_RNvMs0_NtCs33snLMdjP9A_8fdu_core7controlNtB5_14ControlMatcher10is_ignored"
+      }
+    ],
+    "threads": [
+      [
+        "libsystem_kernel.dylib",
+        6891
+      ],
+      [
+        "candidate-controls-profiling-probe",
+        1932
+      ],
+      [
+        "libsystem_malloc.dylib",
+        512
+      ],
+      [
+        "libsystem_pthread.dylib",
+        265
+      ],
+      [
+        "libsystem_platform.dylib",
+        126
+      ],
+      [
+        "libdyld.dylib",
+        64
+      ],
+      [
+        "libdispatch.dylib",
+        36
+      ],
+      [
+        "libsystem_c.dylib",
+        16
+      ]
+    ],
+    "total_samples": 9842
+  }
+]

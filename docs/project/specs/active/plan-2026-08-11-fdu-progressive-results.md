@@ -1,26 +1,27 @@
-# Feature: Progressive Results — Traversal Order, Streaming Sessions, and Instant Warm Opens
+# Feature: Progressive Results — Traversal Order, Warm Provenance, and Instant Warm Opens
 
 **Date:** 2026-08-11
 
 **Author:** fdu project
 
-**Status:** Draft
+**Status:** Active, narrowed to warm serving
 
 ## Overview
 
-Make fdu usable by a consumer that needs answers *while* the walk runs and *instantly*
-on the second open, rather than only after a complete scan.
-This is the architectural work an interactive browser over a multi-million-entry tree
-requires, and it is independent of the FSEvents journal: everything here lands on every
-platform, helps the first scan as much as the second, and is a precondition for the
-journal being worth anything rather than a consequence of it.
+This plan now owns warm persisted roll-ups, lazy warm open, prefer-cache policy, and
+per-value mixed-source provenance.
+Cold progressive discovery, the streaming-session lifecycle, coherent mid-discovery
+reads, and the no-gap observation handoff are owned by the
+[opened-root inventory rewrite](plan-2026-08-25-fdu-opened-root-inventory-engine.md).
+The traversal-order work described here has landed and remains background for both
+tracks; this plan no longer defines a second live session API.
 
 Four changes, in dependency order:
 
 1. **Traversal order as a policy** with breadth-first by default, so partial results
    mean something. *Landed with this plan.*
-2. **A streaming session API** so a caller can start a scan, get control back, and read
-   growing roll-ups with per-path completeness while the walk proceeds.
+2. **An opened-root streaming API**, now superseded here and owned by the opened-root
+   inventory plan.
 3. **Persisted roll-ups and lazy open** so the second open paints from the cache in
    milliseconds instead of materialising millions of records first.
 4. **Provenance on every value**, so a browser can paint slightly stale numbers
@@ -40,8 +41,6 @@ faster fixes either one on its own.
   confidently wrong ranking
 - Traversal order is chosen by the caller’s contract and provably cannot change the
   resulting index or invalidate a cache
-- Starting a scan returns control immediately; roll-ups and per-path completeness are
-  readable throughout
 - A warm open paints the top of a multi-million-entry tree without materialising it
 - Every value a consumer reads carries its own confidence, so approximate answers can be
   shown immediately and labelled honestly, then converge to verified
@@ -184,7 +183,12 @@ Three tests pin the contract: identical engine digests across both orders and se
 worker counts, non-decreasing directory depth in emission order under breadth-first, and
 scope equality between the two orders.
 
-### 2. Streaming session API
+### 2. Historical streaming sketch — superseded
+
+This section records the use case that motivated the later opened-root design.
+Its `Session` names, lifetime, cancellation, and memory claims are not implementation
+requirements. The opened-root inventory plan is authoritative for that API and its
+bounded-work contract.
 
 The engine already produces what a browser needs; what is missing is a way to hold it
 while it is being produced.
@@ -345,8 +349,9 @@ is.
 
 #### Convergence has to be observable, not polled
 
-Clearing an indicator requires knowing *when* a value became trustworthy, so the session
-emits provenance transitions per path alongside the value changes it already produces.
+Clearing an indicator requires knowing *when* a value became trustworthy, so the single
+opened-root change surface emits provenance transitions per path alongside the value
+changes it already produces.
 Two outcomes matter and both must be reported: verification that **confirms** a cached
 value (clear the mark, no visual jump) and verification that **corrects** it (update and
 clear, and the UI may want to draw attention).
@@ -356,10 +361,10 @@ and fine”.
 #### Verification should follow the user’s attention
 
 The browser knows which directories are on screen; fdu does not.
-So the session takes a hint:
+The opened-root control surface therefore takes a priority hint:
 
 ```rust
-session.prioritize(&path);   // the user just opened this — verify it next
+opened.prioritize(&path);   // the user just opened this — verify it next
 ```
 
 Verification is otherwise breadth-first like the walk, but a prioritised subtree jumps
@@ -415,7 +420,12 @@ plans: everything else here works without it, on every platform.
 
 ## Implementation Plan
 
-### Phase 1: Order and session
+### Historical Phase 1: order landed; session superseded
+
+The completed traversal-order and cold-scan work below remains part of this plan’s
+record. The unchecked session, cancellation, Python, and cold-progress work formerly
+listed here is now owned by the opened-root inventory plan; it is not a second active
+API design.
 
 - [x] `ScanOrder` policy, breadth-first default, all four traversal loops, tests for
   index equality, depth monotonicity, and scope stability
@@ -430,11 +440,9 @@ plans: everything else here works without it, on every platform.
 - [x] macOS bulk metadata: replace directory enumeration plus one metadata syscall per
   entry with fail-closed `getattrlistbulk`, retaining the portable backend elsewhere and
   at mount/firmlink boundaries (exp-022)
-- [ ] `Session`: start/read/complete/cancel over `IndexHandle`, with documented
-  monotonicity and per-path freshness; bounded-memory option
-- [ ] Python `Session` mirroring the Rust surface
-- [ ] Loop experiment: time-to-useful-top-level-ranking, breadth-first against
-  depth-first, on a home-folder-scale tree — the metric this plan exists to move
+- [ ] Superseded here: opened-root session, cancellation, Python exposure, and
+  time-to-useful-ranking measurement are specified by the
+  [opened-root inventory plan](plan-2026-08-25-fdu-opened-root-inventory-engine.md).
 
 ### Phase 2: Provenance and convergence
 
@@ -442,9 +450,10 @@ plans: everything else here works without it, on every platform.
   source / oldest observation / worst status - note these aggregates are **not
   invertible** under deletion or revalidation, so the design must specify the recompute
   path (`fdu-fka6`); a snapshot-loaded index reports `Cached`, not `Fresh`
-- [ ] Provenance transitions on the session’s change stream, reporting confirmations as
-  well as corrections
-- [ ] `session.prioritize(path)` so verification follows the user’s attention
+- [ ] Publish warm-revalidation provenance changes through the opened-root inventory
+  plan’s single change stream, reporting confirmations as well as corrections
+- [ ] Feed user-attention priority into warm verification through that opened-root
+  control surface; do not define a second session API here
 - [ ] Surface confidence in `Report` rows and in every output format, per the
   composable-CLI plan’s rule that no policy may silently lie
 
@@ -461,8 +470,9 @@ Order equivalence is the load-bearing correctness property and is already tested
 identical engine digests across orders and worker counts.
 Monotonicity gets a property test — sample roll-ups repeatedly during a scan of a
 fixture tree and assert no observed total ever decreases.
-Session tests cover start/cancel determinism and that a partial read is labelled
-partial. The real-tree harness gains a time-to-useful-ranking job, since a plan about
+The opened-root inventory plan owns session start/cancel and partial-read tests.
+This plan adds warm-open fixtures for lazy loading and mixed provenance.
+The shared real-tree harness gains a time-to-useful-ranking job, since a plan about
 *when* answers arrive cannot be validated by a benchmark that only measures when they
 finish.
 
@@ -472,7 +482,8 @@ finish.
   ~1M directories). End-to-end RSS is now measured at 1M and depth-first saves only 1.03%
   while losing 3.57% wall (exp-037), so a hybrid needs direct queue-width evidence and a
   progressive-result benefit rather than a presumed memory or speed win.
-- How a session should bound memory: entry cap, depth cap, or eviction.
+- How warm persisted blocks should bound resident memory without creating a second
+  session-level budget contract.
 
 ## References
 
@@ -481,7 +492,7 @@ finish.
 - [Performance frontier research](../../research/research-2026-08-10-performance-frontier.md)
   — H16/H33/H34/H35, the verification tiers, and the cost model
 - [Composable CLI and query surface plan](plan-2026-08-10-fdu-composable-cli-surface.md)
-  — `Query`/`Report`, which a session returns
+  — `Query`/`Report`, which the opened-root read surface returns
 - [FSEvents-scoped revalidation plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
   — the convergence half, deliberately separate
 

@@ -1,0 +1,15 @@
+{
+  "call_tree": "control-counter-disabled-calls.txt",
+  "call_tree_sha256": "bfec291a76a7a0a6788b8452311e03d5508f5dfc8933f2ef02a7ecf3fd79f01c",
+  "collector": "macOS sample, counters disabled",
+  "binary_name_in_trace": "candidate-controls-profiling-probe",
+  "binary_sha256": null,
+  "binary_identity": "Not recorded when the tree was captured, and the profiling binary was not retained, so no hash can be recovered. The trace names only the file, and the same file name was reused for the ad52469 profiling build.",
+  "attributed_source_revision": "1a39be9f785d9ea9a1758f9c1ccfee5dfb09ce49",
+  "attribution_basis": "Session record in exp-102, not the artifact: the engine-unchanged pre-change profile.",
+  "readings": {
+    "index_apply_samples_all_call_sites": 2391,
+    "ancestry_validation_samples_all_call_sites": 1993
+  },
+  "noted": "2026-09-13, PR #52 review PERF-7"
+}

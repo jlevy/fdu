@@ -153,7 +153,60 @@ pub struct Candidate<'a> {
     pub mtime_ns: i64,
 }
 
+/// Additive selection for portable opened-root entry projections.
+///
+/// The established [`Selection`] remains the shared one-shot query contract. This value
+/// composes it instead of adding fields to that public struct, preserving source
+/// compatibility for existing Rust callers while keeping interactive row predicates in
+/// one pure engine-owned value.
+#[derive(Clone, Debug, Default)]
+pub struct EntrySelection {
+    /// Existing fdu query predicates.
+    pub query: Selection,
+    /// Largest size, inclusive, in the selected metric.
+    ///
+    /// A caller with an exclusive upper bound translates `less_than: n` to `n - 1`.
+    pub max_size: Option<u64>,
+    /// Exclude entries in the fixed ignored partition.
+    pub exclude_ignored: bool,
+    /// Logical extensions to admit, including the leading dot.
+    ///
+    /// This is name identity, not the registry's canonical classification bucket.
+    pub logical_extensions: Vec<String>,
+    /// Exact basenames to admit, compared case-insensitively.
+    ///
+    /// When either this or `logical_extensions` is nonempty, matching either admits the
+    /// name. That represents one identity filter rather than two intersected filters.
+    pub exact_names: Vec<String>,
+    /// Lowercase terminal suffixes to admit, including the leading dot.
+    ///
+    /// Unlike a logical extension, only the final dotted component participates.
+    pub terminal_extensions: Vec<String>,
+    /// Exact ancestor path-component names to admit.
+    pub ancestor_names: Vec<String>,
+}
+
+impl From<Selection> for EntrySelection {
+    fn from(query: Selection) -> Self {
+        Self { query, ..Self::default() }
+    }
+}
+
 impl Selection {
+    /// Heap payload retained when an opened-root continuation owns this selection.
+    pub(crate) fn retained_heap_bytes(&self) -> usize {
+        let pattern_bytes =
+            self.include.iter().chain(&self.exclude).fold(0_usize, |total, pattern| {
+                total.saturating_add(pattern.retained_heap_bytes())
+            });
+        self.include
+            .capacity()
+            .saturating_add(self.exclude.capacity())
+            .saturating_mul(std::mem::size_of::<Pattern>())
+            .saturating_add(pattern_bytes)
+            .saturating_add(self.kinds.capacity().saturating_mul(std::mem::size_of::<EntryKind>()))
+    }
+
     /// Whether this selection constrains which entries are considered.
     ///
     /// An unconstrained selection lets a view read pre-computed roll-up state directly
@@ -200,6 +253,107 @@ impl Selection {
     }
 }
 
+impl EntrySelection {
+    /// Heap payload retained when an opened-root continuation owns this selection.
+    pub(crate) fn retained_heap_bytes(&self) -> usize {
+        self.query
+            .retained_heap_bytes()
+            .saturating_add(retained_strings(
+                &self.logical_extensions,
+                self.logical_extensions.capacity(),
+            ))
+            .saturating_add(retained_strings(&self.exact_names, self.exact_names.capacity()))
+            .saturating_add(retained_strings(
+                &self.terminal_extensions,
+                self.terminal_extensions.capacity(),
+            ))
+            .saturating_add(retained_strings(&self.ancestor_names, self.ancestor_names.capacity()))
+    }
+
+    /// Whether this portable entry selection constrains any row.
+    pub fn is_unfiltered(&self) -> bool {
+        self.query.is_unfiltered()
+            && self.max_size.is_none()
+            && !self.exclude_ignored
+            && self.logical_extensions.is_empty()
+            && self.exact_names.is_empty()
+            && self.terminal_extensions.is_empty()
+            && self.ancestor_names.is_empty()
+    }
+
+    /// Whether an entry passes the base query and every opened-row predicate.
+    pub fn admits(&self, candidate: &Candidate<'_>, ignored: bool) -> bool {
+        if !self.query.admits(candidate) {
+            return false;
+        }
+        if let Some(max_size) = self.max_size {
+            if self.query.size_of(candidate) > max_size {
+                return false;
+            }
+        }
+        if self.exclude_ignored && ignored {
+            return false;
+        }
+        if !self.logical_extensions.is_empty() || !self.exact_names.is_empty() {
+            if candidate.kind != EntryKind::File {
+                return false;
+            }
+            let extension_matches = crate::classify::logical_ext(candidate.name.as_ref())
+                .is_some_and(|extension| {
+                    self.logical_extensions
+                        .iter()
+                        .any(|expected| extension.eq_ignore_ascii_case(expected))
+                });
+            let name_matches = self
+                .exact_names
+                .iter()
+                .any(|expected| candidate.name.eq_ignore_ascii_case(expected));
+            if !extension_matches && !name_matches {
+                return false;
+            }
+        }
+        if !self.terminal_extensions.is_empty() {
+            if candidate.kind != EntryKind::File {
+                return false;
+            }
+            let Some(suffix) = terminal_suffix(candidate.name) else {
+                return false;
+            };
+            if !self
+                .terminal_extensions
+                .iter()
+                .any(|expected| suffix.eq_ignore_ascii_case(expected))
+            {
+                return false;
+            }
+        }
+        if !self.ancestor_names.is_empty()
+            && !candidate.relative.parent().is_some_and(|parent| {
+                parent.components().any(|component| {
+                    let std::path::Component::Normal(name) = component else {
+                        return false;
+                    };
+                    self.ancestor_names.iter().any(|expected| name == expected.as_str())
+                })
+            })
+        {
+            return false;
+        }
+        true
+    }
+}
+
+fn retained_strings(values: &[String], capacity: usize) -> usize {
+    capacity.saturating_mul(std::mem::size_of::<String>()).saturating_add(
+        values.iter().fold(0_usize, |total, value| total.saturating_add(value.capacity())),
+    )
+}
+
+fn terminal_suffix(name: &str) -> Option<&str> {
+    let dot = name.rfind('.')?;
+    (dot > 0 && dot + 1 < name.len()).then_some(&name[dot..])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,6 +367,28 @@ mod tests {
             .unwrap_or_default();
         let _ = (kind, bytes, mtime_ns);
         (relative, name)
+    }
+
+    fn entry_admits(
+        selection: &EntrySelection,
+        path: &str,
+        kind: EntryKind,
+        bytes: u64,
+        mtime: i64,
+        ignored: bool,
+    ) -> bool {
+        let (relative, name) = candidate(path, kind, bytes, mtime);
+        selection.admits(
+            &Candidate {
+                relative: &relative,
+                name: &name,
+                kind,
+                bytes,
+                allocated: bytes.div_ceil(512) * 512,
+                mtime_ns: mtime,
+            },
+            ignored,
+        )
     }
 
     fn admits(selection: &Selection, path: &str, kind: EntryKind, bytes: u64, mtime: i64) -> bool {
@@ -291,6 +467,36 @@ mod tests {
             Selection { kinds: vec![EntryKind::File, EntryKind::Dir], ..Selection::default() };
         assert!(admits(&both, "src", EntryKind::Dir, 0, 0));
         assert!(!admits(&both, "link", EntryKind::Symlink, 0, 0));
+    }
+
+    #[test]
+    fn portable_catalog_predicates_compose_without_client_side_filtering() {
+        let selection = EntrySelection {
+            max_size: Some(10),
+            exclude_ignored: true,
+            terminal_extensions: vec![".rs".to_string(), ".md".to_string()],
+            ancestor_names: vec!["src".to_string(), "docs".to_string()],
+            ..EntrySelection::default()
+        };
+        assert!(entry_admits(&selection, "src/lib.rs", EntryKind::File, 10, 0, false));
+        assert!(entry_admits(&selection, "docs/readme.md", EntryKind::File, 9, 0, false));
+        assert!(!entry_admits(&selection, "src/lib.RS", EntryKind::File, 11, 0, false));
+        assert!(!entry_admits(&selection, "tests/lib.rs", EntryKind::File, 9, 0, false));
+        assert!(!entry_admits(&selection, "src/lib.rs", EntryKind::File, 9, 0, true));
+        assert!(!entry_admits(&selection, "src/.gitignore", EntryKind::File, 1, 0, false));
+    }
+
+    #[test]
+    fn logical_extensions_and_exact_names_form_one_name_identity_filter() {
+        let selection = EntrySelection {
+            logical_extensions: vec![".v2.zip".to_string()],
+            exact_names: vec!["makefile".to_string()],
+            ..EntrySelection::default()
+        };
+        assert!(entry_admits(&selection, "release.v2.zip", EntryKind::File, 1, 0, false));
+        assert!(entry_admits(&selection, "Makefile", EntryKind::File, 1, 0, false));
+        assert!(!entry_admits(&selection, "plain.zip", EntryKind::File, 1, 0, false));
+        assert!(!entry_admits(&selection, "README", EntryKind::File, 1, 0, false));
     }
 
     #[test]

@@ -12,7 +12,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Initial scaffold: the architecture expressed in working, tested code.
   - **Observation/commit contract** (`types.rs`): producers submit verified, optionally
     conditional `Upsert` / `Remove` / `InvalidateSubtree` observations; the index emits
-    clocked `AppliedDelta` batches containing only effective mutations.
+    clocked `Commit` batches containing exact effective mutations and state transitions.
   - **In-memory index** (`index.rs`): parent-pointer arena with per-directory
     pre-computed roll-ups (counts, apparent and allocated bytes, newest mtime,
     per-extension tallies), O(depth) apply, generation-safe free-slot reuse, explicit
@@ -62,6 +62,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     matching Rust, CLI, and Python surfaces.
     The original extension view is retained as `extensions`, while metadata-only
     `fdu.report/1` output remains unchanged.
+
+### Changed
+
+- Corrected the fixed `.gitignore` matcher’s recursive, negation, and character-class
+  semantics and bounded adversarial pattern work.
+  Its semantic fingerprint is now version 2, so snapshots written with the earlier
+  matcher are intentionally rejected and rebuilt from the filesystem.
+- Runtime type-rule registries now fingerprint their validated semantic values instead
+  of accepting an asserted identity.
+  This intentionally invalidates earlier snapshots and content sidecars once; the next
+  complete run rebuilds them under the verified registry identity.
 
 ### Known limitations
 

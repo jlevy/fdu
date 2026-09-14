@@ -66,6 +66,32 @@ The original extension grouping remains available as the `extensions` view.
 The package supports Python 3.12 and newer and builds one `abi3-py312` extension rather
 than separate native payloads for every Python minor release.
 
+## Long-lived roots
+
+`fdu.opened` is the direct typed interface to the long-lived engine.
+It starts progressive discovery, returns several projections from one coherent version,
+exposes exact resumable changes, verifies explicit path sets, accepts discovery
+priorities, and joins all native work on close:
+
+```python
+from pathlib import Path
+
+from fdu import opened
+
+with opened.OpenedIndex.open(Path("."), opened.OpenedOptions(observe=True)) as index:
+    answer = index.read(
+        opened.Tree(page=opened.Page(limit=200, max_work=100_000)),
+        opened.Diagnostics(),
+    )
+    cursor = answer.change_cursor
+    changed = index.changes(cursor, timeout=1.0)
+```
+
+The methods are synchronous and release the GIL during native work.
+An async application adapts them with its own executor policy, keeping task and shutdown
+ownership visible. The package does not run a private event loop or shell out to the
+command line.
+
 The wheel also exposes the native Rust CLI as the `fdu` console script.
 Argument parsing, help, streams, color, errors, broken-pipe handling, and exit status
 all use the same Rust process boundary as the Cargo-installed binary; there is no Python

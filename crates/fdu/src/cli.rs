@@ -20,14 +20,12 @@ use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, Value
 
 use fdu_core::content::{AnalysisRequest, AnalysisSet};
 use fdu_core::query::{
-    AxisNames, Bound, Pattern, Provenance, Query, ReportSource, Selection, SizeMetric, SortKey,
-    ViewSpec, parse_size, parse_when, system_time_to_nanos,
+    AxisNames, Bound, Pattern, Query, ReportSource, Selection, SizeMetric, SortKey, ViewSpec,
+    parse_size, parse_when, system_time_to_nanos,
 };
 use fdu_core::report_format;
 use fdu_core::report_format::human_count;
-use fdu_core::{
-    CachePolicy, EntryKind, OpenConfig, ScanConfig, default_cache_path, open_with_pending_save,
-};
+use fdu_core::{CachePolicy, EntryKind, OpenConfig, ScanConfig, default_cache_path};
 use fdu_core::{PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics};
 
 const SKILL_TEMPLATE: &str = include_str!("skills/SKILL.md");
@@ -70,6 +68,7 @@ const STYLE_PERFORMANCE: AnsiStyle = AnsiColor::BrightBlack.on_default();
 ///
 /// Gray for the same reason the performance footer is: it is a frame around the report,
 /// not part of the answer, and should not compete with the rows for attention.
+#[cfg(feature = "watch")]
 const STYLE_WATCH_RULE: AnsiStyle = AnsiColor::BrightBlack.on_default();
 const CLI_STYLES: Styles = Styles::styled()
     .header(STYLE_HEADING)
@@ -90,7 +89,17 @@ const DOCS_POINTER: &str = "Run `fdu --docs` for more help and important usage e
 
 /// The guide `--docs` prints: the ladder, the two axes, and the contracts worth knowing
 /// before automating against the output.
-const DOCS: &str = r"fdu — a fast, incremental file roll-up engine.
+///
+/// Composed per build, because the guide names only flags this binary has. A command
+/// line built without `watch` has no `--watch` or `--interval`, and a guide that still
+/// named them would send its reader to flags the parser rejects. Dropping them from
+/// that build's guide, rather than keeping them as flags that only refuse, keeps its
+/// guide, `--help`, and parser describing one command. The two arguments are the
+/// watch example with its note, and the Mode axis's flags.
+macro_rules! docs_guide {
+    ($watch_composition:literal, $mode_flags:literal) => {
+        concat!(
+            r"fdu — a fast, incremental file roll-up engine.
 
 THE LADDER
   Every report is one command, and they form a ladder. Each rung costs more than
@@ -127,18 +136,18 @@ MORE COMPOSITIONS
   fdu --analyze words --view documents .
   fdu --view files --min-size 10M --sort size -n 100 PATH   largest files
   fdu --view files --modified-since 1h --sort mtime PATH    recent changes
-  fdu --watch --view files --format jsonl PATH              a tail -f for a tree
-
-  --interval throttles rendering only; change detection is event-driven and
-  unaffected by it, so an idle tree costs nothing between changes.
-
+",
+            $watch_composition,
+            r"
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH, --scan-depth                         what is scanned and cached
   Content    --analyze none|lines|code|words|all        which file bodies are read
   Selection  --include, --exclude, --depth, --limit     which entries are considered
   View       tree,extensions,types,families,languages,documents,files,summary,all
   Format     --format text|json|jsonl|yaml, --color
-  Mode       --cache, --watch, --analysis-workers
+  Mode       ",
+            $mode_flags,
+            r"
 
 CONTENT ANALYSIS
   none       metadata only; source files are never opened (default)
@@ -172,7 +181,24 @@ EXIT STATUS
   0  Complete result, or a partial result accepted with --allow-partial
   1  Fatal filesystem or cache error
   2  Partial result, or command-line usage error
-";
+"
+        )
+    };
+}
+
+/// The guide for a command line that can watch.
+#[cfg(feature = "watch")]
+const DOCS: &str = docs_guide!(
+    "  fdu --watch --view files --format jsonl PATH              a tail -f for a tree
+
+  --interval throttles rendering only; change detection is event-driven and
+  unaffected by it, so an idle tree costs nothing between changes.
+",
+    "--cache, --watch, --analysis-workers"
+);
+/// The guide for a command line built without `watch`, which names neither of its flags.
+#[cfg(not(feature = "watch"))]
+const DOCS: &str = docs_guide!("", "--cache, --analysis-workers");
 
 /// When terminal styling should be enabled.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
@@ -533,10 +559,20 @@ impl Cli {
         query
             .validate_analysis(analysis.profile)
             .map_err(|message| usage(&anyhow::anyhow!(message)))?;
+        // No command-line view reads control state, so no run of this command observes
+        // it. A one-shot report would not anyway: `prepare_report`'s planner turns
+        // observation off for every surface for that reason (fdu-etfj), and the setting
+        // here does not reach it. `--watch` opens an index instead, whose engine default
+        // observes, and its session drops control and reclassification effects because
+        // it only repaints the same query. Observing there bought nothing but the control
+        // bounds, and a bound must not end a command that never uses what it bounds
+        // (fdu-1onj). Off, a watch also shares the one-shot snapshot scope, so each starts
+        // warm from the other's snapshot (fdu-w3l5).
         let config = OpenConfig {
             scan: ScanConfig {
                 max_depth: self.scan_depth,
                 one_filesystem: self.one_filesystem,
+                read_controls: false,
                 ..ScanConfig::default()
             },
             cache_path: default_cache_path(path),
@@ -672,7 +708,8 @@ impl Cli {
         config: &OpenConfig,
         color: bool,
     ) -> anyhow::Result<RunOutcome> {
-        use fdu_core::query::ViewSpec;
+        use fdu_core::open_with_pending_save;
+        use fdu_core::query::{Provenance, ViewSpec};
         use fdu_core::watch::WatchConfig;
         use fdu_core::watch_session::{ChangeKind, Session};
 
@@ -1061,6 +1098,7 @@ impl Cli {
 }
 
 /// What each knob is called on the command line, given its name in the API.
+#[cfg(feature = "watch")]
 const WATCH_SCOPE_VOCABULARY: [(&str, &str); 5] = [
     ("max_depth", "--scan-depth"),
     ("one_filesystem", "--one-filesystem"),
@@ -1080,6 +1118,7 @@ const WATCH_SCOPE_VOCABULARY: [(&str, &str); 5] = [
 /// token. Here every replacement is a field name that cannot appear inside a value, which
 /// `the_watch_guidance_substitutes_whole_words_only` asserts, and the parity run verifies
 /// the two surfaces stay equivalent.
+#[cfg(feature = "watch")]
 fn watch_scope_guidance() -> String {
     // One pass over whole words, never re-scanning what was already substituted. A
     // sequential replace does re-scan: max_depth becomes --scan-depth, and then `depth`
@@ -1662,6 +1701,7 @@ fn compose_skill_from(template: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "watch")]
     use std::time::UNIX_EPOCH;
 
     /// Every `--watch` run parses an interval before anything else, so this must work on
@@ -1689,6 +1729,7 @@ mod tests {
         assert!(paint(&rule, STYLE_WATCH_RULE, true).contains(&rule));
     }
 
+    #[cfg(feature = "watch")]
     #[test]
     fn an_interval_parses_without_overflowing_any_platforms_clock() {
         assert_eq!(parse_duration("2s").expect("seconds"), Duration::from_secs(2));
@@ -1907,6 +1948,7 @@ mod tests {
     /// Asserted against the constant and the vocabulary rather than by quoting prose. The
     /// first three versions of this test quoted phrases and went stale the moment the rule
     /// was reworded, which is a test measuring its own copy of the thing under test.
+    #[cfg(feature = "watch")]
     #[test]
     fn the_watch_guidance_substitutes_whole_words_only() {
         let source = fdu_core::scan::WATCH_SCOPE_GUIDANCE;

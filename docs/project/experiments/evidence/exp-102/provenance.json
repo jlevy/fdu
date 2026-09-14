@@ -1,0 +1,136 @@
+{
+  "artifacts": {
+    "candidate": {
+      "build_argv": [
+        "cargo",
+        "build",
+        "--locked",
+        "--release",
+        "-p",
+        "fdu-core",
+        "--example",
+        "perf_probe",
+        "--no-default-features",
+        "--features",
+        "gitignore"
+      ],
+      "files": [
+        {
+          "name": "candidate-controls-perf-probe",
+          "sha256": "9df36f8d32a07ba51b0f4224f345459cb27c02e71f47a428b95810435a4daa6f",
+          "size_bytes": 2288960
+        }
+      ],
+      "kind": "fdu-perf-probe",
+      "origin": {
+        "cargo_lock_sha256": "0a967519073aeb31face99e1afae7f6f4d88472d29c3fd9a727efe62657713c2",
+        "license": "MIT",
+        "source_clean": true,
+        "source_revision": "ad52469d7d16fee3135a515fd07a43c5bab8ba11",
+        "source_url": "https://github.com/jlevy/fdu",
+        "target": "aarch64-apple-darwin",
+        "toolchain": "rustc 1.97.1 (8bab26f4f 2026-07-14)\nbinary: rustc\ncommit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452\ncommit-date: 2026-07-14\nhost: aarch64-apple-darwin\nrelease: 1.97.1\nLLVM version: 22.1.6"
+      },
+      "profile": "release",
+      "version": "fdu-perf-probe 0.1.0-dev+gad52469d7"
+    },
+    "control": {
+      "build_argv": [
+        "cargo",
+        "build",
+        "--locked",
+        "--release",
+        "-p",
+        "fdu-core",
+        "--example",
+        "perf_probe",
+        "--no-default-features",
+        "--features",
+        "gitignore"
+      ],
+      "files": [
+        {
+          "name": "mutation-control-perf-probe",
+          "sha256": "d3c34cca3ce3b63a42ca72bfdd9f0d8e259bf84c5e59424ad3c0b15927eafc41",
+          "size_bytes": 2288976
+        }
+      ],
+      "kind": "fdu-perf-probe",
+      "origin": {
+        "cargo_lock_sha256": "0a967519073aeb31face99e1afae7f6f4d88472d29c3fd9a727efe62657713c2",
+        "license": "MIT",
+        "source_clean": true,
+        "source_revision": "64c6e616f2d8d81eb99712bdd26a0e8a57bd2ed5",
+        "source_url": "https://github.com/jlevy/fdu",
+        "target": "aarch64-apple-darwin",
+        "toolchain": "rustc 1.97.1 (8bab26f4f 2026-07-14)\nbinary: rustc\ncommit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452\ncommit-date: 2026-07-14\nhost: aarch64-apple-darwin\nrelease: 1.97.1\nLLVM version: 22.1.6"
+      },
+      "profile": "release",
+      "version": "fdu-perf-probe 0.1.0-dev+g64c6e616f"
+    }
+  },
+  "claim_grade": true,
+  "collectors": {
+    "macos_sample": {
+      "available": true,
+      "name": "sample",
+      "sha256": "569d1e8f29e32e0557fdfffb7620e20126fab5df90f9e1bce4c6930ccded7363",
+      "size_bytes": 175104
+    },
+    "process_rusage": {
+      "reason": null,
+      "supported": true
+    },
+    "time": {
+      "available": true,
+      "name": "time",
+      "sha256": "d2210b72e8c978748a0f0ac7d0819dda4dd411bb7a2e9730476038b0d695e7a2",
+      "size_bytes": 135248
+    }
+  },
+  "filesystem": {
+    "block_size": 1048576,
+    "flags": 0,
+    "fragment_size": 4096,
+    "solid_state": true,
+    "type": "apfs"
+  },
+  "host": {
+    "arch": "arm64",
+    "class_id": "3bae35230459e662ead829ad9c5d5545546335956470725c3e1344dbfd623049",
+    "cpu_count": 10,
+    "cpu_model": "Apple M1 Pro",
+    "efficiency_cores": 2,
+    "filesystem": "apfs",
+    "max_vnodes": 263168,
+    "memory_bytes": 34359738368,
+    "performance_cores": 8,
+    "power": {
+      "available": true,
+      "reason": null,
+      "source": "AC"
+    },
+    "python": "3.14.7",
+    "release": "25.5.0",
+    "system": "Darwin",
+    "thermal": {
+      "available": true,
+      "pressure": "normal",
+      "reason": null
+    },
+    "toolchain": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "virtualization": "bare-metal"
+  },
+  "invalidation_reasons": [],
+  "manifest_id": "87739117618021108333dd134a02b6d0704be816e6fc80ac663609f218093eb1",
+  "schema": "fdu-claim-provenance-v1",
+  "source": {
+    "cargo_lock_sha256": "0a967519073aeb31face99e1afae7f6f4d88472d29c3fd9a727efe62657713c2",
+    "clean": true,
+    "commit": "ad52469d7d16fee3135a515fd07a43c5bab8ba11",
+    "remote": "https://github.com/jlevy/fdu",
+    "rust_target": "aarch64-apple-darwin",
+    "rust_toolchain": "rustc 1.97.1 (8bab26f4f 2026-07-14)\nbinary: rustc\ncommit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452\ncommit-date: 2026-07-14\nhost: aarch64-apple-darwin\nrelease: 1.97.1\nLLVM version: 22.1.6",
+    "tags_at_commit": []
+  }
+}

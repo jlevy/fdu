@@ -1,0 +1,15 @@
+{
+  "call_tree": "candidate-counter-disabled-calls.txt",
+  "call_tree_sha256": "5e174fbd4b763dc07ba5d6ecee0175d67b20dde0c2e75726c4adeef365228fba",
+  "collector": "macOS sample, counters disabled",
+  "binary_name_in_trace": "candidate-controls-profiling-probe",
+  "binary_sha256": null,
+  "binary_identity": "Not recorded when the tree was captured, and the profiling binary was not retained, so no hash can be recovered. The committed candidate profiles name a binary with the same file name and record sha256 4cc1649d391093546091c4c33ee711838f3c3f5e283a883a0bb88be2a4bcd243, but nothing in the artifacts shows that this tree came from that file.",
+  "attributed_source_revision": "ad52469d7d16fee3135a515fd07a43c5bab8ba11",
+  "attribution_basis": "Session record in exp-102, not the artifact: the post-change candidate profile.",
+  "readings": {
+    "index_apply_samples_all_call_sites": 1192,
+    "ancestry_validation_samples_all_call_sites": 345
+  },
+  "noted": "2026-09-13, PR #52 review PERF-7"
+}

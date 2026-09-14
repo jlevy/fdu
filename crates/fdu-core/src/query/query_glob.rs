@@ -125,6 +125,43 @@ impl Pattern {
     pub fn source(&self) -> &str {
         &self.source
     }
+
+    /// Heap payload retained when this compiled pattern is cloned into live query state.
+    pub(crate) fn retained_heap_bytes(&self) -> usize {
+        let alternatives = self.alternatives.iter().fold(0_usize, |total, alternative| {
+            let components = alternative.components.iter().fold(0_usize, |total, component| {
+                let nested = match component {
+                    Component::AnyComponents => 0,
+                    Component::Tokens(tokens) => tokens.iter().fold(
+                        tokens.capacity().saturating_mul(std::mem::size_of::<Token>()),
+                        |total, token| match token {
+                            Token::Class { ranges, .. } => total.saturating_add(
+                                ranges
+                                    .capacity()
+                                    .saturating_mul(std::mem::size_of::<(char, char)>()),
+                            ),
+                            Token::Literal(_) | Token::AnyChar | Token::AnyRun => total,
+                        },
+                    ),
+                };
+                total.saturating_add(nested)
+            });
+            total
+                .saturating_add(
+                    alternative
+                        .components
+                        .capacity()
+                        .saturating_mul(std::mem::size_of::<Component>()),
+                )
+                .saturating_add(components)
+        });
+        self.source
+            .capacity()
+            .saturating_add(
+                self.alternatives.capacity().saturating_mul(std::mem::size_of::<Alternative>()),
+            )
+            .saturating_add(alternatives)
+    }
 }
 
 /// Expand `{a,b}` alternation into brace-free patterns.

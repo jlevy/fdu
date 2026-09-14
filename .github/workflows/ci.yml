@@ -81,8 +81,12 @@ jobs:
         run: node --test scripts/check-rust-module-names.test.mjs
       - name: Check Rust module filenames
         run: node scripts/check-rust-module-names.mjs
+      - name: Check every inventory producer routes through shared admission
+        run: npm run check:admission-sites
       - name: Check the golden corpus never resolves fdu through PATH
         run: node scripts/check-golden-invocations.mjs
+      - name: Check golden sessions expose complete product behavior
+        run: npm run check:golden-observability
       - name: Check committed test data names no machine
         run: node scripts/check-portability.mjs
       # The watch tests exercise a different notify backend on each of these runners —
@@ -93,8 +97,12 @@ jobs:
         run: cargo build --locked -p fdu --all-features
       - name: Compare the CLI golden contract
         run: npm run test:golden
-      - name: Build the repository-only performance probe
-        run: cargo build --locked -p fdu-core --example perf_probe --no-default-features
+      - name: Test the minimal-library performance probe
+        run: cargo test --locked -p fdu-core --example perf_probe --no-default-features
+      - name: Build the repository-only performance probe with control semantics
+        run: cargo build --locked -p fdu-core --example perf_probe --no-default-features --features gitignore
+      - name: Test the performance probe's semantic oracle with control semantics
+        run: cargo test --locked -p fdu-core --example perf_probe --no-default-features --features gitignore
       # `env:` rather than a `PYTHONPATH=... cmd` prefix: this job also runs on the
       # Windows runner, whose shell is PowerShell, where that POSIX prefix form is a
       # parse error rather than an assignment. The harness package is still
@@ -115,11 +123,22 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.97.1
         with:
           toolchain: 1.97.1
+          components: clippy
       # Library consumers take `default-features = false`. Without this job, that path
       # would only ever be compiled by them.
       - run: cargo test --locked -p fdu-core --no-default-features
-      # The watch layer is strictly additive and must not inherit CLI-only features.
+      # Optional layers are additive alone and together; neither may inherit CLI-only features.
+      - run: cargo test --locked -p fdu-core --no-default-features --features gitignore
       - run: cargo test --locked -p fdu-core --no-default-features --features watch
+      - run: cargo test --locked -p fdu-core --no-default-features --features watch,gitignore
+      # The command line promises to build without `watch`, which keeps that layer
+      # deletable. Nothing compiled the shape until it had already stopped building.
+      # Clippy rather than check, because the pedantic lints are clippy's and the Clippy
+      # job lints only all features.
+      - run: cargo clippy --locked -p fdu --no-default-features --all-targets -- -D warnings
+      # Compiling a test is not running it: the guide named `--watch` to a binary without
+      # it while every build of this shape passed.
+      - run: cargo test --locked -p fdu --no-default-features --lib
 
   msrv:
     name: MSRV (1.85)

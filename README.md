@@ -187,6 +187,17 @@ cannot hold the tree (CI runners, cloud hosts, whole-drive scans), journal-assis
 revalidation where the OS already recorded what changed, and expensive derived metrics
 like line counts that an unchanged fingerprint lets you skip entirely.
 
+A snapshot is usable only under the scan scope that wrote it, and a root has one cache
+path. Neither `fdu PATH` nor `fdu --watch PATH` observes `.gitignore` control state,
+because no command-line view reads it, so the two share one scope and each starts warm
+from the other’s snapshot: a watch started after `fdu PATH`, and a one-shot run that
+reads the snapshot, such as `--analyze`, after a watch.
+A summary-only `fdu --view summary PATH` saves no snapshot and replaces none.
+Only the library’s default `open`, and `fdu.open` in Python, keep a snapshot that
+observes control state.
+A command-line run does not start from it, and one that saves replaces it, but
+`--cache only` still answers a one-shot report from it.
+
 ### How performance work is done here
 
 fdu runs a disciplined optimization loop rather than a list of tweaks: instrument,
@@ -574,13 +585,13 @@ The metadata core and opt-in content layer retain separate state:
 | **Content index** | Optional sparse per-file analysis records and derived roll-ups, allocated only after `--analyze` opts in |
 | **Content sidecar** | Separately versioned, analyzer-set-scoped persistence for unchanged content records; never loaded by metadata-only requests |
 | **Observation** | Verified producer input, optionally conditional on the indexed path state |
-| **AppliedDelta** | A clocked batch of effective committed changes for the bounded change feed |
+| **Commit** | A clocked batch of exact effective changes and state transitions for the bounded change feed |
 | **Derived report** | Exact minimum state for a proven one-shot composition; otherwise the planner falls back to the index |
 
 Metadata producers submit observations; the index alone removes no-ops, advances the
-metadata clock, and mints `AppliedDelta`. Content workers submit fingerprint-checked
-analysis observations to the optional derived tier without changing metadata truth or
-snapshot compatibility.
+metadata clock, and mints `Commit`. Content workers submit fingerprint-checked analysis
+observations to the optional derived tier without changing metadata truth or snapshot
+compatibility.
 
 Two invariants are non-negotiable, because a cache that lies is worse than no cache.
 Content-reuse fingerprints are size, mtime, ctime, and inode, never mtime alone, because
