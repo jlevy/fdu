@@ -25,7 +25,7 @@ import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-from fdu import Bound, Format, InvalidArgumentError, Query, View
+from fdu import Bound, EntryKind, FilesSection, Format, InvalidArgumentError, Query, Selection, View
 from fdu import _native as fdu_py
 from fdu.opened import (
     Aggregate,
@@ -36,6 +36,7 @@ from fdu.opened import (
     CoverageKind,
     Diagnostics,
     DirectoryRollUp,
+    EntrySelection,
     Flat,
     KnowledgeKind,
     Lookup,
@@ -549,6 +550,44 @@ def main() -> None:
         assert rollup_readme.kind == "refused", rollup_readme
         assert rollup_readme.reason is RefusalReason.NOT_A_DIRECTORY, rollup_readme
         assert rollup_readme.path == pathlib.Path("README.md"), rollup_readme
+
+    # Every axis of an opened read's selection, a report projection's globs included,
+    # matches the portable path a page returns: a name shown escaped is a filter a caller
+    # can write back unchanged, and its native spelling matches nothing.
+    escaped_root = pathlib.Path(tempfile.mkdtemp(prefix="fdu-opened-escaped-"))
+    (escaped_root / "100%.txt").write_text("x")
+    (escaped_root / "50%").mkdir()
+    (escaped_root / "50%" / "inner.txt").write_text("y")
+    with OpenedIndex.open(escaped_root) as escaped:
+        for _ in range(40):
+            if escaped.state().state.coverage.kind is CoverageKind.COMPLETE:
+                break
+            escaped.changes(escaped.state().change_cursor, timeout=0.25)
+        wide = Page(limit=64, max_work=100_000)
+
+        def admitted(selection: EntrySelection) -> set[str]:
+            result = escaped.read(Flat(selection=selection, page=wide)).results[0]
+            assert result.kind == "flat" and result.value.next is None, result
+            return {row.portable_path for row in result.value.rows if row.kind is EntryKind.FILE}
+
+        shown = admitted(EntrySelection())
+        assert shown == {"100%25.txt", "50%25/inner.txt"}, shown
+        for path in shown:
+            parent, _, name = path.rpartition("/")
+            assert admitted(EntrySelection(exact_names=(name,))) == {path}, path
+            assert admitted(EntrySelection(query=Selection(include=(f"**/{path}",)))) == {path}
+            if parent:
+                assert admitted(EntrySelection(ancestor_names=(parent,))) == {path}, path
+        assert admitted(EntrySelection(exact_names=("100%.txt",))) == set()
+        report = escaped.read(
+            ReportProjection(
+                query=Query(views=(View.FILES,), selection=Selection(include=("50%25/*",)))
+            )
+        ).results[0]
+        assert report.kind == "report", report
+        files = report.value.sections[0]
+        assert isinstance(files, FilesSection), files
+        assert [row.path for row in files.files] == [pathlib.Path("50%") / "inner.txt"], files
 
     before_refresh = response.change_cursor
     (opened_root / "added.md").write_text("added")

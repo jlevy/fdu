@@ -146,7 +146,7 @@ fn parse_entry_selection(
     let Some(dict) = dict else {
         return Ok(EntrySelection::default());
     };
-    Ok(EntrySelection {
+    let mut selection = EntrySelection {
         query: parse_selection(Some(dict), now)?,
         max_size: dict
             .get_item("max_size")?
@@ -160,9 +160,17 @@ fn parse_entry_selection(
             .unwrap_or(false),
         logical_extensions: optional_strings(dict, "logical_extensions")?.unwrap_or_default(),
         exact_names: optional_strings(dict, "exact_names")?.unwrap_or_default(),
-        terminal_extensions: optional_strings(dict, "terminal_extensions")?.unwrap_or_default(),
-        ancestor_names: optional_strings(dict, "ancestor_names")?.unwrap_or_default(),
-    })
+        ..EntrySelection::default()
+    };
+    // Through the engine's admitting constructors, so the binding refuses exactly what a
+    // Rust caller is refused, with the same message.
+    for value in optional_strings(dict, "terminal_extensions")?.unwrap_or_default() {
+        selection.admit_terminal_extension(value).map_err(opened_py_err)?;
+    }
+    for value in optional_strings(dict, "ancestor_names")?.unwrap_or_default() {
+        selection.admit_ancestor_name(value).map_err(opened_py_err)?;
+    }
+    Ok(selection)
 }
 
 fn parse_scope(dict: &Bound<'_, PyDict>) -> PyResult<ScopeIdentity> {

@@ -3038,6 +3038,295 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// Seed an opened root whose names need escaping, without touching a filesystem.
+    #[cfg(unix)]
+    fn opened_with_escaped_names() -> (tempfile::TempDir, OpenedIndex) {
+        use std::os::unix::ffi::OsStrExt;
+        let (root, opened) = opened(Arc::new(TestControls::default()));
+        let native = |bytes: &[u8]| PathBuf::from(std::ffi::OsStr::from_bytes(bytes));
+        let file = |path: PathBuf| Op::Upsert {
+            path,
+            kind: EntryKind::File,
+            attrs: crate::Attrs { size: 3, ..crate::Attrs::default() },
+        };
+        let dir = |path: PathBuf| Op::Upsert {
+            path,
+            kind: EntryKind::Dir,
+            attrs: crate::Attrs::default(),
+        };
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![
+                dir(native(b"x\xff")),
+                file(native(b"x\xff/inner.txt")),
+                file(PathBuf::from("100%.txt")),
+                dir(PathBuf::from("src")),
+                file(PathBuf::from("src/lib.rs")),
+            ]))
+            .expect("seed escaped names");
+        (root, opened)
+    }
+
+    /// The portable paths of the files one projection admits.
+    #[cfg(unix)]
+    fn admitted_files(result: &crate::ProjectionResult) -> std::collections::BTreeSet<String> {
+        match result {
+            crate::ProjectionResult::Flat(page) => {
+                assert!(page.next.is_none(), "one page holds the fixture");
+                page.rows
+                    .iter()
+                    .filter(|row| row.kind == EntryKind::File)
+                    .map(|row| row.portable_path.as_str().to_owned())
+                    .collect()
+            }
+            crate::ProjectionResult::Report(report) => match report.sections.as_slice() {
+                [crate::query::Section::Files { rows, .. }] => rows
+                    .iter()
+                    .filter(|row| row.kind == EntryKind::File)
+                    .map(|row| read::portable_path(&row.path).as_str().to_owned())
+                    .collect(),
+                other => panic!("a files report: {other:?}"),
+            },
+            other => panic!("a page or a report: {other:?}"),
+        }
+    }
+
+    /// Every projection in an opened read filters by one spelling: the portable path.
+    ///
+    /// Flat and aggregate took the name from the portable path and the relative path from
+    /// the native one, ancestor names compared native components, and a report projection
+    /// matched native names, so `exact_names: ["100%.txt"]`, an unanchored glob, and an
+    /// anchored one each answered differently, and a non-UTF-8 ancestor could not be named
+    /// at all (`fdu-8w5k`).
+    #[cfg(unix)]
+    #[test]
+    fn every_projection_filters_by_the_portable_identity_a_page_returns() {
+        let (_root, opened) = opened_with_escaped_names();
+        let glob = |source: &str| crate::query::Pattern::parse(source).expect("pattern");
+        let names = |values: &[&str]| values.iter().map(ToString::to_string).collect::<Vec<_>>();
+        let cases: Vec<(&str, crate::query::EntrySelection, &[&str])> = vec![
+            (
+                "an exact name, escaped",
+                crate::query::EntrySelection {
+                    exact_names: names(&["100%25.txt"]),
+                    ..Default::default()
+                },
+                &["100%25.txt"],
+            ),
+            (
+                "an exact name in its native spelling",
+                crate::query::EntrySelection {
+                    exact_names: names(&["100%.txt"]),
+                    ..Default::default()
+                },
+                &[],
+            ),
+            (
+                "a non-UTF-8 ancestor",
+                crate::query::EntrySelection {
+                    ancestor_names: names(&["x%FF"]),
+                    ..Default::default()
+                },
+                &["x%FF/inner.txt"],
+            ),
+            (
+                "a terminal suffix below that ancestor",
+                crate::query::EntrySelection {
+                    terminal_extensions: names(&[".txt"]),
+                    ancestor_names: names(&["x%FF"]),
+                    ..Default::default()
+                },
+                &["x%FF/inner.txt"],
+            ),
+            (
+                "an anchored glob through the escaped directory",
+                crate::query::EntrySelection {
+                    query: crate::query::Selection {
+                        include: vec![glob("x%FF/*")],
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                &["x%FF/inner.txt"],
+            ),
+            (
+                "an unanchored glob on an escaped name",
+                crate::query::EntrySelection {
+                    query: crate::query::Selection {
+                        include: vec![glob("100%25.txt")],
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                &["100%25.txt"],
+            ),
+            (
+                "an unanchored glob in the native spelling",
+                crate::query::EntrySelection {
+                    query: crate::query::Selection {
+                        include: vec![glob("100%.txt")],
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                &[],
+            ),
+            (
+                "an exclusion by escaped directory",
+                crate::query::EntrySelection {
+                    query: crate::query::Selection {
+                        exclude: vec![glob("x%FF/**")],
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                &["100%25.txt", "src/lib.rs"],
+            ),
+        ];
+        for (case, selection, expected) in cases {
+            let expected: std::collections::BTreeSet<String> =
+                expected.iter().map(ToString::to_string).collect();
+            let report = crate::ReadProjection::Report(crate::ReportRequest {
+                query: crate::query::Query {
+                    views: vec![crate::query::ViewSpec::Files],
+                    selection: selection.query.clone(),
+                    ..crate::query::Query::default()
+                },
+                generated_at: std::time::SystemTime::UNIX_EPOCH,
+                max_work: 1_000,
+            });
+            let response = opened
+                .read(crate::ReadRequest {
+                    projections: vec![
+                        crate::ReadProjection::Flat {
+                            selection: selection.clone(),
+                            shape: crate::RowShape::Compact,
+                            page: crate::PageRequest { limit: 64, max_work: 1_000 },
+                        },
+                        crate::ReadProjection::Aggregate {
+                            selection: crate::query::EntrySelection {
+                                query: crate::query::Selection {
+                                    kinds: vec![EntryKind::File],
+                                    ..selection.query.clone()
+                                },
+                                ..selection.clone()
+                            },
+                            count_cap: 64,
+                            max_work: 1_000,
+                        },
+                        report,
+                    ],
+                    ..crate::ReadRequest::default()
+                })
+                .expect(case);
+            assert_eq!(admitted_files(&response.results[0]), expected, "flat: {case}");
+            assert!(
+                matches!(
+                    response.results[1],
+                    crate::ProjectionResult::Aggregate(crate::CountResult::Exact(count))
+                        if count == expected.len() as u64
+                ),
+                "aggregate: {case}: {:?}",
+                response.results[1]
+            );
+            // A report carries only the base selection, so it is compared where that is
+            // the whole question.
+            if selection.exact_names.is_empty()
+                && selection.ancestor_names.is_empty()
+                && selection.terminal_extensions.is_empty()
+            {
+                assert_eq!(admitted_files(&response.results[2]), expected, "report: {case}");
+            }
+        }
+        opened.close().expect("close");
+    }
+
+    /// A path a page returned is a filter a caller can write back, on every axis.
+    #[cfg(unix)]
+    #[test]
+    fn a_path_from_a_page_passes_back_into_a_filter_unchanged() {
+        let (_root, opened) = opened_with_escaped_names();
+        let flat = |selection: crate::query::EntrySelection| {
+            let response = opened
+                .read(crate::ReadRequest {
+                    projections: vec![crate::ReadProjection::Flat {
+                        selection,
+                        shape: crate::RowShape::Compact,
+                        page: crate::PageRequest { limit: 64, max_work: 1_000 },
+                    }],
+                    ..crate::ReadRequest::default()
+                })
+                .expect("flat page");
+            admitted_files(&response.results[0])
+        };
+        let every = flat(crate::query::EntrySelection::default());
+        assert_eq!(
+            every,
+            ["100%25.txt", "src/lib.rs", "x%FF/inner.txt"].map(String::from).into(),
+            "the page names every file by its portable path"
+        );
+        for shown in &every {
+            let only: std::collections::BTreeSet<String> = [shown.clone()].into();
+            let (ancestors, name) = match shown.rsplit_once('/') {
+                Some((ancestors, name)) => (Some(ancestors), name),
+                None => (None, shown.as_str()),
+            };
+            let anchored = crate::query::Pattern::parse(&format!("**/{shown}")).expect("glob");
+            assert_eq!(
+                flat(crate::query::EntrySelection {
+                    query: crate::query::Selection {
+                        include: vec![anchored],
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }),
+                only,
+                "the whole path as a glob: {shown}"
+            );
+            assert_eq!(
+                flat(crate::query::EntrySelection {
+                    exact_names: vec![name.to_owned()],
+                    ..Default::default()
+                }),
+                only,
+                "its name as an exact name: {shown}"
+            );
+            if let Some(ancestors) = ancestors {
+                let mut selection = crate::query::EntrySelection::default();
+                selection.admit_ancestor_name(ancestors).expect("a page component is a valid name");
+                assert_eq!(flat(selection), only, "its parent as an ancestor name: {shown}");
+            }
+        }
+        opened.close().expect("close");
+    }
+
+    /// A selection a constructor would refuse is refused by a read too, before any answer.
+    #[test]
+    fn a_read_refuses_a_hand_written_selection_the_constructors_would_refuse() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        for selection in [
+            crate::query::EntrySelection {
+                terminal_extensions: vec!["rs".to_string()],
+                ..Default::default()
+            },
+            crate::query::EntrySelection {
+                ancestor_names: vec!["..".to_string()],
+                ..Default::default()
+            },
+        ] {
+            let read = opened.read(crate::ReadRequest {
+                projections: vec![
+                    crate::ReadProjection::Lookup { path: PathBuf::new() },
+                    crate::ReadProjection::Aggregate { selection, count_cap: 8, max_work: 64 },
+                ],
+                ..crate::ReadRequest::default()
+            });
+            assert!(matches!(read, Err(Error::InvalidValue { .. })), "{read:?}");
+        }
+        opened.close().expect("close");
+    }
+
     /// A page whose resume state is too large to retain refuses that page, and only it.
     ///
     /// The page has rows left, so returning them with no continuation would present a

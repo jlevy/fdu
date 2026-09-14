@@ -496,7 +496,18 @@ class Tree:
 
 @dataclass(frozen=True, slots=True)
 class EntrySelection:
-    """Portable opened-root row predicates composed with the one-shot query selection."""
+    """Portable opened-root row predicates composed with the one-shot query selection.
+
+    Every axis, including the globs in ``query``, matches an entry's portable identity:
+    the escaped ``/``-joined spelling a page row carries as ``Entry.portable_path``, never
+    the native path. ``100%.txt`` is ``100%25.txt`` to every predicate, and a path taken
+    from a page can be passed back into a filter unchanged. A ``ReportProjection``'s
+    selection inside an opened read follows the same rule; ``fdu.report`` and
+    ``Index.report`` keep native names.
+
+    Terminal suffixes and ancestor names are checked here, refusing what the MetaBrowser
+    ``CatalogQuery`` contract refuses, and the engine checks them again.
+    """
 
     query: Selection = field(default_factory=Selection)
     max_size: int | None = None
@@ -517,6 +528,29 @@ class EntrySelection:
     def __post_init__(self) -> None:
         if self.max_size is not None and self.max_size < 0:
             raise ValueError("entry selection max_size must be nonnegative")
+        for label, values in (
+            ("terminal_extensions", self.terminal_extensions),
+            ("ancestor_names", self.ancestor_names),
+        ):
+            if isinstance(values, str):
+                raise TypeError(f"{label} must be a tuple of strings, not a string")
+        suffixes = self.terminal_extensions
+        if len(set(suffixes)) != len(suffixes):
+            raise ValueError("terminal_extensions entries must be unique")
+        if any(not value.startswith(".") for value in suffixes):
+            raise ValueError("terminal_extensions entries must start with a dot")
+        if any(value != value.lower() for value in suffixes):
+            raise ValueError("terminal_extensions entries must be lowercase")
+        if any(
+            len(value) < 2 or "/" in value or "\\" in value or "." in value[1:]
+            for value in suffixes
+        ):
+            raise ValueError("terminal_extensions entries must be canonical terminal suffixes")
+        names = self.ancestor_names
+        if len(set(names)) != len(names):
+            raise ValueError("ancestor_names entries must be unique")
+        if any(not name or name in {".", ".."} or "/" in name or "\\" in name for name in names):
+            raise ValueError("ancestor_names entries must be exact path-component names")
 
 
 @dataclass(frozen=True, slots=True)

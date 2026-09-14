@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 from pathlib import Path
@@ -75,6 +76,41 @@ def test_opened_entry_selection_composes_the_stable_query_selection() -> None:
     assert projection.selection.query.kinds == (EntryKind.FILE,)
     assert projection.selection.max_size == 100
     assert projection.selection.exact_names == ("makefile",)
+
+
+@pytest.mark.parametrize(
+    ("arguments", "message"),
+    [
+        ({"terminal_extensions": (".rs", ".rs")}, "terminal_extensions entries must be unique"),
+        ({"terminal_extensions": ("rs",)}, "must start with a dot"),
+        ({"terminal_extensions": (".RS",)}, "must be lowercase"),
+        ({"terminal_extensions": (".\u00c9e",)}, "must be lowercase"),
+        ({"terminal_extensions": (".",)}, "canonical terminal suffixes"),
+        ({"terminal_extensions": (".tar.gz",)}, "canonical terminal suffixes"),
+        ({"terminal_extensions": (".a/b",)}, "canonical terminal suffixes"),
+        ({"terminal_extensions": (".a\\b",)}, "canonical terminal suffixes"),
+        ({"ancestor_names": ("src", "src")}, "ancestor_names entries must be unique"),
+        ({"ancestor_names": ("",)}, "exact path-component names"),
+        ({"ancestor_names": (".",)}, "exact path-component names"),
+        ({"ancestor_names": ("..",)}, "exact path-component names"),
+        ({"ancestor_names": ("a/b",)}, "exact path-component names"),
+        ({"ancestor_names": ("a\\b",)}, "exact path-component names"),
+    ],
+)
+def test_opened_entry_selection_refuses_what_could_never_match(
+    arguments: dict[str, tuple[str, ...]], message: str
+) -> None:
+    with pytest.raises(ValueError, match=re.escape(message)):
+        opened.EntrySelection(**arguments)  # pyright: ignore[reportArgumentType]
+
+
+def test_opened_entry_selection_admits_canonical_suffixes_and_escaped_components() -> None:
+    selection = opened.EntrySelection(
+        terminal_extensions=(".rs", ".c++"), ancestor_names=("x%FF", "..foo")
+    )
+    assert selection.ancestor_names == ("x%FF", "..foo")
+    with pytest.raises(TypeError, match="tuple of strings"):
+        opened.EntrySelection(ancestor_names="src")  # pyright: ignore[reportArgumentType]
 
 
 def test_opened_tree_defaults_to_one_visible_level_and_encodes_its_shape() -> None:

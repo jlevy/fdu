@@ -449,6 +449,31 @@ The conformance packet includes invalid Unix bytes and Windows Unicode/separator
 and must pair a literal `%` with an undecodable byte in one corpus, since that pair is
 what a non-injective encoding collapses.
 
+**Every predicate sees the canonical name** (`fdu-8w5k`).
+Inside an opened-root read, every selection axis evaluates against the canonical path a
+page row returns as `portable_path`, never the native one: exact names, logical and
+terminal extensions, ancestor names, the relative path an anchored glob matches, and the
+name an unanchored glob matches.
+That holds for fdu’s own `Selection` wherever it appears in an opened read, so a flat
+page, an aggregate count, and a report projection answer one query over one spelling.
+A caller therefore filters by the names it was shown: `100%.txt` is `100%25.txt` to every
+predicate, a directory whose native name is not UTF-8 is named by its escaped component,
+and a path taken from a page passes back into a filter unchanged.
+Evaluating any axis natively would split one query into two populations again, the
+failure the total encoding exists to prevent.
+One-shot command-line and `fdu.report` globs, and a watch’s selection, keep matching
+native names; they return native paths, so the same rule (filter by what you are shown)
+gives them the native spelling.
+
+The terminal-suffix and ancestor-name axes refuse every value that could only ever match
+nothing, where the value is written: validating constructors in Rust
+(`EntrySelection::admit_terminal_extension`, `EntrySelection::admit_ancestor_name`, and
+`EntrySelection::validate`, which a read applies as request-shape validation) and
+`EntrySelection.__post_init__` in Python.
+The refused set is the MetaBrowser `CatalogQuery` set, so both providers reject the same
+values: duplicate suffixes; undotted, non-lowercase, compound, or separator-bearing
+suffixes; and duplicate, empty, `.`, `..`, or separator-bearing ancestor names.
+
 ### Version, state, and knowledge
 
 Every committed state has an `EngineVersion` containing:

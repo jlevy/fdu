@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use crate::engine_contract::EntryKind;
+use crate::engine_contract::{EntryKind, Error, Result};
 use crate::query::query_glob::Pattern;
 
 /// Which size metric a report answers in.
@@ -137,11 +137,17 @@ pub struct Selection {
 ///
 /// Passing a small explicit record rather than an index handle keeps the predicate pure
 /// and trivially testable, and keeps selection from reaching into index internals.
+///
+/// `relative` and `name` carry one spelling of the entry, and every name-shaped predicate
+/// -- globs, exact names, extensions, terminal suffixes, ancestor names -- is evaluated
+/// against that spelling. A one-shot report and a watch use the native path. An opened-root
+/// read uses the portable path a page returns, so a caller filters by the names it was
+/// shown: see [`EntrySelection`].
 #[derive(Clone, Copy, Debug)]
 pub struct Candidate<'a> {
-    /// Path relative to the index root.
+    /// Path relative to the index root, in the spelling the selection is evaluated in.
     pub relative: &'a Path,
-    /// Final path component.
+    /// Final path component, in the same spelling as `relative`.
     pub name: &'a str,
     /// What the entry is.
     pub kind: EntryKind,
@@ -159,6 +165,22 @@ pub struct Candidate<'a> {
 /// composes it instead of adding fields to that public struct, preserving source
 /// compatibility for existing Rust callers while keeping interactive row predicates in
 /// one pure engine-owned value.
+///
+/// **Every axis sees the portable identity.** Inside an opened-root read, the name, the
+/// relative path an anchored glob matches, and every ancestor component are the canonical
+/// escaped `/`-joined spelling a page row carries as `portable_path`, never the native
+/// path. `100%.txt` is `100%25.txt` to every predicate, and a directory whose native name
+/// is not UTF-8 is matched by its escaped name, which is the only spelling a caller could
+/// have been shown. A path taken from a page can therefore be passed back into a filter
+/// unchanged. The same rule governs the base [`Selection`] and a `Report` projection's
+/// selection inside an opened read; one-shot reports and watches keep native names.
+///
+/// Terminal suffixes and ancestor names are validated where they are written, by
+/// [`Self::admit_terminal_extension`] and [`Self::admit_ancestor_name`], and again by
+/// [`Self::validate`] when a read receives the selection: every spelling that could only
+/// ever match nothing is refused, the same set the `MetaBrowser` `CatalogQuery` contract
+/// refuses, so the two providers reject the same values rather than one answering with an
+/// empty page.
 #[derive(Clone, Debug, Default)]
 pub struct EntrySelection {
     /// Existing fdu query predicates.
@@ -180,10 +202,24 @@ pub struct EntrySelection {
     pub exact_names: Vec<String>,
     /// Lowercase terminal suffixes to admit, including the leading dot.
     ///
-    /// Unlike a logical extension, only the final dotted component participates.
+    /// Unlike a logical extension, only the final dotted component participates. Each
+    /// entry is unique, starts with a dot, is lowercase, and is one suffix: `.rs`, never
+    /// `rs`, `.RS`, `.`, `.tar.gz`, or a value holding a separator.
     pub terminal_extensions: Vec<String>,
-    /// Exact ancestor path-component names to admit.
+    /// Exact ancestor path-component names to admit, as portable components.
+    ///
+    /// Each entry is unique and one whole component: never empty, `.`, `..`, or a value
+    /// holding `/` or `\`.
     pub ancestor_names: Vec<String>,
+}
+
+/// Which spelling of an entry's path a selection is evaluated against.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum NameIdentity {
+    /// The native path, as one-shot reports and watches match it.
+    Native,
+    /// The canonical escaped path, as every opened-root read matches it.
+    Portable,
 }
 
 impl From<Selection> for EntrySelection {
@@ -254,6 +290,58 @@ impl Selection {
 }
 
 impl EntrySelection {
+    /// Add one terminal suffix, refusing a spelling that could only ever match nothing.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidValue`] for a duplicate, an undotted or non-lowercase suffix, a bare
+    /// dot, a compound suffix such as `.tar.gz`, or a value holding a separator.
+    pub fn admit_terminal_extension(&mut self, value: impl Into<String>) -> Result<()> {
+        let value = value.into();
+        check_terminal_extension(&value)?;
+        if self.terminal_extensions.contains(&value) {
+            return Err(refusal("terminal extension", &value, TERMINAL_UNIQUE));
+        }
+        self.terminal_extensions.push(value);
+        Ok(())
+    }
+
+    /// Add one ancestor name, refusing a value that is not one whole path component.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidValue`] for a duplicate, an empty name, `.` or `..`, or a value
+    /// holding `/` or `\`.
+    pub fn admit_ancestor_name(&mut self, value: impl Into<String>) -> Result<()> {
+        let value = value.into();
+        check_ancestor_name(&value)?;
+        if self.ancestor_names.contains(&value) {
+            return Err(refusal("ancestor name", &value, ANCESTOR_UNIQUE));
+        }
+        self.ancestor_names.push(value);
+        Ok(())
+    }
+
+    /// Check the axes a caller may have written straight into the public fields.
+    ///
+    /// The admitting constructors apply the same rules one value at a time; a read applies
+    /// this to every selection it receives, so a hand-built value is refused the same way.
+    ///
+    /// # Errors
+    ///
+    /// The first refusal [`Self::admit_terminal_extension`] or
+    /// [`Self::admit_ancestor_name`] would have returned.
+    pub fn validate(&self) -> Result<()> {
+        let mut checked = Self::default();
+        for value in &self.terminal_extensions {
+            checked.admit_terminal_extension(value.as_str())?;
+        }
+        for value in &self.ancestor_names {
+            checked.admit_ancestor_name(value.as_str())?;
+        }
+        Ok(())
+    }
+
     /// Heap payload retained when an opened-root continuation owns this selection.
     pub(crate) fn retained_heap_bytes(&self) -> usize {
         self.query
@@ -341,6 +429,46 @@ impl EntrySelection {
         }
         true
     }
+}
+
+const TERMINAL_UNIQUE: &str = "terminal_extensions entries must be unique";
+const ANCESTOR_UNIQUE: &str = "ancestor_names entries must be unique";
+
+fn refusal(kind: &'static str, value: &str, hint: &str) -> Error {
+    Error::InvalidValue { kind, value: value.to_owned(), hint: hint.to_owned() }
+}
+
+/// The `MetaBrowser` `CatalogQuery` rule for one terminal suffix, in its order.
+fn check_terminal_extension(value: &str) -> Result<()> {
+    let kind = "terminal extension";
+    if !value.starts_with('.') {
+        return Err(refusal(kind, value, "terminal_extensions entries must start with a dot"));
+    }
+    // Unicode lowering, as the contract's `str.lower` check is: an uppercase letter outside
+    // ASCII is refused too, even though matching folds only ASCII.
+    if value.to_lowercase() != value {
+        return Err(refusal(kind, value, "terminal_extensions entries must be lowercase"));
+    }
+    if value.chars().count() < 2 || value.contains(['/', '\\']) || value[1..].contains('.') {
+        return Err(refusal(
+            kind,
+            value,
+            "terminal_extensions entries must be canonical terminal suffixes",
+        ));
+    }
+    Ok(())
+}
+
+/// The `MetaBrowser` `CatalogQuery` rule for one ancestor name.
+fn check_ancestor_name(value: &str) -> Result<()> {
+    if value.is_empty() || value == "." || value == ".." || value.contains(['/', '\\']) {
+        return Err(refusal(
+            "ancestor name",
+            value,
+            "ancestor_names entries must be exact path-component names",
+        ));
+    }
+    Ok(())
 }
 
 fn retained_strings(values: &[String], capacity: usize) -> usize {
@@ -497,6 +625,70 @@ mod tests {
         assert!(entry_admits(&selection, "Makefile", EntryKind::File, 1, 0, false));
         assert!(!entry_admits(&selection, "plain.zip", EntryKind::File, 1, 0, false));
         assert!(!entry_admits(&selection, "README", EntryKind::File, 1, 0, false));
+    }
+
+    #[test]
+    fn terminal_extensions_and_ancestor_names_refuse_what_could_never_match() {
+        let refused = |hint: &str, outcome: Result<()>| match outcome {
+            Err(Error::InvalidValue { hint: actual, .. }) => {
+                assert!(actual.contains(hint), "{actual:?} names {hint:?}");
+            }
+            other => panic!("expected a refusal naming {hint:?}, got {other:?}"),
+        };
+        for (value, hint) in [
+            ("rs", "start with a dot"),
+            (".RS", "lowercase"),
+            (".Ée", "lowercase"),
+            (".", "canonical terminal suffixes"),
+            (".tar.gz", "canonical terminal suffixes"),
+            ("..", "canonical terminal suffixes"),
+            (".a/b", "canonical terminal suffixes"),
+            (".a\\b", "canonical terminal suffixes"),
+        ] {
+            let mut selection = EntrySelection::default();
+            refused(hint, selection.admit_terminal_extension(value));
+            assert!(selection.terminal_extensions.is_empty(), "{value:?} was not added");
+            let written = EntrySelection {
+                terminal_extensions: vec![value.to_string()],
+                ..Default::default()
+            };
+            refused(hint, written.validate());
+        }
+        for value in ["", ".", "..", "a/b", "a\\b"] {
+            let mut selection = EntrySelection::default();
+            refused("exact path-component names", selection.admit_ancestor_name(value));
+            let written =
+                EntrySelection { ancestor_names: vec![value.to_string()], ..Default::default() };
+            refused("exact path-component names", written.validate());
+        }
+
+        let mut selection = EntrySelection::default();
+        selection.admit_terminal_extension(".rs").expect("a canonical suffix");
+        selection.admit_terminal_extension(".c++").expect("a non-alphanumeric suffix");
+        refused("unique", selection.admit_terminal_extension(".rs"));
+        selection.admit_ancestor_name("src").expect("a component");
+        selection.admit_ancestor_name("x%FF").expect("an escaped component");
+        selection.admit_ancestor_name("..foo").expect("dots inside a name");
+        refused("unique", selection.admit_ancestor_name("src"));
+        assert_eq!(selection.terminal_extensions, [".rs", ".c++"]);
+        assert_eq!(selection.ancestor_names, ["src", "x%FF", "..foo"]);
+        selection.validate().expect("admitted values validate");
+        refused(
+            "unique",
+            EntrySelection {
+                terminal_extensions: vec![".md".to_string(), ".md".to_string()],
+                ..Default::default()
+            }
+            .validate(),
+        );
+        refused(
+            "unique",
+            EntrySelection {
+                ancestor_names: vec!["docs".to_string(), "docs".to_string()],
+                ..Default::default()
+            }
+            .validate(),
+        );
     }
 
     #[test]
