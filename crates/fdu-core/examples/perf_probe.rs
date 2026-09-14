@@ -217,6 +217,14 @@ impl Arguments {
         // Set apart from the walk-only flags because the one-shot report modes refuse it
         // too, while the index-returning scans still apply it.
         let mut no_controls = false;
+        // Tracked apart from `walk_only_flag`, which only ever refuses these two for
+        // opened-discovery: `--diagnostics` is read by scan-producer, scan-index,
+        // validate-index, and default-tree (through `prepare_report_with_scan_diagnostics`),
+        // while `--worker-policy` is read only by the first three -- default-tree's
+        // diagnostics call takes no worker-policy argument, so it never chooses one
+        // (fdu-unv3). Every other mode reads neither.
+        let mut saw_diagnostics_flag = false;
+        let mut saw_worker_policy_flag = false;
         while let Some(flag) = arguments.next() {
             match flag.to_str() {
                 Some("--root") => root = Some(next_path(&mut arguments, "--root")?),
@@ -241,6 +249,7 @@ impl Arguments {
                 Some("--diagnostics") => {
                     diagnostics = true;
                     walk_only_flag = Some("--diagnostics");
+                    saw_diagnostics_flag = true;
                 }
                 Some("--worker-policy") => {
                     let value = arguments
@@ -256,6 +265,7 @@ impl Arguments {
                     };
                     diagnostics = true;
                     walk_only_flag = Some("--worker-policy");
+                    saw_worker_policy_flag = true;
                 }
                 Some("--batch-size") => {
                     scan.batch_size = next_usize(&mut arguments, "--batch-size")?;
@@ -306,6 +316,35 @@ impl Arguments {
             return Err(ProbeError(format!(
                 "--no-controls does not apply to {}: the one-shot report planner decides \
                  control observation, and a report never observes control state",
+                mode.name()
+            )));
+        }
+        if saw_diagnostics_flag
+            && !matches!(
+                mode,
+                Mode::ScanProducer | Mode::ScanIndex | Mode::ValidateIndex | Mode::DefaultTree
+            )
+        {
+            // Only these four modes produce a `scan_diagnostics` output: the two
+            // index-returning scans, their validate-index alias, and the default-tree
+            // report, which carries diagnostics through `prepare_report_with_scan_diagnostics`.
+            // Every other mode has no field to fill, so accepting the flag would record a
+            // run under a trace nothing produced.
+            return Err(ProbeError(format!(
+                "--diagnostics does not apply to {}: only scan-producer, scan-index, \
+                 validate-index, and default-tree read scan diagnostics",
+                mode.name()
+            )));
+        }
+        if saw_worker_policy_flag
+            && !matches!(mode, Mode::ScanProducer | Mode::ScanIndex | Mode::ValidateIndex)
+        {
+            // default-tree reads diagnostics but not this: `prepare_report_with_scan_diagnostics`
+            // takes no worker-policy argument, so a run recorded under `--worker-policy
+            // repeated` would still have used the shipped policy.
+            return Err(ProbeError(format!(
+                "--worker-policy does not apply to {}: only scan-producer, scan-index, and \
+                 validate-index select a worker-policy experiment",
                 mode.name()
             )));
         }
@@ -2203,6 +2242,83 @@ mod tests {
         )
         .expect("a detached scan applies --no-controls");
         assert!(!arguments.scan.read_controls);
+    }
+
+    #[test]
+    fn every_mode_refuses_diagnostics_and_worker_policy_it_cannot_apply() {
+        // Mirrors `execute`'s dispatch, not the bead that reported this: `scan_producer`
+        // and `scan_index` (which `validate-index` also runs through) read both
+        // `arguments.diagnostics` and `arguments.worker_policy`; `default_tree` reads only
+        // diagnostics, because `prepare_report_with_scan_diagnostics` takes no
+        // worker-policy argument. Every other mode -- opened-discovery included, covered
+        // above -- reads neither field at all.
+        const DIAGNOSTICS_MODES: &[&str] =
+            &["scan-producer", "scan-index", "validate-index", "default-tree"];
+        const WORKER_POLICY_MODES: &[&str] = &["scan-producer", "scan-index", "validate-index"];
+        const ALL_MODES: &[&str] = &[
+            "code-sloc",
+            "code-sloc-cache-hit",
+            "code-sloc-seed",
+            "content-basic",
+            "content-binary-gate",
+            "content-cache-hit",
+            "content-disabled",
+            "content-open",
+            "content-query",
+            "content-seed",
+            "detect-ambiguous",
+            "detect-resolved",
+            "document-cache-hit",
+            "document-seed",
+            "delta-apply",
+            "delta-apply-batched",
+            "delta-apply-large",
+            "markdown-prose",
+            "query",
+            "revalidate",
+            "cold-open-save",
+            "default-tree",
+            "scan-index",
+            "scan-producer",
+            "snapshot-load",
+            "snapshot-save",
+            "summary",
+            "text-prose",
+            "validate-index",
+            // opened-discovery is covered by opened_discovery_refuses_walk_flags_it_cannot_apply.
+        ];
+
+        for mode in ALL_MODES.iter().copied() {
+            let diagnostics_result = Arguments::parse(
+                [mode, "--root", "/root", "--snapshot", "/snapshot", "--diagnostics"]
+                    .into_iter()
+                    .map(OsString::from),
+            );
+            if DIAGNOSTICS_MODES.contains(&mode) {
+                diagnostics_result
+                    .unwrap_or_else(|error| panic!("{mode} applies --diagnostics: {}", error.0));
+            } else {
+                let error = diagnostics_result
+                    .expect_err(&format!("{mode} has no scan-diagnostics output to fill"));
+                assert!(error.0.contains("--diagnostics"), "{}", error.0);
+                assert!(error.0.contains(mode), "{}", error.0);
+            }
+
+            let worker_policy_result = Arguments::parse(
+                [mode, "--root", "/root", "--snapshot", "/snapshot", "--worker-policy", "repeated"]
+                    .into_iter()
+                    .map(OsString::from),
+            );
+            if WORKER_POLICY_MODES.contains(&mode) {
+                worker_policy_result
+                    .unwrap_or_else(|error| panic!("{mode} applies --worker-policy: {}", error.0));
+            } else {
+                let error = worker_policy_result
+                    .expect_err(&format!("{mode} has no worker-policy experiment to select"));
+                assert!(error.0.contains("--worker-policy"), "{}", error.0);
+                assert!(error.0.contains(mode), "{}", error.0);
+            }
+        }
     }
 
     #[test]
