@@ -5,7 +5,7 @@ title: Control-table budget aborts the scan instead of degrading to partial
 kind: bug
 status: open
 priority: 0
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - scale
@@ -14,7 +14,7 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-30T07:12:14.310Z
-updated_at: 2026-09-14T01:49:45.519Z
+updated_at: 2026-09-14T02:43:29.754Z
 ---
 ControlTable::upsert (crates/fdu-core/src/control.rs:120) returns Err(ControlSourceLimit) when the cumulative retained cost crosses MAX_CONTROL_TABLE_BYTES, and index.rs:1203 does the same on install. The error propagates and kills the whole scan - the user gets nothing after minutes of walking.
 
@@ -35,3 +35,9 @@ Where each bound is still reachable after PR #51's fix (a69b95e): one-shot repor
 2026-09-13 (PR #48 review CLASS-1, deferred here; opened-root status after the LIFE-1 fix in c801d4e): the review reproduced both bounds as fatal from the default CLI -- a synthetic tree of 1,105 directories each holding a 510-byte .gitignore ended cold scan_into_index with ControlSourceLimit (retained cost is roughly 64 + dir + 2*bytes + 64*(lines+1) per file, so about 1,370 repository-root-style or 5,000 package-style files exhaust the 4 MiB table), and a single 16,385-byte line anywhere ended it with ControlPatternLimit (MAX_CONTROL_PATTERN_BYTES is 16 KiB). The walk also reads .gitignore files inside directories that are already ignored, which git never does (scan.rs cold walk), and one .gitignore over 4 MiB is a non-fatal scan error while the cumulative and per-line bounds are fatal. One-shot surfaces are closed by PR #51's control-observation gate plus its COMMIT-3 follow-up, so #48 must not merge to main without #51.
 
 For opened roots, a control-bound error no longer kills discovery; it now degrades, but only partly. discover_directory classifies a refused commit (opened.rs discovery_rejection): ControlSourceLimit and ControlPatternLimit refuse that one directory's listing, which stays incomplete, and the refusal is retained as a ProviderFailure issue through an Inaccessible transition, so coverage is Partial(Inaccessible) and discovery continues with every other directory. Pinned by opened::tests::a_control_bound_refuses_one_directory_without_ending_discovery. What this bead still owns: (1) the whole batch is dropped with the control, so that directory's ordinary entries and subdirectories are lost too, rather than only the control; (2) the issue does not name the control path, and the coverage reason says Inaccessible rather than a control or budget reason; (3) the observation handoff's full reconcile applies the same controls and still fails on the same bound, so a watched root still ends Failed; (4) controls under already-ignored directories are still read and retained; (5) the unignored partition's knowledge below a dropped control is not marked incomplete. Review: https://github.com/jlevy/fdu/pull/48#pullrequestreview-5192314101
+
+2026-09-13 (PR #48 verification review 5193206420, FIX48-2/-5/-7): scope widened, and two interim gaps narrowed.
+
+What still fails on a control bound, which the CLASS-1 disposition understated (FIX48-7). The discovery improvement reaches only roots that do not observe. (a) A watched root -- MetaBrowser's mode, and fdu_core::open / fdu.open / --watch by default -- still ends Failed: discovery degrades past the refused directory and reaches Ready, then the observation handoff's full reconcile (reconcile_paths_handle_controlled over the root) applies the same control, gets the same ControlSourceLimit or ControlPatternLimit as an error, and run_observation returns it, so the root fails later, after an extra full walk, and close() names the observation worker instead of discovery. (b) In steady state, once the cumulative table bound has been reached, the first event touching any .gitignore-bearing directory fails the observer the same way: reconcile_pending_target propagates the commit error (scan.rs reconcile_pending_target Err arm), apply_next_controlled returns it, and the observation worker ends with the root Failed. Acceptance for this bead should include both: a watched root over the bound reaches Watching with a typed partial marker, and a steady-state event over a control-bearing directory degrades instead of failing the observer.
+
+Interim changes on PR #48 (commits 9c29e6f for FIX48-2 and FIX48-5): item (1) above is narrowed -- a refusal now still queues the subdirectories that earlier batches of the same listing had committed, so only the refused batch's entries and the rest of that listing are lost, not subtrees nothing refused. Item (2) is narrowed -- the refusal is retained as a ResourceBudget issue whose path is the root-relative directory whose control crossed the bound, rather than a pathless ProviderFailure; the coverage reason is still Inaccessible, and the issue names the directory, not the control file. Still owned here: retrying the refused batch without its control op (the review's preferred option for FIX48-2), so the directory's ordinary entries survive and the directory can complete with a typed marker, plus items (3)-(5) and (a)-(b). Review: https://github.com/jlevy/fdu/pull/48#pullrequestreview-5193206420
