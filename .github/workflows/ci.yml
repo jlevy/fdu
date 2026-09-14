@@ -126,6 +126,9 @@ jobs:
       - run: cargo test --locked -p fdu-core --no-default-features --features gitignore
       - run: cargo test --locked -p fdu-core --no-default-features --features watch
       - run: cargo test --locked -p fdu-core --no-default-features --features watch,gitignore
+      # The command line promises to build without `watch`, which keeps that layer
+      # deletable. Nothing compiled the shape until it had already stopped building.
+      - run: cargo check --locked -p fdu --no-default-features --all-targets
 
   msrv:
     name: MSRV (1.85)
