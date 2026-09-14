@@ -397,9 +397,9 @@ returns. A caller-supplied fingerprint is never accepted as proof of content.
 fdu reads registry schema 3 and schema 4 and refuses any other version by name.
 Schema 4 adds `icon` to groups and families, which is presentation, like `hue`,
 `linguist_color`, `lightness_rank`, and `deviation`: each is validated by shape, none is
-retained, and none enters the fingerprint, nor does `schema_version`.
-One registry written in either schema, or repainted, is therefore one classification
-identity, and a snapshot recorded under one is served under the other.
+retained, and none enters the fingerprint, nor does `schema_version`. One registry
+written in either schema, or repainted, is therefore one classification identity, and a
+snapshot recorded under one is served under the other.
 An `icon` in a schema 3 document is refused rather than ignored.
 The Python and fdu providers must agree on normalized registry identity through the
 shared conformance packet.
@@ -449,16 +449,16 @@ The conformance packet includes invalid Unix bytes and Windows Unicode/separator
 and must pair a literal `%` with an undecodable byte in one corpus, since that pair is
 what a non-injective encoding collapses.
 
-**Every predicate sees the canonical name** (`fdu-8w5k`).
-Inside an opened-root read, every selection axis evaluates against the canonical path a
-page row returns as `portable_path`, never the native one: exact names, logical and
-terminal extensions, ancestor names, the relative path an anchored glob matches, and the
-name an unanchored glob matches.
-That holds for fdu’s own `Selection` wherever it appears in an opened read, so a flat
-page, an aggregate count, and a report projection answer one query over one spelling.
-A caller therefore filters by the names it was shown: `100%.txt` is `100%25.txt` to every
-predicate, a directory whose native name is not UTF-8 is named by its escaped component,
-and a path taken from a page passes back into a filter unchanged.
+**Every predicate sees the canonical name** (`fdu-8w5k`). Inside an opened-root read,
+every selection axis evaluates against the canonical path a page row returns as
+`portable_path`, never the native one: exact names, logical and terminal extensions,
+ancestor names, the relative path an anchored glob matches, and the name an unanchored
+glob matches.
+That holds for fdu’s own `Selection` wherever it appears in an opened read,
+so a flat page, an aggregate count, and a report projection answer one query over one
+spelling. A caller therefore filters by the names it was shown: `100%.txt` is
+`100%25.txt` to every predicate, a directory whose native name is not UTF-8 is named by
+its escaped component, and a path taken from a page passes back into a filter unchanged.
 Evaluating any axis natively would split one query into two populations again, the
 failure the total encoding exists to prevent.
 One-shot command-line and `fdu.report` globs, and a watch’s selection, keep matching
@@ -658,18 +658,17 @@ Overrun is reported, not refused.
 What no projection may do is stop with rows left and no continuation, or relabel a
 partial calculation as exact.
 
-A failure belongs to the smallest thing it invalidates (`fdu-l89e`).
-Three conditions fail the whole request, because each makes every projection in it
-untrustworthy: a request whose shape is invalid, including a continuation the root does
-not retain; a closed root; and a version pin, by `expected` or by a continuation, that
-the index no longer holds.
-Everything else one projection meets at the pinned version is a typed refusal in that
-projection’s position, beside the query-limit result, and the other projections still
-answer:
+A failure belongs to the smallest thing it invalidates (`fdu-l89e`). Three conditions
+fail the whole request, because each makes every projection in it untrustworthy: a
+request whose shape is invalid, including a continuation the root does not retain; a
+closed root; and a version pin, by `expected` or by a continuation, that the index no
+longer holds. Everything else one projection meets at the pinned version is a typed
+refusal in that projection’s position, beside the query-limit result, and the other
+projections still answer:
 
-- a tree page or roll-up that names a retained path that is not a directory refuses
-  with `not_a_directory`, so a path that changed kind since an earlier page costs only
-  its own projection, and an adapter never has to prove a path is a directory before it
+- a tree page or roll-up that names a retained path that is not a directory refuses with
+  `not_a_directory`, so a path that changed kind since an earlier page costs only its
+  own projection, and an adapter never has to prove a path is a directory before it
   batches the question;
 - a page that stops with rows left and whose continuation record would exceed its bound
   refuses with `continuation_record_limit`, rather than returning rows without a way to
@@ -1050,8 +1049,8 @@ defend the current prototype contract.
 - Add a deterministic work budget to potentially scanning queries and a typed
   query-limit result. Output bounds alone do not protect event-loop latency.
 - Add a typed per-projection refusal beside the query-limit result, with the two reasons
-  the read envelope defines: `not_a_directory` and `continuation_record_limit`.
-  A batched request fails as a whole only for an invalid request, a closed root, or a
+  the read envelope defines: `not_a_directory` and `continuation_record_limit`. A
+  batched request fails as a whole only for an invalid request, a closed root, or a
   version pin the provider no longer holds; both providers refuse the one projection and
   answer the rest, so the coordinator never splits a batch to protect a lookup.
 - Add an exact-or-capped count result.
@@ -1822,9 +1821,9 @@ has not been re-measured.
 Whether a scan observes control state is decided by its consumer, not by the compiled
 feature set. `ScanConfig::read_controls` defaults to off (`fdu-agb6`), because the
 question a default `open` answers is what the tree holds, which no ignore rule changes.
-A default `fdu_core::open`, `open_with_pending_save`, `fdu.open`, `fdu.scan`, and a watch
-over any of their indexes read no control file, share the one-shot snapshot scope, and
-reach no control bound.
+A default `fdu_core::open`, `open_with_pending_save`, `fdu.open`, `fdu.scan`, and a
+watch over any of their indexes read no control file, share the one-shot snapshot scope,
+and reach no control bound.
 A caller that reads ignore classification opts in: `ScanConfig::read_controls` in Rust,
 `ScanOptions(read_controls=True)` in Python.
 An index built without it cannot classify, and says so: `Index::is_ignored` and
@@ -1857,8 +1856,8 @@ Three rules keep the switch honest:
   the all-entry facts, and names the requested scope, so it may answer a controls-off
   request from a controls-on snapshot such as an opted-in `open` leaves.
   Every scanning policy treats a scope mismatch as no usable snapshot and scans cold, so
-  an opted-in `open` does not warm-start from a report’s snapshot, while a default `open`
-  shares its scope and does.
+  an opted-in `open` does not warm-start from a report’s snapshot, while a default
+  `open` shares its scope and does.
 
 #### The remaining parity work
 
