@@ -5,7 +5,7 @@ title: "P3: watch scope validation errors"
 kind: task
 status: open
 priority: 1
-version: 14
+version: 16
 spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
 refs:
   - kind: pr
@@ -29,12 +29,13 @@ refs:
 labels:
   - pr47-review
   - metabrowser
+  - stack-followup
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 child_order_hints:
   - is-01m0wqh3ydkn7yztpt80t9d857
 created_at: 2026-08-11T05:36:29.253Z
-updated_at: 2026-08-25T16:06:43.170Z
+updated_at: 2026-09-14T01:49:45.783Z
 closed_at: null
 close_reason: null
 resolution: null
@@ -73,3 +74,5 @@ matches, the root is still admitted (no parent to disqualify it) and a child is
 not. It also asserts the pairing directly -- should_descend stops at a mountpoint
 on another device, and on_root_filesystem keeps the row for it. The mutation that
 asks the entry's own device fails it.
+
+2026-09-13 (PR #48 review 5192314101, prior findings): unchanged on the rewrite. The CLI guard exists, but the tryscript coverage this bead asks for is still missing: each rejected --watch scope combination, and one accepted selection-plus-watch combination.

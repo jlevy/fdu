@@ -5,7 +5,7 @@ title: Hidden-path admission as scope, with an exact-name allowlist
 kind: task
 status: open
 priority: 2
-version: 11
+version: 13
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -14,11 +14,12 @@ refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5020603690
     at: 2026-08-25T15:10:56.893Z
-labels: []
+labels:
+  - stack-followup
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T15:21:47.400Z
-updated_at: 2026-08-26T07:01:50.826Z
+updated_at: 2026-09-14T01:49:45.792Z
 closed_at: 2026-08-25T06:35:17.988Z
 close_reason: |
   Shipped as `crates/fdu-core/src/admission.rs` plus wiring across all three surfaces.
@@ -125,3 +126,7 @@ watcher that prunes always.
 Mutations checked: hidden admission removed, leaf-only instead of every
 component, the fast path forgetting the axis, and pruning regardless of the
 policy. Each fails a named test.
+
+2026-09-13 (PR #48 review 5192314101, prior findings): the engine part was carried into the rewrite and every producer consults it. The command-line and one-shot Python flags described in the close reason above were not carried; they landed on #47, which closed unmerged. The opened-root Python surface has `OpenedOptions.prune_hidden` and `hidden_allow`.
+
+Remaining: expose hidden admission on the command line and the one-shot Python API, or record that those surfaces deliberately omit it.

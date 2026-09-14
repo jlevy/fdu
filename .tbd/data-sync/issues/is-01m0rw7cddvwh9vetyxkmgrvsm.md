@@ -5,13 +5,13 @@ title: "Handle lifecycle: prioritize() and close() on the opened root"
 kind: feature
 status: open
 priority: 2
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T03:15:03.725Z
-updated_at: 2026-08-26T07:01:50.826Z
+updated_at: 2026-09-14T01:49:35.782Z
 ---
 MetaBrowser's InventoryHandle has five operations. fdu answers three and not two:
 
@@ -38,3 +38,7 @@ guessable.
 Both are small in code and easy to get wrong in contract. prioritize must not be able to
 change an answer, and close must be idempotent and safe to call from a thread that is not
 the one draining the watch.
+
+## Notes
+
+2026-09-13 (PR #48 review 5192314101, prior findings): fixed in its OpenedIndex form, since prioritize() and close() exist on the opened root. The review noted the caveats of LIFE-4 and LIFE-5, both since fixed on #48 (fdu-6tqw, fdu-q8p7). Candidate to close once someone confirms nothing else in this bead's text is still owed.

@@ -5,7 +5,7 @@ title: "Address review: PR #49 — the Linux floor scoreboard"
 kind: task
 status: closed
 priority: 1
-version: 16
+version: 21
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels:
   - campaign-2
@@ -25,8 +25,13 @@ child_order_hints:
   - is-01m2ebcdxhc9j53kv6y1pg7sqn
   - is-01m2ebcj7rr3q69ry3crk5xcsg
   - is-01m2ebcn1tc0hehz5167qvcr1j
+  - is-01m2esgr7z3zqmx7fskdj3kfzx
+  - is-01m2esgrngd4vjkprfqa8xq2yg
+  - is-01m2esgs0skcccfsvsej970xcp
+  - is-01m2esgscrc17cgwzsp4tec58c
+  - is-01m2esgsrjvv641ntm9mc8zfxk
 created_at: 2026-09-13T21:38:59.036Z
-updated_at: 2026-09-13T22:17:33.175Z
+updated_at: 2026-09-14T01:46:45.905Z
 closed_at: 2026-09-13T22:17:33.174Z
 close_reason: "All 13 findings fixed on claude/perf-floor-linux-2026-08-28 through 6e018a0 (CI 19/19 green); disposition map posted at https://github.com/jlevy/fdu/pull/49#issuecomment-5656540687. Also fixed outside the review: make perf-floor defaulted to the uncontrolled regime. PR #52's Makefile conflict is left for merge time."
 resolution: null

@@ -5,15 +5,16 @@ title: "~/Library scan is SIGKILLed (137): unbounded growth the control cap does
 kind: bug
 status: open
 priority: 1
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - scale
   - macos
+  - stack-followup
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-30T07:12:47.952Z
-updated_at: 2026-08-30T07:12:47.952Z
+updated_at: 2026-09-14T01:49:45.767Z
 ---
 Field report: 'fdu ~/Library -d 2 -n 30 --sort size --min-size 300M' exited 137 (SIGKILL) on the branch binary. This is a different failure mode from the control-table aborts - the OS killed it rather than fdu refusing cleanly - which points at growth the control budget does not bound.
 

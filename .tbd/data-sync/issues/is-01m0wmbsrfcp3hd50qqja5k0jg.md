@@ -5,7 +5,7 @@ title: Implement exact MetaBrowser catalog predicate semantics
 kind: bug
 status: open
 priority: 1
-version: 13
+version: 15
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -23,10 +23,11 @@ refs:
 labels:
   - pr47-review
   - metabrowser
+  - stack-followup
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-25T14:14:37.582Z
-updated_at: 2026-09-13T22:34:21.982Z
+updated_at: 2026-09-14T01:49:45.533Z
 closed_at: null
 close_reason: null
 resolution: null
@@ -131,3 +132,7 @@ deciding which contract moves, and the reviewer suggests tightening the consumer
 reject "." and ".." -- a cross-repo decision, not one to make from this side.
 
 2026-09-13 (PR #48 review READ-5, deferred here): selection predicates see portable names on some axes and native names on others. Flat and Aggregate build each candidate's `name` from the escaped portable path but its `relative` from the native path (crates/fdu-core/src/opened/read.rs flat_projection and aggregate_projection, the `Candidate` construction), and `EntrySelection` globs are evaluated in crates/fdu-core/src/query/query_glob.rs. For `100%.txt` (portable `100%25.txt`): `exact_names: ["100%.txt"]` matches nothing; an unanchored glob `100%.txt` matches nothing while the anchored `**/100%.txt` matches; `ancestor_names` cannot express a non-UTF-8 ancestor; and `Report` evaluates the same `Selection` against native names, disagreeing with Flat and Aggregate. Review fix: choose one identity for predicates -- portable is the reviewer's recommendation for an adapter-facing API -- apply it on every axis including anchored globs and `ancestor_names`, and state it in the plan's contract section. Deferred from #48 because it is the predicate-identity contract decision the MetaBrowser adapter depends on. Review: https://github.com/jlevy/fdu/pull/48#pullrequestreview-5192314101
+
+2026-09-13 (PR #48 review 5192314101, prior findings; not a numbered finding): open, and partly regressed from #47. On the rewrite, `terminal_extensions` and `ancestor_names` are unvalidated `Vec<String>`. #47's validating constructors were not carried, and the binding passes the values straight through; Python `EntrySelection.__post_init__` validates only `max_size`. So the duplicate, separator, dot-component, and uppercase refusals described above do not exist on the #48 stack.
+
+With READ-5 above, the open decision is the predicate identity contract: portable (escaped) or native names, applied on every axis. Restore validation against whichever identity is chosen.

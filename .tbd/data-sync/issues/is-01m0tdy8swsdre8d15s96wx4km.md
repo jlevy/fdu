@@ -5,7 +5,7 @@ title: Watch invalidation batches lose required dirty information
 kind: bug
 status: open
 priority: 1
-version: 24
+version: 26
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -14,6 +14,7 @@ refs:
 labels:
   - pr47-review
   - metabrowser
+  - stack-followup
 dependencies:
   - type: blocks
     target: is-01m0rw7bvxtw87tgde30emgs56
@@ -21,7 +22,7 @@ dependencies:
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.915Z
-updated_at: 2026-08-26T07:01:50.826Z
+updated_at: 2026-09-14T01:49:45.800Z
 closed_at: null
 close_reason: null
 resolution: null
@@ -61,3 +62,5 @@ Also at 353d48f, the reference adapter (FDU47-E4) now opens the watch with
 Interest.INVALIDATIONS and prints state and work, so the example demonstrates
 zero entry rows crossing the binding rather than repeating a caveat about a gap
 that had closed.
+
+2026-09-13 (PR #48 review 5192314101, prior findings): the core half is fixed on the rewrite, since dirty paths include a removed directory and its ancestors. The async-adapter half does not exist on the #48 stack, which has no async bridge yet. It belongs to the production adapter work (fdu-2xfp) and must carry the lossless batch when that lands.

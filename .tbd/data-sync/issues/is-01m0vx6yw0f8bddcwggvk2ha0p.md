@@ -5,7 +5,7 @@ title: "A native walk budget: stop discovery at the cap, and say so"
 kind: task
 status: open
 priority: 1
-version: 19
+version: 21
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -29,13 +29,14 @@ refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5020603690
     at: 2026-08-25T15:10:54.510Z
-labels: []
+labels:
+  - stack-followup
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 child_order_hints:
   - is-01m0wqh3nwzjz4naa9rap02sq5
 created_at: 2026-08-25T07:30:01.728Z
-updated_at: 2026-08-26T07:01:50.826Z
+updated_at: 2026-09-14T01:49:45.776Z
 closed_at: null
 close_reason: null
 resolution: null
@@ -110,3 +111,7 @@ Also fixed here: the Windows CI red on the new max-files golden was fixture
 setup, not cap enforcement -- `sh -c 'printf x > a; printf x > b; printf x > c'`
 produced one 3-byte file there, so the uncapped control saw one file too.
 Replaced with the repository's standard node writer.
+
+2026-09-13 (PR #48 review 5192314101, prior findings): partly fixed, and this bead's text is stale. The rewrite has the budget for opened roots as execution policy (`max_files` on the open options, `Partial(Budget)` coverage). The acceptance above, a scope-fingerprint change plus a CLI flag, contradicts the opened-root plan and needs re-scoping.
+
+The review found one non-terminal stop, LIFE-4 (discovery's Finish reopened a budget-stopped root), now fixed as fdu-6tqw (c801d4e). Re-scope the acceptance to the plan's execution-policy budget before closing.

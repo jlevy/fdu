@@ -5,7 +5,7 @@ title: "Address review: PR #54 — H86 Linux evidence stage record"
 kind: task
 status: closed
 priority: 1
-version: 13
+version: 14
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
 labels:
   - perf
@@ -23,8 +23,9 @@ child_order_hints:
   - is-01m2eb2sy2gjy29res0hj897ym
   - is-01m2eb2ta7pz62mk2705k9h56n
   - is-01m2eb2tnqsvj39phr0xe31swp
+  - is-01m2esgt594wns69rqrjzzx0ej
 created_at: 2026-09-13T21:33:40.912Z
-updated_at: 2026-09-13T22:07:52.391Z
+updated_at: 2026-09-14T01:46:46.312Z
 closed_at: 2026-09-13T22:07:52.389Z
 close_reason: "All eleven PR #54 review findings (H86-1..H86-11) addressed in 46721fd, 86d2a6a, 4dccad8 and 2d36eab; CI 19/19 at 2d36eab; disposition map posted at https://github.com/jlevy/fdu/pull/54#issuecomment-5656484254. Deferred follow-up fdu-c4jr (per-arm max/min field and durable run JSON) stays open; H86 epic fdu-xde5 notes renumbered and corrected."
 resolution: null

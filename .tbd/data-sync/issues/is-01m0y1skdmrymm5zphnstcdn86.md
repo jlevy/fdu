@@ -5,10 +5,11 @@ title: Measure final performance, dependency, and size acceptance
 kind: task
 status: open
 priority: 1
-version: 7
+version: 9
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - opened-root-rewrite
+  - stack-followup
 dependencies: []
 parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 child_order_hints:
@@ -16,7 +17,7 @@ child_order_hints:
   - is-01m10nshrq8ska2thptbjmp8vs
   - is-01m10nsj426pyks0x8h9azvfka
 created_at: 2026-08-26T03:28:35.764Z
-updated_at: 2026-08-28T15:24:18.267Z
+updated_at: 2026-09-14T01:49:45.626Z
 ---
 Measure cold usefulness and completion, settled query and continuation work, change latency, CPU, memory, dependency trees, CLI binary size, wheel size, and GIL boundary cost on the same corpus. Publish exact revisions and regimes and record the explicit rollback/default-provider decision without changing defaults in this bead.
 
@@ -52,3 +53,9 @@ before-and-after this bead owes, rather than as an objection.
 Still owed by this bead, and untouched by the above: wheel and binding bytes, cold
 startup, one-shot scan time, peak memory, change latency, and GIL boundary cost, under
 the paired protocol.
+
+2026-09-13 (stack-followup audit): PR #48's "Open technical debt" table still lists this bead as "Attribute or reduce the +297,632 raw bytes the rewrite adds to the command line". The 2026-08-28 note above records that growth as explained, so reconcile the two when closing.
+
+The figure predates #51 (the control-observation gate and commit-pipeline changes) and #52 (the detached directory-group builder and compact child topology). Both change code the command line reaches. Re-measure the release CLI binary, raw and gzip under the same profile, on the merged stack head against main before recording a final figure.
+
+The other measurements this bead owes are unchanged.

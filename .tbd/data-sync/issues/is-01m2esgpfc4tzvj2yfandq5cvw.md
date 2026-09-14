@@ -1,0 +1,33 @@
+---
+type: is
+id: is-01m2esgpfc4tzvj2yfandq5cvw
+title: Decide whether open and fdu.open observe control state by default
+kind: task
+status: open
+priority: 2
+version: 2
+spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
+labels:
+  - stack-followup
+dependencies: []
+parent_id: is-01m2eafpfpe8k5c9z9dhrqvy2y
+created_at: 2026-09-14T01:46:42.539Z
+updated_at: 2026-09-14T01:47:10.640Z
+---
+Open decision left by PR #51 review COMMIT-3 (fixed in a69b95e; tracked on fdu-etfj), recorded by the fixer.
+
+**Current behaviour after #51.** The shared one-shot planner (`crates/fdu-core/src/execution.rs` `plan_report` / `prepare_report`) always sets `ReportPlan::read_controls = false`, so `fdu <dir>` and `fdu.report()` keep controls-off snapshots. `fdu_core::open` and `fdu.open` keep `ScanConfig::read_controls` defaulting on, because the returned `Index` exposes `controls()` and `is_ignored()`. `--watch` and the opened root also observe controls. Snapshot acceptance is exact wherever an index is returned or reconciled (c0729ce), so a scanning policy treats a scope mismatch as no usable snapshot and cold-scans.
+
+**Consequence.** An `open` or `fdu.open` right after a report on the same tree cold-scans instead of warm-starting. `51154f9` changed two planner tests to pin exactly that ("a default open no longer warm-starts from a report's snapshot"). The split is documented on `open`, `prepare_report`, `ScanConfig::read_controls`, `fdu.open`, and `fdu.report`.
+
+**Decision.** Should `open` / `fdu.open` observe control state by default?
+- **Keep on (status quo).** The index answers `controls()` and `is_ignored()` exactly, and `open` still aborts on control volume until fdu-1onj. The cost is a cold scan whenever report and open alternate.
+- **Default off, opt in.** Report and open share snapshots, and `open` stops reaching the control bounds by default. But a caller who reads `is_ignored()` has to ask for it, and a controls-off index needs a clear answer for `controls()`.
+
+The review said defaulting on is "defensible" provided the split is documented, and that it should be decided deliberately. It has been documented, not decided.
+
+**Interacts with.** Keying snapshots by scan scope (fdu-w3l5) removes the cold-scan cost of either choice. If that lands first, this reduces to an API-semantics question. Taking "default off" also shrinks fdu-1onj's reach.
+
+**Acceptance.** The decision is recorded in the opened-root plan's Phase 4 section and on `open` / `fdu.open`. If the default changes, the parity corpus gets the cases, the Python and CLI goldens are updated, and the planner tests are adjusted.
+
+Review: https://github.com/jlevy/fdu/pull/51#pullrequestreview-5192254822. Disposition: https://github.com/jlevy/fdu/pull/51#issuecomment-5656491635

@@ -5,7 +5,7 @@ title: "[bug] Gitignore bind walks the whole tree at open, even cache-only"
 kind: bug
 status: open
 priority: 1
-version: 12
+version: 13
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -20,10 +20,11 @@ refs:
 labels:
   - pr47-review
   - metabrowser
+  - stack-followup
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T20:45:09.518Z
-updated_at: 2026-09-13T22:34:27.844Z
+updated_at: 2026-09-14T01:49:45.552Z
 closed_at: null
 close_reason: null
 resolution: null

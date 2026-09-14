@@ -5,7 +5,7 @@ title: Complete the coherent read envelope and version-pinned paging
 kind: bug
 status: open
 priority: 1
-version: 36
+version: 38
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -23,6 +23,7 @@ refs:
 labels:
   - pr47-review
   - metabrowser
+  - stack-followup
 dependencies:
   - type: blocks
     target: is-01m0prhqd27m471dn47yt973k0
@@ -30,7 +31,7 @@ dependencies:
     target: is-01m0tdy9ceep2byvbtyvwc2vky
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.445Z
-updated_at: 2026-09-13T22:34:25.239Z
+updated_at: 2026-09-14T01:49:45.543Z
 closed_at: null
 close_reason: null
 resolution: null
@@ -105,3 +106,7 @@ indexes and does not hold for two clones, which is exactly the hole. The comment
 correcting along with the code.
 
 2026-09-13 (PR #48 review READ-8, deferred here): a nonterminal page whose continuation record would exceed MAX_CONTINUATION_RECORD_BYTES (64 KiB) fails the entire ReadRequest with ContinuationRecordLimit (crates/fdu-core/src/opened/read.rs, the table.insert(...)? in tree_projection and flat_projection), discarding the assembled rows and every other projection in the read. Reachable only with very long paths or a very large EntrySelection. Review fix: refuse that page, typed and per projection, rather than the whole read. The same review's READ-2 (a full flat page discarded when the look-ahead exhausted max_work) and READ-3 (Tree answered Absent and RollUp answered Unknown for a present file) were fixed on #48 as fdu-8u26 and fdu-q2oj. Review: https://github.com/jlevy/fdu/pull/48#pullrequestreview-5192314101
+
+2026-09-13 (stack-followup audit): READ-3's fix (fdu-q2oj, fa033c2) makes `Tree` and `RollUp` on a non-directory return `Error::NotADirectory` from `read()` (`opened/read.rs:73, 426` at f917cb7). That fails the whole `ReadRequest`, exactly as READ-8's `ContinuationRecordLimit` does.
+
+Whether projection-level failures are typed per projection or fail the request is now one decision, tracked as fdu-l89e. READ-8's fix here should follow it.

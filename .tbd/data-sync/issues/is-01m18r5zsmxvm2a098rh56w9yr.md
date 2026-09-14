@@ -5,15 +5,16 @@ title: Control-table charge model inflates ~6.5x and pays repeatedly for identic
 kind: task
 status: open
 priority: 1
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - scale
   - control-state
+  - stack-followup
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-30T07:12:14.643Z
-updated_at: 2026-08-30T07:12:14.643Z
+updated_at: 2026-09-14T01:49:45.749Z
 ---
 retained_source_cost (crates/fdu-core/src/control.rs:337) charges:
   64 + path_bytes + source.len()*2 + (newlines+1)*64 + slash_count*24

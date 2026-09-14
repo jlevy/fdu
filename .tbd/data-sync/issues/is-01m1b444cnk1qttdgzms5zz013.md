@@ -5,15 +5,16 @@ title: "PR #48 branch is 3.6-10x slower than main: allocator churn, not I/O"
 kind: bug
 status: in_progress
 priority: 0
-version: 5
+version: 7
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
 labels:
   - performance
   - regression
+  - stack-followup
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-31T05:19:25.577Z
-updated_at: 2026-09-01T06:33:38.198Z
+updated_at: 2026-09-14T01:49:45.672Z
 ---
 The opened-root-inventory-rewrite branch has an unreported whole-scan performance regression against main that is larger and broader than the control-table cap this epic started from. It affects trees with NO .gitignore files, so it is not control-file I/O.
 
@@ -52,3 +53,12 @@ Acceptance: bisect the branch to the commit that introduces the allocation growt
 ## Notes
 
 PR #51 partially removes the regression but does not meet this P0 acceptance boundary. Independent review at e8f1bed measured the head at about 2.4x main wall time and 4.7x main engine-component time on the same 119,368-entry subject; a 100,001-op public batch remained about 7.7x main. Disposable counter and timing ladders corrected the residual attribution: path-keyed StructuralOverlay ancestry preflight dominates CPU, per-batch impact publication is next, and prepare/effect/AppliedDelta path copies dominate residual allocations. The correctness-first redesign, formal profile protocol, and parity thresholds are now owned by plan-2026-08-31-fdu-streaming-performance-parity.md and epic fdu-748k. This bead remains open until fdu-lj4h proves parity and the allocation guard lands.
+
+2026-09-13 (stack-followup audit): PR #51's description still quotes this bead's current numbers:
+- toolchains 1.58 s → 0.70 s, against main's 0.37 s;
+- the 304-gitignore tree 11.49 s → 3.92 s, against main's 1.32 s;
+- 2.23M / 422k allocations / reallocations.
+
+All were measured before COMMIT-4's port (50e6ca5) replaced the canonical-path copy lane with one pre-sized canonicalizing pass, and they have not been re-measured. Tracked as fdu-wdqf, which fdu-lj4h's quiet-host run on the merged engine supersedes if it lands first.
+
+When closing, also record whether #52's detached builder (no commits, impacts, or journals for detached cold scans) settles #51's "Open for review and redesign" question: should effect recording be lifecycle-gated? Record too where the counters-based per-entry allocation guard landed.

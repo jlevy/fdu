@@ -5,13 +5,14 @@ title: Bound the tree level-advance search without stranding the cursor
 kind: task
 status: open
 priority: 2
-version: 9
-labels: []
+version: 11
+labels:
+  - stack-followup
 dependencies:
   - type: blocks
     target: is-01m1687g2cazrcaxzwkpdcazz5
 created_at: 2026-08-29T05:26:49.303Z
-updated_at: 2026-08-29T20:11:32.766Z
+updated_at: 2026-09-14T01:49:45.634Z
 ---
 The breadth-first tree projection charges its level-advance search against `spent` but
 never cuts it short, so one page can exceed `page.max_work` by a scan of one level.
@@ -104,3 +105,5 @@ all by a `depth: Limit(1)` read.
 Closing that strictly still means teaching the cursor the searching state. It is now a
 performance refinement rather than a contract violation, worth doing when tree paging
 meets a real wide tree.
+
+2026-09-13 (PR #48 review 5192314101, prior findings): open, exactly as described, and listed in #48's open technical debt. Its sibling READ-7 (the level advance recursed once per tree level) is fixed on #48 as fdu-kbvi (ef1db6f; test shrunk in f917cb7). This bead's same-depth advance overrun is not.
