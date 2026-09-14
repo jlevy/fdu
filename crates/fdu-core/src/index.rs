@@ -68,10 +68,10 @@ std::thread_local! {
 /// consumer that falls further behind than this is told so ([`Since::truncated`]) and is
 /// expected to re-read state rather than silently miss changes. The bound is stated in
 /// bytes, as [`Commit::retained_cost`] estimates them, because the question it answers is
-/// how much memory history may hold: the earlier budget of 64 Ki items retained about this
-/// much for short paths and tens of mebibytes for long ones. An opened root lifts it
-/// through `journal_capacity_bytes`; there is no unbounded setting, since truncation is always
-/// announced and a journal that never truncates would grow for the life of the session.
+/// how much memory history may hold, and a budget counted in items would let long paths
+/// hold many times as much. An opened root lifts it through `journal_capacity_bytes`;
+/// there is no unbounded setting, since truncation is always announced and a journal that
+/// never truncates would grow for the life of the session.
 pub const DEFAULT_JOURNAL_CAPACITY_BYTES: usize = 8 * 1024 * 1024;
 
 /// Identifier for an entry within an [`Index`] arena.

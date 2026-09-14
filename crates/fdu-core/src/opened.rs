@@ -530,10 +530,11 @@ impl OpenedIndex {
             .name(format!("fdu-{name}"))
             .spawn(move || {
                 // The worker records its own failure as it leaves, and a panic is caught
-                // for exactly that long before it resumes. Left to the join, a panic was
-                // learned of only at close -- a change poll blocked on the journal slept
-                // to its timeout -- and close reported failures in spawn order, so
-                // discovery's poisoned-lock error stood in for the panic that poisoned it.
+                // for exactly that long before it resumes. Left to the join, a panic would
+                // be learned of only at close -- a change poll blocked on the journal would
+                // sleep to its timeout -- and close could report failures only in spawn
+                // order, letting discovery's poisoned-lock error stand in for the panic
+                // that poisoned it.
                 let outcome =
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(cancellation)));
                 #[cfg(test)]

@@ -4068,9 +4068,9 @@ fn reconcile_paths_target(
         opened.push((subtree, started_at));
     }
 
-    // Each subtree closes on its own walk's outcome. One flag for the whole set marked a
-    // verified sibling partial because another subtree could not be read, and withheld
-    // the completeness its listing had earned.
+    // Each subtree closes on its own walk's outcome, so a subtree that could not be read
+    // neither marks a verified sibling partial nor withholds the completeness its listing
+    // earned.
     let mut failure = None;
     let mut completed = Vec::with_capacity(opened.len());
     for (subtree, _) in &opened {

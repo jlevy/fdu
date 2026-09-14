@@ -1601,11 +1601,10 @@ impl Commit {
     ///
     /// The estimate is a fixed allowance for the commit's own frame plus, for every
     /// change, transition, and dirty path, a fixed allowance for the item and the bytes of
-    /// the path it names. Paths are the part that varies: a journal that charged one unit
-    /// per item held tens of mebibytes of long paths under a budget that read as 64 KiB,
-    /// and every change poll cloned all of it. Charging bytes makes
-    /// [`crate::DEFAULT_JOURNAL_CAPACITY_BYTES`] mean what it says, whatever the tree's paths
-    /// look like. The allowances are fixed rather than measured with `size_of` so the
+    /// the path it names. Paths are the part that varies, so charging their bytes makes
+    /// [`crate::DEFAULT_JOURNAL_CAPACITY_BYTES`] mean what it says whatever the tree's paths
+    /// look like; a charge per item would let long paths hold many times the budget, and
+    /// every change poll clones what the journal holds. The allowances are fixed rather than measured with `size_of` so the
     /// budget means the same on every target: the retained types differ in size by
     /// platform, and a recorded journal work count would otherwise differ with them.
     pub fn retained_cost(&self) -> usize {
