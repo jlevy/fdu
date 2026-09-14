@@ -1604,8 +1604,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         fs::write(dir.path().join(".gitignore"), b"*.log\n").expect("write control");
         fs::write(dir.path().join("debug.log"), b"x").expect("write file");
-        let config = ScanConfig::default();
-        assert!(!config.read_controls, "the default policy observes no control state");
+        let config = ScanConfig { read_controls: false, ..ScanConfig::default() };
         let (mut index, _) = crate::scan::scan_into_index(dir.path(), &config).expect("scan");
         assert!(index.control_table().is_empty());
         assert!(matches!(index.controls(), Err(crate::Error::ControlStateNotObserved)));

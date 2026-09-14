@@ -209,11 +209,7 @@ impl Arguments {
         let mut oracle_enabled = true;
         let mut diagnostics = false;
         let mut worker_policy = fdu_core::scan::WorkerPolicyExperiment::ShippedOneShot;
-        // The probe keeps the regime its recorded experiments measured: index-returning
-        // scans observe control state unless `--no-controls` says otherwise. The library
-        // default no longer observes it (fdu-agb6), and inheriting that here would change
-        // what every existing probe invocation measures without changing its arguments.
-        let mut scan = ScanConfig { read_controls: true, ..ScanConfig::default() };
+        let mut scan = ScanConfig::default();
         // A walk setting or walk trace that an opened root has no option for, so opened
         // discovery would silently measure, and the record would claim, something other
         // than what the command line asked for.

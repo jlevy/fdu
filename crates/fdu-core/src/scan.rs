@@ -185,24 +185,21 @@ pub struct ScanConfig {
     pub types: Option<std::sync::Arc<crate::classify::TypeRegistry>>,
     /// Observe `.gitignore` control files and retain ignore classification.
     ///
-    /// Off by default. Off, the scan performs no control-file I/O and retains no control
-    /// table: the semantics an absent `gitignore` feature gives, stamped into
-    /// [`ScanScope`] the same way, so an index-returning call never serves a snapshot
-    /// taken one way as the other. An [`Index`] built that way answers
-    /// [`Index::is_ignored`] and [`Index::controls`] with
-    /// [`crate::Error::ControlStateNotObserved`], never
-    /// with "not ignored", and no default scan can end on a control bound.
+    /// On by default, so an [`Index`] from [`crate::open`] or a scan keeps the exact
+    /// control state it exposes and a watch maintains: which entries are ignored, and the
+    /// ignored and unignored partitions of every roll-up (fdu-elnn). It costs a read of
+    /// every `.gitignore` in the tree, and exposure to the control bounds.
     ///
-    /// On, an index from [`crate::open`] or a scan keeps the exact control state it
-    /// exposes, and a watch over it maintains that state. Turn it on to read ignore
-    /// classification; it costs a read of every `.gitignore` in the tree, a snapshot
-    /// scope of its own, and exposure to the control bounds.
+    /// Off, the scan performs no control-file I/O and retains no control table: the
+    /// semantics an absent `gitignore` feature gives, stamped into [`ScanScope`] the same
+    /// way, so an index-returning call never serves a snapshot taken one way as the other.
+    /// An [`Index`] built that way answers [`Index::is_ignored`], [`Index::controls`], and
+    /// the partition accessors with [`crate::Error::ControlStateNotObserved`], never with
+    /// "not ignored", and refuses control input. Turn it off for a request that reads no
+    /// ignore classification; its snapshot then shares the one-shot report's scope.
     ///
-    /// The default is off because the question a default open answers is what the tree
-    /// holds, which no ignore rule changes (fdu-agb6). It lets `open`, a watch, and a
-    /// one-shot report share one snapshot scope, so each starts warm from the others'
-    /// snapshots. An opened root ([`crate::OpenedIndex`]) always observes control state,
-    /// because its ignored and unignored partitions are part of what it serves.
+    /// An opened root ([`crate::OpenedIndex`]) always observes control state, because its
+    /// ignored and unignored partitions are part of what it serves.
     ///
     /// A one-shot report ([`crate::prepare_report`]) does not read this field; its
     /// planner always runs with observation off, because no report view reads ignore
@@ -223,7 +220,7 @@ impl Default for ScanConfig {
             threads: None,
             order: ScanOrder::default(),
             types: None,
-            read_controls: false,
+            read_controls: true,
         }
     }
 }

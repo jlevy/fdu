@@ -1704,10 +1704,10 @@ impl Index {
     ///
     /// Accepted, such input installed a table and reclassified entries under a scope that
     /// says no rule was read: `is_ignored` refused over classification the index held, and
-    /// a snapshot saved from it loaded into a default open as an exact scope match
-    /// (`fdu-agb6`). Every operation counts, accepted or stale, so the refusal does not
-    /// depend on the index's state. Without the `gitignore` feature the control table
-    /// refuses control input itself, with the error that names the missing capability.
+    /// a snapshot saved from it loaded into an open that turned observation off as an exact
+    /// scope match (`fdu-agb6`). Every operation counts, accepted or stale, so the refusal
+    /// does not depend on the index's state. Without the `gitignore` feature the control
+    /// table refuses control input itself, with the error that names the missing capability.
     fn carries_unobserved_control_input(&self, ops: &[ObservationOp]) -> bool {
         cfg!(feature = "gitignore")
             && !self.observes_controls()
@@ -7794,8 +7794,9 @@ mod tests {
     /// rather than calling every entry unignored.
     #[test]
     fn an_index_that_did_not_observe_controls_refuses_ignore_questions() {
-        let mut index = Index::new("/root");
-        assert!(!index.observes_controls(), "the default scope observes no control state");
+        let mut index =
+            Index::new_with_scope("/root", crate::test_support::not_observing_controls());
+        assert!(!index.observes_controls());
         index.apply_ok(&Observation::new(vec![upsert(
             "debug.log",
             EntryKind::File,
@@ -7831,13 +7832,14 @@ mod tests {
     /// Control input to an index that observes no control state is refused, typed, and
     /// changes nothing. Accepted, it installed a table and reclassified entries under a
     /// scope that says no rule was read, so `is_ignored` refused over classification the
-    /// index held and a snapshot saved from it loaded into a default open as an exact
-    /// match (`fdu-agb6`). A stale conditional control op is refused as well: the refusal
-    /// is about the index's scope, not its state.
+    /// index held and a snapshot saved from it loaded into an open that turned observation
+    /// off as an exact match (`fdu-agb6`). A stale conditional control op is refused as
+    /// well: the refusal is about the index's scope, not its state.
     #[cfg(feature = "gitignore")]
     #[test]
     fn an_index_that_does_not_observe_controls_refuses_control_input() {
-        let mut index = Index::new("/root");
+        let mut index =
+            Index::new_with_scope("/root", crate::test_support::not_observing_controls());
         index.apply_ok(&Observation::new(vec![
             upsert(".gitignore", EntryKind::File, file_attrs(6, 1)),
             upsert("debug.log", EntryKind::File, file_attrs(10, 2)),
@@ -7917,7 +7919,8 @@ mod tests {
             upsert("dir", EntryKind::Dir, file_attrs(0, 1)),
             upsert("dir/debug.log", EntryKind::File, file_attrs(10, 2)),
         ]);
-        let mut unobserved = Index::new("/root");
+        let mut unobserved =
+            Index::new_with_scope("/root", crate::test_support::not_observing_controls());
         unobserved.apply_ok(&tree);
         assert!(matches!(unobserved.partition_total(), Err(crate::Error::ControlStateNotObserved)));
         for path in ["", "dir", "dir/debug.log", "absent"] {

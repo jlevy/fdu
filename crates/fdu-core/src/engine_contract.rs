@@ -223,10 +223,10 @@ pub struct EngineVersion {
 impl ScanScope {
     /// Whether an index of this scope observed `.gitignore` control state.
     ///
-    /// False when the scan ran with [`ScanConfig::read_controls`](crate::ScanConfig)
-    /// off, which is the default, and in a build without the `gitignore` feature: both
-    /// mean no control file was read and no entry was classified, and they share one
-    /// identity. Such an index cannot say whether an entry is ignored, so
+    /// False when the scan ran with [`ScanConfig::read_controls`](crate::ScanConfig) off,
+    /// and in a build without the `gitignore` feature: both mean no control file was read
+    /// and no entry was classified, and they share one identity. Such an index cannot say
+    /// whether an entry is ignored, so
     /// [`Index::is_ignored`](crate::Index::is_ignored),
     /// [`Index::controls`](crate::Index::controls), and the partition accessors
     /// ([`Index::partition_total`](crate::Index::partition_total) and its per-directory
@@ -1740,8 +1740,8 @@ pub enum Error {
     /// fact nobody observed. Nor does it accept a `ControlUpsert` or `ControlRemove`
     /// ([`Op`]): its scope says no rule was read, and a table installed anyway would
     /// contradict it, in the index and in every snapshot saved from it. Opening with
-    /// [`ScanConfig::read_controls`](crate::ScanConfig) on, in a build with the
-    /// `gitignore` feature, makes the answers exact.
+    /// [`ScanConfig::read_controls`](crate::ScanConfig) on, as it is by default, in a
+    /// build with the `gitignore` feature, makes the answers exact.
     #[error(
         "this index did not observe .gitignore control state, so it neither says what is \
          ignored nor accepts control input; open it with read_controls to observe it"

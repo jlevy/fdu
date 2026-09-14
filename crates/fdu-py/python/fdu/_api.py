@@ -312,8 +312,8 @@ class Index:
         """Keep this index current and report it as it changes.
 
         The watch continues the scan that built the index under the same scope, so it
-        observes ``.gitignore`` control state only when the index was opened with
-        ``ScanOptions(read_controls=True)``, and by default reads no control file.
+        observes ``.gitignore`` control state unless the index was opened with
+        ``ScanOptions(read_controls=False)``.
         """
 
         selected = options if options is not None else WatchOptions()
@@ -349,14 +349,13 @@ def open(
 ) -> Index:
     """Open a root using the requested cache policy, then return a retained index.
 
-    The index observes no ``.gitignore`` control state unless
-    ``ScanOptions(read_controls=True)`` asks for it, as the engine's ``open`` does not by
-    default. :func:`report` and a watch over this index observe none either, so all three
-    share one snapshot scope at one cache path: an ``open`` right after a ``report`` starts
-    warm from its snapshot, and ``CachePolicy.ONLY`` answers from it. An ``open`` that opts
-    in keeps a snapshot of its own scope, which a later default ``open`` or ``report``
-    treats as a miss and scans cold, and which a ``report`` reads only under
-    ``CachePolicy.ONLY``.
+    The index observes ``.gitignore`` control state, as the engine's ``open`` does by
+    default. :func:`report` never does, so the two keep snapshots of different scope at one
+    cache path. An ``open`` never starts from a ``report``'s snapshot: a policy that scans
+    treats it as a miss and scans cold, and ``CachePolicy.ONLY``, which never scans, raises
+    :class:`FduError` naming the remedy. A ``report`` answers from an ``open`` snapshot only
+    under ``CachePolicy.ONLY``. ``ScanOptions(read_controls=False)`` turns observation off:
+    that ``open`` reads no control file and shares a ``report``'s snapshot scope.
     """
 
     scan_options = scan if scan is not None else ScanOptions()
@@ -382,8 +381,8 @@ def scan(
 ) -> Index:
     """Walk a root without reading or writing a snapshot cache.
 
-    Like :func:`open`, it observes no ``.gitignore`` control state unless
-    ``ScanOptions(read_controls=True)`` asks for it.
+    Like :func:`open`, it observes ``.gitignore`` control state unless
+    ``ScanOptions(read_controls=False)`` turns it off.
     """
 
     scan_options = scan if scan is not None else ScanOptions()
@@ -420,8 +419,8 @@ def report(
 
     A report never observes ``.gitignore`` control state, because no view reads it, so it
     opens no control file and cannot fail on the control-state bound, and it ignores
-    ``ScanOptions.read_controls``. A default :func:`open` shares its snapshot scope; see
-    :func:`open` for one that opts in.
+    ``ScanOptions.read_controls``. See :func:`open` for what that means for sharing a
+    snapshot with an index.
 
     Use :func:`open` when you will ask more than one question; the index is the point.
     """

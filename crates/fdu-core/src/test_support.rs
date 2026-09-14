@@ -27,8 +27,14 @@ pub(crate) fn permission_bits_are_enforced() -> bool {
 
 /// The scan scope a scan with control observation on records.
 ///
-/// The default scope observes no control state, so a test about ignore classification
-/// states that it wants it, the way a library caller does.
+/// A test about ignore classification states that it wants it rather than inheriting the
+/// default, so it keeps testing what it names whatever the default is. Without the
+/// `gitignore` build feature this scope observes nothing either.
 pub(crate) fn observing_controls() -> crate::ScanScope {
     crate::ScanConfig { read_controls: true, ..crate::ScanConfig::default() }.scope()
+}
+
+/// The scan scope a request that turns control observation off records.
+pub(crate) fn not_observing_controls() -> crate::ScanScope {
+    crate::ScanConfig { read_controls: false, ..crate::ScanConfig::default() }.scope()
 }
