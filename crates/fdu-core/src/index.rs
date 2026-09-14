@@ -989,6 +989,16 @@ impl IndexHandle {
         Ok(collect_child_expectations(&index, path))
     }
 
+    /// Child baselines for one opened-root listing, with whether the index does not yet
+    /// hold that directory's child set as complete, read at one boundary.
+    pub(crate) fn listing_baseline(
+        &self,
+        path: &Path,
+    ) -> crate::Result<(BTreeMap<OsString, PathExpectation>, bool)> {
+        let index = self.read_index()?;
+        Ok((collect_child_expectations(&index, path), index.directory_complete(path) != Some(true)))
+    }
+
     pub(crate) fn has_control(&self, path: &Path) -> crate::Result<bool> {
         Ok(self.read_index()?.controls().contains(path))
     }
@@ -1016,8 +1026,9 @@ impl IndexHandle {
         path: &Path,
         started_at: u64,
         complete: bool,
+        listed_incomplete: &[PathBuf],
     ) -> crate::Result<Option<Commit>> {
-        self.write_index()?.finish_reconcile(path, started_at, complete)
+        self.write_index()?.finish_reconcile(path, started_at, complete, listed_incomplete)
     }
 
     #[cfg(feature = "watch")]
@@ -1831,11 +1842,20 @@ impl Index {
         Ok((epoch, commit))
     }
 
+    /// Close one reconciliation opened by [`Self::begin_reconcile`].
+    ///
+    /// `listed_incomplete` names the directories the pass listed in full that the index did
+    /// not hold as complete when it listed them. When the whole pass completed, each is
+    /// recorded as complete in this commit, exactly as discovery's listing commit records
+    /// the directories it lists, unless a producer invalidated or began verifying it after
+    /// this pass started: that producer's own pass owns its listing now. Only an opened root
+    /// passes any, since only an opened root serves completeness.
     pub(crate) fn finish_reconcile(
         &mut self,
         path: &Path,
         started_at: u64,
         complete: bool,
+        listed_incomplete: &[PathBuf],
     ) -> crate::Result<Option<Commit>> {
         let path = canonical_relative_path(path)?;
         let next_clock = self.clock.checked_next().ok_or(crate::Error::ClockExhausted)?;
@@ -1857,6 +1877,26 @@ impl Index {
                 self.verified.drain(..excess);
             }
             state.push(StateTransition::Verified { path: path.clone() });
+            for directory in listed_incomplete {
+                if !directory.starts_with(&path)
+                    || self.freshness_marks.iter().any(|(marked, mark)| {
+                        mark.epoch > started_at && directory.starts_with(marked)
+                    })
+                {
+                    continue;
+                }
+                let Some(id) = self.lookup(directory) else {
+                    continue;
+                };
+                let entry = self.entry_mut(id);
+                if entry.kind != EntryKind::Dir || entry.children_complete {
+                    continue;
+                }
+                entry.children_complete = true;
+                self.state.progress.directories_complete =
+                    self.state.progress.directories_complete.saturating_add(1);
+                state.push(StateTransition::DirectoryComplete { path: directory.clone() });
+            }
         } else {
             self.mark_unfresh(&path, Freshness::Partial);
         }
@@ -5247,7 +5287,7 @@ mod tests {
         );
 
         let finish = index
-            .finish_reconcile(Path::new("src"), started, true)
+            .finish_reconcile(Path::new("src"), started, true, &[])
             .expect("finish")
             .expect("finish commit");
         assert!(finish.changes.is_empty());
@@ -6015,7 +6055,7 @@ mod tests {
                 attrs: file_attrs(9, 2),
             },
         ]));
-        index.finish_reconcile(Path::new(""), 0, true).expect("finish reconciliation");
+        index.finish_reconcile(Path::new(""), 0, true, &[]).expect("finish reconciliation");
 
         let kept = index.provenance(Path::new("a/kept.txt")).expect("present");
         let changed = index.provenance(Path::new("a/changed.txt")).expect("present");
@@ -6049,7 +6089,7 @@ mod tests {
             "nothing has checked it yet"
         );
         // A completed sweep then covers the whole tree.
-        index.finish_reconcile(Path::new(""), 0, true).expect("finish reconciliation");
+        index.finish_reconcile(Path::new(""), 0, true, &[]).expect("finish reconciliation");
         let path = Path::new("a/file.txt");
         assert_eq!(
             index.provenance(path).expect("present").source,
@@ -6081,7 +6121,7 @@ mod tests {
         let mut index = Index::new("/root");
         for which in 0..(MAX_VERIFIED_INTERVALS * 2) {
             index
-                .finish_reconcile(&PathBuf::from(format!("dir-{which}")), 0, true)
+                .finish_reconcile(&PathBuf::from(format!("dir-{which}")), 0, true, &[])
                 .expect("finish reconciliation");
         }
         assert!(

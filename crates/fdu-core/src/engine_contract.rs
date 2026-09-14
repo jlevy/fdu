@@ -574,7 +574,10 @@ pub struct IssueSummary {
 pub struct DiscoveryProgress {
     /// Regular files retained by cold discovery.
     pub files_retained: u64,
-    /// Directories whose complete in-scope child listing was committed.
+    /// Directories whose complete in-scope child listing was committed: by discovery, or
+    /// by a later complete reconciliation that listed one the index did not yet hold as
+    /// complete, such as a directory created afterwards or one discovery could not read.
+    /// Each is one [`StateTransition::DirectoryComplete`].
     pub directories_complete: u64,
 }
 
@@ -589,7 +592,7 @@ pub struct IndexState {
     pub freshness: Freshness,
     /// Weakest source represented by this first implementation.
     pub source: Source,
-    /// Stable counters advanced only by committed discovery work.
+    /// Stable counters advanced only by committed discovery and reconciliation work.
     pub progress: DiscoveryProgress,
     /// Bounded diagnostic evidence counts at this version.
     pub issues: IssueSummary,

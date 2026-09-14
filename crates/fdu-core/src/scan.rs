@@ -798,6 +798,12 @@ pub struct ReconcileReport {
     /// Exact producer operations considered, including no-op controls that do not
     /// increment an effect counter or create a commit.
     pub(crate) observations: u64,
+    /// Directories this pass listed in full that the index did not yet hold as complete.
+    ///
+    /// Collected only for an opened root, where completeness is served: once the whole pass
+    /// completes, its closing commit records each one's child set as authoritative, as
+    /// discovery's own listing commit does.
+    pub(crate) listed_incomplete: Vec<PathBuf>,
 }
 
 impl ReconcileReport {
@@ -856,6 +862,18 @@ impl ReconcileTarget<'_> {
         match self {
             Self::Direct(index) => Ok(collect_child_expectations(index, path)),
             Self::Shared(handle) | Self::Controlled { handle, .. } => handle.child_states(path),
+        }
+    }
+
+    /// Child baselines for one directory listing, and whether a complete listing of it
+    /// would be news to the index's directory completeness.
+    ///
+    /// Only an opened root serves completeness, so only it asks; a directory whose upsert
+    /// has not been flushed yet is not held at all, and counts as incomplete.
+    fn listing_baseline(&self, path: &Path) -> Result<(BTreeMap<OsString, PathExpectation>, bool)> {
+        match self {
+            Self::Direct(_) | Self::Shared(_) => Ok((self.child_states(path)?, false)),
+            Self::Controlled { handle, .. } => handle.listing_baseline(path),
         }
     }
 
@@ -939,13 +957,14 @@ impl ReconcileTarget<'_> {
         path: &Path,
         started_at: u64,
         complete: bool,
+        listed_incomplete: &[PathBuf],
     ) -> Result<Option<Commit>> {
         match self {
-            Self::Direct(index) => index.finish_reconcile(path, started_at, complete),
-            Self::Shared(handle) => handle.finish_reconcile(path, started_at, complete),
+            Self::Direct(index) => index.finish_reconcile(path, started_at, complete, &[]),
+            Self::Shared(handle) => handle.finish_reconcile(path, started_at, complete, &[]),
             Self::Controlled { handle, control } => {
                 control.check_active()?;
-                handle.finish_reconcile(path, started_at, complete)
+                handle.finish_reconcile(path, started_at, complete, listed_incomplete)
             }
         }
     }
@@ -3336,8 +3355,9 @@ fn reconcile_paths_target(
     }
 
     let complete = failure.is_none() && report.reconciliation.is_complete();
+    let listed_incomplete = std::mem::take(&mut report.reconciliation.listed_incomplete);
     for (subtree, started_at) in opened {
-        let commit = target.finish_reconcile(&subtree, started_at, complete)?;
+        let commit = target.finish_reconcile(&subtree, started_at, complete, &listed_incomplete)?;
         if let Some(commit) = commit.as_ref() {
             sink(commit);
         }
@@ -3416,15 +3436,21 @@ fn reconcile_target(
         sink(commit);
     }
     match reconcile_target_inner(target, &subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
-        Ok(report) => {
-            let finished = target.finish_reconcile(&subtree, started_at, report.is_complete())?;
+        Ok(mut report) => {
+            let listed_incomplete = std::mem::take(&mut report.listed_incomplete);
+            let finished = target.finish_reconcile(
+                &subtree,
+                started_at,
+                report.is_complete(),
+                &listed_incomplete,
+            )?;
             if let Some(commit) = finished.as_ref() {
                 sink(commit);
             }
             Ok(report)
         }
         Err(error) => {
-            let finished = target.finish_reconcile(&subtree, started_at, false)?;
+            let finished = target.finish_reconcile(&subtree, started_at, false, &[])?;
             if let Some(commit) = finished.as_ref() {
                 sink(commit);
             }
@@ -3542,7 +3568,7 @@ fn reconcile_target_inner(
     #[cfg(target_os = "macos")]
     let mut bulk_reader = (config.worker_threads() > 1).then(macos_bulk::Reader::new);
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
-        let mut known = target.child_states(&rel_dir)?;
+        let (mut known, records_completeness) = target.listing_baseline(&rel_dir)?;
         let abs_dir = root.join(&rel_dir);
         let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
         let had_control = target.has_control(&control_path)?;
@@ -3704,6 +3730,9 @@ fn reconcile_target_inner(
                     Op::ControlRemove { path: control_path },
                     baseline,
                 ));
+            }
+            if records_completeness {
+                report.listed_incomplete.push(rel_dir);
             }
         }
     }
@@ -4300,6 +4329,7 @@ fn merge_reconcile_report(total: &mut ReconcileReport, addition: ReconcileReport
     total.scan.errors.extend(addition.scan.errors);
     total.observations = total.observations.saturating_add(addition.observations);
     merge_apply_stats(&mut total.apply, addition.apply);
+    total.listed_incomplete.extend(addition.listed_incomplete);
 }
 
 fn should_descend(
@@ -6351,6 +6381,7 @@ mod tests {
             scan: ScanReport::default(),
             apply: ApplyStats { stale: 1, ..ApplyStats::default() },
             observations: 1,
+            listed_incomplete: Vec::new(),
         };
 
         assert!(!report.is_complete());

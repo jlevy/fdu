@@ -5130,6 +5130,61 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// A directory created after discovery is complete once a refresh has listed it.
+    #[test]
+    fn a_directory_created_after_discovery_is_complete_once_refreshed() {
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::write(root.path().join("before.txt"), b"b").expect("fixture");
+        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("open");
+        let settled = wait_until_settled(&opened);
+        assert_eq!(settled.coverage, crate::Coverage::Complete);
+
+        std::fs::create_dir_all(root.path().join("later/deeper")).expect("fixture");
+        std::fs::write(root.path().join("later/deeper/inner.txt"), b"i").expect("fixture");
+        let receipt = opened.refresh(&[PathBuf::from("later")]).expect("refresh");
+        assert!(receipt.issues.is_empty(), "{:?}", receipt.issues);
+
+        let index = &opened.state.index;
+        assert_eq!(index.directory_complete(Path::new("later")).expect("lookup"), Some(true));
+        assert_eq!(
+            index.directory_complete(Path::new("later/deeper")).expect("lookup"),
+            Some(true)
+        );
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![
+                    crate::ReadProjection::Lookup { path: PathBuf::from("later/missing") },
+                    crate::ReadProjection::Lookup { path: PathBuf::from("later/deeper/missing") },
+                ],
+                ..crate::ReadRequest::default()
+            })
+            .expect("read");
+        assert_eq!(response.state.coverage, crate::Coverage::Complete);
+        for result in &response.results {
+            assert!(
+                matches!(result, crate::ProjectionResult::Lookup(crate::Knowledge::Absent)),
+                "{result:?}"
+            );
+        }
+        let completed: Vec<_> = index
+            .since(receipt.after.sequence)
+            .expect("journal")
+            .commits
+            .iter()
+            .flat_map(|commit| commit.state.iter())
+            .filter_map(|transition| match transition {
+                crate::StateTransition::DirectoryComplete { path } => Some(path.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(completed, [PathBuf::from("later"), PathBuf::from("later/deeper")]);
+        assert_eq!(
+            receipt.state.progress.directories_complete,
+            settled.progress.directories_complete + 2
+        );
+        opened.close().expect("close");
+    }
+
     #[test]
     fn refresh_rejects_an_unbounded_input_before_filesystem_work() {
         let root = tempfile::tempdir().expect("temp root");
@@ -5343,6 +5398,105 @@ mod tests {
             opened.state.index.kind(Path::new("blocked/secret")).expect("lookup"),
             Some(EntryKind::File),
             "the handoff read the formerly inaccessible directory"
+        );
+        // Complete coverage has to hold one level down as well. The handoff listed `blocked`
+        // in full, so a name it does not hold is absent; before a reconcile recorded
+        // completeness this answered `Unknown { Building }` forever on a complete root.
+        assert_eq!(
+            opened.state.index.directory_complete(Path::new("blocked")).expect("lookup"),
+            Some(true)
+        );
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Lookup {
+                    path: PathBuf::from("blocked/missing"),
+                }],
+                ..crate::ReadRequest::default()
+            })
+            .expect("read");
+        assert_eq!(response.state.phase, crate::LifecyclePhase::Watching);
+        assert_eq!(response.state.coverage, crate::Coverage::Complete);
+        assert!(
+            matches!(
+                response.results[0],
+                crate::ProjectionResult::Lookup(crate::Knowledge::Absent)
+            ),
+            "{:?}",
+            response.results[0]
+        );
+        opened.close().expect("close");
+    }
+
+    /// A directory the observer adds after discovery is complete once its relist finishes.
+    ///
+    /// Only discovery used to mark a directory complete, so one created while the root was
+    /// watched stayed incomplete for the session, and a lookup below it on a complete root
+    /// answered `Unknown { Building }`, which never resolves.
+    #[cfg(feature = "watch")]
+    #[test]
+    fn a_directory_the_observer_adds_is_complete_after_its_relist() {
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"").expect("script");
+        let controls = Arc::new(TestControls::default());
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            scripted_options(&script),
+            Arc::clone(&controls),
+        )
+        .expect("open scripted observer");
+        wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+        let start = current_version(&opened);
+        let watching = opened.read(crate::ReadRequest::default()).expect("read state").state;
+        assert_eq!(watching.coverage, crate::Coverage::Complete);
+
+        std::fs::create_dir_all(root.path().join("later/deeper")).expect("fixture");
+        std::fs::write(root.path().join("later/deeper/inner.txt"), b"i").expect("fixture");
+        controls.send_observation_hints("create-dir\tlater\n");
+        wait_for_observed_walk(&opened, &controls, root.path(), start, Path::new("later"), 1);
+
+        let index = &opened.state.index;
+        assert_eq!(
+            index.kind(Path::new("later/deeper/inner.txt")).expect("lookup"),
+            Some(EntryKind::File)
+        );
+        assert_eq!(index.directory_complete(Path::new("later")).expect("lookup"), Some(true));
+        assert_eq!(
+            index.directory_complete(Path::new("later/deeper")).expect("lookup"),
+            Some(true)
+        );
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![
+                    crate::ReadProjection::Lookup { path: PathBuf::from("later/missing") },
+                    crate::ReadProjection::Lookup { path: PathBuf::from("later/deeper/missing") },
+                ],
+                ..crate::ReadRequest::default()
+            })
+            .expect("read");
+        assert_eq!(response.state.coverage, crate::Coverage::Complete);
+        for result in &response.results {
+            assert!(
+                matches!(result, crate::ProjectionResult::Lookup(crate::Knowledge::Absent)),
+                "{result:?}"
+            );
+        }
+        let since = index.since(start.sequence).expect("journal");
+        let completed: Vec<_> = since
+            .commits
+            .iter()
+            .flat_map(|commit| commit.state.iter())
+            .filter_map(|transition| match transition {
+                crate::StateTransition::DirectoryComplete { path } => Some(path.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(completed, [PathBuf::from("later"), PathBuf::from("later/deeper")]);
+        assert_eq!(
+            response.state.progress.directories_complete,
+            watching.progress.directories_complete + 2,
+            "the progress count agrees with the transitions"
         );
         opened.close().expect("close");
     }
@@ -5614,7 +5768,7 @@ mod tests {
         opened.close().expect("close");
     }
 
-    #[cfg(all(unix, feature = "watch"))]
+    #[cfg(feature = "watch")]
     fn reconciles_of(opened: &OpenedIndex, since: crate::EngineVersion, path: &Path) -> usize {
         opened
             .state
@@ -5632,6 +5786,38 @@ mod tests {
                 )
             })
             .count()
+    }
+
+    /// Wait until the observer has walked `path` `walks` times since `start` and published
+    /// everything the last walk will.
+    ///
+    /// The observer applies one intent at a time and publishes a walk's outcome before it
+    /// takes the next, so a marker event sent after the walk has begun lands only once that
+    /// walk is over. A marker sent together with the event that caused the walk could
+    /// coalesce into the same intent and land first.
+    #[cfg(feature = "watch")]
+    fn wait_for_observed_walk(
+        opened: &OpenedIndex,
+        controls: &TestControls,
+        root: &Path,
+        start: crate::EngineVersion,
+        path: &Path,
+        walks: usize,
+    ) {
+        let deadline = std::time::Instant::now() + TEST_GATE_TIMEOUT;
+        while reconciles_of(opened, start, path) < walks {
+            assert!(std::time::Instant::now() < deadline, "walk {walks} of {path:?} did not begin");
+            std::thread::yield_now();
+        }
+        let marker = format!("marker-{}-{walks}.txt", path.display());
+        std::fs::write(root.join(&marker), &marker).expect("marker");
+        controls.send_observation_hints(&format!("create\t{marker}\n"));
+        let deadline = std::time::Instant::now() + TEST_GATE_TIMEOUT;
+        while opened.state.index.kind(Path::new(&marker)).expect("lookup") != Some(EntryKind::File)
+        {
+            assert!(std::time::Instant::now() < deadline, "{marker} was not applied");
+            std::thread::yield_now();
+        }
     }
 
     /// A gap over an unreadable directory is walked once, and its cause is retained.
