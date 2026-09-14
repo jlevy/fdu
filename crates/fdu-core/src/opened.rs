@@ -1239,8 +1239,9 @@ fn discover_directory(
             continue;
         };
         crate::counters::bump(|c| c.dir_entries += 1);
-        let metadata = match crate::scan::metadata_for_fingerprint(&item) {
-            Ok(metadata) => metadata,
+        let metadata = match crate::scan::listed_child_metadata(&item) {
+            Ok(Some(metadata)) => metadata,
+            Ok(None) => continue,
             Err(source) => {
                 retain_local_issue(
                     &mut issues,
@@ -5504,6 +5505,31 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// Discovery records a child gone by its stat as it records one the listing never
+    /// returned: absent, with no issue, under complete coverage.
+    #[test]
+    fn discovery_omits_a_child_deleted_between_listing_and_stat() {
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::write(root.path().join("kept"), b"kept").expect("kept fixture");
+        std::fs::write(root.path().join("gone"), b"gone").expect("gone fixture");
+        let hook = crate::scan::install_child_metadata_hook(root.path(), |path| {
+            if path.file_name() == Some(std::ffi::OsStr::new("gone")) {
+                std::fs::remove_file(path).expect("delete between listing and stat");
+            }
+            None
+        });
+        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("open");
+        let settled = wait_until_settled(&opened);
+        drop(hook);
+
+        assert_eq!(settled.coverage, crate::Coverage::Complete);
+        assert_eq!(settled.issues.retained, 0);
+        let index = &opened.state.index;
+        assert!(index.kind(Path::new("gone")).expect("lookup").is_none());
+        assert!(index.kind(Path::new("kept")).expect("lookup").is_some());
+        opened.close().expect("close");
+    }
+
     /// One transient child error no longer withholds completeness from every directory
     /// the pass listed. Each is recorded on its own listing, as discovery decides, so a
     /// directory first listed by such a pass answers Absent below it instead of staying
@@ -5519,13 +5545,13 @@ mod tests {
         std::fs::create_dir(root.path().join("fresh")).expect("fresh directory");
         std::fs::write(root.path().join("fresh/new"), b"new").expect("fresh fixture");
 
-        crate::scan::set_child_metadata_hook(|path| {
+        let hook = crate::scan::install_child_metadata_hook(root.path(), |path| {
             (path.file_name() == Some(std::ffi::OsStr::new("kept"))).then(|| {
                 std::io::Error::new(std::io::ErrorKind::PermissionDenied, "injected child error")
             })
         });
         let receipt = opened.refresh(&[PathBuf::new()]);
-        crate::scan::clear_child_metadata_hook();
+        drop(hook);
         let receipt = receipt.expect("refresh");
 
         assert_eq!(receipt.issues.len(), 1, "{:?}", receipt.issues);
