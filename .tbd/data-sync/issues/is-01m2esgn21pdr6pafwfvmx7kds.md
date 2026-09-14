@@ -3,16 +3,20 @@ type: is
 id: is-01m2esgn21pdr6pafwfvmx7kds
 title: Decide whether a projection error fails its projection or the whole ReadRequest
 kind: task
-status: open
+status: closed
 priority: 2
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2ebb348tnqdeqn4fddykv4s
 created_at: 2026-09-14T01:46:41.088Z
-updated_at: 2026-09-14T13:56:25.804Z
+updated_at: 2026-09-14T15:20:31.242Z
+closed_at: 2026-09-14T15:20:31.241Z
+close_reason: "4779d07: per-projection ProjectionResult::Refused(ProjectionRefusal::{NotADirectory, ContinuationRecordLimit}); only request shape, closed root, or version pin fail a whole read; Rust and Python mixed-request tests; plan read envelope and provider contract updated; coherent-projections golden gains the mixed read"
+resolution: null
+duplicate_of: null
 ---
 Open decision from PR #48 review READ-3 (fixed as fdu-q2oj in fa033c2), recorded by the fixer. Related to READ-8 on fdu-91ru.
 

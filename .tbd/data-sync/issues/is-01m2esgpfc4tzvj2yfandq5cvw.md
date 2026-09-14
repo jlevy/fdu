@@ -3,16 +3,20 @@ type: is
 id: is-01m2esgpfc4tzvj2yfandq5cvw
 title: Decide whether open and fdu.open observe control state by default
 kind: task
-status: open
+status: closed
 priority: 2
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2eafpfpe8k5c9z9dhrqvy2y
 created_at: 2026-09-14T01:46:42.539Z
-updated_at: 2026-09-14T13:56:25.269Z
+updated_at: 2026-09-14T15:10:12.749Z
+closed_at: 2026-09-14T15:10:12.747Z
+close_reason: "c06fe47: ScanConfig::read_controls defaults off, so open/open_with_pending_save/fdu.open/fdu.scan/Index.watch observe no control state unless asked (ScanConfig::read_controls, ScanOptions.read_controls); Index::is_ignored/controls return Err(ControlStateNotObserved) on such an index; report/open/watch share one snapshot scope; planner tests now pin the warm start; docs and plan Phase 4 updated"
+resolution: null
+duplicate_of: null
 ---
 Open decision left by PR #51 review COMMIT-3 (fixed in a69b95e; tracked on fdu-etfj), recorded by the fixer.
 
