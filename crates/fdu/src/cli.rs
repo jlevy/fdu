@@ -20,14 +20,12 @@ use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, Value
 
 use fdu_core::content::{AnalysisRequest, AnalysisSet};
 use fdu_core::query::{
-    AxisNames, Bound, Pattern, Provenance, Query, ReportSource, Selection, SizeMetric, SortKey,
-    ViewSpec, parse_size, parse_when, system_time_to_nanos,
+    AxisNames, Bound, Pattern, Query, ReportSource, Selection, SizeMetric, SortKey, ViewSpec,
+    parse_size, parse_when, system_time_to_nanos,
 };
 use fdu_core::report_format;
 use fdu_core::report_format::human_count;
-use fdu_core::{
-    CachePolicy, EntryKind, OpenConfig, ScanConfig, default_cache_path, open_with_pending_save,
-};
+use fdu_core::{CachePolicy, EntryKind, OpenConfig, ScanConfig, default_cache_path};
 use fdu_core::{PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics};
 
 const SKILL_TEMPLATE: &str = include_str!("skills/SKILL.md");
@@ -70,6 +68,7 @@ const STYLE_PERFORMANCE: AnsiStyle = AnsiColor::BrightBlack.on_default();
 ///
 /// Gray for the same reason the performance footer is: it is a frame around the report,
 /// not part of the answer, and should not compete with the rows for attention.
+#[cfg(feature = "watch")]
 const STYLE_WATCH_RULE: AnsiStyle = AnsiColor::BrightBlack.on_default();
 const CLI_STYLES: Styles = Styles::styled()
     .header(STYLE_HEADING)
@@ -533,15 +532,20 @@ impl Cli {
         query
             .validate_analysis(analysis.profile)
             .map_err(|message| usage(&anyhow::anyhow!(message)))?;
-        // Control observation is deliberately not decided here. The engine default
-        // observes control state, which `--watch` needs to maintain ignored partitions;
-        // a one-shot report goes through `prepare_report`, whose planner turns
-        // observation off for every surface because no report view reads it (fdu-etfj).
-        // Deciding it in this front end once left the Python package observing it.
+        // No command-line view reads control state, so no run of this command observes
+        // it. A one-shot report would not anyway: `prepare_report`'s planner turns
+        // observation off for every surface for that reason (fdu-etfj), and the setting
+        // here does not reach it. `--watch` opens an index instead, whose engine default
+        // observes, and its session drops control and reclassification effects because
+        // it only repaints the same query. Observing there bought nothing but the control
+        // bounds, and a bound must not end a command that never uses what it bounds
+        // (fdu-1onj). Off, a watch also shares the one-shot snapshot scope, so each starts
+        // warm from the other's snapshot (fdu-w3l5).
         let config = OpenConfig {
             scan: ScanConfig {
                 max_depth: self.scan_depth,
                 one_filesystem: self.one_filesystem,
+                read_controls: false,
                 ..ScanConfig::default()
             },
             cache_path: default_cache_path(path),
@@ -677,7 +681,8 @@ impl Cli {
         config: &OpenConfig,
         color: bool,
     ) -> anyhow::Result<RunOutcome> {
-        use fdu_core::query::ViewSpec;
+        use fdu_core::open_with_pending_save;
+        use fdu_core::query::{Provenance, ViewSpec};
         use fdu_core::watch::WatchConfig;
         use fdu_core::watch_session::{ChangeKind, Session};
 
@@ -1066,6 +1071,7 @@ impl Cli {
 }
 
 /// What each knob is called on the command line, given its name in the API.
+#[cfg(feature = "watch")]
 const WATCH_SCOPE_VOCABULARY: [(&str, &str); 5] = [
     ("max_depth", "--scan-depth"),
     ("one_filesystem", "--one-filesystem"),
@@ -1085,6 +1091,7 @@ const WATCH_SCOPE_VOCABULARY: [(&str, &str); 5] = [
 /// token. Here every replacement is a field name that cannot appear inside a value, which
 /// `the_watch_guidance_substitutes_whole_words_only` asserts, and the parity run verifies
 /// the two surfaces stay equivalent.
+#[cfg(feature = "watch")]
 fn watch_scope_guidance() -> String {
     // One pass over whole words, never re-scanning what was already substituted. A
     // sequential replace does re-scan: max_depth becomes --scan-depth, and then `depth`
@@ -1667,6 +1674,7 @@ fn compose_skill_from(template: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "watch")]
     use std::time::UNIX_EPOCH;
 
     /// Every `--watch` run parses an interval before anything else, so this must work on
@@ -1694,6 +1702,7 @@ mod tests {
         assert!(paint(&rule, STYLE_WATCH_RULE, true).contains(&rule));
     }
 
+    #[cfg(feature = "watch")]
     #[test]
     fn an_interval_parses_without_overflowing_any_platforms_clock() {
         assert_eq!(parse_duration("2s").expect("seconds"), Duration::from_secs(2));
@@ -1912,6 +1921,7 @@ mod tests {
     /// Asserted against the constant and the vocabulary rather than by quoting prose. The
     /// first three versions of this test quoted phrases and went stale the moment the rule
     /// was reworded, which is a test measuring its own copy of the thing under test.
+    #[cfg(feature = "watch")]
     #[test]
     fn the_watch_guidance_substitutes_whole_words_only() {
         let source = fdu_core::scan::WATCH_SCOPE_GUIDANCE;

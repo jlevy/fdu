@@ -466,7 +466,9 @@ pub enum IssueKind {
 pub struct Issue {
     /// Machine-readable category.
     pub kind: IssueKind,
-    /// Affected relative or absolute path when it fits the detail bound.
+    /// Affected path when it fits the detail bound. Issues an opened root retains or
+    /// returns name it relative to the root, the form its reads use; a message may still
+    /// name the absolute path the operating system refused.
     pub path: Option<PathBuf>,
     /// Human-readable detail, truncated at a UTF-8 boundary when necessary.
     pub message: String,
@@ -501,6 +503,46 @@ impl Issue {
             path: bounded_issue_path(path),
             message: bounded_issue_message(format!("I/O error at {}: {source}", path.display())),
             os_error: source.raw_os_error(),
+        }
+    }
+
+    /// Convert one error met while reading an opened root, naming its path relative to it.
+    ///
+    /// Scan errors carry the absolute path the operating system refused, and the message
+    /// keeps it for whoever has to fix the permission. The `path` field is the root-relative
+    /// form every other opened-root issue uses, so two issues about one directory agree and
+    /// a consumer can match an issue to the path it reads.
+    pub(crate) fn from_error_under(root: &Path, error: &Error) -> Self {
+        let mut issue = Self::from_error(error);
+        if let Error::Io { path, .. } = error {
+            issue.relativize(root, path);
+        }
+        issue
+    }
+
+    /// [`Self::from_io`] for a path under an opened root, naming it relative to the root.
+    pub(crate) fn from_io_under(root: &Path, path: &Path, source: &std::io::Error) -> Self {
+        let mut issue = Self::from_io(path, source);
+        issue.relativize(root, path);
+        issue
+    }
+
+    fn relativize(&mut self, root: &Path, path: &Path) {
+        if let Ok(relative) = path.strip_prefix(root) {
+            self.path = bounded_issue_path(relative);
+        }
+    }
+
+    /// Describe a directory listing the index refused on a control-state resource bound.
+    ///
+    /// A control bound is a resource bound, not a provider failure, and the directory whose
+    /// control file crossed it is known where the refusal is classified.
+    pub(crate) fn control_refusal(directory: &Path, error: &Error) -> Self {
+        Self {
+            kind: IssueKind::ResourceBudget,
+            path: bounded_issue_path(directory),
+            message: bounded_issue_message(error.to_string()),
+            os_error: None,
         }
     }
 
@@ -560,7 +602,10 @@ pub struct IssueSummary {
 pub struct DiscoveryProgress {
     /// Regular files retained by cold discovery.
     pub files_retained: u64,
-    /// Directories whose complete in-scope child listing was committed.
+    /// Directories whose complete in-scope child listing was committed: by discovery, or
+    /// by a later complete reconciliation that listed one the index did not yet hold as
+    /// complete, such as a directory created afterwards or one discovery could not read.
+    /// Each is one [`StateTransition::DirectoryComplete`].
     pub directories_complete: u64,
 }
 
@@ -575,7 +620,7 @@ pub struct IndexState {
     pub freshness: Freshness,
     /// Weakest source represented by this first implementation.
     pub source: Source,
-    /// Stable counters advanced only by committed discovery work.
+    /// Stable counters advanced only by committed discovery and reconciliation work.
     pub progress: DiscoveryProgress,
     /// Bounded diagnostic evidence counts at this version.
     pub issues: IssueSummary,
@@ -1709,6 +1754,13 @@ pub enum Error {
     /// `Absent` claims coverage proves the path missing, and `Unknown` claims coverage
     /// cannot tell, which for a retained path never resolves. A file has no children to
     /// page and no descendants to roll up, so both projections say which it is instead.
+    ///
+    /// Unlike the request-shape errors beside it, this one depends on index state at the
+    /// version the read pinned: the same request succeeds while the path is a directory and
+    /// fails once it has become a file, so a path taken from an earlier page can start
+    /// failing between reads. It fails the whole read, including projections in the same
+    /// request that would have answered, such as a lookup of that path. Whether it should
+    /// instead be a result of the one projection is an open decision (`fdu-l89e`).
     #[error("{0:?} is not a directory; tree pages and roll-ups describe directories")]
     NotADirectory(PathBuf),
 

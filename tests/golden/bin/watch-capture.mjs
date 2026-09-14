@@ -12,7 +12,14 @@
 // arrives fails loudly instead of silently shortening the stream, because a golden that
 // records "nothing happened" would pass forever once watching broke.
 //
-// Usage: watch-capture <tree>
+// Usage: watch-capture [--min-size] <tree>
+//
+// `--min-size` watches under the selection `--min-size 100 --size apparent` instead, and
+// steps through a change the selection excludes, one it admits, and the removal of the
+// excluded file. Selection filters what the stream reports, not what is watched, so the
+// scripted steps are written against that one bound rather than accepting arbitrary flags.
+// The bound is on apparent bytes because the default metric is allocated bytes, which
+// gives a four-byte file a whole filesystem block and differs between filesystems.
 
 import { spawn } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -22,15 +29,17 @@ import { join } from "node:path";
 // reached when something is actually broken.
 const STEP_TIMEOUT_MS = 30_000;
 
-const tree = process.argv[2];
-if (!tree) {
-  console.error("usage: watch-capture <tree>");
+const argv = process.argv.slice(2);
+const sized = argv[0] === "--min-size";
+const tree = sized ? argv[1] : argv[0];
+if (!tree || argv.length !== (sized ? 2 : 1)) {
+  console.error("usage: watch-capture [--min-size] <tree>");
   process.exit(2);
 }
 
 // Every scripted path stays at the top level of the tree: a nested path would render with
 // the platform's separator and split this golden into two platform-specific expectations.
-const steps = [
+const streamSteps = [
   { label: "create a file", path: "added.txt", op: "upsert", act: (p) => writeFileSync(p, "hello") },
   {
     label: "change its size",
@@ -42,13 +51,36 @@ const steps = [
   { label: "create a directory", path: "sub", op: "upsert", act: (p) => mkdirSync(p) },
 ];
 
+// A step without an `op` is one the selection excludes, so there is no record to wait for.
+// What the stream said about its path up to the next awaited record is printed under its
+// label instead: a record that leaks through the selection becomes a golden diff rather
+// than something the helper quietly skipped. The next awaited step bounds it, because
+// the excluded change happened first, and the watcher applies changes in the order they
+// happened and, within one batch, in path order -- which is why the excluded name sorts
+// first.
+const sizedSteps = [
+  { label: "create a file under the bound", path: "a-small.txt", act: (p) => writeFileSync(p, "tiny") },
+  {
+    label: "create a file over the bound",
+    path: "b-large.txt",
+    op: "upsert",
+    act: (p) => writeFileSync(p, "x".repeat(200)),
+  },
+  // A removal carries no size to filter on, and hiding it would hide the disappearance
+  // of something the caller was watching.
+  { label: "remove the file under the bound", path: "a-small.txt", op: "remove", act: (p) => rmSync(p) },
+];
+
+const steps = sized ? sizedSteps : streamSteps;
+const selection = sized ? ["--min-size", "100", "--size", "apparent"] : [];
+
 // FDU names the executable outright, extension included, so there is no PATH lookup to
 // fall through to a different build and no PATHEXT branch for Windows to get wrong.
 const binary = process.env.FDU;
 if (!binary) {
   throw new Error("FDU must name the fdu executable under test");
 }
-const child = spawn(binary, ["--watch", "--view", "files", "--format", "jsonl", tree], {
+const child = spawn(binary, ["--watch", "--view", "files", "--format", "jsonl", ...selection, tree], {
   stdio: ["ignore", "pipe", "pipe"],
 });
 
@@ -145,9 +177,18 @@ try {
   await waitFor((line) => line.includes('"view": "files"'), "the initial report");
 
   const captured = [];
+  // Excluded steps acted on since the last awaited record, each with where it began.
+  let excluded = [];
   for (const step of steps) {
     if (failure) break;
+    const start = lines.length;
     step.act(join(tree, step.path));
+    if (!step.op) {
+      const entry = { label: step.label, path: step.path, start, records: [] };
+      captured.push(entry);
+      excluded.push(entry);
+      continue;
+    }
     const record = await waitFor(
       (line) =>
         isChange(line) &&
@@ -155,15 +196,24 @@ try {
         line.includes(`"op": "${step.op}"`),
       `${step.label} (${step.op} ${step.path})`,
     );
-    captured.push({ label: step.label, record });
+    for (const entry of excluded) {
+      entry.records = lines
+        .slice(entry.start, cursor)
+        .filter((line) => isChange(line) && line.includes(`"path": "${entry.path}"`));
+    }
+    excluded = [];
+    captured.push({ label: step.label, records: [record] });
   }
 
   if (failure) throw new Error(failure);
+  if (excluded.length > 0) {
+    throw new Error("an excluded step needs an awaited step after it to bound what it captured");
+  }
   done = true;
 
-  for (const { label, record } of captured) {
+  for (const { label, records } of captured) {
     console.log(`# ${label}`);
-    console.log(record);
+    for (const record of records) console.log(record);
   }
 } catch (error) {
   console.error(error.message);

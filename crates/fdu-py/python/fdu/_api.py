@@ -48,7 +48,17 @@ class FduError(RuntimeError):
 
 
 class InvalidArgumentError(FduError, ValueError):
-    """A public option or query is invalid."""
+    """A public option or query is invalid.
+
+    Almost every cause is the shape of the call itself, and the same call fails the same
+    way every time. One cause depends on the index instead: an ``OpenedIndex.read`` whose
+    ``Tree`` or ``DirectoryRollUp`` names a retained path that is not a directory. That
+    request succeeds while the path is a directory and raises once it has become a file, so
+    a path taken from an earlier page can start raising between reads. The error fails the
+    whole read, including projections in the same call that would have answered, such as a
+    ``Lookup`` of that path. Whether it should become a result of that one projection
+    instead is an open decision.
+    """
 
 
 class FilesystemError(OSError, FduError):
@@ -338,8 +348,10 @@ def open(
 
     The index observes ``.gitignore`` control state, as the engine's ``open`` does by
     default. :func:`report` never does, so the two keep snapshots of different scope at one
-    cache path: an ``open`` after a ``report`` scans cold rather than reusing its snapshot,
-    and a ``report`` answers from an ``open`` snapshot only under ``CachePolicy.ONLY``.
+    cache path. An ``open`` never starts from a ``report``'s snapshot: a policy that scans
+    treats it as a miss and scans cold, and ``CachePolicy.ONLY``, which never scans, raises
+    :class:`FduError` naming the remedy. A ``report`` answers from an ``open`` snapshot only
+    under ``CachePolicy.ONLY``.
     """
 
     scan_options = scan if scan is not None else ScanOptions()
