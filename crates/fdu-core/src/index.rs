@@ -1699,6 +1699,23 @@ impl Index {
         if self.observes_controls() { Ok(()) } else { Err(crate::Error::ControlStateNotObserved) }
     }
 
+    /// Whether a batch carries control input this index must refuse because its scope
+    /// observes no control state.
+    ///
+    /// Accepted, such input installed a table and reclassified entries under a scope that
+    /// says no rule was read: `is_ignored` refused over classification the index held, and
+    /// a snapshot saved from it loaded into a default open as an exact scope match
+    /// (`fdu-agb6`). Every operation counts, accepted or stale, so the refusal does not
+    /// depend on the index's state. Without the `gitignore` feature the control table
+    /// refuses control input itself, with the error that names the missing capability.
+    fn carries_unobserved_control_input(&self, ops: &[ObservationOp]) -> bool {
+        cfg!(feature = "gitignore")
+            && !self.observes_controls()
+            && ops.iter().any(|observed| {
+                matches!(observed.op, Op::ControlUpsert { .. } | Op::ControlRemove { .. })
+            })
+    }
+
     /// The retained control table whatever the scope: empty when nothing was observed.
     ///
     /// For the engine's own maintenance, which compares what it retains against what it
@@ -1717,6 +1734,11 @@ impl Index {
                 attempted: controls.retained_cost(),
                 limit: crate::control::MAX_CONTROL_TABLE_BYTES,
             });
+        }
+        // A scope that observed no control state retains no table; a snapshot carrying
+        // one under such a scope was not written by a scan that honoured it.
+        if !controls.is_empty() {
+            self.require_observed_controls()?;
         }
         // Every entry's ignored bit agrees with the table it replaces, so when neither table
         // governs anything no bit can move. Walking the tree to confirm it allocated a path
@@ -1854,6 +1876,10 @@ impl Index {
     ///
     /// Conditional operations are accepted only while their baseline still matches.
     /// No-ops and stale operations do not advance the clock or enter the journal.
+    ///
+    /// A control operation on an index that does not observe control state
+    /// ([`Self::observes_controls`]) fails the whole batch with
+    /// [`crate::Error::ControlStateNotObserved`], whatever its baseline.
     pub fn apply(&mut self, observation: &Observation) -> crate::Result<ApplyOutcome> {
         let prepared = prepare_observation(observation)?;
         let outcome = self.commit_prepared(prepared, true)?;
@@ -1975,6 +2001,9 @@ impl Index {
         track_file_progress: bool,
         effects: &mut C,
     ) -> crate::Result<ApplyStats> {
+        if self.carries_unobserved_control_input(&prepared.ops) {
+            return Err(crate::Error::ControlStateNotObserved);
+        }
         if matches!(prepared.ancestry, PreparedAncestry::Scanner { .. }) {
             debug_assert!(observation.is_none());
             return self.reduce_scanner_prepared(
@@ -7783,6 +7812,85 @@ mod tests {
             assert_eq!(observed.is_ignored(Path::new("debug.log")).ok(), Some(Some(false)));
             assert_eq!(observed.is_ignored(Path::new("absent.log")).ok(), Some(None));
             assert!(observed.controls().is_ok_and(crate::control::ControlTable::is_empty));
+        }
+    }
+
+    /// Control input to an index that observes no control state is refused, typed, and
+    /// changes nothing. Accepted, it installed a table and reclassified entries under a
+    /// scope that says no rule was read, so `is_ignored` refused over classification the
+    /// index held and a snapshot saved from it loaded into a default open as an exact
+    /// match (`fdu-agb6`). A stale conditional control op is refused as well: the refusal
+    /// is about the index's scope, not its state.
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn an_index_that_does_not_observe_controls_refuses_control_input() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert(".gitignore", EntryKind::File, file_attrs(6, 1)),
+            upsert("debug.log", EntryKind::File, file_attrs(10, 2)),
+        ]));
+        let stale_baseline = index.expectation(Path::new(".gitignore"));
+        index.apply_ok(&Observation::new(vec![upsert(
+            ".gitignore",
+            EntryKind::File,
+            file_attrs(7, 3),
+        )]));
+        let clock = index.clock();
+        let total = index.total();
+        let controls = || {
+            [
+                Op::ControlUpsert {
+                    path: PathBuf::from(".gitignore"),
+                    source: b"*.log\n".to_vec(),
+                },
+                Op::ControlRemove { path: PathBuf::from(".gitignore") },
+            ]
+        };
+
+        for control in controls() {
+            let batch = Observation::new(vec![
+                upsert("new.txt", EntryKind::File, file_attrs(1, 4)),
+                control.clone(),
+            ]);
+            assert!(
+                matches!(index.apply(&batch), Err(crate::Error::ControlStateNotObserved)),
+                "{control:?}"
+            );
+            assert!(
+                matches!(index.apply_baseline(&batch), Err(crate::Error::ControlStateNotObserved)),
+                "{control:?}"
+            );
+            let stale = Observation::from_ops(vec![ObservationOp::if_state(
+                control.clone(),
+                stale_baseline,
+            )]);
+            assert!(
+                matches!(index.apply(&stale), Err(crate::Error::ControlStateNotObserved)),
+                "stale {control:?}"
+            );
+        }
+        assert_eq!(index.clock(), clock, "a refused batch commits nothing");
+        assert_eq!(index.total(), total);
+        assert!(index.lookup(Path::new("new.txt")).is_none());
+        assert!(index.control_table().is_empty());
+
+        let mut table = crate::control::ControlTable::default();
+        table.upsert(Path::new(".gitignore"), b"*.log\n".to_vec()).expect("control source");
+        assert!(matches!(
+            index.install_controls(table),
+            Err(crate::Error::ControlStateNotObserved)
+        ));
+        assert!(index.control_table().is_empty());
+
+        let mut observed =
+            Index::new_with_scope("/root", crate::test_support::observing_controls());
+        for control in controls() {
+            observed
+                .apply(&Observation::new(vec![
+                    upsert(".gitignore", EntryKind::File, file_attrs(6, 1)),
+                    control,
+                ]))
+                .expect("an observing index accepts control input");
         }
     }
 
