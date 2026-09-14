@@ -5,7 +5,7 @@ title: Control-table budget aborts the scan instead of degrading to partial
 kind: bug
 status: open
 priority: 0
-version: 7
+version: 9
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - scale
@@ -14,7 +14,7 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-30T07:12:14.310Z
-updated_at: 2026-09-14T15:10:23.939Z
+updated_at: 2026-09-14T20:54:44.417Z
 ---
 ControlTable::upsert (crates/fdu-core/src/control.rs:120) returns Err(ControlSourceLimit) when the cumulative retained cost crosses MAX_CONTROL_TABLE_BYTES, and index.rs:1203 does the same on install. The error propagates and kills the whole scan - the user gets nothing after minutes of walking.
 
@@ -47,3 +47,5 @@ Interim changes on PR #48 (commits 9c29e6f for FIX48-2 and FIX48-5): item (1) ab
 Still owned here, unchanged by that commit: fdu_core::open / open_with_pending_save, fdu.open, fdu.scan, and Python Index.watch() over such an index observe by default (the default is fdu-agb6) and still abort on either bound in the blocking scan_into_index path (pinned by scan.rs detached_control_bootstrap_matches_control_limit_failures); the opened root's residuals (1)-(5) and the watched-root failures (a)-(b) above. Side effect for fdu-okne: no command-line surface reaches a control bound any more, so its 'liftable from the command line' half has no CLI caller until something on the CLI observes control state again.
 
 2026-09-14 (fdu-agb6, c06fe47 on claude/contract-decisions): the default no longer reaches either bound from a library call. ScanConfig::read_controls defaults off, so fdu_core::open / open_with_pending_save, fdu.open, fdu.scan and a watch over their indexes read no control file unless the caller opts in. Still reaching both bounds: every opened root (read_controls is always on there, opened.rs OpenOptions::into_parts) and any open or scan that opts in. This bead stays open for those.
+
+2026-09-14 DECISION (user, supersedes the default-off decision recorded earlier the same day): .gitignore information is built into the tool and the library, and is rolled up by default on every surface: CLI reports, --watch, library open, fdu.open/fdu.scan/fdu.report, and opened roots. Each request can turn it off (--no-gitignore on the CLI, read_controls=False in the library and Python). The typed 'not observed' answer from #57 stays, for requests that opt out. The CLI shows split totals, for example '1.2 GB (340 MB ignored)', plus --exclude-ignored and --only-ignored filters. Prerequisites before the default flips: fdu-1onj (the control budget degrades to partial instead of aborting), fdu-okne (a liftable bound named in the error), fdu-szkg (charges deduplicated by fingerprint), and a speed check against main with controls on. This bead is now a prerequisite for the default flip. Without it, `fdu ~` would abort again on large .gitignore volume.
