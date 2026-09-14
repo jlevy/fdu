@@ -62,12 +62,17 @@ std::thread_local! {
     pub(crate) static RECLASSIFY_VISITS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
-/// Maximum retained-cost units in the exact commit history used by [`Index::since`].
+/// Approximate bytes the exact commit history used by [`Index::since`] may retain.
 ///
 /// Bounded on purpose: an unbounded journal is a memory leak in a long-lived server. A
 /// consumer that falls further behind than this is told so ([`Since::truncated`]) and is
-/// expected to re-read state rather than silently miss changes.
-pub const DEFAULT_JOURNAL_CAPACITY: usize = 64 * 1024;
+/// expected to re-read state rather than silently miss changes. The bound is stated in
+/// bytes, as [`Commit::retained_cost`] estimates them, because the question it answers is
+/// how much memory history may hold: the earlier budget of 64 Ki items retained about this
+/// much for short paths and tens of mebibytes for long ones. An opened root lifts it
+/// through `journal_capacity`; there is no unbounded setting, since truncation is always
+/// announced and a journal that never truncates would grow for the life of the session.
+pub const DEFAULT_JOURNAL_CAPACITY: usize = 8 * 1024 * 1024;
 
 /// Identifier for an entry within an [`Index`] arena.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
@@ -1754,6 +1759,23 @@ impl Index {
         self.freshness_at(Path::new(""))
     }
 
+    /// The freshness the coherent [`IndexState`] publishes for the root.
+    ///
+    /// Subtree marks decide it, with one exception: while the observation handoff owns the
+    /// root -- the `Reconciling` phase -- the root does not become `Fresh` until `Watching`
+    /// says the handoff verified it. The handoff's own full pass clears the root's mark
+    /// before the hints captured behind it are drained, and `Fresh` beside `Reconciling`
+    /// promised a verified root the handoff had not delivered yet. Stale and partial marks
+    /// still show through, since they say something the handoff has not yet disproved.
+    fn published_freshness(&self) -> Freshness {
+        let derived = self.freshness();
+        if self.state.phase == LifecyclePhase::Reconciling && derived == Freshness::Fresh {
+            Freshness::Reconciling
+        } else {
+            derived
+        }
+    }
+
     /// Coherent state at the current clock.
     pub(crate) const fn state(&self) -> IndexState {
         self.state
@@ -1861,16 +1883,21 @@ impl Index {
             return Err(crate::Error::OpenedIndexStopped);
         }
 
+        let mut discovery = discovery;
         if let Some(path) =
-            discovery.as_ref().and_then(|discovery| discovery.directory_complete.as_ref())
+            discovery.as_mut().and_then(|discovery| discovery.directory_complete.as_mut())
         {
-            let path = canonical_relative_path(path)?;
-            let Some(id) = self.lookup(&path) else {
-                return Err(crate::Error::InvalidDirectoryCompletion(path));
+            // The transition this commit publishes carries the canonical relative path,
+            // not the producer's spelling: a `DirectoryComplete` was only ever canonical
+            // because discovery happened to build it that way.
+            let canonical = canonical_relative_path(path)?;
+            let Some(id) = self.lookup(&canonical) else {
+                return Err(crate::Error::InvalidDirectoryCompletion(canonical));
             };
             if self.entry(id).kind != EntryKind::Dir {
-                return Err(crate::Error::InvalidDirectoryCompletion(path));
+                return Err(crate::Error::InvalidDirectoryCompletion(canonical));
             }
+            *path = canonical;
         }
 
         #[cfg(test)]
@@ -1987,7 +2014,7 @@ impl Index {
                     self.pending_invalidations.push((path.clone(), *reason));
                     self.mark_unfresh(path, Freshness::Stale);
                     let current = self.freshness_at(path);
-                    self.state.freshness = self.freshness();
+                    self.state.freshness = self.published_freshness();
                     if matches!(
                         reason,
                         InvalidateReason::WatchOverflow
@@ -2537,7 +2564,7 @@ impl Index {
         let previous = self.freshness_at(&path);
         let epoch = self.mark_unfresh(&path, Freshness::Reconciling);
         let current = self.freshness_at(&path);
-        self.state.freshness = self.freshness();
+        self.state.freshness = self.published_freshness();
         let commit = if previous == current && previous_index_state == self.state {
             None
         } else {
@@ -2559,12 +2586,13 @@ impl Index {
 
     /// Close one reconciliation opened by [`Self::begin_reconcile`].
     ///
-    /// `listed_incomplete` names the directories the pass listed in full that the index did
-    /// not hold as complete when it listed them. When the whole pass completed, each is
-    /// recorded as complete in this commit, exactly as discovery's listing commit records
-    /// the directories it lists, unless a producer invalidated or began verifying it after
-    /// this pass started: that producer's own pass owns its listing now. Only an opened root
-    /// passes any, since only an opened root serves completeness.
+    /// `listed_incomplete` names the directories the pass listed in full, with no error
+    /// inside them, that the index did not hold as complete when it listed them. Each is
+    /// recorded as complete in this commit whether or not the whole pass completed, exactly
+    /// as discovery's listing commit records the directories it lists, unless a producer
+    /// invalidated or began verifying it after this pass started: that producer's own pass
+    /// owns its listing now. Only an opened root passes any, since only an opened root
+    /// serves completeness, and it passes none when a conditional commit lost a race.
     pub(crate) fn finish_reconcile(
         &mut self,
         path: &Path,
@@ -2578,6 +2606,21 @@ impl Index {
         let previous = self.freshness_at(&path);
         self.freshness_marks
             .retain(|marked, mark| !marked.starts_with(&path) || mark.epoch > started_at);
+        // Each listed directory is recorded on its own listing, complete pass or not: the
+        // walk names only those it listed in full with no error inside them, as discovery
+        // decides per directory, and the caller passes none when a commit lost a race. A
+        // directory another producer invalidated or began verifying after this pass
+        // started is left to that producer's pass, so decide here, before this pass's own
+        // partial mark below would read as such a newer claim.
+        let recordable: Vec<&PathBuf> = listed_incomplete
+            .iter()
+            .filter(|directory| {
+                directory.starts_with(&path)
+                    && !self.freshness_marks.iter().any(|(marked, mark)| {
+                        mark.epoch > started_at && directory.starts_with(marked)
+                    })
+            })
+            .collect();
         let mut state = Vec::new();
         if complete {
             // A completed sweep stat'd every entry beneath `path`, including the ones
@@ -2592,33 +2635,30 @@ impl Index {
                 self.verified.drain(..excess);
             }
             state.push(StateTransition::Verified { path: path.clone() });
-            for directory in listed_incomplete {
-                if !directory.starts_with(&path)
-                    || self.freshness_marks.iter().any(|(marked, mark)| {
-                        mark.epoch > started_at && directory.starts_with(marked)
-                    })
-                {
-                    continue;
-                }
-                let Some(id) = self.lookup(directory) else {
-                    continue;
-                };
-                let entry = self.entry_mut(id);
-                if entry.kind != EntryKind::Dir || entry.directory().children_complete {
-                    continue;
-                }
-                entry.directory_mut().children_complete = true;
-                self.state.progress.directories_complete =
-                    self.state.progress.directories_complete.saturating_add(1);
-                state.push(StateTransition::DirectoryComplete { path: directory.clone() });
+            // A failed root's issues explain the state it is in; a clean walk below one of
+            // their paths cannot un-fail the root, so it disproves none of them.
+            if self.state.phase != LifecyclePhase::Failed {
+                self.drop_disproven_issues(&path, started_at);
             }
-            self.drop_disproven_issues(&path, started_at);
         } else {
             self.mark_unfresh(&path, Freshness::Partial);
         }
+        for directory in recordable {
+            let Some(id) = self.lookup(directory) else {
+                continue;
+            };
+            let entry = self.entry_mut(id);
+            if entry.kind != EntryKind::Dir || entry.directory().children_complete {
+                continue;
+            }
+            entry.directory_mut().children_complete = true;
+            self.state.progress.directories_complete =
+                self.state.progress.directories_complete.saturating_add(1);
+            state.push(StateTransition::DirectoryComplete { path: directory.clone() });
+        }
 
         let current = self.freshness_at(&path);
-        self.state.freshness = self.freshness();
+        self.state.freshness = self.published_freshness();
         if previous != current {
             state.push(StateTransition::Freshness { path: path.clone(), previous, current });
         }
@@ -3260,7 +3300,16 @@ impl Index {
     }
 
     fn expectation_matches(&self, op: &Op, expected: PathExpectation) -> bool {
-        if self.path_state(op.path()) != expected.state {
+        let current = self.path_state(op.path());
+        // An operation whose target the index already holds changes nothing, whatever
+        // happened to its baseline: another producer verified the same fact first and
+        // there is no older state left to overwrite. Refusing it as stale cost the
+        // observation handoff a full-root walk per convergent refresh, and three in a
+        // row failed the root, for commits that would have applied as unchanged.
+        if target_state(op).is_some_and(|target| target == current) {
+            return true;
+        }
+        if current != expected.state {
             return false;
         }
 
@@ -4836,6 +4885,18 @@ fn insert_dirty_ancestors(
     }
 }
 
+/// The path state an operation leaves behind, when it describes one.
+///
+/// A control or invalidation operation has no single visible target, so it is arbitrated
+/// on its baseline alone.
+fn target_state(op: &Op) -> Option<PathState> {
+    match op {
+        Op::Upsert { kind, attrs, .. } => Some(PathState::Present { kind: *kind, attrs: *attrs }),
+        Op::Remove { .. } => Some(PathState::Absent),
+        Op::ControlUpsert { .. } | Op::ControlRemove { .. } | Op::InvalidateSubtree { .. } => None,
+    }
+}
+
 fn same_target(
     current: Option<EntryIdentity>,
     expected: Option<EntryIdentity>,
@@ -6084,6 +6145,59 @@ mod tests {
         assert!(index.lookup(Path::new("file.txt")).is_none());
     }
 
+    /// A delayed conditional upsert whose baseline moved to exactly its target is no
+    /// conflict: the other producer verified the same fact first. It applies as unchanged,
+    /// not stale, so a refresh that converges with the observation handoff does not send
+    /// the handoff back for another full-root walk.
+    #[test]
+    fn convergent_conditional_upsert_applies_as_unchanged_not_stale() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![upsert(
+            "file.txt",
+            EntryKind::File,
+            file_attrs(10, 1),
+        )]));
+        let baseline = index.expectation(Path::new("file.txt"));
+        let delayed = Observation::from_ops(vec![ObservationOp::if_state(
+            upsert("file.txt", EntryKind::File, file_attrs(20, 2)),
+            baseline,
+        )]);
+
+        index.apply_ok(&Observation::new(vec![upsert(
+            "file.txt",
+            EntryKind::File,
+            file_attrs(20, 2),
+        )]));
+        let outcome = index.apply_ok(&delayed);
+
+        assert_eq!(outcome.stats.stale, 0);
+        assert_eq!(outcome.stats.unchanged, 1);
+        assert!(outcome.commit.is_none());
+        assert_eq!(index.attrs(Path::new("file.txt")).expect("file").size, 20);
+    }
+
+    #[test]
+    fn convergent_conditional_remove_applies_as_unchanged_not_stale() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("dir", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("dir/file.txt", EntryKind::File, file_attrs(10, 1)),
+        ]));
+        let baseline = index.expectation(Path::new("dir/file.txt"));
+        let delayed = Observation::from_ops(vec![ObservationOp::if_state(
+            Op::Remove { path: PathBuf::from("dir/file.txt") },
+            baseline,
+        )]);
+
+        index.apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("dir/file.txt") }]));
+        let outcome = index.apply_ok(&delayed);
+
+        assert_eq!(outcome.stats.stale, 0);
+        assert_eq!(outcome.stats.unchanged, 1);
+        assert!(outcome.commit.is_none());
+        assert!(index.lookup(Path::new("dir/file.txt")).is_none());
+    }
+
     #[test]
     fn unrelated_mutation_does_not_stale_an_absent_path() {
         let mut index = Index::new("/root");
@@ -6618,9 +6732,12 @@ mod tests {
         assert_eq!(counts.effect_paths, 3);
         assert_eq!(counts.journal_retained_commits, 1);
 
+        // Room for exactly two one-file commits; measured before the counters reset so the
+        // probe's own journal work is not counted.
+        let two_commits = 2 * commit_cost(vec![upsert("one", EntryKind::File, file_attrs(1, 1))]);
         crate::counters::test_thread_reset();
         let mut bounded = Index::new("/root");
-        bounded.journal_capacity = 4;
+        bounded.journal_capacity = two_commits;
         bounded.apply_ok(&Observation::new(vec![upsert("one", EntryKind::File, file_attrs(1, 1))]));
         bounded.apply_ok(&Observation::new(vec![upsert("two", EntryKind::File, file_attrs(2, 2))]));
         bounded.journal_capacity = 1;
@@ -7309,14 +7426,23 @@ mod tests {
         assert_eq!(index.since(index.clock()).commits.len(), 0);
     }
 
+    /// The bytes one batch is charged when it commits against an empty tree.
+    fn commit_cost(ops: Vec<Op>) -> usize {
+        let mut probe = Index::new("/root");
+        probe.apply_ok(&Observation::new(ops)).commit.expect("effective commit").retained_cost()
+    }
+
     #[test]
     fn oversized_single_batch_is_not_retained() {
-        let mut index = Index::with_journal_capacity("/root", 2);
-        let outcome = index.apply_ok(&Observation::new(vec![
-            upsert("a.txt", EntryKind::File, file_attrs(1, 1)),
-            upsert("b.txt", EntryKind::File, file_attrs(2, 2)),
-            upsert("c.txt", EntryKind::File, file_attrs(3, 3)),
-        ]));
+        let batch = || {
+            vec![
+                upsert("a.txt", EntryKind::File, file_attrs(1, 1)),
+                upsert("b.txt", EntryKind::File, file_attrs(2, 2)),
+                upsert("c.txt", EntryKind::File, file_attrs(3, 3)),
+            ]
+        };
+        let mut index = Index::with_journal_capacity("/root", commit_cost(batch()) - 1);
+        let outcome = index.apply_ok(&Observation::new(batch()));
 
         assert_eq!(outcome.commit.as_ref().expect("committed").changes.len(), 3);
         let since = index.since(Clock::ZERO);
@@ -7326,21 +7452,55 @@ mod tests {
 
     #[test]
     fn journal_eviction_charges_the_complete_retained_payload() {
-        let mut index = Index::with_journal_capacity("/root", 6);
-        index.apply_ok(&Observation::new(vec![
-            upsert("a.txt", EntryKind::File, file_attrs(1, 1)),
-            upsert("b.txt", EntryKind::File, file_attrs(2, 2)),
-        ]));
-        index.apply_ok(&Observation::new(vec![
-            upsert("c.txt", EntryKind::File, file_attrs(3, 3)),
-            upsert("d.txt", EntryKind::File, file_attrs(4, 4)),
-        ]));
+        let first = || {
+            vec![
+                upsert("a.txt", EntryKind::File, file_attrs(1, 1)),
+                upsert("b.txt", EntryKind::File, file_attrs(2, 2)),
+            ]
+        };
+        let second = || {
+            vec![
+                upsert("c.txt", EntryKind::File, file_attrs(3, 3)),
+                upsert("d.txt", EntryKind::File, file_attrs(4, 4)),
+            ]
+        };
+        // Room for the second commit and all but one byte of the first.
+        let capacity = commit_cost(first()) + commit_cost(second()) - 1;
+        let mut index = Index::with_journal_capacity("/root", capacity);
+        index.apply_ok(&Observation::new(first()));
+        index.apply_ok(&Observation::new(second()));
 
         let since = index.since(Clock::ZERO);
         assert!(since.truncated);
         assert_eq!(since.commits.len(), 1);
         assert_eq!(since.commits[0].changes.len(), 2);
         assert_eq!(since.commits[0].changes[0].path(), Path::new("c.txt"));
+    }
+
+    /// Two commits of one inserted file each: the same item count, but the second names a
+    /// path whose bytes alone dwarf the first commit. A budget counted in items held both
+    /// and let a long-path tree retain tens of mebibytes under a 64 Ki budget; a budget in
+    /// bytes evicts the first.
+    #[test]
+    fn journal_eviction_is_charged_in_path_bytes() {
+        let long_name = format!("{}.txt", "n".repeat(4096));
+        let short = || vec![upsert("a.txt", EntryKind::File, file_attrs(1, 1))];
+        let long = || vec![upsert(&long_name, EntryKind::File, file_attrs(2, 2))];
+        let short_cost = commit_cost(short());
+        let long_cost = commit_cost(long());
+        assert!(
+            long_cost > short_cost + 4096,
+            "path bytes must be charged: short {short_cost}, long {long_cost}"
+        );
+
+        let mut index = Index::with_journal_capacity("/root", short_cost + long_cost - 1);
+        index.apply_ok(&Observation::new(short()));
+        index.apply_ok(&Observation::new(long()));
+
+        let since = index.since(Clock::ZERO);
+        assert!(since.truncated, "an item budget kept both commits; a byte budget cannot");
+        assert_eq!(since.commits.len(), 1);
+        assert_eq!(since.commits[0].changes[0].path(), Path::new(&long_name));
     }
 
     #[test]

@@ -1609,6 +1609,12 @@ pub struct Work {
     pub bytes_visited: u64,
 }
 
+/// Bytes [`Commit::retained_cost`] charges for a commit's own frame in the journal.
+const RETAINED_COMMIT_BYTES: usize = 256;
+/// Bytes [`Commit::retained_cost`] charges for each retained change, transition, or dirty
+/// path, before the bytes of the path it names.
+const RETAINED_ITEM_BYTES: usize = 128;
+
 /// One atomic, exact index transition.
 ///
 /// Detached indexes use the process-local [`Clock`] as their version sequence. The
@@ -1634,12 +1640,27 @@ impl Commit {
         self.changes.is_empty() && self.state.is_empty()
     }
 
-    /// Units charged against the bounded retained journal.
+    /// Approximate bytes this commit retains in the bounded journal.
+    ///
+    /// The estimate is a fixed allowance for the commit's own frame plus, for every
+    /// change, transition, and dirty path, a fixed allowance for the item and the bytes of
+    /// the path it names. Paths are the part that varies: a journal that charged one unit
+    /// per item held tens of mebibytes of long paths under a budget that read as 64 KiB,
+    /// and every change poll cloned all of it. Charging bytes makes
+    /// [`crate::DEFAULT_JOURNAL_CAPACITY`] mean what it says, whatever the tree's paths
+    /// look like. The allowances are fixed rather than measured with `size_of` so the
+    /// budget means the same on every target: the retained types differ in size by
+    /// platform, and a recorded journal work count would otherwise differ with them.
     pub fn retained_cost(&self) -> usize {
-        self.changes.len()
-            + self.state.len()
-            + self.impact.dirty_paths.len()
-            + usize::from(self.impact.all_dirty)
+        let paths = self
+            .changes
+            .iter()
+            .map(|change| change.path().as_os_str().len())
+            .chain(self.state.iter().map(|transition| transition.path().as_os_str().len()))
+            .chain(self.impact.dirty_paths.iter().map(|path| path.as_os_str().len()))
+            .sum::<usize>();
+        let items = self.changes.len() + self.state.len() + self.impact.dirty_paths.len();
+        RETAINED_COMMIT_BYTES + items * RETAINED_ITEM_BYTES + paths
     }
 }
 
@@ -1875,7 +1896,10 @@ pub enum Error {
     #[error("opened-index lifecycle state was poisoned by a panic")]
     OpenedLifecyclePoisoned,
 
-    /// An owned opened-index worker panicked before joined shutdown completed.
+    /// An owned opened-index worker panicked.
+    ///
+    /// Joined shutdown reports it, and so does a change poll that would otherwise wait for
+    /// commits the root can no longer make.
     #[error("opened-index worker {worker} panicked")]
     OpenedWorkerPanicked {
         /// Stable role of the failed worker.

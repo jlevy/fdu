@@ -113,7 +113,10 @@ pub struct OpenOptions {
     #[cfg(all(feature = "watch", test))]
     #[doc(hidden)]
     pub observation_script: Option<PathBuf>,
-    /// Maximum retained-cost units in the exact commit journal.
+    /// Approximate bytes the exact commit journal may retain, as
+    /// [`crate::Commit::retained_cost`] estimates them; see
+    /// [`crate::DEFAULT_JOURNAL_CAPACITY`] for the default and why there is no unbounded
+    /// setting.
     pub journal_capacity: usize,
 }
 
@@ -291,6 +294,11 @@ impl OpenedIndex {
     }
 
     /// Return exact commits after one version, waiting up to the supplied timeout.
+    ///
+    /// A poll waiting on an idle journal returns as soon as an owned worker panics, with
+    /// [`Error::OpenedWorkerPanicked`] naming the worker -- the cause [`Self::close`] will
+    /// report -- rather than at its timeout. Commits retained before the panic are still
+    /// returned first.
     pub fn changes(&self, request: crate::ChangeRequest) -> Result<crate::ChangePoll> {
         self.ensure_open()?;
         journal::poll(self, request)
@@ -523,26 +531,39 @@ impl OpenedIndex {
         }
 
         let cancellation = Arc::clone(&self.state.cancellation);
+        let journal = Arc::clone(&self.state.journal);
+        let failures = Arc::clone(&self.state.failures);
         #[cfg(test)]
         let controls = Arc::clone(&self.state.test_controls);
         let worker = thread::Builder::new()
             .name(format!("fdu-{name}"))
             .spawn(move || {
-                #[cfg(not(test))]
-                {
-                    run(cancellation)
-                }
+                // The worker records its own failure as it leaves, and a panic is caught
+                // for exactly that long before it resumes. Left to the join, a panic was
+                // learned of only at close -- a change poll blocked on the journal slept
+                // to its timeout -- and close reported failures in spawn order, so
+                // discovery's poisoned-lock error stood in for the panic that poisoned it.
+                let outcome =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(cancellation)));
                 #[cfg(test)]
                 {
-                    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        run(cancellation)
-                    }));
                     if name != "discovery" {
                         controls.reach(TestPoint::BeforeWorkerExit);
                     }
-                    match outcome {
-                        Ok(result) => result,
-                        Err(payload) => std::panic::resume_unwind(payload),
+                }
+                match outcome {
+                    Ok(Ok(())) => {}
+                    Ok(Err(error)) => {
+                        failures.record(CloseOutcome::WorkerFailed {
+                            worker: name,
+                            source: Arc::new(error),
+                        });
+                        journal.wake();
+                    }
+                    Err(payload) => {
+                        failures.record(CloseOutcome::WorkerPanicked { worker: name });
+                        journal.wake();
+                        std::panic::resume_unwind(payload);
                     }
                 }
             })
@@ -573,6 +594,8 @@ struct OpenedState {
     frontier: Arc<DiscoveryFrontier>,
     continuations: Mutex<continuation::ContinuationTable>,
     journal: Arc<journal::JournalWait>,
+    /// Worker failures in the order they happened; shared with the workers that record them.
+    failures: Arc<WorkerFailures>,
     cancellation: Arc<Cancellation>,
     #[cfg(feature = "watch")]
     baseline: Arc<BaselineLatch>,
@@ -616,6 +639,7 @@ impl OpenedState {
             frontier: Arc::new(DiscoveryFrontier::new()),
             continuations: Mutex::new(continuation::ContinuationTable::default()),
             journal: Arc::new(journal::JournalWait::new()),
+            failures: Arc::new(WorkerFailures::default()),
             cancellation: Arc::new(Cancellation::default()),
             #[cfg(feature = "watch")]
             baseline: Arc::new(BaselineLatch::default()),
@@ -660,6 +684,7 @@ impl OpenedState {
             frontier: Arc::new(DiscoveryFrontier::new()),
             continuations: Mutex::new(continuation::ContinuationTable::default()),
             journal: Arc::new(journal::JournalWait::new()),
+            failures: Arc::new(WorkerFailures::default()),
             cancellation: Arc::new(Cancellation::default()),
             #[cfg(feature = "watch")]
             baseline: Arc::new(BaselineLatch::default()),
@@ -747,7 +772,7 @@ impl OpenedState {
             }
         };
 
-        let worker_outcome = join_workers(workers);
+        let worker_outcome = join_workers(workers, &self.failures);
         let locked = self.lock_lifecycle();
         saw_poison |= locked.poisoned;
         let mut lifecycle = locked.guard;
@@ -1817,7 +1842,49 @@ enum OwnerPhase {
 
 struct Worker {
     name: &'static str,
-    handle: JoinHandle<Result<()>>,
+    handle: JoinHandle<()>,
+}
+
+/// Worker exits that ended in failure, in the order they happened.
+///
+/// Each worker records its own exit before its thread ends, so close can report the
+/// failure that came first rather than the first in spawn order, and a change poll
+/// blocked on the journal can be answered with a typed cause instead of its timeout.
+#[derive(Default)]
+struct WorkerFailures {
+    recorded: Mutex<Vec<CloseOutcome>>,
+}
+
+impl WorkerFailures {
+    fn record(&self, outcome: CloseOutcome) {
+        self.recorded.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(outcome);
+    }
+
+    /// The worker whose panic ended this root, if one did.
+    fn panicked(&self) -> Option<&'static str> {
+        self.recorded.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().find_map(
+            |outcome| match outcome {
+                CloseOutcome::WorkerPanicked { worker } => Some(*worker),
+                _ => None,
+            },
+        )
+    }
+
+    /// The failure close reports.
+    ///
+    /// The earliest, unless the earliest is only the trace another worker's panic left. A
+    /// poisoned lock is a consequence: the guard is poisoned while its thread is still
+    /// unwinding, before that thread can record its panic, so the worker that trips over
+    /// the poison can record first. Discovery's `IndexLockPoisoned` then stood in for the
+    /// observation worker's panic.
+    fn first(&self) -> Option<CloseOutcome> {
+        let recorded = self.recorded.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        recorded
+            .iter()
+            .find(|outcome| !outcome.is_poison_trace())
+            .or_else(|| recorded.first())
+            .cloned()
+    }
 }
 
 #[derive(Clone)]
@@ -1830,6 +1897,20 @@ enum CloseOutcome {
 }
 
 impl CloseOutcome {
+    /// Whether this failure only reports a lock some panic poisoned, rather than a cause.
+    fn is_poison_trace(&self) -> bool {
+        match self {
+            Self::WorkerFailed { source, .. } => matches!(
+                **source,
+                Error::IndexLockPoisoned
+                    | Error::OpenedLifecyclePoisoned
+                    | Error::OpenedJournalPoisoned
+            ),
+            Self::LifecyclePoisoned | Self::IndexPoisoned => true,
+            Self::Success | Self::WorkerPanicked { .. } => false,
+        }
+    }
+
     fn to_result(&self) -> Result<()> {
         match self {
             Self::Success => Ok(()),
@@ -1843,21 +1924,18 @@ impl CloseOutcome {
     }
 }
 
-fn join_workers(workers: Vec<Worker>) -> Option<CloseOutcome> {
-    let mut first_failure = None;
+/// Join every worker, then report the failure the workers themselves recorded first.
+///
+/// The join only waits: each worker records its exit before its thread ends. The join's
+/// own view is kept as the answer of last resort for a panic that escaped recording.
+fn join_workers(workers: Vec<Worker>, failures: &WorkerFailures) -> Option<CloseOutcome> {
+    let mut first_unrecorded = None;
     for worker in workers {
-        let outcome = match worker.handle.join() {
-            Ok(Ok(())) => None,
-            Ok(Err(error)) => {
-                Some(CloseOutcome::WorkerFailed { worker: worker.name, source: Arc::new(error) })
-            }
-            Err(_) => Some(CloseOutcome::WorkerPanicked { worker: worker.name }),
-        };
-        if first_failure.is_none() {
-            first_failure = outcome;
+        if worker.handle.join().is_err() && first_unrecorded.is_none() {
+            first_unrecorded = Some(CloseOutcome::WorkerPanicked { worker: worker.name });
         }
     }
-    first_failure
+    failures.first().or(first_unrecorded)
 }
 
 #[cfg(feature = "watch")]
@@ -2267,6 +2345,73 @@ mod tests {
         let error = opened.close().expect_err("panic is terminal");
         assert!(matches!(error, Error::OpenedWorkerPanicked { worker: "panic" }));
         assert!(matches!(opened.close(), Err(Error::OpenedWorkerPanicked { worker: "panic" })));
+    }
+
+    /// A poll blocked on the journal learns of a worker panic when it happens, with the
+    /// cause close will report, instead of sleeping to its timeout.
+    #[test]
+    fn a_worker_panic_wakes_a_blocked_change_poll_with_its_typed_failure() {
+        let controls = Arc::new(TestControls::default());
+        controls.gate(TestPoint::BeforeJournalWait).arm();
+        let (_root, opened) = opened(Arc::clone(&controls));
+        let cursor = current_version(&opened);
+        let poller = opened.clone();
+        let poll = thread::spawn(move || {
+            poller.changes(crate::ChangeRequest {
+                after: cursor,
+                timeout: std::time::Duration::from_secs(60),
+            })
+        });
+        controls.gate(TestPoint::BeforeJournalWait).wait_reached();
+        opened
+            .spawn_worker("panic", |_cancellation| panic!("injected worker panic"))
+            .expect("spawn worker");
+        controls.gate(TestPoint::BeforeJournalWait).release();
+
+        let outcome = poll.join().expect("poll thread");
+        assert!(
+            matches!(outcome, Err(Error::OpenedWorkerPanicked { worker: "panic" })),
+            "{outcome:?}"
+        );
+        assert!(matches!(opened.close(), Err(Error::OpenedWorkerPanicked { worker: "panic" })));
+    }
+
+    /// Close reports the failure that happened first, not the worker that was spawned first.
+    #[test]
+    fn close_reports_the_failure_that_happened_first_not_the_worker_spawned_first() {
+        let (_root, opened) = opened(Arc::default());
+        opened
+            .spawn_worker("slow", |cancellation| {
+                cancellation.wait_cancelled();
+                Err(Error::CommitRejected("slow worker failed at close"))
+            })
+            .expect("spawn slow worker");
+        opened
+            .spawn_worker("fast", |_cancellation| {
+                Err(Error::CommitRejected("fast worker failed first"))
+            })
+            .expect("spawn fast worker");
+        wait_for_worker_exit(&opened, "fast");
+
+        assert!(matches!(opened.close(), Err(Error::OpenedWorkerFailed { worker: "fast", .. })));
+    }
+
+    /// A poisoned lock is what a panic leaves behind, and the worker that trips over it can
+    /// record its error before the unwinding thread records the panic. The panic is the
+    /// cause, so it is the failure close reports.
+    #[test]
+    fn close_reports_a_panic_before_the_poisoning_it_left_behind() {
+        let (_root, opened) = opened(Arc::default());
+        opened
+            .spawn_worker("tripped", |_cancellation| Err(Error::IndexLockPoisoned))
+            .expect("spawn tripped worker");
+        wait_for_worker_exit(&opened, "tripped");
+        opened
+            .spawn_worker("panicked", |_cancellation| panic!("injected worker panic"))
+            .expect("spawn panicking worker");
+        wait_for_worker_exit(&opened, "panicked");
+
+        assert!(matches!(opened.close(), Err(Error::OpenedWorkerPanicked { worker: "panicked" })));
     }
 
     #[test]
@@ -2941,6 +3086,53 @@ mod tests {
             opened.state.index.state().expect("state").coverage,
             crate::Coverage::Partial(_)
         ));
+        opened.close().expect("close");
+    }
+
+    /// The completion transition carries the canonical relative path, whatever spelling the
+    /// producer used. Discovery happened to build canonical paths; nothing else guaranteed it.
+    #[test]
+    fn directory_completion_publishes_the_canonical_relative_path() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .transition_discovery(DiscoveryTransition::Begin)
+            .expect("begin discovery");
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![Op::Upsert {
+                path: PathBuf::from("known"),
+                kind: EntryKind::Dir,
+                attrs: crate::Attrs::default(),
+            }]))
+            .expect("seed directory");
+
+        let outcome = opened
+            .state
+            .index
+            .apply_discovery(
+                &Observation::new(Vec::new()),
+                DiscoveryCommit {
+                    directory_complete: Some(PathBuf::from("./known")),
+                    transition: None,
+                },
+            )
+            .expect("complete directory");
+
+        let commit = outcome.commit.expect("completion commit");
+        assert!(
+            commit.state.contains(&crate::StateTransition::DirectoryComplete {
+                path: PathBuf::from("known"),
+            }),
+            "{:?}",
+            commit.state
+        );
+        assert_eq!(
+            opened.state.index.directory_complete(Path::new("known")).expect("lookup"),
+            Some(true)
+        );
         opened.close().expect("close");
     }
 
@@ -5651,6 +5843,148 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// One refresh over two subtrees, one of them unreadable: the readable subtree is
+    /// verified on its own walk. One completion flag for the whole set marked it partial
+    /// because its sibling could not be read.
+    #[cfg(unix)]
+    #[test]
+    fn multi_path_refresh_closes_each_subtree_on_its_own_walk() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::create_dir(root.path().join("readable")).expect("readable directory");
+        std::fs::write(root.path().join("readable/file"), b"ok").expect("readable fixture");
+        let blocked = root.path().join("blocked");
+        std::fs::create_dir(&blocked).expect("blocked directory");
+        std::fs::write(blocked.join("secret"), b"secret").expect("blocked fixture");
+        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("open");
+        let settled = wait_until_settled(&opened);
+        assert_eq!(settled.phase, crate::LifecyclePhase::Ready);
+        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o000))
+            .expect("make directory unreadable");
+
+        let receipt = opened
+            .refresh(&[PathBuf::from("readable"), PathBuf::from("blocked")])
+            .expect("refresh");
+        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o700))
+            .expect("restore directory permissions");
+
+        assert_eq!(receipt.issues.len(), 1, "{:?}", receipt.issues);
+        let index = &opened.state.index;
+        assert_eq!(
+            index.freshness_at(Path::new("readable")).expect("freshness"),
+            crate::Freshness::Fresh
+        );
+        assert_eq!(
+            index.freshness_at(Path::new("blocked")).expect("freshness"),
+            crate::Freshness::Partial
+        );
+        let since = index.since(receipt.after.sequence).expect("journal");
+        assert!(
+            since.commits.iter().flat_map(|commit| commit.state.iter()).any(|transition| {
+                matches!(
+                    transition,
+                    crate::StateTransition::Verified { path } if path == Path::new("readable")
+                )
+            }),
+            "the readable subtree was not verified"
+        );
+        opened.close().expect("close");
+    }
+
+    /// One transient child error no longer withholds completeness from every directory
+    /// the pass listed. Each is recorded on its own listing, as discovery decides, so a
+    /// directory first listed by such a pass answers Absent below it instead of staying
+    /// Unknown { Building } under a complete root.
+    #[test]
+    fn refresh_records_completeness_per_listed_directory_despite_a_child_error() {
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::create_dir(root.path().join("steady")).expect("steady directory");
+        std::fs::write(root.path().join("steady/kept"), b"kept").expect("steady fixture");
+        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("open");
+        let settled = wait_until_settled(&opened);
+        assert_eq!(settled.coverage, crate::Coverage::Complete);
+        std::fs::create_dir(root.path().join("fresh")).expect("fresh directory");
+        std::fs::write(root.path().join("fresh/new"), b"new").expect("fresh fixture");
+
+        crate::scan::set_child_metadata_hook(|path| {
+            (path.file_name() == Some(std::ffi::OsStr::new("kept"))).then(|| {
+                std::io::Error::new(std::io::ErrorKind::PermissionDenied, "injected child error")
+            })
+        });
+        let receipt = opened.refresh(&[PathBuf::new()]);
+        crate::scan::clear_child_metadata_hook();
+        let receipt = receipt.expect("refresh");
+
+        assert_eq!(receipt.issues.len(), 1, "{:?}", receipt.issues);
+        let index = &opened.state.index;
+        assert_eq!(
+            index.freshness_at(Path::new("")).expect("freshness"),
+            crate::Freshness::Partial
+        );
+        assert_eq!(index.directory_complete(Path::new("fresh")).expect("lookup"), Some(true));
+        assert_eq!(index.directory_complete(Path::new("steady")).expect("lookup"), Some(true));
+        let lookup = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Lookup {
+                    path: PathBuf::from("fresh/missing"),
+                }],
+                ..crate::ReadRequest::default()
+            })
+            .expect("lookup")
+            .results
+            .into_iter()
+            .next()
+            .expect("lookup result");
+        assert!(
+            matches!(lookup, crate::ProjectionResult::Lookup(crate::Knowledge::Absent)),
+            "{lookup:?}"
+        );
+        opened.close().expect("close");
+    }
+
+    /// A refresh on a Failed root keeps the issue that explains the failure. The failure
+    /// is the state the root is in, so a clean walk below the issue's path disproves
+    /// nothing; dropping it left a Failed root with no retained cause.
+    #[test]
+    fn refresh_on_a_failed_root_keeps_the_issue_that_explains_it() {
+        let (root, opened) = opened(Arc::default());
+        std::fs::create_dir(root.path().join("sub")).expect("fixture directory");
+        opened
+            .state
+            .index
+            .transition_discovery(DiscoveryTransition::Begin)
+            .expect("begin discovery");
+        let failure = crate::Issue::from_error_under(
+            root.path(),
+            &Error::io(root.path().join("sub"), std::io::Error::other("provider failed here")),
+        );
+        opened
+            .state
+            .index
+            .transition_discovery(DiscoveryTransition::Failed(failure))
+            .expect("fail discovery");
+        let failed = opened.state.index.state().expect("state");
+        assert_eq!(failed.phase, crate::LifecyclePhase::Failed);
+        assert_eq!(failed.issues.retained, 1);
+
+        let receipt = opened.refresh(&[PathBuf::from("sub")]).expect("refresh on a failed root");
+        assert_eq!(receipt.work.stale, 0);
+
+        let after = opened.state.index.state().expect("state");
+        assert_eq!(after.phase, crate::LifecyclePhase::Failed);
+        let issues = opened.state.index.issues().expect("issues");
+        assert_eq!(issues.len(), 1, "{issues:?}");
+        assert_eq!(issues[0].path.as_deref(), Some(Path::new("sub")));
+        assert_eq!(after.issues.retained, 1);
+        opened.close().expect("close");
+    }
+
     #[test]
     fn close_cancels_verified_refresh_before_its_conditional_commit() {
         let controls = Arc::new(TestControls::default());
@@ -6595,6 +6929,77 @@ mod tests {
                 .expect("retained")
                 .size,
             18
+        );
+        opened.close().expect("close");
+    }
+
+    /// A refresh that commits the very facts the handoff is about to commit is not a
+    /// conflict. The handoff's conditional upserts were refused as stale because their
+    /// baselines had moved, so it walked the whole root again, and three such refreshes in
+    /// a row failed the root over commits that would have applied as unchanged.
+    #[cfg(feature = "watch")]
+    #[test]
+    fn handoff_settles_through_a_convergent_refresh_without_a_second_walk() {
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        let path = root.path().join("shared.txt");
+        std::fs::write(&path, b"before").expect("fixture");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"").expect("script");
+        let controls = Arc::new(TestControls::default());
+        controls.gate(TestPoint::BeforeObservationHandoff).arm();
+        controls.gate(TestPoint::AfterObservationVerification).arm();
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            scripted_options(&script),
+            Arc::clone(&controls),
+        )
+        .expect("open scripted observer");
+        controls.gate(TestPoint::BeforeObservationHandoff).wait_reached();
+        // Discovery retained six bytes; the handoff's walk is about to stat seven.
+        std::fs::write(&path, b"changed").expect("mutation before the handoff walk");
+        controls.gate(TestPoint::BeforeObservationHandoff).release();
+        controls.gate(TestPoint::AfterObservationVerification).wait_reached();
+
+        // The refresh sees the same seven bytes and commits them first.
+        let refreshed = opened.refresh(&[PathBuf::from("shared.txt")]).expect("refresh");
+        assert_eq!(refreshed.work.stale, 0);
+        assert_eq!(refreshed.work.observations, 1);
+        controls.gate(TestPoint::AfterObservationVerification).release();
+
+        let state = wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+        assert_eq!(state.coverage, crate::Coverage::Complete);
+        assert_eq!(state.freshness, crate::Freshness::Fresh);
+        let since = opened.state.index.since(crate::Clock::ZERO).expect("journal");
+        let transitions: Vec<&crate::StateTransition> =
+            since.commits.iter().flat_map(|commit| commit.state.iter()).collect();
+        // A refused pass leaves the root partial before the retry verifies it.
+        assert!(
+            !transitions.iter().any(|transition| matches!(
+                transition,
+                crate::StateTransition::Freshness { current: crate::Freshness::Partial, .. }
+            )),
+            "the handoff's first pass was refused: {transitions:?}"
+        );
+        assert_eq!(
+            transitions
+                .iter()
+                .filter(|transition| matches!(
+                    transition,
+                    crate::StateTransition::Verified { path } if path.as_os_str().is_empty()
+                ))
+                .count(),
+            1
+        );
+        assert_eq!(
+            opened
+                .state
+                .index
+                .attrs(Path::new("shared.txt"))
+                .expect("attrs")
+                .expect("retained")
+                .size,
+            7
         );
         opened.close().expect("close");
     }

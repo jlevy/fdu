@@ -397,7 +397,9 @@ fn journal_and_observation_recovery() -> SessionTrace {
     std::fs::write(&script, b"modify\tbaseline.txt\n").expect("initial observation script");
     let controls = deterministic_controls();
     controls.gate(TestPoint::BeforeDiscovery).arm();
-    let options = scripted_options(&script, 32);
+    // Small enough that the twelve-file refresh below evicts the handoff's history, large
+    // enough that the handoff's own commits are retained for the first poll.
+    let options = scripted_options(&script, 8192);
     let mut trace = SessionTrace::new("journal-and-observation-recovery", root.path());
     trace.alias_path(scripts.path(), "$SCRIPT_ROOT");
     trace.record("action.open", &options);

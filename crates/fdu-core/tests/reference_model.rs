@@ -15,7 +15,8 @@ use fdu_core::{
     ObservationOp, Op, PathExpectation, PathState, RollUp, StateTransition,
 };
 
-const JOURNAL_CAPACITY: usize = 64 * 1024;
+/// Contractual journal budget in bytes, checked independently of the production default.
+const JOURNAL_CAPACITY: usize = 8 * 1024 * 1024;
 /// Contractual dirty-path bound checked independently of the production constant.
 const EXPECTED_DIRTY_PATH_LIMIT: usize = 256;
 /// Contractual retained-issue bound checked independently of the production constant.
@@ -155,7 +156,22 @@ impl Model {
     }
 
     fn expectation_matches(&self, op: &Op, expected: ModelExpectation) -> bool {
-        if self.path_state(op.path()) != expected.state {
+        let current = self.path_state(op.path());
+        // An operation the index already reflects is accepted on any baseline: it changes
+        // nothing, so there is no older state for it to overwrite.
+        let target = match op {
+            Op::Upsert { kind, attrs, .. } => {
+                Some(PathState::Present { kind: *kind, attrs: *attrs })
+            }
+            Op::Remove { .. } => Some(PathState::Absent),
+            Op::ControlUpsert { .. } | Op::ControlRemove { .. } | Op::InvalidateSubtree { .. } => {
+                None
+            }
+        };
+        if target == Some(current) {
+            return true;
+        }
+        if current != expected.state {
             return false;
         }
         let require_structure = match (op, expected.state) {
@@ -530,11 +546,22 @@ impl Model {
     }
 }
 
+/// The bytes one commit is charged: a fixed 256 for its frame, plus 128 for each retained
+/// change, transition, or dirty path and the bytes of the path it names. Stated here
+/// independently, not read back from the engine, and fixed rather than measured so the
+/// budget means the same on every target.
 fn model_commit_cost(commit: &Commit) -> usize {
-    commit.changes.len()
-        + commit.state.len()
-        + commit.impact.dirty_paths.len()
-        + usize::from(commit.impact.all_dirty)
+    let mut cost = 256;
+    for change in &commit.changes {
+        cost += 128 + change.path().as_os_str().len();
+    }
+    for transition in &commit.state {
+        cost += 128 + transition.path().as_os_str().len();
+    }
+    for path in &commit.impact.dirty_paths {
+        cost += 128 + path.as_os_str().len();
+    }
+    cost
 }
 
 fn is_observation_gap(reason: InvalidateReason) -> bool {
@@ -1252,14 +1279,24 @@ fn invalid_observation_is_atomic_and_does_not_advance_the_model() {
 fn bounded_journal_reports_loss_at_the_same_clock_as_the_model() {
     let mut index = Index::new("/model-root");
     let mut model = Model::new();
-    for value in 0..=JOURNAL_CAPACITY {
-        let op = Op::Upsert {
-            path: "changing.txt".into(),
-            kind: EntryKind::File,
-            attrs: attrs(u64::try_from(value).expect("bounded")),
-        };
+    // A long path makes each commit cost kibibytes, so the byte budget overflows in
+    // hundreds of commits rather than millions. Stop one commit after the model first
+    // dropped history, so the loss is settled on both sides.
+    let path = PathBuf::from(format!("{}.txt", "changing-".repeat(512)));
+    let mut value = 0_u64;
+    let mut lost_at = None;
+    loop {
+        let op = Op::Upsert { path: path.clone(), kind: EntryKind::File, attrs: attrs(value) };
         index.apply(&Observation::new(vec![op.clone()])).expect("journal mutation");
         model.apply(&[ModelOp { op, condition: ModelCondition::Any }]);
+        value += 1;
+        assert!(value < 1_000_000, "the model journal never overflowed");
+        if lost_at.is_none() && model.journal_floor > Clock::ZERO {
+            lost_at = Some(value);
+        }
+        if lost_at.is_some_and(|at| value > at) {
+            break;
+        }
     }
 
     let actual = index.since(Clock::ZERO);

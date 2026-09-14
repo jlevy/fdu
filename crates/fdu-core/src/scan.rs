@@ -835,11 +835,14 @@ pub struct ReconcileReport {
     /// Exact producer operations considered, including no-op controls that do not
     /// increment an effect counter or create a commit.
     pub(crate) observations: u64,
-    /// Directories this pass listed in full that the index did not yet hold as complete.
+    /// Directories this pass listed in full, with no error inside them, that the index did
+    /// not yet hold as complete.
     ///
-    /// Collected only for an opened root, where completeness is served: once the whole pass
-    /// completes, its closing commit records each one's child set as authoritative, as
-    /// discovery's own listing commit does.
+    /// Collected only for an opened root, where completeness is served. The closing commit
+    /// records each one's child set as authoritative, as discovery's own listing commit
+    /// does, whether or not the rest of the pass completed: one transient child error
+    /// elsewhere used to keep every directory the pass listed incomplete, and a directory
+    /// first listed by such a pass stayed `Unknown { Building }` under a complete root.
     pub(crate) listed_incomplete: Vec<PathBuf>,
 }
 
@@ -848,6 +851,16 @@ impl ReconcileReport {
     /// a race with another producer.
     pub fn is_complete(&self) -> bool {
         self.scan.is_complete() && self.apply.stale == 0 && self.apply.resource_refused == 0
+    }
+
+    /// The directories whose listings this pass can vouch for, taken out of the report.
+    ///
+    /// None when a conditional commit lost a race or was refused: a child of any listed
+    /// directory may then be missing from the index until the retry that race earns, and
+    /// the retry records completeness for what it lists.
+    pub(crate) fn take_recordable_completeness(&mut self) -> Vec<PathBuf> {
+        let listed = std::mem::take(&mut self.listed_incomplete);
+        if self.apply.stale > 0 || self.apply.resource_refused > 0 { Vec::new() } else { listed }
     }
 }
 
@@ -1023,6 +1036,45 @@ pub(crate) fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<
     // Windows serves DirEntry metadata from directory-enumeration data, which the
     // platform permits to be stale. Fingerprints need a fresh non-following query.
     fs::symlink_metadata(entry.path())
+}
+
+#[cfg(test)]
+pub(crate) type ChildMetadataHook = Box<dyn FnMut(&Path) -> Option<std::io::Error>>;
+
+#[cfg(test)]
+std::thread_local! {
+    /// Runs before each listed child's metadata lookup in a reconciliation on this
+    /// thread, with the child's absolute path. An error it returns stands in for the
+    /// lookup's; it may also change the tree first. Per thread, because tests run in
+    /// parallel and a reconciliation runs on its caller's thread.
+    static CHILD_METADATA_HOOK: std::cell::RefCell<Option<ChildMetadataHook>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Install [`CHILD_METADATA_HOOK`] for the calling thread.
+#[cfg(test)]
+pub(crate) fn set_child_metadata_hook(hook: impl FnMut(&Path) -> Option<std::io::Error> + 'static) {
+    CHILD_METADATA_HOOK.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+}
+
+/// Remove the calling thread's [`CHILD_METADATA_HOOK`].
+#[cfg(test)]
+pub(crate) fn clear_child_metadata_hook() {
+    CHILD_METADATA_HOOK.with(|slot| *slot.borrow_mut() = None);
+}
+
+/// Metadata for one entry a reconciliation's listing returned.
+fn listed_child_metadata(entry: &fs::DirEntry) -> std::io::Result<fs::Metadata> {
+    #[cfg(test)]
+    {
+        let path = entry.path();
+        let injected = CHILD_METADATA_HOOK
+            .with(|slot| slot.borrow_mut().as_mut().and_then(|hook| hook(&path)));
+        if let Some(error) = injected {
+            return Err(error);
+        }
+    }
+    metadata_for_fingerprint(entry)
 }
 
 /// Owned output from the filesystem walker before it crosses a public mutation boundary.
@@ -3959,22 +4011,31 @@ fn reconcile_paths_target(
         opened.push((subtree, started_at));
     }
 
+    // Each subtree closes on its own walk's outcome. One flag for the whole set marked a
+    // verified sibling partial because another subtree could not be read, and withheld
+    // the completeness its listing had earned.
     let mut failure = None;
+    let mut completed = Vec::with_capacity(opened.len());
     for (subtree, _) in &opened {
         if failure.is_some() {
-            break;
+            completed.push(false);
+            continue;
         }
         match reconcile_target_inner(target, subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
-            Ok(reconciliation) => {
+            Ok(mut reconciliation) => {
+                completed.push(reconciliation.is_complete());
+                reconciliation.listed_incomplete = reconciliation.take_recordable_completeness();
                 merge_reconcile_report(&mut report.reconciliation, reconciliation);
             }
-            Err(error) => failure = Some(error),
+            Err(error) => {
+                completed.push(false);
+                failure = Some(error);
+            }
         }
     }
 
-    let complete = failure.is_none() && report.reconciliation.is_complete();
     let listed_incomplete = std::mem::take(&mut report.reconciliation.listed_incomplete);
-    for (subtree, started_at) in opened {
+    for ((subtree, started_at), complete) in opened.into_iter().zip(completed) {
         let commit = target.finish_reconcile(&subtree, started_at, complete, &listed_incomplete)?;
         if let Some(commit) = commit.as_ref() {
             sink(commit);
@@ -4055,7 +4116,7 @@ fn reconcile_target(
     }
     match reconcile_target_inner(target, &subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
         Ok(mut report) => {
-            let listed_incomplete = std::mem::take(&mut report.listed_incomplete);
+            let listed_incomplete = report.take_recordable_completeness();
             let finished = target.finish_reconcile(
                 &subtree,
                 started_at,
@@ -4159,6 +4220,16 @@ fn reconcile_target_inner(
         }
         report.scan.observe(kind, attrs);
         push_reconcile_upsert(target, subtree, kind, attrs, baseline, &mut batch, &mut report);
+        // A retained control file at the root of the walk reads its rules here, as the
+        // listing walk does for every retained entry it lists: a file does not descend,
+        // so nothing below would read them, and the table kept the old source while the
+        // pass reported complete and marked the path fresh. In the same batch as the
+        // upsert, so both are arbitrated against one baseline.
+        match read_control_op(config, &root, subtree, kind) {
+            Ok(Some(control)) => batch.push(ObservationOp::if_state(control, baseline)),
+            Ok(None) => {}
+            Err(error) => report.scan.errors.push(error),
+        }
         flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
         if !should_descend(kind, attrs, start_depth.saturating_sub(1), root_dev, config) {
             if kind.is_dir() {
@@ -4187,6 +4258,7 @@ fn reconcile_target_inner(
     let mut bulk_reader = (config.worker_threads() > 1).then(macos_bulk::Reader::new);
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
         let (mut known, records_completeness) = target.listing_baseline(&rel_dir)?;
+        let errors_before = report.scan.errors.len();
         let abs_dir = root.join(&rel_dir);
         let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
         let had_control = target.has_control(&control_path)?;
@@ -4301,7 +4373,6 @@ fn reconcile_target_inner(
                     }
                 };
                 let name = item.file_name();
-                control_seen |= name == crate::control::CONTROL_FILE_NAME;
                 // Seeing the name proves it is not absent even if the following
                 // metadata lookup fails. Remove it from the missing set before that
                 // fallible lookup so an operational error cannot turn an existing
@@ -4310,9 +4381,30 @@ fn reconcile_target_inner(
                     Some(baseline) => baseline,
                     None => target.expectation(&rel_dir.join(&name))?,
                 };
-                let meta = match metadata_for_fingerprint(&item) {
+                let meta = match listed_child_metadata(&item) {
                     Ok(meta) => meta,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        // The listing named it and the lookup found nothing: it was
+                        // deleted in between. That is an observation, not an error;
+                        // recorded as an error it settled as a phantom entry with
+                        // permanent partial freshness. A vanished control file is not
+                        // marked seen, so the listing's closing removals drop its
+                        // rules with it.
+                        if baseline.state != PathState::Absent {
+                            batch.push(ObservationOp::if_state(
+                                Op::Remove { path: rel_dir.join(&name) },
+                                baseline,
+                            ));
+                            if batch.len() >= config.batch_size.max(1) {
+                                flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
+                            }
+                        }
+                        continue;
+                    }
                     Err(error) => {
+                        // Present but unreadable: its rules, if it is the control file,
+                        // stay until a read says otherwise.
+                        control_seen |= name == crate::control::CONTROL_FILE_NAME;
                         report.scan.errors.push(Error::io(item.path(), error));
                         continue;
                     }
@@ -4349,7 +4441,10 @@ fn reconcile_target_inner(
                     baseline,
                 ));
             }
-            if records_completeness {
+            // Only a directory with no error inside its own processing vouches for its
+            // child set; an error under a sibling or a descendant is that directory's
+            // to answer for, as discovery decides completeness per directory.
+            if records_completeness && report.scan.errors.len() == errors_before {
                 report.listed_incomplete.push(rel_dir);
             }
         }
@@ -7690,6 +7785,75 @@ mod tests {
         assert!(applied.iter().any(|commit| commit_touches(commit, Path::new("src/added.rs"))));
     }
 
+    /// A retained `.gitignore` reconciled as the root of its own walk re-reads its rules.
+    /// A file does not descend, so the subtree-root branch was the only place that could
+    /// read them, and it did not: the table kept `*.log` while the pass reported complete.
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn reconciling_a_retained_control_file_as_the_subtree_root_rereads_its_rules() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join(".gitignore"), b"*.log\n");
+        write_file(&dir.path().join("a.log"), b"log");
+        let config = ScanConfig { read_controls: true, ..ScanConfig::default() };
+        let (mut index, _) = scan_into_index(dir.path(), &config).expect("scan");
+        assert_eq!(
+            index.is_ignored(Path::new("a.log")).expect("control state observed"),
+            Some(true)
+        );
+
+        write_file(&dir.path().join(".gitignore"), b"# nothing is ignored now\n");
+        index.apply_ok(&Observation::new(vec![Op::InvalidateSubtree {
+            path: PathBuf::from(".gitignore"),
+            reason: crate::InvalidateReason::Requested,
+        }]));
+        let report = reconcile_pending(&mut index, &config, &mut |_| {}).expect("reconcile");
+
+        assert!(report.is_complete(), "{:?}", report.scan.errors);
+        assert_eq!(index.freshness_at(Path::new(".gitignore")), crate::Freshness::Fresh);
+        assert_eq!(
+            index.is_ignored(Path::new("a.log")).expect("control state observed"),
+            Some(false)
+        );
+    }
+
+    /// The same walk over a control file it cannot read keeps the old rules and does not
+    /// claim the path fresh.
+    #[cfg(all(unix, feature = "gitignore"))]
+    #[test]
+    fn reconciling_an_unreadable_control_file_root_keeps_its_rules_and_stays_partial() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let control = dir.path().join(".gitignore");
+        write_file(&control, b"*.log\n");
+        write_file(&dir.path().join("a.log"), b"log");
+        let config = ScanConfig { read_controls: true, ..ScanConfig::default() };
+        let (mut index, _) = scan_into_index(dir.path(), &config).expect("scan");
+
+        write_file(&control, b"# rewritten, then made unreadable\n");
+        fs::set_permissions(&control, fs::Permissions::from_mode(0o000)).expect("chmod");
+        index.apply_ok(&Observation::new(vec![Op::InvalidateSubtree {
+            path: PathBuf::from(".gitignore"),
+            reason: crate::InvalidateReason::Requested,
+        }]));
+        let report = reconcile_pending(&mut index, &config, &mut |_| {});
+        fs::set_permissions(&control, fs::Permissions::from_mode(0o644)).expect("restore");
+        let report = report.expect("reconcile");
+
+        assert!(!report.is_complete());
+        assert_eq!(report.scan.errors.len(), 1, "{:?}", report.scan.errors);
+        assert_eq!(index.freshness_at(Path::new(".gitignore")), crate::Freshness::Partial);
+        assert_eq!(
+            index.is_ignored(Path::new("a.log")).expect("control state observed"),
+            Some(true)
+        );
+    }
+
     #[test]
     fn handle_reconciliation_publishes_after_each_delta_is_applied() {
         let dir = sample_tree();
@@ -7708,6 +7872,40 @@ mod tests {
         .expect("reconcile handle");
 
         assert!(observed_after_apply);
+    }
+
+    /// A name the listing returned that is gone by the time it is stat'd was deleted. The
+    /// walk removes it; recorded as an error, it settled as a phantom entry with permanent
+    /// partial freshness that no later event healed.
+    #[test]
+    fn a_child_deleted_between_listing_and_stat_is_removed_rather_than_reported() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join("keep.txt"), b"keep");
+        let victim = dir.path().join("gone.txt");
+        write_file(&victim, b"gone");
+        let config = ScanConfig { threads: Some(1), ..ScanConfig::default() };
+        let (mut index, _) = scan_into_index(dir.path(), &config).expect("scan");
+        assert!(index.lookup(Path::new("gone.txt")).is_some());
+
+        index.apply_ok(&Observation::new(vec![Op::InvalidateSubtree {
+            path: PathBuf::new(),
+            reason: crate::InvalidateReason::Requested,
+        }]));
+        set_child_metadata_hook(move |path| {
+            if path.file_name() == Some(OsStr::new("gone.txt")) {
+                fs::remove_file(&victim).expect("delete between listing and stat");
+            }
+            None
+        });
+        let report = reconcile_pending(&mut index, &config, &mut |_| {});
+        clear_child_metadata_hook();
+        let report = report.expect("reconcile");
+
+        assert!(report.is_complete(), "{:?}", report.scan.errors);
+        assert_eq!(report.apply.removed, 1);
+        assert!(index.lookup(Path::new("gone.txt")).is_none());
+        assert!(index.lookup(Path::new("keep.txt")).is_some());
+        assert_eq!(index.freshness(), crate::Freshness::Fresh);
     }
 
     #[test]
