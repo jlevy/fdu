@@ -1,0 +1,929 @@
+"""The floor scoreboard: what it reconciles, what it refuses, and what it flags.
+
+Every case here is a way the scoreboard could print a plausible number that means
+something other than what its column heading says.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import gc
+import io
+import json
+import os
+import re
+import shutil
+import subprocess
+import tempfile
+import unittest
+import warnings
+from pathlib import Path
+from unittest import mock
+
+from benchmarks.realtree import floor
+
+BINARIES = {
+    "parfloor": Path("/b/parfloor"),
+    "arena_spike": Path("/b/arena_spike"),
+    "probe": Path("/b/perf_probe"),
+}
+
+
+def probe_line(dirs, files, *, apparent=1000, allocated=2000, component_ns=5_000_000):
+    return json.dumps({"component_ns": component_ns, "mode": "x", "summary": {
+        "dirs": dirs, "files": files, "apparent_bytes": apparent, "allocated_bytes": allocated,
+    }})
+
+
+def parfloor_line(dirs, files, *, other=3, apparent=1000, allocated=2000, wall_ns=1_000_000,
+                  variant="stat"):
+    return json.dumps({"variant": variant, "threads": 4, "dirs": dirs, "files": files,
+                       "other": other, "bytes": apparent, "allocated": allocated,
+                       "wall_ns": wall_ns})
+
+
+def arena_line(dirs, files, *, apparent=1000, allocated=2000, wall_ms=2.5):
+    return json.dumps({"files": files, "dirs": dirs, "bytes": apparent,
+                       "allocated": allocated, "wall_ms": wall_ms})
+
+
+#: One tree as each instrument reports it: 10 directories under the root, 50 files and 3
+#: symlinks. `parfloor enum` makes no metadata call, so it counts directories only, and
+#: the index retains the root as an entry of its own (11 - 1 == 10).
+CONSISTENT = {
+    "parfloor-stat": parfloor_line(10, 50),
+    "parfloor-enum": parfloor_line(10, 0, other=0, variant="enum"),
+    "arena-spike": arena_line(10, 50),
+    "aggregate": probe_line(10, 50),
+    "index": probe_line(11, 50),
+}
+
+
+def instrument_key(argv):
+    name = Path(argv[0]).name
+    if name == "parfloor":
+        return f"parfloor-{argv[1]}"
+    if name == "arena_spike":
+        return "arena-spike"
+    return {"summary": "aggregate", "scan-index": "index"}.get(argv[1], argv[1])
+
+
+def pressure(load_per_cpu):
+    """A Linux host-pressure snapshot in the shape `measure` records."""
+    return {"system": "Linux", "logical_cpu_count": 4, "load_1m": None,
+            "load_1m_per_cpu": load_per_cpu, "cpu_busy_pct": None,
+            "power_source": None, "thermal_pressure": None, "controlled_load_alive": None}
+
+
+QUIET = pressure(0.01)
+BUSY = pressure(0.9)
+
+
+def pressure_sequence(*snapshots):
+    """Serve `snapshots` in order, then repeat the last one forever."""
+    remaining = list(snapshots)
+
+    def next_snapshot(_regime):
+        return dict(remaining.pop(0) if len(remaining) > 1 else remaining[0])
+
+    return next_snapshot
+
+
+def run_subject(outputs, *, instruments=floor.DEFAULT_INSTRUMENTS, trials=2, warmups=1,
+                snapshots=(QUIET,), **overrides):
+    """Run the real `measure_subject` with only process spawning and pressure replaced.
+
+    Adapted from the proof tests published with the PR #49 review. Host pressure is
+    replaced because sampling it for real sleeps a second per snapshot on macOS.
+    """
+    order = []
+
+    def fake_spawn(argv, *, timeout_seconds):
+        key = instrument_key(argv)
+        order.append(key)
+        return {"stdout": outputs[key] + "\n", "spawn_wall_ns": 7_000_000,
+                "max_rss_bytes": 1 << 20}
+
+    arguments = dict(
+        root=Path("/r"), label="t", binaries=BINARIES,
+        instruments=[floor.INSTRUMENTS[item] if isinstance(item, str) else item
+                     for item in instruments],
+        workers=4, trials=trials, warmups=warmups, quiet=False,
+    )
+    arguments.update(overrides)
+    with mock.patch.object(floor, "_spawn", fake_spawn), \
+            mock.patch("benchmarks.realtree.measure._host_pressure_snapshot",
+                       side_effect=pressure_sequence(*snapshots)):
+        subject = floor.measure_subject(**arguments)
+    return subject, order
+
+
+def run_document(*, outputs=CONSISTENT, snapshots=(QUIET,), host_regime="uncontrolled",
+                 trials=2, warmups=1, subjects=(("t", Path("/r")),), spawned=None):
+    """Run the real `run` end to end with nothing built, spawned, or sampled for real.
+
+    The probe is a real executable file, because `run` refuses a probe that is not one.
+    Every spawned argv is appended to `spawned` when a list is given.
+    """
+
+    def fake_spawn(argv, *, timeout_seconds):
+        if spawned is not None:
+            spawned.append(list(argv))
+        return {"stdout": outputs[instrument_key(argv)] + "\n", "spawn_wall_ns": 7_000_000,
+                "max_rss_bytes": 1 << 20}
+
+    spikes = {name: path for name, path in BINARIES.items() if name != "probe"}
+    with tempfile.TemporaryDirectory() as scratch:
+        probe = Path(scratch) / "perf_probe"
+        probe.write_text("#!/bin/sh\n")
+        probe.chmod(0o755)
+        with mock.patch.object(floor, "require_linux"), \
+                mock.patch.object(floor, "build_instruments", return_value=spikes), \
+                mock.patch.object(floor, "_spawn", fake_spawn), \
+                mock.patch.object(floor.time, "sleep"), \
+                mock.patch("benchmarks.realtree.measure._host_pressure_snapshot",
+                           side_effect=pressure_sequence(*snapshots)):
+            return floor.run(subjects=list(subjects), workers=4, trials=trials,
+                             warmups=warmups, build_dir=Path("/b"), probe=probe,
+                             host_regime=host_regime)
+
+
+class ReadsInstrumentOutput(unittest.TestCase):
+    def test_parfloor_tallies_and_timer(self):
+        line = json.dumps({
+            "variant": "stat", "threads": 4, "dirs": 7842, "files": 68134,
+            "other": 8559, "bytes": 3573889208, "allocated": 3751350272,
+            "wall_ns": 39_260_000,
+        })
+        parsed = floor.INSTRUMENTS["parfloor-stat"].read(line)
+        self.assertEqual(parsed["elapsed_ns"], 39_260_000)
+        self.assertEqual(parsed["tallies"]["dirs"], 7842)
+        self.assertEqual(parsed["tallies"]["apparent_bytes"], 3573889208)
+
+    def test_arena_spike_milliseconds_become_nanoseconds(self):
+        line = json.dumps({
+            "files": 68134, "dirs": 7842, "bytes": 3573889208,
+            "allocated": 3751350272, "wall_ms": 153.75,
+        })
+        parsed = floor.INSTRUMENTS["arena-spike"].read(line)
+        self.assertEqual(parsed["elapsed_ns"], 153_750_000)
+
+    def test_probe_timer_is_the_component_not_the_spawn(self):
+        """The probe's own timer, not its wall: process startup is harness cost."""
+        line = json.dumps({
+            "component_ns": 62_210_000, "mode": "summary",
+            "summary": {"dirs": 7842, "files": 68134,
+                        "apparent_bytes": 3573889208, "allocated_bytes": 3751350272},
+        })
+        parsed = floor.INSTRUMENTS["aggregate"].read(line)
+        self.assertEqual(parsed["elapsed_ns"], 62_210_000)
+
+
+class RefusesOutputItCannotRead(unittest.TestCase):
+    """An instrument that printed something else has measured nothing this table can use,
+    and `main` promises a refusal, not a traceback.
+
+    Review FLOOR-9: empty output raised IndexError, a missing field KeyError and a stray
+    line JSONDecodeError; the timeout path left Popen believing its child still ran; and
+    output was decoded with the locale's encoding.
+    """
+
+    def _refused(self, name, stdout):
+        with self.assertRaises(floor.FloorError) as raised:
+            floor.INSTRUMENTS[name].read(stdout)
+        self.assertIn(name, str(raised.exception))
+
+    def test_empty_output(self):
+        self._refused("aggregate", "")
+
+    def test_a_missing_field(self):
+        self._refused("aggregate", json.dumps({"component_ns": 1, "summary": {"dirs": 1}}))
+
+    def test_a_line_that_is_not_json(self):
+        self._refused("parfloor-stat", "parfloor: out of memory\n")
+
+    def test_a_payload_of_the_wrong_shape(self):
+        self._refused("aggregate", json.dumps({"component_ns": 1, "summary": [1, 2]}))
+
+    def test_a_timer_that_is_not_a_number(self):
+        line = json.loads(parfloor_line(1, 1))
+        line["wall_ns"] = "soon"
+        self._refused("parfloor-stat", json.dumps(line))
+
+    def test_a_tally_that_is_not_a_count(self):
+        line = json.loads(parfloor_line(1, 1))
+        line["dirs"] = "10"
+        self._refused("parfloor-stat", json.dumps(line))
+
+    def test_the_command_line_reports_it_as_a_refusal(self):
+        outputs = dict(CONSISTENT, index="")
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as scratch:
+            probe = Path(scratch) / "perf_probe"
+            probe.write_text("#!/bin/sh\n")
+            probe.chmod(0o755)
+            spikes = {name: path for name, path in BINARIES.items() if name != "probe"}
+            with contextlib.redirect_stderr(stderr), \
+                    mock.patch.object(floor, "require_linux"), \
+                    mock.patch.object(floor, "build_instruments", return_value=spikes), \
+                    mock.patch.object(floor, "_spawn", lambda argv, **_: {
+                        "stdout": outputs[instrument_key(argv)], "spawn_wall_ns": 1,
+                        "max_rss_bytes": None}), \
+                    mock.patch("benchmarks.realtree.measure._host_pressure_snapshot",
+                               return_value=QUIET):
+                status = floor.main(["--subject", f"t={scratch}", "--probe", str(probe),
+                                     "--build-dir", scratch, "--host-regime", "uncontrolled",
+                                     "--trials", "1", "--warmups", "0"])
+        self.assertEqual(status, 1)
+        self.assertIn("floor scoreboard refused: index", stderr.getvalue())
+
+
+class SpawnsAndReapsOneChild(unittest.TestCase):
+    """`_spawn` for real, on commands every POSIX host has.
+
+    Adapted from the proof tests published with the PR #49 review.
+    """
+
+    def test_a_child_is_reaped_with_its_own_rusage(self):
+        outcome = floor._spawn(["/bin/sh", "-c", "echo '{\"a\":1}'"], timeout_seconds=10)
+        self.assertEqual(outcome["stdout"].strip(), '{"a":1}')
+        self.assertIsInstance(outcome["max_rss_bytes"], int)
+
+    def test_a_nonzero_exit_is_a_refusal_carrying_stderr(self):
+        with self.assertRaises(floor.FloorError) as raised:
+            floor._spawn(["/bin/sh", "-c", "echo boom >&2; exit 7"], timeout_seconds=10)
+        self.assertIn("exited 7", str(raised.exception))
+        self.assertIn("boom", str(raised.exception))
+
+    def test_output_that_is_not_utf8_is_still_read(self):
+        with self.assertRaises(floor.FloorError) as raised:
+            floor._spawn(["/bin/sh", "-c", "printf 'bad \\377\\376' >&2; exit 3"],
+                         timeout_seconds=10)
+        self.assertIn("exited 3", str(raised.exception))
+        self.assertIn("bad", str(raised.exception))
+
+    def test_a_timeout_kills_the_child_and_leaves_nothing_running(self):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with self.assertRaises(floor.FloorError) as raised:
+                floor._spawn(["/bin/sleep", "5"], timeout_seconds=0.3)
+            gc.collect()
+        self.assertIn("exceeded", str(raised.exception))
+        leaks = [str(w.message) for w in caught if issubclass(w.category, ResourceWarning)]
+        self.assertEqual(leaks, [])
+
+
+class ReconcilesDefinitionalDifferences(unittest.TestCase):
+    """An index retains the root as an entry; a tallying walk does not count it.
+
+    The offset is applied before the oracle compares, so the comparison stays exact
+    rather than being given slack that would hide a real disagreement.
+    """
+
+    def test_index_tier_drops_the_root_directory(self):
+        line = json.dumps({
+            "component_ns": 110_600_000,
+            "summary": {"dirs": 7843, "files": 68134,
+                        "apparent_bytes": 3573889208, "allocated_bytes": 3751350272},
+        })
+        parsed = floor.INSTRUMENTS["index"].read(line)
+        self.assertEqual(parsed["tallies"]["dirs"], 7842)
+
+    def test_the_reconciliation_says_why(self):
+        self.assertIn("root", floor.INSTRUMENTS["index"].tally_notes)
+
+    def test_the_reconciliations_arithmetic_adds_up(self):
+        """Review FLOOR-13: the note added the root on top of a count that held it."""
+        note = " ".join(floor.INSTRUMENTS["index"].tally_notes.split())
+        match = re.search(r"([\d,]+) entries -- ([\d,]+) directories, the root among them, "
+                          r"plus ([\d,]+) files and ([\d,]+) symlinks -- where parfloor "
+                          r"counted ([\d,]+) directories", note)
+        self.assertIsNotNone(match, note)
+        total, directories, files, symlinks, parfloor = (
+            int(group.replace(",", "")) for group in match.groups()
+        )
+        self.assertEqual(total, directories + files + symlinks)
+        self.assertEqual(parfloor, directories - 1)
+
+
+class HoldsEveryReportedTallyToTheOracle(unittest.TestCase):
+    """Any two instruments that disagree about the tree mean one of them is broken.
+
+    Review FLOOR-10: the oracle's keys were those of the first trial, so a run opening
+    with an instrument that reports fewer tallies never compared the rest.
+    """
+
+    DIRS_ONLY = floor.Instrument(
+        id="dirs-only", role="tier", description="reports directories and nothing else",
+        argv=("{probe}", "dirs-only"), tally_map={"dirs": "dirs"},
+        elapsed_key="component_ns", payload_key="summary",
+    )
+
+    def test_a_consistent_tree_passes(self):
+        subject, _ = run_subject(CONSISTENT)
+        self.assertEqual(subject["oracle_disagreements"], [])
+        self.assertEqual(subject["dropped_instruments"], {})
+        self.assertEqual(set(subject["oracle"]), set(floor.ORACLE_KEYS))
+
+    def test_a_key_the_opening_instrument_lacked_is_still_compared(self):
+        outputs = {"dirs-only": probe_line(10, 0), "aggregate": probe_line(10, 999),
+                   "index": probe_line(11, 50)}
+        subject, _ = run_subject(outputs, instruments=(self.DIRS_ONLY, "aggregate", "index"))
+        self.assertEqual(subject["oracle_sources"]["dirs"], "dirs-only")
+        self.assertEqual(subject["oracle_sources"]["files"], "aggregate")
+        self.assertTrue(any("index" in reason and "files" in reason
+                            for reason in subject["oracle_disagreements"]))
+
+    def test_every_trial_faces_the_oracle_including_warmups(self):
+        outputs = dict(CONSISTENT, **{"arena-spike": arena_line(10, 51)})
+        subject, _ = run_subject(outputs, trials=2, warmups=1)
+        arena = [reason for reason in subject["oracle_disagreements"]
+                 if reason.startswith("arena-spike")]
+        self.assertEqual(len(arena), 3)
+
+
+class DropsAReferenceRowRatherThanVetoing(unittest.TestCase):
+    """A reference row is context; a denominator and the tiers are the scoreboard.
+
+    Review FLOOR-12: `parfloor enum` descends only where `getdents64` reports `DT_DIR`,
+    and `parfloor` skips a directory it cannot open without counting it -- definitional
+    gaps that vetoed the whole subject as if the tree or the tiers were broken.
+    """
+
+    #: What `parfloor enum` reports on a filesystem that leaves `d_type` unknown.
+    BLIND_ENUM = dict(CONSISTENT, **{"parfloor-enum": parfloor_line(0, 0, other=0, variant="enum")})
+
+    def test_a_reference_that_disagrees_is_dropped_not_a_veto(self):
+        subject, _ = run_subject(self.BLIND_ENUM)
+        self.assertEqual(subject["oracle_disagreements"], [])
+        self.assertIn("dirs", subject["dropped_instruments"]["parfloor-enum"])
+        self.assertNotIn("parfloor-enum", subject["instruments"])
+        scored = floor.score(subject)
+        self.assertNotIn("parfloor-enum", [row["instrument"] for row in scored["rows"]])
+
+    def test_a_reference_never_seeds_the_oracle(self):
+        subject, _ = run_subject(
+            self.BLIND_ENUM, instruments=("parfloor-enum", "parfloor-stat", "aggregate", "index"),
+        )
+        self.assertEqual(subject["oracle_disagreements"], [])
+        self.assertEqual(subject["oracle_sources"]["dirs"], "parfloor-stat")
+
+    def test_the_table_says_which_row_it_dropped_and_why(self):
+        subject, _ = run_subject(self.BLIND_ENUM)
+        subject["scored"] = floor.score(subject)
+        document = scored_document({"parfloor-stat": 1})
+        document["subjects"] = [subject]
+        rendered = floor.render(document)
+        self.assertIn("`parfloor-enum` dropped", rendered)
+
+    def test_the_floor_cannot_be_dropped_so_an_unreadable_directory_still_vetoes(self):
+        """The documented limitation: parfloor skips a directory it cannot open."""
+        outputs = dict(CONSISTENT, **{"parfloor-stat": parfloor_line(9, 50)})
+        subject, _ = run_subject(outputs, trials=2, warmups=1)
+        self.assertTrue(subject["oracle_disagreements"])
+        self.assertNotIn("parfloor-stat", subject["dropped_instruments"])
+
+    def test_a_long_veto_says_how_much_it_left_out(self):
+        outputs = dict(CONSISTENT, **{"parfloor-stat": parfloor_line(9, 50)})
+        subject, _ = run_subject(outputs, trials=4, warmups=0)
+        subject["scored"] = floor.score(subject)
+        document = scored_document({"parfloor-stat": 1})
+        document["subjects"] = [subject]
+        hidden = len(subject["oracle_disagreements"]) - 5
+        self.assertGreater(hidden, 0)
+        self.assertIn(f"and {hidden} more", floor.render(document))
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root can read anything")
+    def test_an_unreadable_subject_root_is_refused_before_anything_runs(self):
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as scratch:
+            locked = Path(scratch) / "locked"
+            locked.mkdir()
+            locked.chmod(0)
+            try:
+                with contextlib.redirect_stderr(stderr), \
+                        mock.patch.object(floor, "run", side_effect=AssertionError("must refuse first")):
+                    status = floor.main(["--subject", f"t={locked}", "--probe", "/b/perf_probe"])
+            finally:
+                locked.chmod(0o755)
+        self.assertEqual(status, 2)
+        self.assertIn("not readable", stderr.getvalue())
+
+
+class CountsEntriesTheWayPerfSubjectsDoes(unittest.TestCase):
+    """One word, one count, across the campaign.
+
+    Review FLOOR-6: the scoreboard's "entries" was directories plus files, while
+    `perf-subjects` -- which applies the 50,000-entry deciding bar -- counts the root,
+    symlinks and other kinds too: 75,976 against 84,536 on /usr.
+    """
+
+    def test_entries_include_the_root_symlinks_and_other_kinds(self):
+        subject, _ = run_subject(CONSISTENT)
+        # 10 directories and 50 files under the root, 3 symlinks, and the root itself.
+        self.assertEqual(subject["entries"], 64)
+        self.assertEqual(subject["dirs_and_files"], 60)
+
+    def test_the_count_matches_perf_subjects_on_a_real_tree(self):
+        from benchmarks.realtree import tree
+
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch) / "subject"
+            (root / "a" / "b").mkdir(parents=True)
+            (root / "top.txt").write_text("x")
+            (root / "a" / "inner.txt").write_text("yy")
+            (root / "link").symlink_to("top.txt")
+            expected = tree.fingerprint(root, label="t")["counts"]["total"]
+            # What parfloor stat reports for this tree: directories below the root, regular
+            # files, and everything else in `other`.
+            parfloor = {"dirs": 2, "files": 2, "other": 1}
+        self.assertEqual(floor.entries_from_floor(parfloor), expected)
+
+    def test_the_per_entry_column_names_its_narrower_denominator(self):
+        subject = summarized_subject({"parfloor-stat": 40_000_000, "aggregate": 60_000_000})
+        subject.update(entries=84_536, dirs_and_files=75_976)
+        scored = floor.score(subject)
+        rows = {row["instrument"]: row for row in scored["rows"]}
+        self.assertAlmostEqual(rows["aggregate"]["ns_per_dir_or_file"], 60_000_000 / 75_976, 1)
+        self.assertNotIn("ns_per_entry", rows["aggregate"])
+        document = scored_document({"parfloor-stat": 40_000_000})
+        document["subjects"][0]["scored"] = scored
+        rendered = floor.render(document)
+        self.assertIn("ns/(dir+file)", rendered)
+        self.assertIn("84,536 entries (75,976 directories and files)", rendered)
+
+
+class EveryInstrumentRunsTheSamePool(unittest.TestCase):
+    """A floor is a lower bound for a parallel walker only at the pool size it runs.
+
+    Review FLOOR-1: the probe tiers were given no `--threads`, so fdu ran its automatic
+    pool while the floor ran one worker per CPU, and every ratio was biased wherever
+    the two differ.
+    """
+
+    def test_every_instrument_is_handed_the_worker_count(self):
+        for instrument in floor.INSTRUMENTS.values():
+            with self.subTest(instrument=instrument.id):
+                argv = instrument.command(binaries=BINARIES, root=Path("/r"), workers=7)
+                self.assertIn("7", argv)
+
+    def test_the_probe_tiers_pin_fdus_pool_rather_than_its_automatic_policy(self):
+        for name in ("aggregate", "index"):
+            with self.subTest(instrument=name):
+                argv = floor.INSTRUMENTS[name].command(binaries=BINARIES, root=Path("/r"), workers=7)
+                self.assertEqual(argv[argv.index("--threads") + 1], "7")
+
+    def test_the_default_counts_the_cpus_this_process_may_run_on(self):
+        with mock.patch.object(floor.os, "process_cpu_count", create=True, return_value=3), \
+                mock.patch.object(floor.os, "cpu_count", return_value=16):
+            self.assertEqual(floor.default_workers(), 3)
+
+    def test_without_process_cpu_count_the_affinity_mask_decides(self):
+        """Python before 3.13, and the case the review names: a container whose
+        affinity mask is narrower than the host's CPU count."""
+        with mock.patch.object(floor.os, "process_cpu_count", None, create=True), \
+                mock.patch.object(floor.os, "sched_getaffinity", create=True, return_value={0, 1}), \
+                mock.patch.object(floor.os, "cpu_count", return_value=16):
+            self.assertEqual(floor.default_workers(), 2)
+
+    def test_the_default_never_exceeds_what_fdu_will_actually_run(self):
+        with mock.patch.object(floor.os, "process_cpu_count", create=True, return_value=96):
+            self.assertEqual(floor.default_workers(), floor.MAX_WORKERS)
+
+    def test_a_pool_fdu_would_silently_clamp_is_refused(self):
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), \
+                mock.patch.object(floor, "run", side_effect=AssertionError("must refuse first")):
+            status = floor.main(["--subject", "t=/", "--probe", "/b/perf_probe",
+                                 "--workers", str(floor.MAX_WORKERS + 1)])
+        self.assertEqual(status, 2)
+        self.assertIn(str(floor.MAX_WORKERS), stderr.getvalue())
+
+    def test_the_cap_is_fdus_own_clamp(self):
+        """Read from the engine, so the two cannot drift apart unnoticed."""
+        scan = (floor.PROJECT_ROOT / "crates" / "fdu-core" / "src" / "scan.rs").read_text()
+        match = re.search(r"const MAX_SCAN_THREADS: usize = (\d+);", scan)
+        self.assertIsNotNone(match)
+        self.assertEqual(int(match.group(1)), floor.MAX_WORKERS)
+
+    def test_the_table_names_the_regime_it_measured(self):
+        document = {
+            "host": {"system": "Linux", "machine": "x86_64", "logical_cpu_count": 8},
+            "workers": 4, "recorded_at": "t", "commit": "c", "host_regime": "quiet",
+            "trials": 30, "warmups": 3, "subjects": [],
+        }
+        self.assertIn("fixed pool of 4 workers", floor.render(document))
+
+
+class EveryInstrumentMeetsEveryPredecessor(unittest.TestCase):
+    """What the previous process left behind is a predecessor effect, and the order
+    decides whose effect each instrument inherits.
+
+    Review FLOOR-2: every round ran the same order, so each instrument followed the same
+    predecessor in every round and that effect was baked into its median. A rotation by
+    the round's ordinal does not fix it: a cyclic shift keeps adjacent pairs adjacent.
+    """
+
+    @staticmethod
+    def _adjacency(rounds, names):
+        sequence = [name for order in rounds for name in order]
+        counts = {(before, after): 0 for before in names for after in names if before != after}
+        repeats = 0
+        for before, after in zip(sequence, sequence[1:]):
+            if before == after:
+                repeats += 1
+            else:
+                counts[(before, after)] += 1
+        return counts, repeats
+
+    def test_every_round_runs_every_instrument_once(self):
+        for count in range(1, 6):
+            names = [f"i{k}" for k in range(count)]
+            rounds = floor.schedule(names, trials=7, warmups=2)
+            self.assertEqual([ordinal for ordinal, _ in rounds], list(range(-2, 7)))
+            for _, order in rounds:
+                self.assertEqual(sorted(order), names)
+
+    def test_every_instrument_follows_every_other_equally_often(self):
+        for count in range(2, 6):
+            names = [f"i{k}" for k in range(count)]
+            for trials in (1, 4, 11, 30):
+                with self.subTest(instruments=count, trials=trials):
+                    rounds = [order for _, order in floor.schedule(names, trials=trials, warmups=3)]
+                    counts, repeats = self._adjacency(rounds, names)
+                    self.assertEqual(repeats, 0, "an instrument followed itself")
+                    self.assertLessEqual(max(counts.values()) - min(counts.values()), 1, counts)
+
+    def test_no_instrument_keeps_a_single_predecessor(self):
+        _, order = run_subject(CONSISTENT, trials=7, warmups=1)
+        for name in floor.DEFAULT_INSTRUMENTS:
+            with self.subTest(instrument=name):
+                predecessors = {before for before, after in zip(order, order[1:]) if after == name}
+                self.assertEqual(len(predecessors), len(floor.DEFAULT_INSTRUMENTS) - 1)
+
+    def test_the_run_follows_the_schedule_it_records(self):
+        subject, order = run_subject(CONSISTENT, trials=3, warmups=1)
+        recorded = subject["schedule"]
+        self.assertEqual(recorded["scheme"], floor.SCHEDULE_SCHEME)
+        self.assertEqual(len(recorded["rounds"]), 4)
+        self.assertEqual([name for names in recorded["rounds"] for name in names], order)
+
+
+class RefusesRatherThanSubstituting(unittest.TestCase):
+    def test_non_linux_names_the_decision_instead_of_falling_back(self):
+        with mock.patch("platform.system", return_value="Darwin"):
+            with self.assertRaises(floor.FloorError) as raised:
+                floor.require_linux()
+        message = str(raised.exception)
+        self.assertIn("getattrlistbulk", message)
+        self.assertIn("fdu-33ri", message)
+
+
+class ScoresTheProbeMakeBuilt(unittest.TestCase):
+    """The scoreboard and a verdict run must score the same probe.
+
+    Review FLOOR-5: the harness built its own probe with a copy of the
+    `perf-probe-release` cargo line, which PR #52 changes, after which the two would
+    build different binaries into the same path. Review FLOOR-11: that path assumed
+    `target/`, and the spike build directory sat at a predictable path in `/tmp`.
+    """
+
+    MAKEFILE = (floor.PROJECT_ROOT / "Makefile").read_text()
+
+    def _recipe(self, target):
+        match = re.search(rf"^{re.escape(target)}:(.*)\n((?:\t.*\n|\s*\n)*)", self.MAKEFILE, re.M)
+        self.assertIsNotNone(match, target)
+        return match.group(1).split(), match.group(2)
+
+    def test_the_harness_builds_only_the_spikes(self):
+        builds = []
+        with tempfile.TemporaryDirectory() as scratch, \
+                mock.patch.object(floor.shutil, "which", return_value="/usr/bin/tool"), \
+                mock.patch.object(floor, "_run_build",
+                                  side_effect=lambda argv, **_: builds.append(list(argv))):
+            binaries = floor.build_instruments(Path(scratch))
+        self.assertEqual(set(binaries), {"parfloor", "arena_spike"})
+        self.assertEqual([argv[0] for argv in builds], ["gcc", "rustc"])
+
+    def test_make_hands_over_the_probe_perf_probe_release_built(self):
+        prerequisites, recipe = self._recipe("perf-floor")
+        self.assertIn("perf-probe-release", prerequisites)
+        self.assertIn('--probe "$(PERF_RELEASE)"', recipe)
+        self.assertNotIn("$(CARGO)", recipe)
+
+    def test_run_scores_the_probe_it_is_handed(self):
+        spawned = []
+        run_document(spawned=spawned)
+        probes = {argv[0] for argv in spawned if argv[1] in ("summary", "scan-index")}
+        self.assertEqual(len(probes), 1)
+        self.assertEqual(Path(probes.pop()).name, "perf_probe")
+
+    def test_a_probe_that_is_not_there_is_refused_naming_its_build(self):
+        with mock.patch.object(floor, "require_linux"), \
+                mock.patch.object(floor, "build_instruments", return_value={}):
+            with self.assertRaises(floor.FloorError) as raised:
+                floor.run(subjects=[("t", Path("/r"))], workers=4, trials=1, warmups=0,
+                          build_dir=Path("/b"), probe=Path("/nonexistent/perf_probe"),
+                          host_regime="uncontrolled")
+        self.assertIn("make perf-probe-release", str(raised.exception))
+
+    def test_the_probe_path_is_required(self):
+        with contextlib.redirect_stderr(io.StringIO()), \
+                mock.patch.object(floor, "run", side_effect=AssertionError("must refuse first")):
+            with self.assertRaises(SystemExit) as raised:
+                floor.main(["--subject", "t=/"])
+        self.assertEqual(raised.exception.code, 2)
+
+    def _dry_run(self, *assignments):
+        """`make -n perf-floor`, with a cargo that answers nothing, so nothing runs."""
+        if shutil.which("make") is None:
+            self.skipTest("make is not installed")
+        environment = {key: value for key, value in os.environ.items()
+                       if key not in {"PERF_HOST_REGIME", "MAKEFLAGS", "MAKELEVEL", "MFLAGS"}}
+        return subprocess.run(
+            ["make", "--no-print-directory", "-n", "perf-floor", "SUBJECTS=t=/nonexistent",
+             "CARGO=false", *assignments],
+            cwd=str(floor.PROJECT_ROOT), env=environment, capture_output=True, text=True,
+            check=True,
+        ).stdout
+
+    def test_make_requests_the_quiet_regime_unless_told_otherwise(self):
+        """The recipe meant quiet, but the file default of PERF_HOST_REGIME always won."""
+        self.assertIn("--host-regime quiet", self._dry_run())
+        self.assertIn("--host-regime uncontrolled", self._dry_run("PERF_HOST_REGIME=uncontrolled"))
+
+    def test_make_locates_the_probe_where_cargo_writes_it(self):
+        """A literal `target/` is wrong under CARGO_TARGET_DIR or build.target-dir."""
+        self.assertIsNotNone(
+            re.search(r"(?m)^PERF_TARGET_DIR = .*\$\(CARGO\) metadata", self.MAKEFILE),
+            "PERF_TARGET_DIR must ask cargo where it writes build output",
+        )
+        self.assertIsNotNone(
+            re.search(r"(?m)^PERF_RELEASE = \$\(PERF_TARGET_DIR\)/release/examples/perf_probe$",
+                      self.MAKEFILE),
+            "PERF_RELEASE must sit under PERF_TARGET_DIR",
+        )
+
+    def test_the_spike_build_directory_defaults_under_cargos_target_directory(self):
+        metadata = json.dumps({"target_directory": "/elsewhere/target", "packages": []})
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout=metadata, stderr="")
+        with mock.patch.object(floor.subprocess, "run", return_value=completed) as run:
+            self.assertEqual(floor.default_build_dir(), Path("/elsewhere/target/fdu-floor"))
+        self.assertIn("metadata", run.call_args.args[0])
+
+    def test_a_target_directory_cargo_cannot_name_is_a_refusal(self):
+        failed = subprocess.CompletedProcess(args=[], returncode=101, stdout="", stderr="no")
+        with mock.patch.object(floor.subprocess, "run", return_value=failed):
+            with self.assertRaises(floor.FloorError):
+                floor.default_build_dir()
+
+
+class HoldsEveryTrialToTheQuietBar(unittest.TestCase):
+    """`quiet` is the loop's contract -- the bar holds before and after every sample --
+    checked by `measure`'s own gate rather than a copy of it.
+
+    Review FLOOR-3: the bar was checked once per subject, before any trial, and a load
+    average that could not be read passed silently. Review FLOOR-7: that one check came
+    straight after the harness's own release build, so a first run refused on an idle host.
+    """
+
+    def setUp(self):
+        sleep = mock.patch.object(floor.time, "sleep")
+        self.sleep = sleep.start()
+        self.addCleanup(sleep.stop)
+
+    def test_a_quiet_host_runs_every_trial_valid(self):
+        subject, _ = run_subject(CONSISTENT, quiet=True)
+        self.assertEqual(subject["host_regime"], "quiet")
+        self.assertEqual(subject["invalid_trials"], 0)
+        self.sleep.assert_not_called()
+
+    def test_quiet_is_refused_when_load_cannot_be_read(self):
+        with self.assertRaises(floor.FloorError) as raised:
+            run_subject(CONSISTENT, quiet=True, snapshots=(pressure(None),))
+        self.assertIn("unavailable", str(raised.exception))
+        self.sleep.assert_not_called()  # waiting cannot make it readable
+
+    def test_a_trial_that_breaches_the_bar_is_invalid(self):
+        # Quiet at entry and around the whole first round, busy from then on.
+        entry = [QUIET] * 2
+        first_round = [QUIET] * (2 * len(floor.DEFAULT_INSTRUMENTS))
+        subject, _ = run_subject(CONSISTENT, quiet=True, warmups=1, trials=2,
+                                 snapshots=(*entry, *first_round, BUSY))
+        # The warmup round stayed quiet; both measured rounds breached.
+        self.assertEqual(subject["invalid_trials"], 2 * len(floor.DEFAULT_INSTRUMENTS))
+        self.assertTrue(any("load/core exceeded" in reason for reason in subject["invalid_reasons"]))
+
+    def test_an_uncontrolled_run_records_pressure_without_judging_it(self):
+        subject, _ = run_subject(CONSISTENT, quiet=False, snapshots=(BUSY,))
+        self.assertEqual(subject["host_regime"], "uncontrolled")
+        self.assertEqual(subject["invalid_trials"], 0)
+
+    def test_a_host_still_settling_after_a_build_is_given_time(self):
+        subject, _ = run_subject(CONSISTENT, quiet=True, snapshots=(BUSY, BUSY, QUIET))
+        self.assertEqual(subject["invalid_trials"], 0)
+        self.assertEqual(self.sleep.call_count, 2)
+        self.sleep.assert_called_with(floor.QUIET_POLL_SECONDS)
+
+    def test_a_host_that_never_settles_is_refused_after_the_stated_bound(self):
+        clock = iter(range(0, 10_000, 60))
+        with mock.patch.object(floor.time, "monotonic", side_effect=lambda: next(clock)):
+            with self.assertRaises(floor.FloorError) as raised:
+                run_subject(CONSISTENT, quiet=True, snapshots=(BUSY,), quiet_wait_seconds=180)
+        message = str(raised.exception)
+        self.assertIn("not quiet enough", message)
+        self.assertIn("180", message)
+
+    def test_one_breaching_trial_downgrades_the_whole_scoreboard(self):
+        """A table cannot say quiet when one of its samples was not."""
+        # Settle check and regime entry are quiet; the first measured trial is not.
+        document = run_document(snapshots=(QUIET, QUIET, BUSY, QUIET), host_regime="quiet",
+                                warmups=0)
+        self.assertEqual(document["host_regime"], "uncontrolled")
+        self.assertEqual(document["host_regime_requested"], "quiet")
+        rendered = floor.render(document)
+        self.assertIn("Regime: **uncontrolled**", rendered)
+        self.assertIn("quiet was requested", rendered)
+
+    def test_a_scoreboard_whose_every_trial_held_the_bar_stays_quiet(self):
+        document = run_document(snapshots=(QUIET,), host_regime="quiet")
+        self.assertEqual(document["host_regime"], "quiet")
+        self.assertNotIn("was requested", floor.render(document))
+
+
+class FlagsASpreadNoMedianCanSummarize(unittest.TestCase):
+    """A median describes one hump. `arena_spike` on a shared container had two.
+
+    Review FLOOR-8: max/min is a spread, and the flag claimed modality it cannot see --
+    one outlier among thirty trips it, and two modes closer than 2x do not -- while
+    rounding let a 1.995 ratio trip a 2.0 bar.
+    """
+
+    def _summary(self, samples):
+        trials = [
+            floor.Trial(instrument="arena-spike", ordinal=i, warmup=False,
+                        elapsed_ns=value, spawn_wall_ns=value + 2_000_000,
+                        max_rss_bytes=15 << 20, tallies={})
+            for i, value in enumerate(samples)
+        ]
+        return floor._summarize(trials, floor.INSTRUMENTS["arena-spike"])
+
+    def test_bimodal_samples_are_flagged(self):
+        # The two modes actually measured on a four-core container: ~63 ms and ~150 ms.
+        summary = self._summary([63e6, 64e6, 150e6, 152e6, 63e6, 151e6])
+        self.assertTrue(summary["spread_suspect"])
+        self.assertGreaterEqual(summary["spread"], floor.SPREAD_SUSPECT)
+
+    def test_a_tight_unimodal_instrument_is_not_flagged(self):
+        summary = self._summary([38e6, 39e6, 40e6, 39e6, 41e6])
+        self.assertFalse(summary["spread_suspect"])
+
+    def test_p95_over_median_can_look_calm_while_spread_does_not(self):
+        """Both humps are individually narrow, so the tail ratio reassures wrongly."""
+        summary = self._summary([150e6, 151e6, 152e6, 63e6, 64e6, 65e6])
+        self.assertLess(summary["elapsed_ns"]["p95_over_median"], 1.5)
+        self.assertTrue(summary["spread_suspect"])
+
+    def test_two_modes_closer_than_the_bar_go_unflagged(self):
+        """What the flag cannot see, and why it claims no modality."""
+        self.assertFalse(self._summary([40_000_000] * 15 + [70_000_000] * 15)["spread_suspect"])
+
+    def test_the_p95_index_and_the_empty_and_zero_cases(self):
+        self.assertEqual(self._summary(list(range(1, 31)))["elapsed_ns"]["p95"], 29)
+        empty = self._summary([])
+        self.assertIsNone(empty["elapsed_ns"]["median"])
+        self.assertIsNone(empty["spread"])
+        self.assertFalse(empty["spread_suspect"])
+        self.assertIsNone(self._summary([0, 5])["spread"])
+
+    def test_the_bar_compares_the_ratio_not_its_rounded_display(self):
+        summary = self._summary([100_000_000, 199_500_000])
+        self.assertEqual(summary["spread"], 2.0)  # what the table shows
+        self.assertFalse(summary["spread_suspect"])  # what the samples are: 1.995
+
+    def test_the_flag_names_a_spread_and_claims_no_modality(self):
+        """One outlier trips it; the banner must not call that two populations."""
+        summary = self._summary([40_000_000] * 29 + [81_000_000])
+        self.assertTrue(summary["spread_suspect"])
+        self.assertNotIn("multimodal_suspect", summary)
+        banner = next(line for line in floor.render(scored_document(
+            {"parfloor-stat": 40_000_000, "index": 90_000_000}, suspect=("index",)
+        )).splitlines() if line.startswith("⚠"))
+        self.assertNotIn("population", banner)
+        self.assertIn("outlier", banner)
+
+
+def summarized_subject(medians, *, suspect=()):
+    """A measured subject as `score` reads it, one median per instrument."""
+    return {
+        "label": "usr-tree", "entries": 84_536, "dirs_and_files": 75_976,
+        "instruments": {
+            name: {
+                "role": floor.INSTRUMENTS[name].role,
+                "description": "", "samples": 30,
+                "spread": 4.25 if name in suspect else 1.2,
+                "spread_suspect": name in suspect,
+                "elapsed_ns": {"median": value, "min": value, "max": value,
+                               "p95": value, "p95_over_median": 1.0},
+                "spawn_wall_ns": {"median": value}, "harness_overhead_ns": 0,
+                "max_rss_bytes": None,
+            }
+            for name, value in medians.items()
+        },
+    }
+
+
+def scored_document(medians, *, suspect=()):
+    """A whole scoreboard document around one scored subject, as `render` reads it."""
+    return {
+        "host": {"system": "Linux", "machine": "x86_64", "logical_cpu_count": 4},
+        "workers": 4, "recorded_at": "t", "commit": "c", "host_regime": "quiet",
+        "trials": 30, "warmups": 3,
+        "subjects": [{"scored": floor.score(summarized_subject(medians, suspect=suspect)),
+                      "oracle_disagreements": []}],
+    }
+
+
+class ScoresAgainstTheFloor(unittest.TestCase):
+    def _subject(self, medians):
+        return summarized_subject(medians)
+
+    def test_ratios_divide_by_the_floor_instrument(self):
+        scored = floor.score(self._subject({
+            "parfloor-stat": 39_260_000, "aggregate": 62_210_000, "index": 110_600_000,
+        }))
+        rows = {row["instrument"]: row for row in scored["rows"]}
+        self.assertEqual(rows["parfloor-stat"]["x_floor"], 1.0)
+        self.assertAlmostEqual(rows["aggregate"]["x_floor"], 1.585, places=2)
+        self.assertAlmostEqual(rows["index"]["x_floor"], 2.817, places=2)
+
+    def test_thresholds_decide_only_for_tiers(self):
+        scored = floor.score(self._subject({
+            "parfloor-stat": 39_260_000, "aggregate": 62_210_000, "index": 110_600_000,
+        }))
+        rows = {row["instrument"]: row for row in scored["rows"]}
+        # 1.58x against a 1.25x threshold, and 2.82x against 1.40x: neither is closed.
+        self.assertFalse(rows["aggregate"]["meets_threshold"])
+        self.assertFalse(rows["index"]["meets_threshold"])
+        # The floor is not a contestant and has no threshold to meet.
+        self.assertIsNone(rows["parfloor-stat"]["meets_threshold"])
+
+    def test_a_tier_inside_its_threshold_is_closed(self):
+        scored = floor.score(self._subject({
+            "parfloor-stat": 40_000_000, "aggregate": 46_000_000,
+        }))
+        rows = {row["instrument"]: row for row in scored["rows"]}
+        self.assertTrue(rows["aggregate"]["meets_threshold"])
+
+    def test_no_floor_measurement_is_refused(self):
+        with self.assertRaises(floor.FloorError):
+            floor.score(self._subject({"aggregate": 62_210_000}))
+
+    def test_a_zero_floor_median_is_refused(self):
+        with self.assertRaises(floor.FloorError):
+            floor.score(self._subject({"parfloor-stat": 0, "aggregate": 1}))
+
+    def test_the_threshold_compares_the_unrounded_ratio(self):
+        rows = {row["instrument"]: row for row in floor.score(self._subject(
+            {"parfloor-stat": 100_000_000, "aggregate": 125_040_000}))["rows"]}
+        self.assertEqual(rows["aggregate"]["x_floor"], 1.25)
+        self.assertFalse(rows["aggregate"]["meets_threshold"])
+
+
+class LeavesASpreadTierUndecided(unittest.TestCase):
+    """A tier is closed when its median reaches its threshold, and a median whose
+    samples spread past `SPREAD_SUSPECT` is not one number to hold to a threshold.
+
+    Review FLOOR-4: such a tier was still marked as meeting its threshold whenever the
+    median landed in the lower mode, and the JSON's `meets_threshold` is the
+    machine-readable tier-closed signal.
+    """
+
+    def _rows(self, medians, suspect):
+        return {row["instrument"]: row
+                for row in floor.score(summarized_subject(medians, suspect=suspect))["rows"]}
+
+    def test_a_flagged_tier_under_its_threshold_is_not_called_closed(self):
+        rows = self._rows({"parfloor-stat": 40_000_000, "index": 50_000_000}, ("index",))
+        self.assertTrue(rows["index"]["spread_suspect"])
+        self.assertIsNone(rows["index"]["meets_threshold"])
+        self.assertEqual(rows["index"]["threshold"], floor.THRESHOLDS["index"])
+
+    def test_a_flagged_tier_over_its_threshold_is_not_called_open_either(self):
+        rows = self._rows({"parfloor-stat": 40_000_000, "index": 90_000_000}, ("index",))
+        self.assertIsNone(rows["index"]["meets_threshold"])
+
+    def test_the_table_marks_it_undecided_rather_than_closed(self):
+        line = next(line for line in floor.render(scored_document(
+            {"parfloor-stat": 40_000_000, "index": 50_000_000}, suspect=("index",)
+        )).splitlines() if "`index`" in line)
+        self.assertNotIn("✓", line)
+        self.assertIn("?", line)
+
+    def test_an_unflagged_tier_is_still_decided(self):
+        rows = self._rows({"parfloor-stat": 40_000_000, "index": 50_000_000}, ())
+        self.assertTrue(rows["index"]["meets_threshold"])
+
+
+if __name__ == "__main__":
+    unittest.main()
