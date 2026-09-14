@@ -263,14 +263,14 @@ impl OpenedIndex {
     }
 
     /// Return requested projections from one committed version and state boundary.
+    ///
+    /// The lifecycle lock guards only the phase check. The projection's coherence comes
+    /// from the index read boundary, which any number of readers share, so holding the
+    /// lifecycle lock across it would serialize every read with every other read and with
+    /// refresh, worker registration, and the start of close. A read that races close cannot
+    /// leave state behind: the continuation table refuses records once shutdown clears it.
     pub fn read(&self, request: crate::ReadRequest) -> Result<crate::ReadResponse> {
-        let locked = self.state.lock_lifecycle();
-        if locked.poisoned {
-            return Err(Error::OpenedLifecyclePoisoned);
-        }
-        if locked.guard.phase != OwnerPhase::Open {
-            return Err(Error::OpenedIndexClosed);
-        }
+        self.ensure_open()?;
         read::read(self, request)
     }
 
@@ -701,8 +701,8 @@ impl OpenedState {
                     drop(lifecycle);
                     self.journal.close();
                     match self.continuations.lock() {
-                        Ok(mut continuations) => continuations.clear(),
-                        Err(poisoned) => poisoned.into_inner().clear(),
+                        Ok(mut continuations) => continuations.close(),
+                        Err(poisoned) => poisoned.into_inner().close(),
                     }
                     self.lifecycle_changed.notify_all();
                     break workers;
@@ -772,6 +772,69 @@ impl Drop for OpenedState {
     }
 }
 
+/// What one opened root still retains, read from its own state.
+///
+/// The session goldens' `final` record is derived from this rather than written as a
+/// literal: a regression that left a worker, a blocked poll, or a page record behind a
+/// closed root would otherwise print the same text as a clean shutdown.
+#[cfg(all(test, feature = "watch", feature = "gitignore"))]
+pub(super) struct RetainedOwnership {
+    session: SessionId,
+    /// Shutdown finished: every worker was joined before its outcome was stored.
+    joined: bool,
+    workers: usize,
+    waiters: usize,
+    continuations: usize,
+    /// The outcome every later `close()` replays, once shutdown has stored one.
+    close: Option<Result<()>>,
+}
+
+#[cfg(all(test, feature = "watch", feature = "gitignore"))]
+impl RetainedOwnership {
+    pub(super) fn is_released(&self) -> bool {
+        self.joined && self.workers == 0 && self.waiters == 0 && self.continuations == 0
+    }
+}
+
+#[cfg(all(test, feature = "watch", feature = "gitignore"))]
+impl std::fmt::Display for RetainedOwnership {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "session={:?} joined={} workers={} waiters={} continuations={} close=",
+            self.session, self.joined, self.workers, self.waiters, self.continuations
+        )?;
+        match &self.close {
+            Some(outcome) => write!(formatter, "{outcome:?}"),
+            None => formatter.write_str("none"),
+        }
+    }
+}
+
+#[cfg(all(test, feature = "watch", feature = "gitignore"))]
+impl OpenedState {
+    pub(super) fn retained_ownership(&self) -> RetainedOwnership {
+        let (joined, workers, close) = {
+            let lifecycle = self.lock_lifecycle().guard;
+            (
+                lifecycle.phase == OwnerPhase::Closed,
+                lifecycle.workers.len(),
+                lifecycle.terminal.as_ref().map(CloseOutcome::to_result),
+            )
+        };
+        let continuations =
+            self.continuations.lock().unwrap_or_else(std::sync::PoisonError::into_inner).len();
+        RetainedOwnership {
+            session: self.session,
+            joined,
+            workers,
+            waiters: self.journal.waiters(),
+            continuations,
+            close,
+        }
+    }
+}
+
 fn bind_root(
     root: &Path,
     options: OpenOptions,
@@ -819,64 +882,106 @@ struct DiscoveryFrontier {
     state: Mutex<FrontierState>,
 }
 
+/// Pending directories, grouped by the first priority each one serves.
+///
+/// The next directory is the earliest queued one serving the earliest priority, and
+/// otherwise the earliest queued one. Which priority a directory serves depends only on
+/// its path and the priority list, so it is decided once -- when the directory is queued,
+/// or when the priorities change -- rather than on every pop. Rescanning the whole queue
+/// against every priority per pop made one breadth-first level of width `w` cost
+/// `O(w² · priorities)`: 4,000 pops under 64 priorities took 40 seconds.
 struct FrontierState {
-    pending: VecDeque<PendingDirectory>,
+    /// Directories serving no priority, in queue order.
+    unprioritized: VecDeque<QueuedDirectory>,
+    /// `serving[k]` holds the directories whose first matching priority is
+    /// `priorities[k]`, in queue order.
+    serving: Vec<VecDeque<QueuedDirectory>>,
     priorities: Vec<PathBuf>,
+    /// Queue order, kept so that changing priorities regroups without reordering.
+    next_sequence: u64,
     stopped: bool,
+}
+
+struct QueuedDirectory {
+    sequence: u64,
+    directory: PendingDirectory,
+}
+
+impl FrontierState {
+    fn enqueue(&mut self, queued: QueuedDirectory) {
+        let path = &queued.directory.path;
+        match self
+            .priorities
+            .iter()
+            .position(|priority| priority.starts_with(path) || path.starts_with(priority))
+        {
+            Some(priority) => self.serving[priority].push_back(queued),
+            None => self.unprioritized.push_back(queued),
+        }
+    }
 }
 
 impl DiscoveryFrontier {
     fn new() -> Self {
         Self {
             state: Mutex::new(FrontierState {
-                pending: VecDeque::from([PendingDirectory { path: PathBuf::new(), depth: 0 }]),
+                unprioritized: VecDeque::from([QueuedDirectory {
+                    sequence: 0,
+                    directory: PendingDirectory { path: PathBuf::new(), depth: 0 },
+                }]),
+                serving: Vec::new(),
                 priorities: Vec::new(),
+                next_sequence: 1,
                 stopped: false,
             }),
         }
     }
 
     fn pop(&self) -> Option<PendingDirectory> {
-        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut guard = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let state = &mut *guard;
         if state.stopped {
             return None;
         }
-        let selected = state
-            .pending
-            .iter()
-            .enumerate()
-            .filter_map(|(position, pending)| {
-                state
-                    .priorities
-                    .iter()
-                    .position(|priority| {
-                        priority.starts_with(&pending.path) || pending.path.starts_with(priority)
-                    })
-                    .map(|priority| (priority, position))
-            })
-            .min()
-            .map_or(0, |(_, position)| position);
-        state.pending.remove(selected)
+        if let Some(queue) = state.serving.iter_mut().find(|queue| !queue.is_empty()) {
+            return queue.pop_front().map(|queued| queued.directory);
+        }
+        state.unprioritized.pop_front().map(|queued| queued.directory)
     }
 
     fn extend(&self, directories: impl IntoIterator<Item = PendingDirectory>) {
         let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        if !state.stopped {
-            state.pending.extend(directories);
+        if state.stopped {
+            return;
+        }
+        for directory in directories {
+            let sequence = state.next_sequence;
+            state.next_sequence = sequence.wrapping_add(1);
+            state.enqueue(QueuedDirectory { sequence, directory });
         }
     }
 
     fn prioritize(&self, priorities: Vec<PathBuf>) {
-        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        if !state.stopped {
-            state.priorities = priorities;
+        let mut guard = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let state = &mut *guard;
+        if state.stopped {
+            return;
+        }
+        let mut queued: Vec<_> =
+            state.unprioritized.drain(..).chain(state.serving.drain(..).flatten()).collect();
+        queued.sort_unstable_by_key(|queued| queued.sequence);
+        state.serving = priorities.iter().map(|_| VecDeque::new()).collect();
+        state.priorities = priorities;
+        for directory in queued {
+            state.enqueue(directory);
         }
     }
 
     fn stop(&self) {
         let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         state.stopped = true;
-        state.pending.clear();
+        state.unprioritized.clear();
+        state.serving.clear();
         state.priorities.clear();
     }
 }
@@ -933,6 +1038,75 @@ enum DiscoveryStep {
     Stopped,
 }
 
+/// How the index answered one discovery commit.
+///
+/// Discovery walks a tree other producers are free to change underneath it, so a refused
+/// commit is usually news about the world rather than a failure of the walk. Only an
+/// engine failure -- a poisoned lock, an exhausted clock, a malformed observation -- is
+/// returned as an error and ends discovery.
+#[derive(Clone, Debug)]
+enum DiscoveryAnswer {
+    /// Committed, or verified to change nothing; the listing continues.
+    Accepted,
+    /// The root is terminal: this commit's upsert crossed the shared file budget, or an
+    /// earlier commit had already stopped or failed the root.
+    Stopped,
+    /// The commit named a directory the index no longer holds, or a child whose ancestry
+    /// it no longer holds. A refresh or the observer verified that part of the tree after
+    /// this directory was queued, so the frontier entry is stale and the newer commit
+    /// stands; whichever producer next verifies the path records what is there now.
+    Stale,
+    /// The index refused this directory's listing on a resource bound that does not stop
+    /// the root. The directory stays incomplete and the refusal is retained as an issue.
+    Refused(crate::Issue),
+}
+
+/// Classify a refused discovery commit, keeping engine failures fatal.
+fn discovery_rejection(error: Error) -> Result<DiscoveryAnswer> {
+    match error {
+        Error::OpenedIndexStopped => Ok(DiscoveryAnswer::Stopped),
+        Error::InvalidDirectoryCompletion(_) | Error::UnknownAncestry { .. } => {
+            Ok(DiscoveryAnswer::Stale)
+        }
+        Error::ControlSourceLimit { .. } | Error::ControlPatternLimit { .. } => {
+            Ok(DiscoveryAnswer::Refused(crate::Issue::from_error(&error)))
+        }
+        error => Err(error),
+    }
+}
+
+/// Stop listing one directory whose commit the index did not accept.
+///
+/// Nothing discovered in the abandoned listing is queued: its subdirectories either left
+/// with the stale parent or were never committed, and a directory whose listing was cut
+/// short is never marked complete, so absence below it stays unknown. A refusal keeps the
+/// issues the listing had already gathered, since the refused batch may have carried them.
+fn abandon_directory(
+    index: &IndexHandle,
+    journal: &journal::JournalWait,
+    frontier: &DiscoveryFrontier,
+    answer: DiscoveryAnswer,
+    mut issues: Vec<crate::Issue>,
+    mut omitted: u64,
+) -> Result<DiscoveryStep> {
+    match answer {
+        DiscoveryAnswer::Accepted | DiscoveryAnswer::Stale => Ok(DiscoveryStep::Continue),
+        DiscoveryAnswer::Stopped => {
+            frontier.stop();
+            Ok(DiscoveryStep::Stopped)
+        }
+        DiscoveryAnswer::Refused(issue) => {
+            retain_local_issue(&mut issues, &mut omitted, issue);
+            publish_discovery_transition(
+                index,
+                journal,
+                DiscoveryTransition::Inaccessible { issues, omitted },
+            )?;
+            Ok(DiscoveryStep::Continue)
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn discover_directory(
     root: &Path,
@@ -950,6 +1124,20 @@ fn discover_directory(
     crate::counters::bump(|c| c.dir_opens += 1);
     let listing = match std::fs::read_dir(&absolute) {
         Ok(listing) => listing,
+        // Removed or replaced after its parent was listed -- a build cache, an editor's
+        // temporary directory. That is stale frontier work, not an inaccessible boundary:
+        // marking the root inaccessible for it would outlive every later verification
+        // that the path is simply gone. The root itself is never stale work; losing it is
+        // a failure of the whole walk.
+        Err(source)
+            if !directory.path.as_os_str().is_empty()
+                && matches!(
+                    source.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                ) =>
+        {
+            return Ok(DiscoveryStep::Continue);
+        }
         Err(source) => {
             let error = Error::io(&absolute, source);
             publish_discovery_transition(
@@ -972,7 +1160,7 @@ fn discover_directory(
 
     for item in listing {
         if cancellation.is_cancelled() {
-            commit_discovery_batch(
+            let answer = commit_discovery_batch(
                 index,
                 journal,
                 &mut batch,
@@ -980,6 +1168,10 @@ fn discover_directory(
                 Some(DiscoveryTransition::Cancelled),
                 budget.max_files,
             )?;
+            if matches!(answer, DiscoveryAnswer::Stale | DiscoveryAnswer::Refused(_)) {
+                // The refused batch carried the transition with it.
+                publish_discovery_transition(index, journal, DiscoveryTransition::Cancelled)?;
+            }
             frontier.stop();
             return Ok(DiscoveryStep::Stopped);
         }
@@ -1035,43 +1227,50 @@ fn discover_directory(
         }
         if !retained {
             if let Some(control) = control {
-                if push_discovery_op(
+                let answer = push_discovery_op(
                     index,
                     journal,
                     scan.batch_size,
                     &mut batch,
                     control,
                     budget.max_files,
-                )? {
-                    frontier.stop();
-                    return Ok(DiscoveryStep::Stopped);
+                )?;
+                if !matches!(answer, DiscoveryAnswer::Accepted) {
+                    return abandon_directory(
+                        index,
+                        journal,
+                        frontier,
+                        answer,
+                        issues,
+                        omitted_issues,
+                    );
                 }
             }
             continue;
         }
 
-        if push_discovery_op(
+        let answer = push_discovery_op(
             index,
             journal,
             scan.batch_size,
             &mut batch,
             Op::Upsert { path: path.clone(), kind, attrs },
             budget.max_files,
-        )? {
-            frontier.stop();
-            return Ok(DiscoveryStep::Stopped);
+        )?;
+        if !matches!(answer, DiscoveryAnswer::Accepted) {
+            return abandon_directory(index, journal, frontier, answer, issues, omitted_issues);
         }
         if let Some(control) = control {
-            if push_discovery_op(
+            let answer = push_discovery_op(
                 index,
                 journal,
                 scan.batch_size,
                 &mut batch,
                 control,
                 budget.max_files,
-            )? {
-                frontier.stop();
-                return Ok(DiscoveryStep::Stopped);
+            )?;
+            if !matches!(answer, DiscoveryAnswer::Accepted) {
+                return abandon_directory(index, journal, frontier, answer, issues, omitted_issues);
             }
         }
         if descend {
@@ -1080,12 +1279,15 @@ fn discover_directory(
     }
 
     let incomplete = !issues.is_empty() || omitted_issues > 0;
-    let transition =
-        incomplete.then_some(DiscoveryTransition::Inaccessible { issues, omitted: omitted_issues });
+    let transition = incomplete.then(|| DiscoveryTransition::Inaccessible {
+        issues: issues.clone(),
+        omitted: omitted_issues,
+    });
     let complete = (!incomplete).then(|| directory.path.clone());
-    if commit_discovery_batch(index, journal, &mut batch, complete, transition, budget.max_files)? {
-        frontier.stop();
-        return Ok(DiscoveryStep::Stopped);
+    let answer =
+        commit_discovery_batch(index, journal, &mut batch, complete, transition, budget.max_files)?;
+    if !matches!(answer, DiscoveryAnswer::Accepted) {
+        return abandon_directory(index, journal, frontier, answer, issues, omitted_issues);
     }
     frontier.extend(discovered);
     Ok(DiscoveryStep::Continue)
@@ -1127,12 +1329,12 @@ fn push_discovery_op(
     batch: &mut Vec<Op>,
     op: Op,
     max_files: Option<u64>,
-) -> Result<bool> {
+) -> Result<DiscoveryAnswer> {
     batch.push(op);
     if batch.len() >= batch_size {
         return commit_discovery_batch(index, journal, batch, None, None, max_files);
     }
-    Ok(false)
+    Ok(DiscoveryAnswer::Accepted)
 }
 
 fn commit_discovery_batch(
@@ -1142,25 +1344,41 @@ fn commit_discovery_batch(
     directory_complete: Option<PathBuf>,
     transition: Option<DiscoveryTransition>,
     max_files: Option<u64>,
-) -> Result<bool> {
+) -> Result<DiscoveryAnswer> {
     let observation = Observation::new(std::mem::take(batch));
-    let outcome = index.apply_discovery_bounded(
+    let outcome = match index.apply_discovery_bounded(
         &observation,
         DiscoveryCommit { directory_complete, transition },
         max_files,
-    )?;
+    ) {
+        Ok(outcome) => outcome,
+        Err(error) => return discovery_rejection(error),
+    };
     if outcome.commit.is_some() {
         journal.notify_commit();
     }
-    Ok(outcome.stats.resource_refused > 0)
+    Ok(if outcome.stats.resource_refused > 0 {
+        DiscoveryAnswer::Stopped
+    } else {
+        DiscoveryAnswer::Accepted
+    })
 }
 
+/// Publish a state-only discovery transition.
+///
+/// A root that has already stopped or failed refuses every discovery commit, and a
+/// transition it refuses has nothing left to say: the terminal state it would have
+/// replaced is the answer.
 fn publish_discovery_transition(
     index: &IndexHandle,
     journal: &journal::JournalWait,
     transition: DiscoveryTransition,
 ) -> Result<()> {
-    let outcome = index.transition_discovery(transition)?;
+    let outcome = match index.transition_discovery(transition) {
+        Ok(outcome) => outcome,
+        Err(Error::OpenedIndexStopped) => return Ok(()),
+        Err(error) => return Err(error),
+    };
     if outcome.commit.is_some() {
         journal.notify_commit();
     }
@@ -1308,7 +1526,24 @@ fn run_observation(
             &control,
             &mut |_commit| journal.notify_commit(),
         ) {
-            Ok(_) => {}
+            Ok(Some(report)) => {
+                // The reconciliation already left what it could not read partial, and that
+                // boundary is settled rather than retried on every later event. Retaining
+                // the causes is what lets a consumer see why.
+                let mut unreadable = HandoffEvidence::default();
+                unreadable.retain(&report.reconciliation);
+                if !unreadable.issues.is_empty() || unreadable.omitted > 0 {
+                    publish_observation_transition(
+                        index,
+                        journal,
+                        crate::index::ObservationTransition::Unreadable {
+                            issues: unreadable.issues,
+                            omitted: unreadable.omitted,
+                        },
+                    )?;
+                }
+            }
+            Ok(None) => {}
             Err(Error::OpenedIndexClosed) if cancellation.is_cancelled() => return Ok(()),
             Err(error) => return Err(error),
         }
@@ -1603,6 +1838,7 @@ enum TestPoint {
     AfterRootDirectory,
     BeforeJournalWait,
     AfterRefreshVerification,
+    DuringTreeProjection,
     #[cfg(feature = "watch")]
     BeforeObservationHandoff,
     #[cfg(feature = "watch")]
@@ -1622,6 +1858,7 @@ struct TestControls {
     after_root_directory: TestGate,
     before_journal_wait: TestGate,
     after_refresh_verification: TestGate,
+    during_tree_projection: TestGate,
     #[cfg(feature = "watch")]
     before_observation_handoff: TestGate,
     #[cfg(feature = "watch")]
@@ -1651,6 +1888,7 @@ impl TestControls {
             TestPoint::AfterRootDirectory => &self.after_root_directory,
             TestPoint::BeforeJournalWait => &self.before_journal_wait,
             TestPoint::AfterRefreshVerification => &self.after_refresh_verification,
+            TestPoint::DuringTreeProjection => &self.during_tree_projection,
             #[cfg(feature = "watch")]
             TestPoint::BeforeObservationHandoff => &self.before_observation_handoff,
             #[cfg(feature = "watch")]
@@ -1747,6 +1985,29 @@ mod tests {
                 return state;
             }
             assert!(std::time::Instant::now() < deadline, "discovery did not settle");
+            std::thread::yield_now();
+        }
+    }
+
+    /// Block until every worker registered under `name` has returned, without closing.
+    ///
+    /// A state that should stay put cannot be awaited by polling for a change, so this
+    /// waits for the worker that might change it to finish instead.
+    fn wait_for_worker_exit(opened: &OpenedIndex, name: &str) {
+        let deadline = std::time::Instant::now() + TEST_GATE_TIMEOUT;
+        loop {
+            let (registered, finished) = {
+                let lifecycle = opened.state.lock_lifecycle();
+                let named = lifecycle.guard.workers.iter().filter(|worker| worker.name == name);
+                named.fold((0, 0), |(registered, finished), worker| {
+                    (registered + 1, finished + usize::from(worker.handle.is_finished()))
+                })
+            };
+            assert!(registered > 0, "no worker named {name}");
+            if registered == finished {
+                return;
+            }
+            assert!(std::time::Instant::now() < deadline, "worker {name} did not exit");
             std::thread::yield_now();
         }
     }
@@ -2107,6 +2368,88 @@ mod tests {
             .expect("child file commit");
         assert_eq!(first_file, PathBuf::from("target/leaf"));
         opened.close().expect("close");
+    }
+
+    /// Grouping by priority changes what a pop costs, never which directory it returns.
+    ///
+    /// The reference is the per-pop scan the frontier used to run: the pending directory
+    /// whose first matching priority is earliest, ties broken by queue position, and
+    /// otherwise the front of the queue. A deterministic mix of pops that queue children,
+    /// arbitrary extends, and priority changes must pop the same sequence from both.
+    #[test]
+    fn the_grouped_frontier_pops_in_the_order_the_scan_chose() {
+        fn reference_pop(
+            pending: &mut VecDeque<PendingDirectory>,
+            priorities: &[PathBuf],
+        ) -> Option<PendingDirectory> {
+            let selected = pending
+                .iter()
+                .enumerate()
+                .filter_map(|(position, entry)| {
+                    priorities
+                        .iter()
+                        .position(|priority| {
+                            priority.starts_with(&entry.path) || entry.path.starts_with(priority)
+                        })
+                        .map(|priority| (priority, position))
+                })
+                .min()
+                .map_or(0, |(_, position)| position);
+            pending.remove(selected)
+        }
+
+        const PATHS: [&str; 7] = ["a", "b", "a/b", "b/a", "a/b/c", "c", "c/a/b"];
+        let mut seed = 0x2545_f491_4f6c_dd1d_u64;
+        let mut next = move |bound: usize| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            usize::try_from(seed % u64::try_from(bound).expect("small bound")).expect("fits")
+        };
+        let frontier = DiscoveryFrontier::new();
+        let mut reference = VecDeque::from([PendingDirectory { path: PathBuf::new(), depth: 0 }]);
+        let mut priorities = Vec::new();
+        for step in 0..4_000 {
+            match next(10) {
+                0..=4 => {
+                    let expected = reference_pop(&mut reference, &priorities);
+                    let actual = frontier.pop();
+                    assert_eq!(
+                        actual.as_ref().map(|directory| &directory.path),
+                        expected.as_ref().map(|directory| &directory.path),
+                        "step {step}"
+                    );
+                    if let Some(parent) = expected {
+                        let children: Vec<_> = (0..next(3))
+                            .map(|child| PendingDirectory {
+                                path: parent.path.join(["a", "b", "c"][child]),
+                                depth: parent.depth + 1,
+                            })
+                            .collect();
+                        reference.extend(children.iter().cloned());
+                        frontier.extend(children);
+                    }
+                }
+                5..=7 => {
+                    let directory =
+                        PendingDirectory { path: PathBuf::from(PATHS[next(7)]), depth: 1 };
+                    reference.push_back(directory.clone());
+                    frontier.extend([directory]);
+                }
+                _ => {
+                    let mut chosen: Vec<_> =
+                        (0..next(4)).map(|_| PathBuf::from(PATHS[next(7)])).collect();
+                    chosen.sort();
+                    chosen.dedup();
+                    frontier.prioritize(chosen.clone());
+                    priorities = chosen;
+                }
+            }
+        }
+        while let Some(expected) = reference_pop(&mut reference, &priorities) {
+            assert_eq!(frontier.pop().map(|directory| directory.path), Some(expected.path));
+        }
+        assert!(frontier.pop().is_none());
     }
 
     #[test]
@@ -2500,6 +2843,64 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// A tree page and a roll-up on a retained file both say it is not a directory.
+    ///
+    /// They used to contradict the lookup of the same path on a complete root: the tree
+    /// answered `Absent`, which claims coverage proves the path missing, and the roll-up
+    /// answered `Unknown { reason: Building }`, which a caller polling for an answer would
+    /// wait on forever.
+    #[test]
+    fn directory_projections_on_a_present_file_say_it_is_not_a_directory() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![Op::Upsert {
+                path: PathBuf::from("README.md"),
+                kind: EntryKind::File,
+                attrs: crate::Attrs { size: 5, ..crate::Attrs::default() },
+            }]))
+            .expect("seed file");
+        let state = opened.state.index.state().expect("state");
+        assert_eq!(state.coverage, crate::Coverage::Complete);
+        let read = |projection| {
+            opened.read(crate::ReadRequest {
+                projections: vec![projection],
+                ..crate::ReadRequest::default()
+            })
+        };
+
+        assert!(matches!(
+            read(crate::ReadProjection::Lookup { path: PathBuf::from("README.md") })
+                .expect("lookup")
+                .results[0],
+            crate::ProjectionResult::Lookup(crate::Knowledge::Present(_))
+        ));
+        let tree = read(crate::ReadProjection::Tree {
+            path: PathBuf::from("README.md"),
+            depth: crate::query::Bound::Limit(1),
+            include_ignored: true,
+            page: crate::PageRequest { limit: 16, max_work: 64 },
+        });
+        assert!(
+            matches!(&tree, Err(Error::NotADirectory(path)) if path == Path::new("README.md")),
+            "{tree:?}"
+        );
+        let rollup = read(crate::ReadProjection::RollUp { path: PathBuf::from("README.md") });
+        assert!(
+            matches!(&rollup, Err(Error::NotADirectory(path)) if path == Path::new("README.md")),
+            "{rollup:?}"
+        );
+        // Below a file nothing can exist, and a complete root can say so.
+        assert!(matches!(
+            read(crate::ReadProjection::RollUp { path: PathBuf::from("README.md/inner") })
+                .expect("rollup below a file")
+                .results[0],
+            crate::ProjectionResult::RollUp(crate::Knowledge::Absent)
+        ));
+        opened.close().expect("close");
+    }
+
     #[test]
     fn mixed_read_preserves_projection_order_and_uses_maintained_rollups() {
         let (_root, opened) = opened(Arc::new(TestControls::default()));
@@ -2672,6 +3073,185 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// A full page is an answer, whatever the budget left over after filling it.
+    ///
+    /// The page used to keep scanning past its last row for the next *admitted* entry to
+    /// name as its cursor, charging the budget as it went, and a budget that ran out during
+    /// that look-ahead returned `Limit` and threw the finished page away. The same request at
+    /// the same budget did the same thing forever, so a fixed-budget client could not page
+    /// past a run of unselected entries. Swept rather than named, because the defect lived
+    /// in a band of budgets rather than at one value.
+    #[test]
+    fn a_full_flat_page_survives_any_budget_that_filled_it() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        let file = |name: &str| Op::Upsert {
+            path: PathBuf::from(name),
+            kind: EntryKind::File,
+            attrs: crate::Attrs::default(),
+        };
+        let mut ops = vec![file("a0.rs"), file("a1.rs")];
+        ops.extend((0..5).map(|i| file(&format!("b{i}.txt"))));
+        ops.push(file("c.rs"));
+        opened.state.index.apply(&Observation::new(ops)).expect("seed entries");
+        let selection = crate::query::EntrySelection {
+            query: crate::query::Selection {
+                include: vec![crate::query::Pattern::parse("*.rs").expect("pattern")],
+                ..crate::query::Selection::default()
+            },
+            ..crate::query::EntrySelection::default()
+        };
+        let rows = |page: &crate::FlatPage| {
+            page.rows.iter().map(|row| row.portable_path.as_str().to_string()).collect::<Vec<_>>()
+        };
+
+        for max_work in 1..=12 {
+            let first = opened
+                .read(crate::ReadRequest {
+                    projections: vec![crate::ReadProjection::Flat {
+                        selection: selection.clone(),
+                        shape: crate::RowShape::Compact,
+                        page: crate::PageRequest { limit: 2, max_work },
+                    }],
+                    ..crate::ReadRequest::default()
+                })
+                .expect("first page");
+            if max_work < 2 {
+                // Too small to fill the page: no position to name, so a typed limit.
+                assert!(
+                    matches!(first.results[0], crate::ProjectionResult::Limit(_)),
+                    "max_work {max_work}: {:?}",
+                    first.results[0]
+                );
+                continue;
+            }
+            let crate::ProjectionResult::Flat(first_page) = &first.results[0] else {
+                panic!("max_work {max_work}: a full page was refused: {:?}", first.results[0]);
+            };
+            assert_eq!(rows(first_page), ["a0.rs", "a1.rs"], "max_work {max_work}");
+            assert!(first.work.rows_visited <= max_work, "max_work {max_work}: {:?}", first.work);
+            let continuation = first_page.next.expect("the page stopped with rows left");
+
+            let second = opened
+                .read(crate::ReadRequest {
+                    projections: vec![crate::ReadProjection::Continue {
+                        continuation,
+                        page: crate::PageRequest { limit: 2, max_work: crate::MAX_PAGE_WORK },
+                    }],
+                    expected: Some(first.version),
+                })
+                .expect("second page");
+            let crate::ProjectionResult::Flat(second_page) = &second.results[0] else {
+                panic!("max_work {max_work}: continued flat page: {:?}", second.results[0]);
+            };
+            assert_eq!(rows(second_page), ["c.rs"], "max_work {max_work}");
+            assert!(second_page.next.is_none(), "max_work {max_work}");
+        }
+        opened.close().expect("close");
+    }
+
+    /// Two reads proceed together: a page in progress does not hold the lifecycle lock.
+    ///
+    /// `read()` used to bind the lifecycle guard and project as its tail expression, so the
+    /// guard lived until the page returned. Every read then excluded every other read, and
+    /// refresh, worker registration, and the start of close, for up to a full page of work.
+    #[test]
+    fn a_read_proceeds_while_another_read_is_projecting() {
+        let controls = Arc::new(TestControls::default());
+        let (_root, opened) = opened(Arc::clone(&controls));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![Op::Upsert {
+                path: PathBuf::from("a.txt"),
+                kind: EntryKind::File,
+                attrs: crate::Attrs::default(),
+            }]))
+            .expect("seed entry");
+        controls.gate(TestPoint::DuringTreeProjection).arm();
+        let tree_reader = opened.clone();
+        let tree = thread::spawn(move || {
+            tree_reader.read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Tree {
+                    path: PathBuf::new(),
+                    depth: crate::query::Bound::Limit(1),
+                    include_ignored: true,
+                    page: crate::PageRequest { limit: 16, max_work: 64 },
+                }],
+                ..crate::ReadRequest::default()
+            })
+        });
+        controls.gate(TestPoint::DuringTreeProjection).wait_reached();
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let lookup_reader = opened.clone();
+        let lookup = thread::spawn(move || {
+            let _ = sender.send(lookup_reader.read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Lookup { path: PathBuf::from("a.txt") }],
+                ..crate::ReadRequest::default()
+            }));
+        });
+        let concurrent = receiver.recv_timeout(TEST_GATE_TIMEOUT);
+        controls.gate(TestPoint::DuringTreeProjection).release();
+        let concurrent = concurrent.expect("a second read finished while the first projected");
+        assert!(matches!(
+            concurrent.expect("lookup").results[0],
+            crate::ProjectionResult::Lookup(crate::Knowledge::Present(_))
+        ));
+        lookup.join().expect("lookup thread");
+        tree.join().expect("tree thread").expect("tree page");
+        opened.close().expect("close");
+    }
+
+    /// A page that finishes after close began cannot leave a continuation in a closed root.
+    #[test]
+    fn a_read_racing_close_leaves_no_continuation_behind() {
+        let controls = Arc::new(TestControls::default());
+        let (_root, opened) = opened(Arc::clone(&controls));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("a.txt"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("b.txt"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs::default(),
+                },
+            ]))
+            .expect("seed entries");
+        controls.gate(TestPoint::DuringTreeProjection).arm();
+        let reader = opened.clone();
+        let page = thread::spawn(move || {
+            reader.read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Tree {
+                    path: PathBuf::new(),
+                    depth: crate::query::Bound::Limit(1),
+                    include_ignored: true,
+                    page: crate::PageRequest { limit: 1, max_work: 64 },
+                }],
+                ..crate::ReadRequest::default()
+            })
+        });
+        controls.gate(TestPoint::DuringTreeProjection).wait_reached();
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let closer = opened.clone();
+        let close = thread::spawn(move || {
+            let _ = sender.send(closer.close());
+        });
+        let shutdown = receiver.recv_timeout(TEST_GATE_TIMEOUT);
+        controls.gate(TestPoint::DuringTreeProjection).release();
+        shutdown.expect("close did not wait for a read in progress").expect("close");
+        close.join().expect("close thread");
+
+        assert!(matches!(page.join().expect("page thread"), Err(Error::OpenedIndexClosed)));
+        assert_eq!(opened.state.continuations.lock().expect("continuations").len(), 0);
+    }
+
     #[test]
     fn flat_continuation_retains_its_normalized_native_query() {
         let (_root, opened) = opened(Arc::new(TestControls::default()));
@@ -2723,7 +3303,7 @@ mod tests {
             .read(crate::ReadRequest {
                 projections: vec![crate::ReadProjection::Continue {
                     continuation: first_page.next.expect("continuation"),
-                    page: crate::PageRequest { limit: 1, max_work: 1 },
+                    page: crate::PageRequest { limit: 1, max_work: 2 },
                 }],
                 expected: Some(first.version),
             })
@@ -2733,7 +3313,10 @@ mod tests {
         };
         assert_eq!(second_page.rows[0].portable_path.as_str(), "c.rs");
         assert!(second_page.next.is_none());
-        assert_eq!(second.work.rows_visited, 1);
+        // The full first page stopped at `b.txt`, the first entry it had not examined, so
+        // the resumed page is the one that pays to re-evaluate and skip it under the
+        // retained `*.rs` selection before reaching `c.rs`.
+        assert_eq!(second.work.rows_visited, 2);
         opened.close().expect("close");
     }
 
@@ -2808,11 +3391,13 @@ mod tests {
         ));
 
         let retryable = new_token();
+        // Two rows on a budget of one: the budget runs out before the page fills, so there
+        // is no position to name. A one-row page would fill on its first entry and return.
         let limited = opened
             .read(crate::ReadRequest {
                 projections: vec![crate::ReadProjection::Continue {
                     continuation: retryable,
-                    page: crate::PageRequest { limit: 1, max_work: 1 },
+                    page: crate::PageRequest { limit: 2, max_work: 1 },
                 }],
                 ..crate::ReadRequest::default()
             })
@@ -4243,6 +4828,168 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// A directory another producer removed while it waited in the frontier is stale work.
+    ///
+    /// Discovery queues `sub` from the root listing. While it waits -- minutes, on a wide
+    /// breadth-first walk -- `sub` is deleted, a refresh commits the removal, and `sub` is
+    /// recreated. Discovery then lists the new directory and commits it beneath a parent the
+    /// index no longer holds. That rejection used to end discovery as `Failed`, so
+    /// observation never started and `close()` reported a worker failure. Both commit shapes
+    /// are covered: with a batch of one the first flush fails on the child's ancestry, and
+    /// with the default batch the final commit fails naming the directory complete.
+    #[test]
+    fn a_refresh_racing_discovery_leaves_the_queued_directory_as_stale_work() {
+        for batch_size in [1, OpenOptions::default().batch_size] {
+            let controls = Arc::new(TestControls::default());
+            controls.gate(TestPoint::AfterRootDirectory).arm();
+            let root = tempfile::tempdir().expect("temp root");
+            std::fs::create_dir(root.path().join("sub")).expect("sub");
+            std::fs::write(root.path().join("sub/inner.txt"), b"x").expect("fixture");
+            let opened = OpenedIndex::open_for_test(
+                root.path(),
+                OpenOptions { batch_size, ..OpenOptions::default() },
+                Arc::clone(&controls),
+            )
+            .expect("open");
+            controls.gate(TestPoint::AfterRootDirectory).wait_reached();
+            assert_eq!(
+                opened.state.index.kind(Path::new("sub")).expect("lookup"),
+                Some(EntryKind::Dir),
+                "the root listing queued `sub`"
+            );
+
+            std::fs::remove_dir_all(root.path().join("sub")).expect("remove sub");
+            let refreshed = opened.refresh(&[PathBuf::from("sub")]).expect("refresh");
+            assert_eq!(refreshed.accepted, vec![PathBuf::from("sub")]);
+            std::fs::create_dir(root.path().join("sub")).expect("recreate sub");
+            std::fs::write(root.path().join("sub/again.txt"), b"y").expect("fixture");
+            controls.gate(TestPoint::AfterRootDirectory).release();
+
+            let state = wait_until_settled(&opened);
+            assert_eq!(state.phase, crate::LifecyclePhase::Ready, "batch size {batch_size}");
+            assert_eq!(state.coverage, crate::Coverage::Complete, "batch size {batch_size}");
+            assert_eq!(state.issues.retained, 0, "batch size {batch_size}");
+            // The refresh's verified removal stands. The recreated directory belongs to the
+            // next producer that verifies the path, not to a frontier entry older than it.
+            assert_eq!(opened.state.index.kind(Path::new("sub")).expect("lookup"), None);
+            opened.close().unwrap_or_else(|error| panic!("batch size {batch_size}: {error}"));
+        }
+    }
+
+    /// A directory removed or replaced between its parent's listing and its own is stale
+    /// work, not an inaccessible boundary that outlives every later verification.
+    #[test]
+    fn a_directory_that_vanishes_during_discovery_is_not_inaccessible() {
+        for replace_with_file in [false, true] {
+            let controls = Arc::new(TestControls::default());
+            controls.gate(TestPoint::AfterRootDirectory).arm();
+            let root = tempfile::tempdir().expect("temp root");
+            std::fs::create_dir(root.path().join("sub")).expect("sub");
+            std::fs::write(root.path().join("sub/inner.txt"), b"x").expect("fixture");
+            std::fs::write(root.path().join("keep.txt"), b"k").expect("fixture");
+            let opened = OpenedIndex::open_for_test(
+                root.path(),
+                OpenOptions::default(),
+                Arc::clone(&controls),
+            )
+            .expect("open");
+            controls.gate(TestPoint::AfterRootDirectory).wait_reached();
+            std::fs::remove_dir_all(root.path().join("sub")).expect("remove sub");
+            if replace_with_file {
+                std::fs::write(root.path().join("sub"), b"now a file").expect("replacement");
+            }
+            controls.gate(TestPoint::AfterRootDirectory).release();
+
+            let state = wait_until_settled(&opened);
+            let case = if replace_with_file { "replaced by a file" } else { "removed" };
+            assert_eq!(state.phase, crate::LifecyclePhase::Ready, "{case}");
+            assert_eq!(state.coverage, crate::Coverage::Complete, "{case}");
+            assert_eq!(state.freshness, crate::Freshness::Fresh, "{case}");
+            assert_eq!(state.issues.retained, 0, "{case}");
+            opened.close().unwrap_or_else(|error| panic!("{case}: {error}"));
+        }
+    }
+
+    /// A budget stop is terminal even when it lands in the middle of discovery.
+    ///
+    /// A refresh trips the shared budget while discovery still has a file-less directory
+    /// queued. Nothing that directory holds is refused, so discovery used to run on to
+    /// `Finish`, which set the phase `Ready` unconditionally: `prioritize` succeeded again and
+    /// an observer could have reached `Watching` with budget-partial coverage.
+    #[test]
+    fn a_budget_stop_during_discovery_stays_terminal() {
+        let controls = Arc::new(TestControls::default());
+        controls.gate(TestPoint::AfterRootDirectory).arm();
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::write(root.path().join("a.txt"), b"a").expect("fixture");
+        std::fs::create_dir(root.path().join("emptydir")).expect("fixture");
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            OpenOptions {
+                budget: DiscoveryBudget { max_files: Some(1) },
+                ..OpenOptions::default()
+            },
+            Arc::clone(&controls),
+        )
+        .expect("open");
+        controls.gate(TestPoint::AfterRootDirectory).wait_reached();
+        std::fs::write(root.path().join("b.txt"), b"b").expect("over budget");
+        let refreshed = opened.refresh(&[PathBuf::from("b.txt")]).expect("refresh");
+        assert_eq!(refreshed.work.resource_refused, 1);
+        assert_eq!(refreshed.state.phase, crate::LifecyclePhase::Stopped);
+        controls.gate(TestPoint::AfterRootDirectory).release();
+
+        wait_for_worker_exit(&opened, "discovery");
+        let state = opened.state.index.state().expect("state");
+        assert_eq!(state.phase, crate::LifecyclePhase::Stopped);
+        assert_eq!(state.coverage, crate::Coverage::Partial(crate::CoverageReason::Budget));
+        assert_eq!(
+            opened.state.index.directory_complete(Path::new("emptydir")).expect("lookup"),
+            Some(false),
+            "a listing that arrives after the stop must not land"
+        );
+        assert!(matches!(
+            opened.prioritize(&[PathBuf::from("emptydir")]),
+            Err(Error::OpenedIndexStopped)
+        ));
+        opened.close().expect("close");
+    }
+
+    /// A control-table bound refuses one directory's listing; it does not end discovery.
+    ///
+    /// Pins the interim behavior until control bounds degrade precisely (`fdu-1onj`): the
+    /// refused directory stays incomplete, its refusal is a retained issue, coverage is
+    /// partial, and every other directory is still discovered.
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn a_control_bound_refuses_one_directory_without_ending_discovery() {
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::create_dir(root.path().join("a")).expect("fixture");
+        let mut line = vec![b'x'; crate::control::MAX_CONTROL_PATTERN_BYTES + 1];
+        line.push(b'\n');
+        std::fs::write(root.path().join("a").join(crate::control::CONTROL_FILE_NAME), &line)
+            .expect("oversized control");
+        std::fs::write(root.path().join("a/inside.txt"), b"i").expect("fixture");
+        std::fs::create_dir(root.path().join("b")).expect("fixture");
+        std::fs::write(root.path().join("b/kept.txt"), b"k").expect("fixture");
+
+        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("open");
+        let state = wait_until_settled(&opened);
+        assert_eq!(state.phase, crate::LifecyclePhase::Ready);
+        assert_eq!(state.coverage, crate::Coverage::Partial(crate::CoverageReason::Inaccessible));
+        let issues = opened.state.index.issues().expect("issues");
+        assert!(
+            issues.iter().any(|issue| issue.message.contains("control pattern requires")),
+            "{issues:?}"
+        );
+        assert_eq!(opened.state.index.directory_complete(Path::new("a")).expect("a"), Some(false));
+        assert_eq!(
+            opened.state.index.kind(Path::new("b/kept.txt")).expect("lookup"),
+            Some(EntryKind::File)
+        );
+        opened.close().expect("close");
+    }
+
     #[test]
     fn refresh_rejects_an_unbounded_input_before_filesystem_work() {
         let root = tempfile::tempdir().expect("temp root");
@@ -4404,6 +5151,95 @@ mod tests {
         assert_eq!(state.coverage, crate::Coverage::Partial(crate::CoverageReason::Inaccessible));
         assert_eq!(state.freshness, crate::Freshness::Partial);
         assert!(state.issues.retained > 0);
+        opened.close().expect("close");
+    }
+
+    /// A boundary discovery could not read, and the handoff then read cleanly, is gone.
+    ///
+    /// Discovery records `blocked` as inaccessible; it becomes readable before the
+    /// observation handoff, whose full pass then lists it without an error. `Finish` only
+    /// ever upgraded a building root and `Watching` never upgraded coverage at all, so the
+    /// root stayed partial for the life of the session after a pass proving otherwise.
+    #[cfg(all(unix, feature = "watch"))]
+    #[test]
+    fn watching_after_a_clean_handoff_rederives_complete_coverage() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"").expect("script");
+        let blocked = root.path().join("blocked");
+        std::fs::create_dir(&blocked).expect("blocked directory");
+        std::fs::write(blocked.join("secret"), b"secret").expect("fixture");
+        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o000))
+            .expect("make directory inaccessible");
+        let controls = Arc::new(TestControls::default());
+        controls.gate(TestPoint::BeforeObservationHandoff).arm();
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            scripted_options(&script),
+            Arc::clone(&controls),
+        )
+        .expect("open");
+        controls.gate(TestPoint::BeforeObservationHandoff).wait_reached();
+        let discovered = opened.state.index.state().expect("state after discovery");
+        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o700))
+            .expect("restore directory permissions");
+        controls.gate(TestPoint::BeforeObservationHandoff).release();
+
+        let state = wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+        assert_eq!(
+            discovered.coverage,
+            crate::Coverage::Partial(crate::CoverageReason::Inaccessible)
+        );
+        assert_eq!(state.coverage, crate::Coverage::Complete);
+        assert_eq!(state.freshness, crate::Freshness::Fresh);
+        assert_eq!(
+            opened.state.index.kind(Path::new("blocked/secret")).expect("lookup"),
+            Some(EntryKind::File),
+            "the handoff read the formerly inaccessible directory"
+        );
+        opened.close().expect("close");
+    }
+
+    /// A directory deleted during discovery leaves a watched root complete.
+    #[cfg(feature = "watch")]
+    #[test]
+    fn a_directory_that_vanishes_during_discovery_leaves_a_watched_root_complete() {
+        let controls = Arc::new(TestControls::default());
+        controls.gate(TestPoint::AfterRootDirectory).arm();
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"").expect("script");
+        std::fs::create_dir(root.path().join("sub")).expect("sub");
+        std::fs::write(root.path().join("sub/inner.txt"), b"x").expect("fixture");
+        std::fs::write(root.path().join("keep.txt"), b"k").expect("fixture");
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            scripted_options(&script),
+            Arc::clone(&controls),
+        )
+        .expect("open");
+        controls.gate(TestPoint::AfterRootDirectory).wait_reached();
+        std::fs::remove_dir_all(root.path().join("sub")).expect("remove sub during discovery");
+        controls.gate(TestPoint::AfterRootDirectory).release();
+
+        let state = wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+        assert_eq!(state.coverage, crate::Coverage::Complete);
+        assert_eq!(state.freshness, crate::Freshness::Fresh);
+        assert_eq!(state.issues.retained, 0);
+        assert_eq!(
+            opened.state.index.kind(Path::new("sub")).expect("lookup"),
+            None,
+            "the handoff pass removed the vanished directory"
+        );
+        assert_eq!(opened.state.index.directory_complete(Path::new("")).expect("root"), Some(true));
         opened.close().expect("close");
     }
 
@@ -4634,6 +5470,98 @@ mod tests {
                 .expect("issues")
                 .iter()
                 .any(|issue| issue.kind == crate::IssueKind::ObservationGap)
+        );
+        opened.close().expect("close");
+    }
+
+    #[cfg(all(unix, feature = "watch"))]
+    fn reconciles_of(opened: &OpenedIndex, since: crate::EngineVersion, path: &Path) -> usize {
+        opened
+            .state
+            .index
+            .since(since.sequence)
+            .expect("journal")
+            .commits
+            .iter()
+            .flat_map(|commit| commit.state.iter())
+            .filter(|transition| {
+                matches!(
+                    transition,
+                    crate::StateTransition::Freshness { path: marked, current, .. }
+                        if marked == path && *current == crate::Freshness::Reconciling
+                )
+            })
+            .count()
+    }
+
+    /// A gap over an unreadable directory is walked once, and its cause is retained.
+    ///
+    /// The walk's permission error made the reconciliation incomplete, so the invalidation
+    /// was restored, and the observer drains that queue after every event: each unrelated
+    /// event re-walked the same unreadable subtree, forever -- a full-tree walk per event
+    /// for a root escalation. The report was then discarded, so the resulting partial
+    /// freshness had no issue to explain it.
+    #[cfg(all(unix, feature = "watch"))]
+    #[test]
+    fn an_unreadable_gap_is_walked_once_and_explains_itself() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"").expect("script");
+        let blocked = root.path().join("blocked");
+        std::fs::create_dir(&blocked).expect("blocked");
+        std::fs::write(blocked.join("secret"), b"s").expect("fixture");
+        let controls = Arc::new(TestControls::default());
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            scripted_options(&script),
+            Arc::clone(&controls),
+        )
+        .expect("open scripted observer");
+        let watching = wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+        assert_eq!(watching.freshness, crate::Freshness::Fresh);
+        let start = current_version(&opened);
+
+        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o000))
+            .expect("make directory inaccessible");
+        controls.send_observation_hints("rescan\tblocked\n");
+        let deadline = std::time::Instant::now() + TEST_GATE_TIMEOUT;
+        while reconciles_of(&opened, start, Path::new("blocked")) < 1 {
+            assert!(std::time::Instant::now() < deadline, "the gap was not reconciled");
+            std::thread::yield_now();
+        }
+
+        // Two later events elsewhere. Once the second has landed, the drain that followed
+        // the first has finished, so any re-walk it did is already in the journal.
+        for name in ["live.txt", "marker.txt"] {
+            std::fs::write(root.path().join(name), name).expect("unrelated mutation");
+            controls.send_observation_hints(&format!("create\t{name}\n"));
+            let deadline = std::time::Instant::now() + TEST_GATE_TIMEOUT;
+            while opened.state.index.kind(Path::new(name)).expect("lookup") != Some(EntryKind::File)
+            {
+                assert!(std::time::Instant::now() < deadline, "{name} was not applied");
+                std::thread::yield_now();
+            }
+        }
+
+        let walks = reconciles_of(&opened, start, Path::new("blocked"));
+        let state = opened.state.index.state().expect("state");
+        let issues = opened.state.index.issues().expect("issues");
+        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o700))
+            .expect("restore directory permissions");
+        assert_eq!(walks, 1, "an unreadable subtree must not be re-walked per unrelated event");
+        assert_eq!(state.phase, crate::LifecyclePhase::Watching);
+        assert_eq!(state.freshness, crate::Freshness::Partial);
+        assert!(
+            issues.iter().any(|issue| issue.kind == crate::IssueKind::Permission
+                && issue.path.as_deref().is_some_and(|path| path.ends_with("blocked"))),
+            "{issues:?}"
         );
         opened.close().expect("close");
     }

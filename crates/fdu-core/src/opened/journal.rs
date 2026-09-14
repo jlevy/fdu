@@ -18,6 +18,10 @@ pub(super) struct JournalWait {
 #[derive(Default)]
 struct WaitState {
     closed: bool,
+    /// Polls blocked in the wait right now, so a session golden can observe that none
+    /// outlives close instead of asserting it.
+    #[cfg(all(test, feature = "watch", feature = "gitignore"))]
+    waiters: usize,
 }
 
 impl JournalWait {
@@ -37,6 +41,11 @@ impl JournalWait {
         let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         state.closed = true;
         self.changed.notify_all();
+    }
+
+    #[cfg(all(test, feature = "watch", feature = "gitignore"))]
+    pub(super) fn waiters(&self) -> usize {
+        self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner).waiters
     }
 }
 
@@ -87,6 +96,10 @@ pub(super) fn poll(opened: &OpenedIndex, request: ChangeRequest) -> Result<Chang
         }
         #[cfg(test)]
         opened.state.test_controls.reach(super::TestPoint::BeforeJournalWait);
+        #[cfg(all(test, feature = "watch", feature = "gitignore"))]
+        {
+            wait.waiters += 1;
+        }
         let (next, _) = opened
             .state
             .journal
@@ -94,6 +107,10 @@ pub(super) fn poll(opened: &OpenedIndex, request: ChangeRequest) -> Result<Chang
             .wait_timeout(wait, remaining)
             .map_err(|_| Error::OpenedJournalPoisoned)?;
         wait = next;
+        #[cfg(all(test, feature = "watch", feature = "gitignore"))]
+        {
+            wait.waiters -= 1;
+        }
     }
 }
 

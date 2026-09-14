@@ -908,6 +908,21 @@ impl ReconcileTarget<'_> {
         Ok(())
     }
 
+    /// Whether an invalidation whose reconciliation came back incomplete is queued again.
+    ///
+    /// A caller of the one-shot and shared APIs drains the queue when it chooses, so an
+    /// unreadable subtree stays queued for it to retry. An opened root drains it after
+    /// every observed event, where that retry is a full walk of the same unreadable subtree
+    /// per unrelated event, for the life of the session. There only a lost race is worth
+    /// retrying -- a stale conditional commit, or one the budget refused. A scan error is a
+    /// settled boundary: the subtree stays partial, as it does at the observation handoff.
+    fn retries_incomplete(&self, report: &ReconcileReport) -> bool {
+        match self {
+            Self::Direct(_) | Self::Shared(_) => !report.is_complete(),
+            Self::Controlled { .. } => report.apply.stale > 0 || report.apply.resource_refused > 0,
+        }
+    }
+
     fn begin_reconcile(&mut self, path: &Path) -> Result<(u64, Option<Commit>)> {
         match self {
             Self::Direct(index) => index.begin_reconcile(path),
@@ -4172,7 +4187,7 @@ fn reconcile_pending_target(
     for (position, (root, reason)) in roots.iter().enumerate() {
         match reconcile_target(target, root, config, sink) {
             Ok(report) => {
-                if !report.is_complete() {
+                if target.retries_incomplete(&report) {
                     target.restore_pending_invalidations(vec![(root.clone(), *reason)])?;
                 }
                 merge_reconcile_report(&mut combined, report);

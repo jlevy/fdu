@@ -148,7 +148,10 @@ const isSummaryRow = (line) => line.includes("1 file, 0 directories");
 // can pin. This section's contract is where the separator falls. The sibling
 // `watch-capture` helper pins the change vocabulary, and it needs no filter because it
 // matches each record by exact path and operation.
-const isInvalidation = (line) => line.endsWith("\tinvalidate");
+//
+// Only that exact line: the root's invalidation. An invalidation of any named path is
+// not explained by the contention above, so it stays in the capture and fails the golden.
+const isInvalidation = (line) => line === "\tinvalidate";
 
 try {
   // Waiting for the initial report whole is what proves the watcher is bound before the

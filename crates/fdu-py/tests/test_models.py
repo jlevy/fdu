@@ -20,6 +20,7 @@ from fdu import (
 )
 from fdu._api import FduError, FilesystemError, InvalidArgumentError, _call, _query_kwargs
 from fdu._models import report_from_dict
+from fdu.opened import _opened_call
 
 
 def test_public_options_are_typed_immutable_values() -> None:
@@ -117,3 +118,25 @@ def test_native_failures_use_the_public_exception_hierarchy(
 
     with pytest.raises(public_error):
         _call(fail)
+
+
+@pytest.mark.parametrize(
+    ("native_error", "public_error"),
+    [
+        (ValueError("bad option"), InvalidArgumentError),
+        (OverflowError("can't convert negative int to unsigned"), InvalidArgumentError),
+        (OSError(2, "missing", "root"), FilesystemError),
+        # A poisoned index, or any other operational failure the binding does not type,
+        # is still an opened-root failure a caller can catch as one.
+        (RuntimeError("index lock poisoned"), opened.OpenedIndexError),
+    ],
+)
+def test_opened_failures_use_the_opened_exception_hierarchy(
+    native_error: Exception,
+    public_error: type[Exception],
+) -> None:
+    def fail() -> None:
+        raise native_error
+
+    with pytest.raises(public_error):
+        _opened_call(fail)

@@ -85,11 +85,19 @@ pub(super) struct ContinuationTable {
     next: u64,
     records: BTreeMap<u64, ContinuationRecord>,
     order: VecDeque<u64>,
+    /// Set once by shutdown. Reads do not hold the lifecycle lock while they project, so
+    /// one that passed the open check can reach this table after shutdown emptied it.
+    closed: bool,
 }
 
 impl Default for ContinuationTable {
     fn default() -> Self {
-        Self { next: FIRST_CONTINUATION_ORDINAL, records: BTreeMap::new(), order: VecDeque::new() }
+        Self {
+            next: FIRST_CONTINUATION_ORDINAL,
+            records: BTreeMap::new(),
+            order: VecDeque::new(),
+            closed: false,
+        }
     }
 }
 
@@ -99,6 +107,9 @@ impl ContinuationTable {
         session: SessionId,
         record: ContinuationRecord,
     ) -> Result<ContinuationId> {
+        if self.closed {
+            return Err(Error::OpenedIndexClosed);
+        }
         let retained_bytes = record.retained_bytes();
         if retained_bytes > crate::MAX_CONTINUATION_RECORD_BYTES {
             return Err(Error::ContinuationRecordLimit {
@@ -108,7 +119,10 @@ impl ContinuationTable {
         }
         let ordinal = self.next;
         self.next = self.next.checked_add(1).ok_or(Error::ContinuationIdentityExhausted)?;
-        if self.records.len() == MAX_CONTINUATIONS {
+        // At or above the bound, not exactly at it: a check for equality stops firing for
+        // good the first time anything overshoots, and then the table grows by one record
+        // per page with nothing left to bound it.
+        while self.records.len() >= MAX_CONTINUATIONS {
             let evicted = self.order.pop_front().expect("a full table has an oldest record");
             self.records.remove(&evicted);
         }
@@ -133,17 +147,33 @@ impl ContinuationTable {
     }
 
     /// Restore a consumed continuation after a bounded projection returns no page.
+    ///
+    /// The restored record goes back as the oldest, and eviction takes the oldest first, so
+    /// when other pages have filled the table since it was taken, restoring it would evict
+    /// exactly this record. It is dropped instead, as an eviction, and the token reads as
+    /// unavailable -- never as a record past the table's bound.
     pub(super) fn restore(&mut self, continuation: ContinuationId, record: ContinuationRecord) {
         debug_assert!(!self.records.contains_key(&continuation.ordinal));
+        if self.closed || self.records.len() >= MAX_CONTINUATIONS {
+            return;
+        }
         self.records.insert(continuation.ordinal, record);
         // A repeatedly underfunded token must not become immortal merely because it was
         // retried; keeping it oldest preserves the table's original eviction pressure.
         self.order.push_front(continuation.ordinal);
     }
 
-    pub(super) fn clear(&mut self) {
+    /// Drop every record and refuse new ones, as part of shutdown.
+    pub(super) fn close(&mut self) {
+        self.closed = true;
         self.records.clear();
         self.order.clear();
+    }
+
+    #[cfg(test)]
+    pub(super) fn len(&self) -> usize {
+        debug_assert_eq!(self.records.len(), self.order.len());
+        self.records.len()
     }
 }
 
@@ -277,7 +307,78 @@ mod tests {
                 },
             )
             .expect("retained record");
-        table.clear();
+        table.close();
         assert!(matches!(table.take(session, retained), Err(Error::ContinuationUnavailable)));
+    }
+
+    fn flat_record(session: SessionId, next: &str) -> ContinuationRecord {
+        ContinuationRecord {
+            version: version(session),
+            kind: ContinuationKind::Flat {
+                selection: Box::new(crate::query::EntrySelection::default()),
+                shape: crate::RowShape::Compact,
+                next: crate::PortablePath::new(next.to_owned()),
+            },
+        }
+    }
+
+    /// Take, insert, restore: the interleaving of two pages that once overshot the bound.
+    ///
+    /// One page takes its record from a full table, another page's insert fills the table
+    /// again without evicting, and the first page then runs out of budget and restores what
+    /// it took. Eviction fired only at exactly the bound, so after that overshoot it never
+    /// fired again and the table grew by one record per page.
+    #[test]
+    fn the_table_never_exceeds_its_bound_across_take_insert_and_restore() {
+        let session = SessionId::from_opaque(1).expect("nonzero session");
+        let mut table = ContinuationTable::default();
+        let ids = (0..MAX_CONTINUATIONS)
+            .map(|position| {
+                table.insert(session, flat_record(session, &format!("r{position}"))).expect("fill")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(table.len(), MAX_CONTINUATIONS);
+
+        let taken_id = ids[MAX_CONTINUATIONS / 2];
+        let taken = table.take(session, taken_id).expect("take");
+        table.insert(session, flat_record(session, "other page")).expect("insert while taken");
+        table.restore(taken_id, taken);
+        assert_eq!(table.len(), MAX_CONTINUATIONS, "a restore may not overshoot the bound");
+        for position in 0..16 {
+            table.insert(session, flat_record(session, &format!("later{position}"))).expect("page");
+            assert_eq!(table.len(), MAX_CONTINUATIONS);
+        }
+        // A restored record is the oldest by design, so it is the one a full table gives up.
+        assert!(matches!(table.take(session, taken_id), Err(Error::ContinuationUnavailable)));
+    }
+
+    #[test]
+    fn a_restored_record_is_retryable_while_the_table_has_room() {
+        let session = SessionId::from_opaque(1).expect("nonzero session");
+        let mut table = ContinuationTable::default();
+        let id = table.insert(session, flat_record(session, "next")).expect("insert");
+        let record = table.take(session, id).expect("take");
+        table.restore(id, record);
+        assert_eq!(table.len(), 1);
+        table.take(session, id).expect("restored record is retryable");
+    }
+
+    /// A read no longer holds the lifecycle lock while it projects, so a page can finish
+    /// after shutdown emptied the table. Its record must not outlive the root.
+    #[test]
+    fn a_closed_table_refuses_records_that_race_shutdown() {
+        let session = SessionId::from_opaque(1).expect("nonzero session");
+        let mut table = ContinuationTable::default();
+        let id = table.insert(session, flat_record(session, "before close")).expect("insert");
+        let record = table.take(session, id).expect("take");
+        table.close();
+
+        assert!(matches!(
+            table.insert(session, flat_record(session, "after close")),
+            Err(Error::OpenedIndexClosed)
+        ));
+        table.restore(id, record);
+        assert_eq!(table.len(), 0);
+        assert!(matches!(table.take(session, id), Err(Error::ContinuationUnavailable)));
     }
 }
