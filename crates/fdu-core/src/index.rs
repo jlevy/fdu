@@ -8023,7 +8023,7 @@ mod tests {
     fn serving_semantics_follow_ignore_reclassification_exactly() {
         let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
             "/root",
-            ScanScope::default(),
+            crate::test_support::observing_controls(),
             crate::classify::TypeRegistry::compiled_shared(),
             DEFAULT_JOURNAL_CAPACITY,
         );
