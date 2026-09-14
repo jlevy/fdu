@@ -1728,6 +1728,23 @@ impl Index {
         self.freshness_at(Path::new(""))
     }
 
+    /// The freshness the coherent [`IndexState`] publishes for the root.
+    ///
+    /// Subtree marks decide it, with one exception: while the observation handoff owns the
+    /// root -- the `Reconciling` phase -- the root does not become `Fresh` until `Watching`
+    /// says the handoff verified it. The handoff's own full pass clears the root's mark
+    /// before the hints captured behind it are drained, and `Fresh` beside `Reconciling`
+    /// promised a verified root the handoff had not delivered yet. Stale and partial marks
+    /// still show through, since they say something the handoff has not yet disproved.
+    fn published_freshness(&self) -> Freshness {
+        let derived = self.freshness();
+        if self.state.phase == LifecyclePhase::Reconciling && derived == Freshness::Fresh {
+            Freshness::Reconciling
+        } else {
+            derived
+        }
+    }
+
     /// Coherent state at the current clock.
     pub(crate) const fn state(&self) -> IndexState {
         self.state
@@ -1966,7 +1983,7 @@ impl Index {
                     self.pending_invalidations.push((path.clone(), *reason));
                     self.mark_unfresh(path, Freshness::Stale);
                     let current = self.freshness_at(path);
-                    self.state.freshness = self.freshness();
+                    self.state.freshness = self.published_freshness();
                     if matches!(
                         reason,
                         InvalidateReason::WatchOverflow
@@ -2516,7 +2533,7 @@ impl Index {
         let previous = self.freshness_at(&path);
         let epoch = self.mark_unfresh(&path, Freshness::Reconciling);
         let current = self.freshness_at(&path);
-        self.state.freshness = self.freshness();
+        self.state.freshness = self.published_freshness();
         let commit = if previous == current && previous_index_state == self.state {
             None
         } else {
@@ -2597,7 +2614,7 @@ impl Index {
         }
 
         let current = self.freshness_at(&path);
-        self.state.freshness = self.freshness();
+        self.state.freshness = self.published_freshness();
         if previous != current {
             state.push(StateTransition::Freshness { path: path.clone(), previous, current });
         }

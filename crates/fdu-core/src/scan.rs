@@ -3946,22 +3946,30 @@ fn reconcile_paths_target(
         opened.push((subtree, started_at));
     }
 
+    // Each subtree closes on its own walk's outcome. One flag for the whole set marked a
+    // verified sibling partial because another subtree could not be read, and withheld
+    // the completeness its listing had earned.
     let mut failure = None;
+    let mut completed = Vec::with_capacity(opened.len());
     for (subtree, _) in &opened {
         if failure.is_some() {
-            break;
+            completed.push(false);
+            continue;
         }
         match reconcile_target_inner(target, subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
             Ok(reconciliation) => {
+                completed.push(reconciliation.is_complete());
                 merge_reconcile_report(&mut report.reconciliation, reconciliation);
             }
-            Err(error) => failure = Some(error),
+            Err(error) => {
+                completed.push(false);
+                failure = Some(error);
+            }
         }
     }
 
-    let complete = failure.is_none() && report.reconciliation.is_complete();
     let listed_incomplete = std::mem::take(&mut report.reconciliation.listed_incomplete);
-    for (subtree, started_at) in opened {
+    for ((subtree, started_at), complete) in opened.into_iter().zip(completed) {
         let commit = target.finish_reconcile(&subtree, started_at, complete, &listed_incomplete)?;
         if let Some(commit) = commit.as_ref() {
             sink(commit);

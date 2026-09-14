@@ -5447,6 +5447,60 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// One refresh over two subtrees, one of them unreadable: the readable subtree is
+    /// verified on its own walk. One completion flag for the whole set marked it partial
+    /// because its sibling could not be read.
+    #[cfg(unix)]
+    #[test]
+    fn multi_path_refresh_closes_each_subtree_on_its_own_walk() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::create_dir(root.path().join("readable")).expect("readable directory");
+        std::fs::write(root.path().join("readable/file"), b"ok").expect("readable fixture");
+        let blocked = root.path().join("blocked");
+        std::fs::create_dir(&blocked).expect("blocked directory");
+        std::fs::write(blocked.join("secret"), b"secret").expect("blocked fixture");
+        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("open");
+        let settled = wait_until_settled(&opened);
+        assert_eq!(settled.phase, crate::LifecyclePhase::Ready);
+        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o000))
+            .expect("make directory unreadable");
+
+        let receipt = opened
+            .refresh(&[PathBuf::from("readable"), PathBuf::from("blocked")])
+            .expect("refresh");
+        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o700))
+            .expect("restore directory permissions");
+
+        assert_eq!(receipt.issues.len(), 1, "{:?}", receipt.issues);
+        let index = &opened.state.index;
+        assert_eq!(
+            index.freshness_at(Path::new("readable")).expect("freshness"),
+            crate::Freshness::Fresh
+        );
+        assert_eq!(
+            index.freshness_at(Path::new("blocked")).expect("freshness"),
+            crate::Freshness::Partial
+        );
+        let since = index.since(receipt.after.sequence).expect("journal");
+        assert!(
+            since.commits.iter().flat_map(|commit| commit.state.iter()).any(|transition| {
+                matches!(
+                    transition,
+                    crate::StateTransition::Verified { path } if path == Path::new("readable")
+                )
+            }),
+            "the readable subtree was not verified"
+        );
+        opened.close().expect("close");
+    }
+
     #[test]
     fn close_cancels_verified_refresh_before_its_conditional_commit() {
         let controls = Arc::new(TestControls::default());
