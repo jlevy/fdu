@@ -97,9 +97,9 @@ jobs:
         run: cargo build --locked -p fdu --all-features
       - name: Compare the CLI golden contract
         run: npm run test:golden
-      - name: Test the minimal-library performance probe and its semantic oracle
+      - name: Test the performance probe and its semantic oracle
         run: cargo test --locked -p fdu-core --example perf_probe --no-default-features
-      - name: Build the repository-only performance probe
+      - name: Build the performance probe the harness tests run
         run: cargo build --locked -p fdu-core --example perf_probe --no-default-features
       # `env:` rather than a `PYTHONPATH=... cmd` prefix: this job also runs on the
       # Windows runner, whose shell is PowerShell, where that POSIX prefix form is a
@@ -111,7 +111,7 @@ jobs:
         run: python -m unittest discover -s explorations/benchmarks/tests -p 'test_*.py'
 
   test-lib-only:
-    name: Test library feature boundaries
+    name: Test library build-feature boundaries
     needs: supply-chain
     runs-on: ubuntu-latest
     steps:
@@ -131,7 +131,7 @@ jobs:
       # The command line promises to build without `watch`, which keeps that layer
       # deletable. Nothing compiled the shape until it had already stopped building.
       # Clippy rather than check, because the pedantic lints are clippy's and the Clippy
-      # job lints only all features.
+      # job lints only with all build features.
       - run: cargo clippy --locked -p fdu --no-default-features --all-targets -- -D warnings
       # Compiling a test is not running it: the guide named `--watch` to a binary without
       # it while every build of this shape passed.

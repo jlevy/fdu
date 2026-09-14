@@ -80,9 +80,12 @@ which is how library consumers build and is otherwise never exercised locally.
 Compile-time Cargo features are **build features** in prose (comments, docs, commits,
 PRs, beads), never plain “feature”, which reads as a product capability.
 Literal syntax stays as Cargo spells it: `[features]`, `--features watch`,
-`cfg(feature = "watch")`. `watch` is the only build feature, because it carries a real
-dependency tree and must stay deletable; `.gitignore` handling is built in and turned
-off per request with `read_controls`.
+`cfg(feature = "watch")`. `watch` is the engine’s only optional-capability build
+feature: it carries a real dependency tree and must stay deletable.
+`extension-module` in `fdu-py` is a packaging switch for the Python extension, not a
+capability. `.gitignore` handling is built in, and `read_controls` switches it per
+request: on by default for `open` and `scan` in Rust and Python, and off for one-shot
+reports and `fdu --watch` until `fdu-elnn` lands.
 
 ### Platform-gated code
 
