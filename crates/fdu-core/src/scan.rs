@@ -4154,6 +4154,16 @@ fn reconcile_target_inner(
         }
         report.scan.observe(kind, attrs);
         push_reconcile_upsert(target, subtree, kind, attrs, baseline, &mut batch, &mut report);
+        // A retained control file at the root of the walk reads its rules here, as the
+        // listing walk does for every retained entry it lists: a file does not descend,
+        // so nothing below would read them, and the table kept the old source while the
+        // pass reported complete and marked the path fresh. In the same batch as the
+        // upsert, so both are arbitrated against one baseline.
+        match read_control_op(config, &root, subtree, kind) {
+            Ok(Some(control)) => batch.push(ObservationOp::if_state(control, baseline)),
+            Ok(None) => {}
+            Err(error) => report.scan.errors.push(error),
+        }
         flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
         if !should_descend(kind, attrs, start_depth.saturating_sub(1), root_dev, config) {
             if kind.is_dir() {
@@ -7625,6 +7635,65 @@ mod tests {
         assert_eq!(index.freshness_at(Path::new("src")), crate::Freshness::Fresh);
         assert!(index.take_pending_invalidations().is_empty());
         assert!(applied.iter().any(|commit| commit_touches(commit, Path::new("src/added.rs"))));
+    }
+
+    /// A retained `.gitignore` reconciled as the root of its own walk re-reads its rules.
+    /// A file does not descend, so the subtree-root branch was the only place that could
+    /// read them, and it did not: the table kept `*.log` while the pass reported complete.
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn reconciling_a_retained_control_file_as_the_subtree_root_rereads_its_rules() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join(".gitignore"), b"*.log\n");
+        write_file(&dir.path().join("a.log"), b"log");
+        let (mut index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
+        assert_eq!(index.is_ignored(Path::new("a.log")), Some(true));
+
+        write_file(&dir.path().join(".gitignore"), b"# nothing is ignored now\n");
+        index.apply_ok(&Observation::new(vec![Op::InvalidateSubtree {
+            path: PathBuf::from(".gitignore"),
+            reason: crate::InvalidateReason::Requested,
+        }]));
+        let report =
+            reconcile_pending(&mut index, &ScanConfig::default(), &mut |_| {}).expect("reconcile");
+
+        assert!(report.is_complete(), "{:?}", report.scan.errors);
+        assert_eq!(index.freshness_at(Path::new(".gitignore")), crate::Freshness::Fresh);
+        assert_eq!(index.is_ignored(Path::new("a.log")), Some(false));
+    }
+
+    /// The same walk over a control file it cannot read keeps the old rules and does not
+    /// claim the path fresh.
+    #[cfg(all(unix, feature = "gitignore"))]
+    #[test]
+    fn reconciling_an_unreadable_control_file_root_keeps_its_rules_and_stays_partial() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let control = dir.path().join(".gitignore");
+        write_file(&control, b"*.log\n");
+        write_file(&dir.path().join("a.log"), b"log");
+        let (mut index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
+
+        write_file(&control, b"# rewritten, then made unreadable\n");
+        fs::set_permissions(&control, fs::Permissions::from_mode(0o000)).expect("chmod");
+        index.apply_ok(&Observation::new(vec![Op::InvalidateSubtree {
+            path: PathBuf::from(".gitignore"),
+            reason: crate::InvalidateReason::Requested,
+        }]));
+        let report = reconcile_pending(&mut index, &ScanConfig::default(), &mut |_| {});
+        fs::set_permissions(&control, fs::Permissions::from_mode(0o644)).expect("restore");
+        let report = report.expect("reconcile");
+
+        assert!(!report.is_complete());
+        assert_eq!(report.scan.errors.len(), 1, "{:?}", report.scan.errors);
+        assert_eq!(index.freshness_at(Path::new(".gitignore")), crate::Freshness::Partial);
+        assert_eq!(index.is_ignored(Path::new("a.log")), Some(true));
     }
 
     #[test]
