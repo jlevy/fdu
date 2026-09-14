@@ -53,6 +53,15 @@ use crate::engine_contract::{
 /// `Cached`, so the bound costs precision, never correctness.
 const MAX_VERIFIED_INTERVALS: usize = 256;
 
+#[cfg(test)]
+std::thread_local! {
+    /// Entries the control reclassification walk has visited on this thread.
+    ///
+    /// The walk changes nothing when no bit moves, so a test cannot see it through the
+    /// index. Per thread, because tests run in parallel and a load runs on its caller's.
+    pub(crate) static RECLASSIFY_VISITS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
 /// Maximum retained-cost units in the exact commit history used by [`Index::since`].
 ///
 /// Bounded on purpose: an unbounded journal is a memory leak in a long-lived server. A
@@ -1226,7 +1235,14 @@ impl Index {
                 limit: crate::control::MAX_CONTROL_TABLE_BYTES,
             });
         }
+        // Every entry's ignored bit agrees with the table it replaces, so when neither table
+        // governs anything no bit can move. Walking the tree to confirm it allocated a path
+        // per entry on every snapshot load, including the common load with no controls.
+        let unchanged = controls.is_empty() && self.controls.is_empty();
         self.controls = controls;
+        if unchanged {
+            return Ok(());
+        }
         let mut stats = ApplyStats::default();
         let mut effects = MutationEffects::default();
         self.reclassify_controlled_subtrees(&[PathBuf::new()], &mut stats, &mut effects);
@@ -2769,6 +2785,8 @@ impl Index {
                 .collect();
             let mut queue = VecDeque::from(children);
             while let Some((path, id)) = queue.pop_front() {
+                #[cfg(test)]
+                RECLASSIFY_VISITS.with(|visits| visits.set(visits.get() + 1));
                 let entry = self.entry(id);
                 let parent_ignored = entry.parent.is_some_and(|parent| self.entry(parent).ignored);
                 let current = entry.ignored;
