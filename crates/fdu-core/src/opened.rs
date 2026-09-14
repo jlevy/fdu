@@ -325,7 +325,7 @@ impl OpenedIndex {
         let mut issues = Vec::new();
         let mut omitted_issues = 0_u64;
         for error in &report.reconciliation.scan.errors {
-            let issue = crate::Issue::from_error(error);
+            let issue = crate::Issue::from_error_under(&self.state.root, error);
             if issues.len() < crate::MAX_RETAINED_ISSUES {
                 issues.push(issue);
             } else {
@@ -427,7 +427,7 @@ impl OpenedIndex {
                     publish_discovery_transition(
                         &index,
                         &journal,
-                        DiscoveryTransition::Failed(crate::Issue::from_error(&error)),
+                        DiscoveryTransition::Failed(crate::Issue::from_error_under(&root, &error)),
                     )?;
                 }
                 return Err(error);
@@ -443,6 +443,7 @@ impl OpenedIndex {
         let Some(watcher) = watcher else {
             return Ok(());
         };
+        let root = self.state.root.clone();
         let index = self.state.index.clone();
         let journal = Arc::clone(&self.state.journal);
         let scan = self.state.scan.clone();
@@ -453,6 +454,7 @@ impl OpenedIndex {
         self.spawn_worker("observation", move |cancellation| {
             let outcome = run_observation(
                 watcher,
+                &root,
                 &index,
                 &journal,
                 &scan,
@@ -470,9 +472,9 @@ impl OpenedIndex {
                     publish_observation_transition(
                         &index,
                         &journal,
-                        crate::index::ObservationTransition::Failed(crate::Issue::from_error(
-                            error,
-                        )),
+                        crate::index::ObservationTransition::Failed(
+                            crate::Issue::from_error_under(&root, error),
+                        ),
                     )?;
                 }
             }
@@ -1157,7 +1159,7 @@ fn discover_directory(
                 index,
                 journal,
                 DiscoveryTransition::Inaccessible {
-                    issues: vec![crate::Issue::from_error(&error)],
+                    issues: vec![crate::Issue::from_error_under(root, &error)],
                     omitted: 0,
                 },
             )?;
@@ -1198,7 +1200,7 @@ fn discover_directory(
                 retain_local_issue(
                     &mut issues,
                     &mut omitted_issues,
-                    crate::Issue::from_io(&absolute, source),
+                    crate::Issue::from_io_under(root, &absolute, source),
                 );
             })
             .ok();
@@ -1212,7 +1214,7 @@ fn discover_directory(
                 retain_local_issue(
                     &mut issues,
                     &mut omitted_issues,
-                    crate::Issue::from_io(&item.path(), &source),
+                    crate::Issue::from_io_under(root, &item.path(), &source),
                 );
                 continue;
             }
@@ -1241,7 +1243,11 @@ fn discover_directory(
             control_error,
         } = prepared;
         if let Some(error) = control_error {
-            retain_local_issue(&mut issues, &mut omitted_issues, crate::Issue::from_error(&error));
+            retain_local_issue(
+                &mut issues,
+                &mut omitted_issues,
+                crate::Issue::from_error_under(root, &error),
+            );
         }
         if !retained {
             if let Some(control) = control {
@@ -1471,6 +1477,7 @@ const MAX_HANDOFF_RECONCILIATION_ATTEMPTS: usize = 3;
 #[allow(clippy::needless_pass_by_value)] // Ownership keeps the backend alive for this worker.
 fn run_observation(
     watcher: crate::watch::Watcher,
+    root: &Path,
     index: &IndexHandle,
     journal: &journal::JournalWait,
     scan: &ScanConfig,
@@ -1513,6 +1520,7 @@ fn run_observation(
     watcher.flush_capture()?;
     let _ = drain_observation_hints(
         &watcher,
+        root,
         index,
         journal,
         scan,
@@ -1534,10 +1542,11 @@ fn run_observation(
             &control,
             &mut |_commit| journal.notify_commit(),
         )?;
-        handoff_evidence.retain(&final_pass.reconciliation);
+        handoff_evidence.retain(root, &final_pass.reconciliation);
         watcher.flush_capture()?;
         let drained = drain_observation_hints(
             &watcher,
+            root,
             index,
             journal,
             scan,
@@ -1605,7 +1614,7 @@ fn run_observation(
                 // boundary is settled rather than retried on every later event. Retaining
                 // the causes is what lets a consumer see why.
                 let mut unreadable = HandoffEvidence::default();
-                unreadable.retain(&report.reconciliation);
+                unreadable.retain(root, &report.reconciliation);
                 if !unreadable.issues.is_empty() || unreadable.omitted > 0 {
                     publish_observation_transition(
                         index,
@@ -1628,8 +1637,10 @@ fn run_observation(
 }
 
 #[cfg(feature = "watch")]
+#[allow(clippy::too_many_arguments)]
 fn drain_observation_hints(
     watcher: &crate::watch::Watcher,
+    root: &Path,
     index: &IndexHandle,
     journal: &journal::JournalWait,
     scan: &ScanConfig,
@@ -1649,7 +1660,7 @@ fn drain_observation_hints(
         else {
             break;
         };
-        evidence.retain(&report.reconciliation);
+        evidence.retain(root, &report.reconciliation);
         let report_complete = report.apply.resource_refused == 0
             && report.apply.stale == 0
             && report.reconciliation.apply.resource_refused == 0
@@ -1684,12 +1695,12 @@ struct HandoffEvidence {
 
 #[cfg(feature = "watch")]
 impl HandoffEvidence {
-    fn retain(&mut self, report: &crate::scan::ReconcileReport) {
+    fn retain(&mut self, root: &Path, report: &crate::scan::ReconcileReport) {
         for error in &report.scan.errors {
             retain_local_issue(
                 &mut self.issues,
                 &mut self.omitted,
-                crate::Issue::from_error(error),
+                crate::Issue::from_error_under(root, error),
             );
         }
     }
@@ -5888,6 +5899,95 @@ mod tests {
             issues.iter().any(|issue| issue.kind == crate::IssueKind::Permission
                 && issue.path.as_deref().is_some_and(|path| path.ends_with("blocked"))),
             "{issues:?}"
+        );
+        opened.close().expect("close");
+    }
+
+    /// Re-walking one unreadable boundary retains one issue per cause, and a clean re-walk
+    /// drops the cause it disproved.
+    ///
+    /// Every provider gap over an unreadable directory retained another `ObservationGap`
+    /// and another `Permission` issue, so a few dozen routine gaps filled the bounded list
+    /// with copies and every later distinct issue was omitted with no text. The permission
+    /// issue also named an absolute path where the gap named the root-relative one.
+    #[cfg(all(unix, feature = "watch"))]
+    #[test]
+    fn repeated_unreadable_reconciles_retain_one_issue_per_boundary() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"").expect("script");
+        let blocked = root.path().join("blocked");
+        std::fs::create_dir(&blocked).expect("blocked");
+        std::fs::write(blocked.join("secret"), b"s").expect("fixture");
+        let controls = Arc::new(TestControls::default());
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            scripted_options(&script),
+            Arc::clone(&controls),
+        )
+        .expect("open scripted observer");
+        let watching = wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+        assert_eq!(watching.issues.retained, 0);
+        let start = current_version(&opened);
+        let walks = std::cell::Cell::new(0);
+        let rescan_then_wait = || {
+            controls.send_observation_hints("rescan\tblocked\n");
+            walks.set(walks.get() + 1);
+            wait_for_observed_walk(
+                &opened,
+                &controls,
+                root.path(),
+                start,
+                Path::new("blocked"),
+                walks.get(),
+            );
+        };
+        let issues_of = |kind: crate::IssueKind| {
+            opened
+                .state
+                .index
+                .issues()
+                .expect("issues")
+                .into_iter()
+                .filter(|issue| issue.kind == kind)
+                .collect::<Vec<_>>()
+        };
+
+        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o000))
+            .expect("make directory inaccessible");
+        for _ in 0..5 {
+            rescan_then_wait();
+        }
+        let state = opened.state.index.state().expect("state");
+        let permission = issues_of(crate::IssueKind::Permission);
+        let gaps = issues_of(crate::IssueKind::ObservationGap);
+        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o700))
+            .expect("restore directory permissions");
+        assert_eq!(state.phase, crate::LifecyclePhase::Watching);
+        assert_eq!(permission.len(), 1, "{permission:?}");
+        assert_eq!(permission[0].path.as_deref(), Some(Path::new("blocked")), "{permission:?}");
+        assert_eq!(gaps.len(), 1, "{gaps:?}");
+        assert_eq!(gaps[0].path.as_deref(), Some(Path::new("blocked")), "{gaps:?}");
+        assert_eq!(state.issues, crate::IssueSummary { retained: 2, omitted: 0 });
+
+        // Readable again: the next re-walk completes, which disproves the permission issue.
+        // The gap stays, because it records that observation lost precision there.
+        rescan_then_wait();
+        let state = opened.state.index.state().expect("state");
+        assert_eq!(issues_of(crate::IssueKind::Permission), []);
+        assert_eq!(issues_of(crate::IssueKind::ObservationGap).len(), 1);
+        assert_eq!(state.issues, crate::IssueSummary { retained: 1, omitted: 0 });
+        assert_eq!(state.freshness, crate::Freshness::Fresh);
+        assert_eq!(
+            opened.state.index.kind(Path::new("blocked/secret")).expect("lookup"),
+            Some(EntryKind::File)
         );
         opened.close().expect("close");
     }

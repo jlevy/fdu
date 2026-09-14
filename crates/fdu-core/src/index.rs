@@ -710,6 +710,9 @@ pub struct Index {
     state: IndexState,
     /// Bounded diagnostic details summarized by `state.issues`.
     issues: Vec<Issue>,
+    /// The freshness epoch at which each retained issue was last observed, in step with
+    /// `issues`. A reconciliation only disproves an issue observed before it began.
+    issue_epochs: Vec<u64>,
     /// Optional commit-maintained state for interactive opened-root projections.
     ///
     /// Detached indexes deliberately carry `None`, including the standalone CLI's
@@ -1185,6 +1188,7 @@ impl Index {
             freshness_marks: BTreeMap::new(),
             state: IndexState::default(),
             issues: Vec::new(),
+            issue_epochs: Vec::new(),
             serving,
             applying_source: Source::Scanned,
             scanned_at_ns: Self::now_unix_nanos(),
@@ -1576,6 +1580,7 @@ impl Index {
                             issues: crate::IssueSummary::default(),
                         };
                         self.issues.clear();
+                        self.issue_epochs.clear();
                     }
                     DiscoveryTransition::Finish => {
                         self.state.phase = LifecyclePhase::Ready;
@@ -1649,7 +1654,9 @@ impl Index {
                         {
                             // The handoff has just read the whole root without one error, so
                             // a boundary discovery could not read no longer exists. Coverage
-                            // says what can be known now; the cause stays a retained issue.
+                            // says what can be known now. That complete pass has already
+                            // dropped the issues it disproved and recorded completeness for
+                            // every directory it listed, so nothing below contradicts it.
                             self.state.coverage = Coverage::Complete;
                         }
                         self.state.freshness = self.freshness();
@@ -1701,13 +1708,57 @@ impl Index {
         current_total.saturating_sub(removed).saturating_add(u64::from(kind == EntryKind::File))
     }
 
+    /// Retain one issue, once per cause.
+    ///
+    /// A cause is its kind and path: a boundary a producer meets again on every re-walk --
+    /// an unreadable directory, a gap the observer keeps reporting at one place -- is one
+    /// issue. Without a key, routine repeats filled the bounded list and every later
+    /// distinct issue was omitted with no text. A repeat only records that the cause was
+    /// seen again, which a later reconciliation needs; the retained text stays as it was,
+    /// since changing what a read returns without a commit would let one version answer two
+    /// ways. An issue without a path has nothing to key on, so only an identical one counts
+    /// as a repeat.
     fn retain_issue(&mut self, issue: Issue) {
-        if self.issues.len() < MAX_RETAINED_ISSUES {
+        let repeat = self.issues.iter().position(|retained| {
+            retained.kind == issue.kind
+                && retained.path == issue.path
+                && (issue.path.is_some() || *retained == issue)
+        });
+        if let Some(position) = repeat {
+            self.issue_epochs[position] = self.freshness_epoch;
+        } else if self.issues.len() < MAX_RETAINED_ISSUES {
             self.issues.push(issue);
+            self.issue_epochs.push(self.freshness_epoch);
             self.state.issues.retained = u64::try_from(self.issues.len()).unwrap_or(u64::MAX);
         } else {
             self.state.issues.omitted = self.state.issues.omitted.saturating_add(1);
         }
+    }
+
+    /// Drop the retained issues a complete reconciliation of `path` has disproved.
+    ///
+    /// An issue about a path at or below `path`, observed before the pass began, described
+    /// something the pass has just read without an error: a directory that could not be
+    /// listed, an entry whose metadata could not be read, a control the index refused. It is
+    /// no longer true, and keeping it would explain a state the root is not in. Two kinds of
+    /// issue survive. An observation gap records that the observer lost precision and had to
+    /// recover, which the recovery does not undo. And an issue without a path cannot be
+    /// placed under the pass. The omitted count stays: what it counted was never retained.
+    fn drop_disproven_issues(&mut self, path: &Path, started_at: u64) {
+        let mut position = 0;
+        while position < self.issues.len() {
+            let issue = &self.issues[position];
+            let disproven = issue.kind != crate::IssueKind::ObservationGap
+                && issue.path.as_deref().is_some_and(|issue_path| issue_path.starts_with(path))
+                && self.issue_epochs[position] < started_at;
+            if disproven {
+                self.issues.remove(position);
+                self.issue_epochs.remove(position);
+            } else {
+                position += 1;
+            }
+        }
+        self.state.issues.retained = u64::try_from(self.issues.len()).unwrap_or(u64::MAX);
     }
 
     /// Mint and optionally retain one fully evaluated transition.
@@ -1897,6 +1948,7 @@ impl Index {
                     self.state.progress.directories_complete.saturating_add(1);
                 state.push(StateTransition::DirectoryComplete { path: directory.clone() });
             }
+            self.drop_disproven_issues(&path, started_at);
         } else {
             self.mark_unfresh(&path, Freshness::Partial);
         }

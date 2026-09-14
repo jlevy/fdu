@@ -467,7 +467,9 @@ pub enum IssueKind {
 pub struct Issue {
     /// Machine-readable category.
     pub kind: IssueKind,
-    /// Affected relative or absolute path when it fits the detail bound.
+    /// Affected path when it fits the detail bound. Issues an opened root retains or
+    /// returns name it relative to the root, the form its reads use; a message may still
+    /// name the absolute path the operating system refused.
     pub path: Option<PathBuf>,
     /// Human-readable detail, truncated at a UTF-8 boundary when necessary.
     pub message: String,
@@ -502,6 +504,33 @@ impl Issue {
             path: bounded_issue_path(path),
             message: bounded_issue_message(format!("I/O error at {}: {source}", path.display())),
             os_error: source.raw_os_error(),
+        }
+    }
+
+    /// Convert one error met while reading an opened root, naming its path relative to it.
+    ///
+    /// Scan errors carry the absolute path the operating system refused, and the message
+    /// keeps it for whoever has to fix the permission. The `path` field is the root-relative
+    /// form every other opened-root issue uses, so two issues about one directory agree and
+    /// a consumer can match an issue to the path it reads.
+    pub(crate) fn from_error_under(root: &Path, error: &Error) -> Self {
+        let mut issue = Self::from_error(error);
+        if let Error::Io { path, .. } = error {
+            issue.relativize(root, path);
+        }
+        issue
+    }
+
+    /// [`Self::from_io`] for a path under an opened root, naming it relative to the root.
+    pub(crate) fn from_io_under(root: &Path, path: &Path, source: &std::io::Error) -> Self {
+        let mut issue = Self::from_io(path, source);
+        issue.relativize(root, path);
+        issue
+    }
+
+    fn relativize(&mut self, root: &Path, path: &Path) {
+        if let Ok(relative) = path.strip_prefix(root) {
+            self.path = bounded_issue_path(relative);
         }
     }
 
