@@ -18,12 +18,22 @@ from typing import Any, Literal, cast
 
 from . import _native
 from ._api import FduError, FilesystemError, InvalidArgumentError, _epoch_nanos, _query_kwargs
-from ._models import EntryKind, Freshness, Query, Report, Selection, ValueSource, report_from_dict
+from ._models import (
+    Bound,
+    EntryKind,
+    Freshness,
+    Query,
+    Report,
+    Selection,
+    ValueSource,
+    report_from_dict,
+)
 
 __all__ = [
     "Aggregate",
     "AggregateResult",
     "Attributes",
+    "Bound",
     "ChangeCursorUnavailableError",
     "ChangeOutcome",
     "ChangeOutcomeKind",
@@ -249,10 +259,22 @@ class OpenedOptions:
     max_files: int | None = None
     observe: bool = False
     journal_capacity: int | None = None
+    #: The file-type registry document's text, or ``None`` for the rules compiled into
+    #: fdu. Either dialect is accepted: a File Rollup registry or a ``[[kind]]`` manifest.
+    #: The engine parses and validates it at open and derives
+    #: ``SemanticIdentity.type_rules_fingerprint`` from what it parsed, so the identity a
+    #: read reports always describes this document. A document that does not parse raises
+    #: ``InvalidArgumentError`` before discovery starts.
+    type_rules: str | None = None
 
     def __post_init__(self) -> None:
         if isinstance(self.hidden_allow, str):
             raise TypeError("hidden_allow must be a tuple of names, not a string")
+        type_rules = cast(object, self.type_rules)
+        if type_rules is not None and not isinstance(type_rules, str):
+            # A path here is the likely mistake, and reading it as the document would
+            # fail in the parser with a message about the path's spelling instead.
+            raise TypeError("type_rules takes the registry document's text; read the file first")
         for name, value in (
             ("batch_size", self.batch_size),
             ("journal_capacity", self.journal_capacity),
@@ -419,8 +441,29 @@ class DirectoryRollUp:
 
 @dataclass(frozen=True, slots=True)
 class Tree:
+    """One breadth-first page of the portable descendants of a directory.
+
+    ``depth`` counts levels below ``path``: ``1`` is the directory's own children and
+    ``Bound.ALL`` descends without limit. Rows arrive in level order, so a page cut short
+    withholds depth rather than breadth. ``include_ignored=False`` prunes an ignored
+    directory's whole subtree instead of filtering its row and descending anyway.
+    """
+
     path: Path | str = ""
     page: Page = field(default_factory=Page)
+    depth: int | Bound = 1
+    include_ignored: bool = True
+
+    def __post_init__(self) -> None:
+        depth = cast(object, self.depth)
+        # `bool` is an `int`, so `depth=True` would otherwise be one level by accident.
+        if isinstance(depth, bool) or not isinstance(depth, int | Bound):
+            raise TypeError("tree depth must be a positive int or Bound.ALL")
+        if isinstance(depth, int) and depth <= 0:
+            raise ValueError("tree depth must be at least one level, or Bound.ALL")
+        include_ignored = cast(object, self.include_ignored)
+        if not isinstance(include_ignored, bool):
+            raise TypeError("tree include_ignored must be a bool")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1120,7 +1163,15 @@ def _projection_wire(projection: Projection) -> dict[str, object]:
     if isinstance(projection, DirectoryRollUp):
         return {"kind": "rollup", "path": projection.path}
     if isinstance(projection, Tree):
-        return {"kind": "tree", "path": projection.path, "page": _page_wire(projection.page)}
+        return {
+            "kind": "tree",
+            "path": projection.path,
+            "depth": projection.depth.value
+            if isinstance(projection.depth, Bound)
+            else projection.depth,
+            "include_ignored": projection.include_ignored,
+            "page": _page_wire(projection.page),
+        }
     if isinstance(projection, Flat):
         return {
             "kind": "flat",
@@ -1235,6 +1286,7 @@ class OpenedIndex:
             max_files=selected.max_files,
             observe=selected.observe,
             journal_capacity=selected.journal_capacity,
+            type_rules=selected.type_rules,
         )
         return cls(cast(_native.OpenedIndex, native))
 

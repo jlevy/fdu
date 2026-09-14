@@ -329,7 +329,7 @@ impl OpenedIndex {
         let mut issues = Vec::new();
         let mut omitted_issues = 0_u64;
         for error in &report.reconciliation.scan.errors {
-            let issue = crate::Issue::from_error(error);
+            let issue = crate::Issue::from_error_under(&self.state.root, error);
             if issues.len() < crate::MAX_RETAINED_ISSUES {
                 issues.push(issue);
             } else {
@@ -431,7 +431,7 @@ impl OpenedIndex {
                     publish_discovery_transition(
                         &index,
                         &journal,
-                        DiscoveryTransition::Failed(crate::Issue::from_error(&error)),
+                        DiscoveryTransition::Failed(crate::Issue::from_error_under(&root, &error)),
                     )?;
                 }
                 return Err(error);
@@ -447,6 +447,7 @@ impl OpenedIndex {
         let Some(watcher) = watcher else {
             return Ok(());
         };
+        let root = self.state.root.clone();
         let index = self.state.index.clone();
         let journal = Arc::clone(&self.state.journal);
         let scan = self.state.scan.clone();
@@ -457,6 +458,7 @@ impl OpenedIndex {
         self.spawn_worker("observation", move |cancellation| {
             let outcome = run_observation(
                 watcher,
+                &root,
                 &index,
                 &journal,
                 &scan,
@@ -474,9 +476,9 @@ impl OpenedIndex {
                     publish_observation_transition(
                         &index,
                         &journal,
-                        crate::index::ObservationTransition::Failed(crate::Issue::from_error(
-                            error,
-                        )),
+                        crate::index::ObservationTransition::Failed(
+                            crate::Issue::from_error_under(&root, error),
+                        ),
                     )?;
                 }
             }
@@ -1061,19 +1063,21 @@ enum DiscoveryAnswer {
     /// stands; whichever producer next verifies the path records what is there now.
     Stale,
     /// The index refused this directory's listing on a resource bound that does not stop
-    /// the root. The directory stays incomplete and the refusal is retained as an issue.
+    /// the root. The directory stays incomplete and the refusal is retained as an issue
+    /// naming it.
     Refused(crate::Issue),
 }
 
-/// Classify a refused discovery commit, keeping engine failures fatal.
-fn discovery_rejection(error: Error) -> Result<DiscoveryAnswer> {
+/// Classify a refused discovery commit for `directory`'s listing, keeping engine failures
+/// fatal.
+fn discovery_rejection(error: Error, directory: &Path) -> Result<DiscoveryAnswer> {
     match error {
         Error::OpenedIndexStopped => Ok(DiscoveryAnswer::Stopped),
         Error::InvalidDirectoryCompletion(_) | Error::UnknownAncestry { .. } => {
             Ok(DiscoveryAnswer::Stale)
         }
         Error::ControlSourceLimit { .. } | Error::ControlPatternLimit { .. } => {
-            Ok(DiscoveryAnswer::Refused(crate::Issue::from_error(&error)))
+            Ok(DiscoveryAnswer::Refused(crate::Issue::control_refusal(directory, &error)))
         }
         error => Err(error),
     }
@@ -1081,15 +1085,25 @@ fn discovery_rejection(error: Error) -> Result<DiscoveryAnswer> {
 
 /// Stop listing one directory whose commit the index did not accept.
 ///
-/// Nothing discovered in the abandoned listing is queued: its subdirectories either left
-/// with the stale parent or were never committed, and a directory whose listing was cut
-/// short is never marked complete, so absence below it stays unknown. A refusal keeps the
-/// issues the listing had already gathered, since the refused batch may have carried them.
+/// A directory whose listing was cut short is never marked complete, so absence below it
+/// stays unknown. `committed` holds the subdirectories whose upserts batches before the
+/// unaccepted one had already committed, and what becomes of them depends on the answer:
+///
+/// - `Stale`: the index no longer holds the directory or an ancestor, so those
+///   subdirectories left with it, and the producer that replaced it records what is there.
+/// - `Refused`: the directory is still retained, and so is every subdirectory in
+///   `committed`. Nothing refused those, so they are queued like any other; only the
+///   refused batch's entries and the rest of the listing are dropped. Retrying the refused
+///   batch without its control belongs to the control-degradation design (`fdu-1onj`). A
+///   refusal also keeps the issues the listing had gathered, since that batch may have
+///   carried them.
+/// - `Stopped`: the root is terminal and nothing more is queued.
 fn abandon_directory(
     index: &IndexHandle,
     journal: &journal::JournalWait,
     frontier: &DiscoveryFrontier,
     answer: DiscoveryAnswer,
+    committed: Vec<PendingDirectory>,
     mut issues: Vec<crate::Issue>,
     mut omitted: u64,
 ) -> Result<DiscoveryStep> {
@@ -1100,6 +1114,7 @@ fn abandon_directory(
             Ok(DiscoveryStep::Stopped)
         }
         DiscoveryAnswer::Refused(issue) => {
+            frontier.extend(committed);
             retain_local_issue(&mut issues, &mut omitted, issue);
             publish_discovery_transition(
                 index,
@@ -1148,7 +1163,7 @@ fn discover_directory(
                 index,
                 journal,
                 DiscoveryTransition::Inaccessible {
-                    issues: vec![crate::Issue::from_error(&error)],
+                    issues: vec![crate::Issue::from_error_under(root, &error)],
                     omitted: 0,
                 },
             )?;
@@ -1158,7 +1173,11 @@ fn discover_directory(
     #[cfg(test)]
     let listing = test_directory_listing(listing, deterministic_discovery_order);
     let mut batch = Vec::with_capacity(scan.batch_size);
+    // Subdirectories to queue once the listing commits. The first `committed` of them are
+    // already in the index, carried by a batch this listing flushed: an accepted push that
+    // leaves the batch empty has committed everything pushed before it.
     let mut discovered = Vec::new();
+    let mut committed = 0_usize;
     let mut issues = Vec::new();
     let mut omitted_issues = 0_u64;
 
@@ -1168,6 +1187,7 @@ fn discover_directory(
                 index,
                 journal,
                 &mut batch,
+                &directory.path,
                 None,
                 Some(DiscoveryTransition::Cancelled),
                 budget.max_files,
@@ -1184,7 +1204,7 @@ fn discover_directory(
                 retain_local_issue(
                     &mut issues,
                     &mut omitted_issues,
-                    crate::Issue::from_io(&absolute, source),
+                    crate::Issue::from_io_under(root, &absolute, source),
                 );
             })
             .ok();
@@ -1198,7 +1218,7 @@ fn discover_directory(
                 retain_local_issue(
                     &mut issues,
                     &mut omitted_issues,
-                    crate::Issue::from_io(&item.path(), &source),
+                    crate::Issue::from_io_under(root, &item.path(), &source),
                 );
                 continue;
             }
@@ -1227,7 +1247,11 @@ fn discover_directory(
             control_error,
         } = prepared;
         if let Some(error) = control_error {
-            retain_local_issue(&mut issues, &mut omitted_issues, crate::Issue::from_error(&error));
+            retain_local_issue(
+                &mut issues,
+                &mut omitted_issues,
+                crate::Issue::from_error_under(root, &error),
+            );
         }
         if !retained {
             if let Some(control) = control {
@@ -1236,33 +1260,60 @@ fn discover_directory(
                     journal,
                     scan.batch_size,
                     &mut batch,
+                    &directory.path,
                     control,
                     budget.max_files,
                 )?;
                 if !matches!(answer, DiscoveryAnswer::Accepted) {
+                    discovered.truncate(committed);
                     return abandon_directory(
                         index,
                         journal,
                         frontier,
                         answer,
+                        discovered,
                         issues,
                         omitted_issues,
                     );
+                }
+                if batch.is_empty() {
+                    committed = discovered.len();
                 }
             }
             continue;
         }
 
+        // Queued before its upsert is pushed, so the batch that carries the upsert is the
+        // one whose commit moves it into the committed prefix.
+        if descend {
+            discovered.push(PendingDirectory {
+                path: path.clone(),
+                depth: directory.depth.saturating_add(1),
+            });
+        }
         let answer = push_discovery_op(
             index,
             journal,
             scan.batch_size,
             &mut batch,
-            Op::Upsert { path: path.clone(), kind, attrs },
+            &directory.path,
+            Op::Upsert { path, kind, attrs },
             budget.max_files,
         )?;
         if !matches!(answer, DiscoveryAnswer::Accepted) {
-            return abandon_directory(index, journal, frontier, answer, issues, omitted_issues);
+            discovered.truncate(committed);
+            return abandon_directory(
+                index,
+                journal,
+                frontier,
+                answer,
+                discovered,
+                issues,
+                omitted_issues,
+            );
+        }
+        if batch.is_empty() {
+            committed = discovered.len();
         }
         if let Some(control) = control {
             let answer = push_discovery_op(
@@ -1270,15 +1321,25 @@ fn discover_directory(
                 journal,
                 scan.batch_size,
                 &mut batch,
+                &directory.path,
                 control,
                 budget.max_files,
             )?;
             if !matches!(answer, DiscoveryAnswer::Accepted) {
-                return abandon_directory(index, journal, frontier, answer, issues, omitted_issues);
+                discovered.truncate(committed);
+                return abandon_directory(
+                    index,
+                    journal,
+                    frontier,
+                    answer,
+                    discovered,
+                    issues,
+                    omitted_issues,
+                );
             }
-        }
-        if descend {
-            discovered.push(PendingDirectory { path, depth: directory.depth.saturating_add(1) });
+            if batch.is_empty() {
+                committed = discovered.len();
+            }
         }
     }
 
@@ -1288,10 +1349,26 @@ fn discover_directory(
         omitted: omitted_issues,
     });
     let complete = (!incomplete).then(|| directory.path.clone());
-    let answer =
-        commit_discovery_batch(index, journal, &mut batch, complete, transition, budget.max_files)?;
+    let answer = commit_discovery_batch(
+        index,
+        journal,
+        &mut batch,
+        &directory.path,
+        complete,
+        transition,
+        budget.max_files,
+    )?;
     if !matches!(answer, DiscoveryAnswer::Accepted) {
-        return abandon_directory(index, journal, frontier, answer, issues, omitted_issues);
+        discovered.truncate(committed);
+        return abandon_directory(
+            index,
+            journal,
+            frontier,
+            answer,
+            discovered,
+            issues,
+            omitted_issues,
+        );
     }
     frontier.extend(discovered);
     Ok(DiscoveryStep::Continue)
@@ -1331,20 +1408,23 @@ fn push_discovery_op(
     journal: &journal::JournalWait,
     batch_size: usize,
     batch: &mut Vec<Op>,
+    directory: &Path,
     op: Op,
     max_files: Option<u64>,
 ) -> Result<DiscoveryAnswer> {
     batch.push(op);
     if batch.len() >= batch_size {
-        return commit_discovery_batch(index, journal, batch, None, None, max_files);
+        return commit_discovery_batch(index, journal, batch, directory, None, None, max_files);
     }
     Ok(DiscoveryAnswer::Accepted)
 }
 
+/// Commit one batch of `directory`'s listing.
 fn commit_discovery_batch(
     index: &IndexHandle,
     journal: &journal::JournalWait,
     batch: &mut Vec<Op>,
+    directory: &Path,
     directory_complete: Option<PathBuf>,
     transition: Option<DiscoveryTransition>,
     max_files: Option<u64>,
@@ -1356,7 +1436,7 @@ fn commit_discovery_batch(
         max_files,
     ) {
         Ok(outcome) => outcome,
-        Err(error) => return discovery_rejection(error),
+        Err(error) => return discovery_rejection(error, directory),
     };
     if outcome.commit.is_some() {
         journal.notify_commit();
@@ -1401,6 +1481,7 @@ const MAX_HANDOFF_RECONCILIATION_ATTEMPTS: usize = 3;
 #[allow(clippy::needless_pass_by_value)] // Ownership keeps the backend alive for this worker.
 fn run_observation(
     watcher: crate::watch::Watcher,
+    root: &Path,
     index: &IndexHandle,
     journal: &journal::JournalWait,
     scan: &ScanConfig,
@@ -1443,6 +1524,7 @@ fn run_observation(
     watcher.flush_capture()?;
     let _ = drain_observation_hints(
         &watcher,
+        root,
         index,
         journal,
         scan,
@@ -1464,10 +1546,11 @@ fn run_observation(
             &control,
             &mut |_commit| journal.notify_commit(),
         )?;
-        handoff_evidence.retain(&final_pass.reconciliation);
+        handoff_evidence.retain(root, &final_pass.reconciliation);
         watcher.flush_capture()?;
         let drained = drain_observation_hints(
             &watcher,
+            root,
             index,
             journal,
             scan,
@@ -1535,7 +1618,7 @@ fn run_observation(
                 // boundary is settled rather than retried on every later event. Retaining
                 // the causes is what lets a consumer see why.
                 let mut unreadable = HandoffEvidence::default();
-                unreadable.retain(&report.reconciliation);
+                unreadable.retain(root, &report.reconciliation);
                 if !unreadable.issues.is_empty() || unreadable.omitted > 0 {
                     publish_observation_transition(
                         index,
@@ -1558,8 +1641,10 @@ fn run_observation(
 }
 
 #[cfg(feature = "watch")]
+#[allow(clippy::too_many_arguments)]
 fn drain_observation_hints(
     watcher: &crate::watch::Watcher,
+    root: &Path,
     index: &IndexHandle,
     journal: &journal::JournalWait,
     scan: &ScanConfig,
@@ -1579,7 +1664,7 @@ fn drain_observation_hints(
         else {
             break;
         };
-        evidence.retain(&report.reconciliation);
+        evidence.retain(root, &report.reconciliation);
         let report_complete = report.apply.resource_refused == 0
             && report.apply.stale == 0
             && report.reconciliation.apply.resource_refused == 0
@@ -1614,12 +1699,12 @@ struct HandoffEvidence {
 
 #[cfg(feature = "watch")]
 impl HandoffEvidence {
-    fn retain(&mut self, report: &crate::scan::ReconcileReport) {
+    fn retain(&mut self, root: &Path, report: &crate::scan::ReconcileReport) {
         for error in &report.scan.errors {
             retain_local_issue(
                 &mut self.issues,
                 &mut self.omitted,
-                crate::Issue::from_error(error),
+                crate::Issue::from_error_under(root, error),
             );
         }
     }
@@ -1879,7 +1964,7 @@ struct TestControls {
 
 #[cfg(test)]
 impl TestControls {
-    #[cfg(all(feature = "watch", feature = "gitignore"))]
+    #[cfg(feature = "gitignore")]
     fn use_deterministic_discovery_order(&self) {
         self.deterministic_discovery_order.store(true, Ordering::Release);
     }
@@ -4994,6 +5079,127 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// A refused control abandons only what its own batch carried.
+    ///
+    /// `a` lists `-early/`, then a `.gitignore` over the per-line bound, then `zzz.txt`, one
+    /// entry per batch. The `-early` upsert commits before the control is refused, so
+    /// `-early` is a retained directory nothing refused; it used to be left unqueued and
+    /// incomplete, its subtree silently missing and its roll-up answering an empty
+    /// `Present`. The refusal also used to be retained as a pathless provider failure.
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn a_refused_control_still_queues_subdirectories_its_listing_committed() {
+        let controls = Arc::new(TestControls::default());
+        controls.use_deterministic_discovery_order();
+        let root = tempfile::tempdir().expect("temp root");
+        let a = root.path().join("a");
+        std::fs::create_dir_all(a.join("-early")).expect("fixture");
+        std::fs::write(a.join("-early").join("leaf.txt"), b"l").expect("fixture");
+        let mut line = vec![b'x'; crate::control::MAX_CONTROL_PATTERN_BYTES + 1];
+        line.push(b'\n');
+        std::fs::write(a.join(crate::control::CONTROL_FILE_NAME), &line).expect("control");
+        std::fs::write(a.join("zzz.txt"), b"z").expect("fixture");
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            OpenOptions { batch_size: 1, ..OpenOptions::default() },
+            Arc::clone(&controls),
+        )
+        .expect("open");
+        let state = wait_until_settled(&opened);
+        assert_eq!(state.phase, crate::LifecyclePhase::Ready);
+        assert_eq!(state.coverage, crate::Coverage::Partial(crate::CoverageReason::Inaccessible));
+
+        let index = &opened.state.index;
+        assert_eq!(index.directory_complete(Path::new("a")).expect("lookup"), Some(false));
+        assert_eq!(index.kind(Path::new("a/-early")).expect("lookup"), Some(EntryKind::Dir));
+        assert_eq!(index.directory_complete(Path::new("a/-early")).expect("lookup"), Some(true));
+        assert_eq!(
+            index.kind(Path::new("a/-early/leaf.txt")).expect("lookup"),
+            Some(EntryKind::File)
+        );
+        // The refused batch and everything after it in the listing are still dropped.
+        assert_eq!(index.kind(Path::new("a/zzz.txt")).expect("lookup"), None);
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::RollUp {
+                    path: PathBuf::from("a/-early"),
+                }],
+                ..crate::ReadRequest::default()
+            })
+            .expect("read");
+        assert!(
+            matches!(
+                &response.results[0],
+                crate::ProjectionResult::RollUp(crate::Knowledge::Present(summary))
+                    if summary.all.files == 1
+            ),
+            "{:?}",
+            response.results[0]
+        );
+
+        let issues = index.issues().expect("issues");
+        assert_eq!(issues.len(), 1, "{issues:?}");
+        assert_eq!(issues[0].kind, crate::IssueKind::ResourceBudget, "{issues:?}");
+        assert_eq!(issues[0].path.as_deref(), Some(Path::new("a")), "{issues:?}");
+        assert!(issues[0].message.contains("control pattern requires"), "{issues:?}");
+        opened.close().expect("close");
+    }
+
+    /// A directory created after discovery is complete once a refresh has listed it.
+    #[test]
+    fn a_directory_created_after_discovery_is_complete_once_refreshed() {
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::write(root.path().join("before.txt"), b"b").expect("fixture");
+        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("open");
+        let settled = wait_until_settled(&opened);
+        assert_eq!(settled.coverage, crate::Coverage::Complete);
+
+        std::fs::create_dir_all(root.path().join("later/deeper")).expect("fixture");
+        std::fs::write(root.path().join("later/deeper/inner.txt"), b"i").expect("fixture");
+        let receipt = opened.refresh(&[PathBuf::from("later")]).expect("refresh");
+        assert!(receipt.issues.is_empty(), "{:?}", receipt.issues);
+
+        let index = &opened.state.index;
+        assert_eq!(index.directory_complete(Path::new("later")).expect("lookup"), Some(true));
+        assert_eq!(
+            index.directory_complete(Path::new("later/deeper")).expect("lookup"),
+            Some(true)
+        );
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![
+                    crate::ReadProjection::Lookup { path: PathBuf::from("later/missing") },
+                    crate::ReadProjection::Lookup { path: PathBuf::from("later/deeper/missing") },
+                ],
+                ..crate::ReadRequest::default()
+            })
+            .expect("read");
+        assert_eq!(response.state.coverage, crate::Coverage::Complete);
+        for result in &response.results {
+            assert!(
+                matches!(result, crate::ProjectionResult::Lookup(crate::Knowledge::Absent)),
+                "{result:?}"
+            );
+        }
+        let completed: Vec<_> = index
+            .since(receipt.after.sequence)
+            .expect("journal")
+            .commits
+            .iter()
+            .flat_map(|commit| commit.state.iter())
+            .filter_map(|transition| match transition {
+                crate::StateTransition::DirectoryComplete { path } => Some(path.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(completed, [PathBuf::from("later"), PathBuf::from("later/deeper")]);
+        assert_eq!(
+            receipt.state.progress.directories_complete,
+            settled.progress.directories_complete + 2
+        );
+        opened.close().expect("close");
+    }
+
     #[test]
     fn refresh_rejects_an_unbounded_input_before_filesystem_work() {
         let root = tempfile::tempdir().expect("temp root");
@@ -5207,6 +5413,105 @@ mod tests {
             opened.state.index.kind(Path::new("blocked/secret")).expect("lookup"),
             Some(EntryKind::File),
             "the handoff read the formerly inaccessible directory"
+        );
+        // Complete coverage has to hold one level down as well. The handoff listed `blocked`
+        // in full, so a name it does not hold is absent; before a reconcile recorded
+        // completeness this answered `Unknown { Building }` forever on a complete root.
+        assert_eq!(
+            opened.state.index.directory_complete(Path::new("blocked")).expect("lookup"),
+            Some(true)
+        );
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Lookup {
+                    path: PathBuf::from("blocked/missing"),
+                }],
+                ..crate::ReadRequest::default()
+            })
+            .expect("read");
+        assert_eq!(response.state.phase, crate::LifecyclePhase::Watching);
+        assert_eq!(response.state.coverage, crate::Coverage::Complete);
+        assert!(
+            matches!(
+                response.results[0],
+                crate::ProjectionResult::Lookup(crate::Knowledge::Absent)
+            ),
+            "{:?}",
+            response.results[0]
+        );
+        opened.close().expect("close");
+    }
+
+    /// A directory the observer adds after discovery is complete once its relist finishes.
+    ///
+    /// Only discovery used to mark a directory complete, so one created while the root was
+    /// watched stayed incomplete for the session, and a lookup below it on a complete root
+    /// answered `Unknown { Building }`, which never resolves.
+    #[cfg(feature = "watch")]
+    #[test]
+    fn a_directory_the_observer_adds_is_complete_after_its_relist() {
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"").expect("script");
+        let controls = Arc::new(TestControls::default());
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            scripted_options(&script),
+            Arc::clone(&controls),
+        )
+        .expect("open scripted observer");
+        wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+        let start = current_version(&opened);
+        let watching = opened.read(crate::ReadRequest::default()).expect("read state").state;
+        assert_eq!(watching.coverage, crate::Coverage::Complete);
+
+        std::fs::create_dir_all(root.path().join("later/deeper")).expect("fixture");
+        std::fs::write(root.path().join("later/deeper/inner.txt"), b"i").expect("fixture");
+        controls.send_observation_hints("create-dir\tlater\n");
+        wait_for_observed_walk(&opened, &controls, root.path(), start, Path::new("later"), 1);
+
+        let index = &opened.state.index;
+        assert_eq!(
+            index.kind(Path::new("later/deeper/inner.txt")).expect("lookup"),
+            Some(EntryKind::File)
+        );
+        assert_eq!(index.directory_complete(Path::new("later")).expect("lookup"), Some(true));
+        assert_eq!(
+            index.directory_complete(Path::new("later/deeper")).expect("lookup"),
+            Some(true)
+        );
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![
+                    crate::ReadProjection::Lookup { path: PathBuf::from("later/missing") },
+                    crate::ReadProjection::Lookup { path: PathBuf::from("later/deeper/missing") },
+                ],
+                ..crate::ReadRequest::default()
+            })
+            .expect("read");
+        assert_eq!(response.state.coverage, crate::Coverage::Complete);
+        for result in &response.results {
+            assert!(
+                matches!(result, crate::ProjectionResult::Lookup(crate::Knowledge::Absent)),
+                "{result:?}"
+            );
+        }
+        let since = index.since(start.sequence).expect("journal");
+        let completed: Vec<_> = since
+            .commits
+            .iter()
+            .flat_map(|commit| commit.state.iter())
+            .filter_map(|transition| match transition {
+                crate::StateTransition::DirectoryComplete { path } => Some(path.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(completed, [PathBuf::from("later"), PathBuf::from("later/deeper")]);
+        assert_eq!(
+            response.state.progress.directories_complete,
+            watching.progress.directories_complete + 2,
+            "the progress count agrees with the transitions"
         );
         opened.close().expect("close");
     }
@@ -5478,7 +5783,7 @@ mod tests {
         opened.close().expect("close");
     }
 
-    #[cfg(all(unix, feature = "watch"))]
+    #[cfg(feature = "watch")]
     fn reconciles_of(opened: &OpenedIndex, since: crate::EngineVersion, path: &Path) -> usize {
         opened
             .state
@@ -5496,6 +5801,38 @@ mod tests {
                 )
             })
             .count()
+    }
+
+    /// Wait until the observer has walked `path` `walks` times since `start` and published
+    /// everything the last walk will.
+    ///
+    /// The observer applies one intent at a time and publishes a walk's outcome before it
+    /// takes the next, so a marker event sent after the walk has begun lands only once that
+    /// walk is over. A marker sent together with the event that caused the walk could
+    /// coalesce into the same intent and land first.
+    #[cfg(feature = "watch")]
+    fn wait_for_observed_walk(
+        opened: &OpenedIndex,
+        controls: &TestControls,
+        root: &Path,
+        start: crate::EngineVersion,
+        path: &Path,
+        walks: usize,
+    ) {
+        let deadline = std::time::Instant::now() + TEST_GATE_TIMEOUT;
+        while reconciles_of(opened, start, path) < walks {
+            assert!(std::time::Instant::now() < deadline, "walk {walks} of {path:?} did not begin");
+            std::thread::yield_now();
+        }
+        let marker = format!("marker-{}-{walks}.txt", path.display());
+        std::fs::write(root.join(&marker), &marker).expect("marker");
+        controls.send_observation_hints(&format!("create\t{marker}\n"));
+        let deadline = std::time::Instant::now() + TEST_GATE_TIMEOUT;
+        while opened.state.index.kind(Path::new(&marker)).expect("lookup") != Some(EntryKind::File)
+        {
+            assert!(std::time::Instant::now() < deadline, "{marker} was not applied");
+            std::thread::yield_now();
+        }
     }
 
     /// A gap over an unreadable directory is walked once, and its cause is retained.
@@ -5566,6 +5903,95 @@ mod tests {
             issues.iter().any(|issue| issue.kind == crate::IssueKind::Permission
                 && issue.path.as_deref().is_some_and(|path| path.ends_with("blocked"))),
             "{issues:?}"
+        );
+        opened.close().expect("close");
+    }
+
+    /// Re-walking one unreadable boundary retains one issue per cause, and a clean re-walk
+    /// drops the cause it disproved.
+    ///
+    /// Every provider gap over an unreadable directory retained another `ObservationGap`
+    /// and another `Permission` issue, so a few dozen routine gaps filled the bounded list
+    /// with copies and every later distinct issue was omitted with no text. The permission
+    /// issue also named an absolute path where the gap named the root-relative one.
+    #[cfg(all(unix, feature = "watch"))]
+    #[test]
+    fn repeated_unreadable_reconciles_retain_one_issue_per_boundary() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+        let root = tempfile::tempdir().expect("temp root");
+        let scripts = tempfile::tempdir().expect("script root");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"").expect("script");
+        let blocked = root.path().join("blocked");
+        std::fs::create_dir(&blocked).expect("blocked");
+        std::fs::write(blocked.join("secret"), b"s").expect("fixture");
+        let controls = Arc::new(TestControls::default());
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            scripted_options(&script),
+            Arc::clone(&controls),
+        )
+        .expect("open scripted observer");
+        let watching = wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+        assert_eq!(watching.issues.retained, 0);
+        let start = current_version(&opened);
+        let walks = std::cell::Cell::new(0);
+        let rescan_then_wait = || {
+            controls.send_observation_hints("rescan\tblocked\n");
+            walks.set(walks.get() + 1);
+            wait_for_observed_walk(
+                &opened,
+                &controls,
+                root.path(),
+                start,
+                Path::new("blocked"),
+                walks.get(),
+            );
+        };
+        let issues_of = |kind: crate::IssueKind| {
+            opened
+                .state
+                .index
+                .issues()
+                .expect("issues")
+                .into_iter()
+                .filter(|issue| issue.kind == kind)
+                .collect::<Vec<_>>()
+        };
+
+        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o000))
+            .expect("make directory inaccessible");
+        for _ in 0..5 {
+            rescan_then_wait();
+        }
+        let state = opened.state.index.state().expect("state");
+        let permission = issues_of(crate::IssueKind::Permission);
+        let gaps = issues_of(crate::IssueKind::ObservationGap);
+        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o700))
+            .expect("restore directory permissions");
+        assert_eq!(state.phase, crate::LifecyclePhase::Watching);
+        assert_eq!(permission.len(), 1, "{permission:?}");
+        assert_eq!(permission[0].path.as_deref(), Some(Path::new("blocked")), "{permission:?}");
+        assert_eq!(gaps.len(), 1, "{gaps:?}");
+        assert_eq!(gaps[0].path.as_deref(), Some(Path::new("blocked")), "{gaps:?}");
+        assert_eq!(state.issues, crate::IssueSummary { retained: 2, omitted: 0 });
+
+        // Readable again: the next re-walk completes, which disproves the permission issue.
+        // The gap stays, because it records that observation lost precision there.
+        rescan_then_wait();
+        let state = opened.state.index.state().expect("state");
+        assert_eq!(issues_of(crate::IssueKind::Permission), []);
+        assert_eq!(issues_of(crate::IssueKind::ObservationGap).len(), 1);
+        assert_eq!(state.issues, crate::IssueSummary { retained: 1, omitted: 0 });
+        assert_eq!(state.freshness, crate::Freshness::Fresh);
+        assert_eq!(
+            opened.state.index.kind(Path::new("blocked/secret")).expect("lookup"),
+            Some(EntryKind::File)
         );
         opened.close().expect("close");
     }

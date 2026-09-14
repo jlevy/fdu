@@ -414,7 +414,40 @@ fn apply_intent(
         sink(commit);
     }
     let reconciliation = scan::reconcile_pending_handle(index, scan_config, sink)?;
+    retain_unreadable(index, root, &reconciliation, sink)?;
     Ok(WatchApplyReport { apply, reconciliation })
+}
+
+/// Retain why a reconciliation could not read part of the tree.
+///
+/// The shared reconcile settles an unreadable subtree rather than walking it again on
+/// every later event, so this report is the only time its error is seen. Committing the
+/// causes keeps the partial freshness it left explainable, as the opened root does, and
+/// names each path relative to the root so a later clean walk of it can drop the issue.
+fn retain_unreadable(
+    index: &IndexHandle,
+    root: &Path,
+    reconciliation: &scan::ReconcileReport,
+    sink: &mut dyn FnMut(&Commit),
+) -> Result<()> {
+    if reconciliation.scan.errors.is_empty() {
+        return Ok(());
+    }
+    let retained = reconciliation.scan.errors.len().min(crate::MAX_RETAINED_ISSUES);
+    let issues = reconciliation.scan.errors[..retained]
+        .iter()
+        .map(|error| crate::Issue::from_error_under(root, error))
+        .collect();
+    let omitted = u64::try_from(reconciliation.scan.errors.len() - retained).unwrap_or(u64::MAX);
+    let outcome =
+        index.transition_observation(crate::index::ObservationTransition::Unreadable {
+            issues,
+            omitted,
+        })?;
+    if let Some(commit) = outcome.commit.as_ref() {
+        sink(commit);
+    }
+    Ok(())
 }
 
 fn apply_intent_controlled(
@@ -1976,6 +2009,93 @@ mod tests {
 
         assert!(matches!(error, Error::WatchRootMismatch { .. }));
         assert!(watcher.next_observation(Duration::ZERO).expect("receive").is_some());
+    }
+
+    /// A gap over an unreadable directory is walked once by the per-event driver, which
+    /// then goes quiet and keeps the cause.
+    ///
+    /// `fdu --watch` and the Python watch session drain the invalidation queue after every
+    /// event through [`Watcher::apply_next`]. While an incomplete reconciliation was queued
+    /// again, each unrelated event re-walked the same unreadable subtree -- for a root
+    /// escalation, a full-tree walk per event, for the life of the session.
+    #[cfg(unix)]
+    #[test]
+    fn apply_next_walks_an_unreadable_gap_once_and_retains_its_cause() {
+        use std::os::unix::fs::PermissionsExt;
+
+        fn walks_of(commits: &[Commit], path: &Path) -> usize {
+            commits
+                .iter()
+                .flat_map(|commit| commit.state.iter())
+                .filter(|transition| {
+                    matches!(
+                        transition,
+                        crate::StateTransition::Freshness { path: marked, current, .. }
+                            if marked == path && *current == crate::Freshness::Reconciling
+                    )
+                })
+                .count()
+        }
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonical root");
+        let blocked = root.join("blocked");
+        fs::create_dir(&blocked).expect("blocked");
+        fs::write(blocked.join("secret"), b"s").expect("fixture");
+        let (index, _) =
+            crate::scan::scan_into_index(&root, &crate::ScanConfig::default()).expect("scan");
+        let handle = crate::IndexHandle::new(index);
+        let (sender, watcher) = queued_test_watcher(root.clone());
+        let config = crate::ScanConfig::default();
+        let mut commits = Vec::new();
+
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).expect("deny reads");
+        let mut gap = CoalescedIntent::default();
+        gap.pending
+            .insert(PathBuf::from("blocked"), Pending::Escalate(InvalidateReason::WatchOverflow));
+        sender.try_send(gap).expect("queue the gap");
+        let first = watcher
+            .apply_next(&handle, &config, Duration::ZERO, &mut |commit| {
+                commits.push(commit.clone());
+            })
+            .expect("apply the gap")
+            .expect("an intent was queued");
+        for name in ["live.txt", "marker.txt"] {
+            fs::write(root.join(name), name).expect("unrelated mutation");
+            let mut event = CoalescedIntent::default();
+            event.pending.insert(PathBuf::from(name), Pending::Verify { relist_if_dir: false });
+            sender.try_send(event).expect("queue the event");
+            watcher
+                .apply_next(&handle, &config, Duration::ZERO, &mut |commit| {
+                    commits.push(commit.clone());
+                })
+                .expect("apply the event")
+                .expect("an intent was queued");
+        }
+
+        let pending = handle.take_pending_invalidations().expect("pending");
+        let freshness = handle.freshness_at(Path::new("blocked")).expect("freshness");
+        let issues = handle.issues().expect("issues");
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).expect("restore reads");
+        assert!(!first.reconciliation.is_complete(), "the gap must be unreadable");
+
+        assert_eq!(
+            walks_of(&commits, Path::new("blocked")),
+            1,
+            "an unreadable subtree must not be re-walked per unrelated event"
+        );
+        assert!(pending.is_empty(), "the queue must settle: {pending:?}");
+        assert_eq!(freshness, crate::Freshness::Partial);
+        assert!(handle.kind(Path::new("marker.txt")).expect("lookup").is_some());
+        assert!(
+            issues.iter().any(|issue| issue.kind == crate::IssueKind::Permission
+                && issue.path.as_deref() == Some(Path::new("blocked"))),
+            "{issues:?}"
+        );
     }
 
     #[test]

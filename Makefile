@@ -279,11 +279,17 @@ docs:
 # package, manifest error, resolver failure -- would hand grep empty input, grep would
 # return 1, `!` would invert it to 0, and the check that proves the split would report
 # success having checked nothing (fdu-cqtk).
+#
+# The command line makes the same promise from the other side: crates/fdu/Cargo.toml
+# says it builds without `watch`, which is what keeps that layer deletable. Nothing
+# compiled the featureless command line, so it quietly stopped building (fdu-2wlp). A
+# check of every target holds the promise, and stays cheap because nothing links.
 lib-only:
 	$(CARGO) test --locked -p fdu-core --no-default-features
 	$(CARGO) test --locked -p fdu-core --no-default-features --features gitignore
 	$(CARGO) test --locked -p fdu-core --no-default-features --features watch
 	$(CARGO) test --locked -p fdu-core --no-default-features --features watch,gitignore
+	$(CARGO) check --locked -p fdu --no-default-features --all-targets
 	@tree="$$($(CARGO) tree -p fdu-core --all-features --prefix none)" || exit 1; \
 		! printf '%s\n' "$$tree" | grep -qE '^(clap|anyhow) ' \
 		|| { echo 'fdu-core must not depend on clap or anyhow; they belong to fdu'; exit 1; }

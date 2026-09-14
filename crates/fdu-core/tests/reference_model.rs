@@ -88,6 +88,8 @@ struct Model {
     pending_invalidations: Vec<(PathBuf, InvalidateReason)>,
     freshness_epoch: u64,
     freshness: BTreeMap<PathBuf, (Freshness, u64)>,
+    /// Paths with a retained observation-gap issue: one issue per cause, never a copy.
+    gap_issues: BTreeSet<PathBuf>,
     state: IndexState,
 }
 
@@ -114,6 +116,7 @@ impl Model {
             pending_invalidations: Vec::new(),
             freshness_epoch: 0,
             freshness: BTreeMap::new(),
+            gap_issues: BTreeSet::new(),
             state: IndexState::default(),
         }
     }
@@ -213,8 +216,9 @@ impl Model {
                     self.mark_unfresh(path, Freshness::Stale);
                     let current = self.freshness_at(path);
                     self.state.freshness = self.freshness_at(Path::new(""));
-                    if is_observation_gap(*reason) {
+                    if is_observation_gap(*reason) && !self.gap_issues.contains(path) {
                         if self.state.issues.retained < EXPECTED_RETAINED_ISSUE_LIMIT {
+                            self.gap_issues.insert(path.clone());
                             self.state.issues.retained += 1;
                         } else {
                             self.state.issues.omitted += 1;

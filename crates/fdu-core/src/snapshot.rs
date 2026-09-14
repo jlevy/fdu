@@ -1417,6 +1417,60 @@ mod tests {
         assert!(restored.controls().source_is(Path::new(".gitignore"), &source));
     }
 
+    /// A snapshot with no control state loads without walking the tree to reclassify it.
+    ///
+    /// Installing the loaded control table re-evaluated every entry's ignored bit, allocating
+    /// a path per entry, even when the table was empty and no bit could move. That is every
+    /// warm open of a tree with no `.gitignore`, and it scaled with the tree.
+    #[test]
+    fn loading_a_snapshot_without_controls_skips_the_reclassification_walk() {
+        fn visits_while_loading(path: &Path) -> (u64, Index) {
+            crate::index::RECLASSIFY_VISITS.with(|visits| visits.set(0));
+            let restored = load(path).expect("load").expect("snapshot present");
+            (crate::index::RECLASSIFY_VISITS.with(std::cell::Cell::get), restored)
+        }
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut original = Index::new("/some/root");
+        let mut ops = vec![Op::Upsert {
+            path: PathBuf::from("src"),
+            kind: EntryKind::Dir,
+            attrs: attrs(0, 1),
+        }];
+        ops.extend((0..64).map(|sequence| Op::Upsert {
+            path: PathBuf::from(format!("src/file-{sequence:02}.rs")),
+            kind: EntryKind::File,
+            attrs: attrs(sequence + 1, 2),
+        }));
+        original.apply_baseline_ok(&Observation::new(ops));
+        let plain = dir.path().join("plain.fdu");
+        save(&original, &plain).expect("save");
+
+        let (visits, restored) = visits_while_loading(&plain);
+
+        assert_eq!(visits, 0, "an empty control table has nothing to reclassify");
+        assert!(restored.controls().is_empty());
+        assert_eq!(restored.is_ignored(Path::new("src/file-00.rs")), Some(false));
+        assert_eq!(restored.partition_total(), original.partition_total());
+
+        // The probe sees the walk when there is something to walk for.
+        #[cfg(feature = "gitignore")]
+        {
+            original.apply_ok(&Observation::new(vec![Op::ControlUpsert {
+                path: PathBuf::from("src/.gitignore"),
+                source: b"file-0*.rs\n".to_vec(),
+            }]));
+            let controlled = dir.path().join("controlled.fdu");
+            save(&original, &controlled).expect("save");
+
+            let (visits, restored) = visits_while_loading(&controlled);
+
+            assert!(visits > 64, "{visits}");
+            assert_eq!(restored.is_ignored(Path::new("src/file-00.rs")), Some(true));
+            assert_eq!(restored.is_ignored(Path::new("src/file-10.rs")), Some(false));
+        }
+    }
+
     #[test]
     fn round_trip_handles_wide_directory_fanout() {
         // Load resolves each record's id from its parent. Doing that by scanning the

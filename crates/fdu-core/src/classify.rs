@@ -5,6 +5,37 @@
 //! Classification may also use a caller-supplied bounded prefix for binary signatures,
 //! shebangs, modelines, ambiguous headers, and origin flags. Classification never parses
 //! rules or opens a file; the caller owns the optional read.
+//!
+//! # Extension levels
+//!
+//! A file name has up to three extensions, one per question, and each has its own
+//! functions:
+//!
+//! - **Raw**: [`derive_ext`], and [`ext_bucket`], which labels its `None` as
+//!   [`NO_EXTENSION`]. Any final dotted component counts, whatever its bytes or length,
+//!   and a `.tar` before it is kept. The extension view, per-directory extension tallies,
+//!   and an unrecognized type's label use this level. It is the answer fdu gave before
+//!   registries existed.
+//! - **Logical**: [`logical_ext`] and [`NameClassification::logical_extension`]. This is
+//!   File Rollup Format's name-owned extension: up to two trailing components, each ASCII
+//!   alphanumeric and at most twelve bytes. A portable entry row reports it.
+//! - **Canonical**: [`TypeRegistry::canonical_ext`] and
+//!   [`NameClassification::canonical_extension`], from [`TypeRegistry::classify_name`].
+//!   This is the declared extension the logical one matched, whole or by its final
+//!   component. It is `None` when nothing declared matches, or when an exact filename wins
+//!   first.
+//!
+//! Where the levels part, with the compiled registry (`none` is `None`):
+//!
+//! | Name             | Raw       | Bucket     | Logical   | Canonical |
+//! | ---------------- | --------- | ---------- | --------- | --------- |
+//! | `archive.tar.gz` | `.tar.gz` | `.tar.gz`  | `.tar.gz` | `.tar.gz` |
+//! | `release.v2.zip` | `.zip`    | `.zip`     | `.v2.zip` | `.zip`    |
+//! | `file.c++`       | `.c++`    | `.c++`     | none      | none      |
+//! | `.gitignore`     | none      | `(none)`   | none      | none      |
+//! | `notes.`         | none      | `(none)`   | none      | none      |
+//!
+//! A unit test reads this table and checks every cell against the functions.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -564,19 +595,23 @@ impl TypeRegistry {
         if name.to_str().and_then(|name| self.by_filename(name)).is_some() {
             return None;
         }
-        self.extension_match(name).map(|(extension, _)| extension)
+        self.extension_match(name).map(|(extension, _)| extension.as_str().to_string())
     }
 
     /// The declared extension a name's logical extension matches, and its rule: the whole
     /// logical extension first, then its final component.
-    fn extension_match(&self, name: &OsStr) -> Option<(String, &TypeRule)> {
-        let logical = logical_ext(name)?;
-        let key = logical.strip_prefix('.').expect("a logical extension starts with a dot");
+    ///
+    /// Held inline rather than allocated, because every classified file asks and most
+    /// files in a tree match nothing; see [`InlineExtension`].
+    fn extension_match(&self, name: &OsStr) -> Option<(InlineExtension, &TypeRule)> {
+        let logical = InlineExtension::logical(name)?;
+        let key =
+            logical.as_str().strip_prefix('.').expect("a logical extension starts with a dot");
         if let Some(rule) = self.by_extension(key) {
             return Some((logical, rule));
         }
         let (_, suffix) = key.rsplit_once('.')?;
-        self.by_extension(suffix).map(|rule| (format!(".{suffix}"), rule))
+        self.by_extension(suffix).map(|rule| (InlineExtension::dotted(suffix), rule))
     }
 
     /// Every stable type identifier it can produce, in manifest order.
@@ -591,7 +626,7 @@ impl TypeRegistry {
         let extension_match = filename_rule.is_none().then(|| self.extension_match(name));
         let (canonical_extension, rule) = match (filename_rule, extension_match.flatten()) {
             (Some(rule), _) => (None, Some(rule)),
-            (None, Some((extension, rule))) => (Some(extension), Some(rule)),
+            (None, Some((extension, rule))) => (Some(extension.as_str().to_string()), Some(rule)),
             (None, None) => (None, None),
         };
         let fallback_group = self
@@ -735,7 +770,8 @@ pub fn classify_with(
     }
 
     if let Some((extension, rule)) = registry.extension_match(name) {
-        let key = extension.strip_prefix('.').expect("derived extensions start with a dot");
+        let key =
+            extension.as_str().strip_prefix('.').expect("derived extensions start with a dot");
         let source = if key.contains('.') {
             DetectionSource::CompoundExtension
         } else {
@@ -1066,11 +1102,12 @@ fn eligible_extension_component<T: Copy + Eq + From<u8>>(component: &[T]) -> boo
         })
 }
 
-fn logical_ext_units<T: Copy + Eq + From<u8>>(
+/// The components of a name's logical extension, without their dots: the inner one when
+/// it is eligible, and the final one.
+fn logical_ext_components<T: Copy + Eq + From<u8>>(
     name: &[T],
     dot: T,
-    lowercase: impl Fn(T) -> T,
-) -> Option<Vec<T>> {
+) -> Option<(Option<&[T]>, &[T])> {
     let searchable = if name.first() == Some(&dot) { &name[1..] } else { name };
     let dot_index = searchable.iter().rposition(|unit| *unit == dot)?;
     let (stem, last) = searchable.split_at(dot_index);
@@ -1078,27 +1115,94 @@ fn logical_ext_units<T: Copy + Eq + From<u8>>(
     if !eligible_extension_component(last) {
         return None;
     }
+    let inner = stem
+        .iter()
+        .rposition(|unit| *unit == dot)
+        .map(|inner_dot| &stem[inner_dot + 1..])
+        .filter(|inner| eligible_extension_component(inner));
+    Some((inner, last))
+}
 
+fn logical_ext_units<T: Copy + Eq + From<u8>>(
+    name: &[T],
+    dot: T,
+    lowercase: impl Fn(T) -> T,
+) -> Option<Vec<T>> {
+    let (inner, last) = logical_ext_components(name, dot)?;
     let mut extension = Vec::new();
-    if let Some(inner_dot) = stem.iter().rposition(|unit| *unit == dot) {
-        let inner = &stem[inner_dot + 1..];
-        if eligible_extension_component(inner) {
-            extension.push(dot);
-            extension.extend(inner.iter().copied().map(&lowercase));
-        }
+    for component in inner.into_iter().chain([last]) {
+        extension.push(dot);
+        extension.extend(component.iter().copied().map(&lowercase));
     }
-    extension.push(dot);
-    extension.extend(last.iter().copied().map(lowercase));
     Some(extension)
+}
+
+/// The longest logical extension: two components of at most
+/// [`MAX_LOGICAL_EXTENSION_COMPONENT`] units, each with its dot.
+const MAX_LOGICAL_EXTENSION_BYTES: usize = 2 * (MAX_LOGICAL_EXTENSION_COMPONENT + 1);
+
+/// A logical or declared extension held inline: lowercase ASCII with its leading dot.
+///
+/// Declared extensions are matched for every classified file, and most files in a tree
+/// match none. An eligible component is ASCII alphanumeric and bounded, so the key fits
+/// here and matching allocates nothing: an unrecognized file pays only for the raw
+/// extension its label names, and a recognized one only where a caller wants its
+/// canonical extension as a `String`. Allocating the key made every unrecognized file on
+/// an opened root cost one allocation more, which that route's allocation-slope guard
+/// caught.
+#[derive(Clone, Copy)]
+struct InlineExtension {
+    bytes: [u8; MAX_LOGICAL_EXTENSION_BYTES],
+    len: usize,
+}
+
+impl InlineExtension {
+    const EMPTY: Self = Self { bytes: [0; MAX_LOGICAL_EXTENSION_BYTES], len: 0 };
+
+    /// The name's logical extension, spelled exactly as [`logical_ext`] spells it.
+    fn logical(name: &OsStr) -> Option<Self> {
+        #[cfg(unix)]
+        let units = std::os::unix::ffi::OsStrExt::as_bytes(name);
+        // A non-ASCII character is never a dot or an alphanumeric in any encoding, so a
+        // Unicode name's UTF-8 bytes find the components its native units would. A
+        // Windows name that is not Unicode is rare enough to take the allocating path.
+        #[cfg(not(unix))]
+        let Some(units) = name.to_str().map(str::as_bytes) else {
+            return logical_ext(name).map(|extension| Self::EMPTY.with(extension.bytes()));
+        };
+        let (inner, last) = logical_ext_components(units, b'.')?;
+        let mut extension = Self::EMPTY;
+        for component in inner.into_iter().chain([last]) {
+            extension = extension.with(*b".").with(component.iter().map(u8::to_ascii_lowercase));
+        }
+        Some(extension)
+    }
+
+    /// `.component`, for a component already taken from a logical extension.
+    fn dotted(component: &str) -> Self {
+        Self::EMPTY.with(*b".").with(component.bytes())
+    }
+
+    fn with(mut self, bytes: impl IntoIterator<Item = u8>) -> Self {
+        for byte in bytes {
+            self.bytes[self.len] = byte;
+            self.len += 1;
+        }
+        self
+    }
+
+    fn as_str(&self) -> &str {
+        std::str::from_utf8(&self.bytes[..self.len]).expect("an eligible extension is ASCII")
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::type_rule_manifest::{MANIFEST_FAMILIES, ManifestRule, parse_manifest};
     use super::{
-        ContentFamily, DetectionConfidence, DetectionSource, NO_EXTENSION, TypeRegistry,
-        classify_path, classify_path_with_prefix, classify_with, derive_ext, ext_bucket,
-        family_from_name, logical_ext, type_rule_fingerprint,
+        ContentFamily, DetectionConfidence, DetectionSource, InlineExtension, NO_EXTENSION,
+        TypeRegistry, classify_path, classify_path_with_prefix, classify_with, derive_ext,
+        ext_bucket, family_from_name, logical_ext, type_rule_fingerprint,
     };
     use super::{GENERATED_RULES, human_language_name};
     use std::ffi::OsStr;
@@ -1396,6 +1500,39 @@ priority = 100
         assert_eq!(derive_ext(OsStr::new("Photo.JPEG")).as_deref(), Some(".jpeg"));
     }
 
+    /// The module documentation's extension-level table is read back and checked cell by
+    /// cell, so a change to any level fails here instead of leaving the table wrong. The
+    /// engine architecture document repeats the table and names this test as its source.
+    #[test]
+    fn module_documentation_extension_table_matches_the_functions() {
+        let rules = TypeRegistry::compiled();
+        let mut rows = 0;
+        for line in include_str!("classify.rs").lines().take_while(|line| line.starts_with("//!")) {
+            let row = line.trim_start_matches("//!").trim();
+            if !row.starts_with("| `") {
+                continue;
+            }
+            let cells: Vec<Option<&str>> = row
+                .trim_matches('|')
+                .split('|')
+                .map(|cell| match cell.trim() {
+                    "none" => None,
+                    cell => Some(cell.trim_matches('`')),
+                })
+                .collect();
+            let [Some(name), raw, bucket, logical, canonical] = cells.as_slice() else {
+                panic!("an example row has a name and four levels: {row}");
+            };
+            let name = OsStr::new(name);
+            assert_eq!(derive_ext(name).as_deref(), *raw, "raw {name:?}");
+            assert_eq!(Some(ext_bucket(name).as_str()), *bucket, "bucket {name:?}");
+            assert_eq!(logical_ext(name).as_deref(), *logical, "logical {name:?}");
+            assert_eq!(rules.canonical_ext(name).as_deref(), *canonical, "canonical {name:?}");
+            rows += 1;
+        }
+        assert_eq!(rows, 5, "every example row in the module documentation was read");
+    }
+
     /// Three extensions answer three questions, and these names are where they part.
     ///
     /// `logical_ext` is the File Rollup observation, `canonical_ext` the declared extension
@@ -1414,6 +1551,7 @@ priority = 100
             (".eslintrc.json", Some(".json"), Some(".json"), Some(".json")),
             (".gitignore", None, None, None),
             ("trailing.", None, None, None),
+            ("notes.", None, None, None),
             // Undeclared compound: no canonical form; the raw extension is its final part.
             ("release.v2.widget", Some(".v2.widget"), None, Some(".widget")),
             // Ineligible for File Rollup, yet each is still a raw extension of its own.
@@ -1426,6 +1564,11 @@ priority = 100
         ] {
             let name = OsStr::new(name);
             assert_eq!(logical_ext(name).as_deref(), logical, "logical {name:?}");
+            assert_eq!(
+                InlineExtension::logical(name).as_ref().map(InlineExtension::as_str),
+                logical,
+                "inline logical {name:?}"
+            );
             assert_eq!(rules.canonical_ext(name).as_deref(), canonical, "canonical {name:?}");
             assert_eq!(
                 rules.classify_name(name).canonical_extension(),
@@ -1434,6 +1577,50 @@ priority = 100
             );
             assert_eq!(derive_ext(name).as_deref(), raw, "raw {name:?}");
             assert_eq!(ext_bucket(name), raw.unwrap_or(NO_EXTENSION), "bucket {name:?}");
+        }
+    }
+
+    /// The inline matching key spells what `logical_ext` does, at each of its bounds.
+    #[test]
+    fn inline_logical_extension_spells_what_logical_ext_does() {
+        let twelve = "abcdefghijkl";
+        let names = [
+            "MAIN.RS".to_string(),
+            "Archive.TAR.GZ".to_string(),
+            // Both components at the length bound, so the key fills its buffer.
+            format!("x.{twelve}.{}", twelve.to_uppercase()),
+            format!("x.{twelve}m.{twelve}"),
+            format!("x.{twelve}.{twelve}m"),
+            ".hidden".to_string(),
+            ".hidden.TOML".to_string(),
+            "..".to_string(),
+            ".".to_string(),
+            String::new(),
+            "a.".to_string(),
+            "a..b".to_string(),
+            "résumé.v2.tëxt".to_string(),
+            "naïve.v2.Md".to_string(),
+        ];
+        let inline = |name: &OsStr| InlineExtension::logical(name).map(|e| e.as_str().to_owned());
+        for name in &names {
+            let name = OsStr::new(name);
+            assert_eq!(inline(name), logical_ext(name), "{name:?}");
+        }
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            let name = OsStr::from_bytes(b"caf\xe9.v2.TXT");
+            assert_eq!(logical_ext(name).as_deref(), Some(".v2.txt"));
+            assert_eq!(inline(name), logical_ext(name));
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::ffi::OsStringExt;
+            let units: Vec<u16> = [0xD800].into_iter().chain(".v2.TXT".encode_utf16()).collect();
+            let name = std::ffi::OsString::from_wide(&units);
+            assert_eq!(logical_ext(&name).as_deref(), Some(".v2.txt"));
+            assert_eq!(inline(&name), logical_ext(&name));
         }
     }
 
