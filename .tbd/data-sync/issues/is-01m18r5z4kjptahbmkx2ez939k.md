@@ -3,9 +3,9 @@ type: is
 id: is-01m18r5z4kjptahbmkx2ez939k
 title: Control state is built for every scan, including roll-ups that never use it
 kind: bug
-status: in_progress
+status: closed
 priority: 0
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - scale
@@ -14,7 +14,11 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-30T07:12:13.970Z
-updated_at: 2026-09-14T02:30:45.364Z
+updated_at: 2026-09-14T14:37:37.369Z
+closed_at: 2026-09-14T14:37:37.368Z
+close_reason: Triage 2026-09-14 recommended closing on merge to main. The control-observation gate (a69b95e, planner read_controls=false, plus CLI --watch off in 2237a70) is on main via stack merge 7cc5554. The library open default is decided on fdu-agb6.
+resolution: null
+duplicate_of: null
 ---
 Root cause of the control-table aborts.
 

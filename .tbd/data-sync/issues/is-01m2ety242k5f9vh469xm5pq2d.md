@@ -5,12 +5,12 @@ title: "Make the PR stack and #49 merge-ready together, with CI green on every P
 kind: task
 status: in_progress
 priority: 0
-version: 4
+version: 5
 labels:
   - stack-followup
 dependencies: []
 created_at: 2026-09-14T02:11:29.025Z
-updated_at: 2026-09-14T13:56:29.068Z
+updated_at: 2026-09-14T14:37:36.728Z
 ---
 The user's goal, set 2026-09-13: the whole stack merges together, ready to merge, with CI passing on every PR. This bead tracks the process; each fix has its own bead.
 
@@ -58,3 +58,10 @@ Still owed, all blocked on host disk (3.5 GiB free):
 - make check and cross-lint on the combined tree.
 
 2026-09-14 DECISION (user): merge only after checks. Once the user empties Trash, run make check (and cross-lint) on the combined tree plus a quick interleaved timing of `fdu PATH` against main, on one tree with no .gitignore files and one with many. If the stack is within 10% of main on both, merge; the strict 3% quiet-host gate stays open on fdu-lj4h. If it is slower than that, stop and bring the user the numbers and a profile. The lifecycle Lows (a74137f), fdu-uzzv, fdu-2q40 and fdu-k2l5 go into one follow-up PR on main.
+
+2026-09-14 MERGED. Pre-merge checks, both passed:
+- Speed, fdu --cache off, 15 interleaved pairs, busy host. Stack/main median pair ratio: 0.962 on ~/.rustup/toolchains (72.5k entries, 0 .gitignore); 0.971 on ~/wrk/github/metabrowser (128.5k entries, 48); 0.994 on metabrowser-release-perf (580k entries, 286). Totals were identical on all three trees.
+- make check (UV_PYTHON=3.12) and make cross-lint passed on the combined tree 8b35e28. The first run failed only because this host's uv picked a free-threaded 3.14 for python-smoke; see the bead filed for that.
+- Merge simulation in both orders: clean, same tree.
+Merged: stack #53 via gh stack merge --merge as 7cc5554, then #49 as dda7e6a. main's tree equals the checked tree 8b35e28. All evidence SHAs, including the perf/h86-* tags, are reachable from main.
+Follow-up PRs on main: the lifecycle Lows, fdu-uzzv, fdu-2q40 and fdu-k2l5, plus the decisions recorded on fdu-agb6, fdu-l89e, fdu-8w5k, fdu-r3j4 and fdu-jilk.
