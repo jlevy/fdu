@@ -5,12 +5,12 @@ title: "Make the PR stack and #49 merge-ready together, with CI green on every P
 kind: task
 status: in_progress
 priority: 0
-version: 2
+version: 3
 labels:
   - stack-followup
 dependencies: []
 created_at: 2026-09-14T02:11:29.025Z
-updated_at: 2026-09-14T03:41:05.804Z
+updated_at: 2026-09-14T04:57:11.387Z
 ---
 The user's goal, set 2026-09-13: the whole stack merges together, ready to merge, with CI passing on every PR. This bead tracks the process; each fix has its own bead.
 
@@ -46,3 +46,13 @@ Still in flight:
 - fdu-uzzv (P1) has not started.
 
 Readiness still owed: make check and make cross-lint on the combined tree (blocked on disk), the merge simulation with #49, and a "Merge readiness" section in each description.
+
+2026-09-13 22:15 PDT checkpoint:
+- All six PRs are 19/19 green and CLEAN: #48 d48b8f8, #49 6e018a0, #50 6e94e6b, #51 5d60aba, #52 ddd2b7d, #54 e77b1d9.
+- Every PR is reviewed through its head. Delta reviews: #48 5194005473 (engine) and 5194007815 (surfaces), #49 5193948340, #51 5193989647, #52 5193989948, #54 5193949483. All say safe to merge.
+- Findings from the delta reviews are filed as beads: fdu-2q40, fdu-k2l5, fdu-a7un, fdu-c5kn, fdu-tp2p, fdu-ayzg, fdu-cvx1, fdu-2o2r, plus a note on fdu-hw7f.
+- Each PR description now opens with a Merge readiness section.
+Still owed, all blocked on host disk (3.5 GiB free):
+- the lifecycle fixes, checkpoint a74137f in worktree agent-a365bdbfabb1cd605;
+- fdu-uzzv;
+- make check and cross-lint on the combined tree.
