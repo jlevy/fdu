@@ -383,7 +383,21 @@ class PartitionRollUpSummary:
 
 @dataclass(frozen=True, slots=True)
 class NameClassification:
+    """How the type registry reads one file name.
+
+    Its two extensions are two of the three levels tabulated under "Classification and
+    Extension Levels" in docs/project/architecture/fdu-engine-architecture.md and in the
+    ``fdu_core::classify`` module. Neither is the raw level ``RollUp.by_extension`` uses.
+    """
+
+    #: The File Rollup logical level, ``fdu_core::classify::logical_ext``: up to two
+    #: trailing alphanumeric components, so ``release.v2.zip`` is ``.v2.zip`` and
+    #: ``file.c++`` has none.
     logical_extension: str | None
+    #: The canonical match level: the declared extension the logical one matched, whole or
+    #: by its final component, so ``release.v2.zip`` is ``.zip`` under the compiled
+    #: registry and ``file.c++`` has none. ``None`` when nothing declared matches, or when
+    #: an exact filename wins first.
     canonical_extension: str | None
     kind_id: str | None
     family_id: str | None
@@ -473,8 +487,16 @@ class EntrySelection:
     query: Selection = field(default_factory=Selection)
     max_size: int | None = None
     exclude_ignored: bool = False
+    #: Extensions to admit at the File Rollup logical level, with the leading dot, matched
+    #: against ``NameClassification.logical_extension`` rather than the raw or canonical
+    #: level: ``.v2.zip`` admits ``release.v2.zip`` and ``.zip`` does not. See
+    #: "Classification and Extension Levels" in
+    #: docs/project/architecture/fdu-engine-architecture.md.
     logical_extensions: tuple[str, ...] = ()
     exact_names: tuple[str, ...] = ()
+    #: Lowercase final dotted components to admit, with the leading dot. This is none of
+    #: the three extension levels: only the last component counts, so ``.zip`` admits
+    #: ``release.v2.zip`` and ``.c++`` admits ``file.c++``.
     terminal_extensions: tuple[str, ...] = ()
     ancestor_names: tuple[str, ...] = ()
 
