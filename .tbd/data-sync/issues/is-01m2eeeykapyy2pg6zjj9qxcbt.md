@@ -5,7 +5,7 @@ title: "Address review: PR #52 — one-shot parity without weakening streaming"
 kind: task
 status: closed
 priority: 1
-version: 19
+version: 20
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
 labels:
   - stack-followup
@@ -26,8 +26,9 @@ child_order_hints:
   - is-01m2esgqx2v4wpb5v3fytaqgtz
   - is-01m2et31c6a5zryh6mw57f7v0s
   - is-01m2et31pte5v3c039ny9bjdjh
+  - is-01m2ew97f3ay7c2rp9ztb7b8et
 created_at: 2026-09-13T22:33:30.985Z
-updated_at: 2026-09-14T02:18:01.046Z
+updated_at: 2026-09-14T02:35:03.518Z
 closed_at: 2026-09-14T02:18:01.045Z
 close_reason: "All eleven PR #52 review findings are dispositioned through 8640758. They first ran in CI together with #51 and #48 in merge 753e10f. That merge failed the opened allocation-slope guard; the growth was attributed to #48 3b6de62 (one allocation per unrecognized file) and fixed without raising any ceiling in c0511e9 on #52 and a080391 on #48. CI is green on #52 at c0511e9 (19/19). The disposition map is posted at https://github.com/jlevy/fdu/pull/52#issuecomment-5658101791. Post-merge verification follow-ups stay open under this parent: fdu-tilu, fdu-61vv, fdu-8yv0 (FIX52-1), and fdu-z0vu (FIX52-2)."
 resolution: null

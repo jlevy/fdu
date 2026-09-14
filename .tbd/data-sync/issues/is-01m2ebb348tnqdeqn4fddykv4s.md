@@ -5,7 +5,7 @@ title: "Address review: PR #48 — opened-root engine technical review"
 kind: task
 status: open
 priority: 1
-version: 34
+version: 35
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels: []
 dependencies: []
@@ -42,8 +42,9 @@ child_order_hints:
   - is-01m2esgndtpzgepd8x9vsqqw8y
   - is-01m2esgns6reaadryb462ngghw
   - is-01m2esgp4bz57m5z341p2xgn7r
+  - is-01m2ew7g4hvrgk341tvpay3epj
 created_at: 2026-09-13T21:38:58.823Z
-updated_at: 2026-09-14T01:46:42.186Z
+updated_at: 2026-09-14T02:34:06.864Z
 ---
 Formal review 5192314101 at head c853f7c: https://github.com/jlevy/fdu/pull/48#pullrequestreview-5192314101 — 2 Blocker, 2 High, 15 Medium, 14 Low across LIFE, READ, CLASS, PY. Every finding gets one child bead (or an existing bead with appended context) and an explicit fixed/rebutted/deferred disposition in the PR reply. Merge order: #48 must not reach main without #51's control-observation gate (CLASS-1); LIFE-6 and READ-4 land together.
 
