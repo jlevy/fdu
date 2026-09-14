@@ -1012,6 +1012,45 @@ pub(crate) fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<
     fs::symlink_metadata(entry.path())
 }
 
+#[cfg(test)]
+pub(crate) type ChildMetadataHook = Box<dyn FnMut(&Path) -> Option<std::io::Error>>;
+
+#[cfg(test)]
+std::thread_local! {
+    /// Runs before each listed child's metadata lookup in a reconciliation on this
+    /// thread, with the child's absolute path. An error it returns stands in for the
+    /// lookup's; it may also change the tree first. Per thread, because tests run in
+    /// parallel and a reconciliation runs on its caller's thread.
+    static CHILD_METADATA_HOOK: std::cell::RefCell<Option<ChildMetadataHook>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Install [`CHILD_METADATA_HOOK`] for the calling thread.
+#[cfg(test)]
+pub(crate) fn set_child_metadata_hook(hook: impl FnMut(&Path) -> Option<std::io::Error> + 'static) {
+    CHILD_METADATA_HOOK.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+}
+
+/// Remove the calling thread's [`CHILD_METADATA_HOOK`].
+#[cfg(test)]
+pub(crate) fn clear_child_metadata_hook() {
+    CHILD_METADATA_HOOK.with(|slot| *slot.borrow_mut() = None);
+}
+
+/// Metadata for one entry a reconciliation's listing returned.
+fn listed_child_metadata(entry: &fs::DirEntry) -> std::io::Result<fs::Metadata> {
+    #[cfg(test)]
+    {
+        let path = entry.path();
+        let injected = CHILD_METADATA_HOOK
+            .with(|slot| slot.borrow_mut().as_mut().and_then(|hook| hook(&path)));
+        if let Some(error) = injected {
+            return Err(error);
+        }
+    }
+    metadata_for_fingerprint(entry)
+}
+
 /// Owned output from the filesystem walker before it crosses a public mutation boundary.
 ///
 /// Only the scan and opened-discovery producers construct this type. Their admission,
@@ -4306,7 +4345,6 @@ fn reconcile_target_inner(
                     }
                 };
                 let name = item.file_name();
-                control_seen |= name == crate::control::CONTROL_FILE_NAME;
                 // Seeing the name proves it is not absent even if the following
                 // metadata lookup fails. Remove it from the missing set before that
                 // fallible lookup so an operational error cannot turn an existing
@@ -4315,9 +4353,30 @@ fn reconcile_target_inner(
                     Some(baseline) => baseline,
                     None => target.expectation(&rel_dir.join(&name))?,
                 };
-                let meta = match metadata_for_fingerprint(&item) {
+                let meta = match listed_child_metadata(&item) {
                     Ok(meta) => meta,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        // The listing named it and the lookup found nothing: it was
+                        // deleted in between. That is an observation, not an error;
+                        // recorded as an error it settled as a phantom entry with
+                        // permanent partial freshness. A vanished control file is not
+                        // marked seen, so the listing's closing removals drop its
+                        // rules with it.
+                        if baseline.state != PathState::Absent {
+                            batch.push(ObservationOp::if_state(
+                                Op::Remove { path: rel_dir.join(&name) },
+                                baseline,
+                            ));
+                            if batch.len() >= config.batch_size.max(1) {
+                                flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
+                            }
+                        }
+                        continue;
+                    }
                     Err(error) => {
+                        // Present but unreadable: its rules, if it is the control file,
+                        // stay until a read says otherwise.
+                        control_seen |= name == crate::control::CONTROL_FILE_NAME;
                         report.scan.errors.push(Error::io(item.path(), error));
                         continue;
                     }
@@ -7714,6 +7773,40 @@ mod tests {
         .expect("reconcile handle");
 
         assert!(observed_after_apply);
+    }
+
+    /// A name the listing returned that is gone by the time it is stat'd was deleted. The
+    /// walk removes it; recorded as an error, it settled as a phantom entry with permanent
+    /// partial freshness that no later event healed.
+    #[test]
+    fn a_child_deleted_between_listing_and_stat_is_removed_rather_than_reported() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join("keep.txt"), b"keep");
+        let victim = dir.path().join("gone.txt");
+        write_file(&victim, b"gone");
+        let config = ScanConfig { threads: Some(1), ..ScanConfig::default() };
+        let (mut index, _) = scan_into_index(dir.path(), &config).expect("scan");
+        assert!(index.lookup(Path::new("gone.txt")).is_some());
+
+        index.apply_ok(&Observation::new(vec![Op::InvalidateSubtree {
+            path: PathBuf::new(),
+            reason: crate::InvalidateReason::Requested,
+        }]));
+        set_child_metadata_hook(move |path| {
+            if path.file_name() == Some(OsStr::new("gone.txt")) {
+                fs::remove_file(&victim).expect("delete between listing and stat");
+            }
+            None
+        });
+        let report = reconcile_pending(&mut index, &config, &mut |_| {});
+        clear_child_metadata_hook();
+        let report = report.expect("reconcile");
+
+        assert!(report.is_complete(), "{:?}", report.scan.errors);
+        assert_eq!(report.apply.removed, 1);
+        assert!(index.lookup(Path::new("gone.txt")).is_none());
+        assert!(index.lookup(Path::new("keep.txt")).is_some());
+        assert_eq!(index.freshness(), crate::Freshness::Fresh);
     }
 
     #[test]
