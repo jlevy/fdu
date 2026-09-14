@@ -1178,8 +1178,11 @@ performance. This correction changes the measured coverage, not the acceptance m
 
 Enabling the capability exposed a second scope mismatch in the default-command probe: it
 inherited `ScanConfig::default().read_controls = true`, while the non-watch CLI
-explicitly sets it to `false`. `fdu-ht5q` makes only `default-tree` select that CLI
-scope; index-returning cold scans and opened discovery still retain control state.
+explicitly set it to `false`. `fdu-ht5q` made only `default-tree` select that CLI scope;
+index-returning cold scans and opened discovery still retain control state.
+Since PR #51 neither the command line nor the probe chooses it: the one-shot report
+planner turns observation off for every report, and the probe passes its scan
+configuration through as the command line does.
 The regression test writes a snapshot through the probe and requires an exact-scope
 public cache-only open to admit it for controls-off and reject it for controls-on.
 Report-only snapshot projection cannot hide the mismatch from that test.

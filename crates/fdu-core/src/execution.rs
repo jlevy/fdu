@@ -49,6 +49,18 @@ pub(crate) struct ReportPlan {
     /// whose contract is to answer from the snapshot, and content analysis, whose
     /// sidecar avoids re-reading file bodies.
     pub read_snapshot: bool,
+    /// Whether the scan observes control state: reads `.gitignore` sources and retains
+    /// the ignore classification derived from them.
+    ///
+    /// Derived here and never inherited from the caller's
+    /// [`ScanConfig::read_controls`](crate::ScanConfig::read_controls), by the same
+    /// rule as the two fields above. No report view reads ignore classification, so
+    /// observing it buys a one-shot report nothing: every control file opened and
+    /// parsed, a table retained, and a retention bound that could abort the report over
+    /// state it never shows (fdu-etfj). Deciding it in this planner rather than in a
+    /// front end is what gives the command line and the Python package, which reach it
+    /// with different scan configurations, one scan, one answer, and one cache scope.
+    pub read_controls: bool,
 }
 
 /// Operational work behind one one-shot report.
@@ -167,6 +179,9 @@ pub(crate) fn plan_report(config: &OpenConfig, query: &Query) -> ReportPlan {
             RetainedState::FullIndex
         },
         read_snapshot,
+        // No view reads ignore classification, whatever the query or policy. A view that
+        // someday does derives this from the query here, like the two decisions above.
+        read_controls: false,
     }
 }
 
@@ -182,6 +197,14 @@ pub(crate) fn plan_report(config: &OpenConfig, query: &Query) -> ReportPlan {
 /// transient tier that retains nothing, and writing a snapshot for it caches state the
 /// walk did not save. A Python caller therefore left cache state on a tree that the same
 /// command would not have, which a later cache-only read could see (fdu-4msv).
+///
+/// A one-shot report never observes control state, whatever `config.scan.read_controls`
+/// says: no report view reads ignore classification, so the planner turns observation
+/// off and the report, and any snapshot it writes, carries the controls-off scope. That
+/// separates its cache from [`crate::open`]'s, which observes control state by default
+/// because the index it returns exposes it. An `open` never warm-starts from a report's
+/// snapshot; a report reads an `open` snapshot only under [`CachePolicy::Only`], where it
+/// consumes the all-entry facts and ignores the control state.
 ///
 /// The caller owns the returned [`PendingSave`] and decides when to join it, exactly as
 /// the command line does, so a renderer can run while the snapshot is still being written.
@@ -218,6 +241,12 @@ fn prepare_report_internal(
 ) -> Result<(Report, PendingSave, PerformanceSummary, Option<crate::scan::ScanDiagnostics>)> {
     let scan_started_at = SystemTime::now();
     let plan = plan_report(config, query);
+    // Every step below -- the scan, the snapshot's scope check, the scope the report
+    // names, and the scope any save records -- runs under the planned observation policy
+    // rather than the caller's, so no surface can carry its own.
+    let mut planned = config.clone();
+    planned.scan.read_controls = plan.read_controls;
+    let config = &planned;
     match plan.retained_state {
         RetainedState::Summary => {
             let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
@@ -497,7 +526,14 @@ mod tests {
         );
         assert_eq!(performance.walked_files, 1, "the walk still happened");
 
-        let (_, open_report) = crate::open(root.path(), &auto).expect("library open");
+        // A report's snapshot carries the controls-off scope whatever the caller passed,
+        // so the `open` that shares it asks for that scope. A default `open` observes
+        // control state the snapshot never held, and scans cold instead.
+        let shared = OpenConfig {
+            scan: ScanConfig { read_controls: false, ..ScanConfig::default() },
+            ..auto
+        };
+        let (_, open_report) = crate::open(root.path(), &shared).expect("library open");
         assert_eq!(
             open_report.path_taken,
             OpenPath::WarmRevalidate,
@@ -600,6 +636,86 @@ mod tests {
         assert_eq!(performance.source, ReportSource::ColdScan);
     }
 
+    /// Control sources no scan can observe without saying so.
+    ///
+    /// The root rule is longer than the per-pattern bound, so retaining it aborts an index
+    /// build; the nested source is at the table bound, so reading it fails in either tier
+    /// and makes the report partial. A report that stays complete over this tree
+    /// performed no control observation.
+    #[cfg(feature = "gitignore")]
+    fn write_unobservable_controls(root: &Path) {
+        let mut rule = vec![b'a'; crate::control::MAX_CONTROL_PATTERN_BYTES + 1];
+        rule.push(b'\n');
+        fs::write(root.join(".gitignore"), rule).expect("oversized rule");
+        fs::create_dir(root.join("vendored")).expect("nested directory");
+        fs::write(
+            root.join("vendored/.gitignore"),
+            b"x\n".repeat(crate::control::MAX_CONTROL_TABLE_BYTES / 2),
+        )
+        .expect("oversized source");
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn a_one_shot_report_observes_no_control_state_whatever_the_caller_configured() {
+        // No report view reads ignore classification, so a one-shot report must not pay
+        // for it -- and must not die on its bound -- whichever surface built the config.
+        // The Python binding passes the engine default, which observes control state; the
+        // decision is the planner's, so both tiers ignore that request.
+        let root = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let cache_path = cache.path().join("cache.fdu");
+        fs::write(root.path().join("file.txt"), b"contents").expect("file");
+        write_unobservable_controls(root.path());
+        let caller = config(CachePolicy::Auto, Some(cache_path.clone()));
+        assert!(caller.scan.read_controls, "the caller asks for control state");
+        let controls_off = ScanConfig { read_controls: false, ..ScanConfig::default() }.scope();
+
+        let mut tree_query = summary_query();
+        tree_query.views = vec![ViewSpec::Tree];
+        for query in [summary_query(), tree_query] {
+            let (report, pending, _) = prepare_report(root.path(), &caller, &query)
+                .expect("a one-shot report never retains a control source");
+            pending.join().expect("save");
+            assert!(report.complete, "a one-shot report read control files: {:?}", report.errors);
+            assert_eq!(report.scope, controls_off);
+        }
+
+        let saved = crate::snapshot::load(&cache_path)
+            .expect("load the snapshot")
+            .expect("the index tier persisted");
+        assert_eq!(saved.scope(), controls_off);
+        assert!(saved.controls().is_empty());
+    }
+
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn one_shot_reports_share_one_cache_whichever_surface_wrote_it() {
+        // The command line and the Python package reach this planner with different scan
+        // configurations and write the same default cache path. Were the observation
+        // policy the caller's, a snapshot written by one surface would be refused by the
+        // other's cache-only read in one of the two orders.
+        let root = tempfile::tempdir().expect("tempdir");
+        fs::write(root.path().join("file.txt"), b"contents").expect("file");
+        let mut tree_query = summary_query();
+        tree_query.views = vec![ViewSpec::Tree];
+
+        for (writer, reader) in [(true, false), (false, true)] {
+            let cache = tempfile::tempdir().expect("cache dir");
+            let cache_path = cache.path().join("cache.fdu");
+            let write = controls_config(CachePolicy::Auto, cache_path.clone(), writer);
+            let (_, pending, _) =
+                prepare_report(root.path(), &write, &tree_query).expect("writing report");
+            pending.join().expect("save");
+
+            let read = controls_config(CachePolicy::Only, cache_path, reader);
+            let (report, pending, _) = prepare_report(root.path(), &read, &tree_query)
+                .expect("a cache-only report reads what any one-shot report wrote");
+            pending.join().expect("no save");
+            assert_eq!(report.source, ReportSource::CacheOnly, "writer read_controls: {writer}");
+        }
+    }
+
     #[test]
     fn compact_summary_matches_the_indexed_summary_exactly() {
         let root = tempfile::tempdir().expect("tempdir");
@@ -615,7 +731,13 @@ mod tests {
         assert_eq!(performance.walked_files, 2);
         assert_eq!(performance.walked_bytes, 14);
 
-        let (index, open_report) = crate::open(root.path(), &off).expect("indexed scan");
+        // The report ran with control observation off, as every one-shot report does, so
+        // the index it must match exactly is opened under that scope too.
+        let indexed_config = OpenConfig {
+            scan: ScanConfig { read_controls: false, ..ScanConfig::default() },
+            ..off
+        };
+        let (index, open_report) = crate::open(root.path(), &indexed_config).expect("indexed scan");
         let indexed = report(
             &index,
             &query,

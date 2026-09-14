@@ -596,7 +596,7 @@ fn reverify_observation(
                             crate::admission::Disposition::Retain => {
                                 ops.push(Op::Upsert { path: relative.clone(), kind, attrs });
                                 if let Some(control) =
-                                    scan::read_control_op_unconditional(root, &relative, kind)?
+                                    scan::read_control_op(scan_config, root, &relative, kind)?
                                 {
                                     ops.push(control);
                                 }
@@ -604,7 +604,7 @@ fn reverify_observation(
                             crate::admission::Disposition::ControlOnly => {
                                 ops.push(Op::Remove { path: relative.clone() });
                                 if let Some(control) =
-                                    scan::read_control_op_unconditional(root, &relative, kind)?
+                                    scan::read_control_op(scan_config, root, &relative, kind)?
                                 {
                                     ops.push(control);
                                 }
@@ -898,7 +898,7 @@ fn verify_intent(
                         match disposition {
                             crate::admission::Disposition::Retain => {
                                 ops.push(Op::Upsert { path: rel.clone(), kind, attrs });
-                                match scan::read_control_op_unconditional(root, rel, kind) {
+                                match scan::read_control_op(scan_config, root, rel, kind) {
                                     Ok(Some(control)) => ops.push(control),
                                     Ok(None) => {}
                                     Err(_) => ops.push(Op::InvalidateSubtree {
@@ -910,7 +910,7 @@ fn verify_intent(
                                 }
                             }
                             crate::admission::Disposition::ControlOnly => {
-                                match scan::read_control_op_unconditional(root, rel, kind) {
+                                match scan::read_control_op(scan_config, root, rel, kind) {
                                     Ok(Some(control)) => {
                                         ops.push(Op::Remove { path: rel.clone() });
                                         ops.push(control);
@@ -1557,6 +1557,49 @@ mod tests {
             &observation.ops[1].op,
             Op::ControlUpsert { path, source } if path == &relative && source == b"*.log\n"
         ));
+    }
+
+    /// A watch maintains exactly the control state its scan policy claims.
+    ///
+    /// A controls-off scan retains no control table and stamps that into its scope, and a
+    /// watch with the same policy accepts the scope as its own. Verification that read
+    /// control files regardless would grow a partial rule set -- only the sources some
+    /// event happened to touch -- on an index whose scope says it has none, and the next
+    /// save would persist it under that scope (fdu-ajsu).
+    #[test]
+    fn verification_observes_no_control_state_under_a_controls_off_policy() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::write(dir.path().join(".gitignore"), b"*.log\n").expect("write control");
+        fs::write(dir.path().join("debug.log"), b"x").expect("write file");
+        let config = ScanConfig { read_controls: false, ..ScanConfig::default() };
+        let (mut index, _) = crate::scan::scan_into_index(dir.path(), &config).expect("scan");
+        assert!(index.controls().is_empty());
+        let control = PathBuf::from(".gitignore");
+        let intent = CoalescedIntent {
+            pending: BTreeMap::from([(control.clone(), Pending::Verify { relist_if_dir: false })]),
+        };
+
+        let observation = verify_intent(dir.path(), WatchConfig::default(), &intent, &config);
+        let reverified = reverify_observation(
+            dir.path(),
+            &Observation::new(vec![Op::Remove { path: control }]),
+            &config,
+        )
+        .expect("reverify");
+
+        for verified in [&observation, &reverified] {
+            assert!(
+                !verified.ops.iter().any(|observed| matches!(
+                    observed.op,
+                    Op::ControlUpsert { .. } | Op::ControlRemove { .. }
+                )),
+                "a controls-off policy observed control state: {:?}",
+                verified.ops
+            );
+        }
+        index.apply(&observation).expect("apply the verified observation");
+        assert!(index.controls().is_empty());
+        assert_eq!(index.scope(), config.scope());
     }
 
     #[cfg(all(unix, feature = "gitignore"))]

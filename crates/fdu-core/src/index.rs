@@ -1013,6 +1013,11 @@ pub(crate) enum ObservationTransition {
     /// Persistent inaccessible boundaries do not prevent observation of the readable
     /// scope, but they keep coverage partial and their causes remain inspectable.
     Watching { issues: Vec<Issue>, omitted: u64 },
+    /// A reconciliation while watching could not read part of the scope.
+    ///
+    /// The subtree it covered is already partial and is not retried on every later event,
+    /// so its causes are retained here, where partial freshness can be explained.
+    Unreadable { issues: Vec<Issue>, omitted: u64 },
     /// Observation could not establish or retain a trustworthy live boundary.
     Failed(Issue),
 }
@@ -1445,7 +1450,7 @@ impl DetachedIndexBuilder {
             let crate::scan::DetachedChild { name, kind, attrs, .. } = child;
             crate::counters::bump(|counts| counts.upserts += 1);
             let ext_id = (kind == EntryKind::File)
-                .then(|| self.index.intern_ext(&self.index.types.ext_bucket(&name)));
+                .then(|| self.index.intern_ext(&crate::classify::ext_bucket(&name)));
             let (ignored, child_path) = if let Some(scratch) = &mut match_path {
                 scratch.push(&name);
                 let ignored = self.index.controls.matcher_for(scratch).is_ignored(kind.is_dir());
@@ -1785,6 +1790,17 @@ impl Index {
             && observation.is_none()
         {
             return Ok(ApplyOutcome::default());
+        }
+
+        // A stopped or failed root is terminal for discovery. A listing that lands after
+        // the stop -- a refresh can trip the shared budget while discovery is mid-walk --
+        // may neither expand the retained set nor carry a transition that reopens the
+        // phase: `Finish` would declare the root `Ready`, and an inaccessible boundary
+        // would relabel why its coverage is partial.
+        if discovery.is_some()
+            && matches!(self.state.phase, LifecyclePhase::Stopped | LifecyclePhase::Failed)
+        {
+            return Err(crate::Error::OpenedIndexStopped);
         }
 
         if let Some(path) =
@@ -2169,11 +2185,27 @@ impl Index {
                             }
                             self.state.issues.omitted =
                                 self.state.issues.omitted.saturating_add(omitted);
+                        } else if self.state.coverage
+                            == Coverage::Partial(CoverageReason::Inaccessible)
+                        {
+                            // The handoff has just read the whole root without one error, so
+                            // a boundary discovery could not read no longer exists. Coverage
+                            // says what can be known now; the cause stays a retained issue.
+                            self.state.coverage = Coverage::Complete;
                         }
                         self.state.freshness = self.freshness();
                         if self.state.coverage != Coverage::Complete {
                             self.state.freshness = Freshness::Partial;
                         }
+                    }
+                }
+                ObservationTransition::Unreadable { issues, omitted } => {
+                    if self.state.phase == LifecyclePhase::Watching {
+                        for issue in issues {
+                            self.retain_issue(issue);
+                        }
+                        self.state.issues.omitted =
+                            self.state.issues.omitted.saturating_add(omitted);
                     }
                 }
                 ObservationTransition::Failed(issue) => {
@@ -2698,7 +2730,10 @@ impl Index {
     }
 
     fn remove_serving_file_semantics(&mut self, path: &Path, id: EntryId, attrs: Attrs) {
-        if self.serving.is_none() {
+        // Only a regular file is interned and tallied (`insert_serving_entry`). A symlink
+        // or special entry of the same classification would otherwise find a real file's
+        // type and subtract from its tally, or find none and panic under the write guard.
+        if self.serving.is_none() || self.entry(id).kind != EntryKind::File {
             return;
         }
         let name = self.classify(path).file_type.as_str().to_string();
@@ -4178,7 +4213,9 @@ impl Index {
                 }
                 let previous_attrs = entry.attrs;
                 self.invalidate_content(path);
-                self.remove_serving_file_semantics(path, id, previous_attrs);
+                if kind == EntryKind::File {
+                    self.remove_serving_file_semantics(path, id, previous_attrs);
+                }
                 self.remove_serving_entry(path, kind, previous_attrs, id);
                 let old = self.contribution(id);
                 self.unmerge_upward(Some(parent), &old);
@@ -4213,7 +4250,7 @@ impl Index {
         }
 
         let ext_id =
-            (kind == EntryKind::File).then(|| self.intern_ext(&self.types.ext_bucket(name)));
+            (kind == EntryKind::File).then(|| self.intern_ext(&crate::classify::ext_bucket(name)));
         let ignored =
             self.entry(parent).ignored || self.controls.matcher_for(path).is_ignored(kind.is_dir());
         let id = self.alloc(Entry::new(
@@ -4269,7 +4306,7 @@ impl Index {
         }
         let source = self.applying_source;
         let ext_id =
-            (kind == EntryKind::File).then(|| self.intern_ext(&self.types.ext_bucket(&name)));
+            (kind == EntryKind::File).then(|| self.intern_ext(&crate::classify::ext_bucket(&name)));
         let id = self.alloc(Entry::new(
             NewEntry {
                 parent: Some(parent),
@@ -5083,12 +5120,64 @@ mod tests {
             vec!["dir/a", "replace/child"]
         );
 
+        // Same-kind attribute updates of entries that hold no semantic tally: a symlink
+        // re-created in place (`ln -sfn`) and a special entry replaced by another. Every
+        // file here is extensionless, so each non-file shares its classification with a
+        // real file, and a non-file update that touched semantics would move that file's
+        // tally rather than fail loudly.
+        index.apply_ok(&Observation::new(vec![
+            upsert("dir/current", EntryKind::Symlink, file_attrs(5, 5)),
+            upsert("dir/pipe", EntryKind::Other, file_attrs(6, 6)),
+        ]));
+        assert_serving_indexes(&index);
+        index.apply_ok(&Observation::new(vec![
+            upsert("dir/current", EntryKind::Symlink, file_attrs(7, 7)),
+            upsert("dir/pipe", EntryKind::Other, file_attrs(8, 8)),
+        ]));
+        assert_serving_indexes(&index);
+
         index.apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("replace") }]));
         assert_serving_indexes(&index);
         assert_eq!(
             index.portable_entries().keys().map(crate::PortablePath::as_str).collect::<Vec<_>>(),
-            vec!["dir", "dir/a"]
+            vec!["dir", "dir/a", "dir/current", "dir/pipe"]
         );
+    }
+
+    /// A symlink or special entry holds no semantic tally, so updating one must neither
+    /// panic looking for a tally it never had nor subtract from a real file's.
+    ///
+    /// Both failures were reachable from ordinary filesystem churn on an opened root. With
+    /// no file of the same classification, the update panicked inside the commit while the
+    /// index write guard was held, poisoning the root. With one, it silently subtracted the
+    /// link's attributes from that file's tally and released the file's interned type, so
+    /// the file's own later removal panicked instead.
+    #[test]
+    fn non_file_attrs_updates_leave_file_semantics_untouched() {
+        for kind in [EntryKind::Symlink, EntryKind::Other] {
+            let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+                "/root",
+                ScanScope::default(),
+                crate::classify::TypeRegistry::compiled_shared(),
+                DEFAULT_JOURNAL_CAPACITY,
+            );
+            index.apply_ok(&Observation::new(vec![upsert("current", kind, file_attrs(1, 1))]));
+            assert_serving_indexes(&index);
+            index.apply_ok(&Observation::new(vec![upsert("current", kind, file_attrs(1, 2))]));
+            assert_serving_indexes(&index);
+
+            index.apply_ok(&Observation::new(vec![upsert(
+                "notes",
+                EntryKind::File,
+                file_attrs(5, 3),
+            )]));
+            assert_serving_indexes(&index);
+            index.apply_ok(&Observation::new(vec![upsert("current", kind, file_attrs(4, 4))]));
+            assert_serving_indexes(&index);
+
+            index.apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("notes") }]));
+            assert_serving_indexes(&index);
+        }
     }
 
     /// Escaping touches exactly two things and leaves everything else byte-identical.
@@ -5989,6 +6078,46 @@ mod tests {
         }
     }
 
+    /// The trailing spellings `Path::components` hides reach public values canonically.
+    ///
+    /// `a/b/` and `a/b/.` compare equal to `a/b` component by component, so lookups never
+    /// notice a preserved spelling; only a value that carries the bytes out does. The
+    /// reproduction this pins is an unknown-ancestry error that named `a/b/` (PR #51
+    /// review COMMIT-4).
+    #[test]
+    fn trailing_path_spellings_leave_errors_and_changes_canonical() {
+        let separator = std::path::MAIN_SEPARATOR;
+        let canonical = format!("a{separator}b");
+        for spelling in [format!("a{separator}b{separator}"), format!("a{separator}b{separator}.")]
+        {
+            let file = |mtime_ns| Op::Upsert {
+                path: PathBuf::from(&spelling),
+                kind: EntryKind::File,
+                attrs: file_attrs(1, mtime_ns),
+            };
+            let mut index = Index::new("/root");
+
+            let error = index
+                .apply(&Observation::new(vec![file(1)]))
+                .expect_err("a child of an unknown directory is refused");
+            let crate::Error::UnknownAncestry { path, .. } = error else {
+                panic!("expected unknown ancestry for {spelling:?}, got {error}");
+            };
+            assert_eq!(path.as_os_str().as_encoded_bytes(), canonical.as_bytes(), "{spelling:?}");
+
+            let outcome = index.apply_ok(&Observation::new(vec![
+                upsert("a", EntryKind::Dir, file_attrs(0, 1)),
+                file(2),
+            ]));
+            let commit = outcome.commit.as_ref().expect("one exact commit");
+            assert_eq!(
+                commit.changes[1].path().as_os_str().as_encoded_bytes(),
+                canonical.as_bytes(),
+                "{spelling:?}"
+            );
+        }
+    }
+
     #[test]
     fn malformed_batch_is_rejected_before_any_index_mutation() {
         let invalid_paths = [
@@ -6597,6 +6726,67 @@ mod tests {
         assert_eq!(outcome.commit, None);
         assert_eq!(handle.state().expect("terminal state"), stopped);
         assert_eq!(handle.clock().expect("terminal clock"), clock);
+    }
+
+    /// Once a root has stopped or failed, discovery can neither expand it nor reopen it.
+    #[test]
+    fn a_terminal_root_refuses_every_discovery_commit() {
+        let terminals = [
+            DiscoveryTransition::BudgetRefused(Issue::resource_budget(1)),
+            DiscoveryTransition::Failed(Issue::from_error(&crate::Error::OpenedIndexClosed)),
+        ];
+        for terminal in terminals {
+            let handle = IndexHandle::new(Index::new("/root"));
+            handle.transition_discovery(DiscoveryTransition::Begin).expect("begin");
+            handle
+                .apply_discovery(
+                    &Observation::new(vec![upsert("dir", EntryKind::Dir, Attrs::default())]),
+                    DiscoveryCommit::default(),
+                )
+                .expect("listing before the stop");
+            handle.transition_discovery(terminal.clone()).expect("terminal transition");
+            let state = handle.state().expect("terminal state");
+            let clock = handle.clock().expect("terminal clock");
+
+            let late = [
+                (
+                    vec![upsert("dir/late.txt", EntryKind::File, file_attrs(1, 1))],
+                    DiscoveryCommit {
+                        directory_complete: Some(PathBuf::from("dir")),
+                        transition: None,
+                    },
+                ),
+                (
+                    Vec::new(),
+                    DiscoveryCommit {
+                        directory_complete: None,
+                        transition: Some(DiscoveryTransition::Finish),
+                    },
+                ),
+                (
+                    Vec::new(),
+                    DiscoveryCommit {
+                        directory_complete: None,
+                        transition: Some(DiscoveryTransition::Inaccessible {
+                            issues: vec![Issue::resource_budget(2)],
+                            omitted: 0,
+                        }),
+                    },
+                ),
+            ];
+            for (ops, discovery) in late {
+                assert!(
+                    matches!(
+                        handle.apply_discovery(&Observation::new(ops), discovery.clone()),
+                        Err(crate::Error::OpenedIndexStopped)
+                    ),
+                    "after {terminal:?}, {discovery:?} was accepted"
+                );
+            }
+            assert_eq!(handle.state().expect("state"), state, "after {terminal:?}");
+            assert_eq!(handle.clock().expect("clock"), clock, "after {terminal:?}");
+            assert_eq!(handle.kind(Path::new("dir/late.txt")).expect("lookup"), None);
+        }
     }
 
     #[test]

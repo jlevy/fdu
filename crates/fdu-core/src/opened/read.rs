@@ -69,6 +69,9 @@ pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadRes
                             work.rows_returned = work.rows_returned.saturating_add(1);
                             Knowledge::Present(rollup)
                         }
+                        None if index.kind(&path).is_some() => {
+                            return Err(Error::NotADirectory(path));
+                        }
                         None if absence_is_known(index, &path) => Knowledge::Absent,
                         None => Knowledge::Unknown {
                             reason: match state.coverage {
@@ -400,6 +403,8 @@ fn tree_projection(
     start: Option<&ChildPosition>,
     work: &mut Work,
 ) -> Result<ProjectionResult> {
+    #[cfg(test)]
+    opened.state.test_controls.reach(super::TestPoint::DuringTreeProjection);
     let path_work = path.components().count() as u64 + 1;
     if path_work > page.max_work {
         work.rows_visited = work.rows_visited.saturating_add(page.max_work);
@@ -418,8 +423,7 @@ fn tree_projection(
         }));
     };
     if !directory.kind.is_dir() {
-        work.rows_visited = work.rows_visited.saturating_add(path_work);
-        return Ok(ProjectionResult::Tree(Knowledge::Absent));
+        return Err(Error::NotADirectory(path.to_path_buf()));
     }
 
     // Levels below `path` that may be emitted. A parent at depth `d` produces rows at
@@ -594,6 +598,15 @@ fn flat_projection(
     let mut spent = 0_u64;
     let mut next = None;
     for (portable, id) in iterator {
+        // A full page stops at the first entry it has not looked at, admitted or not, and
+        // before charging for it. Resuming includes that entry and re-evaluates it. Looking
+        // ahead for the next *admitted* entry instead spent budget after the page was
+        // already an answer, and a budget exhausted by that look-ahead discarded the page as
+        // a limit -- identically on every retry, so the position could never be passed.
+        if rows.len() == page.limit {
+            next = Some(portable.clone());
+            break;
+        }
         spent = spent.saturating_add(1);
         if spent > page.max_work {
             work.rows_visited = work.rows_visited.saturating_add(page.max_work);
@@ -617,10 +630,6 @@ fn flat_projection(
         };
         if !selection.admits(&candidate, row.ignored) {
             continue;
-        }
-        if rows.len() == page.limit {
-            next = Some(portable.clone());
-            break;
         }
         if shape == crate::RowShape::Compact {
             row.rollup = None;
@@ -806,6 +815,11 @@ fn first_directory_child(
 /// lookup per level instead of a rescan of everything already emitted, and nothing
 /// unbounded is retained: the frontier, which is every directory one level up, would be
 /// unbounded in directory width and could never fit a bounded continuation record.
+///
+/// The walk down and back up that chain is a loop, not recursion. Each ascent used to be a
+/// call per level, so finding that a level had ended took stack in proportion to how deep
+/// the tree was: bounded by `PATH_MAX` on POSIX, but around sixteen thousand levels under
+/// Windows extended paths.
 fn directory_at_depth(
     index: &crate::Index,
     root: &Path,
@@ -819,24 +833,36 @@ fn directory_at_depth(
         return after.is_none().then(|| root.to_path_buf());
     }
 
-    let (mut parent, mut name) = match after {
+    // `parent` sits at `level`; the search is for its next directory child after `name`.
+    let (mut parent, mut name, mut level) = match after {
         Some(previous) => (
             previous.parent()?.to_path_buf(),
             Some(crate::opened::read::portable_component(previous.file_name()?)),
+            depth - 1,
         ),
-        None => (directory_at_depth(index, root, depth - 1, None, include_ignored, spent)?, None),
+        None => (root.to_path_buf(), None, 0),
     };
 
     loop {
         if let Some(found) =
             first_directory_child(index, &parent, name.as_deref(), include_ignored, spent)
         {
-            return Some(found);
+            if level + 1 == depth {
+                return Some(found);
+            }
+            // Not deep enough yet: continue from the first directory below this one.
+            parent = found;
+            name = None;
+            level += 1;
+        } else {
+            // This parent holds no more directories, so continue after it, one level up.
+            if level == 0 {
+                return None;
+            }
+            name = Some(crate::opened::read::portable_component(parent.file_name()?));
+            parent = parent.parent()?.to_path_buf();
+            level -= 1;
         }
-        // This parent holds no more directories, so continue with the next parent one
-        // level up and start from its first child.
-        parent = directory_at_depth(index, root, depth - 1, Some(&parent), include_ignored, spent)?;
-        name = None;
     }
 }
 
@@ -1018,4 +1044,48 @@ fn push_unrepresentable(out: &mut String, component: &std::ffi::OsStr) {
 #[cfg(not(any(unix, windows)))]
 fn push_unrepresentable(out: &mut String, component: &std::ffi::OsStr) {
     push_lossy_bytes(out, component.as_encoded_bytes());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Ending a level far below the root takes no stack per level climbed.
+    ///
+    /// From the deepest directory of a chain, the next directory at that depth is found
+    /// only after climbing every level back to the root. That climb used to recurse once
+    /// per level; on a thread with a deliberately small stack it overflowed, where a loop
+    /// needs none of it.
+    #[test]
+    fn climbing_out_of_a_deep_chain_needs_no_stack_per_level() {
+        const LEVELS: u32 = 1_000;
+        let mut index = crate::Index::new_opened_with_scope_types_and_journal_capacity(
+            "/root",
+            crate::ScanScope::default(),
+            crate::classify::TypeRegistry::compiled_shared(),
+            crate::DEFAULT_JOURNAL_CAPACITY,
+        );
+        let mut deepest = PathBuf::new();
+        let mut ops = Vec::new();
+        for _ in 0..LEVELS {
+            deepest.push("d");
+            ops.push(crate::Op::Upsert {
+                path: deepest.clone(),
+                kind: crate::EntryKind::Dir,
+                attrs: crate::Attrs::default(),
+            });
+        }
+        index.apply_ok(&crate::Observation::new(ops));
+
+        let next = std::thread::Builder::new()
+            .stack_size(64 * 1024)
+            .spawn(move || {
+                let mut spent = 0;
+                directory_at_depth(&index, Path::new(""), LEVELS, Some(&deepest), true, &mut spent)
+            })
+            .expect("spawn the climbing thread")
+            .join()
+            .expect("the climb finished within a small stack");
+        assert_eq!(next, None, "a chain has no second directory at its deepest level");
+    }
 }

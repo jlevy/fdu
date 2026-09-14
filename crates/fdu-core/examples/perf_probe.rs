@@ -705,9 +705,12 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let snapshot = arguments.snapshot()?.to_path_buf();
     let identity_before = snapshot_identity(&snapshot);
     let config = OpenConfig {
-        // The non-watch CLI counts every entry but does not consume ignore state.
-        // Keep control discovery enabled for the index-returning and opened probes.
-        scan: ScanConfig { read_controls: false, ..arguments.scan.clone() },
+        // Passed through unchanged, as the command line passes its own: the one-shot
+        // planner inside `prepare_report` turns control observation off for every report
+        // whatever this says (fdu-etfj), so the probe measures the scope the command line
+        // gets without choosing it. `--no-controls` therefore changes nothing here, while
+        // it still turns control observation off for the index-returning probes.
+        scan: arguments.scan.clone(),
         cache_path: Some(snapshot.clone()),
         policy: CachePolicy::Auto,
         analysis: AnalysisRequest::default(),
@@ -2186,6 +2189,8 @@ mod tests {
         let output = default_tree(&arguments).expect("default-tree probe");
 
         assert_eq!(output.summary.files, 2, "the CLI still counts ignored files");
+        // The probe asked for control state, so a controls-off snapshot below proves the
+        // one-shot planner decided the scope, as it does for the command line.
         assert!(arguments.scan.read_controls, "other probe modes retain control discovery");
         let mut config = OpenConfig {
             scan: ScanConfig { read_controls: false, ..arguments.scan.clone() },

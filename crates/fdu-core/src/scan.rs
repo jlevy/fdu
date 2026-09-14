@@ -185,13 +185,16 @@ pub struct ScanConfig {
     pub types: Option<std::sync::Arc<crate::classify::TypeRegistry>>,
     /// Observe `.gitignore` control files and retain ignore classification.
     ///
-    /// On by default so library callers keep exact control state. A consumer that never
-    /// reads ignore state -- the one-shot size report consumes none of it -- turns this
-    /// off and the scan performs no control-file I/O and retains no control table,
-    /// which is the same semantics the `gitignore` feature being absent gives, and is
-    /// stamped into [`ScanScope`] the same way so the two lifecycles cannot share a
-    /// snapshot (fdu-etfj: every `fdu <dir>` read and retained every `.gitignore` in
-    /// the tree, then could die on a budget for state its report never consumed).
+    /// On by default, so an [`Index`] from [`crate::open`] or a scan keeps the exact
+    /// control state it exposes and a watch maintains. Off, the scan performs
+    /// no control-file I/O and retains no control table: the semantics an absent
+    /// `gitignore` feature gives, stamped into [`ScanScope`] the same way, so an
+    /// index-returning call never serves a snapshot taken one way as the other.
+    ///
+    /// A one-shot report ([`crate::prepare_report`]) does not read this field; its
+    /// planner always runs with observation off, because no report view reads ignore
+    /// classification (fdu-etfj: every `fdu <dir>` read and retained every `.gitignore`
+    /// in the tree, then could die on a budget for state its report never consumed).
     pub read_controls: bool,
 }
 
@@ -927,6 +930,21 @@ impl ReconcileTarget<'_> {
             }
         }
         Ok(())
+    }
+
+    /// Whether an invalidation whose reconciliation came back incomplete is queued again.
+    ///
+    /// A caller of the one-shot and shared APIs drains the queue when it chooses, so an
+    /// unreadable subtree stays queued for it to retry. An opened root drains it after
+    /// every observed event, where that retry is a full walk of the same unreadable subtree
+    /// per unrelated event, for the life of the session. There only a lost race is worth
+    /// retrying -- a stale conditional commit, or one the budget refused. A scan error is a
+    /// settled boundary: the subtree stays partial, as it does at the observation handoff.
+    fn retries_incomplete(&self, report: &ReconcileReport) -> bool {
+        match self {
+            Self::Direct(_) | Self::Shared(_) => !report.is_complete(),
+            Self::Controlled { .. } => report.apply.stale > 0 || report.apply.resource_refused > 0,
+        }
     }
 
     fn begin_reconcile(&mut self, path: &Path) -> Result<(u64, Option<Commit>)> {
@@ -2769,13 +2787,14 @@ fn record_walk_entry(
     true
 }
 
-/// Read one fixed control source without allowing a raced or hostile file to allocate
-/// beyond the index-wide control budget.
 /// Observe one control file if the scan's policy asks for control state at all.
 ///
-/// Every scan-side observation goes through here so the policy cannot be forgotten at
-/// one walk site; watching bypasses it via [`read_control_op_unconditional`] because a
-/// watch session always maintains control state.
+/// Every control observation goes through here -- each walk and reconcile site, and the
+/// watch layer's verification -- so the policy cannot be forgotten at one of them. A
+/// watch must honor it like a scan does: its scope has to equal the index's, the scope
+/// carries this bit, and a verifier that read control files regardless would grow a
+/// partial rule set, from whichever sources events touched, under a scope that says
+/// there is none.
 pub(crate) fn read_control_op(
     config: &ScanConfig,
     root: &Path,
@@ -2790,21 +2809,18 @@ pub(crate) fn read_control_op(
 
 #[cfg(not(feature = "gitignore"))]
 #[allow(clippy::unnecessary_wraps)] // The feature-enabled implementation performs I/O.
-pub(crate) fn read_control_op_unconditional(
-    root: &Path,
-    path: &Path,
-    kind: EntryKind,
-) -> Result<Option<Op>> {
+fn read_control_op_unconditional(root: &Path, path: &Path, kind: EntryKind) -> Result<Option<Op>> {
     let _ = (root, path, kind);
     Ok(None)
 }
 
+/// Read one fixed control source without allowing a raced or hostile file to allocate
+/// beyond the index-wide control budget.
+///
+/// Private to this module, so no caller elsewhere can step around the policy gate in
+/// `read_control_op`.
 #[cfg(feature = "gitignore")]
-pub(crate) fn read_control_op_unconditional(
-    root: &Path,
-    path: &Path,
-    kind: EntryKind,
-) -> Result<Option<Op>> {
+fn read_control_op_unconditional(root: &Path, path: &Path, kind: EntryKind) -> Result<Option<Op>> {
     if !crate::control::is_control_file(path) {
         return Ok(None);
     }
@@ -4772,7 +4788,7 @@ fn reconcile_pending_target(
     for (position, (root, reason)) in roots.iter().enumerate() {
         match reconcile_target(target, root, config, sink) {
             Ok(report) => {
-                if !report.is_complete() {
+                if target.retries_incomplete(&report) {
                     target.restore_pending_invalidations(vec![(root.clone(), *reason)])?;
                 }
                 merge_reconcile_report(&mut combined, report);

@@ -5,6 +5,18 @@
 //! derived from them. That keeps cold discovery, refresh, observation, and snapshot load
 //! on one semantic path and makes deleting the last control file an ordinary state
 //! transition rather than a special rebuild.
+//!
+//! **Which of git's ignore inputs count.** Exactly one: every regular file named
+//! [`CONTROL_FILE_NAME`] inside the scanned root, each governing its own directory and
+//! everything below it, with deeper files taking precedence. Nothing else git consults is
+//! read. `.git/info/exclude` and `core.excludesFile` are ignored, so a `.DS_Store` excluded
+//! only globally lands in the unignored partition. A nested repository is not a boundary:
+//! its `.gitignore` files join the outer ones as if the tree were one repository. And
+//! unlike git, which never looks inside an ignored directory, the walk reads a
+//! `.gitignore` there too; the ignored partition is still right, because git's rule that
+//! an excluded parent cannot be re-included is applied when matching, but the file's
+//! bytes are retained against the table bound. Matching is case-sensitive regardless of
+//! `core.ignorecase`.
 
 #[cfg(feature = "gitignore")]
 mod gitignore;

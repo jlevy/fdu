@@ -533,26 +533,15 @@ impl Cli {
         query
             .validate_analysis(analysis.profile)
             .map_err(|message| usage(&anyhow::anyhow!(message)))?;
-        // Whether this invocation ever consumes ignore classification. The one-shot
-        // report reads none of it, so a plain `fdu <dir>` performs no control-file I/O
-        // and retains no control table -- reading and retaining every `.gitignore` was
-        // both the control-budget abort on large homes and a measured share of the
-        // whole-scan slowdown (fdu-etfj, fdu-pro1). Watching keeps control state
-        // because a watch session maintains the ignored partitions incrementally and
-        // cannot re-derive them later. The bit is part of the scan's semantic scope, so
-        // an Index-returning API never serves one scope as the other. A cache-only
-        // one-shot report may consume a controls-on snapshot through the engine's
-        // explicit controls-off report projection; no retained index crosses that
-        // boundary.
-        #[cfg(feature = "watch")]
-        let read_controls = self.watch;
-        #[cfg(not(feature = "watch"))]
-        let read_controls = false;
+        // Control observation is deliberately not decided here. The engine default
+        // observes control state, which `--watch` needs to maintain ignored partitions;
+        // a one-shot report goes through `prepare_report`, whose planner turns
+        // observation off for every surface because no report view reads it (fdu-etfj).
+        // Deciding it in this front end once left the Python package observing it.
         let config = OpenConfig {
             scan: ScanConfig {
                 max_depth: self.scan_depth,
                 one_filesystem: self.one_filesystem,
-                read_controls,
                 ..ScanConfig::default()
             },
             cache_path: default_cache_path(path),

@@ -879,7 +879,7 @@ fn walk(index: &Index, selection: &Selection) -> Walked {
                     );
 
                     let tally =
-                        walked.by_ext.entry(index.types().ext_bucket(file_name)).or_default();
+                        walked.by_ext.entry(crate::classify::ext_bucket(file_name)).or_default();
                     tally.files += 1;
                     tally.bytes += attrs.size;
                     tally.allocated += attrs.allocated;
