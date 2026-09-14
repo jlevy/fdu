@@ -69,6 +69,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
+| Linux 6.18.44-fc-v24, ext4 | virtualized | warm-steady | 1 |
 
 ## Every experiment, including the failures
 
@@ -181,6 +182,7 @@ dead end.
 | 101 | [Compact detached child topology with local promotion](#exp101--compact-detached-child-topology-with-local-promotion) | H86 | `default-tree` | -7.7% | ✅ accepted |
 | 102 | [Point lookup for public mutation preflight](#exp102--point-lookup-for-public-mutation-preflight) | — | `delta-apply-large` | -49.8% | ✅ accepted |
 | 103 | [H86 Linux evidence stage: relative gates pass, floor gates fail](#exp103--h86-linux-evidence-stage-relative-gates-pass-floor-gates-fail) | H86 | `default-tree` | -31.7% | ❌ rejected |
+| 104 | [Hash the content roll-up map by path bytes instead of components](#exp104--hash-the-content-rollup-map-by-path-bytes-instead-of-components) | H103 | `content-cache-hit` | +0.1% | ❌ rejected |
 
 ## The experiments
 
@@ -3636,6 +3638,40 @@ the relative gates pass: default-tree wall -31.70% [-34.31%, -29.15%], cold-scan
 Full record:
 [`exp-103-h86-linux-evidence-stage-relative-gates-pass-floor-gates-fai.md`](../experiments/exp-103-h86-linux-evidence-stage-relative-gates-pass-floor-gates-fai.md)
 
+### exp-104 — Hash the content roll-up map by path bytes instead of components
+
+❌ rejected · 2026-09-14 · H103 · commit `dda7e6af5b7bd4a088a816f1c449cf56c22a8a62`
+
+Control: main at dda7e6af
+
+Candidate: ContentIndex::rollups keyed by byte-hashed PathKey under an in-crate
+FxHash-style hasher
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1961.3 | 1973.6 | +0.05% (n.s.) | [-0.82%, +0.86%] |
+| component (ms) | 1723.1 | 1727.9 | +0.07% (n.s.) | [-0.77%, +1.00%] |
+| cpu (ms) | 1960.4 | 1972.8 | +0.06% (n.s.) | [-0.81%, +0.90%] |
+| user (ms) | 1783.5 | 1801.7 | +0.63% (n.s.) | [-0.17%, +1.71%] |
+| system (ms) | 177.9 | 168.7 | -2.32% (n.s.) | [-9.27%, +2.68%] |
+| blocked (ms) | 0.8 | 0.7 | -0.95% (n.s.) | [-6.92%, +5.83%] |
+| peak rss (MiB) | 210.3 | 210.1 | -0.12% | [-0.14%, -0.09%] |
+
+Cost to carry: 66 lines; no new dependencies.
+
+A hand-written FxHash-style Hasher and a second Borrow contract on PathKey, for no
+measured wall change.
+Reverted.
+
+**Rejected:** Mechanism confirmed, effect absent: instructions -1.69% on the decisive
+subject and -3.18% on a small dense one, but wall +0.05% [-0.82%, +0.86%] over 40 pairs.
+The warm content open is not instruction-bound.
+
+Full record:
+[`exp-104-hash-the-content-roll-up-map-by-path-bytes-instead-of-compon.md`](../experiments/exp-104-hash-the-content-roll-up-map-by-path-bytes-instead-of-compon.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -3875,6 +3911,12 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 103 | H86 Linux evidence stage: relative gates pass, floor gates fail | `default-tree` | 1,189.7 | 821.7 | -31.7% | ❌ rejected |
+
+### linux-kernel-7043 (102,318 entries) — Linux 6.18.44-fc-v24, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 104 | Hash the content roll-up map by path bytes instead of components | `content-cache-hit` | 1,961.3 | 1,973.6 | +0.1% | ❌ rejected |
 
 ### live-workspace-exp038 (1,008,723 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

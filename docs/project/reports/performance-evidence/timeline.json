@@ -30455,6 +30455,158 @@
    "subject": "65b45ec72356:450001:e6da049852a2",
    "title": "H86 Linux evidence stage: relative gates pass, floor gates fail",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "ContentIndex::rollups keyed by byte-hashed PathKey under an in-crate FxHash-style hasher",
+   "change_pct": 0.054,
+   "commit": "dda7e6af5b7bd4a088a816f1c449cf56c22a8a62",
+   "complexity": {
+    "lines_changed": 66,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "A hand-written FxHash-style Hasher and a second Borrow contract on PathKey, for no measured wall change. Reverted."
+   },
+   "control": "main at dda7e6af",
+   "date": "2026-09-14",
+   "decision": "rejected",
+   "entries": 102318,
+   "family": "Linux:951be6806409",
+   "hypotheses": [
+    "H103"
+   ],
+   "id": "exp-104",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-cache-hit",
+     "metrics": {
+      "blocked_ns": {
+       "absolute": {
+        "candidate": 748130.5,
+        "control": 764539
+       },
+       "metric": "blocked_ns",
+       "paired": {
+        "change_pct": -0.954,
+        "ci95_high_pct": 5.833,
+        "ci95_low_pct": -6.923,
+        "evidence": "unclear",
+        "pairs": 40,
+        "significant": false
+       }
+      },
+      "component_ns": {
+       "absolute": {
+        "candidate": 1727946871,
+        "control": 1723090367.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.067,
+        "ci95_high_pct": 0.996,
+        "ci95_low_pct": -0.772,
+        "evidence": "unclear",
+        "pairs": 40,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1972821500,
+        "control": 1960351000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.06,
+        "ci95_high_pct": 0.896,
+        "ci95_low_pct": -0.814,
+        "evidence": "unclear",
+        "pairs": 40,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 220264448,
+        "control": 220491776
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.121,
+        "ci95_high_pct": -0.093,
+        "ci95_low_pct": -0.135,
+        "evidence": "improved",
+        "pairs": 40,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 168712000,
+        "control": 177949000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -2.317,
+        "ci95_high_pct": 2.677,
+        "ci95_low_pct": -9.273,
+        "evidence": "unclear",
+        "pairs": 40,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 1801737500,
+        "control": 1783546500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.633,
+        "ci95_high_pct": 1.71,
+        "ci95_low_pct": -0.175,
+        "evidence": "unclear",
+        "pairs": 40,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1973564439.5,
+        "control": 1961291377
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.054,
+        "ci95_high_pct": 0.859,
+        "ci95_low_pct": -0.819,
+        "evidence": "unclear",
+        "pairs": 40,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 19288.53612756309,
+      "control": 19168.585947731583
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "control",
+   "number": 104,
+   "path": "exp-104-hash-the-content-roll-up-map-by-path-bytes-instead-of-compon.md",
+   "platform": "Linux",
+   "primary_job": "content-cache-hit",
+   "primary_metric": "wall_ns",
+   "reason": "Mechanism confirmed, effect absent: instructions -1.69% on the decisive subject and -3.18% on a small dense one, but wall +0.05% [-0.82%, +0.86%] over 40 pairs. The warm content open is not instruction-bound.",
+   "reference_tools": [],
+   "subject": "951be6806409:102318:1a63921c7b9d",
+   "title": "Hash the content roll-up map by path bytes instead of components",
+   "trials": 40
   }
  ],
  "prepared": "2026-09-07",
@@ -31116,6 +31268,24 @@
    "os_cache": "warm-steady",
    "platform": "Linux",
    "synthetic": true
+  },
+  {
+   "apparent_bytes": 1640614597,
+   "directories": 6283,
+   "entries": 102318,
+   "experiments": [
+    "exp-104"
+   ],
+   "files": 95933,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+   "key": "951be6806409:102318:1a63921c7b9d",
+   "labels": [
+    "linux-kernel-7043"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
   }
  ],
  "totals": {
@@ -31125,15 +31295,15 @@
    "baseline": 7,
    "blocked": 2,
    "in-progress": 2,
-   "rejected": 39,
+   "rejected": 40,
    "superseded": 3
   },
-  "experiments": 104,
+  "experiments": 105,
   "first_date": "2026-08-10",
   "hypotheses": 64,
-  "last_date": "2026-09-07",
+  "last_date": "2026-09-14",
   "platforms": {
-   "Linux": 10,
+   "Linux": 11,
    "macOS": 94
   }
  },
