@@ -841,7 +841,8 @@ mod tests {
             );
         }
         assert!(matches!(index.controls(), Err(Error::ControlStateNotObserved)));
-        assert_eq!(index.partition_total().all.files, 3);
+        assert!(matches!(index.partition_total(), Err(Error::ControlStateNotObserved)));
+        assert_eq!(index.total().files, 3);
 
         // The same tree reaches the per-line bound once control state is asked for.
         assert!(
@@ -861,7 +862,7 @@ mod tests {
                 .controls()
                 .is_ok_and(|controls| controls.source_is(Path::new(".gitignore"), b"*.log\n"))
         );
-        assert_eq!(index.partition_total().unignored.files, 2);
+        assert_eq!(index.partition_total().expect("control state observed").unignored.files, 2);
     }
 
     #[cfg(feature = "gitignore")]

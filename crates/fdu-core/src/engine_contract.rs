@@ -227,9 +227,12 @@ impl ScanScope {
     /// off, which is the default, and in a build without the `gitignore` feature: both
     /// mean no control file was read and no entry was classified, and they share one
     /// identity. Such an index cannot say whether an entry is ignored, so
-    /// [`Index::is_ignored`](crate::Index::is_ignored) and
-    /// [`Index::controls`](crate::Index::controls) refuse with
-    /// [`Error::ControlStateNotObserved`] rather than answer "not ignored" for everything.
+    /// [`Index::is_ignored`](crate::Index::is_ignored),
+    /// [`Index::controls`](crate::Index::controls), and the partition accessors
+    /// ([`Index::partition_total`](crate::Index::partition_total) and its per-directory
+    /// forms) refuse with [`Error::ControlStateNotObserved`] rather than answer "not
+    /// ignored" for everything, and a shared
+    /// [`ChildSnapshot`](crate::ChildSnapshot) carries no ignore bit or partitions.
     pub const fn observes_controls(self) -> bool {
         self.ignore_rules_fingerprint != 0
     }

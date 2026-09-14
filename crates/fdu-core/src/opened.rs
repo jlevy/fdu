@@ -6061,7 +6061,8 @@ mod tests {
         opened.refresh(&[PathBuf::from(".gitignore")]).expect("delete refresh");
         let image = opened.state.index.snapshot().expect("snapshot");
         assert!(image.controls().expect("control state observed").is_empty());
-        assert_eq!(image.partition_total().all, image.partition_total().unignored);
+        let partitions = image.partition_total().expect("control state observed");
+        assert_eq!(partitions.all, partitions.unignored);
         opened.close().expect("close");
     }
 

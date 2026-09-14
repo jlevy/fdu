@@ -5733,7 +5733,7 @@ mod tests {
     fn assert_indexes_equal(left: &Index, right: &Index) {
         assert_eq!(index_fingerprint(left), index_fingerprint(right));
         assert_eq!(left.total(), right.total());
-        assert_eq!(left.partition_total(), right.partition_total());
+        assert_eq!(left.partition_total().ok(), right.partition_total().ok());
         assert_eq!(left.scope(), right.scope());
         assert_eq!(left.freshness(), right.freshness());
         assert_eq!(left.state(), right.state());
@@ -6899,8 +6899,9 @@ mod tests {
                 index.is_ignored(Path::new("keep.rs")).expect("control state observed"),
                 Some(false)
             );
-            assert_eq!(index.partition_total().all.files, 3);
-            assert_eq!(index.partition_total().unignored.files, 2);
+            let partitions = index.partition_total().expect("control state observed");
+            assert_eq!(partitions.all.files, 3);
+            assert_eq!(partitions.unignored.files, 2);
         }
     }
 
@@ -7131,7 +7132,8 @@ mod tests {
         assert!(removed.is_complete());
         assert_eq!(removed.apply.controls, 1);
         assert!(index.controls().expect("control state observed").is_empty());
-        assert_eq!(index.partition_total().all, index.partition_total().unignored);
+        let partitions = index.partition_total().expect("control state observed");
+        assert_eq!(partitions.all, partitions.unignored);
     }
 
     #[cfg(unix)]

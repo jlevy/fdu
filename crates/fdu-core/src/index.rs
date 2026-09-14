@@ -690,11 +690,17 @@ pub struct ChildSnapshot {
     pub kind: EntryKind,
     /// Last observed metadata.
     pub attrs: Attrs,
-    /// Effective fixed-control classification.
-    pub ignored: bool,
+    /// Effective fixed-control classification, or `None` when the index did not observe
+    /// control state ([`Index::observes_controls`]).
+    ///
+    /// Such an index read no rule, so `Some(false)` would claim the child is not ignored
+    /// when nobody looked.
+    pub ignored: Option<bool>,
     /// Pre-computed subtree totals for a directory.
     pub rollup: Option<RollUp>,
-    /// Both maintained aggregate partitions for a directory.
+    /// Both maintained aggregate partitions for a directory, or `None` for a
+    /// non-directory and for any child of an index that did not observe control state,
+    /// whose unignored partition would only repeat `rollup` as if no rule applied.
     pub partitions: Option<PartitionRollUp>,
 }
 
@@ -1240,11 +1246,16 @@ impl IndexHandle {
     }
 
     /// Direct children captured coherently at one read boundary.
+    ///
+    /// On an index that did not observe control state each child's
+    /// [`ChildSnapshot::ignored`] and [`ChildSnapshot::partitions`] are `None`, the way
+    /// [`Index::is_ignored`] refuses; the names, metadata, and roll-ups still answer.
     pub fn children(&self, path: &Path) -> crate::Result<Option<Vec<ChildSnapshot>>> {
         let index = self.read_index()?;
         let Some(children) = index.children(path) else {
             return Ok(None);
         };
+        let observed = index.observes_controls();
         Ok(Some(
             children
                 .map(|(name, id)| {
@@ -1254,14 +1265,12 @@ impl IndexHandle {
                         name: name.to_os_string(),
                         kind: entry.kind,
                         attrs: entry.attrs,
-                        ignored: entry.ignored,
+                        ignored: observed.then_some(entry.ignored),
                         rollup: entry
                             .kind
                             .is_dir()
                             .then(|| index.named_rollup(&entry.rollup().all)),
-                        partitions: entry
-                            .kind
-                            .is_dir()
+                        partitions: (observed && entry.kind.is_dir())
                             .then(|| index.named_partitions(entry.rollup())),
                     }
                 })
@@ -1825,8 +1834,15 @@ impl Index {
     }
 
     /// Both fixed aggregate partitions for the complete tree.
-    pub fn partition_total(&self) -> PartitionRollUp {
-        self.named_partitions(self.entry(EntryId::ROOT).rollup())
+    ///
+    /// # Errors
+    ///
+    /// [`crate::Error::ControlStateNotObserved`] when the index did not observe control
+    /// state: its unignored partition equals `all` only because no rule was read.
+    /// [`Self::total`] answers the `all` partition for any index.
+    pub fn partition_total(&self) -> crate::Result<PartitionRollUp> {
+        self.require_observed_controls()?;
+        Ok(self.named_partitions(self.entry(EntryId::ROOT).rollup()))
     }
 
     /// Map-free whole-tree totals for in-crate reporting paths.
@@ -2765,15 +2781,40 @@ impl Index {
     }
 
     /// Both fixed aggregate partitions for a directory by relative path.
-    pub fn partition_rollup(&self, path: &Path) -> Option<PartitionRollUp> {
-        let entry = self.entry(self.lookup(path)?);
-        entry.kind.is_dir().then(|| self.named_partitions(entry.rollup()))
+    ///
+    /// `Ok(None)` when the path is absent or not a directory.
+    ///
+    /// # Errors
+    ///
+    /// [`crate::Error::ControlStateNotObserved`] when the index did not observe control
+    /// state, whatever the path, as [`Self::partition_total`] refuses.
+    pub fn partition_rollup(&self, path: &Path) -> crate::Result<Option<PartitionRollUp>> {
+        self.require_observed_controls()?;
+        Ok(self
+            .lookup(path)
+            .map(|id| self.entry(id))
+            .filter(|entry| entry.kind.is_dir())
+            .map(|entry| self.named_partitions(entry.rollup())))
     }
 
     /// Both constant-size aggregate partitions for a directory.
-    pub fn partition_rollup_summary(&self, path: &Path) -> Option<PartitionRollUpSummary> {
-        let entry = self.entry(self.lookup(path)?);
-        entry.kind.is_dir().then(|| partition_summary(entry.rollup()))
+    ///
+    /// `Ok(None)` when the path is absent or not a directory.
+    ///
+    /// # Errors
+    ///
+    /// [`crate::Error::ControlStateNotObserved`] when the index did not observe control
+    /// state, whatever the path, as [`Self::partition_total`] refuses.
+    pub fn partition_rollup_summary(
+        &self,
+        path: &Path,
+    ) -> crate::Result<Option<PartitionRollUpSummary>> {
+        self.require_observed_controls()?;
+        Ok(self
+            .lookup(path)
+            .map(|id| self.entry(id))
+            .filter(|entry| entry.kind.is_dir())
+            .map(|entry| partition_summary(entry.rollup())))
     }
 
     /// Capture one retained entry without repeating path lookup in a consumer.
@@ -6779,7 +6820,9 @@ mod tests {
         fn assert_same_facts(detached: &Index, exact: &Index) {
             assert_eq!(fact_image(detached), fact_image(exact));
             assert_eq!(detached.total(), exact.total());
-            assert_eq!(detached.partition_total(), exact.partition_total());
+            let partitions =
+                |index: &Index| index.named_partitions(index.entry(EntryId::ROOT).rollup());
+            assert_eq!(partitions(detached), partitions(exact));
             let controls = |index: &Index| {
                 index
                     .controls
@@ -7743,6 +7786,79 @@ mod tests {
         }
     }
 
+    /// The unignored partition and a shared child's ignore bit are ignore facts too. On an
+    /// index that read no rule the partition equals `all` and every bit reads "not
+    /// ignored" only because nobody looked, so they refuse the way `is_ignored` does,
+    /// while the `all` roll-up and the children themselves still answer (`fdu-agb6`).
+    #[test]
+    fn an_index_that_did_not_observe_controls_states_no_partition_or_child_ignore_fact() {
+        let tree = Observation::new(vec![
+            upsert("dir", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("dir/debug.log", EntryKind::File, file_attrs(10, 2)),
+        ]);
+        let mut unobserved = Index::new("/root");
+        unobserved.apply_ok(&tree);
+        assert!(matches!(unobserved.partition_total(), Err(crate::Error::ControlStateNotObserved)));
+        for path in ["", "dir", "dir/debug.log", "absent"] {
+            assert!(
+                matches!(
+                    unobserved.partition_rollup(Path::new(path)),
+                    Err(crate::Error::ControlStateNotObserved)
+                ),
+                "{path}"
+            );
+            assert!(
+                matches!(
+                    unobserved.partition_rollup_summary(Path::new(path)),
+                    Err(crate::Error::ControlStateNotObserved)
+                ),
+                "{path}"
+            );
+        }
+        assert_eq!(unobserved.total().files, 1, "the all partition still answers");
+        let children = IndexHandle::new(unobserved)
+            .children(Path::new(""))
+            .expect("children read")
+            .expect("root directory");
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].ignored, None);
+        assert_eq!(children[0].partitions, None);
+        assert_eq!(children[0].rollup.as_ref().map(|rollup| rollup.files), Some(1));
+
+        #[cfg(feature = "gitignore")]
+        {
+            let mut observed =
+                Index::new_with_scope("/root", crate::test_support::observing_controls());
+            observed.apply_ok(&tree);
+            assert_eq!(
+                observed.partition_total().expect("control state observed").unignored.files,
+                1
+            );
+            assert!(
+                observed
+                    .partition_rollup(Path::new("dir"))
+                    .expect("control state observed")
+                    .is_some()
+            );
+            assert_eq!(
+                observed
+                    .partition_rollup_summary(Path::new("dir/debug.log"))
+                    .expect("control state observed"),
+                None,
+                "a file has no partitions"
+            );
+            let children = IndexHandle::new(observed)
+                .children(Path::new(""))
+                .expect("children read")
+                .expect("root directory");
+            assert_eq!(children[0].ignored, Some(false));
+            assert_eq!(
+                children[0].partitions.as_ref().map(|partitions| partitions.unignored.files),
+                Some(1)
+            );
+        }
+    }
+
     #[cfg(feature = "gitignore")]
     #[test]
     fn control_changes_atomically_move_fixed_partitions_without_changing_all() {
@@ -7755,13 +7871,13 @@ mod tests {
             upsert("docs/other.log", EntryKind::File, file_attrs(30, 5)),
             upsert("docs/keep.log", EntryKind::File, file_attrs(40, 6)),
         ]));
-        let before = index.partition_total();
+        let before = index.partition_total().expect("control state observed");
 
         let outcome = index.apply_ok(&Observation::new(vec![Op::ControlUpsert {
             path: PathBuf::from(".gitignore"),
             source: b"*.log\n".to_vec(),
         }]));
-        let partitions = index.partition_total();
+        let partitions = index.partition_total().expect("control state observed");
 
         assert_eq!(partitions.all, before.all, "classification never changes all facts");
         assert_eq!(partitions.all.files, 5);

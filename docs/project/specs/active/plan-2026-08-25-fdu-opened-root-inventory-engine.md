@@ -1826,9 +1826,11 @@ watch over any of their indexes read no control file, share the one-shot snapsho
 and reach no control bound.
 A caller that reads ignore classification opts in: `ScanConfig::read_controls` in Rust,
 `ScanOptions(read_controls=True)` in Python.
-An index built without it cannot classify, and says so: `Index::is_ignored` and
-`Index::controls` return `Error::ControlStateNotObserved` rather than calling every
-entry unignored or handing back an empty table.
+An index built without it cannot classify, and says so: `Index::is_ignored`,
+`Index::controls`, `Index::partition_total`, `Index::partition_rollup`, and
+`Index::partition_rollup_summary` return `Error::ControlStateNotObserved` rather than
+calling every entry unignored or handing back an empty table, and a shared
+`ChildSnapshot` leaves its ignore bit and partitions as `None`.
 A one-shot report consumes no ignore classification, so the shared one-shot planner —
 `plan_report` and `prepare_report` in `crates/fdu-core/src/execution.rs` — turns
 observation off for every report, whatever the caller passed.

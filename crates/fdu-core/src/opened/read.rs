@@ -72,7 +72,8 @@ pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadRes
                     let path = crate::scan::normalize_subtree(&path)?;
                     charge_path(&mut work, &path);
                     work.maintained_index_work = work.maintained_index_work.saturating_add(1);
-                    let value = match index.partition_rollup_summary(&path) {
+                    // An opened root always observes control state, so this never refuses.
+                    let value = match index.partition_rollup_summary(&path)? {
                         Some(rollup) => {
                             work.rows_returned = work.rows_returned.saturating_add(1);
                             Knowledge::Present(rollup)

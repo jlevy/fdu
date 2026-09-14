@@ -1374,9 +1374,10 @@ mod tests {
             restored.is_ignored(Path::new("keep.rs")).expect("control state observed"),
             Some(false)
         );
-        assert_eq!(restored.partition_total(), original.partition_total());
-        assert_eq!(restored.partition_total().all.files, 3);
-        assert_eq!(restored.partition_total().unignored.files, 2);
+        let partitions = restored.partition_total().expect("control state observed");
+        assert_eq!(partitions, original.partition_total().expect("control state observed"));
+        assert_eq!(partitions.all.files, 3);
+        assert_eq!(partitions.unignored.files, 2);
     }
 
     #[cfg(feature = "gitignore")]
@@ -1410,7 +1411,8 @@ mod tests {
             restored.is_ignored(Path::new("debug.log")).expect("control state observed"),
             Some(false)
         );
-        assert_eq!(restored.partition_total().all, restored.partition_total().unignored);
+        let partitions = restored.partition_total().expect("control state observed");
+        assert_eq!(partitions.all, partitions.unignored);
     }
 
     #[cfg(feature = "gitignore")]
@@ -1485,7 +1487,7 @@ mod tests {
             restored.is_ignored(Path::new("src/file-00.rs")).ok(),
             original.is_ignored(Path::new("src/file-00.rs")).ok()
         );
-        assert_eq!(restored.partition_total(), original.partition_total());
+        assert_eq!(restored.partition_total().ok(), original.partition_total().ok());
 
         // The probe sees the walk when there is something to walk for.
         #[cfg(feature = "gitignore")]
