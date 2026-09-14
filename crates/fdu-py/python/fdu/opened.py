@@ -271,6 +271,12 @@ class OpenedOptions:
     exclude_special: bool = False
     max_files: int | None = None
     observe: bool = False
+    #: A byte budget for the exact change journal ``changes()`` reads from, or ``None``
+    #: for the engine default of 8 MiB. Bytes are estimated rather than measured: each
+    #: retained commit costs a fixed allowance, plus, for every change, state transition,
+    #: and dirty path it holds, a fixed allowance and the bytes of the path it names. A
+    #: consumer that falls further behind than the budget is told so with a ``RESET``
+    #: outcome and re-reads state; there is no unbounded setting.
     journal_capacity: int | None = None
     #: The file-type registry: the text of the File Rollup registry document (what
     #: MetaBrowser calls "the registry", ``recommended-file-types.toml``), or ``None`` for
