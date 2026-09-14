@@ -5,7 +5,7 @@ title: "Spec: streaming performance parity without one-shot overhead"
 kind: epic
 status: in_progress
 priority: 0
-version: 27
+version: 28
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
 labels:
   - performance
@@ -31,8 +31,9 @@ child_order_hints:
   - is-01m1xawdxr2v87f7km4jabmd8x
   - is-01m1xbp9qy40ymd7wvyaw0ckp8
   - is-01m2eeeykapyy2pg6zjj9qxcbt
+  - is-01m2et32219k93fnvccckv623q
 created_at: 2026-09-01T06:32:43.884Z
-updated_at: 2026-09-13T22:33:30.985Z
+updated_at: 2026-09-14T01:56:44.224Z
 ---
 Restore detached one-shot performance to the pre-rewrite main control while preserving exact opened-root and public mutation semantics. Correctness fixes precede profiling and lifecycle specialization. The linked plan is the design and acceptance authority.
 
