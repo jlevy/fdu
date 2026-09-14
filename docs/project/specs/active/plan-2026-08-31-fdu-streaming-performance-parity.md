@@ -207,7 +207,7 @@ post-baseline mutations still publish exact commits through the same reducer.
 | Public arbitrary `Index` mutation | Untrusted public preparation | Required | Yes | No unless explicitly requested |
 
 The default CLI does not select a streaming mode merely because the binary was compiled
-with watch or gitignore support.
+with the `watch` build feature.
 The execution plan derives the lifecycle from the requested operation, as it already
 does for retained serving indexes and control observation.
 
