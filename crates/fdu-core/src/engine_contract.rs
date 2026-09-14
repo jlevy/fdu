@@ -1836,7 +1836,10 @@ pub enum Error {
     #[error("opened-index lifecycle state was poisoned by a panic")]
     OpenedLifecyclePoisoned,
 
-    /// An owned opened-index worker panicked before joined shutdown completed.
+    /// An owned opened-index worker panicked.
+    ///
+    /// Joined shutdown reports it, and so does a change poll that would otherwise wait for
+    /// commits the root can no longer make.
     #[error("opened-index worker {worker} panicked")]
     OpenedWorkerPanicked {
         /// Stable role of the failed worker.

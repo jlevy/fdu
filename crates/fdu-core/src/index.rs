@@ -1835,16 +1835,21 @@ impl Index {
             return Err(crate::Error::OpenedIndexStopped);
         }
 
+        let mut discovery = discovery;
         if let Some(path) =
-            discovery.as_ref().and_then(|discovery| discovery.directory_complete.as_ref())
+            discovery.as_mut().and_then(|discovery| discovery.directory_complete.as_mut())
         {
-            let path = canonical_relative_path(path)?;
-            let Some(id) = self.lookup(&path) else {
-                return Err(crate::Error::InvalidDirectoryCompletion(path));
+            // The transition this commit publishes carries the canonical relative path,
+            // not the producer's spelling: a `DirectoryComplete` was only ever canonical
+            // because discovery happened to build it that way.
+            let canonical = canonical_relative_path(path)?;
+            let Some(id) = self.lookup(&canonical) else {
+                return Err(crate::Error::InvalidDirectoryCompletion(canonical));
             };
             if self.entry(id).kind != EntryKind::Dir {
-                return Err(crate::Error::InvalidDirectoryCompletion(path));
+                return Err(crate::Error::InvalidDirectoryCompletion(canonical));
             }
+            *path = canonical;
         }
 
         #[cfg(test)]

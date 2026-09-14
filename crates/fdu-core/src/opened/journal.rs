@@ -31,6 +31,12 @@ impl JournalWait {
 
     /// Wake every poller after an exact commit has entered the index journal.
     pub(super) fn notify_commit(&self) {
+        self.wake();
+    }
+
+    /// Wake every poller so it re-examines the root: a worker has failed, and a poller
+    /// waiting for its commits must answer for that now rather than at its timeout.
+    pub(super) fn wake(&self) {
         let guard = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         self.changed.notify_all();
         drop(guard);
@@ -88,6 +94,12 @@ pub(super) fn poll(opened: &OpenedIndex, request: ChangeRequest) -> Result<Chang
         }
         if !snapshot.since.commits.is_empty() {
             return Ok(changes_at(snapshot));
+        }
+        if let Some(worker) = opened.state.failures.panicked() {
+            // Nothing will commit again; waiting would end only at the timeout. This is
+            // the cause close reports, checked here rather than first so that commits
+            // retained before the panic are still delivered.
+            return Err(Error::OpenedWorkerPanicked { worker });
         }
 
         let remaining = request.timeout.saturating_sub(started.elapsed());

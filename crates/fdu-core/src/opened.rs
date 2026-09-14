@@ -281,6 +281,11 @@ impl OpenedIndex {
     }
 
     /// Return exact commits after one version, waiting up to the supplied timeout.
+    ///
+    /// A poll waiting on an idle journal returns as soon as an owned worker panics, with
+    /// [`Error::OpenedWorkerPanicked`] naming the worker -- the cause [`Self::close`] will
+    /// report -- rather than at its timeout. Commits retained before the panic are still
+    /// returned first.
     pub fn changes(&self, request: crate::ChangeRequest) -> Result<crate::ChangePoll> {
         self.ensure_open()?;
         journal::poll(self, request)
@@ -513,26 +518,39 @@ impl OpenedIndex {
         }
 
         let cancellation = Arc::clone(&self.state.cancellation);
+        let journal = Arc::clone(&self.state.journal);
+        let failures = Arc::clone(&self.state.failures);
         #[cfg(test)]
         let controls = Arc::clone(&self.state.test_controls);
         let worker = thread::Builder::new()
             .name(format!("fdu-{name}"))
             .spawn(move || {
-                #[cfg(not(test))]
-                {
-                    run(cancellation)
-                }
+                // The worker records its own failure as it leaves, and a panic is caught
+                // for exactly that long before it resumes. Left to the join, a panic was
+                // learned of only at close -- a change poll blocked on the journal slept
+                // to its timeout -- and close reported failures in spawn order, so
+                // discovery's poisoned-lock error stood in for the panic that poisoned it.
+                let outcome =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(cancellation)));
                 #[cfg(test)]
                 {
-                    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        run(cancellation)
-                    }));
                     if name != "discovery" {
                         controls.reach(TestPoint::BeforeWorkerExit);
                     }
-                    match outcome {
-                        Ok(result) => result,
-                        Err(payload) => std::panic::resume_unwind(payload),
+                }
+                match outcome {
+                    Ok(Ok(())) => {}
+                    Ok(Err(error)) => {
+                        failures.record(CloseOutcome::WorkerFailed {
+                            worker: name,
+                            source: Arc::new(error),
+                        });
+                        journal.wake();
+                    }
+                    Err(payload) => {
+                        failures.record(CloseOutcome::WorkerPanicked { worker: name });
+                        journal.wake();
+                        std::panic::resume_unwind(payload);
                     }
                 }
             })
@@ -563,6 +581,8 @@ struct OpenedState {
     frontier: Arc<DiscoveryFrontier>,
     continuations: Mutex<continuation::ContinuationTable>,
     journal: Arc<journal::JournalWait>,
+    /// Worker failures in the order they happened; shared with the workers that record them.
+    failures: Arc<WorkerFailures>,
     cancellation: Arc<Cancellation>,
     #[cfg(feature = "watch")]
     baseline: Arc<BaselineLatch>,
@@ -606,6 +626,7 @@ impl OpenedState {
             frontier: Arc::new(DiscoveryFrontier::new()),
             continuations: Mutex::new(continuation::ContinuationTable::default()),
             journal: Arc::new(journal::JournalWait::new()),
+            failures: Arc::new(WorkerFailures::default()),
             cancellation: Arc::new(Cancellation::default()),
             #[cfg(feature = "watch")]
             baseline: Arc::new(BaselineLatch::default()),
@@ -650,6 +671,7 @@ impl OpenedState {
             frontier: Arc::new(DiscoveryFrontier::new()),
             continuations: Mutex::new(continuation::ContinuationTable::default()),
             journal: Arc::new(journal::JournalWait::new()),
+            failures: Arc::new(WorkerFailures::default()),
             cancellation: Arc::new(Cancellation::default()),
             #[cfg(feature = "watch")]
             baseline: Arc::new(BaselineLatch::default()),
@@ -737,7 +759,7 @@ impl OpenedState {
             }
         };
 
-        let worker_outcome = join_workers(workers);
+        let worker_outcome = join_workers(workers, &self.failures);
         let locked = self.lock_lifecycle();
         saw_poison |= locked.poisoned;
         let mut lifecycle = locked.guard;
@@ -1807,7 +1829,49 @@ enum OwnerPhase {
 
 struct Worker {
     name: &'static str,
-    handle: JoinHandle<Result<()>>,
+    handle: JoinHandle<()>,
+}
+
+/// Worker exits that ended in failure, in the order they happened.
+///
+/// Each worker records its own exit before its thread ends, so close can report the
+/// failure that came first rather than the first in spawn order, and a change poll
+/// blocked on the journal can be answered with a typed cause instead of its timeout.
+#[derive(Default)]
+struct WorkerFailures {
+    recorded: Mutex<Vec<CloseOutcome>>,
+}
+
+impl WorkerFailures {
+    fn record(&self, outcome: CloseOutcome) {
+        self.recorded.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(outcome);
+    }
+
+    /// The worker whose panic ended this root, if one did.
+    fn panicked(&self) -> Option<&'static str> {
+        self.recorded.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().find_map(
+            |outcome| match outcome {
+                CloseOutcome::WorkerPanicked { worker } => Some(*worker),
+                _ => None,
+            },
+        )
+    }
+
+    /// The failure close reports.
+    ///
+    /// The earliest, unless the earliest is only the trace another worker's panic left. A
+    /// poisoned lock is a consequence: the guard is poisoned while its thread is still
+    /// unwinding, before that thread can record its panic, so the worker that trips over
+    /// the poison can record first. Discovery's `IndexLockPoisoned` then stood in for the
+    /// observation worker's panic.
+    fn first(&self) -> Option<CloseOutcome> {
+        let recorded = self.recorded.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        recorded
+            .iter()
+            .find(|outcome| !outcome.is_poison_trace())
+            .or_else(|| recorded.first())
+            .cloned()
+    }
 }
 
 #[derive(Clone)]
@@ -1820,6 +1884,20 @@ enum CloseOutcome {
 }
 
 impl CloseOutcome {
+    /// Whether this failure only reports a lock some panic poisoned, rather than a cause.
+    fn is_poison_trace(&self) -> bool {
+        match self {
+            Self::WorkerFailed { source, .. } => matches!(
+                **source,
+                Error::IndexLockPoisoned
+                    | Error::OpenedLifecyclePoisoned
+                    | Error::OpenedJournalPoisoned
+            ),
+            Self::LifecyclePoisoned | Self::IndexPoisoned => true,
+            Self::Success | Self::WorkerPanicked { .. } => false,
+        }
+    }
+
     fn to_result(&self) -> Result<()> {
         match self {
             Self::Success => Ok(()),
@@ -1833,21 +1911,18 @@ impl CloseOutcome {
     }
 }
 
-fn join_workers(workers: Vec<Worker>) -> Option<CloseOutcome> {
-    let mut first_failure = None;
+/// Join every worker, then report the failure the workers themselves recorded first.
+///
+/// The join only waits: each worker records its exit before its thread ends. The join's
+/// own view is kept as the answer of last resort for a panic that escaped recording.
+fn join_workers(workers: Vec<Worker>, failures: &WorkerFailures) -> Option<CloseOutcome> {
+    let mut first_unrecorded = None;
     for worker in workers {
-        let outcome = match worker.handle.join() {
-            Ok(Ok(())) => None,
-            Ok(Err(error)) => {
-                Some(CloseOutcome::WorkerFailed { worker: worker.name, source: Arc::new(error) })
-            }
-            Err(_) => Some(CloseOutcome::WorkerPanicked { worker: worker.name }),
-        };
-        if first_failure.is_none() {
-            first_failure = outcome;
+        if worker.handle.join().is_err() && first_unrecorded.is_none() {
+            first_unrecorded = Some(CloseOutcome::WorkerPanicked { worker: worker.name });
         }
     }
-    first_failure
+    failures.first().or(first_unrecorded)
 }
 
 #[cfg(feature = "watch")]
@@ -2257,6 +2332,73 @@ mod tests {
         let error = opened.close().expect_err("panic is terminal");
         assert!(matches!(error, Error::OpenedWorkerPanicked { worker: "panic" }));
         assert!(matches!(opened.close(), Err(Error::OpenedWorkerPanicked { worker: "panic" })));
+    }
+
+    /// A poll blocked on the journal learns of a worker panic when it happens, with the
+    /// cause close will report, instead of sleeping to its timeout.
+    #[test]
+    fn a_worker_panic_wakes_a_blocked_change_poll_with_its_typed_failure() {
+        let controls = Arc::new(TestControls::default());
+        controls.gate(TestPoint::BeforeJournalWait).arm();
+        let (_root, opened) = opened(Arc::clone(&controls));
+        let cursor = current_version(&opened);
+        let poller = opened.clone();
+        let poll = thread::spawn(move || {
+            poller.changes(crate::ChangeRequest {
+                after: cursor,
+                timeout: std::time::Duration::from_secs(60),
+            })
+        });
+        controls.gate(TestPoint::BeforeJournalWait).wait_reached();
+        opened
+            .spawn_worker("panic", |_cancellation| panic!("injected worker panic"))
+            .expect("spawn worker");
+        controls.gate(TestPoint::BeforeJournalWait).release();
+
+        let outcome = poll.join().expect("poll thread");
+        assert!(
+            matches!(outcome, Err(Error::OpenedWorkerPanicked { worker: "panic" })),
+            "{outcome:?}"
+        );
+        assert!(matches!(opened.close(), Err(Error::OpenedWorkerPanicked { worker: "panic" })));
+    }
+
+    /// Close reports the failure that happened first, not the worker that was spawned first.
+    #[test]
+    fn close_reports_the_failure_that_happened_first_not_the_worker_spawned_first() {
+        let (_root, opened) = opened(Arc::default());
+        opened
+            .spawn_worker("slow", |cancellation| {
+                cancellation.wait_cancelled();
+                Err(Error::CommitRejected("slow worker failed at close"))
+            })
+            .expect("spawn slow worker");
+        opened
+            .spawn_worker("fast", |_cancellation| {
+                Err(Error::CommitRejected("fast worker failed first"))
+            })
+            .expect("spawn fast worker");
+        wait_for_worker_exit(&opened, "fast");
+
+        assert!(matches!(opened.close(), Err(Error::OpenedWorkerFailed { worker: "fast", .. })));
+    }
+
+    /// A poisoned lock is what a panic leaves behind, and the worker that trips over it can
+    /// record its error before the unwinding thread records the panic. The panic is the
+    /// cause, so it is the failure close reports.
+    #[test]
+    fn close_reports_a_panic_before_the_poisoning_it_left_behind() {
+        let (_root, opened) = opened(Arc::default());
+        opened
+            .spawn_worker("tripped", |_cancellation| Err(Error::IndexLockPoisoned))
+            .expect("spawn tripped worker");
+        wait_for_worker_exit(&opened, "tripped");
+        opened
+            .spawn_worker("panicked", |_cancellation| panic!("injected worker panic"))
+            .expect("spawn panicking worker");
+        wait_for_worker_exit(&opened, "panicked");
+
+        assert!(matches!(opened.close(), Err(Error::OpenedWorkerPanicked { worker: "panicked" })));
     }
 
     #[test]
@@ -2931,6 +3073,53 @@ mod tests {
             opened.state.index.state().expect("state").coverage,
             crate::Coverage::Partial(_)
         ));
+        opened.close().expect("close");
+    }
+
+    /// The completion transition carries the canonical relative path, whatever spelling the
+    /// producer used. Discovery happened to build canonical paths; nothing else guaranteed it.
+    #[test]
+    fn directory_completion_publishes_the_canonical_relative_path() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .transition_discovery(DiscoveryTransition::Begin)
+            .expect("begin discovery");
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![Op::Upsert {
+                path: PathBuf::from("known"),
+                kind: EntryKind::Dir,
+                attrs: crate::Attrs::default(),
+            }]))
+            .expect("seed directory");
+
+        let outcome = opened
+            .state
+            .index
+            .apply_discovery(
+                &Observation::new(Vec::new()),
+                DiscoveryCommit {
+                    directory_complete: Some(PathBuf::from("./known")),
+                    transition: None,
+                },
+            )
+            .expect("complete directory");
+
+        let commit = outcome.commit.expect("completion commit");
+        assert!(
+            commit.state.contains(&crate::StateTransition::DirectoryComplete {
+                path: PathBuf::from("known"),
+            }),
+            "{:?}",
+            commit.state
+        );
+        assert_eq!(
+            opened.state.index.directory_complete(Path::new("known")).expect("lookup"),
+            Some(true)
+        );
         opened.close().expect("close");
     }
 
