@@ -156,11 +156,14 @@ pub enum CachePolicy {
     /// A root has one cache path, and its snapshot carries the scan scope that wrote it.
     /// A read under another scope treats that snapshot as absent and scans cold, and the
     /// scan then writes its own scope over it. The one-shot `fdu <dir>` observes no control
-    /// state while `fdu --watch <dir>` and a default [`open`] do, so the two keep snapshots
-    /// of different scope at one cache path and each replaces the other's. An index opened
-    /// after a one-shot report saved its snapshot therefore takes [`OpenPath::ColdScan`],
-    /// and so does a one-shot report that reads the snapshot, as content analysis does,
-    /// after an index was saved. A summary-only report saves nothing and replaces nothing.
+    /// state while a default [`open`] does, so the two keep snapshots of different scope at
+    /// one cache path and each replaces the other's. `fdu --watch <dir>` opens its index
+    /// with observation off, so it shares the one-shot scope: a watch starts warm from a
+    /// one-shot report's snapshot, and a report that reads the snapshot starts warm from a
+    /// watch's. A default [`open`] after a one-shot report saved its snapshot therefore
+    /// takes [`OpenPath::ColdScan`], and so does a one-shot report that reads the snapshot,
+    /// as content analysis does, after a default [`open`] saved one. A summary-only report
+    /// saves nothing and replaces nothing.
     /// A one-shot report answers from a controls-on snapshot only under
     /// [`CachePolicy::Only`].
     #[default]

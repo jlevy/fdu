@@ -188,13 +188,15 @@ revalidation where the OS already recorded what changed, and expensive derived m
 like line counts that an unchanged fingerprint lets you skip entirely.
 
 A snapshot is usable only under the scan scope that wrote it, and a root has one cache
-path.
-`fdu PATH` observes no `.gitignore` control state while `fdu --watch PATH` does, so
-the two keep snapshots of different scope at that path, and each run replaces the
-other’s. A watch started after `fdu PATH` therefore begins with a cold scan, and so does
-a one-shot run that reads the snapshot, such as `--analyze`, after a watch; a
-summary-only `fdu --view summary PATH` saves no snapshot and replaces none.
-`--cache only` still answers a report from a watch’s snapshot.
+path. Neither `fdu PATH` nor `fdu --watch PATH` observes `.gitignore` control state,
+because no command-line view reads it, so the two share one scope and each starts warm
+from the other’s snapshot: a watch started after `fdu PATH`, and a one-shot run that
+reads the snapshot, such as `--analyze`, after a watch.
+A summary-only `fdu --view summary PATH` saves no snapshot and replaces none.
+Only the library’s default `open`, and `fdu.open` in Python, keep a snapshot that
+observes control state.
+A command-line run does not start from it, and one that saves replaces it, but
+`--cache only` still answers a one-shot report from it.
 
 ### How performance work is done here
 
