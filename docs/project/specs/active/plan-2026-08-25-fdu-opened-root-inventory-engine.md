@@ -661,10 +661,11 @@ partial calculation as exact.
 A failure belongs to the smallest thing it invalidates (`fdu-l89e`). Three conditions
 fail the whole request, because each makes every projection in it untrustworthy: a
 request whose shape is invalid, including a continuation another root issued or this one
-never did; a closed root; and a version pin, by `expected` or by a continuation, that the
-index no longer holds. Everything else one projection meets at the pinned version is a typed
-refusal in that projection’s position, beside the query-limit result, and the other
-projections still answer:
+never did; a closed root; and a version pin, by `expected` or by a continuation, that
+the index no longer holds.
+Everything else one projection meets at the pinned version is a typed refusal in that
+projection’s position, beside the query-limit result, and the other projections still
+answer:
 
 - a tree page or roll-up that names a retained path that is not a directory refuses with
   `not_a_directory`, so a path that changed kind since an earlier page costs only its
@@ -1054,10 +1055,10 @@ defend the current prototype contract.
   query-limit result. Output bounds alone do not protect event-loop latency.
 - Add a typed per-projection refusal beside the query-limit result, with the three
   reasons the read envelope defines: `not_a_directory`, `continuation_record_limit`, and
-  `continuation_unavailable`. A
-  batched request fails as a whole only for an invalid request, a closed root, or a
-  version pin the provider no longer holds; both providers refuse the one projection and
-  answer the rest, so the coordinator never splits a batch to protect a lookup.
+  `continuation_unavailable`. A batched request fails as a whole only for an invalid
+  request, a closed root, or a version pin the provider no longer holds; both providers
+  refuse the one projection and answer the rest, so the coordinator never splits a batch
+  to protect a lookup.
 - Add an exact-or-capped count result.
   Recency, navigation, and catalog totals use the maintained indexes named above; an
   unmaintained compound total returns `at_least(n)` at the request cap rather than
@@ -1835,10 +1836,10 @@ An index built without it cannot classify, and says so: `Index::is_ignored`,
 `Index::controls`, `Index::partition_total`, `Index::partition_rollup`, and
 `Index::partition_rollup_summary` return `Error::ControlStateNotObserved` rather than
 calling every entry unignored or handing back an empty table, and a shared
-`ChildSnapshot` leaves its ignore bit and partitions as `None`.
-Nor does it accept control input: `Index::apply` refuses a `ControlUpsert` or
-`ControlRemove` with the same error, and a snapshot load refuses a control table under a
-scope that observed none, so an index's scope and its table cannot disagree.
+`ChildSnapshot` leaves its ignore bit and partitions as `None`. Nor does it accept
+control input: `Index::apply` refuses a `ControlUpsert` or `ControlRemove` with the same
+error, and a snapshot load refuses a control table under a scope that observed none, so
+an index’s scope and its table cannot disagree.
 A one-shot report consumes no ignore classification, so the shared one-shot planner —
 `plan_report` and `prepare_report` in `crates/fdu-core/src/execution.rs` — turns
 observation off for every report, whatever the caller passed.
