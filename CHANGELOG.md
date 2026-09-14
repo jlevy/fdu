@@ -73,6 +73,39 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of accepting an asserted identity.
   This intentionally invalidates earlier snapshots and content sidecars once; the next
   complete run rebuilds them under the verified registry identity.
+- **Breaking:** the opened root’s journal budget is `journal_capacity_bytes`, on Rust
+  `OpenOptions` and Python `OpenedOptions`, replacing `journal_capacity`, which counted
+  retained items. It is measured in bytes as `Commit::retained_cost` estimates them: a
+  fixed allowance per commit and per retained change, transition, or dirty path, plus
+  each path’s bytes, so a budget means the same on every platform.
+  The default, `DEFAULT_JOURNAL_CAPACITY_BYTES`, is 8 MiB. Opening a root refuses a
+  budget below `MIN_JOURNAL_CAPACITY_BYTES`, which could not retain a single commit,
+  with an error naming the unit and the minimum (`InvalidArgumentError` in Python).
+- A name a directory listing returned that is gone by the time it is stat’d is recorded
+  as deleted on every walk: cold scans, reconciliation, `revalidate`, watches, and
+  opened-root discovery and refresh.
+  A cold walk omits it and a reconciliation removes the retained entry, rather than
+  reporting an I/O error that leaves the walk partial and, under a watch or an opened
+  root, the entry permanently partial.
+- Reconciling a retained `.gitignore` as the root of its own walk, as a watch event or
+  an opened-root refresh naming the file does, re-reads its rules.
+  An unreadable one keeps its previous rules and leaves the path partial.
+- Opened-root lifecycle reporting:
+  - A panicking worker wakes a blocked `changes()` poll, which returns
+    `OpenedWorkerPanicked` after delivering the commits retained before the panic.
+    `close()` reports the earliest failure, ranking a panic ahead of the poisoned lock
+    it left behind.
+  - A refresh or observation pass records each directory it listed as complete unless an
+    error arose in that directory’s own listing, as discovery does, and a multi-path
+    refresh closes each subtree on its own walk.
+    One unreadable child therefore does not leave its sibling directories unknown below
+    a complete root.
+  - Published freshness stays `Reconciling` until the observation handoff reaches
+    `Watching`.
+  - A refresh that verifies the same facts as a concurrent producer applies as unchanged
+    rather than as a lost race, so it does not send the observation handoff around again
+    or fail the root.
+  - A refresh on a `Failed` root keeps the issue that explains the failure.
 
 ### Known limitations
 
