@@ -3,16 +3,21 @@ type: is
 id: is-01m2esgns6reaadryb462ngghw
 title: Document the public extension API's raw and File Rollup levels, and pin the raw level with a golden
 kind: task
-status: open
+status: closed
 priority: 3
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2ebb348tnqdeqn4fddykv4s
 created_at: 2026-09-14T01:46:41.830Z
-updated_at: 2026-09-14T01:46:41.830Z
+updated_at: 2026-09-14T03:18:26.292Z
+closed_at: 2026-09-14T03:18:26.290Z
+close_reason: |
+  0a2e341: the classify module doc now has an "Extension levels" section. It covers raw (derive_ext, ext_bucket), logical (logical_ext, NameClassification::logical_extension), and canonical (TypeRegistry::canonical_ext, classify_name), with a table over archive.tar.gz, release.v2.zip, file.c++, .gitignore, and notes. under the compiled registry. The values come from logical_canonical_and_raw_extensions_answer_different_questions (notes. added as a row) and the derive_ext/ext_bucket doctests. module_documentation_extension_table_matches_the_functions reads that table back from the source and checks every cell. The engine architecture document has a new "Classification and Extension Levels" section with the same table; before this there was no classification section. The golden: a new tests/golden/fixtures/extension-levels fixture (archive.tar.gz, release.v2.zip, file.c++, notes.md~) and a cli-axes session recording the extensions view. At the logical level three of those rows would bucket differently: (none), (none), and .v2.zip. The parity artifact gained the session's check line. No local build (disk floor); CI green on all jobs: run 34801745317. The Python docstring half is split to fdu-k7lj.
+resolution: null
+duplicate_of: null
 ---
 Contract follow-up from PR #48 review CLASS-2 (fixed as fdu-d1hj in 3b6de62, option 1), recorded by the fixer.
 
