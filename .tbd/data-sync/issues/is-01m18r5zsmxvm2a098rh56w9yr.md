@@ -5,7 +5,7 @@ title: Control-table charge model inflates ~6.5x and pays repeatedly for identic
 kind: task
 status: open
 priority: 1
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - scale
@@ -14,7 +14,7 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-30T07:12:14.643Z
-updated_at: 2026-09-14T01:49:45.749Z
+updated_at: 2026-09-14T02:30:51.669Z
 ---
 retained_source_cost (crates/fdu-core/src/control.rs:337) charges:
   64 + path_bytes + source.len()*2 + (newlines+1)*64 + slash_count*24
@@ -28,3 +28,7 @@ Note dedup alone is NOT sufficient: 3.81 MiB against a 4 MiB cap is no margin, a
 Cost to weigh: refcounted shared content makes removal harder to reason about in a module whose stated virtue is that deletion is an ordinary state transition.
 
 Acceptance: retention is deduplicated by fingerprint; removal semantics stay exact and tested; measured retention on ~/wrk drops by the predicted order.
+
+## Notes
+
+2026-09-14 (triage at c0511e9): unchanged; formula at `control.rs:355-366@c0511e9`, per-directory ownership at `control.rs:73-94`, fingerprint present but unused for sharing (`control.rs:61-67`). Follow-on with fdu-okne once fdu-1onj makes the bound non-fatal.

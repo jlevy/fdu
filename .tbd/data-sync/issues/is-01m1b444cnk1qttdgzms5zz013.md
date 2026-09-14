@@ -5,7 +5,7 @@ title: "PR #48 branch is 3.6-10x slower than main: allocator churn, not I/O"
 kind: bug
 status: in_progress
 priority: 0
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
 labels:
   - performance
@@ -14,7 +14,7 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-31T05:19:25.577Z
-updated_at: 2026-09-14T01:49:45.672Z
+updated_at: 2026-09-14T02:30:46.616Z
 ---
 The opened-root-inventory-rewrite branch has an unreported whole-scan performance regression against main that is larger and broader than the control-table cap this epic started from. It affects trees with NO .gitignore files, so it is not control-file I/O.
 
@@ -62,3 +62,5 @@ PR #51 partially removes the regression but does not meet this P0 acceptance bou
 All were measured before COMMIT-4's port (50e6ca5) replaced the canonical-path copy lane with one pre-sized canonicalizing pass, and they have not been re-measured. Tracked as fdu-wdqf, which fdu-lj4h's quiet-host run on the merged engine supersedes if it lands first.
 
 When closing, also record whether #52's detached builder (no commits, impacts, or journals for detached cold scans) settles #51's "Open for review and redesign" question: should effect recording be lifecycle-gated? Record too where the counters-based per-entry allocation guard landed.
+
+2026-09-14 (triage at c0511e9): not re-measured at the combined head; the acceptance remains `plan-2026-08-31:419-437`. Two of this bead's closing questions are answerable now: the counters-based per-entry allocation guard is `crates/fdu/tests/detached_performance_invariants.rs:66@c0511e9` (both routes, slope between two fixture sizes); and detached cold scans record no effects, impacts, or journal clones by construction (`scan.rs:3530-3536` -> builder under `NoConsequences`, `index.rs:768-792, 1658`), which settles #51's lifecycle-gating question for one-shot. Timing evidence still needs fdu-lj4h's quiet-host or Linux run.

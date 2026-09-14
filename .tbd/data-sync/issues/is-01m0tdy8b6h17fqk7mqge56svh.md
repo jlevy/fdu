@@ -5,7 +5,7 @@ title: Complete the coherent read envelope and version-pinned paging
 kind: bug
 status: open
 priority: 1
-version: 38
+version: 39
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -31,7 +31,7 @@ dependencies:
     target: is-01m0tdy9ceep2byvbtyvwc2vky
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.445Z
-updated_at: 2026-09-14T01:49:45.543Z
+updated_at: 2026-09-14T02:30:47.950Z
 closed_at: null
 close_reason: null
 resolution: null
@@ -110,3 +110,5 @@ correcting along with the code.
 2026-09-13 (stack-followup audit): READ-3's fix (fdu-q2oj, fa033c2) makes `Tree` and `RollUp` on a non-directory return `Error::NotADirectory` from `read()` (`opened/read.rs:73, 426` at f917cb7). That fails the whole `ReadRequest`, exactly as READ-8's `ContinuationRecordLimit` does.
 
 Whether projection-level failures are typed per projection or fail the request is now one decision, tracked as fdu-l89e. READ-8's fix here should follow it.
+
+2026-09-14 (triage at c0511e9): rounds 4-5 are closed by the rewrite (`EntryCursor`, `TOKEN_MAX_CHARS`, `ContinuationAuthority` absent; continuations are per-`OpenedIndex` ordinals with a minted `SessionId`, `opened.rs:553-605@c0511e9`). Live residual is READ-8: `table.insert(..)?` at `read.rs:549, 648` fails the whole read, as does `NotADirectory` at `read.rs:73, 426`. `plan:603-636` does not decide projection-versus-request failure, so fdu-l89e is a genuine decision; recommend per-projection typed results, then retitle this bead to READ-8.

@@ -5,7 +5,7 @@ title: Hidden-path admission as scope, with an exact-name allowlist
 kind: task
 status: open
 priority: 2
-version: 13
+version: 14
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -19,7 +19,7 @@ labels:
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T15:21:47.400Z
-updated_at: 2026-09-14T01:49:45.792Z
+updated_at: 2026-09-14T02:30:56.855Z
 closed_at: 2026-08-25T06:35:17.988Z
 close_reason: |
   Shipped as `crates/fdu-core/src/admission.rs` plus wiring across all three surfaces.
@@ -130,3 +130,5 @@ policy. Each fails a named test.
 2026-09-13 (PR #48 review 5192314101, prior findings): the engine part was carried into the rewrite and every producer consults it. The command-line and one-shot Python flags described in the close reason above were not carried; they landed on #47, which closed unmerged. The opened-root Python surface has `OpenedOptions.prune_hidden` and `hidden_allow`.
 
 Remaining: expose hidden admission on the command line and the one-shot Python API, or record that those surfaces deliberately omit it.
+
+2026-09-14 (triage at c0511e9): engine (`scan.rs:160@c0511e9`, `admission.rs`) and opened root (`opened.rs:104`, `opened.py:246-247`) carry hidden admission; CLI and one-shot Python do not, and no plan requires them to. Decision needed: expose or record the omission; recommend recording it and closing until a one-shot consumer names the question.

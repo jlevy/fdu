@@ -5,7 +5,7 @@ title: Control state is built for every scan, including roll-ups that never use 
 kind: bug
 status: in_progress
 priority: 0
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - scale
@@ -14,7 +14,7 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-30T07:12:13.970Z
-updated_at: 2026-09-14T01:49:45.684Z
+updated_at: 2026-09-14T02:30:45.364Z
 ---
 Root cause of the control-table aborts.
 
@@ -42,3 +42,5 @@ What this fix leaves open is tracked elsewhere:
 - the open/fdu.open default: fdu-agb6;
 - report, open, and --watch snapshots evicting each other: fdu-w3l5;
 - opened-root, open, and --watch aborts on control volume: fdu-1onj.
+
+2026-09-14 (triage at c0511e9): verified at the combined head. `plan_report` forces `read_controls: false` (`execution.rs:184@c0511e9`) and `prepare_report_internal` applies it before the scan (`execution.rs:243-249`); both front ends reach that planner (`cli.rs:586`, `fdu-py/src/lib.rs:1276`). Close on merge to main.

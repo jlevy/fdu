@@ -3,9 +3,9 @@ type: is
 id: is-01m0vx6yw0f8bddcwggvk2ha0p
 title: "A native walk budget: stop discovery at the cap, and say so"
 kind: task
-status: open
+status: closed
 priority: 1
-version: 21
+version: 23
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -36,9 +36,9 @@ parent_id: is-01m0prgbradma67z3j1wfyh8r7
 child_order_hints:
   - is-01m0wqh3nwzjz4naa9rap02sq5
 created_at: 2026-08-25T07:30:01.728Z
-updated_at: 2026-09-14T01:49:45.776Z
-closed_at: null
-close_reason: null
+updated_at: 2026-09-14T02:30:58.999Z
+closed_at: 2026-09-14T02:30:58.997Z
+close_reason: "Triage 2026-09-14 at c0511e9: implemented under the plan's decision that the budget is execution policy, not scope (plan:549-566): DiscoveryBudget/OpenOptions.budget, Partial(Budget) with a typed ResourceBudget issue, OpenedOptions.max_files. The original acceptance was withdrawn by the plan."
 resolution: null
 duplicate_of: null
 ---
@@ -115,3 +115,5 @@ Replaced with the repository's standard node writer.
 2026-09-13 (PR #48 review 5192314101, prior findings): partly fixed, and this bead's text is stale. The rewrite has the budget for opened roots as execution policy (`max_files` on the open options, `Partial(Budget)` coverage). The acceptance above, a scope-fingerprint change plus a CLI flag, contradicts the opened-root plan and needs re-scoping.
 
 The review found one non-terminal stop, LIFE-4 (discovery's Finish reopened a budget-stopped root), now fixed as fdu-6tqw (c801d4e). Re-scope the acceptance to the plan's execution-policy budget before closing.
+
+2026-09-14 (triage at c0511e9): closing as implemented under the plan's decision that the budget is execution policy, not scope (`plan:549-566`, `plan:959-961`). Landed: `DiscoveryBudget`/`OpenOptions.budget` (`opened.rs:82-108@c0511e9`), `Partial(Budget)` with a typed `ResourceBudget` issue (`index.rs:2132-2141`), refresh refusal and terminal stop (tests `opened.rs:4784, 4926, 5769`), `OpenedOptions.max_files`. The original acceptance is withdrawn rather than unmet.

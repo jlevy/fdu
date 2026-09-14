@@ -5,7 +5,7 @@ title: Control-table bound is not liftable by any flag and its error names no re
 kind: bug
 status: open
 priority: 1
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - control-state
@@ -14,7 +14,7 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-30T07:12:14.984Z
-updated_at: 2026-09-14T01:49:45.759Z
+updated_at: 2026-09-14T02:30:49.984Z
 ---
 MAX_CONTROL_TABLE_BYTES is a hard const with no CLI or config lever (verified: no match for control-table/max-control in crates/fdu/src). The error text is 'control table requires N bytes; limit is M bytes' - it states the bound and offers no way past it.
 
@@ -25,3 +25,7 @@ A field agent independently hit exactly this and reported 'there is no flag to r
 Fix direction: separate the two jobs the constant currently serves - keep a strict parser guard for snapshot loading (untrusted u32 lengths in snapshot.rs:688,722 must stay bounded), and add a separate, larger, flag-liftable runtime retention budget named in the error.
 
 Acceptance: the runtime budget is settable from the CLI and named in the diagnostic; the snapshot parser guard remains strict and independent.
+
+## Notes
+
+2026-09-14 (triage at c0511e9): unchanged. Const at `control.rs:52@c0511e9`, no lever on `OpenOptions` (`opened.rs:95-120`) or `ScanConfig`, error text at `engine_contract.rs:1580-1582`. Reachable only where fdu-1onj is; do it after fdu-1onj, as a `DiscoveryBudget`/`ScanConfig` field named in the degraded issue.

@@ -5,7 +5,7 @@ title: Remove ordered path-map work from public mutation preflight
 kind: task
 status: in_progress
 priority: 1
-version: 10
+version: 12
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
 labels:
   - stack-followup
@@ -13,10 +13,10 @@ dependencies:
   - type: blocks
     target: is-01m1dtr903vj783j9ajaxfnczf
 parent_id: is-01m1dtq2kd9dex87vs7mzajejc
-hold: blocked
+hold: null
 hold_until: null
 created_at: 2026-09-07T07:18:00.700Z
-updated_at: 2026-09-14T01:49:45.714Z
+updated_at: 2026-09-14T02:30:57.908Z
 ---
 A counter-disabled call-tree profile of the unchanged 1a39be9 engine attributes 1936 of 2358 inclusive Index::apply samples to ancestry validation; StructuralOverlay::kind and upsert repeatedly compare path components in a BTreeMap. The overlay uses exact lookup, insertion and predicate retention, not ordered iteration. First characterize arbitrary operation order, repeated paths, directory replacement, subtree removal/recreation, controls, non-UTF-8 paths and atomic rejection through public contracts. Then compare a private standard HashMap overlay, without new dependencies, caller restrictions or changes to commit ordering. Preregister 12 interleaved pairs and 3 warmups for large and batched public mutations; require at least 3% median wall/component improvement with the paired 95% interval below zero, exact final-state and commit oracles, allocations/bytes and RSS within 1.05x, and cold/default/opened noninferiority. Re-profile to prove ancestry comparisons no longer dominate. Record negative evidence and revert the candidate if gates fail.
 
@@ -25,3 +25,5 @@ A counter-disabled call-tree profile of the unchanged 1a39be9 engine attributes 
 Candidate ad52469 changes only the private exact-lookup overlay from BTreeMap to standard HashMap, with no new dependency, ordering restriction, unsafe code or public contract. Three new tests passed before and after the change; an omitted-pruning mutant failed the independent-model atomicity guard and was restored. Full make check and cross-lint passed on the candidate. Exp-102 completed the preregistered exploratory uncontrolled 12-pair/3-warmup mutation screen: large wall/component -49.78%/-77.84%, repeated batches -39.75%/-67.71%, all intervals below zero and all summaries/commit digests exact. Allocation events fall 1.78%/1.56%, reallocations are unchanged, bytes rise 2.39%/4.95% (the repeated case is close to the 5% ceiling), and peak RSS stays within 1.05. Counting all inclusive call-tree frames corrects the preliminary first-frame attribution to 1993/2391 ancestry samples before and 345/1192 after, about 83% to 29%. Raw pairs, provenance, counter outputs and profiles are retained with the experiment; ledger/report regenerated. Retain for confirmation, not final acceptance: generic all-zero context-switch qualification stays inconclusive, quiet mutation confirmation and one-shot/opened noninferiority remain open. Evidence head afbb2ee passes the full isolated gate and all 19 CI checks (run 34101768829); the candidate also passes cross-lint. Quiet confirmation remains held for an idle host: the final historical preflight refused at 26.9% busy and a subsequent snapshot after our builds/tests finished was 39.86%. No final timing samples have been collected. fdu-lj4h records the final scoped allocation/oracle checks, which pass without substituting for timing evidence.
 
 PR #52 review PERF-7 (2026-09-13): the exp-102 counter-disabled call trees carry no profiling-binary identity, and those binaries were not retained, so the 1a39be9 and ad52469 attributions cannot be checked from the artifacts; exp-102 and each tree's .identity.json now say so, and both documents cite the all-call-sites reading (1,993 of 2,391). When this bead re-profiles for quiet confirmation, record the profiling binary SHA-256 beside every captured call tree.
+
+2026-09-14 (triage at c0511e9): candidate landed (`index.rs:4491-4496@c0511e9`, ad52469). Only measurement remains; the hold on fdu-ht5q is stale (closed) and should be lifted. Record the profiling binary SHA-256 with the confirming call trees, per PERF-7.

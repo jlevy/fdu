@@ -5,7 +5,7 @@ title: "~/Library scan is SIGKILLed (137): unbounded growth the control cap does
 kind: bug
 status: open
 priority: 1
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - scale
@@ -14,7 +14,7 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-30T07:12:47.952Z
-updated_at: 2026-09-14T01:49:45.767Z
+updated_at: 2026-09-14T02:30:49.063Z
 ---
 Field report: 'fdu ~/Library -d 2 -n 30 --sort size --min-size 300M' exited 137 (SIGKILL) on the branch binary. This is a different failure mode from the control-table aborts - the OS killed it rather than fdu refusing cleanly - which points at growth the control budget does not bound.
 
@@ -25,3 +25,7 @@ Isolated the slow subtree: ~/Library/Containers (1012 sandbox containers). IMPOR
 What remains genuinely open is the memory behaviour: why a SIGKILL rather than a slow scan. Reporter's host was at 95-99% disk during testing, so memory pressure is a confound to control for.
 
 Acceptance: establish whether peak RSS grows unbounded with entry count on ~/Library-shaped trees (deep, wide, many small files); if so, identify what accumulates and bound it; distinguish that from TCC-induced slowness, which is out of scope.
+
+## Notes
+
+2026-09-14 (triage at c0511e9): no code change to cite; the query retains a full index (`execution.rs:176-181@c0511e9`) on both main and the stack. Needs an RSS-slope measurement on a quiet host at three fixture sizes, both binaries, before it can be attributed to the stack or closed.

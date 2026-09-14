@@ -3,9 +3,9 @@ type: is
 id: is-01m0tdy8swsdre8d15s96wx4km
 title: Watch invalidation batches lose required dirty information
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 26
+version: 28
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -22,9 +22,9 @@ dependencies:
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.915Z
-updated_at: 2026-09-14T01:49:45.800Z
-closed_at: null
-close_reason: null
+updated_at: 2026-09-14T02:30:58.465Z
+closed_at: 2026-09-14T02:30:58.462Z
+close_reason: "Triage 2026-09-14 at c0511e9: fixed in the engine (removed directories dirty themselves and every ancestor, index.rs:4615-4685); no async adapter exists to lose batches. The lossless-batch requirement moves to fdu-2xfp."
 resolution: null
 duplicate_of: null
 ---
@@ -64,3 +64,5 @@ zero entry rows crossing the binding rather than repeating a caveat about a gap
 that had closed.
 
 2026-09-13 (PR #48 review 5192314101, prior findings): the core half is fixed on the rewrite, since dirty paths include a removed directory and its ancestors. The async-adapter half does not exist on the #48 stack, which has no async bridge yet. It belongs to the production adapter work (fdu-2xfp) and must carry the lossless batch when that lands.
+
+2026-09-14 (triage at c0511e9): closing. Removed directories dirty themselves and every ancestor (`index.rs:4615-4621, 4665-4685@c0511e9`); the opened-root Python `ChangeOutcome` carries `dirty_paths`/`all_dirty` (`opened.py:609-610`). No async adapter exists to be lossy; fdu-2xfp inherits the requirement.
