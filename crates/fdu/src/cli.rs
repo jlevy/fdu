@@ -89,7 +89,17 @@ const DOCS_POINTER: &str = "Run `fdu --docs` for more help and important usage e
 
 /// The guide `--docs` prints: the ladder, the two axes, and the contracts worth knowing
 /// before automating against the output.
-const DOCS: &str = r"fdu — a fast, incremental file roll-up engine.
+///
+/// Composed per build, because the guide names only flags this binary has. A command
+/// line built without `watch` has no `--watch` or `--interval`, and a guide that still
+/// named them would send its reader to flags the parser rejects. Dropping them from
+/// that build's guide, rather than keeping them as flags that only refuse, keeps its
+/// guide, `--help`, and parser describing one command. The two arguments are the
+/// watch example with its note, and the Mode axis's flags.
+macro_rules! docs_guide {
+    ($watch_composition:literal, $mode_flags:literal) => {
+        concat!(
+            r"fdu — a fast, incremental file roll-up engine.
 
 THE LADDER
   Every report is one command, and they form a ladder. Each rung costs more than
@@ -126,18 +136,18 @@ MORE COMPOSITIONS
   fdu --analyze words --view documents .
   fdu --view files --min-size 10M --sort size -n 100 PATH   largest files
   fdu --view files --modified-since 1h --sort mtime PATH    recent changes
-  fdu --watch --view files --format jsonl PATH              a tail -f for a tree
-
-  --interval throttles rendering only; change detection is event-driven and
-  unaffected by it, so an idle tree costs nothing between changes.
-
+",
+            $watch_composition,
+            r"
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH, --scan-depth                         what is scanned and cached
   Content    --analyze none|lines|code|words|all        which file bodies are read
   Selection  --include, --exclude, --depth, --limit     which entries are considered
   View       tree,extensions,types,families,languages,documents,files,summary,all
   Format     --format text|json|jsonl|yaml, --color
-  Mode       --cache, --watch, --analysis-workers
+  Mode       ",
+            $mode_flags,
+            r"
 
 CONTENT ANALYSIS
   none       metadata only; source files are never opened (default)
@@ -171,7 +181,24 @@ EXIT STATUS
   0  Complete result, or a partial result accepted with --allow-partial
   1  Fatal filesystem or cache error
   2  Partial result, or command-line usage error
-";
+"
+        )
+    };
+}
+
+/// The guide for a command line that can watch.
+#[cfg(feature = "watch")]
+const DOCS: &str = docs_guide!(
+    "  fdu --watch --view files --format jsonl PATH              a tail -f for a tree
+
+  --interval throttles rendering only; change detection is event-driven and
+  unaffected by it, so an idle tree costs nothing between changes.
+",
+    "--cache, --watch, --analysis-workers"
+);
+/// The guide for a command line built without `watch`, which names neither of its flags.
+#[cfg(not(feature = "watch"))]
+const DOCS: &str = docs_guide!("", "--cache, --analysis-workers");
 
 /// When terminal styling should be enabled.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
