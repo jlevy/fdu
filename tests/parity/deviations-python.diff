@@ -89,6 +89,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Summary Is One Aggregate Row
   ✓ Types Use Stable Classification IDs
   ✓ Extensions Preserve the Original Raw Grouping
+  ✓ Extensions Are Raw, Not File Rollup’s Logical Extensions
   ✓ Files Keep One Path per Row
   ✓ Tree Reports Every Directory’s Roll-Up
   ✓ Several Views Come Back in Request Order, From One Scan

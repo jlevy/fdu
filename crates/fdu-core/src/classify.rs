@@ -5,6 +5,37 @@
 //! Classification may also use a caller-supplied bounded prefix for binary signatures,
 //! shebangs, modelines, ambiguous headers, and origin flags. Classification never parses
 //! rules or opens a file; the caller owns the optional read.
+//!
+//! # Extension levels
+//!
+//! A file name has up to three extensions, one per question, and each has its own
+//! functions:
+//!
+//! - **Raw**: [`derive_ext`], and [`ext_bucket`], which labels its `None` as
+//!   [`NO_EXTENSION`]. Any final dotted component counts, whatever its bytes or length,
+//!   and a `.tar` before it is kept. The extension view, per-directory extension tallies,
+//!   and an unrecognized type's label use this level. It is the answer fdu gave before
+//!   registries existed.
+//! - **Logical**: [`logical_ext`] and [`NameClassification::logical_extension`]. This is
+//!   File Rollup Format's name-owned extension: up to two trailing components, each ASCII
+//!   alphanumeric and at most twelve bytes. A portable entry row reports it.
+//! - **Canonical**: [`TypeRegistry::canonical_ext`] and
+//!   [`NameClassification::canonical_extension`], from [`TypeRegistry::classify_name`].
+//!   This is the declared extension the logical one matched, whole or by its final
+//!   component. It is `None` when nothing declared matches, or when an exact filename wins
+//!   first.
+//!
+//! Where the levels part, with the compiled registry (`none` is `None`):
+//!
+//! | Name             | Raw       | Bucket     | Logical   | Canonical |
+//! | ---------------- | --------- | ---------- | --------- | --------- |
+//! | `archive.tar.gz` | `.tar.gz` | `.tar.gz`  | `.tar.gz` | `.tar.gz` |
+//! | `release.v2.zip` | `.zip`    | `.zip`     | `.v2.zip` | `.zip`    |
+//! | `file.c++`       | `.c++`    | `.c++`     | none      | none      |
+//! | `.gitignore`     | none      | `(none)`   | none      | none      |
+//! | `notes.`         | none      | `(none)`   | none      | none      |
+//!
+//! A unit test reads this table and checks every cell against the functions.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -1469,6 +1500,39 @@ priority = 100
         assert_eq!(derive_ext(OsStr::new("Photo.JPEG")).as_deref(), Some(".jpeg"));
     }
 
+    /// The module documentation's extension-level table is read back and checked cell by
+    /// cell, so a change to any level fails here instead of leaving the table wrong. The
+    /// engine architecture document repeats the table and names this test as its source.
+    #[test]
+    fn module_documentation_extension_table_matches_the_functions() {
+        let rules = TypeRegistry::compiled();
+        let mut rows = 0;
+        for line in include_str!("classify.rs").lines().take_while(|line| line.starts_with("//!")) {
+            let row = line.trim_start_matches("//!").trim();
+            if !row.starts_with("| `") {
+                continue;
+            }
+            let cells: Vec<Option<&str>> = row
+                .trim_matches('|')
+                .split('|')
+                .map(|cell| match cell.trim() {
+                    "none" => None,
+                    cell => Some(cell.trim_matches('`')),
+                })
+                .collect();
+            let [Some(name), raw, bucket, logical, canonical] = cells.as_slice() else {
+                panic!("an example row has a name and four levels: {row}");
+            };
+            let name = OsStr::new(name);
+            assert_eq!(derive_ext(name).as_deref(), *raw, "raw {name:?}");
+            assert_eq!(Some(ext_bucket(name).as_str()), *bucket, "bucket {name:?}");
+            assert_eq!(logical_ext(name).as_deref(), *logical, "logical {name:?}");
+            assert_eq!(rules.canonical_ext(name).as_deref(), *canonical, "canonical {name:?}");
+            rows += 1;
+        }
+        assert_eq!(rows, 5, "every example row in the module documentation was read");
+    }
+
     /// Three extensions answer three questions, and these names are where they part.
     ///
     /// `logical_ext` is the File Rollup observation, `canonical_ext` the declared extension
@@ -1487,6 +1551,7 @@ priority = 100
             (".eslintrc.json", Some(".json"), Some(".json"), Some(".json")),
             (".gitignore", None, None, None),
             ("trailing.", None, None, None),
+            ("notes.", None, None, None),
             // Undeclared compound: no canonical form; the raw extension is its final part.
             ("release.v2.widget", Some(".v2.widget"), None, Some(".widget")),
             // Ineligible for File Rollup, yet each is still a raw extension of its own.

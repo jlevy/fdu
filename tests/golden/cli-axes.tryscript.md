@@ -4,6 +4,7 @@ path:
   - $FDU_BIN
 fixtures:
   - fixtures/project
+  - fixtures/extension-levels
 env:
   FORCE_COLOR: "0"
   LANG: C
@@ -81,6 +82,25 @@ EXTENSIONS
 SUMMARY
      263 B  6 files, 3 directories
 Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+### Extensions Are Raw, Not File Rollup’s Logical Extensions
+
+A file name has three extension levels, and this view uses the raw one.
+Three of these names would land on a different pile at File Rollup Format’s logical
+level, which admits only ASCII alphanumeric components and keeps up to two: `file.c++`
+and `notes.md~` would fall under `(none)`, and `release.v2.zip` would be `.v2.zip`.
+`archive.tar.gz` is `.tar.gz` at every level.
+The `classify` module documentation tabulates all three levels.
+
+```console
+$ fdu --cache off --view extensions --size apparent extension-levels
+      40 B  .tar.gz      1 file
+      32 B  .zip         1 file
+      25 B  .c++         1 file
+      10 B  .md~         1 file
+Performance: walked 4 files / 107 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
