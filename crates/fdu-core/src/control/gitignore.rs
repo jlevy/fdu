@@ -18,6 +18,14 @@
 //! git. A `/` inside a bracket expression is a member of the set, not a separator. An
 //! expression that never closes, or that names an unknown class, makes its whole line
 //! match nothing, which is also git's answer.
+//!
+//! **An escaped `/`** is a separator, because git reads `\/` as a literal `/` and in a
+//! path only a separator is one: `a\/b` matches `a/b`, not a directory `a\` holding `b`.
+//! Git's two exceptions hold, pinned by recorded verdicts too. A leading `\/` is not an
+//! anchor, so its line matches nothing; and `**\/` matches one or more directories, never
+//! zero, because git's zero-directory shortcut looks for an unescaped `/`. A trailing `/`
+//! makes a pattern directory-only whether or not it is escaped, and a backslash it leaves
+//! with nothing to escape makes the line match nothing.
 
 use std::path::{Component, Path};
 
@@ -37,6 +45,9 @@ struct Pattern {
 #[derive(Clone, Debug)]
 enum Segment {
     DoubleStar,
+    /// A `**` written before an escaped separator, as `**\/`, which git gives no
+    /// zero-directory shortcut, so it matches one or more components.
+    DoubleStarOneOrMore,
     Glob(Vec<u8>),
 }
 
@@ -84,19 +95,25 @@ impl Pattern {
         if body.is_empty() {
             return None;
         }
-        if body.last() == Some(&b'\\') && is_escaped(body, body.len()) {
-            return None;
-        }
 
-        let directory_only = body.last() == Some(&b'/') && !is_escaped(body, body.len() - 1);
+        // Git strips a trailing `/` before it looks at escapes, so `\/` there still makes
+        // the pattern directory-only.
+        let directory_only = body.last() == Some(&b'/');
         if directory_only {
             body = &body[..body.len() - 1];
+        }
+        // A backslash with nothing after it to escape fails git's match, so the line can
+        // never match anything.
+        if body.last() == Some(&b'\\') && is_escaped(body, body.len()) {
+            return None;
         }
         let anchored = body.first() == Some(&b'/');
         if anchored {
             body = &body[1..];
         }
-        if body.is_empty() {
+        // An escaped leading `/` is not an anchor: git must match it against a separator
+        // before the first component, and no path has one.
+        if body.is_empty() || body.starts_with(b"\\/") {
             return None;
         }
 
@@ -104,9 +121,15 @@ impl Pattern {
         let mut segments = Vec::new();
         // A malformed bracket expression aborts git's match wherever it appears, so the
         // line can never match anything and is dropped as if it were a comment.
-        for segment in split_segments(body)?.into_iter().filter(|segment| !segment.is_empty()) {
+        for (segment, before_escaped_separator) in
+            split_segments(body)?.into_iter().filter(|(segment, _)| !segment.is_empty())
+        {
             let segment = if matches_path && segment == b"**" {
-                Segment::DoubleStar
+                if before_escaped_separator {
+                    Segment::DoubleStarOneOrMore
+                } else {
+                    Segment::DoubleStar
+                }
             } else {
                 Segment::Glob(normalize_glob(segment))
             };
@@ -138,29 +161,36 @@ impl Pattern {
     }
 }
 
-/// Split a pattern body at each `/` git treats as a separator.
+/// Split a pattern body at each `/` git treats as a separator, escaped or not.
 ///
-/// A `/` inside a bracket expression is a member of the set, which no path component can
-/// contain, not a separator. A backslash hides the byte after it from bracket parsing, but
-/// an escaped `/` still splits, as it always has here. `None` means a bracket expression
-/// is malformed, which aborts git's whole match.
-fn split_segments(body: &[u8]) -> Option<Vec<&[u8]>> {
+/// Each segment comes with whether the separator after it was escaped, as `\/`, which
+/// changes what a `**` before it may match. A `/` inside a bracket expression is a member
+/// of the set, which no path component can contain, not a separator. A backslash hides the
+/// byte after it from bracket parsing. `None` means a bracket expression is malformed,
+/// which aborts git's whole match.
+fn split_segments(body: &[u8]) -> Option<Vec<(&[u8], bool)>> {
     let mut segments = Vec::new();
     let mut start = 0;
     let mut position = 0;
     while position < body.len() {
         match body[position] {
             b'/' => {
-                segments.push(&body[start..position]);
-                start = position + 1;
+                segments.push((&body[start..position], false));
                 position += 1;
+                start = position;
             }
-            b'\\' if body.get(position + 1).is_some_and(|next| *next != b'/') => position += 2,
+            // Git reads `\/` as a literal `/`, and in a path only a separator is one.
+            b'\\' if body.get(position + 1) == Some(&b'/') => {
+                segments.push((&body[start..position], true));
+                position += 2;
+                start = position;
+            }
+            b'\\' => position += 2,
             b'[' => position += class_match(&body[position..], 0)?.1,
             _ => position += 1,
         }
     }
-    segments.push(&body[start..]);
+    segments.push((&body[start..], false));
     Some(segments)
 }
 
@@ -204,17 +234,18 @@ fn segment_path_matches(
     for (position, segment) in pattern.iter().enumerate() {
         let mut current = vec![false; path.len() + 1];
         match segment {
-            Segment::DoubleStar if position + 1 == pattern.len() => {
-                // Git's trailing `/**` means contents *inside* the named directory,
-                // not the directory itself, so it consumes at least one component.
-                for path_at in 1..=path.len() {
-                    current[path_at] = previous[path_at - 1] || current[path_at - 1];
-                }
-            }
-            Segment::DoubleStar => {
+            Segment::DoubleStar if position + 1 < pattern.len() => {
                 current[0] = previous[0];
                 for path_at in 1..=path.len() {
                     current[path_at] = previous[path_at] || current[path_at - 1];
+                }
+            }
+            Segment::DoubleStar | Segment::DoubleStarOneOrMore => {
+                // Git's trailing `/**` means contents *inside* the named directory,
+                // not the directory itself, and `**\/` has no zero-directory shortcut,
+                // so each consumes at least one component.
+                for path_at in 1..=path.len() {
+                    current[path_at] = previous[path_at - 1] || current[path_at - 1];
                 }
             }
             Segment::Glob(glob) => {
@@ -559,85 +590,115 @@ mod tests {
     /// --no-index -v -z --stdin` (git 2.50.1), with the pattern as the only line and the
     /// user's and system's git configuration out of the way. The live oracle re-asks
     /// whichever git the test host has. No candidate name starts with `:`, which
-    /// `check-ignore` would read as pathspec magic.
-    struct BracketCase {
+    /// `check-ignore` would read as pathspec magic. Every name is a file, so a
+    /// directory-only pattern keeps them all.
+    struct RecordedCase {
         pattern: &'static [u8],
         ignored: &'static [&'static [u8]],
         kept: &'static [&'static [u8]],
     }
 
     #[rustfmt::skip]
-    const BRACKET_CASES: &[BracketCase] = &[
+    const BRACKET_CASES: &[RecordedCase] = &[
             // POSIX classes, which git reads with its own ASCII-only ctype.
-            BracketCase { pattern: b"x[[:alpha:]]", ignored: &[b"xa", b"xZ"], kept: &[b"x1", b"x_", b"x[", b"x:", b"x]", b"xa]"] },
-            BracketCase { pattern: b"[[:digit:]]", ignored: &[b"5"], kept: &[b"a"] },
-            BracketCase { pattern: b"[[:alnum:]]", ignored: &[b"a", b"5"], kept: &[b"-"] },
-            BracketCase { pattern: b"[[:upper:]]", ignored: &[b"A"], kept: &[b"a"] },
-            BracketCase { pattern: b"[[:lower:]]", ignored: &[b"a"], kept: &[b"A"] },
-            BracketCase { pattern: b"[[:space:]]x", ignored: &[b" x", b"\x09x", b"\x0dx", b"\x0ax"], kept: &[b"\x0bx", b"\x0cx", b"ax"] },
-            BracketCase { pattern: b"[[:blank:]]x", ignored: &[b" x", b"\x09x"], kept: &[b"\x0ax", b"\x0bx"] },
-            BracketCase { pattern: b"[[:punct:]]", ignored: &[b"!", b"~", b"_"], kept: &[b"a"] },
-            BracketCase { pattern: b"[[:xdigit:]]", ignored: &[b"f", b"F", b"9"], kept: &[b"g"] },
-            BracketCase { pattern: b"[[:cntrl:]]", ignored: &[b"\x01", b"\x7f"], kept: &[b"a", b" "] },
-            BracketCase { pattern: b"[[:graph:]]", ignored: &[b"a", b"~"], kept: &[b" "] },
-            BracketCase { pattern: b"[[:print:]]x", ignored: &[b" x", b"ax"], kept: &[b"\x7fx"] },
-            BracketCase { pattern: b"[![:alpha:]][![:alpha:]]", ignored: &[b"\xc3\xa9", b"12"], kept: &[b"ab", b"1a"] },
-            BracketCase { pattern: b"[[:alpha:]][[:alpha:]]", ignored: &[b"ab"], kept: &[b"\xc3\xa9"] },
-            BracketCase { pattern: b"[[:bogus:]]", ignored: &[], kept: &[b"b", b"[", b"[[:bogus:]]"] },
-            BracketCase { pattern: b"[[:alpha:]0-9]", ignored: &[b"a", b"5"], kept: &[b"-"] },
-            BracketCase { pattern: b"x[[:alpha]", ignored: &[b"xa", b"x[", b"x:"], kept: &[b"x]", b"xb"] },
-            BracketCase { pattern: b"[[:alpha:]", ignored: &[], kept: &[b"a", b"[", b"[[:alpha:]"] },
-            BracketCase { pattern: b"x[!:alpha:]", ignored: &[b"xb"], kept: &[b"xa", b"x:"] },
-            BracketCase { pattern: b"[[:alpha:]-z]", ignored: &[b"-", b"b"], kept: &[b"5"] },
-            BracketCase { pattern: b"x[[:]]", ignored: &[b"x[]", b"x:]"], kept: &[b"x]"] },
-            BracketCase { pattern: b"x[[::]]", ignored: &[], kept: &[b"x:", b"x["] },
-            BracketCase { pattern: b"x[[:-z]", ignored: &[b"x[", b"xa", b"x:"], kept: &[b"x9"] },
-            BracketCase { pattern: b"x[[:alpha:][:digit:]]", ignored: &[b"xa", b"x5"], kept: &[b"x-"] },
-            BracketCase { pattern: b"x[[.a.]]", ignored: &[b"xa]", b"x.]", b"x[]"], kept: &[b"xa"] },
-            BracketCase { pattern: b"x[[=a=]]", ignored: &[b"xa]", b"x=]"], kept: &[b"xa"] },
-            BracketCase { pattern: b"x[a-**]", ignored: &[b"x*", b"xa"], kept: &[b"xb"] },
-            BracketCase { pattern: b"*[[:[:a]z", ignored: &[b"[z", b"a:z"], kept: &[b"bz"] },
-            BracketCase { pattern: b"*[[:[:]z", ignored: &[], kept: &[b"[z", b"a:z"] },
+            RecordedCase { pattern: b"x[[:alpha:]]", ignored: &[b"xa", b"xZ"], kept: &[b"x1", b"x_", b"x[", b"x:", b"x]", b"xa]"] },
+            RecordedCase { pattern: b"[[:digit:]]", ignored: &[b"5"], kept: &[b"a"] },
+            RecordedCase { pattern: b"[[:alnum:]]", ignored: &[b"a", b"5"], kept: &[b"-"] },
+            RecordedCase { pattern: b"[[:upper:]]", ignored: &[b"A"], kept: &[b"a"] },
+            RecordedCase { pattern: b"[[:lower:]]", ignored: &[b"a"], kept: &[b"A"] },
+            RecordedCase { pattern: b"[[:space:]]x", ignored: &[b" x", b"\x09x", b"\x0dx", b"\x0ax"], kept: &[b"\x0bx", b"\x0cx", b"ax"] },
+            RecordedCase { pattern: b"[[:blank:]]x", ignored: &[b" x", b"\x09x"], kept: &[b"\x0ax", b"\x0bx"] },
+            RecordedCase { pattern: b"[[:punct:]]", ignored: &[b"!", b"~", b"_"], kept: &[b"a"] },
+            RecordedCase { pattern: b"[[:xdigit:]]", ignored: &[b"f", b"F", b"9"], kept: &[b"g"] },
+            RecordedCase { pattern: b"[[:cntrl:]]", ignored: &[b"\x01", b"\x7f"], kept: &[b"a", b" "] },
+            RecordedCase { pattern: b"[[:graph:]]", ignored: &[b"a", b"~"], kept: &[b" "] },
+            RecordedCase { pattern: b"[[:print:]]x", ignored: &[b" x", b"ax"], kept: &[b"\x7fx"] },
+            RecordedCase { pattern: b"[![:alpha:]][![:alpha:]]", ignored: &[b"\xc3\xa9", b"12"], kept: &[b"ab", b"1a"] },
+            RecordedCase { pattern: b"[[:alpha:]][[:alpha:]]", ignored: &[b"ab"], kept: &[b"\xc3\xa9"] },
+            RecordedCase { pattern: b"[[:bogus:]]", ignored: &[], kept: &[b"b", b"[", b"[[:bogus:]]"] },
+            RecordedCase { pattern: b"[[:alpha:]0-9]", ignored: &[b"a", b"5"], kept: &[b"-"] },
+            RecordedCase { pattern: b"x[[:alpha]", ignored: &[b"xa", b"x[", b"x:"], kept: &[b"x]", b"xb"] },
+            RecordedCase { pattern: b"[[:alpha:]", ignored: &[], kept: &[b"a", b"[", b"[[:alpha:]"] },
+            RecordedCase { pattern: b"x[!:alpha:]", ignored: &[b"xb"], kept: &[b"xa", b"x:"] },
+            RecordedCase { pattern: b"[[:alpha:]-z]", ignored: &[b"-", b"b"], kept: &[b"5"] },
+            RecordedCase { pattern: b"x[[:]]", ignored: &[b"x[]", b"x:]"], kept: &[b"x]"] },
+            RecordedCase { pattern: b"x[[::]]", ignored: &[], kept: &[b"x:", b"x["] },
+            RecordedCase { pattern: b"x[[:-z]", ignored: &[b"x[", b"xa", b"x:"], kept: &[b"x9"] },
+            RecordedCase { pattern: b"x[[:alpha:][:digit:]]", ignored: &[b"xa", b"x5"], kept: &[b"x-"] },
+            RecordedCase { pattern: b"x[[.a.]]", ignored: &[b"xa]", b"x.]", b"x[]"], kept: &[b"xa"] },
+            RecordedCase { pattern: b"x[[=a=]]", ignored: &[b"xa]", b"x=]"], kept: &[b"xa"] },
+            RecordedCase { pattern: b"x[a-**]", ignored: &[b"x*", b"xa"], kept: &[b"xb"] },
+            RecordedCase { pattern: b"*[[:[:a]z", ignored: &[b"[z", b"a:z"], kept: &[b"bz"] },
+            RecordedCase { pattern: b"*[[:[:]z", ignored: &[], kept: &[b"[z", b"a:z"] },
             // Escapes inside a class.
-            BracketCase { pattern: b"[a\\-z]", ignored: &[b"a", b"-", b"z"], kept: &[b"b", b"\\"] },
-            BracketCase { pattern: b"[\\]]", ignored: &[b"]"], kept: &[b"\\", b"\\]"] },
-            BracketCase { pattern: b"[\\\\]", ignored: &[b"\\"], kept: &[b"]"] },
-            BracketCase { pattern: b"[\\a-c]", ignored: &[b"b"], kept: &[b"\\", b"-"] },
-            BracketCase { pattern: b"[a-\\c]", ignored: &[b"b"], kept: &[b"\\", b"-"] },
-            BracketCase { pattern: b"[\\!a]", ignored: &[b"!", b"a"], kept: &[b"b"] },
-            BracketCase { pattern: b"[x\\", ignored: &[], kept: &[b"x", b"[x\\"] },
-            BracketCase { pattern: b"\\[a]", ignored: &[b"[a]"], kept: &[b"a"] },
-            BracketCase { pattern: b"[a-\\]]", ignored: &[b"a"], kept: &[b"]", b"b"] },
+            RecordedCase { pattern: b"[a\\-z]", ignored: &[b"a", b"-", b"z"], kept: &[b"b", b"\\"] },
+            RecordedCase { pattern: b"[\\]]", ignored: &[b"]"], kept: &[b"\\", b"\\]"] },
+            RecordedCase { pattern: b"[\\\\]", ignored: &[b"\\"], kept: &[b"]"] },
+            RecordedCase { pattern: b"[\\a-c]", ignored: &[b"b"], kept: &[b"\\", b"-"] },
+            RecordedCase { pattern: b"[a-\\c]", ignored: &[b"b"], kept: &[b"\\", b"-"] },
+            RecordedCase { pattern: b"[\\!a]", ignored: &[b"!", b"a"], kept: &[b"b"] },
+            RecordedCase { pattern: b"[x\\", ignored: &[], kept: &[b"x", b"[x\\"] },
+            RecordedCase { pattern: b"\\[a]", ignored: &[b"[a]"], kept: &[b"a"] },
+            RecordedCase { pattern: b"[a-\\]]", ignored: &[b"a"], kept: &[b"]", b"b"] },
             // A `]` first in the class is a member, not the terminator.
-            BracketCase { pattern: b"[]]", ignored: &[b"]"], kept: &[] },
-            BracketCase { pattern: b"[]a]", ignored: &[b"]", b"a"], kept: &[b"b"] },
-            BracketCase { pattern: b"[!]]", ignored: &[b"a"], kept: &[b"]"] },
-            BracketCase { pattern: b"[^]]", ignored: &[b"a"], kept: &[b"]"] },
-            BracketCase { pattern: b"[]-a]", ignored: &[b"^"], kept: &[b"\\", b"b"] },
-            BracketCase { pattern: b"[]", ignored: &[], kept: &[b"]", b"[]"] },
-            BracketCase { pattern: b"[a-]]", ignored: &[b"a]", b"-]"], kept: &[b"b]"] },
+            RecordedCase { pattern: b"[]]", ignored: &[b"]"], kept: &[] },
+            RecordedCase { pattern: b"[]a]", ignored: &[b"]", b"a"], kept: &[b"b"] },
+            RecordedCase { pattern: b"[!]]", ignored: &[b"a"], kept: &[b"]"] },
+            RecordedCase { pattern: b"[^]]", ignored: &[b"a"], kept: &[b"]"] },
+            RecordedCase { pattern: b"[]-a]", ignored: &[b"^"], kept: &[b"\\", b"b"] },
+            RecordedCase { pattern: b"[]", ignored: &[], kept: &[b"]", b"[]"] },
+            RecordedCase { pattern: b"[a-]]", ignored: &[b"a]", b"-]"], kept: &[b"b]"] },
             // `!` and `^` negate only in first position.
-            BracketCase { pattern: b"[!a-c]", ignored: &[b"d"], kept: &[b"a"] },
-            BracketCase { pattern: b"[^a-c]", ignored: &[b"d"], kept: &[b"a"] },
-            BracketCase { pattern: b"[a!]", ignored: &[b"!"], kept: &[b"b"] },
-            BracketCase { pattern: b"[!!]", ignored: &[b"a"], kept: &[b"!"] },
+            RecordedCase { pattern: b"[!a-c]", ignored: &[b"d"], kept: &[b"a"] },
+            RecordedCase { pattern: b"[^a-c]", ignored: &[b"d"], kept: &[b"a"] },
+            RecordedCase { pattern: b"[a!]", ignored: &[b"!"], kept: &[b"b"] },
+            RecordedCase { pattern: b"[!!]", ignored: &[b"a"], kept: &[b"!"] },
             // Ranges: the start byte is itself a member, and a reversed range adds nothing.
-            BracketCase { pattern: b"[a-c]", ignored: &[b"a", b"b", b"c"], kept: &[b"d"] },
-            BracketCase { pattern: b"[c-a]", ignored: &[b"c"], kept: &[b"a", b"b"] },
-            BracketCase { pattern: b"[a-]", ignored: &[b"-", b"a"], kept: &[b"b"] },
-            BracketCase { pattern: b"[-a]", ignored: &[b"-", b"a"], kept: &[] },
-            BracketCase { pattern: b"[a-c-e]", ignored: &[b"-", b"e"], kept: &[b"d"] },
-            BracketCase { pattern: b"[a-a]", ignored: &[b"a"], kept: &[b"b"] },
+            RecordedCase { pattern: b"[a-c]", ignored: &[b"a", b"b", b"c"], kept: &[b"d"] },
+            RecordedCase { pattern: b"[c-a]", ignored: &[b"c"], kept: &[b"a", b"b"] },
+            RecordedCase { pattern: b"[a-]", ignored: &[b"-", b"a"], kept: &[b"b"] },
+            RecordedCase { pattern: b"[-a]", ignored: &[b"-", b"a"], kept: &[] },
+            RecordedCase { pattern: b"[a-c-e]", ignored: &[b"-", b"e"], kept: &[b"d"] },
+            RecordedCase { pattern: b"[a-a]", ignored: &[b"a"], kept: &[b"b"] },
             // An unterminated class makes the whole pattern match nothing.
-            BracketCase { pattern: b"[abc", ignored: &[], kept: &[b"[abc", b"a"] },
-            BracketCase { pattern: b"foo[", ignored: &[], kept: &[b"foo[", b"foo"] },
-            BracketCase { pattern: b"[!", ignored: &[], kept: &[b"[!", b"a"] },
-            BracketCase { pattern: b"*[", ignored: &[], kept: &[b"x[", b"x"] },
-            BracketCase { pattern: b"*[0-9]", ignored: &[b"file1"], kept: &[b"file"] },
+            RecordedCase { pattern: b"[abc", ignored: &[], kept: &[b"[abc", b"a"] },
+            RecordedCase { pattern: b"foo[", ignored: &[], kept: &[b"foo[", b"foo"] },
+            RecordedCase { pattern: b"[!", ignored: &[], kept: &[b"[!", b"a"] },
+            RecordedCase { pattern: b"*[", ignored: &[], kept: &[b"x[", b"x"] },
+            RecordedCase { pattern: b"*[0-9]", ignored: &[b"file1"], kept: &[b"file"] },
             // A `/` inside a class is a set member, not a segment separator.
-            BracketCase { pattern: b"a[b/c]", ignored: &[b"ab", b"ac"], kept: &[b"a[b/c]"] },
-            BracketCase { pattern: b"[/]", ignored: &[], kept: &[b"a", b"x"] },
-            BracketCase { pattern: b"**/[[:digit:]]", ignored: &[b"d/5", b"5"], kept: &[b"d/a"] },
+            RecordedCase { pattern: b"a[b/c]", ignored: &[b"ab", b"ac"], kept: &[b"a[b/c]"] },
+            RecordedCase { pattern: b"[/]", ignored: &[], kept: &[b"a", b"x"] },
+            RecordedCase { pattern: b"**/[[:digit:]]", ignored: &[b"d/5", b"5"], kept: &[b"d/a"] },
+    ];
+
+    /// Escaped separators, recorded the same way. A name's `/` separates components, so
+    /// `a\/b` as a name is a directory `a\` holding `b`.
+    #[rustfmt::skip]
+    const ESCAPED_SLASH_CASES: &[RecordedCase] = &[
+            // `\/` is a separator, not a backslash ending the segment before it.
+            RecordedCase { pattern: b"a\\/b", ignored: &[b"a/b"], kept: &[b"a\\/b", b"ab", b"a\\b"] },
+            RecordedCase { pattern: b"x\\/y", ignored: &[b"x/y"], kept: &[] },
+            RecordedCase { pattern: b"a\\/b\\/c", ignored: &[b"a/b/c"], kept: &[b"a\\/b\\/c"] },
+            RecordedCase { pattern: b"a\\\\/b", ignored: &[b"a\\/b"], kept: &[b"a/b"] },
+            RecordedCase { pattern: b"a[/]\\/b", ignored: &[], kept: &[b"a/b"] },
+            // A leading `\/` is not an anchor, so the line matches nothing.
+            RecordedCase { pattern: b"\\/foo", ignored: &[], kept: &[b"foo", b"\\/foo", b"x/foo"] },
+            RecordedCase { pattern: b"/\\/foo", ignored: &[], kept: &[b"foo", b"\\/foo"] },
+            // `**\/` matches one or more directories, never zero.
+            RecordedCase { pattern: b"x/**\\/y", ignored: &[b"x/q/y", b"x/q/r/y"], kept: &[b"x/y", b"y"] },
+            RecordedCase { pattern: b"**\\/y", ignored: &[b"q/y", b"q/r/y"], kept: &[b"y"] },
+            RecordedCase { pattern: b"x\\/**\\/y", ignored: &[b"x/q/y"], kept: &[b"x/y"] },
+            RecordedCase { pattern: b"x/**/**\\/y", ignored: &[b"x/q/y"], kept: &[b"x/y"] },
+            RecordedCase { pattern: b"x/**\\/**/y", ignored: &[b"x/q/y", b"x/q/r/y"], kept: &[b"x/y"] },
+            RecordedCase { pattern: b"a/**\\/**", ignored: &[b"a/x/y"], kept: &[b"a/x"] },
+            // An escaped `/` before `**` is an ordinary separator for it.
+            RecordedCase { pattern: b"x\\/**/y", ignored: &[b"x/y", b"x/q/y"], kept: &[] },
+            RecordedCase { pattern: b"a\\/**", ignored: &[b"a/x", b"a/x/y"], kept: &[b"a"] },
+            // A trailing `/` is stripped escaped or not, leaving `\` with nothing to escape.
+            RecordedCase { pattern: b"foo\\/", ignored: &[], kept: &[b"foo", b"foo\\"] },
+            RecordedCase { pattern: b"foo\\\\/", ignored: &[], kept: &[b"foo", b"foo\\"] },
+            RecordedCase { pattern: b"\\/", ignored: &[], kept: &[b"x"] },
     ];
 
     fn verdict_bytes(source: &[u8], path: &[u8]) -> bool {
@@ -645,9 +706,8 @@ mod tests {
         Gitignore::parse(source).matches_components(&components, false).unwrap_or(false)
     }
 
-    #[test]
-    fn bracket_expressions_answer_as_git_check_ignore_does() {
-        for case in BRACKET_CASES {
+    fn assert_recorded_verdicts(cases: &[RecordedCase]) {
+        for case in cases {
             let mut source = case.pattern.to_vec();
             source.push(b'\n');
             for (names, expected) in [(case.ignored, true), (case.kept, false)] {
@@ -663,14 +723,24 @@ mod tests {
             }
         }
         #[cfg(unix)]
-        git_bracket_oracle(BRACKET_CASES);
+        git_recorded_oracle(cases);
     }
 
-    /// Re-ask the host's git for every recorded bracket verdict, when git is installed.
+    #[test]
+    fn bracket_expressions_answer_as_git_check_ignore_does() {
+        assert_recorded_verdicts(BRACKET_CASES);
+    }
+
+    #[test]
+    fn escaped_slashes_answer_as_git_check_ignore_does() {
+        assert_recorded_verdicts(ESCAPED_SLASH_CASES);
+    }
+
+    /// Re-ask the host's git for every recorded verdict, when git is installed.
     ///
     /// Unix only: the names carry `\` and control bytes, which Windows paths cannot.
     #[cfg(unix)]
-    fn git_bracket_oracle(cases: &[BracketCase]) {
+    fn git_recorded_oracle(cases: &[RecordedCase]) {
         use std::io::Write as _;
         use std::process::{Command, Stdio};
 
@@ -683,11 +753,11 @@ mod tests {
                 .args(["-c", "core.ignorecase=false", "-c", "core.excludesFile=/dev/null"]);
             command
         };
-        let root = tempfile::tempdir().expect("bracket oracle root");
+        let root = tempfile::tempdir().expect("recorded-verdict oracle root");
         match git(root.path()).args(["init", "--quiet"]).status() {
-            Ok(status) => assert!(status.success(), "initialize bracket oracle"),
+            Ok(status) => assert!(status.success(), "initialize recorded-verdict oracle"),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
-            Err(error) => panic!("start git bracket oracle: {error}"),
+            Err(error) => panic!("start git recorded-verdict oracle: {error}"),
         }
         for case in cases {
             let mut source = case.pattern.to_vec();
@@ -699,14 +769,14 @@ mod tests {
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .spawn()
-                .expect("run git bracket oracle");
+                .expect("run git recorded-verdict oracle");
             let mut names = Vec::new();
             for name in case.ignored.iter().chain(case.kept) {
                 names.extend_from_slice(name);
                 names.push(0);
             }
             child.stdin.take().expect("oracle stdin").write_all(&names).expect("oracle names");
-            let output = child.wait_with_output().expect("finish git bracket oracle");
+            let output = child.wait_with_output().expect("finish git recorded-verdict oracle");
             assert!(
                 matches!(output.status.code(), Some(0 | 1)),
                 "git check-ignore failed for {}: {}",
