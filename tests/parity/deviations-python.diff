@@ -378,5 +378,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 PASS [ROOT]/tests/parity/.corpus/cli-watch.tryscript.md
   ✓ Build a Tree and Capture a Watch Session
   ✓ Build a Tree and Capture a Watch Session
+  ✓ Selection Filters the Stream, Not What Is Watched
+  ✓ Selection Filters the Stream, Not What Is Watched
   ✓ Text Repaints Are Separated From One Another
   ✓ Text Repaints Are Separated From One Another
