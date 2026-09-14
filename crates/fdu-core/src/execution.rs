@@ -707,6 +707,42 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn a_cache_only_open_refuses_a_one_shot_reports_snapshot_and_names_the_remedy() {
+        // A report's snapshot serves any later cache-only report, as the test above shows,
+        // but not a cache-only `open`. A report writes the controls-off scope; a default
+        // `open` returns an index exposing control state the snapshot never held. A policy
+        // that scans treats that as a miss and scans cold, but `only` must never scan, so
+        // it fails -- and says why, and which policy recovers.
+        let root = tempfile::tempdir().expect("tempdir");
+        fs::write(root.path().join("file.txt"), b"contents").expect("file");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let cache_path = cache.path().join("cache.fdu");
+        let mut tree_query = summary_query();
+        tree_query.views = vec![ViewSpec::Tree];
+
+        let auto = config(CachePolicy::Auto, Some(cache_path.clone()));
+        let (_, pending, _) = prepare_report(root.path(), &auto, &tree_query).expect("report");
+        pending.join().expect("save");
+        assert!(cache_path.exists(), "the report left a snapshot");
+
+        let only = config(CachePolicy::Only, Some(cache_path.clone()));
+        assert!(only.scan.read_controls, "a default open observes control state");
+        let Err(crate::Error::Snapshot(message)) = crate::open(root.path(), &only) else {
+            panic!("a cache-only open must not answer from a report's controls-off snapshot");
+        };
+        assert!(message.contains("control state"), "names the scope difference: {message}");
+        assert!(message.contains("`auto`"), "names the remedy: {message}");
+
+        // The remedy the message names works.
+        let auto_open = config(CachePolicy::Auto, Some(cache_path));
+        let (_, report) = crate::open(root.path(), &auto_open).expect("the named remedy");
+        assert_eq!(report.path_taken, OpenPath::ColdScan);
+        let (_, report) = crate::open(root.path(), &only).expect("cache-only after the remedy");
+        assert_eq!(report.path_taken, OpenPath::CacheOnly);
+    }
+
     #[test]
     fn compact_summary_matches_the_indexed_summary_exactly() {
         let root = tempfile::tempdir().expect("tempdir");
