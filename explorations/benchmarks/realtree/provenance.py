@@ -8,6 +8,7 @@ import json
 import os
 import platform
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -27,6 +28,10 @@ ARTIFACT_KINDS = {
     "native-fdu",
     "python-fdu",
 }
+# The version build.rs stamps on a development binary: <semver>-dev+g<revision>, with
+# .dirty when the tree it was built from had uncommitted changes. Git lengthens the
+# nine-character abbreviation when nine would be ambiguous.
+DEVELOPMENT_STAMP = re.compile(r"-dev\+g(?P<revision>[0-9a-f]{9,40})(?P<dirty>\.dirty)?\Z")
 
 
 class ProvenanceError(RuntimeError):
@@ -324,17 +329,28 @@ def _source_facts(source_root: Path) -> Dict[str, Any]:
 
 
 def _fdu_revision_reasons(version: str, source: Mapping[str, Any]) -> list[str]:
-    """Bind a development binary to HEAD, or a release binary to an exact tag."""
+    """Bind a clean development binary to HEAD, or a release binary to an exact tag.
+
+    The binary's own stamp is the only record of the tree it was built from. A checkout
+    that is clean now may have held uncommitted edits when the binary was built, so the
+    stamp must name the revision exactly and must not carry the dirty marker.
+    """
     commit = source.get("commit")
     tags = source.get("tags_at_commit")
     if not isinstance(commit, str) or len(commit) < 9 or not isinstance(tags, list):
         return ["source revision cannot be matched to the executable version"]
-    if f"g{commit[:9]}" in version:
-        return []
     version_token = version.rsplit(maxsplit=1)[-1] if version else ""
-    if version_token and f"v{version_token}" in tags:
-        return []
-    return ["executable version does not identify the current source revision"]
+    stamp = DEVELOPMENT_STAMP.search(version_token)
+    if stamp is None:
+        if version_token and f"v{version_token}" in tags:
+            return []
+        return ["executable version does not identify the current source revision"]
+    reasons = []
+    if not commit.startswith(stamp["revision"]):
+        reasons.append("executable version does not identify the current source revision")
+    if stamp["dirty"]:
+        reasons.append("executable was built from a dirty source tree")
+    return reasons
 
 
 def _homebrew_dust_facts(executable: Path) -> Tuple[Dict[str, Any], list[str]]:

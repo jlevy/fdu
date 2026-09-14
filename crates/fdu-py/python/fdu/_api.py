@@ -334,7 +334,13 @@ def open(
     scan: ScanOptions | None = None,
     analysis: AnalysisOptions | None = None,
 ) -> Index:
-    """Open a root using the requested cache policy, then return a retained index."""
+    """Open a root using the requested cache policy, then return a retained index.
+
+    The index observes ``.gitignore`` control state, as the engine's ``open`` does by
+    default. :func:`report` never does, so the two keep snapshots of different scope at one
+    cache path: an ``open`` after a ``report`` scans cold rather than reusing its snapshot,
+    and a ``report`` answers from an ``open`` snapshot only under ``CachePolicy.ONLY``.
+    """
 
     scan_options = scan if scan is not None else ScanOptions()
     analysis_options = analysis if analysis is not None else AnalysisOptions()
@@ -388,6 +394,10 @@ def report(
     retains nothing, so writing a snapshot for it caches state the walk never saved --
     which meant a Python caller left cache state on a tree that the same command would
     not have, visible to a later cache-only read.
+
+    A report never observes ``.gitignore`` control state, because no view reads it, so it
+    opens no control file and cannot fail on the control-state bound. See :func:`open` for
+    what that means for sharing a snapshot with an index.
 
     Use :func:`open` when you will ask more than one question; the index is the point.
     """

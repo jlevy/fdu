@@ -210,6 +210,9 @@ impl Arguments {
         let mut diagnostics = false;
         let mut worker_policy = fdu_core::scan::WorkerPolicyExperiment::ShippedOneShot;
         let mut scan = ScanConfig::default();
+        // A walk setting that an opened root has no option for, so opened discovery would
+        // silently measure something other than what the command line asked for.
+        let mut walk_only_flag = None;
         while let Some(flag) = arguments.next() {
             match flag.to_str() {
                 Some("--root") => root = Some(next_path(&mut arguments, "--root")?),
@@ -226,7 +229,10 @@ impl Arguments {
                     repeat = next_usize(&mut arguments, "--repeat")?;
                 }
                 Some("--no-oracle") => oracle_enabled = false,
-                Some("--no-controls") => scan.read_controls = false,
+                Some("--no-controls") => {
+                    scan.read_controls = false;
+                    walk_only_flag = Some("--no-controls");
+                }
                 Some("--diagnostics") => diagnostics = true,
                 Some("--worker-policy") => {
                     let value = arguments
@@ -254,12 +260,15 @@ impl Arguments {
                         Some("depth-first") => ScanOrder::DepthFirst,
                         _ => return Err(ProbeError(format!("unknown order {value:?}"))),
                     };
+                    walk_only_flag = Some("--order");
                 }
                 Some("--threads") => {
                     scan.threads = Some(next_usize(&mut arguments, "--threads")?);
+                    walk_only_flag = Some("--threads");
                 }
                 Some("--max-depth") => {
                     scan.max_depth = Some(next_usize(&mut arguments, "--max-depth")?);
+                    walk_only_flag = Some("--max-depth");
                 }
                 _ => return Err(ProbeError(format!("unknown argument {flag:?}"))),
             }
@@ -271,8 +280,16 @@ impl Arguments {
         if repeat == 0 {
             return Err(ProbeError("--repeat must be nonzero".into()));
         }
+        let mode = Mode::parse(&mode)?;
+        if let (Mode::OpenedDiscovery, Some(flag)) = (mode, walk_only_flag) {
+            // OpenOptions has no such setting: an opened root discovers its whole scope
+            // with one breadth-first producer and always observes control state.
+            return Err(ProbeError(format!(
+                "{flag} does not apply to opened-discovery, whose walk is fixed by the opened root"
+            )));
+        }
         Ok(Self {
-            mode: Mode::parse(&mode)?,
+            mode,
             root,
             snapshot,
             operations,
@@ -688,9 +705,12 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let snapshot = arguments.snapshot()?.to_path_buf();
     let identity_before = snapshot_identity(&snapshot);
     let config = OpenConfig {
-        // The non-watch CLI counts every entry but does not consume ignore state.
-        // Keep control discovery enabled for the index-returning and opened probes.
-        scan: ScanConfig { read_controls: false, ..arguments.scan.clone() },
+        // Passed through unchanged, as the command line passes its own: the one-shot
+        // planner inside `prepare_report` turns control observation off for every report
+        // whatever this says (fdu-etfj), so the probe measures the scope the command line
+        // gets without choosing it. `--no-controls` therefore changes nothing here, while
+        // it still turns control observation off for the index-returning probes.
+        scan: arguments.scan.clone(),
         cache_path: Some(snapshot.clone()),
         policy: CachePolicy::Auto,
         analysis: AnalysisRequest::default(),
@@ -2096,6 +2116,41 @@ mod tests {
     }
 
     #[test]
+    fn opened_discovery_refuses_walk_flags_it_cannot_apply() {
+        let walk_only: [&[&str]; 4] = [
+            &["--threads", "1"],
+            &["--no-controls"],
+            &["--max-depth", "2"],
+            &["--order", "depth-first"],
+        ];
+        for flag in walk_only {
+            let error = Arguments::parse(
+                ["opened-discovery", "--root", "/root"]
+                    .into_iter()
+                    .chain(flag.iter().copied())
+                    .map(OsString::from),
+            )
+            .expect_err("opened discovery has no option for this walk setting");
+            assert!(error.0.contains(flag[0]), "{}", error.0);
+
+            // The same setting still reaches the modes that apply it.
+            Arguments::parse(
+                ["scan-index", "--root", "/root"]
+                    .into_iter()
+                    .chain(flag.iter().copied())
+                    .map(OsString::from),
+            )
+            .expect("a detached scan applies this walk setting");
+        }
+        Arguments::parse(
+            ["opened-discovery", "--root", "/root", "--batch-size", "2"]
+                .into_iter()
+                .map(OsString::from),
+        )
+        .expect("opened discovery applies its batch size");
+    }
+
+    #[test]
     fn component_counters_exclude_validation_but_retain_late_worker_counts() {
         use fdu_core::counters::Counts;
 
@@ -2134,6 +2189,8 @@ mod tests {
         let output = default_tree(&arguments).expect("default-tree probe");
 
         assert_eq!(output.summary.files, 2, "the CLI still counts ignored files");
+        // The probe asked for control state, so a controls-off snapshot below proves the
+        // one-shot planner decided the scope, as it does for the command line.
         assert!(arguments.scan.read_controls, "other probe modes retain control discovery");
         let mut config = OpenConfig {
             scan: ScanConfig { read_controls: false, ..arguments.scan.clone() },

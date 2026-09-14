@@ -1036,7 +1036,11 @@ the 113,794-entry MetaBrowser checkout: `default-tree` must improve at least 3% 
 paired interval below zero, `cold-scan-index` must move in the same direction, peak RSS
 must fall at least 20%, the two one-shot jobs must meet this plan’s historical parity
 limits on both real subjects, and opened discovery must remain within the +3%
-noninferiority and 1.05 allocation bounds while recording zero detached-builder uses.
+noninferiority bound on paired `component_ns` and the 1.05 allocation bounds while
+recording zero detached-builder uses.
+Opened discovery’s wall time is recorded but not gated: the probe’s commit summary and
+paged oracle run inside the same process and dilute a paired wall percentage toward
+zero, while `component_ns` excludes the oracle and ends before the commit summary.
 Exact engine, report, scope, snapshot, and worker-count differential oracles remain
 mandatory.
 
@@ -1204,8 +1208,11 @@ performance. This correction changes the measured coverage, not the acceptance m
 
 Enabling the capability exposed a second scope mismatch in the default-command probe: it
 inherited `ScanConfig::default().read_controls = true`, while the non-watch CLI
-explicitly sets it to `false`. `fdu-ht5q` makes only `default-tree` select that CLI
-scope; index-returning cold scans and opened discovery still retain control state.
+explicitly set it to `false`. `fdu-ht5q` made only `default-tree` select that CLI scope;
+index-returning cold scans and opened discovery still retain control state.
+Since PR #51 neither the command line nor the probe chooses it: the one-shot report
+planner turns observation off for every report, and the probe passes its scan
+configuration through as the command line does.
 The regression test writes a snapshot through the probe and requires an exact-scope
 public cache-only open to admit it for controls-off and reject it for controls-on.
 Report-only snapshot projection cannot hide the mismatch from that test.
@@ -1221,11 +1228,13 @@ symbols fell into the “other” layer.
 samples or timing metrics.
 
 Public large-batch preflight remains a measured cost.
-A counter-disabled call-tree capture at `1a39be9` places 1,936 of 2,358 inclusive
+A counter-disabled call-tree capture at `1a39be9` places 1,993 of 2,391 inclusive
 `Index::apply` samples in ancestry validation, primarily in ordered-map lookups and
 inserts that repeatedly compare path components.
-`fdu-0q6w` tests replacing only the private temporary overlay with a standard hash map;
-the overlay has no ordered iteration contract.
+Both counts sum every call site, the reading
+[exp-102](../../experiments/exp-102-point-lookup-for-public-mutation-preflight.md) uses
+for the same tree. `fdu-0q6w` tests replacing only the private temporary overlay with a
+standard hash map; the overlay has no ordered iteration contract.
 The bead fixes the public-mutation comparison at twelve interleaved pairs and three
 warmups, with the usual 3% wall/component improvement and paired-interval gates, exact
 state and commit oracles, a 1.05 resource ceiling, and one-shot/opened noninferiority.

@@ -152,6 +152,17 @@ pub struct OpenConfig {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum CachePolicy {
     /// Read the snapshot, revalidate it, and write it back when the scan is complete.
+    ///
+    /// A root has one cache path, and its snapshot carries the scan scope that wrote it.
+    /// A read under another scope treats that snapshot as absent and scans cold, and the
+    /// scan then writes its own scope over it. The one-shot `fdu <dir>` observes no control
+    /// state while `fdu --watch <dir>` and a default [`open`] do, so the two keep snapshots
+    /// of different scope at one cache path and each replaces the other's. An index opened
+    /// after a one-shot report saved its snapshot therefore takes [`OpenPath::ColdScan`],
+    /// and so does a one-shot report that reads the snapshot, as content analysis does,
+    /// after an index was saved. A summary-only report saves nothing and replaces nothing.
+    /// A one-shot report answers from a controls-on snapshot only under
+    /// [`CachePolicy::Only`].
     #[default]
     Auto,
     /// Ignore any snapshot, scan cold, and rewrite it. The benchmark control.
@@ -291,6 +302,15 @@ impl OpenReport {
 /// before being returned. Errors are represented as partial freshness and the previous
 /// complete snapshot is left untouched; callers must inspect [`OpenReport::is_complete`]
 /// or [`Index::freshness`] before treating totals as complete.
+///
+/// The index observes control state as [`ScanConfig::read_controls`] says, and the
+/// default is on: the index exposes [`Index::controls`] and [`Index::is_ignored`], and a
+/// watch over it maintains them, so `open` cannot assume its caller will not read them.
+/// A one-shot report from [`prepare_report`] always runs with observation off, so the two
+/// keep snapshots of different scope at one cache path. `open` scans cold instead of
+/// starting from a report's snapshot, and a report consumes an `open` snapshot only under
+/// [`CachePolicy::Only`]. A caller wanting a single answer should use
+/// [`prepare_report`]; one wanting an index without control state turns the field off.
 pub fn open(root: &Path, config: &OpenConfig) -> Result<(Index, OpenReport)> {
     let (index, report, pending) = open_with_pending_save(root, config)?;
     // Joining first is what makes the unwrap infallible: the writer held the only other

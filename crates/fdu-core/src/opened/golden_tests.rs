@@ -132,7 +132,7 @@ fn cold_progressive_knowledge() -> SessionTrace {
     let _ = poll(&opened, &mut trace, cursor, Duration::ZERO);
     final_read(&opened, &mut trace);
     close(&opened, &mut trace);
-    trace.record_text("final", "joined=true workers=0 waiters=0 continuations=0");
+    record_final(&mut trace, &[&opened]);
     trace
 }
 
@@ -190,7 +190,7 @@ fn exact_mutation_and_refresh() -> SessionTrace {
     let _ = poll(&opened, &mut trace, cursor, Duration::ZERO);
     final_read(&opened, &mut trace);
     close(&opened, &mut trace);
-    trace.record_text("final", "joined=true workers=0 waiters=0 continuations=0");
+    record_final(&mut trace, &[&opened]);
     trace
 }
 
@@ -329,6 +329,8 @@ fn coherent_projections_and_continuations() -> SessionTrace {
     trace.record("result.changes.future", &future_result);
     trace.observe_poll(&future_result);
 
+    // Two rows on a budget of one, so the budget runs out before the page fills. A one-row
+    // page fills on its first entry and is an answer, whatever the budget has left.
     let limited = read(
         &opened,
         &mut trace,
@@ -336,7 +338,7 @@ fn coherent_projections_and_continuations() -> SessionTrace {
             projections: vec![ReadProjection::Flat {
                 selection: crate::query::EntrySelection::default(),
                 shape: RowShape::Compact,
-                page: PageRequest { limit: 1, max_work: 1 },
+                page: PageRequest { limit: 2, max_work: 1 },
             }],
             expected: None,
         },
@@ -351,7 +353,7 @@ fn coherent_projections_and_continuations() -> SessionTrace {
     let closed = opened.read(ReadRequest::default());
     trace.record("result.read.after-close", &closed);
     trace.observe_read(&closed);
-    trace.record_text("final", "joined=true workers=0 waiters=0 continuations=0");
+    record_final(&mut trace, &[&opened, &other]);
     trace
 }
 
@@ -403,7 +405,7 @@ fn journal_and_observation_recovery() -> SessionTrace {
     let _ = poll(&opened, &mut trace, cursor, Duration::ZERO);
     final_read(&opened, &mut trace);
     close(&opened, &mut trace);
-    trace.record_text("final", "joined=true workers=0 waiters=0 continuations=0");
+    record_final(&mut trace, &[&opened]);
     trace
 }
 
@@ -494,7 +496,7 @@ fn ownership_races_and_shutdown() -> SessionTrace {
     trace.record("result.close.panic", &panic_close);
     trace.observe_close(&panic_close);
     assert!(matches!(panic_close, Err(Error::OpenedWorkerPanicked { .. })));
-    trace.record_text("final", "joined=true workers=0 waiters=0 continuations=0");
+    record_final(&mut trace, &[&opened, &raced, &panicked]);
     trace
 }
 
@@ -557,6 +559,19 @@ fn close(opened: &OpenedIndex, trace: &mut SessionTrace) {
     let result = opened.close();
     trace.record("result.close", &result);
     trace.observe_close(&result);
+}
+
+/// Record what each root the scenario opened still retains, observed after its close.
+///
+/// One record per root, in the order given. Each is read from the root's own state, so a
+/// worker, a blocked poll, or a page record left behind shows up in the trace as well as
+/// failing here.
+fn record_final(trace: &mut SessionTrace, roots: &[&OpenedIndex]) {
+    for root in roots {
+        let retained = root.state.retained_ownership();
+        trace.record_text("final", retained.to_string());
+        assert!(retained.is_released(), "a closed root retained ownership: {retained}");
+    }
 }
 
 fn wait_for_phase(opened: &OpenedIndex, trace: &mut SessionTrace, expected: LifecyclePhase) {
