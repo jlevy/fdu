@@ -5,11 +5,12 @@ title: The fdu crate's own tests and clippy do not build without the watch featu
 kind: bug
 status: open
 priority: 3
-version: 1
-labels: []
+version: 2
+labels:
+  - stack-followup
 dependencies: []
 created_at: 2026-09-14T02:53:31.986Z
-updated_at: 2026-09-14T02:53:31.986Z
+updated_at: 2026-09-14T03:05:10.873Z
 ---
 Found while fixing fdu-1onj on PR #51 (2237a70); pre-existing on main (b75bf85), not introduced by the stack.
 
