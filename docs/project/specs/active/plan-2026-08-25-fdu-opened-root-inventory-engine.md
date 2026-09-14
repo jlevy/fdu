@@ -394,6 +394,13 @@ versioned reducer behavior; it does not concatenate hashes asserted by the calle
 MetaBrowser must pass the actual File Rollup registry document at open.
 Each provider parses and validates that document and derives the registry fingerprint it
 returns. A caller-supplied fingerprint is never accepted as proof of content.
+fdu reads registry schema 3 and schema 4 and refuses any other version by name.
+Schema 4 adds `icon` to groups and families, which is presentation, like `hue`,
+`linguist_color`, `lightness_rank`, and `deviation`: each is validated by shape, none is
+retained, and none enters the fingerprint, nor does `schema_version`.
+One registry written in either schema, or repainted, is therefore one classification
+identity, and a snapshot recorded under one is served under the other.
+An `icon` in a schema 3 document is refused rather than ignored.
 The Python and fdu providers must agree on normalized registry identity through the
 shared conformance packet.
 
