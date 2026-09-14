@@ -5,12 +5,12 @@ title: "Make the PR stack and #49 merge-ready together, with CI green on every P
 kind: task
 status: in_progress
 priority: 0
-version: 3
+version: 4
 labels:
   - stack-followup
 dependencies: []
 created_at: 2026-09-14T02:11:29.025Z
-updated_at: 2026-09-14T04:57:11.387Z
+updated_at: 2026-09-14T13:56:29.068Z
 ---
 The user's goal, set 2026-09-13: the whole stack merges together, ready to merge, with CI passing on every PR. This bead tracks the process; each fix has its own bead.
 
@@ -56,3 +56,5 @@ Still owed, all blocked on host disk (3.5 GiB free):
 - the lifecycle fixes, checkpoint a74137f in worktree agent-a365bdbfabb1cd605;
 - fdu-uzzv;
 - make check and cross-lint on the combined tree.
+
+2026-09-14 DECISION (user): merge only after checks. Once the user empties Trash, run make check (and cross-lint) on the combined tree plus a quick interleaved timing of `fdu PATH` against main, on one tree with no .gitignore files and one with many. If the stack is within 10% of main on both, merge; the strict 3% quiet-host gate stays open on fdu-lj4h. If it is slower than that, stop and bring the user the numbers and a profile. The lifecycle Lows (a74137f), fdu-uzzv, fdu-2q40 and fdu-k2l5 go into one follow-up PR on main.

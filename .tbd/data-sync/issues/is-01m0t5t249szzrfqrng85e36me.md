@@ -3,9 +3,9 @@ type: is
 id: is-01m0t5t249szzrfqrng85e36me
 title: Hidden-path admission as scope, with an exact-name allowlist
 kind: task
-status: open
+status: closed
 priority: 2
-version: 14
+version: 16
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -19,53 +19,9 @@ labels:
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T15:21:47.400Z
-updated_at: 2026-09-14T02:30:56.855Z
-closed_at: 2026-08-25T06:35:17.988Z
-close_reason: |
-  Shipped as `crates/fdu-core/src/admission.rs` plus wiring across all three surfaces.
-
-  Engine: `HiddenPolicy` with `keep_all`/`prune_hidden`/`admits`/`fingerprint`,
-  `admission::parse_policy` and `AdmissionError`, `ScanConfig.hidden`,
-  `ScanScope.hidden_fingerprint`, and `ScanReport.control_dirs` ->
-  `Index::adopt_pruned_control_dirs`. Snapshot format 2 -> 3: the scope record is
-  positional, so a field added to it moves every byte after.
-
-  Command line: `--hidden keep|prune` and `--hidden-allow LIST` on the Scope axis, with an
-  axis-table row. Python: `ScanOptions(hidden=, hidden_allow=)`. fdu's own default is
-  untouched -- a du replacement counts what is there, so pruning is opt-in and fingerprints
-  to zero.
-
-  Four things worth recording.
-
-  1. The admission rule and the `dotfile` tag share one predicate on purpose. They are
-     distinguished by what they do with an entry, never by which entries they mean: a
-     second definition of hidden would make `--hidden prune` and `--not-tag dotfile`
-     disagree about one file, and the disagreement would read as a bug in whichever
-     surface was consulted second. Windows' FILE_ATTRIBUTE_HIDDEN is deliberately not
-     read, for the same reason.
-
-  2. Admission is asked once, by name, before the stat, from all four listing loops the
-     engine has. One predicate rather than four copies, because the copies are how a scan
-     and a refresh come to disagree about which entries exist.
-
-  3. The snapshot has to record where the pruned control files were. Binding a gitignore
-     rule asks the index where the `.gitignore` files are, and pruning is exactly what
-     removes them from it. The trap: under `CachePolicy::Auto` a revalidation re-walks and
-     re-records them, so the section could be deleted and every assertion still passed. The
-     warm-start test only says what it means under `Only`, which cannot touch the tree.
-
-  4. Two copies of one rule is two messages. The CLI validated `--hidden` itself and the
-     Python dataclass validated `hidden` again, giving `--hidden` against `hidden` and
-     double quotes against single for one mistake; the parity harness recorded the pair as
-     a difference between the surfaces. `admission::parse_policy` is the only judge now.
-
-  Six new golden sessions, replayed by the parity harness as six exact matches. No new
-  declared deviation.
-
-  Not implemented, and no consumer in the engine asks for it: repository-root detection
-  inside a pruned subtree. `.gitignore` is the only control file any enabled rule reads.
-
-  Landed in 6a8ac6f on claude/fdu-interactive-client-implementation-map (PR #47).
+updated_at: 2026-09-14T13:56:29.393Z
+closed_at: 2026-09-14T13:56:29.392Z
+close_reason: "User decision 2026-09-14: the CLI and one-shot Python deliberately do not expose hidden-path pruning (it would make usage totals omit space). Engine and opened-root support stay. Record the omission in the surface docs; reopen if a one-shot consumer asks."
 resolution: null
 duplicate_of: null
 ---
@@ -132,3 +88,5 @@ policy. Each fails a named test.
 Remaining: expose hidden admission on the command line and the one-shot Python API, or record that those surfaces deliberately omit it.
 
 2026-09-14 (triage at c0511e9): engine (`scan.rs:160@c0511e9`, `admission.rs`) and opened root (`opened.rs:104`, `opened.py:246-247`) carry hidden admission; CLI and one-shot Python do not, and no plan requires them to. Decision needed: expose or record the omission; recommend recording it and closing until a one-shot consumer names the question.
+
+2026-09-14 DECISION (user): do not expose hidden-path pruning on the CLI or the one-shot Python API. Pruning would make usage totals omit space, and no one-shot consumer has asked for it. Record the omission in the surface docs, then close; reopen if a one-shot consumer asks.

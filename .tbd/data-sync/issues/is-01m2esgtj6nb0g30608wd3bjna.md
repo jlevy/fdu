@@ -3,16 +3,20 @@ type: is
 id: is-01m2esgtj6nb0g30608wd3bjna
 title: "Close PR #44 as superseded by #48 (needs the user)"
 kind: task
-status: open
+status: closed
 priority: 3
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 created_at: 2026-09-14T01:46:46.725Z
-updated_at: 2026-09-14T01:46:46.725Z
+updated_at: 2026-09-14T13:56:30.241Z
+closed_at: 2026-09-14T13:56:30.240Z
+close_reason: "PR #44 closed 2026-09-14 at the user's direction, with a pointer comment to #48 and the plan's Reuse and Disposition section."
+resolution: null
+duplicate_of: null
 ---
 Close PR #44 (https://github.com/jlevy/fdu/pull/44, "docs(specs): the interactive-client contract, from a measured metabrowser deep-dive", branch claude/metabrowser-fdu-integration-7nqx8b) as superseded by PR #48. As of 2026-09-13 it is still open.
 

@@ -5,14 +5,14 @@ title: MetaBrowser's shared registry is File Rollup schema 4, which the engine r
 kind: task
 status: open
 priority: 2
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2ebb348tnqdeqn4fddykv4s
 created_at: 2026-09-14T02:52:54.808Z
-updated_at: 2026-09-14T02:52:54.808Z
+updated_at: 2026-09-14T13:56:26.853Z
 ---
 Found while fixing fdu-m5zj (PR #48 review CLASS-7) at 4da6d60.
 
@@ -26,3 +26,7 @@ So the spec's "MetaBrowser must pass the actual File Rollup registry document at
 - Or pin the schema 3 document in the adapter until the contract moves, and record that pin in the spec.
 
 Check the File Rollup Format document (`docs/project/architecture/file-rollup-format/file-rollup-format.md` in MetaBrowser) for what else schema 4 changes before choosing.
+
+## Notes
+
+2026-09-14 DECISION (user): accept schema 3 and schema 4. Validate icon by shape and do not retain it, like hue. Presentation fields (icon, hue, deviation, and similar) stay out of the registry fingerprint, so both documents share one classification identity. Verified 2026-09-14: MetaBrowser main's schema-4 registry differs from the last schema-3 one (1e1f5f912) only by icon on every group and family, plus a presentation-only swift hue and deviation change; kinds, extensions, groups and families are identical. Also note MetaBrowser's stale doc line (file-rollup-format.md:214, 'Icons ... remain outside the type registry') on the MetaBrowser side.

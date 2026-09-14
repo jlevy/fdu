@@ -5,14 +5,14 @@ title: Decide whether a projection error fails its projection or the whole ReadR
 kind: task
 status: open
 priority: 2
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2ebb348tnqdeqn4fddykv4s
 created_at: 2026-09-14T01:46:41.088Z
-updated_at: 2026-09-14T02:43:39.365Z
+updated_at: 2026-09-14T13:56:25.804Z
 ---
 Open decision from PR #48 review READ-3 (fixed as fdu-q2oj in fa033c2), recorded by the fixer. Related to READ-8 on fdu-91ru.
 
@@ -35,3 +35,5 @@ Review: https://github.com/jlevy/fdu/pull/48#pullrequestreview-5192314101. Dispo
 ## Notes
 
 2026-09-13 (PR #48 verification review 5193206420, FIX48-4, Low; child bead fdu-py6a): the verification review raised the same decision from the state side. NotADirectory is not a request-shape error: it depends on index state at the pinned version, so the same Tree or roll-up request succeeds while a path is a directory and fails once it has become a file, and a client holding a directory path from an earlier page gets Python InvalidArgumentError (opened_binding.rs maps it with TreeDepthZero and UnsupportedFlatSelection) when the path changed kind in between. It also fails a Lookup in the same request that would have answered Present. The review offered two options: a typed per-projection result, or keep the error and document it as state-dependent. Interim disposition on PR #48 (commit 40ecf28): behavior unchanged; the Rust Error::NotADirectory doc and the Python InvalidArgumentError docstring now say it is state-dependent and fails the whole read, and point here. This bead still owns the decision and its acceptance (plan read-envelope section, provider contract, and a mixed-request test on both surfaces); if the decision is to keep whole-read failure, also decide whether a state-dependent refusal belongs under InvalidArgumentError at all. Review: https://github.com/jlevy/fdu/pull/48#pullrequestreview-5193206420
+
+2026-09-14 DECISION (user): per-projection. The whole ReadRequest fails only for request-shape validation, a closed root, or a version-pin mismatch. A path of the wrong kind (NotADirectory) and an oversized continuation record (READ-8 on fdu-91ru) become typed per-projection refusals, next to ProjectionResult::Limit, and the other projections still answer. Update the plan's read-envelope section and the provider contract, and add a mixed-request test on Rust and Python.

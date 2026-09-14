@@ -1,11 +1,11 @@
 ---
 type: is
 id: is-01m0tra5gw0ap6nbbzgt7egvr4
-title: Controls-on reconcile re-reads every .gitignore even when its attrs are unchanged
+title: Skip re-reading unchanged .gitignore files during controls-on reconcile (deferred by decision)
 kind: bug
-status: open
-priority: 1
-version: 15
+status: closed
+priority: 3
+version: 18
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -26,9 +26,9 @@ parent_id: is-01m0prgbradma67z3j1wfyh8r7
 child_order_hints:
   - is-01m2exj373p2d2ma725h7pz393
 created_at: 2026-08-24T20:45:09.518Z
-updated_at: 2026-09-14T02:58:21.993Z
-closed_at: null
-close_reason: null
+updated_at: 2026-09-14T13:56:29.956Z
+closed_at: 2026-09-14T13:56:29.955Z
+close_reason: "User decision 2026-09-14: not worth it now. The CLI no longer observes controls, and the cost is bounded by the changed subtree. The exact design, if ever needed, is in the notes. Part (a) landed in afe0f89."
 resolution: null
 duplicate_of: null
 ---
@@ -114,3 +114,5 @@ Reconcile half: left open. Skipping read_control_op when the entry's attrs equal
 3. A subtree rooted at the file. Reconciling a retained .gitignore as its own subtree never reads the control at all (fdu-uzzv, reproduced). The next full walk is what repairs that today; with the skip, nothing would.
 
 Making the skip exact needs a design decision, not an early-out. Option (a): record in the index, through the commit path, the attrs at which each control source was admitted, and skip only when those equal the observed attrs. Option (b): make every writer commit a .gitignore's attrs and content atomically, and withhold the attrs when the read fails. Either removes all three cases. Measure the read cost on a real tree before choosing: it is one open plus one read per .gitignore, against one stat per entry.
+
+2026-09-14 DECISION (user): not now. Close the unchanged-.gitignore skip as not worth it at present. The CLI no longer observes controls, and the read cost is bounded by the changed subtree. If an opened-root measurement ever shows the reads matter, use the exact design: make every writer commit a .gitignore's attrs and its content together (withholding attrs when the read fails), then skip on unchanged attrs. fdu-uzzv is fixed separately.

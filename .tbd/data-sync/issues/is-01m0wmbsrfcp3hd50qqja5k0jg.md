@@ -5,7 +5,7 @@ title: Implement exact MetaBrowser catalog predicate semantics
 kind: bug
 status: open
 priority: 1
-version: 16
+version: 17
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -27,7 +27,7 @@ labels:
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-25T14:14:37.582Z
-updated_at: 2026-09-14T02:30:53.719Z
+updated_at: 2026-09-14T13:56:26.334Z
 closed_at: null
 close_reason: null
 resolution: null
@@ -138,3 +138,5 @@ reject "." and ".." -- a cross-repo decision, not one to make from this side.
 With READ-5 above, the open decision is the predicate identity contract: portable (escaped) or native names, applied on every axis. Restore validation against whichever identity is chosen.
 
 2026-09-14 (triage at c0511e9): still open. No validation on `EntrySelection` (`query_selection.rs:163-187@c0511e9`, `read.rs:355-364`, `opened.py:438-440`) against `CatalogQuery`'s refusals (`contract.py:1061-1085`); identity is mixed (portable `name`, native `relative`, `read.rs:620-630`; native ancestors `query_selection.rs:330-340`; native `Report`, `query_report.rs:852-861`). The reference contract already fixes portable canonical names and ASCII folding (`contract.py:300-330, 398-410`), so the only remaining decision is whether fdu's own `Selection` globs follow inside opened reads; state it in the plan when implementing.
+
+2026-09-14 DECISION (user): portable identity everywhere inside an opened-root read, including fdu's own Selection globs in Report/Flat. Restore validation matching MetaBrowser's CatalogQuery refusals (duplicates, undotted, non-lowercase, compound and separator-bearing suffixes; empty, dot, and separator-bearing ancestor names). Write the identity rule into the plan's contract section. One-shot CLI globs stay native.
