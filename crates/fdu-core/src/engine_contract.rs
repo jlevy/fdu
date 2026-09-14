@@ -1563,6 +1563,14 @@ const RETAINED_COMMIT_BYTES: usize = 256;
 /// Bytes [`Commit::retained_cost`] charges for each retained change, transition, or dirty
 /// path, before the bytes of the path it names.
 const RETAINED_ITEM_BYTES: usize = 128;
+/// Smallest journal budget, in bytes, an opened root accepts: the least
+/// [`Commit::retained_cost`] can charge a commit that carries anything.
+///
+/// Every change and transition dirties its own path, so the least a commit can hold is one
+/// item at the root and the root as its dirty path. A smaller budget retains no commit, and
+/// every change poll would answer [`ChangeOutcome::Reset`] for a cause the caller cannot
+/// see: most likely a count passed where bytes are expected.
+pub const MIN_JOURNAL_CAPACITY_BYTES: usize = RETAINED_COMMIT_BYTES + 2 * RETAINED_ITEM_BYTES;
 
 /// One atomic, exact index transition.
 ///
@@ -1668,6 +1676,18 @@ pub enum Error {
     /// A scan or watch setting has no supported safe semantics.
     #[error("unsupported scan configuration: {0}")]
     UnsupportedScanConfig(&'static str),
+
+    /// An opened root's journal budget cannot retain a single commit.
+    #[error(
+        "journal_capacity_bytes is {requested} bytes, below the {minimum} bytes one commit \
+         needs; set it to at least {minimum} bytes, or leave it unset for the default"
+    )]
+    JournalCapacityTooSmall {
+        /// The budget requested, in bytes.
+        requested: usize,
+        /// [`MIN_JOURNAL_CAPACITY_BYTES`].
+        minimum: usize,
+    },
 
     /// Requested scan semantics differ from the index's immutable scope.
     #[error("scan scope mismatch: index has {indexed:?}, requested {requested:?}")]

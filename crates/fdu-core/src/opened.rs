@@ -115,8 +115,9 @@ pub struct OpenOptions {
     pub observation_script: Option<PathBuf>,
     /// Approximate bytes the exact commit journal may retain, as
     /// [`crate::Commit::retained_cost`] estimates them; see
-    /// [`crate::DEFAULT_JOURNAL_CAPACITY_BYTES`] for the default and why there is no unbounded
-    /// setting.
+    /// [`crate::DEFAULT_JOURNAL_CAPACITY_BYTES`] for the default and why there is no
+    /// unbounded setting. [`OpenedIndex::open`] refuses a budget below
+    /// [`crate::MIN_JOURNAL_CAPACITY_BYTES`] with [`Error::JournalCapacityTooSmall`].
     pub journal_capacity_bytes: usize,
 }
 
@@ -879,8 +880,11 @@ fn bind_root(
             "max_files must be nonzero; omit it for an unlimited discovery",
         ));
     }
-    if journal_capacity_bytes == 0 {
-        return Err(Error::UnsupportedScanConfig("journal_capacity_bytes must be nonzero"));
+    if journal_capacity_bytes < crate::MIN_JOURNAL_CAPACITY_BYTES {
+        return Err(Error::JournalCapacityTooSmall {
+            requested: journal_capacity_bytes,
+            minimum: crate::MIN_JOURNAL_CAPACITY_BYTES,
+        });
     }
     let root = root.canonicalize().map_err(|source| Error::io(root, source))?;
     let metadata = std::fs::symlink_metadata(&root).map_err(|source| Error::io(&root, source))?;
@@ -2487,11 +2491,20 @@ mod tests {
             Err(Error::UnsupportedScanConfig(_))
         ));
 
-        let zero_journal = OpenOptions { journal_capacity_bytes: 0, ..OpenOptions::default() };
-        assert!(matches!(
-            OpenedIndex::open(root.path(), zero_journal),
-            Err(Error::UnsupportedScanConfig(_))
-        ));
+        let minimum = crate::MIN_JOURNAL_CAPACITY_BYTES;
+        let below_one_commit =
+            OpenOptions { journal_capacity_bytes: minimum - 1, ..OpenOptions::default() };
+        let error = OpenedIndex::open(root.path(), below_one_commit).expect_err("refused");
+        assert!(
+            matches!(error, Error::JournalCapacityTooSmall { requested, minimum: stated }
+                if requested == minimum - 1 && stated == minimum),
+            "{error:?}"
+        );
+        let message = error.to_string();
+        assert!(message.contains(&format!("at least {minimum} bytes")), "{message}");
+
+        let one_commit = OpenOptions { journal_capacity_bytes: minimum, ..OpenOptions::default() };
+        OpenedIndex::open(root.path(), one_commit).expect("accepted").close().expect("close");
     }
 
     #[test]
@@ -2947,7 +2960,10 @@ mod tests {
         let root = tempfile::tempdir().expect("temp root");
         let opened = OpenedIndex::open_for_test(
             root.path(),
-            OpenOptions { journal_capacity_bytes: 1, ..OpenOptions::default() },
+            OpenOptions {
+                journal_capacity_bytes: crate::MIN_JOURNAL_CAPACITY_BYTES,
+                ..OpenOptions::default()
+            },
             controls,
         )
         .expect("opened root");

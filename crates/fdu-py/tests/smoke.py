@@ -603,6 +603,14 @@ def main() -> None:
     else:
         raise AssertionError("an unparseable registry must raise InvalidArgumentError")
 
+    # A journal budget read as an item count retains nothing; the engine refuses it by unit.
+    try:
+        OpenedIndex.open(shaped_root, OpenedOptions(journal_capacity_bytes=32))
+    except InvalidArgumentError as error:
+        assert "journal_capacity_bytes is 32 bytes" in str(error), error
+    else:
+        raise AssertionError("a journal budget below one commit must raise InvalidArgumentError")
+
     opened.close()
     opened.close()
     try:
