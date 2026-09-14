@@ -54,6 +54,13 @@ export function auditGolden(name, source) {
   if (/newest_mtime_ns: Some\(-?\d/.test(source)) {
     findings.push(`${name}: contains an unnormalized aggregate timestamp`);
   }
+  // A duration a scenario declares -- a poll timeout, a watch settle interval -- is a round
+  // number it chose, and the trace records it exactly. One the run measured renders with a
+  // fraction (`Duration` debug output such as `1.234567ms`) or as a raw `Instant`, and it
+  // changes on every run, so it may never reach an artifact.
+  if (/\b\d+\.\d+(?:ns|µs|ms|s)\b/.test(source) || /\bInstant \{/.test(source)) {
+    findings.push(`${name}: contains a wall-clock duration`);
+  }
   for (const token of source.match(/\[[A-Z_]+\]/g) ?? []) {
     if (!ALLOWED_TOKENS.has(token)) {
       findings.push(`${name}: uses unknown normalization token ${token}`);

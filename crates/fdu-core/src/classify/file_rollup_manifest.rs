@@ -402,6 +402,13 @@ fn valid_identity(value: &str, kind: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Identity of a validated registry's semantic values.
+///
+/// Every value is length-prefixed, and so is every sequence of them: each array and each
+/// section hashes its count before its entries. Without the counts, the byte stream
+/// cannot tell where one array ends and the next begins, so moving a key from
+/// `extensions` to `filenames` -- which changes what files classify as -- left the
+/// identity unchanged, and snapshots recorded under the old registry still matched.
 pub(super) fn fingerprint(registry: &Registry) -> u64 {
     const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
     const PRIME: u64 = 0x0000_0100_0000_01b3;
@@ -411,7 +418,11 @@ pub(super) fn fingerprint(registry: &Registry) -> u64 {
             *hash = (*hash ^ u64::from(*byte)).wrapping_mul(PRIME);
         }
     }
+    fn count(hash: &mut u64, items: usize) {
+        add(hash, &u64::try_from(items).unwrap_or(u64::MAX).to_le_bytes());
+    }
     fn values(hash: &mut u64, items: &[String]) {
+        count(hash, items.len());
         for item in items {
             add(hash, item.as_bytes());
         }
@@ -419,17 +430,20 @@ pub(super) fn fingerprint(registry: &Registry) -> u64 {
     let mut hash = OFFSET;
     add(&mut hash, b"file-rollup-registry-v3");
     add(&mut hash, &registry.revision.to_le_bytes());
+    count(&mut hash, registry.groups.len());
     for group in &registry.groups {
         add(&mut hash, group.id.as_bytes());
         add(&mut hash, group.label.as_bytes());
         add(&mut hash, &group.order.to_le_bytes());
     }
+    count(&mut hash, registry.families.len());
     for family in &registry.families {
         add(&mut hash, family.id.as_bytes());
         add(&mut hash, family.label.as_bytes());
         add(&mut hash, family.group.as_bytes());
         add(&mut hash, &family.order.to_le_bytes());
     }
+    count(&mut hash, registry.kinds.len());
     for kind in &registry.kinds {
         add(&mut hash, kind.id.as_bytes());
         add(&mut hash, kind.family.as_bytes());

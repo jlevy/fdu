@@ -20,4 +20,6 @@ result.close.race: Ok(())
 result.open.panic: OpenedIndex { session: SessionId(session-3), root: "$PANIC_ROOT", .. }
 action.fault: panic worker=golden-panic
 result.close.panic: Err(OpenedWorkerPanicked { worker: "golden-panic" })
-final: joined=true workers=0 waiters=0 continuations=0
+final: session=SessionId(session-1) joined=true workers=0 waiters=0 continuations=0 close=Ok(())
+final: session=SessionId(session-2) joined=true workers=0 waiters=0 continuations=0 close=Ok(())
+final: session=SessionId(session-3) joined=true workers=0 waiters=0 continuations=0 close=Err(OpenedWorkerPanicked { worker: "golden-panic" })

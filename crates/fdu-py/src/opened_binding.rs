@@ -56,16 +56,19 @@ fn opened_py_err(error: fdu_core::Error) -> PyErr {
         | fdu_core::Error::ContinuationRecordLimit { .. } => {
             OpenedIndexLimitError::new_err(error.to_string())
         }
+        // A poisoned index belongs with the lifecycle and journal poison beside it: after a
+        // panic under the index write guard, every operation on this root returns it.
         fdu_core::Error::ContinuationIdentityExhausted
         | fdu_core::Error::OpenedIdentityExhausted
         | fdu_core::Error::OpenedJournalPoisoned
         | fdu_core::Error::OpenedLifecyclePoisoned
+        | fdu_core::Error::IndexLockPoisoned
         | fdu_core::Error::OpenedWorkerPanicked { .. }
         | fdu_core::Error::OpenedWorkerFailed { .. }
         | fdu_core::Error::OpenedWorkerSpawn { .. } => OpenedIndexError::new_err(error.to_string()),
-        fdu_core::Error::UnsupportedFlatSelection | fdu_core::Error::TreeDepthZero => {
-            PyValueError::new_err(error.to_string())
-        }
+        fdu_core::Error::UnsupportedFlatSelection
+        | fdu_core::Error::TreeDepthZero
+        | fdu_core::Error::NotADirectory(_) => PyValueError::new_err(error.to_string()),
         other => super::to_py_err(other),
     }
 }
