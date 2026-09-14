@@ -1805,6 +1805,13 @@ pub enum Error {
     /// `Absent` claims coverage proves the path missing, and `Unknown` claims coverage
     /// cannot tell, which for a retained path never resolves. A file has no children to
     /// page and no descendants to roll up, so both projections say which it is instead.
+    ///
+    /// Unlike the request-shape errors beside it, this one depends on index state at the
+    /// version the read pinned: the same request succeeds while the path is a directory and
+    /// fails once it has become a file, so a path taken from an earlier page can start
+    /// failing between reads. It fails the whole read, including projections in the same
+    /// request that would have answered, such as a lookup of that path. Whether it should
+    /// instead be a result of the one projection is an open decision (`fdu-l89e`).
     #[error("{0:?} is not a directory; tree pages and roll-ups describe directories")]
     NotADirectory(PathBuf),
 
