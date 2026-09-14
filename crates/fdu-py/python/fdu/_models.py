@@ -313,6 +313,10 @@ class RollUp:
     bytes: int
     allocated: int
     newest_mtime_ns: int
+    #: Keyed at the raw extension level, as ``fdu_core::classify::ext_bucket`` names it:
+    #: ``file.c++`` is ``.c++``, ``release.v2.zip`` is ``.zip``, and ``Makefile`` is
+    #: ``(none)``. The levels are tabulated under "Classification and Extension Levels" in
+    #: docs/project/architecture/fdu-engine-architecture.md and in the ``classify`` module.
     by_extension: MappingProxyType[str, ExtensionTally]
     provenance: Provenance | None = None
 
@@ -339,6 +343,9 @@ class SummaryRow:
 
 @dataclass(frozen=True, slots=True)
 class ExtensionRow:
+    #: The raw extension level, the same key as ``RollUp.by_extension``: ``file.c++`` is
+    #: ``.c++`` and ``release.v2.zip`` is ``.zip``. See "Classification and Extension
+    #: Levels" in docs/project/architecture/fdu-engine-architecture.md.
     extension: str
     files: int
     bytes: int
