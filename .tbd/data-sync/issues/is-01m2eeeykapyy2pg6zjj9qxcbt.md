@@ -3,9 +3,9 @@ type: is
 id: is-01m2eeeykapyy2pg6zjj9qxcbt
 title: "Address review: PR #52 — one-shot parity without weakening streaming"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 18
+version: 19
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
 labels:
   - stack-followup
@@ -27,7 +27,11 @@ child_order_hints:
   - is-01m2et31c6a5zryh6mw57f7v0s
   - is-01m2et31pte5v3c039ny9bjdjh
 created_at: 2026-09-13T22:33:30.985Z
-updated_at: 2026-09-14T01:56:43.865Z
+updated_at: 2026-09-14T02:18:01.046Z
+closed_at: 2026-09-14T02:18:01.045Z
+close_reason: "All eleven PR #52 review findings are dispositioned through 8640758. They first ran in CI together with #51 and #48 in merge 753e10f. That merge failed the opened allocation-slope guard; the growth was attributed to #48 3b6de62 (one allocation per unrecognized file) and fixed without raising any ceiling in c0511e9 on #52 and a080391 on #48. CI is green on #52 at c0511e9 (19/19). The disposition map is posted at https://github.com/jlevy/fdu/pull/52#issuecomment-5658101791. Post-merge verification follow-ups stay open under this parent: fdu-tilu, fdu-61vv, fdu-8yv0 (FIX52-1), and fdu-z0vu (FIX52-2)."
+resolution: null
+duplicate_of: null
 ---
 Formal review 5192264318 on PR #52 (https://github.com/jlevy/fdu/pull/52#pullrequestreview-5192264318) at head afbb2ee. Findings: BUILD-1 and BUILD-2 (High), PERF-1 and PERF-2 (Medium), BUILD-3 and PERF-3 through PERF-8 (Low). Scope is this PR's own findings; the carried COMMIT-2, COMMIT-3, and READ-1 are fixed at their origin PRs and arrive with the later stack propagation. PERF-2 is covered by existing fdu-x16g (#54 renumbered its artifact to exp-103 in 86d2a6a). No local Rust builds on this host (disk below the build floor); CI is the gate.
 
