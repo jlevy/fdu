@@ -111,13 +111,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `ScanConfig::read_controls`, and `ScanOptions.read_controls` in Python, is on by
   default, and a request can turn it off for `open`, `open_with_pending_save`,
   `fdu.open`, `fdu.scan`, and a watch over their index.
-  On an index that observes none, which includes every index in a build without the
-  `gitignore` feature, `Index::is_ignored`, `controls`, `partition_total`,
+  On an index that observes none, `Index::is_ignored`, `controls`, `partition_total`,
   `partition_rollup`, and `partition_rollup_summary` return
   `Error::ControlStateNotObserved`, `ChildSnapshot` carries no ignore bit or partitions,
   and `Index::apply` refuses control input with the same error.
   Breaking: those five accessors return `Result`, and `ChildSnapshot.ignored` is
   `Option<bool>`.
+- **Breaking:** `.gitignore` handling is always compiled in, and the `gitignore` build
+  feature is removed from `fdu-core` and `fdu`. `fdu`’s default build features are now
+  `["watch"]`, and a dependent that asks for `features = ["gitignore"]` fails to
+  resolve. `ScanConfig::read_controls` is the only switch for reading control files.
+  A consumer that built without the `gitignore` build feature sees two changes:
+  - Control input through `ControlTable::upsert` or `Index::apply` is applied, or
+    refused with `Error::ControlStateNotObserved` on a scope that observes no control
+    state, where it used to fail with `Error::UnsupportedScanConfig`.
+  - A scope that reads control files now has ignore-rules fingerprint 2 rather than 0,
+    so a snapshot written under it misses once and is rebuilt by a cold scan.
 - One projection of an opened-root read can refuse while the rest of the read answers.
   `ProjectionResult::Refused`, `RefusedResult` in Python, names why: a `Tree` or roll-up
   of a path that is not a directory, a page whose continuation record would exceed its
