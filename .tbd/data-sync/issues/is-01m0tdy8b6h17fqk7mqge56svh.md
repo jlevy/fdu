@@ -3,9 +3,9 @@ type: is
 id: is-01m0tdy8b6h17fqk7mqge56svh
 title: Complete the coherent read envelope and version-pinned paging
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 39
+version: 40
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -31,9 +31,9 @@ dependencies:
     target: is-01m0tdy9ceep2byvbtyvwc2vky
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.445Z
-updated_at: 2026-09-14T02:30:47.950Z
-closed_at: null
-close_reason: null
+updated_at: 2026-09-14T15:20:31.540Z
+closed_at: 2026-09-14T15:20:31.539Z
+close_reason: "4779d07: READ-8, its last open item per the 2026-09-14 triage (rounds 4-5 closed by the rewrite), is fixed: an oversized continuation record refuses only its page (ProjectionRefusal::ContinuationRecordLimit) and the rest of the read answers"
 resolution: null
 duplicate_of: null
 ---

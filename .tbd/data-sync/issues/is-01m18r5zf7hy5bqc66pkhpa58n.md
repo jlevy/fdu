@@ -5,7 +5,7 @@ title: Control-table budget aborts the scan instead of degrading to partial
 kind: bug
 status: open
 priority: 0
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - scale
@@ -14,7 +14,7 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-30T07:12:14.310Z
-updated_at: 2026-09-14T02:53:06.801Z
+updated_at: 2026-09-14T15:10:23.939Z
 ---
 ControlTable::upsert (crates/fdu-core/src/control.rs:120) returns Err(ControlSourceLimit) when the cumulative retained cost crosses MAX_CONTROL_TABLE_BYTES, and index.rs:1203 does the same on install. The error propagates and kills the whole scan - the user gets nothing after minutes of walking.
 
@@ -45,3 +45,5 @@ Interim changes on PR #48 (commits 9c29e6f for FIX48-2 and FIX48-5): item (1) ab
 2026-09-14 (fix wave, PR #51 2237a70): `fdu --watch` no longer reaches either bound. The command line's scan configuration now sets read_controls: false (crates/fdu/src/cli.rs:536-552@2237a70). Verified first that nothing under --watch consumes control state: the session drops ControlUpdated and Reclassified (watch_session.rs:202), the CLI Selection and every report view and renderer read no ignore classification (EntrySelection.exclude_ignored is opened-root only), nothing under crates/fdu/src calls is_ignored or controls(), and no golden depends on it. Pinned by crates/fdu/tests/watch_controls.rs, which drives the binary and was red before the change with "control pattern requires 16385 bytes; limit is 16384 bytes": a watch over one 16,385-byte rule serves a complete initial report, and a watch whose .gitignore is edited past the bound keeps applying later changes and saves a snapshot the next watch starts warm from. All 125 goldens pass unchanged. The opened-root plan's Phase 4 statements that --watch observes control state and can abort on it are corrected.
 
 Still owned here, unchanged by that commit: fdu_core::open / open_with_pending_save, fdu.open, fdu.scan, and Python Index.watch() over such an index observe by default (the default is fdu-agb6) and still abort on either bound in the blocking scan_into_index path (pinned by scan.rs detached_control_bootstrap_matches_control_limit_failures); the opened root's residuals (1)-(5) and the watched-root failures (a)-(b) above. Side effect for fdu-okne: no command-line surface reaches a control bound any more, so its 'liftable from the command line' half has no CLI caller until something on the CLI observes control state again.
+
+2026-09-14 (fdu-agb6, c06fe47 on claude/contract-decisions): the default no longer reaches either bound from a library call. ScanConfig::read_controls defaults off, so fdu_core::open / open_with_pending_save, fdu.open, fdu.scan and a watch over their indexes read no control file unless the caller opts in. Still reaching both bounds: every opened root (read_controls is always on there, opened.rs OpenOptions::into_parts) and any open or scan that opts in. This bead stays open for those.

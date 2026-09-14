@@ -3,16 +3,20 @@ type: is
 id: is-01m2ebdk8je4aenkqz41fsq710
 title: "PR #48 review LIFE-8: journal capacity counts items, not bytes"
 kind: bug
-status: open
+status: closed
 priority: 3
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2ebb348tnqdeqn4fddykv4s
 created_at: 2026-09-13T21:40:20.881Z
-updated_at: 2026-09-14T03:21:05.302Z
+updated_at: 2026-09-14T15:33:25.188Z
+closed_at: 2026-09-14T15:33:25.187Z
+close_reason: "5899366: Commit::retained_cost estimates bytes (inline sizes plus path bytes); DEFAULT_JOURNAL_CAPACITY is 8 MiB; journal_capacity keeps its name and now means bytes (public behaviour change, called out in the PR body). Reference model restates the rule; goldens regenerated per scenario and read (header 65536->8388608; observation golden scripted capacity 32 items -> 8192 bytes, Reset commits_visited 7->17). Python field doc left to the Python owner."
+resolution: null
+duplicate_of: null
 ---
 Low. engine_contract.rs:1560-1565; index.rs:1696-1713. Retention counts changes, transitions, and dirty paths as items, so a 64 KiB item budget can hold tens of MiB of paths, and since() clones all of it. Fix: weight retention by bytes. Review: https://github.com/jlevy/fdu/pull/48#pullrequestreview-5192314101 (head c853f7c).
 

@@ -3,16 +3,20 @@ type: is
 id: is-01m2ex9xmtmf13xwrx4dnn0ex8
 title: MetaBrowser's shared registry is File Rollup schema 4, which the engine rejects
 kind: task
-status: open
+status: closed
 priority: 2
-version: 2
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2ebb348tnqdeqn4fddykv4s
 created_at: 2026-09-14T02:52:54.808Z
-updated_at: 2026-09-14T13:56:26.853Z
+updated_at: 2026-09-14T14:50:36.499Z
+closed_at: 2026-09-14T14:50:36.498Z
+close_reason: "8736a9f: registry schema 3 and 4 accepted; icon validated by shape, not retained, outside the fingerprint; icon under schema 3 and other schema versions refused by name; MetaBrowser schema-3/schema-4 registries share fingerprint 0x951d41f9a873ef78 (local check)"
+resolution: null
+duplicate_of: null
 ---
 Found while fixing fdu-m5zj (PR #48 review CLASS-7) at 4da6d60.
 
@@ -30,3 +34,7 @@ Check the File Rollup Format document (`docs/project/architecture/file-rollup-fo
 ## Notes
 
 2026-09-14 DECISION (user): accept schema 3 and schema 4. Validate icon by shape and do not retain it, like hue. Presentation fields (icon, hue, deviation, and similar) stay out of the registry fingerprint, so both documents share one classification identity. Verified 2026-09-14: MetaBrowser main's schema-4 registry differs from the last schema-3 one (1e1f5f912) only by icon on every group and family, plus a presentation-only swift hue and deviation change; kinds, extensions, groups and families are identical. Also note MetaBrowser's stale doc line (file-rollup-format.md:214, 'Icons ... remain outside the type registry') on the MetaBrowser side.
+
+2026-09-14 (implemented, 8736a9f on claude/contract-decisions): schema 3 and 4 accepted; icon on [[group]] and [[family]] validated as a string and not retained; an icon under schema 3 and any schema other than 3 or 4 are refused by name. Presentation fields (hue, linguist, linguist_color, lightness_rank, deviation, icon) and schema_version are outside the fingerprint; hue/deviation/linguist_color/lightness_rank already were, since the parser never retained them. Local uncommitted check: MetaBrowser origin/main (88606b56, schema 4) and 1e1f5f912 (schema 3) both fingerprint 0x951d41f9a873ef78. Committed tests use this repository's own minimal fixtures; neither MetaBrowser file is vendored (AGPL). Correction to the verified note above: on 88606b56 icon is on all 6 groups but only 7 of 56 families (13 icon lines in all).
+
+MetaBrowser-side, not edited from here: docs/project/architecture/file-rollup-format/file-rollup-format.md at 88606b56 is stale against its own schema-4 registry. Line 214 says "Icons, byte formatting, and disclosure state remain outside the type registry"; line 296 says the registry does not define icons; line 170 and the examples at lines 120, 449 and 525 still give schema_version 3; and the group/family field tables do not list icon.
