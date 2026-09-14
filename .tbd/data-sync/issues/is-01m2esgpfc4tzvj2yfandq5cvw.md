@@ -5,14 +5,14 @@ title: Decide whether open and fdu.open observe control state by default
 kind: task
 status: closed
 priority: 2
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2eafpfpe8k5c9z9dhrqvy2y
 created_at: 2026-09-14T01:46:42.539Z
-updated_at: 2026-09-14T20:54:26.821Z
+updated_at: 2026-09-14T22:32:10.175Z
 closed_at: 2026-09-14T15:10:12.747Z
 close_reason: "c06fe47: ScanConfig::read_controls defaults off, so open/open_with_pending_save/fdu.open/fdu.scan/Index.watch observe no control state unless asked (ScanConfig::read_controls, ScanOptions.read_controls); Index::is_ignored/controls return Err(ControlStateNotObserved) on such an index; report/open/watch share one snapshot scope; planner tests now pin the warm start; docs and plan Phase 4 updated"
 resolution: null
@@ -43,3 +43,5 @@ Review: https://github.com/jlevy/fdu/pull/51#pullrequestreview-5192254822. Dispo
 2026-09-14 DECISION (user): default OFF, opt in. fdu_core::open / open_with_pending_save, fdu.open, fdu.scan and Python Index.watch() stop reading .gitignore control state unless the caller asks. On an index opened without it, is_ignored() and controls() must return a typed 'not observed', never Some(false) (today is_ignored returns Some(false) for every entry when controls were not read, index.rs:3048). Consequences: report/open/watch share one snapshot scope, and no default library call reaches the control bounds. Opened roots are unaffected; they always observe controls, so fdu-1onj degradation is still needed for them. Implement as a follow-up after the stack merges.
 
 2026-09-14 DECISION (user, supersedes the default-off decision recorded earlier the same day): .gitignore information is built into the tool and the library, and is rolled up by default on every surface: CLI reports, --watch, library open, fdu.open/fdu.scan/fdu.report, and opened roots. Each request can turn it off (--no-gitignore on the CLI, read_controls=False in the library and Python). The typed 'not observed' answer from #57 stays, for requests that opt out. The CLI shows split totals, for example '1.2 GB (340 MB ignored)', plus --exclude-ignored and --only-ignored filters. Prerequisites before the default flips: fdu-1onj (the control budget degrades to partial instead of aborting), fdu-okne (a liftable bound named in the error), fdu-szkg (charges deduplicated by fingerprint), and a speed check against main with controls on.
+
+2026-09-14 (PR #57 ab77745, guideline review 5203155952 finding 1): the default-off flip from c06fe47 is undone inside #57, per the superseding decision above (tracked on fdu-elnn). ScanConfig::default(), ScanScope::default(), Index::new(root) and Python ScanOptions.read_controls observe again, as on main. Kept for requests that opt out: Error::ControlStateNotObserved, the Result accessors, the control-input refusal, the partition gating, and the read_controls switch on every surface. One-shot reports and fdu --watch are still off; fdu-elnn owns turning them on.
