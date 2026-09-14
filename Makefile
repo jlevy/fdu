@@ -285,13 +285,18 @@ docs:
 # The command line makes the same promise from the other side: crates/fdu/Cargo.toml
 # says it builds without `watch`, which is what keeps that layer deletable. Nothing
 # compiled the featureless command line, so it quietly stopped building (fdu-2wlp). A
-# check of every target holds the promise, and stays cheap because nothing links.
+# clippy run over every target holds the promise and lints the shape too, since the
+# workspace's pedantic lints are clippy's and the Clippy job lints only all features
+# (fdu-kaog); it stays cheap because nothing links. The library's own tests then run in
+# that shape, because compiling a test is not running it: the guide named `--watch` to a
+# binary without it while every featureless build passed (fdu-224p).
 lib-only:
 	$(CARGO) test --locked -p fdu-core --no-default-features
 	$(CARGO) test --locked -p fdu-core --no-default-features --features gitignore
 	$(CARGO) test --locked -p fdu-core --no-default-features --features watch
 	$(CARGO) test --locked -p fdu-core --no-default-features --features watch,gitignore
-	$(CARGO) check --locked -p fdu --no-default-features --all-targets
+	$(CARGO) clippy --locked -p fdu --no-default-features --all-targets -- -D warnings
+	$(CARGO) test --locked -p fdu --no-default-features --lib
 	@tree="$$($(CARGO) tree -p fdu-core --all-features --prefix none)" || exit 1; \
 		! printf '%s\n' "$$tree" | grep -qE '^(clap|anyhow) ' \
 		|| { echo 'fdu-core must not depend on clap or anyhow; they belong to fdu'; exit 1; }
