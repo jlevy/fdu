@@ -1556,7 +1556,15 @@ impl DetachedIndexBuilder {
 }
 
 impl Index {
-    /// Create an empty index rooted at `root_path`.
+    /// Create an empty index rooted at `root_path`, under [`ScanScope::default`].
+    ///
+    /// That is the scope of [`ScanConfig::default`](crate::ScanConfig), which observes
+    /// control state, so in a build with the `gitignore` feature this index answers
+    /// [`Self::is_ignored`] and [`Self::controls`] and accepts control input. Without the
+    /// feature it observes none: those two refuse with
+    /// [`crate::Error::ControlStateNotObserved`], and control input is unsupported. Build
+    /// any other scope, including one that turns control observation off, with
+    /// [`Self::new_with_scope`].
     pub fn new(root_path: impl Into<PathBuf>) -> Self {
         Self::new_with_scope(root_path, ScanScope::default())
     }

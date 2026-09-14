@@ -1878,7 +1878,10 @@ pub enum Error {
     /// Either is a malformed request, so the whole read fails. A token this root issued and
     /// no longer retains -- consumed or evicted -- refuses only its own projection with
     /// [`ProjectionRefusal::ContinuationUnavailable`].
-    #[error("the page continuation was not issued by this opened index")]
+    #[error(
+        "the page continuation was not issued by this opened index; continue from a token a \
+         page of this root returned"
+    )]
     ContinuationUnavailable,
 
     /// No further handle-local continuation identifier can be represented.
