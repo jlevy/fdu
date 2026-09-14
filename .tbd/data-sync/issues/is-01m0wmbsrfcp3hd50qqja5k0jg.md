@@ -3,9 +3,9 @@ type: is
 id: is-01m0wmbsrfcp3hd50qqja5k0jg
 title: Implement exact MetaBrowser catalog predicate semantics
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 17
+version: 18
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -27,9 +27,9 @@ labels:
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-25T14:14:37.582Z
-updated_at: 2026-09-14T13:56:26.334Z
-closed_at: null
-close_reason: null
+updated_at: 2026-09-14T15:39:40.236Z
+closed_at: 2026-09-14T15:39:40.235Z
+close_reason: "5f40e0b: every EntrySelection axis and fdu's own Selection globs (flat, aggregate, report projection) evaluate the portable path inside opened reads, one-shot globs stay native; CatalogQuery refusals restored as EntrySelection::admit_terminal_extension/admit_ancestor_name/validate (read-time request validation) and Python __post_init__; identity rule in the plan contract section; unix non-UTF-8 agreement, page-path round-trip, and every-refusal tests"
 resolution: null
 duplicate_of: null
 ---
