@@ -136,6 +136,12 @@ impl ContinuationTable {
         session: SessionId,
         continuation: ContinuationId,
     ) -> Result<ContinuationRecord> {
+        // A read releases the lifecycle guard once its phase check passes, so shutdown can
+        // empty the table before the read takes its record. That token did not expire; the
+        // root closed, and it must read the way a fresh page in the same race does.
+        if self.closed {
+            return Err(Error::OpenedIndexClosed);
+        }
         if continuation.session != session {
             return Err(Error::ContinuationUnavailable);
         }
@@ -308,7 +314,8 @@ mod tests {
             )
             .expect("retained record");
         table.close();
-        assert!(matches!(table.take(session, retained), Err(Error::ContinuationUnavailable)));
+        assert!(table.records.is_empty() && table.order.is_empty());
+        assert!(matches!(table.take(session, retained), Err(Error::OpenedIndexClosed)));
     }
 
     fn flat_record(session: SessionId, next: &str) -> ContinuationRecord {
@@ -379,6 +386,10 @@ mod tests {
         ));
         table.restore(id, record);
         assert_eq!(table.len(), 0);
-        assert!(matches!(table.take(session, id), Err(Error::ContinuationUnavailable)));
+        // A continuation racing close reads as the closed root it is, the way a fresh page
+        // in the same race does, never as an expired token the caller could restart from.
+        assert!(matches!(table.take(session, id), Err(Error::OpenedIndexClosed)));
+        let foreign = SessionId::from_opaque(2).expect("nonzero session");
+        assert!(matches!(table.take(foreign, id), Err(Error::OpenedIndexClosed)));
     }
 }
