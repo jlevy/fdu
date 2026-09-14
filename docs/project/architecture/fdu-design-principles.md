@@ -688,6 +688,12 @@ It sits behind a feature flag and is strictly additive: removing it leaves scan,
 snapshot, CLI, and Python surfaces working.
 The index must never learn what a filesystem event is.
 
+A build feature is for a capability with a dependency tree to shed.
+`.gitignore` handling has none, so it is always compiled in, and
+`ScanConfig::read_controls` is the per-request switch for its filesystem reads.
+It was once a build feature as well, which made “observes controls” depend on the build:
+in the build without it, every opened roll-up failed.
+
 ### Two Crates, Not More
 
 `fdu` is the library and CLI. `fdu-py` exists only because a cdylib cannot also be the

@@ -41,8 +41,8 @@ They do not redefine the architecture.
   explicit.
 - Give embedded clients bounded synchronous operations without imposing an async
   runtime, transport, or application vocabulary on the engine.
-- Keep observation and dependency-backed ignore handling removable, and keep content
-  analysis and persistence dormant when their capabilities are not requested.
+- Keep observation removable, and keep control-file reads, content analysis, and
+  persistence dormant when their capabilities are not requested.
 - Make a complete causal behavior session recordable from production values, so a small
   transparent-box golden corpus can exercise the orchestration end to end.
 
@@ -191,8 +191,12 @@ without native observation.
 The `watch` feature supplies observation hints and their driver, not a second index or
 change contract.
 
-Ignore handling is a fixed semantic capability and remains removable if it requires an
-additional dependency.
+Ignore handling is a fixed semantic capability, always compiled in.
+It adds no dependency, so a compile-time gate would remove only code; what a consumer
+may want removed is the control-file reads, and `ScanConfig::read_controls` is the
+per-request switch for those.
+A compile-time switch as well would give “observes controls” a second meaning that
+depends on the build, so the runtime switch is the only one.
 Content analysis is opt-in and separately persisted.
 Core does not acquire an async runtime, web stack, transport serialization framework, or
 token-signing dependency for the live API.
@@ -826,7 +830,8 @@ Worker panic and joined-shutdown failure remain explicit terminal outcomes.
 ### Deployment
 
 `fdu-core` retains a no-default-features build.
-Native observation, ignore handling, and content analysis are explicit capabilities.
+Native observation is a build feature; ignore handling and content analysis are always
+built and requested at runtime.
 
 ### Scaling
 

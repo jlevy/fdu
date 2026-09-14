@@ -77,7 +77,8 @@ tests, and beads.
 | What is provider row order? | Tree pages use parent-first traversal with directories before nondirectories and canonical-name order within each partition. Flat pages use lexicographic canonical POSIX-path UTF-8 byte order. |
 | Sign self-contained page tokens? | No. Use opaque, handle-local continuation IDs backed by bounded server-side state. The immediate boundary is in-process. |
 | Accept a registry fingerprint as classification input? | No. Pass the actual registry document, validate it in each provider, and derive the reported fingerprint from that content. |
-| Ship arbitrary tags and promoted roll-up planes now? | No. Ship the one demonstrated partition, `all` versus `unignored`, behind a feature; defer a generic tag algebra until a second use case exists. |
+| Ship arbitrary tags and promoted roll-up planes now? | No. Ship the one demonstrated partition, `all` versus `unignored`; defer a generic tag algebra until a second use case exists. |
+| Make `.gitignore` handling a build feature? | No (`fdu-x7yb`, which removed the `gitignore` build feature this plan first shipped). The matcher is in-tree and adds no dependency, so it is always compiled in. `ScanConfig::read_controls` is the per-request switch that alone decides whether a scan reads control files. `watch` stays a build feature because it has a dependency tree to shed. |
 | Serve warm and cold facts together during discovery? | Not in the first version. Stream a cold baseline honestly; retain current blocking warm-cache behavior until trust can be represented without per-value guesswork. |
 | Add an async Rust runtime? | No. Use standard threads and synchronization in core. Async adaptation belongs at the Python boundary. |
 | Preserve the standalone CLI? | Yes. Existing one-shot behavior and output remain the default and retain full utility. The binary acquires no Python, async-runtime, or MetaBrowser dependency. Any later interactive mode is additive and calls the same public engine operations available to Rust and Python callers. |
@@ -984,7 +985,10 @@ reconciliation or cold discovery, and a partial snapshot is never served as comp
 ### Features, dependencies, and binary size
 
 `fdu-core` remains usable with no default features.
-The CLI and Python package may opt into `watch` and `gitignore` explicitly.
+The CLI and Python package may opt into `watch` explicitly.
+`.gitignore` handling is not a build feature (`fdu-x7yb`): it adds no dependency, so it
+is always compiled in, and `ScanConfig::read_controls` is the per-request switch for
+whether a scan reads control files.
 The opened-root state, journal, blocking reads, refresh, and continuation table use the
 standard library where practical.
 
@@ -1386,6 +1390,8 @@ later composition of the five real opened-root session artifacts.
 
 - [x] Add the exact removal-aware `.gitignore` control table and the fixed
   `all`/`unignored` partition behind a removable feature.
+  `fdu-x7yb` later removed that build feature; the per-request
+  `ScanConfig::read_controls` switch replaced it.
 - [x] Introduce the runtime registry/classification pieces needed by the fixed partition
   behind explicit features; preserve the no-default-features build.
 - [x] Gate creation, edit, deletion, hidden-control discovery, provider-order
@@ -1859,9 +1865,10 @@ Three rules keep the switch honest:
   scan it continues, so a controls-off index never acquires a partial rule set from
   events.
 - The bit is semantic.
-  A runtime opt-out and the compiled-out `gitignore` capability mean the same thing --
-  no control reads, no classification -- and share one identity in
+  Off means no control reads and no classification, and is identity `0` in
   `ScanScope::ignore_rules_fingerprint`, with no snapshot format change.
+  A build without the old `gitignore` build feature shared that identity until
+  `fdu-x7yb` removed it, which left the runtime bit as the only switch.
 - Snapshot acceptance is exact wherever an index is returned or reconciled.
   The one directional path is a report under `--cache only`: it never scans, reads only
   the all-entry facts, and names the requested scope, so it may answer a controls-off
@@ -2162,7 +2169,7 @@ Beads `fdu-wzu9` and `fdu-ff6r` finish the kernel before a worker is added.
 | `classify.rs` and new `classify/file_rollup_manifest.rs` | Add portable `logical_ext`, registry-owned canonical extension and name classification, ordered browsing groups and families, and the dependency-free validated File Rollup v3 profile. Keep the compiled analyzer registry and existing `derive_ext` answer stable for detached and CLI consumers. | Parse the exact shared document; prove formatting-insensitive semantic identity, exact-basename precedence, longest-suffix matching, unknown fallback, compact-manifest compatibility, and cross-platform components. Reject malformed and unsupported documents before opening a root. |
 | `Index`, `IndexHandle`, and new `OpenedIndex` boundary types | Keep cloned `Index` detached. Do not put session identity, worker ownership, journal waiters, or continuations into it. Reserve those for the Phase 2 opened-root state. | Clone independence, no shared live identity in snapshots, and existing `IndexHandle` read/write behavior. |
 | `snapshot.rs` `save`, `save_handle`, `load`, `put_scope`, `read_scope`, `engine_fingerprint` | Serialize detached facts, control table, reducers, validated scope, and semantic identity only. Bump format/fingerprint once for the cumulative representation change; reject partial-resource baselines. | Existing corruption/size/atomicity tests plus registry, control-removal, portable-path, and partial-baseline cases. |
-| `Cargo.toml`, `crates/fdu-core/Cargo.toml`, `crates/fdu-py/Cargo.toml`, `Makefile`, CI | Make core default features empty; keep `watch` and any `gitignore` dependency removable and explicit; update library-only feature matrix, audit pins, and recorded size commands. | `cargo tree` deltas, `make check`, `make cross-lint`, MSRV, audit, no-default tests, CLI/wheel size baselines. |
+| `Cargo.toml`, `crates/fdu-core/Cargo.toml`, `crates/fdu-py/Cargo.toml`, `Makefile`, CI | Make core default features empty; keep `watch` and any `gitignore` dependency removable and explicit; update library-only feature matrix, audit pins, and recorded size commands. The `gitignore` build feature this added needed no dependency, and `fdu-x7yb` removed it, leaving `watch` as the one build feature. | `cargo tree` deltas, `make check`, `make cross-lint`, MSRV, audit, no-default tests, CLI/wheel size baselines. |
 
 The 1D green checkpoint is the base for every opened-root commit.
 No Phase 2 bead starts if a one-shot surface differs without a reviewed correction.
@@ -2281,7 +2288,7 @@ green.
 | Bead and files | Work | Acceptance |
 | --- | --- | --- |
 | `fdu-pro1`: whole-scan allocation regression | PR #51 bisected the growth and removed repeated commit derivation, redundant walker-path reconstruction, and empty control projection. Its review found that path-keyed ancestry preflight now dominates detached CPU, impact publication is next, and prepare, effect, and compatibility path copies dominate residual allocations. The [streaming performance parity plan](plan-2026-08-31-fdu-streaming-performance-parity.md) owns the remaining work. | Open: both nominated real trees must meet the new plan’s wall, component, allocation, semantic, and zero-streaming-work thresholds against the pinned pre-rewrite control. |
-| `fdu-etfj`: `crates/fdu-core/src/execution.rs` `plan_report` and `prepare_report`, `crates/fdu-core/src/scan.rs` `read_control_op` and `ScanConfig`, `crates/fdu-core/src/lib.rs` snapshot acceptance | Done. `ScanConfig::read_controls` (default off since `fdu-agb6`) gates the one observation funnel that scans and watch verification share. The shared one-shot planner, which the command line and the Python package both call, turns observation off for every report whatever the caller passed, so no front end decides it. The default was on when this landed; `fdu-agb6` turned it off, so a default `open` shares the one-shot scope, and the opened root always observes; `fdu --watch` turns it off explicitly, because no command-line view reads it. The bit shares the compiled-out capability’s identity in `ScanScope::ignore_rules_fingerprint`. Snapshot acceptance is exact except for a no-scan `--cache only` report, which may read a controls-on snapshot for a controls-off request. | By surface. Command-line one-shot and Python `fdu.report`: no control-file I/O and no retained control state, proven at the planner by an engine test over control sources that cannot be read or retained without an error. The binding reaches that planner through `fdu_core::prepare_report` and cannot override it; the Python and parity CI jobs cover that it still builds and answers as the command line does. The `file_opens` counter is not evidence here, because it counts only content-analysis opens. Opened root and an opted-in `open`: exact control state, and still able to abort on control volume until `fdu-1onj`. A default `open`, `fdu.open`, and `fdu.scan` observe none since `fdu-agb6`, and their indexes answer ignore questions with `ControlStateNotObserved`. `fdu --watch`: no control state, pinned by `crates/fdu/tests/watch_controls.rs`. The `--no-default-features` build is unaffected. |
+| `fdu-etfj`: `crates/fdu-core/src/execution.rs` `plan_report` and `prepare_report`, `crates/fdu-core/src/scan.rs` `read_control_op` and `ScanConfig`, `crates/fdu-core/src/lib.rs` snapshot acceptance | Done. `ScanConfig::read_controls` (default off since `fdu-agb6`) gates the one observation funnel that scans and watch verification share. The shared one-shot planner, which the command line and the Python package both call, turns observation off for every report whatever the caller passed, so no front end decides it. The default was on when this landed; `fdu-agb6` turned it off, so a default `open` shares the one-shot scope, and the opened root always observes; `fdu --watch` turns it off explicitly, because no command-line view reads it. Off is identity `0` in `ScanScope::ignore_rules_fingerprint`, which a build without the `gitignore` build feature shared until `fdu-x7yb` removed it. Snapshot acceptance is exact except for a no-scan `--cache only` report, which may read a controls-on snapshot for a controls-off request. | By surface. Command-line one-shot and Python `fdu.report`: no control-file I/O and no retained control state, proven at the planner by an engine test over control sources that cannot be read or retained without an error. The binding reaches that planner through `fdu_core::prepare_report` and cannot override it; the Python and parity CI jobs cover that it still builds and answers as the command line does. The `file_opens` counter is not evidence here, because it counts only content-analysis opens. Opened root and an opted-in `open`: exact control state, and still able to abort on control volume until `fdu-1onj`. A default `open`, `fdu.open`, and `fdu.scan` observe none since `fdu-agb6`, and their indexes answer ignore questions with `ControlStateNotObserved`. `fdu --watch`: no control state, pinned by `crates/fdu/tests/watch_controls.rs`. The `--no-default-features` build is unaffected. |
 | `fdu-1onj`: `crates/fdu-core/src/control.rs` `upsert`, `crates/fdu-core/src/index.rs` `install_controls` | Replace `Err(ControlSourceLimit)` and `Err(ControlPatternLimit)` — the 4 MiB table bound and the 16 KiB per-line bound, both fatal today — with degradation to partial coverage carrying a typed control-budget issue, matching the resource-budget contract this plan already states for `max_files`. One-shot reports, `fdu --watch`, and a default `open` no longer reach either bound; the opened root and an opted-in `open` still do. | Crossing either bound yields a usable roll-up and a stated partial boundary; no scan aborts on control state alone. |
 | `fdu-szkg`: `crates/fdu-core/src/control.rs` `retained_source_cost`, `ControlSource` | Deduplicate retained sources by the `ControlIdentity` fingerprint already computed, so identical control files are compiled and charged once. | Removal semantics unchanged and tested; measured retention on `~/wrk` falls from 9.93 MiB toward the deduplicated 3.81 MiB. |
 | `fdu-okne`: `crates/fdu-core/src/control.rs`, `crates/fdu-core/src/snapshot.rs`, `crates/fdu/src/cli.rs` | Split the constant into a strict snapshot-parser guard and a separate, larger runtime retention budget. Expose the runtime budget where it is stated and name it in the diagnostic. | The bound is liftable by a flag; the parser guard stays strict against untrusted `u32` lengths on load. |
@@ -2891,8 +2898,6 @@ commit invariants:
 - Does the fdu provider need a polling observer before it can become MetaBrowser’s
   default on network filesystems, or can the Python provider remain the explicit choice
   for poll mode initially?
-- Does the CLI opt into the `gitignore` feature by default after the binary-size and
-  user value measurements, or only expose it in the Python/MetaBrowser build?
 - Which later client, if any, justifies sorted resumable reports rather than bounded
   ranked top-N results?
 - What evidence would justify a separate warm progressive design with per-subtree trust
