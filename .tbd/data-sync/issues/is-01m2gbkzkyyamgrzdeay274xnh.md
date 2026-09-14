@@ -5,11 +5,16 @@ title: changes() reports IndexLockPoisoned, not OpenedWorkerPanicked, when a wor
 kind: bug
 status: open
 priority: 3
-version: 1
+version: 3
 labels:
   - stack-followup
 dependencies: []
+parent_id: is-01m2h3ches22p7k9x4kka6bq6q
 created_at: 2026-09-14T16:22:19.001Z
-updated_at: 2026-09-14T16:22:19.001Z
+updated_at: 2026-09-14T23:18:05.471Z
 ---
 PR #56 review PR56-LIFE-2 (https://github.com/jlevy/fdu/pull/56#pullrequestreview-5200187448). Locations at cfd1335: opened/journal.rs:73-86 and :98-103, opened.rs:288-291. When a worker panics while holding the index write lock, the blocked poll does wake, but read_with returns IndexLockPoisoned before the panicked() check. The caller gets the poison error, not the OpenedWorkerPanicked that the new changes() doc promises. close still names the worker correctly. Fix: check panicked() before the lock-poison mapping in changes(), or make the doc name both outcomes. Add a test.
+
+## Notes
+
+Also covers delta review 5203772881 finding PR56B-DOC-1: CHANGELOG.md:94-95 at 8d2eb7f promises OpenedWorkerPanicked from a poll after a worker panic. Disposition: fix the code so a recorded worker panic takes precedence over the poison mapping, which makes the CHANGELOG true.

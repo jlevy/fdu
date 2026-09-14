@@ -5,13 +5,13 @@ title: Content sidecar load is the layer-3 warm cost on Linux
 kind: task
 status: open
 priority: 1
-version: 9
+version: 10
 labels:
   - campaign-2
   - macos-agenda
 dependencies: []
 created_at: 2026-08-14T00:03:55.833Z
-updated_at: 2026-09-14T15:38:24.160Z
+updated_at: 2026-09-14T23:20:10.140Z
 ---
 The content sidecar load costs about 370 ms for 14,542 files, roughly 25 microseconds per file, against about 3 microseconds per record for the metadata snapshot. It dominates every warm content run: with a sidecar hit, all three analysis profiles converge on the same warm floor regardless of how much analysis they avoided. Same class of problem as H78 for the metadata snapshot and probably wants the same answer, a layout usable without rebuilding per-record state. Measured in a virtualized-warm Linux regime; see research-2026-08-13-linux-three-tier-baseline.md.
 
@@ -53,3 +53,25 @@ its non-inferiority margin. Do it as a clarity change or not at all.
 
 What is left on this bead is the structural form (fdu-jxhk) and the layout/allocation
 answer H78/H83 point at. That is where this tier's cost now is.
+
+2026-09-14 (PR #58 review, corrected in bd8ed0b): four statements in the note above
+overreach the exp-104 evidence. The record now says:
+
+1. The ~8% exp-069 named covered two maps: the roll-up HashMap and the candidate map the
+   sidecar loader builds (content_cache.rs:145-152, one insert and one remove per file).
+   H103 took the roll-up half only. The loader half is untested and, at two full-path
+   hashes per file, is expected to be smaller. The 21.06% oracle share was measured in
+   exp-104 on the registry subject, not in exp-069's profile, so "read off a profile that
+   still included the oracle" is withdrawn.
+2. "Not instruction-bound" was measured on one virtualized 4-core Linux host, warm-steady;
+   Apple Silicon and bare metal are unmeasured. High-IPC-removed / memory-stalled-remains
+   is plausible, not measured (no IPC recorded).
+3. "Halves with scale because the snapshot parse grows faster" is replaced by the
+   arithmetic: about 2,000 instructions saved per entry on both subjects (1,950 and
+   2,141), against the rest of the per-entry cost being about 2x on the kernel checkout.
+   The subjects differ in shape as well as size, and only one was profiled.
+4. Component is +0.07% [-0.77%, +1.00%] as a paired change; +0.28% was a ratio of
+   medians.
+
+fdu-cfpa is closed as not a defect: the shipped HashMap<PathBuf, _> finds a roll-up under
+either separator spelling, because Path's Hash and Eq are component-wise.
