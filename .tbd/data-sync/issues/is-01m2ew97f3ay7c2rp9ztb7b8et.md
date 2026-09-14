@@ -3,16 +3,20 @@ type: is
 id: is-01m2ew97f3ay7c2rp9ztb7b8et
 title: "perf_probe: --worker-policy and --diagnostics are still accepted by modes that ignore them"
 kind: bug
-status: open
+status: closed
 priority: 3
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2eeeykapyy2pg6zjj9qxcbt
 created_at: 2026-09-14T02:35:03.518Z
-updated_at: 2026-09-14T02:35:03.518Z
+updated_at: 2026-09-14T03:02:39.582Z
+closed_at: 2026-09-14T03:02:39.580Z
+close_reason: "2d4407d: --diagnostics now refused outside scan-producer, scan-index, validate-index, and default-tree; --worker-policy refused outside the first three. A new test table checks every mode against both allowed sets."
+resolution: null
+duplicate_of: null
 ---
 Found while fixing fdu-8yv0 and fdu-tilu on PR #52 (codex/streaming-performance-parity at ba83690). It is the same defect class as review PERF-3: a flag is accepted and silently ignored, so a run can be recorded under a setting it never applied.
 
