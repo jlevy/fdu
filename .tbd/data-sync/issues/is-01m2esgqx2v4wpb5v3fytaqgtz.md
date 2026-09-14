@@ -3,16 +3,20 @@ type: is
 id: is-01m2esgqx2v4wpb5v3fytaqgtz
 title: perf_probe accepts --no-controls for default-tree and summary, where it no longer has any effect
 kind: bug
-status: open
+status: closed
 priority: 3
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2eeeykapyy2pg6zjj9qxcbt
 created_at: 2026-09-14T01:46:44.001Z
-updated_at: 2026-09-14T01:46:44.001Z
+updated_at: 2026-09-14T02:42:34.288Z
+closed_at: 2026-09-14T02:42:34.284Z
+close_reason: "d90bd41: default-tree and summary refuse --no-controls, saying the one-shot planner decides control observation; no realtree job passed it; performance-loop guide updated; new probe test. #52 CI red only from fdu-oh3m"
+resolution: null
+duplicate_of: null
 ---
 Follow-up on PR #52 after #51 was propagated into it (merge 753e10f, codex/streaming-performance-parity). The same defect class as review PERF-3 (fdu-7uhv).
 
