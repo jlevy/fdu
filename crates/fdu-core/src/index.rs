@@ -1291,7 +1291,7 @@ impl IndexHandle {
     }
 
     pub(crate) fn has_control(&self, path: &Path) -> crate::Result<bool> {
-        Ok(self.read_index()?.controls().contains(path))
+        Ok(self.read_index()?.control_table().contains(path))
     }
 
     pub(crate) fn take_pending_invalidations(
@@ -1663,7 +1663,33 @@ impl Index {
     }
 
     /// Exact fixed control state retained by this detached index.
-    pub fn controls(&self) -> &crate::control::ControlTable {
+    ///
+    /// # Errors
+    ///
+    /// [`crate::Error::ControlStateNotObserved`] when the index was built without
+    /// observing control state ([`ScanScope::observes_controls`]). Its table is empty
+    /// because nothing was read, and returning it would claim the tree has no control
+    /// files.
+    pub fn controls(&self) -> crate::Result<&crate::control::ControlTable> {
+        self.require_observed_controls()?;
+        Ok(&self.controls)
+    }
+
+    /// Whether this index observed `.gitignore` control state, and so can answer
+    /// [`Self::is_ignored`] and [`Self::controls`].
+    pub const fn observes_controls(&self) -> bool {
+        self.scope.observes_controls()
+    }
+
+    fn require_observed_controls(&self) -> crate::Result<()> {
+        if self.observes_controls() { Ok(()) } else { Err(crate::Error::ControlStateNotObserved) }
+    }
+
+    /// The retained control table whatever the scope: empty when nothing was observed.
+    ///
+    /// For the engine's own maintenance, which compares what it retains against what it
+    /// reads and so needs no claim about coverage.
+    pub(crate) fn control_table(&self) -> &crate::control::ControlTable {
         &self.controls
     }
 
@@ -3045,8 +3071,19 @@ impl Index {
     }
 
     /// Effective fixed-control classification for one retained entry.
-    pub fn is_ignored(&self, path: &Path) -> Option<bool> {
-        Some(self.entry(self.lookup(path)?).ignored)
+    ///
+    /// `Ok(Some(ignored))` for a retained entry and `Ok(None)` for a path the index does
+    /// not hold.
+    ///
+    /// # Errors
+    ///
+    /// [`crate::Error::ControlStateNotObserved`] when the index was built without
+    /// observing control state, whatever the path. Every entry of such an index carries
+    /// "not ignored" only because no rule was read, so that answer would be silently
+    /// wrong for a tree that has a `.gitignore`.
+    pub fn is_ignored(&self, path: &Path) -> crate::Result<Option<bool>> {
+        self.require_observed_controls()?;
+        Ok(self.lookup(path).map(|id| self.entry(id).ignored))
     }
 
     /// Borrow direct children of a directory as `(name, id)` pairs in name order.
@@ -5066,7 +5103,7 @@ mod tests {
                     let semantic = index.classify(&path).file_type.as_str().to_string();
                     *semantic_refcounts.entry(semantic.clone()).or_default() += 1;
                     let attrs = *index.attrs(&path).expect("live child has attributes");
-                    let ignored = index.is_ignored(&path).expect("live child is classified");
+                    let ignored = index.entry(id).ignored;
                     for ancestor in &ancestors {
                         let partition = semantic_by_directory.entry(*ancestor).or_default();
                         let all = partition.0.entry(semantic.clone()).or_default();
@@ -7508,10 +7545,48 @@ mod tests {
         );
     }
 
+    /// An index that read no control file cannot say what is ignored, so it says that,
+    /// rather than calling every entry unignored.
+    #[test]
+    fn an_index_that_did_not_observe_controls_refuses_ignore_questions() {
+        let mut index = Index::new("/root");
+        assert!(!index.observes_controls(), "the default scope observes no control state");
+        index.apply_ok(&Observation::new(vec![upsert(
+            "debug.log",
+            EntryKind::File,
+            file_attrs(10, 1),
+        )]));
+        for path in ["debug.log", "absent.log"] {
+            assert!(
+                matches!(
+                    index.is_ignored(Path::new(path)),
+                    Err(crate::Error::ControlStateNotObserved)
+                ),
+                "{path}"
+            );
+        }
+        assert!(matches!(index.controls(), Err(crate::Error::ControlStateNotObserved)));
+
+        #[cfg(feature = "gitignore")]
+        {
+            let mut observed =
+                Index::new_with_scope("/root", crate::test_support::observing_controls());
+            assert!(observed.observes_controls());
+            observed.apply_ok(&Observation::new(vec![upsert(
+                "debug.log",
+                EntryKind::File,
+                file_attrs(10, 1),
+            )]));
+            assert_eq!(observed.is_ignored(Path::new("debug.log")).ok(), Some(Some(false)));
+            assert_eq!(observed.is_ignored(Path::new("absent.log")).ok(), Some(None));
+            assert!(observed.controls().is_ok_and(crate::control::ControlTable::is_empty));
+        }
+    }
+
     #[cfg(feature = "gitignore")]
     #[test]
     fn control_changes_atomically_move_fixed_partitions_without_changing_all() {
-        let mut index = Index::new("/root");
+        let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
         index.apply_ok(&Observation::new(vec![
             upsert(".gitignore", EntryKind::File, file_attrs(6, 1)),
             upsert("debug.log", EntryKind::File, file_attrs(10, 2)),
@@ -7534,8 +7609,14 @@ mod tests {
         assert_eq!(partitions.unignored.bytes, 26);
         assert_eq!(outcome.controls, 1);
         assert_eq!(outcome.reclassified, 3);
-        assert_eq!(index.is_ignored(Path::new("debug.log")), Some(true));
-        assert_eq!(index.is_ignored(Path::new("keep.rs")), Some(false));
+        assert_eq!(
+            index.is_ignored(Path::new("debug.log")).expect("control state observed"),
+            Some(true)
+        );
+        assert_eq!(
+            index.is_ignored(Path::new("keep.rs")).expect("control state observed"),
+            Some(false)
+        );
 
         let commit = outcome.commit.expect("control and classification commit together");
         assert!(matches!(
@@ -7585,7 +7666,7 @@ mod tests {
     #[cfg(feature = "gitignore")]
     #[test]
     fn nested_negation_edit_and_last_control_deletion_reclassify_exactly() {
-        let mut index = Index::new("/root");
+        let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
         index.apply_ok(&Observation::new(vec![
             upsert(".gitignore", EntryKind::File, file_attrs(6, 1)),
             upsert("docs", EntryKind::Dir, file_attrs(0, 2)),
@@ -7597,33 +7678,49 @@ mod tests {
                 source: b"!keep.log\n".to_vec(),
             },
         ]));
-        assert_eq!(index.is_ignored(Path::new("docs/keep.log")), Some(false));
+        assert_eq!(
+            index.is_ignored(Path::new("docs/keep.log")).expect("control state observed"),
+            Some(false)
+        );
 
         let edited = index.apply_ok(&Observation::new(vec![Op::ControlUpsert {
             path: PathBuf::from("docs/.gitignore"),
             source: b"# no exception\n".to_vec(),
         }]));
         assert_eq!(edited.reclassified, 1);
-        assert_eq!(index.is_ignored(Path::new("docs/keep.log")), Some(true));
+        assert_eq!(
+            index.is_ignored(Path::new("docs/keep.log")).expect("control state observed"),
+            Some(true)
+        );
 
         let removed = index
             .apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from(".gitignore") }]));
         assert_eq!(removed.controls, 1, "removing the retained row removes its control state");
         assert_eq!(removed.reclassified, 1);
-        assert_eq!(index.controls().len(), 1, "the nested control remains");
-        assert_eq!(index.is_ignored(Path::new("docs/keep.log")), Some(false));
+        assert_eq!(
+            index.controls().expect("control state observed").len(),
+            1,
+            "the nested control remains"
+        );
+        assert_eq!(
+            index.is_ignored(Path::new("docs/keep.log")).expect("control state observed"),
+            Some(false)
+        );
 
         index.apply_ok(&Observation::new(vec![Op::Remove {
             path: PathBuf::from("docs/.gitignore"),
         }]));
-        assert!(index.controls().is_empty());
-        assert_eq!(index.is_ignored(Path::new("docs/keep.log")), Some(false));
+        assert!(index.controls().expect("control state observed").is_empty());
+        assert_eq!(
+            index.is_ignored(Path::new("docs/keep.log")).expect("control state observed"),
+            Some(false)
+        );
     }
 
     #[cfg(feature = "gitignore")]
     #[test]
     fn replacing_batch_ancestors_prunes_retained_and_transient_controls() {
-        let mut index = Index::new("/root");
+        let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
         index
             .apply(&Observation::new(vec![
                 upsert("docs", EntryKind::Dir, file_attrs(0, 1)),
@@ -7649,9 +7746,15 @@ mod tests {
             ]))
             .expect("mixed control and structural batch");
 
-        assert!(index.controls().is_empty());
-        assert_eq!(index.is_ignored(Path::new("scratch/new.log")), Some(false));
-        assert_eq!(index.is_ignored(Path::new("docs/new.log")), Some(false));
+        assert!(index.controls().expect("control state observed").is_empty());
+        assert_eq!(
+            index.is_ignored(Path::new("scratch/new.log")).expect("control state observed"),
+            Some(false)
+        );
+        assert_eq!(
+            index.is_ignored(Path::new("docs/new.log")).expect("control state observed"),
+            Some(false)
+        );
         assert_eq!(outcome.stats.controls, 1, "only the retained control has a net change");
         let controls = outcome
             .commit
@@ -7673,7 +7776,7 @@ mod tests {
     fn control_bound_failure_is_atomic_with_ordinary_entry_work() {
         let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
             "/root",
-            ScanScope::default(),
+            crate::test_support::observing_controls(),
             crate::classify::TypeRegistry::compiled_shared(),
             DEFAULT_JOURNAL_CAPACITY,
         );
@@ -7693,7 +7796,7 @@ mod tests {
         assert_eq!(index.total(), before.total());
         assert_eq!(index.serving, before.serving);
         assert!(index.lookup(Path::new("ordinary.txt")).is_none());
-        assert!(index.controls().is_empty());
+        assert!(index.controls().expect("control state observed").is_empty());
     }
 
     #[test]

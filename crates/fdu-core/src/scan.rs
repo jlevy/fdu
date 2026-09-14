@@ -185,11 +185,24 @@ pub struct ScanConfig {
     pub types: Option<std::sync::Arc<crate::classify::TypeRegistry>>,
     /// Observe `.gitignore` control files and retain ignore classification.
     ///
-    /// On by default, so an [`Index`] from [`crate::open`] or a scan keeps the exact
-    /// control state it exposes and a watch maintains. Off, the scan performs
-    /// no control-file I/O and retains no control table: the semantics an absent
-    /// `gitignore` feature gives, stamped into [`ScanScope`] the same way, so an
-    /// index-returning call never serves a snapshot taken one way as the other.
+    /// Off by default. Off, the scan performs no control-file I/O and retains no control
+    /// table: the semantics an absent `gitignore` feature gives, stamped into
+    /// [`ScanScope`] the same way, so an index-returning call never serves a snapshot
+    /// taken one way as the other. An [`Index`] built that way answers
+    /// [`Index::is_ignored`] and [`Index::controls`] with
+    /// [`crate::Error::ControlStateNotObserved`], never
+    /// with "not ignored", and no default scan can end on a control bound.
+    ///
+    /// On, an index from [`crate::open`] or a scan keeps the exact control state it
+    /// exposes, and a watch over it maintains that state. Turn it on to read ignore
+    /// classification; it costs a read of every `.gitignore` in the tree, a snapshot
+    /// scope of its own, and exposure to the control bounds.
+    ///
+    /// The default is off because the question a default open answers is what the tree
+    /// holds, which no ignore rule changes (fdu-agb6). It lets `open`, a watch, and a
+    /// one-shot report share one snapshot scope, so each starts warm from the others'
+    /// snapshots. An opened root ([`crate::OpenedIndex`]) always observes control state,
+    /// because its ignored and unignored partitions are part of what it serves.
     ///
     /// A one-shot report ([`crate::prepare_report`]) does not read this field; its
     /// planner always runs with observation off, because no report view reads ignore
@@ -210,7 +223,7 @@ impl Default for ScanConfig {
             threads: None,
             order: ScanOrder::default(),
             types: None,
-            read_controls: true,
+            read_controls: false,
         }
     }
 }
@@ -903,7 +916,7 @@ impl ReconcileTarget<'_> {
 
     fn has_control(&self, path: &Path) -> Result<bool> {
         match self {
-            Self::Direct(index) => Ok(index.controls().contains(path)),
+            Self::Direct(index) => Ok(index.control_table().contains(path)),
             Self::Shared(handle) | Self::Controlled { handle, .. } => handle.has_control(path),
         }
     }
@@ -3682,7 +3695,7 @@ pub fn revalidate(
 
         let mut seen: BTreeSet<OsString> = BTreeSet::new();
         let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
-        let had_control = index.controls().contains(&control_path);
+        let had_control = index.control_table().contains(&control_path);
         let mut control_seen = false;
         let mut listing_complete = true;
         for item in listing {
@@ -4543,7 +4556,7 @@ fn reconcile_wave_worker(
             let mut known = collect_child_expectations(index, rel_dir);
             let abs_dir = root.join(rel_dir);
             let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
-            let had_control = index.controls().contains(&control_path);
+            let had_control = index.control_table().contains(&control_path);
             let mut control_seen = false;
             let mut listing_complete = true;
             let mut control_errors = Vec::new();
@@ -4578,7 +4591,7 @@ fn reconcile_wave_worker(
                         if disposition == crate::admission::Disposition::ControlOnly {
                             match read_control_op(config, root, &rel_path, kind) {
                                 Ok(Some(Op::ControlUpsert { path, source })) => {
-                                    if !index.controls().source_is(&path, &source) {
+                                    if !index.control_table().source_is(&path, &source) {
                                         defer_reconcile_op(
                                             Op::ControlUpsert { path, source },
                                             &mut result.operations,
@@ -4589,7 +4602,7 @@ fn reconcile_wave_worker(
                                     }
                                 }
                                 Ok(Some(Op::ControlRemove { path })) => {
-                                    if index.controls().contains(&path) {
+                                    if index.control_table().contains(&path) {
                                         defer_reconcile_op(
                                             Op::ControlRemove { path },
                                             &mut result.operations,
@@ -4622,7 +4635,7 @@ fn reconcile_wave_worker(
                         }
                         match read_control_op(config, root, &rel_path, kind) {
                             Ok(Some(Op::ControlUpsert { path, source })) => {
-                                if !index.controls().source_is(&path, &source) {
+                                if !index.control_table().source_is(&path, &source) {
                                     defer_reconcile_op(
                                         Op::ControlUpsert { path, source },
                                         &mut result.operations,
@@ -5462,7 +5475,8 @@ mod tests {
     fn detached_control_bootstrap_matches_the_streaming_reducer_for_each_worker_count() {
         let dir = controlled_branching_tree();
         for threads in 1..=4 {
-            let config = ScanConfig { threads: Some(threads), ..ScanConfig::default() };
+            let config =
+                ScanConfig { read_controls: true, threads: Some(threads), ..ScanConfig::default() };
             let _ = detached_and_streaming_indexes(dir.path(), &config);
         }
     }
@@ -5491,7 +5505,7 @@ mod tests {
     #[test]
     fn detached_control_bootstrap_preserves_the_exact_first_mutation() {
         let dir = controlled_branching_tree();
-        let config = ScanConfig { threads: Some(4), ..ScanConfig::default() };
+        let config = ScanConfig { read_controls: true, threads: Some(4), ..ScanConfig::default() };
         let (mut detached, mut streaming) = detached_and_streaming_indexes(dir.path(), &config);
         let observation = Observation::new(vec![Op::ControlUpsert {
             path: PathBuf::from(".gitignore"),
@@ -5512,7 +5526,7 @@ mod tests {
             &pattern_dir.path().join(".gitignore"),
             &vec![b'x'; crate::control::MAX_CONTROL_PATTERN_BYTES + 1],
         );
-        let config = ScanConfig { threads: Some(4), ..ScanConfig::default() };
+        let config = ScanConfig { read_controls: true, threads: Some(4), ..ScanConfig::default() };
         let canonical = pattern_dir.path().canonicalize().expect("canonical pattern root");
         let Err(detached_error) = scan_into_index(pattern_dir.path(), &config) else {
             panic!("detached scan accepted an oversized pattern");
@@ -5631,19 +5645,20 @@ mod tests {
         assert_eq!(left.clock(), right.clock());
         assert_eq!(left.len(), right.len());
         assert_eq!(left.issues(), right.issues());
+        assert_eq!(left.observes_controls(), right.observes_controls());
         assert_eq!(
-            left.controls()
+            left.control_table()
                 .sources()
                 .map(|(path, source)| (path, source.to_vec()))
                 .collect::<Vec<_>>(),
             right
-                .controls()
+                .control_table()
                 .sources()
                 .map(|(path, source)| (path, source.to_vec()))
                 .collect::<Vec<_>>()
         );
         for (path, _, _) in index_fingerprint(left) {
-            assert_eq!(left.is_ignored(&path), right.is_ignored(&path), "{path:?}");
+            assert_eq!(left.is_ignored(&path).ok(), right.is_ignored(&path).ok(), "{path:?}");
         }
     }
 
@@ -6770,13 +6785,25 @@ mod tests {
         write_file(&dir.path().join("keep.rs"), b"visible");
 
         for threads in [1, 4] {
-            let config = ScanConfig { threads: Some(threads), ..ScanConfig::default() };
+            let config =
+                ScanConfig { read_controls: true, threads: Some(threads), ..ScanConfig::default() };
             let (index, report) = scan_into_index(dir.path(), &config).expect("scan");
 
             assert!(report.is_complete(), "unexpected errors: {:?}", report.errors);
-            assert!(index.controls().source_is(Path::new(".gitignore"), b"*.log\n"));
-            assert_eq!(index.is_ignored(Path::new("debug.log")), Some(true));
-            assert_eq!(index.is_ignored(Path::new("keep.rs")), Some(false));
+            assert!(
+                index
+                    .controls()
+                    .expect("control state observed")
+                    .source_is(Path::new(".gitignore"), b"*.log\n")
+            );
+            assert_eq!(
+                index.is_ignored(Path::new("debug.log")).expect("control state observed"),
+                Some(true)
+            );
+            assert_eq!(
+                index.is_ignored(Path::new("keep.rs")).expect("control state observed"),
+                Some(false)
+            );
             assert_eq!(index.partition_total().all.files, 3);
             assert_eq!(index.partition_total().unignored.files, 2);
         }
@@ -6823,6 +6850,7 @@ mod tests {
             let config = ScanConfig {
                 hidden: Some(std::sync::Arc::clone(&hidden)),
                 threads: Some(threads),
+                read_controls: true,
                 ..ScanConfig::default()
             };
             let (mut index, report) = scan_into_index(dir.path(), &config).expect("scan");
@@ -6832,8 +6860,16 @@ mod tests {
             assert!(index.lookup(Path::new(".secret")).is_none());
             assert!(index.lookup(Path::new(".secret/token")).is_none());
             assert!(index.lookup(Path::new(".github/workflows/check.yml")).is_some());
-            assert!(index.controls().source_is(Path::new(".gitignore"), b"*.log\n"));
-            assert_eq!(index.is_ignored(Path::new("debug.log")), Some(true));
+            assert!(
+                index
+                    .controls()
+                    .expect("control state observed")
+                    .source_is(Path::new(".gitignore"), b"*.log\n")
+            );
+            assert_eq!(
+                index.is_ignored(Path::new("debug.log")).expect("control state observed"),
+                Some(true)
+            );
 
             fs::remove_file(dir.path().join(".gitignore")).expect("remove control");
             if threads > 1 {
@@ -6841,7 +6877,7 @@ mod tests {
             }
             let reconciled = reconcile(&mut index, &config, &mut |_| {}).expect("reconcile");
             assert!(reconciled.is_complete());
-            assert!(index.controls().is_empty());
+            assert!(index.controls().expect("control state observed").is_empty());
             if threads > 1 {
                 fs::remove_dir(dir.path().join(".gitignore")).expect("remove directory");
             }
@@ -6901,8 +6937,12 @@ mod tests {
         write_file(&dir.path().join("debug.log"), b"ignored");
 
         for threads in [1, 4] {
-            let config =
-                ScanConfig { threads: Some(threads), batch_size: 1, ..ScanConfig::default() };
+            let config = ScanConfig {
+                read_controls: true,
+                threads: Some(threads),
+                batch_size: 1,
+                ..ScanConfig::default()
+            };
             let mut largest = 0;
             let report = scan(dir.path(), &config, &mut |observation| {
                 largest = largest.max(observation.len());
@@ -6926,17 +6966,37 @@ mod tests {
         write_file(&dir.path().join("node_modules/.gitignore"), b"!keep-me.py\n");
         write_file(&dir.path().join("node_modules/keep-me.py"), b"x");
 
-        let (index, report) =
-            scan_into_index(dir.path(), &ScanConfig { threads: Some(4), ..ScanConfig::default() })
-                .expect("scan fixture");
+        let (index, report) = scan_into_index(
+            dir.path(),
+            &ScanConfig { read_controls: true, threads: Some(4), ..ScanConfig::default() },
+        )
+        .expect("scan fixture");
 
         assert!(report.is_complete(), "unexpected errors: {:?}", report.errors);
-        assert_eq!(index.is_ignored(Path::new("src/app.py")), Some(false));
-        assert_eq!(index.is_ignored(Path::new("src/thing.pyc")), Some(true));
-        assert_eq!(index.is_ignored(Path::new("src/generated")), Some(false));
-        assert_eq!(index.is_ignored(Path::new("src/generated/out.gen")), Some(true));
-        assert_eq!(index.is_ignored(Path::new("node_modules")), Some(true));
-        assert_eq!(index.is_ignored(Path::new("node_modules/keep-me.py")), Some(true));
+        assert_eq!(
+            index.is_ignored(Path::new("src/app.py")).expect("control state observed"),
+            Some(false)
+        );
+        assert_eq!(
+            index.is_ignored(Path::new("src/thing.pyc")).expect("control state observed"),
+            Some(true)
+        );
+        assert_eq!(
+            index.is_ignored(Path::new("src/generated")).expect("control state observed"),
+            Some(false)
+        );
+        assert_eq!(
+            index.is_ignored(Path::new("src/generated/out.gen")).expect("control state observed"),
+            Some(true)
+        );
+        assert_eq!(
+            index.is_ignored(Path::new("node_modules")).expect("control state observed"),
+            Some(true)
+        );
+        assert_eq!(
+            index.is_ignored(Path::new("node_modules/keep-me.py")).expect("control state observed"),
+            Some(true)
+        );
     }
 
     #[cfg(feature = "gitignore")]
@@ -6945,10 +7005,13 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         write_file(&dir.path().join(".gitignore"), b"*.log\n");
         write_file(&dir.path().join("debug.log"), b"ignored");
-        let config = ScanConfig { threads: Some(1), ..ScanConfig::default() };
+        let config = ScanConfig { read_controls: true, threads: Some(1), ..ScanConfig::default() };
         let (mut index, report) = scan_into_index(dir.path(), &config).expect("scan");
         assert!(report.is_complete());
-        assert_eq!(index.is_ignored(Path::new("debug.log")), Some(true));
+        assert_eq!(
+            index.is_ignored(Path::new("debug.log")).expect("control state observed"),
+            Some(true)
+        );
 
         // Same-length content proves control identity is not inferred from stat-tier
         // metadata, which can remain unchanged on coarse filesystems.
@@ -6957,14 +7020,22 @@ mod tests {
         assert!(edited.is_complete());
         assert_eq!(edited.apply.controls, 1);
         assert_eq!(edited.apply.reclassified, 1);
-        assert!(index.controls().source_is(Path::new(".gitignore"), b"*.tmp\n"));
-        assert_eq!(index.is_ignored(Path::new("debug.log")), Some(false));
+        assert!(
+            index
+                .controls()
+                .expect("control state observed")
+                .source_is(Path::new(".gitignore"), b"*.tmp\n")
+        );
+        assert_eq!(
+            index.is_ignored(Path::new("debug.log")).expect("control state observed"),
+            Some(false)
+        );
 
         fs::remove_file(dir.path().join(".gitignore")).expect("remove control");
         let removed = reconcile(&mut index, &config, &mut |_| {}).expect("remove reconcile");
         assert!(removed.is_complete());
         assert_eq!(removed.apply.controls, 1);
-        assert!(index.controls().is_empty());
+        assert!(index.controls().expect("control state observed").is_empty());
         assert_eq!(index.partition_total().all, index.partition_total().unignored);
     }
 

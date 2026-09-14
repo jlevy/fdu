@@ -562,12 +562,13 @@ impl Cli {
         // No command-line view reads control state, so no run of this command observes
         // it. A one-shot report would not anyway: `prepare_report`'s planner turns
         // observation off for every surface for that reason (fdu-etfj), and the setting
-        // here does not reach it. `--watch` opens an index instead, whose engine default
-        // observes, and its session drops control and reclassification effects because
-        // it only repaints the same query. Observing there bought nothing but the control
-        // bounds, and a bound must not end a command that never uses what it bounds
-        // (fdu-1onj). Off, a watch also shares the one-shot snapshot scope, so each starts
-        // warm from the other's snapshot (fdu-w3l5).
+        // here does not reach it. `--watch` opens an index instead, and its session drops
+        // control and reclassification effects because it only repaints the same query.
+        // Observing there bought nothing but the control bounds, and a bound must not end
+        // a command that never uses what it bounds (fdu-1onj). Off, a watch also shares the
+        // one-shot snapshot scope, so each starts warm from the other's snapshot
+        // (fdu-w3l5). The engine default is now off too (fdu-agb6); it stays spelled out
+        // here because the command line's reason does not depend on that default.
         let config = OpenConfig {
             scan: ScanConfig {
                 max_depth: self.scan_depth,

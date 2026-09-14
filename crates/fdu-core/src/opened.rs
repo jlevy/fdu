@@ -5302,14 +5302,30 @@ mod tests {
         let created = opened.refresh(&[PathBuf::from(".gitignore")]).expect("create refresh");
         assert_eq!(created.accepted, vec![PathBuf::from(".gitignore")]);
         let image = opened.state.index.snapshot().expect("snapshot");
-        assert!(image.controls().source_is(Path::new(".gitignore"), b"*.log\n"));
-        assert_eq!(image.is_ignored(Path::new("debug.log")), Some(true));
+        assert!(
+            image
+                .controls()
+                .expect("control state observed")
+                .source_is(Path::new(".gitignore"), b"*.log\n")
+        );
+        assert_eq!(
+            image.is_ignored(Path::new("debug.log")).expect("control state observed"),
+            Some(true)
+        );
 
         std::fs::write(root.path().join(".gitignore"), b"*.tmp\n").expect("edit control");
         opened.refresh(&[PathBuf::from(".gitignore")]).expect("edit refresh");
         let image = opened.state.index.snapshot().expect("snapshot");
-        assert!(image.controls().source_is(Path::new(".gitignore"), b"*.tmp\n"));
-        assert_eq!(image.is_ignored(Path::new("debug.log")), Some(false));
+        assert!(
+            image
+                .controls()
+                .expect("control state observed")
+                .source_is(Path::new(".gitignore"), b"*.tmp\n")
+        );
+        assert_eq!(
+            image.is_ignored(Path::new("debug.log")).expect("control state observed"),
+            Some(false)
+        );
         let unchanged =
             opened.refresh(&[PathBuf::from(".gitignore")]).expect("unchanged control refresh");
         assert_eq!(unchanged.work.observations, 1);
@@ -5317,7 +5333,7 @@ mod tests {
         std::fs::remove_file(root.path().join(".gitignore")).expect("delete control");
         opened.refresh(&[PathBuf::from(".gitignore")]).expect("delete refresh");
         let image = opened.state.index.snapshot().expect("snapshot");
-        assert!(image.controls().is_empty());
+        assert!(image.controls().expect("control state observed").is_empty());
         assert_eq!(image.partition_total().all, image.partition_total().unignored);
         opened.close().expect("close");
     }

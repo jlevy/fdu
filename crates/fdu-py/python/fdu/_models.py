@@ -175,6 +175,14 @@ class ScanOptions:
 
     max_depth: int | None = None
     one_filesystem: bool = False
+    #: Observe ``.gitignore`` control state, as the engine's ``ScanConfig.read_controls``.
+    #: Off by default, so :func:`fdu.open`, :func:`fdu.scan`, and a watch over either read
+    #: no control file, share one snapshot scope with :func:`fdu.report`, and cannot fail
+    #: on a control-state bound. On, the index's snapshot and its refreshes keep the exact
+    #: control state; opt in only to share a snapshot with a caller that needs it.
+    #: :func:`fdu.report` never observes control state and ignores this field, as the
+    #: engine's report planner does.
+    read_controls: bool = False
 
     def __post_init__(self) -> None:
         if self.max_depth is not None and self.max_depth < 0:

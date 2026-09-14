@@ -240,7 +240,7 @@ pub fn save(index: &Index, path: &Path) -> Result<()> {
         buf.extend_from_slice(&attrs.inode.to_le_bytes());
         buf.extend_from_slice(&attrs.dev.to_le_bytes());
     }
-    let controls: Vec<_> = index.controls().sources().collect();
+    let controls: Vec<_> = index.control_table().sources().collect();
     let control_count = u32::try_from(controls.len())
         .map_err(|_| Error::Snapshot("control table exceeds u32 capacity".into()))?;
     buf.extend_from_slice(&control_count.to_le_bytes());
@@ -1335,7 +1335,8 @@ mod tests {
     fn round_trip_preserves_exact_controls_and_fixed_partitions() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("controls.fdu");
-        let mut original = Index::new("/some/root");
+        let mut original =
+            Index::new_with_scope("/some/root", crate::test_support::observing_controls());
         original.apply_ok(&Observation::new(vec![
             Op::Upsert {
                 path: PathBuf::from(".gitignore"),
@@ -1358,10 +1359,21 @@ mod tests {
         save(&original, &path).expect("save");
         let restored = load(&path).expect("load").expect("snapshot present");
 
-        assert!(restored.controls().source_is(Path::new(".gitignore"), b"*.log\n"));
-        assert_eq!(restored.controls().source_bytes(), 6);
-        assert_eq!(restored.is_ignored(Path::new("debug.log")), Some(true));
-        assert_eq!(restored.is_ignored(Path::new("keep.rs")), Some(false));
+        assert!(
+            restored
+                .controls()
+                .expect("control state observed")
+                .source_is(Path::new(".gitignore"), b"*.log\n")
+        );
+        assert_eq!(restored.controls().expect("control state observed").source_bytes(), 6);
+        assert_eq!(
+            restored.is_ignored(Path::new("debug.log")).expect("control state observed"),
+            Some(true)
+        );
+        assert_eq!(
+            restored.is_ignored(Path::new("keep.rs")).expect("control state observed"),
+            Some(false)
+        );
         assert_eq!(restored.partition_total(), original.partition_total());
         assert_eq!(restored.partition_total().all.files, 3);
         assert_eq!(restored.partition_total().unignored.files, 2);
@@ -1372,7 +1384,8 @@ mod tests {
     fn removing_the_last_control_before_save_round_trips_an_empty_table() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("no-controls.fdu");
-        let mut original = Index::new("/some/root");
+        let mut original =
+            Index::new_with_scope("/some/root", crate::test_support::observing_controls());
         original.apply_ok(&Observation::new(vec![
             Op::Upsert {
                 path: PathBuf::from(".gitignore"),
@@ -1392,8 +1405,11 @@ mod tests {
         save(&original, &path).expect("save");
         let restored = load(&path).expect("load").expect("snapshot present");
 
-        assert!(restored.controls().is_empty());
-        assert_eq!(restored.is_ignored(Path::new("debug.log")), Some(false));
+        assert!(restored.controls().expect("control state observed").is_empty());
+        assert_eq!(
+            restored.is_ignored(Path::new("debug.log")).expect("control state observed"),
+            Some(false)
+        );
         assert_eq!(restored.partition_total().all, restored.partition_total().unignored);
     }
 
@@ -1402,19 +1418,31 @@ mod tests {
     fn a_control_table_at_its_shared_bound_round_trips() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("bounded-controls.fdu");
-        let mut original = Index::new("/some/root");
+        let mut original =
+            Index::new_with_scope("/some/root", crate::test_support::observing_controls());
         let source = crate::control::source_at_test_limit();
         original.apply_ok(&Observation::new(vec![Op::ControlUpsert {
             path: PathBuf::from(".gitignore"),
             source: source.clone(),
         }]));
-        assert_eq!(original.controls().retained_cost(), crate::control::MAX_CONTROL_TABLE_BYTES);
+        assert_eq!(
+            original.controls().expect("control state observed").retained_cost(),
+            crate::control::MAX_CONTROL_TABLE_BYTES
+        );
 
         save(&original, &path).expect("save at bound");
         let restored = load(&path).expect("load").expect("snapshot present");
 
-        assert_eq!(restored.controls().retained_cost(), original.controls().retained_cost());
-        assert!(restored.controls().source_is(Path::new(".gitignore"), &source));
+        assert_eq!(
+            restored.controls().expect("control state observed").retained_cost(),
+            original.controls().expect("control state observed").retained_cost()
+        );
+        assert!(
+            restored
+                .controls()
+                .expect("control state observed")
+                .source_is(Path::new(".gitignore"), &source)
+        );
     }
 
     /// A snapshot with no control state loads without walking the tree to reclassify it.
@@ -1431,7 +1459,8 @@ mod tests {
         }
 
         let dir = tempfile::tempdir().expect("tempdir");
-        let mut original = Index::new("/some/root");
+        let mut original =
+            Index::new_with_scope("/some/root", crate::test_support::observing_controls());
         let mut ops = vec![Op::Upsert {
             path: PathBuf::from("src"),
             kind: EntryKind::Dir,
@@ -1449,8 +1478,13 @@ mod tests {
         let (visits, restored) = visits_while_loading(&plain);
 
         assert_eq!(visits, 0, "an empty control table has nothing to reclassify");
-        assert!(restored.controls().is_empty());
-        assert_eq!(restored.is_ignored(Path::new("src/file-00.rs")), Some(false));
+        assert!(restored.control_table().is_empty());
+        // Whether the build observes control state or not, the load answers as the
+        // saved index did.
+        assert_eq!(
+            restored.is_ignored(Path::new("src/file-00.rs")).ok(),
+            original.is_ignored(Path::new("src/file-00.rs")).ok()
+        );
         assert_eq!(restored.partition_total(), original.partition_total());
 
         // The probe sees the walk when there is something to walk for.
@@ -1466,8 +1500,14 @@ mod tests {
             let (visits, restored) = visits_while_loading(&controlled);
 
             assert!(visits > 64, "{visits}");
-            assert_eq!(restored.is_ignored(Path::new("src/file-00.rs")), Some(true));
-            assert_eq!(restored.is_ignored(Path::new("src/file-10.rs")), Some(false));
+            assert_eq!(
+                restored.is_ignored(Path::new("src/file-00.rs")).expect("control state observed"),
+                Some(true)
+            );
+            assert_eq!(
+                restored.is_ignored(Path::new("src/file-10.rs")).expect("control state observed"),
+                Some(false)
+            );
         }
     }
 

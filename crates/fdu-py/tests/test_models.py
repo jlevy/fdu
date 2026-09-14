@@ -42,7 +42,8 @@ def test_public_options_are_typed_immutable_values() -> None:
 
 def test_public_defaults_match_cli_semantics() -> None:
     assert CachePolicy.AUTO.value == "auto"
-    assert ScanOptions() == ScanOptions(max_depth=None, one_filesystem=False)
+    # No command-line view reads control state, and neither does a default open.
+    assert ScanOptions() == ScanOptions(max_depth=None, one_filesystem=False, read_controls=False)
     assert AnalysisOptions().analyze == Analysis.NONE
     # Empty means "let the analyzers choose", which is the CLI semantics this test is
     # named for: `--analyze code` with no `--view` reports languages, not tree.

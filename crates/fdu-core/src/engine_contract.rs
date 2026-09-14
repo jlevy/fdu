@@ -221,6 +221,19 @@ pub struct EngineVersion {
 }
 
 impl ScanScope {
+    /// Whether an index of this scope observed `.gitignore` control state.
+    ///
+    /// False when the scan ran with [`ScanConfig::read_controls`](crate::ScanConfig)
+    /// off, which is the default, and in a build without the `gitignore` feature: both
+    /// mean no control file was read and no entry was classified, and they share one
+    /// identity. Such an index cannot say whether an entry is ignored, so
+    /// [`Index::is_ignored`](crate::Index::is_ignored) and
+    /// [`Index::controls`](crate::Index::controls) refuse with
+    /// [`Error::ControlStateNotObserved`] rather than answer "not ignored" for everything.
+    pub const fn observes_controls(self) -> bool {
+        self.ignore_rules_fingerprint != 0
+    }
+
     /// The part of this validated scope that determines retained filesystem facts.
     pub const fn scope_identity(self) -> ScopeIdentity {
         ScopeIdentity {
@@ -1647,6 +1660,19 @@ pub enum Error {
     /// A scan or watch setting has no supported safe semantics.
     #[error("unsupported scan configuration: {0}")]
     UnsupportedScanConfig(&'static str),
+
+    /// An index built without observing `.gitignore` control state was asked about it.
+    ///
+    /// Such an index read no control file and classified no entry, so answering "not
+    /// ignored" for every entry, or handing back an empty control table, would state a
+    /// fact nobody observed. Opening with
+    /// [`ScanConfig::read_controls`](crate::ScanConfig) on, in a build with the
+    /// `gitignore` feature, makes the answers exact.
+    #[error(
+        "this index did not observe .gitignore control state, so it cannot say what is \
+         ignored; open it with read_controls to classify ignored entries"
+    )]
+    ControlStateNotObserved,
 
     /// Requested scan semantics differ from the index's immutable scope.
     #[error("scan scope mismatch: index has {indexed:?}, requested {requested:?}")]

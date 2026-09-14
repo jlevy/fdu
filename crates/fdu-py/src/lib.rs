@@ -1447,6 +1447,10 @@ fn clear_all_caches(root: PathBuf) -> PyResult<usize> {
 }
 
 /// Open a directory tree, using the snapshot cache according to `cache`.
+///
+/// `read_controls` is the engine's [`ScanConfig::read_controls`], off by default as it is
+/// there: the index shares a one-shot report's snapshot scope unless the caller asks for
+/// `.gitignore` control state.
 #[pyfunction]
 #[pyo3(signature = (
     root,
@@ -1454,16 +1458,22 @@ fn clear_all_caches(root: PathBuf) -> PyResult<usize> {
     cache = "auto",
     max_depth = None,
     one_filesystem = false,
+    read_controls = false,
     analyze = "none",
     analysis_workers = 0
 ))]
-#[allow(clippy::needless_pass_by_value)]
+#[allow(
+    clippy::needless_pass_by_value,
+    clippy::fn_params_excessive_bools,
+    clippy::too_many_arguments
+)]
 fn open(
     py: Python<'_>,
     root: PathBuf,
     cache: &str,
     max_depth: Option<usize>,
     one_filesystem: bool,
+    read_controls: bool,
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
@@ -1471,7 +1481,7 @@ fn open(
     let policy = parse_cache_policy(cache)?;
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
-        scan: ScanConfig { max_depth, one_filesystem, ..ScanConfig::default() },
+        scan: ScanConfig { max_depth, one_filesystem, read_controls, ..ScanConfig::default() },
         cache_path: fdu_core::default_cache_path(&root),
         policy,
         analysis,
@@ -1505,28 +1515,32 @@ fn open(
 }
 
 /// Walk a tree with no cache at all and return the index.
+///
+/// `read_controls` is off by default, as it is for [`open`].
 #[pyfunction]
 #[pyo3(signature = (
     root,
     *,
     max_depth = None,
     one_filesystem = false,
+    read_controls = false,
     analyze = "none",
     analysis_workers = 0
 ))]
-#[allow(clippy::needless_pass_by_value)]
+#[allow(clippy::needless_pass_by_value, clippy::fn_params_excessive_bools)]
 fn scan(
     py: Python<'_>,
     root: PathBuf,
     max_depth: Option<usize>,
     one_filesystem: bool,
+    read_controls: bool,
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
     let scan_started_at = Some(SystemTime::now());
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
-        scan: ScanConfig { max_depth, one_filesystem, ..ScanConfig::default() },
+        scan: ScanConfig { max_depth, one_filesystem, read_controls, ..ScanConfig::default() },
         cache_path: None,
         policy: CachePolicy::Off,
         analysis,

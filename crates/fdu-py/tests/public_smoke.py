@@ -320,6 +320,43 @@ def check_every_view(root: Path) -> None:
     assert fdu.View.FILES not in produced, "an unbounded enumeration is not a summary"
 
 
+def check_an_index_observes_no_control_state_by_default() -> None:
+    """A default open or scan reads no control file, and shares a report's snapshot scope.
+
+    `open` used to observe `.gitignore` control state by default, so it scanned cold after
+    every report and could end on a control-state bound that no default question needs
+    (fdu-agb6). A watch continues its index's scope, so it inherits the same default.
+    """
+
+    root = Path(tempfile.mkdtemp(prefix="fdu-public-controls-"))
+    (root / "kept.txt").write_text("kept", encoding="utf-8")
+    # One pattern longer than the engine's 16 KiB per-line bound, which an index that
+    # observed control state could not retain.
+    (root / ".gitignore").write_text("x" * (16 * 1024 + 1) + "\n", encoding="utf-8")
+
+    for index in (fdu.open(root, cache=fdu.CachePolicy.OFF), fdu.scan(root)):
+        assert index.status.complete is True, index.status.errors
+        assert index.total().files == 2
+    try:
+        opted_in = fdu.scan(root, scan=fdu.ScanOptions(read_controls=True))
+    except fdu.FduError:
+        pass
+    else:
+        # Degrading to partial coverage instead of failing (fdu-1onj) still shows the
+        # control file was read, which is what the opt-in asks for.
+        assert opted_in.status.complete is False, "the opt-in must read the control file"
+
+    # A report and a default open share one snapshot scope, so the open starts warm.
+    assert fdu.cache_path(root) is not None
+    try:
+        fdu.report(root, fdu.Query(views=(fdu.View.TREE,)))
+        assert fdu.open(root).status.source is fdu.ReportSource.WARM_REVALIDATE
+        cached = fdu.open(root, cache=fdu.CachePolicy.ONLY)
+        assert cached.status.source is fdu.ReportSource.CACHE_ONLY
+    finally:
+        fdu.clear_cache(root)
+
+
 def main() -> None:
     root = Path(tempfile.mkdtemp(prefix="fdu-public-api-"))
     (root / "src").mkdir()
@@ -333,6 +370,7 @@ def main() -> None:
     check_the_watch_rule_names_an_instant(root)
     check_the_list_grammar_reaches_python(root)
     check_the_one_shot_retains_nothing(root)
+    check_an_index_observes_no_control_state_by_default()
     check_watch_reports_its_own_index(root)
     check_render_matches_the_cli(
         root, str(Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu"))

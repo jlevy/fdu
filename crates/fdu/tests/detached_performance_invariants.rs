@@ -133,8 +133,14 @@ fn assert_controlled_route_is_detached() {
     assert_route_is_detached(&counts, entries, 1);
 
     let (index, _report) = scan_into_index(root.path(), &config).expect("controlled scan");
-    assert_eq!(index.is_ignored(Path::new("d0/f0.dat")), Some(true));
-    assert_eq!(index.is_ignored(Path::new("d1/f0.dat")), Some(false));
+    assert_eq!(
+        index.is_ignored(Path::new("d0/f0.dat")).expect("control state observed"),
+        Some(true)
+    );
+    assert_eq!(
+        index.is_ignored(Path::new("d1/f0.dat")).expect("control state observed"),
+        Some(false)
+    );
 }
 
 fn fixture(directory_count: u64) -> tempfile::TempDir {

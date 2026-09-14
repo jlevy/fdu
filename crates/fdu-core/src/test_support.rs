@@ -24,3 +24,11 @@ pub(crate) fn permission_bits_are_enforced() -> bool {
     }
     std::fs::read(&path).is_err()
 }
+
+/// The scan scope a scan with control observation on records.
+///
+/// The default scope observes no control state, so a test about ignore classification
+/// states that it wants it, the way a library caller does.
+pub(crate) fn observing_controls() -> crate::ScanScope {
+    crate::ScanConfig { read_controls: true, ..crate::ScanConfig::default() }.scope()
+}
