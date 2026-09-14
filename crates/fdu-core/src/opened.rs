@@ -113,7 +113,10 @@ pub struct OpenOptions {
     #[cfg(all(feature = "watch", test))]
     #[doc(hidden)]
     pub observation_script: Option<PathBuf>,
-    /// Maximum retained-cost units in the exact commit journal.
+    /// Approximate bytes the exact commit journal may retain, as
+    /// [`crate::Commit::retained_cost`] estimates them; see
+    /// [`crate::DEFAULT_JOURNAL_CAPACITY`] for the default and why there is no unbounded
+    /// setting.
     pub journal_capacity: usize,
 }
 

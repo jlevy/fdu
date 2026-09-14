@@ -1583,12 +1583,28 @@ impl Commit {
         self.changes.is_empty() && self.state.is_empty()
     }
 
-    /// Units charged against the bounded retained journal.
+    /// Approximate bytes this commit retains in the bounded journal.
+    ///
+    /// The estimate is the commit's own inline size plus, for every change, transition,
+    /// and dirty path, that item's inline size and the bytes of the path it names. Paths
+    /// are the part that varies: a journal that charged one unit per item held tens of
+    /// mebibytes of long paths under a budget that read as 64 KiB, and every change poll
+    /// cloned all of it. Charging bytes makes [`crate::DEFAULT_JOURNAL_CAPACITY`] mean
+    /// what it says, whatever the tree's paths look like.
     pub fn retained_cost(&self) -> usize {
-        self.changes.len()
-            + self.state.len()
-            + self.impact.dirty_paths.len()
-            + usize::from(self.impact.all_dirty)
+        let paths = self
+            .changes
+            .iter()
+            .map(|change| change.path().as_os_str().len())
+            .chain(self.state.iter().map(|transition| transition.path().as_os_str().len()))
+            .chain(self.impact.dirty_paths.iter().map(|path| path.as_os_str().len()))
+            .sum::<usize>();
+        std::mem::size_of::<Self>()
+            + self.changes.len() * std::mem::size_of::<EffectiveChange>()
+            + self.state.len() * std::mem::size_of::<StateTransition>()
+            + self.impact.dirty_paths.len() * std::mem::size_of::<PathBuf>()
+            + self.impact.domains.len() * std::mem::size_of::<ImpactDomain>()
+            + paths
     }
 }
 

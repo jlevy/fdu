@@ -62,12 +62,17 @@ std::thread_local! {
     pub(crate) static RECLASSIFY_VISITS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
-/// Maximum retained-cost units in the exact commit history used by [`Index::since`].
+/// Approximate bytes the exact commit history used by [`Index::since`] may retain.
 ///
 /// Bounded on purpose: an unbounded journal is a memory leak in a long-lived server. A
 /// consumer that falls further behind than this is told so ([`Since::truncated`]) and is
-/// expected to re-read state rather than silently miss changes.
-pub const DEFAULT_JOURNAL_CAPACITY: usize = 64 * 1024;
+/// expected to re-read state rather than silently miss changes. The bound is stated in
+/// bytes, as [`Commit::retained_cost`] estimates them, because the question it answers is
+/// how much memory history may hold: the earlier budget of 64 Ki items retained about this
+/// much for short paths and tens of mebibytes for long ones. An opened root lifts it
+/// through `journal_capacity`; there is no unbounded setting, since truncation is always
+/// announced and a journal that never truncates would grow for the life of the session.
+pub const DEFAULT_JOURNAL_CAPACITY: usize = 8 * 1024 * 1024;
 
 /// Identifier for an entry within an [`Index`] arena.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
@@ -6677,9 +6682,12 @@ mod tests {
         assert_eq!(counts.effect_paths, 3);
         assert_eq!(counts.journal_retained_commits, 1);
 
+        // Room for exactly two one-file commits; measured before the counters reset so the
+        // probe's own journal work is not counted.
+        let two_commits = 2 * commit_cost(vec![upsert("one", EntryKind::File, file_attrs(1, 1))]);
         crate::counters::test_thread_reset();
         let mut bounded = Index::new("/root");
-        bounded.journal_capacity = 4;
+        bounded.journal_capacity = two_commits;
         bounded.apply_ok(&Observation::new(vec![upsert("one", EntryKind::File, file_attrs(1, 1))]));
         bounded.apply_ok(&Observation::new(vec![upsert("two", EntryKind::File, file_attrs(2, 2))]));
         bounded.journal_capacity = 1;
@@ -7368,14 +7376,23 @@ mod tests {
         assert_eq!(index.since(index.clock()).commits.len(), 0);
     }
 
+    /// The bytes one batch is charged when it commits against an empty tree.
+    fn commit_cost(ops: Vec<Op>) -> usize {
+        let mut probe = Index::new("/root");
+        probe.apply_ok(&Observation::new(ops)).commit.expect("effective commit").retained_cost()
+    }
+
     #[test]
     fn oversized_single_batch_is_not_retained() {
-        let mut index = Index::with_journal_capacity("/root", 2);
-        let outcome = index.apply_ok(&Observation::new(vec![
-            upsert("a.txt", EntryKind::File, file_attrs(1, 1)),
-            upsert("b.txt", EntryKind::File, file_attrs(2, 2)),
-            upsert("c.txt", EntryKind::File, file_attrs(3, 3)),
-        ]));
+        let batch = || {
+            vec![
+                upsert("a.txt", EntryKind::File, file_attrs(1, 1)),
+                upsert("b.txt", EntryKind::File, file_attrs(2, 2)),
+                upsert("c.txt", EntryKind::File, file_attrs(3, 3)),
+            ]
+        };
+        let mut index = Index::with_journal_capacity("/root", commit_cost(batch()) - 1);
+        let outcome = index.apply_ok(&Observation::new(batch()));
 
         assert_eq!(outcome.commit.as_ref().expect("committed").changes.len(), 3);
         let since = index.since(Clock::ZERO);
@@ -7385,21 +7402,55 @@ mod tests {
 
     #[test]
     fn journal_eviction_charges_the_complete_retained_payload() {
-        let mut index = Index::with_journal_capacity("/root", 6);
-        index.apply_ok(&Observation::new(vec![
-            upsert("a.txt", EntryKind::File, file_attrs(1, 1)),
-            upsert("b.txt", EntryKind::File, file_attrs(2, 2)),
-        ]));
-        index.apply_ok(&Observation::new(vec![
-            upsert("c.txt", EntryKind::File, file_attrs(3, 3)),
-            upsert("d.txt", EntryKind::File, file_attrs(4, 4)),
-        ]));
+        let first = || {
+            vec![
+                upsert("a.txt", EntryKind::File, file_attrs(1, 1)),
+                upsert("b.txt", EntryKind::File, file_attrs(2, 2)),
+            ]
+        };
+        let second = || {
+            vec![
+                upsert("c.txt", EntryKind::File, file_attrs(3, 3)),
+                upsert("d.txt", EntryKind::File, file_attrs(4, 4)),
+            ]
+        };
+        // Room for the second commit and all but one byte of the first.
+        let capacity = commit_cost(first()) + commit_cost(second()) - 1;
+        let mut index = Index::with_journal_capacity("/root", capacity);
+        index.apply_ok(&Observation::new(first()));
+        index.apply_ok(&Observation::new(second()));
 
         let since = index.since(Clock::ZERO);
         assert!(since.truncated);
         assert_eq!(since.commits.len(), 1);
         assert_eq!(since.commits[0].changes.len(), 2);
         assert_eq!(since.commits[0].changes[0].path(), Path::new("c.txt"));
+    }
+
+    /// Two commits of one inserted file each: the same item count, but the second names a
+    /// path whose bytes alone dwarf the first commit. A budget counted in items held both
+    /// and let a long-path tree retain tens of mebibytes under a 64 Ki budget; a budget in
+    /// bytes evicts the first.
+    #[test]
+    fn journal_eviction_is_charged_in_path_bytes() {
+        let long_name = format!("{}.txt", "n".repeat(4096));
+        let short = || vec![upsert("a.txt", EntryKind::File, file_attrs(1, 1))];
+        let long = || vec![upsert(&long_name, EntryKind::File, file_attrs(2, 2))];
+        let short_cost = commit_cost(short());
+        let long_cost = commit_cost(long());
+        assert!(
+            long_cost > short_cost + 4096,
+            "path bytes must be charged: short {short_cost}, long {long_cost}"
+        );
+
+        let mut index = Index::with_journal_capacity("/root", short_cost + long_cost - 1);
+        index.apply_ok(&Observation::new(short()));
+        index.apply_ok(&Observation::new(long()));
+
+        let since = index.since(Clock::ZERO);
+        assert!(since.truncated, "an item budget kept both commits; a byte budget cannot");
+        assert_eq!(since.commits.len(), 1);
+        assert_eq!(since.commits[0].changes[0].path(), Path::new(&long_name));
     }
 
     #[test]

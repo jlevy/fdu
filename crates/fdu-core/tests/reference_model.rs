@@ -15,7 +15,8 @@ use fdu_core::{
     ObservationOp, Op, PathExpectation, PathState, RollUp, StateTransition,
 };
 
-const JOURNAL_CAPACITY: usize = 64 * 1024;
+/// Contractual journal budget in bytes, checked independently of the production default.
+const JOURNAL_CAPACITY: usize = 8 * 1024 * 1024;
 /// Contractual dirty-path bound checked independently of the production constant.
 const EXPECTED_DIRTY_PATH_LIMIT: usize = 256;
 /// Contractual retained-issue bound checked independently of the production constant.
@@ -545,11 +546,21 @@ impl Model {
     }
 }
 
+/// The bytes one commit is charged: its inline size, plus each retained item's inline size
+/// and the bytes of the path it names. Stated here from the public types, not read back
+/// from the engine.
 fn model_commit_cost(commit: &Commit) -> usize {
-    commit.changes.len()
-        + commit.state.len()
-        + commit.impact.dirty_paths.len()
-        + usize::from(commit.impact.all_dirty)
+    let mut cost = std::mem::size_of::<Commit>();
+    for change in &commit.changes {
+        cost += std::mem::size_of::<EffectiveChange>() + change.path().as_os_str().len();
+    }
+    for transition in &commit.state {
+        cost += std::mem::size_of::<StateTransition>() + transition.path().as_os_str().len();
+    }
+    for path in &commit.impact.dirty_paths {
+        cost += std::mem::size_of::<PathBuf>() + path.as_os_str().len();
+    }
+    cost + commit.impact.domains.len() * std::mem::size_of::<ImpactDomain>()
 }
 
 fn is_observation_gap(reason: InvalidateReason) -> bool {
@@ -1267,14 +1278,24 @@ fn invalid_observation_is_atomic_and_does_not_advance_the_model() {
 fn bounded_journal_reports_loss_at_the_same_clock_as_the_model() {
     let mut index = Index::new("/model-root");
     let mut model = Model::new();
-    for value in 0..=JOURNAL_CAPACITY {
-        let op = Op::Upsert {
-            path: "changing.txt".into(),
-            kind: EntryKind::File,
-            attrs: attrs(u64::try_from(value).expect("bounded")),
-        };
+    // A long path makes each commit cost kibibytes, so the byte budget overflows in
+    // hundreds of commits rather than millions. Stop one commit after the model first
+    // dropped history, so the loss is settled on both sides.
+    let path = PathBuf::from(format!("{}.txt", "changing-".repeat(512)));
+    let mut value = 0_u64;
+    let mut lost_at = None;
+    loop {
+        let op = Op::Upsert { path: path.clone(), kind: EntryKind::File, attrs: attrs(value) };
         index.apply(&Observation::new(vec![op.clone()])).expect("journal mutation");
         model.apply(&[ModelOp { op, condition: ModelCondition::Any }]);
+        value += 1;
+        assert!(value < 1_000_000, "the model journal never overflowed");
+        if lost_at.is_none() && model.journal_floor > Clock::ZERO {
+            lost_at = Some(value);
+        }
+        if lost_at.is_some_and(|at| value > at) {
+            break;
+        }
     }
 
     let actual = index.since(Clock::ZERO);

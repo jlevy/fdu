@@ -1,5 +1,5 @@
 scenario: schema=1 name=coherent-projections-and-continuations
-action.open: OpenOptions { batch_size: 1024, follow_symlinks: false, one_filesystem: false, hidden: None, exclude_special: false, types: None, budget: DiscoveryBudget { max_files: None }, observation: None, observation_script: None, journal_capacity: 65536 }
+action.open: OpenOptions { batch_size: 1024, follow_symlinks: false, one_filesystem: false, hidden: None, exclude_special: false, types: None, budget: DiscoveryBudget { max_files: None }, observation: None, observation_script: None, journal_capacity: 8388608 }
 result.open: OpenedIndex { session: SessionId(session-1), root: "$ROOT", .. }
 barrier.phase: IndexState { phase: Ready, coverage: Complete, freshness: Fresh, source: Scanned, progress: DiscoveryProgress { files_retained: 4, directories_complete: 2 }, issues: IssueSummary { retained: 0, omitted: 0 } }
 action.read: ReadRequest { projections: [], expected: None }
