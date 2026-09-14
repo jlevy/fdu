@@ -210,9 +210,13 @@ impl Arguments {
         let mut diagnostics = false;
         let mut worker_policy = fdu_core::scan::WorkerPolicyExperiment::ShippedOneShot;
         let mut scan = ScanConfig::default();
-        // A walk setting that an opened root has no option for, so opened discovery would
-        // silently measure something other than what the command line asked for.
+        // A walk setting or walk trace that an opened root has no option for, so opened
+        // discovery would silently measure, and the record would claim, something other
+        // than what the command line asked for.
         let mut walk_only_flag = None;
+        // Set apart from the walk-only flags because the one-shot report modes refuse it
+        // too, while the index-returning scans still apply it.
+        let mut no_controls = false;
         while let Some(flag) = arguments.next() {
             match flag.to_str() {
                 Some("--root") => root = Some(next_path(&mut arguments, "--root")?),
@@ -232,8 +236,12 @@ impl Arguments {
                 Some("--no-controls") => {
                     scan.read_controls = false;
                     walk_only_flag = Some("--no-controls");
+                    no_controls = true;
                 }
-                Some("--diagnostics") => diagnostics = true,
+                Some("--diagnostics") => {
+                    diagnostics = true;
+                    walk_only_flag = Some("--diagnostics");
+                }
                 Some("--worker-policy") => {
                     let value = arguments
                         .next()
@@ -247,6 +255,7 @@ impl Arguments {
                         _ => return Err(ProbeError(format!("unknown worker policy {value:?}"))),
                     };
                     diagnostics = true;
+                    walk_only_flag = Some("--worker-policy");
                 }
                 Some("--batch-size") => {
                     scan.batch_size = next_usize(&mut arguments, "--batch-size")?;
@@ -283,9 +292,21 @@ impl Arguments {
         let mode = Mode::parse(&mode)?;
         if let (Mode::OpenedDiscovery, Some(flag)) = (mode, walk_only_flag) {
             // OpenOptions has no such setting: an opened root discovers its whole scope
-            // with one breadth-first producer and always observes control state.
+            // with one breadth-first producer, always observes control state, and has no
+            // worker-policy experiment or scan diagnostics to select or record.
             return Err(ProbeError(format!(
-                "{flag} does not apply to opened-discovery, whose walk is fixed by the opened root"
+                "{flag} does not apply to opened-discovery, whose walk is fixed by the opened \
+                 root and records no scan diagnostics"
+            )));
+        }
+        if no_controls && matches!(mode, Mode::DefaultTree | Mode::Summary) {
+            // These modes run through `prepare_report`, whose planner turns control
+            // observation off for every report whatever the scan configuration says
+            // (fdu-etfj). Accepting the flag would record a pinned variable nothing applied.
+            return Err(ProbeError(format!(
+                "--no-controls does not apply to {}: the one-shot report planner decides \
+                 control observation, and a report never observes control state",
+                mode.name()
             )));
         }
         Ok(Self {
@@ -708,8 +729,8 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         // Passed through unchanged, as the command line passes its own: the one-shot
         // planner inside `prepare_report` turns control observation off for every report
         // whatever this says (fdu-etfj), so the probe measures the scope the command line
-        // gets without choosing it. `--no-controls` therefore changes nothing here, while
-        // it still turns control observation off for the index-returning probes.
+        // gets without choosing it. `--no-controls` would change nothing here, so this mode
+        // refuses it; it still turns control observation off for the index-returning probes.
         scan: arguments.scan.clone(),
         cache_path: Some(snapshot.clone()),
         policy: CachePolicy::Auto,
@@ -2117,11 +2138,15 @@ mod tests {
 
     #[test]
     fn opened_discovery_refuses_walk_flags_it_cannot_apply() {
-        let walk_only: [&[&str]; 4] = [
+        // The last two select and record a one-shot walk trace. An opened root has neither,
+        // so accepting them would label a run with a policy or trace it never had.
+        let walk_only: [&[&str]; 6] = [
             &["--threads", "1"],
             &["--no-controls"],
             &["--max-depth", "2"],
             &["--order", "depth-first"],
+            &["--diagnostics"],
+            &["--worker-policy", "repeated"],
         ];
         for flag in walk_only {
             let error = Arguments::parse(
@@ -2148,6 +2173,36 @@ mod tests {
                 .map(OsString::from),
         )
         .expect("opened discovery applies its batch size");
+    }
+
+    #[test]
+    fn one_shot_report_modes_refuse_no_controls_the_planner_overrides() {
+        for mode in ["default-tree", "summary"] {
+            let error = Arguments::parse(
+                [mode, "--root", "/root", "--snapshot", "/snapshot", "--no-controls"]
+                    .into_iter()
+                    .map(OsString::from),
+            )
+            .expect_err("the one-shot planner decides control observation");
+            assert!(error.0.contains("--no-controls"), "{}", error.0);
+            assert!(error.0.contains(mode), "{}", error.0);
+            assert!(error.0.contains("planner"), "{}", error.0);
+
+            // The refusal is of the flag, not of the invocation.
+            Arguments::parse(
+                [mode, "--root", "/root", "--snapshot", "/snapshot"]
+                    .into_iter()
+                    .map(OsString::from),
+            )
+            .expect("the same invocation without the flag");
+        }
+
+        // An index-returning scan is not planned, so the flag still reaches it.
+        let arguments = Arguments::parse(
+            ["scan-index", "--root", "/root", "--no-controls"].into_iter().map(OsString::from),
+        )
+        .expect("a detached scan applies --no-controls");
+        assert!(!arguments.scan.read_controls);
     }
 
     #[test]
