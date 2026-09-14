@@ -1,5 +1,5 @@
 scenario: schema=1 name=cold-progressive-knowledge
-action.open: OpenOptions { batch_size: 1, follow_symlinks: false, one_filesystem: false, hidden: None, exclude_special: false, types: None, budget: DiscoveryBudget { max_files: Some(2) }, observation: None, observation_script: None, journal_capacity: 8388608 }
+action.open: OpenOptions { batch_size: 1, follow_symlinks: false, one_filesystem: false, hidden: None, exclude_special: false, types: None, budget: DiscoveryBudget { max_files: Some(2) }, observation: None, observation_script: None, journal_capacity_bytes: 8388608 }
 result.open: OpenedIndex { session: SessionId(session-1), root: "$ROOT", .. }
 barrier: reached after-root-directory
 action.read: ReadRequest { projections: [], expected: None }

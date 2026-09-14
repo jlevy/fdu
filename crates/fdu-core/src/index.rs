@@ -70,9 +70,9 @@ std::thread_local! {
 /// bytes, as [`Commit::retained_cost`] estimates them, because the question it answers is
 /// how much memory history may hold: the earlier budget of 64 Ki items retained about this
 /// much for short paths and tens of mebibytes for long ones. An opened root lifts it
-/// through `journal_capacity`; there is no unbounded setting, since truncation is always
+/// through `journal_capacity_bytes`; there is no unbounded setting, since truncation is always
 /// announced and a journal that never truncates would grow for the life of the session.
-pub const DEFAULT_JOURNAL_CAPACITY: usize = 8 * 1024 * 1024;
+pub const DEFAULT_JOURNAL_CAPACITY_BYTES: usize = 8 * 1024 * 1024;
 
 /// Identifier for an entry within an [`Index`] arena.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
@@ -822,7 +822,7 @@ pub struct Index {
     clock: Clock,
     journal: VecDeque<Commit>,
     journal_cost: usize,
-    journal_capacity: usize,
+    journal_capacity_bytes: usize,
     /// Oldest clock still represented in `journal`.
     journal_floor: Clock,
     pending_invalidations: Vec<(PathBuf, InvalidateReason)>,
@@ -1567,34 +1567,34 @@ impl Index {
         scope: ScanScope,
         types: std::sync::Arc<crate::classify::TypeRegistry>,
     ) -> Self {
-        Self::new_with_scope_types_and_journal_capacity(
+        Self::new_with_scope_types_and_journal_capacity_bytes(
             root_path,
             scope,
             types,
-            DEFAULT_JOURNAL_CAPACITY,
+            DEFAULT_JOURNAL_CAPACITY_BYTES,
         )
     }
 
-    pub(crate) fn new_with_scope_types_and_journal_capacity(
+    pub(crate) fn new_with_scope_types_and_journal_capacity_bytes(
         root_path: impl Into<PathBuf>,
         scope: ScanScope,
         types: std::sync::Arc<crate::classify::TypeRegistry>,
-        journal_capacity: usize,
+        journal_capacity_bytes: usize,
     ) -> Self {
         assert_eq!(
             scope.type_rules_fingerprint,
             types.fingerprint(),
             "an index's registry must match its semantic scope"
         );
-        Self::new_with_journal_capacity(root_path, scope, journal_capacity, types, None)
+        Self::new_with_journal_capacity_bytes(root_path, scope, journal_capacity_bytes, types, None)
     }
 
     /// Create the retained index behind an opened root, including its serving orders.
-    pub(crate) fn new_opened_with_scope_types_and_journal_capacity(
+    pub(crate) fn new_opened_with_scope_types_and_journal_capacity_bytes(
         root_path: impl Into<PathBuf>,
         scope: ScanScope,
         types: std::sync::Arc<crate::classify::TypeRegistry>,
-        journal_capacity: usize,
+        journal_capacity_bytes: usize,
     ) -> Self {
         assert_eq!(
             scope.type_rules_fingerprint,
@@ -1602,19 +1602,19 @@ impl Index {
             "an index's registry must match its semantic scope"
         );
         let serving = ServingIndexes::for_types(&types);
-        Self::new_with_journal_capacity(
+        Self::new_with_journal_capacity_bytes(
             root_path,
             scope,
-            journal_capacity,
+            journal_capacity_bytes,
             types,
             Some(Box::new(serving)),
         )
     }
 
-    fn new_with_journal_capacity(
+    fn new_with_journal_capacity_bytes(
         root_path: impl Into<PathBuf>,
         scope: ScanScope,
-        journal_capacity: usize,
+        journal_capacity_bytes: usize,
         types: std::sync::Arc<crate::classify::TypeRegistry>,
         serving: Option<Box<ServingIndexes>>,
     ) -> Self {
@@ -1639,7 +1639,7 @@ impl Index {
             clock: Clock::ZERO,
             journal: VecDeque::new(),
             journal_cost: 0,
-            journal_capacity,
+            journal_capacity_bytes,
             journal_floor: Clock::ZERO,
             pending_invalidations: Vec::new(),
             freshness_epoch: 0,
@@ -1708,11 +1708,14 @@ impl Index {
     }
 
     #[cfg(test)]
-    fn with_journal_capacity(root_path: impl Into<PathBuf>, journal_capacity: usize) -> Self {
-        Self::new_with_journal_capacity(
+    fn with_journal_capacity_bytes(
+        root_path: impl Into<PathBuf>,
+        journal_capacity_bytes: usize,
+    ) -> Self {
+        Self::new_with_journal_capacity_bytes(
             root_path,
             ScanScope::default(),
-            journal_capacity,
+            journal_capacity_bytes,
             crate::classify::TypeRegistry::compiled_shared(),
             None,
         )
@@ -2402,7 +2405,7 @@ impl Index {
 
     fn retain_commit(&mut self, commit: &Commit) {
         let cost = commit.retained_cost();
-        if cost > self.journal_capacity {
+        if cost > self.journal_capacity_bytes {
             let dropped = u64::try_from(self.journal.len()).unwrap_or(u64::MAX);
             crate::counters::bump(|counts| {
                 counts.journal_oversized_commits =
@@ -2416,7 +2419,7 @@ impl Index {
             return;
         }
 
-        while self.journal_cost + cost > self.journal_capacity {
+        while self.journal_cost + cost > self.journal_capacity_bytes {
             if let Some(dropped) = self.journal.pop_front() {
                 crate::counters::bump(|counts| {
                     counts.journal_dropped_commits =
@@ -5262,11 +5265,11 @@ mod tests {
 
     #[test]
     fn portable_indexes_conserve_insert_kind_change_and_subtree_removal() {
-        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
             ScanScope::default(),
             crate::classify::TypeRegistry::compiled_shared(),
-            DEFAULT_JOURNAL_CAPACITY,
+            DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
         index.apply_ok(&Observation::new(vec![
             upsert("dir", EntryKind::Dir, Attrs::default()),
@@ -5330,11 +5333,11 @@ mod tests {
     #[test]
     fn non_file_attrs_updates_leave_file_semantics_untouched() {
         for kind in [EntryKind::Symlink, EntryKind::Other] {
-            let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+            let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
                 "/root",
                 ScanScope::default(),
                 crate::classify::TypeRegistry::compiled_shared(),
-                DEFAULT_JOURNAL_CAPACITY,
+                DEFAULT_JOURNAL_CAPACITY_BYTES,
             );
             index.apply_ok(&Observation::new(vec![upsert("current", kind, file_attrs(1, 1))]));
             assert_serving_indexes(&index);
@@ -5369,11 +5372,11 @@ mod tests {
     /// working, and callers ask the arena for a native path instead.
     #[test]
     fn escaping_touches_only_invalid_bytes_and_percent() {
-        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
             ScanScope::default(),
             crate::classify::TypeRegistry::compiled_shared(),
-            DEFAULT_JOURNAL_CAPACITY,
+            DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
         index.apply_ok(&Observation::new(vec![
             upsert("dir", EntryKind::Dir, Attrs::default()),
@@ -5414,11 +5417,11 @@ mod tests {
         );
         let scope =
             ScanScope { type_rules_fingerprint: types.fingerprint(), ..ScanScope::default() };
-        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
             scope,
             types,
-            DEFAULT_JOURNAL_CAPACITY,
+            DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
         index.apply_ok(&Observation::new(vec![
             upsert("Makefile", EntryKind::File, file_attrs(2, 1)),
@@ -5469,18 +5472,18 @@ mod tests {
             ScanScope { type_rules_fingerprint: types.fingerprint(), ..ScanScope::default() };
         let measure = |opened: bool| {
             let mut index = if opened {
-                Index::new_opened_with_scope_types_and_journal_capacity(
+                Index::new_opened_with_scope_types_and_journal_capacity_bytes(
                     "/root",
                     scope,
                     Arc::clone(&types),
-                    DEFAULT_JOURNAL_CAPACITY,
+                    DEFAULT_JOURNAL_CAPACITY_BYTES,
                 )
             } else {
-                Index::new_with_scope_types_and_journal_capacity(
+                Index::new_with_scope_types_and_journal_capacity_bytes(
                     "/root",
                     scope,
                     Arc::clone(&types),
-                    DEFAULT_JOURNAL_CAPACITY,
+                    DEFAULT_JOURNAL_CAPACITY_BYTES,
                 )
             };
             let started = std::time::Instant::now();
@@ -5560,11 +5563,11 @@ mod tests {
 
     #[test]
     fn opened_entry_values_project_name_identity_without_retaining_it_on_detached_entries() {
-        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
             ScanScope::default(),
             crate::classify::TypeRegistry::compiled_shared(),
-            DEFAULT_JOURNAL_CAPACITY,
+            DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
         index.apply_ok(&Observation::new(vec![upsert(
             "bundle.umd.min.js",
@@ -5582,11 +5585,11 @@ mod tests {
 
     #[test]
     fn a_shared_snapshot_drops_opened_root_serving_state() {
-        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
             ScanScope::default(),
             crate::classify::TypeRegistry::compiled_shared(),
-            DEFAULT_JOURNAL_CAPACITY,
+            DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
         index.apply_ok(&Observation::new(vec![upsert("a.txt", EntryKind::File, file_attrs(1, 1))]));
         assert!(index.serving_indexes_enabled());
@@ -6700,10 +6703,10 @@ mod tests {
         let two_commits = 2 * commit_cost(vec![upsert("one", EntryKind::File, file_attrs(1, 1))]);
         crate::counters::test_thread_reset();
         let mut bounded = Index::new("/root");
-        bounded.journal_capacity = two_commits;
+        bounded.journal_capacity_bytes = two_commits;
         bounded.apply_ok(&Observation::new(vec![upsert("one", EntryKind::File, file_attrs(1, 1))]));
         bounded.apply_ok(&Observation::new(vec![upsert("two", EntryKind::File, file_attrs(2, 2))]));
-        bounded.journal_capacity = 1;
+        bounded.journal_capacity_bytes = 1;
         bounded.apply_ok(&Observation::new(vec![upsert(
             "three",
             EntryKind::File,
@@ -7404,7 +7407,7 @@ mod tests {
                 upsert("c.txt", EntryKind::File, file_attrs(3, 3)),
             ]
         };
-        let mut index = Index::with_journal_capacity("/root", commit_cost(batch()) - 1);
+        let mut index = Index::with_journal_capacity_bytes("/root", commit_cost(batch()) - 1);
         let outcome = index.apply_ok(&Observation::new(batch()));
 
         assert_eq!(outcome.commit.as_ref().expect("committed").changes.len(), 3);
@@ -7429,7 +7432,7 @@ mod tests {
         };
         // Room for the second commit and all but one byte of the first.
         let capacity = commit_cost(first()) + commit_cost(second()) - 1;
-        let mut index = Index::with_journal_capacity("/root", capacity);
+        let mut index = Index::with_journal_capacity_bytes("/root", capacity);
         index.apply_ok(&Observation::new(first()));
         index.apply_ok(&Observation::new(second()));
 
@@ -7456,7 +7459,7 @@ mod tests {
             "path bytes must be charged: short {short_cost}, long {long_cost}"
         );
 
-        let mut index = Index::with_journal_capacity("/root", short_cost + long_cost - 1);
+        let mut index = Index::with_journal_capacity_bytes("/root", short_cost + long_cost - 1);
         index.apply_ok(&Observation::new(short()));
         index.apply_ok(&Observation::new(long()));
 
@@ -7538,11 +7541,11 @@ mod tests {
 
         let first = PathBuf::from(OsString::from_vec(vec![b'n', 0x80]));
         let second = PathBuf::from(OsString::from_vec(vec![b'n', 0x81]));
-        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
             ScanScope::default(),
             crate::classify::TypeRegistry::compiled_shared(),
-            DEFAULT_JOURNAL_CAPACITY,
+            DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
         index.apply_ok(&Observation::new(vec![
             Op::Upsert { path: first.clone(), kind: EntryKind::File, attrs: file_attrs(10, 1) },
@@ -7564,11 +7567,11 @@ mod tests {
 
         let directory = PathBuf::from(OsString::from_vec(vec![b'd', 0x80]));
         let child = directory.join("child");
-        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
             ScanScope::default(),
             crate::classify::TypeRegistry::compiled_shared(),
-            DEFAULT_JOURNAL_CAPACITY,
+            DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
         index.apply_ok(&Observation::new(vec![
             Op::Upsert { path: directory.clone(), kind: EntryKind::Dir, attrs: Attrs::default() },
@@ -7716,11 +7719,11 @@ mod tests {
     #[cfg(feature = "gitignore")]
     #[test]
     fn serving_semantics_follow_ignore_reclassification_exactly() {
-        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
             ScanScope::default(),
             crate::classify::TypeRegistry::compiled_shared(),
-            DEFAULT_JOURNAL_CAPACITY,
+            DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
         index.apply_ok(&Observation::new(vec![
             upsert(".gitignore", EntryKind::File, file_attrs(6, 1)),
@@ -7831,11 +7834,11 @@ mod tests {
     #[cfg(feature = "gitignore")]
     #[test]
     fn control_bound_failure_is_atomic_with_ordinary_entry_work() {
-        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
             ScanScope::default(),
             crate::classify::TypeRegistry::compiled_shared(),
-            DEFAULT_JOURNAL_CAPACITY,
+            DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
         let before = index.clone();
         let mut oversized = crate::control::source_at_test_limit();

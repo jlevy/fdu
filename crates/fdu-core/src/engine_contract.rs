@@ -1596,7 +1596,7 @@ impl Commit {
     /// the path it names. Paths are the part that varies: a journal that charged one unit
     /// per item held tens of mebibytes of long paths under a budget that read as 64 KiB,
     /// and every change poll cloned all of it. Charging bytes makes
-    /// [`crate::DEFAULT_JOURNAL_CAPACITY`] mean what it says, whatever the tree's paths
+    /// [`crate::DEFAULT_JOURNAL_CAPACITY_BYTES`] mean what it says, whatever the tree's paths
     /// look like. The allowances are fixed rather than measured with `size_of` so the
     /// budget means the same on every target: the retained types differ in size by
     /// platform, and a recorded journal work count would otherwise differ with them.

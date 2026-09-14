@@ -258,7 +258,7 @@ class OpenedOptions:
     exclude_special: bool = False
     max_files: int | None = None
     observe: bool = False
-    journal_capacity: int | None = None
+    journal_capacity_bytes: int | None = None
     #: The file-type registry document's text, or ``None`` for the rules compiled into
     #: fdu. Either dialect is accepted: a File Rollup registry or a ``[[kind]]`` manifest.
     #: The engine parses and validates it at open and derives
@@ -277,7 +277,7 @@ class OpenedOptions:
             raise TypeError("type_rules takes the registry document's text; read the file first")
         for name, value in (
             ("batch_size", self.batch_size),
-            ("journal_capacity", self.journal_capacity),
+            ("journal_capacity_bytes", self.journal_capacity_bytes),
         ):
             if value is not None and value <= 0:
                 raise ValueError(f"{name} must be positive")
@@ -1307,7 +1307,7 @@ class OpenedIndex:
             exclude_special=selected.exclude_special,
             max_files=selected.max_files,
             observe=selected.observe,
-            journal_capacity=selected.journal_capacity,
+            journal_capacity_bytes=selected.journal_capacity_bytes,
             type_rules=selected.type_rules,
         )
         return cls(cast(_native.OpenedIndex, native))

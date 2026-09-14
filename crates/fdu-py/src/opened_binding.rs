@@ -1015,7 +1015,7 @@ impl PyOpenedIndex {
         exclude_special = false,
         max_files = None,
         observe = false,
-        journal_capacity = None,
+        journal_capacity_bytes = None,
         type_rules = None
     ))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
@@ -1030,7 +1030,7 @@ impl PyOpenedIndex {
         exclude_special: bool,
         max_files: Option<u64>,
         observe: bool,
-        journal_capacity: Option<usize>,
+        journal_capacity_bytes: Option<usize>,
         type_rules: Option<String>,
     ) -> PyResult<Self> {
         let allowed = hidden_allow.unwrap_or_default();
@@ -1050,8 +1050,8 @@ impl PyOpenedIndex {
         options.exclude_special = exclude_special;
         options.budget.max_files = max_files;
         options.observation = observe.then(fdu_core::watch::WatchConfig::default);
-        if let Some(value) = journal_capacity {
-            options.journal_capacity = value;
+        if let Some(value) = journal_capacity_bytes {
+            options.journal_capacity_bytes = value;
         }
         let inner = py
             .detach(move || {

@@ -623,7 +623,7 @@ fn final_read(opened: &OpenedIndex, trace: &mut SessionTrace) {
     );
 }
 
-fn scripted_options(script: &Path, journal_capacity: usize) -> OpenOptions {
+fn scripted_options(script: &Path, journal_capacity_bytes: usize) -> OpenOptions {
     OpenOptions {
         observation: Some(crate::watch::WatchConfig {
             settle: Duration::from_millis(1),
@@ -631,7 +631,7 @@ fn scripted_options(script: &Path, journal_capacity: usize) -> OpenOptions {
             ..crate::watch::WatchConfig::default()
         }),
         observation_script: Some(script.to_path_buf()),
-        journal_capacity,
+        journal_capacity_bytes,
         ..OpenOptions::default()
     }
 }

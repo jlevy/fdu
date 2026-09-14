@@ -115,9 +115,9 @@ pub struct OpenOptions {
     pub observation_script: Option<PathBuf>,
     /// Approximate bytes the exact commit journal may retain, as
     /// [`crate::Commit::retained_cost`] estimates them; see
-    /// [`crate::DEFAULT_JOURNAL_CAPACITY`] for the default and why there is no unbounded
+    /// [`crate::DEFAULT_JOURNAL_CAPACITY_BYTES`] for the default and why there is no unbounded
     /// setting.
-    pub journal_capacity: usize,
+    pub journal_capacity_bytes: usize,
 }
 
 impl Default for OpenOptions {
@@ -135,7 +135,7 @@ impl Default for OpenOptions {
             observation: None,
             #[cfg(all(feature = "watch", test))]
             observation_script: None,
-            journal_capacity: crate::DEFAULT_JOURNAL_CAPACITY,
+            journal_capacity_bytes: crate::DEFAULT_JOURNAL_CAPACITY_BYTES,
         }
     }
 }
@@ -160,7 +160,7 @@ impl OpenOptions {
             // observation is never optional here.
             read_controls: true,
         };
-        (scan, self.budget, self.journal_capacity)
+        (scan, self.budget, self.journal_capacity_bytes)
     }
 }
 
@@ -872,15 +872,15 @@ fn bind_root(
     root: &Path,
     options: OpenOptions,
 ) -> Result<(std::path::PathBuf, IndexHandle, ScanConfig, DiscoveryBudget)> {
-    let (scan, budget, journal_capacity) = options.into_parts();
+    let (scan, budget, journal_capacity_bytes) = options.into_parts();
     scan.validate()?;
     if budget.max_files == Some(0) {
         return Err(Error::UnsupportedScanConfig(
             "max_files must be nonzero; omit it for an unlimited discovery",
         ));
     }
-    if journal_capacity == 0 {
-        return Err(Error::UnsupportedScanConfig("journal_capacity must be nonzero"));
+    if journal_capacity_bytes == 0 {
+        return Err(Error::UnsupportedScanConfig("journal_capacity_bytes must be nonzero"));
     }
     let root = root.canonicalize().map_err(|source| Error::io(root, source))?;
     let metadata = std::fs::symlink_metadata(&root).map_err(|source| Error::io(&root, source))?;
@@ -896,11 +896,11 @@ fn bind_root(
 
     let scope = scan.scope();
     let types = scan.types_shared();
-    let index = IndexHandle::new(Index::new_opened_with_scope_types_and_journal_capacity(
+    let index = IndexHandle::new(Index::new_opened_with_scope_types_and_journal_capacity_bytes(
         &root,
         scope,
         types,
-        journal_capacity,
+        journal_capacity_bytes,
     ));
     Ok((root, index, scan, budget))
 }
@@ -2487,7 +2487,7 @@ mod tests {
             Err(Error::UnsupportedScanConfig(_))
         ));
 
-        let zero_journal = OpenOptions { journal_capacity: 0, ..OpenOptions::default() };
+        let zero_journal = OpenOptions { journal_capacity_bytes: 0, ..OpenOptions::default() };
         assert!(matches!(
             OpenedIndex::open(root.path(), zero_journal),
             Err(Error::UnsupportedScanConfig(_))
@@ -2947,7 +2947,7 @@ mod tests {
         let root = tempfile::tempdir().expect("temp root");
         let opened = OpenedIndex::open_for_test(
             root.path(),
-            OpenOptions { journal_capacity: 1, ..OpenOptions::default() },
+            OpenOptions { journal_capacity_bytes: 1, ..OpenOptions::default() },
             controls,
         )
         .expect("opened root");

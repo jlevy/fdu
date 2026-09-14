@@ -52,7 +52,7 @@ const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 26;
 const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 34;
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
 const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 26;
-const OPENED_JOURNAL_CAPACITY: usize = 4 * 1024 * 1024;
+const OPENED_JOURNAL_CAPACITY_BYTES: usize = 4 * 1024 * 1024;
 
 struct DisableCounters;
 
@@ -170,8 +170,10 @@ fn measure_detached(root: &Path, config: &ScanConfig, expected_entries: u64) -> 
 fn measure_opened(root: &Path, expected_entries: u64) -> Counts {
     fdu_core::counters::reset();
     fdu_core::counters::enable(true);
-    let options =
-        OpenOptions { journal_capacity: OPENED_JOURNAL_CAPACITY, ..OpenOptions::default() };
+    let options = OpenOptions {
+        journal_capacity_bytes: OPENED_JOURNAL_CAPACITY_BYTES,
+        ..OpenOptions::default()
+    };
     let opened = OpenedIndex::open(root, options).expect("opened discovery");
     let initial = opened.read(ReadRequest::default()).expect("initial opened read");
     let mut cursor = EngineVersion { sequence: Clock::ZERO, ..initial.version };
