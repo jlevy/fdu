@@ -117,3 +117,76 @@ test("rejects a generic emission implementation that bypasses admission", () => 
   );
   assert.match(result.problems[0], /DetachedEmission bypasses the admission chokepoint/);
 });
+
+test("audits an emission implementation that follows a quote character literal", () => {
+  // A `'"'` used to open string state and blank every later line up to the next double
+  // quote, so an implementation in that span was neither audited nor reported.
+  const scan = [
+    baseline().get("crates/fdu-core/src/scan.rs"),
+    "fn is_quote(c: char) -> bool { c == '\"' }",
+    "impl WalkEmission for ShadowEmission {",
+    "  fn record_entry() { record_walk_entry(); }",
+    "}",
+  ].join("\n");
+  const result = auditAdmissionSources(
+    baseline(new Map([["crates/fdu-core/src/scan.rs", scan]])),
+  );
+  assert.match(result.problems[0] ?? "", /unaudited emission implementation ShadowEmission/);
+});
+
+test("ignores quotes and braces in character literals while checking a loop", () => {
+  for (const literal of [
+    "'\"'",
+    "'}'",
+    "'{'",
+    "b'}'",
+    "'\\''",
+    "'\\\"'",
+    "'\\\\'",
+    "'\\x7d'",
+    "'\\u{7d}'",
+    "'\\u{10FFFF}'",
+    "'\u{1F600}'",
+  ]) {
+    const opened = [
+      "read_dir(root);",
+      "for item in listing {",
+      `  let literal = ${literal};`,
+      "  prepare_walk_entry();",
+      "}",
+    ].join("\n");
+    const result = auditAdmissionSources(
+      baseline(new Map([["crates/fdu-core/src/opened.rs", opened]])),
+    );
+    assert.deepEqual(result.problems, [], literal);
+  }
+});
+
+test("keeps lifetimes and loop labels as code rather than character literals", () => {
+  // A lifetime never closes with a quote. Reading `'a>(item: &'` as a literal would blank
+  // real code, so these must leave the route visible and the braces counted.
+  const opened = [
+    "read_dir(root);",
+    "for item in listing {",
+    "  fn keep<'a>(item: &'a Item) -> &'a Item { item }",
+    "  fn name(_: &'static str, _: &'_ str) {}",
+    "  'next: loop { break 'next; }",
+    "  prepare_walk_entry();",
+    "}",
+  ].join("\n");
+  const result = auditAdmissionSources(
+    baseline(new Map([["crates/fdu-core/src/opened.rs", opened]])),
+  );
+  assert.deepEqual(result.problems, []);
+
+  const scan = [
+    baseline().get("crates/fdu-core/src/scan.rs"),
+    "impl<'a> WalkEmission for ShadowEmission<'a> {",
+    "  fn record_entry(&'a self) { record_walk_entry(); }",
+    "}",
+  ].join("\n");
+  const shadow = auditAdmissionSources(
+    baseline(new Map([["crates/fdu-core/src/scan.rs", scan]])),
+  );
+  assert.match(shadow.problems[0] ?? "", /unaudited emission implementation ShadowEmission/);
+});
