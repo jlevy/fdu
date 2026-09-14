@@ -155,7 +155,22 @@ impl Model {
     }
 
     fn expectation_matches(&self, op: &Op, expected: ModelExpectation) -> bool {
-        if self.path_state(op.path()) != expected.state {
+        let current = self.path_state(op.path());
+        // An operation the index already reflects is accepted on any baseline: it changes
+        // nothing, so there is no older state for it to overwrite.
+        let target = match op {
+            Op::Upsert { kind, attrs, .. } => {
+                Some(PathState::Present { kind: *kind, attrs: *attrs })
+            }
+            Op::Remove { .. } => Some(PathState::Absent),
+            Op::ControlUpsert { .. } | Op::ControlRemove { .. } | Op::InvalidateSubtree { .. } => {
+                None
+            }
+        };
+        if target == Some(current) {
+            return true;
+        }
+        if current != expected.state {
             return false;
         }
         let require_structure = match (op, expected.state) {

@@ -3223,7 +3223,16 @@ impl Index {
     }
 
     fn expectation_matches(&self, op: &Op, expected: PathExpectation) -> bool {
-        if self.path_state(op.path()) != expected.state {
+        let current = self.path_state(op.path());
+        // An operation whose target the index already holds changes nothing, whatever
+        // happened to its baseline: another producer verified the same fact first and
+        // there is no older state left to overwrite. Refusing it as stale cost the
+        // observation handoff a full-root walk per convergent refresh, and three in a
+        // row failed the root, for commits that would have applied as unchanged.
+        if target_state(op).is_some_and(|target| target == current) {
+            return true;
+        }
+        if current != expected.state {
             return false;
         }
 
@@ -4799,6 +4808,18 @@ fn insert_dirty_ancestors(
     }
 }
 
+/// The path state an operation leaves behind, when it describes one.
+///
+/// A control or invalidation operation has no single visible target, so it is arbitrated
+/// on its baseline alone.
+fn target_state(op: &Op) -> Option<PathState> {
+    match op {
+        Op::Upsert { kind, attrs, .. } => Some(PathState::Present { kind: *kind, attrs: *attrs }),
+        Op::Remove { .. } => Some(PathState::Absent),
+        Op::ControlUpsert { .. } | Op::ControlRemove { .. } | Op::InvalidateSubtree { .. } => None,
+    }
+}
+
 fn same_target(
     current: Option<EntryIdentity>,
     expected: Option<EntryIdentity>,
@@ -6045,6 +6066,59 @@ mod tests {
         assert_eq!(outcome.stats.stale, 1);
         assert!(outcome.commit.is_none());
         assert!(index.lookup(Path::new("file.txt")).is_none());
+    }
+
+    /// A delayed conditional upsert whose baseline moved to exactly its target is no
+    /// conflict: the other producer verified the same fact first. It applies as unchanged,
+    /// not stale, so a refresh that converges with the observation handoff does not send
+    /// the handoff back for another full-root walk.
+    #[test]
+    fn convergent_conditional_upsert_applies_as_unchanged_not_stale() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![upsert(
+            "file.txt",
+            EntryKind::File,
+            file_attrs(10, 1),
+        )]));
+        let baseline = index.expectation(Path::new("file.txt"));
+        let delayed = Observation::from_ops(vec![ObservationOp::if_state(
+            upsert("file.txt", EntryKind::File, file_attrs(20, 2)),
+            baseline,
+        )]);
+
+        index.apply_ok(&Observation::new(vec![upsert(
+            "file.txt",
+            EntryKind::File,
+            file_attrs(20, 2),
+        )]));
+        let outcome = index.apply_ok(&delayed);
+
+        assert_eq!(outcome.stats.stale, 0);
+        assert_eq!(outcome.stats.unchanged, 1);
+        assert!(outcome.commit.is_none());
+        assert_eq!(index.attrs(Path::new("file.txt")).expect("file").size, 20);
+    }
+
+    #[test]
+    fn convergent_conditional_remove_applies_as_unchanged_not_stale() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("dir", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("dir/file.txt", EntryKind::File, file_attrs(10, 1)),
+        ]));
+        let baseline = index.expectation(Path::new("dir/file.txt"));
+        let delayed = Observation::from_ops(vec![ObservationOp::if_state(
+            Op::Remove { path: PathBuf::from("dir/file.txt") },
+            baseline,
+        )]);
+
+        index.apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("dir/file.txt") }]));
+        let outcome = index.apply_ok(&delayed);
+
+        assert_eq!(outcome.stats.stale, 0);
+        assert_eq!(outcome.stats.unchanged, 1);
+        assert!(outcome.commit.is_none());
+        assert!(index.lookup(Path::new("dir/file.txt")).is_none());
     }
 
     #[test]
