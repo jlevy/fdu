@@ -816,7 +816,8 @@ fn collect_children(
         // became `x%25FF`. These names are portable by construction, so they are for
         // ordering and resumption, never for addressing.
         let path = index.path_of(*id).unwrap_or_else(|| parent.join(name));
-        if !include_ignored && matches!(index.is_ignored(&path), Ok(Some(true))) {
+        // An opened root always observes control state; see `Index::opened_is_ignored`.
+        if !include_ignored && index.opened_is_ignored(*id) {
             continue;
         }
         // Noticed in passing, not searched for: this row is a directory one level down,
@@ -846,7 +847,7 @@ fn first_directory_child(
     for (name, id) in iterator {
         *spent = spent.saturating_add(1);
         let path = index.path_of(*id).unwrap_or_else(|| parent.join(name));
-        if !include_ignored && matches!(index.is_ignored(&path), Ok(Some(true))) {
+        if !include_ignored && index.opened_is_ignored(*id) {
             // Pruning the subtree, not the row: an excluded directory is never expanded,
             // so none of its descendants can reach a later level either.
             continue;
@@ -1111,11 +1112,11 @@ mod tests {
     #[test]
     fn climbing_out_of_a_deep_chain_needs_no_stack_per_level() {
         const LEVELS: u32 = 1_000;
-        let mut index = crate::Index::new_opened_with_scope_types_and_journal_capacity(
+        let mut index = crate::Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
             crate::ScanScope::default(),
             crate::classify::TypeRegistry::compiled_shared(),
-            crate::DEFAULT_JOURNAL_CAPACITY,
+            crate::DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
         let mut deepest = PathBuf::new();
         let mut ops = Vec::new();

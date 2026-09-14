@@ -115,9 +115,10 @@ pub struct OpenOptions {
     pub observation_script: Option<PathBuf>,
     /// Approximate bytes the exact commit journal may retain, as
     /// [`crate::Commit::retained_cost`] estimates them; see
-    /// [`crate::DEFAULT_JOURNAL_CAPACITY`] for the default and why there is no unbounded
-    /// setting.
-    pub journal_capacity: usize,
+    /// [`crate::DEFAULT_JOURNAL_CAPACITY_BYTES`] for the default and why there is no
+    /// unbounded setting. [`OpenedIndex::open`] refuses a budget below
+    /// [`crate::MIN_JOURNAL_CAPACITY_BYTES`] with [`Error::JournalCapacityTooSmall`].
+    pub journal_capacity_bytes: usize,
 }
 
 impl Default for OpenOptions {
@@ -135,7 +136,7 @@ impl Default for OpenOptions {
             observation: None,
             #[cfg(all(feature = "watch", test))]
             observation_script: None,
-            journal_capacity: crate::DEFAULT_JOURNAL_CAPACITY,
+            journal_capacity_bytes: crate::DEFAULT_JOURNAL_CAPACITY_BYTES,
         }
     }
 }
@@ -160,7 +161,7 @@ impl OpenOptions {
             // observation is never optional here.
             read_controls: true,
         };
-        (scan, self.budget, self.journal_capacity)
+        (scan, self.budget, self.journal_capacity_bytes)
     }
 }
 
@@ -540,10 +541,11 @@ impl OpenedIndex {
             .name(format!("fdu-{name}"))
             .spawn(move || {
                 // The worker records its own failure as it leaves, and a panic is caught
-                // for exactly that long before it resumes. Left to the join, a panic was
-                // learned of only at close -- a change poll blocked on the journal slept
-                // to its timeout -- and close reported failures in spawn order, so
-                // discovery's poisoned-lock error stood in for the panic that poisoned it.
+                // for exactly that long before it resumes. Left to the join, a panic would
+                // be learned of only at close -- a change poll blocked on the journal would
+                // sleep to its timeout -- and close could report failures only in spawn
+                // order, letting discovery's poisoned-lock error stand in for the panic
+                // that poisoned it.
                 let outcome =
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(cancellation)));
                 #[cfg(test)]
@@ -883,15 +885,18 @@ fn bind_root(
     root: &Path,
     options: OpenOptions,
 ) -> Result<(std::path::PathBuf, IndexHandle, ScanConfig, DiscoveryBudget)> {
-    let (scan, budget, journal_capacity) = options.into_parts();
+    let (scan, budget, journal_capacity_bytes) = options.into_parts();
     scan.validate()?;
     if budget.max_files == Some(0) {
         return Err(Error::UnsupportedScanConfig(
             "max_files must be nonzero; omit it for an unlimited discovery",
         ));
     }
-    if journal_capacity == 0 {
-        return Err(Error::UnsupportedScanConfig("journal_capacity must be nonzero"));
+    if journal_capacity_bytes < crate::MIN_JOURNAL_CAPACITY_BYTES {
+        return Err(Error::JournalCapacityTooSmall {
+            requested: journal_capacity_bytes,
+            minimum: crate::MIN_JOURNAL_CAPACITY_BYTES,
+        });
     }
     let root = root.canonicalize().map_err(|source| Error::io(root, source))?;
     let metadata = std::fs::symlink_metadata(&root).map_err(|source| Error::io(&root, source))?;
@@ -907,11 +912,11 @@ fn bind_root(
 
     let scope = scan.scope();
     let types = scan.types_shared();
-    let index = IndexHandle::new(Index::new_opened_with_scope_types_and_journal_capacity(
+    let index = IndexHandle::new(Index::new_opened_with_scope_types_and_journal_capacity_bytes(
         &root,
         scope,
         types,
-        journal_capacity,
+        journal_capacity_bytes,
     ));
     Ok((root, index, scan, budget))
 }
@@ -1250,8 +1255,9 @@ fn discover_directory(
             continue;
         };
         crate::counters::bump(|c| c.dir_entries += 1);
-        let metadata = match crate::scan::metadata_for_fingerprint(&item) {
-            Ok(metadata) => metadata,
+        let metadata = match crate::scan::listed_child_metadata(&item) {
+            Ok(Some(metadata)) => metadata,
+            Ok(None) => continue,
             Err(source) => {
                 retain_local_issue(
                     &mut issues,
@@ -2496,11 +2502,20 @@ mod tests {
             Err(Error::UnsupportedScanConfig(_))
         ));
 
-        let zero_journal = OpenOptions { journal_capacity: 0, ..OpenOptions::default() };
-        assert!(matches!(
-            OpenedIndex::open(root.path(), zero_journal),
-            Err(Error::UnsupportedScanConfig(_))
-        ));
+        let minimum = crate::MIN_JOURNAL_CAPACITY_BYTES;
+        let below_one_commit =
+            OpenOptions { journal_capacity_bytes: minimum - 1, ..OpenOptions::default() };
+        let error = OpenedIndex::open(root.path(), below_one_commit).expect_err("refused");
+        assert!(
+            matches!(error, Error::JournalCapacityTooSmall { requested, minimum: stated }
+                if requested == minimum - 1 && stated == minimum),
+            "{error:?}"
+        );
+        let message = error.to_string();
+        assert!(message.contains(&format!("at least {minimum} bytes")), "{message}");
+
+        let one_commit = OpenOptions { journal_capacity_bytes: minimum, ..OpenOptions::default() };
+        OpenedIndex::open(root.path(), one_commit).expect("accepted").close().expect("close");
     }
 
     #[test]
@@ -2956,7 +2971,10 @@ mod tests {
         let root = tempfile::tempdir().expect("temp root");
         let opened = OpenedIndex::open_for_test(
             root.path(),
-            OpenOptions { journal_capacity: 1, ..OpenOptions::default() },
+            OpenOptions {
+                journal_capacity_bytes: crate::MIN_JOURNAL_CAPACITY_BYTES,
+                ..OpenOptions::default()
+            },
             controls,
         )
         .expect("opened root");
@@ -4580,6 +4598,62 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// Every row path of one unbounded tree page from the root.
+    fn tree_rows(opened: &OpenedIndex, include_ignored: bool) -> Vec<String> {
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Tree {
+                    path: PathBuf::new(),
+                    depth: crate::query::Bound::All,
+                    include_ignored,
+                    page: crate::PageRequest {
+                        limit: crate::MAX_PAGE_ROWS,
+                        max_work: crate::MAX_PAGE_WORK,
+                    },
+                }],
+                ..crate::ReadRequest::default()
+            })
+            .expect("tree read");
+        let crate::ProjectionResult::Tree(crate::Knowledge::Present(page)) = &response.results[0]
+        else {
+            panic!("tree page");
+        };
+        page.rows.iter().map(|row| row.portable_path.as_str().to_owned()).collect()
+    }
+
+    /// A tree read that excludes ignored entries reads each row's ignore bit without the
+    /// observation check `Index::is_ignored` makes, on the invariant that an opened root
+    /// always observes control state. The invariant is pinned here, in every build profile,
+    /// and a read over a tree nothing ignores keeps every row.
+    #[test]
+    fn an_opened_tree_read_excluding_ignored_entries_relies_on_an_observing_root() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("src"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("src/main.rs"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs { size: 1, ..crate::Attrs::default() },
+                },
+            ]))
+            .expect("seed tree");
+
+        let image = opened.state.index.snapshot().expect("snapshot");
+        assert!(image.observes_controls());
+        let excluded = tree_rows(&opened, false);
+        assert_eq!(excluded, ["src", "src/main.rs"]);
+        assert_eq!(excluded, tree_rows(&opened, true));
+
+        opened.close().expect("close");
+    }
+
     /// Excluding ignored entries prunes the subtree, not merely the row.
     ///
     /// Filtering the row and descending anyway is an equally reasonable reading of an
@@ -4619,34 +4693,11 @@ mod tests {
             ]))
             .expect("seed tree");
 
-        let rows = |include_ignored: bool| -> Vec<String> {
-            let response = opened
-                .read(crate::ReadRequest {
-                    projections: vec![crate::ReadProjection::Tree {
-                        path: PathBuf::new(),
-                        depth: crate::query::Bound::All,
-                        include_ignored,
-                        page: crate::PageRequest {
-                            limit: crate::MAX_PAGE_ROWS,
-                            max_work: crate::MAX_PAGE_WORK,
-                        },
-                    }],
-                    ..crate::ReadRequest::default()
-                })
-                .expect("tree read");
-            let crate::ProjectionResult::Tree(crate::Knowledge::Present(page)) =
-                &response.results[0]
-            else {
-                panic!("tree page");
-            };
-            page.rows.iter().map(|row| row.portable_path.as_str().to_owned()).collect()
-        };
-
-        let included = rows(true);
+        let included = tree_rows(&opened, true);
         assert!(included.iter().any(|row| row == "vendor"));
         assert!(included.iter().any(|row| row == "vendor/keep.txt"));
 
-        let excluded = rows(false);
+        let excluded = tree_rows(&opened, false);
         assert!(!excluded.iter().any(|row| row == "vendor"), "the row is gone");
         assert!(
             !excluded.iter().any(|row| row == "vendor/keep.txt"),
@@ -5904,6 +5955,31 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// Discovery records a child gone by its stat as it records one the listing never
+    /// returned: absent, with no issue, under complete coverage.
+    #[test]
+    fn discovery_omits_a_child_deleted_between_listing_and_stat() {
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::write(root.path().join("kept"), b"kept").expect("kept fixture");
+        std::fs::write(root.path().join("gone"), b"gone").expect("gone fixture");
+        let hook = crate::scan::install_child_metadata_hook(root.path(), |path| {
+            if path.file_name() == Some(std::ffi::OsStr::new("gone")) {
+                std::fs::remove_file(path).expect("delete between listing and stat");
+            }
+            None
+        });
+        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("open");
+        let settled = wait_until_settled(&opened);
+        drop(hook);
+
+        assert_eq!(settled.coverage, crate::Coverage::Complete);
+        assert_eq!(settled.issues.retained, 0);
+        let index = &opened.state.index;
+        assert!(index.kind(Path::new("gone")).expect("lookup").is_none());
+        assert!(index.kind(Path::new("kept")).expect("lookup").is_some());
+        opened.close().expect("close");
+    }
+
     /// One transient child error no longer withholds completeness from every directory
     /// the pass listed. Each is recorded on its own listing, as discovery decides, so a
     /// directory first listed by such a pass answers Absent below it instead of staying
@@ -5919,13 +5995,13 @@ mod tests {
         std::fs::create_dir(root.path().join("fresh")).expect("fresh directory");
         std::fs::write(root.path().join("fresh/new"), b"new").expect("fresh fixture");
 
-        crate::scan::set_child_metadata_hook(|path| {
+        let hook = crate::scan::install_child_metadata_hook(root.path(), |path| {
             (path.file_name() == Some(std::ffi::OsStr::new("kept"))).then(|| {
                 std::io::Error::new(std::io::ErrorKind::PermissionDenied, "injected child error")
             })
         });
         let receipt = opened.refresh(&[PathBuf::new()]);
-        crate::scan::clear_child_metadata_hook();
+        drop(hook);
         let receipt = receipt.expect("refresh");
 
         assert_eq!(receipt.issues.len(), 1, "{:?}", receipt.issues);

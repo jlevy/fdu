@@ -51,6 +51,7 @@ fn to_py_err(err: fdu_core::Error) -> PyErr {
         | fdu_core::Error::ScanScopeMismatch { .. }
         | fdu_core::Error::SubtreeOutsideScanScope { .. }
         | fdu_core::Error::InvalidValue { .. }
+        | fdu_core::Error::JournalCapacityTooSmall { .. }
         | fdu_core::Error::WatchRootMismatch { .. }) => PyValueError::new_err(error.to_string()),
 
         // Everything else is the operation failing on its own terms: the cache had no
@@ -1448,9 +1449,9 @@ fn clear_all_caches(root: PathBuf) -> PyResult<usize> {
 
 /// Open a directory tree, using the snapshot cache according to `cache`.
 ///
-/// `read_controls` is the engine's [`ScanConfig::read_controls`], off by default as it is
-/// there: the index shares a one-shot report's snapshot scope unless the caller asks for
-/// `.gitignore` control state.
+/// `read_controls` is the engine's [`ScanConfig::read_controls`], on by default as it is
+/// there. Off, the index observes no `.gitignore` control state and shares a one-shot
+/// report's snapshot scope.
 #[pyfunction]
 #[pyo3(signature = (
     root,
@@ -1458,7 +1459,7 @@ fn clear_all_caches(root: PathBuf) -> PyResult<usize> {
     cache = "auto",
     max_depth = None,
     one_filesystem = false,
-    read_controls = false,
+    read_controls = true,
     analyze = "none",
     analysis_workers = 0
 ))]
@@ -1516,14 +1517,14 @@ fn open(
 
 /// Walk a tree with no cache at all and return the index.
 ///
-/// `read_controls` is off by default, as it is for [`open`].
+/// `read_controls` is on by default, as it is for [`open`].
 #[pyfunction]
 #[pyo3(signature = (
     root,
     *,
     max_depth = None,
     one_filesystem = false,
-    read_controls = false,
+    read_controls = true,
     analyze = "none",
     analysis_workers = 0
 ))]
