@@ -3,9 +3,9 @@ type: is
 id: is-01m18r5zsmxvm2a098rh56w9yr
 title: Control-table charge model inflates ~6.5x and pays repeatedly for identical sources
 kind: task
-status: open
+status: closed
 priority: 1
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - scale
@@ -15,7 +15,11 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-30T07:12:14.643Z
-updated_at: 2026-09-15T05:22:19.327Z
+updated_at: 2026-09-15T20:00:41.304Z
+closed_at: 2026-09-15T20:00:41.303Z
+close_reason: "eed4f62: identical .gitignore contents are stored and charged once, keyed by FNV-1a identity with a byte comparison so a collision never shares a matcher; removal releases a content with its last holder, pinned by a fixed-seed property test. ~/wrk (4,830 files, 980 distinct) charges 4.10 MiB, from 13.84. PR #63."
+resolution: null
+duplicate_of: null
 ---
 retained_source_cost (crates/fdu-core/src/control.rs:337) charges:
   64 + path_bytes + source.len()*2 + (newlines+1)*64 + slash_count*24

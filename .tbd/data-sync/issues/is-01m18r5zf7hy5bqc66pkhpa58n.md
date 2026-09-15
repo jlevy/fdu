@@ -3,9 +3,9 @@ type: is
 id: is-01m18r5zf7hy5bqc66pkhpa58n
 title: Control-table budget aborts the scan instead of degrading to partial
 kind: bug
-status: open
+status: closed
 priority: 0
-version: 11
+version: 12
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - scale
@@ -15,7 +15,11 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-30T07:12:14.310Z
-updated_at: 2026-09-15T05:22:18.201Z
+updated_at: 2026-09-15T20:00:41.666Z
+closed_at: 2026-09-15T20:00:41.665Z
+close_reason: "d910079, 2255593, 256053e: a source past the budget or the 16 KiB line guard is refused and recorded instead of returning an error, on the cold, streaming, reconcile, watch, and opened-root paths; the batch commits and sizes stay exact. Index::control_coverage (exact count, at most MAX_RETAINED_ISSUES listed), EffectiveChange::ControlRefusalUpdated, ReadDiagnostics::controls, snapshot format 4, and a report's ignore_rules field and note (exit 0) state it. Residual (4), reads under ignored directories, filed as fdu-9jfj. PR #63."
+resolution: null
+duplicate_of: null
 ---
 ControlTable::upsert (crates/fdu-core/src/control.rs:120) returns Err(ControlSourceLimit) when the cumulative retained cost crosses MAX_CONTROL_TABLE_BYTES, and index.rs:1203 does the same on install. The error propagates and kills the whole scan - the user gets nothing after minutes of walking.
 

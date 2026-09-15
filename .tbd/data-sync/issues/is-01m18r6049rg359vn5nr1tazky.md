@@ -3,9 +3,9 @@ type: is
 id: is-01m18r6049rg359vn5nr1tazky
 title: Control-table bound is not liftable by any flag and its error names no remedy
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - control-state
@@ -15,7 +15,11 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-30T07:12:14.984Z
-updated_at: 2026-09-15T05:22:18.771Z
+updated_at: 2026-09-15T20:00:42.022Z
+closed_at: 2026-09-15T20:00:42.021Z
+close_reason: "7d9c565, 2255593: ScanConfig::control_budget, OpenOptions::control_budget, Python ScanOptions/OpenedOptions.control_budget, and --gitignore-budget SIZE|all; None/all lifts the budget and the per-line guard together (Q3), a numeric budget keeps the guard. The budget is mixed into ignore_rules_fingerprint (Q2); the snapshot parser keeps a fixed 256 MiB ceiling; the refusal note names the knob in each surface's spelling. PR #63."
+resolution: null
+duplicate_of: null
 ---
 MAX_CONTROL_TABLE_BYTES is a hard const with no CLI or config lever (verified: no match for control-table/max-control in crates/fdu/src). The error text is 'control table requires N bytes; limit is M bytes' - it states the bound and offers no way past it.
 
