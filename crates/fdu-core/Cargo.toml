@@ -13,6 +13,12 @@ repository.workspace = true
 authors.workspace = true
 include = ["src/**", "tests/**", "rules/**", "build.rs", "Cargo.toml", "README.md", "LICENSE"]
 
+# docs.rs builds only the default build features unless told otherwise, and this crate's
+# default is empty, so the published docs would omit every API behind a build feature,
+# `watch` included. The docs gate builds with all of them for the same reason.
+[package.metadata.docs.rs]
+all-features = true
+
 [lib]
 name = "fdu_core"
 path = "src/lib.rs"
