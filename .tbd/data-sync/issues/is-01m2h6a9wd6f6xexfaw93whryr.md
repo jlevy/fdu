@@ -5,7 +5,7 @@ title: "Release readiness: land the open PR stack and cut the first stable fdu r
 kind: epic
 status: in_progress
 priority: 0
-version: 11
+version: 12
 labels:
   - release
 dependencies: []
@@ -18,7 +18,7 @@ child_order_hints:
   - is-01m2k27z25tt9ygs4c1nchhzez
   - is-01m2k2pp6jw10vq759yyetmcmb
 created_at: 2026-09-15T00:08:53.387Z
-updated_at: 2026-09-15T17:44:13.777Z
+updated_at: 2026-09-15T18:37:24.477Z
 ---
 User goal (2026-09-14): bring fdu to a stable state that can land on main and cut a release. Keep making progress, track everything as beads, stack PRs as needed, and make sure the final PR stack is complete.
 
@@ -56,3 +56,14 @@ Next:
 - Then PR A (fdu-1onj/okne/szkg) and PR B (fdu-elnn/5ryb) on main, blocked on disk.
 - Release-prep PR: fdu-k4ad, fdu-ih88, fdu-qy8e, fdu-y5xr.
 - Combined make check and release rehearsal (fdu-ls14), then a local install for final testing.
+
+2026-09-15 verification of merged main at 3373134:
+- CI green (run 34999813497).
+- Local `UV_PYTHON=3.12 make check` and `make cross-lint` both pass through the lock wrapper; parity holds (21 recorded deviations matched).
+- A release CLI built from a clean checkout reports fdu 0.1.0-dev+g337313468 and passes the smoke checks.
+Open for 0.1.0:
+- #61 (release workflow): all findings fixed, final check running.
+- #62 (shipped text): fdu-8dou fix running.
+- PR A (control bounds, fdu-1onj/okne/szkg): in progress.
+- PR B (default on and CLI split): after PR A.
+- Release prep: fdu-qy8e CHANGELOG, fdu-y5xr perf figure, fdu-ls14 rehearsal.
