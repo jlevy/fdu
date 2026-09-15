@@ -339,8 +339,9 @@ pinned Rust.
 
 Once every channel verifies, record the final registry state and attach it with the
 evidence and artifacts to a GitHub release on the tag.
-The notes are the CHANGELOG’s `[0.1.0]` section, saved as `$RELEASE/notes.md`. The
-release is created only if the audit exits 0, which with `--require-identical` means
+The notes are [`docs/project/release-notes/0.1.0.md`](../release-notes/0.1.0.md) as
+tagged, so they must be final, with no draft comments left, before the tag is cut.
+The release is created only if the audit exits 0, which with `--require-identical` means
 every channel holds exactly the rehearsal’s files:
 
 ```shell
@@ -348,7 +349,7 @@ uv run --no-project --python 3.12 python scripts/release/registry_state.py \
   --manifest "$RELEASE/files/release-manifest.json" --version 0.1.0 \
   --require-identical --output "$RELEASE/registry-state.json" &&
   gh release create v0.1.0 --repo jlevy/fdu --verify-tag --title "fdu 0.1.0" \
-    --notes-file "$RELEASE/notes.md" \
+    --notes-file docs/project/release-notes/0.1.0.md \
     "$RELEASE/registry-state.json" "$RELEASE"/files/release-manifest.json \
     "$RELEASE"/files/SHA256SUMS "$RELEASE"/files/*.crate "$RELEASE"/files/*.whl \
     "$RELEASE"/files/fdu-0.1.0.tar.gz
