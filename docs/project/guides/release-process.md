@@ -222,6 +222,18 @@ pinned Rust.
    (cd target/package && grep '\.crate$' "$RELEASE/files/SHA256SUMS" | shasum -a 256 -c -)
    ```
 
+   A match is evidence about this host and this tree only, and Cargo cannot upload
+   anything else: `cargo publish` takes no archive argument and repackages from the
+   checkout every time.
+   So the host whose digests matched is the host that publishes.
+   If only a Linux reproduction matches, do all of Publish the Crates on that Linux
+   host: download and check the rehearsal’s files there as in
+   [Rehearse the Release Commit](#rehearse-the-release-commit) step 3, clone and
+   validate the tag as in [Tag the Release Commit](#tag-the-release-commit) step 2, then
+   run steps 1 to 6 of this section in that clone.
+   Publishing from the host whose digests differed uploads the bytes that failed the
+   comparison.
+
 3. Publish `fdu-core`. Cargo waits until the index carries it.
    The audit must then report `fdu-core` as `identical` and `fdu` as `missing`:
 
