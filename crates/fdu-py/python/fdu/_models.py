@@ -8,7 +8,7 @@ typed values; callers never need to know the private extension's wire shape.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -169,6 +169,61 @@ class Bound(StrEnum):
     ALL = "all"
 
 
+class ControlRefusalReason(StrEnum):
+    """Which bound refused a ``.gitignore`` instead of applying its rules."""
+
+    #: Retaining it would have taken the index past its control budget.
+    BUDGET = "budget"
+    #: One of its lines is longer than the per-line guard.
+    LINE_GUARD = "line_guard"
+
+
+@dataclass(frozen=True, slots=True)
+class RefusedControl:
+    """One ``.gitignore`` whose rules an index refused, relative to the root."""
+
+    path: Path
+    reason: ControlRefusalReason
+
+
+@dataclass(frozen=True, slots=True)
+class ControlObservation:
+    """The ``.gitignore`` files an index applied and refused.
+
+    Sizes and counts never depend on this. Below a refused file the ignored and unignored
+    split is not exact in either direction, because the file may have held negations.
+    """
+
+    #: Retained-charge budget in bytes, or ``None`` when unbounded.
+    budget: int | None
+    applied: int
+    #: Counted exactly, even when ``refusals`` is truncated.
+    refused: int
+    #: The first refused files in path order; shorter than ``refused`` when truncated.
+    refusals: tuple[RefusedControl, ...] = ()
+
+    @property
+    def is_complete(self) -> bool:
+        return self.refused == 0
+
+    @property
+    def lists_every_refusal(self) -> bool:
+        return len(self.refusals) == self.refused
+
+
+def control_observation_from_dict(value: Mapping[str, Any]) -> ControlObservation:
+    budget = value["budget"]
+    return ControlObservation(
+        budget=None if budget is None else int(budget),
+        applied=int(value["applied"]),
+        refused=int(value["refused"]),
+        refusals=tuple(
+            RefusedControl(path=Path(item["path"]), reason=ControlRefusalReason(item["reason"]))
+            for item in value["refusals"]
+        ),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ScanOptions:
     """Filesystem scope for an initial scan and later refreshes."""
@@ -177,16 +232,23 @@ class ScanOptions:
     one_filesystem: bool = False
     #: Observe ``.gitignore`` control state, as the engine's ``ScanConfig.read_controls``.
     #: On by default, so an index from :func:`fdu.open` or :func:`fdu.scan`, and a watch
-    #: over it, keep the exact control state. Off, they read no control file and cannot fail
-    #: on a control-state bound, and :func:`fdu.open` shares one snapshot scope with
-    #: :func:`fdu.report`.
-    #: :func:`fdu.report` never observes control state and ignores this field, as the
-    #: engine's report planner does.
+    #: over it, keep the exact control state. Off, they read no control file and
+    #: :func:`fdu.open` shares one snapshot scope with :func:`fdu.report`.
+    #: :func:`fdu.report` never observes control state and ignores this field and
+    #: ``control_budget``, as the engine's report planner does.
     read_controls: bool = True
+    #: Bytes of retained ``.gitignore`` charge before further files are refused, as the
+    #: engine's ``ScanConfig.control_budget``: an int, a size such as ``"16MiB"``,
+    #: ``Bound.ALL`` to lift the budget and the 16 KiB per-line guard, or ``None`` for the
+    #: default of 4 MiB. A refused file ends nothing; its report's ``status.ignore_rules``
+    #: names it. Part of the snapshot scope, so a different budget scans cold once.
+    control_budget: int | Bound | str | None = None
 
     def __post_init__(self) -> None:
         if self.max_depth is not None and self.max_depth < 0:
             raise ValueError("max_depth must be non-negative")
+        if isinstance(self.control_budget, int) and self.control_budget < 0:
+            raise ValueError("control_budget must be non-negative or Bound.ALL")
 
 
 @dataclass(frozen=True, slots=True)
@@ -296,6 +358,10 @@ class Status:
     freshness: Freshness
     source: ReportSource
     errors: tuple[OperationError, ...] = ()
+    #: Which ``.gitignore`` files apply, or ``None`` when none was read. A refused file
+    #: leaves ``complete`` true and every size exact; only the ignored and unignored split
+    #: below it is not.
+    ignore_rules: ControlObservation | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -662,12 +728,21 @@ def _operation_error(value: object) -> OperationError:
     )
 
 
+def _ignore_rules(value: object) -> ControlObservation | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TypeError("ignore_rules must be an object or null")
+    return control_observation_from_dict(cast(dict[str, Any], value))
+
+
 def status_from_dict(value: dict[str, Any]) -> Status:
     return Status(
         complete=bool(value["complete"]),
         freshness=Freshness(str(value["freshness"])),
         source=ReportSource(str(value["source"])),
         errors=tuple(_operation_error(item) for item in value.get("errors", [])),
+        ignore_rules=_ignore_rules(value["ignore_rules"]),
     )
 
 
@@ -836,6 +911,7 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
         freshness=Freshness(str(wire["freshness"])),
         source=ReportSource(str(wire["source"])),
         errors=tuple(_operation_error(item) for item in raw_errors),
+        ignore_rules=_ignore_rules(wire["ignore_rules"]),
     )
     raw_analysis = wire.get("analysis")
     analysis = None

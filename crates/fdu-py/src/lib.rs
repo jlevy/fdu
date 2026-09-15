@@ -470,6 +470,7 @@ impl PyIndex {
         out.set_item("errors", error_list(py, &self.errors)?)?;
         out.set_item("source", source_label(self.source))?;
         out.set_item("complete", self.complete())?;
+        out.set_item("ignore_rules", ignore_rules_value(py, &self.inner.control_coverage())?)?;
         out.set_item("freshness", self.freshness())?;
         out.set_item("clock", self.inner.clock().0)?;
         Ok(out)
@@ -514,6 +515,7 @@ impl PyIndex {
                         item
                     }
                     fdu_core::EffectiveChange::ControlUpdated { .. }
+                    | fdu_core::EffectiveChange::ControlRefusalUpdated { .. }
                     | fdu_core::EffectiveChange::Reclassified { .. } => continue,
                 };
                 ops.append(item)?;
@@ -632,7 +634,21 @@ fn status_dict<'py>(py: Python<'py>, index: &PyIndex) -> PyResult<Bound<'py, PyD
     status.set_item("freshness", freshness_label(index.inner.freshness()))?;
     status.set_item("source", source_label(index.source))?;
     status.set_item("errors", error_list(py, &index.errors)?)?;
+    status.set_item("ignore_rules", ignore_rules_value(py, &index.inner.control_coverage())?)?;
     Ok(status)
+}
+
+/// `None` when no control file was read, else the shape a report's `ignore_rules` carries.
+fn ignore_rules_value<'py>(
+    py: Python<'py>,
+    coverage: &fdu_core::control::ControlCoverage,
+) -> PyResult<Bound<'py, PyAny>> {
+    match coverage {
+        fdu_core::control::ControlCoverage::NotObserved => Ok(py.None().into_bound(py)),
+        fdu_core::control::ControlCoverage::Observed(observed) => {
+            Ok(opened_binding::control_observation_dict(py, observed)?.into_any())
+        }
+    }
 }
 
 fn value_source_label(source: fdu_core::Source) -> &'static str {
@@ -689,6 +705,7 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
     let dict = PyDict::new(py);
     dict.set_item("root", report.root.as_os_str())?;
     dict.set_item("complete", report.complete)?;
+    dict.set_item("ignore_rules", ignore_rules_value(py, &report.ignore_rules)?)?;
     dict.set_item("errors", report.errors.clone())?;
     dict.set_item("source", source_label(report.source))?;
     dict.set_item("freshness", freshness_label(report.freshness))?;
@@ -974,6 +991,13 @@ fn parse_sort(value: &str) -> PyResult<SortKey> {
             "invalid sort {other:?}: expected one of size, count, mtime, name"
         ))),
     }
+}
+
+/// Parse a `control_budget` token with the engine's grammar; absent means the default.
+pub(crate) fn parse_control_budget(value: Option<&str>) -> PyResult<Option<usize>> {
+    value.map_or(Ok(ScanConfig::default().control_budget), |value| {
+        fdu_core::query::parse_control_budget(value).map_err(to_py_err)
+    })
 }
 
 /// Parse a size metric.
@@ -1460,6 +1484,7 @@ fn clear_all_caches(root: PathBuf) -> PyResult<usize> {
     max_depth = None,
     one_filesystem = false,
     read_controls = true,
+    control_budget = None,
     analyze = "none",
     analysis_workers = 0
 ))]
@@ -1475,6 +1500,7 @@ fn open(
     max_depth: Option<usize>,
     one_filesystem: bool,
     read_controls: bool,
+    control_budget: Option<&str>,
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
@@ -1482,7 +1508,13 @@ fn open(
     let policy = parse_cache_policy(cache)?;
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
-        scan: ScanConfig { max_depth, one_filesystem, read_controls, ..ScanConfig::default() },
+        scan: ScanConfig {
+            max_depth,
+            one_filesystem,
+            read_controls,
+            control_budget: parse_control_budget(control_budget)?,
+            ..ScanConfig::default()
+        },
         cache_path: fdu_core::default_cache_path(&root),
         policy,
         analysis,
@@ -1525,23 +1557,35 @@ fn open(
     max_depth = None,
     one_filesystem = false,
     read_controls = true,
+    control_budget = None,
     analyze = "none",
     analysis_workers = 0
 ))]
-#[allow(clippy::needless_pass_by_value, clippy::fn_params_excessive_bools)]
+#[allow(
+    clippy::needless_pass_by_value,
+    clippy::fn_params_excessive_bools,
+    clippy::too_many_arguments
+)]
 fn scan(
     py: Python<'_>,
     root: PathBuf,
     max_depth: Option<usize>,
     one_filesystem: bool,
     read_controls: bool,
+    control_budget: Option<&str>,
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
     let scan_started_at = Some(SystemTime::now());
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
-        scan: ScanConfig { max_depth, one_filesystem, read_controls, ..ScanConfig::default() },
+        scan: ScanConfig {
+            max_depth,
+            one_filesystem,
+            read_controls,
+            control_budget: parse_control_budget(control_budget)?,
+            ..ScanConfig::default()
+        },
         cache_path: None,
         policy: CachePolicy::Off,
         analysis,

@@ -115,7 +115,7 @@ coordinator assembly, route integration, and full application gate.
 | Phase 1: exact engine kernel | Complete | Checkpoints 1A through 1D passed their local gates and the cumulative cross-platform PR gate. |
 | Phase 2: opened-root vertical slice | Complete | The native lifecycle and five transparent session goldens are green. The direct `PyO3` handle, exhaustive value conversion, immutable `fdu.opened` API, typed errors, GIL-detached operations, strict downstream typing fixture, installed-wheel lifecycle, source distribution, CLI parity, and cross-target lint all pass. |
 | Phase 3: MetaBrowser adoption | Checkpoint 3C in progress | MetaBrowser commit `2743064` measures the unchanged contract against the exact fdu wheel from `0583a1a`; `45266a8` completes the shared bounded contract and Python oracle. fdu `a286145` completes the approved optional serving-index set, and `27aeed0` completes the bounded continuation authority with green CI. The current native checkpoint parses the actual File Rollup v3 registry without adding a dependency, projects classification on demand, and adds the selection predicates needed by catalog and filtered reads. The bounded projection readers, Python registry input, and thin production adapter remain open. |
-| Phase 4: control-state scale | Not started | Branch builds cannot roll up `~`, `~/wrk`, or `~/Library` on macOS while `main` can. The control table aborts the scan at a 4 MiB cumulative budget that `~/wrk` exceeds 2.4-fold. Epic `fdu-2lkf`. |
+| Phase 4: control-state scale | In progress | The control bounds degrade: a `.gitignore` past the budget or the per-line guard is refused and named, sizes stay exact, and nothing ends the scan (`fdu-1onj`). Identical sources are charged once (`fdu-szkg`), and one knob lifts both bounds on every surface (`fdu-okne`). Memory on `~/Library`-shaped trees, the peer-memory gap, and the macOS re-measurement remain. Epic `fdu-2lkf`. |
 | Phase 5: composed proof | Not started | Cross-provider conformance, route and lifecycle integration, installed-wheel proof, and final performance and size acceptance remain required. |
 
 The implementation epic has completed the native and Python Phase 2 dependency chain.
@@ -1836,15 +1836,15 @@ keeps the exact control state it exposes and a watch maintains.
 A request that reads no ignore classification opts out: `ScanConfig::read_controls` in
 Rust, `ScanOptions(read_controls=False)` in Python.
 Its `fdu_core::open`, `open_with_pending_save`, `fdu.open`, or `fdu.scan`, and a watch
-over that index, read no control file, share the one-shot snapshot scope, and reach no
-control bound. An index built without observation cannot classify, and says so:
-`Index::is_ignored`, `Index::controls`, `Index::partition_total`,
-`Index::partition_rollup`, and `Index::partition_rollup_summary` return
-`Error::ControlStateNotObserved` rather than calling every entry unignored or handing
-back an empty table, and a shared `ChildSnapshot` leaves its ignore bit and partitions
-as `None`. Nor does it accept control input: `Index::apply` refuses a `ControlUpsert` or
-`ControlRemove` with the same error, and a snapshot load refuses a control table under a
-scope that observed none, so an index’s scope and its table cannot disagree.
+over that index, read no control file and share the one-shot snapshot scope.
+An index built without observation cannot classify, and says so: `Index::is_ignored`,
+`Index::controls`, `Index::partition_total`, `Index::partition_rollup`, and
+`Index::partition_rollup_summary` return `Error::ControlStateNotObserved` rather than
+calling every entry unignored or handing back an empty table, and a shared
+`ChildSnapshot` leaves its ignore bit and partitions as `None`. Nor does it accept
+control input: `Index::apply` refuses a `ControlUpsert` or `ControlRemove` with the same
+error, and a snapshot load refuses a control table under a scope that observed none, so
+an index’s scope and its table cannot disagree.
 A one-shot report consumes no ignore classification, so the shared one-shot planner —
 `plan_report` and `prepare_report` in `crates/fdu-core/src/execution.rs` — turns
 observation off for every report, whatever the caller passed.
@@ -1853,8 +1853,8 @@ neither front end decides the policy and neither can drift from the other.
 `fdu.open` keeps the default, and the opened root always observes because its ignored
 and unignored partitions are the contract it serves.
 `fdu --watch` opens an index but turns observation off in the command line’s scan
-configuration: no command-line view reads control state, so it shares the one-shot scope
-and reaches no control bound (`fdu-1onj`).
+configuration: no command-line view reads control state, so it shares the one-shot
+scope.
 
 Three rules keep the switch honest:
 
@@ -1875,6 +1875,56 @@ Three rules keep the switch honest:
   Every scanning policy treats a scope mismatch as no usable snapshot and scans cold, so
   a default `open` does not warm-start from a report’s snapshot, while one that opts out
   shares its scope and does.
+
+#### Control bounds degrade, and the design as landed
+
+A control file the table cannot admit is refused, not an error.
+The rule is the one this plan states for `max_files`: reaching a bound yields a usable
+answer and a stated boundary.
+
+- **What is refused.** A source whose retained charge would take the table past its
+  budget, or with a line longer than the 16 KiB guard.
+  The table keeps no rules for that directory, and a source it replaces is dropped with
+  it, because rules no longer on disk must not keep applying.
+  The batch that carried it commits, and the walk continues.
+  A file longer than the budget is read only one byte past it, since no table under that
+  budget could admit it.
+- **What stays exact.** Every size and count.
+  Below a refused file the ignored and unignored split is not exact in either direction,
+  because the file may have held negations as well as ignore rules, so the marker names
+  directories rather than a bound.
+- **How it is stated.** `Index::control_coverage` returns `NotObserved`, or `Observed`
+  with the budget, the applied and refused counts, and at most `MAX_RETAINED_ISSUES`
+  refused files with their reason.
+  The count is exact: the table keeps every refusal, so removing a refused file or its
+  subtree lifts it. `EffectiveChange::ControlRefusalUpdated` records a refusal recorded
+  or lifted, so coverage never changes without a commit.
+  An opened root reports it in `ReadDiagnostics::controls`; its structural coverage
+  stays `Complete`, its listing commits, and a watched root keeps `Watching`. A report
+  carries it as `ignore_rules` in every machine format (`fdu.report/5`, and
+  `fdu.report/6` with content analysis) and as a note naming the directories and the
+  knob. It is not an operational partial: `complete` stays true and the exit status 0.
+- **The knob.** `ScanConfig::control_budget` and `OpenOptions::control_budget`, an
+  `Option<usize>` defaulting to 4 MiB; Python `ScanOptions.control_budget` and
+  `OpenedOptions.control_budget`; `--gitignore-budget SIZE|all` on the command line.
+  `None` or `all` lifts the budget and the per-line guard together.
+  The budget is mixed into `ScanScope::ignore_rules_fingerprint`, so a snapshot taken
+  under one budget never serves another and raising it scans cold once.
+- **Persistence.** Snapshot format 4 carries the budget and every refusal, so a
+  partially covered index reloads with the same coverage.
+  The snapshot parser checks control lengths against a fixed 256 MiB ceiling that does
+  not depend on the runtime budget, and `save` refuses a table above it rather than
+  write a snapshot the loader would discard.
+- **Sharing.** Identical sources are stored and parsed once, keyed by FNV-1a identity
+  with a byte comparison, so a collision never shares a matcher.
+  Each directory still pays for its key.
+  Over `~/wrk` on 2026-09-15, 4,830 `.gitignore` files with 980 distinct contents, the
+  charge model drops from 13.84 MiB to 4.10 MiB; that tree is still past the default
+  budget, which is why degradation rather than a larger constant is the fix.
+
+Which files are refused is not deterministic under a parallel walk: the first crossing
+of a running total depends on the order sources arrive.
+The coverage names what this run refused, and a snapshot carries it.
 
 #### The remaining parity work
 
@@ -1907,18 +1957,17 @@ before anything tunes what that state costs.
   acceptance described above.
   Acceptance by surface: a command-line one-shot report and a Python `fdu.report`
   perform no control-file I/O and retain no control state, because both run through
-  `prepare_report`. The opened root and `open` still observe exact control state, so
-  they can still abort on control volume until `fdu-1onj` lands; `fdu --watch` has
-  observed none since the command line turned it off.
-- [ ] Replace the abort with degradation: on crossing the table budget or the per-line
-  pattern bound, stop retaining further control sources, mark coverage partial with a
-  typed control-budget issue that names the affected directories, and keep the roll-up
-  answer (`fdu-1onj`).
-- [ ] Deduplicate retained sources by the `ControlIdentity` fingerprint already
-  computed, so identical control files are charged and compiled once (`fdu-szkg`).
-- [ ] Split the constant into a strict snapshot-parser guard and a separate, larger
-  runtime retention budget; make the runtime budget liftable from the command line and
-  name it in the diagnostic (`fdu-okne`).
+  `prepare_report`. The opened root and `open` observe exact control state, and since
+  `fdu-1onj` a control bound degrades rather than ends them; `fdu --watch` has observed
+  none since the command line turned it off.
+- [x] Replace the abort with degradation (`fdu-1onj`). Landed as described in “Control
+  bounds degrade”: a refused source is a typed coverage fact naming the files, on the
+  cold, streaming, reconcile, watch, and opened-root paths, carried by snapshot format
+  4\.
+- [x] Deduplicate retained sources by the `ControlIdentity` fingerprint, with a byte
+  comparison, so identical control files are charged and compiled once (`fdu-szkg`).
+- [x] Split the constant into a fixed snapshot-parser ceiling and a runtime budget that
+  one knob lifts on every surface, named in the refusal note (`fdu-okne`).
 - [ ] Establish whether peak memory grows unbounded on `~/Library`-shaped trees — deep,
   wide, many small files — and bound whatever accumulates, keeping that question
   separate from TCC-induced slowness (`fdu-6o5o`).
@@ -2286,10 +2335,10 @@ green.
 | Bead and files | Work | Acceptance |
 | --- | --- | --- |
 | `fdu-pro1`: whole-scan allocation regression | PR #51 bisected the growth and removed repeated commit derivation, redundant walker-path reconstruction, and empty control projection. Its review found that path-keyed ancestry preflight now dominates detached CPU, impact publication is next, and prepare, effect, and compatibility path copies dominate residual allocations. The [streaming performance parity plan](plan-2026-08-31-fdu-streaming-performance-parity.md) owns the remaining work. | Open: both nominated real trees must meet the new plan’s wall, component, allocation, semantic, and zero-streaming-work thresholds against the pinned pre-rewrite control. |
-| `fdu-etfj`: `crates/fdu-core/src/execution.rs` `plan_report` and `prepare_report`, `crates/fdu-core/src/scan.rs` `read_control_op` and `ScanConfig`, `crates/fdu-core/src/lib.rs` snapshot acceptance | Done. `ScanConfig::read_controls` (default on) gates the one observation funnel that scans and watch verification share. The shared one-shot planner, which the command line and the Python package both call, turns observation off for every report whatever the caller passed, so no front end decides it. `open` keeps the default and the opened root always observes; `fdu --watch` turns it off, because no command-line view reads it. Off is identity `0` in `ScanScope::ignore_rules_fingerprint`, which a build without the `gitignore` build feature shared until `fdu-x7yb` removed it. Snapshot acceptance is exact except for a no-scan `--cache only` report, which may read a controls-on snapshot for a controls-off request. | By surface. Command-line one-shot and Python `fdu.report`: no control-file I/O and no retained control state, proven at the planner by an engine test over control sources that cannot be read or retained without an error. The binding reaches that planner through `fdu_core::prepare_report` and cannot override it; the Python and parity CI jobs cover that it still builds and answers as the command line does. The `file_opens` counter is not evidence here, because it counts only content-analysis opens. Opened root and `open`: exact control state, and still able to abort on control volume until `fdu-1onj`. An `open`, `fdu.open`, or `fdu.scan` that opts out observes none, and its index answers ignore questions with `ControlStateNotObserved`. `fdu --watch`: no control state, pinned by `crates/fdu/tests/watch_controls.rs`. The `--no-default-features` build is unaffected. |
-| `fdu-1onj`: `crates/fdu-core/src/control.rs` `upsert`, `crates/fdu-core/src/index.rs` `install_controls` | Replace `Err(ControlSourceLimit)` and `Err(ControlPatternLimit)` — the 4 MiB table bound and the 16 KiB per-line bound, both fatal today — with degradation to partial coverage carrying a typed control-budget issue, matching the resource-budget contract this plan already states for `max_files`. One-shot reports and `fdu --watch` no longer reach either bound; the opened root and `open` still do. | Crossing either bound yields a usable roll-up and a stated partial boundary; no scan aborts on control state alone. |
-| `fdu-szkg`: `crates/fdu-core/src/control.rs` `retained_source_cost`, `ControlSource` | Deduplicate retained sources by the `ControlIdentity` fingerprint already computed, so identical control files are compiled and charged once. | Removal semantics unchanged and tested; measured retention on `~/wrk` falls from 9.93 MiB toward the deduplicated 3.81 MiB. |
-| `fdu-okne`: `crates/fdu-core/src/control.rs`, `crates/fdu-core/src/snapshot.rs`, `crates/fdu/src/cli.rs` | Split the constant into a strict snapshot-parser guard and a separate, larger runtime retention budget. Expose the runtime budget where it is stated and name it in the diagnostic. | The bound is liftable by a flag; the parser guard stays strict against untrusted `u32` lengths on load. |
+| `fdu-etfj`: `crates/fdu-core/src/execution.rs` `plan_report` and `prepare_report`, `crates/fdu-core/src/scan.rs` `read_control_op` and `ScanConfig`, `crates/fdu-core/src/lib.rs` snapshot acceptance | Done. `ScanConfig::read_controls` (default on) gates the one observation funnel that scans and watch verification share. The shared one-shot planner, which the command line and the Python package both call, turns observation off for every report whatever the caller passed, so no front end decides it. `open` keeps the default and the opened root always observes; `fdu --watch` turns it off, because no command-line view reads it. Off is identity `0` in `ScanScope::ignore_rules_fingerprint`, which a build without the `gitignore` build feature shared until `fdu-x7yb` removed it. Snapshot acceptance is exact except for a no-scan `--cache only` report, which may read a controls-on snapshot for a controls-off request. | By surface. Command-line one-shot and Python `fdu.report`: no control-file I/O and no retained control state, proven at the planner by an engine test over control sources that cannot be read or retained without an error. The binding reaches that planner through `fdu_core::prepare_report` and cannot override it; the Python and parity CI jobs cover that it still builds and answers as the command line does. The `file_opens` counter is not evidence here, because it counts only content-analysis opens. Opened root and `open`: exact control state, and a control bound degrades rather than ends them (`fdu-1onj`). An `open`, `fdu.open`, or `fdu.scan` that opts out observes none, and its index answers ignore questions with `ControlStateNotObserved`. `fdu --watch`: no control state, pinned by `crates/fdu/tests/watch_controls.rs`. The `--no-default-features` build is unaffected. |
+| `fdu-1onj`: `crates/fdu-core/src/control.rs` `ControlTable::upsert`, `crates/fdu-core/src/index.rs` `control_coverage` and `apply_control_transition`, `crates/fdu-core/src/opened.rs` `discovery_rejection`, `crates/fdu-core/src/snapshot.rs` `read_controls` | Done. `ControlSourceLimit` and `ControlPatternLimit` are gone: a source past the budget or the line guard is refused and recorded, its batch commits, and `Index::control_coverage`, `EffectiveChange::ControlRefusalUpdated`, `ReadDiagnostics::controls`, and a report’s `ignore_rules` and note state it. Snapshot format 4 carries the refusals. | Crossing either bound yields a usable roll-up with exact sizes and a named partial boundary on every path: cold detached and streaming bootstraps over the 1,105-directory tree plus a line over the guard, a watched opened root through events and a refresh, and a snapshot round trip. |
+| `fdu-szkg`: `crates/fdu-core/src/control.rs` `ControlTable` `attach` and `detach` | Done. Distinct contents are shared by `ControlIdentity` with a byte comparison and charged once; each directory pays for its key. | A fixed-seed property test recomputes every charge, holder count, and refusal after each random upsert and removal; a forged collision keeps separate matchers; over `~/wrk` the charge falls from 13.84 MiB to 4.10 MiB. |
+| `fdu-okne`: `crates/fdu-core/src/scan.rs` `ScanConfig::control_budget`, `crates/fdu-core/src/opened.rs` `OpenOptions::control_budget`, `crates/fdu-core/src/snapshot.rs`, `crates/fdu/src/cli.rs` `--gitignore-budget`, Python `control_budget` | Done. One runtime budget, liftable to unbounded with the per-line guard, mixed into the ignore-rules fingerprint, and named by the refusal note in each surface’s spelling. The snapshot parser keeps a fixed 256 MiB ceiling. | The budget is settable on every surface and named in the diagnostic; the parser guard stays independent of it. |
 | `fdu-6o5o`: macOS `~/Library` memory investigation | Establish whether peak memory grows unbounded on deep, wide, many-small-file trees and bound whatever accumulates. Keep this separate from TCC-induced slowness, which is not fdu’s. | Peak memory is bounded and measured, or the SIGKILL is attributed outside fdu with evidence. |
 | `fdu-syyl`: peak-memory deficit against dust | Separate the portion of fdu’s peak that the retained index contract requires from the portion a roll-up never uses. Measure through the harness, paired and interleaved, not by hand. | Peak RSS on nominated macOS trees is measured and attributed; any reducible part has an owner or a recorded decision to keep it. |
 | `fdu-zibs`: recorded macOS peer comparison | Run `make perf-compare-tools` over the nominated macOS subjects and record the artifact, so no fdu-versus-dust figure rests on an unpaired or cache-uncontrolled run. | A recorded artifact exists with platform, host, and cache state stated; the `~/Library` case where dust leads is explained or filed. |

@@ -214,6 +214,15 @@ scope.
 A command-line run does not start from a snapshot that observes control state, and
 one that saves replaces it, but `--cache only` still answers a one-shot report from it.
 
+Control state has a budget, and crossing it never costs the answer.
+An index that observes `.gitignore` files charges each distinct file’s rules once, up to
+4 MiB by default, and refuses a file past that budget or with a line over 16 KiB. A
+refused file’s rules do not apply, every size stays exact, the result stays complete,
+and the report says which files it refused in its `ignore_rules` field and a note naming
+their directories. `control_budget` in the library and Python, and `--gitignore-budget`
+on the command line, raise the budget or lift both bounds with `all`. The budget is part
+of the snapshot scope, so changing it scans cold once.
+
 ### How performance work is done here
 
 fdu runs a disciplined optimization loop rather than a list of tweaks: instrument,
@@ -460,14 +469,14 @@ A text report covering more than one view labels each block with an all-caps hea
 naming the view, separated by a blank line, and colorizes that header on the same terms
 as the rest of human output; a single-view report is left bare, so `fdu --view files`
 stays a listing of paths and nothing else.
-Metadata-only machine reports use the versioned `fdu.report/4` schema.
+Metadata-only machine reports use the versioned `fdu.report/5` schema.
 An `extension` value is either a derived extension, which always carries a leading dot,
 or the literal `(none)` for names that have none; a consumer matching on the dot should
 expect that one label without it.
 The schema is unchanged by this, because the field’s name and type are: `(none)` is a
 member of its value domain, not a new shape.
 A report that ran content analysis, or that includes the `types`, `families`,
-`languages`, or `documents` metric summaries, uses `fdu.report/5`, adding exact share
+`languages`, or `documents` metric summaries, uses `fdu.report/6`, adding exact share
 numerators and denominators, analyzer coverage, and versioned rule, option, and analyzer
 identities.
 An unavailable metric share is represented as `0/0` in machine output and `—`
@@ -510,7 +519,7 @@ shebangs, modelines, C++ literals, XML and manpage markers, binary signatures, a
 generated-file markers.
 For unresolved paths, NUL and named binary signatures take precedence over shebang and
 modeline hints. A NUL found anywhere in any eligible read discards provisional text
-metrics, and every deeper decision is explainable in `fdu.report/5` rather than silently
+metrics, and every deeper decision is explainable in `fdu.report/6` rather than silently
 guessed.
 
 This surface — composable views, selection filters, time-window and watermark queries,

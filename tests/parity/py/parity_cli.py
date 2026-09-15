@@ -127,6 +127,7 @@ class Args:
         self.root: str | None = None
         self.scan_depth: int | None = None
         self.one_filesystem = False
+        self.gitignore_budget: str | None = None
         self.include: list[str] = []
         self.exclude: list[str] = []
         self.min_size: str | None = None
@@ -188,6 +189,8 @@ def parse_args(argv: list[str]) -> Args:
             args.scan_depth = int(take())
         elif flag == "--one-filesystem":
             args.one_filesystem = True
+        elif flag == "--gitignore-budget":
+            args.gitignore_budget = take()
         elif flag == "--include":
             args.include.append(take())
         elif flag == "--exclude":
@@ -381,7 +384,11 @@ def _repaint(args: Args, watch: fdu.Watch) -> None:
 
 
 def _open(args: Args) -> fdu.Index:
-    scan = fdu.ScanOptions(max_depth=args.scan_depth, one_filesystem=args.one_filesystem)
+    scan = fdu.ScanOptions(
+        max_depth=args.scan_depth,
+        one_filesystem=args.one_filesystem,
+        control_budget=args.gitignore_budget,
+    )
     analysis = fdu.AnalysisOptions(analyze=args.analyze, workers=args.analysis_workers)
     return fdu.open(args.root or ".", cache=args.cache, scan=scan, analysis=analysis)
 
@@ -431,7 +438,11 @@ def main(argv: list[str] | None = None) -> int:
         args.root or ".",
         build_query(args),
         cache=args.cache,
-        scan=fdu.ScanOptions(max_depth=args.scan_depth, one_filesystem=args.one_filesystem),
+        scan=fdu.ScanOptions(
+            max_depth=args.scan_depth,
+            one_filesystem=args.one_filesystem,
+            control_budget=args.gitignore_budget,
+        ),
         analysis=fdu.AnalysisOptions(analyze=args.analyze, workers=args.analysis_workers),
     )
     sys.stdout.write(render(args, report))

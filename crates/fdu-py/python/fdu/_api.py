@@ -368,6 +368,7 @@ def open(
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,
         read_controls=scan_options.read_controls,
+        control_budget=_bound(scan_options.control_budget),
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
@@ -394,6 +395,7 @@ def scan(
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,
         read_controls=scan_options.read_controls,
+        control_budget=_bound(scan_options.control_budget),
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
@@ -419,9 +421,8 @@ def report(
     not have, visible to a later cache-only read.
 
     A report never observes ``.gitignore`` control state, because no view reads it, so it
-    opens no control file and cannot fail on the control-state bound, and it ignores
-    ``ScanOptions.read_controls``. See :func:`open` for what that means for sharing a
-    snapshot with an index.
+    opens no control file, and it ignores ``ScanOptions.read_controls``. See :func:`open`
+    for what that means for sharing a snapshot with an index.
 
     Use :func:`open` when you will ask more than one question; the index is the point.
     """

@@ -118,7 +118,9 @@ def check_render_matches_the_cli(root: Path, binary: str) -> None:
     recording drifts and the point is that the two agree today.
     """
 
-    index = fdu.scan(str(root))
+    # The command line reads no `.gitignore`, and a report's `ignore_rules` field says
+    # whether rules were read, so the index compared with it reads none either.
+    index = fdu.scan(str(root), scan=fdu.ScanOptions(read_controls=False))
     for view in (fdu.View.TREE, fdu.View.LARGEST, fdu.View.SUMMARY):
         report = index.report(fdu.Query(views=(view,)))
         for fmt in fdu.Format:
@@ -323,15 +325,15 @@ def check_every_view(root: Path) -> None:
 def check_an_index_can_opt_out_of_control_state() -> None:
     """A default open or scan reads control files; one that opts out shares a report's scope.
 
-    A request that turns ``read_controls`` off reads no control file, so it cannot end on a
-    control-state bound, and its snapshot has a one-shot report's scope. A watch continues
-    its index's scope, so it inherits the same choice.
+    A request that turns ``read_controls`` off reads no control file, and its snapshot has a
+    one-shot report's scope. A watch continues its index's scope, so it inherits the same
+    choice.
     """
 
     root = Path(tempfile.mkdtemp(prefix="fdu-public-controls-"))
     (root / "kept.txt").write_text("kept", encoding="utf-8")
-    # One pattern longer than the engine's 16 KiB per-line bound, which an index that
-    # observed control state could not retain.
+    # One pattern longer than the engine's 16 KiB per-line guard, which an index that
+    # observes control state refuses.
     (root / ".gitignore").write_text("x" * (16 * 1024 + 1) + "\n", encoding="utf-8")
     opted_out = fdu.ScanOptions(read_controls=False)
 
@@ -341,14 +343,32 @@ def check_an_index_can_opt_out_of_control_state() -> None:
     ):
         assert index.status.complete is True, index.status.errors
         assert index.total().files == 2
-    try:
-        observed = fdu.scan(root)
-    except fdu.FduError:
-        pass
-    else:
-        # Degrading to partial coverage instead of failing (fdu-1onj) still shows the
-        # control file was read, which is what the default asks for.
-        assert observed.status.complete is False, "a default scan must read the control file"
+        assert index.status.ignore_rules is None, "a request that read no rule says so"
+        assert index.report().status.ignore_rules is None
+    # A default scan reads the control file and refuses the line over the guard, without
+    # ending the scan or making its sizes partial (fdu-1onj).
+    observed = fdu.scan(root)
+    assert observed.status.complete is True, observed.status.errors
+    assert observed.total().files == 2
+    refused = fdu.RefusedControl(Path(".gitignore"), fdu.ControlRefusalReason.LINE_GUARD)
+    expected = fdu.ControlObservation(
+        budget=4 * 1024 * 1024, applied=0, refused=1, refusals=(refused,)
+    )
+    assert observed.status.ignore_rules == expected, observed.status
+    observed_report = observed.report(fdu.Query(views=(fdu.View.SUMMARY,)))
+    assert observed_report.status.complete is True
+    assert observed_report.status.ignore_rules == expected, observed_report.status
+    wire = json.loads(observed_report.render(fdu.Format.JSON))
+    assert wire["ignore_rules"]["refusals"] == [{"path": ".gitignore", "reason": "line_guard"}]
+    # The note names the directory and the knob as this surface spells it.
+    (note,) = observed_report.notes
+    assert "under . are not exact" in note, note
+    assert "set control_budget to all" in note, note
+    assert note in observed_report.render(fdu.Format.TEXT), note
+    # The same knob lifts the guard.
+    lifted = fdu.scan(root, scan=fdu.ScanOptions(control_budget=fdu.Bound.ALL))
+    assert lifted.status.ignore_rules == fdu.ControlObservation(budget=None, applied=1, refused=0)
+    assert lifted.report().notes == ()
 
     # A report and an opted-out open share one snapshot scope, so that open starts warm; a
     # default open observes control state the report's snapshot never held, and scans cold.
@@ -423,7 +443,7 @@ def main() -> None:
         fdu.View.FILES,
     ]
     wire = report.as_dict()
-    assert wire["schema"] == "fdu.report/4"
+    assert wire["schema"] == "fdu.report/5"
     assert wire["generator"] == f"fdu {fdu.__version__}"
     assert json.loads(json.dumps(wire)) == wire
 
@@ -529,6 +549,15 @@ def main() -> None:
     for volatile in ("scan_started_at", "generated_at", "source"):
         cli_wire.pop(volatile)
         wire.pop(volatile)
+    # The index read `.gitignore` control state and the command line reads none, and the
+    # envelope says so on each side rather than agreeing on a value neither observed.
+    assert cli_wire.pop("ignore_rules") is None, cli_wire
+    assert wire.pop("ignore_rules") == {
+        "budget": 4 * 1024 * 1024,
+        "applied": 0,
+        "refused": 0,
+        "refusals": [],
+    }, wire
     assert wire == cli_wire, (wire, cli_wire)
 
     print(f"fdu {fdu.__version__} public API ok")

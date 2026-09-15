@@ -548,19 +548,6 @@ impl Issue {
         }
     }
 
-    /// Describe a directory listing the index refused on a control-state resource bound.
-    ///
-    /// A control bound is a resource bound, not a provider failure, and the directory whose
-    /// control file crossed it is known where the refusal is classified.
-    pub(crate) fn control_refusal(directory: &Path, error: &Error) -> Self {
-        Self {
-            kind: IssueKind::ResourceBudget,
-            path: bounded_issue_path(directory),
-            message: bounded_issue_message(error.to_string()),
-            os_error: None,
-        }
-    }
-
     /// Describe the first file refused by an opened-root resource budget.
     pub(crate) fn resource_budget(max_files: u64) -> Self {
         Self {
@@ -885,6 +872,9 @@ pub struct ReadDiagnostics {
     pub entries: u64,
     /// Bounded typed issue details at this version.
     pub issues: Vec<Issue>,
+    /// Which `.gitignore` files apply and which were refused, at this version. An opened
+    /// root always observes control state.
+    pub controls: crate::control::ControlObservation,
 }
 
 /// One depth-one structural page.
@@ -1480,6 +1470,19 @@ pub enum EffectiveChange {
         /// Current source identity, or absence.
         current: Option<crate::control::ControlIdentity>,
     },
+    /// A control file was refused, or its refusal lifted, so ignore classification's
+    /// coverage changed.
+    ///
+    /// A refusal replacing a retained source arrives with the [`Self::ControlUpdated`]
+    /// that drops the source; a refusal of a file no rule came from arrives alone.
+    ControlRefusalUpdated {
+        /// Relative `.gitignore` path.
+        path: PathBuf,
+        /// Why the file was refused before the commit, or absence.
+        previous: Option<crate::control::ControlRefusalReason>,
+        /// Why the file is refused after the commit, or absence.
+        current: Option<crate::control::ControlRefusalReason>,
+    },
     /// One retained entry moved between the fixed ignored and unignored partitions.
     Reclassified {
         /// Relative retained-entry path.
@@ -1506,6 +1509,7 @@ impl EffectiveChange {
             | Self::Updated { path, .. }
             | Self::Removed { path, .. }
             | Self::ControlUpdated { path, .. }
+            | Self::ControlRefusalUpdated { path, .. }
             | Self::Reclassified { path, .. }
             | Self::Invalidated { path, .. } => path,
         }
@@ -1718,24 +1722,6 @@ pub enum Error {
     /// A control observation did not name the fixed control filename.
     #[error("invalid control-file path: {0:?}")]
     InvalidControlPath(PathBuf),
-
-    /// Exact retained control sources exceeded the per-index resource bound.
-    #[error("control table requires {attempted} bytes; limit is {limit} bytes")]
-    ControlSourceLimit {
-        /// Bytes the resulting table would retain.
-        attempted: usize,
-        /// Shared table limit.
-        limit: usize,
-    },
-
-    /// One control pattern exceeded the per-line matching-work bound.
-    #[error("control pattern requires {attempted} bytes; limit is {limit} bytes")]
-    ControlPatternLimit {
-        /// Bytes in the oversized pattern line.
-        attempted: usize,
-        /// Per-line pattern limit.
-        limit: usize,
-    },
 
     /// Snapshot persistence failed after a usable snapshot had been selected.
     #[error("snapshot is not usable: {0}")]

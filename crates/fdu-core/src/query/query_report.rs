@@ -23,6 +23,7 @@ use crate::classify::{ContentFamily, DetectionConfidence, DetectionSource};
 use crate::content::{
     AnalysisSet, ContentIndex, ContentProvenance, CoverageReason, LogicalWordStats, MetricValues,
 };
+use crate::control::ControlCoverage;
 use crate::engine_contract::{EntryKind, Freshness, ScanScope};
 use crate::index::{EntryId, ExtTally, Index, RollUpScalars};
 use crate::query::query_selection::{
@@ -280,7 +281,7 @@ impl ViewSpec {
     }
 }
 
-/// What the calling surface calls the two axes a report's diagnostics name.
+/// What the calling surface calls the knobs a report's diagnostics name.
 ///
 /// The same reason `ViewSpec::resolve` and `AnalysisSet::parse_labeled` take a label: a
 /// rule belongs to the library, but the words a caller can act on belong to the surface
@@ -288,19 +289,23 @@ impl ViewSpec {
 /// not exist in their surface -- the defect that made these messages worth moving here in
 /// the first place, reappearing one door over (fdu-4apt).
 ///
-/// Two axes rather than one because both diagnostics name both: the view that cannot be
-/// answered, and the analyzer that would answer it.
+/// The view and analyzer axes both, because both diagnostics name both: the view that
+/// cannot be answered, and the analyzer that would answer it. The control budget, because
+/// the note about refused `.gitignore` files names the knob that applies them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AxisNames {
     /// The view axis.
     pub view: &'static str,
     /// The analyzer axis.
     pub analyze: &'static str,
+    /// The control budget that bounds which `.gitignore` files apply.
+    pub control_budget: &'static str,
 }
 
 impl AxisNames {
     /// How the command line spells them.
-    pub const FLAGS: Self = Self { view: "--view", analyze: "--analyze" };
+    pub const FLAGS: Self =
+        Self { view: "--view", analyze: "--analyze", control_budget: "--gitignore-budget" };
 
     /// How the library and the Python API spell them, and the default: a `Query` built
     /// without saying otherwise belongs to a library caller, not to the command line.
@@ -309,7 +314,8 @@ impl AxisNames {
     /// `ViewSpec::resolve`, so every diagnostic about this axis names it one way. It also
     /// keeps the difference from the command line to the flag dashes alone, which is what
     /// the parity harness's `surface-label` class checks.
-    pub const FIELDS: Self = Self { view: "view", analyze: "analyze" };
+    pub const FIELDS: Self =
+        Self { view: "view", analyze: "analyze", control_budget: "control_budget" };
 }
 
 impl Default for AxisNames {
@@ -708,26 +714,112 @@ pub struct Report {
     pub size: SizeMetric,
     /// Analyzer identity when sparse content records are present.
     pub analysis: Option<ContentReportMetadata>,
+    /// Whether ignore classification applies every `.gitignore` in scope, serialised as
+    /// `ignore_rules`.
+    ///
+    /// Not operational completeness: a refused control file leaves [`Self::complete`]
+    /// true and every size exact, and costs only the ignored and unignored split below
+    /// it. [`Self::notes`] names the directories and the knob that applies them.
+    pub ignore_rules: ControlCoverage,
     /// One section per requested view, in request order.
     pub sections: Vec<Section>,
 }
 
 /// Remarks a report makes about itself.
 ///
-/// Only what the request and the resolved views can establish. The CLI also prints a note
-/// quoting how many bytes analysis read, which is walk telemetry the report envelope does
-/// not carry, so that one stays with the performance footer where the rest of the run's
-/// telemetry lives.
-fn display_notes(query: &Query) -> Vec<String> {
-    if query.omitted_views.is_empty() {
-        return Vec::new();
+/// Only what the request, the resolved views, and the index's coverage can establish. The
+/// CLI also prints a note quoting how many bytes analysis read, which is walk telemetry the
+/// report envelope does not carry, so that one stays with the performance footer where the
+/// rest of the run's telemetry lives.
+pub(crate) fn display_notes(query: &Query, ignore_rules: &ControlCoverage) -> Vec<String> {
+    let mut notes = Vec::new();
+    if !query.omitted_views.is_empty() {
+        let names: Vec<&str> = query.omitted_views.iter().map(|view| view.label()).collect();
+        notes.push(format!(
+            "note: omitted {} — requires content analysis: add {} lines, code, words, or all",
+            names.join(", "),
+            query.axes.analyze
+        ));
     }
-    let names: Vec<&str> = query.omitted_views.iter().map(|view| view.label()).collect();
-    vec![format!(
-        "note: omitted {} — requires content analysis: add {} lines, code, words, or all",
-        names.join(", "),
-        query.axes.analyze
-    )]
+    notes.extend(refused_controls_note(ignore_rules, query.axes));
+    notes
+}
+
+/// Directories a refused-controls note names before it counts the rest.
+const REFUSED_DIRECTORIES_NAMED: usize = 5;
+
+/// Say which `.gitignore` files were not applied, why, where, and what applies them.
+///
+/// The truncation states itself: the note names a few directories and counts the rest,
+/// and a structured report lists up to [`crate::MAX_RETAINED_ISSUES`] beside the exact
+/// count. A reason is broken down only when every refusal is listed; otherwise the note
+/// names both bounds, since an unlisted file could have crossed either.
+fn refused_controls_note(ignore_rules: &ControlCoverage, axes: AxisNames) -> Option<String> {
+    use crate::control::ControlRefusalReason;
+
+    let ControlCoverage::Observed(observed) = ignore_rules else {
+        return None;
+    };
+    if observed.is_complete() {
+        return None;
+    }
+    // An unbounded table refuses nothing, so a refusal always has a budget to name.
+    let budget = crate::report_format::human_bytes(
+        u64::try_from(observed.budget.unwrap_or(0)).unwrap_or(u64::MAX),
+    );
+    let guard = crate::report_format::human_bytes(
+        u64::try_from(crate::control::CONTROL_LINE_GUARD_BYTES).unwrap_or(u64::MAX),
+    );
+    let files = crate::report_format::human_count(observed.refused);
+    let noun = if observed.refused == 1 { "file" } else { "files" };
+    let count =
+        |reason| observed.refusals.iter().filter(|refusal| refusal.reason == reason).count();
+    let (over_budget, over_guard) = if observed.lists_every_refusal() {
+        (count(ControlRefusalReason::Budget), count(ControlRefusalReason::LineGuard))
+    } else {
+        (1, 1)
+    };
+    let why = if observed.lists_every_refusal() {
+        let mut parts = Vec::new();
+        if over_budget > 0 {
+            parts.push(format!("{over_budget} over the {budget} ignore-rule budget"));
+        }
+        if over_guard > 0 {
+            parts.push(format!("{over_guard} with a line over the {guard} line guard"));
+        }
+        parts.join(", ")
+    } else {
+        format!("over the {budget} ignore-rule budget or the {guard} line guard")
+    };
+
+    let shown = observed.refusals.len().min(REFUSED_DIRECTORIES_NAMED);
+    let mut directories: Vec<String> = observed.refusals[..shown]
+        .iter()
+        .map(|refusal| match refusal.path.parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => parent.display().to_string(),
+            _ => ".".to_string(),
+        })
+        .collect();
+    let unnamed = observed.refused.saturating_sub(u64::try_from(shown).unwrap_or(u64::MAX));
+    if unnamed > 0 {
+        directories.push(format!("{} more", crate::report_format::human_count(unnamed)));
+    }
+
+    let knob = axes.control_budget;
+    let remedy = match (over_budget > 0, over_guard > 0) {
+        (true, false) => format!("raise {knob} above {budget}, or set it to all"),
+        (false, _) => format!("set {knob} to all to lift the line guard"),
+        (true, true) => {
+            format!(
+                "raise {knob} above {budget}, or set it to all, which also lifts the line guard"
+            )
+        }
+    };
+    Some(format!(
+        "note: {files} .gitignore {noun} not applied ({why}), so ignored shares under {} are \
+         not exact; sizes are. To apply them, {remedy}",
+        directories.join(", ")
+    ))
 }
 
 /// Build a report from an index.
@@ -759,8 +851,9 @@ pub(crate) fn report_in(
         .map(|view| build_section(*view, index, query, walked.as_ref()))
         .collect();
 
+    let ignore_rules = index.control_coverage();
     Report {
-        notes: display_notes(query),
+        notes: display_notes(query, &ignore_rules),
         scan_started_at: provenance.scan_started_at,
         generated_at: provenance.generated_at,
         source: provenance.source,
@@ -776,6 +869,7 @@ pub(crate) fn report_in(
                 provenance: content.provenance()?.clone(),
             })
         }),
+        ignore_rules,
         sections,
     }
 }
@@ -808,6 +902,8 @@ pub(crate) fn report_summary(
         // The planner only selects this tier when no analysis was requested, so there is
         // no analyzer provenance to report.
         analysis: None,
+        // Nor when control state is observed, since it retains no table to classify with.
+        ignore_rules: ControlCoverage::NotObserved,
         sections: vec![Section::Summary(summary)],
     }
 }
@@ -1882,7 +1978,7 @@ mod tests {
         assert!(!omitted.is_empty(), "documents needs analysis and must be dropped");
 
         let query = Query { views: selected, omitted_views: omitted, ..Query::default() };
-        let notes = display_notes(&query);
+        let notes = display_notes(&query, &ControlCoverage::NotObserved);
         assert_eq!(notes.len(), 1, "{notes:?}");
         assert!(notes[0].contains("omitted documents"), "{notes:?}");
 
@@ -1891,7 +1987,7 @@ mod tests {
             .expect("full resolves with analyzers");
         assert!(omitted.is_empty(), "every view is answerable with analysis enabled");
         let query = Query { views: selected, omitted_views: omitted, ..Query::default() };
-        assert!(display_notes(&query).is_empty());
+        assert!(display_notes(&query, &ControlCoverage::NotObserved).is_empty());
     }
 
     /// A rule belongs to the library; the words a caller can act on belong to their
@@ -1900,6 +1996,56 @@ mod tests {
     ///
     /// Asserted as "names mine, never the other's" rather than by quoting either sentence,
     /// so rewording the rule cannot break this and changing the vocabulary cannot pass it.
+    /// The refused-controls note names a few directories and counts the rest, breaks the
+    /// reasons down only when every refusal is listed, and offers the remedy the reasons
+    /// call for.
+    #[test]
+    fn the_refused_controls_note_bounds_its_list_and_matches_its_remedy_to_the_reasons() {
+        use crate::control::{ControlObservation, ControlRefusalReason, RefusedControl};
+
+        let refused = |directory: &str, reason| RefusedControl {
+            path: Path::new(directory).join(".gitignore"),
+            reason,
+        };
+        let note = |refusals: Vec<RefusedControl>, count: u64| {
+            let coverage = ControlCoverage::Observed(ControlObservation {
+                budget: Some(4 * 1024 * 1024),
+                applied: 7,
+                refused: count,
+                refusals,
+            });
+            refused_controls_note(&coverage, AxisNames::FLAGS).expect("a refusal is noted")
+        };
+        let budget = ControlRefusalReason::Budget;
+
+        assert_eq!(
+            note(vec![refused("", budget), refused("pkg/a", budget)], 2),
+            "note: 2 .gitignore files not applied (2 over the 4.0 MiB ignore-rule budget), so \
+             ignored shares under ., pkg/a are not exact; sizes are. To apply them, raise \
+             --gitignore-budget above 4.0 MiB, or set it to all"
+        );
+
+        let listed: Vec<_> = (0..crate::MAX_RETAINED_ISSUES)
+            .map(|index| refused(&format!("d{index:02}"), budget))
+            .collect();
+        assert_eq!(
+            note(listed, 1_000),
+            "note: 1,000 .gitignore files not applied (over the 4.0 MiB ignore-rule budget or \
+             the 16 KiB line guard), so ignored shares under d00, d01, d02, d03, d04, 995 more \
+             are not exact; sizes are. To apply them, raise --gitignore-budget above 4.0 MiB, \
+             or set it to all, which also lifts the line guard"
+        );
+
+        let complete = ControlCoverage::Observed(ControlObservation {
+            budget: Some(1),
+            applied: 3,
+            refused: 0,
+            refusals: Vec::new(),
+        });
+        assert_eq!(refused_controls_note(&complete, AxisNames::FLAGS), None);
+        assert_eq!(refused_controls_note(&ControlCoverage::NotObserved, AxisNames::FLAGS), None);
+    }
+
     #[test]
     fn a_diagnostic_names_the_axes_the_requesting_surface_uses() {
         let (selected, omitted) = ViewSpec::resolve(Some("full"), AnalysisSet::NONE, "view")
@@ -1918,7 +2064,7 @@ mod tests {
             // Anchored on the whole phrase, because `--analyze` contains `analyze`: a bare
             // `contains` for the other surface's spelling matches its own. That is the same
             // tokenisation trap the watch-scope substitution had to avoid.
-            let note = display_notes(&query).remove(0);
+            let note = display_notes(&query, &ControlCoverage::NotObserved).remove(0);
             assert!(note.contains(&format!("add {mine} ")), "{note} must name {mine}");
             assert!(!note.contains(&format!("add {theirs} ")), "{note} must not name {theirs}");
         }

@@ -1424,6 +1424,12 @@ impl DetachedIndexBuilder {
         }
     }
 
+    /// Refuse control sources past `budget` while building.
+    pub(crate) fn with_control_budget(mut self, budget: Option<usize>) -> Self {
+        self.index.set_control_budget(budget);
+        self
+    }
+
     /// Consume one listing after its parent listing has already been consumed.
     ///
     /// An enumerator can repeat a name while its directory is modified, which the
@@ -1574,6 +1580,11 @@ impl Index {
     }
 
     /// Create an empty index with an explicit semantic scan scope.
+    ///
+    /// Its control table refuses sources past
+    /// [`DEFAULT_CONTROL_BUDGET`](crate::control::DEFAULT_CONTROL_BUDGET). The scans behind
+    /// [`crate::open`] and [`crate::OpenedIndex`] apply the configuration's own
+    /// [`control_budget`](crate::ScanConfig::control_budget).
     pub fn new_with_scope(root_path: impl Into<PathBuf>, scope: ScanScope) -> Self {
         Self::new_with_scope_and_types(
             root_path,
@@ -1734,20 +1745,44 @@ impl Index {
         &self.controls
     }
 
-    /// Install a complete bounded control table while restoring a detached snapshot.
+    /// Whether this index's ignore classification applies every control file in scope.
+    ///
+    /// [`crate::control::ControlCoverage::NotObserved`] when the index read no control
+    /// file. Otherwise the budget, the applied and refused counts, and the first refused
+    /// files. Sizes and counts are exact either way; only the ignored and unignored split
+    /// below a refused file is not.
+    pub fn control_coverage(&self) -> crate::control::ControlCoverage {
+        if self.observes_controls() {
+            crate::control::ControlCoverage::Observed(self.controls.observation())
+        } else {
+            crate::control::ControlCoverage::NotObserved
+        }
+    }
+
+    /// Refuse control sources past `budget`, as the scan configuration that builds this
+    /// index asks. Set once, before any control input arrives: a table's refusals are only
+    /// meaningful under the budget that made them.
+    pub(crate) fn set_control_budget(&mut self, budget: Option<usize>) {
+        debug_assert!(self.controls.is_vacant(), "the control budget is set before any control");
+        self.controls = crate::control::ControlTable::with_budget(budget);
+    }
+
+    /// Install a complete control table while restoring a detached snapshot.
     pub(crate) fn install_controls(
         &mut self,
         controls: crate::control::ControlTable,
     ) -> crate::Result<()> {
-        if controls.retained_cost() > crate::control::MAX_CONTROL_TABLE_BYTES {
-            return Err(crate::Error::ControlSourceLimit {
-                attempted: controls.retained_cost(),
-                limit: crate::control::MAX_CONTROL_TABLE_BYTES,
-            });
+        // Every source a table retains was admitted under its own budget, and the charge
+        // does not depend on admission order, so a larger total was not written by one.
+        if controls.budget().is_some_and(|budget| controls.retained_cost() > budget) {
+            return Err(crate::Error::Snapshot(
+                "a snapshot's control table exceeds its own control budget".into(),
+            ));
         }
-        // A scope that observed no control state retains no table; a snapshot carrying
-        // one under such a scope was not written by a scan that honoured it.
-        if !controls.is_empty() {
+        // A scope that observed no control state retains no table and refuses nothing; a
+        // snapshot carrying either under such a scope was not written by a scan that
+        // honoured it.
+        if !controls.is_vacant() {
             self.require_observed_controls()?;
         }
         // Every entry's ignored bit agrees with the table it replaces, so when neither table
@@ -3630,9 +3665,9 @@ impl Index {
 
     /// Evaluate the complete resulting control table before any fact or reducer moves.
     ///
-    /// Parsing is infallible, but the shared source bound is not. Building the projected
-    /// table here makes an over-limit observation fault-atomic even when the same batch
-    /// also inserts or removes ordinary entries.
+    /// Only a malformed control path fails here; a source the bounds cannot admit is
+    /// refused inside the projection. Building the whole table first keeps a failing
+    /// observation fault-atomic even when the same batch also moves ordinary entries.
     fn projected_controls(
         &self,
         ops: &[ObservationOp],
@@ -3658,7 +3693,10 @@ impl Index {
         //
         // Both control op kinds disqualify, not just upserts, so every control op reaches
         // the table and this lane never has to decide which control input is inert.
-        if self.controls.is_empty()
+        //
+        // A table holding only refusals is not vacant: a structural removal must still
+        // lift the refusals under the subtree it removes.
+        if self.controls.is_vacant()
             && !ops
                 .clone()
                 .any(|op| matches!(op, Op::ControlUpsert { .. } | Op::ControlRemove { .. }))
@@ -3704,7 +3742,8 @@ impl Index {
         effects: &mut C,
     ) {
         let changes = projected.changes_from(&self.controls);
-        if changes.is_empty() {
+        let refusals = projected.refusal_changes_from(&self.controls);
+        if changes.is_empty() && refusals.is_empty() {
             return;
         }
         let affected: Vec<PathBuf> = changes
@@ -3712,9 +3751,14 @@ impl Index {
             .filter_map(|(path, _, _)| crate::control::ControlTable::affected_subtree(path).ok())
             .collect();
         self.controls = projected;
-        stats.controls = u64::try_from(changes.len()).unwrap_or(u64::MAX);
+        stats.controls = u64::try_from(changes.len() + refusals.len()).unwrap_or(u64::MAX);
         for (path, previous, current) in changes {
             effects.change(|| EffectiveChange::ControlUpdated { path, previous, current });
+        }
+        // A refusal changes what classification covers, not what it says, so it moves no
+        // entry by itself; the source it may have dropped arrived as a change above.
+        for (path, previous, current) in refusals {
+            effects.change(|| EffectiveChange::ControlRefusalUpdated { path, previous, current });
         }
         self.reclassify_controlled_subtrees(&affected, stats, effects);
     }
@@ -4909,6 +4953,9 @@ fn derive_impact(changes: &[EffectiveChange], state: &[StateTransition]) -> Impa
             }
             EffectiveChange::ControlUpdated { .. } | EffectiveChange::Reclassified { .. } => {
                 domains.extend([ImpactDomain::Classification, ImpactDomain::Aggregates]);
+            }
+            EffectiveChange::ControlRefusalUpdated { .. } => {
+                domains.insert(ImpactDomain::Classification);
             }
             EffectiveChange::Invalidated { .. } => {
                 domains.insert(ImpactDomain::State);
@@ -8208,31 +8255,95 @@ mod tests {
         ));
     }
 
+    /// A control the budget cannot admit is refused inside the commit that carried it: the
+    /// batch's ordinary entries land, the refusal is a change of its own, and a source it
+    /// replaces is dropped and its entries reclassified.
     #[test]
-    fn control_bound_failure_is_atomic_with_ordinary_entry_work() {
+    fn an_over_budget_control_is_refused_while_its_batch_commits() {
         let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
             crate::test_support::observing_controls(),
             crate::classify::TypeRegistry::compiled_shared(),
             DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
-        let before = index.clone();
+        index.apply_ok(&Observation::new(vec![
+            Op::ControlUpsert { path: PathBuf::from(".gitignore"), source: b"*.log\n".to_vec() },
+            upsert("debug.log", EntryKind::File, file_attrs(10, 1)),
+        ]));
+        assert_eq!(index.is_ignored(Path::new("debug.log")).expect("observed"), Some(true));
         let mut oversized = crate::control::source_at_test_limit();
         oversized.push(b'a');
-        let error = index
-            .apply(&Observation::new(vec![
-                upsert("ordinary.txt", EntryKind::File, file_attrs(1, 1)),
-                Op::ControlUpsert { path: PathBuf::from(".gitignore"), source: oversized },
-            ]))
-            .expect_err("the complete batch must fail before any mutation");
 
-        assert!(matches!(error, crate::Error::ControlSourceLimit { .. }));
-        assert_eq!(index.clock(), before.clock());
-        assert_eq!(index.len(), before.len());
-        assert_eq!(index.total(), before.total());
-        assert_eq!(index.serving, before.serving);
-        assert!(index.lookup(Path::new("ordinary.txt")).is_none());
-        assert!(index.controls().expect("control state observed").is_empty());
+        let outcome = index.apply_ok(&Observation::new(vec![
+            upsert("ordinary.txt", EntryKind::File, file_attrs(1, 2)),
+            Op::ControlUpsert { path: PathBuf::from(".gitignore"), source: oversized },
+        ]));
+
+        assert!(index.lookup(Path::new("ordinary.txt")).is_some(), "ordinary work commits");
+        assert_eq!(index.total().files, 2);
+        assert_eq!(
+            index.is_ignored(Path::new("debug.log")).expect("observed"),
+            Some(false),
+            "the rules the refused source replaced no longer apply"
+        );
+        let changes = &outcome.commit.as_ref().expect("one commit").changes;
+        let refused = Some(crate::control::ControlRefusalReason::Budget);
+        assert!(changes.iter().any(|change| matches!(
+            change,
+            EffectiveChange::ControlUpdated { previous: Some(_), current: None, .. }
+        )));
+        assert!(changes.iter().any(|change| matches!(
+            change,
+            EffectiveChange::ControlRefusalUpdated { previous: None, current, .. }
+                if *current == refused
+        )));
+        let crate::control::ControlCoverage::Observed(coverage) = index.control_coverage() else {
+            panic!("an observing index reports observed coverage");
+        };
+        assert_eq!((coverage.applied, coverage.refused), (0, 1));
+        assert_eq!(coverage.refusals[0].path, Path::new(".gitignore"));
+
+        // Removing the refused file lifts the refusal in a commit of its own.
+        let lifted = index.apply_ok(&Observation::new(vec![Op::ControlRemove {
+            path: PathBuf::from(".gitignore"),
+        }]));
+        assert!(matches!(
+            lifted.commit.as_ref().expect("lifting a refusal commits").changes.as_slice(),
+            [EffectiveChange::ControlRefusalUpdated { previous, current: None, .. }]
+                if *previous == refused
+        ));
+        assert_eq!(
+            index.control_coverage(),
+            crate::control::ControlCoverage::Observed(crate::control::ControlObservation {
+                budget: Some(crate::control::DEFAULT_CONTROL_BUDGET),
+                applied: 0,
+                refused: 0,
+                refusals: Vec::new(),
+            })
+        );
+    }
+
+    /// A structural removal takes the refusals under it along, even when no rule is retained.
+    #[test]
+    fn removing_a_subtree_lifts_the_refusals_beneath_it() {
+        let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
+        let mut line = vec![b'x'; crate::control::CONTROL_LINE_GUARD_BYTES + 1];
+        line.push(b'\n');
+        index.apply_ok(&Observation::new(vec![
+            upsert("vendor", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("vendor/.gitignore", EntryKind::File, file_attrs(16_386, 1)),
+            Op::ControlUpsert { path: PathBuf::from("vendor/.gitignore"), source: line },
+        ]));
+        assert_eq!(index.controls().expect("observed").refused_len(), 1);
+
+        let outcome =
+            index.apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("vendor") }]));
+
+        assert_eq!(index.controls().expect("observed").refused_len(), 0);
+        assert!(outcome.commit.expect("commit").changes.iter().any(|change| matches!(
+            change,
+            EffectiveChange::ControlRefusalUpdated { current: None, .. }
+        )));
     }
 
     #[test]

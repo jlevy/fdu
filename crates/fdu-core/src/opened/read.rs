@@ -202,6 +202,7 @@ pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadRes
                         scope,
                         entries: index.len(),
                         issues: index.issues().to_vec(),
+                        controls: index.control_table().observation(),
                     }));
                 }
             }

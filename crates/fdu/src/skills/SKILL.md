@@ -174,9 +174,9 @@ before the modification, so only the start bound is conservative.
 
 Check the process exit status and these fields:
 
-- `schema` before parsing anything else: a report carries `fdu.report/5` when it ran
+- `schema` before parsing anything else: a report carries `fdu.report/6` when it ran
   content analysis or includes a metric summary (the `types`, `families`, `languages`,
-  and `documents` views), `fdu.report/4` otherwise, and a `--watch` stream carries
+  and `documents` views), `fdu.report/5` otherwise, and a `--watch` stream carries
   `fdu.stream/1`. Treat an unrecognized value as a version you cannot parse rather than
   guessing at the fields.
 - `complete` and `errors` before trusting totals

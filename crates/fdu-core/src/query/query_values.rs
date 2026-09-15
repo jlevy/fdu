@@ -76,6 +76,29 @@ pub fn parse_size(input: &str) -> Result<u64> {
     })
 }
 
+/// Parse a control budget: a [`parse_size`] value, or `all` for no bound.
+///
+/// The grammar of [`crate::ScanConfig::control_budget`], shared so the command line's
+/// `--gitignore-budget` and the Python API's `control_budget` accept the same words.
+pub fn parse_control_budget(input: &str) -> Result<Option<usize>> {
+    if input.trim().eq_ignore_ascii_case("all") {
+        return Ok(None);
+    }
+    let bytes = parse_size(input).map_err(|error| match error {
+        Error::InvalidValue { value, hint, .. } => Error::InvalidValue {
+            kind: "control budget",
+            value,
+            hint: format!("{hint}, or `all` for no bound"),
+        },
+        other => other,
+    })?;
+    usize::try_from(bytes).map(Some).map_err(|_| Error::InvalidValue {
+        kind: "control budget",
+        value: input.to_string(),
+        hint: "larger than this machine can address; use `all` for no bound".to_string(),
+    })
+}
+
 /// Render an instant as an RFC 3339 timestamp in UTC, with nanosecond precision.
 ///
 /// The exact inverse of the RFC 3339 branch of [`parse_when`], so a report's
@@ -686,6 +709,19 @@ mod tests {
         assert!(size_rejection("1.2.3M").contains("not a number"));
         // A size that cannot fit in a byte count is rejected, never wrapped.
         assert!(size_rejection("99999999P").contains("not a number"));
+    }
+
+    #[test]
+    fn a_control_budget_is_a_size_or_all() {
+        assert_eq!(parse_control_budget("16M").expect("size"), Some(16_000_000));
+        assert_eq!(parse_control_budget("4MiB").expect("size"), Some(4 * 1024 * 1024));
+        assert_eq!(parse_control_budget(" ALL ").expect("all"), None);
+        let message = parse_control_budget("lots").expect_err("not a size").to_string();
+        assert_eq!(
+            message,
+            "invalid control budget \"lots\": expected a number before the unit, as in `10M`, \
+             or `all` for no bound"
+        );
     }
 
     #[test]

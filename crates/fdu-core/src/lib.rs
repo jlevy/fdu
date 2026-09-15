@@ -103,7 +103,8 @@ pub use crate::cache::{
     CacheStatus, SnapshotInfo, cache_status, clear_all_caches, clear_cache, list_caches,
 };
 pub use crate::control::{
-    CONTROL_FILE_NAME, ControlIdentity, ControlMatcher, ControlTable, MAX_CONTROL_TABLE_BYTES,
+    CONTROL_FILE_NAME, ControlAdmission, ControlCoverage, ControlIdentity, ControlMatcher,
+    ControlObservation, ControlRefusalReason, ControlTable, DEFAULT_CONTROL_BUDGET, RefusedControl,
     is_control_file,
 };
 pub use crate::engine_contract::{
@@ -329,9 +330,9 @@ impl OpenReport {
 /// [`CachePolicy::Only`]. A caller wanting a single answer should use [`prepare_report`].
 ///
 /// A caller that reads no ignore classification may turn the field off. Its `open` reads
-/// no `.gitignore`, cannot end on a control bound, and shares the one-shot report's
-/// snapshot scope, and its index answers [`Index::is_ignored`] and [`Index::controls`]
-/// with [`Error::ControlStateNotObserved`] rather than calling every entry unignored.
+/// no `.gitignore` and shares the one-shot report's snapshot scope, and its index answers
+/// [`Index::is_ignored`] and [`Index::controls`] with [`Error::ControlStateNotObserved`]
+/// rather than calling every entry unignored.
 pub fn open(root: &Path, config: &OpenConfig) -> Result<(Index, OpenReport)> {
     let (index, report, pending) = open_with_pending_save(root, config)?;
     // Joining first is what makes the unwrap infallible: the writer held the only other
@@ -850,13 +851,15 @@ mod tests {
         );
         assert_eq!(index.partition_total().expect("control state observed").unignored.files, 2);
 
-        let mut oversized = vec![b'x'; crate::control::MAX_CONTROL_PATTERN_BYTES + 1];
+        let mut oversized = vec![b'x'; crate::control::CONTROL_LINE_GUARD_BYTES + 1];
         oversized.extend_from_slice(b"\n*.log\n");
         write_file(&root.path().join(".gitignore"), &oversized);
-        assert!(
-            open(root.path(), &uncached).map_or(true, |(_, report)| !report.is_complete()),
-            "a default open must read the control file the opt-out skips"
-        );
+        let (index, report) = open(root.path(), &uncached).expect("a refused control ends nothing");
+        assert!(report.is_complete(), "{:?}", report.errors());
+        let crate::control::ControlCoverage::Observed(coverage) = index.control_coverage() else {
+            panic!("a default open reads the control file the opt-out skips");
+        };
+        assert_eq!((coverage.applied, coverage.refused), (0, 1));
 
         let (index, report) = open(root.path(), &opted_out)
             .expect("an opted-out open reads no control line, however long");
@@ -871,6 +874,42 @@ mod tests {
         assert!(matches!(index.controls(), Err(Error::ControlStateNotObserved)));
         assert!(matches!(index.partition_total(), Err(Error::ControlStateNotObserved)));
         assert_eq!(index.total().files, 3);
+    }
+
+    /// Raising the control budget scans cold once, and the snapshot it writes then serves
+    /// that budget warm, with the coverage it recorded; the other budget's request misses.
+    #[test]
+    fn a_snapshot_serves_only_the_control_budget_it_was_taken_under() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        let mut long_line = b"*.log\n".to_vec();
+        long_line.extend(std::iter::repeat_n(b'x', crate::control::CONTROL_LINE_GUARD_BYTES + 1));
+        write_file(&root.path().join(".gitignore"), &long_line);
+        write_file(&root.path().join("debug.log"), b"ignored");
+        let default = controls_config(CachePolicy::Auto, snapshot_path.clone(), true);
+        let lifted = OpenConfig {
+            scan: ScanConfig { control_budget: None, ..default.scan.clone() },
+            ..controls_config(CachePolicy::Auto, snapshot_path, true)
+        };
+        let refused = |index: &Index| match index.control_coverage() {
+            crate::control::ControlCoverage::Observed(coverage) => coverage.refused,
+            crate::control::ControlCoverage::NotObserved => panic!("observed"),
+        };
+
+        let (index, report) = open(root.path(), &default).expect("default budget");
+        assert_eq!((report.path_taken, refused(&index)), (OpenPath::ColdScan, 1));
+        let (index, report) = open(root.path(), &default).expect("default budget again");
+        assert_eq!((report.path_taken, refused(&index)), (OpenPath::WarmRevalidate, 1));
+
+        let (index, report) = open(root.path(), &lifted).expect("lifted budget");
+        assert_eq!((report.path_taken, refused(&index)), (OpenPath::ColdScan, 0));
+        assert_eq!(index.is_ignored(Path::new("debug.log")).ok(), Some(Some(true)));
+        let (index, report) = open(root.path(), &lifted).expect("lifted budget again");
+        assert_eq!((report.path_taken, refused(&index)), (OpenPath::WarmRevalidate, 0));
+
+        let (_, report) = open(root.path(), &default).expect("back to the default");
+        assert_eq!(report.path_taken, OpenPath::ColdScan);
     }
 
     #[test]

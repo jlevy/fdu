@@ -17,9 +17,11 @@ pub use query_report::{
     Provenance, Query, Report, ReportSource, Section, ShareMetric, SummaryRow, TreeNode, TypeRow,
     ViewSpec, document_words, report,
 };
-pub(crate) use query_report::{report_in, report_summary};
+pub(crate) use query_report::{display_notes, report_in, report_summary};
 pub(crate) use query_selection::NameIdentity;
 pub use query_selection::{
     Bound, Candidate, EntrySelection, ModifiedWindow, Selection, SizeMetric, SortKey,
 };
-pub use query_values::{format_rfc3339, parse_size, parse_when, system_time_to_nanos};
+pub use query_values::{
+    format_rfc3339, parse_control_budget, parse_size, parse_when, system_time_to_nanos,
+};

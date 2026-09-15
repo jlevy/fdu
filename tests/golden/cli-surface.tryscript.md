@@ -39,8 +39,10 @@ ARGUMENTS
   [PATH]  Report root; optional only for the discovery and cache-lifecycle flags
 
 SCOPE
-      --scan-depth <N>  Limit scanning and retention to N entry levels
-      --one-filesystem  Stay on the filesystem the root lives on
+      --scan-depth <N>               Limit scanning and retention to N entry levels
+      --one-filesystem               Stay on the filesystem the root lives on
+      --gitignore-budget <SIZE|all>  Bytes of .gitignore rules to apply before refusing more
+                                     [default: 4MiB]; `all` lifts it
 
 SELECTION
       --include <GLOB>          Report only entries matching this glob; repeatable
@@ -276,9 +278,9 @@ before the modification, so only the start bound is conservative.
 
 Check the process exit status and these fields:
 
-- `schema` before parsing anything else: a report carries `fdu.report/5` when it ran
+- `schema` before parsing anything else: a report carries `fdu.report/6` when it ran
   content analysis or includes a metric summary (the `types`, `families`, `languages`,
-  and `documents` views), `fdu.report/4` otherwise, and a `--watch` stream carries
+  and `documents` views), `fdu.report/5` otherwise, and a `--watch` stream carries
   `fdu.stream/1`. Treat an unrecognized value as a version you cannot parse rather than
   guessing at the fields.
 - `complete` and `errors` before trusting totals
@@ -409,7 +411,7 @@ CONTENT ANALYSIS
   cache=only never opens source files and fails if requested content is absent.
 
 OUTPUT AND AUTOMATION
-  Metadata-only machine output remains fdu.report/4; metric summaries use fdu.report/5.
+  Metadata-only machine output remains fdu.report/5; metric summaries use fdu.report/6.
   Text language rows use canonical names; machine formats retain lowercase IDs.
   Metric rows include detection source, confidence, origin flags, and coverage.
   One-shot text reports end with a gray performance line; machine formats omit it.

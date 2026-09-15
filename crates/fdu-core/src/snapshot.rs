@@ -1,6 +1,6 @@
 //! Persisting an index to disk and reading it back.
 //!
-//! # Status: format v3 is a bounded bootstrap format
+//! # Status: format v4 is a bounded bootstrap format
 //!
 //! This module implements a flat, uncompressed writer and a bounded streaming reader.
 //! It exists so the cache *lifecycle* — semantic-scope invalidation, atomic replacement,
@@ -57,7 +57,11 @@ const CRC32C_TABLES: [[u32; 256]; 8] = make_crc32c_tables();
 
 /// On-disk format version. Bump on any layout change; old snapshots are then discarded
 /// rather than misread.
-const FORMAT_VERSION: u32 = 3;
+///
+/// 4: the control section also carries the control budget and every refused control
+/// file, so a snapshot of an index that refused some reloads with the same coverage
+/// rather than claiming every rule applied.
+const FORMAT_VERSION: u32 = 4;
 
 /// Version of the rules that decide which bucket an entry's bytes are tallied under.
 ///
@@ -161,6 +165,25 @@ const MAX_PATH_BYTES: u32 = 1024 * 1024;
 /// Upper bound on records accepted even when a sparse file could physically hold more.
 const MAX_SNAPSHOT_ENTRIES: u64 = 100_000_000;
 
+/// Binary size unit for the control-section ceiling.
+const MEBIBYTE: usize = 1024 * 1024;
+
+/// Largest control table, in retained charge and in total source bytes, a snapshot may
+/// carry.
+///
+/// A parser guard over untrusted lengths, deliberately independent of the control budget:
+/// the budget is a caller's runtime setting and may be unbounded, while this bounds what a
+/// corrupt or hostile file can make the loader allocate. [`save`] refuses a table above
+/// it, so a snapshot the loader would reject is never written as if it were usable.
+const SNAPSHOT_CONTROL_TABLE_CEILING: usize = 256 * MEBIBYTE;
+
+/// Encoded budget meaning the control table was unbounded.
+const UNBOUNDED_CONTROL_BUDGET: u64 = u64::MAX;
+
+/// Encoded refusal reasons.
+const REFUSED_FOR_BUDGET: u8 = 1;
+const REFUSED_FOR_LINE_GUARD: u8 = 2;
+
 /// A fingerprint of everything that would change how the engine interprets a tree.
 ///
 /// When this does not match, the whole snapshot is discarded. That is the cheap,
@@ -240,14 +263,7 @@ pub fn save(index: &Index, path: &Path) -> Result<()> {
         buf.extend_from_slice(&attrs.inode.to_le_bytes());
         buf.extend_from_slice(&attrs.dev.to_le_bytes());
     }
-    let controls: Vec<_> = index.control_table().sources().collect();
-    let control_count = u32::try_from(controls.len())
-        .map_err(|_| Error::Snapshot("control table exceeds u32 capacity".into()))?;
-    buf.extend_from_slice(&control_count.to_le_bytes());
-    for (path, source) in controls {
-        put_os_str(&mut buf, path.as_os_str())?;
-        put_control_bytes(&mut buf, source)?;
-    }
+    put_controls(&mut buf, index.control_table())?;
     let checksum = crc32c(&buf);
     buf.extend_from_slice(&checksum.to_le_bytes());
     buf.extend_from_slice(TRAILER);
@@ -607,20 +623,7 @@ fn parse_stream(
         ids.push(id);
     }
 
-    let control_count = read_u32(reader)?;
-    if usize::try_from(control_count)
-        .map_err(|_| ParseError::Invalid)?
-        .saturating_mul(crate::control::CONTROL_SOURCE_OVERHEAD)
-        > crate::control::MAX_CONTROL_TABLE_BYTES
-    {
-        return Err(ParseError::Invalid);
-    }
-    let mut controls = crate::control::ControlTable::default();
-    for _ in 0..control_count {
-        let path = PathBuf::from(read_os_string(reader)?);
-        let source = read_control_bytes(reader)?;
-        controls.upsert(&path, source).map_err(|_| ParseError::Invalid)?;
-    }
+    let controls = read_controls(reader)?;
     index.install_controls(controls).map_err(|_| ParseError::Invalid)?;
 
     let mut extra = [0u8; 1];
@@ -682,11 +685,65 @@ fn read_bytes(reader: &mut impl Read) -> ParseResult<Vec<u8>> {
     }
 }
 
+/// Read the control section: retained sources, then the budget, then refusals.
+///
+/// Every source is admitted again under the recorded budget. The charge does not depend
+/// on admission order, so a table a scan retained always fits; one that does not, a
+/// repeated path, or a refusal naming a retained or repeated path was not written by
+/// [`save`].
+fn read_controls(reader: &mut impl Read) -> ParseResult<crate::control::ControlTable> {
+    let control_count = read_u32(reader)?;
+    if usize::try_from(control_count)
+        .map_err(|_| ParseError::Invalid)?
+        .saturating_mul(crate::control::CONTROL_SOURCE_OVERHEAD)
+        > SNAPSHOT_CONTROL_TABLE_CEILING
+    {
+        return Err(ParseError::Invalid);
+    }
+    let mut sources = Vec::new();
+    let mut source_bytes = 0_usize;
+    for _ in 0..control_count {
+        let path = PathBuf::from(read_os_string(reader)?);
+        let source = read_control_bytes(reader)?;
+        source_bytes = source_bytes.saturating_add(source.len());
+        if source_bytes > SNAPSHOT_CONTROL_TABLE_CEILING {
+            return Err(ParseError::Invalid);
+        }
+        sources.push((path, source));
+    }
+    let budget = match read_u64(reader)? {
+        UNBOUNDED_CONTROL_BUDGET => None,
+        budget => Some(usize::try_from(budget).map_err(|_| ParseError::Invalid)?),
+    };
+    let mut controls = crate::control::ControlTable::with_budget(budget);
+    for (path, source) in sources {
+        let admission = controls.upsert(&path, source).map_err(|_| ParseError::Invalid)?;
+        if admission != (crate::control::ControlAdmission::Retained { changed: true }) {
+            return Err(ParseError::Invalid);
+        }
+    }
+    if controls.retained_cost() > SNAPSHOT_CONTROL_TABLE_CEILING {
+        return Err(ParseError::Invalid);
+    }
+    let refused = read_u32(reader)?;
+    for _ in 0..refused {
+        let path = PathBuf::from(read_os_string(reader)?);
+        let reason = match read_u8(reader)? {
+            REFUSED_FOR_BUDGET => crate::control::ControlRefusalReason::Budget,
+            REFUSED_FOR_LINE_GUARD => crate::control::ControlRefusalReason::LineGuard,
+            _ => return Err(ParseError::Invalid),
+        };
+        if !crate::control::is_control_file(&path) || controls.contains(&path) {
+            return Err(ParseError::Invalid);
+        }
+        controls.record_refusal(&path, reason).map_err(|_| ParseError::Invalid)?;
+    }
+    Ok(controls)
+}
+
 fn read_control_bytes(reader: &mut impl Read) -> ParseResult<Vec<u8>> {
     let len = read_u32(reader)?;
-    if usize::try_from(len).map_err(|_| ParseError::Invalid)?
-        >= crate::control::MAX_CONTROL_TABLE_BYTES
-    {
+    if usize::try_from(len).map_err(|_| ParseError::Invalid)? > SNAPSHOT_CONTROL_TABLE_CEILING {
         return Err(ParseError::Invalid);
     }
     let mut bytes = vec![0u8; usize::try_from(len).map_err(|_| ParseError::Invalid)?];
@@ -718,14 +775,43 @@ fn put_bytes(buf: &mut Vec<u8>, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-fn put_control_bytes(buf: &mut Vec<u8>, bytes: &[u8]) -> Result<()> {
-    if bytes.len() >= crate::control::MAX_CONTROL_TABLE_BYTES {
-        return Err(Error::Snapshot("control source exceeds snapshot limit".into()));
+/// Write the control section [`read_controls`] reads.
+fn put_controls(buf: &mut Vec<u8>, controls: &crate::control::ControlTable) -> Result<()> {
+    if controls.retained_cost() > SNAPSHOT_CONTROL_TABLE_CEILING
+        || controls.source_bytes() > SNAPSHOT_CONTROL_TABLE_CEILING
+    {
+        return Err(Error::Snapshot(format!(
+            "the control table retains {} bytes of charge, above the {} bytes a snapshot can \
+             carry; set a control budget below it, or open without a cache",
+            controls.retained_cost(),
+            SNAPSHOT_CONTROL_TABLE_CEILING
+        )));
     }
-    let len = u32::try_from(bytes.len())
-        .map_err(|_| Error::Snapshot("control source exceeds u32 capacity".into()))?;
-    buf.extend_from_slice(&len.to_le_bytes());
-    buf.extend_from_slice(bytes);
+    let sources: Vec<_> = controls.sources().collect();
+    let control_count = u32::try_from(sources.len())
+        .map_err(|_| Error::Snapshot("control table exceeds u32 capacity".into()))?;
+    buf.extend_from_slice(&control_count.to_le_bytes());
+    for (path, source) in sources {
+        put_os_str(buf, path.as_os_str())?;
+        let len = u32::try_from(source.len())
+            .map_err(|_| Error::Snapshot("control source exceeds u32 capacity".into()))?;
+        buf.extend_from_slice(&len.to_le_bytes());
+        buf.extend_from_slice(source);
+    }
+    let budget = controls.budget().map_or(Ok(UNBOUNDED_CONTROL_BUDGET), |budget| {
+        u64::try_from(budget).map_err(|_| Error::Snapshot("control budget overflow".into()))
+    })?;
+    buf.extend_from_slice(&budget.to_le_bytes());
+    let refused = u32::try_from(controls.refused_len())
+        .map_err(|_| Error::Snapshot("refused controls exceed u32 capacity".into()))?;
+    buf.extend_from_slice(&refused.to_le_bytes());
+    for refusal in controls.refusals() {
+        put_os_str(buf, refusal.path.as_os_str())?;
+        buf.push(match refusal.reason {
+            crate::control::ControlRefusalReason::Budget => REFUSED_FOR_BUDGET,
+            crate::control::ControlRefusalReason::LineGuard => REFUSED_FOR_LINE_GUARD,
+        });
+    }
     Ok(())
 }
 
@@ -1426,7 +1512,7 @@ mod tests {
         }]));
         assert_eq!(
             original.controls().expect("control state observed").retained_cost(),
-            crate::control::MAX_CONTROL_TABLE_BYTES
+            crate::control::DEFAULT_CONTROL_BUDGET
         );
 
         save(&original, &path).expect("save at bound");
@@ -1442,6 +1528,123 @@ mod tests {
                 .expect("control state observed")
                 .source_is(Path::new(".gitignore"), &source)
         );
+    }
+
+    /// An index whose control table refused some sources, and its path-ordered tail.
+    fn index_with_refused_controls() -> Index {
+        let mut index =
+            Index::new_with_scope("/some/root", crate::test_support::observing_controls());
+        let mut line = vec![b'x'; crate::control::CONTROL_LINE_GUARD_BYTES + 1];
+        line.push(b'\n');
+        index.apply_ok(&Observation::new(vec![
+            Op::Upsert {
+                path: PathBuf::from(".gitignore"),
+                kind: EntryKind::File,
+                attrs: attrs(6, 1),
+            },
+            Op::Upsert { path: PathBuf::from("a"), kind: EntryKind::Dir, attrs: attrs(0, 1) },
+            Op::Upsert {
+                path: PathBuf::from("a/.gitignore"),
+                kind: EntryKind::File,
+                attrs: attrs(1, 1),
+            },
+            Op::Upsert { path: PathBuf::from("b"), kind: EntryKind::Dir, attrs: attrs(0, 1) },
+            Op::Upsert {
+                path: PathBuf::from("b/.gitignore"),
+                kind: EntryKind::File,
+                attrs: attrs(1, 1),
+            },
+            Op::Upsert {
+                path: PathBuf::from("b/debug.log"),
+                kind: EntryKind::File,
+                attrs: attrs(9, 1),
+            },
+            Op::ControlUpsert { path: PathBuf::from(".gitignore"), source: b"*.log\n".to_vec() },
+            Op::ControlUpsert { path: PathBuf::from("a/.gitignore"), source: line },
+            Op::ControlUpsert {
+                path: PathBuf::from("b/.gitignore"),
+                source: b"y\n".repeat(crate::control::DEFAULT_CONTROL_BUDGET / 2),
+            },
+        ]));
+        index
+    }
+
+    /// A snapshot of an index that refused control files reloads with the same coverage,
+    /// rather than as an index whose every rule applied.
+    #[test]
+    fn a_snapshot_with_refused_controls_reloads_its_coverage_exactly() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("refused.fdu");
+        let original = index_with_refused_controls();
+        let crate::control::ControlCoverage::Observed(coverage) = original.control_coverage()
+        else {
+            panic!("observed");
+        };
+        assert_eq!((coverage.applied, coverage.refused), (1, 2));
+
+        save(&original, &path).expect("save a partially covered index");
+        let restored = load(&path).expect("load").expect("snapshot present");
+
+        assert_eq!(restored.control_coverage(), original.control_coverage());
+        assert_eq!(
+            restored.is_ignored(Path::new("b/debug.log")).expect("observed"),
+            original.is_ignored(Path::new("b/debug.log")).expect("observed")
+        );
+        assert_eq!(
+            restored.partition_total().expect("observed"),
+            original.partition_total().expect("observed")
+        );
+    }
+
+    /// The refusal records are parsed as strictly as the rest: an unknown reason, and a
+    /// refusal naming a retained source, are corrupt.
+    #[test]
+    fn corrupt_refusal_records_fail_closed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("refused.fdu");
+        save(&index_with_refused_controls(), &path).expect("save");
+        let saved = fs::read(&path).expect("read snapshot");
+        let footer = CHECKSUM_BYTES + TRAILER.len();
+        // The last refusal is `b/.gitignore` and its one-byte reason ends the payload.
+        let reason_at = saved.len() - footer - 1;
+        assert_eq!(saved[reason_at], REFUSED_FOR_BUDGET);
+
+        let mut unknown_reason = saved;
+        unknown_reason[reason_at] = 9;
+        rewrite_checksum(&mut unknown_reason);
+        fs::write(&path, &unknown_reason).expect("write corrupt reason");
+        assert!(load(&path).expect("corrupt equals absent").is_none());
+
+        // A refusal naming a retained source, or one already refused, is corrupt. Built with
+        // the platform's own path encoding, so the same bytes mean the same on every target.
+        let section = |retained: &str, refusals: &[&str]| {
+            let mut section = Vec::new();
+            section.extend_from_slice(&1_u32.to_le_bytes());
+            put_os_str(&mut section, OsStr::new(retained)).expect("retained path");
+            section.extend_from_slice(&6_u32.to_le_bytes());
+            section.extend_from_slice(b"*.log\n");
+            let budget = u64::try_from(crate::control::DEFAULT_CONTROL_BUDGET).expect("budget");
+            section.extend_from_slice(&budget.to_le_bytes());
+            let count = u32::try_from(refusals.len()).expect("few refusals");
+            section.extend_from_slice(&count.to_le_bytes());
+            for refusal in refusals {
+                put_os_str(&mut section, OsStr::new(refusal)).expect("refused path");
+                section.push(REFUSED_FOR_BUDGET);
+            }
+            section
+        };
+        let valid = read_controls(&mut section(".gitignore", &["a/.gitignore"][..]).as_slice())
+            .expect("a well-formed control section");
+        assert_eq!((valid.len(), valid.refused_len()), (1, 1));
+        for refusals in [&[".gitignore"][..], &["a/.gitignore", "a/.gitignore"][..]] {
+            assert!(
+                matches!(
+                    read_controls(&mut section(".gitignore", refusals).as_slice()),
+                    Err(ParseError::Invalid)
+                ),
+                "{refusals:?}"
+            );
+        }
     }
 
     /// A snapshot with no control state loads without walking the tree to reclassify it.

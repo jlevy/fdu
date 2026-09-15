@@ -56,6 +56,10 @@ def test_public_defaults_match_cli_semantics() -> None:
 def test_invalid_option_values_fail_before_crossing_native_boundary() -> None:
     with pytest.raises(ValueError, match="max_depth"):
         ScanOptions(max_depth=-1)
+    with pytest.raises(ValueError, match="control_budget"):
+        ScanOptions(control_budget=-1)
+    with pytest.raises(ValueError, match="control_budget"):
+        opened.OpenedOptions(control_budget=-1)
     with pytest.raises(ValueError, match="workers"):
         AnalysisOptions(workers=-1)
     with pytest.raises(ValueError, match="words_per_page"):

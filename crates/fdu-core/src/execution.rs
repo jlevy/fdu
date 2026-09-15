@@ -56,10 +56,10 @@ pub(crate) struct ReportPlan {
     /// [`ScanConfig::read_controls`](crate::ScanConfig::read_controls), by the same
     /// rule as the two fields above. No report view reads ignore classification, so
     /// observing it buys a one-shot report nothing: every control file opened and
-    /// parsed, a table retained, and a retention bound that could abort the report over
-    /// state it never shows (fdu-etfj). Deciding it in this planner rather than in a
-    /// front end is what gives the command line and the Python package, which reach it
-    /// with different scan configurations, one scan, one answer, and one cache scope.
+    /// parsed, and a table retained, for state it never shows (fdu-etfj). Deciding it in
+    /// this planner rather than in a front end is what gives the command line and the
+    /// Python package, which reach it with different scan configurations, one scan, one
+    /// answer, and one cache scope.
     pub read_controls: bool,
 }
 
@@ -330,8 +330,13 @@ fn prepare_report_internal(
             // A cache-only report may consume a controls-on snapshot for a controls-off
             // request because reporting reads only the all-entry facts. No Index escapes
             // this boundary, and the projected report must describe the requested scope
-            // rather than the stronger internal snapshot it consumed.
+            // rather than the stronger internal snapshot it consumed, including what it
+            // says about ignore rules.
             answer.scope = config.scan.scope();
+            if !answer.scope.observes_controls() {
+                answer.ignore_rules = crate::control::ControlCoverage::NotObserved;
+                answer.notes = crate::query::display_notes(query, &answer.ignore_rules);
+            }
             Ok((answer, pending_save, performance, scan_diagnostics))
         }
     }
@@ -603,6 +608,7 @@ mod tests {
 
         assert_eq!(performance.source, ReportSource::CacheOnly);
         assert_eq!(projected.scope, cold.scan.scope());
+        assert_eq!(projected.ignore_rules, crate::control::ControlCoverage::NotObserved);
         assert_eq!(
             crate::report_format::render(&projected, crate::report_format::Format::Json, false,),
             crate::report_format::render(&expected, crate::report_format::Format::Json, false,),
@@ -633,20 +639,19 @@ mod tests {
         assert_eq!(performance.source, ReportSource::ColdScan);
     }
 
-    /// Control sources no scan can observe without saying so.
+    /// Control sources past both bounds, so no scan can observe them without saying so.
     ///
-    /// The root rule is longer than the per-pattern bound, so retaining it aborts an index
-    /// build; the nested source is at the table bound, so reading it fails in either tier
-    /// and makes the report partial. A report that stays complete over this tree
-    /// performed no control observation.
+    /// The root rule is longer than the per-line guard and the nested source is past the
+    /// table budget. An observing scan refuses both and records it in its control coverage;
+    /// a report whose scope observes no control state read neither.
     fn write_unobservable_controls(root: &Path) {
-        let mut rule = vec![b'a'; crate::control::MAX_CONTROL_PATTERN_BYTES + 1];
+        let mut rule = vec![b'a'; crate::control::CONTROL_LINE_GUARD_BYTES + 1];
         rule.push(b'\n');
         fs::write(root.join(".gitignore"), rule).expect("oversized rule");
         fs::create_dir(root.join("vendored")).expect("nested directory");
         fs::write(
             root.join("vendored/.gitignore"),
-            b"x\n".repeat(crate::control::MAX_CONTROL_TABLE_BYTES / 2),
+            b"x\n".repeat(crate::control::DEFAULT_CONTROL_BUDGET / 2),
         )
         .expect("oversized source");
     }
@@ -674,6 +679,8 @@ mod tests {
             pending.join().expect("save");
             assert!(report.complete, "a one-shot report read control files: {:?}", report.errors);
             assert_eq!(report.scope, controls_off);
+            assert_eq!(report.ignore_rules, crate::control::ControlCoverage::NotObserved);
+            assert!(report.notes.is_empty(), "{:?}", report.notes);
         }
 
         let saved = crate::snapshot::load(&cache_path)
