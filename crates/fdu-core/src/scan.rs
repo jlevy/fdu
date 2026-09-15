@@ -3835,7 +3835,8 @@ pub fn revalidate(
         let mut had_control = index.controls().contains(&control_path);
         let mut control_seen = false;
         let mut listing_complete = true;
-        for item in reconcile_listing(listing, &abs_dir) {
+        let listing = reconcile_listing(listing, &abs_dir);
+        for item in listing {
             let item = match item {
                 Ok(item) => item,
                 Err(e) => {
@@ -4464,7 +4465,8 @@ fn reconcile_target_inner(
                 }
             };
             report.scan.dirs_read += 1;
-            for item in reconcile_listing(listing, &abs_dir) {
+            let listing = reconcile_listing(listing, &abs_dir);
+            for item in listing {
                 let item = match item {
                     Ok(item) => item,
                     Err(error) => {
@@ -4891,7 +4893,8 @@ fn reconcile_wave_worker(
                         }
                     };
                     result.scan.dirs_read += 1;
-                    for item in reconcile_listing(listing, &abs_dir) {
+                    let listing = reconcile_listing(listing, &abs_dir);
+                    for item in listing {
                         let item = match item {
                             Ok(item) => item,
                             Err(error) => {
