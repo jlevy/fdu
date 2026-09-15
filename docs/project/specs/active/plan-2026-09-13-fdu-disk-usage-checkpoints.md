@@ -358,9 +358,9 @@ It also records the writing engine version, as information only.
 **Volume identity.** A checkpoint’s volume identity is the stable UUID of the filesystem
 volume that holds its root, never its device number.
 `st_dev` is renumbered across reboots and remounts.
-The engine’s `Attrs::dev` holds that number, or zero on Windows; `fdu-4qtk` corrects the
-rustdoc that calls it a volume identity component.
-The FSEvents plan follows the same rule for its replay cursor.
+The engine’s `Attrs::dev` holds that number, or zero on Windows, and `Fingerprint::dev`
+copies it; `fdu-4qtk` corrects the rustdoc that calls the latter a volume identity
+component. The FSEvents plan follows the same rule for its replay cursor.
 
 - **macOS:** the volume UUID the root reports through `getattrlist` (`ATTR_VOL_UUID`).
   The FSEvents plan’s cursor UUID is a different value: `FSEventsCopyUUIDForDevice`
@@ -524,12 +524,15 @@ work; do not relabel the old answer as current.
 
 Slice 2 can provide useful comparisons before the replay optimization.
 Slice 4 is needed before claiming fast whole-home refresh independent of inventory size.
-The slices build on the merged opened-root lifecycle.
-Two open pull requests change adjacent contracts:
-[#56](https://github.com/jlevy/fdu/pull/56) bounds the index journal in bytes
-(`journal_capacity_bytes`), and [#57](https://github.com/jlevy/fdu/pull/57) adds a typed
-not-observed control state.
-Confirm their merged shape before slice 2 fixes its API.
+The slices build on the opened-root lifecycle that the
+[opened-root inventory engine plan](plan-2026-08-25-fdu-opened-root-inventory-engine.md)
+delivered to `main`. Slice 2 also depends on two adjacent contracts, proposed in
+[#56](https://github.com/jlevy/fdu/pull/56) and
+[#57](https://github.com/jlevy/fdu/pull/57). Before slice 2 fixes its API, confirm on
+`main` that the index journal is bounded in bytes (`journal_capacity_bytes`), and that
+an index built without control state answers with a typed not-observed value rather than
+as if nothing were ignored, which is what a checkpoint captured without control
+observation records.
 
 Use the existing [performance loop](../../guides/performance-loop.md) and predeclare
 accept rules before trials.
@@ -593,6 +596,8 @@ cross-process, next-day acceptance test.
   drops history; align it with the interpretation the FSEvents plan’s Phase 0 findings
   support, using slice 1’s evidence.
 - `fdu-579b`: the durable hard-link attribution rule that survives incremental updates.
+- `fdu-4qtk`: the `Fingerprint::dev` rustdoc calls the device number a volume identity
+  component; say it is not stable across reboots or remounts.
 - `fdu-w3l5`: scope-keyed snapshots, which reduce cache churn but do not make the cache
   a checkpoint store.
 
@@ -639,6 +644,7 @@ The plan above follows each recommendation.
 ## References
 
 - [Cache design](../../guides/cache-design.md)
+- [Opened-root inventory engine](plan-2026-08-25-fdu-opened-root-inventory-engine.md)
 - [FSEvents-scoped revalidation](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
 - [Performance frontier](../../research/research-2026-08-10-performance-frontier.md)
 - [Campaign 2, Phase D](plan-2026-08-23-fdu-performance-campaign-2.md#phase-d-the-warm-end-state-after-b-because-the-representation-decides-the-format)
