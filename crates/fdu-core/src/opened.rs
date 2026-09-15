@@ -119,6 +119,11 @@ pub struct OpenOptions {
     /// unbounded setting. [`OpenedIndex::open`] refuses a budget below
     /// [`crate::MIN_JOURNAL_CAPACITY_BYTES`] with [`Error::JournalCapacityTooSmall`].
     pub journal_capacity_bytes: usize,
+    /// Bytes of retained `.gitignore` charge before further control files are refused, or
+    /// `None` for no bound, which also lifts the per-line guard. See
+    /// [`ScanConfig::control_budget`]: a refused file ends nothing, and
+    /// [`crate::ReadDiagnostics::controls`] names it.
+    pub control_budget: Option<usize>,
 }
 
 impl Default for OpenOptions {
@@ -137,6 +142,7 @@ impl Default for OpenOptions {
             #[cfg(all(feature = "watch", test))]
             observation_script: None,
             journal_capacity_bytes: crate::DEFAULT_JOURNAL_CAPACITY_BYTES,
+            control_budget: scan.control_budget,
         }
     }
 }
@@ -160,6 +166,7 @@ impl OpenOptions {
             // ignored/unignored partitions are part of that contract, so control
             // observation is never optional here.
             read_controls: true,
+            control_budget: self.control_budget,
         };
         (scan, self.budget, self.journal_capacity_bytes)
     }
@@ -916,12 +923,14 @@ fn bind_root(
 
     let scope = scan.scope();
     let types = scan.types_shared();
-    let index = IndexHandle::new(Index::new_opened_with_scope_types_and_journal_capacity_bytes(
+    let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
         &root,
         scope,
         types,
         journal_capacity_bytes,
-    ));
+    );
+    index.set_control_budget(scan.control_budget);
+    let index = IndexHandle::new(index);
     Ok((root, index, scan, budget))
 }
 
@@ -5694,7 +5703,7 @@ mod tests {
         std::fs::create_dir_all(a.join("-early")).expect("fixture");
         std::fs::write(a.join("-early").join("leaf.txt"), b"l").expect("fixture");
         let mut line = b"*.txt\n".to_vec();
-        line.extend(std::iter::repeat_n(b'x', crate::control::MAX_CONTROL_PATTERN_BYTES + 1));
+        line.extend(std::iter::repeat_n(b'x', crate::control::CONTROL_LINE_GUARD_BYTES + 1));
         std::fs::write(a.join(crate::control::CONTROL_FILE_NAME), &line).expect("control");
         std::fs::write(a.join("zzz.txt"), b"z").expect("fixture");
         std::fs::create_dir(root.path().join("b")).expect("fixture");
@@ -5756,7 +5765,7 @@ mod tests {
         assert_eq!(
             diagnostics(&opened).controls,
             crate::control::ControlObservation {
-                budget: Some(crate::control::MAX_CONTROL_TABLE_BYTES),
+                budget: Some(crate::control::DEFAULT_CONTROL_BUDGET),
                 applied: 0,
                 refused: 1,
                 refusals: vec![crate::control::RefusedControl {
@@ -5765,6 +5774,27 @@ mod tests {
                 }],
             }
         );
+        opened.close().expect("close");
+    }
+
+    /// An opened root with no control budget applies the file the guard would refuse, and
+    /// its scope says which budget it ran under.
+    #[test]
+    fn an_opened_root_without_a_control_budget_applies_what_the_guard_refuses() {
+        let root = tree_with_a_guarded_control();
+        let options = OpenOptions { control_budget: None, ..OpenOptions::default() };
+        let opened = OpenedIndex::open(root.path(), options).expect("open");
+        wait_until_settled(&opened);
+
+        let diagnostics = diagnostics(&opened);
+        assert_eq!((diagnostics.controls.budget, diagnostics.controls.applied), (None, 1));
+        assert_eq!(diagnostics.controls.refused, 0);
+        assert_eq!(
+            diagnostics.scope,
+            ScanConfig { control_budget: None, ..ScanConfig::default() }.scope()
+        );
+        let snapshot = opened.state.index.snapshot().expect("snapshot");
+        assert_eq!(snapshot.is_ignored(Path::new("a/zzz.txt")).expect("observed"), Some(true));
         opened.close().expect("close");
     }
 

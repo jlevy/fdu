@@ -234,13 +234,21 @@ class ScanOptions:
     #: On by default, so an index from :func:`fdu.open` or :func:`fdu.scan`, and a watch
     #: over it, keep the exact control state. Off, they read no control file and
     #: :func:`fdu.open` shares one snapshot scope with :func:`fdu.report`.
-    #: :func:`fdu.report` never observes control state and ignores this field, as the
-    #: engine's report planner does.
+    #: :func:`fdu.report` never observes control state and ignores this field and
+    #: ``control_budget``, as the engine's report planner does.
     read_controls: bool = True
+    #: Bytes of retained ``.gitignore`` charge before further files are refused, as the
+    #: engine's ``ScanConfig.control_budget``: an int, a size such as ``"16MiB"``,
+    #: ``Bound.ALL`` to lift the budget and the 16 KiB per-line guard, or ``None`` for the
+    #: default of 4 MiB. A refused file ends nothing; its report's ``status.ignore_rules``
+    #: names it. Part of the snapshot scope, so a different budget scans cold once.
+    control_budget: int | Bound | str | None = None
 
     def __post_init__(self) -> None:
         if self.max_depth is not None and self.max_depth < 0:
             raise ValueError("max_depth must be non-negative")
+        if isinstance(self.control_budget, int) and self.control_budget < 0:
+            raise ValueError("control_budget must be non-negative or Bound.ALL")
 
 
 @dataclass(frozen=True, slots=True)

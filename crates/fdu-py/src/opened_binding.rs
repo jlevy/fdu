@@ -1075,7 +1075,8 @@ impl PyOpenedIndex {
         max_files = None,
         observe = false,
         journal_capacity_bytes = None,
-        type_rules = None
+        type_rules = None,
+        control_budget = None
     ))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn open(
@@ -1091,6 +1092,7 @@ impl PyOpenedIndex {
         observe: bool,
         journal_capacity_bytes: Option<usize>,
         type_rules: Option<String>,
+        control_budget: Option<&str>,
     ) -> PyResult<Self> {
         let allowed = hidden_allow.unwrap_or_default();
         if !prune_hidden && !allowed.is_empty() {
@@ -1112,6 +1114,7 @@ impl PyOpenedIndex {
         if let Some(value) = journal_capacity_bytes {
             options.journal_capacity_bytes = value;
         }
+        options.control_budget = super::parse_control_budget(control_budget)?;
         let inner = py
             .detach(move || {
                 // The document, never a fingerprint beside it: the engine derives the

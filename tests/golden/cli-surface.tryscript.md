@@ -39,8 +39,10 @@ ARGUMENTS
   [PATH]  Report root; optional only for the discovery and cache-lifecycle flags
 
 SCOPE
-      --scan-depth <N>  Limit scanning and retention to N entry levels
-      --one-filesystem  Stay on the filesystem the root lives on
+      --scan-depth <N>               Limit scanning and retention to N entry levels
+      --one-filesystem               Stay on the filesystem the root lives on
+      --gitignore-budget <SIZE|all>  Bytes of .gitignore rules to apply before refusing more
+                                     [default: 4MiB]; `all` lifts it
 
 SELECTION
       --include <GLOB>          Report only entries matching this glob; repeatable

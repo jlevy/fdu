@@ -29,18 +29,23 @@ use gitignore::Gitignore;
 /// Name of the fixed control file understood by the first engine version.
 pub const CONTROL_FILE_NAME: &str = ".gitignore";
 
-/// Maximum retained control-table cost for one index.
+/// Default retained control-table charge for one index, in bytes.
 ///
-/// The limit includes a fixed charge per source as well as its exact bytes, so a hostile
-/// tree of empty control files cannot evade the bound. Four MiB is far above ordinary
-/// repositories while remaining small relative to the inventory it governs.
-pub const MAX_CONTROL_TABLE_BYTES: usize = 4 * 1024 * 1024;
+/// The charge includes a fixed amount per directory as well as each distinct source's
+/// bytes and matcher, so a hostile tree of empty control files cannot evade it. Four MiB is
+/// far above ordinary repositories while remaining small relative to the inventory it
+/// governs; a source past it is refused, not an error. Callers lift it with
+/// [`crate::ScanConfig::control_budget`], which the command line spells
+/// `--gitignore-budget`.
+pub const DEFAULT_CONTROL_BUDGET: usize = 4 * 1024 * 1024;
 
-/// Maximum bytes in one parsed ignore pattern line.
+/// Longest line a bounded control table admits, in bytes.
 ///
-/// A control file may contain many ordinary rules up to the shared table bound, but a
-/// single adversarial rule must not impose unbounded matching work on every entry.
-pub const MAX_CONTROL_PATTERN_BYTES: usize = 16 * 1024;
+/// A control file may hold many ordinary rules up to the budget, but a single adversarial
+/// rule must not impose unbounded matching work on every entry, so a source with a longer
+/// line is refused whole. An unbounded budget (`control_budget: None`, or
+/// `--gitignore-budget all`) lifts this guard too: it is one knob for both bounds.
+pub const CONTROL_LINE_GUARD_BYTES: usize = 16 * 1024;
 
 /// Conservative retained charge for one key, identity, and matcher shell.
 pub(crate) const CONTROL_SOURCE_OVERHEAD: usize = 64;
@@ -79,7 +84,7 @@ struct Holding {
 pub enum ControlRefusalReason {
     /// Retaining the source would have taken the table past its control budget.
     Budget,
-    /// A line of the source is longer than [`MAX_CONTROL_PATTERN_BYTES`].
+    /// A line of the source is longer than [`CONTROL_LINE_GUARD_BYTES`].
     LineGuard,
 }
 
@@ -183,7 +188,7 @@ pub struct ControlTable {
 
 impl Default for ControlTable {
     fn default() -> Self {
-        Self::with_budget(Some(MAX_CONTROL_TABLE_BYTES))
+        Self::with_budget(Some(DEFAULT_CONTROL_BUDGET))
     }
 }
 
@@ -228,9 +233,7 @@ impl ControlTable {
             return Ok(ControlAdmission::Retained { changed: false });
         }
         if self.budget.is_some()
-            && source
-                .split(|byte| *byte == b'\n')
-                .any(|line| line.len() > MAX_CONTROL_PATTERN_BYTES)
+            && source.split(|byte| *byte == b'\n').any(|line| line.len() > CONTROL_LINE_GUARD_BYTES)
         {
             return Ok(self.refuse(directory, ControlRefusalReason::LineGuard));
         }
@@ -616,16 +619,16 @@ pub(crate) fn source_at_test_limit() -> Vec<u8> {
     let mut source = Vec::new();
     loop {
         let previous_len = source.len();
-        source.extend(std::iter::repeat_n(b'a', MAX_CONTROL_PATTERN_BYTES));
+        source.extend(std::iter::repeat_n(b'a', CONTROL_LINE_GUARD_BYTES));
         source.push(b'\n');
-        if retained_source_cost(Path::new(""), &source) > MAX_CONTROL_TABLE_BYTES {
+        if retained_source_cost(Path::new(""), &source) > DEFAULT_CONTROL_BUDGET {
             source.truncate(previous_len);
             break;
         }
     }
-    let remaining = MAX_CONTROL_TABLE_BYTES - retained_source_cost(Path::new(""), &source);
-    source.extend(std::iter::repeat_n(b'a', (remaining / 2).min(MAX_CONTROL_PATTERN_BYTES)));
-    assert_eq!(retained_source_cost(Path::new(""), &source), MAX_CONTROL_TABLE_BYTES);
+    let remaining = DEFAULT_CONTROL_BUDGET - retained_source_cost(Path::new(""), &source);
+    source.extend(std::iter::repeat_n(b'a', (remaining / 2).min(CONTROL_LINE_GUARD_BYTES)));
+    assert_eq!(retained_source_cost(Path::new(""), &source), DEFAULT_CONTROL_BUDGET);
     source
 }
 
@@ -700,7 +703,7 @@ mod tests {
     #[test]
     fn charges_and_refusals_stay_exact_through_random_upserts_and_removals() {
         const DIRECTORIES: [&str; 6] = ["", "a", "a/b", "b", "b/c/d", "c"];
-        let long_line = [vec![b'x'; MAX_CONTROL_PATTERN_BYTES + 1], b"\n".to_vec()].concat();
+        let long_line = [vec![b'x'; CONTROL_LINE_GUARD_BYTES + 1], b"\n".to_vec()].concat();
         let large = b"pattern/\n".repeat(40);
         let contents: [&[u8]; 6] =
             [b"*.log\n", b"target/\n", b"!keep\n*.tmp\n", b"", &large, &long_line];
@@ -932,12 +935,12 @@ mod tests {
     #[test]
     fn the_line_guard_admits_its_own_length_and_refuses_one_byte_over_it() {
         let mut table = ControlTable::default();
-        let at_guard = vec![b'a'; MAX_CONTROL_PATTERN_BYTES];
+        let at_guard = vec![b'a'; CONTROL_LINE_GUARD_BYTES];
         assert_eq!(
             table.upsert(Path::new("a/.gitignore"), at_guard).expect("control path"),
             CHANGED
         );
-        let over = [b"*.log\n".as_slice(), &vec![b'a'; MAX_CONTROL_PATTERN_BYTES + 1]].concat();
+        let over = [b"*.log\n".as_slice(), &vec![b'a'; CONTROL_LINE_GUARD_BYTES + 1]].concat();
         assert_eq!(
             table.upsert(Path::new("b/.gitignore"), over).expect("control path"),
             OVER_LINE_GUARD
@@ -955,7 +958,7 @@ mod tests {
     #[test]
     fn an_unbounded_table_applies_what_the_bounds_would_refuse() {
         let mut table = ControlTable::with_budget(None);
-        let long = [b"*.log\n".as_slice(), &vec![b'a'; MAX_CONTROL_PATTERN_BYTES + 1]].concat();
+        let long = [b"*.log\n".as_slice(), &vec![b'a'; CONTROL_LINE_GUARD_BYTES + 1]].concat();
         assert_eq!(table.upsert(Path::new(".gitignore"), long).expect("control path"), CHANGED);
         assert_eq!(
             table
@@ -963,7 +966,7 @@ mod tests {
                 .expect("control path"),
             CHANGED
         );
-        assert!(table.retained_cost() > MAX_CONTROL_TABLE_BYTES);
+        assert!(table.retained_cost() > DEFAULT_CONTROL_BUDGET);
         assert!(table.is_ignored(Path::new("debug.log"), false));
         assert_eq!(table.refused_len(), 0);
     }

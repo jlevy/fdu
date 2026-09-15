@@ -977,6 +977,13 @@ fn parse_sort(value: &str) -> PyResult<SortKey> {
     }
 }
 
+/// Parse a `control_budget` token with the engine's grammar; absent means the default.
+pub(crate) fn parse_control_budget(value: Option<&str>) -> PyResult<Option<usize>> {
+    value.map_or(Ok(ScanConfig::default().control_budget), |value| {
+        fdu_core::query::parse_control_budget(value).map_err(to_py_err)
+    })
+}
+
 /// Parse a size metric.
 fn parse_size_metric(value: &str) -> PyResult<SizeMetric> {
     match value.trim().to_ascii_lowercase().as_str() {
@@ -1461,6 +1468,7 @@ fn clear_all_caches(root: PathBuf) -> PyResult<usize> {
     max_depth = None,
     one_filesystem = false,
     read_controls = true,
+    control_budget = None,
     analyze = "none",
     analysis_workers = 0
 ))]
@@ -1476,6 +1484,7 @@ fn open(
     max_depth: Option<usize>,
     one_filesystem: bool,
     read_controls: bool,
+    control_budget: Option<&str>,
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
@@ -1483,7 +1492,13 @@ fn open(
     let policy = parse_cache_policy(cache)?;
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
-        scan: ScanConfig { max_depth, one_filesystem, read_controls, ..ScanConfig::default() },
+        scan: ScanConfig {
+            max_depth,
+            one_filesystem,
+            read_controls,
+            control_budget: parse_control_budget(control_budget)?,
+            ..ScanConfig::default()
+        },
         cache_path: fdu_core::default_cache_path(&root),
         policy,
         analysis,
@@ -1526,23 +1541,35 @@ fn open(
     max_depth = None,
     one_filesystem = false,
     read_controls = true,
+    control_budget = None,
     analyze = "none",
     analysis_workers = 0
 ))]
-#[allow(clippy::needless_pass_by_value, clippy::fn_params_excessive_bools)]
+#[allow(
+    clippy::needless_pass_by_value,
+    clippy::fn_params_excessive_bools,
+    clippy::too_many_arguments
+)]
 fn scan(
     py: Python<'_>,
     root: PathBuf,
     max_depth: Option<usize>,
     one_filesystem: bool,
     read_controls: bool,
+    control_budget: Option<&str>,
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
     let scan_started_at = Some(SystemTime::now());
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
-        scan: ScanConfig { max_depth, one_filesystem, read_controls, ..ScanConfig::default() },
+        scan: ScanConfig {
+            max_depth,
+            one_filesystem,
+            read_controls,
+            control_budget: parse_control_budget(control_budget)?,
+            ..ScanConfig::default()
+        },
         cache_path: None,
         policy: CachePolicy::Off,
         analysis,

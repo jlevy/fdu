@@ -1424,6 +1424,12 @@ impl DetachedIndexBuilder {
         }
     }
 
+    /// Refuse control sources past `budget` while building.
+    pub(crate) fn with_control_budget(mut self, budget: Option<usize>) -> Self {
+        self.index.set_control_budget(budget);
+        self
+    }
+
     /// Consume one listing after its parent listing has already been consumed.
     ///
     /// An enumerator can repeat a name while its directory is modified, which the
@@ -1746,6 +1752,14 @@ impl Index {
         } else {
             crate::control::ControlCoverage::NotObserved
         }
+    }
+
+    /// Refuse control sources past `budget`, as the scan configuration that builds this
+    /// index asks. Set once, before any control input arrives: a table's refusals are only
+    /// meaningful under the budget that made them.
+    pub(crate) fn set_control_budget(&mut self, budget: Option<usize>) {
+        debug_assert!(self.controls.is_vacant(), "the control budget is set before any control");
+        self.controls = crate::control::ControlTable::with_budget(budget);
     }
 
     /// Install a complete control table while restoring a detached snapshot.
@@ -8296,7 +8310,7 @@ mod tests {
         assert_eq!(
             index.control_coverage(),
             crate::control::ControlCoverage::Observed(crate::control::ControlObservation {
-                budget: Some(crate::control::MAX_CONTROL_TABLE_BYTES),
+                budget: Some(crate::control::DEFAULT_CONTROL_BUDGET),
                 applied: 0,
                 refused: 0,
                 refusals: Vec::new(),
@@ -8308,7 +8322,7 @@ mod tests {
     #[test]
     fn removing_a_subtree_lifts_the_refusals_beneath_it() {
         let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
-        let mut line = vec![b'x'; crate::control::MAX_CONTROL_PATTERN_BYTES + 1];
+        let mut line = vec![b'x'; crate::control::CONTROL_LINE_GUARD_BYTES + 1];
         line.push(b'\n');
         index.apply_ok(&Observation::new(vec![
             upsert("vendor", EntryKind::Dir, file_attrs(0, 1)),

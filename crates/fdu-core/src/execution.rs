@@ -639,13 +639,13 @@ mod tests {
     /// table budget. An observing scan refuses both and records it in its control coverage;
     /// a report whose scope observes no control state read neither.
     fn write_unobservable_controls(root: &Path) {
-        let mut rule = vec![b'a'; crate::control::MAX_CONTROL_PATTERN_BYTES + 1];
+        let mut rule = vec![b'a'; crate::control::CONTROL_LINE_GUARD_BYTES + 1];
         rule.push(b'\n');
         fs::write(root.join(".gitignore"), rule).expect("oversized rule");
         fs::create_dir(root.join("vendored")).expect("nested directory");
         fs::write(
             root.join("vendored/.gitignore"),
-            b"x\n".repeat(crate::control::MAX_CONTROL_TABLE_BYTES / 2),
+            b"x\n".repeat(crate::control::DEFAULT_CONTROL_BUDGET / 2),
         )
         .expect("oversized source");
     }

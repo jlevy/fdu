@@ -17,7 +17,14 @@ from types import TracebackType
 from typing import Any, Literal, cast
 
 from . import _native
-from ._api import FduError, FilesystemError, InvalidArgumentError, _epoch_nanos, _query_kwargs
+from ._api import (
+    FduError,
+    FilesystemError,
+    InvalidArgumentError,
+    _bound,
+    _epoch_nanos,
+    _query_kwargs,
+)
 from ._models import (
     Bound,
     ControlObservation,
@@ -301,6 +308,11 @@ class OpenedOptions:
     #: it parsed, so the fingerprint a read reports identifies this registry. A document
     #: that does not parse raises ``InvalidArgumentError`` before discovery starts.
     type_rules: str | None = None
+    #: Bytes of retained ``.gitignore`` charge before further files are refused: an int, a
+    #: size such as ``"16MiB"``, ``Bound.ALL`` to lift the budget and the 16 KiB per-line
+    #: guard, or ``None`` for the engine default of 4 MiB. A refused file ends nothing;
+    #: ``ReadDiagnostics.controls`` names it.
+    control_budget: int | Bound | str | None = None
 
     def __post_init__(self) -> None:
         if isinstance(self.hidden_allow, str):
@@ -318,6 +330,8 @@ class OpenedOptions:
                 raise ValueError(f"{name} must be positive")
         if self.max_files is not None and self.max_files <= 0:
             raise ValueError("max_files must be positive")
+        if isinstance(self.control_budget, int) and self.control_budget < 0:
+            raise ValueError("control_budget must be non-negative or Bound.ALL")
         if self.hidden_allow and not self.prune_hidden:
             raise ValueError("hidden_allow requires prune_hidden=True")
 
@@ -1422,6 +1436,7 @@ class OpenedIndex:
             observe=selected.observe,
             journal_capacity_bytes=selected.journal_capacity_bytes,
             type_rules=selected.type_rules,
+            control_budget=_bound(selected.control_budget),
         )
         return cls(cast(_native.OpenedIndex, native))
 

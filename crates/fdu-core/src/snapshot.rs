@@ -1512,7 +1512,7 @@ mod tests {
         }]));
         assert_eq!(
             original.controls().expect("control state observed").retained_cost(),
-            crate::control::MAX_CONTROL_TABLE_BYTES
+            crate::control::DEFAULT_CONTROL_BUDGET
         );
 
         save(&original, &path).expect("save at bound");
@@ -1534,7 +1534,7 @@ mod tests {
     fn index_with_refused_controls() -> Index {
         let mut index =
             Index::new_with_scope("/some/root", crate::test_support::observing_controls());
-        let mut line = vec![b'x'; crate::control::MAX_CONTROL_PATTERN_BYTES + 1];
+        let mut line = vec![b'x'; crate::control::CONTROL_LINE_GUARD_BYTES + 1];
         line.push(b'\n');
         index.apply_ok(&Observation::new(vec![
             Op::Upsert {
@@ -1563,7 +1563,7 @@ mod tests {
             Op::ControlUpsert { path: PathBuf::from("a/.gitignore"), source: line },
             Op::ControlUpsert {
                 path: PathBuf::from("b/.gitignore"),
-                source: b"y\n".repeat(crate::control::MAX_CONTROL_TABLE_BYTES / 2),
+                source: b"y\n".repeat(crate::control::DEFAULT_CONTROL_BUDGET / 2),
             },
         ]));
         index
