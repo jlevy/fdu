@@ -173,11 +173,12 @@ whose contracts are about the snapshot itself.
 Under the rest a snapshot cannot save the walk that request is already doing, so it
 neither reads nor writes one.
 Ordinary metadata requests retain the reusable index but never read regular-file
-contents. Any non-`none` `--analyze` profile opts into streaming reads through every
-eligible file and a separate profile-scoped sidecar.
-A repeated run with the same profile and semantic settings reuses unchanged content
-records. Coverage is profile-scoped too: an unsupported deeper analyzer leaves byte
-metadata visible but does not retain a separate lower-level metric record for that file.
+contents. Any `--analyze` value other than `none` opts into streaming reads through
+every eligible file and a separate sidecar scoped to the selected analyzers.
+A repeated run with the same analyzers and semantic settings reuses unchanged content
+records. Coverage is scoped to the analyzers too: an unsupported deeper analyzer leaves
+byte metadata visible but does not retain a separate lower-level metric record for that
+file.
 
 ## Pick the View, Then Shape It
 
@@ -188,7 +189,7 @@ metadata visible but does not retain a separate lower-level metric record for th
 - `--view types` for stable detected file types and exact byte shares.
 - `--view families` for code, prose, markup, data, binary, and unknown roll-ups.
 - `--view languages` for code-family rows and byte shares from path-only detection.
-- `--view documents` for prose metrics; it requires any enabled analysis profile.
+- `--view documents` for prose metrics; it requires any enabled analyzer.
 - `--view largest` for the 20 largest regular files, and `--view recent` for the 20 most
   recently modified. Both are presets over `files`, not separate machinery: `largest` is
   `files --sort size --limit 20` and `recent` is `files --sort mtime --limit 20`, each
@@ -274,9 +275,10 @@ before the modification, so only the start bound is conservative.
 
 Check the process exit status and these fields:
 
-- `schema` before parsing anything else: a metadata-only report carries `fdu.report/4`,
-  a report that ran content analysis carries `fdu.report/5`, and a `--watch` stream
-  carries `fdu.stream/1`. Treat an unrecognized value as a version you cannot parse
+- `schema` before parsing anything else: a report carries `fdu.report/5` when it ran
+  content analysis or includes a metric summary (the `types`, `families`, `languages`,
+  and `documents` views), `fdu.report/4` otherwise, and a `--watch` stream carries
+  `fdu.stream/1`. Treat an unrecognized value as a version you cannot parse
   rather than guessing at the fields.
 - `complete` and `errors` before trusting totals
 - `freshness` and `source` before presenting data as current
