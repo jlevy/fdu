@@ -268,8 +268,9 @@ and the structural form in `fdu-jxhk` already say.
 **The saving’s share is subject-shaped.** −3.18% on a 3,077-entry tree became −1.69% on
 a 102,318-entry one.
 Per entry, the saving was nearly the same on both subjects, 1,950 and 2,141
-instructions; what differed was everything else the run cost per entry, about 61,000
-instructions on the registry subject and 126,000 on the kernel checkout.
+instructions; what differed was everything else the control run cost per entry, about
+59,400 instructions on the registry subject and 124,200 on the kernel checkout (61,323
+and 126,386 in total, less the saving).
 The trees differ in shape as well as size, a registry of many small crates against one C
 source tree, and only the registry subject was profiled, so what makes up that doubling
 is not established. A snapshot parse that grows faster than the roll-up hashing is one
