@@ -121,9 +121,9 @@ def check_render_matches_the_cli(root: Path, binary: str) -> None:
     recording drifts and the point is that the two agree today.
     """
 
-    # The command line reads no `.gitignore`, and a report's `ignore_rules` field says
-    # whether rules were read, so the index compared with it reads none either.
-    index = fdu.scan(str(root), scan=fdu.ScanOptions(read_controls=False))
+    # Both surfaces read `.gitignore` by default, and a report's `ignore_rules` field and
+    # every row's `ignored` share say so, so the default index is the one to compare.
+    index = fdu.scan(str(root))
     for view in (fdu.View.TREE, fdu.View.LARGEST, fdu.View.SUMMARY):
         report = index.report(fdu.Query(views=(view,)))
         for fmt in fdu.Format:
@@ -403,7 +403,9 @@ def check_reports_carry_the_ignored_share() -> None:
     apparent = fdu.SizeMetric.APPARENT
 
     report = fdu.report(
-        root, fdu.Query(views=views, selection=fdu.Selection(size=apparent)), cache=fdu.CachePolicy.OFF
+        root,
+        fdu.Query(views=views, selection=fdu.Selection(size=apparent)),
+        cache=fdu.CachePolicy.OFF,
     )
     summary, tree, extensions, files = report.sections
     assert isinstance(summary, fdu.SummarySection), summary
@@ -445,7 +447,9 @@ def check_reports_carry_the_ignored_share() -> None:
         try:
             attempt()
         except fdu.InvalidArgumentError as error:
-            expected = "ignored=only needs .gitignore classification, and read_controls turned it off"
+            expected = (
+                "ignored=only needs .gitignore classification, and read_controls turned it off"
+            )
             assert expected in str(error), error
         else:
             raise AssertionError("selecting by ignored state without the rules must be refused")

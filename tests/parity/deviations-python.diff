@@ -41,7 +41,7 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 21 sessions differ, and every one of them has a named cause.
+# 23 sessions differ, and every one of them has a named cause.
 #
 #  13  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
@@ -53,7 +53,7 @@
 #      reports a usage error, which exits 2 rather than 1. The rule text is one constant
 #      either way, with only the knob names substituted, and a unit test pins that.
 #
-#   2  The same rule, in each surface's own names for the same knobs  [surface-vocabulary]
+#   4  The same rule, in each surface's own names for the same knobs  [surface-vocabulary]
 #      The command line calls it --scan-depth and the API calls it max_depth. They are
 #      different words, not different punctuation, so this is checked by eliding the knob
 #      names on both sides and requiring the rest of the sentence to be identical.
@@ -103,6 +103,21 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Sort and Limit Compose Into a Top-N, With No Dedicated View
   ✓ Reverse Flips Whatever Order Is in Effect
   ✓ Depth Bounds the Rendered Tree, Not the Scan
+  ✓ Every Row Says How Much of It .gitignore Ignores
+  ✓ Ignored Entries Are a Selection, and Sizes Follow It
+  ✓ Ignored Entries Are a Selection, and Sizes Follow It
+  ✓ Machine Rows Mark Each Entry, and Null Means No Rule Was Read
+  ✓ Machine Rows Mark Each Entry, and Null Means No Rule Was Read
+  ✗ A Selection by Ignored State Needs the Rules
+@@ -1,1 +1,1 @@
+-fdu: --only-ignored needs .gitignore classification, and --no-gitignore turned it off; drop one of them
++fdu: ignored=only needs .gitignore classification, and read_controls turned it off; drop one of them
+  ✓ A Rule File the Budget Refuses Is Named, and Sizes Stay Exact
+  ✗ A Rule File the Budget Refuses Is Named, and Sizes Stay Exact
+@@ -1,2 +1,2 @@
+     16 KiB  2 files, 0 directories
+-note: 1 .gitignore file not applied (1 with a line over the 16 KiB line guard), so ignored shares under . are not exact; sizes are. To apply them, set --gitignore-budget to all to lift the line guard
++note: 1 .gitignore file not applied (1 with a line over the 16 KiB line guard), so ignored shares under . are not exact; sizes are. To apply them, set control_budget to all to lift the line guard
   ✓ JSON Carries the Versioned Envelope
   ✓ JSONL Is One Document per Line
   ✓ YAML Quotes Only What Would Be Ambiguous
@@ -146,6 +161,10 @@ PASS [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✓ Corrupt the Snapshot
   ✓ Recover with a Cold Scan
   ✓ Verify the Corrupt File Was Replaced
+  ✓ Reading No .gitignore Is a Separate Scope
+  ✓ Reading No .gitignore Is a Separate Scope
+  ✓ Reading No .gitignore Is a Separate Scope
+  ✓ Reading No .gitignore Is a Separate Scope
 FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
   ✓ Prepare Mixed Line Endings and Observed Binary Data
   ✓ Prepare Empty and Unsupported-Language Trees
@@ -269,7 +288,7 @@ PASS [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,91 +1,1 @@
+@@ -1,106 +1,1 @@
 -fdu — a fast, incremental file roll-up engine.
 -
 -THE LADDER
@@ -309,6 +328,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  fdu --analyze words --view documents .
 -  fdu --view largest -n 100 PATH                            the 100 largest files
 -  fdu --view files --modified-since 1h --sort mtime PATH    recent changes
+-  fdu --exclude-ignored PATH                                sizes without ignored files
+-  fdu --view files --only-ignored --format jsonl PATH       what .gitignore covers
 -  fdu --watch --view files --format jsonl PATH              a tail -f for a tree
 -
 -  --interval throttles rendering only; change detection is event-driven and
@@ -321,9 +342,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  matching entry, in name order. full is every view except files.
 -
 -SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
--  Scope      PATH, --scan-depth                         what is scanned and cached
+-  Scope      PATH, --scan-depth, --no-gitignore         what is scanned and cached
 -  Content    --analyze none|lines|code|words|all        which file bodies are read
 -  Selection  --include, --exclude, --depth, --limit     which entries are considered
+-             --exclude-ignored, --only-ignored
 -  View       summary,tree,families,types,extensions,languages,documents,
 -             largest,recent,files,full
 -  Format     --format text|json|jsonl|yaml, --color
@@ -347,8 +369,20 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  any narrower request without re-reading.
 -  cache=only never opens source files and fails if requested content is absent.
 -
+-IGNORE RULES
+-  Every report reads each .gitignore in the tree, and summary, tree, and extension
+-  rows end with how much of their size its rules ignore, as `(128 B ignored)`.
+-  A directory a rule ignores is ignored with everything below it. Unignored is not
+-  tracked: .git is unignored unless a rule names it. --exclude-ignored and
+-  --only-ignored report one side, and sort and --min-size follow the size shown.
+-  --no-gitignore reads no rules and shows no share. Only per-directory .gitignore
+-  files apply, not core.excludesFile, .git/info/exclude, or a global ignore file,
+-  and matching is case-sensitive on every platform. An unreadable .gitignore makes
+-  the result partial, like any unreadable path.
+-
 -OUTPUT AND AUTOMATION
 -  Metadata-only machine output remains fdu.report/5; metric summaries use fdu.report/6.
+-  Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
 -  Text language rows use canonical names; machine formats retain lowercase IDs.
 -  Metric rows include detection source, confidence, origin flags, and coverage.
 -  One-shot text reports end with a gray performance line; machine formats omit it.
