@@ -1559,12 +1559,14 @@ impl Index {
     /// Create an empty index rooted at `root_path`, under [`ScanScope::default`].
     ///
     /// That is the scope of [`ScanConfig::default`](crate::ScanConfig), which observes
-    /// control state, so in a build with the `gitignore` feature this index answers
-    /// [`Self::is_ignored`] and [`Self::controls`] and accepts control input. Without the
-    /// feature it observes none: those two refuse with
-    /// [`crate::Error::ControlStateNotObserved`], and control input is unsupported. Build
-    /// any other scope, including one that turns control observation off, with
-    /// [`Self::new_with_scope`].
+    /// control state. In a build with the `gitignore` feature this index answers
+    /// [`Self::is_ignored`], [`Self::controls`], and the partition accessors
+    /// ([`Self::partition_total`], [`Self::partition_rollup`], and
+    /// [`Self::partition_rollup_summary`]), and it accepts control input. A build without
+    /// the feature observes none: those accessors refuse with
+    /// [`crate::Error::ControlStateNotObserved`], and its control table refuses control
+    /// input as unsupported. Build any other scope, including one that turns control
+    /// observation off, with [`Self::new_with_scope`].
     pub fn new(root_path: impl Into<PathBuf>) -> Self {
         Self::new_with_scope(root_path, ScanScope::default())
     }
