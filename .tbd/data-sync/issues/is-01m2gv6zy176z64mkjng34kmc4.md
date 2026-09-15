@@ -3,15 +3,19 @@ type: is
 id: is-01m2gv6zy176z64mkjng34kmc4
 title: CLI shows gitignored share in summaries and tree rows, with --exclude-ignored and --only-ignored
 kind: feature
-status: open
+status: closed
 priority: 1
-version: 3
+version: 4
 labels:
   - stack-followup
   - release
 dependencies: []
 created_at: 2026-09-14T20:54:50.553Z
-updated_at: 2026-09-15T05:26:11.490Z
+updated_at: 2026-09-15T22:17:59.839Z
+closed_at: 2026-09-15T22:17:59.838Z
+close_reason: "ae46261, 3ddec4c, ea671de (PR #65): summary, tree, and extension rows carry an ignored share, text '(N ignored)' after the detail (Q5), zero object in JSON and no text suffix when nothing is ignored (Q6), null under --no-gitignore; --exclude-ignored and --only-ignored filter entries so sizes, sort, and --min-size follow (Q4); goldens over a project/.gitignore fixture; grouped views follow in fdu-12zs (Q8)"
+resolution: null
+duplicate_of: null
 ---
 DECISION (user, 2026-09-14): once reports observe .gitignore by default, the CLI shows how much of each size is gitignored, for example '1.2 GB (340 MB ignored)', in summary and tree rows, and adds --exclude-ignored and --only-ignored filters. JSON output carries the ignored/unignored split. Human output changes, so goldens and the Python parity corpus change too; read every diff. With --no-gitignore the split is omitted and never shown as zero. Depends on the default-on bead.
 

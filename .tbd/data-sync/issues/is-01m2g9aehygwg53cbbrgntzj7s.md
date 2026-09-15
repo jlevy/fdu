@@ -3,14 +3,18 @@ type: is
 id: is-01m2g9aehygwg53cbbrgntzj7s
 title: Decide whether a one-shot report refuses read_controls=true instead of ignoring it
 kind: task
-status: open
+status: closed
 priority: 3
-version: 2
+version: 3
 labels:
   - stack-followup
 dependencies: []
 created_at: 2026-09-14T15:42:09.469Z
-updated_at: 2026-09-14T20:54:32.475Z
+updated_at: 2026-09-15T22:18:00.478Z
+closed_at: 2026-09-15T22:18:00.477Z
+close_reason: "dcdec5a (PR #65): moot. plan_report no longer overrides read_controls, so a one-shot report honours read_controls: true and there is nothing to refuse; fdu.report forwards ScanOptions.read_controls"
+resolution: null
+duplicate_of: null
 ---
 Found while implementing fdu-agb6 (commit c06fe47 on claude/contract-decisions).
 

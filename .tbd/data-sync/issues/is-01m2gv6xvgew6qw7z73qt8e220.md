@@ -3,15 +3,19 @@ type: is
 id: is-01m2gv6xvgew6qw7z73qt8e220
 title: Roll up .gitignore information by default on every surface, with a per-request opt-out
 kind: feature
-status: open
+status: closed
 priority: 1
-version: 6
+version: 7
 labels:
   - stack-followup
   - release
 dependencies: []
 created_at: 2026-09-14T20:54:48.425Z
-updated_at: 2026-09-15T05:26:10.933Z
+updated_at: 2026-09-15T22:17:59.533Z
+closed_at: 2026-09-15T22:17:59.532Z
+close_reason: "dcdec5a, 3ddec4c, d108786 (PR #65): one-shot reports, fdu PATH, --watch, and fdu.report observe .gitignore by default; --no-gitignore and read_controls=False opt out; the summary tier falls closed to the index when observing (Q7); an unreadable .gitignore exits 2 unless --allow-partial (Q10), pinned in crates/fdu/tests/cli_exit.rs; speed gate passed (median pair ratios 0.92-1.04), summary RSS follow-up fdu-if7o"
+resolution: null
+duplicate_of: null
 ---
 DECISION (user, 2026-09-14): .gitignore handling is built in and rolled up by default everywhere, and each request can turn it off.
 - Engine: ScanConfig::read_controls defaults to true. execution::plan_report stops forcing it off, so one-shot reports observe and keep ignored/unignored roll-ups.

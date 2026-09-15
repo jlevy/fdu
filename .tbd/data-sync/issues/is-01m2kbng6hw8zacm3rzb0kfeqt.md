@@ -3,14 +3,14 @@ type: is
 id: is-01m2kbng6hw8zacm3rzb0kfeqt
 title: Cache clear cannot reclaim snapshots from an older format, so the 0.1.0 format bump strands them
 kind: bug
-status: open
+status: in_progress
 priority: 1
-version: 1
+version: 2
 labels:
   - release
 dependencies: []
 created_at: 2026-09-15T20:20:52.047Z
-updated_at: 2026-09-15T20:20:52.047Z
+updated_at: 2026-09-15T21:44:04.119Z
 ---
 Found while drafting the 0.1.0 release notes (PR #64). On main, `--cache-clear` and `--cache-clear=all` never delete a snapshot file they do not recognize.
 
