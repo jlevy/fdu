@@ -5,7 +5,7 @@ title: Control-table budget aborts the scan instead of degrading to partial
 kind: bug
 status: open
 priority: 0
-version: 10
+version: 11
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - scale
@@ -15,7 +15,7 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-30T07:12:14.310Z
-updated_at: 2026-09-15T05:15:27.783Z
+updated_at: 2026-09-15T05:22:18.201Z
 ---
 ControlTable::upsert (crates/fdu-core/src/control.rs:120) returns Err(ControlSourceLimit) when the cumulative retained cost crosses MAX_CONTROL_TABLE_BYTES, and index.rs:1203 does the same on install. The error propagates and kills the whole scan - the user gets nothing after minutes of walking.
 
@@ -50,3 +50,9 @@ Still owned here, unchanged by that commit: fdu_core::open / open_with_pending_s
 2026-09-14 (fdu-agb6, c06fe47 on claude/contract-decisions): the default no longer reaches either bound from a library call. ScanConfig::read_controls defaults off, so fdu_core::open / open_with_pending_save, fdu.open, fdu.scan and a watch over their indexes read no control file unless the caller opts in. Still reaching both bounds: every opened root (read_controls is always on there, opened.rs OpenOptions::into_parts) and any open or scan that opts in. This bead stays open for those.
 
 2026-09-14 DECISION (user, supersedes the default-off decision recorded earlier the same day): .gitignore information is built into the tool and the library, and is rolled up by default on every surface: CLI reports, --watch, library open, fdu.open/fdu.scan/fdu.report, and opened roots. Each request can turn it off (--no-gitignore on the CLI, read_controls=False in the library and Python). The typed 'not observed' answer from #57 stays, for requests that opt out. The CLI shows split totals, for example '1.2 GB (340 MB ignored)', plus --exclude-ignored and --only-ignored filters. Prerequisites before the default flips: fdu-1onj (the control budget degrades to partial instead of aborting), fdu-okne (a liftable bound named in the error), fdu-szkg (charges deduplicated by fingerprint), and a speed check against main with controls on. This bead is now a prerequisite for the default flip. Without it, `fdu ~` would abort again on large .gitignore volume.
+
+2026-09-15 DECISIONS (user), PR A design (plan: scratchpad/reviews/plan-gitignore-default-on.md, section 7):
+Q1: a crossed control budget is a coverage note with exit 0. Sizes stay exact; only ignore classification is partial. Text output names the directories whose rules were not loaded and the flag that raises the budget. JSON carries an ignore_rules coverage field.
+Q2: the budget is part of snapshot scope, mixed into ignore_rules_fingerprint. Raising it cold-scans once.
+Q3: the 16 KiB per-line guard can be lifted by the same budget flag (the recommendation was fixed; the user chose liftable, per 'every bound is liftable'). Over the guard it degrades and names the guard and the flag.
+Q11: bump snapshot FORMAT_VERSION in PR A, so snapshots carry refused rules and the budget.
