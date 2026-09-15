@@ -5,12 +5,13 @@ title: Roll up .gitignore information by default on every surface, with a per-re
 kind: feature
 status: open
 priority: 1
-version: 3
+version: 5
 labels:
   - stack-followup
+  - release
 dependencies: []
 created_at: 2026-09-14T20:54:48.425Z
-updated_at: 2026-09-14T22:32:11.667Z
+updated_at: 2026-09-15T05:15:30.148Z
 ---
 DECISION (user, 2026-09-14): .gitignore handling is built in and rolled up by default everywhere, and each request can turn it off.
 - Engine: ScanConfig::read_controls defaults to true. execution::plan_report stops forcing it off, so one-shot reports observe and keep ignored/unignored roll-ups.
@@ -24,3 +25,5 @@ Blocked by fdu-1onj, fdu-okne and fdu-szkg, so large .gitignore volume degrades 
 ## Notes
 
 2026-09-14 (PR #57 ab77745): the library surfaces already default on. ScanConfig::read_controls, ScanScope::default(), Index::new(root), fdu_core::open, fdu.open, fdu.scan and a watch over their index observe by default, and read_controls=false opts out, with ControlStateNotObserved answered on that index. Remaining for this bead: execution::plan_report still forces read_controls off for one-shot reports, crates/fdu/src/cli.rs still sets it off for --watch, and the CLI opt-out flag, split totals and ignored filters are not started.
+
+2026-09-15 DECISIONS (user): ships in 0.1.0, not deferred to 0.2.0.

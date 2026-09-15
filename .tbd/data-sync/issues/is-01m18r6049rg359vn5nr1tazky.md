@@ -5,16 +5,17 @@ title: Control-table bound is not liftable by any flag and its error names no re
 kind: bug
 status: open
 priority: 1
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - control-state
   - cli
   - stack-followup
+  - release
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-30T07:12:14.984Z
-updated_at: 2026-09-14T20:54:46.078Z
+updated_at: 2026-09-15T05:15:28.077Z
 ---
 MAX_CONTROL_TABLE_BYTES is a hard const with no CLI or config lever (verified: no match for control-table/max-control in crates/fdu/src). The error text is 'control table requires N bytes; limit is M bytes' - it states the bound and offers no way past it.
 

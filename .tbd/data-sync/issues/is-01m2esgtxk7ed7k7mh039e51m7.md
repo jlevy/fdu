@@ -5,14 +5,15 @@ title: "Release note: the type_rules_fingerprint change cold-rescans every cache
 kind: task
 status: open
 priority: 3
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - stack-followup
+  - release
 dependencies: []
 parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 created_at: 2026-09-14T01:46:47.090Z
-updated_at: 2026-09-14T01:46:47.090Z
+updated_at: 2026-09-15T05:15:29.578Z
 ---
 Release-note follow-up from PR #48's description ("The command line is unmoved"): "One consequence deserves a release note."
 

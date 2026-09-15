@@ -5,7 +5,7 @@ title: "Release readiness: land the open PR stack and cut the first stable fdu r
 kind: epic
 status: in_progress
 priority: 0
-version: 6
+version: 7
 labels:
   - release
 dependencies: []
@@ -15,7 +15,7 @@ child_order_hints:
   - is-01m2h7j050f97s4hctpda4nzje
   - is-01m2h7jd6sqqr8n05g4375s6yt
 created_at: 2026-09-15T00:08:53.387Z
-updated_at: 2026-09-15T00:30:47.512Z
+updated_at: 2026-09-15T05:15:26.262Z
 ---
 User goal (2026-09-14): bring fdu to a stable state that can land on main and cut a release. Keep making progress, track everything as beads, stack PRs as needed, and make sure the final PR stack is complete.
 
@@ -39,3 +39,6 @@ Tracking: fdu-6nyd (the earlier merge-readiness bead) covered the first stack, w
   - #57: technical review 5200240760 never got a disposition map, and delta review 5204082880 is unanswered. Assigned to the #57 agent with the address-pr-review shortcut.
 - Release-readiness audit (Fable) is running; it will create 'release' beads under this epic.
 - Next: propagate #56's fixes into #57 and #60, run final delta reviews, then the default-on .gitignore PRs (fdu-elnn, fdu-5ryb, prerequisites fdu-1onj/okne/szkg) stacked on #60, unless the audit recommends deferring them.
+
+2026-09-15 DECISIONS (user): release 0.1.0 (not 1.0.0). All of the default-on .gitignore work ships IN 0.1.0: PR A (bounds degrade, dedup, liftable budget: fdu-1onj, fdu-okne, fdu-szkg) and PR B (default on for every surface, --no-gitignore, the CLI (N ignored) split, --exclude-ignored/--only-ignored, the JSON schema bump: fdu-elnn, fdu-5ryb). The README headline performance figure is re-measured on the release candidate before tagging. The first release is published by hand from the signed tag (fdu-core, then fdu, then the PyPI wheel), following the release guide; automated publish jobs come later.
+The readiness audit report is at scratchpad/reviews/release-readiness.md. Release blockers: fdu-y5zc, fdu-0t6d, fdu-k4ad, fdu-ih88, fdu-1onj, fdu-qy8e, fdu-ls14, fdu-9cf0.

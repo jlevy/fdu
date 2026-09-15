@@ -5,14 +5,15 @@ title: "PR #26 review S2: dispatch release rehearsal to prove full matrix"
 kind: task
 status: open
 priority: 2
-version: 3
-labels: []
+version: 4
+labels:
+  - release
 dependencies:
   - type: blocks
     target: is-01kzg4c6vnh98mqrpkzw7ydne0
 parent_id: is-01m01chg3gqm5sjf58mt5ng9zw
 created_at: 2026-08-15T00:18:50.120Z
-updated_at: 2026-08-15T00:31:51.742Z
+updated_at: 2026-09-15T05:15:28.993Z
 ---
 Deferred: after R1/R11 land on the PR and merge, dispatch release.yml once so all five wheel legs, evidence, and registry classification actually run before fdu-9cf0.
 

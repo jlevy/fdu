@@ -5,16 +5,17 @@ title: Control-table budget aborts the scan instead of degrading to partial
 kind: bug
 status: open
 priority: 0
-version: 9
+version: 10
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - scale
   - control-state
   - stack-followup
+  - release
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-30T07:12:14.310Z
-updated_at: 2026-09-14T20:54:44.417Z
+updated_at: 2026-09-15T05:15:27.783Z
 ---
 ControlTable::upsert (crates/fdu-core/src/control.rs:120) returns Err(ControlSourceLimit) when the cumulative retained cost crosses MAX_CONTROL_TABLE_BYTES, and index.rs:1203 does the same on install. The error propagates and kills the whole scan - the user gets nothing after minutes of walking.
 
