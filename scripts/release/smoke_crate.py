@@ -194,7 +194,7 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     """Smoke-test the packaged crates without contacting a publishing API."""
-    check_python(tuple(sys.version_info))
+    check_python(sys.version_info[:3])
     args = parser().parse_args()
     smoke_crate(args.crates, args.version, args.work_dir, cargo=args.cargo)
 
