@@ -136,8 +136,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     state, where it used to fail with `Error::UnsupportedScanConfig`.
   - A scope with `read_controls` on now has ignore-rules fingerprint 2 rather than 0, so
     a snapshot written under it misses once and is rebuilt by a cold scan.
-- **Breaking:** a `.gitignore` past the control budget, or with a line over the 16 KiB
-  guard, is refused instead of ending the scan.
+- **Breaking:** a `.gitignore` past the control budget, or with a line over the line
+  limit, is refused instead of ending the scan.
   Its rules do not apply, every size stays exact, and the result stays complete with
   exit status 0; the batch that carried it commits, an opened root completes the
   directory and keeps watching, and a watch keeps applying events.
@@ -145,23 +145,30 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   checkouts uses a fraction of the budget it did.
   - `Error::ControlSourceLimit` and `Error::ControlPatternLimit` are removed.
     `ControlTable::upsert` returns a `ControlAdmission`, `Index::control_coverage`
-    returns the budget, the applied and refused counts, and at most
-    `MAX_RETAINED_ISSUES` refused files with an exact count, and
-    `EffectiveChange::ControlRefusalUpdated` reports a refusal recorded or lifted.
-    `ReadDiagnostics::controls` carries the same for an opened root, and Python mirrors
-    all three.
-  - One knob sets the budget and lifts both bounds: `ScanConfig::control_budget` and
-    `OpenOptions::control_budget` (`Option<usize>`, 4 MiB by default, `None` for no
-    bound), `control_budget` on Python `ScanOptions` and `OpenedOptions`, and
-    `--gitignore-budget SIZE|all` on the command line.
+    returns the limits, the applied and refused counts, and at most
+    `MAX_RETAINED_ISSUES` refused files with an exact count and the limit that refused
+    each, and `EffectiveChange::ControlRefusalUpdated` reports a refusal recorded or
+    lifted. `ReadDiagnostics::controls` carries the same for an opened root, and Python
+    mirrors all three.
+  - Two independent limits, each a size or unbounded, and each liftable without moving
+    the other. The budget bounds the control state the whole index retains, 4 MiB by
+    default; unbounded, it also reads every `.gitignore` whole.
+    The line limit bounds one pattern, 16 KiB by default.
+    They are `ControlLimits { budget, line_limit }` on `ScanConfig::control_limits` and
+    `OpenOptions::control_limits`, `control_budget` and `control_line_limit` on Python
+    `ScanOptions` and `OpenedOptions`, and `--gitignore-budget SIZE|all` and
+    `--gitignore-line-limit SIZE|all` on the command line.
     `MAX_CONTROL_TABLE_BYTES` and `MAX_CONTROL_PATTERN_BYTES` are renamed
-    `DEFAULT_CONTROL_BUDGET` and `CONTROL_LINE_GUARD_BYTES`. The budget is part of the
-    snapshot scope, so changing it scans cold once.
-  - Reports carry `ignore_rules` in every machine format, `null` when no `.gitignore`
-    was read, and a note naming the refused files’ directories and the knob.
+    `DEFAULT_CONTROL_BUDGET` and `DEFAULT_CONTROL_LINE_LIMIT`. Both limits are part of
+    the snapshot scope, so changing either scans cold once.
+  - Reports carry `ignore_rules` in every machine format: `null` when no `.gitignore`
+    was read, otherwise `limits` (`budget` and `line_limit`, each bytes or `null`), the
+    `applied` and `refused` counts, and `refusals`, each with a `path` and the `reason`
+    naming the limit that fired.
+    A note names the refused files’ directories and the flag for each limit that fired.
     The report schema moves to `fdu.report/5`, and to `fdu.report/6` with content
     analysis; Python `Status.ignore_rules` carries the same value.
-  - The snapshot format moves to version 4, carrying the budget and every refusal, so
+  - The snapshot format moves to version 4, carrying both limits and every refusal, so
     existing snapshots are rebuilt once.
 - One projection of an opened-root read can refuse while the rest of the read answers.
   `ProjectionResult::Refused`, `RefusedResult` in Python, names why: a `Tree` or roll-up

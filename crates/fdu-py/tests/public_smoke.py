@@ -332,7 +332,7 @@ def check_an_index_can_opt_out_of_control_state() -> None:
 
     root = Path(tempfile.mkdtemp(prefix="fdu-public-controls-"))
     (root / "kept.txt").write_text("kept", encoding="utf-8")
-    # One pattern longer than the engine's 16 KiB per-line guard, which an index that
+    # One pattern longer than the engine's 16 KiB default line limit, which an index that
     # observes control state refuses.
     (root / ".gitignore").write_text("x" * (16 * 1024 + 1) + "\n", encoding="utf-8")
     opted_out = fdu.ScanOptions(read_controls=False)
@@ -345,29 +345,43 @@ def check_an_index_can_opt_out_of_control_state() -> None:
         assert index.total().files == 2
         assert index.status.ignore_rules is None, "a request that read no rule says so"
         assert index.report().status.ignore_rules is None
-    # A default scan reads the control file and refuses the line over the guard, without
+    # A default scan reads the control file and refuses the line over the limit, without
     # ending the scan or making its sizes partial (fdu-1onj).
     observed = fdu.scan(root)
     assert observed.status.complete is True, observed.status.errors
     assert observed.total().files == 2
-    refused = fdu.RefusedControl(Path(".gitignore"), fdu.ControlRefusalReason.LINE_GUARD)
-    expected = fdu.ControlObservation(
-        budget=4 * 1024 * 1024, applied=0, refused=1, refusals=(refused,)
-    )
+    defaults = fdu.ControlLimits(budget=4 * 1024 * 1024, line_limit=16 * 1024)
+    refused = fdu.RefusedControl(Path(".gitignore"), fdu.ControlRefusalReason.LINE_LIMIT)
+    expected = fdu.ControlObservation(limits=defaults, applied=0, refused=1, refusals=(refused,))
     assert observed.status.ignore_rules == expected, observed.status
     observed_report = observed.report(fdu.Query(views=(fdu.View.SUMMARY,)))
     assert observed_report.status.complete is True
     assert observed_report.status.ignore_rules == expected, observed_report.status
     wire = json.loads(observed_report.render(fdu.Format.JSON))
-    assert wire["ignore_rules"]["refusals"] == [{"path": ".gitignore", "reason": "line_guard"}]
-    # The note names the directory and the knob as this surface spells it.
+    assert wire["ignore_rules"] == {
+        "limits": {"budget": 4 * 1024 * 1024, "line_limit": 16 * 1024},
+        "applied": 0,
+        "refused": 1,
+        "refusals": [{"path": ".gitignore", "reason": "line_limit"}],
+    }, wire
+    # The note names the directory and the limit that fired, as this surface spells it.
     (note,) = observed_report.notes
     assert "under . are not exact" in note, note
-    assert "set control_budget to all" in note, note
+    assert "raise control_line_limit above 16 KiB, or set it to all" in note, note
+    assert "control_budget" not in note, note
     assert note in observed_report.render(fdu.Format.TEXT), note
-    # The same knob lifts the guard.
-    lifted = fdu.scan(root, scan=fdu.ScanOptions(control_budget=fdu.Bound.ALL))
-    assert lifted.status.ignore_rules == fdu.ControlObservation(budget=None, applied=1, refused=0)
+    # Lifting the budget leaves the line limit refusing; lifting the line limit applies it.
+    budget_lifted = fdu.scan(root, scan=fdu.ScanOptions(control_budget=fdu.Bound.ALL))
+    assert budget_lifted.status.ignore_rules == fdu.ControlObservation(
+        limits=fdu.ControlLimits(budget=None, line_limit=16 * 1024),
+        applied=0,
+        refused=1,
+        refusals=(refused,),
+    )
+    lifted = fdu.scan(root, scan=fdu.ScanOptions(control_line_limit="all"))
+    assert lifted.status.ignore_rules == fdu.ControlObservation(
+        limits=fdu.ControlLimits(budget=4 * 1024 * 1024, line_limit=None), applied=1, refused=0
+    )
     assert lifted.report().notes == ()
 
     # A report and an opted-out open share one snapshot scope, so that open starts warm; a
@@ -553,7 +567,7 @@ def main() -> None:
     # envelope says so on each side rather than agreeing on a value neither observed.
     assert cli_wire.pop("ignore_rules") is None, cli_wire
     assert wire.pop("ignore_rules") == {
-        "budget": 4 * 1024 * 1024,
+        "limits": {"budget": 4 * 1024 * 1024, "line_limit": 16 * 1024},
         "applied": 0,
         "refused": 0,
         "refusals": [],

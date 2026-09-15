@@ -541,11 +541,13 @@ fn write_envelope_json(out: &mut String, report: &Report) {
     }
 }
 
-/// The `ignore_rules` field: `null` when no control file was read, otherwise the budget,
-/// the applied and refused counts, and at most `MAX_RETAINED_ISSUES` refused files.
+/// The `ignore_rules` field: `null` when no control file was read, otherwise the `limits`
+/// the rules were applied under, the applied and refused counts, and at most
+/// `MAX_RETAINED_ISSUES` refused files.
 ///
 /// `null` rather than a zero object, because a report that read no rule must not say that
-/// every rule applied. `budget` is `null` when unbounded.
+/// every rule applied. Each limit is a byte count, or `null` when unbounded, and a
+/// refusal's `reason` is the key of the limit that refused it.
 fn ignore_rules_json(ignore_rules: &ControlCoverage) -> String {
     let ControlCoverage::Observed(observed) = ignore_rules else {
         return "null".to_string();
@@ -563,11 +565,18 @@ fn ignore_rules_json(ignore_rules: &ControlCoverage) -> String {
     }
     refusals.push(']');
     format!(
-        "{{\"budget\": {}, \"applied\": {}, \"refused\": {}, \"refusals\": {refusals}}}",
-        observed.budget.map_or_else(|| "null".to_string(), |budget| budget.to_string()),
+        "{{\"limits\": {{\"budget\": {}, \"line_limit\": {}}}, \"applied\": {}, \"refused\": {}, \
+         \"refusals\": {refusals}}}",
+        limit_value(observed.limits.budget),
+        limit_value(observed.limits.line_limit),
         observed.applied,
         observed.refused,
     )
+}
+
+/// One control limit as JSON and YAML write it: its bytes, or `null` when unbounded.
+fn limit_value(limit: Option<usize>) -> String {
+    limit.map_or_else(|| "null".to_string(), |bytes| bytes.to_string())
 }
 
 /// The `ignore_rules` field in YAML, as [`ignore_rules_json`] describes it.
@@ -577,12 +586,9 @@ fn write_ignore_rules_yaml(out: &mut String, ignore_rules: &ControlCoverage) {
         return;
     };
     out.push_str("ignore_rules:\n");
-    match observed.budget {
-        Some(budget) => {
-            let _ = writeln!(out, "  budget: {budget}");
-        }
-        None => out.push_str("  budget: null\n"),
-    }
+    out.push_str("  limits:\n");
+    let _ = writeln!(out, "    budget: {}", limit_value(observed.limits.budget));
+    let _ = writeln!(out, "    line_limit: {}", limit_value(observed.limits.line_limit));
     let _ = writeln!(out, "  applied: {}", observed.applied);
     let _ = writeln!(out, "  refused: {}", observed.refused);
     if observed.refusals.is_empty() {
@@ -2007,7 +2013,7 @@ mod tests {
 
         let mut observed =
             Index::new_with_scope("/root", crate::test_support::observing_controls());
-        let mut long_line = vec![b'x'; crate::control::CONTROL_LINE_GUARD_BYTES + 1];
+        let mut long_line = vec![b'x'; crate::control::DEFAULT_CONTROL_LINE_LIMIT + 1];
         long_line.push(b'\n');
         observed
             .apply(&Observation::new(vec![
@@ -2028,28 +2034,29 @@ mod tests {
         let refused = refused.to_string_lossy();
         let json = render(&report(&observed, &query, &provenance), Format::Json, false);
         let expected = format!(
-            "\"ignore_rules\": {{\"budget\": 4194304, \"applied\": 1, \"refused\": 1, \
-             \"refusals\": [{{\"path\": {}, \"reason\": \"line_guard\"}}]}}",
+            "\"ignore_rules\": {{\"limits\": {{\"budget\": 4194304, \"line_limit\": 16384}}, \
+             \"applied\": 1, \"refused\": 1, \"refusals\": [{{\"path\": {}, \"reason\": \
+             \"line_limit\"}}]}}",
             quote(&refused)
         );
         assert!(json.contains(&expected), "{json}");
         assert!(json.contains("\"complete\": true"), "a refusal is not an operational partial");
         let yaml = render(&report(&observed, &query, &provenance), Format::Yaml, false);
         let expected = format!(
-            "ignore_rules:\n  budget: 4194304\n  applied: 1\n  refused: 1\n  refusals:\n    \
-             - path: {}\n      reason: line_guard\n",
+            "ignore_rules:\n  limits:\n    budget: 4194304\n    line_limit: 16384\n  applied: 1\n  \
+             refused: 1\n  refusals:\n    - path: {}\n      reason: line_limit\n",
             yaml_scalar(&refused)
         );
         assert!(yaml.contains(&expected), "{yaml}");
 
         let flags = Query { axes: crate::query::AxisNames::FLAGS, ..query.clone() };
         let note = "note: 1 .gitignore file not applied (1 with a line over the 16 KiB line \
-                    guard), so ignored shares under vendor are not exact; sizes are. To apply \
-                    them, set --gitignore-budget to all to lift the line guard";
+                    limit), so ignored shares under vendor are not exact; sizes are. To apply \
+                    them, raise --gitignore-line-limit above 16 KiB, or set it to all";
         let text = render(&report(&observed, &flags, &provenance), Format::Text, false);
         assert!(text.ends_with(&format!("{note}\n")), "{text}");
         let fields = report(&observed, &query, &provenance);
-        assert_eq!(fields.notes, [note.replace("--gitignore-budget", "control_budget")]);
+        assert_eq!(fields.notes, [note.replace("--gitignore-line-limit", "control_line_limit")]);
     }
 
     #[test]

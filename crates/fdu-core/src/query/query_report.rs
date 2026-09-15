@@ -290,22 +290,28 @@ impl ViewSpec {
 /// the first place, reappearing one door over (fdu-4apt).
 ///
 /// The view and analyzer axes both, because both diagnostics name both: the view that
-/// cannot be answered, and the analyzer that would answer it. The control budget, because
-/// the note about refused `.gitignore` files names the knob that applies them.
+/// cannot be answered, and the analyzer that would answer it. The two control limits,
+/// because the note about refused `.gitignore` files names the limit that applies them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AxisNames {
     /// The view axis.
     pub view: &'static str,
     /// The analyzer axis.
     pub analyze: &'static str,
-    /// The control budget that bounds which `.gitignore` files apply.
+    /// The budget on retained `.gitignore` state.
     pub control_budget: &'static str,
+    /// The limit on one `.gitignore` line.
+    pub control_line_limit: &'static str,
 }
 
 impl AxisNames {
     /// How the command line spells them.
-    pub const FLAGS: Self =
-        Self { view: "--view", analyze: "--analyze", control_budget: "--gitignore-budget" };
+    pub const FLAGS: Self = Self {
+        view: "--view",
+        analyze: "--analyze",
+        control_budget: "--gitignore-budget",
+        control_line_limit: "--gitignore-line-limit",
+    };
 
     /// How the library and the Python API spell them, and the default: a `Query` built
     /// without saying otherwise belongs to a library caller, not to the command line.
@@ -314,8 +320,12 @@ impl AxisNames {
     /// `ViewSpec::resolve`, so every diagnostic about this axis names it one way. It also
     /// keeps the difference from the command line to the flag dashes alone, which is what
     /// the parity harness's `surface-label` class checks.
-    pub const FIELDS: Self =
-        Self { view: "view", analyze: "analyze", control_budget: "control_budget" };
+    pub const FIELDS: Self = Self {
+        view: "view",
+        analyze: "analyze",
+        control_budget: "control_budget",
+        control_line_limit: "control_line_limit",
+    };
 }
 
 impl Default for AxisNames {
@@ -752,10 +762,12 @@ const REFUSED_DIRECTORIES_NAMED: usize = 5;
 ///
 /// The truncation states itself: the note names a few directories and counts the rest,
 /// and a structured report lists up to [`crate::MAX_RETAINED_ISSUES`] beside the exact
-/// count. A reason is broken down only when every refusal is listed; otherwise the note
-/// names both bounds, since an unlisted file could have crossed either.
+/// count. Each limit is named with the refusals it caused only when every refusal is
+/// listed; otherwise the note names every limit that could have refused an unlisted file.
+/// The remedy raises exactly the limits it named, each by the name the requesting surface
+/// uses, so lifting one never reads as lifting the other.
 fn refused_controls_note(ignore_rules: &ControlCoverage, axes: AxisNames) -> Option<String> {
-    use crate::control::ControlRefusalReason;
+    use crate::control::ControlRefusalReason::{Budget, LineLimit};
 
     let ControlCoverage::Observed(observed) = ignore_rules else {
         return None;
@@ -763,33 +775,41 @@ fn refused_controls_note(ignore_rules: &ControlCoverage, axes: AxisNames) -> Opt
     if observed.is_complete() {
         return None;
     }
-    // An unbounded table refuses nothing, so a refusal always has a budget to name.
-    let budget = crate::report_format::human_bytes(
-        u64::try_from(observed.budget.unwrap_or(0)).unwrap_or(u64::MAX),
-    );
-    let guard = crate::report_format::human_bytes(
-        u64::try_from(crate::control::CONTROL_LINE_GUARD_BYTES).unwrap_or(u64::MAX),
-    );
-    let files = crate::report_format::human_count(observed.refused);
-    let noun = if observed.refused == 1 { "file" } else { "files" };
-    let count =
+    let every_listed = observed.lists_every_refusal();
+    let listed =
         |reason| observed.refusals.iter().filter(|refusal| refusal.reason == reason).count();
-    let (over_budget, over_guard) = if observed.lists_every_refusal() {
-        (count(ControlRefusalReason::Budget), count(ControlRefusalReason::LineGuard))
-    } else {
-        (1, 1)
+    // A listed reason certainly fired. When the list is truncated, a bounded limit may also
+    // have refused an unlisted file; an unbounded one refuses nothing.
+    let fired: Vec<_> = [Budget, LineLimit]
+        .into_iter()
+        .filter(|reason| {
+            listed(*reason) > 0 || (!every_listed && observed.limits.limit_for(*reason).is_some())
+        })
+        .collect();
+    let size = |reason| {
+        observed.limits.limit_for(reason).map(|bytes| {
+            crate::report_format::human_bytes(u64::try_from(bytes).unwrap_or(u64::MAX))
+        })
     };
-    let why = if observed.lists_every_refusal() {
-        let mut parts = Vec::new();
-        if over_budget > 0 {
-            parts.push(format!("{over_budget} over the {budget} ignore-rule budget"));
-        }
-        if over_guard > 0 {
-            parts.push(format!("{over_guard} with a line over the {guard} line guard"));
-        }
+    // A refusal recorded under an unbounded limit names the limit without a size, never a
+    // zero one.
+    let over = |reason| {
+        let (lead, noun) = match reason {
+            Budget => ("over", "ignore-rule budget"),
+            LineLimit => ("with a line over", "line limit"),
+        };
+        size(reason).map_or_else(
+            || format!("{lead} the {noun}"),
+            |size| format!("{lead} the {size} {noun}"),
+        )
+    };
+    let why = if every_listed {
+        let parts: Vec<String> =
+            fired.iter().map(|reason| format!("{} {}", listed(*reason), over(*reason))).collect();
         parts.join(", ")
     } else {
-        format!("over the {budget} ignore-rule budget or the {guard} line guard")
+        let parts: Vec<String> = fired.iter().map(|reason| over(*reason)).collect();
+        parts.join(" or ")
     };
 
     let shown = observed.refusals.len().min(REFUSED_DIRECTORIES_NAMED);
@@ -805,19 +825,27 @@ fn refused_controls_note(ignore_rules: &ControlCoverage, axes: AxisNames) -> Opt
         directories.push(format!("{} more", crate::report_format::human_count(unnamed)));
     }
 
-    let knob = axes.control_budget;
-    let remedy = match (over_budget > 0, over_guard > 0) {
-        (true, false) => format!("raise {knob} above {budget}, or set it to all"),
-        (false, _) => format!("set {knob} to all to lift the line guard"),
-        (true, true) => {
-            format!(
-                "raise {knob} above {budget}, or set it to all, which also lifts the line guard"
-            )
-        }
+    // Only a bounded limit can be raised.
+    let raises: Vec<String> = fired
+        .iter()
+        .filter_map(|reason| {
+            let knob = match reason {
+                Budget => axes.control_budget,
+                LineLimit => axes.control_line_limit,
+            };
+            size(*reason).map(|size| format!("{knob} above {size}"))
+        })
+        .collect();
+    let remedy = match raises.as_slice() {
+        [] => String::new(),
+        [raise] => format!(" To apply them, raise {raise}, or set it to all"),
+        raises => format!(" To apply them, raise {}, or set them to all", raises.join(" and ")),
     };
+    let files = crate::report_format::human_count(observed.refused);
+    let noun = if observed.refused == 1 { "file" } else { "files" };
     Some(format!(
         "note: {files} .gitignore {noun} not applied ({why}), so ignored shares under {} are \
-         not exact; sizes are. To apply them, {remedy}",
+         not exact; sizes are.{remedy}",
         directories.join(", ")
     ))
 }
@@ -1997,47 +2025,72 @@ mod tests {
     /// Asserted as "names mine, never the other's" rather than by quoting either sentence,
     /// so rewording the rule cannot break this and changing the vocabulary cannot pass it.
     /// The refused-controls note names a few directories and counts the rest, breaks the
-    /// reasons down only when every refusal is listed, and offers the remedy the reasons
-    /// call for.
+    /// reasons down only when every refusal is listed, and raises exactly the limits that
+    /// fired, each by its own knob.
     #[test]
     fn the_refused_controls_note_bounds_its_list_and_matches_its_remedy_to_the_reasons() {
-        use crate::control::{ControlObservation, ControlRefusalReason, RefusedControl};
+        use crate::control::{
+            ControlLimits, ControlObservation, ControlRefusalReason, RefusedControl,
+        };
 
         let refused = |directory: &str, reason| RefusedControl {
             path: Path::new(directory).join(".gitignore"),
             reason,
         };
-        let note = |refusals: Vec<RefusedControl>, count: u64| {
+        let note = |limits, refusals: Vec<RefusedControl>, count: u64| {
             let coverage = ControlCoverage::Observed(ControlObservation {
-                budget: Some(4 * 1024 * 1024),
+                limits,
                 applied: 7,
                 refused: count,
                 refusals,
             });
             refused_controls_note(&coverage, AxisNames::FLAGS).expect("a refusal is noted")
         };
-        let budget = ControlRefusalReason::Budget;
+        let defaults = ControlLimits::default();
+        let (budget, line_limit) = (ControlRefusalReason::Budget, ControlRefusalReason::LineLimit);
 
         assert_eq!(
-            note(vec![refused("", budget), refused("pkg/a", budget)], 2),
+            note(defaults, vec![refused("", budget), refused("pkg/a", budget)], 2),
             "note: 2 .gitignore files not applied (2 over the 4.0 MiB ignore-rule budget), so \
              ignored shares under ., pkg/a are not exact; sizes are. To apply them, raise \
              --gitignore-budget above 4.0 MiB, or set it to all"
         );
+        assert_eq!(
+            note(defaults, vec![refused("vendor", line_limit)], 1),
+            "note: 1 .gitignore file not applied (1 with a line over the 16 KiB line limit), so \
+             ignored shares under vendor are not exact; sizes are. To apply them, raise \
+             --gitignore-line-limit above 16 KiB, or set it to all"
+        );
+        assert_eq!(
+            note(defaults, vec![refused("a", budget), refused("b", line_limit)], 2),
+            "note: 2 .gitignore files not applied (1 over the 4.0 MiB ignore-rule budget, 1 with \
+             a line over the 16 KiB line limit), so ignored shares under a, b are not exact; \
+             sizes are. To apply them, raise --gitignore-budget above 4.0 MiB and \
+             --gitignore-line-limit above 16 KiB, or set them to all"
+        );
 
+        // Truncated, the note names every limit that could have refused an unlisted file:
+        // both when both are bounded, and only the budget once the line limit is lifted.
         let listed: Vec<_> = (0..crate::MAX_RETAINED_ISSUES)
             .map(|index| refused(&format!("d{index:02}"), budget))
             .collect();
         assert_eq!(
-            note(listed, 1_000),
+            note(defaults, listed.clone(), 1_000),
             "note: 1,000 .gitignore files not applied (over the 4.0 MiB ignore-rule budget or \
-             the 16 KiB line guard), so ignored shares under d00, d01, d02, d03, d04, 995 more \
-             are not exact; sizes are. To apply them, raise --gitignore-budget above 4.0 MiB, \
-             or set it to all, which also lifts the line guard"
+             with a line over the 16 KiB line limit), so ignored shares under d00, d01, d02, \
+             d03, d04, 995 more are not exact; sizes are. To apply them, raise \
+             --gitignore-budget above 4.0 MiB and --gitignore-line-limit above 16 KiB, or set \
+             them to all"
+        );
+        assert_eq!(
+            note(ControlLimits { line_limit: None, ..defaults }, listed, 1_000),
+            "note: 1,000 .gitignore files not applied (over the 4.0 MiB ignore-rule budget), so \
+             ignored shares under d00, d01, d02, d03, d04, 995 more are not exact; sizes are. \
+             To apply them, raise --gitignore-budget above 4.0 MiB, or set it to all"
         );
 
         let complete = ControlCoverage::Observed(ControlObservation {
-            budget: Some(1),
+            limits: defaults,
             applied: 3,
             refused: 0,
             refusals: Vec::new(),

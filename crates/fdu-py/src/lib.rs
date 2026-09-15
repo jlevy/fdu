@@ -993,10 +993,20 @@ fn parse_sort(value: &str) -> PyResult<SortKey> {
     }
 }
 
-/// Parse a `control_budget` token with the engine's grammar; absent means the default.
-pub(crate) fn parse_control_budget(value: Option<&str>) -> PyResult<Option<usize>> {
-    value.map_or(Ok(ScanConfig::default().control_budget), |value| {
-        fdu_core::query::parse_control_budget(value).map_err(to_py_err)
+/// Parse the `control_budget` and `control_line_limit` tokens with the engine's grammar,
+/// each on its own; an absent token keeps that limit's default.
+pub(crate) fn parse_control_limits(
+    budget: Option<&str>,
+    line_limit: Option<&str>,
+) -> PyResult<fdu_core::ControlLimits> {
+    let defaults = fdu_core::ControlLimits::default();
+    Ok(fdu_core::ControlLimits {
+        budget: budget.map_or(Ok(defaults.budget), |value| {
+            fdu_core::query::parse_control_budget(value).map_err(to_py_err)
+        })?,
+        line_limit: line_limit.map_or(Ok(defaults.line_limit), |value| {
+            fdu_core::query::parse_control_line_limit(value).map_err(to_py_err)
+        })?,
     })
 }
 
@@ -1485,6 +1495,7 @@ fn clear_all_caches(root: PathBuf) -> PyResult<usize> {
     one_filesystem = false,
     read_controls = true,
     control_budget = None,
+    control_line_limit = None,
     analyze = "none",
     analysis_workers = 0
 ))]
@@ -1501,6 +1512,7 @@ fn open(
     one_filesystem: bool,
     read_controls: bool,
     control_budget: Option<&str>,
+    control_line_limit: Option<&str>,
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
@@ -1512,7 +1524,7 @@ fn open(
             max_depth,
             one_filesystem,
             read_controls,
-            control_budget: parse_control_budget(control_budget)?,
+            control_limits: parse_control_limits(control_budget, control_line_limit)?,
             ..ScanConfig::default()
         },
         cache_path: fdu_core::default_cache_path(&root),
@@ -1558,6 +1570,7 @@ fn open(
     one_filesystem = false,
     read_controls = true,
     control_budget = None,
+    control_line_limit = None,
     analyze = "none",
     analysis_workers = 0
 ))]
@@ -1573,6 +1586,7 @@ fn scan(
     one_filesystem: bool,
     read_controls: bool,
     control_budget: Option<&str>,
+    control_line_limit: Option<&str>,
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
@@ -1583,7 +1597,7 @@ fn scan(
             max_depth,
             one_filesystem,
             read_controls,
-            control_budget: parse_control_budget(control_budget)?,
+            control_limits: parse_control_limits(control_budget, control_line_limit)?,
             ..ScanConfig::default()
         },
         cache_path: None,

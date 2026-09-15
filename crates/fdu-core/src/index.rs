@@ -1424,9 +1424,9 @@ impl DetachedIndexBuilder {
         }
     }
 
-    /// Refuse control sources past `budget` while building.
-    pub(crate) fn with_control_budget(mut self, budget: Option<usize>) -> Self {
-        self.index.set_control_budget(budget);
+    /// Refuse control sources past either of `limits` while building.
+    pub(crate) fn with_control_limits(mut self, limits: crate::control::ControlLimits) -> Self {
+        self.index.set_control_limits(limits);
         self
     }
 
@@ -1581,10 +1581,10 @@ impl Index {
 
     /// Create an empty index with an explicit semantic scan scope.
     ///
-    /// Its control table refuses sources past
-    /// [`DEFAULT_CONTROL_BUDGET`](crate::control::DEFAULT_CONTROL_BUDGET). The scans behind
-    /// [`crate::open`] and [`crate::OpenedIndex`] apply the configuration's own
-    /// [`control_budget`](crate::ScanConfig::control_budget).
+    /// Its control table applies the default
+    /// [`ControlLimits`](crate::control::ControlLimits). The scans behind [`crate::open`]
+    /// and [`crate::OpenedIndex`] apply the configuration's own
+    /// [`control_limits`](crate::ScanConfig::control_limits).
     pub fn new_with_scope(root_path: impl Into<PathBuf>, scope: ScanScope) -> Self {
         Self::new_with_scope_and_types(
             root_path,
@@ -1748,7 +1748,7 @@ impl Index {
     /// Whether this index's ignore classification applies every control file in scope.
     ///
     /// [`crate::control::ControlCoverage::NotObserved`] when the index read no control
-    /// file. Otherwise the budget, the applied and refused counts, and the first refused
+    /// file. Otherwise the limits, the applied and refused counts, and the first refused
     /// files. Sizes and counts are exact either way; only the ignored and unignored split
     /// below a refused file is not.
     pub fn control_coverage(&self) -> crate::control::ControlCoverage {
@@ -1759,12 +1759,12 @@ impl Index {
         }
     }
 
-    /// Refuse control sources past `budget`, as the scan configuration that builds this
-    /// index asks. Set once, before any control input arrives: a table's refusals are only
-    /// meaningful under the budget that made them.
-    pub(crate) fn set_control_budget(&mut self, budget: Option<usize>) {
-        debug_assert!(self.controls.is_vacant(), "the control budget is set before any control");
-        self.controls = crate::control::ControlTable::with_budget(budget);
+    /// Refuse control sources past either of `limits`, as the scan configuration that
+    /// builds this index asks. Set once, before any control input arrives: a table's
+    /// refusals are only meaningful under the limits that made them.
+    pub(crate) fn set_control_limits(&mut self, limits: crate::control::ControlLimits) {
+        debug_assert!(self.controls.is_vacant(), "the control limits are set before any control");
+        self.controls = crate::control::ControlTable::with_limits(limits);
     }
 
     /// Install a complete control table while restoring a detached snapshot.
@@ -1774,7 +1774,7 @@ impl Index {
     ) -> crate::Result<()> {
         // Every source a table retains was admitted under its own budget, and the charge
         // does not depend on admission order, so a larger total was not written by one.
-        if controls.budget().is_some_and(|budget| controls.retained_cost() > budget) {
+        if controls.limits().budget.is_some_and(|budget| controls.retained_cost() > budget) {
             return Err(crate::Error::Snapshot(
                 "a snapshot's control table exceeds its own control budget".into(),
             ));
@@ -8315,7 +8315,7 @@ mod tests {
         assert_eq!(
             index.control_coverage(),
             crate::control::ControlCoverage::Observed(crate::control::ControlObservation {
-                budget: Some(crate::control::DEFAULT_CONTROL_BUDGET),
+                limits: crate::control::ControlLimits::default(),
                 applied: 0,
                 refused: 0,
                 refusals: Vec::new(),
@@ -8327,7 +8327,7 @@ mod tests {
     #[test]
     fn removing_a_subtree_lifts_the_refusals_beneath_it() {
         let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
-        let mut line = vec![b'x'; crate::control::CONTROL_LINE_GUARD_BYTES + 1];
+        let mut line = vec![b'x'; crate::control::DEFAULT_CONTROL_LINE_LIMIT + 1];
         line.push(b'\n');
         index.apply_ok(&Observation::new(vec![
             upsert("vendor", EntryKind::Dir, file_attrs(0, 1)),

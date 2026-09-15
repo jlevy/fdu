@@ -170,12 +170,15 @@ class Bound(StrEnum):
 
 
 class ControlRefusalReason(StrEnum):
-    """Which bound refused a ``.gitignore`` instead of applying its rules."""
+    """Which of the :class:`ControlLimits` refused a ``.gitignore`` instead of applying it.
 
-    #: Retaining it would have taken the index past its control budget.
+    Each value is also the name of the limit that fired.
+    """
+
+    #: Retaining it would have taken the index past its budget.
     BUDGET = "budget"
-    #: One of its lines is longer than the per-line guard.
-    LINE_GUARD = "line_guard"
+    #: One of its lines is longer than the line limit.
+    LINE_LIMIT = "line_limit"
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,6 +190,18 @@ class RefusedControl:
 
 
 @dataclass(frozen=True, slots=True)
+class ControlLimits:
+    """The two independent bounds an index applied ``.gitignore`` files under.
+
+    The budget bounds how much control state the whole index retains; the line limit bounds
+    what one pattern costs to match. Each is a byte count, or ``None`` when unbounded.
+    """
+
+    budget: int | None
+    line_limit: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class ControlObservation:
     """The ``.gitignore`` files an index applied and refused.
 
@@ -194,8 +209,7 @@ class ControlObservation:
     split is not exact in either direction, because the file may have held negations.
     """
 
-    #: Retained-charge budget in bytes, or ``None`` when unbounded.
-    budget: int | None
+    limits: ControlLimits
     applied: int
     #: Counted exactly, even when ``refusals`` is truncated.
     refused: int
@@ -211,10 +225,25 @@ class ControlObservation:
         return len(self.refusals) == self.refused
 
 
+def _limit(value: object) -> int | None:
+    return None if value is None else int(cast(int, value))
+
+
+def _check_control_limits(budget: object, line_limit: object) -> None:
+    """Reject a negative control limit before it crosses the native boundary."""
+
+    for name, value in (("control_budget", budget), ("control_line_limit", line_limit)):
+        if isinstance(value, int) and value < 0:
+            raise ValueError(f"{name} must be non-negative or Bound.ALL")
+
+
 def control_observation_from_dict(value: Mapping[str, Any]) -> ControlObservation:
-    budget = value["budget"]
+    raw_limits = value["limits"]
+    limits = ControlLimits(
+        budget=_limit(raw_limits["budget"]), line_limit=_limit(raw_limits["line_limit"])
+    )
     return ControlObservation(
-        budget=None if budget is None else int(budget),
+        limits=limits,
         applied=int(value["applied"]),
         refused=int(value["refused"]),
         refusals=tuple(
@@ -234,21 +263,26 @@ class ScanOptions:
     #: On by default, so an index from :func:`fdu.open` or :func:`fdu.scan`, and a watch
     #: over it, keep the exact control state. Off, they read no control file and
     #: :func:`fdu.open` shares one snapshot scope with :func:`fdu.report`.
-    #: :func:`fdu.report` never observes control state and ignores this field and
-    #: ``control_budget``, as the engine's report planner does.
+    #: :func:`fdu.report` never observes control state and ignores this field and both
+    #: control limits, as the engine's report planner does.
     read_controls: bool = True
     #: Bytes of retained ``.gitignore`` charge before further files are refused, as the
-    #: engine's ``ScanConfig.control_budget``: an int, a size such as ``"16MiB"``,
-    #: ``Bound.ALL`` to lift the budget and the 16 KiB per-line guard, or ``None`` for the
-    #: default of 4 MiB. A refused file ends nothing; its report's ``status.ignore_rules``
-    #: names it. Part of the snapshot scope, so a different budget scans cold once.
+    #: engine's ``ControlLimits.budget``: an int, a size such as ``"16MiB"``, ``Bound.ALL``
+    #: for no bound, which also reads every ``.gitignore`` whole however large, or ``None``
+    #: for the default of 4 MiB. It never changes the line limit. A refused file ends
+    #: nothing; its report's ``status.ignore_rules`` names it. Part of the snapshot scope,
+    #: so a different budget scans cold once.
     control_budget: int | Bound | str | None = None
+    #: Longest ``.gitignore`` line applied before its file is refused, as the engine's
+    #: ``ControlLimits.line_limit``: an int, a size such as ``"64KiB"``, ``Bound.ALL`` for no
+    #: bound, or ``None`` for the default of 16 KiB. It never changes the budget. Part of the
+    #: snapshot scope, like ``control_budget``.
+    control_line_limit: int | Bound | str | None = None
 
     def __post_init__(self) -> None:
         if self.max_depth is not None and self.max_depth < 0:
             raise ValueError("max_depth must be non-negative")
-        if isinstance(self.control_budget, int) and self.control_budget < 0:
-            raise ValueError("control_budget must be non-negative or Bound.ALL")
+        _check_control_limits(self.control_budget, self.control_line_limit)
 
 
 @dataclass(frozen=True, slots=True)

@@ -119,11 +119,10 @@ pub struct OpenOptions {
     /// unbounded setting. [`OpenedIndex::open`] refuses a budget below
     /// [`crate::MIN_JOURNAL_CAPACITY_BYTES`] with [`Error::JournalCapacityTooSmall`].
     pub journal_capacity_bytes: usize,
-    /// Bytes of retained `.gitignore` charge before further control files are refused, or
-    /// `None` for no bound, which also lifts the per-line guard. See
-    /// [`ScanConfig::control_budget`]: a refused file ends nothing, and
-    /// [`crate::ReadDiagnostics::controls`] names it.
-    pub control_budget: Option<usize>,
+    /// The budget and the line limit `.gitignore` files are applied under. See
+    /// [`ScanConfig::control_limits`]: a refused file ends nothing, and
+    /// [`crate::ReadDiagnostics::controls`] names it and the limit that fired.
+    pub control_limits: crate::control::ControlLimits,
 }
 
 impl Default for OpenOptions {
@@ -142,7 +141,7 @@ impl Default for OpenOptions {
             #[cfg(all(feature = "watch", test))]
             observation_script: None,
             journal_capacity_bytes: crate::DEFAULT_JOURNAL_CAPACITY_BYTES,
-            control_budget: scan.control_budget,
+            control_limits: scan.control_limits,
         }
     }
 }
@@ -166,7 +165,7 @@ impl OpenOptions {
             // ignored/unignored partitions are part of that contract, so control
             // observation is never optional here.
             read_controls: true,
-            control_budget: self.control_budget,
+            control_limits: self.control_limits,
         };
         (scan, self.budget, self.journal_capacity_bytes)
     }
@@ -929,7 +928,7 @@ fn bind_root(
         types,
         journal_capacity_bytes,
     );
-    index.set_control_budget(scan.control_budget);
+    index.set_control_limits(scan.control_limits);
     let index = IndexHandle::new(index);
     Ok((root, index, scan, budget))
 }
@@ -1122,7 +1121,7 @@ enum DiscoveryAnswer {
 
 /// Classify a refused discovery commit, keeping engine failures fatal.
 ///
-/// A control file the control budget or line guard cannot admit is not a refusal of the
+/// A control file the control budget or line limit cannot admit is not a refusal of the
 /// commit: the index refuses that one source and commits the listing (fdu-1onj).
 fn discovery_rejection(error: Error) -> Result<DiscoveryAnswer> {
     match error {
@@ -5695,7 +5694,7 @@ mod tests {
         opened.close().expect("close");
     }
 
-    /// A `.gitignore` in `a` over the per-line guard, listed between `-early/` and
+    /// A `.gitignore` in `a` over the default line limit, listed between `-early/` and
     /// `zzz.txt`, with one entry per batch so the control lands in a batch of its own.
     fn tree_with_a_guarded_control() -> tempfile::TempDir {
         let root = tempfile::tempdir().expect("temp root");
@@ -5703,7 +5702,7 @@ mod tests {
         std::fs::create_dir_all(a.join("-early")).expect("fixture");
         std::fs::write(a.join("-early").join("leaf.txt"), b"l").expect("fixture");
         let mut line = b"*.txt\n".to_vec();
-        line.extend(std::iter::repeat_n(b'x', crate::control::CONTROL_LINE_GUARD_BYTES + 1));
+        line.extend(std::iter::repeat_n(b'x', crate::control::DEFAULT_CONTROL_LINE_LIMIT + 1));
         std::fs::write(a.join(crate::control::CONTROL_FILE_NAME), &line).expect("control");
         std::fs::write(a.join("zzz.txt"), b"z").expect("fixture");
         std::fs::create_dir(root.path().join("b")).expect("fixture");
@@ -5725,7 +5724,7 @@ mod tests {
         diagnostics.clone()
     }
 
-    /// A control over a bound is refused, and the listing that carried it commits.
+    /// A control over a limit is refused, and the listing that carried it commits.
     ///
     /// The directory's other entries land and it completes, so structural coverage stays
     /// complete and no issue is retained; the refusal is a control-coverage fact naming the
@@ -5765,33 +5764,37 @@ mod tests {
         assert_eq!(
             diagnostics(&opened).controls,
             crate::control::ControlObservation {
-                budget: Some(crate::control::DEFAULT_CONTROL_BUDGET),
+                limits: crate::control::ControlLimits::default(),
                 applied: 0,
                 refused: 1,
                 refusals: vec![crate::control::RefusedControl {
                     path: PathBuf::from("a/.gitignore"),
-                    reason: crate::control::ControlRefusalReason::LineGuard,
+                    reason: crate::control::ControlRefusalReason::LineLimit,
                 }],
             }
         );
         opened.close().expect("close");
     }
 
-    /// An opened root with no control budget applies the file the guard would refuse, and
-    /// its scope says which budget it ran under.
+    /// An opened root with no line limit applies the file the default limit refuses, and
+    /// its scope says which limits it ran under.
     #[test]
-    fn an_opened_root_without_a_control_budget_applies_what_the_guard_refuses() {
+    fn an_opened_root_without_a_line_limit_applies_what_the_default_limit_refuses() {
         let root = tree_with_a_guarded_control();
-        let options = OpenOptions { control_budget: None, ..OpenOptions::default() };
+        let limits = crate::control::ControlLimits {
+            line_limit: None,
+            ..crate::control::ControlLimits::default()
+        };
+        let options = OpenOptions { control_limits: limits, ..OpenOptions::default() };
         let opened = OpenedIndex::open(root.path(), options).expect("open");
         wait_until_settled(&opened);
 
         let diagnostics = diagnostics(&opened);
-        assert_eq!((diagnostics.controls.budget, diagnostics.controls.applied), (None, 1));
+        assert_eq!((diagnostics.controls.limits, diagnostics.controls.applied), (limits, 1));
         assert_eq!(diagnostics.controls.refused, 0);
         assert_eq!(
             diagnostics.scope,
-            ScanConfig { control_budget: None, ..ScanConfig::default() }.scope()
+            ScanConfig { control_limits: limits, ..ScanConfig::default() }.scope()
         );
         let snapshot = opened.state.index.snapshot().expect("snapshot");
         assert_eq!(snapshot.is_ignored(Path::new("a/zzz.txt")).expect("observed"), Some(true));

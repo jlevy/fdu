@@ -67,12 +67,12 @@ const RECONCILE_WAVE_DIRECTORIES: usize =
 /// [`ScanScope::observes_controls`] tests.
 const IGNORE_RULES_FINGERPRINT: u64 = 2;
 
-/// The ignore-rules fingerprint of a scope that observes control state under `budget`.
+/// The ignore-rules fingerprint of a scope that observes control state under `limits`.
 ///
-/// The budget decides which sources apply, so it is part of the scope: a snapshot taken
-/// under one budget never serves a request for another, and raising it scans cold once.
-/// FNV-1a over the semantics version and the budget, never zero.
-pub(crate) fn observed_ignore_rules_fingerprint(budget: Option<usize>) -> u64 {
+/// The limits decide which sources apply, so both are part of the scope: a snapshot taken
+/// under one budget or line limit never serves a request for another, and changing either
+/// scans cold once. FNV-1a over the semantics version and each limit in turn, never zero.
+pub(crate) fn observed_ignore_rules_fingerprint(limits: crate::control::ControlLimits) -> u64 {
     const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
     const FNV_PRIME: u64 = 0x100_0000_01b3;
     const UNBOUNDED: u8 = 0;
@@ -86,11 +86,13 @@ pub(crate) fn observed_ignore_rules_fingerprint(budget: Option<usize>) -> u64 {
         }
     };
     mix(&IGNORE_RULES_FINGERPRINT.to_le_bytes());
-    match budget {
-        None => mix(&[UNBOUNDED]),
-        Some(budget) => {
-            mix(&[BOUNDED]);
-            mix(&u64::try_from(budget).unwrap_or(u64::MAX).to_le_bytes());
+    for limit in [limits.budget, limits.line_limit] {
+        match limit {
+            None => mix(&[UNBOUNDED]),
+            Some(limit) => {
+                mix(&[BOUNDED]);
+                mix(&u64::try_from(limit).unwrap_or(u64::MAX).to_le_bytes());
+            }
         }
     }
     fingerprint.max(1)
@@ -214,8 +216,8 @@ pub struct ScanConfig {
     /// On by default, so an [`Index`] from [`crate::open`] or a scan keeps the exact
     /// control state it exposes and a watch maintains: which entries are ignored, and the
     /// ignored and unignored partitions of every roll-up (fdu-elnn). It costs a read of
-    /// every `.gitignore` in the tree. A file past the control bounds is refused and
-    /// named in [`Index::control_coverage`] rather than ending the scan.
+    /// every `.gitignore` in the tree. A file past the [`Self::control_limits`] is refused
+    /// and named in [`Index::control_coverage`] rather than ending the scan.
     ///
     /// Off, the scan performs no control-file I/O and retains no control table, and that is
     /// stamped into [`ScanScope`], so an index-returning call never serves a snapshot taken
@@ -233,21 +235,20 @@ pub struct ScanConfig {
     /// classification (fdu-etfj: every `fdu <dir>` read and retained every `.gitignore`
     /// in the tree, then could die on a budget for state its report never consumed).
     pub read_controls: bool,
-    /// Bytes of retained `.gitignore` charge before further control files are refused, or
-    /// `None` for no bound.
+    /// The budget and the line limit `.gitignore` files are applied under, each a size or
+    /// unbounded. See [`crate::control::ControlLimits`].
     ///
-    /// Each directory's key and each distinct source's bytes and matcher are charged, so
-    /// identical files count once. A source that would take the table past the budget, or
-    /// that has a line longer than [`crate::control::CONTROL_LINE_GUARD_BYTES`], is
-    /// refused: its rules do not apply, the scan continues with every size exact, and
-    /// [`Index::control_coverage`] names it. `None` lifts both bounds. The command line
-    /// spells this `--gitignore-budget SIZE|all`; the Python API spells it
-    /// `control_budget`.
+    /// A source that would take the table past the budget, or that has a line longer than
+    /// the line limit, is refused: its rules do not apply, the scan continues with every
+    /// size exact, and [`Index::control_coverage`] names it and the limit that fired. The
+    /// command line spells these `--gitignore-budget SIZE|all` and
+    /// `--gitignore-line-limit SIZE|all`; the Python API spells them `control_budget` and
+    /// `control_line_limit`.
     ///
-    /// Semantic, like [`Self::read_controls`]: the budget decides which rules apply, so it
-    /// is part of [`ScanScope`] and a snapshot taken under another budget is not reused.
+    /// Semantic, like [`Self::read_controls`]: the limits decide which rules apply, so both
+    /// are part of [`ScanScope`] and a snapshot taken under other limits is not reused.
     /// Ignored when control state is not observed.
-    pub control_budget: Option<usize>,
+    pub control_limits: crate::control::ControlLimits,
 }
 
 impl Default for ScanConfig {
@@ -263,7 +264,7 @@ impl Default for ScanConfig {
             order: ScanOrder::default(),
             types: None,
             read_controls: true,
-            control_budget: Some(crate::control::DEFAULT_CONTROL_BUDGET),
+            control_limits: crate::control::ControlLimits::default(),
         }
     }
 }
@@ -329,7 +330,7 @@ impl ScanConfig {
             // Zero means no control reads and no ignore classification, which is what
             // `ScanScope::observes_controls` tests.
             ignore_rules_fingerprint: if self.read_controls {
-                observed_ignore_rules_fingerprint(self.control_budget)
+                observed_ignore_rules_fingerprint(self.control_limits)
             } else {
                 0
             },
@@ -2200,7 +2201,7 @@ fn scan_concurrent_detached(
     policy: WorkerPolicyExperiment,
 ) -> Result<(ScanReport, DetachedIndexBuilder)> {
     let mut builder = DetachedIndexBuilder::new(root, config.scope(), config.types_shared())
-        .with_control_budget(config.control_budget);
+        .with_control_limits(config.control_limits);
     let mut build_error = None;
     let output = {
         let mut consume = |message| match message {
@@ -3038,7 +3039,7 @@ pub(crate) fn read_control_op(
     if !config.read_controls {
         return Ok(None);
     }
-    read_control_op_unconditional(root, path, kind, config.control_budget)
+    read_control_op_unconditional(root, path, kind, config.control_limits.budget)
 }
 
 /// Read one fixed control source without allowing a raced or hostile file to allocate
@@ -3719,7 +3720,7 @@ fn scan_detached_directories(
         return Ok((
             ScanReport::default(),
             DetachedIndexBuilder::new(root, config.scope(), config.types_shared())
-                .with_control_budget(config.control_budget),
+                .with_control_limits(config.control_limits),
             diagnostics.as_ref().map(|value| value.finish()),
         ));
     }
@@ -3767,7 +3768,7 @@ pub fn scan_into_index(root: &Path, config: &ScanConfig) -> Result<(Index, ScanR
 #[cfg(test)]
 fn scan_into_index_via_scanner(root: &Path, config: &ScanConfig) -> Result<(Index, ScanReport)> {
     let mut index = Index::new_with_scope_and_types(root, config.scope(), config.types_shared());
-    index.set_control_budget(config.control_budget);
+    index.set_control_limits(config.control_limits);
     let mut apply_error: Option<Error> = None;
     let (report, _diagnostics) = scan_internal(
         root,
@@ -5818,14 +5819,14 @@ mod tests {
         }
     }
 
-    /// Both bootstrap lanes refuse a line over the guard and a file over the budget, and
+    /// Both bootstrap lanes refuse a line over the limit and a file over the budget, and
     /// neither ends the scan or makes it partial. Both refusals are order-independent, so
     /// the lanes agree on exactly which files they refused.
     #[test]
     fn both_bootstrap_lanes_refuse_over_bound_controls_without_ending_the_scan() {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut long_line = b"*.log\n".to_vec();
-        long_line.extend(std::iter::repeat_n(b'x', crate::control::CONTROL_LINE_GUARD_BYTES + 1));
+        long_line.extend(std::iter::repeat_n(b'x', crate::control::DEFAULT_CONTROL_LINE_LIMIT + 1));
         write_file(&dir.path().join("guarded/.gitignore"), &long_line);
         write_file(&dir.path().join("guarded/kept.log"), b"guarded");
         write_file(
@@ -5847,7 +5848,7 @@ mod tests {
             vec![
                 crate::control::RefusedControl {
                     path: PathBuf::from("guarded/.gitignore"),
-                    reason: crate::control::ControlRefusalReason::LineGuard,
+                    reason: crate::control::ControlRefusalReason::LineLimit,
                 },
                 crate::control::RefusedControl {
                     path: PathBuf::from("huge/.gitignore"),
@@ -5865,50 +5866,74 @@ mod tests {
         );
     }
 
-    /// The budget is part of the scope, and one knob lifts both bounds.
+    /// Both limits are part of the scope, and each lifts only its own refusals: no budget
+    /// still refuses a long line, and no line limit still refuses a file past the budget.
     #[test]
-    fn the_control_budget_is_scope_and_lifts_both_bounds() {
+    fn each_control_limit_is_scope_and_lifts_only_its_own_refusals() {
+        use crate::control::{ControlLimits, ControlRefusalReason, RefusedControl};
+
+        let with = |limits| ScanConfig { control_limits: limits, ..ScanConfig::default() };
+        let defaults = ControlLimits::default();
         let default = ScanConfig::default();
-        let raised = ScanConfig { control_budget: Some(16 * 1024 * 1024), ..default.clone() };
-        let unbounded = ScanConfig { control_budget: None, ..default.clone() };
-        let scopes = [default.scope(), raised.scope(), unbounded.scope()];
+        let no_budget = with(ControlLimits { budget: None, ..defaults });
+        let no_line_limit = with(ControlLimits { line_limit: None, ..defaults });
+        let configs = [
+            default.clone(),
+            with(ControlLimits { budget: Some(16 * 1024 * 1024), ..defaults }),
+            no_budget.clone(),
+            with(ControlLimits { line_limit: Some(64 * 1024), ..defaults }),
+            no_line_limit.clone(),
+            with(ControlLimits { budget: None, line_limit: None }),
+            // The same values in each other's places are a different scope.
+            with(ControlLimits { budget: defaults.line_limit, line_limit: defaults.budget }),
+        ];
+        let scopes: Vec<ScanScope> = configs.iter().map(ScanConfig::scope).collect();
         for (index, scope) in scopes.iter().enumerate() {
             assert!(scope.observes_controls());
             assert!(scopes[index + 1..].iter().all(|other| other != scope), "{scopes:?}");
         }
-        for config in [&default, &raised, &unbounded] {
+        for config in &configs {
             let blind = ScanConfig { read_controls: false, ..config.clone() };
             assert_eq!(blind.scope().ignore_rules_fingerprint, 0, "unobserved has one scope");
         }
 
         let dir = tempfile::tempdir().expect("tempdir");
         let mut long_line = b"*.log\n".to_vec();
-        long_line.extend(std::iter::repeat_n(b'x', crate::control::CONTROL_LINE_GUARD_BYTES + 1));
+        long_line.extend(std::iter::repeat_n(b'x', crate::control::DEFAULT_CONTROL_LINE_LIMIT + 1));
         write_file(&dir.path().join("guarded/.gitignore"), &long_line);
         write_file(&dir.path().join("guarded/dropped.log"), b"log");
         write_file(
             &dir.path().join("huge/.gitignore"),
             &b"x\n".repeat(crate::control::DEFAULT_CONTROL_BUDGET / 2),
         );
+        let refused = |path: &str, reason| RefusedControl { path: PathBuf::from(path), reason };
         let (bounded, _) = scan_into_index(dir.path(), &default).expect("default scan");
         assert_eq!(observed_coverage(&bounded).refused, 2);
+
+        let (budget_lifted, _) = detached_and_streaming_indexes(dir.path(), &no_budget);
+        let coverage = observed_coverage(&budget_lifted);
+        assert_eq!(coverage.limits, no_budget.control_limits);
         assert_eq!(
-            bounded.is_ignored(Path::new("guarded/dropped.log")).expect("observed"),
+            coverage.refusals,
+            [refused("guarded/.gitignore", ControlRefusalReason::LineLimit)]
+        );
+        assert_eq!(
+            budget_lifted.is_ignored(Path::new("guarded/dropped.log")).expect("observed"),
             Some(false)
         );
 
-        let (lifted, _) = detached_and_streaming_indexes(dir.path(), &unbounded);
-        let coverage = observed_coverage(&lifted);
-        assert_eq!((coverage.budget, coverage.applied, coverage.refused), (None, 2, 0));
+        let (line_limit_lifted, _) = detached_and_streaming_indexes(dir.path(), &no_line_limit);
+        let coverage = observed_coverage(&line_limit_lifted);
+        assert_eq!(coverage.refusals, [refused("huge/.gitignore", ControlRefusalReason::Budget)]);
         assert_eq!(
-            lifted.is_ignored(Path::new("guarded/dropped.log")).expect("observed"),
+            line_limit_lifted.is_ignored(Path::new("guarded/dropped.log")).expect("observed"),
             Some(true)
         );
-        assert_eq!(lifted.scope(), unbounded.scope());
+        assert_eq!(line_limit_lifted.scope(), no_line_limit.scope());
     }
 
     /// The synthetic tree that ended a cold scan (fdu-1onj): 1,105 directories, each with
-    /// a distinct 510-byte `.gitignore` of short rules, plus one line over the guard. The
+    /// a distinct 510-byte `.gitignore` of short rules, plus one line over the limit. The
     /// scan completes with every size exact and names what it refused, on both lanes.
     #[test]
     fn a_tree_past_both_control_bounds_completes_with_exact_sizes() {
@@ -5927,7 +5952,7 @@ mod tests {
         }
         write_file(
             &dir.path().join("a-guard/.gitignore"),
-            &vec![b'x'; crate::control::CONTROL_LINE_GUARD_BYTES + 1],
+            &vec![b'x'; crate::control::DEFAULT_CONTROL_LINE_LIMIT + 1],
         );
         let observing =
             ScanConfig { read_controls: true, threads: Some(4), ..ScanConfig::default() };
@@ -5954,7 +5979,7 @@ mod tests {
                 coverage.refusals[0],
                 crate::control::RefusedControl {
                     path: PathBuf::from("a-guard/.gitignore"),
-                    reason: crate::control::ControlRefusalReason::LineGuard,
+                    reason: crate::control::ControlRefusalReason::LineLimit,
                 }
             );
             assert!(

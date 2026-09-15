@@ -805,7 +805,10 @@ pub(crate) fn control_observation_dict<'py>(
     observation: &fdu_core::control::ControlObservation,
 ) -> PyResult<Bound<'py, PyDict>> {
     let out = PyDict::new(py);
-    out.set_item("budget", observation.budget)?;
+    let limits = PyDict::new(py);
+    limits.set_item("budget", observation.limits.budget)?;
+    limits.set_item("line_limit", observation.limits.line_limit)?;
+    out.set_item("limits", limits)?;
     out.set_item("applied", observation.applied)?;
     out.set_item("refused", observation.refused)?;
     let refusals = PyList::empty(py);
@@ -1076,7 +1079,8 @@ impl PyOpenedIndex {
         observe = false,
         journal_capacity_bytes = None,
         type_rules = None,
-        control_budget = None
+        control_budget = None,
+        control_line_limit = None
     ))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn open(
@@ -1093,6 +1097,7 @@ impl PyOpenedIndex {
         journal_capacity_bytes: Option<usize>,
         type_rules: Option<String>,
         control_budget: Option<&str>,
+        control_line_limit: Option<&str>,
     ) -> PyResult<Self> {
         let allowed = hidden_allow.unwrap_or_default();
         if !prune_hidden && !allowed.is_empty() {
@@ -1114,7 +1119,7 @@ impl PyOpenedIndex {
         if let Some(value) = journal_capacity_bytes {
             options.journal_capacity_bytes = value;
         }
-        options.control_budget = super::parse_control_budget(control_budget)?;
+        options.control_limits = super::parse_control_limits(control_budget, control_line_limit)?;
         let inner = py
             .detach(move || {
                 // The document, never a fingerprint beside it: the engine derives the

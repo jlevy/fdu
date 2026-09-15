@@ -103,9 +103,9 @@ pub use crate::cache::{
     CacheStatus, SnapshotInfo, cache_status, clear_all_caches, clear_cache, list_caches,
 };
 pub use crate::control::{
-    CONTROL_FILE_NAME, ControlAdmission, ControlCoverage, ControlIdentity, ControlMatcher,
-    ControlObservation, ControlRefusalReason, ControlTable, DEFAULT_CONTROL_BUDGET, RefusedControl,
-    is_control_file,
+    CONTROL_FILE_NAME, ControlAdmission, ControlCoverage, ControlIdentity, ControlLimits,
+    ControlMatcher, ControlObservation, ControlRefusalReason, ControlTable, DEFAULT_CONTROL_BUDGET,
+    DEFAULT_CONTROL_LINE_LIMIT, RefusedControl, is_control_file,
 };
 pub use crate::engine_contract::{
     Attrs, ChangeOutcome, ChangePoll, ChangeRequest, Clock, Commit, ContinuationId, CountResult,
@@ -851,7 +851,7 @@ mod tests {
         );
         assert_eq!(index.partition_total().expect("control state observed").unignored.files, 2);
 
-        let mut oversized = vec![b'x'; crate::control::CONTROL_LINE_GUARD_BYTES + 1];
+        let mut oversized = vec![b'x'; crate::control::DEFAULT_CONTROL_LINE_LIMIT + 1];
         oversized.extend_from_slice(b"\n*.log\n");
         write_file(&root.path().join(".gitignore"), &oversized);
         let (index, report) = open(root.path(), &uncached).expect("a refused control ends nothing");
@@ -876,20 +876,24 @@ mod tests {
         assert_eq!(index.total().files, 3);
     }
 
-    /// Raising the control budget scans cold once, and the snapshot it writes then serves
-    /// that budget warm, with the coverage it recorded; the other budget's request misses.
+    /// Lifting a control limit scans cold once, and the snapshot it writes then serves
+    /// those limits warm, with the coverage it recorded; the other limits' request misses.
     #[test]
-    fn a_snapshot_serves_only_the_control_budget_it_was_taken_under() {
+    fn a_snapshot_serves_only_the_control_limits_it_was_taken_under() {
         let root = tempfile::tempdir().expect("tempdir");
         let cache = tempfile::tempdir().expect("cache dir");
         let snapshot_path = cache.path().join("snap.fdu");
         let mut long_line = b"*.log\n".to_vec();
-        long_line.extend(std::iter::repeat_n(b'x', crate::control::CONTROL_LINE_GUARD_BYTES + 1));
+        long_line.extend(std::iter::repeat_n(b'x', crate::control::DEFAULT_CONTROL_LINE_LIMIT + 1));
         write_file(&root.path().join(".gitignore"), &long_line);
         write_file(&root.path().join("debug.log"), b"ignored");
         let default = controls_config(CachePolicy::Auto, snapshot_path.clone(), true);
+        let lifted_limits = crate::control::ControlLimits {
+            line_limit: None,
+            ..crate::control::ControlLimits::default()
+        };
         let lifted = OpenConfig {
-            scan: ScanConfig { control_budget: None, ..default.scan.clone() },
+            scan: ScanConfig { control_limits: lifted_limits, ..default.scan.clone() },
             ..controls_config(CachePolicy::Auto, snapshot_path, true)
         };
         let refused = |index: &Index| match index.control_coverage() {
@@ -897,15 +901,15 @@ mod tests {
             crate::control::ControlCoverage::NotObserved => panic!("observed"),
         };
 
-        let (index, report) = open(root.path(), &default).expect("default budget");
+        let (index, report) = open(root.path(), &default).expect("default limits");
         assert_eq!((report.path_taken, refused(&index)), (OpenPath::ColdScan, 1));
-        let (index, report) = open(root.path(), &default).expect("default budget again");
+        let (index, report) = open(root.path(), &default).expect("default limits again");
         assert_eq!((report.path_taken, refused(&index)), (OpenPath::WarmRevalidate, 1));
 
-        let (index, report) = open(root.path(), &lifted).expect("lifted budget");
+        let (index, report) = open(root.path(), &lifted).expect("lifted line limit");
         assert_eq!((report.path_taken, refused(&index)), (OpenPath::ColdScan, 0));
         assert_eq!(index.is_ignored(Path::new("debug.log")).ok(), Some(Some(true)));
-        let (index, report) = open(root.path(), &lifted).expect("lifted budget again");
+        let (index, report) = open(root.path(), &lifted).expect("lifted line limit again");
         assert_eq!((report.path_taken, refused(&index)), (OpenPath::WarmRevalidate, 0));
 
         let (_, report) = open(root.path(), &default).expect("back to the default");

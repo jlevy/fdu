@@ -128,6 +128,7 @@ class Args:
         self.scan_depth: int | None = None
         self.one_filesystem = False
         self.gitignore_budget: str | None = None
+        self.gitignore_line_limit: str | None = None
         self.include: list[str] = []
         self.exclude: list[str] = []
         self.min_size: str | None = None
@@ -191,6 +192,8 @@ def parse_args(argv: list[str]) -> Args:
             args.one_filesystem = True
         elif flag == "--gitignore-budget":
             args.gitignore_budget = take()
+        elif flag == "--gitignore-line-limit":
+            args.gitignore_line_limit = take()
         elif flag == "--include":
             args.include.append(take())
         elif flag == "--exclude":
@@ -388,6 +391,7 @@ def _open(args: Args) -> fdu.Index:
         max_depth=args.scan_depth,
         one_filesystem=args.one_filesystem,
         control_budget=args.gitignore_budget,
+        control_line_limit=args.gitignore_line_limit,
     )
     analysis = fdu.AnalysisOptions(analyze=args.analyze, workers=args.analysis_workers)
     return fdu.open(args.root or ".", cache=args.cache, scan=scan, analysis=analysis)
@@ -442,6 +446,7 @@ def main(argv: list[str] | None = None) -> int:
             max_depth=args.scan_depth,
             one_filesystem=args.one_filesystem,
             control_budget=args.gitignore_budget,
+            control_line_limit=args.gitignore_line_limit,
         ),
         analysis=fdu.AnalysisOptions(analyze=args.analyze, workers=args.analysis_workers),
     )

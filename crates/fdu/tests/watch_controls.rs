@@ -20,14 +20,14 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use fdu_core::control::CONTROL_LINE_GUARD_BYTES;
+use fdu_core::control::DEFAULT_CONTROL_LINE_LIMIT;
 
 /// Generous: a cold scan, an event round trip, and a loaded CI runner all have to fit.
 const DEADLINE: Duration = Duration::from_secs(30);
 
 /// A control source whose single rule is one byte over the per-line bound.
 fn oversized_rule() -> Vec<u8> {
-    let mut source = vec![b'a'; CONTROL_LINE_GUARD_BYTES + 1];
+    let mut source = vec![b'a'; DEFAULT_CONTROL_LINE_LIMIT + 1];
     source.push(b'\n');
     source
 }

@@ -34,18 +34,58 @@ pub const CONTROL_FILE_NAME: &str = ".gitignore";
 /// The charge includes a fixed amount per directory as well as each distinct source's
 /// bytes and matcher, so a hostile tree of empty control files cannot evade it. Four MiB is
 /// far above ordinary repositories while remaining small relative to the inventory it
-/// governs; a source past it is refused, not an error. Callers lift it with
-/// [`crate::ScanConfig::control_budget`], which the command line spells
-/// `--gitignore-budget`.
+/// governs; a source past it is refused, not an error. Callers set it with
+/// [`ControlLimits::budget`], which the command line spells `--gitignore-budget`.
 pub const DEFAULT_CONTROL_BUDGET: usize = 4 * 1024 * 1024;
 
-/// Longest line a bounded control table admits, in bytes.
+/// Default longest line a control source may hold, in bytes.
 ///
 /// A control file may hold many ordinary rules up to the budget, but a single adversarial
 /// rule must not impose unbounded matching work on every entry, so a source with a longer
-/// line is refused whole. An unbounded budget (`control_budget: None`, or
-/// `--gitignore-budget all`) lifts this guard too: it is one knob for both bounds.
-pub const CONTROL_LINE_GUARD_BYTES: usize = 16 * 1024;
+/// line is refused whole. Callers set it with [`ControlLimits::line_limit`], which the
+/// command line spells `--gitignore-line-limit`.
+pub const DEFAULT_CONTROL_LINE_LIMIT: usize = 16 * 1024;
+
+/// The two bounds on the control state one index retains, each liftable on its own.
+///
+/// They bound different things. The budget bounds the memory the whole table retains; the
+/// line limit bounds what one pattern costs to match against every entry. So raising the
+/// budget admits more files without admitting longer lines, and lifting the line limit
+/// admits long lines without retaining more. A source either bound cannot admit is
+/// refused, and its [`ControlRefusalReason`] names the one that fired.
+///
+/// Both are part of the scan scope: they decide which rules apply, so a snapshot taken
+/// under other limits never serves a request for these.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct ControlLimits {
+    /// Bytes of retained charge before further sources are refused, or `None` for no
+    /// bound.
+    ///
+    /// Each directory's key and each distinct source's bytes and matcher are charged, so
+    /// identical files count once. It also bounds the read: a control file is read to one
+    /// byte past the budget, so `None` reads every control file whole, however large.
+    pub budget: Option<usize>,
+    /// Longest line in bytes a source may hold before it is refused whole, or `None` for
+    /// no bound.
+    pub line_limit: Option<usize>,
+}
+
+impl Default for ControlLimits {
+    /// [`DEFAULT_CONTROL_BUDGET`] and [`DEFAULT_CONTROL_LINE_LIMIT`].
+    fn default() -> Self {
+        Self { budget: Some(DEFAULT_CONTROL_BUDGET), line_limit: Some(DEFAULT_CONTROL_LINE_LIMIT) }
+    }
+}
+
+impl ControlLimits {
+    /// The limit a refusal for `reason` crossed, or `None` when that limit is unbounded.
+    pub const fn limit_for(self, reason: ControlRefusalReason) -> Option<usize> {
+        match reason {
+            ControlRefusalReason::Budget => self.budget,
+            ControlRefusalReason::LineLimit => self.line_limit,
+        }
+    }
+}
 
 /// Conservative retained charge for one key, identity, and matcher shell.
 pub(crate) const CONTROL_SOURCE_OVERHEAD: usize = 64;
@@ -79,21 +119,22 @@ struct Holding {
     holders: usize,
 }
 
-/// Why a control table refused a control source instead of applying its rules.
+/// Which of the [`ControlLimits`] refused a control source instead of applying its rules.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum ControlRefusalReason {
-    /// Retaining the source would have taken the table past its control budget.
+    /// Retaining the source would have taken the table past [`ControlLimits::budget`].
     Budget,
-    /// A line of the source is longer than [`CONTROL_LINE_GUARD_BYTES`].
-    LineGuard,
+    /// A line of the source is longer than [`ControlLimits::line_limit`].
+    LineLimit,
 }
 
 impl ControlRefusalReason {
-    /// The stable name every structured output and binding uses for this reason.
+    /// The stable name every structured output and binding uses for this reason, which is
+    /// also the name of the limit that fired.
     pub const fn label(self) -> &'static str {
         match self {
             Self::Budget => "budget",
-            Self::LineGuard => "line_guard",
+            Self::LineLimit => "line_limit",
         }
     }
 }
@@ -117,7 +158,7 @@ pub enum ControlAdmission {
 pub struct RefusedControl {
     /// The refused `.gitignore`.
     pub path: PathBuf,
-    /// Which bound refused it.
+    /// Which limit refused it.
     pub reason: ControlRefusalReason,
 }
 
@@ -137,8 +178,8 @@ pub enum ControlCoverage {
 /// The control files an observing index applied and refused.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ControlObservation {
-    /// Retained-charge budget in bytes, or `None` when unbounded.
-    pub budget: Option<usize>,
+    /// The limits the index applied control files under.
+    pub limits: ControlLimits,
     /// Control files whose rules apply.
     pub applied: u64,
     /// Control files refused, counted exactly.
@@ -168,7 +209,7 @@ impl ControlObservation {
 /// directory still pays for its own key, so a tree of empty control files cannot evade the
 /// bound, and removing the last holder of a content releases the content's charge.
 ///
-/// A source the bounds cannot admit is refused, not an error: the table records the
+/// A source the limits cannot admit is refused, not an error: the table records the
 /// refusal and keeps no rules for that directory, and the scan that read it continues
 /// (fdu-1onj). A refusal ends when the directory's control file is removed or a later
 /// read admits it.
@@ -181,26 +222,25 @@ pub struct ControlTable {
     /// Every refused source, by governing directory. Kept whole, not bounded like issue
     /// details, so removing a refused file keeps the refused count exact.
     refused: BTreeMap<PathBuf, ControlRefusalReason>,
-    budget: Option<usize>,
+    limits: ControlLimits,
     source_bytes: usize,
     retained_cost: usize,
 }
 
 impl Default for ControlTable {
     fn default() -> Self {
-        Self::with_budget(Some(DEFAULT_CONTROL_BUDGET))
+        Self::with_limits(ControlLimits::default())
     }
 }
 
 impl ControlTable {
-    /// An empty table that refuses sources past `budget` bytes of retained charge, or
-    /// none when `budget` is `None`.
-    pub(crate) fn with_budget(budget: Option<usize>) -> Self {
+    /// An empty table that refuses sources past either of `limits`.
+    pub(crate) fn with_limits(limits: ControlLimits) -> Self {
         Self {
             by_directory: BTreeMap::new(),
             shared: HashMap::new(),
             refused: BTreeMap::new(),
-            budget,
+            limits,
             source_bytes: 0,
             retained_cost: 0,
         }
@@ -210,9 +250,10 @@ impl ControlTable {
     ///
     /// `path` names the control file relative to the index root. The source is retained
     /// exactly, while matching state is derived once per distinct content rather than per
-    /// directory or per entry. A source the bounds cannot admit is refused and recorded,
+    /// directory or per entry. A source the limits cannot admit is refused and recorded,
     /// and a source it replaces is dropped with it: rules no longer on disk must not keep
-    /// applying.
+    /// applying. The line limit is checked first, so a source both limits refuse is
+    /// refused for its line.
     ///
     /// # Errors
     ///
@@ -232,22 +273,23 @@ impl ControlTable {
         if self.by_directory.get(directory).is_some_and(|current| current.bytes == source) {
             return Ok(ControlAdmission::Retained { changed: false });
         }
-        if self.budget.is_some()
-            && source.split(|byte| *byte == b'\n').any(|line| line.len() > CONTROL_LINE_GUARD_BYTES)
-        {
-            return Ok(self.refuse(directory, ControlRefusalReason::LineGuard));
+        if self.limits.line_limit.is_some_and(|line_limit| {
+            source.split(|byte| *byte == b'\n').any(|line| line.len() > line_limit)
+        }) {
+            return Ok(self.refuse(directory, ControlRefusalReason::LineLimit));
         }
         let content_charge =
             if self.holding(identity, &source).is_some() { 0 } else { content_cost(&source) };
+        // Saturating: every retained charge is a sum of real allocations, so only a source
+        // no budget could admit reaches the ceiling, and an unbounded table never refuses.
         let next = self
             .retained_cost
-            .checked_sub(self.release_charge(directory))
-            .and_then(|bytes| bytes.checked_add(directory_cost(directory)))
-            .and_then(|bytes| bytes.checked_add(content_charge));
-        let Some(next) = next.filter(|next| self.budget.is_none_or(|budget| *next <= budget))
-        else {
+            .saturating_sub(self.release_charge(directory))
+            .saturating_add(directory_cost(directory))
+            .saturating_add(content_charge);
+        if self.limits.budget.is_some_and(|budget| next > budget) {
             return Ok(self.refuse(directory, ControlRefusalReason::Budget));
-        };
+        }
 
         self.detach(directory);
         self.attach(directory, source, identity);
@@ -466,15 +508,15 @@ impl ControlTable {
         self.refused.len()
     }
 
-    /// Retained-charge budget in bytes, or `None` when unbounded.
-    pub const fn budget(&self) -> Option<usize> {
-        self.budget
+    /// The limits this table admits sources under.
+    pub const fn limits(&self) -> ControlLimits {
+        self.limits
     }
 
     /// This table's coverage, listing at most [`crate::MAX_RETAINED_ISSUES`] refusals.
     pub fn observation(&self) -> ControlObservation {
         ControlObservation {
-            budget: self.budget,
+            limits: self.limits,
             applied: u64::try_from(self.len()).unwrap_or(u64::MAX),
             refused: u64::try_from(self.refused_len()).unwrap_or(u64::MAX),
             refusals: self.refusals().take(crate::MAX_RETAINED_ISSUES).collect(),
@@ -619,7 +661,7 @@ pub(crate) fn source_at_test_limit() -> Vec<u8> {
     let mut source = Vec::new();
     loop {
         let previous_len = source.len();
-        source.extend(std::iter::repeat_n(b'a', CONTROL_LINE_GUARD_BYTES));
+        source.extend(std::iter::repeat_n(b'a', DEFAULT_CONTROL_LINE_LIMIT));
         source.push(b'\n');
         if retained_source_cost(Path::new(""), &source) > DEFAULT_CONTROL_BUDGET {
             source.truncate(previous_len);
@@ -627,7 +669,7 @@ pub(crate) fn source_at_test_limit() -> Vec<u8> {
         }
     }
     let remaining = DEFAULT_CONTROL_BUDGET - retained_source_cost(Path::new(""), &source);
-    source.extend(std::iter::repeat_n(b'a', (remaining / 2).min(CONTROL_LINE_GUARD_BYTES)));
+    source.extend(std::iter::repeat_n(b'a', (remaining / 2).min(DEFAULT_CONTROL_LINE_LIMIT)));
     assert_eq!(retained_source_cost(Path::new(""), &source), DEFAULT_CONTROL_BUDGET);
     source
 }
@@ -672,7 +714,18 @@ impl ControlTable {
             self.refused.keys().all(|directory| !self.by_directory.contains_key(directory)),
             "a refused directory retains no source"
         );
-        assert!(self.budget.is_none_or(|budget| self.retained_cost <= budget), "within budget");
+        assert!(
+            self.limits.budget.is_none_or(|budget| self.retained_cost <= budget),
+            "within budget"
+        );
+        assert!(
+            self.limits.line_limit.is_none_or(|line_limit| {
+                distinct.iter().all(|content| {
+                    content.bytes.split(|byte| *byte == b'\n').all(|line| line.len() <= line_limit)
+                })
+            }),
+            "within the line limit"
+        );
     }
 }
 
@@ -698,12 +751,13 @@ mod tests {
     }
 
     /// Every directory's last operation decides whether it holds a record, whatever the
-    /// bounds decided: an upsert leaves exactly one of a source or a refusal, and a removal
-    /// leaves neither. Charges and holder counts are recomputed after every step.
+    /// limits decided: an upsert leaves exactly one of a source or a refusal, and a removal
+    /// leaves neither. Charges and holder counts are recomputed after every step, under
+    /// each combination of a bounded or unbounded budget and line limit.
     #[test]
     fn charges_and_refusals_stay_exact_through_random_upserts_and_removals() {
         const DIRECTORIES: [&str; 6] = ["", "a", "a/b", "b", "b/c/d", "c"];
-        let long_line = [vec![b'x'; CONTROL_LINE_GUARD_BYTES + 1], b"\n".to_vec()].concat();
+        let long_line = [vec![b'x'; DEFAULT_CONTROL_LINE_LIMIT + 1], b"\n".to_vec()].concat();
         let large = b"pattern/\n".repeat(40);
         let contents: [&[u8]; 6] =
             [b"*.log\n", b"target/\n", b"!keep\n*.tmp\n", b"", &large, &long_line];
@@ -711,7 +765,11 @@ mod tests {
         let budget = 2 * retained_source_cost(Path::new("b/c/d"), &large);
         for seed in 0..64 {
             let mut random = SplitMix(seed);
-            let mut table = ControlTable::with_budget(Some(budget));
+            let limits = ControlLimits {
+                budget: (seed % 2 == 0).then_some(budget),
+                line_limit: (seed % 4 < 2).then_some(DEFAULT_CONTROL_LINE_LIMIT),
+            };
+            let mut table = ControlTable::with_limits(limits);
             let mut holds_record: BTreeMap<&Path, bool> = BTreeMap::new();
             for step in 0..300 {
                 let directory = Path::new(DIRECTORIES[random.below(DIRECTORIES.len())]);
@@ -732,10 +790,16 @@ mod tests {
                     _ => {
                         let content = contents[random.below(contents.len())].to_vec();
                         let admission = table.upsert(&path, content.clone()).expect("control path");
-                        if content == long_line {
+                        if content == long_line && limits.line_limit.is_some() {
                             assert_eq!(
                                 admission,
-                                ControlAdmission::Refused(ControlRefusalReason::LineGuard)
+                                ControlAdmission::Refused(ControlRefusalReason::LineLimit)
+                            );
+                        }
+                        if limits.budget.is_none() && limits.line_limit.is_none() {
+                            assert!(
+                                matches!(admission, ControlAdmission::Retained { .. }),
+                                "an unbounded table refuses nothing"
                             );
                         }
                         holds_record.insert(directory, true);
@@ -793,8 +857,13 @@ mod tests {
     const CHANGED: ControlAdmission = ControlAdmission::Retained { changed: true };
     const UNCHANGED: ControlAdmission = ControlAdmission::Retained { changed: false };
     const OVER_BUDGET: ControlAdmission = ControlAdmission::Refused(ControlRefusalReason::Budget);
-    const OVER_LINE_GUARD: ControlAdmission =
-        ControlAdmission::Refused(ControlRefusalReason::LineGuard);
+    const OVER_LINE_LIMIT: ControlAdmission =
+        ControlAdmission::Refused(ControlRefusalReason::LineLimit);
+
+    /// A table under `budget` and the default line limit.
+    fn budgeted(budget: Option<usize>) -> ControlTable {
+        ControlTable::with_limits(ControlLimits { budget, ..ControlLimits::default() })
+    }
 
     #[test]
     fn replacing_the_last_holder_releases_its_content_for_the_bound() {
@@ -842,14 +911,14 @@ mod tests {
     fn the_budget_admits_its_own_size_and_refuses_one_byte_over_it() {
         let source = b"*.log\n".to_vec();
         let exact = retained_source_cost(Path::new("a"), &source);
-        let mut at_budget = ControlTable::with_budget(Some(exact));
+        let mut at_budget = budgeted(Some(exact));
         assert_eq!(
             at_budget.upsert(Path::new("a/.gitignore"), source.clone()).expect("control path"),
             CHANGED
         );
         assert_eq!(at_budget.retained_cost(), exact);
 
-        let mut under_budget = ControlTable::with_budget(Some(exact - 1));
+        let mut under_budget = budgeted(Some(exact - 1));
         assert_eq!(
             under_budget.upsert(Path::new("a/.gitignore"), source).expect("control path"),
             OVER_BUDGET
@@ -859,7 +928,10 @@ mod tests {
         assert_eq!(
             under_budget.observation(),
             ControlObservation {
-                budget: Some(exact - 1),
+                limits: ControlLimits {
+                    budget: Some(exact - 1),
+                    line_limit: Some(DEFAULT_CONTROL_LINE_LIMIT),
+                },
                 applied: 0,
                 refused: 1,
                 refusals: vec![RefusedControl {
@@ -930,50 +1002,75 @@ mod tests {
         assert!(table.is_ignored(Path::new("bb/debug.log"), false));
     }
 
-    /// One line at the guard applies; one byte longer refuses the whole source, before any
+    /// One line at the limit applies; one byte longer refuses the whole source, before any
     /// parsing, so a hostile rule costs no matching work.
     #[test]
-    fn the_line_guard_admits_its_own_length_and_refuses_one_byte_over_it() {
+    fn the_line_limit_admits_its_own_length_and_refuses_one_byte_over_it() {
         let mut table = ControlTable::default();
-        let at_guard = vec![b'a'; CONTROL_LINE_GUARD_BYTES];
+        let at_limit = vec![b'a'; DEFAULT_CONTROL_LINE_LIMIT];
         assert_eq!(
-            table.upsert(Path::new("a/.gitignore"), at_guard).expect("control path"),
+            table.upsert(Path::new("a/.gitignore"), at_limit).expect("control path"),
             CHANGED
         );
-        let over = [b"*.log\n".as_slice(), &vec![b'a'; CONTROL_LINE_GUARD_BYTES + 1]].concat();
+        let over = [b"*.log\n".as_slice(), &vec![b'a'; DEFAULT_CONTROL_LINE_LIMIT + 1]].concat();
         assert_eq!(
             table.upsert(Path::new("b/.gitignore"), over).expect("control path"),
-            OVER_LINE_GUARD
+            OVER_LINE_LIMIT
         );
         assert!(!table.is_ignored(Path::new("b/debug.log"), false), "no rule of it applies");
         assert_eq!(
             table.refusals().collect::<Vec<_>>(),
             vec![RefusedControl {
                 path: PathBuf::from("b/.gitignore"),
-                reason: ControlRefusalReason::LineGuard,
+                reason: ControlRefusalReason::LineLimit,
             }]
         );
     }
 
+    /// Raising or lifting one limit never moves the other: a larger budget still refuses a
+    /// long line, and no line limit still refuses a table past its budget.
     #[test]
-    fn an_unbounded_table_applies_what_the_bounds_would_refuse() {
-        let mut table = ControlTable::with_budget(None);
-        let long = [b"*.log\n".as_slice(), &vec![b'a'; CONTROL_LINE_GUARD_BYTES + 1]].concat();
-        assert_eq!(table.upsert(Path::new(".gitignore"), long).expect("control path"), CHANGED);
+    fn the_budget_and_the_line_limit_lift_independently() {
+        let long = [b"*.log\n".as_slice(), &vec![b'a'; DEFAULT_CONTROL_LINE_LIMIT + 1]].concat();
+        let large = source_at_test_limit();
+
+        let mut no_budget = budgeted(None);
         assert_eq!(
-            table
-                .upsert(Path::new("big/.gitignore"), source_at_test_limit())
-                .expect("control path"),
+            no_budget.upsert(Path::new("big/.gitignore"), large.clone()).expect("path"),
             CHANGED
         );
-        assert!(table.retained_cost() > DEFAULT_CONTROL_BUDGET);
-        assert!(table.is_ignored(Path::new("debug.log"), false));
-        assert_eq!(table.refused_len(), 0);
+        assert_eq!(
+            no_budget.upsert(Path::new("c/.gitignore"), b"*.tmp\n".to_vec()).expect("path"),
+            CHANGED
+        );
+        assert!(no_budget.retained_cost() > DEFAULT_CONTROL_BUDGET);
+        assert_eq!(
+            no_budget.upsert(Path::new(".gitignore"), long.clone()).expect("path"),
+            OVER_LINE_LIMIT
+        );
+
+        let mut raised_budget = budgeted(Some(16 * DEFAULT_CONTROL_BUDGET));
+        assert_eq!(
+            raised_budget.upsert(Path::new(".gitignore"), long.clone()).expect("path"),
+            OVER_LINE_LIMIT
+        );
+
+        let mut no_line_limit = ControlTable::with_limits(ControlLimits {
+            line_limit: None,
+            ..ControlLimits::default()
+        });
+        assert_eq!(no_line_limit.upsert(Path::new(".gitignore"), long).expect("path"), CHANGED);
+        assert!(no_line_limit.is_ignored(Path::new("debug.log"), false));
+        assert_eq!(
+            no_line_limit.upsert(Path::new("big/.gitignore"), large).expect("path"),
+            OVER_BUDGET
+        );
+        no_line_limit.assert_consistent();
     }
 
     #[test]
     fn a_listing_of_refusals_is_bounded_and_says_when_it_is_truncated() {
-        let mut table = ControlTable::with_budget(Some(0));
+        let mut table = budgeted(Some(0));
         let refused = crate::MAX_RETAINED_ISSUES + 1;
         for directory in 0..refused {
             let path = PathBuf::from(format!("d{directory:03}/.gitignore"));

@@ -369,6 +369,7 @@ def open(
         one_filesystem=scan_options.one_filesystem,
         read_controls=scan_options.read_controls,
         control_budget=_bound(scan_options.control_budget),
+        control_line_limit=_bound(scan_options.control_line_limit),
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
@@ -396,6 +397,7 @@ def scan(
         one_filesystem=scan_options.one_filesystem,
         read_controls=scan_options.read_controls,
         control_budget=_bound(scan_options.control_budget),
+        control_line_limit=_bound(scan_options.control_line_limit),
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
