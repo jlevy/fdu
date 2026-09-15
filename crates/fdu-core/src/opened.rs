@@ -1868,18 +1868,18 @@ impl WorkerFailures {
 
     /// The failure close reports.
     ///
-    /// The earliest, unless the earliest is only the trace another worker's panic left. A
-    /// poisoned lock is a consequence: the guard is poisoned while its thread is still
+    /// The earliest, unless the earliest is only the trace a recorded worker panic left. A
+    /// poisoned lock is then a consequence: the guard is poisoned while its thread is still
     /// unwinding, before that thread can record its panic, so the worker that trips over
-    /// the poison can record first. Discovery's `IndexLockPoisoned` then stood in for the
-    /// observation worker's panic.
+    /// the poison can record first, and discovery's `IndexLockPoisoned` would stand in for
+    /// the observation worker's panic. With no panic recorded, nothing here explains the
+    /// poisoning -- the caller's own thread may have panicked inside a commit -- so it is
+    /// a failure like any other, and a later unrelated error does not displace it.
     fn first(&self) -> Option<CloseOutcome> {
         let recorded = self.recorded.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        recorded
-            .iter()
-            .find(|outcome| !outcome.is_poison_trace())
-            .or_else(|| recorded.first())
-            .cloned()
+        let panicked =
+            recorded.iter().any(|outcome| matches!(outcome, CloseOutcome::WorkerPanicked { .. }));
+        recorded.iter().find(|outcome| !(panicked && outcome.is_poison_trace())).cloned()
     }
 }
 
@@ -2408,6 +2408,36 @@ mod tests {
         wait_for_worker_exit(&opened, "panicked");
 
         assert!(matches!(opened.close(), Err(Error::OpenedWorkerPanicked { worker: "panicked" })));
+    }
+
+    /// Without a recorded panic, nothing explains a poisoning: the caller's own thread can
+    /// poison the index by panicking inside a commit. A worker that trips over it first is
+    /// then the earliest failure, and close reports it rather than a later, unrelated one.
+    #[test]
+    fn close_reports_a_poisoning_no_worker_panic_explains_when_it_came_first() {
+        let (_root, opened) = opened(Arc::default());
+        opened.state.index.poison_for_test();
+        let index = opened.state.index.clone();
+        opened
+            .spawn_worker("tripped", move |_cancellation| index.clock().map(|_| ()))
+            .expect("spawn tripped worker");
+        wait_for_worker_exit(&opened, "tripped");
+        opened
+            .spawn_worker("later", |_cancellation| {
+                Err(Error::CommitRejected("unrelated later failure"))
+            })
+            .expect("spawn later worker");
+        wait_for_worker_exit(&opened, "later");
+
+        let closed = opened.close();
+        assert!(
+            matches!(
+                &closed,
+                Err(Error::OpenedWorkerFailed { worker: "tripped", source })
+                    if matches!(**source, Error::IndexLockPoisoned)
+            ),
+            "{closed:?}"
+        );
     }
 
     #[test]
