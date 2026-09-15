@@ -219,20 +219,55 @@ Permission loss is unknown state, not removal.
   scope. A gap is cleared only by a complete scan of its subtree, never by replay,
   because events delivered while it was unreadable were not applied.
 
-The snapshot cache keeps its complete-only rule.
-Typed gaps belong to the checkpoint format from slice 2. The working inventory needs the
-same semantics, in its own format version, before slice 3 can advance a replay cursor
-past a gap; neither change weakens the existing complete flag.
+Typed gaps belong to the checkpoint format from slice 2. The working inventory, which
+lives in the snapshot (see
+[Persistent State and Idempotence](#persistent-state-and-idempotence)), needs them
+before slice 3 can advance a replay cursor past a gap.
+The snapshot’s complete-only rule keeps its meaning once they exist:
+
+- `Coverage::Complete` still means every in-scope directory has a complete listing.
+- Slice 3 adds a typed-gap section to the snapshot at a new `FORMAT_VERSION`.
+  `snapshot::save` then persists a `Coverage::Partial(Inaccessible)` index only when
+  every incomplete directory is recorded as a gap in that section.
+- An index with an unrecorded gap, or one that is partial for any other reason (still
+  building, budget, cancellation, failure), is still refused.
+- Loading a gap-marked image restores it as partial, never as complete.
 
 ## Persistent State and Idempotence
 
-Keep three kinds of state separate:
+Keep three kinds of state separate, each in a container that matches whether it can be
+rebuilt:
 
-| State | Lifetime and meaning |
-| --- | --- |
-| Working inventory | Latest reconciled entry facts, typed gaps, and persisted directory aggregates; replaced by each refresh |
-| Replay cursor | Per-volume FSEvents progress used to discover work since the last refresh |
-| Checkpoint | Immutable comparison baseline with its id, recorded identities, coverage, capture interval, and free space; labels point to it |
+| State | Lifetime and meaning | Container |
+| --- | --- | --- |
+| Working inventory | Latest reconciled entry facts, typed gaps, and persisted directory aggregates; replaced by each refresh | The root’s snapshot image in the cache directory; discarded by a release upgrade, `--cache-clear`, or a scope change |
+| Replay cursor | Per-volume FSEvents progress used to discover work since the last refresh | The same snapshot image as the inventory it was fenced against; discarded with it |
+| Checkpoint | Immutable comparison baseline with its id, recorded identities, coverage, capture interval, and free space; labels point to it | The checkpoint store under the user data directory; kept across upgrades |
+
+The working inventory and replay cursor are derived state.
+A full scan rebuilds both, so losing them costs time but no answer, and the snapshot
+cache’s VERSION + FAIL FAST contract already serves that case.
+Keeping the cursor in the image it describes gives the two one publication boundary,
+where the FSEvents plan already places it.
+A checkpoint cannot be rebuilt once the filesystem has moved on, so it lives in the
+store.
+
+**After a release upgrade,** `engine_fingerprint` no longer matches, so the snapshot is
+a miss and the first refresh is a full scan.
+That scan publishes a new inventory with a pre-scan cursor (the FSEvents plan’s G2).
+Checkpoints captured before the upgrade stay retained, and they remain comparable with
+the checkpoint the refresh publishes, because neither the crate version nor the snapshot
+`FORMAT_VERSION` affects comparability.
+`--cache-clear` has the same effect.
+So does alternating between report and opened-root scopes, until `fdu-w3l5` keys
+snapshots by scope.
+
+Keeping the inventory in the checkpoint store instead would let replay survive an
+upgrade. It would also make derived state user-owned data under the store’s SUPPORT BOTH
+contract, so every inventory format change would carry a reader for as long as that
+format is supported.
+One full scan per release costs less.
+Slice 4 changes the inventory’s encoding, not its container.
 
 A week-old checkpoint may be compared using a recently refreshed cursor.
 The checkpoint’s age must not force replay from a week ago.
@@ -450,7 +485,7 @@ work; do not relabel the old answer as current.
 | --- | --- | --- |
 | 1. Reproducible replay probe (`fdu-uwhl`) | Commit the probe, exact flags, cursor fences, and machine-readable results; compare with and without `FullHistory` | Deep append, deletion, move, restart, overlap, and controlled loss agree with an independent scan or produce a declared degraded result |
 | 2. Checkpoint store and comparison contract (`fdu-8ybz`) | Engine-native store with ids, labels, pins, typed gaps, recorded identities, and the three accounting measures, including retained link counts; initially from scanned state | Repeated reads of one id pair are identical; moving a label or refreshing never changes a checkpoint; a removed checkpoint is refused, not substituted; an incompatible scope is refused; the hard-link, clone, and denied-subtree cases below produce their expected deltas; native, CLI, and Python surfaces agree |
-| 3. Incremental macOS refresh | Cursor encoding and gates (`fdu-2cdv`), replay (`fdu-3tun`), scoped reconciliation (`fdu-rvje`), and typed gaps in the working inventory | Persist/restart/refresh tests and failure injection prove no lost cursor work or duplicate accounting, and a persistently denied subtree does not stop the cursor advancing |
+| 3. Incremental macOS refresh | Cursor encoding and gates (`fdu-2cdv`), replay (`fdu-3tun`), scoped reconciliation (`fdu-rvje`), and the snapshot’s typed-gap section and save rule, at a new `FORMAT_VERSION` | Persist/restart/refresh tests and failure injection prove no lost cursor work or duplicate accounting; a persistently denied subtree does not stop the cursor advancing; after an engine fingerprint change the first refresh scans in full, and its checkpoint compares with one captured before |
 | 4. Bounded persistent access | Block/lazy inventory and durable changes with checkpoint-aware compaction | Quiet refresh does not decode or rewrite all N entries; retained state stays within its declared budget |
 | 5. Large-home workflow | Measure full capture, day-gap refresh, delta read, and fallback at realistic churn | Publish paired results against a fresh scan, with all work and coverage reported |
 

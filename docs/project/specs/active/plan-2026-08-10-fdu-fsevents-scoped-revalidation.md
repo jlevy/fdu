@@ -91,6 +91,8 @@ fails closed on every row, and why the full sweep remains the backstop on every 
   fast there. The two investments are complements, not alternatives.
 - Changing what is cached or where.
   This feature accelerates revalidation.
+  The cursor rides in the existing snapshot, and the typed-gap rule that lets a
+  gap-marked image persist belongs to the checkpoint plan.
   Durable checkpoints, comparison, and retention belong to the linked checkpoint plan.
   Current content-sidecar reuse and portable full sweeps remain available independently.
 - Touching the live watch layer.
@@ -324,7 +326,7 @@ CoreServices. Every row falls closed to the sweep:
 | # | Condition | Decision |
 | --- | --- | --- |
 | G1 | Not macOS, build feature off, or `--revalidate=full` | full sweep |
-| G2 | Snapshot has no cursor (older format, or first save) | full sweep; persist its pre-scan cursor with the snapshot |
+| G2 | No usable snapshot, or one without a cursor (first save, older format, or an image discarded by a release upgrade, a scope change, or `--cache-clear`) | full sweep; persist its pre-scan cursor with the snapshot |
 | G3 | Root’s current volume UUID ≠ stored UUID (moved disk, container change, FSEvents database replaced, UUID unreadable), or the root’s device number ≠ the one the snapshot recorded | full sweep; a renumbered device changes every retained `Fingerprint`, and a scoped refresh would leave entries under two device numbers |
 | G4 | Stored event ID > current volume event ID (regression: journal purged, clock wrapped) | full sweep |
 | G5 | Applied cursor older than `max_cursor_age` (provisional default **24 hours**) | full sweep; an age limit bounds exposure but does not prove retained history is complete |
@@ -379,6 +381,16 @@ cursor-absent (G2); otherwise it remains a clean miss.
 Test each supported predecessor, unknown version, and corrupt cursor.
 Cursor, inventory generation, and publication must commit atomically: never save a
 boundary ahead of the reconciled data.
+
+The snapshot is the checkpoint plan’s working inventory, and the cursor stays in it on
+purpose. Both are derived state that a full scan rebuilds, so they share the cache’s
+VERSION + FAIL FAST contract and one publication boundary.
+A release upgrade changes `engine_fingerprint`, which discards the image and its cursor
+together, and the next open takes G2. Checkpoints live in that plan’s separate store and
+are unaffected. Before a cursor may advance past a denied subtree, the snapshot also
+needs the typed-gap section that plan’s slice 3 specifies.
+With it, `save` accepts a `Coverage::Partial(Inaccessible)` index only when every
+incomplete directory is recorded as a gap, and still refuses any other partial index.
 
 ### Components
 
