@@ -409,6 +409,14 @@ Plan Phase C against the warm number.
 
 ### Phase D: The warm end-state (after B, because the representation decides the format)
 
+The [disk-usage checkpoint plan](plan-2026-09-13-fdu-disk-usage-checkpoints.md) defines
+the user workflow this phase should enable: an immutable checkpoint, a later refresh,
+and repeatable signed directory deltas.
+Its reproducible FSEvents probe can run before the representation work; the whole-home
+latency claim requires both.
+Include flat-image load/save cost and the provisional 24-hour replay-cursor age gate (G5
+in the FSEvents plan) in the acceptance runs.
+
 - [ ] `fdu-yr23` — persist roll-ups and the interner (H92): load becomes adoption.
 - [ ] `fdu-pdra` — the directly-usable snapshot format (H78), then H35 block checksums
   and H61 base-plus-overlay as its own gated steps.

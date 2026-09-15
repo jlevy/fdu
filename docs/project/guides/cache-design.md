@@ -23,11 +23,17 @@ recursive answer lives between runs.
 One file per root, under the user cache directory, named by a hash of the canonical root
 path so two trees never collide.
 
-It holds entry records and per-directory roll-up state, and it is invalidated wholesale
-by an engine fingerprint: a format version, and a hash of the configuration that would
-change what the records mean.
+It holds entry records from which loading rebuilds per-directory roll-ups, and it is
+invalidated wholesale by an engine fingerprint of the crate version, the format version,
+and the classification-rules version.
 A snapshot written by an incompatible build is not migrated and not repaired — it is
-treated as absent.
+treated as absent. Because the crate version is part of the fingerprint, every release
+invalidates every existing snapshot; nothing that must outlive an upgrade belongs in
+this cache.
+
+The file also records the scan scope it was built under.
+A snapshot whose scope cannot serve the request is a miss as well, and under a
+write-permitting policy the next complete indexed scan replaces it.
 
 Three rules keep it honest:
 
@@ -39,12 +45,13 @@ Three rules keep it honest:
 - **Writes are atomic.** A temporary file and a rename, so an interrupted write leaves
   the previous snapshot intact rather than a half-file for the next run to reject.
 
-The snapshot is written on every platform, for every tier of query, including plain stat
-roll-ups. Skipping the write for cheap queries is a tempting refinement and the wrong
-one: the write costs tens of milliseconds off the hot path, while the stat-tier snapshot
-is exactly what the two decisive warm paths consume — on a cloud runner the snapshot is
-the *only* possible warm state, because the operating system’s own metadata cache cannot
-hold a large tree’s inodes in RAM.
+Snapshot persistence is available on every platform, including for metadata queries.
+It is not used by every execution plan: the transient summary path does not retain an
+index or write a snapshot.
+For indexed reports, a complete scan and a write-permitting cache policy are both
+required.
+The planner may also skip reading a snapshot when loading it and performing the
+full metadata sweep would cost more than scanning directly.
 
 ## Layer Two: Derived Content Data
 
@@ -134,9 +141,9 @@ belongs.
 
 | Policy | Reads snapshot | Touches filesystem | Writes snapshot |
 | --- | --- | --- | --- |
-| `auto` (default) | yes | revalidates | on a complete scan |
-| `refresh` | no | full scan | on a complete scan |
-| `read-only` | yes | revalidates | never |
+| `auto` (default) | when the execution plan benefits | full scan or full revalidation | complete indexed scans |
+| `refresh` | no | full scan | complete indexed scans |
+| `read-only` | when the execution plan benefits | full scan or full revalidation | never |
 | `only` | yes | never | never |
 | `off` | no | full scan | never |
 
@@ -148,20 +155,33 @@ with nothing in the output to say which happened — is worse than no fast path.
 Every report carries `source`, `freshness`, `complete`, and `errors` in every format, so
 no policy can silently serve old or partial data as current.
 
+[`plan_report`](../../../crates/fdu-core/src/execution.rs) and
+[`open_for_report`](../../../crates/fdu-core/src/lib.rs) implement these policies.
+The transient summary path and snapshot-read bypass mean that `--cache auto` does not
+promise a reusable baseline after an arbitrary command.
+`--allow-partial` changes exit acceptance; it does not make a partial scan cacheable.
+
 ## What Is Not Built Yet
 
-- **The block snapshot format.** Today’s format is a flat image whose reader is bounded
-  and streaming. Compressed blocks with a tail index would make opening O(1) and let
-  directory listings materialize lazily.
-- **Journal-scoped revalidation.** On macOS the FSEvents journal can name which
-  directories changed since a snapshot was written, turning a warm open into O(changes).
-  The snapshot format reserves the resume fields.
-- **A durable delta journal**, for `since(clock)` across restarts.
+- **The block snapshot format.** Today’s flat image is read and rebuilt in full.
+  Persisted aggregates and indexed blocks could make bounded summary queries avoid
+  materializing every entry; that cost must be measured with validation and persistence
+  included.
+- **FSEvents history replay.** On macOS, the persistent FSEvents history can name which
+  scopes need fresh observations.
+  The current snapshot does not store a replay cursor, and reducing filesystem work
+  alone would still leave full-image load/save costs.
+- **Durable checkpoints and comparison.** The cache replaces the latest inventory for a
+  root; it does not retain a user-selected baseline.
+  The index journal behind `since(clock)` is process local and starts empty on load.
+  The
+  [disk-usage checkpoint plan](../specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md)
+  specifies immutable checkpoints in a store separate from this cache, repeatable
+  deltas, history-replay refresh, and checkpoint-aware retention.
 - **Cache retention.** Nothing prunes snapshots for roots never queried again, and
   nothing bounds the derived layer’s total size.
   `--cache-clear` is the only reclaim today.
 
-* * *
-
-*Part of the fdu project documentation.
-See [AGENTS.md](../../../AGENTS.md).*
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->
