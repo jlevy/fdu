@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import re
 from collections.abc import Callable
@@ -100,8 +101,17 @@ def get(url: str) -> bytes | None:
         if error.code == 404:
             return None
         raise RegistryError(f"{url}: {error}") from error
-    except OSError as error:
+    except (OSError, http.client.HTTPException) as error:
+        # A truncated body or a malformed status line is not an answer either.
         raise RegistryError(f"{url}: {error}") from error
+
+
+def parse_json(url: str, body: bytes) -> Any:
+    """Decode a registry answer, naming the URL when a 200 body is not JSON."""
+    try:
+        return json.loads(body)
+    except ValueError as error:
+        raise RegistryError(f"{url}: response is not JSON: {error}") from error
 
 
 def pypi_state(manifest: Path, version: str) -> RegistryState:
@@ -110,10 +120,11 @@ def pypi_state(manifest: Path, version: str) -> RegistryState:
         **expected_artifacts(manifest, "wheel"),
         **expected_artifacts(manifest, "sdist"),
     }
-    body = get(f"https://pypi.org/pypi/fdu/{version}/json")
+    url = f"https://pypi.org/pypi/fdu/{version}/json"
+    body = get(url)
     if body is None:
         return classify_files("pypi", "fdu", version, expected, None)
-    document: dict[str, Any] = json.loads(body)
+    document: dict[str, Any] = parse_json(url, body)
     urls = document.get("urls")
     if not isinstance(urls, list):
         raise ValueError("PyPI response has no release file list")
@@ -149,17 +160,18 @@ def crates_io_state(
     for package, filename in filenames.items():
         if filename not in expected:
             raise ValueError(f"artifact manifest has no {filename}")
-        body = fetch(f"https://crates.io/api/v1/crates/{package}/{version}")
-        published = None if body is None else {filename: crate_checksum(body, package, version)}
+        url = f"https://crates.io/api/v1/crates/{package}/{version}"
+        body = fetch(url)
+        record = None if body is None else parse_json(url, body)
+        published = None if record is None else {filename: crate_checksum(record, package, version)}
         states.append(
             classify_files("crates.io", package, version, {filename: expected[filename]}, published)
         )
     return states
 
 
-def crate_checksum(body: bytes, package: str, version: str) -> str:
-    """Read the published `.crate` SHA-256 from a crates.io version record."""
-    document: Any = json.loads(body)
+def crate_checksum(document: Any, package: str, version: str) -> str:
+    """Read the published `.crate` SHA-256 from a decoded crates.io version record."""
     record = document.get("version") if isinstance(document, dict) else None
     checksum = record.get("checksum") if isinstance(record, dict) else None
     if not isinstance(checksum, str) or re.fullmatch(r"[0-9a-f]{64}", checksum) is None:

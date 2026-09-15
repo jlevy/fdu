@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import re
 import tempfile
@@ -142,11 +143,14 @@ class RegistryStateTests(unittest.TestCase):
         # Reading a refusal, an outage, or an unreachable host as `missing` would report an
         # upload that landed as one that did not.
         url = f"{CRATES_IO}/fdu-core/0.1.0"
-        failures: list[OSError] = [
+        failures: list[Exception] = [
             HTTPError(url, 403, "Forbidden", Message(), None),
             HTTPError(url, 503, "Service Unavailable", Message(), None),
             URLError("nodename nor servname provided"),
             TimeoutError("The read operation timed out"),
+            # Protocol failures are not OSError, and a truncated body is not an answer.
+            http.client.IncompleteRead(b"{", 64),
+            http.client.BadStatusLine("garbage"),
         ]
         for failure in failures:
             with (
@@ -160,6 +164,30 @@ class RegistryStateTests(unittest.TestCase):
             self.assertIsNone(registry_state.get(url))
         # crates.io refuses a request without a User-Agent with a 403.
         self.assertIn("fdu-release-audit", opened.call_args.args[0].get_header("User-agent"))
+
+    def test_a_non_json_registry_answer_has_no_verdict(self) -> None:
+        # A 200 whose body is not JSON (a proxy page, a truncated record) is not a registry
+        # answer; it must fail naming the URL rather than escape as a decode traceback.
+        crates = [
+            {"kind": "crate", "filename": f"{package}-0.1.0.crate", "sha256": "0" * 64}
+            for package in CRATE_PACKAGES
+        ]
+        python = [
+            {"kind": "wheel", "filename": "fdu-0.1.0-py3-none-any.whl", "sha256": "1" * 64},
+            {"kind": "sdist", "filename": "fdu-0.1.0.tar.gz", "sha256": "2" * 64},
+        ]
+        not_json = b"<html>not json</html>"
+        with tempfile.TemporaryDirectory() as temporary:
+            manifest = Path(temporary) / "manifest.json"
+            manifest.write_text(json.dumps({"artifacts": crates + python}), encoding="utf-8")
+            with self.assertRaisesRegex(RegistryError, re.escape(f"{CRATES_IO}/fdu-core/0.1.0")):
+                crates_io_state(manifest, "0.1.0", fetch=lambda _url: not_json)
+            pypi_url = "https://pypi.org/pypi/fdu/0.1.0/json"
+            with (
+                patch.object(registry_state, "get", return_value=not_json),
+                self.assertRaisesRegex(RegistryError, re.escape(pypi_url)),
+            ):
+                registry_state.pypi_state(manifest, "0.1.0")
 
     def test_a_manifest_without_the_core_crate_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
