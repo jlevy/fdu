@@ -3,16 +3,20 @@ type: is
 id: is-01m2k2pp6jw10vq759yyetmcmb
 title: README library examples and schema prose name APIs the release does not have
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 1
+version: 2
 labels:
   - stack-followup
   - release
 dependencies: []
 parent_id: is-01m2h6a9wd6f6xexfaw93whryr
 created_at: 2026-09-15T17:44:13.777Z
-updated_at: 2026-09-15T17:44:13.777Z
+updated_at: 2026-09-15T18:47:22.006Z
+closed_at: 2026-09-15T18:47:22.005Z
+close_reason: "32428c8 (PR #62): Rust README examples use content::AnalysisSet::ALL and Python examples AnalysisOptions(analyze=Analysis.ALL), each checked against the code. Prose now says fdu.report/4, or /5 when a report ran analysis or has a metric summary (report_schema's rule); the words and all analyzers; no snapshot format number; cargo add fdu, without the false claim that no-default-features drops the CLI's dependencies. Tests written first and red on the stale examples: ReadmeDoctests (cfg(doctest) include_str of each crate README; 3 doctests) and tests/test_readme_examples.py (runs every README python block in a temp tree). CI 19/19; the doctests ran on Windows, Linux, macOS, and MSRV, and the pytest under python-check."
+resolution: null
+duplicate_of: null
 ---
 Found while fixing fdu-k4ad and fdu-ih88 (branch claude/release-shipped-text, commit bc704c5). These are shipped surfaces: README.md is the fdu crate's crates.io page, crates/fdu-core/README.md is fdu-core's, and crates/fdu-py/README.md is the PyPI long description.
 
