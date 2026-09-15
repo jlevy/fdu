@@ -5,7 +5,7 @@ title: "Release note: the type_rules_fingerprint change cold-rescans every cache
 kind: task
 status: open
 priority: 3
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - stack-followup
@@ -13,7 +13,7 @@ labels:
 dependencies: []
 parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 created_at: 2026-09-14T01:46:47.090Z
-updated_at: 2026-09-15T05:15:29.578Z
+updated_at: 2026-09-15T20:14:06.579Z
 ---
 Release-note follow-up from PR #48's description ("The command line is unmoved"): "One consequence deserves a release note."
 
@@ -27,3 +27,13 @@ Release-note follow-up from PR #48's description ("The command line is unmoved")
 - how to reclaim the stale snapshots, with whatever cache-clearing mechanism exists at that point (fdu-558j tracks that none prunes them today).
 
 Put it wherever release notes live for that release, and close this bead with a link.
+
+## Notes
+
+2026-09-15 DRAFT EXISTS: the upgrade note is drafted in draft PR https://github.com/jlevy/fdu/pull/64. It appears in CHANGELOG.md, under [0.1.0] 'Upgrading from a pre-release build', and in docs/project/release-notes/0.1.0.md, under 'Upgrading from a Pre-Release Build'.
+What it says:
+(1) The first run on each previously cached tree scans cold and replaces the snapshot if that run saves one, because the snapshot format (PR A: version 4) and the type-rule and ignore-rule fingerprints changed.
+(2) fdu does not remove old snapshots. --cache-clear and --cache-clear=all delete only recognized snapshots (cache.rs clear_cache/clear_all_caches); snapshot.rs read_header rejects any other FORMAT_VERSION or engine fingerprint. An old-format file stays until a run on the same root replaces it. 'fdu --cache-status=all --format json' lists it as "recognized": false; text status prints 'No cached snapshots.' when every file is unrecognized. Delete by hand from the cache directory (fdu-m6lr would add --cache-clear=unreadable).
+Still owed before closing:
+- On the release candidate, run over a tree cached by a build of today's main. Confirm the snapshot is refused (cold scan), not served, and that --cache-clear leaves it. Before PR A's format bump, a dev-build 0.1.0 snapshot is still recognized, since the engine fingerprint mixes only CARGO_PKG_VERSION, FORMAT_VERSION and CLASSIFICATION_VERSION.
+Close this bead with the note's location when the final version of PR #64 merges.
