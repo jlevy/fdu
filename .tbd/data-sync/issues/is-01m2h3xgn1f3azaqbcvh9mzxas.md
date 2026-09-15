@@ -5,7 +5,7 @@ title: "Address review: PR #60 — gitignore build feature removal docs"
 kind: task
 status: closed
 priority: 1
-version: 5
+version: 6
 labels:
   - stack-followup
 dependencies: []
@@ -13,8 +13,9 @@ child_order_hints:
   - is-01m2h3xvk4r633m5ka0st8qyec
   - is-01m2h3xw5vzbmm4843r3vgp8zd
   - is-01m2h3xwmz6k12kq0jwvvrfvns
+  - is-01m2hsj3b876x988kevmjygg05
 created_at: 2026-09-14T23:26:57.184Z
-updated_at: 2026-09-15T00:19:14.534Z
+updated_at: 2026-09-15T05:45:11.782Z
 closed_at: 2026-09-15T00:19:14.526Z
 close_reason: "All three findings of review 5203700640 fixed in 179f4a2, d009bbe, 3a4d384 on PR #60; disposition map posted at https://github.com/jlevy/fdu/pull/60#issuecomment-5672723190. CI 19/19 green at 3a4d384, mergeStateStatus CLEAN."
 resolution: null
