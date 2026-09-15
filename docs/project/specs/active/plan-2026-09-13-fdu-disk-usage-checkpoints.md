@@ -298,10 +298,40 @@ cache’s.
 
 **Own format version.** The store has a checkpoint format version, independent of the
 snapshot `FORMAT_VERSION`, the crate version, and `CLASSIFICATION_VERSION`. Each
-checkpoint records its format version, id, root path and volume identity,
-`ScopeIdentity`, `SemanticIdentity`, classification version, accounting version (which
-measures it recorded), capture interval, coverage, and free space.
+checkpoint records its format version, id, root path and volume identity (defined
+below), `ScopeIdentity`, `SemanticIdentity`, classification version, accounting version
+(which measures it recorded), capture interval, coverage, and free space.
 It also records the writing engine version, as information only.
+
+**Volume identity.** A checkpoint’s volume identity is the stable UUID of the filesystem
+volume that holds its root, never its device number.
+`st_dev` is renumbered across reboots and remounts.
+The engine’s `Attrs::dev` holds that number, or zero on Windows; `fdu-4qtk` corrects the
+rustdoc that calls it a volume identity component.
+The FSEvents plan follows the same rule for its replay cursor.
+
+- **macOS:** the volume UUID the root reports through `getattrlist` (`ATTR_VOL_UUID`).
+  The FSEvents plan’s cursor UUID is a different value: `FSEventsCopyUUIDForDevice`
+  identifies the volume’s FSEvents database, which changes when that history is
+  discarded or event IDs wrap, while the volume’s contents do not.
+- **Linux:** no portable call returns one.
+  A filesystem UUID is reachable only through the block device behind the mount, and
+  `statfs`’s `f_fsid` is not stable on every filesystem.
+- **Windows:** fdu observes none today.
+  `dev` and `inode` are zero, and the volume serial number or GUID needs platform calls
+  the scanner does not make.
+- **Network and FUSE volumes:** may report no UUID on any platform.
+
+Where no UUID is observed, the checkpoint records the volume identity as not observed.
+A comparison in which either checkpoint lacks one is decided on root path and
+`ScopeIdentity` alone, and its result states that the volume was not verified, so a
+different volume mounted at the same path is never presented as a verified comparison.
+
+A remount that renumbers `st_dev` leaves A→B comparable: deltas are computed by path and
+byte facts, and `(dev, inode)` pairs are grouped only within one checkpoint.
+It does change every retained entry’s `Fingerprint`. A refresh that finds the root’s
+device number changed therefore re-observes every entry before it publishes a
+checkpoint, so hard-link grouping never meets one file under two device numbers.
 
 **Upgrades.** Before any release writes checkpoints, a development build refuses an
 older development format and says so.
@@ -320,11 +350,12 @@ Once a release writes checkpoints, they are user-owned data:
 **Scope and classification changes.** Whether a comparison is valid is decided per
 measure, from the recorded identities:
 
-- A different root or volume identity, or a different `ScopeIdentity` (depth, symlink
-  policy, filesystem boundary, hidden-entry policy, special files), refuses the
-  comparison with a typed error naming the differing field.
+- A different root, a different observed volume UUID, or a different `ScopeIdentity`
+  (depth, symlink policy, filesystem boundary, hidden-entry policy, special files),
+  refuses the comparison with a typed error naming the differing field.
   The two checkpoints admitted different entries, so no byte delta between them means
-  anything.
+  anything. A volume identity missing from one or both checkpoints is not a difference;
+  the result is marked volume-unverified instead.
 - A different `SemanticIdentity` or classification version leaves the filesystem facts
   comparable: path, kind, apparent bytes, allocated bytes, and counts.
   Measures derived from classification, such as ignored and unignored partitions and
@@ -451,8 +482,10 @@ observation rather than a simultaneous filesystem snapshot.
 Correctness cases include in-place append with unchanged directory mtimes,
 allocated-only changes, file and subtree deletion, rename across sibling and monitored
 roots, duplicate/overlapping events, sparse files, ignored and hidden paths, permission
-loss and restoration, volume identity changes, event loss, concurrent writers, and
-crashes before and after cursor publication.
+loss and restoration, event loss, concurrent writers, and crashes before and after
+cursor publication. Volume identity cases: a remount or reboot that renumbers `st_dev`
+stays comparable and re-observes every entry; a different volume UUID at the same root
+path is refused; and a volume that reports no UUID compares as volume-unverified.
 Accounting cases have stated expected deltas:
 
 - **Hard link added to an existing file:** per-path allocated grows by the file’s

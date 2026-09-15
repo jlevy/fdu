@@ -249,6 +249,10 @@ how far its production use actually goes):
   Both facts drive the gate: G4 compares the cursor against the machine-wide current ID,
   and the volume UUID (from `FSEventsCopyUUIDForDevice(st_dev)`, never `st_dev` itself,
   which is not stable across reboots) pins which volume’s journal the cursor belongs to.
+  That UUID identifies the volume’s FSEvents database and changes when the database is
+  discarded or event IDs wrap, which is what G3 must detect.
+  It is not the filesystem volume UUID (`ATTR_VOL_UUID`) that the checkpoint plan
+  records as a checkpoint’s volume identity, which must survive a history purge.
   Wrap is signalled by `EventIdsWrapped` (G7).
 - Stream `latency` may be 0 for replay; coalescing within the historical log has already
   happened.
@@ -321,7 +325,7 @@ CoreServices. Every row falls closed to the sweep:
 | --- | --- | --- |
 | G1 | Not macOS, build feature off, or `--revalidate=full` | full sweep |
 | G2 | Snapshot has no cursor (older format, or first save) | full sweep; persist its pre-scan cursor with the snapshot |
-| G3 | Root’s current volume UUID ≠ stored UUID (moved disk, container change, UUID unreadable) | full sweep |
+| G3 | Root’s current volume UUID ≠ stored UUID (moved disk, container change, FSEvents database replaced, UUID unreadable), or the root’s device number ≠ the one the snapshot recorded | full sweep; a renumbered device changes every retained `Fingerprint`, and a scoped refresh would leave entries under two device numbers |
 | G4 | Stored event ID > current volume event ID (regression: journal purged, clock wrapped) | full sweep |
 | G5 | Applied cursor older than `max_cursor_age` (provisional default **24 hours**) | full sweep; an age limit bounds exposure but does not prove retained history is complete |
 | G6 | Stream creation fails, or replay exceeds the G11 budget without `HistoryDone` | full sweep |
@@ -344,9 +348,10 @@ descendants of a `MustScanSubDirs` subtree are absorbed into it, duplicates coal
 and paths are mapped root-relative against the same canonicalized root the scan layer
 uses.
 
-Volume identity is the UUID, not `st_dev` — device numbers are not stable across
-reboots. The research doc’s sharding observation applies: journals, event IDs, and UUIDs
-are per-volume, and a snapshot that spans a mount boundary cannot use a single cursor.
+The cursor’s volume identity is that FSEvents database UUID, not `st_dev` — device
+numbers are not stable across reboots.
+The research doc’s sharding observation applies: journals, event IDs, and UUIDs are
+per-volume, and a snapshot that spans a mount boundary cannot use a single cursor.
 Phase 1 sidesteps this by combining the gate with the existing `one_filesystem` scope
 information: a snapshot whose scan crossed devices simply never carries a cursor (G2).
 
