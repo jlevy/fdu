@@ -129,9 +129,10 @@ A maintainer publishes `0.1.0` from the signed tag in this order: `fdu-core`, th
 Every upload carries bytes the rehearsal validated, and each registry is checked against
 the rehearsal’s manifest before the next write.
 
-The commands assume a POSIX shell with `gh`, `uv`, and `rustup`. `RELEASE` is an empty
-scratch directory outside any checkout, and `<run-id>` and `<release-commit>` are
-recorded in the first step.
+The commands assume bash or zsh, with `gh`, `uv`, `rustup`, and `curl`: the token
+prompts use `read -s`, which a plain POSIX `sh` such as `dash` rejects.
+`RELEASE` is an empty scratch directory outside any checkout, and `<run-id>` and
+`<release-commit>` are recorded in the first step.
 
 ### Rehearse the Release Commit
 
@@ -168,11 +169,23 @@ recorded in the first step.
 
 ### Tag the Release Commit
 
-1. Create, verify, and push the signed tag:
+1. Tag from your own clone of `jlevy/fdu`, whose `origin` is GitHub, not from
+   `$RELEASE`. Fetch, and confirm that the working tree is clean and the release commit
+   is on `main`: the status command must print nothing, and the ancestry check must
+   print `on main`.
 
    ```shell
    git fetch origin
-   git tag -s v0.1.0 <release-commit> -m "fdu 0.1.0"
+   git status --porcelain
+   git merge-base --is-ancestor <release-commit> origin/main && echo "on main"
+   ```
+
+   Then check out exactly the release commit, and create, verify, and push the signed
+   tag on it:
+
+   ```shell
+   git switch --detach <release-commit>
+   git tag -s v0.1.0 -m "fdu 0.1.0"
    git tag -v v0.1.0
    git push origin v0.1.0
    ```
@@ -251,16 +264,25 @@ pinned Rust.
      --manifest "$RELEASE/files/release-manifest.json" --version 0.1.0 --channel crates.io
    ```
 
+   If `cargo publish` succeeded but the audit still reports `fdu-core` as `missing`, the
+   download endpoint the audit reads may not serve the new file yet, even though the
+   index Cargo waited for does.
+   Rerun the audit once a minute for up to ten minutes.
+   A `missing` that outlasts that is a failed upload.
+
 4. `fdu` now resolves `fdu-core` from crates.io rather than from the packaged sibling,
    so reproduce and compare it once more, then publish it.
-   The audit must report both crates as `identical`:
+   The audit must report both crates as `identical`; `--require-identical` makes it exit
+   3 while either is `missing`, which right after the publish may be the same lag, so
+   rerun it as in step 3:
 
    ```shell
    cargo package --locked -p fdu
    (cd target/package && grep ' fdu-0\.1\.0\.crate$' "$RELEASE/files/SHA256SUMS" | shasum -a 256 -c -)
    cargo publish --locked -p fdu
    uv run --no-project --python 3.12 python scripts/release/registry_state.py \
-     --manifest "$RELEASE/files/release-manifest.json" --version 0.1.0 --channel crates.io
+     --manifest "$RELEASE/files/release-manifest.json" --version 0.1.0 --channel crates.io \
+     --require-identical
    ```
 
 5. Install the published crate as a user does, outside the checkout, and check that it
@@ -295,12 +317,16 @@ pinned Rust.
 
 3. The audit must report the PyPI release as `identical`, and the published wheel must
    run. `--no-config` sets aside any user-level `exclude-newer` cool-off, which would
-   hide a release published minutes ago:
+   hide a release published minutes ago.
+   PyPI’s API and index can also trail an upload, so if the audit exits 3 for a
+   `missing` release, or the install cannot find `fdu==0.1.0`, rerun both as in step 3
+   of Publish the Crates:
 
    ```shell
    uv run --no-project --python 3.12 python scripts/release/registry_state.py \
-     --manifest "$RELEASE/files/release-manifest.json" --version 0.1.0 --channel pypi
-   (cd "$RELEASE" && uv tool run --no-config --from fdu==0.1.0 fdu --version)
+     --manifest "$RELEASE/files/release-manifest.json" --version 0.1.0 --channel pypi \
+     --require-identical &&
+     (cd "$RELEASE" && uv tool run --no-config --from fdu==0.1.0 fdu --version)
    ```
 
 4. Delete the token in the PyPI account settings, and add the trusted publisher for
@@ -310,17 +336,19 @@ pinned Rust.
 
 Once every channel verifies, record the final registry state and attach it with the
 evidence and artifacts to a GitHub release on the tag.
-The notes are the CHANGELOG’s `[0.1.0]` section, saved as `$RELEASE/notes.md`.
+The notes are the CHANGELOG’s `[0.1.0]` section, saved as `$RELEASE/notes.md`. The
+release is created only if the audit exits 0, which with `--require-identical` means
+every channel holds exactly the rehearsal’s files:
 
 ```shell
 uv run --no-project --python 3.12 python scripts/release/registry_state.py \
   --manifest "$RELEASE/files/release-manifest.json" --version 0.1.0 \
-  --output "$RELEASE/registry-state.json"
-gh release create v0.1.0 --repo jlevy/fdu --verify-tag --title "fdu 0.1.0" \
-  --notes-file "$RELEASE/notes.md" \
-  "$RELEASE/registry-state.json" "$RELEASE"/files/release-manifest.json \
-  "$RELEASE"/files/SHA256SUMS "$RELEASE"/files/*.crate "$RELEASE"/files/*.whl \
-  "$RELEASE"/files/fdu-0.1.0.tar.gz
+  --require-identical --output "$RELEASE/registry-state.json" &&
+  gh release create v0.1.0 --repo jlevy/fdu --verify-tag --title "fdu 0.1.0" \
+    --notes-file "$RELEASE/notes.md" \
+    "$RELEASE/registry-state.json" "$RELEASE"/files/release-manifest.json \
+    "$RELEASE"/files/SHA256SUMS "$RELEASE"/files/*.crate "$RELEASE"/files/*.whl \
+    "$RELEASE"/files/fdu-0.1.0.tar.gz
 ```
 
 ### Recover From a Partial Publication
@@ -332,7 +360,7 @@ command from the step that failed, and let its verdict decide what comes next:
 
 | Audit reports | Meaning | Next step |
 | --- | --- | --- |
-| `missing` | Nothing reached the registry. | Fix the cause, then rerun the failed step from its start, so a crate is compared again before it is published. |
+| `missing`, after the lag retry in step 3 of Publish the Crates | Nothing reached the registry. | Fix the cause, then rerun the failed step from its start, so a crate is compared again before it is published. |
 | `identical` | The upload landed, though the command reported a failure. | Continue with the next step. |
 | `conflict` | The registry holds bytes nothing tested, under a version that cannot be reused. | Follow the procedure below. |
 
