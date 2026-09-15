@@ -203,6 +203,13 @@ golden-observability:
 portability:
 	$(NODE) scripts/check-portability.mjs
 
+# The interpreter every environment that installs fdu is created with. The wheel is
+# cp312-abi3, which a free-threaded CPython cannot install, and uv picks a free-threaded
+# build when it manages one, so an unpinned `uv venv` fails the gate on such a host
+# (fdu-pd1b). The default is the version CI's Python quality job pins; UV_PYTHON, or
+# WHEEL_PYTHON on the command line, chooses another GIL-enabled CPython.
+WHEEL_PYTHON ?= $(or $(UV_PYTHON),3.12)
+
 # The parity surface needs the wheel installed, not the working tree: a shim importing
 # python/fdu/ directly would pass while the built package was broken, which is the
 # failure public_smoke already exists to prevent.
@@ -210,7 +217,7 @@ parity-venv: uv-version
 	cd crates/fdu-py && wheel_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-parity.XXXXXX")" && \
 		trap 'rm -r -- "$$wheel_dir"' EXIT && \
 		$(UV) run --frozen --only-group dev maturin build --locked --release --out "$$wheel_dir" && \
-		$(UV) venv --clear .venv-parity && \
+		$(UV) venv --clear --python $(WHEEL_PYTHON) .venv-parity && \
 		$(UV) pip install --python .venv-parity --no-index --find-links "$$wheel_dir" fdu
 
 # The two interpreters the parity harness can run against, named once. `parity-venv`
@@ -336,7 +343,7 @@ python-smoke:
 		type_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-typecheck.XXXXXX")" && \
 		trap 'rm -r -- "$$wheel_dir" "$$type_dir"' EXIT && \
 		$(UV) run --frozen --only-group dev maturin build --locked --release --out "$$wheel_dir" && \
-		$(UV) venv --clear .venv-smoke && \
+		$(UV) venv --clear --python $(WHEEL_PYTHON) .venv-smoke && \
 		$(UV) pip install --python .venv-smoke --no-index --find-links "$$wheel_dir" fdu && \
 		$(UV) run --no-project --python .venv-smoke python tests/public_smoke.py && \
 		$(UV) run --no-project --python .venv-smoke python tests/smoke.py && \
@@ -350,7 +357,7 @@ python-sdist-smoke:
 	cd crates/fdu-py && sdist_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-sdist.XXXXXX")" && \
 		trap 'rm -r -- "$$sdist_dir"' EXIT && \
 		$(UV) build --no-sources --sdist --out-dir "$$sdist_dir" && \
-		$(UV) venv --clear .venv-sdist && \
+		$(UV) venv --clear --python $(WHEEL_PYTHON) .venv-sdist && \
 		$(UV) pip install --python .venv-sdist "$$sdist_dir/fdu-"*.tar.gz && \
 		$(UV) run --no-project --python .venv-sdist python tests/public_smoke.py
 

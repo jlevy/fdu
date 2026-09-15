@@ -94,6 +94,31 @@ test("every directly uv-backed Make target depends on the version guard", () => 
   }
 });
 
+test("every environment a wheel smoke creates names a GIL-enabled interpreter", () => {
+  // uv picks a free-threaded CPython when it manages one, and the cp312-abi3 wheel cannot
+  // install there, so an environment created without --python fails the gate on such a
+  // host (fdu-pd1b). The default is CI's 3.12; UV_PYTHON chooses another.
+  const targets = ["python-smoke", "python-sdist-smoke", "parity-venv"];
+  for (const [override, expected] of [[undefined, "3.12"], ["3.13", "3.13"]]) {
+    const env = { ...process.env };
+    delete env.UV_PYTHON;
+    if (override) env.UV_PYTHON = override;
+    for (const target of targets) {
+      const result = spawnSync("make", ["--no-print-directory", "-n", target], {
+        cwd: ROOT,
+        encoding: "utf8",
+        env,
+      });
+      assert.equal(result.status, 0, result.stderr);
+      const creations = result.stdout.split("\n").filter((line) => /(?:^|\s)venv\s/.test(line));
+      assert(creations.length > 0, `${target} creates no environment`);
+      for (const line of creations) {
+        assert.match(line, new RegExp(`\\s--python ${expected.replace(".", "\\.")}\\s`), `${target}: ${line}`);
+      }
+    }
+  }
+});
+
 test("the bootstrap policy enforces one reviewed uv version in Make and CI", () => {
   const policy = JSON.parse(readFileSync(join(ROOT, "supply-chain-policy.json"), "utf8"));
   const uvRelease = policy.bootstrap.githubReleases.find(
