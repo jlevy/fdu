@@ -153,6 +153,19 @@ test("a free-threaded interpreter request is refused before any environment is c
   }
 });
 
+test("make check refuses a free-threaded request before anything but the uv floor runs", () => {
+  // Reached only through the Python targets, the refusal would follow the whole Rust gate.
+  const env = { ...process.env, UV_PYTHON: "3.14t" };
+  const make = (target) =>
+    spawnSync("make", ["--no-print-directory", "-j1", "-n", target], { cwd: ROOT, encoding: "utf8", env });
+  const check = make("check");
+  assert.notEqual(check.status, 0, check.stdout);
+  assert.match(check.stderr, /WHEEL_PYTHON=3\.14t is a free-threaded CPython/);
+  const floor = make("uv-version");
+  assert.equal(floor.status, 0, floor.stderr);
+  assert.equal(check.stdout, floor.stdout);
+});
+
 test("the bootstrap policy enforces one reviewed uv version in Make and CI", () => {
   const policy = JSON.parse(readFileSync(join(ROOT, "supply-chain-policy.json"), "utf8"));
   const uvRelease = policy.bootstrap.githubReleases.find(
