@@ -12,18 +12,16 @@ under one name.
 Full documentation, design notes, and the tool survey this is built from live in the
 repository: <https://github.com/jlevy/fdu>
 
-**Status: pre-release.** The revision-arbitrated observation/commit contract, bounded
-parallel walker, applying reconciler, checksummed snapshot and content sidecars, cache
-lifecycle, and opt-in metric profiles are tested end to end.
-The public release matrix remains open, so the crate is not published yet.
+**Status: 0.x.** A new minor release may change the API;
+[the release process](https://github.com/jlevy/fdu/blob/main/docs/project/guides/release-process.md)
+states the compatibility rules.
+The revision-arbitrated observation/commit contract, bounded parallel walker, applying
+reconciler, checksummed snapshot and content sidecars, cache lifecycle, and opt-in
+metric profiles are tested end to end.
 
-```toml
-[dependencies]
-fdu-core = { path = "crates/fdu-core" }
+```shell
+cargo add fdu-core
 ```
-
-The crate is not published yet; the version-based dependency form is a Phase 1 release
-step.
 
 The crate has no default features.
 The `watch` capability is strictly additive; without it, scan, index, and snapshot

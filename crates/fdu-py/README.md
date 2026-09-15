@@ -99,15 +99,15 @@ CLI reimplementation.
 `make python-smoke` installs the built wheel into an isolated environment and runs both
 the module contract and a direct local-wheel `uvx` check.
 
-After publication, an exact reviewed release can run without a persistent install:
+An exact reviewed release runs without a persistent install:
 
 ```shell
 uvx fdu@<version> --help
 ```
 
-That registry command is conditional until the first release is actually on PyPI.
-
-**Status: pre-release**, not yet published to PyPI.
+**Status: 0.x.** A new minor release may change the Python API;
+[the release process](https://github.com/jlevy/fdu/blob/main/docs/project/guides/release-process.md)
+states the compatibility rules.
 
 License: MIT.
 

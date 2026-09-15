@@ -11,16 +11,18 @@ One walk, many metrics, cached between runs.
 > 6.016 for dust, and 6.782 for Go gdu on an M1 Pro MacBook with a local SSD. See
 > [the full comparison](#speed-and-the-cache).
 
-> **Status: pre-release.** The observation/commit contract, bounded in-process change
-> feed, cache lifecycle, applying reconciler, CLI, and Python wheel are tested end to
-> end, and the measured-improvement loop described below is running.
+> **Status: 0.x.** A new minor release may change the Rust API, the Python API, or the
+> command line; [the release process](docs/project/guides/release-process.md) states the
+> compatibility rules.
+> The observation/commit contract, bounded in-process change feed, cache lifecycle,
+> applying reconciler, CLI, and Python wheel are tested end to end, and the
+> measured-improvement loop described below is running.
 > The portable walker has a bounded parallel pool; macOS additionally uses an audited
 > `getattrlistbulk` backend.
 > Local M1/APFS evidence is published below and is the bulk of what has been measured.
 > Linux evidence is early: real and improving, but virtualized rather than bare metal,
 > so claims whose mechanism is device latency remain untested there.
-> The full release matrix is open, and Windows builds and passes tests with no
-> performance evidence claimed at all.
+> Windows builds and passes tests, with no performance evidence claimed at all.
 > See [the Phase 1 plan](docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md).
 
 ## Start Here
@@ -257,19 +259,35 @@ bulk-attribute design — are in
 
 ## Install
 
-Until the crate is published, install from source with Rust 1.85 or newer:
+Install the command line from crates.io with Rust 1.85 or newer:
+
+```shell
+cargo install --locked fdu
+fdu --help
+```
+
+`--locked` builds against the `Cargo.lock` published with the crate.
+Without it Cargo re-resolves every dependency to the newest compatible release, which
+bypasses the review and release cool-off this project applies to its dependency set —
+see [SUPPLY-CHAIN-SECURITY.md](SUPPLY-CHAIN-SECURITY.md).
+
+The `fdu` Python package on PyPI carries the same command line as a console script, in
+prebuilt wheels for the platforms
+[the release process](docs/project/guides/release-process.md#supported-artifacts) lists,
+so running it needs no Rust toolchain:
+
+```shell
+uv tool install fdu                    # install the command line
+uvx --from fdu==<version> fdu --help   # or run an exact release without installing
+```
+
+To build from a checkout instead:
 
 ```shell
 git clone https://github.com/jlevy/fdu.git
 cd fdu
 cargo install --locked --path crates/fdu
-fdu --help
 ```
-
-`--locked` builds against the committed `Cargo.lock`. Without it Cargo re-resolves every
-dependency to the newest compatible release, which bypasses the review and release
-cool-off this project applies to its dependency set — see
-[SUPPLY-CHAIN-SECURITY.md](SUPPLY-CHAIN-SECURITY.md).
 
 The Python package builds and tests from the same workspace:
 
@@ -289,10 +307,6 @@ The split is load-bearing rather than cosmetic.
 The command line depends on `fdu-core` the way any consumer does, so it cannot reach a
 private item: anything it needs is public API, and the compiler decides that on every
 build instead of a reviewer deciding it in review.
-
-Publishing is Phase 1 work.
-`cargo install fdu` and `uvx --from fdu==<version> fdu` are future commands; neither
-package should be presented as available from crates.io or PyPI yet.
 
 ## Three Cost Layers
 
@@ -583,10 +597,8 @@ Completeness and freshness stay independent: a cache-only index may cover its co
 scope while remaining stale until it is revalidated.
 Every native method is bulk: it returns a whole structured result in one call.
 A million small zero-copy calls lose comfortably to one large call.
-The same wheel also installs an `fdu` console script backed by the native Rust CLI. Once
-a release is published, that makes an exact version directly runnable as
-`uvx --from fdu==<version> fdu`; the local wheel and `uvx` path are already exercised by
-`make python-smoke` without implying that a public release exists.
+The same wheel also installs an `fdu` console script backed by the native Rust CLI, and
+`make python-smoke` exercises it through the local wheel and `uvx`.
 
 ## How It Works
 
