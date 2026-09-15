@@ -169,6 +169,23 @@ class Bound(StrEnum):
     ALL = "all"
 
 
+class IgnoredEntries(StrEnum):
+    """Which entries a report selects by their ``.gitignore`` classification.
+
+    A selection rather than a scan setting: every entry is classified, so choosing a side
+    never rescans. The command line spells ``EXCLUDE`` and ``ONLY`` as
+    ``--exclude-ignored`` and ``--only-ignored``. Anything but ``INCLUDE`` needs a scan
+    that reads ``.gitignore``, and is refused under ``ScanOptions(read_controls=False)``.
+    """
+
+    #: Every entry; rows carry their ignored share.
+    INCLUDE = "include"
+    #: Only entries no ``.gitignore`` rule ignores.
+    EXCLUDE = "exclude"
+    #: Only entries a ``.gitignore`` rule ignores.
+    ONLY = "only"
+
+
 class ControlRefusalReason(StrEnum):
     """Which bound refused a ``.gitignore`` instead of applying its rules."""
 
@@ -231,11 +248,11 @@ class ScanOptions:
     max_depth: int | None = None
     one_filesystem: bool = False
     #: Observe ``.gitignore`` control state, as the engine's ``ScanConfig.read_controls``.
-    #: On by default, so an index from :func:`fdu.open` or :func:`fdu.scan`, and a watch
-    #: over it, keep the exact control state. Off, they read no control file and
-    #: :func:`fdu.open` shares one snapshot scope with :func:`fdu.report`.
-    #: :func:`fdu.report` never observes control state and ignores this field and
-    #: ``control_budget``, as the engine's report planner does.
+    #: On by default for :func:`fdu.open`, :func:`fdu.scan`, :func:`fdu.report`, and a
+    #: watch, so an index keeps the exact control state and every report row carries its
+    #: ignored share. Off, no control file is read, rows carry ``ignored=None`` rather than
+    #: a zero share, a selection by ``IgnoredEntries`` is refused, and the snapshot is of a
+    #: separate scope. The command line spells it ``--no-gitignore``.
     read_controls: bool = True
     #: Bytes of retained ``.gitignore`` charge before further files are refused, as the
     #: engine's ``ScanConfig.control_budget``: an int, a size such as ``"16MiB"``,
@@ -282,6 +299,9 @@ class Selection:
     sort: SortKey | None = None
     reverse: bool = False
     size: SizeMetric = SizeMetric.ALLOCATED
+    #: Entries to consider by ``.gitignore`` classification. Sizes, ordering, and
+    #: ``min_size`` follow the entries selected.
+    ignored: IgnoredEntries = IgnoredEntries.INCLUDE
 
     def __post_init__(self) -> None:
         # A bare string is iterable, so without this guard `include="*.rs"` would run
@@ -407,12 +427,31 @@ class Child:
 
 
 @dataclass(frozen=True, slots=True)
+class IgnoredTally:
+    """The part of a row's tallies that ``.gitignore`` rules ignore.
+
+    An entry is ignored when a rule matches it or any directory above it. Counted over the
+    selected entries, like the row itself. Below a ``.gitignore`` the control budget
+    refused (``Status.ignore_rules``) the split is not exact in either direction; the
+    sizes it divides are.
+    """
+
+    files: int
+    dirs: int
+    bytes: int
+    allocated: int
+
+
+@dataclass(frozen=True, slots=True)
 class SummaryRow:
     files: int
     dirs: int
     bytes: int
     allocated: int
     newest_mtime_ns: int | None
+    #: The ignored share, zero when nothing is ignored, or ``None`` when no ``.gitignore``
+    #: was read.
+    ignored: IgnoredTally | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -424,6 +463,9 @@ class ExtensionRow:
     files: int
     bytes: int
     allocated: int
+    #: The ignored share of this extension's files, or ``None`` when no ``.gitignore`` was
+    #: read.
+    ignored: ExtensionTally | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -433,6 +475,8 @@ class FileRow:
     bytes: int
     allocated: int
     mtime_ns: int
+    #: Whether ``.gitignore`` rules ignore this entry, or ``None`` when none was read.
+    ignored: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -447,6 +491,8 @@ class TreeNode:
     newest_mtime_ns: int | None
     truncated: bool
     children: tuple[TreeNode, ...]
+    #: The ignored share of this subtree, or ``None`` when no ``.gitignore`` was read.
+    ignored: IgnoredTally | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -801,6 +847,39 @@ def _metric_row(value: dict[str, Any]) -> MetricRow:
     )
 
 
+def _ignored_tally(value: object) -> IgnoredTally | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TypeError("an ignored share must be an object or null")
+    share = cast(dict[str, Any], value)
+    return IgnoredTally(
+        files=int(share["files"]),
+        dirs=int(share["dirs"]),
+        bytes=int(share["bytes"]),
+        allocated=int(share["allocated"]),
+    )
+
+
+def _ignored_files(value: object) -> ExtensionTally | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TypeError("an ignored share must be an object or null")
+    share = cast(dict[str, Any], value)
+    return ExtensionTally(
+        files=int(share["files"]), bytes=int(share["bytes"]), allocated=int(share["allocated"])
+    )
+
+
+def _ignored_flag(value: object) -> bool | None:
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise TypeError("a file row's ignored flag must be a boolean or null")
+    return value
+
+
 def _tree(value: dict[str, Any]) -> TreeNode:
     return TreeNode(
         name=str(value["name"]),
@@ -815,6 +894,7 @@ def _tree(value: dict[str, Any]) -> TreeNode:
         ),
         truncated=bool(value["truncated"]),
         children=tuple(_tree(child) for child in value["children"]),
+        ignored=_ignored_tally(value["ignored"]),
     )
 
 
@@ -850,13 +930,42 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
             row = raw["summary"]
             if not isinstance(row, dict):
                 raise TypeError("summary section must be an object")
-            sections.append(SummarySection(view, SummaryRow(**row)))
+            sections.append(
+                SummarySection(
+                    view,
+                    SummaryRow(
+                        files=int(row["files"]),
+                        dirs=int(row["dirs"]),
+                        bytes=int(row["bytes"]),
+                        allocated=int(row["allocated"]),
+                        newest_mtime_ns=(
+                            int(row["newest_mtime_ns"])
+                            if row["newest_mtime_ns"] is not None
+                            else None
+                        ),
+                        ignored=_ignored_tally(row["ignored"]),
+                    ),
+                )
+            )
         elif view is View.EXTENSIONS:
             rows = raw["extensions"]
             if not isinstance(rows, list):
                 raise TypeError("extensions section must be a list")
             sections.append(
-                ExtensionsSection(view, tuple(ExtensionRow(**row) for row in rows), _bound(raw))
+                ExtensionsSection(
+                    view,
+                    tuple(
+                        ExtensionRow(
+                            extension=str(row["extension"]),
+                            files=int(row["files"]),
+                            bytes=int(row["bytes"]),
+                            allocated=int(row["allocated"]),
+                            ignored=_ignored_files(row["ignored"]),
+                        )
+                        for row in rows
+                    ),
+                    _bound(raw),
+                )
             )
         elif view in (View.FILES, View.LARGEST, View.RECENT):
             rows = raw["files"]
@@ -872,6 +981,7 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                             bytes=int(row["bytes"]),
                             allocated=int(row["allocated"]),
                             mtime_ns=int(row["mtime_ns"]),
+                            ignored=_ignored_flag(row["ignored"]),
                         )
                         for row in rows
                     ),

@@ -105,6 +105,7 @@ fn parse_selection(dict: Option<&Bound<'_, PyDict>>, now: SystemTime) -> PyResul
     let modified_since = optional_string(dict, "modified_since")?;
     let modified_before = optional_string(dict, "modified_before")?;
     let kind = optional_strings(dict, "kind")?;
+    let ignored = optional_string(dict, "ignored")?;
     let depth = optional_string(dict, "depth")?;
     let limit = optional_string(dict, "limit")?;
     let sort = optional_string(dict, "sort")?;
@@ -129,6 +130,7 @@ fn parse_selection(dict: Option<&Bound<'_, PyDict>>, now: SystemTime) -> PyResul
         modified_since.as_deref(),
         modified_before.as_deref(),
         kind,
+        ignored.as_deref(),
         depth.as_deref(),
         limit.as_deref(),
         sort.as_deref(),

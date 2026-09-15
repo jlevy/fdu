@@ -55,12 +55,13 @@ def check_the_one_shot_retains_nothing(root: Path) -> None:
     """`fdu.report` runs the contract the command line runs, not a session.
 
     `open` retains an index and writes a snapshot, which is right for a caller asking many
-    questions and wrong for one asking a single question -- an unfiltered summary is
-    answered by a transient tier that retains nothing, so a session cached state the walk
-    never saved and a later cache-only read could see it (fdu-4msv).
+    questions and wrong for one asking a single question -- an unfiltered summary that reads
+    no `.gitignore` is answered by a transient tier that retains nothing, so a session cached
+    state the walk never saved and a later cache-only read could see it (fdu-4msv).
     """
 
-    report = fdu.report(root, fdu.Query(views=(fdu.View.SUMMARY,)))
+    blind = fdu.ScanOptions(read_controls=False)
+    report = fdu.report(root, fdu.Query(views=(fdu.View.SUMMARY,)), scan=blind)
     assert report.status.source is not None
 
     # Rendering twice must not cost a second walk: the handle owns the finished report.
@@ -72,7 +73,9 @@ def check_the_one_shot_retains_nothing(root: Path) -> None:
     # an argument error sent a caller looking in the wrong place, and made the CLI shim
     # exit 2 as a usage error where the command line exits 1.
     try:
-        fdu.report(root, fdu.Query(views=(fdu.View.SUMMARY,)), cache=fdu.CachePolicy.ONLY)
+        fdu.report(
+            root, fdu.Query(views=(fdu.View.SUMMARY,)), cache=fdu.CachePolicy.ONLY, scan=blind
+        )
     except fdu.InvalidArgumentError as error:  # pragma: no cover - the regression
         raise AssertionError(f"an unusable snapshot is not an argument error: {error}") from None
     except fdu.FduError:
@@ -323,11 +326,10 @@ def check_every_view(root: Path) -> None:
 
 
 def check_an_index_can_opt_out_of_control_state() -> None:
-    """A default open or scan reads control files; one that opts out shares a report's scope.
+    """A default open, scan, or report reads control files; one that opts out reads none.
 
-    A request that turns ``read_controls`` off reads no control file, and its snapshot has a
-    one-shot report's scope. A watch continues its index's scope, so it inherits the same
-    choice.
+    A request that turns ``read_controls`` off reads no control file, and its snapshot is of
+    a separate scope. A watch continues its index's scope, so it inherits the same choice.
     """
 
     root = Path(tempfile.mkdtemp(prefix="fdu-public-controls-"))
@@ -370,18 +372,83 @@ def check_an_index_can_opt_out_of_control_state() -> None:
     assert lifted.status.ignore_rules == fdu.ControlObservation(budget=None, applied=1, refused=0)
     assert lifted.report().notes == ()
 
-    # A report and an opted-out open share one snapshot scope, so that open starts warm; a
-    # default open observes control state the report's snapshot never held, and scans cold.
+    # A default report and a default open share one snapshot scope, so that open starts
+    # warm; an opted-out open wants a scope the report's snapshot is not, and scans cold.
     (root / ".gitignore").write_text("*.log\n", encoding="utf-8")
     assert fdu.cache_path(root) is not None
     try:
         fdu.report(root, fdu.Query(views=(fdu.View.TREE,)))
-        assert fdu.open(root, scan=opted_out).status.source is fdu.ReportSource.WARM_REVALIDATE
-        cached = fdu.open(root, cache=fdu.CachePolicy.ONLY, scan=opted_out)
+        assert fdu.open(root).status.source is fdu.ReportSource.WARM_REVALIDATE
+        cached = fdu.open(root, cache=fdu.CachePolicy.ONLY)
         assert cached.status.source is fdu.ReportSource.CACHE_ONLY
-        assert fdu.open(root).status.source is fdu.ReportSource.COLD_SCAN
+        assert fdu.open(root, scan=opted_out).status.source is fdu.ReportSource.COLD_SCAN
     finally:
         fdu.clear_cache(root)
+
+
+def check_reports_carry_the_ignored_share() -> None:
+    """Every row a report draws carries its ignored share, and a selection picks one side.
+
+    ``None`` means no ``.gitignore`` was read, never that nothing is ignored, and selecting
+    by ignored state without the rules is refused rather than answered.
+    """
+
+    root = Path(tempfile.mkdtemp(prefix="fdu-public-ignored-"))
+    (root / ".gitignore").write_text("dist/\n", encoding="utf-8")
+    (root / "dist").mkdir()
+    (root / "dist" / "bundle.js").write_text("x" * 100, encoding="utf-8")
+    (root / "src").mkdir()
+    (root / "src" / "main.rs").write_text("fn main() {}", encoding="utf-8")
+    views = (fdu.View.SUMMARY, fdu.View.TREE, fdu.View.EXTENSIONS, fdu.View.FILES)
+    apparent = fdu.SizeMetric.APPARENT
+
+    report = fdu.report(
+        root, fdu.Query(views=views, selection=fdu.Selection(size=apparent)), cache=fdu.CachePolicy.OFF
+    )
+    summary, tree, extensions, files = report.sections
+    assert isinstance(summary, fdu.SummarySection), summary
+    share = summary.summary.ignored
+    assert share is not None and (share.files, share.dirs, share.bytes) == (1, 1, 100), share
+    assert isinstance(tree, fdu.TreeSection), tree
+    by_name = {child.name: child.ignored for child in tree.tree.children}
+    assert by_name["dist"] is not None and by_name["dist"].bytes == 100, by_name
+    assert by_name["src"] == fdu.IgnoredTally(0, 0, 0, 0), by_name
+    assert isinstance(extensions, fdu.ExtensionsSection), extensions
+    js = next(row for row in extensions.extensions if row.extension == ".js")
+    assert js.ignored is not None and js.ignored.bytes == 100, js
+    assert isinstance(files, fdu.FilesSection), files
+    flags = {row.path.as_posix(): row.ignored for row in files.files}
+    assert (flags["dist"], flags["dist/bundle.js"], flags["src/main.rs"]) == (True, True, False)
+    assert "(100 B ignored)" in report.render(fdu.Format.TEXT)
+
+    kept_query = fdu.Query(
+        views=(fdu.View.SUMMARY,),
+        selection=fdu.Selection(size=apparent, ignored=fdu.IgnoredEntries.EXCLUDE),
+    )
+    (kept,) = fdu.report(root, kept_query, cache=fdu.CachePolicy.OFF).sections
+    assert isinstance(kept, fdu.SummarySection), kept
+    assert (kept.summary.files, kept.summary.bytes) == (2, 18), kept
+    assert kept.summary.ignored == fdu.IgnoredTally(0, 0, 0, 0), kept
+    (from_index,) = fdu.scan(root).report(kept_query).sections
+    assert from_index == kept, (from_index, kept)
+
+    blind = fdu.ScanOptions(read_controls=False)
+    (unread,) = fdu.report(
+        root, fdu.Query(views=(fdu.View.SUMMARY,)), cache=fdu.CachePolicy.OFF, scan=blind
+    ).sections
+    assert isinstance(unread, fdu.SummarySection) and unread.summary.ignored is None, unread
+    only_query = fdu.Query(selection=fdu.Selection(ignored=fdu.IgnoredEntries.ONLY))
+    for attempt in (
+        lambda: fdu.report(root, only_query, cache=fdu.CachePolicy.OFF, scan=blind),
+        lambda: fdu.scan(root, scan=blind).report(only_query),
+    ):
+        try:
+            attempt()
+        except fdu.InvalidArgumentError as error:
+            expected = "ignored=only needs .gitignore classification, and read_controls turned it off"
+            assert expected in str(error), error
+        else:
+            raise AssertionError("selecting by ignored state without the rules must be refused")
 
 
 def main() -> None:
@@ -398,6 +465,7 @@ def main() -> None:
     check_the_list_grammar_reaches_python(root)
     check_the_one_shot_retains_nothing(root)
     check_an_index_can_opt_out_of_control_state()
+    check_reports_carry_the_ignored_share()
     check_watch_reports_its_own_index(root)
     check_render_matches_the_cli(
         root, str(Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu"))
@@ -549,10 +617,9 @@ def main() -> None:
     for volatile in ("scan_started_at", "generated_at", "source"):
         cli_wire.pop(volatile)
         wire.pop(volatile)
-    # The index read `.gitignore` control state and the command line reads none, and the
-    # envelope says so on each side rather than agreeing on a value neither observed.
-    assert cli_wire.pop("ignore_rules") is None, cli_wire
-    assert wire.pop("ignore_rules") == {
+    # Both surfaces read `.gitignore` control state by default, so the envelopes agree on it
+    # as they agree on every row's ignored share.
+    assert wire["ignore_rules"] == {
         "budget": 4 * 1024 * 1024,
         "applied": 0,
         "refused": 0,

@@ -24,9 +24,9 @@ use pyo3::types::{PyDict, PyList};
 
 use fdu_core::content::{AnalysisRequest, AnalysisSet, CoverageReason};
 use fdu_core::query::{
-    AxisNames, Bound as Bound_, MetricRow, MetricSummary, Pattern, Provenance, Query, Report,
-    ReportSource, Section, Selection, SizeMetric, SortKey, SummaryRow, TreeNode, ViewSpec,
-    document_words,
+    AxisNames, Bound as Bound_, IgnoredEntries, IgnoredTally, MetricRow, MetricSummary, Pattern,
+    Provenance, Query, Report, ReportSource, Section, Selection, SizeMetric, SortKey, SummaryRow,
+    TreeNode, ViewSpec, document_words,
 };
 use fdu_core::watch::WatchConfig;
 use fdu_core::watch_session::{ChangeKind, Session};
@@ -202,6 +202,7 @@ impl PyIndex {
         modified_since = None,
         modified_before = None,
         kind = None,
+        ignored = None,
         depth = None,
         limit = None,
         sort = None,
@@ -220,6 +221,7 @@ impl PyIndex {
         modified_since: Option<&str>,
         modified_before: Option<&str>,
         kind: Option<Vec<String>>,
+        ignored: Option<&str>,
         depth: Option<&str>,
         limit: Option<&str>,
         sort: Option<&str>,
@@ -235,6 +237,7 @@ impl PyIndex {
             modified_since,
             modified_before,
             kind,
+            ignored,
             depth,
             limit,
             sort,
@@ -262,6 +265,7 @@ impl PyIndex {
         modified_since = None,
         modified_before = None,
         kind = None,
+        ignored = None,
         depth = None,
         limit = None,
         sort = None,
@@ -279,6 +283,7 @@ impl PyIndex {
         modified_since: Option<&str>,
         modified_before: Option<&str>,
         kind: Option<Vec<String>>,
+        ignored: Option<&str>,
         depth: Option<&str>,
         limit: Option<&str>,
         sort: Option<&str>,
@@ -294,6 +299,7 @@ impl PyIndex {
             modified_since,
             modified_before,
             kind,
+            ignored,
             depth,
             limit,
             sort,
@@ -318,6 +324,7 @@ impl PyIndex {
         modified_since = None,
         modified_before = None,
         kind = None,
+        ignored = None,
         depth = None,
         limit = None,
         sort = None,
@@ -336,6 +343,7 @@ impl PyIndex {
         modified_since: Option<&str>,
         modified_before: Option<&str>,
         kind: Option<Vec<String>>,
+        ignored: Option<&str>,
         depth: Option<&str>,
         limit: Option<&str>,
         sort: Option<&str>,
@@ -354,6 +362,7 @@ impl PyIndex {
             modified_since,
             modified_before,
             kind,
+            ignored,
             depth,
             limit,
             sort,
@@ -361,6 +370,9 @@ impl PyIndex {
             size,
             words_per_page,
         )?;
+
+        // Refused here, in the API's own names, rather than as the session's typed error.
+        query.validate_controls(self.inner.observes_controls()).map_err(PyValueError::new_err)?;
 
         // The index is cloned into the session: a watcher owns its own handle, so closing
         // the feed cannot disturb the caller's index.
@@ -545,6 +557,7 @@ impl PyIndex {
         modified_since: Option<&str>,
         modified_before: Option<&str>,
         kind: Option<Vec<String>>,
+        ignored: Option<&str>,
         depth: Option<&str>,
         limit: Option<&str>,
         sort: Option<&str>,
@@ -566,6 +579,7 @@ impl PyIndex {
             modified_since,
             modified_before,
             kind,
+            ignored,
             depth,
             limit,
             sort,
@@ -573,6 +587,7 @@ impl PyIndex {
             size,
             words_per_page,
         )?;
+        query.validate_controls(self.inner.observes_controls()).map_err(PyValueError::new_err)?;
         let provenance = Provenance {
             scan_started_at: self.scan_started_at,
             generated_at: now,
@@ -749,6 +764,10 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
                     item.set_item("files", row.files)?;
                     item.set_item("bytes", row.bytes)?;
                     item.set_item("allocated", row.allocated)?;
+                    item.set_item(
+                        "ignored",
+                        row.ignored.map(|share| ignored_dict(py, share, false)).transpose()?,
+                    )?;
                     list.append(item)?;
                 }
                 entry.set_item("extensions", list)?;
@@ -768,6 +787,7 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
                     item.set_item("bytes", row.bytes)?;
                     item.set_item("allocated", row.allocated)?;
                     item.set_item("mtime_ns", row.mtime_ns)?;
+                    item.set_item("ignored", row.ignored)?;
                     list.append(item)?;
                 }
                 entry.set_item("files", list)?;
@@ -888,6 +908,22 @@ fn analysis_set_labels(profile: AnalysisSet) -> Vec<&'static str> {
     profile.labels()
 }
 
+/// A row's ignored share as a dict, with `dirs` where the row counts directories.
+fn ignored_dict(
+    py: Python<'_>,
+    share: IgnoredTally,
+    with_dirs: bool,
+) -> PyResult<Bound<'_, PyDict>> {
+    let dict = PyDict::new(py);
+    dict.set_item("files", share.files)?;
+    if with_dirs {
+        dict.set_item("dirs", share.dirs)?;
+    }
+    dict.set_item("bytes", share.bytes)?;
+    dict.set_item("allocated", share.allocated)?;
+    Ok(dict)
+}
+
 /// One summary row as a dict.
 fn summary_dict<'py>(py: Python<'py>, row: &SummaryRow) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new(py);
@@ -895,6 +931,7 @@ fn summary_dict<'py>(py: Python<'py>, row: &SummaryRow) -> PyResult<Bound<'py, P
     dict.set_item("dirs", row.dirs)?;
     dict.set_item("bytes", row.bytes)?;
     dict.set_item("allocated", row.allocated)?;
+    dict.set_item("ignored", row.ignored.map(|share| ignored_dict(py, share, true)).transpose()?)?;
     dict.set_item("newest_mtime_ns", row.newest_mtime_ns)?;
     Ok(dict)
 }
@@ -912,6 +949,10 @@ fn tree_dict<'py>(py: Python<'py>, root: &TreeNode) -> PyResult<Bound<'py, PyDic
         dict.set_item("allocated", node.allocated)?;
         dict.set_item("files", node.files)?;
         dict.set_item("dirs", node.dirs)?;
+        dict.set_item(
+            "ignored",
+            node.ignored.map(|share| ignored_dict(py, share, true)).transpose()?,
+        )?;
         dict.set_item("newest_mtime_ns", node.newest_mtime_ns)?;
         dict.set_item("truncated", node.truncated)?;
         dict.set_item("children", PyList::empty(py))?;
@@ -1128,6 +1169,7 @@ fn build_query_at(
     modified_since: Option<&str>,
     modified_before: Option<&str>,
     kind: Option<Vec<String>>,
+    ignored: Option<&str>,
     depth: Option<&str>,
     limit: Option<&str>,
     sort: Option<&str>,
@@ -1162,6 +1204,11 @@ fn build_query_at(
     }
     for value in kind.unwrap_or_default() {
         selection.kinds.push(parse_kind(&value)?);
+    }
+    if let Some(value) = ignored {
+        selection.ignored = IgnoredEntries::parse(value).map_err(|expected| {
+            PyValueError::new_err(format!("invalid ignored {value:?}: {expected}"))
+        })?;
     }
     if let Some(value) = sort {
         selection.sort = Some(parse_sort(value)?);
@@ -1218,10 +1265,13 @@ impl PyOneShot {
 ///
 /// `open` takes the session path: it retains an index and writes a snapshot, which is
 /// right for a caller asking many questions and wrong for one asking a single question.
-/// An unfiltered summary is answered by a transient tier that retains nothing, so writing
-/// a snapshot for it caches state the walk never saved -- and a Python caller therefore
-/// left cache state on a tree that the same command would not have, which a later
-/// cache-only read could see (fdu-4msv).
+/// An unfiltered summary that reads no `.gitignore` is answered by a transient tier that
+/// retains nothing, so writing a snapshot for it caches state the walk never saved -- and a
+/// Python caller therefore left cache state on a tree that the same command would not
+/// have, which a later cache-only read could see (fdu-4msv).
+///
+/// `read_controls` and `control_budget` are the engine's, on and 4 MiB by default as for
+/// [`open`]; the report observes `.gitignore` as they say (fdu-elnn).
 #[pyfunction]
 #[pyo3(signature = (
     root,
@@ -1229,6 +1279,8 @@ impl PyOneShot {
     cache = "auto",
     max_depth = None,
     one_filesystem = false,
+    read_controls = true,
+    control_budget = None,
     analyze = "none",
     analysis_workers = 0,
     views = None,
@@ -1238,6 +1290,7 @@ impl PyOneShot {
     modified_since = None,
     modified_before = None,
     kind = None,
+    ignored = None,
     depth = None,
     limit = None,
     sort = None,
@@ -1256,6 +1309,8 @@ fn report_once(
     cache: &str,
     max_depth: Option<usize>,
     one_filesystem: bool,
+    read_controls: bool,
+    control_budget: Option<&str>,
     analyze: &str,
     analysis_workers: usize,
     views: Option<Vec<String>>,
@@ -1265,6 +1320,7 @@ fn report_once(
     modified_since: Option<&str>,
     modified_before: Option<&str>,
     kind: Option<Vec<String>>,
+    ignored: Option<&str>,
     depth: Option<&str>,
     limit: Option<&str>,
     sort: Option<&str>,
@@ -1274,7 +1330,13 @@ fn report_once(
 ) -> PyResult<PyOneShot> {
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
-        scan: ScanConfig { max_depth, one_filesystem, ..ScanConfig::default() },
+        scan: ScanConfig {
+            max_depth,
+            one_filesystem,
+            read_controls,
+            control_budget: parse_control_budget(control_budget)?,
+            ..ScanConfig::default()
+        },
         cache_path: fdu_core::default_cache_path(&root),
         policy: parse_cache_policy(cache)?,
         analysis,
@@ -1290,6 +1352,7 @@ fn report_once(
         modified_since,
         modified_before,
         kind,
+        ignored,
         depth,
         limit,
         sort,
@@ -1297,6 +1360,10 @@ fn report_once(
         size,
         words_per_page,
     )?;
+
+    // Refused before any scan, in the API's own names; the engine refuses the same request
+    // with a typed error for a Rust caller.
+    query.validate_controls(config.scan.read_controls).map_err(PyValueError::new_err)?;
 
     let prepared = py.detach(|| fdu_core::prepare_report(&root, &config, &query));
     let (report, pending_save, _performance) = prepared.map_err(to_py_err)?;

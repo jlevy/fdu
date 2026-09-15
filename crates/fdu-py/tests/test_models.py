@@ -14,10 +14,17 @@ from fdu import (
     Bound,
     CachePolicy,
     EntryKind,
+    ExtensionsSection,
+    ExtensionTally,
+    FilesSection,
+    IgnoredEntries,
+    IgnoredTally,
     Query,
     ScanOptions,
     Selection,
     SizeMetric,
+    SummarySection,
+    TreeSection,
     View,
     opened,
 )
@@ -44,9 +51,13 @@ def test_public_options_are_typed_immutable_values() -> None:
 def test_public_defaults_match_cli_semantics() -> None:
     assert CachePolicy.AUTO.value == "auto"
     assert ScanOptions() == ScanOptions(max_depth=None, one_filesystem=False)
-    # The one deliberate departure: an index observes `.gitignore` control state by
-    # default, while the command line turns it off because no command-line view reads it.
+    # Every surface observes `.gitignore` by default, as the command line does unless
+    # `--no-gitignore`, and selects every entry whatever its classification.
     assert ScanOptions().read_controls is True
+    assert Selection().ignored is IgnoredEntries.INCLUDE
+    assert _query_kwargs(Query())["ignored"] == "include"
+    only = Query(selection=Selection(ignored=IgnoredEntries.ONLY))
+    assert _query_kwargs(only)["ignored"] == "only"
     assert AnalysisOptions().analyze == Analysis.NONE
     # Empty means "let the analyzers choose", which is the CLI semantics this test is
     # named for: `--analyze code` with no `--view` reports languages, not tree.
@@ -200,6 +211,107 @@ def test_malformed_wire_reports_fail_loudly() -> None:
     # Wire validation must be real raises, not asserts, so it survives python -O.
     with pytest.raises(TypeError, match="sections"):
         report_from_dict({"reports": "nope"})
+
+
+def _envelope(sections: list[dict[str, object]]) -> dict[str, object]:
+    return {
+        "schema": "fdu.report/5",
+        "generator": "fdu 0.1.0",
+        "root": "/root",
+        "scan_started_at": None,
+        "generated_at": "2026-09-15T00:00:00.000000000Z",
+        "source": "cold_scan",
+        "freshness": "fresh",
+        "complete": True,
+        "errors": [],
+        "ignore_rules": None,
+        "reports": sections,
+    }
+
+
+def test_every_row_parses_its_ignored_share_and_keeps_null_distinct_from_zero() -> None:
+    share = {"files": 1, "dirs": 1, "bytes": 128, "allocated": 4096}
+    leaf = {
+        "name": "dist",
+        "path": "dist",
+        "kind": "dir",
+        "bytes": 128,
+        "allocated": 4096,
+        "files": 1,
+        "dirs": 0,
+        "ignored": {**share, "dirs": 0},
+        "newest_mtime_ns": 1,
+        "truncated": False,
+        "children": [],
+    }
+    root = {**leaf, "name": ".", "path": "", "dirs": 1, "ignored": share, "children": [leaf]}
+    summary = {"files": 2, "dirs": 1, "bytes": 164, "allocated": 8192, "ignored": share}
+    report = report_from_dict(
+        _envelope(
+            [
+                {"view": "summary", "summary": {**summary, "newest_mtime_ns": 2}},
+                {"view": "tree", "tree": root},
+                {
+                    "view": "extensions",
+                    "bound": None,
+                    "extensions": [
+                        {
+                            "extension": ".gz",
+                            "files": 1,
+                            "bytes": 128,
+                            "allocated": 4096,
+                            "ignored": {"files": 1, "bytes": 128, "allocated": 4096},
+                        },
+                        {
+                            "extension": ".rs",
+                            "files": 1,
+                            "bytes": 36,
+                            "allocated": 4096,
+                            "ignored": {"files": 0, "bytes": 0, "allocated": 0},
+                        },
+                    ],
+                },
+                {
+                    "view": "files",
+                    "bound": None,
+                    "files": [
+                        {
+                            "path": "dist",
+                            "kind": "dir",
+                            "bytes": 0,
+                            "allocated": 0,
+                            "mtime_ns": 0,
+                            "ignored": True,
+                        },
+                        {
+                            "path": "src",
+                            "kind": "dir",
+                            "bytes": 0,
+                            "allocated": 0,
+                            "mtime_ns": 0,
+                            "ignored": None,
+                        },
+                    ],
+                },
+            ]
+        )
+    )
+    summary_section, tree_section, extensions_section, files_section = report.sections
+    assert isinstance(summary_section, SummarySection)
+    assert summary_section.summary.ignored == IgnoredTally(1, 1, 128, 4096)
+    assert isinstance(tree_section, TreeSection)
+    assert tree_section.tree.ignored == IgnoredTally(1, 1, 128, 4096)
+    assert tree_section.tree.children[0].ignored == IgnoredTally(1, 0, 128, 4096)
+    assert isinstance(extensions_section, ExtensionsSection)
+    gz, rs = extensions_section.extensions
+    assert gz.ignored == ExtensionTally(1, 128, 4096)
+    assert rs.ignored == ExtensionTally(0, 0, 0), "a zero share is not null"
+    assert isinstance(files_section, FilesSection)
+    assert [row.ignored for row in files_section.files] == [True, None]
+
+    malformed = {**summary, "newest_mtime_ns": 2, "ignored": 1}
+    with pytest.raises(TypeError, match="ignored"):
+        report_from_dict(_envelope([{"view": "summary", "summary": malformed}]))
 
 
 @pytest.mark.parametrize(

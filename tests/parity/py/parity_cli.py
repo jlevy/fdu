@@ -128,6 +128,9 @@ class Args:
         self.scan_depth: int | None = None
         self.one_filesystem = False
         self.gitignore_budget: str | None = None
+        self.no_gitignore = False
+        self.exclude_ignored = False
+        self.only_ignored = False
         self.include: list[str] = []
         self.exclude: list[str] = []
         self.min_size: str | None = None
@@ -191,6 +194,12 @@ def parse_args(argv: list[str]) -> Args:
             args.one_filesystem = True
         elif flag == "--gitignore-budget":
             args.gitignore_budget = take()
+        elif flag == "--no-gitignore":
+            args.no_gitignore = True
+        elif flag == "--exclude-ignored":
+            args.exclude_ignored = True
+        elif flag == "--only-ignored":
+            args.only_ignored = True
         elif flag == "--include":
             args.include.append(take())
         elif flag == "--exclude":
@@ -264,6 +273,29 @@ def _decline(flag: str) -> int:
     return 2
 
 
+def parse_ignored(args: Args) -> fdu.IgnoredEntries:
+    """Two flags on the command line, one field in the API, so only the CLI can pass both."""
+
+    if args.exclude_ignored and args.only_ignored:
+        raise UsageError(
+            "--exclude-ignored and --only-ignored select opposite entries; use one of them"
+        )
+    if args.exclude_ignored:
+        return fdu.IgnoredEntries.EXCLUDE
+    if args.only_ignored:
+        return fdu.IgnoredEntries.ONLY
+    return fdu.IgnoredEntries.INCLUDE
+
+
+def scan_options(args: Args) -> fdu.ScanOptions:
+    return fdu.ScanOptions(
+        max_depth=args.scan_depth,
+        one_filesystem=args.one_filesystem,
+        read_controls=not args.no_gitignore,
+        control_budget=args.gitignore_budget,
+    )
+
+
 def build_query(args: Args) -> fdu.Query:
     selection = fdu.Selection(
         include=tuple(args.include),
@@ -277,6 +309,7 @@ def build_query(args: Args) -> fdu.Query:
         sort=args.sort,
         reverse=args.reverse,
         size=args.size,
+        ignored=parse_ignored(args),
     )
     # An empty view tuple means "let the requested analyzers choose", which is the
     # library's own default derivation rather than a default spelled out here.
@@ -384,13 +417,8 @@ def _repaint(args: Args, watch: fdu.Watch) -> None:
 
 
 def _open(args: Args) -> fdu.Index:
-    scan = fdu.ScanOptions(
-        max_depth=args.scan_depth,
-        one_filesystem=args.one_filesystem,
-        control_budget=args.gitignore_budget,
-    )
     analysis = fdu.AnalysisOptions(analyze=args.analyze, workers=args.analysis_workers)
-    return fdu.open(args.root or ".", cache=args.cache, scan=scan, analysis=analysis)
+    return fdu.open(args.root or ".", cache=args.cache, scan=scan_options(args), analysis=analysis)
 
 
 def render(args: Args, report: fdu.Report) -> str:
@@ -438,11 +466,7 @@ def main(argv: list[str] | None = None) -> int:
         args.root or ".",
         build_query(args),
         cache=args.cache,
-        scan=fdu.ScanOptions(
-            max_depth=args.scan_depth,
-            one_filesystem=args.one_filesystem,
-            control_budget=args.gitignore_budget,
-        ),
+        scan=scan_options(args),
         analysis=fdu.AnalysisOptions(analyze=args.analyze, workers=args.analysis_workers),
     )
     sys.stdout.write(render(args, report))
