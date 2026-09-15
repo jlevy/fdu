@@ -1109,6 +1109,11 @@ fn walk_hook(path: &Path) -> Option<WalkHook> {
 }
 
 /// A reconciliation's listing of `dir`, followed by any error a test hook injects.
+///
+/// Callers bind the result to `listing` and iterate it as `for … in listing`, because the
+/// admission audit (`scripts/check-admission-sites.mjs`) counts routed listing loops by that
+/// shape. Keep the binding when editing a call site; dropping it silently removes the loop
+/// from the audit, whose expected count would then look too high rather than wrong.
 #[cfg(test)]
 fn reconcile_listing(
     listing: fs::ReadDir,

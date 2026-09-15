@@ -95,8 +95,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Opened-root lifecycle reporting:
   - A panicking worker wakes a blocked `changes()` poll, which returns
     `OpenedWorkerPanicked` after delivering the commits retained before the panic.
-    A panic inside a commit poisons the index and leaves nothing to deliver, and the
-    poll still names the panic rather than the poisoned lock.
+    A panic inside a commit poisons the index and leaves nothing to deliver; a poll
+    parked on the journal names the panic, while a poll already reading at that moment
+    can report the poisoned lock instead.
     `close()` reports the earliest failure, ranking a panic ahead of the poisoned lock
     it left behind.
   - A refresh or observation pass records each directory it listed as complete unless an
