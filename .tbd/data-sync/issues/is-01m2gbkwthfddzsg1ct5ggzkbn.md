@@ -5,15 +5,15 @@ title: "Handoff convergence rule misses control ops: a .gitignore edit racing th
 kind: bug
 status: closed
 priority: 3
-version: 8
+version: 10
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2h3ches22p7k9x4kka6bq6q
 created_at: 2026-09-14T16:22:16.135Z
-updated_at: 2026-09-15T00:29:45.272Z
-closed_at: 2026-09-15T00:29:45.268Z
-close_reason: "705afe3: Index::holds_target extends target equality to ControlUpsert (exact source retained) and ControlRemove (none retained); handoff race test now covers a .gitignore, plus a unit test for converging and diverging control ops."
+updated_at: 2026-09-15T01:08:15.988Z
+closed_at: 2026-09-15T01:08:15.978Z
+close_reason: "d4859c4: Index::holds_target extends target equality to ControlUpsert (exact source retained) and ControlRemove (none retained); the handoff race test now covers a .gitignore, plus a unit test for converging and diverging control ops."
 resolution: null
 duplicate_of: null
 ---

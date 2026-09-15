@@ -5,15 +5,15 @@ title: "PR #56 review PR56B-FS-1: a control file gone at its stat keeps its rule
 kind: bug
 status: closed
 priority: 3
-version: 3
+version: 5
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2h3ches22p7k9x4kka6bq6q
 created_at: 2026-09-14T23:17:46.947Z
-updated_at: 2026-09-14T23:53:41.538Z
-closed_at: 2026-09-14T23:53:41.533Z
-close_reason: "308f945: a stat NotFound now removes a vanished control file's rules beside its entry, at the serial, wave and revalidate sites via vanished_child_removals. The retained case was already covered by the index's control projection (the Op::Remove arm drops a control file's rules), so the finding as written is a false positive there. The real residue was a hidden-pruned .gitignore, which has no entry. Tests cover both policies with a failing listing injected through the new WalkHookPoint::ListingEnd."
+updated_at: 2026-09-15T01:07:52.694Z
+closed_at: 2026-09-15T01:07:52.689Z
+close_reason: "fac0291 (with 0ca27bf keeping the audited loop shape): a stat NotFound now removes a vanished control file's rules beside its entry at the serial, wave and revalidate sites via vanished_child_removals. The retained case was already handled by the index's control projection (the Op::Remove arm drops a control file's rules), so the finding as written was a false positive there; the real residue was a hidden-pruned .gitignore, which has no entry. Tests cover both policies with a failing listing injected through WalkHookPoint::ListingEnd."
 resolution: null
 duplicate_of: null
 ---

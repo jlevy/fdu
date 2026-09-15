@@ -5,15 +5,15 @@ title: changes() reports IndexLockPoisoned, not OpenedWorkerPanicked, when a wor
 kind: bug
 status: closed
 priority: 3
-version: 5
+version: 7
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2h3ches22p7k9x4kka6bq6q
 created_at: 2026-09-14T16:22:19.001Z
-updated_at: 2026-09-15T00:16:58.948Z
-closed_at: 2026-09-15T00:16:58.946Z
-close_reason: "43a7331: journal::poll maps IndexLockPoisoned to OpenedWorkerPanicked when a worker panic is recorded; changes() doc and CHANGELOG (PR56B-DOC-1) now say a panic inside a commit leaves no retained commits to deliver. New cfg(test) hook IndexHandle::panic_holding_the_write_lock_for_test; the wake test covers a panic inside and outside the write lock, run 8x."
+updated_at: 2026-09-15T01:08:09.323Z
+closed_at: 2026-09-15T01:08:09.304Z
+close_reason: "9d8a87c: journal::poll maps IndexLockPoisoned to OpenedWorkerPanicked when a worker panic is recorded; the changes() doc and CHANGELOG (PR56B-DOC-1) now say a panic inside a commit leaves no retained commits to deliver. New cfg(test) hook IndexHandle::panic_holding_the_write_lock_for_test; the wake test covers a panic inside and outside the write lock, run 8x."
 resolution: null
 duplicate_of: null
 ---

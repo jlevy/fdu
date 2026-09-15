@@ -5,15 +5,15 @@ title: "PR #56 review PR56B-STYLE-1: 124-column doc line at engine_contract.rs:1
 kind: bug
 status: closed
 priority: 4
-version: 2
+version: 4
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2h3ches22p7k9x4kka6bq6q
 created_at: 2026-09-14T23:17:53.472Z
-updated_at: 2026-09-15T00:12:03.404Z
-closed_at: 2026-09-15T00:12:03.394Z
-close_reason: "c5d27e2: reflowed the Commit::retained_cost doc comment to 100 columns"
+updated_at: 2026-09-15T01:07:59.609Z
+closed_at: 2026-09-15T01:07:59.597Z
+close_reason: "4676fa5: reflowed the Commit::retained_cost doc comment to 100 columns"
 resolution: null
 duplicate_of: null
 ---
