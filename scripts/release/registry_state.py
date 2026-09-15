@@ -139,6 +139,18 @@ def crates_io_state(
     return states
 
 
+def exit_status(states: list[RegistryState], *, require_identical: bool) -> int:
+    """
+    Return 2 when any registry conflicts, and 3 when `require_identical` is set and any
+    registry does not yet hold the expected files; otherwise 0.
+    """
+    if any(state.state == "conflict" for state in states):
+        return 2
+    if require_identical and any(state.state != "identical" for state in states):
+        return 3
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     """Build the command-line parser."""
     result = argparse.ArgumentParser()
@@ -146,6 +158,11 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--version", required=True)
     result.add_argument("--channel", choices=("all", "crates.io", "pypi"), default="all")
     result.add_argument("--output", type=Path)
+    result.add_argument(
+        "--require-identical",
+        action="store_true",
+        help="exit 3 unless every audited registry already holds exactly the expected files",
+    )
     return result
 
 
@@ -162,8 +179,7 @@ def main() -> None:
     print(rendered, end="")
     if args.output is not None:
         args.output.write_text(rendered, encoding="utf-8")
-    if any(state.state == "conflict" for state in states):
-        raise SystemExit(2)
+    raise SystemExit(exit_status(states, require_identical=args.require_identical))
 
 
 if __name__ == "__main__":

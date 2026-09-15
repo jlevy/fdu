@@ -11,8 +11,10 @@ from pathlib import Path
 from scripts.release import inspect_artifacts
 from scripts.release.registry_state import (
     CRATE_PACKAGES,
+    RegistryState,
     classify_files,
     crates_io_state,
+    exit_status,
     expected_artifacts,
 )
 
@@ -35,6 +37,19 @@ class RegistryStateTests(unittest.TestCase):
         self.assertEqual(identical.state, "identical")
         self.assertEqual(conflict.state, "conflict")
         self.assertIn("hash mismatch", conflict.detail)
+
+    def test_a_conflict_always_fails_and_an_unpublished_channel_fails_on_request(self) -> None:
+        # Mid-publication `missing` is expected; an announcement must see every channel
+        # identical, so a chained `gh release create` cannot follow a skipped upload.
+        identical, missing, conflict = (
+            RegistryState("crates.io", "fdu", "0.1.0", state, "")
+            for state in ("identical", "missing", "conflict")
+        )
+        self.assertEqual(exit_status([identical, missing], require_identical=False), 0)
+        self.assertEqual(exit_status([identical, missing], require_identical=True), 3)
+        self.assertEqual(exit_status([identical, conflict], require_identical=False), 2)
+        self.assertEqual(exit_status([missing, conflict], require_identical=True), 2)
+        self.assertEqual(exit_status([identical, identical], require_identical=True), 0)
 
     def test_extra_or_incomplete_file_sets_conflict(self) -> None:
         expected = {"a.whl": "a" * 64, "b.whl": "b" * 64}
