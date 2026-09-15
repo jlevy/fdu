@@ -44,6 +44,9 @@ def test_public_options_are_typed_immutable_values() -> None:
 def test_public_defaults_match_cli_semantics() -> None:
     assert CachePolicy.AUTO.value == "auto"
     assert ScanOptions() == ScanOptions(max_depth=None, one_filesystem=False)
+    # The one deliberate departure: an index observes `.gitignore` control state by
+    # default, while the command line turns it off because no command-line view reads it.
+    assert ScanOptions().read_controls is True
     assert AnalysisOptions().analyze == Analysis.NONE
     # Empty means "let the analyzers choose", which is the CLI semantics this test is
     # named for: `--analyze code` with no `--view` reports languages, not tree.
