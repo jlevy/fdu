@@ -5,7 +5,7 @@ title: "Release readiness: land the open PR stack and cut the first stable fdu r
 kind: epic
 status: in_progress
 priority: 0
-version: 8
+version: 9
 labels:
   - release
 dependencies: []
@@ -16,7 +16,7 @@ child_order_hints:
   - is-01m2h7jd6sqqr8n05g4375s6yt
   - is-01m2jzadk7w8m1xcsewzwg5wj1
 created_at: 2026-09-15T00:08:53.387Z
-updated_at: 2026-09-15T16:45:06.022Z
+updated_at: 2026-09-15T17:13:03.223Z
 ---
 User goal (2026-09-14): bring fdu to a stable state that can land on main and cut a release. Keep making progress, track everything as beads, stack PRs as needed, and make sure the final PR stack is complete.
 
@@ -43,3 +43,14 @@ Tracking: fdu-6nyd (the earlier merge-readiness bead) covered the first stack, w
 
 2026-09-15 DECISIONS (user): release 0.1.0 (not 1.0.0). All of the default-on .gitignore work ships IN 0.1.0: PR A (bounds degrade, dedup, liftable budget: fdu-1onj, fdu-okne, fdu-szkg) and PR B (default on for every surface, --no-gitignore, the CLI (N ignored) split, --exclude-ignored/--only-ignored, the JSON schema bump: fdu-elnn, fdu-5ryb). The README headline performance figure is re-measured on the release candidate before tagging. The first release is published by hand from the signed tag (fdu-core, then fdu, then the PyPI wheel), following the release guide; automated publish jobs come later.
 The readiness audit report is at scratchpad/reviews/release-readiness.md. Release blockers: fdu-y5zc, fdu-0t6d, fdu-k4ad, fdu-ih88, fdu-1onj, fdu-qy8e, fdu-ls14, fdu-9cf0.
+
+2026-09-15 MERGED to main, with user authorization ("be sure all issues are addressed fully, and then you can merge the PR"). Every review on each PR had a disposition reply, and each PR was 19/19 green and CLEAN.
+- Stack #59 (#56 fix(engine), #57 contract decisions, #60 gitignore build feature removed): merged via gh stack merge --merge as 5f03062.
+- #58 (exp-104 evidence): 8856b4d.
+- #55 (checkpoints plan): 3373134.
+- #61 (release-workflow fixes): delta review of its review-fix commits running; merges after that.
+Next:
+- CI on main at 3373134.
+- Then PR A (fdu-1onj/okne/szkg) and PR B (fdu-elnn/5ryb) on main, blocked on disk.
+- Release-prep PR: fdu-k4ad, fdu-ih88, fdu-qy8e, fdu-y5xr.
+- Combined make check and release rehearsal (fdu-ls14), then a local install for final testing.

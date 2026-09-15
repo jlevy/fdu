@@ -3,14 +3,18 @@ type: is
 id: is-01m2ety242k5f9vh469xm5pq2d
 title: "Make the PR stack and #49 merge-ready together, with CI green on every PR"
 kind: task
-status: in_progress
+status: closed
 priority: 0
-version: 5
+version: 6
 labels:
   - stack-followup
 dependencies: []
 created_at: 2026-09-14T02:11:29.025Z
-updated_at: 2026-09-14T14:37:36.728Z
+updated_at: 2026-09-15T17:13:03.929Z
+closed_at: 2026-09-15T17:13:03.926Z
+close_reason: Superseded by fdu-gjc2; the first stack merged 2026-09-14 (7cc5554, dda7e6a), and the follow-up stack merged 2026-09-15 (5f03062, 8856b4d, 3373134).
+resolution: null
+duplicate_of: null
 ---
 The user's goal, set 2026-09-13: the whole stack merges together, ready to merge, with CI passing on every PR. This bead tracks the process; each fix has its own bead.
 
