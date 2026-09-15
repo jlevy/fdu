@@ -604,21 +604,36 @@ The plan above follows each recommendation.
 1. **Default delta measure.** Recommendation: unique allocated bytes, with per-path
    allocated and apparent bytes selectable and the free-space change always shown.
    Case against: it needs retained link counts, which change the engine’s entry facts
-   and snapshot format, and its directory attribution can move when a link is added;
-   per-path allocated bytes are what the roll-ups already report and cost nothing new.
+   and snapshot format.
+   Its directory attribution can move by a file’s full size to a directory where nothing
+   changed, when a link is added or one link of a multi-link file is renamed.
    On clone-populated macOS caches neither allocated measure removes the overstatement.
+   Alternative: per-path allocated bytes, which the roll-ups already report at no new
+   cost.
 2. **Label reuse.** Recommendation: labels move and comparisons bind to ids.
-   Case against: refusing to reuse a name makes a name an id and removes the resolution
-   step, but forces dated names on the rolling `yesterday` workflow and still needs a
-   separate notion of the latest checkpoint.
+   Case against: the same command, such as `yesterday` against `today`, returns
+   different answers on different days, and nothing in the invocation shows it.
+   The resolved ids appear only in the output, so a saved command is not a saved
+   question. Alternative: refusing to reuse a name makes a name an id and removes the
+   resolution step, but forces dated names on the rolling `yesterday` workflow and still
+   needs a separate notion of the latest checkpoint.
 3. **Released checkpoint formats.** Recommendation: keep each released format readable
    and never rewrite a checkpoint in place.
-   Case against: migrating on upgrade keeps one reader, at the cost of rewriting
+   Case against: every retained reader is a compounding cost.
+   Each later format change has to be tested against a stored checkpoint pair in every
+   released format for as long as that format is supported, which the backward
+   compatibility requirements commit to.
+   Alternative: migrating on upgrade keeps one reader, at the cost of rewriting
    user-owned data, which then has to be atomic and verified against earlier comparison
    results.
 4. **Partial checkpoints.** Recommendation: publish a gap-marked partial checkpoint and
    let `--allow-partial` decide the exit status.
-   Case against: requiring an explicit opt-in keeps every stored checkpoint complete, at
+   Case against: two partial checkpoints with different gap sets mark every shared
+   ancestor’s delta partial.
+   A rolling label such as `yesterday` can land on a partial checkpoint, so the daily
+   workflow degrades without anyone opting in, and the label then pins that partial
+   checkpoint against retention.
+   Alternative: requiring an explicit opt-in keeps every stored checkpoint complete, at
    the cost of no baseline at all for a home folder with one protected subtree.
 
 ## References
