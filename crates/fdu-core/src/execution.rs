@@ -202,9 +202,10 @@ pub(crate) fn plan_report(config: &OpenConfig, query: &Query) -> ReportPlan {
 /// says: no report view reads ignore classification, so the planner turns observation
 /// off and the report, and any snapshot it writes, carries the controls-off scope. That
 /// separates its cache from [`crate::open`]'s, which observes control state by default
-/// because the index it returns exposes it. An `open` never warm-starts from a report's
-/// snapshot; a report reads an `open` snapshot only under [`CachePolicy::Only`], where it
-/// consumes the all-entry facts and ignores the control state.
+/// because the index it returns exposes it. A default `open` never warm-starts from a
+/// report's snapshot, and one that turns observation off shares its scope. A report reads
+/// a controls-on `open` snapshot only under [`CachePolicy::Only`], where it consumes the
+/// all-entry facts and ignores the control state.
 ///
 /// The caller owns the returned [`PendingSave`] and decides when to join it, exactly as
 /// the command line does, so a renderer can run while the snapshot is still being written.
@@ -353,7 +354,6 @@ mod tests {
         OpenConfig { scan: ScanConfig::default(), cache_path, policy, ..OpenConfig::default() }
     }
 
-    #[cfg(feature = "gitignore")]
     fn controls_config(
         policy: CachePolicy,
         cache_path: PathBuf,
@@ -367,7 +367,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "gitignore")]
     fn seed_controls_snapshot(root: &Path, cache_path: PathBuf) {
         fs::write(root.join(".gitignore"), b"ignored.log\n").expect("control file");
         fs::write(root.join("ignored.log"), b"ignored").expect("ignored file");
@@ -565,7 +564,6 @@ mod tests {
         assert!(diagnostics.is_none(), "a cache-only open has no scan trace");
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn controls_on_snapshot_projects_to_an_equivalent_controls_off_cache_only_report() {
         let root = tempfile::tempdir().expect("tempdir");
@@ -611,7 +609,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn controls_on_snapshot_does_not_serve_controls_off_auto_report() {
         let root = tempfile::tempdir().expect("tempdir");
@@ -642,7 +639,6 @@ mod tests {
     /// build; the nested source is at the table bound, so reading it fails in either tier
     /// and makes the report partial. A report that stays complete over this tree
     /// performed no control observation.
-    #[cfg(feature = "gitignore")]
     fn write_unobservable_controls(root: &Path) {
         let mut rule = vec![b'a'; crate::control::MAX_CONTROL_PATTERN_BYTES + 1];
         rule.push(b'\n');
@@ -655,7 +651,6 @@ mod tests {
         .expect("oversized source");
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn a_one_shot_report_observes_no_control_state_whatever_the_caller_configured() {
         // No report view reads ignore classification, so a one-shot report must not pay
@@ -685,10 +680,9 @@ mod tests {
             .expect("load the snapshot")
             .expect("the index tier persisted");
         assert_eq!(saved.scope(), controls_off);
-        assert!(saved.controls().is_empty());
+        assert!(matches!(saved.controls(), Err(Error::ControlStateNotObserved)));
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn one_shot_reports_share_one_cache_whichever_surface_wrote_it() {
         // The command line and the Python package reach this planner with different scan
@@ -716,14 +710,13 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn a_cache_only_open_refuses_a_one_shot_reports_snapshot_and_names_the_remedy() {
         // A report's snapshot serves any later cache-only report, as the test above shows,
-        // but not a cache-only `open`. A report writes the controls-off scope; a default
-        // `open` returns an index exposing control state the snapshot never held. A policy
-        // that scans treats that as a miss and scans cold, but `only` must never scan, so
-        // it fails -- and says why, and which policy recovers.
+        // but not a default cache-only `open`. A report writes the controls-off scope; a
+        // default `open` returns an index exposing control state the snapshot never held.
+        // A policy that scans treats that as a miss and scans cold, but `only` must never
+        // scan, so it fails -- and says why, and which policy recovers.
         let root = tempfile::tempdir().expect("tempdir");
         fs::write(root.path().join("file.txt"), b"contents").expect("file");
         let cache = tempfile::tempdir().expect("cache dir");
@@ -747,9 +740,44 @@ mod tests {
         // The remedy the message names works.
         let auto_open = config(CachePolicy::Auto, Some(cache_path));
         let (_, report) = crate::open(root.path(), &auto_open).expect("the named remedy");
-        assert_eq!(report.path_taken, OpenPath::ColdScan);
-        let (_, report) = crate::open(root.path(), &only).expect("cache-only after the remedy");
+        assert_eq!(
+            report.path_taken,
+            OpenPath::ColdScan,
+            "a default open scans cold after a report, which observed no control state"
+        );
+        let (index, report) = crate::open(root.path(), &only).expect("cache-only after the remedy");
         assert_eq!(report.path_taken, OpenPath::CacheOnly);
+        assert_eq!(index.is_ignored(Path::new("file.txt")).ok(), Some(Some(false)));
+    }
+
+    #[test]
+    fn an_open_that_opts_out_of_control_state_shares_a_reports_snapshot_even_cache_only() {
+        // A report writes the controls-off scope, and so does an `open` that turns
+        // observation off, so one snapshot serves both: that open answers from it without
+        // touching the tree, under the one policy that forbids a scan, and says it cannot
+        // classify ignored entries.
+        let root = tempfile::tempdir().expect("tempdir");
+        fs::write(root.path().join("file.txt"), b"contents").expect("file");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let cache_path = cache.path().join("cache.fdu");
+        let mut tree_query = summary_query();
+        tree_query.views = vec![ViewSpec::Tree];
+
+        let auto = config(CachePolicy::Auto, Some(cache_path.clone()));
+        let (_, pending, _) = prepare_report(root.path(), &auto, &tree_query).expect("report");
+        pending.join().expect("save");
+        assert!(cache_path.exists(), "the report left a snapshot");
+
+        let only = OpenConfig {
+            scan: ScanConfig { read_controls: false, ..ScanConfig::default() },
+            ..config(CachePolicy::Only, Some(cache_path))
+        };
+        let (index, report) = crate::open(root.path(), &only).expect("the shared snapshot");
+        assert_eq!(report.path_taken, OpenPath::CacheOnly);
+        assert!(matches!(
+            index.is_ignored(Path::new("file.txt")),
+            Err(Error::ControlStateNotObserved)
+        ));
     }
 
     #[test]

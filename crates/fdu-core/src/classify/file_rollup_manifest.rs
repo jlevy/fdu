@@ -1,4 +1,9 @@
-//! Dependency-free parser for the File Rollup v3 registry profile.
+//! Dependency-free parser for the File Rollup registry profile, schema 3 and schema 4.
+//!
+//! Schema 4 adds one field, `icon`, to `[[group]]` and `[[family]]`. Like `hue` and the
+//! other colour fields, it is presentation: validated by shape, not retained, and outside
+//! the registry fingerprint, so one registry written in either schema is one
+//! classification identity.
 //!
 //! The engine needs classifier and browsing semantics, not TOML as a general-purpose
 //! configuration language. Keeping this parser beside the existing compact fdu manifest
@@ -22,7 +27,10 @@
 use super::manifest_toml::{BYTE_ORDER_MARK, Document, Value, separated_digits};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub(super) const SCHEMA_VERSION: u32 = 3;
+/// The registry schemas this parser reads.
+pub(super) const SCHEMA_VERSIONS: [u32; 2] = [3, 4];
+/// The first schema whose groups and families may carry an `icon`.
+const ICON_SCHEMA_VERSION: u32 = 4;
 pub(super) const MAX_EXTENSION_COMPONENTS: u8 = 2;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -87,6 +95,9 @@ pub(super) fn parse(source: &str) -> Result<Registry, String> {
     let mut registry = Registry::default();
     let mut top_seen = BTreeSet::new();
     let mut block = None;
+    // Where the first icon was written, so a schema 3 document that uses one is refused
+    // naming the line rather than the field, once the declared schema is known.
+    let mut first_icon: Option<(usize, &str)> = None;
     while document.next_line() {
         let line_number = document.line;
         if document.peek() == Some(b'[') {
@@ -123,6 +134,11 @@ pub(super) fn parse(source: &str) -> Result<Registry, String> {
                     "id" => group.id = value?.string(line_number)?,
                     "label" => group.label = value?.string(line_number)?,
                     "order" => group.order = value?.integer(line_number)?,
+                    // Presentation, like a family's hue: checked by shape, not retained.
+                    "icon" => {
+                        let _ = value?.string(line_number)?;
+                        first_icon.get_or_insert((line_number, "group"));
+                    }
                     _ => return Err(format!("line {line_number}: unknown group field {key:?}")),
                 }
             }
@@ -148,6 +164,10 @@ pub(super) fn parse(source: &str) -> Result<Registry, String> {
                     }
                     "linguist" | "linguist_color" | "deviation" => {
                         let _ = value?.string(line_number)?;
+                    }
+                    "icon" => {
+                        let _ = value?.string(line_number)?;
+                        first_icon.get_or_insert((line_number, "family"));
                     }
                     _ => return Err(format!("line {line_number}: unknown family field {key:?}")),
                 }
@@ -175,6 +195,21 @@ pub(super) fn parse(source: &str) -> Result<Registry, String> {
         &["schema_version", "registry_revision", "max_extension_components"],
         "registry",
     )?;
+    if !SCHEMA_VERSIONS.contains(&registry.schema_version) {
+        return Err(format!(
+            "unsupported schema_version {}: this engine reads File Rollup registry schema 3 and 4",
+            registry.schema_version
+        ));
+    }
+    if let Some((line, table)) =
+        first_icon.filter(|_| registry.schema_version < ICON_SCHEMA_VERSION)
+    {
+        return Err(format!(
+            "line {line}: {table} field \"icon\" requires schema_version \
+             {ICON_SCHEMA_VERSION}; this registry declares {}",
+            registry.schema_version
+        ));
+    }
     validate(&registry)?;
     Ok(registry)
 }
@@ -273,9 +308,6 @@ impl Value<'_> {
 }
 
 fn validate(registry: &Registry) -> Result<(), String> {
-    if registry.schema_version != SCHEMA_VERSION {
-        return Err(format!("unsupported schema_version {}", registry.schema_version));
-    }
     if registry.revision == 0 {
         return Err("registry_revision must be positive".to_string());
     }
@@ -420,6 +452,12 @@ fn valid_identity(value: &str, kind: &str) -> Result<(), String> {
 }
 
 /// Identity of a validated registry's semantic values.
+///
+/// Only what decides a classification or a browsing position enters it. Presentation --
+/// `hue`, `linguist`, `linguist_color`, `lightness_rank`, `deviation`, and schema 4's
+/// `icon` -- is never retained, so it cannot enter, and neither does `schema_version`: a
+/// registry that repaints a family or moves to schema 4 classifies every file as before,
+/// and a snapshot recorded under the older document stays valid under the newer.
 ///
 /// Every value is length-prefixed, and so is every sequence of them: each array and each
 /// section hashes its count before its entries. Without the counts, the byte stream
@@ -656,5 +694,98 @@ priority = 100
         let error = parse(&PLAIN.replace("shebangs = []\npriority = 100\n", "shebangs = [\n"))
             .expect_err("an array open at the end of the document");
         assert!(error.contains("unterminated array"), "{error}");
+    }
+
+    /// `PLAIN` as schema 4, which adds an `icon` to groups and families.
+    fn schema_four(replacements: &[(&str, &str)]) -> String {
+        let mut all = vec![
+            ("schema_version = 3", "schema_version = 4"),
+            ("order = 10", "order = 10\nicon = \"file\""),
+            ("hue = 120.5", "hue = 120.5\nicon = \"doc\""),
+        ];
+        all.extend_from_slice(replacements);
+        spelled(&all)
+    }
+
+    #[test]
+    fn schema_four_reads_icons_by_shape_and_retains_nothing_new() {
+        let registry = parse(&schema_four(&[])).expect("a schema 4 registry parses");
+        assert_eq!(registry, Registry { schema_version: 4, ..plain() });
+        assert_eq!(fingerprint(&registry), fingerprint(&plain()));
+    }
+
+    /// Presentation is validated by shape and never retained, so it cannot move the
+    /// identity a snapshot is recorded under: a registry that only repaints a family
+    /// classifies every file exactly as before.
+    #[test]
+    fn presentation_fields_and_the_schema_version_stay_out_of_the_fingerprint() {
+        let plain = fingerprint(&plain());
+        let cases: &[(&str, String)] = &[
+            ("a changed hue", spelled(&[("hue = 120.5", "hue = 52.3")])),
+            ("a deviation", spelled(&[("hue = 120.5", "hue = 120.5\ndeviation = \"why\"")])),
+            (
+                "a linguist color",
+                spelled(&[(
+                    "hue = 120.5",
+                    "hue = 120.5\nlinguist = \"Text\"\nlinguist_color = \"#aabbcc\"",
+                )]),
+            ),
+            (
+                "a lightness rank",
+                spelled(&[(
+                    "hue = 120.5",
+                    "hue = 120.5\nlightness_rank = -0.5\ndeviation = \"x\"",
+                )]),
+            ),
+            ("icons under schema 4", schema_four(&[])),
+            (
+                "schema 4 with a changed hue",
+                schema_four(&[("icon = \"doc\"", "icon = \"doc\"\ndeviation = \"moved\"")])
+                    .replace("hue = 120.5", "hue = 52.3"),
+            ),
+        ];
+        for (change, source) in cases {
+            let registry = parse(source).unwrap_or_else(|error| panic!("{change}: {error}"));
+            assert_eq!(fingerprint(&registry), plain, "{change} moved the fingerprint");
+        }
+        // The control: the same comparison does see a semantic change.
+        let relabeled = parse(&spelled(&[("label = \"Notes\"", "label = \"Prose\"")]))
+            .expect("a relabeled registry parses");
+        assert_ne!(fingerprint(&relabeled), plain);
+    }
+
+    #[test]
+    fn a_schema_version_other_than_three_or_four_is_refused_by_name() {
+        for version in ["2", "5", "0"] {
+            let line = format!("schema_version = {version}");
+            let error = parse(&spelled(&[("schema_version = 3", line.as_str())]))
+                .expect_err("an unsupported schema");
+            assert!(
+                error.contains(&format!("unsupported schema_version {version}"))
+                    && error.contains("3 and 4"),
+                "{version} gave {error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_icon_needs_schema_four_and_a_string() {
+        for (table, from, to) in [
+            ("group", "order = 10", "order = 10\nicon = \"file\""),
+            ("family", "hue = 120.5", "hue = 120.5\nicon = \"doc\""),
+        ] {
+            let error = parse(&spelled(&[(from, to)])).expect_err("an icon under schema 3");
+            assert!(
+                error.contains(&format!("{table} field \"icon\" requires schema_version 4"))
+                    && error.contains("declares 3"),
+                "{table} gave {error:?}"
+            );
+        }
+        let error =
+            parse(&schema_four(&[("icon = \"doc\"", "icon = 7")])).expect_err("a numeric icon");
+        assert!(error.contains("expected a quoted string"), "{error}");
+        let error = parse(&schema_four(&[("priority = 100", "priority = 100\nicon = \"x\"")]))
+            .expect_err("an icon on a kind");
+        assert!(error.contains("unknown kind field \"icon\""), "{error}");
     }
 }

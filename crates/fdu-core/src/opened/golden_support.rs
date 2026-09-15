@@ -529,6 +529,7 @@ impl ContractCoverage {
                         ProjectionResult::Report(_) => self.key("projection.report"),
                         ProjectionResult::Diagnostics(_) => self.key("projection.diagnostics"),
                         ProjectionResult::Limit(_) => self.key("projection.limit"),
+                        ProjectionResult::Refused(_) => self.key("projection.refused"),
                     }
                 }
             }
@@ -636,7 +637,6 @@ impl ContractCoverage {
             Error::ReadProjectionLimit { .. } => "error.read_limit",
             Error::VersionUnavailable { .. } => "error.version_unavailable",
             Error::ContinuationUnavailable => "error.continuation_unavailable",
-            Error::ContinuationRecordLimit { .. } => "error.continuation_record_limit",
             Error::ContinuationStale { .. } => "error.continuation_stale",
             Error::ChangeCursorUnavailable { .. } => "error.change_cursor_unavailable",
             Error::OpenedWorkerPanicked { .. } => "error.worker_panicked",

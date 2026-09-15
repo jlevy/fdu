@@ -94,8 +94,7 @@ content-selfcheck: build
 
 performance-probe:
 	$(CARGO) test --locked -p fdu-core --example perf_probe --no-default-features
-	$(CARGO) build --locked -p fdu-core --example perf_probe --no-default-features --features gitignore
-	$(CARGO) test --locked -p fdu-core --example perf_probe --no-default-features --features gitignore
+	$(CARGO) build --locked -p fdu-core --example perf_probe --no-default-features
 
 test-performance: performance-probe
 	PYTHONPATH=explorations $(UV) run --no-project python -m unittest discover -s explorations/benchmarks/tests -p 'test_*.py'
@@ -270,11 +269,13 @@ cross-lint:
 docs:
 	RUSTDOCFLAGS="-D warnings" $(CARGO) doc --locked --no-deps --all-features
 
-# How library consumers build: the minimal core, then the additive watch and gitignore
-# layers, without relying on what the binary enables. Explicit `--no-default-features`
-# pins the empty feature floor as a contract. The dependency guard proves the crate split
-# stuck -- a library that pulls in an argument parser has back the dependency the split
-# removed.
+# How library consumers build: the minimal core, then the additive watch layer, without
+# relying on what the binary enables. Explicit `--no-default-features` pins the empty
+# build-feature floor as a contract. `.gitignore` handling is not a build feature and is
+# in both shapes; whether a scan reads control files is a runtime setting, which the
+# tests cover.
+# The dependency guard proves the crate split stuck -- a library that pulls in an
+# argument parser has back the dependency the split removed.
 #
 # The guard captures `cargo tree` before testing it, rather than piping straight into
 # grep. A pipeline's status is its last command's, so a failing `cargo tree` -- renamed
@@ -292,9 +293,7 @@ docs:
 # binary without it while every featureless build passed (fdu-224p).
 lib-only:
 	$(CARGO) test --locked -p fdu-core --no-default-features
-	$(CARGO) test --locked -p fdu-core --no-default-features --features gitignore
 	$(CARGO) test --locked -p fdu-core --no-default-features --features watch
-	$(CARGO) test --locked -p fdu-core --no-default-features --features watch,gitignore
 	$(CARGO) clippy --locked -p fdu --no-default-features --all-targets -- -D warnings
 	$(CARGO) test --locked -p fdu --no-default-features --lib
 	@tree="$$($(CARGO) tree -p fdu-core --all-features --prefix none)" || exit 1; \
@@ -447,10 +446,10 @@ PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 .PHONY: perf-floor perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check
 
 perf-probe-release:
-	$(CARGO) build --locked --release -p fdu-core --example perf_probe --no-default-features --features gitignore
+	$(CARGO) build --locked --release -p fdu-core --example perf_probe --no-default-features
 
 perf-probe-profiling:
-	$(CARGO) build --locked --profile profiling -p fdu-core --example perf_probe --no-default-features --features gitignore
+	$(CARGO) build --locked --profile profiling -p fdu-core --example perf_probe --no-default-features
 
 # Record what the tree looks like now, so later runs can prove they measured the same one.
 perf-baseline:

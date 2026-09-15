@@ -73,8 +73,8 @@ would report success having checked nothing.
 The engine must not acquire the command line’s dependencies.
 It had: `report_format` took its ANSI colour types from `clap::builder::styling`, so the
 engine compiled an argument parser to name three colours — and rendering had to hide
-behind a feature because of it, which meant a library caller could produce a report and
-not print it.
+behind a build feature because of it, which meant a library caller could produce a
+report and not print it.
 
 ## How Agreement Is Enforced
 

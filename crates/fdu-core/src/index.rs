@@ -62,12 +62,17 @@ std::thread_local! {
     pub(crate) static RECLASSIFY_VISITS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
-/// Maximum retained-cost units in the exact commit history used by [`Index::since`].
+/// Approximate bytes the exact commit history used by [`Index::since`] may retain.
 ///
 /// Bounded on purpose: an unbounded journal is a memory leak in a long-lived server. A
 /// consumer that falls further behind than this is told so ([`Since::truncated`]) and is
-/// expected to re-read state rather than silently miss changes.
-pub const DEFAULT_JOURNAL_CAPACITY: usize = 64 * 1024;
+/// expected to re-read state rather than silently miss changes. The bound is stated in
+/// bytes, as [`Commit::retained_cost`] estimates them, because the question it answers is
+/// how much memory history may hold, and a budget counted in items would let long paths
+/// hold many times as much. An opened root lifts it through `journal_capacity_bytes`;
+/// there is no unbounded setting, since truncation is always announced and a journal that
+/// never truncates would grow for the life of the session.
+pub const DEFAULT_JOURNAL_CAPACITY_BYTES: usize = 8 * 1024 * 1024;
 
 /// Identifier for an entry within an [`Index`] arena.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
@@ -685,11 +690,17 @@ pub struct ChildSnapshot {
     pub kind: EntryKind,
     /// Last observed metadata.
     pub attrs: Attrs,
-    /// Effective fixed-control classification.
-    pub ignored: bool,
+    /// Effective fixed-control classification, or `None` when the index did not observe
+    /// control state ([`Index::observes_controls`]).
+    ///
+    /// Such an index read no rule, so `Some(false)` would claim the child is not ignored
+    /// when nobody looked.
+    pub ignored: Option<bool>,
     /// Pre-computed subtree totals for a directory.
     pub rollup: Option<RollUp>,
-    /// Both maintained aggregate partitions for a directory.
+    /// Both maintained aggregate partitions for a directory, or `None` for a
+    /// non-directory and for any child of an index that did not observe control state,
+    /// whose unignored partition would only repeat `rollup` as if no rule applied.
     pub partitions: Option<PartitionRollUp>,
 }
 
@@ -817,7 +828,7 @@ pub struct Index {
     clock: Clock,
     journal: VecDeque<Commit>,
     journal_cost: usize,
-    journal_capacity: usize,
+    journal_capacity_bytes: usize,
     /// Oldest clock still represented in `journal`.
     journal_floor: Clock,
     pending_invalidations: Vec<(PathBuf, InvalidateReason)>,
@@ -1057,13 +1068,18 @@ impl IndexHandle {
 
     #[cfg(test)]
     pub(crate) fn poison_for_test(&self) {
-        let inner = std::sync::Arc::clone(&self.inner);
-        std::thread::spawn(move || {
-            let _guard = inner.write().expect("test index write lock");
-            panic!("inject index poison");
-        })
-        .join()
-        .expect_err("injected index panic");
+        let handle = self.clone();
+        std::thread::spawn(move || handle.panic_holding_the_write_lock_for_test())
+            .join()
+            .expect_err("injected index panic");
+    }
+
+    /// Panic on this thread while holding the write lock, as a commit that panics does,
+    /// leaving the lock poisoned.
+    #[cfg(test)]
+    pub(crate) fn panic_holding_the_write_lock_for_test(&self) -> ! {
+        let _guard = self.inner.write().expect("test index write lock");
+        panic!("inject index poison");
     }
 
     /// Arbitrate and apply one observation under the single-writer lock.
@@ -1235,11 +1251,16 @@ impl IndexHandle {
     }
 
     /// Direct children captured coherently at one read boundary.
+    ///
+    /// On an index that did not observe control state each child's
+    /// [`ChildSnapshot::ignored`] and [`ChildSnapshot::partitions`] are `None`, the way
+    /// [`Index::is_ignored`] refuses; the names, metadata, and roll-ups still answer.
     pub fn children(&self, path: &Path) -> crate::Result<Option<Vec<ChildSnapshot>>> {
         let index = self.read_index()?;
         let Some(children) = index.children(path) else {
             return Ok(None);
         };
+        let observed = index.observes_controls();
         Ok(Some(
             children
                 .map(|(name, id)| {
@@ -1249,14 +1270,12 @@ impl IndexHandle {
                         name: name.to_os_string(),
                         kind: entry.kind,
                         attrs: entry.attrs,
-                        ignored: entry.ignored,
+                        ignored: observed.then_some(entry.ignored),
                         rollup: entry
                             .kind
                             .is_dir()
                             .then(|| index.named_rollup(&entry.rollup().all)),
-                        partitions: entry
-                            .kind
-                            .is_dir()
+                        partitions: (observed && entry.kind.is_dir())
                             .then(|| index.named_partitions(entry.rollup())),
                     }
                 })
@@ -1291,7 +1310,7 @@ impl IndexHandle {
     }
 
     pub(crate) fn has_control(&self, path: &Path) -> crate::Result<bool> {
-        Ok(self.read_index()?.controls().contains(path))
+        Ok(self.read_index()?.control_table().contains(path))
     }
 
     pub(crate) fn take_pending_invalidations(
@@ -1542,7 +1561,14 @@ impl DetachedIndexBuilder {
 }
 
 impl Index {
-    /// Create an empty index rooted at `root_path`.
+    /// Create an empty index rooted at `root_path`, under [`ScanScope::default`].
+    ///
+    /// That is the scope of [`ScanConfig::default`](crate::ScanConfig), which observes
+    /// control state, so this index answers [`Self::is_ignored`], [`Self::controls`], and
+    /// the partition accessors ([`Self::partition_total`], [`Self::partition_rollup`], and
+    /// [`Self::partition_rollup_summary`]), and it accepts control input. Build any other
+    /// scope, including one that turns control observation off, with
+    /// [`Self::new_with_scope`].
     pub fn new(root_path: impl Into<PathBuf>) -> Self {
         Self::new_with_scope(root_path, ScanScope::default())
     }
@@ -1562,34 +1588,34 @@ impl Index {
         scope: ScanScope,
         types: std::sync::Arc<crate::classify::TypeRegistry>,
     ) -> Self {
-        Self::new_with_scope_types_and_journal_capacity(
+        Self::new_with_scope_types_and_journal_capacity_bytes(
             root_path,
             scope,
             types,
-            DEFAULT_JOURNAL_CAPACITY,
+            DEFAULT_JOURNAL_CAPACITY_BYTES,
         )
     }
 
-    pub(crate) fn new_with_scope_types_and_journal_capacity(
+    pub(crate) fn new_with_scope_types_and_journal_capacity_bytes(
         root_path: impl Into<PathBuf>,
         scope: ScanScope,
         types: std::sync::Arc<crate::classify::TypeRegistry>,
-        journal_capacity: usize,
+        journal_capacity_bytes: usize,
     ) -> Self {
         assert_eq!(
             scope.type_rules_fingerprint,
             types.fingerprint(),
             "an index's registry must match its semantic scope"
         );
-        Self::new_with_journal_capacity(root_path, scope, journal_capacity, types, None)
+        Self::new_with_journal_capacity_bytes(root_path, scope, journal_capacity_bytes, types, None)
     }
 
     /// Create the retained index behind an opened root, including its serving orders.
-    pub(crate) fn new_opened_with_scope_types_and_journal_capacity(
+    pub(crate) fn new_opened_with_scope_types_and_journal_capacity_bytes(
         root_path: impl Into<PathBuf>,
         scope: ScanScope,
         types: std::sync::Arc<crate::classify::TypeRegistry>,
-        journal_capacity: usize,
+        journal_capacity_bytes: usize,
     ) -> Self {
         assert_eq!(
             scope.type_rules_fingerprint,
@@ -1597,19 +1623,19 @@ impl Index {
             "an index's registry must match its semantic scope"
         );
         let serving = ServingIndexes::for_types(&types);
-        Self::new_with_journal_capacity(
+        Self::new_with_journal_capacity_bytes(
             root_path,
             scope,
-            journal_capacity,
+            journal_capacity_bytes,
             types,
             Some(Box::new(serving)),
         )
     }
 
-    fn new_with_journal_capacity(
+    fn new_with_journal_capacity_bytes(
         root_path: impl Into<PathBuf>,
         scope: ScanScope,
-        journal_capacity: usize,
+        journal_capacity_bytes: usize,
         types: std::sync::Arc<crate::classify::TypeRegistry>,
         serving: Option<Box<ServingIndexes>>,
     ) -> Self {
@@ -1634,7 +1660,7 @@ impl Index {
             clock: Clock::ZERO,
             journal: VecDeque::new(),
             journal_cost: 0,
-            journal_capacity,
+            journal_capacity_bytes,
             journal_floor: Clock::ZERO,
             pending_invalidations: Vec::new(),
             freshness_epoch: 0,
@@ -1663,7 +1689,48 @@ impl Index {
     }
 
     /// Exact fixed control state retained by this detached index.
-    pub fn controls(&self) -> &crate::control::ControlTable {
+    ///
+    /// # Errors
+    ///
+    /// [`crate::Error::ControlStateNotObserved`] when the index was built without
+    /// observing control state ([`ScanScope::observes_controls`]). Its table is empty
+    /// because nothing was read, and returning it would claim the tree has no control
+    /// files.
+    pub fn controls(&self) -> crate::Result<&crate::control::ControlTable> {
+        self.require_observed_controls()?;
+        Ok(&self.controls)
+    }
+
+    /// Whether this index observed `.gitignore` control state, and so can answer
+    /// [`Self::is_ignored`] and [`Self::controls`].
+    pub const fn observes_controls(&self) -> bool {
+        self.scope.observes_controls()
+    }
+
+    fn require_observed_controls(&self) -> crate::Result<()> {
+        if self.observes_controls() { Ok(()) } else { Err(crate::Error::ControlStateNotObserved) }
+    }
+
+    /// Whether a batch carries control input this index must refuse because its scope
+    /// observes no control state.
+    ///
+    /// Accepted, such input installed a table and reclassified entries under a scope that
+    /// says no rule was read: `is_ignored` refused over classification the index held, and
+    /// a snapshot saved from it loaded into an open that turned observation off as an exact
+    /// scope match (`fdu-agb6`). Every operation counts, accepted or stale, so the refusal
+    /// does not depend on the index's state.
+    fn carries_unobserved_control_input(&self, ops: &[ObservationOp]) -> bool {
+        !self.observes_controls()
+            && ops.iter().any(|observed| {
+                matches!(observed.op, Op::ControlUpsert { .. } | Op::ControlRemove { .. })
+            })
+    }
+
+    /// The retained control table whatever the scope: empty when nothing was observed.
+    ///
+    /// For the engine's own maintenance, which compares what it retains against what it
+    /// reads and so needs no claim about coverage.
+    pub(crate) fn control_table(&self) -> &crate::control::ControlTable {
         &self.controls
     }
 
@@ -1677,6 +1744,11 @@ impl Index {
                 attempted: controls.retained_cost(),
                 limit: crate::control::MAX_CONTROL_TABLE_BYTES,
             });
+        }
+        // A scope that observed no control state retains no table; a snapshot carrying
+        // one under such a scope was not written by a scan that honoured it.
+        if !controls.is_empty() {
+            self.require_observed_controls()?;
         }
         // Every entry's ignored bit agrees with the table it replaces, so when neither table
         // governs anything no bit can move. Walking the tree to confirm it allocated a path
@@ -1703,11 +1775,14 @@ impl Index {
     }
 
     #[cfg(test)]
-    fn with_journal_capacity(root_path: impl Into<PathBuf>, journal_capacity: usize) -> Self {
-        Self::new_with_journal_capacity(
+    fn with_journal_capacity_bytes(
+        root_path: impl Into<PathBuf>,
+        journal_capacity_bytes: usize,
+    ) -> Self {
+        Self::new_with_journal_capacity_bytes(
             root_path,
             ScanScope::default(),
-            journal_capacity,
+            journal_capacity_bytes,
             crate::classify::TypeRegistry::compiled_shared(),
             None,
         )
@@ -1726,6 +1801,23 @@ impl Index {
     /// Trust state for the whole index.
     pub fn freshness(&self) -> Freshness {
         self.freshness_at(Path::new(""))
+    }
+
+    /// The freshness the coherent [`IndexState`] publishes for the root.
+    ///
+    /// Subtree marks decide it, with one exception: while the observation handoff owns the
+    /// root -- the `Reconciling` phase -- the root does not become `Fresh` until `Watching`
+    /// says the handoff verified it. The handoff's own full pass clears the root's mark
+    /// before the hints captured behind it are drained, and `Fresh` beside `Reconciling`
+    /// promised a verified root the handoff had not delivered yet. Stale and partial marks
+    /// still show through, since they say something the handoff has not yet disproved.
+    fn published_freshness(&self) -> Freshness {
+        let derived = self.freshness();
+        if self.state.phase == LifecyclePhase::Reconciling && derived == Freshness::Fresh {
+            Freshness::Reconciling
+        } else {
+            derived
+        }
     }
 
     /// Coherent state at the current clock.
@@ -1777,8 +1869,15 @@ impl Index {
     }
 
     /// Both fixed aggregate partitions for the complete tree.
-    pub fn partition_total(&self) -> PartitionRollUp {
-        self.named_partitions(self.entry(EntryId::ROOT).rollup())
+    ///
+    /// # Errors
+    ///
+    /// [`crate::Error::ControlStateNotObserved`] when the index did not observe control
+    /// state: its unignored partition equals `all` only because no rule was read.
+    /// [`Self::total`] answers the `all` partition for any index.
+    pub fn partition_total(&self) -> crate::Result<PartitionRollUp> {
+        self.require_observed_controls()?;
+        Ok(self.named_partitions(self.entry(EntryId::ROOT).rollup()))
     }
 
     /// Map-free whole-tree totals for in-crate reporting paths.
@@ -1790,6 +1889,10 @@ impl Index {
     ///
     /// Conditional operations are accepted only while their baseline still matches.
     /// No-ops and stale operations do not advance the clock or enter the journal.
+    ///
+    /// A control operation on an index that does not observe control state
+    /// ([`Self::observes_controls`]) fails the whole batch with
+    /// [`crate::Error::ControlStateNotObserved`], whatever its baseline.
     pub fn apply(&mut self, observation: &Observation) -> crate::Result<ApplyOutcome> {
         let prepared = prepare_observation(observation)?;
         let outcome = self.commit_prepared(prepared, true)?;
@@ -1835,16 +1938,21 @@ impl Index {
             return Err(crate::Error::OpenedIndexStopped);
         }
 
+        let mut discovery = discovery;
         if let Some(path) =
-            discovery.as_ref().and_then(|discovery| discovery.directory_complete.as_ref())
+            discovery.as_mut().and_then(|discovery| discovery.directory_complete.as_mut())
         {
-            let path = canonical_relative_path(path)?;
-            let Some(id) = self.lookup(&path) else {
-                return Err(crate::Error::InvalidDirectoryCompletion(path));
+            // The transition this commit publishes carries the canonical relative path,
+            // not the producer's spelling: a `DirectoryComplete` was only ever canonical
+            // because discovery happened to build it that way.
+            let canonical = canonical_relative_path(path)?;
+            let Some(id) = self.lookup(&canonical) else {
+                return Err(crate::Error::InvalidDirectoryCompletion(canonical));
             };
             if self.entry(id).kind != EntryKind::Dir {
-                return Err(crate::Error::InvalidDirectoryCompletion(path));
+                return Err(crate::Error::InvalidDirectoryCompletion(canonical));
             }
+            *path = canonical;
         }
 
         #[cfg(test)]
@@ -1906,6 +2014,9 @@ impl Index {
         track_file_progress: bool,
         effects: &mut C,
     ) -> crate::Result<ApplyStats> {
+        if self.carries_unobserved_control_input(&prepared.ops) {
+            return Err(crate::Error::ControlStateNotObserved);
+        }
         if matches!(prepared.ancestry, PreparedAncestry::Scanner { .. }) {
             debug_assert!(observation.is_none());
             return self.reduce_scanner_prepared(
@@ -1961,7 +2072,7 @@ impl Index {
                     self.pending_invalidations.push((path.clone(), *reason));
                     self.mark_unfresh(path, Freshness::Stale);
                     let current = self.freshness_at(path);
-                    self.state.freshness = self.freshness();
+                    self.state.freshness = self.published_freshness();
                     if matches!(
                         reason,
                         InvalidateReason::WatchOverflow
@@ -2375,7 +2486,7 @@ impl Index {
 
     fn retain_commit(&mut self, commit: &Commit) {
         let cost = commit.retained_cost();
-        if cost > self.journal_capacity {
+        if cost > self.journal_capacity_bytes {
             let dropped = u64::try_from(self.journal.len()).unwrap_or(u64::MAX);
             crate::counters::bump(|counts| {
                 counts.journal_oversized_commits =
@@ -2389,7 +2500,7 @@ impl Index {
             return;
         }
 
-        while self.journal_cost + cost > self.journal_capacity {
+        while self.journal_cost + cost > self.journal_capacity_bytes {
             if let Some(dropped) = self.journal.pop_front() {
                 crate::counters::bump(|counts| {
                     counts.journal_dropped_commits =
@@ -2511,7 +2622,7 @@ impl Index {
         let previous = self.freshness_at(&path);
         let epoch = self.mark_unfresh(&path, Freshness::Reconciling);
         let current = self.freshness_at(&path);
-        self.state.freshness = self.freshness();
+        self.state.freshness = self.published_freshness();
         let commit = if previous == current && previous_index_state == self.state {
             None
         } else {
@@ -2533,12 +2644,13 @@ impl Index {
 
     /// Close one reconciliation opened by [`Self::begin_reconcile`].
     ///
-    /// `listed_incomplete` names the directories the pass listed in full that the index did
-    /// not hold as complete when it listed them. When the whole pass completed, each is
-    /// recorded as complete in this commit, exactly as discovery's listing commit records
-    /// the directories it lists, unless a producer invalidated or began verifying it after
-    /// this pass started: that producer's own pass owns its listing now. Only an opened root
-    /// passes any, since only an opened root serves completeness.
+    /// `listed_incomplete` names the directories the pass listed in full, with no error
+    /// inside them, that the index did not hold as complete when it listed them. Each is
+    /// recorded as complete in this commit whether or not the whole pass completed, exactly
+    /// as discovery's listing commit records the directories it lists, unless a producer
+    /// invalidated or began verifying it after this pass started: that producer's own pass
+    /// owns its listing now. Only an opened root passes any, since only an opened root
+    /// serves completeness, and it passes none when a conditional commit lost a race.
     pub(crate) fn finish_reconcile(
         &mut self,
         path: &Path,
@@ -2552,6 +2664,21 @@ impl Index {
         let previous = self.freshness_at(&path);
         self.freshness_marks
             .retain(|marked, mark| !marked.starts_with(&path) || mark.epoch > started_at);
+        // Each listed directory is recorded on its own listing, complete pass or not: the
+        // walk names only those it listed in full with no error inside them, as discovery
+        // decides per directory, and the caller passes none when a commit lost a race. A
+        // directory another producer invalidated or began verifying after this pass
+        // started is left to that producer's pass, so decide here, before this pass's own
+        // partial mark below would read as such a newer claim.
+        let recordable: Vec<&PathBuf> = listed_incomplete
+            .iter()
+            .filter(|directory| {
+                directory.starts_with(&path)
+                    && !self.freshness_marks.iter().any(|(marked, mark)| {
+                        mark.epoch > started_at && directory.starts_with(marked)
+                    })
+            })
+            .collect();
         let mut state = Vec::new();
         if complete {
             // A completed sweep stat'd every entry beneath `path`, including the ones
@@ -2566,33 +2693,30 @@ impl Index {
                 self.verified.drain(..excess);
             }
             state.push(StateTransition::Verified { path: path.clone() });
-            for directory in listed_incomplete {
-                if !directory.starts_with(&path)
-                    || self.freshness_marks.iter().any(|(marked, mark)| {
-                        mark.epoch > started_at && directory.starts_with(marked)
-                    })
-                {
-                    continue;
-                }
-                let Some(id) = self.lookup(directory) else {
-                    continue;
-                };
-                let entry = self.entry_mut(id);
-                if entry.kind != EntryKind::Dir || entry.directory().children_complete {
-                    continue;
-                }
-                entry.directory_mut().children_complete = true;
-                self.state.progress.directories_complete =
-                    self.state.progress.directories_complete.saturating_add(1);
-                state.push(StateTransition::DirectoryComplete { path: directory.clone() });
+            // A failed root's issues explain the state it is in; a clean walk below one of
+            // their paths cannot un-fail the root, so it disproves none of them.
+            if self.state.phase != LifecyclePhase::Failed {
+                self.drop_disproven_issues(&path, started_at);
             }
-            self.drop_disproven_issues(&path, started_at);
         } else {
             self.mark_unfresh(&path, Freshness::Partial);
         }
+        for directory in recordable {
+            let Some(id) = self.lookup(directory) else {
+                continue;
+            };
+            let entry = self.entry_mut(id);
+            if entry.kind != EntryKind::Dir || entry.directory().children_complete {
+                continue;
+            }
+            entry.directory_mut().children_complete = true;
+            self.state.progress.directories_complete =
+                self.state.progress.directories_complete.saturating_add(1);
+            state.push(StateTransition::DirectoryComplete { path: directory.clone() });
+        }
 
         let current = self.freshness_at(&path);
-        self.state.freshness = self.freshness();
+        self.state.freshness = self.published_freshness();
         if previous != current {
             state.push(StateTransition::Freshness { path: path.clone(), previous, current });
         }
@@ -2699,15 +2823,50 @@ impl Index {
     }
 
     /// Both fixed aggregate partitions for a directory by relative path.
-    pub fn partition_rollup(&self, path: &Path) -> Option<PartitionRollUp> {
-        let entry = self.entry(self.lookup(path)?);
-        entry.kind.is_dir().then(|| self.named_partitions(entry.rollup()))
+    ///
+    /// `Ok(None)` when the path is absent or not a directory.
+    ///
+    /// # Errors
+    ///
+    /// [`crate::Error::ControlStateNotObserved`] when the index did not observe control
+    /// state, whatever the path, as [`Self::partition_total`] refuses.
+    pub fn partition_rollup(&self, path: &Path) -> crate::Result<Option<PartitionRollUp>> {
+        self.require_observed_controls()?;
+        Ok(self
+            .lookup(path)
+            .map(|id| self.entry(id))
+            .filter(|entry| entry.kind.is_dir())
+            .map(|entry| self.named_partitions(entry.rollup())))
     }
 
     /// Both constant-size aggregate partitions for a directory.
-    pub fn partition_rollup_summary(&self, path: &Path) -> Option<PartitionRollUpSummary> {
-        let entry = self.entry(self.lookup(path)?);
-        entry.kind.is_dir().then(|| partition_summary(entry.rollup()))
+    ///
+    /// `Ok(None)` when the path is absent or not a directory.
+    ///
+    /// # Errors
+    ///
+    /// [`crate::Error::ControlStateNotObserved`] when the index did not observe control
+    /// state, whatever the path, as [`Self::partition_total`] refuses.
+    pub fn partition_rollup_summary(
+        &self,
+        path: &Path,
+    ) -> crate::Result<Option<PartitionRollUpSummary>> {
+        self.require_observed_controls()?;
+        Ok(self
+            .lookup(path)
+            .map(|id| self.entry(id))
+            .filter(|entry| entry.kind.is_dir())
+            .map(|entry| partition_summary(entry.rollup())))
+    }
+
+    /// Whether a live entry is ignored, for the opened-root tree projection, without the
+    /// observation check [`Self::is_ignored`] makes.
+    ///
+    /// An opened root always observes control state, so the retained bit is the exact
+    /// classification; the assertion checks that invariant where it is cheap to.
+    pub(crate) fn opened_is_ignored(&self, id: EntryId) -> bool {
+        debug_assert!(self.observes_controls(), "an opened root observes control state");
+        self.entry(id).ignored
     }
 
     /// Capture one retained entry without repeating path lookup in a consumer.
@@ -3045,8 +3204,19 @@ impl Index {
     }
 
     /// Effective fixed-control classification for one retained entry.
-    pub fn is_ignored(&self, path: &Path) -> Option<bool> {
-        Some(self.entry(self.lookup(path)?).ignored)
+    ///
+    /// `Ok(Some(ignored))` for a retained entry and `Ok(None)` for a path the index does
+    /// not hold.
+    ///
+    /// # Errors
+    ///
+    /// [`crate::Error::ControlStateNotObserved`] when the index was built without
+    /// observing control state, whatever the path. Every entry of such an index carries
+    /// "not ignored" only because no rule was read, so that answer would be silently
+    /// wrong for a tree that has a `.gitignore`.
+    pub fn is_ignored(&self, path: &Path) -> crate::Result<Option<bool>> {
+        self.require_observed_controls()?;
+        Ok(self.lookup(path).map(|id| self.entry(id).ignored))
     }
 
     /// Borrow direct children of a directory as `(name, id)` pairs in name order.
@@ -3223,7 +3393,16 @@ impl Index {
     }
 
     fn expectation_matches(&self, op: &Op, expected: PathExpectation) -> bool {
-        if self.path_state(op.path()) != expected.state {
+        let current = self.path_state(op.path());
+        // An operation whose target the index already holds changes nothing, whatever
+        // happened to its baseline: another producer verified the same fact first and
+        // there is no older state left to overwrite. Refusing it as stale cost the
+        // observation handoff a full-root walk per convergent refresh, and three in a
+        // row failed the root, for commits that would have applied as unchanged.
+        if self.holds_target(op, current) {
+            return true;
+        }
+        if current != expected.state {
             return false;
         }
 
@@ -3249,6 +3428,26 @@ impl Index {
                 .absence_guard_identity(op.path())
                 .is_some_and(|current| current.same_absence_guard(expected)),
             None => true,
+        }
+    }
+
+    /// Whether the index already holds what `op` would leave behind at `current`, the state
+    /// of its path.
+    ///
+    /// An entry operation's target is a path state. A control operation's is the table:
+    /// exactly its source retained at its path, or nothing retained there. The walk pushes
+    /// a control file's entry and rules on one baseline, so both must converge together or
+    /// the pair is refused for the rules alone. An invalidation always commits a change, so
+    /// it is arbitrated on its baseline.
+    fn holds_target(&self, op: &Op, current: PathState) -> bool {
+        match op {
+            Op::Upsert { kind, attrs, .. } => {
+                current == PathState::Present { kind: *kind, attrs: *attrs }
+            }
+            Op::Remove { .. } => current == PathState::Absent,
+            Op::ControlUpsert { path, source } => self.controls.source_is(path, source),
+            Op::ControlRemove { path } => !self.controls.contains(path),
+            Op::InvalidateSubtree { .. } => false,
         }
     }
 
@@ -3457,11 +3656,8 @@ impl Index {
         // one structural-overlay insertion per op to project a table that was empty onto
         // a table that stays empty (fdu-pro1).
         //
-        // Both control op kinds disqualify, not just upserts: with the capability
-        // compiled out, `ControlTable::remove` is what rejects a `ControlRemove`, and a
-        // fast lane that skipped it would accept input the slow lane fails closed on --
-        // which is precisely what `control_input_fails_closed_when_the_capability_is_absent`
-        // caught when this lane tested only for upserts.
+        // Both control op kinds disqualify, not just upserts, so every control op reaches
+        // the table and this lane never has to decide which control input is inert.
         if self.controls.is_empty()
             && !ops
                 .clone()
@@ -3493,14 +3689,6 @@ impl Index {
                     projected.upsert(path, source.clone())?;
                 }
                 Op::ControlRemove { path } => {
-                    #[cfg(not(feature = "gitignore"))]
-                    {
-                        let _ = path;
-                        return Err(crate::Error::UnsupportedScanConfig(
-                            "control observations require the fdu-core `gitignore` feature",
-                        ));
-                    }
-                    #[cfg(feature = "gitignore")]
                     projected.remove(path)?;
                 }
                 Op::InvalidateSubtree { .. } => {}
@@ -5066,7 +5254,7 @@ mod tests {
                     let semantic = index.classify(&path).file_type.as_str().to_string();
                     *semantic_refcounts.entry(semantic.clone()).or_default() += 1;
                     let attrs = *index.attrs(&path).expect("live child has attributes");
-                    let ignored = index.is_ignored(&path).expect("live child is classified");
+                    let ignored = index.entry(id).ignored;
                     for ancestor in &ancestors {
                         let partition = semantic_by_directory.entry(*ancestor).or_default();
                         let all = partition.0.entry(semantic.clone()).or_default();
@@ -5201,11 +5389,11 @@ mod tests {
 
     #[test]
     fn portable_indexes_conserve_insert_kind_change_and_subtree_removal() {
-        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
             ScanScope::default(),
             crate::classify::TypeRegistry::compiled_shared(),
-            DEFAULT_JOURNAL_CAPACITY,
+            DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
         index.apply_ok(&Observation::new(vec![
             upsert("dir", EntryKind::Dir, Attrs::default()),
@@ -5269,11 +5457,11 @@ mod tests {
     #[test]
     fn non_file_attrs_updates_leave_file_semantics_untouched() {
         for kind in [EntryKind::Symlink, EntryKind::Other] {
-            let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+            let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
                 "/root",
                 ScanScope::default(),
                 crate::classify::TypeRegistry::compiled_shared(),
-                DEFAULT_JOURNAL_CAPACITY,
+                DEFAULT_JOURNAL_CAPACITY_BYTES,
             );
             index.apply_ok(&Observation::new(vec![upsert("current", kind, file_attrs(1, 1))]));
             assert_serving_indexes(&index);
@@ -5308,11 +5496,11 @@ mod tests {
     /// working, and callers ask the arena for a native path instead.
     #[test]
     fn escaping_touches_only_invalid_bytes_and_percent() {
-        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
             ScanScope::default(),
             crate::classify::TypeRegistry::compiled_shared(),
-            DEFAULT_JOURNAL_CAPACITY,
+            DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
         index.apply_ok(&Observation::new(vec![
             upsert("dir", EntryKind::Dir, Attrs::default()),
@@ -5353,11 +5541,11 @@ mod tests {
         );
         let scope =
             ScanScope { type_rules_fingerprint: types.fingerprint(), ..ScanScope::default() };
-        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
             scope,
             types,
-            DEFAULT_JOURNAL_CAPACITY,
+            DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
         index.apply_ok(&Observation::new(vec![
             upsert("Makefile", EntryKind::File, file_attrs(2, 1)),
@@ -5408,18 +5596,18 @@ mod tests {
             ScanScope { type_rules_fingerprint: types.fingerprint(), ..ScanScope::default() };
         let measure = |opened: bool| {
             let mut index = if opened {
-                Index::new_opened_with_scope_types_and_journal_capacity(
+                Index::new_opened_with_scope_types_and_journal_capacity_bytes(
                     "/root",
                     scope,
                     Arc::clone(&types),
-                    DEFAULT_JOURNAL_CAPACITY,
+                    DEFAULT_JOURNAL_CAPACITY_BYTES,
                 )
             } else {
-                Index::new_with_scope_types_and_journal_capacity(
+                Index::new_with_scope_types_and_journal_capacity_bytes(
                     "/root",
                     scope,
                     Arc::clone(&types),
-                    DEFAULT_JOURNAL_CAPACITY,
+                    DEFAULT_JOURNAL_CAPACITY_BYTES,
                 )
             };
             let started = std::time::Instant::now();
@@ -5499,11 +5687,11 @@ mod tests {
 
     #[test]
     fn opened_entry_values_project_name_identity_without_retaining_it_on_detached_entries() {
-        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
             ScanScope::default(),
             crate::classify::TypeRegistry::compiled_shared(),
-            DEFAULT_JOURNAL_CAPACITY,
+            DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
         index.apply_ok(&Observation::new(vec![upsert(
             "bundle.umd.min.js",
@@ -5521,11 +5709,11 @@ mod tests {
 
     #[test]
     fn a_shared_snapshot_drops_opened_root_serving_state() {
-        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
             ScanScope::default(),
             crate::classify::TypeRegistry::compiled_shared(),
-            DEFAULT_JOURNAL_CAPACITY,
+            DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
         index.apply_ok(&Observation::new(vec![upsert("a.txt", EntryKind::File, file_attrs(1, 1))]));
         assert!(index.serving_indexes_enabled());
@@ -6045,6 +6233,106 @@ mod tests {
         assert_eq!(outcome.stats.stale, 1);
         assert!(outcome.commit.is_none());
         assert!(index.lookup(Path::new("file.txt")).is_none());
+    }
+
+    /// A delayed conditional upsert whose baseline moved to exactly its target is no
+    /// conflict: the other producer verified the same fact first. It applies as unchanged,
+    /// not stale, so a refresh that converges with the observation handoff does not send
+    /// the handoff back for another full-root walk.
+    #[test]
+    fn convergent_conditional_upsert_applies_as_unchanged_not_stale() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![upsert(
+            "file.txt",
+            EntryKind::File,
+            file_attrs(10, 1),
+        )]));
+        let baseline = index.expectation(Path::new("file.txt"));
+        let delayed = Observation::from_ops(vec![ObservationOp::if_state(
+            upsert("file.txt", EntryKind::File, file_attrs(20, 2)),
+            baseline,
+        )]);
+
+        index.apply_ok(&Observation::new(vec![upsert(
+            "file.txt",
+            EntryKind::File,
+            file_attrs(20, 2),
+        )]));
+        let outcome = index.apply_ok(&delayed);
+
+        assert_eq!(outcome.stats.stale, 0);
+        assert_eq!(outcome.stats.unchanged, 1);
+        assert!(outcome.commit.is_none());
+        assert_eq!(index.attrs(Path::new("file.txt")).expect("file").size, 20);
+    }
+
+    #[test]
+    fn convergent_conditional_remove_applies_as_unchanged_not_stale() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("dir", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("dir/file.txt", EntryKind::File, file_attrs(10, 1)),
+        ]));
+        let baseline = index.expectation(Path::new("dir/file.txt"));
+        let delayed = Observation::from_ops(vec![ObservationOp::if_state(
+            Op::Remove { path: PathBuf::from("dir/file.txt") },
+            baseline,
+        )]);
+
+        index.apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("dir/file.txt") }]));
+        let outcome = index.apply_ok(&delayed);
+
+        assert_eq!(outcome.stats.stale, 0);
+        assert_eq!(outcome.stats.unchanged, 1);
+        assert!(outcome.commit.is_none());
+        assert!(index.lookup(Path::new("dir/file.txt")).is_none());
+    }
+
+    /// A control file's entry and rules are pushed on one baseline, so a refresh that
+    /// verified both first leaves nothing for either to change. Both apply as unchanged; a
+    /// control op whose rules the table does not hold is still refused on the moved
+    /// baseline.
+    #[test]
+    fn convergent_conditional_control_ops_apply_as_unchanged_not_stale() {
+        let path = PathBuf::from(".gitignore");
+        let rules =
+            |source: &[u8]| Op::ControlUpsert { path: path.clone(), source: source.to_vec() };
+        let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
+        index.apply_ok(&Observation::new(vec![
+            upsert(".gitignore", EntryKind::File, file_attrs(6, 1)),
+            rules(b"before"),
+        ]));
+        let baseline = index.expectation(&path);
+        index.apply_ok(&Observation::new(vec![
+            upsert(".gitignore", EntryKind::File, file_attrs(7, 2)),
+            rules(b"changed"),
+        ]));
+
+        let outcome = index.apply_ok(&Observation::from_ops(vec![
+            ObservationOp::if_state(
+                upsert(".gitignore", EntryKind::File, file_attrs(7, 2)),
+                baseline,
+            ),
+            ObservationOp::if_state(rules(b"changed"), baseline),
+        ]));
+        assert_eq!(outcome.stats.stale, 0);
+        assert!(outcome.commit.is_none());
+        let diverged = index.apply_ok(&Observation::from_ops(vec![ObservationOp::if_state(
+            rules(b"other"),
+            baseline,
+        )]));
+        assert_eq!(diverged.stats.stale, 1);
+        assert!(index.controls().expect("control state observed").source_is(&path, b"changed"));
+
+        let baseline = index.expectation(&path);
+        index.apply_ok(&Observation::new(vec![Op::Remove { path: path.clone() }]));
+        let outcome = index.apply_ok(&Observation::from_ops(vec![
+            ObservationOp::if_state(Op::Remove { path: path.clone() }, baseline),
+            ObservationOp::if_state(Op::ControlRemove { path: path.clone() }, baseline),
+        ]));
+        assert_eq!(outcome.stats.stale, 0);
+        assert!(outcome.commit.is_none());
+        assert!(!index.controls().expect("control state observed").contains(&path));
     }
 
     #[test]
@@ -6581,12 +6869,15 @@ mod tests {
         assert_eq!(counts.effect_paths, 3);
         assert_eq!(counts.journal_retained_commits, 1);
 
+        // Room for exactly two one-file commits; measured before the counters reset so the
+        // probe's own journal work is not counted.
+        let two_commits = 2 * commit_cost(vec![upsert("one", EntryKind::File, file_attrs(1, 1))]);
         crate::counters::test_thread_reset();
         let mut bounded = Index::new("/root");
-        bounded.journal_capacity = 4;
+        bounded.journal_capacity_bytes = two_commits;
         bounded.apply_ok(&Observation::new(vec![upsert("one", EntryKind::File, file_attrs(1, 1))]));
         bounded.apply_ok(&Observation::new(vec![upsert("two", EntryKind::File, file_attrs(2, 2))]));
-        bounded.journal_capacity = 1;
+        bounded.journal_capacity_bytes = 1;
         bounded.apply_ok(&Observation::new(vec![upsert(
             "three",
             EntryKind::File,
@@ -6625,7 +6916,9 @@ mod tests {
         fn assert_same_facts(detached: &Index, exact: &Index) {
             assert_eq!(fact_image(detached), fact_image(exact));
             assert_eq!(detached.total(), exact.total());
-            assert_eq!(detached.partition_total(), exact.partition_total());
+            let partitions =
+                |index: &Index| index.named_partitions(index.entry(EntryId::ROOT).rollup());
+            assert_eq!(partitions(detached), partitions(exact));
             let controls = |index: &Index| {
                 index
                     .controls
@@ -7272,14 +7565,23 @@ mod tests {
         assert_eq!(index.since(index.clock()).commits.len(), 0);
     }
 
+    /// The bytes one batch is charged when it commits against an empty tree.
+    fn commit_cost(ops: Vec<Op>) -> usize {
+        let mut probe = Index::new("/root");
+        probe.apply_ok(&Observation::new(ops)).commit.expect("effective commit").retained_cost()
+    }
+
     #[test]
     fn oversized_single_batch_is_not_retained() {
-        let mut index = Index::with_journal_capacity("/root", 2);
-        let outcome = index.apply_ok(&Observation::new(vec![
-            upsert("a.txt", EntryKind::File, file_attrs(1, 1)),
-            upsert("b.txt", EntryKind::File, file_attrs(2, 2)),
-            upsert("c.txt", EntryKind::File, file_attrs(3, 3)),
-        ]));
+        let batch = || {
+            vec![
+                upsert("a.txt", EntryKind::File, file_attrs(1, 1)),
+                upsert("b.txt", EntryKind::File, file_attrs(2, 2)),
+                upsert("c.txt", EntryKind::File, file_attrs(3, 3)),
+            ]
+        };
+        let mut index = Index::with_journal_capacity_bytes("/root", commit_cost(batch()) - 1);
+        let outcome = index.apply_ok(&Observation::new(batch()));
 
         assert_eq!(outcome.commit.as_ref().expect("committed").changes.len(), 3);
         let since = index.since(Clock::ZERO);
@@ -7289,21 +7591,55 @@ mod tests {
 
     #[test]
     fn journal_eviction_charges_the_complete_retained_payload() {
-        let mut index = Index::with_journal_capacity("/root", 6);
-        index.apply_ok(&Observation::new(vec![
-            upsert("a.txt", EntryKind::File, file_attrs(1, 1)),
-            upsert("b.txt", EntryKind::File, file_attrs(2, 2)),
-        ]));
-        index.apply_ok(&Observation::new(vec![
-            upsert("c.txt", EntryKind::File, file_attrs(3, 3)),
-            upsert("d.txt", EntryKind::File, file_attrs(4, 4)),
-        ]));
+        let first = || {
+            vec![
+                upsert("a.txt", EntryKind::File, file_attrs(1, 1)),
+                upsert("b.txt", EntryKind::File, file_attrs(2, 2)),
+            ]
+        };
+        let second = || {
+            vec![
+                upsert("c.txt", EntryKind::File, file_attrs(3, 3)),
+                upsert("d.txt", EntryKind::File, file_attrs(4, 4)),
+            ]
+        };
+        // Room for the second commit and all but one byte of the first.
+        let capacity = commit_cost(first()) + commit_cost(second()) - 1;
+        let mut index = Index::with_journal_capacity_bytes("/root", capacity);
+        index.apply_ok(&Observation::new(first()));
+        index.apply_ok(&Observation::new(second()));
 
         let since = index.since(Clock::ZERO);
         assert!(since.truncated);
         assert_eq!(since.commits.len(), 1);
         assert_eq!(since.commits[0].changes.len(), 2);
         assert_eq!(since.commits[0].changes[0].path(), Path::new("c.txt"));
+    }
+
+    /// Two commits of one inserted file each: the same item count, but the second names a
+    /// path whose bytes alone dwarf the first commit. A budget counted in items held both
+    /// and let a long-path tree retain tens of mebibytes under a 64 Ki budget; a budget in
+    /// bytes evicts the first.
+    #[test]
+    fn journal_eviction_is_charged_in_path_bytes() {
+        let long_name = format!("{}.txt", "n".repeat(4096));
+        let short = || vec![upsert("a.txt", EntryKind::File, file_attrs(1, 1))];
+        let long = || vec![upsert(&long_name, EntryKind::File, file_attrs(2, 2))];
+        let short_cost = commit_cost(short());
+        let long_cost = commit_cost(long());
+        assert!(
+            long_cost > short_cost + 4096,
+            "path bytes must be charged: short {short_cost}, long {long_cost}"
+        );
+
+        let mut index = Index::with_journal_capacity_bytes("/root", short_cost + long_cost - 1);
+        index.apply_ok(&Observation::new(short()));
+        index.apply_ok(&Observation::new(long()));
+
+        let since = index.since(Clock::ZERO);
+        assert!(since.truncated, "an item budget kept both commits; a byte budget cannot");
+        assert_eq!(since.commits.len(), 1);
+        assert_eq!(since.commits[0].changes[0].path(), Path::new(&long_name));
     }
 
     #[test]
@@ -7378,11 +7714,11 @@ mod tests {
 
         let first = PathBuf::from(OsString::from_vec(vec![b'n', 0x80]));
         let second = PathBuf::from(OsString::from_vec(vec![b'n', 0x81]));
-        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
             ScanScope::default(),
             crate::classify::TypeRegistry::compiled_shared(),
-            DEFAULT_JOURNAL_CAPACITY,
+            DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
         index.apply_ok(&Observation::new(vec![
             Op::Upsert { path: first.clone(), kind: EntryKind::File, attrs: file_attrs(10, 1) },
@@ -7404,11 +7740,11 @@ mod tests {
 
         let directory = PathBuf::from(OsString::from_vec(vec![b'd', 0x80]));
         let child = directory.join("child");
-        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
             ScanScope::default(),
             crate::classify::TypeRegistry::compiled_shared(),
-            DEFAULT_JOURNAL_CAPACITY,
+            DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
         index.apply_ok(&Observation::new(vec![
             Op::Upsert { path: directory.clone(), kind: EntryKind::Dir, attrs: Attrs::default() },
@@ -7508,10 +7844,189 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "gitignore")]
+    /// An index that read no control file cannot say what is ignored, so it says that,
+    /// rather than calling every entry unignored.
+    #[test]
+    fn an_index_that_did_not_observe_controls_refuses_ignore_questions() {
+        let mut index =
+            Index::new_with_scope("/root", crate::test_support::not_observing_controls());
+        assert!(!index.observes_controls());
+        index.apply_ok(&Observation::new(vec![upsert(
+            "debug.log",
+            EntryKind::File,
+            file_attrs(10, 1),
+        )]));
+        for path in ["debug.log", "absent.log"] {
+            assert!(
+                matches!(
+                    index.is_ignored(Path::new(path)),
+                    Err(crate::Error::ControlStateNotObserved)
+                ),
+                "{path}"
+            );
+        }
+        assert!(matches!(index.controls(), Err(crate::Error::ControlStateNotObserved)));
+
+        let mut observed =
+            Index::new_with_scope("/root", crate::test_support::observing_controls());
+        assert!(observed.observes_controls());
+        observed.apply_ok(&Observation::new(vec![upsert(
+            "debug.log",
+            EntryKind::File,
+            file_attrs(10, 1),
+        )]));
+        assert_eq!(observed.is_ignored(Path::new("debug.log")).ok(), Some(Some(false)));
+        assert_eq!(observed.is_ignored(Path::new("absent.log")).ok(), Some(None));
+        assert!(observed.controls().is_ok_and(crate::control::ControlTable::is_empty));
+    }
+
+    /// Control input to an index that observes no control state is refused, typed, and
+    /// changes nothing. Accepted, it installed a table and reclassified entries under a
+    /// scope that says no rule was read, so `is_ignored` refused over classification the
+    /// index held and a snapshot saved from it loaded into an open that turned observation
+    /// off as an exact match (`fdu-agb6`). A stale conditional control op is refused as
+    /// well: the refusal is about the index's scope, not its state.
+    #[test]
+    fn an_index_that_does_not_observe_controls_refuses_control_input() {
+        let mut index =
+            Index::new_with_scope("/root", crate::test_support::not_observing_controls());
+        index.apply_ok(&Observation::new(vec![
+            upsert(".gitignore", EntryKind::File, file_attrs(6, 1)),
+            upsert("debug.log", EntryKind::File, file_attrs(10, 2)),
+        ]));
+        let stale_baseline = index.expectation(Path::new(".gitignore"));
+        index.apply_ok(&Observation::new(vec![upsert(
+            ".gitignore",
+            EntryKind::File,
+            file_attrs(7, 3),
+        )]));
+        let clock = index.clock();
+        let total = index.total();
+        let controls = || {
+            [
+                Op::ControlUpsert {
+                    path: PathBuf::from(".gitignore"),
+                    source: b"*.log\n".to_vec(),
+                },
+                Op::ControlRemove { path: PathBuf::from(".gitignore") },
+            ]
+        };
+
+        for control in controls() {
+            let batch = Observation::new(vec![
+                upsert("new.txt", EntryKind::File, file_attrs(1, 4)),
+                control.clone(),
+            ]);
+            assert!(
+                matches!(index.apply(&batch), Err(crate::Error::ControlStateNotObserved)),
+                "{control:?}"
+            );
+            assert!(
+                matches!(index.apply_baseline(&batch), Err(crate::Error::ControlStateNotObserved)),
+                "{control:?}"
+            );
+            let stale = Observation::from_ops(vec![ObservationOp::if_state(
+                control.clone(),
+                stale_baseline,
+            )]);
+            assert!(
+                matches!(index.apply(&stale), Err(crate::Error::ControlStateNotObserved)),
+                "stale {control:?}"
+            );
+        }
+        assert_eq!(index.clock(), clock, "a refused batch commits nothing");
+        assert_eq!(index.total(), total);
+        assert!(index.lookup(Path::new("new.txt")).is_none());
+        assert!(index.control_table().is_empty());
+
+        let mut table = crate::control::ControlTable::default();
+        table.upsert(Path::new(".gitignore"), b"*.log\n".to_vec()).expect("control source");
+        assert!(matches!(
+            index.install_controls(table),
+            Err(crate::Error::ControlStateNotObserved)
+        ));
+        assert!(index.control_table().is_empty());
+
+        let mut observed =
+            Index::new_with_scope("/root", crate::test_support::observing_controls());
+        for control in controls() {
+            observed
+                .apply(&Observation::new(vec![
+                    upsert(".gitignore", EntryKind::File, file_attrs(6, 1)),
+                    control,
+                ]))
+                .expect("an observing index accepts control input");
+        }
+    }
+
+    /// The unignored partition and a shared child's ignore bit are ignore facts too. On an
+    /// index that read no rule the partition equals `all` and every bit reads "not
+    /// ignored" only because nobody looked, so they refuse the way `is_ignored` does,
+    /// while the `all` roll-up and the children themselves still answer (`fdu-agb6`).
+    #[test]
+    fn an_index_that_did_not_observe_controls_states_no_partition_or_child_ignore_fact() {
+        let tree = Observation::new(vec![
+            upsert("dir", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("dir/debug.log", EntryKind::File, file_attrs(10, 2)),
+        ]);
+        let mut unobserved =
+            Index::new_with_scope("/root", crate::test_support::not_observing_controls());
+        unobserved.apply_ok(&tree);
+        assert!(matches!(unobserved.partition_total(), Err(crate::Error::ControlStateNotObserved)));
+        for path in ["", "dir", "dir/debug.log", "absent"] {
+            assert!(
+                matches!(
+                    unobserved.partition_rollup(Path::new(path)),
+                    Err(crate::Error::ControlStateNotObserved)
+                ),
+                "{path}"
+            );
+            assert!(
+                matches!(
+                    unobserved.partition_rollup_summary(Path::new(path)),
+                    Err(crate::Error::ControlStateNotObserved)
+                ),
+                "{path}"
+            );
+        }
+        assert_eq!(unobserved.total().files, 1, "the all partition still answers");
+        let children = IndexHandle::new(unobserved)
+            .children(Path::new(""))
+            .expect("children read")
+            .expect("root directory");
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].ignored, None);
+        assert_eq!(children[0].partitions, None);
+        assert_eq!(children[0].rollup.as_ref().map(|rollup| rollup.files), Some(1));
+
+        let mut observed =
+            Index::new_with_scope("/root", crate::test_support::observing_controls());
+        observed.apply_ok(&tree);
+        assert_eq!(observed.partition_total().expect("control state observed").unignored.files, 1);
+        assert!(
+            observed.partition_rollup(Path::new("dir")).expect("control state observed").is_some()
+        );
+        assert_eq!(
+            observed
+                .partition_rollup_summary(Path::new("dir/debug.log"))
+                .expect("control state observed"),
+            None,
+            "a file has no partitions"
+        );
+        let children = IndexHandle::new(observed)
+            .children(Path::new(""))
+            .expect("children read")
+            .expect("root directory");
+        assert_eq!(children[0].ignored, Some(false));
+        assert_eq!(
+            children[0].partitions.as_ref().map(|partitions| partitions.unignored.files),
+            Some(1)
+        );
+    }
+
     #[test]
     fn control_changes_atomically_move_fixed_partitions_without_changing_all() {
-        let mut index = Index::new("/root");
+        let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
         index.apply_ok(&Observation::new(vec![
             upsert(".gitignore", EntryKind::File, file_attrs(6, 1)),
             upsert("debug.log", EntryKind::File, file_attrs(10, 2)),
@@ -7520,13 +8035,13 @@ mod tests {
             upsert("docs/other.log", EntryKind::File, file_attrs(30, 5)),
             upsert("docs/keep.log", EntryKind::File, file_attrs(40, 6)),
         ]));
-        let before = index.partition_total();
+        let before = index.partition_total().expect("control state observed");
 
         let outcome = index.apply_ok(&Observation::new(vec![Op::ControlUpsert {
             path: PathBuf::from(".gitignore"),
             source: b"*.log\n".to_vec(),
         }]));
-        let partitions = index.partition_total();
+        let partitions = index.partition_total().expect("control state observed");
 
         assert_eq!(partitions.all, before.all, "classification never changes all facts");
         assert_eq!(partitions.all.files, 5);
@@ -7534,8 +8049,14 @@ mod tests {
         assert_eq!(partitions.unignored.bytes, 26);
         assert_eq!(outcome.controls, 1);
         assert_eq!(outcome.reclassified, 3);
-        assert_eq!(index.is_ignored(Path::new("debug.log")), Some(true));
-        assert_eq!(index.is_ignored(Path::new("keep.rs")), Some(false));
+        assert_eq!(
+            index.is_ignored(Path::new("debug.log")).expect("control state observed"),
+            Some(true)
+        );
+        assert_eq!(
+            index.is_ignored(Path::new("keep.rs")).expect("control state observed"),
+            Some(false)
+        );
 
         let commit = outcome.commit.expect("control and classification commit together");
         assert!(matches!(
@@ -7553,14 +8074,13 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn serving_semantics_follow_ignore_reclassification_exactly() {
-        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
-            ScanScope::default(),
+            crate::test_support::observing_controls(),
             crate::classify::TypeRegistry::compiled_shared(),
-            DEFAULT_JOURNAL_CAPACITY,
+            DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
         index.apply_ok(&Observation::new(vec![
             upsert(".gitignore", EntryKind::File, file_attrs(6, 1)),
@@ -7582,10 +8102,9 @@ mod tests {
         assert_serving_indexes(&index);
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn nested_negation_edit_and_last_control_deletion_reclassify_exactly() {
-        let mut index = Index::new("/root");
+        let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
         index.apply_ok(&Observation::new(vec![
             upsert(".gitignore", EntryKind::File, file_attrs(6, 1)),
             upsert("docs", EntryKind::Dir, file_attrs(0, 2)),
@@ -7597,33 +8116,48 @@ mod tests {
                 source: b"!keep.log\n".to_vec(),
             },
         ]));
-        assert_eq!(index.is_ignored(Path::new("docs/keep.log")), Some(false));
+        assert_eq!(
+            index.is_ignored(Path::new("docs/keep.log")).expect("control state observed"),
+            Some(false)
+        );
 
         let edited = index.apply_ok(&Observation::new(vec![Op::ControlUpsert {
             path: PathBuf::from("docs/.gitignore"),
             source: b"# no exception\n".to_vec(),
         }]));
         assert_eq!(edited.reclassified, 1);
-        assert_eq!(index.is_ignored(Path::new("docs/keep.log")), Some(true));
+        assert_eq!(
+            index.is_ignored(Path::new("docs/keep.log")).expect("control state observed"),
+            Some(true)
+        );
 
         let removed = index
             .apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from(".gitignore") }]));
         assert_eq!(removed.controls, 1, "removing the retained row removes its control state");
         assert_eq!(removed.reclassified, 1);
-        assert_eq!(index.controls().len(), 1, "the nested control remains");
-        assert_eq!(index.is_ignored(Path::new("docs/keep.log")), Some(false));
+        assert_eq!(
+            index.controls().expect("control state observed").len(),
+            1,
+            "the nested control remains"
+        );
+        assert_eq!(
+            index.is_ignored(Path::new("docs/keep.log")).expect("control state observed"),
+            Some(false)
+        );
 
         index.apply_ok(&Observation::new(vec![Op::Remove {
             path: PathBuf::from("docs/.gitignore"),
         }]));
-        assert!(index.controls().is_empty());
-        assert_eq!(index.is_ignored(Path::new("docs/keep.log")), Some(false));
+        assert!(index.controls().expect("control state observed").is_empty());
+        assert_eq!(
+            index.is_ignored(Path::new("docs/keep.log")).expect("control state observed"),
+            Some(false)
+        );
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn replacing_batch_ancestors_prunes_retained_and_transient_controls() {
-        let mut index = Index::new("/root");
+        let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
         index
             .apply(&Observation::new(vec![
                 upsert("docs", EntryKind::Dir, file_attrs(0, 1)),
@@ -7649,9 +8183,15 @@ mod tests {
             ]))
             .expect("mixed control and structural batch");
 
-        assert!(index.controls().is_empty());
-        assert_eq!(index.is_ignored(Path::new("scratch/new.log")), Some(false));
-        assert_eq!(index.is_ignored(Path::new("docs/new.log")), Some(false));
+        assert!(index.controls().expect("control state observed").is_empty());
+        assert_eq!(
+            index.is_ignored(Path::new("scratch/new.log")).expect("control state observed"),
+            Some(false)
+        );
+        assert_eq!(
+            index.is_ignored(Path::new("docs/new.log")).expect("control state observed"),
+            Some(false)
+        );
         assert_eq!(outcome.stats.controls, 1, "only the retained control has a net change");
         let controls = outcome
             .commit
@@ -7668,14 +8208,13 @@ mod tests {
         ));
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn control_bound_failure_is_atomic_with_ordinary_entry_work() {
-        let mut index = Index::new_opened_with_scope_types_and_journal_capacity(
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
-            ScanScope::default(),
+            crate::test_support::observing_controls(),
             crate::classify::TypeRegistry::compiled_shared(),
-            DEFAULT_JOURNAL_CAPACITY,
+            DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
         let before = index.clone();
         let mut oversized = crate::control::source_at_test_limit();
@@ -7693,7 +8232,7 @@ mod tests {
         assert_eq!(index.total(), before.total());
         assert_eq!(index.serving, before.serving);
         assert!(index.lookup(Path::new("ordinary.txt")).is_none());
-        assert!(index.controls().is_empty());
+        assert!(index.controls().expect("control state observed").is_empty());
     }
 
     #[test]

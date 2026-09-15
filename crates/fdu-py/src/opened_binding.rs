@@ -20,9 +20,9 @@ use fdu_core::{
     ChangeOutcome, ChangePoll, ChangeRequest, ContinuationId, CountResult, Coverage,
     CoverageReason, EffectiveChange, EngineVersion, EntryKind, EntryValue, Freshness, Impact,
     ImpactDomain, IndexState, Issue, IssueKind, Knowledge, LifecyclePhase, LimitedProjection,
-    OpenOptions, OpenedIndex, PageRequest, ProjectionResult, ReadDiagnostics, ReadProjection,
-    ReadRequest, ReadResponse, RefreshResult, RollUpSummary, RowShape, ScopeIdentity,
-    SemanticIdentity, Source, StateTransition, Work,
+    OpenOptions, OpenedIndex, PageRequest, ProjectionRefusal, ProjectionResult, ReadDiagnostics,
+    ReadProjection, ReadRequest, ReadResponse, RefreshResult, RollUpSummary, RowShape,
+    ScopeIdentity, SemanticIdentity, Source, StateTransition, Work,
 };
 
 create_exception!(fdu, OpenedIndexError, PyRuntimeError);
@@ -52,8 +52,7 @@ fn opened_py_err(error: fdu_core::Error) -> PyErr {
         | fdu_core::Error::PageRowLimit { .. }
         | fdu_core::Error::PageWorkLimit { .. }
         | fdu_core::Error::CountCapLimit { .. }
-        | fdu_core::Error::ReportViewLimit { .. }
-        | fdu_core::Error::ContinuationRecordLimit { .. } => {
+        | fdu_core::Error::ReportViewLimit { .. } => {
             OpenedIndexLimitError::new_err(error.to_string())
         }
         // A poisoned index belongs with the lifecycle and journal poison beside it: after a
@@ -66,9 +65,9 @@ fn opened_py_err(error: fdu_core::Error) -> PyErr {
         | fdu_core::Error::OpenedWorkerPanicked { .. }
         | fdu_core::Error::OpenedWorkerFailed { .. }
         | fdu_core::Error::OpenedWorkerSpawn { .. } => OpenedIndexError::new_err(error.to_string()),
-        fdu_core::Error::UnsupportedFlatSelection
-        | fdu_core::Error::TreeDepthZero
-        | fdu_core::Error::NotADirectory(_) => PyValueError::new_err(error.to_string()),
+        fdu_core::Error::UnsupportedFlatSelection | fdu_core::Error::TreeDepthZero => {
+            PyValueError::new_err(error.to_string())
+        }
         other => super::to_py_err(other),
     }
 }
@@ -147,7 +146,7 @@ fn parse_entry_selection(
     let Some(dict) = dict else {
         return Ok(EntrySelection::default());
     };
-    Ok(EntrySelection {
+    let mut selection = EntrySelection {
         query: parse_selection(Some(dict), now)?,
         max_size: dict
             .get_item("max_size")?
@@ -161,9 +160,17 @@ fn parse_entry_selection(
             .unwrap_or(false),
         logical_extensions: optional_strings(dict, "logical_extensions")?.unwrap_or_default(),
         exact_names: optional_strings(dict, "exact_names")?.unwrap_or_default(),
-        terminal_extensions: optional_strings(dict, "terminal_extensions")?.unwrap_or_default(),
-        ancestor_names: optional_strings(dict, "ancestor_names")?.unwrap_or_default(),
-    })
+        ..EntrySelection::default()
+    };
+    // Through the engine's admitting constructors, so the binding refuses exactly what a
+    // Rust caller is refused, with the same message.
+    for value in optional_strings(dict, "terminal_extensions")?.unwrap_or_default() {
+        selection.admit_terminal_extension(value).map_err(opened_py_err)?;
+    }
+    for value in optional_strings(dict, "ancestor_names")?.unwrap_or_default() {
+        selection.admit_ancestor_name(value).map_err(opened_py_err)?;
+    }
+    Ok(selection)
 }
 
 fn parse_scope(dict: &Bound<'_, PyDict>) -> PyResult<ScopeIdentity> {
@@ -912,6 +919,25 @@ fn projection_result_dict<'py>(
             limit.set_item("rows_visited", value.rows_visited)?;
             out.set_item("value", limit)?;
         }
+        ProjectionResult::Refused(refusal) => {
+            out.set_item("kind", "refused")?;
+            let value = PyDict::new(py);
+            match refusal {
+                ProjectionRefusal::NotADirectory { path } => {
+                    value.set_item("reason", "not_a_directory")?;
+                    value.set_item("path", path.as_os_str())?;
+                }
+                ProjectionRefusal::ContinuationRecordLimit { attempted, limit } => {
+                    value.set_item("reason", "continuation_record_limit")?;
+                    value.set_item("attempted", attempted)?;
+                    value.set_item("limit", limit)?;
+                }
+                ProjectionRefusal::ContinuationUnavailable => {
+                    value.set_item("reason", "continuation_unavailable")?;
+                }
+            }
+            out.set_item("value", value)?;
+        }
     }
     Ok(out)
 }
@@ -1015,7 +1041,7 @@ impl PyOpenedIndex {
         exclude_special = false,
         max_files = None,
         observe = false,
-        journal_capacity = None,
+        journal_capacity_bytes = None,
         type_rules = None
     ))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
@@ -1030,7 +1056,7 @@ impl PyOpenedIndex {
         exclude_special: bool,
         max_files: Option<u64>,
         observe: bool,
-        journal_capacity: Option<usize>,
+        journal_capacity_bytes: Option<usize>,
         type_rules: Option<String>,
     ) -> PyResult<Self> {
         let allowed = hidden_allow.unwrap_or_default();
@@ -1050,8 +1076,8 @@ impl PyOpenedIndex {
         options.exclude_special = exclude_special;
         options.budget.max_files = max_files;
         options.observation = observe.then(fdu_core::watch::WatchConfig::default);
-        if let Some(value) = journal_capacity {
-            options.journal_capacity = value;
+        if let Some(value) = journal_capacity_bytes {
+            options.journal_capacity_bytes = value;
         }
         let inner = py
             .detach(move || {

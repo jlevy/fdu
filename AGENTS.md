@@ -62,7 +62,7 @@ actions rather than telling them to run commands.
 ## Build and Test
 
 ```shell
-make build      # debug build, all features
+make build      # debug build, all build features
 make test       # test suite
 make check      # handoff gate: fmt, clippy, tests, docs, lib-only build
 make fix        # apply formatting and machine-applicable lint fixes
@@ -72,8 +72,20 @@ make audit      # cargo-deny advisory and license audit
 `make check` is the required handoff gate, and `make cross-lint` is its companion for
 anything platform-specific.
 If it passes, CI should.
-It runs the same feature combinations CI does, notably `--no-default-features`, which is
-how library consumers build and is otherwise never exercised locally.
+It runs the same build-feature combinations CI does, notably `--no-default-features`,
+which is how library consumers build and is otherwise never exercised locally.
+
+### Terminology
+
+Compile-time Cargo features are **build features** in prose (comments, docs, commits,
+PRs, beads), never plain “feature”, which reads as a product capability.
+Literal syntax stays as Cargo spells it: `[features]`, `--features watch`,
+`cfg(feature = "watch")`. `watch` is the engine’s only optional-capability build
+feature: it carries a real dependency tree and must stay deletable.
+`extension-module` in `fdu-py` is a packaging switch for the Python extension, not a
+capability. `.gitignore` handling is built in, and `read_controls` switches it per
+request: on by default for `open` and `scan` in Rust and Python, and off for one-shot
+reports and `fdu --watch` until `fdu-elnn` lands.
 
 ### Platform-gated code
 

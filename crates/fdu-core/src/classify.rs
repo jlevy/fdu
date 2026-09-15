@@ -1484,6 +1484,38 @@ priority = 100
         assert_ne!(as_extension.fingerprint(), as_filename.fingerprint());
     }
 
+    /// One registry written as schema 3 and as schema 4 is one classification. Schema 4
+    /// adds icons, and the same revision repaints a family; neither changes what a file
+    /// is, so a snapshot recorded under either document is served under the other.
+    #[test]
+    fn a_schema_three_registry_and_its_schema_four_repaint_share_one_identity() {
+        let registry = |schema: u32, group_icon: &str, hue: &str, family_icon: &str| {
+            TypeRegistry::from_manifest(&format!(
+                "schema_version = {schema}\nregistry_revision = 3\nmax_extension_components = 2\n\n\
+                 [[group]]\nid = \"code\"\nlabel = \"Code\"\norder = 10\n{group_icon}\n\
+                 [[group]]\nid = \"other\"\nlabel = \"Other\"\norder = 20\n{group_icon}\n\
+                 [[family]]\nid = \"swift\"\nlabel = \"Swift\"\ngroup = \"code\"\norder = 190\n\
+                 linguist = \"Swift\"\nlinguist_color = \"#f05138\"\nhue = {hue}\n{family_icon}\n\
+                 [[kind]]\nid = \"swift\"\nfamily = \"swift\"\ncontent_family = \"code\"\n\
+                 extensions = [\"swift\"]\nfilenames = []\nshebangs = []\npriority = 100\n"
+            ))
+            .unwrap_or_else(|error| panic!("schema {schema}: {error}"))
+        };
+        let three = registry(3, "", "31.62", "");
+        let four = registry(
+            4,
+            "icon = \"alignLeft\"",
+            "52.3",
+            "deviation = \"\"\"Moved off svelte's hue.\"\"\"\nicon = \"fileText\"",
+        );
+
+        assert_eq!(three.fingerprint(), four.fingerprint());
+        assert_eq!(three.registry_revision(), four.registry_revision());
+        let swift = OsStr::new("App.swift");
+        assert_eq!(three.classify_name(swift).family_id(), Some("swift"));
+        assert_eq!(four.classify_name(swift).family_id(), Some("swift"));
+    }
+
     /// A name that is not valid UTF-8 must classify as unknown, as it did when the tier
     /// compared raw `OsStr` bytes against an all-ASCII rules table.
     #[test]

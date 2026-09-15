@@ -20,7 +20,7 @@ struct WaitState {
     closed: bool,
     /// Polls blocked in the wait right now, so a session golden can observe that none
     /// outlives close instead of asserting it.
-    #[cfg(all(test, feature = "watch", feature = "gitignore"))]
+    #[cfg(all(test, feature = "watch"))]
     waiters: usize,
 }
 
@@ -31,6 +31,12 @@ impl JournalWait {
 
     /// Wake every poller after an exact commit has entered the index journal.
     pub(super) fn notify_commit(&self) {
+        self.wake();
+    }
+
+    /// Wake every poller so it re-examines the root: a worker has failed, and a poller
+    /// waiting for its commits must answer for that now rather than at its timeout.
+    pub(super) fn wake(&self) {
         let guard = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         self.changed.notify_all();
         drop(guard);
@@ -43,7 +49,7 @@ impl JournalWait {
         self.changed.notify_all();
     }
 
-    #[cfg(all(test, feature = "watch", feature = "gitignore"))]
+    #[cfg(all(test, feature = "watch"))]
     pub(super) fn waiters(&self) -> usize {
         self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner).waiters
     }
@@ -64,7 +70,7 @@ pub(super) fn poll(opened: &OpenedIndex, request: ChangeRequest) -> Result<Chang
             return Err(Error::OpenedIndexClosed);
         }
 
-        let snapshot = opened.state.index.read_with(|index| {
+        let read = opened.state.index.read_with(|index| {
             let scope = index.scope();
             let version = EngineVersion {
                 session: opened.state.session,
@@ -77,7 +83,23 @@ pub(super) fn poll(opened: &OpenedIndex, request: ChangeRequest) -> Result<Chang
             debug_assert_eq!(since.clock, version.sequence);
             debug_assert_eq!(since.state, index.state());
             Ok(JournalSnapshot { version, state: since.state, since })
-        })??;
+        });
+        let snapshot = match read {
+            Ok(snapshot) => snapshot?,
+            Err(Error::IndexLockPoisoned) => {
+                // A worker that panics inside a commit, the likeliest place for a panic,
+                // poisons the index lock as it unwinds. Once the panic is recorded it is
+                // the cause close reports, and the poisoning is only its trace.
+                return Err(opened
+                    .state
+                    .failures
+                    .panicked()
+                    .map_or(Error::IndexLockPoisoned, |worker| Error::OpenedWorkerPanicked {
+                        worker,
+                    }));
+            }
+            Err(error) => return Err(error),
+        };
 
         if opened.state.cancellation.is_cancelled() {
             return Err(Error::OpenedIndexClosed);
@@ -89,6 +111,12 @@ pub(super) fn poll(opened: &OpenedIndex, request: ChangeRequest) -> Result<Chang
         if !snapshot.since.commits.is_empty() {
             return Ok(changes_at(snapshot));
         }
+        if let Some(worker) = opened.state.failures.panicked() {
+            // Nothing will commit again; waiting would end only at the timeout. This is
+            // the cause close reports, checked here rather than first so that commits
+            // retained before the panic are still delivered.
+            return Err(Error::OpenedWorkerPanicked { worker });
+        }
 
         let remaining = request.timeout.saturating_sub(started.elapsed());
         if remaining.is_zero() {
@@ -96,7 +124,7 @@ pub(super) fn poll(opened: &OpenedIndex, request: ChangeRequest) -> Result<Chang
         }
         #[cfg(test)]
         opened.state.test_controls.reach(super::TestPoint::BeforeJournalWait);
-        #[cfg(all(test, feature = "watch", feature = "gitignore"))]
+        #[cfg(all(test, feature = "watch"))]
         {
             wait.waiters += 1;
         }
@@ -107,7 +135,7 @@ pub(super) fn poll(opened: &OpenedIndex, request: ChangeRequest) -> Result<Chang
             .wait_timeout(wait, remaining)
             .map_err(|_| Error::OpenedJournalPoisoned)?;
         wait = next;
-        #[cfg(all(test, feature = "watch", feature = "gitignore"))]
+        #[cfg(all(test, feature = "watch"))]
         {
             wait.waiters -= 1;
         }

@@ -52,7 +52,7 @@ const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 26;
 const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 34;
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
 const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 26;
-const OPENED_JOURNAL_CAPACITY: usize = 4 * 1024 * 1024;
+const OPENED_JOURNAL_CAPACITY_BYTES: usize = 4 * 1024 * 1024;
 
 struct DisableCounters;
 
@@ -110,7 +110,6 @@ fn construction_routes_keep_their_allocation_and_work_boundaries() {
     );
 
     // Here rather than in a test of its own: the allocator and counters are process-wide.
-    #[cfg(feature = "gitignore")]
     assert_controlled_route_is_detached();
 }
 
@@ -119,7 +118,6 @@ fn construction_routes_keep_their_allocation_and_work_boundaries() {
 /// Its digest-equality tests would pass just as well if that route silently went back
 /// through the streaming reducer; these counters would not. Only the route is asserted:
 /// an allocation ceiling for control parsing needs its own measurement on each platform.
-#[cfg(feature = "gitignore")]
 fn assert_controlled_route_is_detached() {
     let root = fixture(SMALL_DIRECTORY_COUNT);
     // One root control ignoring a whole directory, so classification and both partitions
@@ -133,8 +131,14 @@ fn assert_controlled_route_is_detached() {
     assert_route_is_detached(&counts, entries, 1);
 
     let (index, _report) = scan_into_index(root.path(), &config).expect("controlled scan");
-    assert_eq!(index.is_ignored(Path::new("d0/f0.dat")), Some(true));
-    assert_eq!(index.is_ignored(Path::new("d1/f0.dat")), Some(false));
+    assert_eq!(
+        index.is_ignored(Path::new("d0/f0.dat")).expect("control state observed"),
+        Some(true)
+    );
+    assert_eq!(
+        index.is_ignored(Path::new("d1/f0.dat")).expect("control state observed"),
+        Some(false)
+    );
 }
 
 fn fixture(directory_count: u64) -> tempfile::TempDir {
@@ -170,8 +174,10 @@ fn measure_detached(root: &Path, config: &ScanConfig, expected_entries: u64) -> 
 fn measure_opened(root: &Path, expected_entries: u64) -> Counts {
     fdu_core::counters::reset();
     fdu_core::counters::enable(true);
-    let options =
-        OpenOptions { journal_capacity: OPENED_JOURNAL_CAPACITY, ..OpenOptions::default() };
+    let options = OpenOptions {
+        journal_capacity_bytes: OPENED_JOURNAL_CAPACITY_BYTES,
+        ..OpenOptions::default()
+    };
     let opened = OpenedIndex::open(root, options).expect("opened discovery");
     let initial = opened.read(ReadRequest::default()).expect("initial opened read");
     let mut cursor = EngineVersion { sequence: Clock::ZERO, ..initial.version };

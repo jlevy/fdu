@@ -26,10 +26,13 @@ The crate is not published yet; the version-based dependency form is a Phase 1 r
 step.
 
 The crate has no default features.
-The `watch` and `gitignore` capabilities are strictly additive; without them, scan,
-index, and snapshot remain fully functional.
-The `fdu` command and Python package enable both explicitly, while embedding consumers
-can opt into either independently.
+The `watch` capability is strictly additive; without it, scan, index, and snapshot
+remain fully functional.
+The `fdu` command and Python package enable it explicitly, while embedding consumers can
+leave it out along with its dependency tree.
+`.gitignore` handling is always compiled in, because it has no dependency to shed.
+Whether a request reads `.gitignore` files is decided at runtime by its
+`ScanConfig::read_controls`.
 
 Content inspection is optional and disabled by default.
 `OpenConfig::analysis` enables bounded streaming line, prose, and common-language SLOC

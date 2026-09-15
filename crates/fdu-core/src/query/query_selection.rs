@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use crate::engine_contract::EntryKind;
+use crate::engine_contract::{EntryKind, Error, Result};
 use crate::query::query_glob::Pattern;
 
 /// Which size metric a report answers in.
@@ -137,11 +137,17 @@ pub struct Selection {
 ///
 /// Passing a small explicit record rather than an index handle keeps the predicate pure
 /// and trivially testable, and keeps selection from reaching into index internals.
+///
+/// `relative` and `name` carry one spelling of the entry, and every name-shaped predicate
+/// -- globs, exact names, extensions, terminal suffixes, ancestor names -- is evaluated
+/// against that spelling. A one-shot report and a watch use the native path. An opened-root
+/// read uses the portable path a page returns, so a caller filters by the names it was
+/// shown: see [`EntrySelection`].
 #[derive(Clone, Copy, Debug)]
 pub struct Candidate<'a> {
-    /// Path relative to the index root.
+    /// Path relative to the index root, in the spelling the selection is evaluated in.
     pub relative: &'a Path,
-    /// Final path component.
+    /// Final path component, in the same spelling as `relative`.
     pub name: &'a str,
     /// What the entry is.
     pub kind: EntryKind,
@@ -159,6 +165,22 @@ pub struct Candidate<'a> {
 /// composes it instead of adding fields to that public struct, preserving source
 /// compatibility for existing Rust callers while keeping interactive row predicates in
 /// one pure engine-owned value.
+///
+/// **Every axis sees the portable identity.** Inside an opened-root read, the name, the
+/// relative path an anchored glob matches, and every ancestor component are the canonical
+/// escaped `/`-joined spelling a page row carries as `portable_path`, never the native
+/// path. `100%.txt` is `100%25.txt` to every predicate, and a directory whose native name
+/// is not UTF-8 is matched by its escaped name, which is the only spelling a caller could
+/// have been shown. A path taken from a page can therefore be passed back into a filter
+/// unchanged. The same rule governs the base [`Selection`] and a `Report` projection's
+/// selection inside an opened read; one-shot reports and watches keep native names.
+///
+/// Terminal suffixes and ancestor names are validated where they are written, by
+/// [`Self::admit_terminal_extension`] and [`Self::admit_ancestor_name`], and again by
+/// [`Self::validate`] when a read receives the selection: every spelling that could only
+/// ever match nothing is refused, the same set the `MetaBrowser` `CatalogQuery` contract
+/// refuses, so the two providers reject the same values rather than one answering with an
+/// empty page.
 #[derive(Clone, Debug, Default)]
 pub struct EntrySelection {
     /// Existing fdu query predicates.
@@ -180,10 +202,24 @@ pub struct EntrySelection {
     pub exact_names: Vec<String>,
     /// Lowercase terminal suffixes to admit, including the leading dot.
     ///
-    /// Unlike a logical extension, only the final dotted component participates.
+    /// Unlike a logical extension, only the final dotted component participates. Each
+    /// entry is unique, starts with a dot, is lowercase, and is one suffix: `.rs`, never
+    /// `rs`, `.RS`, `.`, `.tar.gz`, or a value holding a separator.
     pub terminal_extensions: Vec<String>,
-    /// Exact ancestor path-component names to admit.
+    /// Exact ancestor path-component names to admit, as portable components.
+    ///
+    /// Each entry is unique and one whole component: never empty, `.`, `..`, or a value
+    /// holding `/` or `\`.
     pub ancestor_names: Vec<String>,
+}
+
+/// Which spelling of an entry's path a selection is evaluated against.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum NameIdentity {
+    /// The native path, as one-shot reports and watches match it.
+    Native,
+    /// The canonical escaped path, as every opened-root read matches it.
+    Portable,
 }
 
 impl From<Selection> for EntrySelection {
@@ -254,6 +290,54 @@ impl Selection {
 }
 
 impl EntrySelection {
+    /// Add one terminal suffix, refusing a spelling that could only ever match nothing.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidValue`] for a duplicate, an undotted or non-lowercase suffix, a bare
+    /// dot, a compound suffix such as `.tar.gz`, or a value holding a separator.
+    pub fn admit_terminal_extension(&mut self, value: impl Into<String>) -> Result<()> {
+        let value = value.into();
+        if self.terminal_extensions.contains(&value) {
+            return Err(refusal(TERMINAL_KIND, &value, TERMINAL_UNIQUE));
+        }
+        check_value(TERMINAL_KIND, &value, TERMINAL_RULES)?;
+        self.terminal_extensions.push(value);
+        Ok(())
+    }
+
+    /// Add one ancestor name, refusing a value that is not one whole path component.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidValue`] for a duplicate, an empty name, `.` or `..`, or a value
+    /// holding `/` or `\`.
+    pub fn admit_ancestor_name(&mut self, value: impl Into<String>) -> Result<()> {
+        let value = value.into();
+        if self.ancestor_names.contains(&value) {
+            return Err(refusal(ANCESTOR_KIND, &value, ANCESTOR_UNIQUE));
+        }
+        check_value(ANCESTOR_KIND, &value, ANCESTOR_RULES)?;
+        self.ancestor_names.push(value);
+        Ok(())
+    }
+
+    /// Check the axes a caller may have written straight into the public fields.
+    ///
+    /// The admitting constructors apply the same rules one value at a time; a read applies
+    /// this to every selection it receives, so a hand-built value is refused the same way.
+    ///
+    /// # Errors
+    ///
+    /// The refusal `MetaBrowser`'s `CatalogQuery` and the Python `EntrySelection` raise
+    /// first, in their order: terminal extensions before ancestor names, and within each
+    /// list uniqueness first, then each rule across the whole list. A list wrong in two
+    /// ways therefore gets the same message on every surface.
+    pub fn validate(&self) -> Result<()> {
+        check_list(TERMINAL_KIND, &self.terminal_extensions, TERMINAL_UNIQUE, TERMINAL_RULES)?;
+        check_list(ANCESTOR_KIND, &self.ancestor_names, ANCESTOR_UNIQUE, ANCESTOR_RULES)
+    }
+
     /// Heap payload retained when an opened-root continuation owns this selection.
     pub(crate) fn retained_heap_bytes(&self) -> usize {
         self.query
@@ -341,6 +425,73 @@ impl EntrySelection {
         }
         true
     }
+}
+
+const TERMINAL_KIND: &str = "terminal extension";
+const ANCESTOR_KIND: &str = "ancestor name";
+const TERMINAL_UNIQUE: &str = "terminal_extensions entries must be unique";
+const ANCESTOR_UNIQUE: &str = "ancestor_names entries must be unique";
+
+/// One `CatalogQuery` rule: whether a value breaks it, and the message that says so.
+type Rule = (fn(&str) -> bool, &'static str);
+
+/// The `MetaBrowser` `CatalogQuery` rules for terminal suffixes, in its order.
+///
+/// Each rule may assume the ones before it held for every value in the list: the last
+/// slices past a leading dot the first one proved.
+const TERMINAL_RULES: &[Rule] = &[
+    (undotted, "terminal_extensions entries must start with a dot"),
+    (not_lowercase, "terminal_extensions entries must be lowercase"),
+    (not_terminal_suffix, "terminal_extensions entries must be canonical terminal suffixes"),
+];
+
+/// The `MetaBrowser` `CatalogQuery` rule for ancestor names.
+const ANCESTOR_RULES: &[Rule] =
+    &[(not_path_component, "ancestor_names entries must be exact path-component names")];
+
+fn undotted(value: &str) -> bool {
+    !value.starts_with('.')
+}
+
+/// Unicode lowering, as the contract's `str.lower` check is: an uppercase letter outside
+/// ASCII is refused too, even though matching folds only ASCII.
+fn not_lowercase(value: &str) -> bool {
+    value.to_lowercase() != value
+}
+
+fn not_terminal_suffix(value: &str) -> bool {
+    value.chars().count() < 2 || value.contains(['/', '\\']) || value[1..].contains('.')
+}
+
+fn not_path_component(value: &str) -> bool {
+    value.is_empty() || value == "." || value == ".." || value.contains(['/', '\\'])
+}
+
+fn refusal(kind: &'static str, value: &str, hint: &str) -> Error {
+    Error::InvalidValue { kind, value: value.to_owned(), hint: hint.to_owned() }
+}
+
+/// Refuse one value by the first rule it breaks.
+fn check_value(kind: &'static str, value: &str, rules: &[Rule]) -> Result<()> {
+    match rules.iter().find(|(breaks, _)| breaks(value)) {
+        Some((_, hint)) => Err(refusal(kind, value, hint)),
+        None => Ok(()),
+    }
+}
+
+/// Refuse a whole list the way `CatalogQuery.__post_init__` does: uniqueness first, then
+/// each rule across every value before the next rule is tried.
+fn check_list(kind: &'static str, values: &[String], unique: &str, rules: &[Rule]) -> Result<()> {
+    let mut seen = std::collections::HashSet::with_capacity(values.len());
+    if let Some(repeated) = values.iter().find(|value| !seen.insert(value.as_str())) {
+        return Err(refusal(kind, repeated, unique));
+    }
+    for (breaks, hint) in rules {
+        if let Some(value) = values.iter().find(|value| breaks(value)) {
+            return Err(refusal(kind, value, hint));
+        }
+    }
+    Ok(())
 }
 
 fn retained_strings(values: &[String], capacity: usize) -> usize {
@@ -497,6 +648,106 @@ mod tests {
         assert!(entry_admits(&selection, "Makefile", EntryKind::File, 1, 0, false));
         assert!(!entry_admits(&selection, "plain.zip", EntryKind::File, 1, 0, false));
         assert!(!entry_admits(&selection, "README", EntryKind::File, 1, 0, false));
+    }
+
+    #[test]
+    fn terminal_extensions_and_ancestor_names_refuse_what_could_never_match() {
+        let refused = |hint: &str, outcome: Result<()>| match outcome {
+            Err(Error::InvalidValue { hint: actual, .. }) => {
+                assert!(actual.contains(hint), "{actual:?} names {hint:?}");
+            }
+            other => panic!("expected a refusal naming {hint:?}, got {other:?}"),
+        };
+        for (value, hint) in [
+            ("rs", "start with a dot"),
+            (".RS", "lowercase"),
+            (".Ée", "lowercase"),
+            (".", "canonical terminal suffixes"),
+            (".tar.gz", "canonical terminal suffixes"),
+            ("..", "canonical terminal suffixes"),
+            (".a/b", "canonical terminal suffixes"),
+            (".a\\b", "canonical terminal suffixes"),
+        ] {
+            let mut selection = EntrySelection::default();
+            refused(hint, selection.admit_terminal_extension(value));
+            assert!(selection.terminal_extensions.is_empty(), "{value:?} was not added");
+            let written = EntrySelection {
+                terminal_extensions: vec![value.to_string()],
+                ..Default::default()
+            };
+            refused(hint, written.validate());
+        }
+        for value in ["", ".", "..", "a/b", "a\\b"] {
+            let mut selection = EntrySelection::default();
+            refused("exact path-component names", selection.admit_ancestor_name(value));
+            let written =
+                EntrySelection { ancestor_names: vec![value.to_string()], ..Default::default() };
+            refused("exact path-component names", written.validate());
+        }
+
+        let mut selection = EntrySelection::default();
+        selection.admit_terminal_extension(".rs").expect("a canonical suffix");
+        selection.admit_terminal_extension(".c++").expect("a non-alphanumeric suffix");
+        refused("unique", selection.admit_terminal_extension(".rs"));
+        selection.admit_ancestor_name("src").expect("a component");
+        selection.admit_ancestor_name("x%FF").expect("an escaped component");
+        selection.admit_ancestor_name("..foo").expect("dots inside a name");
+        refused("unique", selection.admit_ancestor_name("src"));
+        assert_eq!(selection.terminal_extensions, [".rs", ".c++"]);
+        assert_eq!(selection.ancestor_names, ["src", "x%FF", "..foo"]);
+        selection.validate().expect("admitted values validate");
+        refused(
+            "unique",
+            EntrySelection {
+                terminal_extensions: vec![".md".to_string(), ".md".to_string()],
+                ..Default::default()
+            }
+            .validate(),
+        );
+        refused(
+            "unique",
+            EntrySelection {
+                ancestor_names: vec!["docs".to_string(), "docs".to_string()],
+                ..Default::default()
+            }
+            .validate(),
+        );
+    }
+
+    /// A list wrong in two ways gets the refusal `CatalogQuery` and the Python
+    /// `EntrySelection` raise, so every surface names the same fault: uniqueness before
+    /// shape, and each rule across the whole list before the next rule.
+    #[test]
+    fn a_list_wrong_twice_is_refused_in_the_catalog_query_order() {
+        let hint_of = |selection: EntrySelection| match selection.validate() {
+            Err(Error::InvalidValue { hint, .. }) => hint,
+            other => panic!("expected a refusal, got {other:?}"),
+        };
+        let terminal = |values: &[&str]| EntrySelection {
+            terminal_extensions: values.iter().map(ToString::to_string).collect(),
+            ..Default::default()
+        };
+        let ancestors = |values: &[&str]| EntrySelection {
+            ancestor_names: values.iter().map(ToString::to_string).collect(),
+            ..Default::default()
+        };
+        for (selection, hint) in [
+            (terminal(&["rs", "rs"]), TERMINAL_UNIQUE),
+            (terminal(&[".RS", ".RS"]), TERMINAL_UNIQUE),
+            (terminal(&[".RS", "rs"]), "terminal_extensions entries must start with a dot"),
+            (terminal(&[".tar.gz", ".RS"]), "terminal_extensions entries must be lowercase"),
+            (ancestors(&["..", ".."]), ANCESTOR_UNIQUE),
+            (
+                EntrySelection {
+                    terminal_extensions: vec!["rs".to_string()],
+                    ancestor_names: vec!["src".to_string(), "src".to_string()],
+                    ..Default::default()
+                },
+                "terminal_extensions entries must start with a dot",
+            ),
+        ] {
+            assert_eq!(hint_of(selection), hint);
+        }
     }
 
     #[test]

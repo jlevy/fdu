@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::path::PathBuf;
 
-use crate::{ContinuationId, EngineVersion, Error, Result, SessionId};
+use crate::{ContinuationId, EngineVersion, Error, ProjectionRefusal, Result, SessionId};
 
 /// Maximum resumable page positions retained by one opened root.
 pub(super) const MAX_CONTINUATIONS: usize = 128;
@@ -102,20 +102,25 @@ impl Default for ContinuationTable {
 }
 
 impl ContinuationTable {
+    /// Retain a record, or say why this one page cannot have one.
+    ///
+    /// The outer error ends the whole read: the root closed, or no identifier is left. The
+    /// inner refusal belongs to the one page whose record is too large, and every other
+    /// projection in the read still answers.
     pub(super) fn insert(
         &mut self,
         session: SessionId,
         record: ContinuationRecord,
-    ) -> Result<ContinuationId> {
+    ) -> Result<std::result::Result<ContinuationId, ProjectionRefusal>> {
         if self.closed {
             return Err(Error::OpenedIndexClosed);
         }
         let retained_bytes = record.retained_bytes();
         if retained_bytes > crate::MAX_CONTINUATION_RECORD_BYTES {
-            return Err(Error::ContinuationRecordLimit {
+            return Ok(Err(ProjectionRefusal::ContinuationRecordLimit {
                 attempted: retained_bytes,
                 limit: crate::MAX_CONTINUATION_RECORD_BYTES,
-            });
+            }));
         }
         let ordinal = self.next;
         self.next = self.next.checked_add(1).ok_or(Error::ContinuationIdentityExhausted)?;
@@ -128,28 +133,36 @@ impl ContinuationTable {
         }
         self.records.insert(ordinal, record);
         self.order.push_back(ordinal);
-        Ok(ContinuationId { session, ordinal })
+        Ok(Ok(ContinuationId { session, ordinal }))
     }
 
+    /// Take a record to resume its page, or say why this one page cannot resume.
+    ///
+    /// The outer error ends the whole read: the root closed, or the token is not one this
+    /// root issued -- another session's, or an ordinal it never handed out -- which is a
+    /// malformed request. The inner refusal belongs to the one `Continue` whose token this
+    /// root did issue but no longer retains, because an earlier page consumed it or the
+    /// bound evicted it. That depends on the table's state, not on the request, so every
+    /// other projection in the read still answers (`fdu-l89e`).
     pub(super) fn take(
         &mut self,
         session: SessionId,
         continuation: ContinuationId,
-    ) -> Result<ContinuationRecord> {
+    ) -> Result<std::result::Result<ContinuationRecord, ProjectionRefusal>> {
         // A read releases the lifecycle guard once its phase check passes, so shutdown can
         // empty the table before the read takes its record. That token did not expire; the
         // root closed, and it must read the way a fresh page in the same race does.
         if self.closed {
             return Err(Error::OpenedIndexClosed);
         }
-        if continuation.session != session {
+        if continuation.session != session || continuation.ordinal >= self.next {
             return Err(Error::ContinuationUnavailable);
         }
         let Some(record) = self.records.remove(&continuation.ordinal) else {
-            return Err(Error::ContinuationUnavailable);
+            return Ok(Err(ProjectionRefusal::ContinuationUnavailable));
         };
         self.order.retain(|ordinal| *ordinal != continuation.ordinal);
-        Ok(record)
+        Ok(Ok(record))
     }
 
     /// Restore a consumed continuation after a bounded projection returns no page.
@@ -244,9 +257,10 @@ mod tests {
                     },
                 },
             )
+            .expect("open table")
             .expect("small record");
 
-        let error = table
+        let refusal = table
             .insert(
                 session,
                 ContinuationRecord {
@@ -260,16 +274,17 @@ mod tests {
                     },
                 },
             )
+            .expect("open table")
             .expect_err("oversized record");
         assert!(matches!(
-            error,
-            Error::ContinuationRecordLimit { attempted, limit }
+            refusal,
+            ProjectionRefusal::ContinuationRecordLimit { attempted, limit }
                 if attempted > limit && limit == crate::MAX_CONTINUATION_RECORD_BYTES
         ));
 
         let expanded =
             crate::query::Pattern::parse(&"{a,b}".repeat(10)).expect("bounded pattern expansion");
-        let query_error = table
+        let query_refusal = table
             .insert(
                 session,
                 ContinuationRecord {
@@ -287,11 +302,12 @@ mod tests {
                     },
                 },
             )
+            .expect("open table")
             .expect_err("expanded query record");
-        assert!(matches!(query_error, Error::ContinuationRecordLimit { .. }));
+        assert!(matches!(query_refusal, ProjectionRefusal::ContinuationRecordLimit { .. }));
         assert_eq!(table.records.len(), 1);
         assert_eq!(table.next, first.ordinal + 1);
-        table.take(session, first).expect("existing record was not evicted");
+        table.take(session, first).expect("open table").expect("existing record was not evicted");
 
         let retained = table
             .insert(
@@ -312,6 +328,7 @@ mod tests {
                     },
                 },
             )
+            .expect("open table")
             .expect("retained record");
         table.close();
         assert!(table.records.is_empty() && table.order.is_empty());
@@ -341,33 +358,99 @@ mod tests {
         let mut table = ContinuationTable::default();
         let ids = (0..MAX_CONTINUATIONS)
             .map(|position| {
-                table.insert(session, flat_record(session, &format!("r{position}"))).expect("fill")
+                table
+                    .insert(session, flat_record(session, &format!("r{position}")))
+                    .expect("open table")
+                    .expect("fill")
             })
             .collect::<Vec<_>>();
         assert_eq!(table.len(), MAX_CONTINUATIONS);
 
         let taken_id = ids[MAX_CONTINUATIONS / 2];
-        let taken = table.take(session, taken_id).expect("take");
-        table.insert(session, flat_record(session, "other page")).expect("insert while taken");
+        let taken = table.take(session, taken_id).expect("open table").expect("take");
+        table
+            .insert(session, flat_record(session, "other page"))
+            .expect("open table")
+            .expect("insert while taken");
         table.restore(taken_id, taken);
         assert_eq!(table.len(), MAX_CONTINUATIONS, "a restore may not overshoot the bound");
         for position in 0..16 {
-            table.insert(session, flat_record(session, &format!("later{position}"))).expect("page");
+            table
+                .insert(session, flat_record(session, &format!("later{position}")))
+                .expect("open table")
+                .expect("page");
             assert_eq!(table.len(), MAX_CONTINUATIONS);
         }
         // A restored record is the oldest by design, so it is the one a full table gives up.
-        assert!(matches!(table.take(session, taken_id), Err(Error::ContinuationUnavailable)));
+        assert!(matches!(
+            table.take(session, taken_id),
+            Ok(Err(ProjectionRefusal::ContinuationUnavailable))
+        ));
+    }
+
+    /// A token this root issued and no longer retains refuses its one page; a token it
+    /// never issued fails the request.
+    ///
+    /// Eviction and consumption depend on what other pages did to the table, so a
+    /// `Continue` that meets either refuses alone and the rest of its read answers. Another
+    /// session's token, or an ordinal this root never handed out, is a malformed request
+    /// whatever the table holds (`fdu-l89e`).
+    #[test]
+    fn an_evicted_or_consumed_token_refuses_and_a_token_never_issued_fails() {
+        let session = SessionId::from_opaque(1).expect("nonzero session");
+        let mut table = ContinuationTable::default();
+        let evicted = table
+            .insert(session, flat_record(session, "oldest"))
+            .expect("open table")
+            .expect("insert");
+        let consumed = table
+            .insert(session, flat_record(session, "consumed"))
+            .expect("open table")
+            .expect("insert");
+        table.take(session, consumed).expect("open table").expect("first use");
+        for position in 0..MAX_CONTINUATIONS {
+            table
+                .insert(session, flat_record(session, &format!("r{position}")))
+                .expect("open table")
+                .expect("fill");
+        }
+
+        for token in [evicted, consumed] {
+            assert!(
+                matches!(
+                    table.take(session, token),
+                    Ok(Err(ProjectionRefusal::ContinuationUnavailable))
+                ),
+                "{token:?}"
+            );
+        }
+        let foreign = SessionId::from_opaque(2).expect("nonzero session");
+        let latest = table
+            .insert(session, flat_record(session, "latest"))
+            .expect("open table")
+            .expect("insert");
+        assert!(matches!(table.take(foreign, latest), Err(Error::ContinuationUnavailable)));
+        let never_issued = ContinuationId::from_opaque_parts(
+            session.opaque(),
+            latest.ordinal.checked_add(1).expect("ordinal space"),
+        )
+        .expect("nonzero parts");
+        assert!(matches!(table.take(session, never_issued), Err(Error::ContinuationUnavailable)));
+        table.take(session, latest).expect("open table").expect("retained token still resumes");
     }
 
     #[test]
     fn a_restored_record_is_retryable_while_the_table_has_room() {
         let session = SessionId::from_opaque(1).expect("nonzero session");
         let mut table = ContinuationTable::default();
-        let id = table.insert(session, flat_record(session, "next")).expect("insert");
-        let record = table.take(session, id).expect("take");
+        let id = table
+            .insert(session, flat_record(session, "next"))
+            .expect("open table")
+            .expect("insert");
+        let record = table.take(session, id).expect("open table").expect("take");
         table.restore(id, record);
         assert_eq!(table.len(), 1);
-        table.take(session, id).expect("restored record is retryable");
+        table.take(session, id).expect("open table").expect("restored record is retryable");
     }
 
     /// A read no longer holds the lifecycle lock while it projects, so a page can finish
@@ -376,8 +459,11 @@ mod tests {
     fn a_closed_table_refuses_records_that_race_shutdown() {
         let session = SessionId::from_opaque(1).expect("nonzero session");
         let mut table = ContinuationTable::default();
-        let id = table.insert(session, flat_record(session, "before close")).expect("insert");
-        let record = table.take(session, id).expect("take");
+        let id = table
+            .insert(session, flat_record(session, "before close"))
+            .expect("open table")
+            .expect("insert");
+        let record = table.take(session, id).expect("open table").expect("take");
         table.close();
 
         assert!(matches!(

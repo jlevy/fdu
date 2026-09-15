@@ -46,14 +46,16 @@
 //! # Ok::<(), fdu_core::Error>(())
 //! ```
 //!
-//! # Feature flags
+//! # Build features
 //!
 //! - `watch` — the OS-native watch layer.
-//! - `gitignore` — exact `.gitignore` control state and fixed unignored roll-ups.
 //!
-//! `fdu-core` has no default features. The command and Python packages opt into the
-//! capabilities they expose, while embedding consumers can retain the smaller one-shot
-//! engine.
+//! `fdu-core` has no default build features. The command and Python packages opt into
+//! watch, while embedding consumers can retain the smaller one-shot engine.
+//!
+//! `.gitignore` handling is not a build feature: it has no dependency, so it is always
+//! compiled in, and whether a scan reads control files is decided at runtime by
+//! [`ScanConfig::read_controls`].
 
 pub mod admission;
 pub mod cache;
@@ -102,15 +104,16 @@ pub use crate::engine_contract::{
     ImpactDomain, IndexState, InvalidateReason, Issue, IssueKind, IssueSummary, Knowledge,
     LifecyclePhase, LimitedProjection, MAX_CONTINUATION_RECORD_BYTES, MAX_COUNT_CAP,
     MAX_DIRTY_PATHS, MAX_ISSUE_MESSAGE_BYTES, MAX_ISSUE_PATH_BYTES, MAX_PAGE_ROWS, MAX_PAGE_WORK,
-    MAX_READ_PROJECTIONS, MAX_REPORT_VIEWS, MAX_RETAINED_ISSUES, Observation, ObservationOp, Op,
-    PageRequest, PathExpectation, PathState, PortablePath, ProjectionResult, Provenance,
-    QueryLimit, ReadDiagnostics, ReadProjection, ReadRequest, ReadResponse, RefreshRejection,
-    RefreshResult, RejectedRefreshPath, ReportRequest, Result, RowShape, ScanScope, ScopeIdentity,
-    SemanticIdentity, SessionId, Source, StateTransition, Status, TreePage, Work,
+    MAX_READ_PROJECTIONS, MAX_REPORT_VIEWS, MAX_RETAINED_ISSUES, MIN_JOURNAL_CAPACITY_BYTES,
+    Observation, ObservationOp, Op, PageRequest, PathExpectation, PathState, PortablePath,
+    ProjectionRefusal, ProjectionResult, Provenance, QueryLimit, ReadDiagnostics, ReadProjection,
+    ReadRequest, ReadResponse, RefreshRejection, RefreshResult, RejectedRefreshPath, ReportRequest,
+    Result, RowShape, ScanScope, ScopeIdentity, SemanticIdentity, SessionId, Source,
+    StateTransition, Status, TreePage, Work,
 };
 pub use crate::index::{
-    ApplyOutcome, ApplyStats, ChildSnapshot, DEFAULT_JOURNAL_CAPACITY, EntryId, ExtTally, Index,
-    IndexHandle, PartitionRollUp, PartitionRollUpSummary, RollUp, RollUpSummary, Since,
+    ApplyOutcome, ApplyStats, ChildSnapshot, DEFAULT_JOURNAL_CAPACITY_BYTES, EntryId, ExtTally,
+    Index, IndexHandle, PartitionRollUp, PartitionRollUpSummary, RollUp, RollUpSummary, Since,
 };
 pub use crate::opened::{
     DiscoveryBudget, MAX_PRIORITY_PATHS, MAX_REFRESH_PATHS, OpenOptions, OpenedIndex,
@@ -160,9 +163,10 @@ pub enum CachePolicy {
     /// one cache path and each replaces the other's. `fdu --watch <dir>` opens its index
     /// with observation off, so it shares the one-shot scope: a watch starts warm from a
     /// one-shot report's snapshot, and a report that reads the snapshot starts warm from a
-    /// watch's. A default [`open`] after a one-shot report saved its snapshot therefore
-    /// takes [`OpenPath::ColdScan`], and so does a one-shot report that reads the snapshot,
-    /// as content analysis does, after a default [`open`] saved one. A summary-only report
+    /// watch's. So does an [`open`] that turns [`ScanConfig::read_controls`] off. A default
+    /// [`open`] after a one-shot report saved its snapshot therefore takes
+    /// [`OpenPath::ColdScan`], and so does a one-shot report that reads the snapshot, as
+    /// content analysis does, after a default [`open`] saved one. A summary-only report
     /// saves nothing and replaces nothing.
     /// A one-shot report answers from a controls-on snapshot only under
     /// [`CachePolicy::Only`].
@@ -308,14 +312,17 @@ impl OpenReport {
 ///
 /// The index observes control state as [`ScanConfig::read_controls`] says, and the
 /// default is on: the index exposes [`Index::controls`] and [`Index::is_ignored`], and a
-/// watch over it maintains them, so `open` cannot assume its caller will not read them.
-/// A one-shot report from [`prepare_report`] always runs with observation off, so the two
-/// keep snapshots of different scope at one cache path. `open` never starts from a
-/// report's snapshot: a policy that scans treats it as a miss and scans cold, and
-/// [`CachePolicy::Only`], which never scans, fails with an error naming the remedy. A
-/// report consumes an `open` snapshot only under [`CachePolicy::Only`]. A caller wanting a
-/// single answer should use [`prepare_report`]; one wanting an index without control
-/// state turns the field off.
+/// watch over it maintains them. A one-shot report from [`prepare_report`] always runs
+/// with observation off, so the two keep snapshots of different scope at one cache path.
+/// A default `open` never starts from a report's snapshot: a policy that scans treats it
+/// as a miss and scans cold, and [`CachePolicy::Only`], which never scans, fails with an
+/// error naming the remedy. A report consumes a default `open`'s snapshot only under
+/// [`CachePolicy::Only`]. A caller wanting a single answer should use [`prepare_report`].
+///
+/// A caller that reads no ignore classification may turn the field off. Its `open` reads
+/// no `.gitignore`, cannot end on a control bound, and shares the one-shot report's
+/// snapshot scope, and its index answers [`Index::is_ignored`] and [`Index::controls`]
+/// with [`Error::ControlStateNotObserved`] rather than calling every entry unignored.
 pub fn open(root: &Path, config: &OpenConfig) -> Result<(Index, OpenReport)> {
     let (index, report, pending) = open_with_pending_save(root, config)?;
     // Joining first is what makes the unwrap infallible: the writer held the only other
@@ -782,7 +789,6 @@ mod tests {
         fs::write(path, contents).expect("write");
     }
 
-    #[cfg(feature = "gitignore")]
     fn controls_config(
         policy: CachePolicy,
         snapshot_path: PathBuf,
@@ -796,15 +802,68 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "gitignore")]
     fn seed_controls_snapshot(root: &Path, snapshot_path: PathBuf) {
         let seed = controls_config(CachePolicy::Auto, snapshot_path, true);
         let (index, report) = open(root, &seed).expect("seed controls-on snapshot");
         assert_eq!(report.path_taken, OpenPath::ColdScan);
-        assert!(!index.controls().is_empty(), "the fixture must retain a control source");
+        assert!(
+            !index.controls().expect("control state observed").is_empty(),
+            "the fixture must retain a control source"
+        );
     }
 
-    #[cfg(feature = "gitignore")]
+    /// A default `open` observes control state, so its index answers ignore questions
+    /// exactly. A request that turns observation off reads no control file, so a control
+    /// line no index could retain does not end it, and its index says it cannot classify
+    /// ignored entries rather than calling every entry unignored.
+    #[test]
+    fn a_default_open_answers_ignore_questions_and_an_opt_out_refuses_them() {
+        let root = tempfile::tempdir().expect("tempdir");
+        write_file(&root.path().join(".gitignore"), b"*.log\n");
+        write_file(&root.path().join("debug.log"), b"ignored");
+        write_file(&root.path().join("keep.rs"), b"kept");
+        let uncached = OpenConfig { policy: CachePolicy::Off, ..OpenConfig::default() };
+        let opted_out = OpenConfig {
+            scan: ScanConfig { read_controls: false, ..ScanConfig::default() },
+            ..uncached.clone()
+        };
+
+        let (index, report) = open(root.path(), &uncached).expect("default open");
+        assert!(report.is_complete(), "{:?}", report.errors());
+        assert!(index.observes_controls());
+        assert_eq!(index.is_ignored(Path::new("debug.log")).ok(), Some(Some(true)));
+        assert_eq!(index.is_ignored(Path::new("keep.rs")).ok(), Some(Some(false)));
+        assert_eq!(index.is_ignored(Path::new("absent")).ok(), Some(None));
+        assert!(
+            index
+                .controls()
+                .is_ok_and(|controls| controls.source_is(Path::new(".gitignore"), b"*.log\n"))
+        );
+        assert_eq!(index.partition_total().expect("control state observed").unignored.files, 2);
+
+        let mut oversized = vec![b'x'; crate::control::MAX_CONTROL_PATTERN_BYTES + 1];
+        oversized.extend_from_slice(b"\n*.log\n");
+        write_file(&root.path().join(".gitignore"), &oversized);
+        assert!(
+            open(root.path(), &uncached).map_or(true, |(_, report)| !report.is_complete()),
+            "a default open must read the control file the opt-out skips"
+        );
+
+        let (index, report) = open(root.path(), &opted_out)
+            .expect("an opted-out open reads no control line, however long");
+        assert!(report.is_complete(), "{:?}", report.errors());
+        assert!(!index.observes_controls());
+        for path in ["debug.log", "keep.rs", "absent"] {
+            assert!(
+                matches!(index.is_ignored(Path::new(path)), Err(Error::ControlStateNotObserved)),
+                "{path} must not be called unignored by an index that read no rule"
+            );
+        }
+        assert!(matches!(index.controls(), Err(Error::ControlStateNotObserved)));
+        assert!(matches!(index.partition_total(), Err(Error::ControlStateNotObserved)));
+        assert_eq!(index.total().files, 3);
+    }
+
     #[test]
     fn controls_on_snapshot_does_not_serve_controls_off_auto_open() {
         let root = tempfile::tempdir().expect("tempdir");
@@ -819,10 +878,9 @@ mod tests {
 
         assert_eq!(report.path_taken, OpenPath::ColdScan);
         assert_eq!(index.scope(), controls_off.scan.scope());
-        assert!(index.controls().is_empty());
+        assert!(matches!(index.controls(), Err(Error::ControlStateNotObserved)));
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn controls_on_snapshot_does_not_serve_controls_off_cache_only_open() {
         let root = tempfile::tempdir().expect("tempdir");

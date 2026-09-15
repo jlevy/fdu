@@ -67,6 +67,7 @@ const REQUIRED_CONTRACT_OUTCOMES: &[&str] = &[
     "projection.report",
     "projection.diagnostics",
     "projection.limit",
+    "projection.refused",
     "change.inserted",
     "change.updated",
     "change.removed",
@@ -348,6 +349,37 @@ fn coherent_projections_and_continuations() -> SessionTrace {
         Ok(ReadResponse { results, .. })
             if matches!(results.as_slice(), [ProjectionResult::Limit(_)])
     ));
+
+    // A projection that names a file where a directory belongs refuses alone: the lookup
+    // before it and the roll-up after it answer in the same read.
+    let mixed = read(
+        &opened,
+        &mut trace,
+        ReadRequest {
+            projections: vec![
+                ReadProjection::Lookup { path: PathBuf::from("a.txt") },
+                ReadProjection::Tree {
+                    path: PathBuf::from("a.txt"),
+                    depth: crate::query::Bound::Limit(1),
+                    include_ignored: true,
+                    page,
+                },
+                ReadProjection::RollUp { path: PathBuf::from("dir") },
+            ],
+            expected: None,
+        },
+    );
+    assert!(matches!(
+        mixed,
+        Ok(ReadResponse { results, .. }) if matches!(
+            results.as_slice(),
+            [
+                ProjectionResult::Lookup(Knowledge::Present(_)),
+                ProjectionResult::Refused(crate::ProjectionRefusal::NotADirectory { .. }),
+                ProjectionResult::RollUp(Knowledge::Present(_)),
+            ]
+        )
+    ));
     final_read(&opened, &mut trace);
     close(&opened, &mut trace);
     let closed = opened.read(ReadRequest::default());
@@ -358,6 +390,9 @@ fn coherent_projections_and_continuations() -> SessionTrace {
 }
 
 fn journal_and_observation_recovery() -> SessionTrace {
+    // Each refreshed file costs its refresh about three small commits, a little over 2 KiB
+    // of journal together, so this many overflow the minimum budget with room to spare.
+    const BULK_FILES: usize = 32;
     let root = tempfile::tempdir().expect("observation root");
     let scripts = tempfile::tempdir().expect("observation scripts");
     let script = scripts.path().join("events.script");
@@ -365,7 +400,9 @@ fn journal_and_observation_recovery() -> SessionTrace {
     std::fs::write(&script, b"modify\tbaseline.txt\n").expect("initial observation script");
     let controls = deterministic_controls();
     controls.gate(TestPoint::BeforeDiscovery).arm();
-    let options = scripted_options(&script, 32);
+    // The smallest budget accepted. It retains the handoff's commits for the first poll,
+    // and the refresh of BULK_FILES below evicts them.
+    let options = scripted_options(&script, crate::MIN_JOURNAL_CAPACITY_BYTES);
     let mut trace = SessionTrace::new("journal-and-observation-recovery", root.path());
     trace.alias_path(scripts.path(), "$SCRIPT_ROOT");
     trace.record("action.open", &options);
@@ -387,12 +424,15 @@ fn journal_and_observation_recovery() -> SessionTrace {
 
     let reset_cursor = cursor;
     let mut bulk_paths = Vec::new();
-    for index in 0..12 {
+    for index in 0..BULK_FILES {
         let relative = PathBuf::from(format!("bulk-{index:02}.txt"));
         std::fs::write(root.path().join(&relative), b"bulk").expect("bulk fixture");
         bulk_paths.push(relative);
     }
-    trace.record_text("action.fixture", "write bulk-00.txt..bulk-11.txt");
+    trace.record_text(
+        "action.fixture",
+        format!("write bulk-00.txt..bulk-{:02}.txt", BULK_FILES - 1),
+    );
     refresh(&opened, &mut trace, &bulk_paths);
     cursor = poll(&opened, &mut trace, reset_cursor, Duration::ZERO);
 
@@ -621,7 +661,7 @@ fn final_read(opened: &OpenedIndex, trace: &mut SessionTrace) {
     );
 }
 
-fn scripted_options(script: &Path, journal_capacity: usize) -> OpenOptions {
+fn scripted_options(script: &Path, journal_capacity_bytes: usize) -> OpenOptions {
     OpenOptions {
         observation: Some(crate::watch::WatchConfig {
             settle: Duration::from_millis(1),
@@ -629,7 +669,7 @@ fn scripted_options(script: &Path, journal_capacity: usize) -> OpenOptions {
             ..crate::watch::WatchConfig::default()
         }),
         observation_script: Some(script.to_path_buf()),
-        journal_capacity,
+        journal_capacity_bytes,
         ..OpenOptions::default()
     }
 }

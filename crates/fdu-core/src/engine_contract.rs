@@ -221,6 +221,21 @@ pub struct EngineVersion {
 }
 
 impl ScanScope {
+    /// Whether an index of this scope observed `.gitignore` control state.
+    ///
+    /// False when the scan ran with [`ScanConfig::read_controls`](crate::ScanConfig) off:
+    /// no control file was read and no entry was classified. Such an index cannot say
+    /// whether an entry is ignored, so
+    /// [`Index::is_ignored`](crate::Index::is_ignored),
+    /// [`Index::controls`](crate::Index::controls), and the partition accessors
+    /// ([`Index::partition_total`](crate::Index::partition_total) and its per-directory
+    /// forms) refuse with [`Error::ControlStateNotObserved`] rather than answer "not
+    /// ignored" for everything, and a shared
+    /// [`ChildSnapshot`](crate::ChildSnapshot) carries no ignore bit or partitions.
+    pub const fn observes_controls(self) -> bool {
+        self.ignore_rules_fingerprint != 0
+    }
+
     /// The part of this validated scope that determines retained filesystem facts.
     pub const fn scope_identity(self) -> ScopeIdentity {
         ScopeIdentity {
@@ -957,6 +972,51 @@ pub struct ReadRequest {
     pub expected: Option<EngineVersion>,
 }
 
+/// Why one projection of a read refused, while every other projection still answered.
+///
+/// A read fails as a whole only when no projection in it can be trusted: the request's
+/// shape is invalid, the root is closed, or the version it pinned is not the one the index
+/// holds. A refusal is narrower. It depends on what one projection found at that version,
+/// so the lookup of a path beside a tree page that refused the same path still answers,
+/// and a caller never has to prove a path is a directory before it may batch the question.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum ProjectionRefusal {
+    /// A tree page or roll-up named a retained path that is not a directory.
+    ///
+    /// A lookup of the same path answers `Present`, so neither three-valued answer fits:
+    /// `Absent` claims coverage proves the path missing, and `Unknown` claims coverage
+    /// cannot tell, which for a retained path never resolves. It depends on index state:
+    /// the same projection answers while the path is a directory and refuses once it has
+    /// become a file, so a path taken from an earlier page can start refusing between
+    /// reads.
+    NotADirectory {
+        /// The normalized path the projection named.
+        path: PathBuf,
+    },
+    /// A page stopped with rows left, and the record that would resume it exceeds
+    /// [`MAX_CONTINUATION_RECORD_BYTES`].
+    ///
+    /// The page is refused rather than returned without a way to continue, which would
+    /// present a truncated page as a finished one. Only very long paths or a very large
+    /// selection reach it. A refused continued page keeps its continuation, so the caller
+    /// may retry it with a different page bound.
+    ContinuationRecordLimit {
+        /// Structural payload bytes the record would retain.
+        attempted: usize,
+        /// Maximum structural payload retained by one record.
+        limit: usize,
+    },
+    /// A `Continue` named a continuation this root issued but no longer retains.
+    ///
+    /// An earlier page consumed it, or the root's bound on retained continuations evicted
+    /// it to make room for newer pages. Both depend on what other pages did, not on the
+    /// request, so a token that worked a moment ago costs only its own projection. Start
+    /// the page again from its first request. A token from another opened root, or one
+    /// this root never issued, still fails the whole read with
+    /// [`Error::ContinuationUnavailable`].
+    ContinuationUnavailable,
+}
+
 /// One projection result, in the same position as its request.
 #[derive(Clone, Debug)]
 pub enum ProjectionResult {
@@ -976,6 +1036,8 @@ pub enum ProjectionResult {
     Diagnostics(ReadDiagnostics),
     /// A bounded projection stopped without returning a misleading partial answer.
     Limit(QueryLimit),
+    /// This projection refused; the rest of the read answered.
+    Refused(ProjectionRefusal),
 }
 
 /// One coherent opened-root response.
@@ -1558,6 +1620,26 @@ pub struct Work {
     pub bytes_visited: u64,
 }
 
+/// Bytes [`Commit::retained_cost`] charges for a commit's own frame in the journal.
+const RETAINED_COMMIT_BYTES: usize = 256;
+/// Bytes [`Commit::retained_cost`] charges for each retained change, transition, or dirty
+/// path, before the bytes of the path it names.
+const RETAINED_ITEM_BYTES: usize = 128;
+/// Smallest journal budget, in bytes, an opened root accepts.
+///
+/// The floor refuses a count passed where bytes are expected. Until the budget was stated
+/// in bytes it counted retained items, and its default was this same number, so a caller
+/// still thinking in counts passes at most that: every smaller count is refused, and the
+/// old default itself, read as bytes, is a working budget.
+///
+/// It also guarantees history worth polling, as [`Commit::retained_cost`] charges it. The
+/// cheapest commit a tree produces, one change to a one-byte name at the root, costs the
+/// frame, three items (the change, the root it dirties, and its own path), and two path
+/// bytes: 642 bytes. The floor holds about a hundred of those, or one commit of some two
+/// hundred changes to short names in one directory. A budget that held only a few would
+/// answer [`ChangeOutcome::Reset`] to a consumer barely behind, for a cause it cannot see.
+pub const MIN_JOURNAL_CAPACITY_BYTES: usize = 64 * 1024;
+
 /// One atomic, exact index transition.
 ///
 /// Detached indexes use the process-local [`Clock`] as their version sequence. The
@@ -1583,12 +1665,27 @@ impl Commit {
         self.changes.is_empty() && self.state.is_empty()
     }
 
-    /// Units charged against the bounded retained journal.
+    /// Approximate bytes this commit retains in the bounded journal.
+    ///
+    /// The estimate is a fixed allowance for the commit's own frame plus, for every
+    /// change, transition, and dirty path, a fixed allowance for the item and the bytes of
+    /// the path it names. Paths are the part that varies, so charging their bytes makes
+    /// [`crate::DEFAULT_JOURNAL_CAPACITY_BYTES`] mean what it says whatever the tree's paths
+    /// look like; a charge per item would let long paths hold many times the budget, and
+    /// every change poll clones what the journal holds. The allowances are fixed rather
+    /// than measured with `size_of` so the budget means the same on every target: the
+    /// retained types differ in size by platform, and a recorded journal work count would
+    /// otherwise differ with them.
     pub fn retained_cost(&self) -> usize {
-        self.changes.len()
-            + self.state.len()
-            + self.impact.dirty_paths.len()
-            + usize::from(self.impact.all_dirty)
+        let paths = self
+            .changes
+            .iter()
+            .map(|change| change.path().as_os_str().len())
+            .chain(self.state.iter().map(|transition| transition.path().as_os_str().len()))
+            .chain(self.impact.dirty_paths.iter().map(|path| path.as_os_str().len()))
+            .sum::<usize>();
+        let items = self.changes.len() + self.state.len() + self.impact.dirty_paths.len();
+        RETAINED_COMMIT_BYTES + items * RETAINED_ITEM_BYTES + paths
     }
 }
 
@@ -1647,6 +1744,35 @@ pub enum Error {
     /// A scan or watch setting has no supported safe semantics.
     #[error("unsupported scan configuration: {0}")]
     UnsupportedScanConfig(&'static str),
+
+    /// An index built without observing `.gitignore` control state was asked about it, or
+    /// was handed control input.
+    ///
+    /// Such an index read no control file and classified no entry, so answering "not
+    /// ignored" for every entry, or handing back an empty control table, would state a
+    /// fact nobody observed. Nor does it accept a `ControlUpsert` or `ControlRemove`
+    /// ([`Op`]): its scope says no rule was read, and a table installed anyway would
+    /// contradict it, in the index and in every snapshot saved from it. Opening with
+    /// [`ScanConfig::read_controls`](crate::ScanConfig) on, as it is by default, makes the
+    /// answers exact.
+    #[error(
+        "this index did not observe .gitignore control state, so it neither says what is \
+         ignored nor accepts control input; open it with read_controls to observe it"
+    )]
+    ControlStateNotObserved,
+
+    /// An opened root's journal budget is below [`MIN_JOURNAL_CAPACITY_BYTES`].
+    #[error(
+        "journal_capacity_bytes is {requested} bytes, below the {minimum}-byte minimum; it is \
+         a size in bytes, not a count, so set it to at least {minimum} bytes, or leave it \
+         unset for the default"
+    )]
+    JournalCapacityTooSmall {
+        /// The budget requested, in bytes.
+        requested: usize,
+        /// [`MIN_JOURNAL_CAPACITY_BYTES`].
+        minimum: usize,
+    },
 
     /// Requested scan semantics differ from the index's immutable scope.
     #[error("scan scope mismatch: index has {indexed:?}, requested {requested:?}")]
@@ -1748,22 +1874,6 @@ pub enum Error {
     #[error("tree page depth must be at least one level")]
     TreeDepthZero,
 
-    /// A tree page or roll-up named a retained path that is not a directory.
-    ///
-    /// A lookup of the same path answers `Present`, so neither of the other answers fits:
-    /// `Absent` claims coverage proves the path missing, and `Unknown` claims coverage
-    /// cannot tell, which for a retained path never resolves. A file has no children to
-    /// page and no descendants to roll up, so both projections say which it is instead.
-    ///
-    /// Unlike the request-shape errors beside it, this one depends on index state at the
-    /// version the read pinned: the same request succeeds while the path is a directory and
-    /// fails once it has become a file, so a path taken from an earlier page can start
-    /// failing between reads. It fails the whole read, including projections in the same
-    /// request that would have answered, such as a lookup of that path. Whether it should
-    /// instead be a result of the one projection is an open decision (`fdu-l89e`).
-    #[error("{0:?} is not a directory; tree pages and roll-ups describe directories")]
-    NotADirectory(PathBuf),
-
     /// A flat page attempted to use presentation axes whose ordering is not resumable.
     #[error(
         "flat opened-index pages use fixed portable path order; selection cannot set depth, limit, sort, or reverse"
@@ -1788,18 +1898,17 @@ pub enum Error {
         limit: usize,
     },
 
-    /// A continuation belongs to another handle or is no longer retained.
-    #[error("the page continuation is unavailable for this opened index")]
+    /// A continuation belongs to another opened root, or names an ordinal this root never
+    /// issued.
+    ///
+    /// Either is a malformed request, so the whole read fails. A token this root issued and
+    /// no longer retains -- consumed or evicted -- refuses only its own projection with
+    /// [`ProjectionRefusal::ContinuationUnavailable`].
+    #[error(
+        "the page continuation was not issued by this opened index; continue from a token a \
+         page of this root returned"
+    )]
     ContinuationUnavailable,
-
-    /// A resumable query would retain more payload than one continuation permits.
-    #[error("continuation record requires {attempted} bytes; limit is {limit} bytes")]
-    ContinuationRecordLimit {
-        /// Structural payload bytes the record would retain.
-        attempted: usize,
-        /// Maximum structural payload retained by one record.
-        limit: usize,
-    },
 
     /// No further handle-local continuation identifier can be represented.
     #[error("the opened index continuation identity space is exhausted")]
@@ -1836,7 +1945,10 @@ pub enum Error {
     #[error("opened-index lifecycle state was poisoned by a panic")]
     OpenedLifecyclePoisoned,
 
-    /// An owned opened-index worker panicked before joined shutdown completed.
+    /// An owned opened-index worker panicked.
+    ///
+    /// Joined shutdown reports it, and so does a change poll that would otherwise wait for
+    /// commits the root can no longer make.
     #[error("opened-index worker {worker} panicked")]
     OpenedWorkerPanicked {
         /// Stable role of the failed worker.

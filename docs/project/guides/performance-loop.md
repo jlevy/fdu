@@ -596,17 +596,19 @@ The primary checkout identifies the harness and any artifact without an override
 explicit checkout must remain clean and match its binary’s recorded revision, lockfiles,
 and toolchain throughout verification.
 Checkout paths stay local and are not serialized into the manifest.
-Performance builds enable `gitignore`, including on a tree with no control files, so the
-measured binary retains the shipped control semantics.
+Control semantics are always compiled in, so every performance build measures the
+shipped matcher, including on a tree with no control files.
 The default-command and summary probes run through the one-shot report planner, which
 turns control observation off for every report whatever the caller passes, so they
 measure the command line’s controls-off scope and refuse the no-op `--no-controls`;
 index-returning cold scans and opened discovery keep control discovery enabled.
-Compile-time capability and per-request scope are separate parts of the work contract.
-The watch feature is unnecessary for these jobs: opened discovery does not attach an OS
-watcher. Minimal-library probe tests remain separate.
-Record each artifact’s exact build arguments; a historical revision without the
-capability must be identified as such, not presented as a controls-enabled control.
+Per-request scope is the part of the work contract that decides control observation.
+The `watch` build feature is unnecessary for these jobs: opened discovery does not
+attach an OS watcher.
+Record each artifact’s exact build arguments.
+A historical revision that still had the `gitignore` build feature needs
+`--features gitignore` to keep control semantics, and one built without it must be
+identified as such, not presented as a controls-enabled control.
 An installation attestation then proves the native Cargo or wheel-installed command, its
 effective bash/zsh resolution, its native payload, and a real cache-off scan.
 The competitor adapter must establish exact work before any timing is accepted.

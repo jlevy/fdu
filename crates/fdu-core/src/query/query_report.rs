@@ -25,7 +25,9 @@ use crate::content::{
 };
 use crate::engine_contract::{EntryKind, Freshness, ScanScope};
 use crate::index::{EntryId, ExtTally, Index, RollUpScalars};
-use crate::query::query_selection::{Bound, Candidate, Selection, SizeMetric, SortKey};
+use crate::query::query_selection::{
+    Bound, Candidate, NameIdentity, Selection, SizeMetric, SortKey,
+};
 
 /// Which roll-up or listing a view reports.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -733,9 +735,23 @@ fn display_notes(query: &Query) -> Vec<String> {
 /// Pure: the same index, query, and provenance always produce the same report, and
 /// nothing here reads the filesystem or mutates the index.
 pub fn report(index: &Index, query: &Query, provenance: &Provenance) -> Report {
+    report_in(index, query, provenance, NameIdentity::Native)
+}
+
+/// [`report`], with the selection evaluated against the named spelling of each path.
+///
+/// A one-shot report matches native names; an opened-root read matches portable ones, so
+/// its report projection agrees with its flat and aggregate projections over one query.
+pub(crate) fn report_in(
+    index: &Index,
+    query: &Query,
+    provenance: &Provenance,
+    identity: NameIdentity,
+) -> Report {
     // One traversal serves every filtered view in the request, so asking for three views
     // costs one pass rather than three.
-    let walked = (!query.selection.is_unfiltered()).then(|| walk(index, &query.selection));
+    let walked =
+        (!query.selection.is_unfiltered()).then(|| walk(index, &query.selection, identity));
 
     let sections = query
         .views
@@ -810,7 +826,7 @@ struct Walked {
 ///
 /// Iterative rather than recursive: this engine is built for trees deep enough that a
 /// recursive post-order would exhaust the stack.
-fn walk(index: &Index, selection: &Selection) -> Walked {
+fn walk(index: &Index, selection: &Selection, identity: NameIdentity) -> Walked {
     let mut walked =
         Walked { per_directory: BTreeMap::new(), by_ext: BTreeMap::new(), rows: Vec::new() };
 
@@ -850,9 +866,17 @@ fn walk(index: &Index, selection: &Selection) -> Walked {
             // bytes the index interned from, or a name that is not valid UTF-8 would be
             // filed under one label by the fast tier and another by this one.
             let file_name = child_path.file_name().unwrap_or_default();
-            let name = file_name.to_string_lossy().into_owned();
+            let portable = (identity == NameIdentity::Portable)
+                .then(|| crate::opened::read::portable_path(&child_path));
+            let (relative, name) = match &portable {
+                Some(portable) => {
+                    let path = portable.as_str();
+                    (Path::new(path), path.rsplit('/').next().unwrap_or(path).to_owned())
+                }
+                None => (child_path.as_path(), file_name.to_string_lossy().into_owned()),
+            };
             let candidate = Candidate {
-                relative: &child_path,
+                relative,
                 name: &name,
                 kind,
                 bytes: attrs.size,

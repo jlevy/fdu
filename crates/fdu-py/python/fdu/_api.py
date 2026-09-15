@@ -50,14 +50,10 @@ class FduError(RuntimeError):
 class InvalidArgumentError(FduError, ValueError):
     """A public option or query is invalid.
 
-    Almost every cause is the shape of the call itself, and the same call fails the same
-    way every time. One cause depends on the index instead: an ``OpenedIndex.read`` whose
-    ``Tree`` or ``DirectoryRollUp`` names a retained path that is not a directory. That
-    request succeeds while the path is a directory and raises once it has become a file, so
-    a path taken from an earlier page can start raising between reads. The error fails the
-    whole read, including projections in the same call that would have answered, such as a
-    ``Lookup`` of that path. Whether it should become a result of that one projection
-    instead is an open decision.
+    Every cause is the shape of the call itself, so the same call fails the same way every
+    time. What an index holds never raises it: an ``OpenedIndex.read`` whose ``Tree`` or
+    ``DirectoryRollUp`` names a path that is not a directory returns a ``RefusedResult``
+    for that projection, and the rest of the read answers.
     """
 
 
@@ -313,6 +309,13 @@ class Index:
         )
 
     def watch(self, options: WatchOptions | None = None) -> Watch:
+        """Keep this index current and report it as it changes.
+
+        The watch continues the scan that built the index under the same scope, so it
+        observes ``.gitignore`` control state unless the index was opened with
+        ``ScanOptions(read_controls=False)``.
+        """
+
         selected = options if options is not None else WatchOptions()
         arguments = _query_kwargs(selected.query)
         arguments["interval"] = selected.interval
@@ -348,10 +351,12 @@ def open(
 
     The index observes ``.gitignore`` control state, as the engine's ``open`` does by
     default. :func:`report` never does, so the two keep snapshots of different scope at one
-    cache path. An ``open`` never starts from a ``report``'s snapshot: a policy that scans
-    treats it as a miss and scans cold, and ``CachePolicy.ONLY``, which never scans, raises
-    :class:`FduError` naming the remedy. A ``report`` answers from an ``open`` snapshot only
-    under ``CachePolicy.ONLY``.
+    cache path. A default ``open`` never starts from a ``report``'s snapshot: a policy that
+    scans treats it as a miss and scans cold, and ``CachePolicy.ONLY``, which never scans,
+    raises :class:`FduError` naming the remedy. A ``report`` answers from a default
+    ``open``'s snapshot only under ``CachePolicy.ONLY``. ``ScanOptions(read_controls=False)``
+    turns observation off: that ``open`` reads no control file and shares a ``report``'s
+    snapshot scope.
     """
 
     scan_options = scan if scan is not None else ScanOptions()
@@ -362,6 +367,7 @@ def open(
         cache=cache.value,
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,
+        read_controls=scan_options.read_controls,
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
@@ -374,7 +380,11 @@ def scan(
     scan: ScanOptions | None = None,
     analysis: AnalysisOptions | None = None,
 ) -> Index:
-    """Walk a root without reading or writing a snapshot cache."""
+    """Walk a root without reading or writing a snapshot cache.
+
+    Like :func:`open`, it observes ``.gitignore`` control state unless
+    ``ScanOptions(read_controls=False)`` turns it off.
+    """
 
     scan_options = scan if scan is not None else ScanOptions()
     analysis_options = analysis if analysis is not None else AnalysisOptions()
@@ -383,6 +393,7 @@ def scan(
         root,
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,
+        read_controls=scan_options.read_controls,
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
@@ -408,8 +419,9 @@ def report(
     not have, visible to a later cache-only read.
 
     A report never observes ``.gitignore`` control state, because no view reads it, so it
-    opens no control file and cannot fail on the control-state bound. See :func:`open` for
-    what that means for sharing a snapshot with an index.
+    opens no control file and cannot fail on the control-state bound, and it ignores
+    ``ScanOptions.read_controls``. See :func:`open` for what that means for sharing a
+    snapshot with an index.
 
     Use :func:`open` when you will ask more than one question; the index is the point.
     """

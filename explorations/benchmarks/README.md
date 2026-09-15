@@ -76,8 +76,8 @@ and steady query work.
 Build and execute it with:
 
 ```shell
-# The same build as `make perf-probe-release`, which keeps shipped control semantics.
-cargo build --locked --release -p fdu-core --example perf_probe --no-default-features --features gitignore
+# The same build as `make perf-probe-release`.
+cargo build --locked --release -p fdu-core --example perf_probe --no-default-features
 
 uv run --no-project python -m benchmarks.run execute \
   --scenarios explorations/benchmarks/scenarios.json \

@@ -684,9 +684,15 @@ These counters describe one run and are not benchmark claims.
 
 ### The Watch Layer Stays Deletable
 
-It sits behind a feature flag and is strictly additive: removing it leaves scan, index,
+It sits behind a build feature and is strictly additive: removing it leaves scan, index,
 snapshot, CLI, and Python surfaces working.
 The index must never learn what a filesystem event is.
+
+A build feature is for a capability with a dependency tree to shed.
+`.gitignore` handling has none, so it is always compiled in, and
+`ScanConfig::read_controls` is the per-request switch for its filesystem reads.
+It was once a build feature as well, which made “observes controls” depend on the build:
+in the build without it, every opened roll-up failed.
 
 ### Two Crates, Not More
 

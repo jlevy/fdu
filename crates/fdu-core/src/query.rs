@@ -12,12 +12,13 @@ mod query_selection;
 mod query_values;
 
 pub use query_glob::Pattern;
-pub(crate) use query_report::report_summary;
 pub use query_report::{
     AxisNames, ContentReportMetadata, FileRow, MetricGroup, MetricRow, MetricShare, MetricSummary,
     Provenance, Query, Report, ReportSource, Section, ShareMetric, SummaryRow, TreeNode, TypeRow,
     ViewSpec, document_words, report,
 };
+pub(crate) use query_report::{report_in, report_summary};
+pub(crate) use query_selection::NameIdentity;
 pub use query_selection::{
     Bound, Candidate, EntrySelection, ModifiedWindow, Selection, SizeMetric, SortKey,
 };

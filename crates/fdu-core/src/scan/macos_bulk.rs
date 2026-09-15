@@ -69,6 +69,12 @@ impl Reader {
     /// successful read reports both. That is the point of the backend, and counting it
     /// this way is what makes the saving legible beside the portable path.
     pub(super) fn read(&mut self, path: &Path) -> Option<Vec<Entry>> {
+        // A test hook injects into per-entry lookups and listings, which only the portable
+        // path makes.
+        #[cfg(test)]
+        if super::walk_hook_covers(path) {
+            return None;
+        }
         let entries = self.read_bulk(path)?;
         crate::counters::bump(|c| {
             c.dir_opens += 1;

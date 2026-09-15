@@ -19,7 +19,6 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::{OsStr, OsString};
 use std::fmt::Write as _;
 use std::fs;
-#[cfg(feature = "gitignore")]
 use std::io::Read as _;
 use std::path::{Component, Path, PathBuf};
 
@@ -63,12 +62,10 @@ const RECONCILE_WAVE_DIRECTORIES: usize =
     crate::platform_tuning::tuning().reconcile_wave_directories.get();
 
 /// Identity of the current fixed `.gitignore` control semantics.
-#[cfg(feature = "gitignore")]
+///
+/// Zero is reserved for a scope that observed no control state, which is what
+/// [`ScanScope::observes_controls`] tests.
 const IGNORE_RULES_FINGERPRINT: u64 = 2;
-
-/// A build without the capability performs no control reads or classification.
-#[cfg(not(feature = "gitignore"))]
-const IGNORE_RULES_FINGERPRINT: u64 = 0;
 
 /// Identity of the fixed stat-tier reducer set.
 const REDUCERS_FINGERPRINT: u64 = 1;
@@ -186,10 +183,20 @@ pub struct ScanConfig {
     /// Observe `.gitignore` control files and retain ignore classification.
     ///
     /// On by default, so an [`Index`] from [`crate::open`] or a scan keeps the exact
-    /// control state it exposes and a watch maintains. Off, the scan performs
-    /// no control-file I/O and retains no control table: the semantics an absent
-    /// `gitignore` feature gives, stamped into [`ScanScope`] the same way, so an
-    /// index-returning call never serves a snapshot taken one way as the other.
+    /// control state it exposes and a watch maintains: which entries are ignored, and the
+    /// ignored and unignored partitions of every roll-up (fdu-elnn). It costs a read of
+    /// every `.gitignore` in the tree, and exposure to the control bounds.
+    ///
+    /// Off, the scan performs no control-file I/O and retains no control table, and that is
+    /// stamped into [`ScanScope`], so an index-returning call never serves a snapshot taken
+    /// one way as the other. An [`Index`] built that way answers [`Index::is_ignored`],
+    /// [`Index::controls`], and the partition accessors with
+    /// [`crate::Error::ControlStateNotObserved`], never with "not ignored", and refuses
+    /// control input. Turn it off for a request that reads no ignore classification; its
+    /// snapshot then shares the one-shot report's scope.
+    ///
+    /// An opened root ([`crate::OpenedIndex`]) always observes control state, because its
+    /// ignored and unignored partitions are part of what it serves.
     ///
     /// A one-shot report ([`crate::prepare_report`]) does not read this field; its
     /// planner always runs with observation off, because no report view reads ignore
@@ -273,10 +280,8 @@ impl ScanConfig {
             one_filesystem: self.one_filesystem,
             hidden_fingerprint: self.hidden().fingerprint(),
             exclude_special: self.exclude_special,
-            // Runtime opt-out and compiled-out capability are one semantic identity:
-            // both mean no control reads and no ignore classification, so they must
-            // share a fingerprint or two equivalent indexes would refuse each other's
-            // snapshots.
+            // Zero means no control reads and no ignore classification, which is what
+            // `ScanScope::observes_controls` tests.
             ignore_rules_fingerprint: if self.read_controls { IGNORE_RULES_FINGERPRINT } else { 0 },
             type_rules_fingerprint: self.types().fingerprint(),
             reducers_fingerprint: REDUCERS_FINGERPRINT,
@@ -822,11 +827,14 @@ pub struct ReconcileReport {
     /// Exact producer operations considered, including no-op controls that do not
     /// increment an effect counter or create a commit.
     pub(crate) observations: u64,
-    /// Directories this pass listed in full that the index did not yet hold as complete.
+    /// Directories this pass listed in full, with no error inside them, that the index did
+    /// not yet hold as complete.
     ///
-    /// Collected only for an opened root, where completeness is served: once the whole pass
-    /// completes, its closing commit records each one's child set as authoritative, as
-    /// discovery's own listing commit does.
+    /// Collected only for an opened root, where completeness is served. The closing commit
+    /// records each one's child set as authoritative, as discovery's own listing commit
+    /// does, whether or not the rest of the pass completed: one transient child error
+    /// elsewhere used to keep every directory the pass listed incomplete, and a directory
+    /// first listed by such a pass stayed `Unknown { Building }` under a complete root.
     pub(crate) listed_incomplete: Vec<PathBuf>,
 }
 
@@ -835,6 +843,16 @@ impl ReconcileReport {
     /// a race with another producer.
     pub fn is_complete(&self) -> bool {
         self.scan.is_complete() && self.apply.stale == 0 && self.apply.resource_refused == 0
+    }
+
+    /// The directories whose listings this pass can vouch for, taken out of the report.
+    ///
+    /// None when a conditional commit lost a race or was refused: a child of any listed
+    /// directory may then be missing from the index until the retry that race earns, and
+    /// the retry records completeness for what it lists.
+    pub(crate) fn take_recordable_completeness(&mut self) -> Vec<PathBuf> {
+        let listed = std::mem::take(&mut self.listed_incomplete);
+        if self.apply.stale > 0 || self.apply.resource_refused > 0 { Vec::new() } else { listed }
     }
 }
 
@@ -903,7 +921,7 @@ impl ReconcileTarget<'_> {
 
     fn has_control(&self, path: &Path) -> Result<bool> {
         match self {
-            Self::Direct(index) => Ok(index.controls().contains(path)),
+            Self::Direct(index) => Ok(index.control_table().contains(path)),
             Self::Shared(handle) | Self::Controlled { handle, .. } => handle.has_control(path),
         }
     }
@@ -1010,6 +1028,146 @@ pub(crate) fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<
     // Windows serves DirEntry metadata from directory-enumeration data, which the
     // platform permits to be stale. Fingerprints need a fresh non-following query.
     fs::symlink_metadata(entry.path())
+}
+
+#[cfg(test)]
+type WalkHook = std::sync::Arc<dyn Fn(WalkHookPoint<'_>) -> Option<std::io::Error> + Send + Sync>;
+
+/// Where a test hook runs in a listing walk.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum WalkHookPoint<'a> {
+    /// Before the metadata lookup of the listed child at this absolute path; an error
+    /// stands in for the lookup's.
+    ChildMetadata(&'a Path),
+    /// After a reconciliation's listing of a directory returns its last entry; an error is
+    /// read as one more listing item, which leaves the listing incomplete.
+    ListingEnd,
+}
+
+/// Hooks run at each [`WalkHookPoint`], each for the paths under its root.
+///
+/// Process-wide, because a parallel walk looks children up on its worker threads; keyed
+/// by root, because tests run in parallel and each walks its own temporary directory.
+#[cfg(test)]
+static WALK_HOOKS: std::sync::RwLock<Vec<(Vec<PathBuf>, WalkHook)>> =
+    std::sync::RwLock::new(Vec::new());
+
+/// Removes its hook from [`WALK_HOOKS`] when dropped.
+#[cfg(test)]
+#[must_use = "the hook is removed as soon as the guard is dropped"]
+pub(crate) struct WalkHookGuard(WalkHook);
+
+#[cfg(test)]
+impl Drop for WalkHookGuard {
+    fn drop(&mut self) {
+        WALK_HOOKS
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .retain(|(_, hook)| !std::sync::Arc::ptr_eq(hook, &self.0));
+    }
+}
+
+/// Run `hook` at every [`WalkHookPoint`] under `root`, on any thread, until the guard drops.
+///
+/// The hook may also change the tree before it returns. `root` matches as given and
+/// canonical, since an opened root and a detached scan walk the canonical path.
+#[cfg(test)]
+pub(crate) fn install_walk_hook(
+    root: &Path,
+    hook: impl Fn(WalkHookPoint<'_>) -> Option<std::io::Error> + Send + Sync + 'static,
+) -> WalkHookGuard {
+    let mut roots = vec![root.to_path_buf()];
+    if let Ok(canonical) = root.canonicalize() {
+        roots.push(canonical);
+    }
+    let hook: WalkHook = std::sync::Arc::new(hook);
+    WALK_HOOKS
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push((roots, std::sync::Arc::clone(&hook)));
+    WalkHookGuard(hook)
+}
+
+/// Run `hook` before every listed child's metadata lookup under `root`, with the child's
+/// absolute path, until the guard drops.
+#[cfg(test)]
+pub(crate) fn install_child_metadata_hook(
+    root: &Path,
+    hook: impl Fn(&Path) -> Option<std::io::Error> + Send + Sync + 'static,
+) -> WalkHookGuard {
+    install_walk_hook(root, move |point| match point {
+        WalkHookPoint::ChildMetadata(path) => hook(path),
+        WalkHookPoint::ListingEnd => None,
+    })
+}
+
+/// The hook installed for a root containing `path`, if any.
+#[cfg(test)]
+fn walk_hook(path: &Path) -> Option<WalkHook> {
+    WALK_HOOKS
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter()
+        .find(|(roots, _)| roots.iter().any(|root| path.starts_with(root)))
+        .map(|(_, hook)| std::sync::Arc::clone(hook))
+}
+
+/// A reconciliation's listing of `dir`, followed by any error a test hook injects.
+///
+/// Callers bind the result to `listing` and iterate it as `for … in listing`, because the
+/// admission audit (`scripts/check-admission-sites.mjs`) counts routed listing loops by that
+/// shape. Keep the binding when editing a call site; dropping it silently removes the loop
+/// from the audit, whose expected count would then look too high rather than wrong.
+#[cfg(test)]
+fn reconcile_listing(
+    listing: fs::ReadDir,
+    dir: &Path,
+) -> impl Iterator<Item = std::io::Result<fs::DirEntry>> {
+    let injected = walk_hook(dir).and_then(|hook| hook(WalkHookPoint::ListingEnd));
+    listing.chain(injected.map(Err))
+}
+
+/// A reconciliation's listing of `dir`.
+#[cfg(not(test))]
+fn reconcile_listing(listing: fs::ReadDir, _dir: &Path) -> fs::ReadDir {
+    listing
+}
+
+/// Metadata for one entry a directory listing returned, or `None` when it is gone.
+///
+/// `NotFound` for a name the listing just returned means the entry was deleted in
+/// between, and every walk records it as it records a name the listing never returned: a
+/// cold walk has nothing to record, and a reconciliation removes what its baseline held.
+/// Reported as an error, it would make a walk over a tree being cleaned partial, and in a
+/// reconciliation it would settle as a phantom entry with permanent partial freshness.
+/// Any other error means the entry is present but unreadable.
+pub(crate) fn listed_child_metadata(entry: &fs::DirEntry) -> std::io::Result<Option<fs::Metadata>> {
+    #[cfg(test)]
+    {
+        let path = entry.path();
+        if let Some(error) =
+            walk_hook(&path).and_then(|hook| hook(WalkHookPoint::ChildMetadata(&path)))
+        {
+            return missing_as_none(Err(error));
+        }
+    }
+    missing_as_none(metadata_for_fingerprint(entry))
+}
+
+fn missing_as_none(lookup: std::io::Result<fs::Metadata>) -> std::io::Result<Option<fs::Metadata>> {
+    match lookup {
+        Ok(metadata) => Ok(Some(metadata)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+/// Whether a test hook observes lookups or listings under `path`, which a bulk read would
+/// not make.
+#[cfg(all(test, target_os = "macos"))]
+fn walk_hook_covers(path: &Path) -> bool {
+    walk_hook(path).is_some()
 }
 
 /// Owned output from the filesystem walker before it crosses a public mutation boundary.
@@ -1189,8 +1347,9 @@ fn scan_internal(
             crate::counters::bump(|c| c.dir_entries += 1);
             let name = item.file_name();
             let rel_path = rel_dir.join(&name);
-            let meta = match metadata_for_fingerprint(&item) {
-                Ok(meta) => meta,
+            let meta = match listed_child_metadata(&item) {
+                Ok(Some(meta)) => meta,
+                Ok(None) => continue,
                 Err(e) => {
                     report.errors.push(Error::io(item.path(), e));
                     continue;
@@ -2564,8 +2723,9 @@ fn walk_worker_with<E: WalkEmission>(
                 };
                 crate::counters::bump(|c| c.dir_entries += 1);
                 let name = item.file_name();
-                let meta = match metadata_for_fingerprint(&item) {
-                    Ok(meta) => meta,
+                let meta = match listed_child_metadata(&item) {
+                    Ok(Some(meta)) => meta,
+                    Ok(None) => continue,
                     Err(e) => {
                         report.errors.push(Error::io(item.path(), e));
                         continue;
@@ -2830,19 +2990,11 @@ pub(crate) fn read_control_op(
     read_control_op_unconditional(root, path, kind)
 }
 
-#[cfg(not(feature = "gitignore"))]
-#[allow(clippy::unnecessary_wraps)] // The feature-enabled implementation performs I/O.
-fn read_control_op_unconditional(root: &Path, path: &Path, kind: EntryKind) -> Result<Option<Op>> {
-    let _ = (root, path, kind);
-    Ok(None)
-}
-
 /// Read one fixed control source without allowing a raced or hostile file to allocate
 /// beyond the index-wide control budget.
 ///
 /// Private to this module, so no caller elsewhere can step around the policy gate in
 /// `read_control_op`.
-#[cfg(feature = "gitignore")]
 fn read_control_op_unconditional(root: &Path, path: &Path, kind: EntryKind) -> Result<Option<Op>> {
     if !crate::control::is_control_file(path) {
         return Ok(None);
@@ -2869,14 +3021,14 @@ fn read_control_op_unconditional(root: &Path, path: &Path, kind: EntryKind) -> R
     Ok(Some(Op::ControlUpsert { path: path.to_path_buf(), source }))
 }
 
-#[cfg(all(feature = "gitignore", unix))]
+#[cfg(unix)]
 fn open_control_file(path: &Path) -> std::io::Result<fs::File> {
     use std::os::unix::fs::OpenOptionsExt as _;
 
     fs::OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW).open(path)
 }
 
-#[cfg(all(feature = "gitignore", not(unix)))]
+#[cfg(not(unix))]
 fn open_control_file(path: &Path) -> std::io::Result<fs::File> {
     fs::File::open(path)
 }
@@ -3682,9 +3834,10 @@ pub fn revalidate(
 
         let mut seen: BTreeSet<OsString> = BTreeSet::new();
         let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
-        let had_control = index.controls().contains(&control_path);
+        let mut had_control = index.control_table().contains(&control_path);
         let mut control_seen = false;
         let mut listing_complete = true;
+        let listing = reconcile_listing(listing, &abs_dir);
         for item in listing {
             let item = match item {
                 Ok(item) => item,
@@ -3699,16 +3852,32 @@ pub fn revalidate(
             // lookup fails. Record it before any fallible per-entry work so an
             // operational error cannot become a false removal in the missing sweep.
             seen.insert(name.clone());
-            control_seen |= name == crate::control::CONTROL_FILE_NAME;
             let rel_path = rel_dir.join(&name);
             let baseline = index.relaxed_expectation(&rel_path);
-            let meta = match metadata_for_fingerprint(&item) {
-                Ok(meta) => meta,
+            let meta = match listed_child_metadata(&item) {
+                Ok(Some(meta)) => meta,
+                Ok(None) => {
+                    let entry_held = baseline.state != PathState::Absent;
+                    for removal in
+                        vanished_child_removals(&rel_dir, &name, entry_held, &mut had_control)
+                            .into_iter()
+                            .flatten()
+                    {
+                        batch.push(ObservationOp::if_state(removal, baseline));
+                    }
+                    if batch.len() >= batch_limit {
+                        sink(Observation::from_ops(std::mem::take(&mut batch)));
+                        batch.reserve(batch_limit);
+                    }
+                    continue;
+                }
                 Err(e) => {
+                    control_seen |= name == crate::control::CONTROL_FILE_NAME;
                     report.errors.push(Error::io(item.path(), e));
                     continue;
                 }
             };
+            control_seen |= name == crate::control::CONTROL_FILE_NAME;
 
             let kind = kind_from(&meta);
             let attrs = attrs_from(&meta);
@@ -3946,22 +4115,31 @@ fn reconcile_paths_target(
         opened.push((subtree, started_at));
     }
 
+    // Each subtree closes on its own walk's outcome, so a subtree that could not be read
+    // neither marks a verified sibling partial nor withholds the completeness its listing
+    // earned.
     let mut failure = None;
+    let mut completed = Vec::with_capacity(opened.len());
     for (subtree, _) in &opened {
         if failure.is_some() {
-            break;
+            completed.push(false);
+            continue;
         }
         match reconcile_target_inner(target, subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
-            Ok(reconciliation) => {
+            Ok(mut reconciliation) => {
+                completed.push(reconciliation.is_complete());
+                reconciliation.listed_incomplete = reconciliation.take_recordable_completeness();
                 merge_reconcile_report(&mut report.reconciliation, reconciliation);
             }
-            Err(error) => failure = Some(error),
+            Err(error) => {
+                completed.push(false);
+                failure = Some(error);
+            }
         }
     }
 
-    let complete = failure.is_none() && report.reconciliation.is_complete();
     let listed_incomplete = std::mem::take(&mut report.reconciliation.listed_incomplete);
-    for (subtree, started_at) in opened {
+    for ((subtree, started_at), complete) in opened.into_iter().zip(completed) {
         let commit = target.finish_reconcile(&subtree, started_at, complete, &listed_incomplete)?;
         if let Some(commit) = commit.as_ref() {
             sink(commit);
@@ -4042,7 +4220,7 @@ fn reconcile_target(
     }
     match reconcile_target_inner(target, &subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
         Ok(mut report) => {
-            let listed_incomplete = std::mem::take(&mut report.listed_incomplete);
+            let listed_incomplete = report.take_recordable_completeness();
             let finished = target.finish_reconcile(
                 &subtree,
                 started_at,
@@ -4146,6 +4324,16 @@ fn reconcile_target_inner(
         }
         report.scan.observe(kind, attrs);
         push_reconcile_upsert(target, subtree, kind, attrs, baseline, &mut batch, &mut report);
+        // A retained control file at the root of the walk reads its rules here, as the
+        // listing walk does for every retained entry it lists: a file does not descend,
+        // so nothing below would read them, and the table kept the old source while the
+        // pass reported complete and marked the path fresh. In the same batch as the
+        // upsert, so both are arbitrated against one baseline.
+        match read_control_op(config, &root, subtree, kind) {
+            Ok(Some(control)) => batch.push(ObservationOp::if_state(control, baseline)),
+            Ok(None) => {}
+            Err(error) => report.scan.errors.push(error),
+        }
         flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
         if !should_descend(kind, attrs, start_depth.saturating_sub(1), root_dev, config) {
             if kind.is_dir() {
@@ -4174,9 +4362,10 @@ fn reconcile_target_inner(
     let mut bulk_reader = (config.worker_threads() > 1).then(macos_bulk::Reader::new);
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
         let (mut known, records_completeness) = target.listing_baseline(&rel_dir)?;
+        let errors_before = report.scan.errors.len();
         let abs_dir = root.join(&rel_dir);
         let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
-        let had_control = target.has_control(&control_path)?;
+        let mut had_control = target.has_control(&control_path)?;
         let mut control_seen = false;
         let mut listing_complete = true;
         let process_entry = |name: OsString,
@@ -4278,6 +4467,7 @@ fn reconcile_target_inner(
                 }
             };
             report.scan.dirs_read += 1;
+            let listing = reconcile_listing(listing, &abs_dir);
             for item in listing {
                 let item = match item {
                     Ok(item) => item,
@@ -4288,7 +4478,6 @@ fn reconcile_target_inner(
                     }
                 };
                 let name = item.file_name();
-                control_seen |= name == crate::control::CONTROL_FILE_NAME;
                 // Seeing the name proves it is not absent even if the following
                 // metadata lookup fails. Remove it from the missing set before that
                 // fallible lookup so an operational error cannot turn an existing
@@ -4297,9 +4486,26 @@ fn reconcile_target_inner(
                     Some(baseline) => baseline,
                     None => target.expectation(&rel_dir.join(&name))?,
                 };
-                let meta = match metadata_for_fingerprint(&item) {
-                    Ok(meta) => meta,
+                let meta = match listed_child_metadata(&item) {
+                    Ok(Some(meta)) => meta,
+                    Ok(None) => {
+                        let entry_held = baseline.state != PathState::Absent;
+                        for removal in
+                            vanished_child_removals(&rel_dir, &name, entry_held, &mut had_control)
+                                .into_iter()
+                                .flatten()
+                        {
+                            batch.push(ObservationOp::if_state(removal, baseline));
+                        }
+                        if batch.len() >= config.batch_size.max(1) {
+                            flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
+                        }
+                        continue;
+                    }
                     Err(error) => {
+                        // Present but unreadable: its rules, if it is the control file,
+                        // stay until a read says otherwise.
+                        control_seen |= name == crate::control::CONTROL_FILE_NAME;
                         report.scan.errors.push(Error::io(item.path(), error));
                         continue;
                     }
@@ -4336,7 +4542,10 @@ fn reconcile_target_inner(
                     baseline,
                 ));
             }
-            if records_completeness {
+            // Only a directory with no error inside its own processing vouches for its
+            // child set; an error under a sibling or a descendant is that directory's
+            // to answer for, as discovery decides completeness per directory.
+            if records_completeness && report.scan.errors.len() == errors_before {
                 report.listed_incomplete.push(rel_dir);
             }
         }
@@ -4543,10 +4752,11 @@ fn reconcile_wave_worker(
             let mut known = collect_child_expectations(index, rel_dir);
             let abs_dir = root.join(rel_dir);
             let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
-            let had_control = index.controls().contains(&control_path);
+            let mut had_control = index.control_table().contains(&control_path);
             let mut control_seen = false;
             let mut listing_complete = true;
             let mut control_errors = Vec::new();
+            let mut vanished = Vec::new();
 
             {
                 let mut process_entry =
@@ -4578,7 +4788,7 @@ fn reconcile_wave_worker(
                         if disposition == crate::admission::Disposition::ControlOnly {
                             match read_control_op(config, root, &rel_path, kind) {
                                 Ok(Some(Op::ControlUpsert { path, source })) => {
-                                    if !index.controls().source_is(&path, &source) {
+                                    if !index.control_table().source_is(&path, &source) {
                                         defer_reconcile_op(
                                             Op::ControlUpsert { path, source },
                                             &mut result.operations,
@@ -4589,7 +4799,7 @@ fn reconcile_wave_worker(
                                     }
                                 }
                                 Ok(Some(Op::ControlRemove { path })) => {
-                                    if index.controls().contains(&path) {
+                                    if index.control_table().contains(&path) {
                                         defer_reconcile_op(
                                             Op::ControlRemove { path },
                                             &mut result.operations,
@@ -4622,7 +4832,7 @@ fn reconcile_wave_worker(
                         }
                         match read_control_op(config, root, &rel_path, kind) {
                             Ok(Some(Op::ControlUpsert { path, source })) => {
-                                if !index.controls().source_is(&path, &source) {
+                                if !index.control_table().source_is(&path, &source) {
                                     defer_reconcile_op(
                                         Op::ControlUpsert { path, source },
                                         &mut result.operations,
@@ -4685,6 +4895,7 @@ fn reconcile_wave_worker(
                         }
                     };
                     result.scan.dirs_read += 1;
+                    let listing = reconcile_listing(listing, &abs_dir);
                     for item in listing {
                         let item = match item {
                             Ok(item) => item,
@@ -4695,15 +4906,20 @@ fn reconcile_wave_worker(
                             }
                         };
                         let name = item.file_name();
-                        control_seen |= name == crate::control::CONTROL_FILE_NAME;
                         // Match the serial path: an entry whose name was enumerated is
                         // not missing merely because its metadata could not be read.
                         let baseline = known
                             .remove(&name)
                             .unwrap_or_else(|| index.expectation(&rel_dir.join(&name)));
-                        let meta = match metadata_for_fingerprint(&item) {
-                            Ok(meta) => meta,
+                        let meta = match listed_child_metadata(&item) {
+                            Ok(Some(meta)) => meta,
+                            Ok(None) => {
+                                // Removed once this directory's listing is done.
+                                vanished.push((name, baseline.state != PathState::Absent));
+                                continue;
+                            }
                             Err(error) => {
+                                control_seen |= name == crate::control::CONTROL_FILE_NAME;
                                 result.scan.errors.push(Error::io(item.path(), error));
                                 continue;
                             }
@@ -4719,6 +4935,20 @@ fn reconcile_wave_worker(
                 }
             }
             result.scan.errors.append(&mut control_errors);
+            for (name, entry_held) in vanished {
+                for removal in vanished_child_removals(rel_dir, &name, entry_held, &mut had_control)
+                    .into_iter()
+                    .flatten()
+                {
+                    defer_reconcile_op(
+                        removal,
+                        &mut result.operations,
+                        deferred_count,
+                        overflowed,
+                        max_deferred_ops,
+                    );
+                }
+            }
             if listing_complete {
                 for (name, _) in known {
                     defer_reconcile_op(
@@ -4742,6 +4972,29 @@ fn reconcile_wave_worker(
         }
     }
     result
+}
+
+/// What a listed child gone at its stat removes: its entry, if the baseline holds one, and
+/// its rules, if it is the directory's control file and the table holds them.
+///
+/// The stat's `NotFound` is positive evidence that both are gone, so neither waits for a
+/// complete listing; only a name the listing never returned has to, because it may merely
+/// be unread. Removing a retained control file's entry drops its rules too, but a
+/// hidden-pruned one has no entry, and without its own removal one unreadable sibling would
+/// leave its rules applied with no file behind them. Clears `had_control` once the rules
+/// are removed, so the listing's closing removals do not repeat it.
+fn vanished_child_removals(
+    dir: &Path,
+    name: &OsStr,
+    entry_held: bool,
+    had_control: &mut bool,
+) -> [Option<Op>; 2] {
+    let path = dir.join(name);
+    let rules = (*had_control && name == crate::control::CONTROL_FILE_NAME).then(|| {
+        *had_control = false;
+        Op::ControlRemove { path: path.clone() }
+    });
+    [entry_held.then_some(Op::Remove { path }), rules]
 }
 
 fn defer_reconcile_op(
@@ -5457,12 +5710,12 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn detached_control_bootstrap_matches_the_streaming_reducer_for_each_worker_count() {
         let dir = controlled_branching_tree();
         for threads in 1..=4 {
-            let config = ScanConfig { threads: Some(threads), ..ScanConfig::default() };
+            let config =
+                ScanConfig { read_controls: true, threads: Some(threads), ..ScanConfig::default() };
             let _ = detached_and_streaming_indexes(dir.path(), &config);
         }
     }
@@ -5487,11 +5740,10 @@ mod tests {
         assert_indexes_equal(&detached, &streaming);
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn detached_control_bootstrap_preserves_the_exact_first_mutation() {
         let dir = controlled_branching_tree();
-        let config = ScanConfig { threads: Some(4), ..ScanConfig::default() };
+        let config = ScanConfig { read_controls: true, threads: Some(4), ..ScanConfig::default() };
         let (mut detached, mut streaming) = detached_and_streaming_indexes(dir.path(), &config);
         let observation = Observation::new(vec![Op::ControlUpsert {
             path: PathBuf::from(".gitignore"),
@@ -5504,7 +5756,6 @@ mod tests {
         assert_indexes_equal(&detached, &streaming);
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn detached_control_bootstrap_matches_control_limit_failures() {
         let pattern_dir = tempfile::tempdir().expect("pattern tempdir");
@@ -5512,7 +5763,7 @@ mod tests {
             &pattern_dir.path().join(".gitignore"),
             &vec![b'x'; crate::control::MAX_CONTROL_PATTERN_BYTES + 1],
         );
-        let config = ScanConfig { threads: Some(4), ..ScanConfig::default() };
+        let config = ScanConfig { read_controls: true, threads: Some(4), ..ScanConfig::default() };
         let canonical = pattern_dir.path().canonicalize().expect("canonical pattern root");
         let Err(detached_error) = scan_into_index(pattern_dir.path(), &config) else {
             panic!("detached scan accepted an oversized pattern");
@@ -5570,7 +5821,6 @@ mod tests {
         dir
     }
 
-    #[cfg(feature = "gitignore")]
     fn controlled_branching_tree() -> tempfile::TempDir {
         let dir = branching_tree();
         write_file(&dir.path().join(".gitignore"), b"leaf-1.dat\nt7/\n");
@@ -5624,26 +5874,27 @@ mod tests {
     fn assert_indexes_equal(left: &Index, right: &Index) {
         assert_eq!(index_fingerprint(left), index_fingerprint(right));
         assert_eq!(left.total(), right.total());
-        assert_eq!(left.partition_total(), right.partition_total());
+        assert_eq!(left.partition_total().ok(), right.partition_total().ok());
         assert_eq!(left.scope(), right.scope());
         assert_eq!(left.freshness(), right.freshness());
         assert_eq!(left.state(), right.state());
         assert_eq!(left.clock(), right.clock());
         assert_eq!(left.len(), right.len());
         assert_eq!(left.issues(), right.issues());
+        assert_eq!(left.observes_controls(), right.observes_controls());
         assert_eq!(
-            left.controls()
+            left.control_table()
                 .sources()
                 .map(|(path, source)| (path, source.to_vec()))
                 .collect::<Vec<_>>(),
             right
-                .controls()
+                .control_table()
                 .sources()
                 .map(|(path, source)| (path, source.to_vec()))
                 .collect::<Vec<_>>()
         );
         for (path, _, _) in index_fingerprint(left) {
-            assert_eq!(left.is_ignored(&path), right.is_ignored(&path), "{path:?}");
+            assert_eq!(left.is_ignored(&path).ok(), right.is_ignored(&path).ok(), "{path:?}");
         }
     }
 
@@ -6761,7 +7012,6 @@ mod tests {
         assert_eq!(src.dirs, 1);
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn cold_scan_routes_control_sources_through_both_walkers() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -6770,19 +7020,32 @@ mod tests {
         write_file(&dir.path().join("keep.rs"), b"visible");
 
         for threads in [1, 4] {
-            let config = ScanConfig { threads: Some(threads), ..ScanConfig::default() };
+            let config =
+                ScanConfig { read_controls: true, threads: Some(threads), ..ScanConfig::default() };
             let (index, report) = scan_into_index(dir.path(), &config).expect("scan");
 
             assert!(report.is_complete(), "unexpected errors: {:?}", report.errors);
-            assert!(index.controls().source_is(Path::new(".gitignore"), b"*.log\n"));
-            assert_eq!(index.is_ignored(Path::new("debug.log")), Some(true));
-            assert_eq!(index.is_ignored(Path::new("keep.rs")), Some(false));
-            assert_eq!(index.partition_total().all.files, 3);
-            assert_eq!(index.partition_total().unignored.files, 2);
+            assert!(
+                index
+                    .controls()
+                    .expect("control state observed")
+                    .source_is(Path::new(".gitignore"), b"*.log\n")
+            );
+            assert_eq!(
+                index.is_ignored(Path::new("debug.log")).expect("control state observed"),
+                Some(true)
+            );
+            assert_eq!(
+                index.is_ignored(Path::new("keep.rs")).expect("control state observed"),
+                Some(false)
+            );
+            let partitions = index.partition_total().expect("control state observed");
+            assert_eq!(partitions.all.files, 3);
+            assert_eq!(partitions.unignored.files, 2);
         }
     }
 
-    #[cfg(all(feature = "gitignore", unix))]
+    #[cfg(unix)]
     #[test]
     fn raced_fifo_control_source_is_rejected_without_blocking() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -6809,7 +7072,6 @@ mod tests {
         assert!(matches!(result, Some(Op::ControlRemove { .. })));
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn hidden_admission_keeps_exact_allowlist_and_control_signals_only() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -6823,6 +7085,7 @@ mod tests {
             let config = ScanConfig {
                 hidden: Some(std::sync::Arc::clone(&hidden)),
                 threads: Some(threads),
+                read_controls: true,
                 ..ScanConfig::default()
             };
             let (mut index, report) = scan_into_index(dir.path(), &config).expect("scan");
@@ -6832,8 +7095,16 @@ mod tests {
             assert!(index.lookup(Path::new(".secret")).is_none());
             assert!(index.lookup(Path::new(".secret/token")).is_none());
             assert!(index.lookup(Path::new(".github/workflows/check.yml")).is_some());
-            assert!(index.controls().source_is(Path::new(".gitignore"), b"*.log\n"));
-            assert_eq!(index.is_ignored(Path::new("debug.log")), Some(true));
+            assert!(
+                index
+                    .controls()
+                    .expect("control state observed")
+                    .source_is(Path::new(".gitignore"), b"*.log\n")
+            );
+            assert_eq!(
+                index.is_ignored(Path::new("debug.log")).expect("control state observed"),
+                Some(true)
+            );
 
             fs::remove_file(dir.path().join(".gitignore")).expect("remove control");
             if threads > 1 {
@@ -6841,7 +7112,7 @@ mod tests {
             }
             let reconciled = reconcile(&mut index, &config, &mut |_| {}).expect("reconcile");
             assert!(reconciled.is_complete());
-            assert!(index.controls().is_empty());
+            assert!(index.controls().expect("control state observed").is_empty());
             if threads > 1 {
                 fs::remove_dir(dir.path().join(".gitignore")).expect("remove directory");
             }
@@ -6893,7 +7164,6 @@ mod tests {
         assert_eq!(index_fingerprint(&serial), index_fingerprint(&parallel));
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn control_sources_respect_a_single_operation_batch_bound() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -6901,8 +7171,12 @@ mod tests {
         write_file(&dir.path().join("debug.log"), b"ignored");
 
         for threads in [1, 4] {
-            let config =
-                ScanConfig { threads: Some(threads), batch_size: 1, ..ScanConfig::default() };
+            let config = ScanConfig {
+                read_controls: true,
+                threads: Some(threads),
+                batch_size: 1,
+                ..ScanConfig::default()
+            };
             let mut largest = 0;
             let report = scan(dir.path(), &config, &mut |observation| {
                 largest = largest.max(observation.len());
@@ -6914,7 +7188,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn cold_scan_matches_the_metabrowser_nested_control_fixture() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -6926,29 +7199,51 @@ mod tests {
         write_file(&dir.path().join("node_modules/.gitignore"), b"!keep-me.py\n");
         write_file(&dir.path().join("node_modules/keep-me.py"), b"x");
 
-        let (index, report) =
-            scan_into_index(dir.path(), &ScanConfig { threads: Some(4), ..ScanConfig::default() })
-                .expect("scan fixture");
+        let (index, report) = scan_into_index(
+            dir.path(),
+            &ScanConfig { read_controls: true, threads: Some(4), ..ScanConfig::default() },
+        )
+        .expect("scan fixture");
 
         assert!(report.is_complete(), "unexpected errors: {:?}", report.errors);
-        assert_eq!(index.is_ignored(Path::new("src/app.py")), Some(false));
-        assert_eq!(index.is_ignored(Path::new("src/thing.pyc")), Some(true));
-        assert_eq!(index.is_ignored(Path::new("src/generated")), Some(false));
-        assert_eq!(index.is_ignored(Path::new("src/generated/out.gen")), Some(true));
-        assert_eq!(index.is_ignored(Path::new("node_modules")), Some(true));
-        assert_eq!(index.is_ignored(Path::new("node_modules/keep-me.py")), Some(true));
+        assert_eq!(
+            index.is_ignored(Path::new("src/app.py")).expect("control state observed"),
+            Some(false)
+        );
+        assert_eq!(
+            index.is_ignored(Path::new("src/thing.pyc")).expect("control state observed"),
+            Some(true)
+        );
+        assert_eq!(
+            index.is_ignored(Path::new("src/generated")).expect("control state observed"),
+            Some(false)
+        );
+        assert_eq!(
+            index.is_ignored(Path::new("src/generated/out.gen")).expect("control state observed"),
+            Some(true)
+        );
+        assert_eq!(
+            index.is_ignored(Path::new("node_modules")).expect("control state observed"),
+            Some(true)
+        );
+        assert_eq!(
+            index.is_ignored(Path::new("node_modules/keep-me.py")).expect("control state observed"),
+            Some(true)
+        );
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn reconciliation_observes_same_metadata_control_edits_and_last_deletion() {
         let dir = tempfile::tempdir().expect("tempdir");
         write_file(&dir.path().join(".gitignore"), b"*.log\n");
         write_file(&dir.path().join("debug.log"), b"ignored");
-        let config = ScanConfig { threads: Some(1), ..ScanConfig::default() };
+        let config = ScanConfig { read_controls: true, threads: Some(1), ..ScanConfig::default() };
         let (mut index, report) = scan_into_index(dir.path(), &config).expect("scan");
         assert!(report.is_complete());
-        assert_eq!(index.is_ignored(Path::new("debug.log")), Some(true));
+        assert_eq!(
+            index.is_ignored(Path::new("debug.log")).expect("control state observed"),
+            Some(true)
+        );
 
         // Same-length content proves control identity is not inferred from stat-tier
         // metadata, which can remain unchanged on coarse filesystems.
@@ -6957,15 +7252,24 @@ mod tests {
         assert!(edited.is_complete());
         assert_eq!(edited.apply.controls, 1);
         assert_eq!(edited.apply.reclassified, 1);
-        assert!(index.controls().source_is(Path::new(".gitignore"), b"*.tmp\n"));
-        assert_eq!(index.is_ignored(Path::new("debug.log")), Some(false));
+        assert!(
+            index
+                .controls()
+                .expect("control state observed")
+                .source_is(Path::new(".gitignore"), b"*.tmp\n")
+        );
+        assert_eq!(
+            index.is_ignored(Path::new("debug.log")).expect("control state observed"),
+            Some(false)
+        );
 
         fs::remove_file(dir.path().join(".gitignore")).expect("remove control");
         let removed = reconcile(&mut index, &config, &mut |_| {}).expect("remove reconcile");
         assert!(removed.is_complete());
         assert_eq!(removed.apply.controls, 1);
-        assert!(index.controls().is_empty());
-        assert_eq!(index.partition_total().all, index.partition_total().unignored);
+        assert!(index.controls().expect("control state observed").is_empty());
+        let partitions = index.partition_total().expect("control state observed");
+        assert_eq!(partitions.all, partitions.unignored);
     }
 
     #[cfg(unix)]
@@ -7619,6 +7923,74 @@ mod tests {
         assert!(applied.iter().any(|commit| commit_touches(commit, Path::new("src/added.rs"))));
     }
 
+    /// A retained `.gitignore` reconciled as the root of its own walk re-reads its rules.
+    /// A file does not descend, so the subtree-root branch was the only place that could
+    /// read them, and it did not: the table kept `*.log` while the pass reported complete.
+    #[test]
+    fn reconciling_a_retained_control_file_as_the_subtree_root_rereads_its_rules() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join(".gitignore"), b"*.log\n");
+        write_file(&dir.path().join("a.log"), b"log");
+        let config = ScanConfig { read_controls: true, ..ScanConfig::default() };
+        let (mut index, _) = scan_into_index(dir.path(), &config).expect("scan");
+        assert_eq!(
+            index.is_ignored(Path::new("a.log")).expect("control state observed"),
+            Some(true)
+        );
+
+        write_file(&dir.path().join(".gitignore"), b"# nothing is ignored now\n");
+        index.apply_ok(&Observation::new(vec![Op::InvalidateSubtree {
+            path: PathBuf::from(".gitignore"),
+            reason: crate::InvalidateReason::Requested,
+        }]));
+        let report = reconcile_pending(&mut index, &config, &mut |_| {}).expect("reconcile");
+
+        assert!(report.is_complete(), "{:?}", report.scan.errors);
+        assert_eq!(index.freshness_at(Path::new(".gitignore")), crate::Freshness::Fresh);
+        assert_eq!(
+            index.is_ignored(Path::new("a.log")).expect("control state observed"),
+            Some(false)
+        );
+    }
+
+    /// The same walk over a control file it cannot read keeps the old rules and does not
+    /// claim the path fresh.
+    #[cfg(unix)]
+    #[test]
+    fn reconciling_an_unreadable_control_file_root_keeps_its_rules_and_stays_partial() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let control = dir.path().join(".gitignore");
+        write_file(&control, b"*.log\n");
+        write_file(&dir.path().join("a.log"), b"log");
+        let config = ScanConfig { read_controls: true, ..ScanConfig::default() };
+        let (mut index, _) = scan_into_index(dir.path(), &config).expect("scan");
+
+        write_file(&control, b"# rewritten, then made unreadable\n");
+        fs::set_permissions(&control, fs::Permissions::from_mode(0o000)).expect("chmod");
+        index.apply_ok(&Observation::new(vec![Op::InvalidateSubtree {
+            path: PathBuf::from(".gitignore"),
+            reason: crate::InvalidateReason::Requested,
+        }]));
+        let report = reconcile_pending(&mut index, &config, &mut |_| {});
+        fs::set_permissions(&control, fs::Permissions::from_mode(0o644)).expect("restore");
+        let report = report.expect("reconcile");
+
+        assert!(!report.is_complete());
+        assert_eq!(report.scan.errors.len(), 1, "{:?}", report.scan.errors);
+        assert_eq!(index.freshness_at(Path::new(".gitignore")), crate::Freshness::Partial);
+        assert_eq!(
+            index.is_ignored(Path::new("a.log")).expect("control state observed"),
+            Some(true)
+        );
+    }
+
     #[test]
     fn handle_reconciliation_publishes_after_each_delta_is_applied() {
         let dir = sample_tree();
@@ -7637,6 +8009,224 @@ mod tests {
         .expect("reconcile handle");
 
         assert!(observed_after_apply);
+    }
+
+    /// Delete `name` under `root` from inside its own metadata lookup, after the listing
+    /// returned it, on whichever thread performs the lookup.
+    fn delete_between_listing_and_stat(root: &Path, name: &'static str) -> WalkHookGuard {
+        install_child_metadata_hook(root, move |path| {
+            delete_if_named(path, name);
+            None
+        })
+    }
+
+    /// As [`delete_between_listing_and_stat`], and every reconciliation listing under `root`
+    /// also ends in an error, so none of them is complete.
+    fn delete_between_listing_and_stat_in_a_failing_listing(
+        root: &Path,
+        name: &'static str,
+    ) -> WalkHookGuard {
+        install_walk_hook(root, move |point| match point {
+            WalkHookPoint::ChildMetadata(path) => {
+                delete_if_named(path, name);
+                None
+            }
+            WalkHookPoint::ListingEnd => Some(std::io::Error::other("injected listing error")),
+        })
+    }
+
+    fn delete_if_named(path: &Path, name: &str) {
+        if path.file_name() == Some(OsStr::new(name)) {
+            fs::remove_file(path).expect("delete between listing and stat");
+        }
+    }
+
+    /// A name the listing returned that is gone by the time it is stat'd was deleted, on
+    /// the serial path and on the parallel waves a full-root pass takes by default. The
+    /// walk removes it; recorded as an error, it would settle as a phantom entry with
+    /// permanent partial freshness.
+    #[test]
+    fn a_child_deleted_between_listing_and_stat_is_removed_rather_than_reported() {
+        for threads in [1, 4] {
+            let dir = tempfile::tempdir().expect("tempdir");
+            write_file(&dir.path().join("keep.txt"), b"keep");
+            write_file(&dir.path().join("gone.txt"), b"gone");
+            let config = ScanConfig { threads: Some(threads), ..ScanConfig::default() };
+            let (mut index, _) = scan_into_index(dir.path(), &config).expect("scan");
+            assert!(index.lookup(Path::new("gone.txt")).is_some());
+
+            index.apply_ok(&Observation::new(vec![Op::InvalidateSubtree {
+                path: PathBuf::new(),
+                reason: crate::InvalidateReason::Requested,
+            }]));
+            let hook = delete_between_listing_and_stat(dir.path(), "gone.txt");
+            let report = reconcile_pending(&mut index, &config, &mut |_| {});
+            drop(hook);
+            let report = report.expect("reconcile");
+
+            assert!(report.is_complete(), "threads {threads}: {:?}", report.scan.errors);
+            assert_eq!(report.apply.removed, 1, "threads {threads}");
+            assert!(index.lookup(Path::new("gone.txt")).is_none(), "threads {threads}");
+            assert!(index.lookup(Path::new("keep.txt")).is_some(), "threads {threads}");
+            assert_eq!(index.freshness(), crate::Freshness::Fresh, "threads {threads}");
+        }
+    }
+
+    /// A vanished control file takes its rules with it on both reconcile paths, even when the
+    /// rest of its listing fails: the stat's `NotFound` is the evidence. A retained file's
+    /// rules go with its entry's removal; a hidden-pruned one has no entry to remove, so
+    /// without its own removal its rules would go on ignoring its siblings.
+    #[test]
+    fn a_control_file_deleted_between_listing_and_stat_takes_its_rules_with_it() {
+        for prune_hidden in [false, true] {
+            for (threads, listing_fails) in [(1, false), (4, false), (1, true), (4, true)] {
+                let case = format!(
+                    "prune hidden {prune_hidden}, threads {threads}, listing fails {listing_fails}"
+                );
+                let dir = tempfile::tempdir().expect("tempdir");
+                write_file(&dir.path().join(".gitignore"), b"*.log\n");
+                write_file(&dir.path().join("a.log"), b"log");
+                let config = ScanConfig {
+                    read_controls: true,
+                    threads: Some(threads),
+                    hidden: prune_hidden
+                        .then(|| std::sync::Arc::new(crate::HiddenPolicy::prune_hidden([""; 0]))),
+                    ..ScanConfig::default()
+                };
+                let (mut index, _) = scan_into_index(dir.path(), &config).expect("scan");
+                assert_eq!(
+                    index.is_ignored(Path::new("a.log")).expect("control state observed"),
+                    Some(true),
+                    "{case}"
+                );
+
+                index.apply_ok(&Observation::new(vec![Op::InvalidateSubtree {
+                    path: PathBuf::new(),
+                    reason: crate::InvalidateReason::Requested,
+                }]));
+                let hook = if listing_fails {
+                    delete_between_listing_and_stat_in_a_failing_listing(dir.path(), ".gitignore")
+                } else {
+                    delete_between_listing_and_stat(dir.path(), ".gitignore")
+                };
+                let report = reconcile_pending(&mut index, &config, &mut |_| {});
+                drop(hook);
+                let report = report.expect("reconcile");
+
+                assert_eq!(
+                    report.is_complete(),
+                    !listing_fails,
+                    "{case}: {:?}",
+                    report.scan.errors
+                );
+                assert!(index.lookup(Path::new(".gitignore")).is_none(), "{case}");
+                assert!(
+                    !index
+                        .controls()
+                        .expect("control state observed")
+                        .contains(Path::new(".gitignore")),
+                    "{case}"
+                );
+                assert_eq!(
+                    index.is_ignored(Path::new("a.log")).expect("control state observed"),
+                    Some(false),
+                    "{case}"
+                );
+            }
+        }
+    }
+
+    /// A cold walk records a name gone by its stat as it records a name the listing never
+    /// returned: not at all, and without an error that would make the walk partial.
+    #[test]
+    fn a_cold_walk_omits_a_child_deleted_between_listing_and_stat() {
+        for threads in [1, 4] {
+            let dir = tempfile::tempdir().expect("tempdir");
+            write_file(&dir.path().join("keep.txt"), b"keep");
+            write_file(&dir.path().join("gone.txt"), b"gone");
+            let config = ScanConfig { threads: Some(threads), ..ScanConfig::default() };
+
+            let hook = delete_between_listing_and_stat(dir.path(), "gone.txt");
+            let scanned = scan_into_index_via_scanner(dir.path(), &config);
+            drop(hook);
+            let (index, report) = scanned.expect("scan");
+
+            assert!(report.is_complete(), "threads {threads}: {:?}", report.errors);
+            assert!(index.lookup(Path::new("gone.txt")).is_none(), "threads {threads}");
+            assert!(index.lookup(Path::new("keep.txt")).is_some(), "threads {threads}");
+        }
+    }
+
+    /// Revalidation emits the removal a reconciliation would apply.
+    #[test]
+    fn revalidation_removes_a_child_deleted_between_listing_and_stat() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join("keep.txt"), b"keep");
+        write_file(&dir.path().join("gone.txt"), b"gone");
+        let (mut index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
+
+        let hook = delete_between_listing_and_stat(dir.path(), "gone.txt");
+        let mut observations = Vec::new();
+        let report = revalidate(&index, &ScanConfig::default(), &mut |observation| {
+            observations.push(observation);
+        });
+        drop(hook);
+        let report = report.expect("revalidate");
+        for observation in &observations {
+            index.apply_ok(observation);
+        }
+
+        assert!(report.is_complete(), "{:?}", report.errors);
+        assert!(index.lookup(Path::new("gone.txt")).is_none());
+        assert!(index.lookup(Path::new("keep.txt")).is_some());
+    }
+
+    /// Revalidation emits the same rules removal when the rest of the listing fails.
+    #[test]
+    fn revalidation_removes_the_rules_of_a_control_file_deleted_in_a_failing_listing() {
+        for prune_hidden in [false, true] {
+            let dir = tempfile::tempdir().expect("tempdir");
+            write_file(&dir.path().join(".gitignore"), b"*.log\n");
+            write_file(&dir.path().join("a.log"), b"log");
+            let config = ScanConfig {
+                read_controls: true,
+                hidden: prune_hidden
+                    .then(|| std::sync::Arc::new(crate::HiddenPolicy::prune_hidden([""; 0]))),
+                ..ScanConfig::default()
+            };
+            let (mut index, _) = scan_into_index(dir.path(), &config).expect("scan");
+            assert_eq!(
+                index.is_ignored(Path::new("a.log")).expect("control state observed"),
+                Some(true)
+            );
+
+            let hook =
+                delete_between_listing_and_stat_in_a_failing_listing(dir.path(), ".gitignore");
+            let mut observations = Vec::new();
+            let report = revalidate(&index, &config, &mut |observation| {
+                observations.push(observation);
+            });
+            drop(hook);
+            let report = report.expect("revalidate");
+            for observation in &observations {
+                index.apply_ok(observation);
+            }
+
+            assert!(!report.is_complete(), "prune hidden {prune_hidden}");
+            assert!(index.lookup(Path::new(".gitignore")).is_none(), "prune hidden {prune_hidden}");
+            assert!(
+                !index
+                    .controls()
+                    .expect("control state observed")
+                    .contains(Path::new(".gitignore")),
+                "prune hidden {prune_hidden}"
+            );
+            assert_eq!(
+                index.is_ignored(Path::new("a.log")).expect("control state observed"),
+                Some(false),
+                "prune hidden {prune_hidden}"
+            );
+        }
     }
 
     #[test]

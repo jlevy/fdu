@@ -320,6 +320,50 @@ def check_every_view(root: Path) -> None:
     assert fdu.View.FILES not in produced, "an unbounded enumeration is not a summary"
 
 
+def check_an_index_can_opt_out_of_control_state() -> None:
+    """A default open or scan reads control files; one that opts out shares a report's scope.
+
+    A request that turns ``read_controls`` off reads no control file, so it cannot end on a
+    control-state bound, and its snapshot has a one-shot report's scope. A watch continues
+    its index's scope, so it inherits the same choice.
+    """
+
+    root = Path(tempfile.mkdtemp(prefix="fdu-public-controls-"))
+    (root / "kept.txt").write_text("kept", encoding="utf-8")
+    # One pattern longer than the engine's 16 KiB per-line bound, which an index that
+    # observed control state could not retain.
+    (root / ".gitignore").write_text("x" * (16 * 1024 + 1) + "\n", encoding="utf-8")
+    opted_out = fdu.ScanOptions(read_controls=False)
+
+    for index in (
+        fdu.open(root, cache=fdu.CachePolicy.OFF, scan=opted_out),
+        fdu.scan(root, scan=opted_out),
+    ):
+        assert index.status.complete is True, index.status.errors
+        assert index.total().files == 2
+    try:
+        observed = fdu.scan(root)
+    except fdu.FduError:
+        pass
+    else:
+        # Degrading to partial coverage instead of failing (fdu-1onj) still shows the
+        # control file was read, which is what the default asks for.
+        assert observed.status.complete is False, "a default scan must read the control file"
+
+    # A report and an opted-out open share one snapshot scope, so that open starts warm; a
+    # default open observes control state the report's snapshot never held, and scans cold.
+    (root / ".gitignore").write_text("*.log\n", encoding="utf-8")
+    assert fdu.cache_path(root) is not None
+    try:
+        fdu.report(root, fdu.Query(views=(fdu.View.TREE,)))
+        assert fdu.open(root, scan=opted_out).status.source is fdu.ReportSource.WARM_REVALIDATE
+        cached = fdu.open(root, cache=fdu.CachePolicy.ONLY, scan=opted_out)
+        assert cached.status.source is fdu.ReportSource.CACHE_ONLY
+        assert fdu.open(root).status.source is fdu.ReportSource.COLD_SCAN
+    finally:
+        fdu.clear_cache(root)
+
+
 def main() -> None:
     root = Path(tempfile.mkdtemp(prefix="fdu-public-api-"))
     (root / "src").mkdir()
@@ -333,6 +377,7 @@ def main() -> None:
     check_the_watch_rule_names_an_instant(root)
     check_the_list_grammar_reaches_python(root)
     check_the_one_shot_retains_nothing(root)
+    check_an_index_can_opt_out_of_control_state()
     check_watch_reports_its_own_index(root)
     check_render_matches_the_cli(
         root, str(Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu"))

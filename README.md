@@ -194,9 +194,10 @@ from the other’s snapshot: a watch started after `fdu PATH`, and a one-shot ru
 reads the snapshot, such as `--analyze`, after a watch.
 A summary-only `fdu --view summary PATH` saves no snapshot and replaces none.
 Only the library’s default `open`, and `fdu.open` in Python, keep a snapshot that
-observes control state.
-A command-line run does not start from it, and one that saves replaces it, but
-`--cache only` still answers a one-shot report from it.
+observes control state; one opened with `read_controls` off shares the command line’s
+scope.
+A command-line run does not start from a snapshot that observes control state, and
+one that saves replaces it, but `--cache only` still answers a one-shot report from it.
 
 ### How performance work is done here
 

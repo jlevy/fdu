@@ -7,10 +7,19 @@ use std::path::{Component, Path, PathBuf};
 use super::OpenedIndex;
 use super::continuation::{ChildPartition, ChildPosition, ContinuationKind, ContinuationRecord};
 use crate::{
-    Coverage, CoverageReason, EngineVersion, EntryId, Error, Knowledge, LimitedProjection,
-    PageRequest, ProjectionResult, QueryLimit, ReadRequest, ReadResponse, Result, TreePage, Work,
+    Coverage, CoverageReason, EngineVersion, EntryId, EntryValue, Error, Knowledge,
+    LimitedProjection, PageRequest, ProjectionRefusal, ProjectionResult, QueryLimit, ReadRequest,
+    ReadResponse, Result, TreePage, Work,
 };
 
+/// Answer every projection of one request at one version.
+///
+/// Three things fail the whole request, because each makes every projection in it
+/// untrustworthy: a request whose shape is invalid, a closed root, and a version pin the
+/// index cannot honour. Anything one projection finds at that version -- a path of the
+/// wrong kind, a page whose continuation would be too large to keep, or a continuation
+/// this root issued and no longer retains -- is that projection's [`ProjectionRefusal`],
+/// and the rest of the request still answers.
 pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadResponse> {
     if request.projections.len() > crate::MAX_READ_PROJECTIONS {
         return Err(Error::ReadProjectionLimit {
@@ -64,13 +73,17 @@ pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadRes
                     let path = crate::scan::normalize_subtree(&path)?;
                     charge_path(&mut work, &path);
                     work.maintained_index_work = work.maintained_index_work.saturating_add(1);
-                    let value = match index.partition_rollup_summary(&path) {
+                    // An opened root always observes control state, so this never refuses.
+                    let value = match index.partition_rollup_summary(&path)? {
                         Some(rollup) => {
                             work.rows_returned = work.rows_returned.saturating_add(1);
                             Knowledge::Present(rollup)
                         }
                         None if index.kind(&path).is_some() => {
-                            return Err(Error::NotADirectory(path));
+                            results.push(ProjectionResult::Refused(
+                                ProjectionRefusal::NotADirectory { path },
+                            ));
+                            continue;
                         }
                         None if absence_is_known(index, &path) => Knowledge::Absent,
                         None => Knowledge::Unknown {
@@ -109,6 +122,13 @@ pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadRes
                             .map_err(|_| Error::OpenedLifecyclePoisoned)?;
                         table.take(opened.state.session, continuation)?
                     };
+                    let record = match record {
+                        Ok(record) => record,
+                        Err(refusal) => {
+                            results.push(ProjectionResult::Refused(refusal));
+                            continue;
+                        }
+                    };
                     if record.version != version {
                         return Err(Error::ContinuationStale {
                             requested: Box::new(record.version),
@@ -142,7 +162,14 @@ pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadRes
                             &mut work,
                         ),
                     };
-                    if result.is_err() || matches!(result, Ok(ProjectionResult::Limit(_))) {
+                    // A page that did not come back as a page leaves its position where it
+                    // was, so the same continuation can be retried.
+                    if result.is_err()
+                        || matches!(
+                            result,
+                            Ok(ProjectionResult::Limit(_) | ProjectionResult::Refused(_))
+                        )
+                    {
                         let mut table = opened
                             .state
                             .continuations
@@ -236,7 +263,14 @@ fn report_projection(
         complete: state.coverage == Coverage::Complete,
         errors: index.issues().iter().map(|issue| issue.message.clone()).collect(),
     };
-    let report = crate::query::report(index, &request.query, &provenance);
+    // The same identity rule as every other projection: a report's selection inside an
+    // opened read matches portable names, where a one-shot report matches native ones.
+    let report = crate::query::report_in(
+        index,
+        &request.query,
+        &provenance,
+        crate::query::NameIdentity::Portable,
+    );
     work.rows_visited = work.rows_visited.saturating_add(charge.rows);
     work.maintained_index_work = work.maintained_index_work.saturating_add(charge.maintained);
     work.rows_returned = work.rows_returned.saturating_add(report_rows(&report));
@@ -360,7 +394,32 @@ fn validate_flat_selection(selection: &crate::query::EntrySelection) -> Result<(
     {
         return Err(Error::UnsupportedFlatSelection);
     }
-    Ok(())
+    selection.validate()
+}
+
+/// The facts a selection sees about one entry inside an opened read: its portable identity.
+///
+/// Every name-shaped axis -- a glob, an exact name, an extension, a terminal suffix, an
+/// ancestor name -- reads the canonical `/`-joined escaped path a page returns as
+/// `portable_path`, never the native one (`fdu-8w5k`). A caller filters by what it was
+/// shown, a path from a page passes back into a filter unchanged, and a native name that
+/// is not UTF-8 is matched by the only spelling a caller can write.
+///
+/// `Path::new` over the portable string splits components on `/` on every platform, and no
+/// portable component holds a separator of the platform that produced it.
+fn portable_candidate<'a>(
+    portable: &'a crate::PortablePath,
+    row: &EntryValue,
+) -> crate::query::Candidate<'a> {
+    let path = portable.as_str();
+    crate::query::Candidate {
+        relative: Path::new(path),
+        name: path.rsplit('/').next().unwrap_or(path),
+        kind: row.kind,
+        bytes: row.attrs.size,
+        allocated: row.attrs.allocated,
+        mtime_ns: row.attrs.mtime_ns,
+    }
 }
 
 /// A render depth of zero asks for a page that can hold nothing.
@@ -423,7 +482,10 @@ fn tree_projection(
         }));
     };
     if !directory.kind.is_dir() {
-        return Err(Error::NotADirectory(path.to_path_buf()));
+        work.rows_visited = work.rows_visited.saturating_add(path_work);
+        return Ok(ProjectionResult::Refused(ProjectionRefusal::NotADirectory {
+            path: path.to_path_buf(),
+        }));
     }
 
     // Levels below `path` that may be emitted. A parent at depth `d` produces rows at
@@ -537,16 +599,11 @@ fn tree_projection(
     // work, so it is charged once above and excluded here.
     work.maintained_index_work =
         work.maintained_index_work.saturating_add(spent.saturating_sub(path_work));
-    // Plus one: a tree page returns the directory itself beside its rows, and a caller
-    // counting what it received counts that too.
-    work.rows_returned = work
-        .rows_returned
-        .saturating_add(u64::try_from(rows.len()).unwrap_or(u64::MAX).saturating_add(1));
 
     let continuation = if let Some(position) = next {
         let mut table =
             opened.state.continuations.lock().map_err(|_| Error::OpenedLifecyclePoisoned)?;
-        Some(table.insert(
+        match table.insert(
             opened.state.session,
             ContinuationRecord {
                 version,
@@ -557,10 +614,19 @@ fn tree_projection(
                     next: position,
                 },
             },
-        )?)
+        )? {
+            Ok(continuation) => Some(continuation),
+            // The work was done and stays charged; the rows are not returned.
+            Err(refusal) => return Ok(ProjectionResult::Refused(refusal)),
+        }
     } else {
         None
     };
+    // Plus one: a tree page returns the directory itself beside its rows, and a caller
+    // counting what it received counts that too.
+    work.rows_returned = work
+        .rows_returned
+        .saturating_add(u64::try_from(rows.len()).unwrap_or(u64::MAX).saturating_add(1));
 
     // One completeness, because there is now one population. While a portable name was
     // optional this had to distinguish "the native child set is authoritative" from
@@ -619,16 +685,7 @@ fn flat_projection(
         }
         let native = index.path_of(*id).unwrap_or_default();
         let mut row = index.entry_value_of(*id, &native);
-        let name = portable.as_str().rsplit('/').next().unwrap_or(portable.as_str());
-        let candidate = crate::query::Candidate {
-            relative: &native,
-            name,
-            kind: row.kind,
-            bytes: row.attrs.size,
-            allocated: row.attrs.allocated,
-            mtime_ns: row.attrs.mtime_ns,
-        };
-        if !selection.admits(&candidate, row.ignored) {
+        if !selection.admits(&portable_candidate(portable, &row), row.ignored) {
             continue;
         }
         if shape == crate::RowShape::Compact {
@@ -640,12 +697,10 @@ fn flat_projection(
 
     work.rows_visited = work.rows_visited.saturating_add(spent);
     work.maintained_index_work = work.maintained_index_work.saturating_add(spent);
-    work.rows_returned =
-        work.rows_returned.saturating_add(u64::try_from(rows.len()).unwrap_or(u64::MAX));
     let continuation = if let Some(next) = next {
         let mut table =
             opened.state.continuations.lock().map_err(|_| Error::OpenedLifecyclePoisoned)?;
-        Some(table.insert(
+        match table.insert(
             opened.state.session,
             ContinuationRecord {
                 version,
@@ -655,10 +710,16 @@ fn flat_projection(
                     next,
                 },
             },
-        )?)
+        )? {
+            Ok(continuation) => Some(continuation),
+            // The work was done and stays charged; the rows are not returned.
+            Err(refusal) => return Ok(ProjectionResult::Refused(refusal)),
+        }
     } else {
         None
     };
+    work.rows_returned =
+        work.rows_returned.saturating_add(u64::try_from(rows.len()).unwrap_or(u64::MAX));
     Ok(ProjectionResult::Flat(crate::FlatPage { rows, next: continuation }))
 }
 
@@ -691,16 +752,7 @@ fn aggregate_projection(
         }
         let native = index.path_of(*id).unwrap_or_default();
         let row = index.entry_value_of(*id, &native);
-        let name = portable.as_str().rsplit('/').next().unwrap_or(portable.as_str());
-        let candidate = crate::query::Candidate {
-            relative: &native,
-            name,
-            kind: row.kind,
-            bytes: row.attrs.size,
-            allocated: row.attrs.allocated,
-            mtime_ns: row.attrs.mtime_ns,
-        };
-        if !selection.admits(&candidate, row.ignored) {
+        if !selection.admits(&portable_candidate(portable, &row), row.ignored) {
             continue;
         }
         if matches == count_cap {
@@ -764,7 +816,8 @@ fn collect_children(
         // became `x%25FF`. These names are portable by construction, so they are for
         // ordering and resumption, never for addressing.
         let path = index.path_of(*id).unwrap_or_else(|| parent.join(name));
-        if !include_ignored && index.is_ignored(&path) == Some(true) {
+        // An opened root always observes control state; see `Index::opened_is_ignored`.
+        if !include_ignored && index.opened_is_ignored(*id) {
             continue;
         }
         // Noticed in passing, not searched for: this row is a directory one level down,
@@ -794,7 +847,7 @@ fn first_directory_child(
     for (name, id) in iterator {
         *spent = spent.saturating_add(1);
         let path = index.path_of(*id).unwrap_or_else(|| parent.join(name));
-        if !include_ignored && index.is_ignored(&path) == Some(true) {
+        if !include_ignored && index.opened_is_ignored(*id) {
             // Pruning the subtree, not the row: an excluded directory is never expanded,
             // so none of its descendants can reach a later level either.
             continue;
@@ -1059,11 +1112,11 @@ mod tests {
     #[test]
     fn climbing_out_of_a_deep_chain_needs_no_stack_per_level() {
         const LEVELS: u32 = 1_000;
-        let mut index = crate::Index::new_opened_with_scope_types_and_journal_capacity(
+        let mut index = crate::Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
             crate::ScanScope::default(),
             crate::classify::TypeRegistry::compiled_shared(),
-            crate::DEFAULT_JOURNAL_CAPACITY,
+            crate::DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
         let mut deepest = PathBuf::new();
         let mut ops = Vec::new();

@@ -1569,7 +1569,6 @@ mod tests {
         ));
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn control_verification_emits_exact_source_with_the_entry_fact() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -1579,8 +1578,8 @@ mod tests {
             pending: BTreeMap::from([(relative.clone(), Pending::Verify { relist_if_dir: false })]),
         };
 
-        let observation =
-            verify_intent(dir.path(), WatchConfig::default(), &intent, &ScanConfig::default());
+        let config = ScanConfig { read_controls: true, ..ScanConfig::default() };
+        let observation = verify_intent(dir.path(), WatchConfig::default(), &intent, &config);
 
         assert!(matches!(
             &observation.ops[0].op,
@@ -1606,7 +1605,8 @@ mod tests {
         fs::write(dir.path().join("debug.log"), b"x").expect("write file");
         let config = ScanConfig { read_controls: false, ..ScanConfig::default() };
         let (mut index, _) = crate::scan::scan_into_index(dir.path(), &config).expect("scan");
-        assert!(index.controls().is_empty());
+        assert!(index.control_table().is_empty());
+        assert!(matches!(index.controls(), Err(crate::Error::ControlStateNotObserved)));
         let control = PathBuf::from(".gitignore");
         let intent = CoalescedIntent {
             pending: BTreeMap::from([(control.clone(), Pending::Verify { relist_if_dir: false })]),
@@ -1631,11 +1631,11 @@ mod tests {
             );
         }
         index.apply(&observation).expect("apply the verified observation");
-        assert!(index.controls().is_empty());
+        assert!(index.control_table().is_empty());
         assert_eq!(index.scope(), config.scope());
     }
 
-    #[cfg(all(unix, feature = "gitignore"))]
+    #[cfg(unix)]
     #[test]
     fn applying_verification_uses_the_index_admission_scope() {
         use std::os::unix::net::UnixListener;
@@ -1653,6 +1653,7 @@ mod tests {
         let config = ScanConfig {
             hidden: Some(Arc::new(crate::HiddenPolicy::prune_hidden::<[&str; 0], &str>([]))),
             exclude_special: true,
+            read_controls: true,
             ..ScanConfig::default()
         };
 

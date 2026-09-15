@@ -18,9 +18,9 @@ use crate::scan::ReconcileControl;
 use crate::{Error, Index, IndexHandle, ObservationOp, Op, Result, ScanConfig, SessionId};
 
 mod continuation;
-#[cfg(all(test, feature = "watch", feature = "gitignore"))]
+#[cfg(all(test, feature = "watch"))]
 mod golden_support;
-#[cfg(all(test, feature = "watch", feature = "gitignore"))]
+#[cfg(all(test, feature = "watch"))]
 mod golden_tests;
 mod journal;
 pub(crate) mod read;
@@ -113,8 +113,12 @@ pub struct OpenOptions {
     #[cfg(all(feature = "watch", test))]
     #[doc(hidden)]
     pub observation_script: Option<PathBuf>,
-    /// Maximum retained-cost units in the exact commit journal.
-    pub journal_capacity: usize,
+    /// Approximate bytes the exact commit journal may retain, as
+    /// [`crate::Commit::retained_cost`] estimates them; see
+    /// [`crate::DEFAULT_JOURNAL_CAPACITY_BYTES`] for the default and why there is no
+    /// unbounded setting. [`OpenedIndex::open`] refuses a budget below
+    /// [`crate::MIN_JOURNAL_CAPACITY_BYTES`] with [`Error::JournalCapacityTooSmall`].
+    pub journal_capacity_bytes: usize,
 }
 
 impl Default for OpenOptions {
@@ -132,7 +136,7 @@ impl Default for OpenOptions {
             observation: None,
             #[cfg(all(feature = "watch", test))]
             observation_script: None,
-            journal_capacity: crate::DEFAULT_JOURNAL_CAPACITY,
+            journal_capacity_bytes: crate::DEFAULT_JOURNAL_CAPACITY_BYTES,
         }
     }
 }
@@ -157,7 +161,7 @@ impl OpenOptions {
             // observation is never optional here.
             read_controls: true,
         };
-        (scan, self.budget, self.journal_capacity)
+        (scan, self.budget, self.journal_capacity_bytes)
     }
 }
 
@@ -270,6 +274,17 @@ impl OpenedIndex {
 
     /// Return requested projections from one committed version and state boundary.
     ///
+    /// # Errors
+    ///
+    /// The whole read fails only when no projection in it can be trusted: the request's
+    /// shape is invalid (a bound out of range, too many projections, a path that escapes the
+    /// root, a continuation another root issued or this one never did), the root is closed,
+    /// or [`crate::ReadRequest::expected`] or a continuation pins a version the index no
+    /// longer holds. What one projection finds at the pinned version -- including a
+    /// continuation this root issued and has since consumed or evicted -- is that
+    /// projection's [`crate::ProjectionRefusal`] instead, returned in its position while
+    /// every other projection answers.
+    ///
     /// The lifecycle lock guards only the phase check. The projection's coherence comes
     /// from the index read boundary, which any number of readers share, so holding the
     /// lifecycle lock across it would serialize every read with every other read and with
@@ -281,6 +296,15 @@ impl OpenedIndex {
     }
 
     /// Return exact commits after one version, waiting up to the supplied timeout.
+    ///
+    /// A poll waiting on an idle journal returns as soon as an owned worker panics, with
+    /// [`Error::OpenedWorkerPanicked`] naming the worker -- the cause [`Self::close`] will
+    /// report -- rather than at its timeout. Commits retained before the panic are still
+    /// returned first, unless the panic struck inside a commit: that poisons the index,
+    /// which leaves nothing to read. A poll parked on the journal then reports the panic.
+    /// A poll already reading when the commit panics can observe the poisoned index before
+    /// the worker has recorded its panic, and returns [`Error::IndexLockPoisoned`]; the
+    /// panic is recorded moments later, and [`Self::close`] names it either way.
     pub fn changes(&self, request: crate::ChangeRequest) -> Result<crate::ChangePoll> {
         self.ensure_open()?;
         journal::poll(self, request)
@@ -513,26 +537,40 @@ impl OpenedIndex {
         }
 
         let cancellation = Arc::clone(&self.state.cancellation);
+        let journal = Arc::clone(&self.state.journal);
+        let failures = Arc::clone(&self.state.failures);
         #[cfg(test)]
         let controls = Arc::clone(&self.state.test_controls);
         let worker = thread::Builder::new()
             .name(format!("fdu-{name}"))
             .spawn(move || {
-                #[cfg(not(test))]
-                {
-                    run(cancellation)
-                }
+                // The worker records its own failure as it leaves, and a panic is caught
+                // for exactly that long before it resumes. Left to the join, a panic would
+                // be learned of only at close -- a change poll blocked on the journal would
+                // sleep to its timeout -- and close could report failures only in spawn
+                // order, letting discovery's poisoned-lock error stand in for the panic
+                // that poisoned it.
+                let outcome =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(cancellation)));
                 #[cfg(test)]
                 {
-                    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        run(cancellation)
-                    }));
                     if name != "discovery" {
                         controls.reach(TestPoint::BeforeWorkerExit);
                     }
-                    match outcome {
-                        Ok(result) => result,
-                        Err(payload) => std::panic::resume_unwind(payload),
+                }
+                match outcome {
+                    Ok(Ok(())) => {}
+                    Ok(Err(error)) => {
+                        failures.record(CloseOutcome::WorkerFailed {
+                            worker: name,
+                            source: Arc::new(error),
+                        });
+                        journal.wake();
+                    }
+                    Err(payload) => {
+                        failures.record(CloseOutcome::WorkerPanicked { worker: name });
+                        journal.wake();
+                        std::panic::resume_unwind(payload);
                     }
                 }
             })
@@ -563,6 +601,8 @@ struct OpenedState {
     frontier: Arc<DiscoveryFrontier>,
     continuations: Mutex<continuation::ContinuationTable>,
     journal: Arc<journal::JournalWait>,
+    /// Worker failures in the order they happened; shared with the workers that record them.
+    failures: Arc<WorkerFailures>,
     cancellation: Arc<Cancellation>,
     #[cfg(feature = "watch")]
     baseline: Arc<BaselineLatch>,
@@ -606,6 +646,7 @@ impl OpenedState {
             frontier: Arc::new(DiscoveryFrontier::new()),
             continuations: Mutex::new(continuation::ContinuationTable::default()),
             journal: Arc::new(journal::JournalWait::new()),
+            failures: Arc::new(WorkerFailures::default()),
             cancellation: Arc::new(Cancellation::default()),
             #[cfg(feature = "watch")]
             baseline: Arc::new(BaselineLatch::default()),
@@ -650,6 +691,7 @@ impl OpenedState {
             frontier: Arc::new(DiscoveryFrontier::new()),
             continuations: Mutex::new(continuation::ContinuationTable::default()),
             journal: Arc::new(journal::JournalWait::new()),
+            failures: Arc::new(WorkerFailures::default()),
             cancellation: Arc::new(Cancellation::default()),
             #[cfg(feature = "watch")]
             baseline: Arc::new(BaselineLatch::default()),
@@ -737,7 +779,7 @@ impl OpenedState {
             }
         };
 
-        let worker_outcome = join_workers(workers);
+        let worker_outcome = join_workers(workers, &self.failures);
         let locked = self.lock_lifecycle();
         saw_poison |= locked.poisoned;
         let mut lifecycle = locked.guard;
@@ -785,7 +827,7 @@ impl Drop for OpenedState {
 /// The session goldens' `final` record is derived from this rather than written as a
 /// literal: a regression that left a worker, a blocked poll, or a page record behind a
 /// closed root would otherwise print the same text as a clean shutdown.
-#[cfg(all(test, feature = "watch", feature = "gitignore"))]
+#[cfg(all(test, feature = "watch"))]
 pub(super) struct RetainedOwnership {
     session: SessionId,
     /// Shutdown finished: every worker was joined before its outcome was stored.
@@ -797,14 +839,14 @@ pub(super) struct RetainedOwnership {
     close: Option<Result<()>>,
 }
 
-#[cfg(all(test, feature = "watch", feature = "gitignore"))]
+#[cfg(all(test, feature = "watch"))]
 impl RetainedOwnership {
     pub(super) fn is_released(&self) -> bool {
         self.joined && self.workers == 0 && self.waiters == 0 && self.continuations == 0
     }
 }
 
-#[cfg(all(test, feature = "watch", feature = "gitignore"))]
+#[cfg(all(test, feature = "watch"))]
 impl std::fmt::Display for RetainedOwnership {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -819,7 +861,7 @@ impl std::fmt::Display for RetainedOwnership {
     }
 }
 
-#[cfg(all(test, feature = "watch", feature = "gitignore"))]
+#[cfg(all(test, feature = "watch"))]
 impl OpenedState {
     pub(super) fn retained_ownership(&self) -> RetainedOwnership {
         let (joined, workers, close) = {
@@ -847,15 +889,18 @@ fn bind_root(
     root: &Path,
     options: OpenOptions,
 ) -> Result<(std::path::PathBuf, IndexHandle, ScanConfig, DiscoveryBudget)> {
-    let (scan, budget, journal_capacity) = options.into_parts();
+    let (scan, budget, journal_capacity_bytes) = options.into_parts();
     scan.validate()?;
     if budget.max_files == Some(0) {
         return Err(Error::UnsupportedScanConfig(
             "max_files must be nonzero; omit it for an unlimited discovery",
         ));
     }
-    if journal_capacity == 0 {
-        return Err(Error::UnsupportedScanConfig("journal_capacity must be nonzero"));
+    if journal_capacity_bytes < crate::MIN_JOURNAL_CAPACITY_BYTES {
+        return Err(Error::JournalCapacityTooSmall {
+            requested: journal_capacity_bytes,
+            minimum: crate::MIN_JOURNAL_CAPACITY_BYTES,
+        });
     }
     let root = root.canonicalize().map_err(|source| Error::io(root, source))?;
     let metadata = std::fs::symlink_metadata(&root).map_err(|source| Error::io(&root, source))?;
@@ -871,11 +916,11 @@ fn bind_root(
 
     let scope = scan.scope();
     let types = scan.types_shared();
-    let index = IndexHandle::new(Index::new_opened_with_scope_types_and_journal_capacity(
+    let index = IndexHandle::new(Index::new_opened_with_scope_types_and_journal_capacity_bytes(
         &root,
         scope,
         types,
-        journal_capacity,
+        journal_capacity_bytes,
     ));
     Ok((root, index, scan, budget))
 }
@@ -1214,8 +1259,9 @@ fn discover_directory(
             continue;
         };
         crate::counters::bump(|c| c.dir_entries += 1);
-        let metadata = match crate::scan::metadata_for_fingerprint(&item) {
-            Ok(metadata) => metadata,
+        let metadata = match crate::scan::listed_child_metadata(&item) {
+            Ok(Some(metadata)) => metadata,
+            Ok(None) => continue,
             Err(source) => {
                 retain_local_issue(
                     &mut issues,
@@ -1807,7 +1853,49 @@ enum OwnerPhase {
 
 struct Worker {
     name: &'static str,
-    handle: JoinHandle<Result<()>>,
+    handle: JoinHandle<()>,
+}
+
+/// Worker exits that ended in failure, in the order they happened.
+///
+/// Each worker records its own exit before its thread ends, so close can report the
+/// failure that came first rather than the first in spawn order, and a change poll
+/// blocked on the journal can be answered with a typed cause instead of its timeout.
+#[derive(Default)]
+struct WorkerFailures {
+    recorded: Mutex<Vec<CloseOutcome>>,
+}
+
+impl WorkerFailures {
+    fn record(&self, outcome: CloseOutcome) {
+        self.recorded.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(outcome);
+    }
+
+    /// The worker whose panic ended this root, if one did.
+    fn panicked(&self) -> Option<&'static str> {
+        self.recorded.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().find_map(
+            |outcome| match outcome {
+                CloseOutcome::WorkerPanicked { worker } => Some(*worker),
+                _ => None,
+            },
+        )
+    }
+
+    /// The failure close reports.
+    ///
+    /// The earliest, unless the earliest is only the trace a recorded worker panic left. A
+    /// poisoned lock is then a consequence: the guard is poisoned while its thread is still
+    /// unwinding, before that thread can record its panic, so the worker that trips over
+    /// the poison can record first, and discovery's `IndexLockPoisoned` would stand in for
+    /// the observation worker's panic. With no panic recorded, nothing here explains the
+    /// poisoning -- the caller's own thread may have panicked inside a commit -- so it is
+    /// a failure like any other, and a later unrelated error does not displace it.
+    fn first(&self) -> Option<CloseOutcome> {
+        let recorded = self.recorded.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let panicked =
+            recorded.iter().any(|outcome| matches!(outcome, CloseOutcome::WorkerPanicked { .. }));
+        recorded.iter().find(|outcome| !(panicked && outcome.is_poison_trace())).cloned()
+    }
 }
 
 #[derive(Clone)]
@@ -1820,6 +1908,20 @@ enum CloseOutcome {
 }
 
 impl CloseOutcome {
+    /// Whether this failure only reports a lock some panic poisoned, rather than a cause.
+    fn is_poison_trace(&self) -> bool {
+        match self {
+            Self::WorkerFailed { source, .. } => matches!(
+                **source,
+                Error::IndexLockPoisoned
+                    | Error::OpenedLifecyclePoisoned
+                    | Error::OpenedJournalPoisoned
+            ),
+            Self::LifecyclePoisoned | Self::IndexPoisoned => true,
+            Self::Success | Self::WorkerPanicked { .. } => false,
+        }
+    }
+
     fn to_result(&self) -> Result<()> {
         match self {
             Self::Success => Ok(()),
@@ -1833,21 +1935,18 @@ impl CloseOutcome {
     }
 }
 
-fn join_workers(workers: Vec<Worker>) -> Option<CloseOutcome> {
-    let mut first_failure = None;
+/// Join every worker, then report the failure the workers themselves recorded first.
+///
+/// The join only waits: each worker records its exit before its thread ends. The join's
+/// own view is kept as the answer of last resort for a panic that escaped recording.
+fn join_workers(workers: Vec<Worker>, failures: &WorkerFailures) -> Option<CloseOutcome> {
+    let mut first_unrecorded = None;
     for worker in workers {
-        let outcome = match worker.handle.join() {
-            Ok(Ok(())) => None,
-            Ok(Err(error)) => {
-                Some(CloseOutcome::WorkerFailed { worker: worker.name, source: Arc::new(error) })
-            }
-            Err(_) => Some(CloseOutcome::WorkerPanicked { worker: worker.name }),
-        };
-        if first_failure.is_none() {
-            first_failure = outcome;
+        if worker.handle.join().is_err() && first_unrecorded.is_none() {
+            first_unrecorded = Some(CloseOutcome::WorkerPanicked { worker: worker.name });
         }
     }
-    first_failure
+    failures.first().or(first_unrecorded)
 }
 
 #[cfg(feature = "watch")]
@@ -1966,7 +2065,6 @@ struct TestControls {
 
 #[cfg(test)]
 impl TestControls {
-    #[cfg(feature = "gitignore")]
     fn use_deterministic_discovery_order(&self) {
         self.deterministic_discovery_order.store(true, Ordering::Release);
     }
@@ -2259,6 +2357,113 @@ mod tests {
         assert!(matches!(opened.close(), Err(Error::OpenedWorkerPanicked { worker: "panic" })));
     }
 
+    /// A poll blocked on the journal learns of a worker panic when it happens, with the
+    /// cause close will report, instead of sleeping to its timeout. That holds for a panic
+    /// inside a commit too, the likeliest place for one: the unwinding guard poisons the
+    /// index lock, and the poll reports the panic rather than the poisoning it left.
+    #[test]
+    fn a_worker_panic_wakes_a_blocked_change_poll_with_its_typed_failure() {
+        for holds_index_lock in [false, true] {
+            let controls = Arc::new(TestControls::default());
+            controls.gate(TestPoint::BeforeJournalWait).arm();
+            let (_root, opened) = opened(Arc::clone(&controls));
+            let cursor = current_version(&opened);
+            let poller = opened.clone();
+            let poll = thread::spawn(move || {
+                poller.changes(crate::ChangeRequest {
+                    after: cursor,
+                    timeout: std::time::Duration::from_secs(60),
+                })
+            });
+            controls.gate(TestPoint::BeforeJournalWait).wait_reached();
+            let index = opened.state.index.clone();
+            opened
+                .spawn_worker("panic", move |_cancellation| {
+                    if holds_index_lock {
+                        index.panic_holding_the_write_lock_for_test();
+                    }
+                    panic!("injected worker panic")
+                })
+                .expect("spawn worker");
+            controls.gate(TestPoint::BeforeJournalWait).release();
+
+            let outcome = poll.join().expect("poll thread");
+            assert!(
+                matches!(outcome, Err(Error::OpenedWorkerPanicked { worker: "panic" })),
+                "holds index lock {holds_index_lock}: {outcome:?}"
+            );
+            assert!(matches!(opened.close(), Err(Error::OpenedWorkerPanicked { worker: "panic" })));
+        }
+    }
+
+    /// Close reports the failure that happened first, not the worker that was spawned first.
+    #[test]
+    fn close_reports_the_failure_that_happened_first_not_the_worker_spawned_first() {
+        let (_root, opened) = opened(Arc::default());
+        opened
+            .spawn_worker("slow", |cancellation| {
+                cancellation.wait_cancelled();
+                Err(Error::CommitRejected("slow worker failed at close"))
+            })
+            .expect("spawn slow worker");
+        opened
+            .spawn_worker("fast", |_cancellation| {
+                Err(Error::CommitRejected("fast worker failed first"))
+            })
+            .expect("spawn fast worker");
+        wait_for_worker_exit(&opened, "fast");
+
+        assert!(matches!(opened.close(), Err(Error::OpenedWorkerFailed { worker: "fast", .. })));
+    }
+
+    /// A poisoned lock is what a panic leaves behind, and the worker that trips over it can
+    /// record its error before the unwinding thread records the panic. The panic is the
+    /// cause, so it is the failure close reports.
+    #[test]
+    fn close_reports_a_panic_before_the_poisoning_it_left_behind() {
+        let (_root, opened) = opened(Arc::default());
+        opened
+            .spawn_worker("tripped", |_cancellation| Err(Error::IndexLockPoisoned))
+            .expect("spawn tripped worker");
+        wait_for_worker_exit(&opened, "tripped");
+        opened
+            .spawn_worker("panicked", |_cancellation| panic!("injected worker panic"))
+            .expect("spawn panicking worker");
+        wait_for_worker_exit(&opened, "panicked");
+
+        assert!(matches!(opened.close(), Err(Error::OpenedWorkerPanicked { worker: "panicked" })));
+    }
+
+    /// Without a recorded panic, nothing explains a poisoning: the caller's own thread can
+    /// poison the index by panicking inside a commit. A worker that trips over it first is
+    /// then the earliest failure, and close reports it rather than a later, unrelated one.
+    #[test]
+    fn close_reports_a_poisoning_no_worker_panic_explains_when_it_came_first() {
+        let (_root, opened) = opened(Arc::default());
+        opened.state.index.poison_for_test();
+        let index = opened.state.index.clone();
+        opened
+            .spawn_worker("tripped", move |_cancellation| index.clock().map(|_| ()))
+            .expect("spawn tripped worker");
+        wait_for_worker_exit(&opened, "tripped");
+        opened
+            .spawn_worker("later", |_cancellation| {
+                Err(Error::CommitRejected("unrelated later failure"))
+            })
+            .expect("spawn later worker");
+        wait_for_worker_exit(&opened, "later");
+
+        let closed = opened.close();
+        assert!(
+            matches!(
+                &closed,
+                Err(Error::OpenedWorkerFailed { worker: "tripped", source })
+                    if matches!(**source, Error::IndexLockPoisoned)
+            ),
+            "{closed:?}"
+        );
+    }
+
     #[test]
     fn dropping_the_last_reference_cancels_and_joins() {
         let active = Arc::new(AtomicUsize::new(0));
@@ -2341,11 +2546,20 @@ mod tests {
             Err(Error::UnsupportedScanConfig(_))
         ));
 
-        let zero_journal = OpenOptions { journal_capacity: 0, ..OpenOptions::default() };
-        assert!(matches!(
-            OpenedIndex::open(root.path(), zero_journal),
-            Err(Error::UnsupportedScanConfig(_))
-        ));
+        let minimum = crate::MIN_JOURNAL_CAPACITY_BYTES;
+        let below_minimum =
+            OpenOptions { journal_capacity_bytes: minimum - 1, ..OpenOptions::default() };
+        let error = OpenedIndex::open(root.path(), below_minimum).expect_err("refused");
+        assert!(
+            matches!(error, Error::JournalCapacityTooSmall { requested, minimum: stated }
+                if requested == minimum - 1 && stated == minimum),
+            "{error:?}"
+        );
+        let message = error.to_string();
+        assert!(message.contains(&format!("at least {minimum} bytes")), "{message}");
+
+        let at_minimum = OpenOptions { journal_capacity_bytes: minimum, ..OpenOptions::default() };
+        OpenedIndex::open(root.path(), at_minimum).expect("accepted").close().expect("close");
     }
 
     #[test]
@@ -2794,26 +3008,70 @@ mod tests {
         second.close().expect("second close");
     }
 
-    #[test]
-    fn a_slow_consumer_gets_one_coherent_all_dirty_reset() {
+    /// Opens a root with no discovery, at the smallest journal budget it accepts.
+    fn opened_at_the_minimum_journal_budget() -> (tempfile::TempDir, OpenedIndex) {
         let controls = Arc::new(TestControls::default());
         controls.discovery_disabled.store(true, Ordering::Release);
         let root = tempfile::tempdir().expect("temp root");
         let opened = OpenedIndex::open_for_test(
             root.path(),
-            OpenOptions { journal_capacity: 1, ..OpenOptions::default() },
+            OpenOptions {
+                journal_capacity_bytes: crate::MIN_JOURNAL_CAPACITY_BYTES,
+                ..OpenOptions::default()
+            },
             controls,
         )
         .expect("opened root");
+        (root, opened)
+    }
+
+    /// The least budget accepted holds history worth polling, not one commit: a consumer
+    /// that falls behind by a burst of single-file commits still receives every one.
+    #[test]
+    fn the_minimum_journal_budget_delivers_a_burst_of_single_file_commits() {
+        const BURST: usize = 64;
+        let (_root, opened) = opened_at_the_minimum_journal_budget();
         let after = current_version(&opened);
-        apply_and_notify(
+        for index in 0..BURST {
+            apply_and_notify(
+                &opened,
+                &Observation::new(vec![Op::Upsert {
+                    path: PathBuf::from(format!("file-{index:02}")),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs::default(),
+                }]),
+            );
+        }
+
+        let poll = opened
+            .changes(crate::ChangeRequest { after, timeout: std::time::Duration::ZERO })
+            .expect("burst");
+        let crate::ChangeOutcome::Changes { commits, .. } = &poll.outcome else {
+            panic!("expected the burst's commits: {:?}", poll.outcome);
+        };
+        assert_eq!(commits.len(), BURST);
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn a_slow_consumer_gets_one_coherent_all_dirty_reset() {
+        let (_root, opened) = opened_at_the_minimum_journal_budget();
+        let after = current_version(&opened);
+        // One commit that costs more than the whole budget: many long names at once.
+        let outcome = apply_and_notify(
             &opened,
-            &Observation::new(vec![Op::Upsert {
-                path: PathBuf::from("larger-than-history"),
-                kind: EntryKind::File,
-                attrs: crate::Attrs::default(),
-            }]),
+            &Observation::new(
+                (0..=crate::MAX_DIRTY_PATHS)
+                    .map(|index| Op::Upsert {
+                        path: PathBuf::from(format!("{index:0>200}")),
+                        kind: EntryKind::File,
+                        attrs: crate::Attrs::default(),
+                    })
+                    .collect(),
+            ),
         );
+        let commit = outcome.commit.expect("effective commit");
+        assert!(commit.retained_cost() > crate::MIN_JOURNAL_CAPACITY_BYTES);
 
         let poll = opened
             .changes(crate::ChangeRequest { after, timeout: std::time::Duration::ZERO })
@@ -2934,61 +3192,491 @@ mod tests {
         opened.close().expect("close");
     }
 
-    /// A tree page and a roll-up on a retained file both say it is not a directory.
-    ///
-    /// They used to contradict the lookup of the same path on a complete root: the tree
-    /// answered `Absent`, which claims coverage proves the path missing, and the roll-up
-    /// answered `Unknown { reason: Building }`, which a caller polling for an answer would
-    /// wait on forever.
+    /// The completion transition carries the canonical relative path, whatever spelling the
+    /// producer used. Discovery happened to build canonical paths; nothing else guaranteed it.
     #[test]
-    fn directory_projections_on_a_present_file_say_it_is_not_a_directory() {
+    fn directory_completion_publishes_the_canonical_relative_path() {
         let (_root, opened) = opened(Arc::new(TestControls::default()));
         opened
             .state
             .index
+            .transition_discovery(DiscoveryTransition::Begin)
+            .expect("begin discovery");
+        opened
+            .state
+            .index
             .apply(&Observation::new(vec![Op::Upsert {
-                path: PathBuf::from("README.md"),
-                kind: EntryKind::File,
-                attrs: crate::Attrs { size: 5, ..crate::Attrs::default() },
+                path: PathBuf::from("known"),
+                kind: EntryKind::Dir,
+                attrs: crate::Attrs::default(),
             }]))
-            .expect("seed file");
-        let state = opened.state.index.state().expect("state");
-        assert_eq!(state.coverage, crate::Coverage::Complete);
-        let read = |projection| {
-            opened.read(crate::ReadRequest {
-                projections: vec![projection],
-                ..crate::ReadRequest::default()
-            })
-        };
+            .expect("seed directory");
 
-        assert!(matches!(
-            read(crate::ReadProjection::Lookup { path: PathBuf::from("README.md") })
-                .expect("lookup")
-                .results[0],
-            crate::ProjectionResult::Lookup(crate::Knowledge::Present(_))
-        ));
-        let tree = read(crate::ReadProjection::Tree {
-            path: PathBuf::from("README.md"),
+        let outcome = opened
+            .state
+            .index
+            .apply_discovery(
+                &Observation::new(Vec::new()),
+                DiscoveryCommit {
+                    directory_complete: Some(PathBuf::from("./known")),
+                    transition: None,
+                },
+            )
+            .expect("complete directory");
+
+        let commit = outcome.commit.expect("completion commit");
+        assert!(
+            commit.state.contains(&crate::StateTransition::DirectoryComplete {
+                path: PathBuf::from("known"),
+            }),
+            "{:?}",
+            commit.state
+        );
+        assert_eq!(
+            opened.state.index.directory_complete(Path::new("known")).expect("lookup"),
+            Some(true)
+        );
+        opened.close().expect("close");
+    }
+
+    /// A tree page and a roll-up on a retained file refuse that projection, and only it.
+    ///
+    /// They used to contradict the lookup of the same path on a complete root: the tree
+    /// answered `Absent`, which claims coverage proves the path missing, and the roll-up
+    /// answered `Unknown { reason: Building }`, which a caller polling for an answer would
+    /// wait on forever. Then they failed the whole read, so a mixed request lost the
+    /// lookup beside them because one path had changed kind since an earlier page
+    /// (`fdu-l89e`).
+    #[test]
+    fn a_path_of_the_wrong_kind_refuses_its_projection_and_the_read_still_answers() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        let file = |path: &str| Op::Upsert {
+            path: PathBuf::from(path),
+            kind: EntryKind::File,
+            attrs: crate::Attrs { size: 5, ..crate::Attrs::default() },
+        };
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![
+                file("a"),
+                file("README.md"),
+                Op::Upsert {
+                    path: PathBuf::from("dir"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+            ]))
+            .expect("seed tree");
+        let page = crate::PageRequest { limit: 16, max_work: 64 };
+        let tree = |path: &str| crate::ReadProjection::Tree {
+            path: PathBuf::from(path),
             depth: crate::query::Bound::Limit(1),
             include_ignored: true,
-            page: crate::PageRequest { limit: 16, max_work: 64 },
-        });
-        assert!(
-            matches!(&tree, Err(Error::NotADirectory(path)) if path == Path::new("README.md")),
-            "{tree:?}"
-        );
-        let rollup = read(crate::ReadProjection::RollUp { path: PathBuf::from("README.md") });
-        assert!(
-            matches!(&rollup, Err(Error::NotADirectory(path)) if path == Path::new("README.md")),
-            "{rollup:?}"
-        );
+            page,
+        };
+        // The directory answers while it is one: the path a caller holds is a good path.
+        let before = opened
+            .read(crate::ReadRequest { projections: vec![tree("dir")], ..Default::default() })
+            .expect("tree of a directory");
+        assert!(matches!(
+            before.results.as_slice(),
+            [crate::ProjectionResult::Tree(crate::Knowledge::Present(_))]
+        ));
+
+        opened.state.index.apply(&Observation::new(vec![file("dir")])).expect("dir became a file");
+        assert_eq!(opened.state.index.state().expect("state").coverage, crate::Coverage::Complete);
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![
+                    crate::ReadProjection::Lookup { path: PathBuf::from("a") },
+                    tree("dir"),
+                    crate::ReadProjection::RollUp { path: PathBuf::from("README.md") },
+                    crate::ReadProjection::Lookup { path: PathBuf::from("dir") },
+                ],
+                ..crate::ReadRequest::default()
+            })
+            .expect("a refusal does not fail the read");
+        match response.results.as_slice() {
+            [
+                crate::ProjectionResult::Lookup(crate::Knowledge::Present(a)),
+                crate::ProjectionResult::Refused(crate::ProjectionRefusal::NotADirectory {
+                    path: tree_path,
+                }),
+                crate::ProjectionResult::Refused(crate::ProjectionRefusal::NotADirectory {
+                    path: rollup_path,
+                }),
+                crate::ProjectionResult::Lookup(crate::Knowledge::Present(dir)),
+            ] => {
+                assert_eq!(a.path, Path::new("a"));
+                assert_eq!(tree_path, Path::new("dir"));
+                assert_eq!(rollup_path, Path::new("README.md"));
+                assert_eq!(dir.kind, EntryKind::File);
+            }
+            other => panic!("each projection answers for itself: {other:?}"),
+        }
+        assert_eq!(response.work.rows_returned, 2, "a refusal returns no rows");
+
         // Below a file nothing can exist, and a complete root can say so.
         assert!(matches!(
-            read(crate::ReadProjection::RollUp { path: PathBuf::from("README.md/inner") })
+            opened
+                .read(crate::ReadRequest {
+                    projections: vec![crate::ReadProjection::RollUp {
+                        path: PathBuf::from("README.md/inner"),
+                    }],
+                    ..crate::ReadRequest::default()
+                })
                 .expect("rollup below a file")
                 .results[0],
             crate::ProjectionResult::RollUp(crate::Knowledge::Absent)
         ));
+        opened.close().expect("close");
+    }
+
+    /// Seed an opened root whose names need escaping, without touching a filesystem.
+    #[cfg(unix)]
+    fn opened_with_escaped_names() -> (tempfile::TempDir, OpenedIndex) {
+        use std::os::unix::ffi::OsStrExt;
+        let (root, opened) = opened(Arc::new(TestControls::default()));
+        let native = |bytes: &[u8]| PathBuf::from(std::ffi::OsStr::from_bytes(bytes));
+        let file = |path: PathBuf| Op::Upsert {
+            path,
+            kind: EntryKind::File,
+            attrs: crate::Attrs { size: 3, ..crate::Attrs::default() },
+        };
+        let dir = |path: PathBuf| Op::Upsert {
+            path,
+            kind: EntryKind::Dir,
+            attrs: crate::Attrs::default(),
+        };
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![
+                dir(native(b"x\xff")),
+                file(native(b"x\xff/inner.txt")),
+                file(PathBuf::from("100%.txt")),
+                dir(PathBuf::from("src")),
+                file(PathBuf::from("src/lib.rs")),
+            ]))
+            .expect("seed escaped names");
+        (root, opened)
+    }
+
+    /// The portable paths of the files one projection admits.
+    #[cfg(unix)]
+    fn admitted_files(result: &crate::ProjectionResult) -> std::collections::BTreeSet<String> {
+        match result {
+            crate::ProjectionResult::Flat(page) => {
+                assert!(page.next.is_none(), "one page holds the fixture");
+                page.rows
+                    .iter()
+                    .filter(|row| row.kind == EntryKind::File)
+                    .map(|row| row.portable_path.as_str().to_owned())
+                    .collect()
+            }
+            crate::ProjectionResult::Report(report) => match report.sections.as_slice() {
+                [crate::query::Section::Files { rows, .. }] => rows
+                    .iter()
+                    .filter(|row| row.kind == EntryKind::File)
+                    .map(|row| read::portable_path(&row.path).as_str().to_owned())
+                    .collect(),
+                other => panic!("a files report: {other:?}"),
+            },
+            other => panic!("a page or a report: {other:?}"),
+        }
+    }
+
+    /// Every projection in an opened read filters by one spelling: the portable path.
+    ///
+    /// Flat and aggregate took the name from the portable path and the relative path from
+    /// the native one, ancestor names compared native components, and a report projection
+    /// matched native names, so `exact_names: ["100%.txt"]`, an unanchored glob, and an
+    /// anchored one each answered differently, and a non-UTF-8 ancestor could not be named
+    /// at all (`fdu-8w5k`).
+    #[cfg(unix)]
+    #[test]
+    fn every_projection_filters_by_the_portable_identity_a_page_returns() {
+        let (_root, opened) = opened_with_escaped_names();
+        let glob = |source: &str| crate::query::Pattern::parse(source).expect("pattern");
+        let names = |values: &[&str]| values.iter().map(ToString::to_string).collect::<Vec<_>>();
+        let cases: Vec<(&str, crate::query::EntrySelection, &[&str])> = vec![
+            (
+                "an exact name, escaped",
+                crate::query::EntrySelection {
+                    exact_names: names(&["100%25.txt"]),
+                    ..Default::default()
+                },
+                &["100%25.txt"],
+            ),
+            (
+                "an exact name in its native spelling",
+                crate::query::EntrySelection {
+                    exact_names: names(&["100%.txt"]),
+                    ..Default::default()
+                },
+                &[],
+            ),
+            (
+                "a non-UTF-8 ancestor",
+                crate::query::EntrySelection {
+                    ancestor_names: names(&["x%FF"]),
+                    ..Default::default()
+                },
+                &["x%FF/inner.txt"],
+            ),
+            (
+                "a terminal suffix below that ancestor",
+                crate::query::EntrySelection {
+                    terminal_extensions: names(&[".txt"]),
+                    ancestor_names: names(&["x%FF"]),
+                    ..Default::default()
+                },
+                &["x%FF/inner.txt"],
+            ),
+            (
+                "an anchored glob through the escaped directory",
+                crate::query::EntrySelection {
+                    query: crate::query::Selection {
+                        include: vec![glob("x%FF/*")],
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                &["x%FF/inner.txt"],
+            ),
+            (
+                "an unanchored glob on an escaped name",
+                crate::query::EntrySelection {
+                    query: crate::query::Selection {
+                        include: vec![glob("100%25.txt")],
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                &["100%25.txt"],
+            ),
+            (
+                "an unanchored glob in the native spelling",
+                crate::query::EntrySelection {
+                    query: crate::query::Selection {
+                        include: vec![glob("100%.txt")],
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                &[],
+            ),
+            (
+                "an exclusion by escaped directory",
+                crate::query::EntrySelection {
+                    query: crate::query::Selection {
+                        exclude: vec![glob("x%FF/**")],
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                &["100%25.txt", "src/lib.rs"],
+            ),
+        ];
+        for (case, selection, expected) in cases {
+            let expected: std::collections::BTreeSet<String> =
+                expected.iter().map(ToString::to_string).collect();
+            let report = crate::ReadProjection::Report(crate::ReportRequest {
+                query: crate::query::Query {
+                    views: vec![crate::query::ViewSpec::Files],
+                    selection: selection.query.clone(),
+                    ..crate::query::Query::default()
+                },
+                generated_at: std::time::SystemTime::UNIX_EPOCH,
+                max_work: 1_000,
+            });
+            let response = opened
+                .read(crate::ReadRequest {
+                    projections: vec![
+                        crate::ReadProjection::Flat {
+                            selection: selection.clone(),
+                            shape: crate::RowShape::Compact,
+                            page: crate::PageRequest { limit: 64, max_work: 1_000 },
+                        },
+                        crate::ReadProjection::Aggregate {
+                            selection: crate::query::EntrySelection {
+                                query: crate::query::Selection {
+                                    kinds: vec![EntryKind::File],
+                                    ..selection.query.clone()
+                                },
+                                ..selection.clone()
+                            },
+                            count_cap: 64,
+                            max_work: 1_000,
+                        },
+                        report,
+                    ],
+                    ..crate::ReadRequest::default()
+                })
+                .expect(case);
+            assert_eq!(admitted_files(&response.results[0]), expected, "flat: {case}");
+            assert!(
+                matches!(
+                    response.results[1],
+                    crate::ProjectionResult::Aggregate(crate::CountResult::Exact(count))
+                        if count == expected.len() as u64
+                ),
+                "aggregate: {case}: {:?}",
+                response.results[1]
+            );
+            // A report carries only the base selection, so it is compared where that is
+            // the whole question.
+            if selection.exact_names.is_empty()
+                && selection.ancestor_names.is_empty()
+                && selection.terminal_extensions.is_empty()
+            {
+                assert_eq!(admitted_files(&response.results[2]), expected, "report: {case}");
+            }
+        }
+        opened.close().expect("close");
+    }
+
+    /// A path a page returned is a filter a caller can write back, on every axis.
+    #[cfg(unix)]
+    #[test]
+    fn a_path_from_a_page_passes_back_into_a_filter_unchanged() {
+        let (_root, opened) = opened_with_escaped_names();
+        let flat = |selection: crate::query::EntrySelection| {
+            let response = opened
+                .read(crate::ReadRequest {
+                    projections: vec![crate::ReadProjection::Flat {
+                        selection,
+                        shape: crate::RowShape::Compact,
+                        page: crate::PageRequest { limit: 64, max_work: 1_000 },
+                    }],
+                    ..crate::ReadRequest::default()
+                })
+                .expect("flat page");
+            admitted_files(&response.results[0])
+        };
+        let every = flat(crate::query::EntrySelection::default());
+        assert_eq!(
+            every,
+            ["100%25.txt", "src/lib.rs", "x%FF/inner.txt"].map(String::from).into(),
+            "the page names every file by its portable path"
+        );
+        for shown in &every {
+            let only: std::collections::BTreeSet<String> = [shown.clone()].into();
+            let (ancestors, name) = match shown.rsplit_once('/') {
+                Some((ancestors, name)) => (Some(ancestors), name),
+                None => (None, shown.as_str()),
+            };
+            let anchored = crate::query::Pattern::parse(&format!("**/{shown}")).expect("glob");
+            assert_eq!(
+                flat(crate::query::EntrySelection {
+                    query: crate::query::Selection {
+                        include: vec![anchored],
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }),
+                only,
+                "the whole path as a glob: {shown}"
+            );
+            assert_eq!(
+                flat(crate::query::EntrySelection {
+                    exact_names: vec![name.to_owned()],
+                    ..Default::default()
+                }),
+                only,
+                "its name as an exact name: {shown}"
+            );
+            if let Some(ancestors) = ancestors {
+                let mut selection = crate::query::EntrySelection::default();
+                selection.admit_ancestor_name(ancestors).expect("a page component is a valid name");
+                assert_eq!(flat(selection), only, "its parent as an ancestor name: {shown}");
+            }
+        }
+        opened.close().expect("close");
+    }
+
+    /// A selection a constructor would refuse is refused by a read too, before any answer.
+    #[test]
+    fn a_read_refuses_a_hand_written_selection_the_constructors_would_refuse() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        for selection in [
+            crate::query::EntrySelection {
+                terminal_extensions: vec!["rs".to_string()],
+                ..Default::default()
+            },
+            crate::query::EntrySelection {
+                ancestor_names: vec!["..".to_string()],
+                ..Default::default()
+            },
+        ] {
+            let read = opened.read(crate::ReadRequest {
+                projections: vec![
+                    crate::ReadProjection::Lookup { path: PathBuf::new() },
+                    crate::ReadProjection::Aggregate { selection, count_cap: 8, max_work: 64 },
+                ],
+                ..crate::ReadRequest::default()
+            });
+            assert!(matches!(read, Err(Error::InvalidValue { .. })), "{read:?}");
+        }
+        opened.close().expect("close");
+    }
+
+    /// A page whose resume state is too large to retain refuses that page, and only it.
+    ///
+    /// The page has rows left, so returning them with no continuation would present a
+    /// truncated page as a finished one. Failing the read instead discarded every other
+    /// projection in it (READ-8).
+    #[test]
+    fn a_page_whose_continuation_cannot_be_retained_refuses_alone() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        let file = |path: &str| Op::Upsert {
+            path: PathBuf::from(path),
+            kind: EntryKind::File,
+            attrs: crate::Attrs { size: 1, ..crate::Attrs::default() },
+        };
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![file("a.txt"), file("b.txt")]))
+            .expect("seed tree");
+        // A selection this large is valid, and admits both files; it is only too large to
+        // carry into a continuation record.
+        let mut exact_names = vec!["a.txt".to_string(), "b.txt".to_string()];
+        exact_names.extend((0..4_000).map(|number| format!("unused-{number:05}.txt")));
+        let selection = crate::query::EntrySelection { exact_names, ..Default::default() };
+        let flat = crate::ReadProjection::Flat {
+            selection,
+            shape: crate::RowShape::Compact,
+            page: crate::PageRequest { limit: 1, max_work: 64 },
+        };
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![
+                    flat,
+                    crate::ReadProjection::Lookup { path: PathBuf::from("b.txt") },
+                ],
+                ..crate::ReadRequest::default()
+            })
+            .expect("a refused page does not fail the read");
+        match response.results.as_slice() {
+            [
+                crate::ProjectionResult::Refused(
+                    crate::ProjectionRefusal::ContinuationRecordLimit { attempted, limit },
+                ),
+                crate::ProjectionResult::Lookup(crate::Knowledge::Present(_)),
+            ] => {
+                assert_eq!(*limit, crate::MAX_CONTINUATION_RECORD_BYTES);
+                assert!(attempted > limit, "{attempted} > {limit}");
+            }
+            other => panic!("the page refuses and the lookup answers: {other:?}"),
+        }
+        assert_eq!(response.work.rows_returned, 1, "the refused page returns no rows");
+        assert_eq!(
+            opened.state.continuations.lock().expect("table").len(),
+            0,
+            "a refused page retains nothing"
+        );
         opened.close().expect("close");
     }
 
@@ -3411,6 +4099,8 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// A consumed or evicted token refuses its `Continue` and the rest of the read answers;
+    /// a foreign token or a version it no longer holds still fails the read (`fdu-l89e`).
     #[test]
     fn continuations_are_single_use_version_pinned_handle_local_and_bounded() {
         let (_root, opened) = opened(Arc::new(TestControls::default()));
@@ -3448,6 +4138,29 @@ mod tests {
             result.next.expect("continuation")
         };
 
+        // A token this root issued and no longer holds costs only its own projection: the
+        // lookup beside it still answers.
+        let refuses_beside_a_lookup = |continuation| {
+            let response = opened
+                .read(crate::ReadRequest {
+                    projections: vec![
+                        crate::ReadProjection::Continue { continuation, page },
+                        crate::ReadProjection::Lookup { path: PathBuf::from("a") },
+                    ],
+                    ..crate::ReadRequest::default()
+                })
+                .expect("a refused continuation does not fail the read");
+            matches!(
+                response.results.as_slice(),
+                [
+                    crate::ProjectionResult::Refused(
+                        crate::ProjectionRefusal::ContinuationUnavailable
+                    ),
+                    crate::ProjectionResult::Lookup(crate::Knowledge::Present(_)),
+                ]
+            )
+        };
+
         let replay = new_token();
         opened
             .read(crate::ReadRequest {
@@ -3455,13 +4168,7 @@ mod tests {
                 ..crate::ReadRequest::default()
             })
             .expect("first continuation use");
-        assert!(matches!(
-            opened.read(crate::ReadRequest {
-                projections: vec![crate::ReadProjection::Continue { continuation: replay, page }],
-                ..crate::ReadRequest::default()
-            }),
-            Err(Error::ContinuationUnavailable)
-        ));
+        assert!(refuses_beside_a_lookup(replay), "a consumed token refuses its page");
 
         let stale = new_token();
         opened
@@ -3522,13 +4229,7 @@ mod tests {
         for _ in 0..super::continuation::MAX_CONTINUATIONS {
             let _ = new_token();
         }
-        assert!(matches!(
-            opened.read(crate::ReadRequest {
-                projections: vec![crate::ReadProjection::Continue { continuation: oldest, page }],
-                ..crate::ReadRequest::default()
-            }),
-            Err(Error::ContinuationUnavailable)
-        ));
+        assert!(refuses_beside_a_lookup(oldest), "an evicted token refuses its page");
         other.close().expect("close other");
         opened.close().expect("close");
     }
@@ -3982,14 +4683,67 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// Every row path of one unbounded tree page from the root.
+    fn tree_rows(opened: &OpenedIndex, include_ignored: bool) -> Vec<String> {
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Tree {
+                    path: PathBuf::new(),
+                    depth: crate::query::Bound::All,
+                    include_ignored,
+                    page: crate::PageRequest {
+                        limit: crate::MAX_PAGE_ROWS,
+                        max_work: crate::MAX_PAGE_WORK,
+                    },
+                }],
+                ..crate::ReadRequest::default()
+            })
+            .expect("tree read");
+        let crate::ProjectionResult::Tree(crate::Knowledge::Present(page)) = &response.results[0]
+        else {
+            panic!("tree page");
+        };
+        page.rows.iter().map(|row| row.portable_path.as_str().to_owned()).collect()
+    }
+
+    /// A tree read that excludes ignored entries reads each row's ignore bit without the
+    /// observation check `Index::is_ignored` makes, on the invariant that an opened root
+    /// always observes control state. The invariant is pinned here, in every build profile,
+    /// and a read over a tree nothing ignores keeps every row.
+    #[test]
+    fn an_opened_tree_read_excluding_ignored_entries_relies_on_an_observing_root() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        opened
+            .state
+            .index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("src"),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("src/main.rs"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs { size: 1, ..crate::Attrs::default() },
+                },
+            ]))
+            .expect("seed tree");
+
+        let image = opened.state.index.snapshot().expect("snapshot");
+        assert!(image.observes_controls());
+        let excluded = tree_rows(&opened, false);
+        assert_eq!(excluded, ["src", "src/main.rs"]);
+        assert_eq!(excluded, tree_rows(&opened, true));
+
+        opened.close().expect("close");
+    }
+
     /// Excluding ignored entries prunes the subtree, not merely the row.
     ///
     /// Filtering the row and descending anyway is an equally reasonable reading of an
     /// unstated rule, and it is observably different: it would still return
     /// `vendor/keep.txt` while hiding the directory that explains where it came from.
-    // The ignore partition is only populated when the feature that reads control files is
-    // compiled in; without it nothing is ignored and the fixture cannot express the case.
-    #[cfg(feature = "gitignore")]
     #[test]
     fn excluding_ignored_prunes_the_subtree() {
         let (_root, opened) = opened(Arc::new(TestControls::default()));
@@ -4024,34 +4778,11 @@ mod tests {
             ]))
             .expect("seed tree");
 
-        let rows = |include_ignored: bool| -> Vec<String> {
-            let response = opened
-                .read(crate::ReadRequest {
-                    projections: vec![crate::ReadProjection::Tree {
-                        path: PathBuf::new(),
-                        depth: crate::query::Bound::All,
-                        include_ignored,
-                        page: crate::PageRequest {
-                            limit: crate::MAX_PAGE_ROWS,
-                            max_work: crate::MAX_PAGE_WORK,
-                        },
-                    }],
-                    ..crate::ReadRequest::default()
-                })
-                .expect("tree read");
-            let crate::ProjectionResult::Tree(crate::Knowledge::Present(page)) =
-                &response.results[0]
-            else {
-                panic!("tree page");
-            };
-            page.rows.iter().map(|row| row.portable_path.as_str().to_owned()).collect()
-        };
-
-        let included = rows(true);
+        let included = tree_rows(&opened, true);
         assert!(included.iter().any(|row| row == "vendor"));
         assert!(included.iter().any(|row| row == "vendor/keep.txt"));
 
-        let excluded = rows(false);
+        let excluded = tree_rows(&opened, false);
         assert!(!excluded.iter().any(|row| row == "vendor"), "the row is gone");
         assert!(
             !excluded.iter().any(|row| row == "vendor/keep.txt"),
@@ -4077,7 +4808,6 @@ mod tests {
     ///
     /// So the ignored directory sorts first and is given enough children that expanding
     /// it cannot hide in the noise.
-    #[cfg(feature = "gitignore")]
     #[test]
     fn the_remembered_descent_skips_a_pruned_first_child() {
         let (_root, opened) = opened(Arc::new(TestControls::default()));
@@ -5051,7 +5781,6 @@ mod tests {
     /// Pins the interim behavior until control bounds degrade precisely (`fdu-1onj`): the
     /// refused directory stays incomplete, its refusal is a retained issue, coverage is
     /// partial, and every other directory is still discovered.
-    #[cfg(feature = "gitignore")]
     #[test]
     fn a_control_bound_refuses_one_directory_without_ending_discovery() {
         let root = tempfile::tempdir().expect("temp root");
@@ -5088,7 +5817,6 @@ mod tests {
     /// `-early` is a retained directory nothing refused; it used to be left unqueued and
     /// incomplete, its subtree silently missing and its roll-up answering an empty
     /// `Present`. The refusal also used to be retained as a pathless provider failure.
-    #[cfg(feature = "gitignore")]
     #[test]
     fn a_refused_control_still_queues_subdirectories_its_listing_committed() {
         let controls = Arc::new(TestControls::default());
@@ -5258,6 +5986,173 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// One refresh over two subtrees, one of them unreadable: the readable subtree is
+    /// verified on its own walk. One completion flag for the whole set marked it partial
+    /// because its sibling could not be read.
+    #[cfg(unix)]
+    #[test]
+    fn multi_path_refresh_closes_each_subtree_on_its_own_walk() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::create_dir(root.path().join("readable")).expect("readable directory");
+        std::fs::write(root.path().join("readable/file"), b"ok").expect("readable fixture");
+        let blocked = root.path().join("blocked");
+        std::fs::create_dir(&blocked).expect("blocked directory");
+        std::fs::write(blocked.join("secret"), b"secret").expect("blocked fixture");
+        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("open");
+        let settled = wait_until_settled(&opened);
+        assert_eq!(settled.phase, crate::LifecyclePhase::Ready);
+        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o000))
+            .expect("make directory unreadable");
+
+        let receipt = opened
+            .refresh(&[PathBuf::from("readable"), PathBuf::from("blocked")])
+            .expect("refresh");
+        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o700))
+            .expect("restore directory permissions");
+
+        assert_eq!(receipt.issues.len(), 1, "{:?}", receipt.issues);
+        let index = &opened.state.index;
+        assert_eq!(
+            index.freshness_at(Path::new("readable")).expect("freshness"),
+            crate::Freshness::Fresh
+        );
+        assert_eq!(
+            index.freshness_at(Path::new("blocked")).expect("freshness"),
+            crate::Freshness::Partial
+        );
+        let since = index.since(receipt.after.sequence).expect("journal");
+        assert!(
+            since.commits.iter().flat_map(|commit| commit.state.iter()).any(|transition| {
+                matches!(
+                    transition,
+                    crate::StateTransition::Verified { path } if path == Path::new("readable")
+                )
+            }),
+            "the readable subtree was not verified"
+        );
+        opened.close().expect("close");
+    }
+
+    /// Discovery records a child gone by its stat as it records one the listing never
+    /// returned: absent, with no issue, under complete coverage.
+    #[test]
+    fn discovery_omits_a_child_deleted_between_listing_and_stat() {
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::write(root.path().join("kept"), b"kept").expect("kept fixture");
+        std::fs::write(root.path().join("gone"), b"gone").expect("gone fixture");
+        let hook = crate::scan::install_child_metadata_hook(root.path(), |path| {
+            if path.file_name() == Some(std::ffi::OsStr::new("gone")) {
+                std::fs::remove_file(path).expect("delete between listing and stat");
+            }
+            None
+        });
+        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("open");
+        let settled = wait_until_settled(&opened);
+        drop(hook);
+
+        assert_eq!(settled.coverage, crate::Coverage::Complete);
+        assert_eq!(settled.issues.retained, 0);
+        let index = &opened.state.index;
+        assert!(index.kind(Path::new("gone")).expect("lookup").is_none());
+        assert!(index.kind(Path::new("kept")).expect("lookup").is_some());
+        opened.close().expect("close");
+    }
+
+    /// One transient child error no longer withholds completeness from every directory
+    /// the pass listed. Each is recorded on its own listing, as discovery decides, so a
+    /// directory first listed by such a pass answers Absent below it instead of staying
+    /// Unknown { Building } under a complete root.
+    #[test]
+    fn refresh_records_completeness_per_listed_directory_despite_a_child_error() {
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::create_dir(root.path().join("steady")).expect("steady directory");
+        std::fs::write(root.path().join("steady/kept"), b"kept").expect("steady fixture");
+        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("open");
+        let settled = wait_until_settled(&opened);
+        assert_eq!(settled.coverage, crate::Coverage::Complete);
+        std::fs::create_dir(root.path().join("fresh")).expect("fresh directory");
+        std::fs::write(root.path().join("fresh/new"), b"new").expect("fresh fixture");
+
+        let hook = crate::scan::install_child_metadata_hook(root.path(), |path| {
+            (path.file_name() == Some(std::ffi::OsStr::new("kept"))).then(|| {
+                std::io::Error::new(std::io::ErrorKind::PermissionDenied, "injected child error")
+            })
+        });
+        let receipt = opened.refresh(&[PathBuf::new()]);
+        drop(hook);
+        let receipt = receipt.expect("refresh");
+
+        assert_eq!(receipt.issues.len(), 1, "{:?}", receipt.issues);
+        let index = &opened.state.index;
+        assert_eq!(
+            index.freshness_at(Path::new("")).expect("freshness"),
+            crate::Freshness::Partial
+        );
+        assert_eq!(index.directory_complete(Path::new("fresh")).expect("lookup"), Some(true));
+        assert_eq!(index.directory_complete(Path::new("steady")).expect("lookup"), Some(true));
+        let lookup = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Lookup {
+                    path: PathBuf::from("fresh/missing"),
+                }],
+                ..crate::ReadRequest::default()
+            })
+            .expect("lookup")
+            .results
+            .into_iter()
+            .next()
+            .expect("lookup result");
+        assert!(
+            matches!(lookup, crate::ProjectionResult::Lookup(crate::Knowledge::Absent)),
+            "{lookup:?}"
+        );
+        opened.close().expect("close");
+    }
+
+    /// A refresh on a Failed root keeps the issue that explains the failure. The failure
+    /// is the state the root is in, so a clean walk below the issue's path disproves
+    /// nothing; dropping it left a Failed root with no retained cause.
+    #[test]
+    fn refresh_on_a_failed_root_keeps_the_issue_that_explains_it() {
+        let (root, opened) = opened(Arc::default());
+        std::fs::create_dir(root.path().join("sub")).expect("fixture directory");
+        opened
+            .state
+            .index
+            .transition_discovery(DiscoveryTransition::Begin)
+            .expect("begin discovery");
+        let failure = crate::Issue::from_error_under(
+            root.path(),
+            &Error::io(root.path().join("sub"), std::io::Error::other("provider failed here")),
+        );
+        opened
+            .state
+            .index
+            .transition_discovery(DiscoveryTransition::Failed(failure))
+            .expect("fail discovery");
+        let failed = opened.state.index.state().expect("state");
+        assert_eq!(failed.phase, crate::LifecyclePhase::Failed);
+        assert_eq!(failed.issues.retained, 1);
+
+        let receipt = opened.refresh(&[PathBuf::from("sub")]).expect("refresh on a failed root");
+        assert_eq!(receipt.work.stale, 0);
+
+        let after = opened.state.index.state().expect("state");
+        assert_eq!(after.phase, crate::LifecyclePhase::Failed);
+        let issues = opened.state.index.issues().expect("issues");
+        assert_eq!(issues.len(), 1, "{issues:?}");
+        assert_eq!(issues[0].path.as_deref(), Some(Path::new("sub")));
+        assert_eq!(after.issues.retained, 1);
+        opened.close().expect("close");
+    }
+
     #[test]
     fn close_cancels_verified_refresh_before_its_conditional_commit() {
         let controls = Arc::new(TestControls::default());
@@ -5282,7 +6177,6 @@ mod tests {
         opened.close().expect("repeat close");
     }
 
-    #[cfg(feature = "gitignore")]
     #[test]
     fn refresh_tracks_hidden_control_creation_edit_and_deletion() {
         let root = tempfile::tempdir().expect("temp root");
@@ -5302,14 +6196,30 @@ mod tests {
         let created = opened.refresh(&[PathBuf::from(".gitignore")]).expect("create refresh");
         assert_eq!(created.accepted, vec![PathBuf::from(".gitignore")]);
         let image = opened.state.index.snapshot().expect("snapshot");
-        assert!(image.controls().source_is(Path::new(".gitignore"), b"*.log\n"));
-        assert_eq!(image.is_ignored(Path::new("debug.log")), Some(true));
+        assert!(
+            image
+                .controls()
+                .expect("control state observed")
+                .source_is(Path::new(".gitignore"), b"*.log\n")
+        );
+        assert_eq!(
+            image.is_ignored(Path::new("debug.log")).expect("control state observed"),
+            Some(true)
+        );
 
         std::fs::write(root.path().join(".gitignore"), b"*.tmp\n").expect("edit control");
         opened.refresh(&[PathBuf::from(".gitignore")]).expect("edit refresh");
         let image = opened.state.index.snapshot().expect("snapshot");
-        assert!(image.controls().source_is(Path::new(".gitignore"), b"*.tmp\n"));
-        assert_eq!(image.is_ignored(Path::new("debug.log")), Some(false));
+        assert!(
+            image
+                .controls()
+                .expect("control state observed")
+                .source_is(Path::new(".gitignore"), b"*.tmp\n")
+        );
+        assert_eq!(
+            image.is_ignored(Path::new("debug.log")).expect("control state observed"),
+            Some(false)
+        );
         let unchanged =
             opened.refresh(&[PathBuf::from(".gitignore")]).expect("unchanged control refresh");
         assert_eq!(unchanged.work.observations, 1);
@@ -5317,8 +6227,9 @@ mod tests {
         std::fs::remove_file(root.path().join(".gitignore")).expect("delete control");
         opened.refresh(&[PathBuf::from(".gitignore")]).expect("delete refresh");
         let image = opened.state.index.snapshot().expect("snapshot");
-        assert!(image.controls().is_empty());
-        assert_eq!(image.partition_total().all, image.partition_total().unignored);
+        assert!(image.controls().expect("control state observed").is_empty());
+        let partitions = image.partition_total().expect("control state observed");
+        assert_eq!(partitions.all, partitions.unignored);
         opened.close().expect("close");
     }
 
@@ -6188,6 +7099,91 @@ mod tests {
             18
         );
         opened.close().expect("close");
+    }
+
+    /// A refresh that commits the very facts the handoff is about to commit is not a
+    /// conflict. The handoff's conditional upserts were refused as stale because their
+    /// baselines had moved, so it walked the whole root again, and three such refreshes in
+    /// a row failed the root over commits that would have applied as unchanged. A control
+    /// file is the case with two ops on one baseline, the entry and its rules, and both
+    /// must converge.
+    #[cfg(feature = "watch")]
+    #[test]
+    fn handoff_settles_through_a_convergent_refresh_without_a_second_walk() {
+        for name in ["shared.txt", ".gitignore"] {
+            let root = tempfile::tempdir().expect("temp root");
+            let scripts = tempfile::tempdir().expect("script root");
+            let path = root.path().join(name);
+            std::fs::write(&path, b"before").expect("fixture");
+            let script = scripts.path().join("events.script");
+            std::fs::write(&script, b"").expect("script");
+            let controls = Arc::new(TestControls::default());
+            controls.gate(TestPoint::BeforeObservationHandoff).arm();
+            controls.gate(TestPoint::AfterObservationVerification).arm();
+            let opened = OpenedIndex::open_for_test(
+                root.path(),
+                scripted_options(&script),
+                Arc::clone(&controls),
+            )
+            .expect("open scripted observer");
+            controls.gate(TestPoint::BeforeObservationHandoff).wait_reached();
+            // Discovery retained six bytes; the handoff's walk is about to stat seven.
+            std::fs::write(&path, b"changed").expect("mutation before the handoff walk");
+            controls.gate(TestPoint::BeforeObservationHandoff).release();
+            controls.gate(TestPoint::AfterObservationVerification).wait_reached();
+
+            // The refresh sees the same seven bytes and commits them first.
+            let refreshed = opened.refresh(&[PathBuf::from(name)]).expect("refresh");
+            assert_eq!(refreshed.work.stale, 0, "{name}");
+            let ops = if name == crate::control::CONTROL_FILE_NAME { 2 } else { 1 };
+            assert_eq!(refreshed.work.observations, ops, "{name}");
+            controls.gate(TestPoint::AfterObservationVerification).release();
+
+            let state = wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+            assert_eq!(state.coverage, crate::Coverage::Complete, "{name}");
+            assert_eq!(state.freshness, crate::Freshness::Fresh, "{name}");
+            let since = opened.state.index.since(crate::Clock::ZERO).expect("journal");
+            let transitions: Vec<&crate::StateTransition> =
+                since.commits.iter().flat_map(|commit| commit.state.iter()).collect();
+            // A refused pass leaves the root partial before the retry verifies it.
+            assert!(
+                !transitions.iter().any(|transition| matches!(
+                    transition,
+                    crate::StateTransition::Freshness { current: crate::Freshness::Partial, .. }
+                )),
+                "{name}: the handoff's first pass was refused: {transitions:?}"
+            );
+            assert_eq!(
+                transitions
+                    .iter()
+                    .filter(|transition| matches!(
+                        transition,
+                        crate::StateTransition::Verified { path } if path.as_os_str().is_empty()
+                    ))
+                    .count(),
+                1,
+                "{name}"
+            );
+            let index = &opened.state.index;
+            assert_eq!(
+                index.attrs(Path::new(name)).expect("attrs").expect("retained").size,
+                7,
+                "{name}"
+            );
+            if name == crate::control::CONTROL_FILE_NAME {
+                assert!(
+                    index
+                        .read_with(|index| {
+                            index.controls().is_ok_and(|controls| {
+                                controls.source_is(Path::new(name), b"changed")
+                            })
+                        })
+                        .expect("controls"),
+                    "the refreshed rules are retained"
+                );
+            }
+            opened.close().expect("close");
+        }
     }
 
     #[cfg(feature = "watch")]

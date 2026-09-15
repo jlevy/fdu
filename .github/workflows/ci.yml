@@ -97,12 +97,10 @@ jobs:
         run: cargo build --locked -p fdu --all-features
       - name: Compare the CLI golden contract
         run: npm run test:golden
-      - name: Test the minimal-library performance probe
+      - name: Test the performance probe and its semantic oracle
         run: cargo test --locked -p fdu-core --example perf_probe --no-default-features
-      - name: Build the repository-only performance probe with control semantics
-        run: cargo build --locked -p fdu-core --example perf_probe --no-default-features --features gitignore
-      - name: Test the performance probe's semantic oracle with control semantics
-        run: cargo test --locked -p fdu-core --example perf_probe --no-default-features --features gitignore
+      - name: Build the performance probe the harness tests run
+        run: cargo build --locked -p fdu-core --example perf_probe --no-default-features
       # `env:` rather than a `PYTHONPATH=... cmd` prefix: this job also runs on the
       # Windows runner, whose shell is PowerShell, where that POSIX prefix form is a
       # parse error rather than an assignment. The harness package is still
@@ -113,7 +111,7 @@ jobs:
         run: python -m unittest discover -s explorations/benchmarks/tests -p 'test_*.py'
 
   test-lib-only:
-    name: Test library feature boundaries
+    name: Test library build-feature boundaries
     needs: supply-chain
     runs-on: ubuntu-latest
     steps:
@@ -127,14 +125,13 @@ jobs:
       # Library consumers take `default-features = false`. Without this job, that path
       # would only ever be compiled by them.
       - run: cargo test --locked -p fdu-core --no-default-features
-      # Optional layers are additive alone and together; neither may inherit CLI-only features.
-      - run: cargo test --locked -p fdu-core --no-default-features --features gitignore
+      # The watch layer is additive and may not inherit CLI-only build features.
+      # `.gitignore` handling is not a build feature, so both shapes carry it.
       - run: cargo test --locked -p fdu-core --no-default-features --features watch
-      - run: cargo test --locked -p fdu-core --no-default-features --features watch,gitignore
       # The command line promises to build without `watch`, which keeps that layer
       # deletable. Nothing compiled the shape until it had already stopped building.
       # Clippy rather than check, because the pedantic lints are clippy's and the Clippy
-      # job lints only all features.
+      # job lints only with all build features.
       - run: cargo clippy --locked -p fdu --no-default-features --all-targets -- -D warnings
       # Compiling a test is not running it: the guide named `--watch` to a binary without
       # it while every build of this shape passed.

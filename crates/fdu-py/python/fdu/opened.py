@@ -92,6 +92,8 @@ __all__ = [
     "ReadResponse",
     "RefreshReceipt",
     "RefreshRejection",
+    "RefusalReason",
+    "RefusedResult",
     "RejectedRefreshPath",
     "Report",
     "ReportProjection",
@@ -131,7 +133,12 @@ class VersionUnavailableError(OpenedIndexError):
 
 
 class ContinuationUnavailableError(OpenedIndexError):
-    """A page continuation is foreign, consumed, evicted, or unavailable."""
+    """A page continuation came from another root, was never issued, or is stale.
+
+    A continuation this root issued and has since consumed or evicted does not raise: its
+    ``Continue`` returns a :class:`RefusedResult` with
+    ``RefusalReason.CONTINUATION_UNAVAILABLE`` and the rest of the read answers.
+    """
 
 
 class ChangeCursorUnavailableError(OpenedIndexError):
@@ -211,6 +218,20 @@ class LimitedProjection(StrEnum):
     AGGREGATE = "aggregate"
 
 
+class RefusalReason(StrEnum):
+    """Why one projection of a read refused while the rest of the read answered."""
+
+    #: A ``Tree`` or ``DirectoryRollUp`` named a retained path that is not a directory. It
+    #: depends on the index: the same projection answers while the path is a directory.
+    NOT_A_DIRECTORY = "not_a_directory"
+    #: A page stopped with rows left, and the record that would resume it is larger than
+    #: one continuation may retain. A refused ``Continue`` keeps its continuation.
+    CONTINUATION_RECORD_LIMIT = "continuation_record_limit"
+    #: A ``Continue`` named a continuation this root issued but no longer retains: an
+    #: earlier page consumed it, or newer pages evicted it. Start the page again.
+    CONTINUATION_UNAVAILABLE = "continuation_unavailable"
+
+
 class EffectiveChangeKind(StrEnum):
     INSERTED = "inserted"
     UPDATED = "updated"
@@ -258,13 +279,23 @@ class OpenedOptions:
     exclude_special: bool = False
     max_files: int | None = None
     observe: bool = False
-    journal_capacity: int | None = None
-    #: The file-type registry document's text, or ``None`` for the rules compiled into
-    #: fdu. Either dialect is accepted: a File Rollup registry or a ``[[kind]]`` manifest.
-    #: The engine parses and validates it at open and derives
-    #: ``SemanticIdentity.type_rules_fingerprint`` from what it parsed, so the identity a
-    #: read reports always describes this document. A document that does not parse raises
-    #: ``InvalidArgumentError`` before discovery starts.
+    #: A byte budget for the exact change journal ``changes()`` reads from, or ``None``
+    #: for the engine default of 8 MiB. The smallest budget is the engine's minimum,
+    #: ``MIN_JOURNAL_CAPACITY_BYTES`` in Rust: a floor that refuses an item count passed
+    #: where bytes are expected, so a smaller positive value raises ``InvalidArgumentError``
+    #: at open, and the error names the minimum. Bytes are estimated rather than measured:
+    #: each retained commit costs a fixed allowance, plus, for every change, state
+    #: transition, and dirty path it holds, a fixed allowance and the bytes of the path it
+    #: names. A consumer that falls further behind than the budget is told so with a
+    #: ``RESET`` outcome and re-reads state; there is no unbounded setting.
+    journal_capacity_bytes: int | None = None
+    #: The file-type registry: the text of the File Rollup registry document (what
+    #: MetaBrowser calls "the registry", ``recommended-file-types.toml``), or ``None`` for
+    #: the rules compiled into fdu. A ``[[kind]]`` type-rule manifest is also accepted.
+    #: The name follows the identity it produces: the engine parses and validates the
+    #: document at open and derives ``SemanticIdentity.type_rules_fingerprint`` from what
+    #: it parsed, so the fingerprint a read reports identifies this registry. A document
+    #: that does not parse raises ``InvalidArgumentError`` before discovery starts.
     type_rules: str | None = None
 
     def __post_init__(self) -> None:
@@ -277,7 +308,7 @@ class OpenedOptions:
             raise TypeError("type_rules takes the registry document's text; read the file first")
         for name, value in (
             ("batch_size", self.batch_size),
-            ("journal_capacity", self.journal_capacity),
+            ("journal_capacity_bytes", self.journal_capacity_bytes),
         ):
             if value is not None and value <= 0:
                 raise ValueError(f"{name} must be positive")
@@ -482,7 +513,18 @@ class Tree:
 
 @dataclass(frozen=True, slots=True)
 class EntrySelection:
-    """Portable opened-root row predicates composed with the one-shot query selection."""
+    """Portable opened-root row predicates composed with the one-shot query selection.
+
+    Every axis, including the globs in ``query``, matches an entry's portable identity:
+    the escaped ``/``-joined spelling a page row carries as ``Entry.portable_path``, never
+    the native path. ``100%.txt`` is ``100%25.txt`` to every predicate, and a path taken
+    from a page can be passed back into a filter unchanged. A ``ReportProjection``'s
+    selection inside an opened read follows the same rule; ``fdu.report`` and
+    ``Index.report`` keep native names.
+
+    Terminal suffixes and ancestor names are checked here, refusing what the MetaBrowser
+    ``CatalogQuery`` contract refuses, and the engine checks them again.
+    """
 
     query: Selection = field(default_factory=Selection)
     max_size: int | None = None
@@ -503,6 +545,29 @@ class EntrySelection:
     def __post_init__(self) -> None:
         if self.max_size is not None and self.max_size < 0:
             raise ValueError("entry selection max_size must be nonnegative")
+        for label, values in (
+            ("terminal_extensions", self.terminal_extensions),
+            ("ancestor_names", self.ancestor_names),
+        ):
+            if isinstance(values, str):
+                raise TypeError(f"{label} must be a tuple of strings, not a string")
+        suffixes = self.terminal_extensions
+        if len(set(suffixes)) != len(suffixes):
+            raise ValueError("terminal_extensions entries must be unique")
+        if any(not value.startswith(".") for value in suffixes):
+            raise ValueError("terminal_extensions entries must start with a dot")
+        if any(value != value.lower() for value in suffixes):
+            raise ValueError("terminal_extensions entries must be lowercase")
+        if any(
+            len(value) < 2 or "/" in value or "\\" in value or "." in value[1:]
+            for value in suffixes
+        ):
+            raise ValueError("terminal_extensions entries must be canonical terminal suffixes")
+        names = self.ancestor_names
+        if len(set(names)) != len(names):
+            raise ValueError("ancestor_names entries must be unique")
+        if any(not name or name in {".", ".."} or "/" in name or "\\" in name for name in names):
+            raise ValueError("ancestor_names entries must be exact path-component names")
 
 
 @dataclass(frozen=True, slots=True)
@@ -647,6 +712,25 @@ class LimitResult:
     rows_visited: int
 
 
+@dataclass(frozen=True, slots=True)
+class RefusedResult:
+    """One projection refused; every other projection in the same read still answered.
+
+    A read raises only when none of its projections can be trusted: an invalid request, a
+    closed root, or an ``expected`` version the root no longer holds. Anything one
+    projection finds at that version is this result instead, in that projection's place.
+    """
+
+    kind: Literal["refused"]
+    reason: RefusalReason
+    #: The path a ``NOT_A_DIRECTORY`` projection named, as the engine normalized it.
+    path: Path | None = None
+    #: For ``CONTINUATION_RECORD_LIMIT``, the bytes the record would retain.
+    attempted: int | None = None
+    #: For ``CONTINUATION_RECORD_LIMIT``, the most one record may retain.
+    limit: int | None = None
+
+
 type ProjectionResult = (
     LookupResult
     | RollUpResult
@@ -656,6 +740,7 @@ type ProjectionResult = (
     | ReportResult
     | DiagnosticsResult
     | LimitResult
+    | RefusedResult
 )
 
 
@@ -994,6 +1079,15 @@ def _projection_result(value: object) -> ProjectionResult:
             max_work=int(limit["max_work"]),
             rows_visited=int(limit["rows_visited"]),
         )
+    if kind == "refused":
+        refusal = _mapping(payload, "projection refusal")
+        return RefusedResult(
+            "refused",
+            reason=RefusalReason(str(refusal["reason"])),
+            path=Path(refusal["path"]) if refusal.get("path") is not None else None,
+            attempted=int(refusal["attempted"]) if refusal.get("attempted") is not None else None,
+            limit=int(refusal["limit"]) if refusal.get("limit") is not None else None,
+        )
     raise TypeError(f"unknown native projection result kind {kind!r}")
 
 
@@ -1307,7 +1401,7 @@ class OpenedIndex:
             exclude_special=selected.exclude_special,
             max_files=selected.max_files,
             observe=selected.observe,
-            journal_capacity=selected.journal_capacity,
+            journal_capacity_bytes=selected.journal_capacity_bytes,
             type_rules=selected.type_rules,
         )
         return cls(cast(_native.OpenedIndex, native))
@@ -1317,7 +1411,15 @@ class OpenedIndex:
         *projections: Projection,
         expected: EngineVersion | None = None,
     ) -> ReadResponse:
-        """Return all requested projections from one coherent committed boundary."""
+        """Return all requested projections from one coherent committed boundary.
+
+        The call raises only for an invalid request, a closed root, or an ``expected``
+        version the root no longer holds. A projection that cannot answer at that version
+        -- a ``Tree`` or ``DirectoryRollUp`` of a path that is not a directory, a page
+        whose continuation is too large to keep, or a ``Continue`` whose continuation was
+        consumed or evicted -- returns a :class:`RefusedResult` in its own position, and
+        every other projection still answers.
+        """
 
         raw = _opened_call(
             self._native.read,
