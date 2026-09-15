@@ -20,8 +20,9 @@
 
 mod gitignore;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use gitignore::Gitignore;
 
@@ -53,26 +54,39 @@ pub struct ControlIdentity {
     pub fingerprint: u64,
 }
 
-#[derive(Clone, Debug)]
-struct ControlSource {
+/// One distinct control content, parsed once and shared by every directory holding it.
+#[derive(Debug)]
+struct SharedContent {
     bytes: Vec<u8>,
     identity: ControlIdentity,
     matcher: Gitignore,
-    retained_cost: usize,
+    /// Charge for the exact bytes and the parsed matcher, paid once per distinct content.
+    content_cost: usize,
 }
 
-impl ControlSource {
-    fn new(bytes: Vec<u8>, retained_cost: usize) -> Self {
-        let identity = identity(&bytes);
-        let matcher = Gitignore::parse(&bytes);
-        Self { bytes, identity, matcher, retained_cost }
-    }
+/// A distinct content and how many directories of one table hold it.
+///
+/// The count belongs to the table, not to the `Arc`: a projected clone of a table shares
+/// every content with it, so the reference count cannot say which holders one table has.
+#[derive(Clone, Debug)]
+struct Holding {
+    content: Arc<SharedContent>,
+    holders: usize,
 }
 
 /// Exact `.gitignore` sources and parsed matchers, keyed by governing directory.
+///
+/// Identical sources are stored and parsed once. A tree of package checkouts repeats a few
+/// `.gitignore` files thousands of times, and charging every copy for its bytes and matcher
+/// crossed the bound at a fraction of the distinct rules the tree holds (fdu-szkg). Each
+/// directory still pays for its own key, so a tree of empty control files cannot evade the
+/// bound, and removing the last holder of a content releases the content's charge.
 #[derive(Clone, Debug, Default)]
 pub struct ControlTable {
-    by_directory: BTreeMap<PathBuf, ControlSource>,
+    by_directory: BTreeMap<PathBuf, Arc<SharedContent>>,
+    /// Distinct contents by identity. A list, because an equal length and FNV-1a digest do
+    /// not prove equal bytes, and a collision must never share another source's matcher.
+    shared: HashMap<ControlIdentity, Vec<Holding>>,
     source_bytes: usize,
     retained_cost: usize,
 }
@@ -81,8 +95,19 @@ impl ControlTable {
     /// Insert or replace one verified control source.
     ///
     /// `path` names the control file relative to the index root. The source is retained
-    /// exactly, while matching state is derived once here rather than per entry.
+    /// exactly, while matching state is derived once per distinct content rather than per
+    /// directory or per entry.
     pub fn upsert(&mut self, path: &Path, source: Vec<u8>) -> crate::Result<bool> {
+        let identity = identity(&source);
+        self.upsert_identified(path, source, identity)
+    }
+
+    fn upsert_identified(
+        &mut self,
+        path: &Path,
+        source: Vec<u8>,
+        identity: ControlIdentity,
+    ) -> crate::Result<bool> {
         let directory = control_directory(path)?;
         if let Some(line) =
             source.split(|byte| *byte == b'\n').find(|line| line.len() > MAX_CONTROL_PATTERN_BYTES)
@@ -92,12 +117,16 @@ impl ControlTable {
                 limit: MAX_CONTROL_PATTERN_BYTES,
             });
         }
-        let replaced = self.by_directory.get(directory).map_or(0, |value| value.retained_cost);
-        let incoming_cost = retained_source_cost(directory, &source);
+        if self.by_directory.get(directory).is_some_and(|current| current.bytes == source) {
+            return Ok(false);
+        }
+        let content_charge =
+            if self.holding(identity, &source).is_some() { 0 } else { content_cost(&source) };
         let next = self
             .retained_cost
-            .checked_sub(replaced)
-            .and_then(|bytes| bytes.checked_add(incoming_cost))
+            .checked_sub(self.release_charge(directory))
+            .and_then(|bytes| bytes.checked_add(directory_cost(directory)))
+            .and_then(|bytes| bytes.checked_add(content_charge))
             .ok_or(crate::Error::ControlSourceLimit {
                 attempted: usize::MAX,
                 limit: MAX_CONTROL_TABLE_BYTES,
@@ -109,28 +138,16 @@ impl ControlTable {
             });
         }
 
-        let incoming = ControlSource::new(source, incoming_cost);
-        if self.by_directory.get(directory).is_some_and(|current| current.bytes == incoming.bytes) {
-            return Ok(false);
-        }
-        let previous = self.by_directory.insert(directory.to_path_buf(), incoming);
-        self.source_bytes = self
-            .source_bytes
-            .saturating_sub(previous.as_ref().map_or(0, |value| value.bytes.len()))
-            .saturating_add(self.by_directory[directory].bytes.len());
-        self.retained_cost = next;
+        self.detach(directory);
+        self.attach(directory, source, identity);
+        debug_assert_eq!(self.retained_cost, next);
         Ok(true)
     }
 
     /// Remove one control source. Missing sources are no-ops.
     pub fn remove(&mut self, path: &Path) -> crate::Result<bool> {
         let directory = control_directory(path)?;
-        let Some(removed) = self.by_directory.remove(directory) else {
-            return Ok(false);
-        };
-        self.source_bytes -= removed.bytes.len();
-        self.retained_cost -= removed.retained_cost;
-        Ok(true)
+        Ok(self.detach(directory))
     }
 
     /// Remove every control file at or below `subtree`.
@@ -142,11 +159,74 @@ impl ControlTable {
             .cloned()
             .collect();
         for directory in directories {
-            if let Some(removed) = self.by_directory.remove(&directory) {
-                self.source_bytes -= removed.bytes.len();
-                self.retained_cost -= removed.retained_cost;
+            self.detach(&directory);
+        }
+    }
+
+    /// The holding for exactly `source`, when some directory already retains it.
+    fn holding(&self, identity: ControlIdentity, source: &[u8]) -> Option<&Holding> {
+        self.shared
+            .get(&identity)?
+            .iter()
+            .find(|holding| holding.content.bytes.as_slice() == source)
+    }
+
+    /// The charge that dropping `directory`'s current source would release.
+    fn release_charge(&self, directory: &Path) -> usize {
+        let Some(content) = self.by_directory.get(directory) else {
+            return 0;
+        };
+        let last_holder = self.shared.get(&content.identity).is_some_and(|holdings| {
+            holdings
+                .iter()
+                .any(|holding| Arc::ptr_eq(&holding.content, content) && holding.holders == 1)
+        });
+        directory_cost(directory).saturating_add(if last_holder { content.content_cost } else { 0 })
+    }
+
+    /// Drop `directory`'s source, releasing its content when this was the last holder.
+    fn detach(&mut self, directory: &Path) -> bool {
+        let Some(content) = self.by_directory.remove(directory) else {
+            return false;
+        };
+        let holdings = self.shared.get_mut(&content.identity).expect("a retained content is held");
+        let position = holdings
+            .iter()
+            .position(|holding| Arc::ptr_eq(&holding.content, &content))
+            .expect("a retained content is listed under its own identity");
+        holdings[position].holders -= 1;
+        if holdings[position].holders == 0 {
+            holdings.swap_remove(position);
+            self.retained_cost -= content.content_cost;
+            if holdings.is_empty() {
+                self.shared.remove(&content.identity);
             }
         }
+        self.retained_cost -= directory_cost(directory);
+        self.source_bytes -= content.bytes.len();
+        true
+    }
+
+    /// Hold `source` at `directory`, sharing an identical retained content when one exists.
+    fn attach(&mut self, directory: &Path, source: Vec<u8>, identity: ControlIdentity) {
+        let holdings = self.shared.entry(identity).or_default();
+        let content = if let Some(holding) =
+            holdings.iter_mut().find(|holding| holding.content.bytes == source)
+        {
+            holding.holders += 1;
+            Arc::clone(&holding.content)
+        } else {
+            let content_cost = content_cost(&source);
+            let matcher = Gitignore::parse(&source);
+            let content =
+                Arc::new(SharedContent { bytes: source, identity, matcher, content_cost });
+            holdings.push(Holding { content: Arc::clone(&content), holders: 1 });
+            self.retained_cost += content_cost;
+            content
+        };
+        self.retained_cost += directory_cost(directory);
+        self.source_bytes += content.bytes.len();
+        self.by_directory.insert(directory.to_path_buf(), content);
     }
 
     /// Matcher view for one retained path.
@@ -196,7 +276,9 @@ impl ControlTable {
                 let before = previous.by_directory.get(directory);
                 let after = self.by_directory.get(directory);
                 let changed = match (before, after) {
-                    (Some(before), Some(after)) => before.bytes != after.bytes,
+                    (Some(before), Some(after)) => {
+                        !Arc::ptr_eq(before, after) && before.bytes != after.bytes
+                    }
                     (None, None) => false,
                     (Some(_), None) | (None, Some(_)) => true,
                 };
@@ -318,17 +400,29 @@ fn identity(bytes: &[u8]) -> ControlIdentity {
     ControlIdentity { bytes: u64::try_from(bytes.len()).unwrap_or(u64::MAX), fingerprint }
 }
 
-fn retained_source_cost(directory: &Path, source: &[u8]) -> usize {
+/// Charge for one directory's key and identity, whatever content it holds.
+fn directory_cost(directory: &Path) -> usize {
+    CONTROL_SOURCE_OVERHEAD.saturating_add(directory.as_os_str().as_encoded_bytes().len())
+}
+
+/// Charge for one distinct content: its exact bytes and parsed glob bytes, plus the
+/// matcher's per-pattern and per-segment shells.
+fn content_cost(source: &[u8]) -> usize {
     let (newlines, segment_shells) = source.iter().fold((0usize, 0usize), |counts, byte| {
         (counts.0 + usize::from(*byte == b'\n'), counts.1 + usize::from(*byte == b'/'))
     });
     let pattern_shells = newlines.saturating_add(1);
-    CONTROL_SOURCE_OVERHEAD
-        .saturating_add(directory.as_os_str().as_encoded_bytes().len())
-        // Exact source and the parsed glob bytes are both retained.
-        .saturating_add(source.len().saturating_mul(2))
+    source
+        .len()
+        .saturating_mul(2)
         .saturating_add(pattern_shells.saturating_mul(64))
         .saturating_add(segment_shells.saturating_mul(24))
+}
+
+/// Charge for one source whose content no other directory holds.
+#[cfg(test)]
+fn retained_source_cost(directory: &Path, source: &[u8]) -> usize {
+    directory_cost(directory).saturating_add(content_cost(source))
 }
 
 #[cfg(test)]
@@ -350,8 +444,141 @@ pub(crate) fn source_at_test_limit() -> Vec<u8> {
 }
 
 #[cfg(test)]
+impl ControlTable {
+    /// Recompute every charge and holder count from the directories alone.
+    fn assert_consistent(&self) {
+        let mut distinct: Vec<&Arc<SharedContent>> = Vec::new();
+        let mut directory_charges = 0;
+        let mut source_bytes = 0;
+        for (directory, content) in &self.by_directory {
+            directory_charges += directory_cost(directory);
+            source_bytes += content.bytes.len();
+            if !distinct.iter().any(|seen| Arc::ptr_eq(seen, content)) {
+                distinct.push(content);
+            }
+        }
+        let content_charges: usize = distinct.iter().map(|content| content.content_cost).sum();
+        assert_eq!(self.retained_cost, directory_charges + content_charges, "retained cost");
+        assert_eq!(self.source_bytes, source_bytes, "source bytes");
+        let holdings: usize = self.shared.values().map(Vec::len).sum();
+        assert_eq!(holdings, distinct.len(), "one holding per distinct content");
+        for (identity, holdings) in &self.shared {
+            assert!(!holdings.is_empty(), "no empty identity list survives");
+            for holding in holdings {
+                assert_eq!(holding.content.identity, *identity);
+                let holders = self
+                    .by_directory
+                    .values()
+                    .filter(|content| Arc::ptr_eq(content, &holding.content))
+                    .count();
+                assert_eq!(holding.holders, holders, "holder count");
+            }
+            for (index, left) in holdings.iter().enumerate() {
+                for right in &holdings[index + 1..] {
+                    assert_ne!(left.content.bytes, right.content.bytes, "equal bytes are shared");
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Deterministic `SplitMix64`, so a failing sequence replays from its printed seed.
+    struct SplitMix(u64);
+
+    impl SplitMix {
+        fn next(&mut self) -> u64 {
+            self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
+            let mut value = self.0;
+            value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+            value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+            value ^ (value >> 31)
+        }
+
+        fn below(&mut self, bound: usize) -> usize {
+            usize::try_from(self.next() % u64::try_from(bound).expect("small bound")).expect("fits")
+        }
+    }
+
+    #[test]
+    fn shared_charges_stay_exact_through_random_upserts_and_removals() {
+        const DIRECTORIES: [&str; 6] = ["", "a", "a/b", "b", "b/c/d", "c"];
+        const CONTENTS: [&[u8]; 4] = [b"*.log\n", b"target/\n", b"!keep\n*.tmp\n", b""];
+        for seed in 0..64 {
+            let mut random = SplitMix(seed);
+            let mut table = ControlTable::default();
+            for step in 0..200 {
+                let directory = Path::new(DIRECTORIES[random.below(DIRECTORIES.len())]);
+                let path = directory.join(CONTROL_FILE_NAME);
+                match random.below(8) {
+                    0 => table.remove_subtree(directory),
+                    1 | 2 => {
+                        table.remove(&path).expect("control path");
+                    }
+                    _ => {
+                        let content = CONTENTS[random.below(CONTENTS.len())].to_vec();
+                        table.upsert(&path, content).expect("far below the bound");
+                    }
+                }
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    table.assert_consistent();
+                }))
+                .unwrap_or_else(|_| panic!("seed {seed}, step {step}: inconsistent table"));
+            }
+            for directory in DIRECTORIES {
+                table.remove(&Path::new(directory).join(CONTROL_FILE_NAME)).expect("control path");
+            }
+            assert_eq!(table.retained_cost(), 0, "seed {seed}");
+            assert_eq!(table.source_bytes(), 0, "seed {seed}");
+            assert!(table.shared.is_empty(), "seed {seed}");
+        }
+    }
+
+    #[test]
+    fn a_fingerprint_collision_never_shares_a_matcher() {
+        let collision = ControlIdentity { bytes: 6, fingerprint: 7 };
+        let mut table = ControlTable::default();
+        table
+            .upsert_identified(Path::new("a/.gitignore"), b"*.log\n".to_vec(), collision)
+            .expect("first");
+        table
+            .upsert_identified(Path::new("b/.gitignore"), b"*.tmp\n".to_vec(), collision)
+            .expect("second");
+        table.assert_consistent();
+
+        assert_eq!(table.shared[&collision].len(), 2);
+        assert!(table.is_ignored(Path::new("a/x.log"), false));
+        assert!(!table.is_ignored(Path::new("a/x.tmp"), false));
+        assert!(table.is_ignored(Path::new("b/x.tmp"), false));
+        assert!(!table.is_ignored(Path::new("b/x.log"), false));
+        assert_eq!(
+            table.retained_cost(),
+            retained_source_cost(Path::new("a"), b"*.log\n")
+                + retained_source_cost(Path::new("b"), b"*.tmp\n")
+        );
+
+        table.remove(Path::new("a/.gitignore")).expect("remove");
+        table.assert_consistent();
+        assert!(table.is_ignored(Path::new("b/x.tmp"), false));
+    }
+
+    #[test]
+    fn replacing_the_last_holder_releases_its_content_for_the_bound() {
+        let mut table = ControlTable::default();
+        let first = source_at_test_limit();
+        table.upsert(Path::new(".gitignore"), first.clone()).expect("at the bound");
+        // The same content elsewhere costs only a key, which still crosses a full table.
+        let error = table
+            .upsert(Path::new("copy/.gitignore"), first)
+            .expect_err("a key alone crosses a table at its bound");
+        assert!(matches!(error, crate::Error::ControlSourceLimit { .. }));
+        table.upsert(Path::new(".gitignore"), b"small\n".to_vec()).expect("replace");
+        table.assert_consistent();
+        assert_eq!(table.retained_cost(), retained_source_cost(Path::new(""), b"small\n"));
+    }
 
     #[test]
     fn creation_edit_and_last_removal_are_exact() {
@@ -382,6 +609,21 @@ mod tests {
                 .upsert(Path::new("nested/.gitignore"), b"now it fits\n".to_vec())
                 .expect("freed bytes are reusable")
         );
+    }
+
+    #[test]
+    fn identical_sources_share_one_content_charge() {
+        let source = b"target/\n*.log\nnode_modules/\n".to_vec();
+        let mut table = ControlTable::default();
+        table.upsert(Path::new("a/.gitignore"), source.clone()).expect("first holder");
+        let one = table.retained_cost();
+        table.upsert(Path::new("bb/.gitignore"), source.clone()).expect("second holder");
+
+        // The second directory pays for its key and nothing for content it shares.
+        assert_eq!(table.retained_cost() - one, CONTROL_SOURCE_OVERHEAD + "bb".len());
+        assert_eq!(table.source_bytes(), 2 * source.len());
+        assert!(table.is_ignored(Path::new("a/debug.log"), false));
+        assert!(table.is_ignored(Path::new("bb/debug.log"), false));
     }
 
     #[test]
