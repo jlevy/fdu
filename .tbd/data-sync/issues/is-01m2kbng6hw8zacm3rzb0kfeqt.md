@@ -3,14 +3,18 @@ type: is
 id: is-01m2kbng6hw8zacm3rzb0kfeqt
 title: Cache clear cannot reclaim snapshots from an older format, so the 0.1.0 format bump strands them
 kind: bug
-status: in_progress
+status: closed
 priority: 1
-version: 2
+version: 3
 labels:
   - release
 dependencies: []
 created_at: 2026-09-15T20:20:52.047Z
-updated_at: 2026-09-15T21:44:04.119Z
+updated_at: 2026-09-15T22:27:24.355Z
+closed_at: 2026-09-15T22:27:24.354Z
+close_reason: "816fcf7 (PR #67): --cache-status and --cache-clear identify fdu snapshots by magic and name whatever their format or engine, report stale and unrecognized files with sizes and the reclaim command, clear stale snapshots with current ones, and never remove a file that is not an fdu snapshot or follow a symlink. Rust, CLI, Python, goldens, docs and CHANGELOG updated; make check and CI green."
+resolution: null
+duplicate_of: null
 ---
 Found while drafting the 0.1.0 release notes (PR #64). On main, `--cache-clear` and `--cache-clear=all` never delete a snapshot file they do not recognize.
 
