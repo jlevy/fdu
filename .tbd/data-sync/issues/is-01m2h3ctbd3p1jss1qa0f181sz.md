@@ -5,15 +5,15 @@ title: "PR #56 review PR56B-JRN-1: MIN_JOURNAL_CAPACITY_BYTES admits budgets tha
 kind: bug
 status: closed
 priority: 3
-version: 4
+version: 6
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2h3ches22p7k9x4kka6bq6q
 created_at: 2026-09-14T23:17:50.060Z
-updated_at: 2026-09-15T00:21:42.110Z
-closed_at: 2026-09-15T00:21:42.109Z
-close_reason: "503d1e9: MIN_JOURNAL_CAPACITY_BYTES is 64 KiB (the old item-count default), derived in its doc from Commit::retained_cost; error message, Python field doc and smoke test (4096), CHANGELOG, and the journal-and-observation-recovery golden (opens at the minimum, 32-file refresh) updated; new burst-delivery test fails at the old floor."
+updated_at: 2026-09-15T00:29:43.762Z
+closed_at: 2026-09-15T00:29:43.761Z
+close_reason: "5c81bdf: MIN_JOURNAL_CAPACITY_BYTES is 64 KiB (the old item-count default), derived in its doc from Commit::retained_cost; error message, Python smoke test (4096), CHANGELOG, and the journal-and-observation-recovery golden (opens at the minimum, 32-file refresh) updated; new burst-delivery test fails at the old floor. The Python field's doc is #57's and must state the new floor."
 resolution: null
 duplicate_of: null
 ---
