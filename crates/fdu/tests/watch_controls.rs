@@ -1,12 +1,11 @@
-//! `fdu --watch` reads no `.gitignore` control state, so no control bound can end it.
+//! `fdu --watch` observes `.gitignore` control state as a one-shot report does, keeps every
+//! row's ignored share current as control files change, and no control bound can end it.
 //!
-//! No command-line view reads ignore classification, which is why a one-shot report
-//! already runs with control observation off. A watch run is the same query repeated, so
-//! observing control state bought it nothing but the control-table bounds: one ignore rule
-//! over 16 KiB, or 4 MiB of retained sources across a tree, ended the session before its
-//! first answer, or ended it later when a control file was edited. `main` had no control
-//! table and watched those trees (fdu-1onj). Sharing the one-shot scope also lets the two
-//! runs warm-start from each other's snapshot (fdu-w3l5).
+//! A watch run is the same query repeated, so it reads the rules a one-shot report reads
+//! and repaints when they change (fdu-elnn). A control file past a bound is refused and
+//! named rather than ending the session, before its first answer or after an edit
+//! (fdu-1onj). Both runs observe by default, so they share one snapshot scope and each
+//! warm-starts from the other's snapshot (fdu-w3l5).
 //!
 //! These drive the real binary, because the property is about the configuration the
 //! command line builds, not about what the engine can be configured to do.
@@ -41,8 +40,12 @@ struct Watching {
 
 impl Watching {
     fn spawn(tree: &Path, cache: &Path) -> Self {
+        Self::spawn_view(tree, cache, "files")
+    }
+
+    fn spawn_view(tree: &Path, cache: &Path, view: &str) -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_fdu"))
-            .args(["--watch", "--view", "files", "--format", "jsonl", "--interval", "1s"])
+            .args(["--watch", "--view", view, "--format", "jsonl", "--interval", "1s"])
             .arg(tree)
             .env("XDG_CACHE_HOME", cache)
             .stdin(Stdio::null())
@@ -161,6 +164,30 @@ fn a_watch_serves_a_tree_whose_ignore_rule_exceeds_the_control_bound() {
         envelope.contains("\"complete\": true"),
         "a watch over an oversized ignore rule answered only partially: {envelope}",
     );
+    assert!(
+        envelope.contains("\"applied\": 0, \"refused\": 1"),
+        "the watch read the control file and named its refusal: {envelope}",
+    );
+}
+
+#[test]
+fn a_control_file_edit_repaints_the_ignored_share() {
+    let (_root, tree) =
+        tree_with(&[(".gitignore", b"*.log\n"), ("kept.txt", b"kept"), ("debug.log", b"debug")]);
+    let cache = tempfile::tempdir().expect("cache tempdir");
+
+    let mut watch = Watching::spawn_view(&tree, cache.path(), "summary");
+    watch.wait_for("the initial summary's ignored share", |line| {
+        line.contains("\"view\": \"summary\"")
+            && line.contains("\"ignored\": {\"files\": 1, \"dirs\": 0, \"bytes\": 5,")
+    });
+
+    // No file changes size or kind; only the rule that classifies one of them does.
+    fs::write(tree.join(".gitignore"), b"# nothing ignored\n").expect("rewrite the control file");
+    watch.wait_for("a repaint with nothing ignored", |line| {
+        line.contains("\"view\": \"summary\"")
+            && line.contains("\"ignored\": {\"files\": 0, \"dirs\": 0, \"bytes\": 0,")
+    });
 }
 
 #[test]

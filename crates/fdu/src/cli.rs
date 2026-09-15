@@ -19,9 +19,10 @@ use clap::builder::styling::{AnsiColor, Style as AnsiStyle, Styles};
 use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, ValueEnum};
 
 use fdu_core::content::{AnalysisRequest, AnalysisSet};
+use fdu_core::control::ControlCoverage;
 use fdu_core::query::{
-    AxisNames, Bound, Pattern, Query, ReportSource, Selection, SizeMetric, SortKey, ViewSpec,
-    parse_size, parse_when, system_time_to_nanos,
+    AxisNames, Bound, IgnoredEntries, Pattern, Query, ReportSource, Selection, SizeMetric, SortKey,
+    ViewSpec, parse_size, parse_when, system_time_to_nanos,
 };
 use fdu_core::report_format;
 use fdu_core::report_format::human_count;
@@ -138,6 +139,8 @@ MORE COMPOSITIONS
   fdu --analyze words --view documents .
   fdu --view largest -n 100 PATH                            the 100 largest files
   fdu --view files --modified-since 1h --sort mtime PATH    recent changes
+  fdu --exclude-ignored PATH                                sizes without ignored files
+  fdu --view files --only-ignored --format jsonl PATH       what .gitignore covers
 ",
             $watch_composition,
             r"
@@ -148,9 +151,10 @@ MORE COMPOSITIONS
   matching entry, in name order. full is every view except files.
 
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
-  Scope      PATH, --scan-depth                         what is scanned and cached
+  Scope      PATH, --scan-depth, --no-gitignore         what is scanned and cached
   Content    --analyze none|lines|code|words|all        which file bodies are read
   Selection  --include, --exclude, --depth, --limit     which entries are considered
+             --exclude-ignored, --only-ignored
   View       summary,tree,families,types,extensions,languages,documents,
              largest,recent,files,full
   Format     --format text|json|jsonl|yaml, --color
@@ -176,8 +180,20 @@ CONTENT ANALYSIS
   any narrower request without re-reading.
   cache=only never opens source files and fails if requested content is absent.
 
+IGNORE RULES
+  Every report reads each .gitignore in the tree and says how much of each size
+  its rules ignore: `263 B (128 B ignored)` on summary, tree, and extension rows.
+  A directory a rule ignores is ignored with everything below it. Unignored is not
+  tracked: .git is unignored unless a rule names it. --exclude-ignored and
+  --only-ignored report one side, and sort and --min-size follow the size shown.
+  --no-gitignore reads no rules and shows no share. Only per-directory .gitignore
+  files apply, not core.excludesFile, .git/info/exclude, or a global ignore file,
+  and matching is case-sensitive on every platform. An unreadable .gitignore makes
+  the result partial, like any unreadable path.
+
 OUTPUT AND AUTOMATION
   Metadata-only machine output remains fdu.report/5; metric summaries use fdu.report/6.
+  Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
   Text language rows use canonical names; machine formats retain lowercase IDs.
   Metric rows include detection source, confidence, origin flags, and coverage.
   One-shot text reports end with a gray performance line; machine formats omit it.
@@ -366,6 +382,10 @@ pub struct Cli {
     #[arg(long, value_name = "SIZE|all", help_heading = "SCOPE")]
     pub gitignore_budget: Option<String>,
 
+    /// Read no .gitignore files: rows lose their ignored share, and the snapshot scope differs
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "SCOPE")]
+    pub no_gitignore: bool,
+
     // ---- selection: which retained entries this query considers ----
     /// Report only entries matching this glob; repeatable.
     #[arg(long, value_name = "GLOB", help_heading = "SELECTION")]
@@ -390,6 +410,14 @@ pub struct Cli {
     /// Entry kinds to report: file, dir, symlink, other.
     #[arg(long, value_name = "LIST", help_heading = "SELECTION")]
     pub kind: Option<String>,
+
+    /// Report only entries no .gitignore rule ignores; sizes and ordering follow.
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "SELECTION")]
+    pub exclude_ignored: bool,
+
+    /// Report only entries a .gitignore rule ignores.
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "SELECTION")]
+    pub only_ignored: bool,
 
     /// Directory levels to show; does not limit scanning. Accepts `all` [tree default: 2].
     ///
@@ -574,19 +602,20 @@ impl Cli {
         query
             .validate_analysis(analysis.profile)
             .map_err(|message| usage(&anyhow::anyhow!(message)))?;
-        // No command-line view reads control state yet, so no run of this command observes
-        // it. A one-shot report would not anyway: `prepare_report`'s planner turns
-        // observation off for every surface for that reason (fdu-etfj), and the setting
-        // here does not reach it. `--watch` opens an index instead, whose session drops
-        // control and reclassification effects because it only repaints the same query.
-        // Off, a watch also shares the one-shot snapshot scope, so each starts warm from the
-        // other's snapshot (fdu-w3l5). The budget is carried so the scan honours it wherever
-        // control state is observed.
+        // Every run observes `.gitignore` unless told not to, one-shot and `--watch` alike,
+        // because every row shows the ignored share of its size (fdu-elnn). Sharing the
+        // engine default also gives the command line, the Python package, and a library
+        // `open` one snapshot scope (fdu-w3l5). A selection by ignored state over a scan
+        // that reads no rule has no answer, so the library's refusal is a usage error here.
+        let read_controls = !self.no_gitignore;
+        query
+            .validate_controls(read_controls)
+            .map_err(|message| usage(&anyhow::anyhow!(message)))?;
         let config = OpenConfig {
             scan: ScanConfig {
                 max_depth: self.scan_depth,
                 one_filesystem: self.one_filesystem,
-                read_controls: false,
+                read_controls,
                 control_budget,
                 ..ScanConfig::default()
             },
@@ -673,7 +702,11 @@ impl Cli {
                 out,
                 "{}",
                 paint(
-                    &performance_footer(performance, report_started.elapsed()),
+                    &performance_footer(
+                        performance,
+                        &report.ignore_rules,
+                        report_started.elapsed()
+                    ),
                     STYLE_PERFORMANCE,
                     color,
                 )
@@ -1088,6 +1121,14 @@ impl Cli {
         if let Some(sort) = &self.sort {
             selection.sort = Some(parse_sort(sort)?);
         }
+        selection.ignored = match (self.exclude_ignored, self.only_ignored) {
+            (false, false) => IgnoredEntries::Include,
+            (true, false) => IgnoredEntries::Exclude,
+            (false, true) => IgnoredEntries::Only,
+            (true, true) => anyhow::bail!(
+                "--exclude-ignored and --only-ignored select opposite entries; use one of them"
+            ),
+        };
 
         let omitted_views = views.omitted.clone();
         let views = views.selected.clone();
@@ -1155,7 +1196,15 @@ fn watch_scope_guidance() -> String {
 }
 
 /// Format transient one-shot work without adding it to the machine-report schema.
-fn performance_footer(performance: PerformanceSummary, total: Duration) -> String {
+///
+/// The ignore-rule count sits beside the walk it was read during. It is also what tells a
+/// reader apart two reports that show no ignored share: one whose rules ignore nothing,
+/// and one that read no rules.
+fn performance_footer(
+    performance: PerformanceSummary,
+    ignore_rules: &ControlCoverage,
+    total: Duration,
+) -> String {
     let fresh = match (performance.fresh_files, performance.analysis_ns) {
         (0, _) | (_, 0) => format!("{} fresh", human_count(performance.fresh_files)),
         (files, elapsed_ns) => {
@@ -1182,8 +1231,23 @@ fn performance_footer(performance: PerformanceSummary, total: Duration) -> Strin
             ))
         )
     };
+    let rules = match ignore_rules {
+        ControlCoverage::NotObserved => "no ignore rules".to_string(),
+        ControlCoverage::Observed(observed) => {
+            let refused = if observed.refused > 0 {
+                format!(", {} refused", human_count(observed.refused))
+            } else {
+                String::new()
+            };
+            format!(
+                "ignore rules {} {}{refused}",
+                human_count(observed.applied),
+                plural_u64(observed.applied, "file", "files")
+            )
+        }
+    };
     format!(
-        "Performance: walked {} {} / {}; content read {}{}; analysis {fresh}, {cached}; {}; total {}",
+        "Performance: walked {} {} / {}; {rules}; content read {}{}; analysis {fresh}, {cached}; {}; total {}",
         human_count(performance.walked_files),
         plural_u64(performance.walked_files, "file", "files"),
         report_format::human_bytes(performance.walked_bytes),
@@ -1733,6 +1797,79 @@ mod tests {
     use std::time::UNIX_EPOCH;
 
     #[test]
+    fn the_ignored_selection_flags_pick_one_side_and_refuse_both() {
+        assert_eq!(
+            cli().resolved_query().expect("parses").selection.ignored,
+            IgnoredEntries::Include
+        );
+        let exclude = Cli { exclude_ignored: true, ..cli() }.resolved_query().expect("parses");
+        assert_eq!(exclude.selection.ignored, IgnoredEntries::Exclude);
+        let only = Cli { only_ignored: true, ..cli() }.resolved_query().expect("parses");
+        assert_eq!(only.selection.ignored, IgnoredEntries::Only);
+        assert_eq!(
+            query_error(&Cli { exclude_ignored: true, only_ignored: true, ..cli() }),
+            "--exclude-ignored and --only-ignored select opposite entries; use one of them"
+        );
+    }
+
+    /// A selection by ignored state needs the rules `--no-gitignore` turns off, so the pair
+    /// is a usage error naming both flags, raised before anything is scanned.
+    #[test]
+    fn no_gitignore_refuses_a_selection_by_ignored_state_before_scanning() {
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let args = [
+            "fdu",
+            "--no-gitignore",
+            "--only-ignored",
+            "/nonexistent-root-that-must-not-be-scanned",
+        ]
+        .map(OsString::from);
+        let status = run_with_io(&args, &mut out, &mut err, false, false);
+        assert_eq!(status, 2);
+        assert!(out.is_empty());
+        assert_eq!(
+            String::from_utf8(err).expect("UTF-8 diagnostics"),
+            "fdu: --only-ignored needs .gitignore classification, and --no-gitignore turned it \
+             off; drop one of them\n"
+        );
+    }
+
+    #[test]
+    fn the_performance_line_counts_the_ignore_rules_it_read_or_says_it_read_none() {
+        use fdu_core::control::{ControlObservation, ControlRefusalReason, RefusedControl};
+
+        let performance = PerformanceSummary {
+            walked_files: 7,
+            walked_bytes: 269,
+            ..PerformanceSummary::default()
+        };
+        let footer = |rules: &ControlCoverage| {
+            performance_footer(performance, rules, Duration::from_millis(3))
+        };
+        assert_eq!(
+            footer(&ControlCoverage::NotObserved),
+            "Performance: walked 7 files / 269 B; no ignore rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total 3.0 ms"
+        );
+        let observed = |applied, refusals: Vec<RefusedControl>| {
+            ControlCoverage::Observed(ControlObservation {
+                budget: Some(fdu_core::control::DEFAULT_CONTROL_BUDGET),
+                applied,
+                refused: u64::try_from(refusals.len()).expect("a handful"),
+                refusals,
+            })
+        };
+        assert!(footer(&observed(1, Vec::new())).contains("; ignore rules 1 file; "));
+        let refused = RefusedControl {
+            path: PathBuf::from(".gitignore"),
+            reason: ControlRefusalReason::LineGuard,
+        };
+        assert!(
+            footer(&observed(0, vec![refused])).contains("; ignore rules 0 files, 1 refused; ")
+        );
+    }
+
+    #[test]
     fn the_gitignore_budget_takes_a_size_or_all_and_names_itself_when_rejected() {
         assert_eq!(
             parse_gitignore_budget(None).expect("default"),
@@ -1863,12 +2000,15 @@ mod tests {
             scan_depth: None,
             one_filesystem: false,
             gitignore_budget: None,
+            no_gitignore: false,
             include: Vec::new(),
             exclude: Vec::new(),
             min_size: None,
             modified_since: None,
             modified_before: None,
             kind: None,
+            exclude_ignored: false,
+            only_ignored: false,
             // None, as clap now leaves it: the default belongs to the view.
             depth: None,
             limit: None,
@@ -2407,7 +2547,9 @@ mod tests {
         let footer =
             plain.lines().find(|line| line.contains("Performance:")).expect("performance footer");
         assert!(
-            footer.starts_with("Performance: walked 2 files / 8 B; content read 8 B at "),
+            footer.starts_with(
+                "Performance: walked 2 files / 8 B; ignore rules 0 files; content read 8 B at "
+            ),
             "{plain}"
         );
         assert!(footer.contains("2 fresh at "), "{footer}");
@@ -2448,12 +2590,13 @@ mod tests {
                 cached_bytes: 4_096,
                 source: ReportSource::WarmRevalidate,
             },
+            &ControlCoverage::NotObserved,
             Duration::from_millis(2_500),
         );
 
         assert_eq!(
             footer,
-            "Performance: walked 12,345 files / 2.0 KiB; content read 2.0 KiB at 1.0 KiB/s; analysis 3,000 fresh at 1.5k files/s, 2 cached / 4.0 KiB; warm revalidation; total 2.50 s"
+            "Performance: walked 12,345 files / 2.0 KiB; no ignore rules; content read 2.0 KiB at 1.0 KiB/s; analysis 3,000 fresh at 1.5k files/s, 2 cached / 4.0 KiB; warm revalidation; total 2.50 s"
         );
     }
 
