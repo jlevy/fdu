@@ -168,12 +168,15 @@ shared inode, including one whose other links lie outside the scope.
 That rule is stable across two complete captures, but a new link that sorts earlier
 moves the attribution: the delta shows a decrease at the old directory and an increase
 at the new one, with net zero at their common ancestor.
-Renaming one link of a multi-link file can move it with nothing physical changing: when
-the renamed link was the attributed one and its new path no longer sorts first, the
-file’s full allocated size moves to the directory of another in-scope link, where no
-entry changed. The durable rule, which must also survive incremental updates, is
-`fdu-579b`. `(dev, inode)` is compared only within one checkpoint: device numbers are
-not stable across reboots, and inode numbers are reused.
+Renaming one link of a multi-link file can move it with nothing physical changing,
+because attribution follows whichever in-scope link sorts first after the rename.
+If the attributed link is renamed so it no longer sorts first, the file’s full allocated
+size arrives at another link’s directory, where no entry changed.
+If another link is renamed so it now sorts first, the size leaves the previously
+attributed link’s directory, where no entry changed either.
+The durable rule, which must also survive incremental updates, is `fdu-579b`.
+`(dev, inode)` is compared only within one checkpoint: device numbers are not stable
+across reboots, and inode numbers are reused.
 
 The engine retains no link count, so grouping would otherwise have to hash every regular
 file by `(dev, inode)`. Slice 2 therefore adds the link count to the retained entry
@@ -622,9 +625,18 @@ Accounting cases have stated expected deltas:
   and the row is marked shared.
 - **One link of a multi-link file renamed:** apparent and per-path allocated bytes move
   from the old link’s directory to the new one.
-  Unique allocated is unchanged in total, but if the renamed link was the attributed one
-  and no longer sorts first, the file’s full allocated size moves to another in-scope
-  link’s directory. Each measure nets to zero at the common ancestor.
+  Each measure nets to zero at the common ancestor of the directories it moves between.
+  Unique allocated is unchanged in total, and its attribution follows whichever in-scope
+  link sorts first after the rename, which has four outcomes:
+  - The attributed link is renamed and still sorts first: attribution moves with it, as
+    per-path bytes do.
+  - The attributed link is renamed and no longer sorts first: the file’s full allocated
+    size moves to the directory of the link that now sorts first, where no entry
+    changed.
+  - Another link is renamed and still sorts after the attributed one: attribution does
+    not move.
+  - Another link is renamed and now sorts first: the size moves to its new directory
+    from the previously attributed link’s directory, where no entry changed.
 - **Last remaining link removed:** both allocated measures shrink by the file’s
   allocated size.
 - **Clone of an existing file:** both allocated measures grow by the clone’s allocated
@@ -663,11 +675,11 @@ The plan above follows each recommendation.
    allocated and apparent bytes selectable and the free-space change always shown.
    Case against: it needs retained link counts, which change the engine’s entry facts
    and snapshot format.
-   Its directory attribution can move by a file’s full size to a directory where nothing
-   changed, when a link is added or one link of a multi-link file is renamed.
-   On clone-populated macOS caches neither allocated measure removes the overstatement.
-   Alternative: per-path allocated bytes, which the roll-ups already report at no new
-   cost.
+   Its directory attribution can move a file’s full size into or out of a directory
+   where nothing changed, when a link is added or one link of a multi-link file is
+   renamed. On clone-populated macOS caches neither allocated measure removes the
+   overstatement. Alternative: per-path allocated bytes, which the roll-ups already
+   report at no new cost.
 2. **Label reuse.** Recommendation: labels move and comparisons bind to ids.
    Case against: the same command, such as `yesterday` against `today`, returns
    different answers on different days, and nothing in the invocation shows it.
