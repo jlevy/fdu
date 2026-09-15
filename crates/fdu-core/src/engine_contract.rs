@@ -1747,6 +1747,24 @@ pub enum Error {
     )]
     ControlStateNotObserved,
 
+    /// An index's control table enforces other limits than the ones its scan scope was
+    /// taken under.
+    ///
+    /// The scope's ignore-rules identity names the limits that decide which `.gitignore`
+    /// rules apply, so a table refusing under other limits would contradict it, in the index
+    /// and in every snapshot saved from it. [`Index::new_with_scope`](crate::Index) applies
+    /// the default limits whatever its scope claims;
+    /// [`Index::new_with_config`](crate::Index::new_with_config) builds a table and a scope
+    /// from one configuration, so they agree.
+    #[error(
+        "this index's .gitignore limits ({limits}) are not the ones its scan scope was taken \
+         under; build it with Index::new_with_config from the ScanConfig that made its scope"
+    )]
+    ControlLimitsOutsideScope {
+        /// The limits the index's control table enforces.
+        limits: crate::control::ControlLimits,
+    },
+
     /// An opened root's journal budget is below [`MIN_JOURNAL_CAPACITY_BYTES`].
     #[error(
         "journal_capacity_bytes is {requested} bytes, below the {minimum}-byte minimum; it is \

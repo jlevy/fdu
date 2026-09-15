@@ -1582,15 +1582,27 @@ impl Index {
     /// Create an empty index with an explicit semantic scan scope.
     ///
     /// Its control table applies the default
-    /// [`ControlLimits`](crate::control::ControlLimits). The scans behind [`crate::open`]
-    /// and [`crate::OpenedIndex`] apply the configuration's own
-    /// [`control_limits`](crate::ScanConfig::control_limits).
+    /// [`ControlLimits`](crate::control::ControlLimits), whatever limits the scope was
+    /// taken under, so a snapshot of it saves only when those agree. Build an index for any
+    /// other limits with [`Self::new_with_config`].
     pub fn new_with_scope(root_path: impl Into<PathBuf>, scope: ScanScope) -> Self {
         Self::new_with_scope_and_types(
             root_path,
             scope,
             crate::classify::TypeRegistry::compiled_shared(),
         )
+    }
+
+    /// Create an empty index with the scope, file-type rules, and control limits of
+    /// `config`, as the scans behind [`crate::open`] and [`crate::OpenedIndex`] do.
+    ///
+    /// The scope and the control table come from one configuration, so the table enforces
+    /// exactly the limits the scope's ignore-rules identity claims.
+    pub fn new_with_config(root_path: impl Into<PathBuf>, config: &crate::ScanConfig) -> Self {
+        let mut index =
+            Self::new_with_scope_and_types(root_path, config.scope(), config.types_shared());
+        index.set_control_limits(config.control_limits);
+        index
     }
 
     /// Create an index whose registry is part of its validated semantic scope.
@@ -1767,11 +1779,31 @@ impl Index {
         self.controls = crate::control::ControlTable::with_limits(limits);
     }
 
+    /// Refuse `limits` unless they are the ones this index's scope was taken under.
+    ///
+    /// A scope that observes control state names its limits in its ignore-rules identity,
+    /// and an index's scope and its table must never disagree: a table refusing under other
+    /// limits would be served, and saved, as if it applied the scope's. A scope that
+    /// observes nothing retains no table, so its limits decide nothing.
+    pub(crate) fn require_control_limits_in_scope(
+        &self,
+        limits: crate::control::ControlLimits,
+    ) -> crate::Result<()> {
+        if self.scope.observes_controls()
+            && crate::scan::observed_ignore_rules_fingerprint(limits)
+                != self.scope.ignore_rules_fingerprint
+        {
+            return Err(crate::Error::ControlLimitsOutsideScope { limits });
+        }
+        Ok(())
+    }
+
     /// Install a complete control table while restoring a detached snapshot.
     pub(crate) fn install_controls(
         &mut self,
         controls: crate::control::ControlTable,
     ) -> crate::Result<()> {
+        self.require_control_limits_in_scope(controls.limits())?;
         // Every source a table retains was admitted under its own budget, and the charge
         // does not depend on admission order, so a larger total was not written by one.
         if controls.limits().budget.is_some_and(|budget| controls.retained_cost() > budget) {

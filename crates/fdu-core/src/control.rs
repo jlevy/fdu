@@ -87,6 +87,27 @@ impl ControlLimits {
     }
 }
 
+/// `budget 4.0 MiB, line limit 16 KiB`, with `all` for an unbounded limit, the word every
+/// surface accepts back.
+impl std::fmt::Display for ControlLimits {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "budget {}, line limit {}",
+            limit_display(self.budget),
+            limit_display(self.line_limit)
+        )
+    }
+}
+
+/// One control limit as a person reads it: a size, or `all` when unbounded.
+pub(crate) fn limit_display(limit: Option<usize>) -> String {
+    limit.map_or_else(
+        || "all".to_string(),
+        |bytes| crate::report_format::human_bytes(u64::try_from(bytes).unwrap_or(u64::MAX)),
+    )
+}
+
 /// Conservative retained charge for one key, identity, and matcher shell.
 pub(crate) const CONTROL_SOURCE_OVERHEAD: usize = 64;
 

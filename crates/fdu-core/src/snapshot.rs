@@ -215,6 +215,9 @@ pub fn save(index: &Index, path: &Path) -> Result<()> {
             "refusing to persist an index that is stale, reconciling, or incomplete".into(),
         ));
     }
+    // The loader refuses a table whose limits its scope does not claim, so writing one
+    // would publish a snapshot that every later open discards.
+    index.require_control_limits_in_scope(index.control_table().limits())?;
     let mut buf: Vec<u8> = Vec::new();
     buf.extend_from_slice(MAGIC);
     buf.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
@@ -1556,6 +1559,55 @@ mod tests {
         );
     }
 
+    /// A control table must enforce the limits its scope was taken under. A hand-built index
+    /// whose scope claims other limits is refused at save with a typed error, a snapshot
+    /// whose control section disagrees with its header's scope fails closed at load, and
+    /// `Index::new_with_config` builds an index whose table and scope agree.
+    #[test]
+    fn control_limits_that_disagree_with_the_scope_are_refused_at_save_and_load() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("limits.fdu");
+        let lifted = crate::ScanConfig {
+            control_limits: crate::control::ControlLimits {
+                budget: None,
+                ..crate::control::ControlLimits::default()
+            },
+            ..crate::ScanConfig::default()
+        };
+
+        let mismatched = Index::new_with_scope("/some/root", lifted.scope());
+        let error = save(&mismatched, &path).expect_err("the scope claims no budget");
+        assert!(
+            matches!(
+                error,
+                Error::ControlLimitsOutsideScope { limits }
+                    if limits == crate::control::ControlLimits::default()
+            ),
+            "{error}"
+        );
+        assert!(!path.exists(), "nothing is written");
+
+        let agreeing = Index::new_with_config("/some/root", &lifted);
+        assert_eq!(agreeing.scope(), lifted.scope());
+        save(&agreeing, &path).expect("save an index whose table enforces its scope's limits");
+        let restored = load(&path).expect("load").expect("snapshot present");
+        assert_eq!(restored.control_coverage(), agreeing.control_coverage());
+
+        // The section ends with the budget's tag, the line limit's tag and bytes, and the
+        // refusal count. Claiming a line limit one byte longer than the scope's is a
+        // CRC-valid snapshot no save wrote, so it fails closed like any other corruption.
+        let mut forged = fs::read(&path).expect("read snapshot");
+        let footer = CHECKSUM_BYTES + TRAILER.len();
+        let line_limit_at = forged.len() - footer - 4 - 8;
+        assert_eq!(forged[line_limit_at - 1], BOUNDED_CONTROL_LIMIT);
+        let recorded = u64::try_from(crate::control::DEFAULT_CONTROL_LINE_LIMIT).expect("limit");
+        assert_eq!(forged[line_limit_at..line_limit_at + 8], recorded.to_le_bytes());
+        forged[line_limit_at..line_limit_at + 8].copy_from_slice(&(recorded + 1).to_le_bytes());
+        rewrite_checksum(&mut forged);
+        fs::write(&path, &forged).expect("write forged limits");
+        assert!(load(&path).expect("forged equals absent").is_none());
+    }
+
     /// An index whose control table refused some sources, and its path-ordered tail.
     fn index_with_refused_controls() -> Index {
         let mut index =
@@ -2300,7 +2352,10 @@ mod tests {
             one_filesystem: true,
             hidden_fingerprint: 5,
             exclude_special: true,
-            ignore_rules_fingerprint: 11,
+            // The identity of the default control limits, which the table of an index built
+            // with `new_with_scope` enforces; any other value is refused at save.
+            ignore_rules_fingerprint: crate::test_support::observing_controls()
+                .ignore_rules_fingerprint,
             type_rules_fingerprint: crate::classify::type_rule_fingerprint(),
             reducers_fingerprint: 33,
         };

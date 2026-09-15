@@ -161,6 +161,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `MAX_CONTROL_TABLE_BYTES` and `MAX_CONTROL_PATTERN_BYTES` are renamed
     `DEFAULT_CONTROL_BUDGET` and `DEFAULT_CONTROL_LINE_LIMIT`. Both limits are part of
     the snapshot scope, so changing either scans cold once.
+    `Index::new_with_config` builds an index whose table enforces the limits its scope
+    claims; saving or loading an index whose table and scope disagree is refused with
+    `Error::ControlLimitsOutsideScope`.
   - Reports carry `ignore_rules` in every machine format: `null` when no `.gitignore`
     was read, otherwise `limits` (`budget` and `line_limit`, each bytes or `null`), the
     `applied` and `refused` counts, and `refusals`, each with a `path` and the `reason`
