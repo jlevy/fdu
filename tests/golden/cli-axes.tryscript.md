@@ -268,8 +268,8 @@ Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; anal
 
 ### Every Row Says How Much of It .gitignore Ignores
 
-`project/.gitignore` ignores `dist/`, so the summary, every tree row, and every extension
-row end with the part of their size those rules ignore.
+`project/.gitignore` ignores `dist/`, so the summary, every tree row, and every
+extension row end with the part of their size those rules ignore.
 The share is left off a row with nothing ignored, and the performance line counts the
 rule files read, which is what separates a row with nothing ignored from a report that
 read no rules.

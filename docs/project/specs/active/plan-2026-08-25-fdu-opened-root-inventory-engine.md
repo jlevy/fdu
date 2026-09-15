@@ -1831,12 +1831,12 @@ has not been re-measured.
 #### Control observation is scan policy, and the design as landed
 
 Whether a scan observes control state is decided by its consumer, not by the compiled
-feature set. `ScanConfig::read_controls` defaults to on, so an index returned by `open`
-keeps the exact control state it exposes and a watch maintains.
-A request that reads no ignore classification opts out: `ScanConfig::read_controls` in
-Rust, `ScanOptions(read_controls=False)` in Python.
-Its `fdu_core::open`, `open_with_pending_save`, `fdu.open`, or `fdu.scan`, and a watch
-over that index, read no control file and share the one-shot snapshot scope.
+feature set. `ScanConfig::read_controls` defaults to on for every surface (`fdu-elnn`):
+an index returned by `open` keeps the exact control state it exposes and a watch
+maintains, and a one-shot report shows the ignored share of every row.
+A request that turns it off says so: `--no-gitignore` on the command line,
+`ScanConfig::read_controls` in Rust, `ScanOptions(read_controls=False)` in Python.
+Such a request reads no control file and keeps a snapshot scope of its own.
 An index built without observation cannot classify, and says so: `Index::is_ignored`,
 `Index::controls`, `Index::partition_total`, `Index::partition_rollup`, and
 `Index::partition_rollup_summary` return `Error::ControlStateNotObserved` rather than
@@ -1845,16 +1845,17 @@ calling every entry unignored or handing back an empty table, and a shared
 control input: `Index::apply` refuses a `ControlUpsert` or `ControlRemove` with the same
 error, and a snapshot load refuses a control table under a scope that observed none, so
 an index’s scope and its table cannot disagree.
-A one-shot report consumes no ignore classification, so the shared one-shot planner —
-`plan_report` and `prepare_report` in `crates/fdu-core/src/execution.rs` — turns
-observation off for every report, whatever the caller passed.
-The command line and the Python package both run reports through that planner, so
-neither front end decides the policy and neither can drift from the other.
-`fdu.open` keeps the default, and the opened root always observes because its ignored
-and unignored partitions are the contract it serves.
-`fdu --watch` opens an index but turns observation off in the command line’s scan
-configuration: no command-line view reads control state, so it shares the one-shot
-scope.
+The shared one-shot planner — `plan_report` and `prepare_report` in
+`crates/fdu-core/src/execution.rs` — follows the caller’s setting.
+It once turned observation off for every report, because no view then read ignore
+classification; once every row carried an ignored share, that override would have read
+nothing a report showed, so it was removed with the view that displays it (`fdu-elnn`,
+`fdu-5ryb`). The aggregate-only summary plan keeps no control table, so an observing
+summary falls closed to the index.
+A selection by ignored state over a request that turned observation off is refused, in
+each surface’s names for both knobs.
+The opened root always observes because its ignored and unignored partitions are the
+contract it serves, and `fdu --watch` observes by default like a report.
 
 Three rules keep the switch honest:
 
@@ -1873,8 +1874,8 @@ Three rules keep the switch honest:
   the all-entry facts, and names the requested scope, so it may answer a controls-off
   request from a controls-on snapshot such as `open` leaves.
   Every scanning policy treats a scope mismatch as no usable snapshot and scans cold, so
-  a default `open` does not warm-start from a report’s snapshot, while one that opts out
-  shares its scope and does.
+  default requests share one scope and warm-start from each other’s snapshots, while a
+  request that turned observation off keeps its own.
 
 #### Control bounds degrade, and the design as landed
 
@@ -1955,11 +1956,11 @@ before anything tunes what that state costs.
   compile feature alone (`fdu-etfj`). Landed as `ScanConfig::read_controls`, decided for
   one-shot reports by the shared planner, with the scope identity and snapshot
   acceptance described above.
-  Acceptance by surface: a command-line one-shot report and a Python `fdu.report`
-  perform no control-file I/O and retain no control state, because both run through
-  `prepare_report`. The opened root and `open` observe exact control state, and since
-  `fdu-1onj` a control bound degrades rather than ends them; `fdu --watch` has observed
-  none since the command line turned it off.
+  Acceptance by surface: every default request observes exact control state, and since
+  `fdu-1onj` a control bound degrades rather than ends it.
+  The planner’s override that kept one-shot reports from observing was removed when
+  reports began showing the ignored share (`fdu-elnn`); `--no-gitignore` and
+  `read_controls` off perform no control-file I/O on any surface.
 - [x] Replace the abort with degradation (`fdu-1onj`). Landed as described in “Control
   bounds degrade”: a refused source is a typed coverage fact naming the files, on the
   cold, streaming, reconcile, watch, and opened-root paths, carried by snapshot format
@@ -1985,8 +1986,9 @@ result instead of an error.
 Acceptance for Phase 4:
 
 - a default one-shot roll-up of `~` and of `~/wrk`, from the command line or from
-  `fdu.report`, completes on macOS, performing no control-file I/O and retaining no
-  control state;
+  `fdu.report`, completes on macOS with every size exact, reading `.gitignore` files and
+  naming any the control budget refused, and `--no-gitignore` performs no control-file
+  I/O and retains no control state;
 - opened-root and inventory consumers still receive exact, removal-aware control state,
   and the `--no-default-features` build is unaffected;
 - crossing the runtime retention budget produces a usable roll-up plus an explicit

@@ -253,8 +253,8 @@ snapshot replaced
 ## Reading No .gitignore Is a Separate Scope
 
 A report that turns `.gitignore` off records a scope without classification.
-A cache-only report that also turns it off may answer from a default snapshot, because it
-reads only the sizes a default scan also recorded; it says it read no rules.
+A cache-only report that also turns it off may answer from a default snapshot, because
+it reads only the sizes a default scan also recorded; it says it read no rules.
 
 ```console
 $ fdu --format json --size apparent --depth 0 --limit 0 project
@@ -302,9 +302,9 @@ $ fdu --no-gitignore --cache only --format json --size apparent --depth 0 --limi
 ? 0
 ```
 
-The reverse cannot work: a snapshot written without the rules has no classification for a
-default request to report, so a cache-only default request refuses it and names the way
-out.
+The reverse cannot work: a snapshot written without the rules has no classification for
+a default request to report, so a cache-only default request refuses it and names the
+way out.
 
 ```console
 $ fdu --no-gitignore --format json --size apparent --depth 0 --limit 0 project

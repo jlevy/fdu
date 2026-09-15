@@ -178,8 +178,9 @@ A single unfiltered `--no-gitignore --view summary PATH` is the one exact compos
 that retains only aggregate tallies and no index, under every cache policy except `only`
 and `refresh`, whose contracts are about the snapshot itself.
 Under the rest a snapshot cannot save the walk that request is already doing, so it
-neither reads nor writes one. Without `--no-gitignore` the summary reads `.gitignore` to
-report its ignored share, which needs the index.
+neither reads nor writes one.
+Without `--no-gitignore` the summary reads `.gitignore` to report its ignored share,
+which needs the index.
 Ordinary metadata requests retain the reusable index but never read regular-file
 contents.
 Any `--analyze` value other than `none` opts into streaming reads through every
@@ -260,9 +261,10 @@ scanned and retained, so do not reach for it merely to shorten output.
 
 ## Read What `.gitignore` Covers
 
-Every report reads the tree's `.gitignore` files. Summary, tree, and extension rows end
-with the part of their size those rules ignore, as `(128 B ignored)`, left off a row with
-no ignored file; the performance line counts the rule files read.
+Every report reads the tree’s `.gitignore` files.
+Summary, tree, and extension rows end with the part of their size those rules ignore, as
+`(128 B ignored)`, left off a row with no ignored file; the performance line counts the
+rule files read.
 
 ```bash
 fdu --exclude-ignored PATH                              # folders by what the rules leave

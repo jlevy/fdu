@@ -163,6 +163,36 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     analysis; Python `Status.ignore_rules` carries the same value.
   - The snapshot format moves to version 4, carrying the budget and every refusal, so
     existing snapshots are rebuilt once.
+- **Breaking:** every surface reads `.gitignore` by default and reports how much of each
+  size its rules ignore.
+  - `fdu PATH` and `fdu --watch PATH` observe control state, as `prepare_report`,
+    `fdu.report`, `open`, and `fdu.open` now all do: the one-shot planner no longer
+    turns it off. `--no-gitignore` on the command line, and `read_controls` off in the
+    library and Python, reads no rules.
+  - Text summary, tree, and extension rows end with `(N ignored)` when they hold an
+    ignored file, and the performance line counts the rule files read or says
+    `no ignore rules`.
+  - Machine summary, tree, and extension rows carry an `ignored` object and file rows an
+    `ignored` flag, `null` when no rule was read.
+    The fields join the `fdu.report/5` and `fdu.report/6` schemas this release already
+    introduced. Rust `SummaryRow`, `TreeNode`, `TypeRow`, and `FileRow` gain `ignored`,
+    `Report` gains `ignored_entries`, `Candidate` gains `ignored`, and
+    `EntrySelection::admits` reads the bit from the candidate instead of a second
+    argument; Python rows gain `ignored` and `IgnoredTally`.
+  - `--exclude-ignored` and `--only-ignored`, `Selection::ignored` in Rust, and
+    `Selection(ignored=IgnoredEntries...)` in Python report one side; sizes, sorting,
+    and `--min-size` follow the entries shown.
+    Over a scan that read no rules the selection is refused: a usage error on the
+    command line, `InvalidArgumentError` in Python, and `Error::ControlStateNotObserved`
+    from `prepare_report` and a watch session.
+  - An unfiltered `--view summary` that reads `.gitignore` retains the index to classify
+    entries, so it uses more memory than the aggregate-only plan, which
+    `--no-gitignore --view summary` still takes, and it saves a snapshot like any other
+    report.
+  - An unreadable `.gitignore` is an unreadable path: the result is partial and the
+    command exits 2 unless `--allow-partial`.
+  - Default snapshots now carry control state, so the first default run after upgrading
+    scans cold once, and `fdu --no-gitignore` keeps a snapshot scope of its own.
 - One projection of an opened-root read can refuse while the rest of the read answers.
   `ProjectionResult::Refused`, `RefusedResult` in Python, names why: a `Tree` or roll-up
   of a path that is not a directory, a page whose continuation record would exceed its
