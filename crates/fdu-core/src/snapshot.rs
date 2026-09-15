@@ -782,7 +782,7 @@ fn put_controls(buf: &mut Vec<u8>, controls: &crate::control::ControlTable) -> R
     {
         return Err(Error::Snapshot(format!(
             "the control table retains {} bytes of charge, above the {} bytes a snapshot can \
-             carry; a smaller control budget would have refused the excess",
+             carry; set a control budget below it, or open without a cache",
             controls.retained_cost(),
             SNAPSHOT_CONTROL_TABLE_CEILING
         )));

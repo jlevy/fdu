@@ -1580,6 +1580,11 @@ impl Index {
     }
 
     /// Create an empty index with an explicit semantic scan scope.
+    ///
+    /// Its control table refuses sources past
+    /// [`DEFAULT_CONTROL_BUDGET`](crate::control::DEFAULT_CONTROL_BUDGET). The scans behind
+    /// [`crate::open`] and [`crate::OpenedIndex`] apply the configuration's own
+    /// [`control_budget`](crate::ScanConfig::control_budget).
     pub fn new_with_scope(root_path: impl Into<PathBuf>, scope: ScanScope) -> Self {
         Self::new_with_scope_and_types(
             root_path,

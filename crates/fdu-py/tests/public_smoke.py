@@ -549,6 +549,15 @@ def main() -> None:
     for volatile in ("scan_started_at", "generated_at", "source"):
         cli_wire.pop(volatile)
         wire.pop(volatile)
+    # The index read `.gitignore` control state and the command line reads none, and the
+    # envelope says so on each side rather than agreeing on a value neither observed.
+    assert cli_wire.pop("ignore_rules") is None, cli_wire
+    assert wire.pop("ignore_rules") == {
+        "budget": 4 * 1024 * 1024,
+        "applied": 0,
+        "refused": 0,
+        "refusals": [],
+    }, wire
     assert wire == cli_wire, (wire, cli_wire)
 
     print(f"fdu {fdu.__version__} public API ok")
