@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -14,12 +15,17 @@ from urllib.request import Request, urlopen
 
 USER_AGENT = "fdu-release-audit/0.1 (+https://github.com/jlevy/fdu)"
 
+# Every published crate, in publication order. Each is its own crates.io record, so each
+# is classified on its own; inspect_artifacts.py names the same crates.
+CRATE_PACKAGES = ("fdu-core", "fdu")
+
 
 @dataclass(frozen=True, slots=True)
 class RegistryState:
     """Read-only comparison of one registry version with expected artifacts."""
 
     channel: str
+    package: str
     version: str
     state: str
     detail: str
@@ -45,15 +51,18 @@ def expected_artifacts(manifest: Path, kind: str) -> dict[str, str]:
 
 def classify_files(
     channel: str,
+    package: str,
     version: str,
     expected: dict[str, str],
     published: dict[str, str] | None,
 ) -> RegistryState:
     """Classify an immutable file set as missing, identical, or conflicting."""
     if published is None:
-        return RegistryState(channel, version, "missing", "version is not present")
+        return RegistryState(channel, package, version, "missing", "version is not present")
     if expected == published:
-        return RegistryState(channel, version, "identical", "all filenames and hashes match")
+        return RegistryState(
+            channel, package, version, "identical", "all filenames and hashes match"
+        )
 
     missing = sorted(expected.keys() - published.keys())
     unexpected = sorted(published.keys() - expected.keys())
@@ -69,7 +78,7 @@ def classify_files(
         parts.append(f"unexpected: {', '.join(unexpected)}")
     if changed:
         parts.append(f"hash mismatch: {', '.join(changed)}")
-    return RegistryState(channel, version, "conflict", "; ".join(parts))
+    return RegistryState(channel, package, version, "conflict", "; ".join(parts))
 
 
 def get(url: str) -> bytes | None:
@@ -92,7 +101,7 @@ def pypi_state(manifest: Path, version: str) -> RegistryState:
     }
     body = get(f"https://pypi.org/pypi/fdu/{version}/json")
     if body is None:
-        return classify_files("pypi", version, expected, None)
+        return classify_files("pypi", "fdu", version, expected, None)
     document: dict[str, Any] = json.loads(body)
     urls = document.get("urls")
     if not isinstance(urls, list):
@@ -104,18 +113,30 @@ def pypi_state(manifest: Path, version: str) -> RegistryState:
         and isinstance(item.get("digests"), dict)
         and item["digests"].get("sha256")
     }
-    return classify_files("pypi", version, expected, published)
+    return classify_files("pypi", "fdu", version, expected, published)
 
 
-def crates_io_state(manifest: Path, version: str) -> RegistryState:
-    """Compare the expected Cargo package with crates.io's immutable download."""
+def crates_io_state(
+    manifest: Path,
+    version: str,
+    fetch: Callable[[str], bytes | None] = get,
+) -> list[RegistryState]:
+    """Compare every expected Cargo package with its immutable crates.io download."""
     expected = expected_artifacts(manifest, "crate")
-    body = get(f"https://crates.io/api/v1/crates/fdu/{version}/download")
-    published = None
-    if body is not None:
-        filename = f"fdu-{version}.crate"
-        published = {filename: hashlib.sha256(body).hexdigest()}
-    return classify_files("crates.io", version, expected, published)
+    filenames = {package: f"{package}-{version}.crate" for package in CRATE_PACKAGES}
+    unexpected = sorted(expected.keys() - set(filenames.values()))
+    if unexpected:
+        raise ValueError(f"artifact manifest has unexpected crates: {', '.join(unexpected)}")
+    states = []
+    for package, filename in filenames.items():
+        if filename not in expected:
+            raise ValueError(f"artifact manifest has no {filename}")
+        body = fetch(f"https://crates.io/api/v1/crates/{package}/{version}/download")
+        published = None if body is None else {filename: hashlib.sha256(body).hexdigest()}
+        states.append(
+            classify_files("crates.io", package, version, {filename: expected[filename]}, published)
+        )
+    return states
 
 
 def parser() -> argparse.ArgumentParser:
@@ -133,7 +154,7 @@ def main() -> None:
     args = parser().parse_args()
     states = []
     if args.channel in {"all", "crates.io"}:
-        states.append(crates_io_state(args.manifest, args.version))
+        states.extend(crates_io_state(args.manifest, args.version))
     if args.channel in {"all", "pypi"}:
         states.append(pypi_state(args.manifest, args.version))
     document = {"version": args.version, "registries": [asdict(state) for state in states]}
