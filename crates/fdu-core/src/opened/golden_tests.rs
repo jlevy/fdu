@@ -358,6 +358,9 @@ fn coherent_projections_and_continuations() -> SessionTrace {
 }
 
 fn journal_and_observation_recovery() -> SessionTrace {
+    // Each refreshed file costs its refresh about three small commits, a little over 2 KiB
+    // of journal together, so this many overflow the minimum budget with room to spare.
+    const BULK_FILES: usize = 32;
     let root = tempfile::tempdir().expect("observation root");
     let scripts = tempfile::tempdir().expect("observation scripts");
     let script = scripts.path().join("events.script");
@@ -387,9 +390,6 @@ fn journal_and_observation_recovery() -> SessionTrace {
     cursor = poll(&opened, &mut trace, cursor, Duration::ZERO);
     cursor = poll(&opened, &mut trace, cursor, Duration::ZERO);
 
-    // Each refreshed file costs its refresh about three small commits, a little over 2 KiB
-    // of journal together, so this many overflow the minimum budget with room to spare.
-    const BULK_FILES: usize = 32;
     let reset_cursor = cursor;
     let mut bulk_paths = Vec::new();
     for index in 0..BULK_FILES {
