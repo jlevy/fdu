@@ -21,6 +21,10 @@ RELEASE_WHEEL_PLATFORMS = {
     "Windows x86-64": re.compile(r"win_amd64\.whl$"),
 }
 
+# Every published crate, in publication order: `fdu` resolves `fdu-core` from crates.io,
+# so the engine goes first. registry_state.py names the same crates.
+CRATE_PACKAGES = ("fdu-core", "fdu")
+
 
 @dataclass(frozen=True, slots=True)
 class Artifact:
@@ -28,6 +32,7 @@ class Artifact:
 
     filename: str
     kind: str
+    package: str
     bytes: int
     sha256: str
 
@@ -105,9 +110,9 @@ def inspect_sdist(path: Path, version: str) -> None:
     )
 
 
-def inspect_crate(path: Path, version: str) -> None:
+def inspect_crate(path: Path, package: str, version: str) -> None:
     """Validate the Cargo package's identity and legal/discovery files."""
-    prefix = f"fdu-{version}/"
+    prefix = f"{package}-{version}/"
     with tarfile.open(path, "r:gz") as archive:
         names = set(archive.getnames())
     for member in ("Cargo.toml", "Cargo.toml.orig", "LICENSE", "README.md", "src/lib.rs"):
@@ -120,14 +125,22 @@ def inspect_directory(
     *,
     require_release_matrix: bool = False,
 ) -> list[Artifact]:
-    """Validate exactly one crate/sdist and every wheel in a release directory."""
+    """Validate one sdist, one crate per published package and no other, and every wheel."""
     paths = sorted(path for path in directory.iterdir() if path.is_file())
     wheels = [path for path in paths if path.suffix == ".whl"]
     sdists = [path for path in paths if path.name == f"fdu-{version}.tar.gz"]
-    crates = [path for path in paths if path.name == f"fdu-{version}.crate"]
     require(bool(wheels), "no wheels found")
     require(len(sdists) == 1, "expected exactly one fdu source distribution")
-    require(len(crates) == 1, "expected exactly one fdu crate")
+    expected_crates = {f"{package}-{version}.crate" for package in CRATE_PACKAGES}
+    unexpected = [
+        path.name for path in paths if path.suffix == ".crate" and path.name not in expected_crates
+    ]
+    require(not unexpected, f"unexpected crates: {', '.join(unexpected)}")
+    crates: dict[str, Path] = {}
+    for package in CRATE_PACKAGES:
+        matches = [path for path in paths if path.name == f"{package}-{version}.crate"]
+        require(len(matches) == 1, f"expected exactly one {package} crate")
+        crates[package] = matches[0]
     if require_release_matrix:
         require(len(wheels) == len(RELEASE_WHEEL_PLATFORMS), "expected exactly five wheels")
         for label, pattern in RELEASE_WHEEL_PLATFORMS.items():
@@ -140,12 +153,17 @@ def inspect_directory(
         )
         inspect_wheel(wheel, version)
     inspect_sdist(sdists[0], version)
-    inspect_crate(crates[0], version)
-    artifacts = []
-    for path in [*wheels, *sdists, *crates]:
-        kind = "wheel" if path.suffix == ".whl" else "sdist" if path in sdists else "crate"
-        artifacts.append(Artifact(path.name, kind, path.stat().st_size, digest(path)))
-    return artifacts
+    for package, path in crates.items():
+        inspect_crate(path, package, version)
+    labelled = [
+        *((path, "wheel", "fdu") for path in wheels),
+        *((path, "sdist", "fdu") for path in sdists),
+        *((path, "crate", package) for package, path in crates.items()),
+    ]
+    return [
+        Artifact(path.name, kind, package, path.stat().st_size, digest(path))
+        for path, kind, package in labelled
+    ]
 
 
 def parser() -> argparse.ArgumentParser:

@@ -25,7 +25,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.18.0
-      - run: node --test scripts/check-supply-chain.test.mjs
+      - run: node --test scripts/check-supply-chain.test.mjs scripts/check-uv-version.test.mjs
       - run: node scripts/check-supply-chain.mjs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

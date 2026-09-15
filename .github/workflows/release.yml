@@ -66,15 +66,15 @@ jobs:
         run: cargo package --locked -p fdu-core -p fdu
         env:
           FDU_RELEASE_TAG: ${{ needs.plan.outputs.release_tag }}
-      - name: Smoke-test extracted crate CLI
+      # The packaged `fdu` resolves `fdu-core` from crates.io, where it does not exist
+      # until the first publish, so installing it locked from its own lockfile fails here.
+      # The script installs it, locked, against the packaged `fdu-core` instead, and
+      # checks the installed command reports exactly this version (fdu-y5zc).
+      - name: Install and smoke-test the packaged crate CLI
         run: >-
-          cargo install
-          --path "target/package/fdu-${{ needs.plan.outputs.version }}"
-          --locked
-          --root "${RUNNER_TEMP}/fdu-crate"
-        env:
-          FDU_RELEASE_TAG: ${{ needs.plan.outputs.release_tag }}
-      - run: '"${RUNNER_TEMP}/fdu-crate/bin/fdu" --version'
+          python3 scripts/release/smoke_crate.py target/package
+          --version "${{ needs.plan.outputs.version }}"
+          --work-dir "${RUNNER_TEMP}/fdu-crate"
       # Both crates are release artifacts: `fdu-core` has to be published first, or `fdu`
       # has nothing to resolve against.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

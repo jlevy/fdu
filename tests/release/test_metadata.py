@@ -42,6 +42,16 @@ class MetadataTests(unittest.TestCase):
         self.assertNotIn("cargo publish", workflow)
         self.assertNotIn("gh-action-pypi-publish", workflow)
 
+    def test_workflow_and_local_rehearsal_run_the_same_crate_smoke(self) -> None:
+        # A plain `cargo install --locked` of the packaged `fdu` cannot resolve an
+        # unpublished `fdu-core`; both paths must use the script that patches it (fdu-y5zc).
+        workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        rehearsal = makefile.split("\nrelease-rehearse:", 1)[1].split("\n\n", 1)[0]
+        for text in (workflow, rehearsal):
+            self.assertIn("scripts/release/smoke_crate.py", text)
+        self.assertNotIn("cargo install", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

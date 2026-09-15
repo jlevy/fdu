@@ -16,6 +16,10 @@ repository.workspace = true
 authors.workspace = true
 include = ["src/**", "tests/**", "build.rs", "Cargo.toml", "LICENSE"]
 
+# Publish the documentation surface the docs gate checks: every build feature.
+[package.metadata.docs.rs]
+all-features = true
+
 # A library as well as a binary: the Python wheel's `fdu` console script runs this
 # command, so `run_process` has to be callable rather than only executable.
 [lib]
