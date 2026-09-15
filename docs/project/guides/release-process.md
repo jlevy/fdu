@@ -265,8 +265,7 @@ pinned Rust.
    ```
 
    If `cargo publish` succeeded but the audit still reports `fdu-core` as `missing`, the
-   download endpoint the audit reads may not serve the new file yet, even though the
-   index Cargo waited for does.
+   crates.io version record the audit reads may be trailing the index Cargo waited for.
    Rerun the audit once a minute for up to ten minutes.
    A `missing` that outlasts that is a failed upload.
 
@@ -356,7 +355,9 @@ uv run --no-project --python 3.12 python scripts/release/registry_state.py \
 Neither crates.io nor PyPI lets a version’s files be replaced, even after a yank or a
 deletion.
 So when any step fails, first run that channel’s audit, the `registry_state.py`
-command from the step that failed, and let its verdict decide what comes next:
+command from the step that failed, and let its verdict decide what comes next.
+An audit that cannot read a registry stops with an error naming the URL and exits 1.
+That is no verdict: rerun the audit, and never read it as `missing`.
 
 | Audit reports | Meaning | Next step |
 | --- | --- | --- |
@@ -377,7 +378,7 @@ is on crates.io.
 
    - the audit’s output;
    - the published digest of each conflicting crate beside the manifest’s, from
-     `curl -sSL -A 'fdu-release (https://github.com/jlevy/fdu)' https://crates.io/api/v1/crates/<crate>/0.1.0/download | shasum -a 256`;
+     `curl -fsSL -A 'fdu-release (https://github.com/jlevy/fdu)' https://crates.io/api/v1/crates/<crate>/0.1.0/download | shasum -a 256`;
    - the host and toolchain that published (`uname -a`, `cargo -V`) and the digests step
      2 of Publish the Crates printed;
    - the release commit, the rehearsal’s run ID, and every version yanked.

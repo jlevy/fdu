@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
+import re
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -81,8 +81,17 @@ def classify_files(
     return RegistryState(channel, package, version, "conflict", "; ".join(parts))
 
 
+class RegistryError(RuntimeError):
+    """A registry could not be read, so the audit has no verdict for it."""
+
+
 def get(url: str) -> bytes | None:
-    """Fetch a public registry resource, mapping an authoritative 404 to absence."""
+    """
+    Fetch a public registry resource, mapping an authoritative 404 to absence.
+
+    Every other failure raises, naming the URL: a refusal, an outage, or an unreachable
+    host read as `missing` would report an upload that landed as one that did not.
+    """
     request = Request(url, headers={"Accept": "application/json", "User-Agent": USER_AGENT})
     try:
         with urlopen(request, timeout=30) as response:
@@ -90,7 +99,9 @@ def get(url: str) -> bytes | None:
     except HTTPError as error:
         if error.code == 404:
             return None
-        raise
+        raise RegistryError(f"{url}: {error}") from error
+    except OSError as error:
+        raise RegistryError(f"{url}: {error}") from error
 
 
 def pypi_state(manifest: Path, version: str) -> RegistryState:
@@ -121,7 +132,14 @@ def crates_io_state(
     version: str,
     fetch: Callable[[str], bytes | None] = get,
 ) -> list[RegistryState]:
-    """Compare every expected Cargo package with its immutable crates.io download."""
+    """
+    Compare every expected Cargo package with its crates.io version record.
+
+    A version that does not exist is an authoritative 404, and the record's `checksum` is
+    the SHA-256 of the published `.crate`. The download endpoint cannot stand in for it:
+    asked for JSON it answers 200 with a URL for any version, published or not, and the
+    file host it redirects to answers 403, not 404, for a missing file.
+    """
     expected = expected_artifacts(manifest, "crate")
     filenames = {package: f"{package}-{version}.crate" for package in CRATE_PACKAGES}
     unexpected = sorted(expected.keys() - set(filenames.values()))
@@ -131,12 +149,22 @@ def crates_io_state(
     for package, filename in filenames.items():
         if filename not in expected:
             raise ValueError(f"artifact manifest has no {filename}")
-        body = fetch(f"https://crates.io/api/v1/crates/{package}/{version}/download")
-        published = None if body is None else {filename: hashlib.sha256(body).hexdigest()}
+        body = fetch(f"https://crates.io/api/v1/crates/{package}/{version}")
+        published = None if body is None else {filename: crate_checksum(body, package, version)}
         states.append(
             classify_files("crates.io", package, version, {filename: expected[filename]}, published)
         )
     return states
+
+
+def crate_checksum(body: bytes, package: str, version: str) -> str:
+    """Read the published `.crate` SHA-256 from a crates.io version record."""
+    document: Any = json.loads(body)
+    record = document.get("version") if isinstance(document, dict) else None
+    checksum = record.get("checksum") if isinstance(record, dict) else None
+    if not isinstance(checksum, str) or re.fullmatch(r"[0-9a-f]{64}", checksum) is None:
+        raise ValueError(f"crates.io record for {package} {version} has no SHA-256 checksum")
+    return checksum
 
 
 def exit_status(states: list[RegistryState], *, require_identical: bool) -> int:
