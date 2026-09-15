@@ -394,21 +394,24 @@ checkpoint, so hard-link grouping never meets one file under two device numbers.
 older development format and says so.
 Once a release writes checkpoints, they are user-owned data:
 
-- The reader keeps every released checkpoint format readable for the comparison facts,
-  and never rewrites a checkpoint in place.
+- The reader keeps every released checkpoint format readable for the comparison facts
+  until that format’s support window closes, and never rewrites a checkpoint in place.
 - Compaction, which already republishes blocks atomically, may re-encode what it copies
   in the current format, provided the A→B result of every retained id pair is unchanged.
+  Nothing depends on it doing so: a pinned checkpoint that compaction never copies keeps
+  the format it was written in.
 - A checkpoint in a format the reader cannot read is refused, never skipped, with an
   error naming its id, its format version, and the remedy.
   For a newer format, the remedy is a release that reads it.
-  For a retired older format, it is the range of releases that still read that format
-  and re-encode it, or explicit removal.
-- Retirement takes effect per user store, not per release.
-  A release drops a format’s reader only after earlier releases have re-encoded, by
-  atomic replacement, every checkpoint they found in that format, and its release note
-  names the last release that reads it.
-  A store that skipped those releases still holds the format and meets the refusal
-  above, so neither direction has a silent path.
+  For a retired older format, it is the range of releases that still read that format,
+  or explicit removal.
+- A format’s reader is retired only after a support window, a number of releases
+  documented when the first release writes checkpoints, has shipped since the last
+  release that wrote that format.
+  The release that drops the reader names the last release that reads it in its release
+  note. Retirement requires no re-encoding, so a store can still hold the format
+  afterwards, for example in a pinned checkpoint that compaction never copied.
+  That checkpoint meets the refusal above, so neither direction has a silent path.
 
 **Scope and classification changes.** Whether a comparison is valid is decided per
 measure, from the recorded identities:
@@ -489,8 +492,9 @@ root’s ignored delta whenever any source below it was refused.
   writes it, then SUPPORT BOTH at the reader for released versions.
   The protected data is retained checkpoints.
   Tests keep a stored checkpoint pair in each released format and assert its recorded
-  A→B result. Support for a format ends with a release note naming the last release that
-  reads it, and a store still holding that format is refused with that remedy.
+  A→B result. Support for a format ends after its documented support window, with a
+  release note naming the last release that reads it, and a store still holding that
+  format is refused with that remedy.
 - **Persisted client state:** Labels and pins follow the checkpoint store.
 - **Database schemas:** N/A.
 
@@ -672,11 +676,14 @@ The plan above follows each recommendation.
    resolution step, but forces dated names on the rolling `yesterday` workflow and still
    needs a separate notion of the latest checkpoint.
 3. **Released checkpoint formats.** Recommendation: keep each released format readable
-   and never rewrite a checkpoint in place.
+   for a documented support window, never rewrite a checkpoint in place, and refuse a
+   retired format with the releases that read it.
    Case against: every retained reader is a compounding cost.
    Each later format change has to be tested against a stored checkpoint pair in every
    released format for as long as that format is supported, which the backward
    compatibility requirements commit to.
+   And once the window closes, a pinned baseline that compaction never copied becomes
+   unreadable to current releases, however deliberately it was kept.
    Alternative: migrating on upgrade keeps one reader, at the cost of rewriting
    user-owned data, which then has to be atomic and verified against earlier comparison
    results.
