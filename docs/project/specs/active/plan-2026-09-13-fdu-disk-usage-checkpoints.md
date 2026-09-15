@@ -177,9 +177,12 @@ not stable across reboots, and inode numbers are reused.
 
 The engine retains no link count, so grouping would otherwise have to hash every regular
 file by `(dev, inode)`. Slice 2 therefore adds the link count to the retained entry
-facts in `fdu-core`, so only files with more than one link enter the group.
-The metadata calls the scanner already makes can supply it: `st_nlink` from `stat`, and
-`ATTR_FILE_LINKCOUNT`, which `getattrlistbulk` can request.
+facts in `fdu-core`, as a new field of `Attrs`, so only files with more than one link
+enter the group. The metadata calls the scanner already makes can supply it: `st_nlink`
+from `stat`, and `ATTR_FILE_LINKCOUNT`, which `getattrlistbulk` can request.
+The snapshot writes each entry’s `Attrs` as fixed-width fields, so the same change
+alters the record layout and bumps the snapshot `FORMAT_VERSION`; existing snapshots
+become clean misses.
 
 **Where file identity is not observed.** Unique allocated bytes need a real
 `(dev, inode)` and a link count.
@@ -390,11 +393,17 @@ Once a release writes checkpoints, they are user-owned data:
   and never rewrites a checkpoint in place.
 - Compaction, which already republishes blocks atomically, may re-encode what it copies
   in the current format, provided the A→B result of every retained id pair is unchanged.
-- A checkpoint in a newer format than the reader knows is refused with an error naming
-  its id and version, and the remedy: use a release that reads it, or remove it
-  explicitly.
-- Retiring a released format requires a release that has re-encoded every retained
-  checkpoint in that format, and a release note.
+- A checkpoint in a format the reader cannot read is refused, never skipped, with an
+  error naming its id, its format version, and the remedy.
+  For a newer format, the remedy is a release that reads it.
+  For a retired older format, it is the range of releases that still read that format
+  and re-encode it, or explicit removal.
+- Retirement takes effect per user store, not per release.
+  A release drops a format’s reader only after earlier releases have re-encoded, by
+  atomic replacement, every checkpoint they found in that format, and its release note
+  names the last release that reads it.
+  A store that skipped those releases still holds the format and meets the refusal
+  above, so neither direction has a silent path.
 
 **Scope and classification changes.** Whether a comparison is valid is decided per
 measure, from the recorded identities:
@@ -426,16 +435,23 @@ measure, from the recorded identities:
 
 - **Internal code:** DO NOT MAINTAIN. Nothing outside the repository depends on
   checkpoint internals.
-- **Library APIs:** N/A. The plan adds engine, CLI, and Python APIs and changes none.
+- **Library APIs:** DO NOT MAINTAIN. Slice 2 adds a link count to `Attrs`, a public
+  struct with public fields that is not `#[non_exhaustive]` and is re-exported from the
+  crate root, so a struct literal or exhaustive pattern outside the engine stops
+  compiling. Neither `fdu-core` nor the Python package has been released (the changelog
+  holds only unreleased changes), so every consumer is in this repository and updates in
+  the same change. Revisit at the first release.
+  The plan’s other engine, CLI, and Python APIs are additions.
 - **Server APIs:** N/A.
 - **Plugin and extension APIs:** N/A.
 - **File formats:** The snapshot cache stays VERSION + FAIL FAST, where a mismatch is a
-  clean miss. The checkpoint store is VERSION + FAIL FAST until a release writes it, then
-  SUPPORT BOTH at the reader for released versions.
+  clean miss; slice 2’s link count and slice 3’s typed gaps and replay cursor each bump
+  its `FORMAT_VERSION`. The checkpoint store is VERSION + FAIL FAST until a release
+  writes it, then SUPPORT BOTH at the reader for released versions.
   The protected data is retained checkpoints.
   Tests keep a stored checkpoint pair in each released format and assert its recorded
-  A→B result. Support for a format ends when a release has re-encoded every retained
-  checkpoint in it.
+  A→B result. Support for a format ends with a release note naming the last release that
+  reads it, and a store still holding that format is refused with that remedy.
 - **Persisted client state:** Labels and pins follow the checkpoint store.
 - **Database schemas:** N/A.
 
@@ -501,7 +517,7 @@ work; do not relabel the old answer as current.
 | Slice | Deliverable | Acceptance |
 | --- | --- | --- |
 | 1. Reproducible replay probe (`fdu-uwhl`) | Commit the probe, exact flags, cursor fences, and machine-readable results; compare with and without `FullHistory` | Deep append, deletion, move, restart, overlap, and controlled loss agree with an independent scan or produce a declared degraded result |
-| 2. Checkpoint store and comparison contract (`fdu-8ybz`) | Engine-native store with ids, labels, pins, typed gaps, recorded identities, and the three accounting measures, including retained link counts; initially from scanned state | Repeated reads of one id pair are identical; moving a label or refreshing never changes a checkpoint; a removed checkpoint is refused, not substituted; an incompatible scope is refused; the hard-link, clone, and denied-subtree cases below produce their expected deltas; native, CLI, and Python surfaces agree |
+| 2. Checkpoint store and comparison contract (`fdu-8ybz`) | Engine-native store with ids, labels, pins, typed gaps, recorded identities, and the three accounting measures, including retained link counts (a new `Attrs` field and a snapshot `FORMAT_VERSION` bump); initially from scanned state | Repeated reads of one id pair are identical; moving a label or refreshing never changes a checkpoint; a removed checkpoint is refused, not substituted; an incompatible scope is refused; the hard-link, clone, and denied-subtree cases below produce their expected deltas; native, CLI, and Python surfaces agree |
 | 3. Incremental macOS refresh | Cursor encoding and gates (`fdu-2cdv`), replay (`fdu-3tun`), scoped reconciliation (`fdu-rvje`), and the snapshot’s typed-gap section and save rule, at a new `FORMAT_VERSION` | Persist/restart/refresh tests and failure injection prove no lost cursor work or duplicate accounting; a persistently denied subtree does not stop the cursor advancing; after an engine fingerprint change the first refresh scans in full, and its checkpoint compares with one captured before |
 | 4. Bounded persistent access | Block/lazy inventory and durable changes with checkpoint-aware compaction | Quiet refresh does not decode or rewrite all N entries; retained state stays within its declared budget |
 | 5. Large-home workflow | Measure full capture, day-gap refresh, delta read, and fallback at realistic churn | Publish paired results against a fresh scan, with all work and coverage reported |
