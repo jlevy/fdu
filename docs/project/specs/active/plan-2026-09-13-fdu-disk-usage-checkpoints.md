@@ -375,9 +375,10 @@ component. The FSEvents plan follows the same rule for its replay cursor.
 - **Network and FUSE volumes:** may report no UUID on any platform.
 
 Where no UUID is observed, the checkpoint records the volume identity as not observed.
-A comparison in which either checkpoint lacks one is decided on root path and
-`ScopeIdentity` alone, and its result states that the volume was not verified, so a
-different volume mounted at the same path is never presented as a verified comparison.
+A comparison in which either checkpoint lacks one skips the volume check and is decided
+by root path and the other recorded identities.
+Its result states that the volume was not verified, so a different volume mounted at the
+same path is never presented as a verified comparison.
 
 A remount that renumbers `st_dev` leaves A→B comparable: deltas are computed by path and
 byte facts, and `(dev, inode)` pairs are grouped only within one checkpoint.
