@@ -359,9 +359,9 @@ information: a snapshot whose scan crossed devices simply never carries a cursor
 
 ### Snapshot format
 
-`main` writes snapshot format version 3, which has no replay cursor.
-Use the next available format version at integration time, and do not assign one version
-to incompatible layouts.
+The snapshot format `main` writes, at the current `snapshot::FORMAT_VERSION`, has no
+replay cursor. Use the next available format version at integration time, and do not
+assign one version to incompatible layouts.
 After the scope header, propose one new optional section:
 
 ```
@@ -706,7 +706,7 @@ acceptance evidence still needed.
 - [ ] `history_replay/mod.rs`: cursor types, gate decision table as a pure function,
   changed-set normalization; exhaustive unit tests for every gate row
 - [ ] Round-trip tests for the new version; explicit predecessor migration or clean-miss
-  tests, including the current version 3 layout
+  tests, including the layout of the format version current at integration time
 - [ ] Snapshot header records this tree’s observed scan cost (µs/entry) and entry count,
   so the cache carries its own cost model; a header without timing falls back to a
   conservative default

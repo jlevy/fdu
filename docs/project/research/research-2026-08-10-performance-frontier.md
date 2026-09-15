@@ -1352,8 +1352,8 @@ comparison command. The
 [checkpoint plan](../specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md) defines
 the missing workflow and its delivery slices.
 
-**What `main` provides.** Snapshots, at format version 3, hold the latest inventory per
-root and load the full entry set.
+**What `main` provides.** Snapshots, at the current format version, hold the latest
+inventory per root and load the full entry set.
 Their fingerprint includes the crate version, so every release discards them, and a
 scope mismatch replaces them.
 They persist neither the opened root’s process-local index journal nor an FSEvents
