@@ -1068,13 +1068,18 @@ impl IndexHandle {
 
     #[cfg(test)]
     pub(crate) fn poison_for_test(&self) {
-        let inner = std::sync::Arc::clone(&self.inner);
-        std::thread::spawn(move || {
-            let _guard = inner.write().expect("test index write lock");
-            panic!("inject index poison");
-        })
-        .join()
-        .expect_err("injected index panic");
+        let handle = self.clone();
+        std::thread::spawn(move || handle.panic_holding_the_write_lock_for_test())
+            .join()
+            .expect_err("injected index panic");
+    }
+
+    /// Panic on this thread while holding the write lock, as a commit that panics does,
+    /// leaving the lock poisoned.
+    #[cfg(test)]
+    pub(crate) fn panic_holding_the_write_lock_for_test(&self) -> ! {
+        let _guard = self.inner.write().expect("test index write lock");
+        panic!("inject index poison");
     }
 
     /// Arbitrate and apply one observation under the single-writer lock.
@@ -3424,7 +3429,7 @@ impl Index {
         // there is no older state left to overwrite. Refusing it as stale cost the
         // observation handoff a full-root walk per convergent refresh, and three in a
         // row failed the root, for commits that would have applied as unchanged.
-        if target_state(op).is_some_and(|target| target == current) {
+        if self.holds_target(op, current) {
             return true;
         }
         if current != expected.state {
@@ -3453,6 +3458,26 @@ impl Index {
                 .absence_guard_identity(op.path())
                 .is_some_and(|current| current.same_absence_guard(expected)),
             None => true,
+        }
+    }
+
+    /// Whether the index already holds what `op` would leave behind at `current`, the state
+    /// of its path.
+    ///
+    /// An entry operation's target is a path state. A control operation's is the table:
+    /// exactly its source retained at its path, or nothing retained there. The walk pushes
+    /// a control file's entry and rules on one baseline, so both must converge together or
+    /// the pair is refused for the rules alone. An invalidation always commits a change, so
+    /// it is arbitrated on its baseline.
+    fn holds_target(&self, op: &Op, current: PathState) -> bool {
+        match op {
+            Op::Upsert { kind, attrs, .. } => {
+                current == PathState::Present { kind: *kind, attrs: *attrs }
+            }
+            Op::Remove { .. } => current == PathState::Absent,
+            Op::ControlUpsert { path, source } => self.controls.source_is(path, source),
+            Op::ControlRemove { path } => !self.controls.contains(path),
+            Op::InvalidateSubtree { .. } => false,
         }
     }
 
@@ -5003,18 +5028,6 @@ fn insert_dirty_ancestors(
     }
 }
 
-/// The path state an operation leaves behind, when it describes one.
-///
-/// A control or invalidation operation has no single visible target, so it is arbitrated
-/// on its baseline alone.
-fn target_state(op: &Op) -> Option<PathState> {
-    match op {
-        Op::Upsert { kind, attrs, .. } => Some(PathState::Present { kind: *kind, attrs: *attrs }),
-        Op::Remove { .. } => Some(PathState::Absent),
-        Op::ControlUpsert { .. } | Op::ControlRemove { .. } | Op::InvalidateSubtree { .. } => None,
-    }
-}
-
 fn same_target(
     current: Option<EntryIdentity>,
     expected: Option<EntryIdentity>,
@@ -6314,6 +6327,54 @@ mod tests {
         assert_eq!(outcome.stats.unchanged, 1);
         assert!(outcome.commit.is_none());
         assert!(index.lookup(Path::new("dir/file.txt")).is_none());
+    }
+
+    /// A control file's entry and rules are pushed on one baseline, so a refresh that
+    /// verified both first leaves nothing for either to change. Both apply as unchanged; a
+    /// control op whose rules the table does not hold is still refused on the moved
+    /// baseline.
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn convergent_conditional_control_ops_apply_as_unchanged_not_stale() {
+        let path = PathBuf::from(".gitignore");
+        let rules =
+            |source: &[u8]| Op::ControlUpsert { path: path.clone(), source: source.to_vec() };
+        let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
+        index.apply_ok(&Observation::new(vec![
+            upsert(".gitignore", EntryKind::File, file_attrs(6, 1)),
+            rules(b"before"),
+        ]));
+        let baseline = index.expectation(&path);
+        index.apply_ok(&Observation::new(vec![
+            upsert(".gitignore", EntryKind::File, file_attrs(7, 2)),
+            rules(b"changed"),
+        ]));
+
+        let outcome = index.apply_ok(&Observation::from_ops(vec![
+            ObservationOp::if_state(
+                upsert(".gitignore", EntryKind::File, file_attrs(7, 2)),
+                baseline,
+            ),
+            ObservationOp::if_state(rules(b"changed"), baseline),
+        ]));
+        assert_eq!(outcome.stats.stale, 0);
+        assert!(outcome.commit.is_none());
+        let diverged = index.apply_ok(&Observation::from_ops(vec![ObservationOp::if_state(
+            rules(b"other"),
+            baseline,
+        )]));
+        assert_eq!(diverged.stats.stale, 1);
+        assert!(index.controls().expect("control state observed").source_is(&path, b"changed"));
+
+        let baseline = index.expectation(&path);
+        index.apply_ok(&Observation::new(vec![Op::Remove { path: path.clone() }]));
+        let outcome = index.apply_ok(&Observation::from_ops(vec![
+            ObservationOp::if_state(Op::Remove { path: path.clone() }, baseline),
+            ObservationOp::if_state(Op::ControlRemove { path: path.clone() }, baseline),
+        ]));
+        assert_eq!(outcome.stats.stale, 0);
+        assert!(outcome.commit.is_none());
+        assert!(!index.controls().expect("control state observed").contains(&path));
     }
 
     #[test]

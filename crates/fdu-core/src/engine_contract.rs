@@ -1626,14 +1626,20 @@ const RETAINED_COMMIT_BYTES: usize = 256;
 /// Bytes [`Commit::retained_cost`] charges for each retained change, transition, or dirty
 /// path, before the bytes of the path it names.
 const RETAINED_ITEM_BYTES: usize = 128;
-/// Smallest journal budget, in bytes, an opened root accepts: the least
-/// [`Commit::retained_cost`] can charge a commit that carries anything.
+/// Smallest journal budget, in bytes, an opened root accepts.
 ///
-/// Every change and transition dirties its own path, so the least a commit can hold is one
-/// item at the root and the root as its dirty path. A smaller budget retains no commit, and
-/// every change poll would answer [`ChangeOutcome::Reset`] for a cause the caller cannot
-/// see: most likely a count passed where bytes are expected.
-pub const MIN_JOURNAL_CAPACITY_BYTES: usize = RETAINED_COMMIT_BYTES + 2 * RETAINED_ITEM_BYTES;
+/// The floor refuses a count passed where bytes are expected. Until the budget was stated
+/// in bytes it counted retained items, and its default was this same number, so a caller
+/// still thinking in counts passes at most that: every smaller count is refused, and the
+/// old default itself, read as bytes, is a working budget.
+///
+/// It also guarantees history worth polling, as [`Commit::retained_cost`] charges it. The
+/// cheapest commit a tree produces, one change to a one-byte name at the root, costs the
+/// frame, three items (the change, the root it dirties, and its own path), and two path
+/// bytes: 642 bytes. The floor holds about a hundred of those, or one commit of some two
+/// hundred changes to short names in one directory. A budget that held only a few would
+/// answer [`ChangeOutcome::Reset`] to a consumer barely behind, for a cause it cannot see.
+pub const MIN_JOURNAL_CAPACITY_BYTES: usize = 64 * 1024;
 
 /// One atomic, exact index transition.
 ///
@@ -1667,9 +1673,10 @@ impl Commit {
     /// the path it names. Paths are the part that varies, so charging their bytes makes
     /// [`crate::DEFAULT_JOURNAL_CAPACITY_BYTES`] mean what it says whatever the tree's paths
     /// look like; a charge per item would let long paths hold many times the budget, and
-    /// every change poll clones what the journal holds. The allowances are fixed rather than measured with `size_of` so the
-    /// budget means the same on every target: the retained types differ in size by
-    /// platform, and a recorded journal work count would otherwise differ with them.
+    /// every change poll clones what the journal holds. The allowances are fixed rather
+    /// than measured with `size_of` so the budget means the same on every target: the
+    /// retained types differ in size by platform, and a recorded journal work count would
+    /// otherwise differ with them.
     pub fn retained_cost(&self) -> usize {
         let paths = self
             .changes
@@ -1755,10 +1762,11 @@ pub enum Error {
     )]
     ControlStateNotObserved,
 
-    /// An opened root's journal budget cannot retain a single commit.
+    /// An opened root's journal budget is below [`MIN_JOURNAL_CAPACITY_BYTES`].
     #[error(
-        "journal_capacity_bytes is {requested} bytes, below the {minimum} bytes one commit \
-         needs; set it to at least {minimum} bytes, or leave it unset for the default"
+        "journal_capacity_bytes is {requested} bytes, below the {minimum}-byte minimum; it is \
+         a size in bytes, not a count, so set it to at least {minimum} bytes, or leave it \
+         unset for the default"
     )]
     JournalCapacityTooSmall {
         /// The budget requested, in bytes.
