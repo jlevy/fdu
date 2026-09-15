@@ -230,6 +230,10 @@ Permission loss is unknown state, not removal.
 - A capture with gaps publishes a partial checkpoint marked with its gap list.
   The command’s exit status follows the existing partial-result acceptance
   (`--allow-partial`).
+- A crossed control budget is not a gap.
+  Sizes stay exact, so the checkpoint is complete and the exit status is unaffected;
+  only its ignore classification is partial, which comparisons mark as described under
+  [Checkpoint Store and Compatibility](#checkpoint-store-and-compatibility).
 - A comparison shows a gap in either checkpoint as unknown for that subtree and marks
   every ancestor’s delta partial.
 - A disappearance is established only by a successful reconciliation of its containing
@@ -424,6 +428,29 @@ measure, from the recorded identities:
   count.
 - A checkpoint captured without control observation has no ignored partition, and
   comparisons report that measure as not observed.
+- A checkpoint captured over its control budget has a partially observed ignored
+  partition. For 0.1.0, `fdu-1onj` makes crossing that budget, or the per-line guard the
+  same setting raises, refuse the control source instead of ending the scan: sizes stay
+  exact, the result is complete with exit status 0, and a coverage note names the
+  directories whose control sources were refused.
+  With `.gitignore` roll-ups on by default (`fdu-elnn`), a large home folder reaches it
+  without any fault. Each checkpoint therefore records its control budget and every
+  refused control source, read from the index, and a comparison applies these rules:
+  - Byte and count deltas stay exact, whatever either checkpoint refused.
+  - If either checkpoint refused a source, the ignored and unignored deltas are marked
+    partial at every directory at or below a source refused in either checkpoint, and at
+    each ancestor, with the refused sources named, the way a gap marks its ancestors.
+    Equal refused sets do not lift the marker: below a source both checkpoints refused,
+    neither applied its rules, so a new file there is counted in whichever partition the
+    loaded rules choose.
+  - A checkpoint that retains only a count of refused sources, not their paths, marks
+    every classification delta of its comparisons partial.
+  - The budget is mixed into `ignore_rules_fingerprint`, so checkpoints captured at
+    different budgets differ in `SemanticIdentity`, and their classification is not
+    comparable under the `SemanticIdentity` rule above.
+    The recorded budget lets that reason name the two budgets.
+    Two complete checkpoints whose classifications agree are also reported as not
+    comparable when their budgets differ, which is conservative rather than wrong.
 - A measure not recorded in both checkpoints is unavailable for that pair: for example,
   unique allocated bytes from before link counts were retained, or from a platform that
   observes no file identity.
@@ -431,6 +458,17 @@ measure, from the recorded identities:
   per-path allocated bytes and names that measure, and the other measures remain
   available.
 - The crate version and the snapshot `FORMAT_VERSION` never affect comparability.
+
+Marking a partially observed classification partial, rather than refusing it, keeps the
+comparison consistent with the coverage note a single report gives for the same state.
+Case against: below a refused source the classification is not exact in either
+direction, because a refused file can hold negations as well as ignore rules.
+A partial number there can be wrong, not merely incomplete, and a reader who skips the
+marker is misled. Over budget, the marker always reaches the root, so the top rows of a
+home-folder comparison carry it.
+Alternative: refuse classification-derived measures at the affected directories and
+their ancestors. No number that may be wrong is shown, at the cost of withholding the
+root’s ignored delta whenever any source below it was refused.
 
 **Backward compatibility requirements:**
 
@@ -527,13 +565,18 @@ Slice 2 can provide useful comparisons before the replay optimization.
 Slice 4 is needed before claiming fast whole-home refresh independent of inventory size.
 The slices build on the opened-root lifecycle that the
 [opened-root inventory engine plan](plan-2026-08-25-fdu-opened-root-inventory-engine.md)
-delivered to `main`. Slice 2 also depends on two adjacent contracts, proposed in
-[#56](https://github.com/jlevy/fdu/pull/56) and
-[#57](https://github.com/jlevy/fdu/pull/57). Before slice 2 fixes its API, confirm on
-`main` that the index journal is bounded in bytes (`journal_capacity_bytes`), and that
-an index built without control state answers with a typed not-observed value rather than
-as if nothing were ignored, which is what a checkpoint captured without control
-observation records.
+delivered to `main`. Slice 2 also depends on three adjacent contracts.
+Before slice 2 fixes its API, confirm on `main` that:
+
+- the index journal is bounded in bytes (`journal_capacity_bytes`), as proposed in
+  [#56](https://github.com/jlevy/fdu/pull/56);
+- an index built without control state answers with a typed not-observed value rather
+  than as if nothing were ignored, as proposed in
+  [#57](https://github.com/jlevy/fdu/pull/57), which is what a checkpoint captured
+  without control observation records;
+- a crossed control budget leaves the index, including one loaded from a snapshot, a
+  typed record of its budget and refused control sources (`fdu-1onj`), which is what a
+  checkpoint with partially observed classification records.
 
 Use the existing [performance loop](../../guides/performance-loop.md) and predeclare
 accept rules before trials.
@@ -558,6 +601,11 @@ loss and restoration, event loss, concurrent writers, and crashes before and aft
 cursor publication. Volume identity cases: a remount or reboot that renumbers `st_dev`
 stays comparable and re-observes every entry; a different volume UUID at the same root
 path is refused; and a volume that reports no UUID compares as volume-unverified.
+Classification cases: a control budget crossed in either checkpoint leaves every byte
+delta exact and marks the ignored and unignored deltas partial at each directory at or
+below a refused source and at its ancestors; a source refused at A and loaded at B is
+marked partial, never shown as bytes moving between partitions; and checkpoints captured
+at different budgets report classification as not comparable.
 Accounting cases have stated expected deltas:
 
 - **Hard link added to an existing in-scope file:** per-path allocated grows by the
