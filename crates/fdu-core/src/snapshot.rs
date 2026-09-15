@@ -1609,23 +1609,42 @@ mod tests {
         let reason_at = saved.len() - footer - 1;
         assert_eq!(saved[reason_at], REFUSED_FOR_BUDGET);
 
-        let mut unknown_reason = saved.clone();
+        let mut unknown_reason = saved;
         unknown_reason[reason_at] = 9;
         rewrite_checksum(&mut unknown_reason);
         fs::write(&path, &unknown_reason).expect("write corrupt reason");
         assert!(load(&path).expect("corrupt equals absent").is_none());
 
-        // Respell the refused `b/.gitignore` as `a/.gitignore`, which is already refused.
-        let refused_b = b"b/.gitignore";
-        let at = saved
-            .windows(refused_b.len())
-            .rposition(|window| window == refused_b)
-            .expect("the refusal names b/.gitignore");
-        let mut repeated = saved;
-        repeated[at] = b'a';
-        rewrite_checksum(&mut repeated);
-        fs::write(&path, &repeated).expect("write repeated refusal");
-        assert!(load(&path).expect("corrupt equals absent").is_none());
+        // A refusal naming a retained source, or one already refused, is corrupt. Built with
+        // the platform's own path encoding, so the same bytes mean the same on every target.
+        let section = |retained: &str, refusals: &[&str]| {
+            let mut section = Vec::new();
+            section.extend_from_slice(&1_u32.to_le_bytes());
+            put_os_str(&mut section, OsStr::new(retained)).expect("retained path");
+            section.extend_from_slice(&6_u32.to_le_bytes());
+            section.extend_from_slice(b"*.log\n");
+            let budget = u64::try_from(crate::control::DEFAULT_CONTROL_BUDGET).expect("budget");
+            section.extend_from_slice(&budget.to_le_bytes());
+            let count = u32::try_from(refusals.len()).expect("few refusals");
+            section.extend_from_slice(&count.to_le_bytes());
+            for refusal in refusals {
+                put_os_str(&mut section, OsStr::new(refusal)).expect("refused path");
+                section.push(REFUSED_FOR_BUDGET);
+            }
+            section
+        };
+        let valid = read_controls(&mut section(".gitignore", &["a/.gitignore"][..]).as_slice())
+            .expect("a well-formed control section");
+        assert_eq!((valid.len(), valid.refused_len()), (1, 1));
+        for refusals in [&[".gitignore"][..], &["a/.gitignore", "a/.gitignore"][..]] {
+            assert!(
+                matches!(
+                    read_controls(&mut section(".gitignore", refusals).as_slice()),
+                    Err(ParseError::Invalid)
+                ),
+                "{refusals:?}"
+            );
+        }
     }
 
     /// A snapshot with no control state loads without walking the tree to reclassify it.

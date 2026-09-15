@@ -2023,23 +2023,24 @@ mod tests {
                 Op::ControlUpsert { path: PathBuf::from("vendor/.gitignore"), source: long_line },
             ]))
             .expect("apply");
+        // The platform spells the refused path, so Windows writes a backslash.
+        let refused = Path::new("vendor").join(".gitignore");
+        let refused = refused.to_string_lossy();
         let json = render(&report(&observed, &query, &provenance), Format::Json, false);
-        assert!(
-            json.contains(
-                "\"ignore_rules\": {\"budget\": 4194304, \"applied\": 1, \"refused\": 1, \
-                 \"refusals\": [{\"path\": \"vendor/.gitignore\", \"reason\": \"line_guard\"}]}"
-            ),
-            "{json}"
+        let expected = format!(
+            "\"ignore_rules\": {{\"budget\": 4194304, \"applied\": 1, \"refused\": 1, \
+             \"refusals\": [{{\"path\": {}, \"reason\": \"line_guard\"}}]}}",
+            quote(&refused)
         );
+        assert!(json.contains(&expected), "{json}");
         assert!(json.contains("\"complete\": true"), "a refusal is not an operational partial");
         let yaml = render(&report(&observed, &query, &provenance), Format::Yaml, false);
-        assert!(
-            yaml.contains(
-                "ignore_rules:\n  budget: 4194304\n  applied: 1\n  refused: 1\n  refusals:\n    \
-                 - path: vendor/.gitignore\n      reason: line_guard\n"
-            ),
-            "{yaml}"
+        let expected = format!(
+            "ignore_rules:\n  budget: 4194304\n  applied: 1\n  refused: 1\n  refusals:\n    \
+             - path: {}\n      reason: line_guard\n",
+            yaml_scalar(&refused)
         );
+        assert!(yaml.contains(&expected), "{yaml}");
 
         let flags = Query { axes: crate::query::AxisNames::FLAGS, ..query.clone() };
         let note = "note: 1 .gitignore file not applied (1 with a line over the 16 KiB line \
