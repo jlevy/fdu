@@ -268,8 +268,8 @@ before the modification, so only the start bound is conservative.
 
 Check the process exit status and these fields:
 
-- `schema` before parsing anything else: a metadata-only report carries `fdu.report/4`,
-  a report that ran content analysis carries `fdu.report/5`, and a `--watch` stream
+- `schema` before parsing anything else: a metadata-only report carries `fdu.report/5`,
+  a report that ran content analysis carries `fdu.report/6`, and a `--watch` stream
   carries `fdu.stream/1`. Treat an unrecognized value as a version you cannot parse
   rather than guessing at the fields.
 - `complete` and `errors` before trusting totals
@@ -391,7 +391,7 @@ CONTENT ANALYSIS
   cache=only never opens source files and fails if requested content is absent.
 
 OUTPUT AND AUTOMATION
-  Metadata-only machine output remains fdu.report/4; metric summaries use fdu.report/5.
+  Metadata-only machine output remains fdu.report/5; metric summaries use fdu.report/6.
   Text language rows use canonical names; machine formats retain lowercase IDs.
   Metric rows include detection source, confidence, origin flags, and coverage.
   One-shot text reports end with a gray performance line; machine formats omit it.

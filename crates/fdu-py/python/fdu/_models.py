@@ -358,6 +358,10 @@ class Status:
     freshness: Freshness
     source: ReportSource
     errors: tuple[OperationError, ...] = ()
+    #: Which ``.gitignore`` files apply, or ``None`` when none was read. A refused file
+    #: leaves ``complete`` true and every size exact; only the ignored and unignored split
+    #: below it is not.
+    ignore_rules: ControlObservation | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -724,12 +728,21 @@ def _operation_error(value: object) -> OperationError:
     )
 
 
+def _ignore_rules(value: object) -> ControlObservation | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TypeError("ignore_rules must be an object or null")
+    return control_observation_from_dict(cast(dict[str, Any], value))
+
+
 def status_from_dict(value: dict[str, Any]) -> Status:
     return Status(
         complete=bool(value["complete"]),
         freshness=Freshness(str(value["freshness"])),
         source=ReportSource(str(value["source"])),
         errors=tuple(_operation_error(item) for item in value.get("errors", [])),
+        ignore_rules=_ignore_rules(value["ignore_rules"]),
     )
 
 
@@ -898,6 +911,7 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
         freshness=Freshness(str(wire["freshness"])),
         source=ReportSource(str(wire["source"])),
         errors=tuple(_operation_error(item) for item in raw_errors),
+        ignore_rules=_ignore_rules(wire["ignore_rules"]),
     )
     raw_analysis = wire.get("analysis")
     analysis = None

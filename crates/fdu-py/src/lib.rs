@@ -470,6 +470,7 @@ impl PyIndex {
         out.set_item("errors", error_list(py, &self.errors)?)?;
         out.set_item("source", source_label(self.source))?;
         out.set_item("complete", self.complete())?;
+        out.set_item("ignore_rules", ignore_rules_value(py, &self.inner.control_coverage())?)?;
         out.set_item("freshness", self.freshness())?;
         out.set_item("clock", self.inner.clock().0)?;
         Ok(out)
@@ -633,7 +634,21 @@ fn status_dict<'py>(py: Python<'py>, index: &PyIndex) -> PyResult<Bound<'py, PyD
     status.set_item("freshness", freshness_label(index.inner.freshness()))?;
     status.set_item("source", source_label(index.source))?;
     status.set_item("errors", error_list(py, &index.errors)?)?;
+    status.set_item("ignore_rules", ignore_rules_value(py, &index.inner.control_coverage())?)?;
     Ok(status)
+}
+
+/// `None` when no control file was read, else the shape a report's `ignore_rules` carries.
+fn ignore_rules_value<'py>(
+    py: Python<'py>,
+    coverage: &fdu_core::control::ControlCoverage,
+) -> PyResult<Bound<'py, PyAny>> {
+    match coverage {
+        fdu_core::control::ControlCoverage::NotObserved => Ok(py.None().into_bound(py)),
+        fdu_core::control::ControlCoverage::Observed(observed) => {
+            Ok(opened_binding::control_observation_dict(py, observed)?.into_any())
+        }
+    }
 }
 
 fn value_source_label(source: fdu_core::Source) -> &'static str {
@@ -690,6 +705,7 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
     let dict = PyDict::new(py);
     dict.set_item("root", report.root.as_os_str())?;
     dict.set_item("complete", report.complete)?;
+    dict.set_item("ignore_rules", ignore_rules_value(py, &report.ignore_rules)?)?;
     dict.set_item("errors", report.errors.clone())?;
     dict.set_item("source", source_label(report.source))?;
     dict.set_item("freshness", freshness_label(report.freshness))?;

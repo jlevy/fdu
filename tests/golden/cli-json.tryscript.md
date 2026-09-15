@@ -23,7 +23,7 @@ patterns:
 ```console
 $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
 {
-  "schema": "fdu.report/4",
+  "schema": "fdu.report/5",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
@@ -32,6 +32,7 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
   "freshness": "fresh",
   "complete": true,
   "errors": [],
+  "ignore_rules": null,
   "reports": [
     {
       "view": "tree",
@@ -47,7 +48,7 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
 ```console
 $ fdu --cache off --format json --size apparent --depth 1 --limit 2 project
 {
-  "schema": "fdu.report/4",
+  "schema": "fdu.report/5",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
@@ -56,6 +57,7 @@ $ fdu --cache off --format json --size apparent --depth 1 --limit 2 project
   "freshness": "fresh",
   "complete": true,
   "errors": [],
+  "ignore_rules": null,
   "reports": [
     {
       "view": "tree",
@@ -71,7 +73,7 @@ $ fdu --cache off --format json --size apparent --depth 1 --limit 2 project
 ```console
 $ fdu --cache off --format json --size apparent --scan-depth 1 --depth 2 --limit 10 project
 {
-  "schema": "fdu.report/4",
+  "schema": "fdu.report/5",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
@@ -80,6 +82,7 @@ $ fdu --cache off --format json --size apparent --scan-depth 1 --depth 2 --limit
   "freshness": "fresh",
   "complete": true,
   "errors": [],
+  "ignore_rules": null,
   "reports": [
     {
       "view": "tree",
@@ -100,7 +103,7 @@ not just legal but required to work — formats are serializations, not features
 ```console
 $ fdu --cache off --view types --format json --size apparent project
 {
-  "schema": "fdu.report/5",
+  "schema": "fdu.report/6",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
@@ -109,6 +112,7 @@ $ fdu --cache off --view types --format json --size apparent project
   "freshness": "fresh",
   "complete": true,
   "errors": [],
+  "ignore_rules": null,
   "analysis": null,
   "reports": [
     {

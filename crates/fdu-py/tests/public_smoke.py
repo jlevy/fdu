@@ -118,7 +118,9 @@ def check_render_matches_the_cli(root: Path, binary: str) -> None:
     recording drifts and the point is that the two agree today.
     """
 
-    index = fdu.scan(str(root))
+    # The command line reads no `.gitignore`, and a report's `ignore_rules` field says
+    # whether rules were read, so the index compared with it reads none either.
+    index = fdu.scan(str(root), scan=fdu.ScanOptions(read_controls=False))
     for view in (fdu.View.TREE, fdu.View.LARGEST, fdu.View.SUMMARY):
         report = index.report(fdu.Query(views=(view,)))
         for fmt in fdu.Format:
@@ -341,11 +343,32 @@ def check_an_index_can_opt_out_of_control_state() -> None:
     ):
         assert index.status.complete is True, index.status.errors
         assert index.total().files == 2
+        assert index.status.ignore_rules is None, "a request that read no rule says so"
+        assert index.report().status.ignore_rules is None
     # A default scan reads the control file and refuses the line over the guard, without
     # ending the scan or making its sizes partial (fdu-1onj).
     observed = fdu.scan(root)
     assert observed.status.complete is True, observed.status.errors
     assert observed.total().files == 2
+    refused = fdu.RefusedControl(Path(".gitignore"), fdu.ControlRefusalReason.LINE_GUARD)
+    expected = fdu.ControlObservation(
+        budget=4 * 1024 * 1024, applied=0, refused=1, refusals=(refused,)
+    )
+    assert observed.status.ignore_rules == expected, observed.status
+    observed_report = observed.report(fdu.Query(views=(fdu.View.SUMMARY,)))
+    assert observed_report.status.complete is True
+    assert observed_report.status.ignore_rules == expected, observed_report.status
+    wire = json.loads(observed_report.render(fdu.Format.JSON))
+    assert wire["ignore_rules"]["refusals"] == [{"path": ".gitignore", "reason": "line_guard"}]
+    # The note names the directory and the knob as this surface spells it.
+    (note,) = observed_report.notes
+    assert "under . are not exact" in note, note
+    assert "set control_budget to all" in note, note
+    assert note in observed_report.render(fdu.Format.TEXT), note
+    # The same knob lifts the guard.
+    lifted = fdu.scan(root, scan=fdu.ScanOptions(control_budget=fdu.Bound.ALL))
+    assert lifted.status.ignore_rules == fdu.ControlObservation(budget=None, applied=1, refused=0)
+    assert lifted.report().notes == ()
 
     # A report and an opted-out open share one snapshot scope, so that open starts warm; a
     # default open observes control state the report's snapshot never held, and scans cold.
@@ -420,7 +443,7 @@ def main() -> None:
         fdu.View.FILES,
     ]
     wire = report.as_dict()
-    assert wire["schema"] == "fdu.report/4"
+    assert wire["schema"] == "fdu.report/5"
     assert wire["generator"] == f"fdu {fdu.__version__}"
     assert json.loads(json.dumps(wire)) == wire
 

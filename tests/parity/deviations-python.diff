@@ -339,7 +339,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  cache=only never opens source files and fails if requested content is absent.
 -
 -OUTPUT AND AUTOMATION
--  Metadata-only machine output remains fdu.report/4; metric summaries use fdu.report/5.
+-  Metadata-only machine output remains fdu.report/5; metric summaries use fdu.report/6.
 -  Text language rows use canonical names; machine formats retain lowercase IDs.
 -  Metric rows include detection source, confidence, origin flags, and coverage.
 -  One-shot text reports end with a gray performance line; machine formats omit it.

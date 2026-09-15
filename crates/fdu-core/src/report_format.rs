@@ -19,6 +19,7 @@ use anstyle::{AnsiColor, Style as AnsiStyle};
 
 use crate::classify::{DetectionConfidence, DetectionSource, human_language_name};
 use crate::content::{CoverageReason, MetricValues};
+use crate::control::ControlCoverage;
 use crate::engine_contract::{EntryKind, Freshness};
 use crate::query::{
     FileRow, MetricGroup, MetricRow, MetricSummary, Report, ReportSource, Section, SizeMetric,
@@ -56,9 +57,9 @@ const TEXT_TYPE_LABEL_WIDTH: usize = 12;
 ///
 /// Any change to a field's name, type, or meaning bumps this, and a golden test fails if
 /// the schema moves without it — the versioning is the promise, not the intention.
-pub const REPORT_SCHEMA: &str = "fdu.report/4";
+pub const REPORT_SCHEMA: &str = "fdu.report/5";
 /// Machine schema used when a generic metric-summary section is present.
-pub const CONTENT_REPORT_SCHEMA: &str = "fdu.report/5";
+pub const CONTENT_REPORT_SCHEMA: &str = "fdu.report/6";
 
 /// How a report is serialized.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -534,8 +535,64 @@ fn write_envelope_json(out: &mut String, report: &Report) {
         let _ = write!(out, "{}\n    {}", if index > 0 { "," } else { "" }, quote(error));
     }
     out.push_str(if report.errors.is_empty() { "]" } else { "\n  ]" });
+    let _ = write!(out, ",\n  \"ignore_rules\": {}", ignore_rules_json(&report.ignore_rules));
     if report_schema(report) == CONTENT_REPORT_SCHEMA {
         let _ = write!(out, ",\n  \"analysis\": {}", analysis_json(report.analysis.as_ref()));
+    }
+}
+
+/// The `ignore_rules` field: `null` when no control file was read, otherwise the budget,
+/// the applied and refused counts, and at most `MAX_RETAINED_ISSUES` refused files.
+///
+/// `null` rather than a zero object, because a report that read no rule must not say that
+/// every rule applied. `budget` is `null` when unbounded.
+fn ignore_rules_json(ignore_rules: &ControlCoverage) -> String {
+    let ControlCoverage::Observed(observed) = ignore_rules else {
+        return "null".to_string();
+    };
+    let mut refusals = String::from("[");
+    for (index, refusal) in observed.refusals.iter().enumerate() {
+        let _ = write!(
+            refusals,
+            "{}{{\"path\": {}{}, \"reason\": {}}}",
+            if index > 0 { ", " } else { "" },
+            quote(&refusal.path.to_string_lossy()),
+            path_raw_field(&refusal.path),
+            quote(refusal.reason.label())
+        );
+    }
+    refusals.push(']');
+    format!(
+        "{{\"budget\": {}, \"applied\": {}, \"refused\": {}, \"refusals\": {refusals}}}",
+        observed.budget.map_or_else(|| "null".to_string(), |budget| budget.to_string()),
+        observed.applied,
+        observed.refused,
+    )
+}
+
+/// The `ignore_rules` field in YAML, as [`ignore_rules_json`] describes it.
+fn write_ignore_rules_yaml(out: &mut String, ignore_rules: &ControlCoverage) {
+    let ControlCoverage::Observed(observed) = ignore_rules else {
+        out.push_str("ignore_rules: null\n");
+        return;
+    };
+    out.push_str("ignore_rules:\n");
+    match observed.budget {
+        Some(budget) => {
+            let _ = writeln!(out, "  budget: {budget}");
+        }
+        None => out.push_str("  budget: null\n"),
+    }
+    let _ = writeln!(out, "  applied: {}", observed.applied);
+    let _ = writeln!(out, "  refused: {}", observed.refused);
+    if observed.refusals.is_empty() {
+        out.push_str("  refusals: []\n");
+        return;
+    }
+    out.push_str("  refusals:\n");
+    for refusal in &observed.refusals {
+        let _ = writeln!(out, "    - path: {}", yaml_scalar(&refusal.path.to_string_lossy()));
+        let _ = writeln!(out, "      reason: {}", refusal.reason.label());
     }
 }
 
@@ -824,6 +881,7 @@ fn render_yaml(report: &Report) -> String {
             let _ = writeln!(out, "  - {}", yaml_scalar(error));
         }
     }
+    write_ignore_rules_yaml(&mut out, &report.ignore_rules);
     if report_schema(report) == CONTENT_REPORT_SCHEMA {
         match report.analysis.as_ref() {
             None => out.push_str("analysis: null\n"),
@@ -1902,7 +1960,7 @@ mod tests {
     #[test]
     fn machine_output_carries_the_schema_and_provenance() {
         let json = render(&fixture(&[ViewSpec::Summary]), Format::Json, false);
-        assert!(json.contains("\"schema\": \"fdu.report/4\""));
+        assert!(json.contains("\"schema\": \"fdu.report/5\""));
         assert!(json.contains("\"source\": \"cold_scan\""));
         assert!(json.contains("\"complete\": true"));
         // Timestamps render in the same grammar the CLI accepts back as a watermark.
@@ -1914,21 +1972,93 @@ mod tests {
     fn the_schema_constant_is_the_versioning_promise() {
         // Fails loudly when the schema string moves, so a field rename cannot ship
         // without a deliberate version bump and a golden update.
-        assert_eq!(REPORT_SCHEMA, "fdu.report/4");
-        // /4 and /5 add the section-level `bound`, which reports what a view dropped.
-        // Both lines move because a metadata-only section can be bounded too, so the
-        // field is not confined to content reports.
-        assert_eq!(CONTENT_REPORT_SCHEMA, "fdu.report/5");
+        assert_eq!(REPORT_SCHEMA, "fdu.report/5");
+        // /5 and /6 add the envelope's `ignore_rules`, which says whether ignore
+        // classification applied every `.gitignore`. Both lines move because every report
+        // carries the envelope.
+        assert_eq!(CONTENT_REPORT_SCHEMA, "fdu.report/6");
+    }
+
+    /// Every format says whether ignore rules were read and which files were refused, and
+    /// text names the directories and the knob as the requesting surface spells it.
+    #[test]
+    fn every_format_states_the_ignore_rules_a_report_could_apply() {
+        let unobserved = crate::test_support::not_observing_controls();
+        let mut blind = Index::new_with_scope("/root", unobserved);
+        blind
+            .apply(&Observation::new(vec![Op::Upsert {
+                path: PathBuf::from("a.txt"),
+                kind: EntryKind::File,
+                attrs: attrs(1, 1),
+            }]))
+            .expect("apply");
+        let provenance = Provenance {
+            scan_started_at: None,
+            generated_at: UNIX_EPOCH,
+            source: ReportSource::ColdScan,
+            complete: true,
+            errors: Vec::new(),
+        };
+        let query = Query { views: vec![ViewSpec::Summary], ..Query::default() };
+        let blind_report = report(&blind, &query, &provenance);
+        assert!(render(&blind_report, Format::Json, false).contains("\"ignore_rules\": null"));
+        assert!(render(&blind_report, Format::Yaml, false).contains("\nignore_rules: null\n"));
+        assert!(blind_report.notes.is_empty());
+
+        let mut observed =
+            Index::new_with_scope("/root", crate::test_support::observing_controls());
+        let mut long_line = vec![b'x'; crate::control::CONTROL_LINE_GUARD_BYTES + 1];
+        long_line.push(b'\n');
+        observed
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("vendor"),
+                    kind: EntryKind::Dir,
+                    attrs: attrs(0, 1),
+                },
+                Op::ControlUpsert {
+                    path: PathBuf::from(".gitignore"),
+                    source: b"*.log\n".to_vec(),
+                },
+                Op::ControlUpsert { path: PathBuf::from("vendor/.gitignore"), source: long_line },
+            ]))
+            .expect("apply");
+        let json = render(&report(&observed, &query, &provenance), Format::Json, false);
+        assert!(
+            json.contains(
+                "\"ignore_rules\": {\"budget\": 4194304, \"applied\": 1, \"refused\": 1, \
+                 \"refusals\": [{\"path\": \"vendor/.gitignore\", \"reason\": \"line_guard\"}]}"
+            ),
+            "{json}"
+        );
+        assert!(json.contains("\"complete\": true"), "a refusal is not an operational partial");
+        let yaml = render(&report(&observed, &query, &provenance), Format::Yaml, false);
+        assert!(
+            yaml.contains(
+                "ignore_rules:\n  budget: 4194304\n  applied: 1\n  refused: 1\n  refusals:\n    \
+                 - path: vendor/.gitignore\n      reason: line_guard\n"
+            ),
+            "{yaml}"
+        );
+
+        let flags = Query { axes: crate::query::AxisNames::FLAGS, ..query.clone() };
+        let note = "note: 1 .gitignore file not applied (1 with a line over the 16 KiB line \
+                    guard), so ignored shares under vendor are not exact; sizes are. To apply \
+                    them, set --gitignore-budget to all to lift the line guard";
+        let text = render(&report(&observed, &flags, &provenance), Format::Text, false);
+        assert!(text.ends_with(&format!("{note}\n")), "{text}");
+        let fields = report(&observed, &query, &provenance);
+        assert_eq!(fields.notes, [note.replace("--gitignore-budget", "control_budget")]);
     }
 
     #[test]
     fn metric_sections_upgrade_schema_while_metadata_sections_stay_on_v1() {
         let metadata = render(&fixture(&[ViewSpec::Tree]), Format::Json, false);
-        assert!(metadata.contains("\"schema\": \"fdu.report/4\""));
+        assert!(metadata.contains("\"schema\": \"fdu.report/5\""));
         assert!(!metadata.contains("\"analysis\""));
 
         let metrics = render(&fixture(&[ViewSpec::Types]), Format::Json, false);
-        assert!(metrics.contains("\"schema\": \"fdu.report/5\""));
+        assert!(metrics.contains("\"schema\": \"fdu.report/6\""));
         assert!(metrics.contains("\"analysis\": null"));
         assert!(metrics.contains("\"share\": {\"numerator\":"));
     }
