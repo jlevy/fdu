@@ -92,7 +92,8 @@
         "sha256": "03569b1886ceb5c05276b50c8431ab111de944cd6140fe1fa7d821dd8e0f29cf",
         "files": [
           "rust-toolchain.toml",
-          ".github/workflows/ci.yml"
+          ".github/workflows/ci.yml",
+          ".github/workflows/release.yml"
         ]
       },
       {
@@ -110,7 +111,8 @@
         "shasums": "https://nodejs.org/dist/v24.18.0/SHASUMS256.txt",
         "sha256": "3927bab574a00ca0560c9583fe19655ba19603a1c5851414e4325d34ac50e469",
         "files": [
-          ".github/workflows/ci.yml"
+          ".github/workflows/ci.yml",
+          ".github/workflows/release.yml"
         ]
       }
     ],
