@@ -106,13 +106,15 @@ THE LADDER
   the one above it and tells you more, so stop at the cheapest answer that
   settles your question.
 
-    fdu --view summary PATH             how big is this tree?        no reads
-    fdu PATH                            which folders are big?       no reads
-    fdu --view types PATH               what kinds of files?         no reads
-    fdu --view languages PATH           which languages?             no reads
-    fdu --analyze code PATH             how much code?               READS FILES
-    fdu --analyze words PATH            how much writing?            READS FILES
-    fdu --analyze all --view all PATH   everything there is          READS FILES
+    fdu --view summary PATH              how big is this tree?        no reads
+    fdu PATH                             which folders are big?       no reads
+    fdu --view largest PATH              what is eating my disk?      no reads
+    fdu --view recent PATH               what changed?                no reads
+    fdu --view types PATH                what kinds of files?         no reads
+    fdu --view languages PATH            which languages?             no reads
+    fdu --analyze code PATH              how much code?               READS FILES
+    fdu --analyze words PATH             how much writing?            READS FILES
+    fdu --analyze all --view full PATH   everything there is          READS FILES
 
 TWO FLAGS DO ALL OF IT
   --analyze decides what gets read. Anything but `none` opens and reads every
@@ -128,22 +130,29 @@ TWO FLAGS DO ALL OF IT
   A view never turns on an analyzer, because choosing how to look at a result
   should not quietly authorize reading every file in the tree. So a --view that
   displays none of what you asked to read says how much was read for nothing,
-  and --view all names any view it had to skip.
+  and --view full names any view it had to skip.
 
 MORE COMPOSITIONS
   fdu --view extensions ~/Downloads
   fdu --view types,families --format json .
   fdu --analyze words --view documents .
-  fdu --view files --min-size 10M --sort size -n 100 PATH   largest files
+  fdu --view largest -n 100 PATH                            the 100 largest files
   fdu --view files --modified-since 1h --sort mtime PATH    recent changes
 ",
             $watch_composition,
             r"
+  largest and recent are presets over files, not more views to learn:
+    largest = files --sort size --limit 20, regular files only
+    recent  = files --sort mtime --limit 20, regular files only
+  --sort and --limit still override them. files alone is complete: every
+  matching entry, in name order. full is every view except files.
+
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH, --scan-depth                         what is scanned and cached
   Content    --analyze none|lines|code|words|all        which file bodies are read
   Selection  --include, --exclude, --depth, --limit     which entries are considered
-  View       tree,extensions,types,families,languages,documents,files,summary,all
+  View       summary,tree,families,types,extensions,languages,documents,
+             largest,recent,files,full
   Format     --format text|json|jsonl|yaml, --color
   Mode       ",
             $mode_flags,
@@ -1298,7 +1307,7 @@ const fn view_displays_analysis(view: ViewSpec) -> bool {
     matches!(view, ViewSpec::Types | ViewSpec::Families | ViewSpec::Languages | ViewSpec::Documents)
 }
 
-/// Views to render, plus any `--view all` could not satisfy.
+/// Views to render, plus any `--view full` could not satisfy.
 #[derive(Debug)]
 struct ResolvedViews {
     selected: Vec<ViewSpec>,
@@ -1307,7 +1316,7 @@ struct ResolvedViews {
 
 /// Resolve the view axis against the content axis.
 ///
-/// `all` expands to what the requested analyzers can answer rather than failing the
+/// `full` expands to what the requested analyzers can answer rather than failing the
 /// whole run over one unsatisfiable view, and reports what it dropped so the omission is
 /// stated rather than hidden.
 fn resolve_views(spec: Option<&str>, profile: AnalysisSet) -> anyhow::Result<ResolvedViews> {
@@ -1332,7 +1341,7 @@ fn display_notes(views: &ResolvedViews, profile: AnalysisSet, bytes_read: u64) -
     // use, and `--cache`-aware callers depend on it.  Silence would hide the cost instead.
     if profile.is_enabled() && !views.selected.iter().any(|view| view_displays_analysis(*view)) {
         return vec![format!(
-            "note: --analyze {} read {}; no selected view displays content metrics — try --view families, languages, or all",
+            "note: --analyze {} read {}; no selected view displays content metrics — try --view families, languages, or full",
             profile.labels().join(","),
             report_format::human_bytes(bytes_read),
         )];
@@ -2080,25 +2089,83 @@ mod tests {
     }
 
     /// The vocabularies the guide lists must be the ones the parsers accept.
+    ///
+    /// The View row is compared whole rather than word by word. A membership check kept
+    /// passing after the view total was renamed `full` and two presets were added,
+    /// because every old name still appeared somewhere in the guide, while the row went
+    /// on offering `all` to a parser that rejects it.
     #[test]
     fn the_guide_only_names_views_and_analyzers_that_parse() {
-        for view in [
-            "tree",
-            "extensions",
-            "types",
-            "families",
-            "languages",
-            "documents",
-            "files",
-            "summary",
-        ] {
-            assert!(DOCS.contains(view), "the guide should list the {view} view");
-            ViewSpec::parse(view).unwrap_or_else(|_| panic!("{view} must parse"));
-        }
+        let row = DOCS
+            .split("\n  View ")
+            .nth(1)
+            .and_then(|rest| rest.split("\n  Format ").next())
+            .expect("the guide should have a View axis row");
+        let listed: Vec<&str> =
+            row.split([',', ' ', '\n']).filter(|name| !name.is_empty()).collect();
+        let vocabulary = ViewSpec::vocabulary();
+        let accepted: Vec<&str> = vocabulary.split(", ").collect();
+        assert_eq!(listed, accepted, "the View row should list exactly what --view accepts");
         for set in ["none", "lines", "code", "words", "all"] {
             assert!(DOCS.contains(set), "the guide should list the {set} analyzer value");
             AnalysisSet::parse(set).unwrap_or_else(|_| panic!("{set} must parse"));
         }
+    }
+
+    /// Every command the guide shows must resolve as written.
+    ///
+    /// The guide is where a reader copies commands from, so a value the parser rejects
+    /// is a broken example: `--view all` stayed on the ladder's last rung after the view
+    /// total became `full`, and the binary printing it exited 2 on it.
+    #[test]
+    fn every_command_the_guide_shows_resolves() {
+        let mut checked = 0;
+        for line in DOCS.lines().filter(|line| line.starts_with(' ')) {
+            let Some(example) = line.trim_start().strip_prefix("fdu ") else { continue };
+            // A ladder row continues with its question after a column gap.
+            let example = example.split("   ").next().unwrap_or(example);
+            let args = std::iter::once("fdu").chain(example.split_whitespace());
+            let parsed = Cli::try_parse_from(args)
+                .unwrap_or_else(|error| panic!("the guide shows `fdu {example}`: {error}"));
+            if let Err(error) = parsed.resolved_query() {
+                panic!("the guide shows `fdu {example}`: {error}");
+            }
+            checked += 1;
+        }
+        assert!(checked > 0, "the guide should show commands");
+    }
+
+    /// Every view and analyzer value the skill shows must be one the parsers accept.
+    ///
+    /// An agent copies an inline `--view full` as readily as a fenced command, so both
+    /// count. Only the guide was checked, and the skill kept `--view all` and an
+    /// analyzer vocabulary the content axis no longer has.
+    #[test]
+    fn the_skill_only_names_views_and_analyzers_that_parse() {
+        let skill = compose_skill();
+        let spans = skill.split('`').filter(|span| span.starts_with("--"));
+        let commands = skill.lines().map(str::trim_start).filter(|line| line.starts_with("fdu "));
+        let mut checked = 0;
+        for text in spans.chain(commands) {
+            let mut words = text.split_whitespace();
+            while let Some(flag) = words.next() {
+                if flag != "--view" && flag != "--analyze" {
+                    continue;
+                }
+                let Some(value) = words.next() else { continue };
+                // A table cell lists alternatives, escaped for Markdown: `none\|lines`.
+                for choice in value.split(['\\', '|']).filter(|choice| !choice.is_empty()) {
+                    let parsed = if flag == "--view" {
+                        ViewSpec::resolve(Some(choice), AnalysisSet::ALL, flag).map(drop)
+                    } else {
+                        AnalysisSet::parse(choice).map(drop)
+                    };
+                    assert!(parsed.is_ok(), "the skill shows `{flag} {choice}`: {parsed:?}");
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 0, "the skill should show views and analyzers");
     }
 
     /// The stale-schema bug, made unrepeatable.
@@ -2201,6 +2268,12 @@ mod tests {
         assert_eq!(notes.len(), 1, "{notes:?}");
         assert!(notes[0].contains("no selected view displays content metrics"), "{notes:?}");
         assert!(notes[0].contains("1.1 KiB"), "the note quantifies what was read: {notes:?}");
+        // The note is advice, so every view it suggests must be one --view accepts.
+        let (_, suggested) = notes[0].split_once("try --view ").expect("the note suggests views");
+        for view in suggested.split([',', ' ']).filter(|word| !word.is_empty() && *word != "or") {
+            let resolved = ViewSpec::resolve(Some(view), AnalysisSet::ALL, "--view");
+            assert!(resolved.is_ok(), "the note suggests --view {view}: {resolved:?}");
+        }
 
         // A view that does display the metrics earns no note at all.
         let spent = resolve_views(Some("families"), AnalysisSet::ALL).expect("resolve");

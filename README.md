@@ -33,11 +33,13 @@ cheapest answer that settles your question:
 | --- | --- | --- |
 | How big is this tree? | `fdu --view summary PATH` | no |
 | Which folders are big? | `fdu PATH` | no |
+| What is eating my disk? | `fdu --view largest PATH` | no |
+| What changed? | `fdu --view recent PATH` | no |
 | What kinds of files are in it? | `fdu --view types PATH` | no |
 | Which languages? | `fdu --view languages PATH` | no |
 | How much code? | `fdu --analyze code PATH` | **yes** |
 | How much writing? | `fdu --analyze words PATH` | **yes** |
-| Everything you have | `fdu --analyze all --view all PATH` | **yes** |
+| Everything you have | `fdu --analyze all --view full PATH` | **yes** |
 
 Two flags do all of it.
 **`--analyze` decides what gets read**, and it is the only thing that can make a run
@@ -73,12 +75,23 @@ as totals. `code,words` runs both; `lines` comes free with any analyzer, since a
 that is being read is already being counted.
 
 `--view` takes a comma-separated list: `summary`, `tree`, `families`, `types`,
-`extensions`, `languages`, `documents`, `files`, plus `all`. Several views in one run
-share one scan — `fdu --view tree,types PATH` walks once and prints both.
+`extensions`, `languages`, `documents`, `largest`, `recent`, `files`, or `full` alone.
+Several views in one run share one scan — `fdu --view tree,types PATH` walks once and
+prints both.
 
-`--view all` prints every view your analyzers can answer and names any it had to skip.
-`documents` is the only view that needs content, so it is the only one that can be
-skipped.
+`files` is complete: every matching entry, in name order, the way `fd` and `find` list a
+tree. `largest` and `recent` are presets over it rather than more views to learn:
+
+```text
+largest = files --sort size  --limit 20, regular files only
+recent  = files --sort mtime --limit 20, regular files only
+```
+
+`--sort` and `--limit` still override either preset.
+
+`--view full` prints every view except `files` that your analyzers can answer, and names
+any it had to skip. `documents` is the only view that needs content, so it is the only
+one that can be skipped.
 
 `fdu --docs` prints all of this as a guide, without a PATH and without scanning;
 `--help` stays the flag reference.
@@ -393,7 +406,7 @@ fdu --view extensions ~/Downloads          # break down by raw file extension
 fdu --analyze lines --view families .      # lines, blanks, words, and exact byte shares
 fdu --analyze words .                      # picks the view that displays the words
 fdu --format json .                        # stable, versioned machine output
-fdu --view files --sort size -n 20 ~/src   # compose a largest-files query
+fdu --view largest -n 50 ~/src             # the 50 largest files
 fdu --docs                                 # the usage guide: ladder, axes, contracts
 fdu --skill                                # print the self-contained agent skill
 ```
