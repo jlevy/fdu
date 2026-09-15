@@ -9,6 +9,16 @@
 
 mod cli;
 
+/// The repository README's Rust examples, compiled and run as doctests.
+///
+/// The README is this crate's crates.io page, and nothing compiled its examples, so they
+/// kept naming an `AnalysisProfile` type for a release after it was gone. The path reaches
+/// the workspace copy; a packaged crate carries the README at its own root, which only a
+/// doctest run from an extracted package would notice.
+#[cfg(doctest)]
+#[doc = include_str!("../../../README.md")]
+pub struct ReadmeDoctests;
+
 pub use fdu_core::*;
 
 pub use crate::cli::run_process;

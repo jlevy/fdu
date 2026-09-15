@@ -17,7 +17,7 @@ repository: <https://github.com/jlevy/fdu>
 states the compatibility rules.
 The revision-arbitrated observation/commit contract, bounded parallel walker, applying
 reconciler, checksummed snapshot and content sidecars, cache lifecycle, and opt-in
-metric profiles are tested end to end.
+content analyzers are tested end to end.
 
 ```shell
 cargo add fdu-core
@@ -46,12 +46,12 @@ paths may use bounded shebang, modeline, literal, or signature probes whose sour
 confidence are retained in reports and sidecars.
 
 ```rust
-use fdu_core::content::AnalysisProfile;
+use fdu_core::content::AnalysisSet;
 use fdu_core::{OpenConfig, open};
 use std::path::Path;
 
 let mut config = OpenConfig::default();
-config.analysis.profile = AnalysisProfile::Full;
+config.analysis.profile = AnalysisSet::ALL;
 let (index, report) = open(Path::new("."), &config)?;
 let lines = index
     .content_rollup(Path::new(""))

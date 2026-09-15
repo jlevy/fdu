@@ -321,7 +321,7 @@ was read for nothing.
 | Layer | Representative command | Filesystem work | State retained |
 | --- | --- | --- | --- |
 | Exact summary | `fdu --view summary PATH` | Enumerate and stat every entry; never read file contents | Five aggregate tallies; no index or cache |
-| Metadata index | `fdu PATH` | Enumerate and stat every entry; classify recognized paths without reading contents | Reusable parent-pointer index and, unless disabled, metadata snapshot v2 |
+| Metadata index | `fdu PATH` | Enumerate and stat every entry; classify recognized paths without reading contents | Reusable parent-pointer index and, unless disabled, a metadata snapshot |
 | Content index | `fdu --analyze SET PATH` | Metadata work plus streaming reads through every eligible file missing from a compatible content sidecar | Metadata index plus sparse content roll-ups and a separate `.content` sidecar |
 
 The summary-only plan applies to one unfiltered `summary` view under any cache policy
@@ -339,8 +339,8 @@ With no `--analyze`, the default is strictly metadata-only:
 - `tree`, `files`, `summary`, and `extensions` retain their metadata behavior
 - `types`, `families`, and `languages` add path-only classification by exact filename
   and extension
-- the content sidecar is not loaded, and analyzer settings do not alter metadata
-  snapshot v2
+- the content sidecar is not loaded, and analyzer settings do not alter the metadata
+  snapshot
 
 `--analyze` names a **set** of analyzers, not a level of one.
 `code` and `words` measure different things over different families, and either is
@@ -460,18 +460,18 @@ A text report covering more than one view labels each block with an all-caps hea
 naming the view, separated by a blank line, and colorizes that header on the same terms
 as the rest of human output; a single-view report is left bare, so `fdu --view files`
 stays a listing of paths and nothing else.
-Metadata-only machine reports retain the versioned `fdu.report/1` schema unless a
-metric-summary view is requested.
+Metadata-only machine reports use the versioned `fdu.report/4` schema.
 An `extension` value is either a derived extension, which always carries a leading dot,
 or the literal `(none)` for names that have none; a consumer matching on the dot should
 expect that one label without it.
 The schema is unchanged by this, because the field’s name and type are: `(none)` is a
 member of its value domain, not a new shape.
-Every explicit content request and the `types`, `families`, `languages`, and `documents`
-metric summaries use `fdu.report/3`, adding exact share numerators and denominators,
-analyzer coverage, and versioned rule, option, and analyzer identities.
-An unavailable metric share is represented as `0/0` in machine output and `—` in human
-output, never as a measured zero percent.
+A report that ran content analysis, or that includes the `types`, `families`,
+`languages`, or `documents` metric summaries, uses `fdu.report/5`, adding exact share
+numerators and denominators, analyzer coverage, and versioned rule, option, and analyzer
+identities.
+An unavailable metric share is represented as `0/0` in machine output and `—`
+in human output, never as a measured zero percent.
 Every metric row also reports how its files were detected, the confidence of those
 decisions, and generated, vendored, and documentation flags.
 Scan completeness and each tree node’s rendered truncation are separate fields.
@@ -490,18 +490,18 @@ Content results use a separately versioned sidecar keyed by the analyzer set, so
 unchanged warm run does not reopen files -- and a sidecar written by a wider set answers
 any narrower request without rereading, because it already holds those metrics.
 Widening the set can require reanalysis, but it never invalidates the separate metadata
-snapshot v2. The `code` analyzer adds the dependency-free `code-sloc-v1` state machine
-for Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP, Swift,
-Kotlin, shell, and SQL. It reports code, comment, and code-blank lines separately,
-counts mixed lines as code, treats multiline strings and docstrings as code, and uses
-code lines as the default language-percentage denominator.
+snapshot. The `code` analyzer adds the dependency-free `code-sloc-v1` state machine for
+Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP, Swift, Kotlin,
+shell, and SQL. It reports code, comment, and code-blank lines separately, counts mixed
+lines as code, treats multiline strings and docstrings as code, and uses code lines as
+the default language-percentage denominator.
 Other code types remain visible as unsupported coverage rather than being mislabeled
 from nonblank lines.
-The `documents` profile adds FlexDoc-style normalized word counts, paragraph runs, and
+The `words` analyzer adds FlexDoc-style normalized word counts, paragraph runs, and
 pages derived after aggregation.
 For Markdown it separately reports reader-visible words and excludes URLs, link
-destinations, code, metadata, footnote markers, and hidden markup; `full` combines the
-code and document analyzers.
+destinations, code, metadata, footnote markers, and hidden markup; `all` runs the `code`
+and `words` analyzers together.
 
 When analysis is enabled, classification is also a cost ladder.
 Exact filenames and recognized extensions stay path-only.
@@ -510,7 +510,7 @@ shebangs, modelines, C++ literals, XML and manpage markers, binary signatures, a
 generated-file markers.
 For unresolved paths, NUL and named binary signatures take precedence over shebang and
 modeline hints. A NUL found anywhere in any eligible read discards provisional text
-metrics, and every deeper decision is explainable in `fdu.report/3` rather than silently
+metrics, and every deeper decision is explainable in `fdu.report/5` rather than silently
 guessed.
 
 This surface — composable views, selection filters, time-window and watermark queries,
@@ -525,13 +525,14 @@ Why the cache can be a speed-up or a cost depending on platform and view is in
 
 ## As a Rust Library
 
-```toml
-[dependencies]
-fdu = { path = "crates/fdu", default-features = false }
+```shell
+cargo add fdu
 ```
 
-`default-features = false` skips the CLI’s dependency tree.
-Add `features = ["watch"]` for the OS-native watch layer.
+`fdu` re-exports the whole engine, and its default `watch` build feature adds the
+OS-native watch layer; `cargo add fdu --no-default-features` leaves that out.
+The command line’s own dependencies come with `fdu` either way, so an embedding that
+wants none of them depends on `fdu-core` instead.
 
 ```rust
 use fdu::{OpenConfig, open};
@@ -548,16 +549,15 @@ if let Some(src) = index.rollup(Path::new("src")) {
 # Ok::<(), fdu::Error>(())
 ```
 
-Opt into the complete code-and-document tier explicitly; metadata-only remains the
-default:
+Opt into every analyzer explicitly; metadata-only remains the default:
 
 ```rust
-use fdu::content::AnalysisProfile;
+use fdu::content::AnalysisSet;
 use fdu::{OpenConfig, open};
 use std::path::Path;
 
 let mut config = OpenConfig::default();
-config.analysis.profile = AnalysisProfile::Full;
+config.analysis.profile = AnalysisSet::ALL;
 let (index, report) = open(Path::new("."), &config)?;
 let analyzed = index
     .content_rollup(Path::new(""))
@@ -576,7 +576,7 @@ import fdu
 
 index = fdu.open(
     Path("/path/to/tree"),
-    analysis=fdu.AnalysisOptions(profile=fdu.AnalysisProfile.FULL),
+    analysis=fdu.AnalysisOptions(analyze=fdu.Analysis.ALL),
 )
 print(index.status.complete, index.status.freshness, index.status.errors)
 print(index.total().files)

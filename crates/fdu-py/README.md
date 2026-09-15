@@ -23,7 +23,7 @@ index = fdu.open(
     Path("/path/to/tree"),
     cache=fdu.CachePolicy.AUTO,
     scan=fdu.ScanOptions(one_filesystem=True),
-    analysis=fdu.AnalysisOptions(profile=fdu.AnalysisProfile.FULL),
+    analysis=fdu.AnalysisOptions(analyze=fdu.Analysis.ALL),
 )
 print(index.status.complete)
 print(index.status.freshness)
@@ -57,8 +57,10 @@ closable, event-driven change feed.
 Content analysis itself remains one-shot: refresh reanalyzes after metadata
 reconciliation, while a watch feed reports metadata changes.
 
-`AnalysisProfile` covers the same `none`, `basic`, `code`, `documents`, and `full`
-profiles as the Rust CLI, and `AnalysisOptions` carries worker concurrency.
+`Analysis` names the same analyzers as the command line’s `--analyze`: `lines`, `code`,
+and `words`, with `none` and `all` as totals.
+`AnalysisOptions` takes one of them or a comma-separated set such as `"code,words"`,
+plus a worker count.
 Typed report sections expose stable type/family groups, exact share fractions, line and
 word slots, page denominators, coverage outcomes, analyzer provenance, detection source
 and confidence, and generated/vendor/documentation flags.
