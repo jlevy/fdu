@@ -3,9 +3,9 @@ type: is
 id: is-01m2h6nn916177k0wrc92zmkge
 title: "Address review: PR #55 — delta review 5204152578 (volume identity, inventory container, accounting)"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 8
+version: 9
 spec_path: docs/project/specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md
 labels: []
 dependencies: []
@@ -17,6 +17,10 @@ child_order_hints:
   - is-01m2h6pbwp4zssmpy6savygn1x
   - is-01m2h6pcsyv7veh22eygwyw99h
 created_at: 2026-09-15T00:15:05.503Z
-updated_at: 2026-09-15T00:15:40.276Z
+updated_at: 2026-09-15T00:32:57.420Z
+closed_at: 2026-09-15T00:32:57.418Z
+close_reason: "All six delta-review findings fixed on PR #55 (bb4317e, a59b089, 0a254bf, df47165, af3e148, 8d7e4fc, 55ce4a3); CI 19/19 green on 55ce4a3; disposition map https://github.com/jlevy/fdu/pull/55#issuecomment-5672838674. New follow-up fdu-4qtk."
+resolution: null
+duplicate_of: null
 ---
 Address delta review https://github.com/jlevy/fdu/pull/55#pullrequestreview-5204152578 on PR #55 (codex/disk-usage-checkpoints, head 4727de0). Docs-only: six findings (PR55-ID-1, PR55-INV-1, PR55-ACCT-2, PR55-DUR-2, PR55-OQ-1, PR55-DOC-4), all fixed in the plan text. Earlier review dispositions: fdu-r3lm and https://github.com/jlevy/fdu/pull/55#issuecomment-5672501907. One child bead per finding.
