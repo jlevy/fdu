@@ -11,16 +11,18 @@ One walk, many metrics, cached between runs.
 > 6.016 for dust, and 6.782 for Go gdu on an M1 Pro MacBook with a local SSD. See
 > [the full comparison](#speed-and-the-cache).
 
-> **Status: pre-release.** The observation/commit contract, bounded in-process change
-> feed, cache lifecycle, applying reconciler, CLI, and Python wheel are tested end to
-> end, and the measured-improvement loop described below is running.
+> **Status: 0.x.** A new minor release may change the Rust API, the Python API, or the
+> command line; [the release process](docs/project/guides/release-process.md) states the
+> compatibility rules.
+> The observation/commit contract, bounded in-process change feed, cache lifecycle,
+> applying reconciler, CLI, and Python wheel are tested end to end, and the
+> measured-improvement loop described below is running.
 > The portable walker has a bounded parallel pool; macOS additionally uses an audited
 > `getattrlistbulk` backend.
 > Local M1/APFS evidence is published below and is the bulk of what has been measured.
 > Linux evidence is early: real and improving, but virtualized rather than bare metal,
 > so claims whose mechanism is device latency remain untested there.
-> The full release matrix is open, and Windows builds and passes tests with no
-> performance evidence claimed at all.
+> Windows builds and passes tests, with no performance evidence claimed at all.
 > See [the Phase 1 plan](docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md).
 
 ## Start Here
@@ -33,11 +35,13 @@ cheapest answer that settles your question:
 | --- | --- | --- |
 | How big is this tree? | `fdu --view summary PATH` | no |
 | Which folders are big? | `fdu PATH` | no |
+| What is eating my disk? | `fdu --view largest PATH` | no |
+| What changed? | `fdu --view recent PATH` | no |
 | What kinds of files are in it? | `fdu --view types PATH` | no |
 | Which languages? | `fdu --view languages PATH` | no |
 | How much code? | `fdu --analyze code PATH` | **yes** |
 | How much writing? | `fdu --analyze words PATH` | **yes** |
-| Everything you have | `fdu --analyze all --view all PATH` | **yes** |
+| Everything you have | `fdu --analyze all --view full PATH` | **yes** |
 
 Two flags do all of it.
 **`--analyze` decides what gets read**, and it is the only thing that can make a run
@@ -73,12 +77,23 @@ as totals. `code,words` runs both; `lines` comes free with any analyzer, since a
 that is being read is already being counted.
 
 `--view` takes a comma-separated list: `summary`, `tree`, `families`, `types`,
-`extensions`, `languages`, `documents`, `files`, plus `all`. Several views in one run
-share one scan — `fdu --view tree,types PATH` walks once and prints both.
+`extensions`, `languages`, `documents`, `largest`, `recent`, `files`, or `full` alone.
+Several views in one run share one scan — `fdu --view tree,types PATH` walks once and
+prints both.
 
-`--view all` prints every view your analyzers can answer and names any it had to skip.
-`documents` is the only view that needs content, so it is the only one that can be
-skipped.
+`files` is complete: every matching entry, in name order, the way `fd` and `find` list a
+tree. `largest` and `recent` are presets over it rather than more views to learn:
+
+```text
+largest = files --sort size  --limit 20, regular files only
+recent  = files --sort mtime --limit 20, regular files only
+```
+
+`--sort` and `--limit` still override either preset.
+
+`--view full` prints every view except `files` that your analyzers can answer, and names
+any it had to skip. `documents` is the only view that needs content, so it is the only
+one that can be skipped.
 
 `fdu --docs` prints all of this as a guide, without a PATH and without scanning;
 `--help` stays the flag reference.
@@ -244,19 +259,35 @@ bulk-attribute design — are in
 
 ## Install
 
-Until the crate is published, install from source with Rust 1.85 or newer:
+Install the command line from crates.io with Rust 1.85 or newer:
+
+```shell
+cargo install --locked fdu
+fdu --help
+```
+
+`--locked` builds against the `Cargo.lock` published with the crate.
+Without it Cargo re-resolves every dependency to the newest compatible release, which
+bypasses the review and release cool-off this project applies to its dependency set —
+see [SUPPLY-CHAIN-SECURITY.md](SUPPLY-CHAIN-SECURITY.md).
+
+The `fdu` Python package on PyPI carries the same command line as a console script, in
+prebuilt wheels for the platforms
+[the release process](docs/project/guides/release-process.md#supported-artifacts) lists,
+so running it needs no Rust toolchain:
+
+```shell
+uv tool install fdu                    # install the command line
+uvx --from fdu==<version> fdu --help   # or run an exact release without installing
+```
+
+To build from a checkout instead:
 
 ```shell
 git clone https://github.com/jlevy/fdu.git
 cd fdu
 cargo install --locked --path crates/fdu
-fdu --help
 ```
-
-`--locked` builds against the committed `Cargo.lock`. Without it Cargo re-resolves every
-dependency to the newest compatible release, which bypasses the review and release
-cool-off this project applies to its dependency set — see
-[SUPPLY-CHAIN-SECURITY.md](SUPPLY-CHAIN-SECURITY.md).
 
 The Python package builds and tests from the same workspace:
 
@@ -277,10 +308,6 @@ The command line depends on `fdu-core` the way any consumer does, so it cannot r
 private item: anything it needs is public API, and the compiler decides that on every
 build instead of a reviewer deciding it in review.
 
-Publishing is Phase 1 work.
-`cargo install fdu` and `uvx --from fdu==<version> fdu` are future commands; neither
-package should be presented as available from crates.io or PyPI yet.
-
 ## Three Cost Layers
 
 fdu separates **what it reads** from **how it reports the result**. `--analyze` is the
@@ -294,7 +321,7 @@ was read for nothing.
 | Layer | Representative command | Filesystem work | State retained |
 | --- | --- | --- | --- |
 | Exact summary | `fdu --view summary PATH` | Enumerate and stat every entry; never read file contents | Five aggregate tallies; no index or cache |
-| Metadata index | `fdu PATH` | Enumerate and stat every entry; classify recognized paths without reading contents | Reusable parent-pointer index and, unless disabled, metadata snapshot v2 |
+| Metadata index | `fdu PATH` | Enumerate and stat every entry; classify recognized paths without reading contents | Reusable parent-pointer index and, unless disabled, a metadata snapshot |
 | Content index | `fdu --analyze SET PATH` | Metadata work plus streaming reads through every eligible file missing from a compatible content sidecar | Metadata index plus sparse content roll-ups and a separate `.content` sidecar |
 
 The summary-only plan applies to one unfiltered `summary` view under any cache policy
@@ -312,8 +339,8 @@ With no `--analyze`, the default is strictly metadata-only:
 - `tree`, `files`, `summary`, and `extensions` retain their metadata behavior
 - `types`, `families`, and `languages` add path-only classification by exact filename
   and extension
-- the content sidecar is not loaded, and analyzer settings do not alter metadata
-  snapshot v2
+- the content sidecar is not loaded, and analyzer settings do not alter the metadata
+  snapshot
 
 `--analyze` names a **set** of analyzers, not a level of one.
 `code` and `words` measure different things over different families, and either is
@@ -393,7 +420,7 @@ fdu --view extensions ~/Downloads          # break down by raw file extension
 fdu --analyze lines --view families .      # lines, blanks, words, and exact byte shares
 fdu --analyze words .                      # picks the view that displays the words
 fdu --format json .                        # stable, versioned machine output
-fdu --view files --sort size -n 20 ~/src   # compose a largest-files query
+fdu --view largest -n 50 ~/src             # the 50 largest files
 fdu --docs                                 # the usage guide: ladder, axes, contracts
 fdu --skill                                # print the self-contained agent skill
 ```
@@ -433,18 +460,18 @@ A text report covering more than one view labels each block with an all-caps hea
 naming the view, separated by a blank line, and colorizes that header on the same terms
 as the rest of human output; a single-view report is left bare, so `fdu --view files`
 stays a listing of paths and nothing else.
-Metadata-only machine reports retain the versioned `fdu.report/1` schema unless a
-metric-summary view is requested.
+Metadata-only machine reports use the versioned `fdu.report/4` schema.
 An `extension` value is either a derived extension, which always carries a leading dot,
 or the literal `(none)` for names that have none; a consumer matching on the dot should
 expect that one label without it.
 The schema is unchanged by this, because the field’s name and type are: `(none)` is a
 member of its value domain, not a new shape.
-Every explicit content request and the `types`, `families`, `languages`, and `documents`
-metric summaries use `fdu.report/3`, adding exact share numerators and denominators,
-analyzer coverage, and versioned rule, option, and analyzer identities.
-An unavailable metric share is represented as `0/0` in machine output and `—` in human
-output, never as a measured zero percent.
+A report that ran content analysis, or that includes the `types`, `families`,
+`languages`, or `documents` metric summaries, uses `fdu.report/5`, adding exact share
+numerators and denominators, analyzer coverage, and versioned rule, option, and analyzer
+identities.
+An unavailable metric share is represented as `0/0` in machine output and `—`
+in human output, never as a measured zero percent.
 Every metric row also reports how its files were detected, the confidence of those
 decisions, and generated, vendored, and documentation flags.
 Scan completeness and each tree node’s rendered truncation are separate fields.
@@ -463,18 +490,18 @@ Content results use a separately versioned sidecar keyed by the analyzer set, so
 unchanged warm run does not reopen files -- and a sidecar written by a wider set answers
 any narrower request without rereading, because it already holds those metrics.
 Widening the set can require reanalysis, but it never invalidates the separate metadata
-snapshot v2. The `code` analyzer adds the dependency-free `code-sloc-v1` state machine
-for Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP, Swift,
-Kotlin, shell, and SQL. It reports code, comment, and code-blank lines separately,
-counts mixed lines as code, treats multiline strings and docstrings as code, and uses
-code lines as the default language-percentage denominator.
+snapshot. The `code` analyzer adds the dependency-free `code-sloc-v1` state machine for
+Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP, Swift, Kotlin,
+shell, and SQL. It reports code, comment, and code-blank lines separately, counts mixed
+lines as code, treats multiline strings and docstrings as code, and uses code lines as
+the default language-percentage denominator.
 Other code types remain visible as unsupported coverage rather than being mislabeled
 from nonblank lines.
-The `documents` profile adds FlexDoc-style normalized word counts, paragraph runs, and
+The `words` analyzer adds FlexDoc-style normalized word counts, paragraph runs, and
 pages derived after aggregation.
 For Markdown it separately reports reader-visible words and excludes URLs, link
-destinations, code, metadata, footnote markers, and hidden markup; `full` combines the
-code and document analyzers.
+destinations, code, metadata, footnote markers, and hidden markup; `all` runs the `code`
+and `words` analyzers together.
 
 When analysis is enabled, classification is also a cost ladder.
 Exact filenames and recognized extensions stay path-only.
@@ -483,7 +510,7 @@ shebangs, modelines, C++ literals, XML and manpage markers, binary signatures, a
 generated-file markers.
 For unresolved paths, NUL and named binary signatures take precedence over shebang and
 modeline hints. A NUL found anywhere in any eligible read discards provisional text
-metrics, and every deeper decision is explainable in `fdu.report/3` rather than silently
+metrics, and every deeper decision is explainable in `fdu.report/5` rather than silently
 guessed.
 
 This surface — composable views, selection filters, time-window and watermark queries,
@@ -498,13 +525,14 @@ Why the cache can be a speed-up or a cost depending on platform and view is in
 
 ## As a Rust Library
 
-```toml
-[dependencies]
-fdu = { path = "crates/fdu", default-features = false }
+```shell
+cargo add fdu
 ```
 
-`default-features = false` skips the CLI’s dependency tree.
-Add `features = ["watch"]` for the OS-native watch layer.
+`fdu` re-exports the whole engine, and its default `watch` build feature adds the
+OS-native watch layer; `cargo add fdu --no-default-features` leaves that out.
+The command line’s own dependencies come with `fdu` either way, so an embedding that
+wants none of them depends on `fdu-core` instead.
 
 ```rust
 use fdu::{OpenConfig, open};
@@ -521,16 +549,15 @@ if let Some(src) = index.rollup(Path::new("src")) {
 # Ok::<(), fdu::Error>(())
 ```
 
-Opt into the complete code-and-document tier explicitly; metadata-only remains the
-default:
+Opt into every analyzer explicitly; metadata-only remains the default:
 
 ```rust
-use fdu::content::AnalysisProfile;
+use fdu::content::AnalysisSet;
 use fdu::{OpenConfig, open};
 use std::path::Path;
 
 let mut config = OpenConfig::default();
-config.analysis.profile = AnalysisProfile::Full;
+config.analysis.profile = AnalysisSet::ALL;
 let (index, report) = open(Path::new("."), &config)?;
 let analyzed = index
     .content_rollup(Path::new(""))
@@ -549,7 +576,7 @@ import fdu
 
 index = fdu.open(
     Path("/path/to/tree"),
-    analysis=fdu.AnalysisOptions(profile=fdu.AnalysisProfile.FULL),
+    analysis=fdu.AnalysisOptions(analyze=fdu.Analysis.ALL),
 )
 print(index.status.complete, index.status.freshness, index.status.errors)
 print(index.total().files)
@@ -570,10 +597,8 @@ Completeness and freshness stay independent: a cache-only index may cover its co
 scope while remaining stale until it is revalidated.
 Every native method is bulk: it returns a whole structured result in one call.
 A million small zero-copy calls lose comfortably to one large call.
-The same wheel also installs an `fdu` console script backed by the native Rust CLI. Once
-a release is published, that makes an exact version directly runnable as
-`uvx --from fdu==<version> fdu`; the local wheel and `uvx` path are already exercised by
-`make python-smoke` without implying that a public release exists.
+The same wheel also installs an `fdu` console script backed by the native Rust CLI, and
+`make python-smoke` exercises it through the local wheel and `uvx`.
 
 ## How It Works
 

@@ -2,10 +2,9 @@
 
 ## Supported Versions
 
-Before the first public release, only the current `main` branch receives security fixes.
-After `0.1.0`, the latest released minor series and the current development branch are
-supported. Older `0.x` lines may receive a fix when the change is low risk, but they are
-not a standing compatibility promise.
+The latest released minor series and the current `main` branch receive security fixes.
+Older `0.x` lines may receive a fix when the change is low risk, but they are not a
+standing compatibility promise.
 
 ## Reporting a Vulnerability
 
