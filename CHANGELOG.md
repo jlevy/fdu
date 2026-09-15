@@ -108,7 +108,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `Watching`.
   - A refresh that verifies the same facts as a concurrent producer applies as unchanged
     rather than as a lost race, so it does not send the observation handoff around again
-    or fail the root.
+    or fail the root. That includes a `.gitignore`’s rules as well as its entry.
   - A refresh on a `Failed` root keeps the issue that explains the failure.
 
 ### Known limitations

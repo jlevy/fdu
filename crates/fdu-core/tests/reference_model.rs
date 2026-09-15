@@ -164,6 +164,8 @@ impl Model {
                 Some(PathState::Present { kind: *kind, attrs: *attrs })
             }
             Op::Remove { .. } => Some(PathState::Absent),
+            // The engine gives a control op the control table as its target. The model holds
+            // no table and never applies one, so only an invalidation reaches this arm.
             Op::ControlUpsert { .. } | Op::ControlRemove { .. } | Op::InvalidateSubtree { .. } => {
                 None
             }

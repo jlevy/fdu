@@ -6652,72 +6652,88 @@ mod tests {
     /// A refresh that commits the very facts the handoff is about to commit is not a
     /// conflict. The handoff's conditional upserts were refused as stale because their
     /// baselines had moved, so it walked the whole root again, and three such refreshes in
-    /// a row failed the root over commits that would have applied as unchanged.
+    /// a row failed the root over commits that would have applied as unchanged. A control
+    /// file is the case with two ops on one baseline, the entry and its rules, and both
+    /// must converge.
     #[cfg(feature = "watch")]
     #[test]
     fn handoff_settles_through_a_convergent_refresh_without_a_second_walk() {
-        let root = tempfile::tempdir().expect("temp root");
-        let scripts = tempfile::tempdir().expect("script root");
-        let path = root.path().join("shared.txt");
-        std::fs::write(&path, b"before").expect("fixture");
-        let script = scripts.path().join("events.script");
-        std::fs::write(&script, b"").expect("script");
-        let controls = Arc::new(TestControls::default());
-        controls.gate(TestPoint::BeforeObservationHandoff).arm();
-        controls.gate(TestPoint::AfterObservationVerification).arm();
-        let opened = OpenedIndex::open_for_test(
-            root.path(),
-            scripted_options(&script),
-            Arc::clone(&controls),
-        )
-        .expect("open scripted observer");
-        controls.gate(TestPoint::BeforeObservationHandoff).wait_reached();
-        // Discovery retained six bytes; the handoff's walk is about to stat seven.
-        std::fs::write(&path, b"changed").expect("mutation before the handoff walk");
-        controls.gate(TestPoint::BeforeObservationHandoff).release();
-        controls.gate(TestPoint::AfterObservationVerification).wait_reached();
+        let names: &[&str] = if cfg!(feature = "gitignore") {
+            &["shared.txt", ".gitignore"]
+        } else {
+            &["shared.txt"]
+        };
+        for &name in names {
+            let root = tempfile::tempdir().expect("temp root");
+            let scripts = tempfile::tempdir().expect("script root");
+            let path = root.path().join(name);
+            std::fs::write(&path, b"before").expect("fixture");
+            let script = scripts.path().join("events.script");
+            std::fs::write(&script, b"").expect("script");
+            let controls = Arc::new(TestControls::default());
+            controls.gate(TestPoint::BeforeObservationHandoff).arm();
+            controls.gate(TestPoint::AfterObservationVerification).arm();
+            let opened = OpenedIndex::open_for_test(
+                root.path(),
+                scripted_options(&script),
+                Arc::clone(&controls),
+            )
+            .expect("open scripted observer");
+            controls.gate(TestPoint::BeforeObservationHandoff).wait_reached();
+            // Discovery retained six bytes; the handoff's walk is about to stat seven.
+            std::fs::write(&path, b"changed").expect("mutation before the handoff walk");
+            controls.gate(TestPoint::BeforeObservationHandoff).release();
+            controls.gate(TestPoint::AfterObservationVerification).wait_reached();
 
-        // The refresh sees the same seven bytes and commits them first.
-        let refreshed = opened.refresh(&[PathBuf::from("shared.txt")]).expect("refresh");
-        assert_eq!(refreshed.work.stale, 0);
-        assert_eq!(refreshed.work.observations, 1);
-        controls.gate(TestPoint::AfterObservationVerification).release();
+            // The refresh sees the same seven bytes and commits them first.
+            let refreshed = opened.refresh(&[PathBuf::from(name)]).expect("refresh");
+            assert_eq!(refreshed.work.stale, 0, "{name}");
+            let ops = if name == crate::control::CONTROL_FILE_NAME { 2 } else { 1 };
+            assert_eq!(refreshed.work.observations, ops, "{name}");
+            controls.gate(TestPoint::AfterObservationVerification).release();
 
-        let state = wait_until_phase(&opened, crate::LifecyclePhase::Watching);
-        assert_eq!(state.coverage, crate::Coverage::Complete);
-        assert_eq!(state.freshness, crate::Freshness::Fresh);
-        let since = opened.state.index.since(crate::Clock::ZERO).expect("journal");
-        let transitions: Vec<&crate::StateTransition> =
-            since.commits.iter().flat_map(|commit| commit.state.iter()).collect();
-        // A refused pass leaves the root partial before the retry verifies it.
-        assert!(
-            !transitions.iter().any(|transition| matches!(
-                transition,
-                crate::StateTransition::Freshness { current: crate::Freshness::Partial, .. }
-            )),
-            "the handoff's first pass was refused: {transitions:?}"
-        );
-        assert_eq!(
-            transitions
-                .iter()
-                .filter(|transition| matches!(
+            let state = wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+            assert_eq!(state.coverage, crate::Coverage::Complete, "{name}");
+            assert_eq!(state.freshness, crate::Freshness::Fresh, "{name}");
+            let since = opened.state.index.since(crate::Clock::ZERO).expect("journal");
+            let transitions: Vec<&crate::StateTransition> =
+                since.commits.iter().flat_map(|commit| commit.state.iter()).collect();
+            // A refused pass leaves the root partial before the retry verifies it.
+            assert!(
+                !transitions.iter().any(|transition| matches!(
                     transition,
-                    crate::StateTransition::Verified { path } if path.as_os_str().is_empty()
-                ))
-                .count(),
-            1
-        );
-        assert_eq!(
-            opened
-                .state
-                .index
-                .attrs(Path::new("shared.txt"))
-                .expect("attrs")
-                .expect("retained")
-                .size,
-            7
-        );
-        opened.close().expect("close");
+                    crate::StateTransition::Freshness { current: crate::Freshness::Partial, .. }
+                )),
+                "{name}: the handoff's first pass was refused: {transitions:?}"
+            );
+            assert_eq!(
+                transitions
+                    .iter()
+                    .filter(|transition| matches!(
+                        transition,
+                        crate::StateTransition::Verified { path } if path.as_os_str().is_empty()
+                    ))
+                    .count(),
+                1,
+                "{name}"
+            );
+            let index = &opened.state.index;
+            assert_eq!(
+                index.attrs(Path::new(name)).expect("attrs").expect("retained").size,
+                7,
+                "{name}"
+            );
+            #[cfg(feature = "gitignore")]
+            if name == crate::control::CONTROL_FILE_NAME {
+                assert!(
+                    index
+                        .read_with(|index| index.controls().source_is(Path::new(name), b"changed"))
+                        .expect("controls"),
+                    "the refreshed rules are retained"
+                );
+            }
+            opened.close().expect("close");
+        }
     }
 
     #[cfg(feature = "watch")]
