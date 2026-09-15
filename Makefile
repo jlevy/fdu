@@ -9,7 +9,7 @@ UV ?= uv
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names admission-sites fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse clean cli perf-help verify-beads
+.PHONY: help build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names admission-sites fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test release-rehearse clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -209,6 +209,17 @@ portability:
 # (fdu-pd1b). The default is the version CI's Python quality job pins; UV_PYTHON, or
 # WHEEL_PYTHON on the command line, chooses another GIL-enabled CPython.
 WHEEL_PYTHON ?= $(or $(UV_PYTHON),3.12)
+
+# An explicit free-threaded request (`3.14t`, `cpython-3.14+freethreaded`) would reach
+# `uv venv` and fail on wheel tags, a message that names neither the request nor the
+# remedy. The check is a Make function in the recipe, so `make -n` refuses it too.
+WHEEL_PYTHON_FREE_THREADED = $(filter %0t %1t %2t %3t %4t %5t %6t %7t %8t %9t,$(WHEEL_PYTHON))$(findstring freethreaded,$(WHEEL_PYTHON))
+WHEEL_PYTHON_REFUSAL = WHEEL_PYTHON=$(WHEEL_PYTHON) is a free-threaded CPython, which cannot install the cp312-abi3 wheel; set UV_PYTHON or WHEEL_PYTHON to a GIL-enabled CPython such as 3.12
+
+wheel-python:
+	$(if $(WHEEL_PYTHON_FREE_THREADED),$(error $(WHEEL_PYTHON_REFUSAL)),@:)
+
+parity-venv python-smoke python-sdist-smoke: wheel-python
 
 # The parity surface needs the wheel installed, not the working tree: a shim importing
 # python/fdu/ directly would pass while the built package was broken, which is the

@@ -119,6 +119,30 @@ test("every environment a wheel smoke creates names a GIL-enabled interpreter", 
   }
 });
 
+test("a free-threaded interpreter request is refused before any environment is created", () => {
+  // Asking for one explicitly would otherwise reach uv, whose failure names wheel tags
+  // rather than the request (fdu-pd1b).
+  const targets = ["python-smoke", "python-sdist-smoke", "parity-venv"];
+  const requests = [
+    [{ UV_PYTHON: "3.14t" }, [], "3.14t"],
+    [{}, ["WHEEL_PYTHON=cpython-3.14+freethreaded"], "cpython-3.14\\+freethreaded"],
+  ];
+  for (const [overrides, variables, shown] of requests) {
+    const env = { ...process.env, ...overrides };
+    if (!overrides.UV_PYTHON) delete env.UV_PYTHON;
+    for (const target of targets) {
+      const result = spawnSync("make", ["--no-print-directory", "-n", target, ...variables], {
+        cwd: ROOT,
+        encoding: "utf8",
+        env,
+      });
+      assert.notEqual(result.status, 0, `${target}: ${result.stdout}`);
+      assert.match(result.stderr, new RegExp(`WHEEL_PYTHON=${shown} is a free-threaded CPython`), target);
+      assert.doesNotMatch(result.stdout, /(?:^|\s)venv\s/, target);
+    }
+  }
+});
+
 test("the bootstrap policy enforces one reviewed uv version in Make and CI", () => {
   const policy = JSON.parse(readFileSync(join(ROOT, "supply-chain-policy.json"), "utf8"));
   const uvRelease = policy.bootstrap.githubReleases.find(
