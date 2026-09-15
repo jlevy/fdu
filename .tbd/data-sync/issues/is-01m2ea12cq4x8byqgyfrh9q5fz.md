@@ -5,12 +5,12 @@ title: Implement durable disk-usage checkpoints and repeatable net comparisons
 kind: feature
 status: open
 priority: 1
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md
 labels: []
 dependencies: []
 created_at: 2026-09-13T21:16:01.814Z
-updated_at: 2026-09-15T00:31:52.966Z
+updated_at: 2026-09-15T16:09:22.146Z
 ---
 Implement delivery slice 2 in fdu-core with CLI and Python parity: immutable durable checkpoint identity distinct from live clocks, explicit baseline capture and advancement, signed allocated/apparent/count deltas computed before ranking, and repeated A-to-B reads without refresh. Begin with complete scanned roots; preserve pinned baselines across refresh, failure, and cache eviction. Define compatible scope, unknown coverage, rename attribution, own-store exclusion, and concurrency/publication semantics before persistence. Integrate with existing block-format and durable-journal work for later bounded access.
 
@@ -29,3 +29,8 @@ Implement delivery slice 2 in fdu-core with CLI and Python parity: immutable dur
 - Where (dev, inode) or a link count is unavailable (Windows today), record unique allocated bytes as not observed in the accounting version; rank by per-path allocated under that name and refuse an explicit unique request.
 - Attribution is by first in-scope path in bytewise path order. Expected-delta tests now include an out-of-scope hard-link source and renaming one link of a multi-link file.
 - Checkpoint format retirement is per user store: a reader refuses both newer and retired older formats with id, version, and the release range that reads them.
+
+2026-09-15 (PR #55 delta review 5205945198; ba70cc0, e0aad48, a2e1eba): more slice 2 requirements now in the checkpoint plan.
+- Partially observed classification. fdu-1onj records the user's decisions for 0.1.0: a crossed control budget is an exit-0 coverage note with exact sizes, the budget is mixed into ignore_rules_fingerprint, the per-line guard is raised by the same setting, and snapshot FORMAT_VERSION is bumped to carry refused rules. Each checkpoint records its control budget and every refused control source, read from the index. Byte and count deltas stay exact. If either checkpoint refused a source, ignored/unignored deltas are marked partial at every directory at or below a source refused in either checkpoint and at its ancestors, with the sources named; equal refused sets do not lift the marker. A checkpoint that retains only a count of refused sources marks every classification delta partial. Different budgets differ in SemanticIdentity, so classification is not comparable. A crossed budget is not a gap: the checkpoint is complete. Before slice 2 fixes its API, confirm on main that the index, including one loaded from a snapshot, carries a typed record of its budget and refused sources. Tests: the classification cases in the plan's correctness list.
+- Checkpoint format retirement happens after a documented support window (releases since the last release that wrote the format), with no re-encoding duty. Compaction may re-encode, but nothing relies on it; a checkpoint still in a retired format, such as a pinned one compaction never copied, is refused with the releases that read it.
+- Renaming one link of a multi-link file: the expected-delta test covers all four outcomes (attributed link renamed and still first, or no longer first; another link renamed and still later, or now first).
