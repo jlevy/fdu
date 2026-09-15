@@ -162,21 +162,35 @@ are one file, so unique allocated bytes count it once.
 A package manager that links an existing file into a new environment therefore does not
 grow the checkpoint total.
 Attributing that file to one directory needs a deterministic rule.
-Slice 2 attributes it to the in-scope entry whose root-relative path sorts first by
-bytes, and marks every directory row whose subtree holds a shared inode, including one
-whose other links lie outside the scope.
+Slice 2 attributes it to the in-scope entry whose root-relative path sorts first in
+bytewise path order (not by size), and marks every directory row whose subtree holds a
+shared inode, including one whose other links lie outside the scope.
 That rule is stable across two complete captures, but a new link that sorts earlier
 moves the attribution: the delta shows a decrease at the old directory and an increase
 at the new one, with net zero at their common ancestor.
-The durable rule, which must also survive incremental updates, is `fdu-579b`.
-`(dev, inode)` is compared only within one checkpoint: device numbers are not stable
-across reboots, and inode numbers are reused.
+Renaming one link of a multi-link file can move it with nothing physical changing: when
+the renamed link was the attributed one and its new path no longer sorts first, the
+file’s full allocated size moves to the directory of another in-scope link, where no
+entry changed. The durable rule, which must also survive incremental updates, is
+`fdu-579b`. `(dev, inode)` is compared only within one checkpoint: device numbers are
+not stable across reboots, and inode numbers are reused.
 
 The engine retains no link count, so grouping would otherwise have to hash every regular
 file by `(dev, inode)`. Slice 2 therefore adds the link count to the retained entry
 facts in `fdu-core`, so only files with more than one link enter the group.
 The metadata calls the scanner already makes can supply it: `st_nlink` from `stat`, and
 `ATTR_FILE_LINKCOUNT`, which `getattrlistbulk` can request.
+
+**Where file identity is not observed.** Unique allocated bytes need a real
+`(dev, inode)` and a link count.
+On Windows the scanner records `inode` and `dev` as zero, and `std::fs::Metadata` has no
+stable link count there, so no file would enter the group and a “unique” total would
+silently equal per-path allocated bytes.
+A checkpoint captured where either fact is unavailable records unique allocated bytes as
+not observed in its accounting version.
+Its comparisons then rank by per-path allocated bytes and name that measure, and an
+explicit request for unique allocated bytes is refused with the reason, so a per-path
+figure is never presented as unique.
 
 **APFS clones.** A clone is a distinct inode that shares blocks with its source, and
 each reports its full allocated size.
@@ -400,9 +414,12 @@ measure, from the recorded identities:
   count.
 - A checkpoint captured without control observation has no ignored partition, and
   comparisons report that measure as not observed.
-- A measure recorded in only one of the two checkpoints, such as unique allocated bytes
-  from before link counts were retained, is unavailable for that pair.
-  Ranking by it is refused with a remedy; the other measures remain available.
+- A measure not recorded in both checkpoints is unavailable for that pair: for example,
+  unique allocated bytes from before link counts were retained, or from a platform that
+  observes no file identity.
+  An explicit ranking by it is refused with a remedy, the default ranking falls back to
+  per-path allocated bytes and names that measure, and the other measures remain
+  available.
 - The crate version and the snapshot `FORMAT_VERSION` never affect comparability.
 
 **Backward compatibility requirements:**
@@ -523,8 +540,19 @@ stays comparable and re-observes every entry; a different volume UUID at the sam
 path is refused; and a volume that reports no UUID compares as volume-unverified.
 Accounting cases have stated expected deltas:
 
-- **Hard link added to an existing file:** per-path allocated grows by the file’s
-  allocated size at the new link’s directory; unique allocated is unchanged in total.
+- **Hard link added to an existing in-scope file:** per-path allocated grows by the
+  file’s allocated size at the new link’s directory; unique allocated is unchanged in
+  total, and its attribution moves only if the new link sorts first.
+- **Hard link added in scope to a file outside the scope:** for example, uv on Linux,
+  which hard-links from its cache by default, installing from a cache outside the root
+  into an environment inside it.
+  Both allocated measures grow by the file’s allocated size at the new link’s directory,
+  and the row is marked shared.
+- **One link of a multi-link file renamed:** apparent and per-path allocated bytes move
+  from the old link’s directory to the new one.
+  Unique allocated is unchanged in total, but if the renamed link was the attributed one
+  and no longer sorts first, the file’s full allocated size moves to another in-scope
+  link’s directory. Each measure nets to zero at the common ancestor.
 - **Last remaining link removed:** both allocated measures shrink by the file’s
   allocated size.
 - **Clone of an existing file:** both allocated measures grow by the clone’s allocated
@@ -533,6 +561,9 @@ Accounting cases have stated expected deltas:
   unchanged; free space can decrease.
 - **Subtree denied at B but readable at A:** the subtree and its ancestors report
   unknown or partial deltas, not removal.
+- **Capture on a platform without file identity (Windows today):** unique allocated
+  bytes are not observed, and the comparison ranks by per-path allocated bytes under
+  that name.
 
 Compaction and retention must preserve every pinned checkpoint and the A→B result of
 every retained id pair.
