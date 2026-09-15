@@ -1731,19 +1731,19 @@ pub enum Error {
     #[error("unsupported scan configuration: {0}")]
     UnsupportedScanConfig(&'static str),
 
-    /// An index built without observing `.gitignore` control state was asked about it, or
-    /// was handed control input.
+    /// An index or report built without observing `.gitignore` control state was asked
+    /// about it, was asked to select entries by it, or was handed control input.
     ///
-    /// Such an index read no control file and classified no entry, so answering "not
-    /// ignored" for every entry, or handing back an empty control table, would state a
-    /// fact nobody observed. Nor does it accept a `ControlUpsert` or `ControlRemove`
-    /// ([`Op`]): its scope says no rule was read, and a table installed anyway would
-    /// contradict it, in the index and in every snapshot saved from it. Opening with
-    /// [`ScanConfig::read_controls`](crate::ScanConfig) on, as it is by default, makes the
-    /// answers exact.
+    /// Such a scan read no control file and classified no entry, so answering "not
+    /// ignored" for every entry, handing back an empty control table, or selecting every
+    /// entry or none by ignored state would state a fact nobody observed. Nor does an index
+    /// accept a `ControlUpsert` or `ControlRemove` ([`Op`]): its scope says no rule was
+    /// read, and a table installed anyway would contradict it, in the index and in every
+    /// snapshot saved from it. Scanning with [`ScanConfig::read_controls`](crate::ScanConfig)
+    /// on, as it is by default, makes the answers exact.
     #[error(
-        "this index did not observe .gitignore control state, so it neither says what is \
-         ignored nor accepts control input; open it with read_controls to observe it"
+        "this scan did not observe .gitignore control state, so it neither says nor selects \
+         what is ignored and accepts no control input; scan with read_controls to observe it"
     )]
     ControlStateNotObserved,
 

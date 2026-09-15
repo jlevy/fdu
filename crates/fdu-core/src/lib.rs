@@ -168,18 +168,18 @@ pub enum CachePolicy {
     ///
     /// A root has one cache path, and its snapshot carries the scan scope that wrote it.
     /// A read under another scope treats that snapshot as absent and scans cold, and the
-    /// scan then writes its own scope over it. The one-shot `fdu <dir>` observes no control
-    /// state while a default [`open`] does, so the two keep snapshots of different scope at
-    /// one cache path and each replaces the other's. `fdu --watch <dir>` opens its index
-    /// with observation off, so it shares the one-shot scope: a watch starts warm from a
-    /// one-shot report's snapshot, and a report that reads the snapshot starts warm from a
-    /// watch's. So does an [`open`] that turns [`ScanConfig::read_controls`] off. A default
-    /// [`open`] after a one-shot report saved its snapshot therefore takes
-    /// [`OpenPath::ColdScan`], and so does a one-shot report that reads the snapshot, as
-    /// content analysis does, after a default [`open`] saved one. A summary-only report
-    /// saves nothing and replaces nothing.
-    /// A one-shot report answers from a controls-on snapshot only under
-    /// [`CachePolicy::Only`].
+    /// scan then writes its own scope over it.
+    ///
+    /// Every default request observes `.gitignore` control state -- the one-shot
+    /// `fdu <dir>` and [`prepare_report`], `fdu --watch <dir>`, and a default [`open`] --
+    /// so they share one scope: an [`open`] or a watch starts warm from a one-shot report's
+    /// snapshot, and a report that reads the snapshot, as content analysis does, starts
+    /// warm from theirs. A request that turns [`ScanConfig::read_controls`] off is a second
+    /// scope, and alternating it with a default request scans cold each time. One direction
+    /// is spared: a one-shot report under [`CachePolicy::Only`] that turned observation off
+    /// answers from a default snapshot, since it reads nothing a default scan did not also
+    /// record. A summary-only report that turned observation off saves nothing and
+    /// replaces nothing.
     #[default]
     Auto,
     /// Ignore any snapshot, scan cold, and rewrite it. The benchmark control.
@@ -322,17 +322,17 @@ impl OpenReport {
 ///
 /// The index observes control state as [`ScanConfig::read_controls`] says, and the
 /// default is on: the index exposes [`Index::controls`] and [`Index::is_ignored`], and a
-/// watch over it maintains them. A one-shot report from [`prepare_report`] always runs
-/// with observation off, so the two keep snapshots of different scope at one cache path.
-/// A default `open` never starts from a report's snapshot: a policy that scans treats it
-/// as a miss and scans cold, and [`CachePolicy::Only`], which never scans, fails with an
-/// error naming the remedy. A report consumes a default `open`'s snapshot only under
-/// [`CachePolicy::Only`]. A caller wanting a single answer should use [`prepare_report`].
+/// watch over it maintains them. A one-shot report from [`prepare_report`] observes it on
+/// the same terms, so a default `open` and a default report share one snapshot scope and
+/// each starts warm from the other's snapshot. A caller wanting a single answer should use
+/// [`prepare_report`].
 ///
 /// A caller that reads no ignore classification may turn the field off. Its `open` reads
-/// no `.gitignore` and shares the one-shot report's snapshot scope, and its index answers
-/// [`Index::is_ignored`] and [`Index::controls`] with [`Error::ControlStateNotObserved`]
-/// rather than calling every entry unignored.
+/// no `.gitignore`, and its index answers [`Index::is_ignored`] and [`Index::controls`]
+/// with [`Error::ControlStateNotObserved`] rather than calling every entry unignored. Its
+/// snapshot is of another scope: a policy that scans treats a default snapshot as a miss
+/// and scans cold, and [`CachePolicy::Only`], which never scans, fails with an error
+/// naming the remedy.
 pub fn open(root: &Path, config: &OpenConfig) -> Result<(Index, OpenReport)> {
     let (index, report, pending) = open_with_pending_save(root, config)?;
     // Joining first is what makes the unwrap infallible: the writer held the only other
@@ -397,9 +397,10 @@ fn snapshot_scope_serves(
 ///
 /// [`CachePolicy::Only`] is the one policy that cannot fall back to a scan, so its failure
 /// is the only place a caller learns that the snapshot is missing or of another scope. The
-/// common mismatch is control state: a one-shot report never observes it and an index does
-/// by default, so a cache-only index after a report would otherwise fail with no hint that
-/// a snapshot exists at all.
+/// common mismatch is control state: every default request observes it, so a snapshot
+/// without it was written by a request that turned observation off, or by a release from
+/// before observation was the default, and a default cache-only request after it would
+/// otherwise fail with no hint that a snapshot exists at all.
 fn unusable_snapshot_message(refused: Option<ScanScope>, wanted: ScanScope) -> String {
     // Not "run once under `auto` to write one": a compact summary scans without retaining
     // an index and writes nothing, so that remedy would fail again for exactly that query.
@@ -412,12 +413,12 @@ fn unusable_snapshot_message(refused: Option<ScanScope>, wanted: ScanScope) -> S
     };
     match refused {
         None => format!("{PREFIX}; {NEVER_SCANS}, so use `auto`, which scans when none serves"),
-        // Only an index asks for control state, and a complete index scan under `auto` is
-        // always saved, so here the second remedy works as well as the first.
+        // Named without a knob, because the command line and the library spell the switch
+        // differently and this message is the engine's.
         Some(stored) if lacks_only_control_state(stored) => format!(
-            "{PREFIX}: the cached snapshot has no control state, as a one-shot report writes \
-             it, and this request needs it; {NEVER_SCANS}, so use `auto`, or first open an \
-             index under `auto` to write a snapshot that has it"
+            "{PREFIX}: the cached snapshot has no .gitignore state, because the request that \
+             wrote it did not observe it, and this request does; {NEVER_SCANS}, so use `auto`, \
+             or turn .gitignore observation off as that request did"
         ),
         Some(_) => format!(
             "{PREFIX}: the cached snapshot has a different scan scope; {NEVER_SCANS}, so use \

@@ -211,27 +211,23 @@ pub struct ScanConfig {
     pub types: Option<std::sync::Arc<crate::classify::TypeRegistry>>,
     /// Observe `.gitignore` control files and retain ignore classification.
     ///
-    /// On by default, so an [`Index`] from [`crate::open`] or a scan keeps the exact
-    /// control state it exposes and a watch maintains: which entries are ignored, and the
-    /// ignored and unignored partitions of every roll-up (fdu-elnn). It costs a read of
-    /// every `.gitignore` in the tree. A file past the control bounds is refused and
-    /// named in [`Index::control_coverage`] rather than ending the scan.
+    /// On by default on every surface: an [`Index`] from [`crate::open`] or a scan keeps
+    /// the exact control state it exposes and a watch maintains, and a one-shot report from
+    /// [`crate::prepare_report`] shows the ignored share of every row (fdu-elnn). It costs
+    /// a read of every `.gitignore` in the tree. A file past the control bounds is refused
+    /// and named in [`Index::control_coverage`] rather than ending the scan; a file that
+    /// cannot be read is an error at its path, which makes the result partial.
     ///
     /// Off, the scan performs no control-file I/O and retains no control table, and that is
     /// stamped into [`ScanScope`], so an index-returning call never serves a snapshot taken
     /// one way as the other. An [`Index`] built that way answers [`Index::is_ignored`],
     /// [`Index::controls`], and the partition accessors with
     /// [`crate::Error::ControlStateNotObserved`], never with "not ignored", and refuses
-    /// control input. Turn it off for a request that reads no ignore classification; its
-    /// snapshot then shares the one-shot report's scope.
+    /// control input; a report's rows carry no ignored share, and a selection by ignored
+    /// state is refused. The command line spells it `--no-gitignore`.
     ///
     /// An opened root ([`crate::OpenedIndex`]) always observes control state, because its
     /// ignored and unignored partitions are part of what it serves.
-    ///
-    /// A one-shot report ([`crate::prepare_report`]) does not read this field; its
-    /// planner always runs with observation off, because no report view reads ignore
-    /// classification (fdu-etfj: every `fdu <dir>` read and retained every `.gitignore`
-    /// in the tree, then could die on a budget for state its report never consumed).
     pub read_controls: bool,
     /// Bytes of retained `.gitignore` charge before further control files are refused, or
     /// `None` for no bound.
