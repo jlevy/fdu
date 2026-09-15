@@ -118,6 +118,9 @@ index to carry it, then publish `fdu`. After a partial failure, verify the succe
 registry’s version and hash, rerun only the missing channel, and stop on any
 same-version hash conflict.
 Never retag, replace an immutable artifact, or rebuild from a different commit.
+A conflict therefore ends that version on every channel;
+[Recover From a Partial Publication](#recover-from-a-partial-publication) gives the
+procedure.
 
 ## Publishing 0.1.0 by Hand
 
@@ -200,9 +203,11 @@ pinned Rust.
 
 ### Publish the Crates
 
-1. Create a crates.io API token with the `publish-new` and `publish-update` scopes,
-   limited to the crates `fdu-core` and `fdu`, with the shortest expiry crates.io
-   offers. Read it without echoing it or writing it to shell history:
+1. Create a crates.io API token with the `publish-new`, `publish-update`, and `yank`
+   scopes, limited to the crates `fdu-core` and `fdu`, with the shortest expiry
+   crates.io offers. `yank` is there so that a conflict can be contained at once, without
+   creating a second token mid-incident.
+   Read the token without echoing it or writing it to shell history:
 
    ```shell
    read -rs CARGO_REGISTRY_TOKEN && export CARGO_REGISTRY_TOKEN
@@ -235,7 +240,10 @@ pinned Rust.
    comparison.
 
 3. Publish `fdu-core`. Cargo waits until the index carries it.
-   The audit must then report `fdu-core` as `identical` and `fdu` as `missing`:
+   The audit must then report `fdu-core` as `identical` and `fdu` as `missing`. This is
+   the first write nobody can undo: from here on, any failure goes through
+   [Recover From a Partial Publication](#recover-from-a-partial-publication) before
+   anything else runs.
 
    ```shell
    cargo publish --locked -p fdu-core
@@ -315,9 +323,59 @@ gh release create v0.1.0 --repo jlevy/fdu --verify-tag --title "fdu 0.1.0" \
   "$RELEASE"/files/fdu-0.1.0.tar.gz
 ```
 
-If any step fails partway, follow the recovery rules in
-[Publication Invariants](#publication-invariants): verify what reached each registry
-with `registry_state.py`, rerun only what is missing, and stop on a conflict.
+### Recover From a Partial Publication
+
+Neither crates.io nor PyPI lets a version’s files be replaced, even after a yank or a
+deletion.
+So when any step fails, first run that channel’s audit, the `registry_state.py`
+command from the step that failed, and let its verdict decide what comes next:
+
+| Audit reports | Meaning | Next step |
+| --- | --- | --- |
+| `missing` | Nothing reached the registry. | Fix the cause, then rerun the failed step from its start, so a crate is compared again before it is published. |
+| `identical` | The upload landed, though the command reported a failure. | Continue with the next step. |
+| `conflict` | The registry holds bytes nothing tested, under a version that cannot be reused. | Follow the procedure below. |
+
+A `conflict` on any channel, or any failure whose fix needs a new commit, ends `0.1.0`:
+a published file cannot be replaced, the pushed tag cannot move, and every channel
+carries one version.
+The first case can only arise from step 3 of Publish the Crates onward, once `fdu-core`
+is on crates.io.
+
+1. **Publish nothing more under `0.1.0`.** Run no later step.
+   Above all, never publish `fdu` against an `fdu-core` that conflicts.
+
+2. **Record what happened while the evidence is fresh**, in a bead or a GitHub issue:
+
+   - the audit’s output;
+   - the published digest of each conflicting crate beside the manifest’s, from
+     `curl -sSL -A 'fdu-release (https://github.com/jlevy/fdu)' https://crates.io/api/v1/crates/<crate>/0.1.0/download | shasum -a 256`;
+   - the host and toolchain that published (`uname -a`, `cargo -V`) and the digests step
+     2 of Publish the Crates printed;
+   - the release commit, the rehearsal’s run ID, and every version yanked.
+
+   Keep `$RELEASE`, including the clone’s `target/package`, which holds the archives
+   `cargo publish` built and uploaded.
+
+3. **Yank each version whose published bytes are wrong, and only those.**
+   `cargo yank fdu-core@0.1.0` (or `fdu@0.1.0`) uses the token from step 1 of Publish
+   the Crates; on PyPI, yank the release from the project’s settings.
+   A version the audit reports as `identical` holds the tested bytes and stays.
+   A yank stops new resolution; it deletes nothing and does not break an existing
+   lockfile.
+
+4. **Never retag.** `v0.1.0` keeps naming the release commit, and nothing is published
+   again under `0.1.0` on any channel.
+
+5. **Release `0.1.1` instead.** Bump the version in a pull request, including every
+   manifest and the expected version in `tests/release/test_metadata.py`, and give the
+   CHANGELOG a `0.1.1` entry that says which `0.1.0` artifacts exist and which were
+   yanked. Once it merges, repeat this section from
+   [Rehearse the Release Commit](#rehearse-the-release-commit) with `0.1.1` in place of
+   `0.1.0`. Both crates are published at `0.1.1`, `fdu-core` included, even if its
+   source did not change.
+
+Whatever the outcome, unset and revoke every token as the steps above describe.
 
 The implementation audit, Flowmark comparison, deliberate divergences, and proposed
 upstream improvements live in the
