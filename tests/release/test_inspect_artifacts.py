@@ -9,7 +9,7 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from scripts.release.inspect_artifacts import inspect_directory
+from scripts.release.inspect_artifacts import CRATE_PACKAGES, inspect_directory
 
 VERSION = "0.1.0"
 
@@ -29,7 +29,8 @@ class InspectArtifactsTests(unittest.TestCase):
         self.directory = Path(self.temporary.name)
         self._write_wheel()
         self._write_sdist()
-        self._write_crate()
+        for package in CRATE_PACKAGES:
+            self._write_crate(package)
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
@@ -73,9 +74,9 @@ class InspectArtifactsTests(unittest.TestCase):
             ):
                 add_tar(archive, prefix + name)
 
-    def _write_crate(self) -> None:
-        path = self.directory / f"fdu-{VERSION}.crate"
-        prefix = f"fdu-{VERSION}/"
+    def _write_crate(self, package: str) -> None:
+        path = self.directory / f"{package}-{VERSION}.crate"
+        prefix = f"{package}-{VERSION}/"
         with tarfile.open(path, "w:gz") as archive:
             for name in ("Cargo.toml", "Cargo.toml.orig", "LICENSE", "README.md", "src/lib.rs"):
                 add_tar(archive, prefix + name)
@@ -84,6 +85,31 @@ class InspectArtifactsTests(unittest.TestCase):
         artifacts = inspect_directory(self.directory, VERSION)
         self.assertEqual({item.kind for item in artifacts}, {"crate", "sdist", "wheel"})
         self.assertTrue(all(len(item.sha256) == 64 for item in artifacts))
+        # Both crates are evidence, in the order they must be published.
+        self.assertEqual(
+            [(item.package, item.filename) for item in artifacts if item.kind == "crate"],
+            [("fdu-core", f"fdu-core-{VERSION}.crate"), ("fdu", f"fdu-{VERSION}.crate")],
+        )
+
+    def test_a_missing_core_crate_is_rejected(self) -> None:
+        (self.directory / f"fdu-core-{VERSION}.crate").unlink()
+        with self.assertRaisesRegex(ValueError, "expected exactly one fdu-core crate"):
+            inspect_directory(self.directory, VERSION)
+
+    def test_an_unexpected_crate_is_rejected_by_name(self) -> None:
+        # Left out, it would reach neither the manifest nor SHA256SUMS, and so never the
+        # registry audit's own unexpected-crate guard.
+        self._write_crate("fdu-py")
+        with self.assertRaisesRegex(ValueError, f"unexpected crates: fdu-py-{VERSION}.crate"):
+            inspect_directory(self.directory, VERSION)
+
+    def test_a_core_crate_without_its_library_is_rejected(self) -> None:
+        path = self.directory / f"fdu-core-{VERSION}.crate"
+        with tarfile.open(path, "w:gz") as archive:
+            for name in ("Cargo.toml", "Cargo.toml.orig", "LICENSE", "README.md"):
+                add_tar(archive, f"fdu-core-{VERSION}/{name}")
+        with self.assertRaisesRegex(ValueError, f"fdu-core-{VERSION}.crate: missing src/lib.rs"):
+            inspect_directory(self.directory, VERSION)
 
     def test_missing_typing_marker_is_rejected(self) -> None:
         self._write_wheel(typed=False)

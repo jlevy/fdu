@@ -13,6 +13,7 @@ import {
   validateDownloadScripts,
   validateExceptions,
   validateFirstParty,
+  validateRustToolchainPins,
   validateWorkflowSecurity,
 } from "./check-supply-chain.mjs";
 
@@ -304,6 +305,49 @@ test("a second npx line escaping the pin is caught", () => {
     () => validateBootstrapPin("hook.sh", hook, PIN, CONFIG),
     /unreviewed npx execution/,
   );
+});
+
+const RUST_TOOLCHAINS = [
+  { version: "1.97.1", files: ["rust-toolchain.toml", "ci.yml"] },
+  { version: "1.85.0", files: ["ci.yml"] },
+];
+
+function rustStep(comment, toolchain) {
+  return (
+    `      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # ${comment}\n` +
+    `        with:\n          toolchain: ${toolchain}\n`
+  );
+}
+
+test("Rust pins are read from the keys that select a toolchain", () => {
+  validateRustToolchainPins(RUST_TOOLCHAINS, {
+    "rust-toolchain.toml": '[toolchain]\nchannel = "1.97.1"\n',
+    "ci.yml": rustStep("1.97.1", "1.97.1") + rustStep("1.85.0", '"1.85.0"'),
+  });
+});
+
+test("a Rust version present only outside the toolchain keys is not a pin", () => {
+  const drifted = {
+    // The action's trailing comment still names the reviewed version.
+    "a comment beside a drifted toolchain input": {
+      "rust-toolchain.toml": '[toolchain]\nchannel = "1.97.1"\n',
+      "ci.yml": rustStep("1.97.1", "1.98.0") + rustStep("1.85.0", "1.85.0"),
+    },
+    "one job drifted while another still pins": {
+      "rust-toolchain.toml": '[toolchain]\nchannel = "1.97.1"\n',
+      "ci.yml": rustStep("1.97.1", "1.97.1") + rustStep("1.97.1", "1.98.0") + rustStep("1.85.0", "1.85.0"),
+    },
+    "a commented-out channel": {
+      "rust-toolchain.toml": '[toolchain]\n# channel = "1.97.1"\nchannel = "1.98.0"\n',
+      "ci.yml": rustStep("1.97.1", "1.97.1") + rustStep("1.85.0", "1.85.0"),
+    },
+  };
+  for (const [label, texts] of Object.entries(drifted)) {
+    // Every drifted file still contains the version string, which is all a substring
+    // check can see.
+    assert(Object.values(texts).every((text) => text.includes("1.97.1")), label);
+    assert.throws(() => validateRustToolchainPins(RUST_TOOLCHAINS, texts), /pins Rust 1\.98\.0/, label);
+  }
 });
 
 const FIRST_PARTY = [

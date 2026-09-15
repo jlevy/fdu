@@ -228,13 +228,13 @@ Representative compositions, which double as the subsumption checklist (Principl
 | `dust` / `dut` | `fdu PATH` | tree view, warm when a cache exists |
 | `du -sh` / `diskus` | `fdu --view summary PATH` | one-line totals |
 | `du -a --max-depth 3` | `fdu --depth 3 -n all PATH` | unlimited entries per directory |
-| `fd -e rs` / `find -name` | `fdu --view files --include '*.rs' PATH` | flat listing, one path per line in text |
-| biggest files (`dust -f`, `find -size +10M`) | `fdu --view files --min-size 10M --sort size -n 100 PATH` | not a special view — files + sort + limit |
+| `fd -e rs` / `find -name` | `fdu --view files --include '*.rs' PATH` | complete flat listing, one path per line in text |
+| biggest files (`dust -f`, `find -size +10M`) | `fdu --view largest PATH` | a preset: `files --sort size --limit 20`, regular files only |
 | recently modified (`find -mmin -60`) | `fdu --view files --modified-since 1h --sort mtime PATH` | humane durations, not day counts |
 | `du` by type | `fdu --view types PATH` | current `--by-type` |
 | `tokei` / `scc` | `fdu --analyze code --view languages PATH` | SLOC per language, one walk |
 | `wc -w` over a doc tree | `fdu --analyze words --view documents PATH` | normalized and reader-visible words |
-| everything fdu can measure | `fdu --analyze all --view all PATH` | one walk, every analyzer, every projection |
+| everything fdu can measure | `fdu --analyze all --view full PATH` | one walk, every analyzer, every summary view |
 | two reports, one scan | `fdu --view types,tree PATH` | one index, both roll-ups |
 | `tail -f` for a tree | `fdu --watch --view files --format jsonl PATH` | one record per applied change |
 | live dashboard poll | `fdu --watch --view tree,types --interval 2s PATH` | aggregate views re-render when dirty |
@@ -296,7 +296,9 @@ grouping is the only thing that distinguishes them:
 | --- | --- | --- | --- | --- |
 | `tree` | by directory hierarchy | no | size desc | du, dust, dut |
 | `summary` | everything in one group | no | — | du -s, diskus |
-| `files` | none (individual entries) | no | name asc | fd, find |
+| `files` | none (individual entries), complete | no | name asc | fd, find |
+| `largest` | none (regular files), 20 rows | no | size desc | dust -f |
+| `recent` | none (regular files), 20 rows | no | mtime desc | find -mmin |
 | `extensions` | by raw filename extension | no | size desc | du by extension |
 | `types` | by detected file type | yes | size desc | current `--by-type` |
 | `families` | by content family (`code`, `prose`, `markup`, `data`, `binary`, `unknown`) | yes | size desc | — |
@@ -308,9 +310,17 @@ The `Uses --analyze` column is a contract, not a description: it is what makes P
 selecting only those views is a request that pays for I/O it cannot display, and the run
 says so (see *Displaying what was paid for* below).
 
-“Largest files” and “recently modified” are deliberately not views: they are
-`files --sort size` and `files --sort mtime --modified-since …`, because every selection
-and shaping knob applies to every view.
+`largest` and `recent` are named presets over `files`, not separate machinery: `largest`
+is `files --sort size --limit 20` and `recent` is `files --sort mtime --limit 20`, each
+restricted to regular files, and `--sort` and `--limit` still override them.
+This plan first removed both, on the test “can it be expressed as a composition of
+existing axes?” That test conflated capability with interface.
+A composition the caller must already know how to build is not a default, and the cost
+showed up in `files` itself: asked to serve as enumeration and top-N at once, it paired
+name order with a ten-row cap and printed the ten alphabetically first entries of a
+192,871-entry tree.
+[The view vocabulary plan](plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md)
+reinstated them as presets and made `files` complete.
 The same composability makes `tree --sort mtime` an activity map of a project with no
 extra machinery. When the reducer registry (Goal 6) and type rules (`fdu-v4lc`) land,
 they extend this table’s *columns and groupings* — new metrics per row, content-aware
@@ -361,7 +371,7 @@ unreachable.
 counts are free and implicit whenever the set is non-empty.
 Naming it alone is still meaningful — it is the cheapest tier that opens files at all.
 `all` is defined as *every registered analyzer*, so adding an analyzer extends it
-without a grammar change, exactly as `--view all` extends with a new view.
+without a grammar change, exactly as `--view full` extends with a new summary view.
 
 Two consequences follow from modelling the set honestly rather than by rank:
 
@@ -401,23 +411,24 @@ directory tree containing none of the results — a report byte-identical to the
 same command produces with no analysis at all, differing only in the performance footer.
 That is the concrete defect this revision exists to fix.
 
-### `--view all`
+### `--view full`
 
-`all` expands to every view the requested analyzer set can answer, in the table order
-above. It is not a synonym for `--analyze all`: content and view are different axes, and
-`all` on each means “every value this axis offers”, which is why both spell it the same
-way.
+`full` expands to every summary view the requested analyzer set can answer — every view
+except `files`, because an unbounded enumeration inside a digest destroys the digest.
+It is not a synonym for `--analyze all`: `all` on the content axis means every analyzer,
+while `full` names a curated report, and the different word marks the different
+semantics. The view vocabulary plan records the rename from the original `--view all`.
 
-Because `documents` requires analysis, `--view all` without it would otherwise fail the
+Because `documents` requires analysis, `--view full` without it would otherwise fail the
 whole run over one unsatisfiable view.
 Instead the run renders what it can and **names what it skipped**, which keeps Principle
 5’s honesty rule (never present an unmeasured value, never hide that something was
 omitted) without making the obvious command an error:
 
 ```console
-$ fdu --view all PATH
-... seven view sections ...
-note: omitted documents — requires --analyze words or all
+$ fdu --view full PATH
+... nine view sections ...
+note: omitted documents — requires content analysis: add --analyze lines, code, words, or all
 ```
 
 Machine formats need no new field: the `reports` array already enumerates exactly which
@@ -434,7 +445,7 @@ bought I/O it cannot show:
 $ fdu --analyze all --view tree PATH
 ... tree ...
 note: --analyze all read 1.2 GiB; no selected view displays content metrics
-      — try --view families, languages, or all
+      — try --view families, languages, or full
 ```
 
 This is a note, not an error, for one reason: warming the content sidecar so a later run
@@ -893,14 +904,14 @@ lands last.
   Focused sessions retain the actual limit-marker boundary and other combinatorial edges
   instead of inflating this product example.
 - Schema tests: `fdu.report/1` and `fdu.stream/1` fixtures that fail on unversioned
-  change. `--view all` and the analyzer-set rename must *not* bump either schema; a test
+  change. `--view full` and the analyzer-set rename must *not* bump either schema; a test
   pins that the `reports` array alone communicates which views were produced.
 - Content-axis tests: every analyzer set round-trips through the sidecar bitmask; an
   `all` sidecar satisfies a `code` request with zero fresh reads (containment, not
   equality); the default view derived from each set matches the table, and an explicit
   `--view` overrides every one of them.
 - Display-contract tests, one per direction of Principle 13: a run whose selected views
-  all ignore analysis emits the paid-for-nothing note and still exits 0; `--view all`
+  all ignore analysis emits the paid-for-nothing note and still exits 0; `--view full`
   without analysis renders the satisfiable views, names the omitted one, and exits 0;
   and no view, under any content setting, causes a file body to be opened that
   `--analyze` did not authorize.
@@ -993,8 +1004,9 @@ no automated test asserts well: that an idle tree costs 0% CPU.
    someone needs normalized counts without the Markdown projection.
 
 Resolved by composition rather than by new surface, recorded so they stay resolved:
-suppressing watch’s initial report is `--modified-since now --watch`, and top-N
-largest/recent listings are `files` plus `--sort`/`--limit`.
+suppressing watch’s initial report is `--modified-since now --watch`. Top-N largest and
+recent listings were once on this list as `files` plus `--sort`/`--limit`; they are now
+the `largest` and `recent` presets, for the reason given under Views.
 
 ## References
 

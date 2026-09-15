@@ -74,6 +74,15 @@ pub mod snapshot;
 #[cfg(test)]
 mod test_support;
 
+/// The crate README's Rust examples, compiled and run as doctests.
+///
+/// crates.io shows the README as this crate's front page, so its examples are the first
+/// code a reader copies. Nothing compiled them, and they kept naming an `AnalysisProfile`
+/// type for a release after the content axis became `AnalysisSet`.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+pub struct ReadmeDoctests;
+
 // Ungated: rendering is not a command-line concern. It was behind `cli` only because it
 // took its ANSI colour types from clap, so the library could produce a report and not
 // print it -- and a display note added elsewhere on this branch called into here and

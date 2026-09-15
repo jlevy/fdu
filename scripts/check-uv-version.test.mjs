@@ -94,6 +94,78 @@ test("every directly uv-backed Make target depends on the version guard", () => 
   }
 });
 
+test("every environment a wheel smoke creates names a GIL-enabled interpreter", () => {
+  // uv picks a free-threaded CPython when it manages one, and the cp312-abi3 wheel cannot
+  // install there, so an environment created without --python fails the gate on such a
+  // host (fdu-pd1b). The default is CI's 3.12; UV_PYTHON chooses another.
+  const targets = ["python-smoke", "python-sdist-smoke", "parity-venv"];
+  const requests = [
+    [undefined, "3.12"],
+    ["3.13", "3.13"],
+    // Splitting uv's full request form on its dashes must not invent a free-threaded suffix.
+    ["cpython-3.12.11-macos-aarch64-none", "cpython-3.12.11-macos-aarch64-none"],
+  ];
+  for (const [override, expected] of requests) {
+    const env = { ...process.env };
+    delete env.UV_PYTHON;
+    if (override) env.UV_PYTHON = override;
+    for (const target of targets) {
+      const result = spawnSync("make", ["--no-print-directory", "-n", target], {
+        cwd: ROOT,
+        encoding: "utf8",
+        env,
+      });
+      assert.equal(result.status, 0, result.stderr);
+      const creations = result.stdout.split("\n").filter((line) => /(?:^|\s)venv\s/.test(line));
+      assert(creations.length > 0, `${target} creates no environment`);
+      for (const line of creations) {
+        assert.match(line, new RegExp(`\\s--python ${expected.replaceAll(".", "\\.")}\\s`), `${target}: ${line}`);
+      }
+    }
+  }
+});
+
+test("a free-threaded interpreter request is refused before any environment is created", () => {
+  // Asking for one explicitly would otherwise reach uv, whose failure names wheel tags
+  // rather than the request (fdu-pd1b).
+  const targets = ["python-smoke", "python-sdist-smoke", "parity-venv"];
+  // uv reads a `t` after the version, or `td` for the debug build, as free-threaded in
+  // every request form, and so does `+freethreaded`.
+  const requests = [
+    [{ UV_PYTHON: "3.14t" }, [], "3.14t"],
+    [{ UV_PYTHON: "cpython-3.14t-macos-aarch64-none" }, [], "cpython-3\\.14t-macos-aarch64-none"],
+    [{}, ["WHEEL_PYTHON=3.14td"], "3\\.14td"],
+    [{}, ["WHEEL_PYTHON=cpython-3.14+freethreaded"], "cpython-3.14\\+freethreaded"],
+  ];
+  for (const [overrides, variables, shown] of requests) {
+    const env = { ...process.env, ...overrides };
+    if (!overrides.UV_PYTHON) delete env.UV_PYTHON;
+    for (const target of targets) {
+      const result = spawnSync("make", ["--no-print-directory", "-n", target, ...variables], {
+        cwd: ROOT,
+        encoding: "utf8",
+        env,
+      });
+      assert.notEqual(result.status, 0, `${target}: ${result.stdout}`);
+      assert.match(result.stderr, new RegExp(`WHEEL_PYTHON=${shown} is a free-threaded CPython`), target);
+      assert.doesNotMatch(result.stdout, /(?:^|\s)venv\s/, target);
+    }
+  }
+});
+
+test("make check refuses a free-threaded request before anything but the uv floor runs", () => {
+  // Reached only through the Python targets, the refusal would follow the whole Rust gate.
+  const env = { ...process.env, UV_PYTHON: "3.14t" };
+  const make = (target) =>
+    spawnSync("make", ["--no-print-directory", "-j1", "-n", target], { cwd: ROOT, encoding: "utf8", env });
+  const check = make("check");
+  assert.notEqual(check.status, 0, check.stdout);
+  assert.match(check.stderr, /WHEEL_PYTHON=3\.14t is a free-threaded CPython/);
+  const floor = make("uv-version");
+  assert.equal(floor.status, 0, floor.stderr);
+  assert.equal(check.stdout, floor.stdout);
+});
+
 test("the bootstrap policy enforces one reviewed uv version in Make and CI", () => {
   const policy = JSON.parse(readFileSync(join(ROOT, "supply-chain-policy.json"), "utf8"));
   const uvRelease = policy.bootstrap.githubReleases.find(

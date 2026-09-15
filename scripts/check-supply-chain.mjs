@@ -616,6 +616,44 @@ export function validateBootstrapPin(filePath, text, item, versionSourceText = n
   }
 }
 
+/**
+ * Require each inventoried file to select exactly the Rust toolchains the policy lists
+ * for it.
+ *
+ * A version string somewhere in the file is not a pin: the `# 1.97.1` comment beside a
+ * SHA-pinned toolchain action survives a change to the `toolchain:` input it describes.
+ * So the pins are read from the keys that select a toolchain, `channel` in a
+ * rust-toolchain.toml and a `toolchain:` input in a workflow, and every one found must
+ * be a version inventoried for that file, so one drifted job fails beside others that
+ * still pin. `texts` maps each inventoried file to its contents.
+ */
+export function validateRustToolchainPins(rustToolchains, texts) {
+  const inventoried = new Map();
+  for (const item of rustToolchains) {
+    for (const file of item.files) {
+      inventoried.set(file, [...(inventoried.get(file) ?? []), item.version]);
+    }
+  }
+  for (const [file, versions] of inventoried) {
+    const key = file.endsWith(".toml")
+      ? /^\s*channel\s*=\s*["']([^"']*)["']/gm
+      : /\.ya?ml$/.test(file)
+        ? /^\s*-?\s*toolchain\s*:\s*["']?([^"'\s#]*)/gm
+        : fail(`${file}: Rust pins can be read only from a TOML toolchain file or a workflow`);
+    const pins = [...texts[file].matchAll(key)].map((match) => match[1]);
+    for (const pin of pins) {
+      if (!versions.includes(pin)) {
+        fail(`${file} pins Rust ${pin}, which the supply-chain policy does not inventory for it`);
+      }
+    }
+    for (const version of versions) {
+      if (!pins.includes(version)) {
+        fail(`${file} does not pin Rust ${version}`);
+      }
+    }
+  }
+}
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -743,13 +781,14 @@ async function verifyBootstrap(policy, root, context) {
       context.exceptions,
       context.firstParty,
     );
-    for (const file of item.files) {
-      const text = await readFile(path.join(root, file), "utf8");
-      if (!text.includes(item.version)) {
-        fail(`${file} does not pin Rust ${item.version}`);
-      }
-    }
   }
+  const rustFiles = [...new Set(policy.bootstrap.rustToolchains.flatMap((item) => item.files))];
+  validateRustToolchainPins(
+    policy.bootstrap.rustToolchains,
+    Object.fromEntries(
+      await Promise.all(rustFiles.map(async (file) => [file, await readFile(path.join(root, file), "utf8")])),
+    ),
+  );
 
   for (const item of policy.bootstrap.nodeRuntimes) {
     const releases = await fetchJson("https://nodejs.org/dist/index.json");

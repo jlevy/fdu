@@ -126,6 +126,8 @@ Start with the report that answers the question:
 fdu --view languages PATH                 # detected language sizes; metadata only
 fdu --analyze code --view languages PATH  # add standard LOC; reads content
 fdu --view types PATH                     # all file types; metadata only
+fdu --view largest PATH                   # the 20 largest files; metadata only
+fdu --view recent PATH                    # 20 most recently modified; metadata only
 fdu PATH                                  # folder-size tree; metadata only
 fdu --view summary PATH                   # one totals row; no retained index
 ```
@@ -148,7 +150,7 @@ version. Never use an unversioned `uvx` runner or `latest` in agent instructions
 uvx --from fdu==0.1.0 fdu --format json --view tree PATH
 ```
 
-## Compose the Request From Five Axes
+## Compose the Request From Six Axes
 
 Every option belongs to exactly one axis, and any axis composes with any other.
 There are no subcommands: the grammar is always “report on a path”.
@@ -156,10 +158,11 @@ There are no subcommands: the grammar is always “report on a path”.
 | Axis | Question | Options |
 | --- | --- | --- |
 | Scope | What is scanned and cached? | `PATH`, `--scan-depth N` |
+| Content | Which file bodies are read? | `--analyze none\|lines\|code\|words\|all` |
 | Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--depth`, `-n/--limit`, `--sort`, `--reverse`, `--size` |
-| View | Which roll-up is reported? | `--view tree,extensions,types,families,languages,documents,files,summary` |
+| View | Which roll-up is reported? | `--view summary,tree,families,types,extensions,languages,documents,largest,recent,files`, or `--view full` |
 | Format | How is it serialized? | `--format text\|json\|jsonl\|yaml`, `--color` |
-| Mode | How is work performed? | `--cache auto\|refresh\|read-only\|only\|off`, `--analyze none\|basic\|code\|documents\|full` |
+| Mode | How is work performed? | `--cache auto\|refresh\|read-only\|only\|off`, `--watch`, `--analysis-workers N` |
 
 Scope versus selection is the distinction that matters: scope decides what is scanned
 and cached, so one cache serves every query, while selection filters the retained index
@@ -172,11 +175,13 @@ whose contracts are about the snapshot itself.
 Under the rest a snapshot cannot save the walk that request is already doing, so it
 neither reads nor writes one.
 Ordinary metadata requests retain the reusable index but never read regular-file
-contents. Any non-`none` `--analyze` profile opts into streaming reads through every
-eligible file and a separate profile-scoped sidecar.
-A repeated run with the same profile and semantic settings reuses unchanged content
-records. Coverage is profile-scoped too: an unsupported deeper analyzer leaves byte
-metadata visible but does not retain a separate lower-level metric record for that file.
+contents.
+Any `--analyze` value other than `none` opts into streaming reads through every
+eligible file and a separate sidecar scoped to the selected analyzers.
+A repeated run with the same analyzers and semantic settings reuses unchanged content
+records. Coverage is scoped to the analyzers too: an unsupported deeper analyzer leaves
+byte metadata visible but does not retain a separate lower-level metric record for that
+file.
 
 ## Pick the View, Then Shape It
 
@@ -187,11 +192,16 @@ metadata visible but does not retain a separate lower-level metric record for th
 - `--view types` for stable detected file types and exact byte shares.
 - `--view families` for code, prose, markup, data, binary, and unknown roll-ups.
 - `--view languages` for code-family rows and byte shares from path-only detection.
-- `--view documents` for prose metrics; it requires any enabled analysis profile.
-- `--view files` for a flat listing.
+- `--view documents` for prose metrics; it requires any enabled analyzer.
+- `--view largest` for the 20 largest regular files, and `--view recent` for the 20 most
+  recently modified. Both are presets over `files`, not separate machinery: `largest` is
+  `files --sort size --limit 20` and `recent` is `files --sort mtime --limit 20`, each
+  restricted to regular files, and `--sort` and `--limit` still override them.
+- `--view files` for a complete flat listing: every matching entry, in name order.
   One-shot text adds the performance footer described below; use a machine format when
   output is consumed programmatically.
 - `--view summary` for one aggregate row.
+- `--view full` for every view except `files`.
 - Several views in one run share one scan: `--view summary,types,families`. Text then
   labels each block with an all-caps header naming its view; a single-view text report
   has no header. Machine formats tag every report with `view` either way.
@@ -212,7 +222,7 @@ Requesting analysis without naming a view selects one that displays it: `code` r
 `languages`, `words` reports `documents`, and either both or `lines` alone reports
 `families`. Naming `--view` overrides that; a view never enables an analyzer, so a
 `--view` that displays no content metric prints a note saying what was read for nothing.
-`--view all` reports every view the requested analyzers can answer and names any it
+`--view full` includes `documents` only when an analyzer ran, and otherwise names it as
 skipped. Use `--analysis-workers` to bound concurrent reads and `--words-per-page` to
 control page derivation.
 Analysis never truncates a file or excludes it because of size.
@@ -233,7 +243,7 @@ JSON, JSONL, YAML, skill output, lifecycle output, and watch streams omit it.
 Common shapes are compositions rather than dedicated flags:
 
 ```bash
-fdu --view files --sort size --limit 20 PATH          # largest files
+fdu --view largest -n 100 PATH                        # the 100 largest files
 fdu --view files --modified-since 2h PATH             # changed in the last two hours
 fdu --view files --include '*.{rs,toml}' PATH         # by pattern
 fdu --view tree --sort mtime PATH                     # an activity map
@@ -268,10 +278,11 @@ before the modification, so only the start bound is conservative.
 
 Check the process exit status and these fields:
 
-- `schema` before parsing anything else: a metadata-only report carries `fdu.report/5`,
-  a report that ran content analysis carries `fdu.report/6`, and a `--watch` stream
-  carries `fdu.stream/1`. Treat an unrecognized value as a version you cannot parse
-  rather than guessing at the fields.
+- `schema` before parsing anything else: a report carries `fdu.report/6` when it ran
+  content analysis or includes a metric summary (the `types`, `families`, `languages`,
+  and `documents` views), `fdu.report/5` otherwise, and a `--watch` stream carries
+  `fdu.stream/1`. Treat an unrecognized value as a version you cannot parse rather than
+  guessing at the fields.
 - `complete` and `errors` before trusting totals
 - `freshness` and `source` before presenting data as current
 - `truncated` on a tree node before treating it as exhaustive
@@ -329,13 +340,15 @@ THE LADDER
   the one above it and tells you more, so stop at the cheapest answer that
   settles your question.
 
-    fdu --view summary PATH             how big is this tree?        no reads
-    fdu PATH                            which folders are big?       no reads
-    fdu --view types PATH               what kinds of files?         no reads
-    fdu --view languages PATH           which languages?             no reads
-    fdu --analyze code PATH             how much code?               READS FILES
-    fdu --analyze words PATH            how much writing?            READS FILES
-    fdu --analyze all --view all PATH   everything there is          READS FILES
+    fdu --view summary PATH              how big is this tree?        no reads
+    fdu PATH                             which folders are big?       no reads
+    fdu --view largest PATH              what is eating my disk?      no reads
+    fdu --view recent PATH               what changed?                no reads
+    fdu --view types PATH                what kinds of files?         no reads
+    fdu --view languages PATH            which languages?             no reads
+    fdu --analyze code PATH              how much code?               READS FILES
+    fdu --analyze words PATH             how much writing?            READS FILES
+    fdu --analyze all --view full PATH   everything there is          READS FILES
 
 TWO FLAGS DO ALL OF IT
   --analyze decides what gets read. Anything but `none` opens and reads every
@@ -351,24 +364,31 @@ TWO FLAGS DO ALL OF IT
   A view never turns on an analyzer, because choosing how to look at a result
   should not quietly authorize reading every file in the tree. So a --view that
   displays none of what you asked to read says how much was read for nothing,
-  and --view all names any view it had to skip.
+  and --view full names any view it had to skip.
 
 MORE COMPOSITIONS
   fdu --view extensions ~/Downloads
   fdu --view types,families --format json .
   fdu --analyze words --view documents .
-  fdu --view files --min-size 10M --sort size -n 100 PATH   largest files
+  fdu --view largest -n 100 PATH                            the 100 largest files
   fdu --view files --modified-since 1h --sort mtime PATH    recent changes
   fdu --watch --view files --format jsonl PATH              a tail -f for a tree
 
   --interval throttles rendering only; change detection is event-driven and
   unaffected by it, so an idle tree costs nothing between changes.
 
+  largest and recent are presets over files, not more views to learn:
+    largest = files --sort size --limit 20, regular files only
+    recent  = files --sort mtime --limit 20, regular files only
+  --sort and --limit still override them. files alone is complete: every
+  matching entry, in name order. full is every view except files.
+
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH, --scan-depth                         what is scanned and cached
   Content    --analyze none|lines|code|words|all        which file bodies are read
   Selection  --include, --exclude, --depth, --limit     which entries are considered
-  View       tree,extensions,types,families,languages,documents,files,summary,all
+  View       summary,tree,families,types,extensions,languages,documents,
+             largest,recent,files,full
   Format     --format text|json|jsonl|yaml, --color
   Mode       --cache, --watch, --analysis-workers
 

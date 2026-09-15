@@ -9,7 +9,7 @@ UV ?= uv
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names admission-sites fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse clean cli perf-help verify-beads
+.PHONY: help build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names admission-sites fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test release-rehearse clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -110,7 +110,7 @@ $(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
 	$(NPM) ci
 
 # Everything CI enforces, in the order that fails fastest.
-check: uv-version supply-chain rust-module-names admission-sites golden-invocations golden-observability opened-root-golden-lint portability fmt-check clippy test docs docs-format-check perf-test perf-schema-check perf-ledger-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check release-test
+check: uv-version wheel-python supply-chain rust-module-names admission-sites golden-invocations golden-observability opened-root-golden-lint portability fmt-check clippy test docs docs-format-check perf-test perf-schema-check perf-ledger-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check release-test
 
 # The uv.toml files express the supply-chain cool-off as a relative `exclude-newer`
 # ("14 days"). uv releases older than this cannot parse that form: they abort with
@@ -202,6 +202,28 @@ golden-observability:
 portability:
 	$(NODE) scripts/check-portability.mjs
 
+# The interpreter every environment that installs fdu is created with. The wheel is
+# cp312-abi3, which a free-threaded CPython cannot install, and uv picks a free-threaded
+# build when it manages one, so an unpinned `uv venv` fails the gate on such a host
+# (fdu-pd1b). The default is the version CI's Python quality job pins; UV_PYTHON, or
+# WHEEL_PYTHON on the command line, chooses another GIL-enabled CPython.
+WHEEL_PYTHON ?= $(or $(UV_PYTHON),3.12)
+
+# An explicit free-threaded request would reach `uv venv` and fail on wheel tags, a
+# message that names neither the request nor the remedy. uv reads a version followed by
+# `t`, or `td` for the debug build, as free-threaded in every request form (`3.14t`,
+# `cpython@3.14t`, `cpython-3.14t-macos-aarch64-none`), and so is `+freethreaded`.
+# Splitting on `-` separates the version from the rest of the full form. The check is a
+# Make function in the recipe, so `make -n` refuses it too.
+WHEEL_PYTHON_FREE_THREADED_SUFFIXES := $(foreach digit,0 1 2 3 4 5 6 7 8 9,%$(digit)t %$(digit)td)
+WHEEL_PYTHON_FREE_THREADED = $(filter $(WHEEL_PYTHON_FREE_THREADED_SUFFIXES),$(subst -, ,$(WHEEL_PYTHON)))$(findstring freethreaded,$(WHEEL_PYTHON))
+WHEEL_PYTHON_REFUSAL = WHEEL_PYTHON=$(WHEEL_PYTHON) is a free-threaded CPython, which cannot install the cp312-abi3 wheel; set UV_PYTHON or WHEEL_PYTHON to a GIL-enabled CPython such as 3.12
+
+wheel-python:
+	$(if $(WHEEL_PYTHON_FREE_THREADED),$(error $(WHEEL_PYTHON_REFUSAL)),@:)
+
+parity-venv python-smoke python-sdist-smoke: wheel-python
+
 # The parity surface needs the wheel installed, not the working tree: a shim importing
 # python/fdu/ directly would pass while the built package was broken, which is the
 # failure public_smoke already exists to prevent.
@@ -209,7 +231,7 @@ parity-venv: uv-version
 	cd crates/fdu-py && wheel_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-parity.XXXXXX")" && \
 		trap 'rm -r -- "$$wheel_dir"' EXIT && \
 		$(UV) run --frozen --only-group dev maturin build --locked --release --out "$$wheel_dir" && \
-		$(UV) venv --clear .venv-parity && \
+		$(UV) venv --clear --python $(WHEEL_PYTHON) .venv-parity && \
 		$(UV) pip install --python .venv-parity --no-index --find-links "$$wheel_dir" fdu
 
 # The two interpreters the parity harness can run against, named once. `parity-venv`
@@ -335,7 +357,7 @@ python-smoke:
 		type_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-typecheck.XXXXXX")" && \
 		trap 'rm -r -- "$$wheel_dir" "$$type_dir"' EXIT && \
 		$(UV) run --frozen --only-group dev maturin build --locked --release --out "$$wheel_dir" && \
-		$(UV) venv --clear .venv-smoke && \
+		$(UV) venv --clear --python $(WHEEL_PYTHON) .venv-smoke && \
 		$(UV) pip install --python .venv-smoke --no-index --find-links "$$wheel_dir" fdu && \
 		$(UV) run --no-project --python .venv-smoke python tests/public_smoke.py && \
 		$(UV) run --no-project --python .venv-smoke python tests/smoke.py && \
@@ -349,7 +371,7 @@ python-sdist-smoke:
 	cd crates/fdu-py && sdist_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-sdist.XXXXXX")" && \
 		trap 'rm -r -- "$$sdist_dir"' EXIT && \
 		$(UV) build --no-sources --sdist --out-dir "$$sdist_dir" && \
-		$(UV) venv --clear .venv-sdist && \
+		$(UV) venv --clear --python $(WHEEL_PYTHON) .venv-sdist && \
 		$(UV) pip install --python .venv-sdist "$$sdist_dir/fdu-"*.tar.gz && \
 		$(UV) run --no-project --python .venv-sdist python tests/public_smoke.py
 
@@ -366,13 +388,19 @@ release-test:
 # sibling first in a separate run does not help -- that puts a `.crate` in target/package,
 # not in the index. Naming both in one invocation makes cargo verify each against the
 # just-packaged sibling (fdu-pj9w).
+#
+# The crate smoke is the release workflow's own step, run on the copied artifacts: it
+# installs the packaged `fdu`, locked, against the packaged `fdu-core` (fdu-y5zc).
 release-rehearse: release-test
 	artifact_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-release.XXXXXX")" && \
-		trap 'rm -r -- "$$artifact_dir"' EXIT && \
+		smoke_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-crate-smoke.XXXXXX")" && \
+		trap 'rm -r -- "$$artifact_dir" "$$smoke_dir"' EXIT && \
 		version="$$($(UV) run --no-project --python 3.12 python -c 'import pathlib,tomllib; print(tomllib.loads(pathlib.Path("crates/fdu/Cargo.toml").read_text())["package"]["version"])')" && \
 		export FDU_RELEASE_TAG="v$$version" && \
 		$(CARGO) package --locked -p fdu-core -p fdu --allow-dirty && \
 		cp "target/package/fdu-core-$$version.crate" "target/package/fdu-$$version.crate" "$$artifact_dir/" && \
+		$(UV) run --no-project --python 3.12 python scripts/release/smoke_crate.py "$$artifact_dir" --version "$$version" \
+			--work-dir "$$smoke_dir" --cargo "$(CARGO)" && \
 		$(UV) build --directory crates/fdu-py --no-sources --sdist --out-dir "$$artifact_dir" && \
 		$(UV) run --directory crates/fdu-py --frozen --only-group dev maturin build --locked --release --out "$$artifact_dir" && \
 		$(UV) run --no-project --python 3.12 python scripts/release/inspect_artifacts.py "$$artifact_dir" --version "$$version" \

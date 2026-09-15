@@ -103,7 +103,7 @@ An explicit analysis request remains visible even when there are no file records
 $ fdu --cache off --analyze lines --view summary empty-project
        0 B  0 files, 0 directories
 Performance: walked 0 files / 0 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
-note: --analyze lines read 0 B; no selected view displays content metrics — try --view families, languages, or all
+note: --analyze lines read 0 B; no selected view displays content metrics — try --view families, languages, or full
 ? 0
 ```
 
@@ -379,7 +379,7 @@ sidecar.
 $ fdu --analyze lines --view summary --size apparent content-project
      256 B  7 files, 4 directories
 Performance: walked 7 files / 256 B; content read 0 B; analysis 0 fresh, 7 cached / 256 B; warm revalidation; total [PERF_TIME]
-note: --analyze lines read 0 B; no selected view displays content metrics — try --view families, languages, or all
+note: --analyze lines read 0 B; no selected view displays content metrics — try --view families, languages, or full
 ? 0
 ```
 
@@ -396,7 +396,7 @@ A cache-only report states that it did no filesystem walk.
 $ fdu --cache only --analyze lines --view summary --size apparent content-project
      256 B  7 files, 4 directories
 Performance: walked 0 files / 0 B; content read 0 B; analysis 0 fresh, 7 cached / 256 B; cache only; total [PERF_TIME]
-note: --analyze lines read 0 B; no selected view displays content metrics — try --view families, languages, or all
+note: --analyze lines read 0 B; no selected view displays content metrics — try --view families, languages, or full
 ? 0
 ```
 
@@ -499,7 +499,7 @@ $ fdu --cache off --color never --size apparent --analyze all --view tree conten
       59 B  ██░░░░░░░░    23%    docs (2 files)
       22 B  █░░░░░░░░░     9%    data (1 file)
 Performance: walked 7 files / 256 B; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
-note: --analyze lines,code,words read 176 B; no selected view displays content metrics — try --view families, languages, or all
+note: --analyze lines,code,words read 176 B; no selected view displays content metrics — try --view families, languages, or full
 ? 0
 ```
 
