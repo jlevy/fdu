@@ -451,9 +451,10 @@ measure, from the recorded identities:
     neither applied its rules, so a new file there is counted in whichever partition the
     loaded rules choose.
   - A checkpoint that retains fewer refused-source paths than its refused count, whether
-    none or a truncated list (the engine retains at most `MAX_RETAINED_ISSUES` of them),
-    marks every classification delta of its comparisons partial: an unrecorded source
-    could lie under any directory.
+    none or a truncated list (`Index::control_coverage` lists at most
+    `MAX_RETAINED_ISSUES` of them beside the exact count), marks every classification
+    delta of its comparisons partial: an unrecorded source could lie under any
+    directory.
   - The budget is mixed into `ignore_rules_fingerprint`, so checkpoints captured at
     different budgets differ in `SemanticIdentity`, and their classification is not
     comparable under the `SemanticIdentity` rule above.

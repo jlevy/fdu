@@ -199,6 +199,15 @@ scope.
 A command-line run does not start from a snapshot that observes control state, and
 one that saves replaces it, but `--cache only` still answers a one-shot report from it.
 
+Control state has a budget, and crossing it never costs the answer.
+An index that observes `.gitignore` files charges each distinct file’s rules once, up to
+4 MiB by default, and refuses a file past that budget or with a line over 16 KiB. A
+refused file’s rules do not apply, every size stays exact, the result stays complete,
+and the report says which files it refused in its `ignore_rules` field and a note naming
+their directories. `control_budget` in the library and Python, and `--gitignore-budget`
+on the command line, raise the budget or lift both bounds with `all`. The budget is part
+of the snapshot scope, so changing it scans cold once.
+
 ### How performance work is done here
 
 fdu runs a disciplined optimization loop rather than a list of tweaks: instrument,
