@@ -2534,9 +2534,9 @@ mod tests {
         ));
 
         let minimum = crate::MIN_JOURNAL_CAPACITY_BYTES;
-        let below_one_commit =
+        let below_minimum =
             OpenOptions { journal_capacity_bytes: minimum - 1, ..OpenOptions::default() };
-        let error = OpenedIndex::open(root.path(), below_one_commit).expect_err("refused");
+        let error = OpenedIndex::open(root.path(), below_minimum).expect_err("refused");
         assert!(
             matches!(error, Error::JournalCapacityTooSmall { requested, minimum: stated }
                 if requested == minimum - 1 && stated == minimum),
@@ -2545,8 +2545,8 @@ mod tests {
         let message = error.to_string();
         assert!(message.contains(&format!("at least {minimum} bytes")), "{message}");
 
-        let one_commit = OpenOptions { journal_capacity_bytes: minimum, ..OpenOptions::default() };
-        OpenedIndex::open(root.path(), one_commit).expect("accepted").close().expect("close");
+        let at_minimum = OpenOptions { journal_capacity_bytes: minimum, ..OpenOptions::default() };
+        OpenedIndex::open(root.path(), at_minimum).expect("accepted").close().expect("close");
     }
 
     #[test]
@@ -2995,8 +2995,8 @@ mod tests {
         second.close().expect("second close");
     }
 
-    #[test]
-    fn a_slow_consumer_gets_one_coherent_all_dirty_reset() {
+    /// Opens a root with no discovery, at the smallest journal budget it accepts.
+    fn opened_at_the_minimum_journal_budget() -> (tempfile::TempDir, OpenedIndex) {
         let controls = Arc::new(TestControls::default());
         controls.discovery_disabled.store(true, Ordering::Release);
         let root = tempfile::tempdir().expect("temp root");
@@ -3009,15 +3009,56 @@ mod tests {
             controls,
         )
         .expect("opened root");
+        (root, opened)
+    }
+
+    /// The least budget accepted holds history worth polling, not one commit: a consumer
+    /// that falls behind by a burst of single-file commits still receives every one.
+    #[test]
+    fn the_minimum_journal_budget_delivers_a_burst_of_single_file_commits() {
+        const BURST: usize = 64;
+        let (_root, opened) = opened_at_the_minimum_journal_budget();
         let after = current_version(&opened);
-        apply_and_notify(
+        for index in 0..BURST {
+            apply_and_notify(
+                &opened,
+                &Observation::new(vec![Op::Upsert {
+                    path: PathBuf::from(format!("file-{index:02}")),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs::default(),
+                }]),
+            );
+        }
+
+        let poll = opened
+            .changes(crate::ChangeRequest { after, timeout: std::time::Duration::ZERO })
+            .expect("burst");
+        let crate::ChangeOutcome::Changes { commits, .. } = &poll.outcome else {
+            panic!("expected the burst's commits: {:?}", poll.outcome);
+        };
+        assert_eq!(commits.len(), BURST);
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn a_slow_consumer_gets_one_coherent_all_dirty_reset() {
+        let (_root, opened) = opened_at_the_minimum_journal_budget();
+        let after = current_version(&opened);
+        // One commit that costs more than the whole budget: many long names at once.
+        let outcome = apply_and_notify(
             &opened,
-            &Observation::new(vec![Op::Upsert {
-                path: PathBuf::from("larger-than-history"),
-                kind: EntryKind::File,
-                attrs: crate::Attrs::default(),
-            }]),
+            &Observation::new(
+                (0..=crate::MAX_DIRTY_PATHS)
+                    .map(|index| Op::Upsert {
+                        path: PathBuf::from(format!("{index:0>200}")),
+                        kind: EntryKind::File,
+                        attrs: crate::Attrs::default(),
+                    })
+                    .collect(),
+            ),
         );
+        let commit = outcome.commit.expect("effective commit");
+        assert!(commit.retained_cost() > crate::MIN_JOURNAL_CAPACITY_BYTES);
 
         let poll = opened
             .changes(crate::ChangeRequest { after, timeout: std::time::Duration::ZERO })

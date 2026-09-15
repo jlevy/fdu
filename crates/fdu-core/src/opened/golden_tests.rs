@@ -365,9 +365,9 @@ fn journal_and_observation_recovery() -> SessionTrace {
     std::fs::write(&script, b"modify\tbaseline.txt\n").expect("initial observation script");
     let controls = deterministic_controls();
     controls.gate(TestPoint::BeforeDiscovery).arm();
-    // Small enough that the twelve-file refresh below evicts the handoff's history, large
-    // enough that the handoff's own commits are retained for the first poll.
-    let options = scripted_options(&script, 8192);
+    // The smallest budget accepted. It retains the handoff's commits for the first poll,
+    // and the refresh of BULK_FILES below evicts them.
+    let options = scripted_options(&script, crate::MIN_JOURNAL_CAPACITY_BYTES);
     let mut trace = SessionTrace::new("journal-and-observation-recovery", root.path());
     trace.alias_path(scripts.path(), "$SCRIPT_ROOT");
     trace.record("action.open", &options);
@@ -387,14 +387,20 @@ fn journal_and_observation_recovery() -> SessionTrace {
     cursor = poll(&opened, &mut trace, cursor, Duration::ZERO);
     cursor = poll(&opened, &mut trace, cursor, Duration::ZERO);
 
+    // Each refreshed file costs its refresh about three small commits, a little over 2 KiB
+    // of journal together, so this many overflow the minimum budget with room to spare.
+    const BULK_FILES: usize = 32;
     let reset_cursor = cursor;
     let mut bulk_paths = Vec::new();
-    for index in 0..12 {
+    for index in 0..BULK_FILES {
         let relative = PathBuf::from(format!("bulk-{index:02}.txt"));
         std::fs::write(root.path().join(&relative), b"bulk").expect("bulk fixture");
         bulk_paths.push(relative);
     }
-    trace.record_text("action.fixture", "write bulk-00.txt..bulk-11.txt");
+    trace.record_text(
+        "action.fixture",
+        format!("write bulk-00.txt..bulk-{:02}.txt", BULK_FILES - 1),
+    );
     refresh(&opened, &mut trace, &bulk_paths);
     cursor = poll(&opened, &mut trace, reset_cursor, Duration::ZERO);
 

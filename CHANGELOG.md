@@ -79,8 +79,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   fixed allowance per commit and per retained change, transition, or dirty path, plus
   each path’s bytes, so a budget means the same on every platform.
   The default, `DEFAULT_JOURNAL_CAPACITY_BYTES`, is 8 MiB. Opening a root refuses a
-  budget below `MIN_JOURNAL_CAPACITY_BYTES`, which could not retain a single commit,
-  with an error naming the unit and the minimum (`InvalidArgumentError` in Python).
+  budget below `MIN_JOURNAL_CAPACITY_BYTES`, 64 KiB, with an error naming the unit and
+  the minimum (`InvalidArgumentError` in Python).
+  The floor is the old item-count default, so any count passed as bytes is refused or
+  works, and it holds about a hundred single-file commits.
 - A name a directory listing returned that is gone by the time it is stat’d is recorded
   as deleted on every walk: cold scans, reconciliation, `revalidate`, watches, and
   opened-root discovery and refresh.
