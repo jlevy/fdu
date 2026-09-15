@@ -289,7 +289,8 @@ impl OpenedIndex {
     /// A poll waiting on an idle journal returns as soon as an owned worker panics, with
     /// [`Error::OpenedWorkerPanicked`] naming the worker -- the cause [`Self::close`] will
     /// report -- rather than at its timeout. Commits retained before the panic are still
-    /// returned first.
+    /// returned first, unless the panic struck inside a commit: that poisons the index,
+    /// which leaves nothing to read, and the poll reports the panic rather than the poison.
     pub fn changes(&self, request: crate::ChangeRequest) -> Result<crate::ChangePoll> {
         self.ensure_open()?;
         journal::poll(self, request)
@@ -2344,32 +2345,42 @@ mod tests {
     }
 
     /// A poll blocked on the journal learns of a worker panic when it happens, with the
-    /// cause close will report, instead of sleeping to its timeout.
+    /// cause close will report, instead of sleeping to its timeout. That holds for a panic
+    /// inside a commit too, the likeliest place for one: the unwinding guard poisons the
+    /// index lock, and the poll reports the panic rather than the poisoning it left.
     #[test]
     fn a_worker_panic_wakes_a_blocked_change_poll_with_its_typed_failure() {
-        let controls = Arc::new(TestControls::default());
-        controls.gate(TestPoint::BeforeJournalWait).arm();
-        let (_root, opened) = opened(Arc::clone(&controls));
-        let cursor = current_version(&opened);
-        let poller = opened.clone();
-        let poll = thread::spawn(move || {
-            poller.changes(crate::ChangeRequest {
-                after: cursor,
-                timeout: std::time::Duration::from_secs(60),
-            })
-        });
-        controls.gate(TestPoint::BeforeJournalWait).wait_reached();
-        opened
-            .spawn_worker("panic", |_cancellation| panic!("injected worker panic"))
-            .expect("spawn worker");
-        controls.gate(TestPoint::BeforeJournalWait).release();
+        for holds_index_lock in [false, true] {
+            let controls = Arc::new(TestControls::default());
+            controls.gate(TestPoint::BeforeJournalWait).arm();
+            let (_root, opened) = opened(Arc::clone(&controls));
+            let cursor = current_version(&opened);
+            let poller = opened.clone();
+            let poll = thread::spawn(move || {
+                poller.changes(crate::ChangeRequest {
+                    after: cursor,
+                    timeout: std::time::Duration::from_secs(60),
+                })
+            });
+            controls.gate(TestPoint::BeforeJournalWait).wait_reached();
+            let index = opened.state.index.clone();
+            opened
+                .spawn_worker("panic", move |_cancellation| {
+                    if holds_index_lock {
+                        index.panic_holding_the_write_lock_for_test();
+                    }
+                    panic!("injected worker panic")
+                })
+                .expect("spawn worker");
+            controls.gate(TestPoint::BeforeJournalWait).release();
 
-        let outcome = poll.join().expect("poll thread");
-        assert!(
-            matches!(outcome, Err(Error::OpenedWorkerPanicked { worker: "panic" })),
-            "{outcome:?}"
-        );
-        assert!(matches!(opened.close(), Err(Error::OpenedWorkerPanicked { worker: "panic" })));
+            let outcome = poll.join().expect("poll thread");
+            assert!(
+                matches!(outcome, Err(Error::OpenedWorkerPanicked { worker: "panic" })),
+                "holds index lock {holds_index_lock}: {outcome:?}"
+            );
+            assert!(matches!(opened.close(), Err(Error::OpenedWorkerPanicked { worker: "panic" })));
+        }
     }
 
     /// Close reports the failure that happened first, not the worker that was spawned first.

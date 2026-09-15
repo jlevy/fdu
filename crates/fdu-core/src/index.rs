@@ -1062,13 +1062,18 @@ impl IndexHandle {
 
     #[cfg(test)]
     pub(crate) fn poison_for_test(&self) {
-        let inner = std::sync::Arc::clone(&self.inner);
-        std::thread::spawn(move || {
-            let _guard = inner.write().expect("test index write lock");
-            panic!("inject index poison");
-        })
-        .join()
-        .expect_err("injected index panic");
+        let handle = self.clone();
+        std::thread::spawn(move || handle.panic_holding_the_write_lock_for_test())
+            .join()
+            .expect_err("injected index panic");
+    }
+
+    /// Panic on this thread while holding the write lock, as a commit that panics does,
+    /// leaving the lock poisoned.
+    #[cfg(test)]
+    pub(crate) fn panic_holding_the_write_lock_for_test(&self) -> ! {
+        let _guard = self.inner.write().expect("test index write lock");
+        panic!("inject index poison");
     }
 
     /// Arbitrate and apply one observation under the single-writer lock.
