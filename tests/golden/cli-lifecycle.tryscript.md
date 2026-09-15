@@ -37,20 +37,23 @@ No cached snapshots.
 
 ```console
 $ fdu --size apparent project
-     263 B  ██████████   100%  . (6 files)
-     128 B  █████░░░░░    49%    dist (1 file)
-      36 B  █░░░░░░░░░    14%    src (2 files)
+     269 B  ██████████   100%  . (7 files) (128 B ignored)
+     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
+      36 B  █░░░░░░░░░    13%    src (2 files)
       23 B  █░░░░░░░░░     9%    docs (1 file)
-Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
 ## The Compact Summary Retains Nothing, and Cache-Only Says So
 
-An unfiltered `summary` is answered by the transient tier, which retains no index and so
-has no snapshot to write: the cache cannot save the walk that request is already doing.
+An unfiltered `summary` that reads no `.gitignore` is answered by the transient tier,
+which retains no index and so has no snapshot to write: the cache cannot save the walk
+that request is already doing.
 A tier that retained nothing has nothing for `--cache only` to read, and it says so
 rather than quietly scanning.
+A default summary reads `.gitignore` to report its ignored share, which needs the index,
+so it saves a snapshot like any other report.
 
 ```console
 $ fdu --cache-clear project
@@ -60,9 +63,9 @@ Cache cleared.
 ```
 
 ```console
-$ fdu --view summary --size apparent project
-     263 B  6 files, 3 directories
-Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+$ fdu --no-gitignore --view summary --size apparent project
+     269 B  7 files, 3 directories
+Performance: walked 7 files / 269 B; no ignore rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -73,7 +76,7 @@ No cached snapshots.
 ```
 
 ```console
-$ fdu --cache only --view summary project
+$ fdu --no-gitignore --cache only --view summary project
 fdu: snapshot is not usable: no usable snapshot for this root and scan scope; the `only` cache policy never scans, so use `auto`, which scans when none serves
 ? 1
 ```
@@ -83,18 +86,18 @@ can then answer from without touching the tree.
 
 ```console
 $ fdu --size apparent project
-     263 B  ██████████   100%  . (6 files)
-     128 B  █████░░░░░    49%    dist (1 file)
-      36 B  █░░░░░░░░░    14%    src (2 files)
+     269 B  ██████████   100%  . (7 files) (128 B ignored)
+     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
+      36 B  █░░░░░░░░░    13%    src (2 files)
       23 B  █░░░░░░░░░     9%    docs (1 file)
-Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
 ```console
 $ fdu --cache only --view summary --size apparent project
-     263 B  6 files, 3 directories
-Performance: walked 0 files / 0 B; content read 0 B; analysis 0 fresh, 0 cached; cache only; total [PERF_TIME]
+     269 B  7 files, 3 directories (128 B ignored)
+Performance: walked 0 files / 0 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cache only; total [PERF_TIME]
 ? 0
 ```
 
@@ -106,7 +109,7 @@ The header carries the answer.
 
 ```console
 $ fdu --cache-status project
-[CACHE_FILE]  10 entries, [BYTES] metadata bytes, 0 content bytes  [SCAN_PATH]
+[CACHE_FILE]  11 entries, [BYTES] metadata bytes, 0 content bytes  [SCAN_PATH]
 ? 0
 ```
 
@@ -118,7 +121,7 @@ Agents get cache observability without a second schema style.
 $ fdu --cache-status --format json project
 {
   "caches": [
-    {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "recognized": true, "root": "[SCAN_PATH]", "entries": 10}
+    {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "recognized": true, "root": "[SCAN_PATH]", "entries": 11}
   ]
 }
 ? 0
@@ -146,11 +149,11 @@ Cache already empty.
 
 ```console
 $ fdu --size apparent project
-     263 B  ██████████   100%  . (6 files)
-     128 B  █████░░░░░    49%    dist (1 file)
-      36 B  █░░░░░░░░░    14%    src (2 files)
+     269 B  ██████████   100%  . (7 files) (128 B ignored)
+     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
+      36 B  █░░░░░░░░░    13%    src (2 files)
       23 B  █░░░░░░░░░     9%    docs (1 file)
-Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 

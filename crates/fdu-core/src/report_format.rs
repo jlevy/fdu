@@ -319,10 +319,12 @@ fn human_coverage_label(reason: CoverageReason) -> &'static str {
 ///
 /// One placement for every row that carries a share: after the row's own detail, so the
 /// fixed size, bar, and percentage columns keep their alignment. Nothing is appended when
-/// nothing is ignored, when the index observed no control state, or when the selection
-/// admitted only ignored entries, where the share would repeat the row's size. Text cannot
-/// tell the first two apart; the performance line says whether any rule was read, and
-/// machine formats carry a zero share and `null` respectively.
+/// no file is ignored, when the index observed no control state, or when the selection
+/// admitted only ignored entries, where the share would repeat the row's size. A share of
+/// ignored directories alone holds no bytes, and `(0 B ignored)` would say nothing a
+/// reader can act on; the machine formats still count them. Text cannot tell "nothing
+/// ignored" from "no rules read"; the performance line says whether any rule was read,
+/// and machine formats carry a zero share and `null` respectively.
 fn ignored_suffix(
     ignored: Option<IgnoredTally>,
     size: SizeMetric,
@@ -330,7 +332,7 @@ fn ignored_suffix(
 ) -> String {
     let shown = match selected {
         IgnoredEntries::Include | IgnoredEntries::Exclude => {
-            ignored.filter(|share| !share.is_empty())
+            ignored.filter(|share| share.files > 0)
         }
         IgnoredEntries::Only => None,
     };
@@ -2248,6 +2250,12 @@ mod tests {
                 "src/b.rs\n",
             )
             .replace('/', std::path::MAIN_SEPARATOR_STR)
+        );
+        // A share of ignored directories alone holds no bytes, so text says nothing of it.
+        let dirs_only = IgnoredTally { files: 0, dirs: 1, bytes: 0, allocated: 0 };
+        assert_eq!(
+            ignored_suffix(Some(dirs_only), SizeMetric::Apparent, IgnoredEntries::Include),
+            ""
         );
         let only = render(
             &report(&observed, &query(IgnoredEntries::Only), &provenance),

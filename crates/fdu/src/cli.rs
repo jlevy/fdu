@@ -181,8 +181,8 @@ CONTENT ANALYSIS
   cache=only never opens source files and fails if requested content is absent.
 
 IGNORE RULES
-  Every report reads each .gitignore in the tree and says how much of each size
-  its rules ignore: `263 B (128 B ignored)` on summary, tree, and extension rows.
+  Every report reads each .gitignore in the tree, and summary, tree, and extension
+  rows end with how much of their size its rules ignore, as `(128 B ignored)`.
   A directory a rule ignores is ignored with everything below it. Unignored is not
   tracked: .git is unignored unless a rule names it. --exclude-ignored and
   --only-ignored report one side, and sort and --min-size follow the size shown.
