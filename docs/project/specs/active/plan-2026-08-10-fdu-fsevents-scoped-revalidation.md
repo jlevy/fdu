@@ -327,7 +327,7 @@ CoreServices. Every row falls closed to the sweep:
 | --- | --- | --- |
 | G1 | Not macOS, build feature off, or `--revalidate=full` | full sweep |
 | G2 | No usable snapshot, or one without a cursor (first save, older format, or an image discarded by a release upgrade, a scope change, or `--cache-clear`) | full sweep; persist its pre-scan cursor with the snapshot |
-| G3 | Root’s current volume UUID ≠ stored UUID (moved disk, container change, FSEvents database replaced, UUID unreadable), or the root’s device number ≠ the one the snapshot recorded | full sweep; a renumbered device changes every retained `Fingerprint`, and a scoped refresh would leave entries under two device numbers |
+| G3 | Root’s current volume UUID ≠ stored UUID (container change, FSEvents database purged or replaced, disk erased, UUID unreadable), or the root’s device number ≠ the one the snapshot recorded | full sweep; a renumbered device changes every retained `Fingerprint`, and a scoped refresh would leave entries under two device numbers |
 | G4 | Stored event ID > current volume event ID (regression: journal purged, clock wrapped) | full sweep |
 | G5 | Applied cursor older than `max_cursor_age` (provisional default **24 hours**) | full sweep; an age limit bounds exposure but does not prove retained history is complete |
 | G6 | Stream creation fails, or replay exceeds the G11 budget without `HistoryDone` | full sweep |
@@ -486,7 +486,11 @@ acceptance run. On a real volume, establish:
   hours, and 7 days; record missing expected events even when no warning is emitted.
   Ancient and future synthetic IDs are negative controls, not retention measurements
 - [ ] Volume identity works: `FSEventsCopyUUIDForDevice` for the root’s current `st_dev`
-  returns a stable UUID across remount; the self-declared extern links
+  returns a stable UUID across remount; the self-declared extern links.
+  The SDK header says the UUID is stored on the device and travels with it to other
+  computers, so G3’s UUID comparison does not catch a disk changed on another Mac and
+  brought back: record whether replay from a cursor saved before the move names those
+  changes, and which gate falls closed if it does not
 - [ ] Permission surface is understood: what a plain user process sees for its own trees
   without Full Disk Access, and whether any TCC prompt appears
 - [ ] Cross-restart reliability is probed directly, because this is the unproven part:
