@@ -22,8 +22,9 @@ use crate::content::{CoverageReason, MetricValues};
 use crate::control::ControlCoverage;
 use crate::engine_contract::{EntryKind, Freshness};
 use crate::query::{
-    FileRow, MetricGroup, MetricRow, MetricSummary, Report, ReportSource, Section, SizeMetric,
-    SummaryRow, TreeNode, TypeRow, ViewSpec, document_words, format_rfc3339,
+    FileRow, IgnoredEntries, IgnoredTally, MetricGroup, MetricRow, MetricSummary, Report,
+    ReportSource, Section, SizeMetric, SummaryRow, TreeNode, TypeRow, ViewSpec, document_words,
+    format_rfc3339,
 };
 
 /// The all-caps label naming which view a block of text output belongs to.
@@ -145,9 +146,11 @@ fn render_text(report: &Report, color: bool) -> String {
             let _ = writeln!(out, "{}", paint(bound.trim_start(), STYLE_TELEMETRY, color));
         }
         match section {
-            Section::Tree(root) => render_text_tree(&mut out, root, report.size, color),
+            Section::Tree(root) => {
+                render_text_tree(&mut out, root, report.size, report.ignored_entries, color);
+            }
             Section::Extensions { rows, .. } => {
-                render_text_types(&mut out, rows, report.size, color);
+                render_text_types(&mut out, rows, report.size, report.ignored_entries, color);
             }
             Section::Metrics { view, summary } => {
                 render_text_metrics(&mut out, *view, summary, report.size, color);
@@ -170,7 +173,9 @@ fn render_text(report: &Report, color: bool) -> String {
                     }
                 }
             },
-            Section::Summary(row) => render_text_summary(&mut out, row, report.size),
+            Section::Summary(row) => {
+                render_text_summary(&mut out, row, report.size, report.ignored_entries);
+            }
         }
     }
     // Remarks about the report, after the report and before the caller's own epilogue.
@@ -310,10 +315,40 @@ fn human_coverage_label(reason: CoverageReason) -> &'static str {
     }
 }
 
+/// The ignored share a text row ends with, as ` (128 B ignored)`, or nothing.
+///
+/// One placement for every row that carries a share: after the row's own detail, so the
+/// fixed size, bar, and percentage columns keep their alignment. Nothing is appended when
+/// nothing is ignored, when the index observed no control state, or when the selection
+/// admitted only ignored entries, where the share would repeat the row's size. Text cannot
+/// tell the first two apart; the performance line says whether any rule was read, and
+/// machine formats carry a zero share and `null` respectively.
+fn ignored_suffix(
+    ignored: Option<IgnoredTally>,
+    size: SizeMetric,
+    selected: IgnoredEntries,
+) -> String {
+    let shown = match selected {
+        IgnoredEntries::Include | IgnoredEntries::Exclude => {
+            ignored.filter(|share| !share.is_empty())
+        }
+        IgnoredEntries::Only => None,
+    };
+    shown.map_or_else(String::new, |share| {
+        format!(" ({} ignored)", human_bytes(pick(size, share.bytes, share.allocated)))
+    })
+}
+
 /// Render a tree section with fixed size, bar, and percentage columns.
 ///
 /// Iterative for the same reason the expansion is: a deep tree must render, not panic.
-fn render_text_tree(out: &mut String, root: &TreeNode, size: SizeMetric, color: bool) {
+fn render_text_tree(
+    out: &mut String,
+    root: &TreeNode,
+    size: SizeMetric,
+    selected: IgnoredEntries,
+    color: bool,
+) {
     enum Row<'a> {
         Node(&'a TreeNode, usize),
         Truncation(usize),
@@ -331,13 +366,14 @@ fn render_text_tree(out: &mut String, root: &TreeNode, size: SizeMetric, color: 
                 let indent = "  ".repeat(depth);
                 let _ = writeln!(
                     out,
-                    "{:>10}  {}  {:>4.0}%  {indent}{} ({} {})",
+                    "{:>10}  {}  {:>4.0}%  {indent}{} ({} {}){}",
                     human_bytes(bytes),
                     bar(share, color),
                     share * 100.0,
                     paint(&node.name, STYLE_DIRECTORY, color),
                     node.files,
                     plural(node.files, "file", "files"),
+                    ignored_suffix(node.ignored, size, selected),
                 );
                 // Reaching the requested depth is visible from the outline itself and
                 // marking every boundary directory overwhelms a real tree with dots.
@@ -359,16 +395,23 @@ fn render_text_tree(out: &mut String, root: &TreeNode, size: SizeMetric, color: 
 }
 
 /// Render a types section as aligned rows.
-fn render_text_types(out: &mut String, rows: &[TypeRow], size: SizeMetric, color: bool) {
+fn render_text_types(
+    out: &mut String,
+    rows: &[TypeRow],
+    size: SizeMetric,
+    selected: IgnoredEntries,
+    color: bool,
+) {
     let width = label_width(rows.iter().map(|row| row.extension.as_str()), TEXT_TYPE_LABEL_WIDTH);
     for row in rows {
         let _ = writeln!(
             out,
-            "{:>TEXT_SIZE_WIDTH$}  {} {} {}",
+            "{:>TEXT_SIZE_WIDTH$}  {} {} {}{}",
             human_bytes(pick(size, row.bytes, row.allocated)),
             label_cell(&row.extension, width, STYLE_TYPE, color),
             row.files,
             plural(row.files, "file", "files"),
+            ignored_suffix(row.ignored, size, selected),
         );
     }
 }
@@ -461,15 +504,21 @@ fn render_text_ranked_files(
     }
 }
 
-fn render_text_summary(out: &mut String, row: &SummaryRow, size: SizeMetric) {
+fn render_text_summary(
+    out: &mut String,
+    row: &SummaryRow,
+    size: SizeMetric,
+    selected: IgnoredEntries,
+) {
     let _ = writeln!(
         out,
-        "{:>10}  {} {}, {} {}",
+        "{:>10}  {} {}, {} {}{}",
         human_bytes(pick(size, row.bytes, row.allocated)),
         row.files,
         plural(row.files, "file", "files"),
         row.dirs,
         plural(row.dirs, "directory", "directories"),
+        ignored_suffix(row.ignored, size, selected),
     );
 }
 
@@ -633,12 +682,13 @@ fn section_json(section: &Section, _indent: usize) -> String {
             for (index, row) in rows.iter().enumerate() {
                 let _ = write!(
                     out,
-                    "{}\n    {{\"extension\": {}, \"files\": {}, \"bytes\": {}, \"allocated\": {}}}",
+                    "{}\n    {{\"extension\": {}, \"files\": {}, \"bytes\": {}, \"allocated\": {}, \"ignored\": {}}}",
                     if index > 0 { "," } else { "" },
                     quote(&row.extension),
                     row.files,
                     row.bytes,
-                    row.allocated
+                    row.allocated,
+                    ignored_files_json(row.ignored),
                 );
             }
             out.push_str(if rows.is_empty() { "]" } else { "\n  ]" });
@@ -768,14 +818,61 @@ fn coverage_json(coverage: &std::collections::BTreeMap<CoverageReason, u64>) -> 
 /// One file row as a JSON object.
 fn file_json(row: &FileRow) -> String {
     format!(
-        "{{\"path\": {}{}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"mtime_ns\": {}}}",
+        "{{\"path\": {}{}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"mtime_ns\": {}, \"ignored\": {}}}",
         quote(&row.path.to_string_lossy()),
         path_raw_field(&row.path),
         quote(kind_label(row.kind)),
         row.bytes,
         row.allocated,
-        row.mtime_ns
+        row.mtime_ns,
+        row.ignored.map_or_else(|| "null".to_string(), |ignored| ignored.to_string()),
     )
+}
+
+/// A row's ignored share: `null` when the index observed no control state, and an object
+/// otherwise, zero when nothing is ignored.
+///
+/// `null` rather than a zero object, for the reason `ignore_rules` is `null`: a report that
+/// read no rule must not say that nothing is ignored.
+fn ignored_json(ignored: Option<IgnoredTally>) -> String {
+    ignored.map_or_else(
+        || "null".to_string(),
+        |share| {
+            format!(
+                "{{\"files\": {}, \"dirs\": {}, \"bytes\": {}, \"allocated\": {}}}",
+                share.files, share.dirs, share.bytes, share.allocated
+            )
+        },
+    )
+}
+
+/// [`ignored_json`] for an extension row, which counts files and so carries no `dirs`.
+fn ignored_files_json(ignored: Option<IgnoredTally>) -> String {
+    ignored.map_or_else(
+        || "null".to_string(),
+        |share| {
+            format!(
+                "{{\"files\": {}, \"bytes\": {}, \"allocated\": {}}}",
+                share.files, share.bytes, share.allocated
+            )
+        },
+    )
+}
+
+/// A row's ignored share in YAML at `pad`, as [`ignored_json`] describes it; `dirs` only
+/// where the row counts directories.
+fn yaml_ignored(out: &mut String, ignored: Option<IgnoredTally>, pad: &str, with_dirs: bool) {
+    let Some(share) = ignored else {
+        let _ = writeln!(out, "{pad}ignored: null");
+        return;
+    };
+    let _ = writeln!(out, "{pad}ignored:");
+    let _ = writeln!(out, "{pad}  files: {}", share.files);
+    if with_dirs {
+        let _ = writeln!(out, "{pad}  dirs: {}", share.dirs);
+    }
+    let _ = writeln!(out, "{pad}  bytes: {}", share.bytes);
+    let _ = writeln!(out, "{pad}  allocated: {}", share.allocated);
 }
 
 /// The `path_raw` field for a path that cannot survive `to_string_lossy`, or nothing.
@@ -791,11 +888,12 @@ fn path_raw_field(path: &Path) -> String {
 /// A summary row as a JSON object.
 fn summary_json(row: &SummaryRow) -> String {
     format!(
-        "{{\"files\": {}, \"dirs\": {}, \"bytes\": {}, \"allocated\": {}, \"newest_mtime_ns\": {}}}",
+        "{{\"files\": {}, \"dirs\": {}, \"bytes\": {}, \"allocated\": {}, \"ignored\": {}, \"newest_mtime_ns\": {}}}",
         row.files,
         row.dirs,
         row.bytes,
         row.allocated,
+        ignored_json(row.ignored),
         row.newest_mtime_ns.map_or_else(|| "null".to_string(), |value| value.to_string())
     )
 }
@@ -821,7 +919,7 @@ fn tree_json(node: &TreeNode) -> String {
             Step::Open(node) => {
                 let _ = write!(
                     out,
-                    "{{\"name\": {}, \"path\": {}{}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"files\": {}, \"dirs\": {}, \"newest_mtime_ns\": {}, \"truncated\": {}",
+                    "{{\"name\": {}, \"path\": {}{}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"files\": {}, \"dirs\": {}, \"ignored\": {}, \"newest_mtime_ns\": {}, \"truncated\": {}",
                     quote(&node.name),
                     quote(&node.path.to_string_lossy()),
                     path_raw_field(&node.path),
@@ -830,6 +928,7 @@ fn tree_json(node: &TreeNode) -> String {
                     node.allocated,
                     node.files,
                     node.dirs,
+                    ignored_json(node.ignored),
                     node.newest_mtime_ns
                         .map_or_else(|| "null".to_string(), |value| value.to_string()),
                     node.truncated
@@ -938,6 +1037,7 @@ fn render_yaml(report: &Report) -> String {
                         let _ = writeln!(out, "        files: {}", row.files);
                         let _ = writeln!(out, "        bytes: {}", row.bytes);
                         let _ = writeln!(out, "        allocated: {}", row.allocated);
+                        yaml_ignored(&mut out, row.ignored, "        ", false);
                     }
                 }
             }
@@ -959,6 +1059,12 @@ fn render_yaml(report: &Report) -> String {
                         let _ = writeln!(out, "        bytes: {}", row.bytes);
                         let _ = writeln!(out, "        allocated: {}", row.allocated);
                         let _ = writeln!(out, "        mtime_ns: {}", row.mtime_ns);
+                        match row.ignored {
+                            Some(ignored) => {
+                                let _ = writeln!(out, "        ignored: {ignored}");
+                            }
+                            None => out.push_str("        ignored: null\n"),
+                        }
                     }
                 }
             }
@@ -968,6 +1074,7 @@ fn render_yaml(report: &Report) -> String {
                 let _ = writeln!(out, "      dirs: {}", row.dirs);
                 let _ = writeln!(out, "      bytes: {}", row.bytes);
                 let _ = writeln!(out, "      allocated: {}", row.allocated);
+                yaml_ignored(&mut out, row.ignored, "      ", true);
                 let _ =
                     writeln!(out, "      newest_mtime_ns: {}", yaml_option(row.newest_mtime_ns));
             }
@@ -1090,6 +1197,7 @@ fn yaml_tree(out: &mut String, root: &TreeNode, pad: usize) {
         let _ = writeln!(out, "{rest}allocated: {}", node.allocated);
         let _ = writeln!(out, "{rest}files: {}", node.files);
         let _ = writeln!(out, "{rest}dirs: {}", node.dirs);
+        yaml_ignored(out, node.ignored, &rest, true);
         let _ = writeln!(out, "{rest}newest_mtime_ns: {}", yaml_option(node.newest_mtime_ns));
         let _ = writeln!(out, "{rest}truncated: {}", node.truncated);
         if node.children.is_empty() {
@@ -2052,6 +2160,144 @@ mod tests {
         assert_eq!(fields.notes, [note.replace("--gitignore-budget", "control_budget")]);
     }
 
+    /// Every row that carries an ignored share says so in every format: text appends it
+    /// only when something is ignored and the selection is not ignored entries alone, and
+    /// machine formats write a zero share when nothing is and `null` when no rule was read.
+    #[test]
+    fn every_format_carries_each_rows_ignored_share() {
+        let build = |scope: ScanScope| {
+            let mut index = Index::new_with_scope("/root", scope);
+            let mut ops = vec![
+                Op::Upsert {
+                    path: PathBuf::from("dist"),
+                    kind: EntryKind::Dir,
+                    attrs: Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("dist/a.gz"),
+                    kind: EntryKind::File,
+                    attrs: attrs(128, 10),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("src"),
+                    kind: EntryKind::Dir,
+                    attrs: Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("src/b.rs"),
+                    kind: EntryKind::File,
+                    attrs: attrs(36, 20),
+                },
+            ];
+            if scope.observes_controls() {
+                ops.insert(
+                    0,
+                    Op::ControlUpsert {
+                        path: PathBuf::from(".gitignore"),
+                        source: b"dist/\n".to_vec(),
+                    },
+                );
+            }
+            index.apply(&Observation::new(ops)).expect("apply");
+            index
+        };
+        let provenance = Provenance {
+            scan_started_at: None,
+            generated_at: UNIX_EPOCH,
+            source: ReportSource::ColdScan,
+            complete: true,
+            errors: Vec::new(),
+        };
+        let views = vec![ViewSpec::Summary, ViewSpec::Tree, ViewSpec::Extensions, ViewSpec::Files];
+        let query = |ignored| Query {
+            views: views.clone(),
+            selection: Selection {
+                ignored,
+                size: SizeMetric::Apparent,
+                limit: Some(Bound::All),
+                ..Selection::default()
+            },
+            ..Query::default()
+        };
+
+        let observed = build(crate::test_support::observing_controls());
+        let text = render(
+            &report(&observed, &query(IgnoredEntries::Include), &provenance),
+            Format::Text,
+            false,
+        );
+        assert_eq!(
+            text,
+            concat!(
+                "SUMMARY\n",
+                "     164 B  2 files, 2 directories (128 B ignored)\n",
+                "\n",
+                "TREE\n",
+                "     164 B  ██████████   100%  . (2 files) (128 B ignored)\n",
+                "     128 B  ████████░░    78%    dist (1 file) (128 B ignored)\n",
+                "      36 B  ██░░░░░░░░    22%    src (1 file)\n",
+                "\n",
+                "EXTENSIONS\n",
+                "     128 B  .gz          1 file (128 B ignored)\n",
+                "      36 B  .rs          1 file\n",
+                "\n",
+                "FILES\n",
+                "dist\n",
+                "dist/a.gz\n",
+                "src\n",
+                "src/b.rs\n",
+            )
+            .replace('/', std::path::MAIN_SEPARATOR_STR)
+        );
+        let only = render(
+            &report(&observed, &query(IgnoredEntries::Only), &provenance),
+            Format::Text,
+            false,
+        );
+        assert!(only.contains("     128 B  1 file, 1 directory\n"), "{only}");
+        assert!(!only.contains("ignored"), "every row is ignored, so none repeats it: {only}");
+
+        let json = render(
+            &report(&observed, &query(IgnoredEntries::Include), &provenance),
+            Format::Json,
+            false,
+        );
+        assert!(is_valid_json(&json), "{json}");
+        for expected in [
+            "\"summary\": {\"files\": 2, \"dirs\": 2, \"bytes\": 164, \"allocated\": 1024, \
+             \"ignored\": {\"files\": 1, \"dirs\": 1, \"bytes\": 128, \"allocated\": 512}, ",
+            "\"name\": \"src\", \"path\": \"src\", \"kind\": \"dir\", \"bytes\": 36, \
+             \"allocated\": 512, \"files\": 1, \"dirs\": 0, \"ignored\": {\"files\": 0, \
+             \"dirs\": 0, \"bytes\": 0, \"allocated\": 0}, ",
+            "{\"extension\": \".gz\", \"files\": 1, \"bytes\": 128, \"allocated\": 512, \
+             \"ignored\": {\"files\": 1, \"bytes\": 128, \"allocated\": 512}}",
+            "\"kind\": \"dir\", \"bytes\": 0, \"allocated\": 0, \"mtime_ns\": 0, \"ignored\": true}",
+        ] {
+            assert!(json.contains(expected), "missing {expected}\nin {json}");
+        }
+        let yaml = render(
+            &report(&observed, &query(IgnoredEntries::Include), &provenance),
+            Format::Yaml,
+            false,
+        );
+        assert!(
+            yaml.contains(
+                "      allocated: 1024\n      ignored:\n        files: 1\n        dirs: 1\n        \
+                 bytes: 128\n        allocated: 512\n      newest_mtime_ns: 20\n"
+            ),
+            "{yaml}"
+        );
+        assert!(yaml.contains("        ignored: true\n"), "{yaml}");
+
+        let blind = build(crate::test_support::not_observing_controls());
+        let blind_report = report(&blind, &query(IgnoredEntries::Include), &provenance);
+        assert!(!render(&blind_report, Format::Text, false).contains("ignored"));
+        let json = render(&blind_report, Format::Json, false);
+        assert!(!json.contains("\"ignored\": {"), "never a zero share for an unread rule: {json}");
+        assert!(json.contains("\"ignored\": null"), "{json}");
+        assert!(render(&blind_report, Format::Yaml, false).contains("ignored: null\n"));
+    }
+
     #[test]
     fn metric_sections_upgrade_schema_while_metadata_sections_stay_on_v1() {
         let metadata = render(&fixture(&[ViewSpec::Tree]), Format::Json, false);
@@ -2454,7 +2700,8 @@ mod tests {
         for hex in [first_hex, second_hex] {
             let row = format!(
                 "{{\"path\": \"{lossy}\", \"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{hex}\"}}, \
-                 \"kind\": \"file\", \"bytes\": 1, \"allocated\": 1, \"mtime_ns\": 0}}"
+                 \"kind\": \"file\", \"bytes\": 1, \"allocated\": 1, \"mtime_ns\": 0, \
+                 \"ignored\": false}}"
             );
             assert!(
                 rendered.contains(&row),

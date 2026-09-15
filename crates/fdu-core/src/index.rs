@@ -3297,10 +3297,30 @@ impl Index {
         entry.kind.is_dir().then(|| self.named_rollup(&entry.rollup().all))
     }
 
-    /// Map-free directory totals for in-crate reporting paths.
-    pub(crate) fn rollup_scalars_of(&self, id: EntryId) -> Option<RollUpScalars> {
+    /// Map-free totals of a directory's `all` and `unignored` partitions, in that order,
+    /// for reporting paths that derive an ignored share.
+    ///
+    /// No observation check: in an index that observed no control state the two are equal,
+    /// so a caller that has not checked [`Self::observes_controls`] derives a zero share
+    /// rather than an error, and must not present it as one.
+    pub(crate) fn partition_scalars_of(
+        &self,
+        id: EntryId,
+    ) -> Option<(RollUpScalars, RollUpScalars)> {
         let entry = self.try_entry(id)?;
-        entry.kind.is_dir().then(|| RollUpScalars::from(&entry.rollup().all))
+        entry.kind.is_dir().then(|| {
+            let rollup = entry.rollup();
+            (RollUpScalars::from(&rollup.all), RollUpScalars::from(&rollup.unignored))
+        })
+    }
+
+    /// The retained ignore bit of a live entry, without the observation check
+    /// [`Self::is_ignored`] makes, or `None` for a stale handle.
+    ///
+    /// `false` throughout an index that observed no control state, for the reason
+    /// [`Self::partition_scalars_of`] gives.
+    pub(crate) fn ignored_bit_of(&self, id: EntryId) -> Option<bool> {
+        Some(self.try_entry(id)?.ignored)
     }
 
     /// Attributes for an entry id, or `None` when the handle is stale.

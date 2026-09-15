@@ -420,6 +420,7 @@ fn portable_candidate<'a>(
         bytes: row.attrs.size,
         allocated: row.attrs.allocated,
         mtime_ns: row.attrs.mtime_ns,
+        ignored: row.ignored,
     }
 }
 
@@ -686,7 +687,7 @@ fn flat_projection(
         }
         let native = index.path_of(*id).unwrap_or_default();
         let mut row = index.entry_value_of(*id, &native);
-        if !selection.admits(&portable_candidate(portable, &row), row.ignored) {
+        if !selection.admits(&portable_candidate(portable, &row)) {
             continue;
         }
         if shape == crate::RowShape::Compact {
@@ -753,7 +754,7 @@ fn aggregate_projection(
         }
         let native = index.path_of(*id).unwrap_or_default();
         let row = index.entry_value_of(*id, &native);
-        if !selection.admits(&portable_candidate(portable, &row), row.ignored) {
+        if !selection.admits(&portable_candidate(portable, &row)) {
             continue;
         }
         if matches == count_cap {

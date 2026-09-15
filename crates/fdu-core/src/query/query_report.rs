@@ -27,7 +27,7 @@ use crate::control::ControlCoverage;
 use crate::engine_contract::{EntryKind, Freshness, ScanScope};
 use crate::index::{EntryId, ExtTally, Index, RollUpScalars};
 use crate::query::query_selection::{
-    Bound, Candidate, NameIdentity, Selection, SizeMetric, SortKey,
+    Bound, Candidate, IgnoredEntries, NameIdentity, Selection, SizeMetric, SortKey,
 };
 
 /// Which roll-up or listing a view reports.
@@ -291,7 +291,9 @@ impl ViewSpec {
 ///
 /// The view and analyzer axes both, because both diagnostics name both: the view that
 /// cannot be answered, and the analyzer that would answer it. The control budget, because
-/// the note about refused `.gitignore` files names the knob that applies them.
+/// the note about refused `.gitignore` files names the knob that applies them. The
+/// ignored-state selections and the observation switch, because selecting by ignored state
+/// in a scan that reads no `.gitignore` is refused by naming both.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AxisNames {
     /// The view axis.
@@ -300,12 +302,24 @@ pub struct AxisNames {
     pub analyze: &'static str,
     /// The control budget that bounds which `.gitignore` files apply.
     pub control_budget: &'static str,
+    /// The selection of unignored entries only.
+    pub exclude_ignored: &'static str,
+    /// The selection of ignored entries only.
+    pub only_ignored: &'static str,
+    /// The switch that turns `.gitignore` observation off.
+    pub read_controls: &'static str,
 }
 
 impl AxisNames {
     /// How the command line spells them.
-    pub const FLAGS: Self =
-        Self { view: "--view", analyze: "--analyze", control_budget: "--gitignore-budget" };
+    pub const FLAGS: Self = Self {
+        view: "--view",
+        analyze: "--analyze",
+        control_budget: "--gitignore-budget",
+        exclude_ignored: "--exclude-ignored",
+        only_ignored: "--only-ignored",
+        read_controls: "--no-gitignore",
+    };
 
     /// How the library and the Python API spell them, and the default: a `Query` built
     /// without saying otherwise belongs to a library caller, not to the command line.
@@ -314,8 +328,14 @@ impl AxisNames {
     /// `ViewSpec::resolve`, so every diagnostic about this axis names it one way. It also
     /// keeps the difference from the command line to the flag dashes alone, which is what
     /// the parity harness's `surface-label` class checks.
-    pub const FIELDS: Self =
-        Self { view: "view", analyze: "analyze", control_budget: "control_budget" };
+    pub const FIELDS: Self = Self {
+        view: "view",
+        analyze: "analyze",
+        control_budget: "control_budget",
+        exclude_ignored: "ignored=exclude",
+        only_ignored: "ignored=only",
+        read_controls: "read_controls",
+    };
 }
 
 impl Default for AxisNames {
@@ -396,6 +416,27 @@ impl Query {
         }
         Ok(())
     }
+
+    /// Reject a selection by ignored state over a scan that observes no control state.
+    ///
+    /// No entry of such an index can be shown to be ignored or not, so the request has no
+    /// answer, and admitting every entry or none would each be a silent guess. Names both
+    /// knobs as the requesting surface spells them, as [`Self::validate_analysis`] does.
+    pub fn validate_controls(&self, observes_controls: bool) -> Result<(), String> {
+        if observes_controls {
+            return Ok(());
+        }
+        let selection = match self.selection.ignored {
+            IgnoredEntries::Include => return Ok(()),
+            IgnoredEntries::Exclude => self.axes.exclude_ignored,
+            IgnoredEntries::Only => self.axes.only_ignored,
+        };
+        Err(format!(
+            "{selection} needs .gitignore classification, and {} turned it off; drop one of \
+             them",
+            self.axes.read_controls
+        ))
+    }
 }
 
 /// Which tier of the freshness ladder produced the index behind a report.
@@ -452,6 +493,13 @@ pub struct TreeNode {
     pub files: u64,
     /// Directories in this subtree.
     pub dirs: u64,
+    /// The part of this subtree's tallies that `.gitignore` rules ignore, or `None` when
+    /// the index observed no control state.
+    ///
+    /// Counted over the selected entries, like every other tally on the row, so it is zero
+    /// when the selection excludes ignored entries and the whole row when it admits only
+    /// them.
+    pub ignored: Option<IgnoredTally>,
     /// Newest modification time in this subtree, when it holds any files.
     pub newest_mtime_ns: Option<i64>,
     /// Children reported beneath this node.
@@ -475,6 +523,48 @@ impl Drop for TreeNode {
     }
 }
 
+/// The part of a row's tallies that `.gitignore` rules ignore.
+///
+/// An entry is ignored when a rule matches it or any ancestor directory, as git cannot
+/// re-include a file below an excluded directory. Below a refused `.gitignore`
+/// ([`Report::ignore_rules`]) the split is not exact in either direction; the sizes it
+/// divides are.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct IgnoredTally {
+    /// Ignored files.
+    pub files: u64,
+    /// Ignored directories. Always zero on an extension row, which counts files only.
+    pub dirs: u64,
+    /// Apparent bytes across ignored files.
+    pub bytes: u64,
+    /// Allocated bytes across ignored files.
+    pub allocated: u64,
+}
+
+impl IgnoredTally {
+    /// The ignored share of a roll-up: what `all` holds beyond `unignored`.
+    pub(crate) fn between(all: RollUpScalars, unignored: RollUpScalars) -> Self {
+        Self {
+            files: all.files.saturating_sub(unignored.files),
+            dirs: all.dirs.saturating_sub(unignored.dirs),
+            bytes: all.bytes.saturating_sub(unignored.bytes),
+            allocated: all.allocated.saturating_sub(unignored.allocated),
+        }
+    }
+
+    /// Whether nothing at all is ignored.
+    pub const fn is_empty(&self) -> bool {
+        self.files == 0 && self.dirs == 0
+    }
+
+    fn add(&mut self, other: Self) {
+        self.files = self.files.saturating_add(other.files);
+        self.dirs = self.dirs.saturating_add(other.dirs);
+        self.bytes = self.bytes.saturating_add(other.bytes);
+        self.allocated = self.allocated.saturating_add(other.allocated);
+    }
+}
+
 /// One extension's row in a types view.
 #[derive(Clone, Debug)]
 pub struct TypeRow {
@@ -486,6 +576,8 @@ pub struct TypeRow {
     pub bytes: u64,
     /// Allocated bytes across those files.
     pub allocated: u64,
+    /// The ignored part of this row, or `None` when the index observed no control state.
+    pub ignored: Option<IgnoredTally>,
 }
 
 /// Dimension used by a generic metric-summary section.
@@ -609,6 +701,9 @@ pub struct FileRow {
     pub allocated: u64,
     /// Modification time in nanoseconds since the Unix epoch.
     pub mtime_ns: i64,
+    /// Whether `.gitignore` rules ignore this entry, or `None` when the index observed no
+    /// control state.
+    pub ignored: Option<bool>,
 }
 
 /// The aggregate row of a summary view.
@@ -622,6 +717,9 @@ pub struct SummaryRow {
     pub bytes: u64,
     /// Allocated bytes.
     pub allocated: u64,
+    /// The ignored part of what was selected, or `None` when the index observed no control
+    /// state.
+    pub ignored: Option<IgnoredTally>,
     /// Newest modification time, when anything was selected.
     pub newest_mtime_ns: Option<i64>,
 }
@@ -714,6 +812,12 @@ pub struct Report {
     pub size: SizeMetric,
     /// Analyzer identity when sparse content records are present.
     pub analysis: Option<ContentReportMetadata>,
+    /// Which entries the rows count by `.gitignore` classification.
+    ///
+    /// Carried for the renderer, like [`Self::size`], and not serialised: a row whose
+    /// selection admits only ignored entries is wholly ignored, so text leaves the ignored
+    /// share off rather than repeat the size beside it.
+    pub ignored_entries: IgnoredEntries,
     /// Whether ignore classification applies every `.gitignore` in scope, serialised as
     /// `ignore_rules`.
     ///
@@ -869,8 +973,43 @@ pub(crate) fn report_in(
                 provenance: content.provenance()?.clone(),
             })
         }),
+        ignored_entries: query.selection.ignored,
         ignore_rules,
         sections,
+    }
+}
+
+/// Drop every ignored share from a report, for a request whose scope observes no control
+/// state.
+///
+/// A cache-only report may answer a request that turned observation off from a snapshot
+/// that observed it. Every row of that report must then say what the request did, which
+/// is that nothing was classified: `null`, never the stronger snapshot's split.
+pub(crate) fn forget_ignore_classification(report: &mut Report) {
+    report.ignore_rules = ControlCoverage::NotObserved;
+    for section in &mut report.sections {
+        match section {
+            Section::Tree(root) => {
+                let mut pending: Vec<&mut TreeNode> = vec![root];
+                while let Some(node) = pending.pop() {
+                    node.ignored = None;
+                    pending.extend(node.children.iter_mut());
+                }
+            }
+            Section::Extensions { rows, .. } => {
+                for row in rows {
+                    row.ignored = None;
+                }
+            }
+            Section::Files { rows, .. } => {
+                for row in rows {
+                    row.ignored = None;
+                }
+            }
+            Section::Summary(row) => row.ignored = None,
+            // Grouped metric rows carry no ignored share.
+            Section::Metrics { .. } => {}
+        }
     }
 }
 
@@ -902,20 +1041,54 @@ pub(crate) fn report_summary(
         // The planner only selects this tier when no analysis was requested, so there is
         // no analyzer provenance to report.
         analysis: None,
+        // An unfiltered summary selects every entry.
+        ignored_entries: IgnoredEntries::Include,
         // Nor when control state is observed, since it retains no table to classify with.
         ignore_rules: ControlCoverage::NotObserved,
-        sections: vec![Section::Summary(summary)],
+        sections: vec![Section::Summary(SummaryRow { ignored: None, ..summary })],
     }
 }
 
 /// Aggregates gathered by one filtered traversal.
 struct Walked {
+    /// Whether the walked index observed control state, so its rows carry ignored shares.
+    observed: bool,
     /// Filtered subtree aggregates, keyed by directory id.
+    ///
+    /// A row's `ignored` stays `None` until an ignored entry is admitted beneath it;
+    /// [`Self::summary_of`] is what reads it as the index's observation says.
     per_directory: BTreeMap<EntryId, SummaryRow>,
     /// Filtered per-extension tallies.
     by_ext: BTreeMap<String, ExtTally>,
+    /// The ignored part of each filtered per-extension tally, for extensions that have one.
+    ignored_by_ext: BTreeMap<String, ExtTally>,
     /// Entries the selection admitted.
     rows: Vec<FileRow>,
+}
+
+impl Walked {
+    /// One directory's filtered totals, with an ignored share exactly when observed.
+    fn summary_of(&self, id: EntryId) -> SummaryRow {
+        let mut row = self.per_directory.get(&id).copied().unwrap_or_default();
+        row.ignored = self.observed.then(|| row.ignored.unwrap_or_default());
+        row
+    }
+}
+
+/// One directory's unfiltered totals from the roll-up state the index maintains, with its
+/// ignored share, `all` less `unignored`, when the index observed control state.
+fn unfiltered_summary(index: &Index, id: EntryId) -> SummaryRow {
+    let observed = index.observes_controls();
+    let Some((all, unignored)) = index.partition_scalars_of(id) else {
+        return SummaryRow {
+            ignored: observed.then(IgnoredTally::default),
+            ..SummaryRow::default()
+        };
+    };
+    SummaryRow {
+        ignored: observed.then(|| IgnoredTally::between(all, unignored)),
+        ..summary_from_scalars(all)
+    }
 }
 
 /// Walk the retained index once, aggregating only what the selection admits.
@@ -923,8 +1096,20 @@ struct Walked {
 /// Iterative rather than recursive: this engine is built for trees deep enough that a
 /// recursive post-order would exhaust the stack.
 fn walk(index: &Index, selection: &Selection, identity: NameIdentity) -> Walked {
-    let mut walked =
-        Walked { per_directory: BTreeMap::new(), by_ext: BTreeMap::new(), rows: Vec::new() };
+    let observed = index.observes_controls();
+    let mut walked = Walked {
+        observed,
+        per_directory: BTreeMap::new(),
+        by_ext: BTreeMap::new(),
+        ignored_by_ext: BTreeMap::new(),
+        rows: Vec::new(),
+    };
+    // No entry of an index that read no rule can be shown to be ignored or not, so a
+    // selection by ignored state admits nothing rather than guessing.
+    // `Query::validate_controls` refuses such a request before it gets here.
+    if !observed && selection.ignored != IgnoredEntries::Include {
+        return walked;
+    }
 
     // (id, path, whether its children have already been pushed)
     let mut stack: Vec<(EntryId, PathBuf, bool)> = vec![(EntryId::ROOT, PathBuf::new(), false)];
@@ -971,6 +1156,7 @@ fn walk(index: &Index, selection: &Selection, identity: NameIdentity) -> Walked 
                 }
                 None => (child_path.as_path(), file_name.to_string_lossy().into_owned()),
             };
+            let ignored = index.ignored_bit_of(child).unwrap_or(false);
             let candidate = Candidate {
                 relative,
                 name: &name,
@@ -978,6 +1164,7 @@ fn walk(index: &Index, selection: &Selection, identity: NameIdentity) -> Walked 
                 bytes: attrs.size,
                 allocated: attrs.allocated,
                 mtime_ns: attrs.mtime_ns,
+                ignored,
             };
 
             if selection.admits(&candidate) {
@@ -987,6 +1174,7 @@ fn walk(index: &Index, selection: &Selection, identity: NameIdentity) -> Walked 
                     bytes: attrs.size,
                     allocated: attrs.allocated,
                     mtime_ns: attrs.mtime_ns,
+                    ignored: observed.then_some(ignored),
                 });
 
                 if kind == EntryKind::File {
@@ -997,9 +1185,20 @@ fn walk(index: &Index, selection: &Selection, identity: NameIdentity) -> Walked 
                     own.newest_mtime_ns = Some(
                         own.newest_mtime_ns.map_or(attrs.mtime_ns, |seen| seen.max(attrs.mtime_ns)),
                     );
-
-                    let tally =
-                        walked.by_ext.entry(crate::classify::ext_bucket(file_name)).or_default();
+                    let bucket = crate::classify::ext_bucket(file_name);
+                    if ignored {
+                        own.ignored.get_or_insert_with(IgnoredTally::default).add(IgnoredTally {
+                            files: 1,
+                            dirs: 0,
+                            bytes: attrs.size,
+                            allocated: attrs.allocated,
+                        });
+                        let tally = walked.ignored_by_ext.entry(bucket.clone()).or_default();
+                        tally.files += 1;
+                        tally.bytes += attrs.size;
+                        tally.allocated += attrs.allocated;
+                    }
+                    let tally = walked.by_ext.entry(bucket).or_default();
                     tally.files += 1;
                     tally.bytes += attrs.size;
                     tally.allocated += attrs.allocated;
@@ -1009,7 +1208,11 @@ fn walk(index: &Index, selection: &Selection, identity: NameIdentity) -> Walked 
                     // counting there reported directories the selection had rejected.
                     // `--kind file` answered "6 files, 3 directories", and a summary
                     // disagreed with the files view over the very same query.
-                    walked.per_directory.entry(id).or_default().dirs += 1;
+                    let own = walked.per_directory.entry(id).or_default();
+                    own.dirs += 1;
+                    if ignored {
+                        own.ignored.get_or_insert_with(IgnoredTally::default).dirs += 1;
+                    }
                 }
             }
 
@@ -1032,14 +1235,17 @@ fn merge_summary(into: &mut SummaryRow, from: &SummaryRow) {
         (Some(left), Some(right)) => Some(left.max(right)),
         (left, right) => left.or(right),
     };
+    if let Some(share) = from.ignored {
+        into.ignored.get_or_insert_with(IgnoredTally::default).add(share);
+    }
 }
 
 /// Build one view's section, using the pre-computed tier when the selection allows.
 fn build_section(view: ViewSpec, index: &Index, query: &Query, walked: Option<&Walked>) -> Section {
     match view {
         ViewSpec::Summary => Section::Summary(match walked {
-            None => summary_from_scalars(index.total_scalars()),
-            Some(walked) => walked.per_directory.get(&EntryId::ROOT).copied().unwrap_or_default(),
+            None => unfiltered_summary(index, EntryId::ROOT),
+            Some(walked) => walked.summary_of(EntryId::ROOT),
         }),
         ViewSpec::Extensions => {
             let (rows, total) = extension_rows(index, query, walked);
@@ -1056,31 +1262,70 @@ fn build_section(view: ViewSpec, index: &Index, query: &Query, walked: Option<&W
     }
 }
 
-/// A summary row taken straight from pre-computed roll-up state.
+/// A summary row taken straight from pre-computed roll-up state, before any ignored share.
 fn summary_from_scalars(rollup: RollUpScalars) -> SummaryRow {
     SummaryRow {
         files: rollup.files,
         dirs: rollup.dirs,
         bytes: rollup.bytes,
         allocated: rollup.allocated,
+        ignored: None,
         newest_mtime_ns: (rollup.files > 0).then_some(rollup.newest_mtime_ns),
     }
 }
 
+/// What each extension tally in `all` holds beyond the same extension in `unignored`.
+fn ignored_by_extension(
+    all: &BTreeMap<String, ExtTally>,
+    unignored: &BTreeMap<String, ExtTally>,
+) -> BTreeMap<String, ExtTally> {
+    all.iter()
+        .filter_map(|(extension, tally)| {
+            let kept = unignored.get(extension).copied().unwrap_or_default();
+            let ignored = ExtTally {
+                files: tally.files.saturating_sub(kept.files),
+                bytes: tally.bytes.saturating_sub(kept.bytes),
+                allocated: tally.allocated.saturating_sub(kept.allocated),
+            };
+            (ignored.files > 0).then(|| (extension.clone(), ignored))
+        })
+        .collect()
+}
+
 /// Rows for the types view.
 fn extension_rows(index: &Index, query: &Query, walked: Option<&Walked>) -> (Vec<TypeRow>, usize) {
-    let tallies: BTreeMap<String, ExtTally> = match walked {
-        None => index.total().by_ext,
-        Some(walked) => walked.by_ext.clone(),
+    let observed = index.observes_controls();
+    let (tallies, ignored): (BTreeMap<String, ExtTally>, BTreeMap<String, ExtTally>) = match walked
+    {
+        None => match index.partition_total() {
+            Ok(partitions) => {
+                let ignored =
+                    ignored_by_extension(&partitions.all.by_ext, &partitions.unignored.by_ext);
+                (partitions.all.by_ext, ignored)
+            }
+            // An index that observed no control state has no unignored partition to
+            // subtract, and its rows carry no ignored share.
+            Err(_not_observed) => (index.total().by_ext, BTreeMap::new()),
+        },
+        Some(walked) => (walked.by_ext.clone(), walked.ignored_by_ext.clone()),
     };
 
     let mut rows: Vec<TypeRow> = tallies
         .into_iter()
-        .map(|(extension, tally)| TypeRow {
-            extension,
-            files: tally.files,
-            bytes: tally.bytes,
-            allocated: tally.allocated,
+        .map(|(extension, tally)| {
+            let share = ignored.get(&extension).copied().unwrap_or_default();
+            TypeRow {
+                files: tally.files,
+                bytes: tally.bytes,
+                allocated: tally.allocated,
+                ignored: observed.then_some(IgnoredTally {
+                    files: share.files,
+                    dirs: 0,
+                    bytes: share.bytes,
+                    allocated: share.allocated,
+                }),
+                extension,
+            }
         })
         .collect();
 
@@ -1338,6 +1583,7 @@ fn file_rows(
 
 /// Every entry in the index, for an unfiltered files view.
 fn every_entry(index: &Index) -> Vec<FileRow> {
+    let observed = index.observes_controls();
     let mut rows = Vec::new();
     let mut stack: Vec<(EntryId, PathBuf)> = vec![(EntryId::ROOT, PathBuf::new())];
     while let Some((id, path)) = stack.pop() {
@@ -1356,6 +1602,7 @@ fn every_entry(index: &Index) -> Vec<FileRow> {
                 bytes: attrs.size,
                 allocated: attrs.allocated,
                 mtime_ns: attrs.mtime_ns,
+                ignored: observed.then(|| index.ignored_bit_of(child).unwrap_or(false)),
             });
             if kind == EntryKind::Dir {
                 stack.push((child, child_path));
@@ -1368,8 +1615,8 @@ fn every_entry(index: &Index) -> Vec<FileRow> {
 /// The tree view's root node, expanded to the requested depth.
 fn tree_node(index: &Index, query: &Query, walked: Option<&Walked>) -> TreeNode {
     let root_summary = match walked {
-        None => summary_from_scalars(index.total_scalars()),
-        Some(walked) => walked.per_directory.get(&EntryId::ROOT).copied().unwrap_or_default(),
+        None => unfiltered_summary(index, EntryId::ROOT),
+        Some(walked) => walked.summary_of(EntryId::ROOT),
     };
 
     let mut root = TreeNode {
@@ -1380,6 +1627,7 @@ fn tree_node(index: &Index, query: &Query, walked: Option<&Walked>) -> TreeNode 
         allocated: root_summary.allocated,
         files: root_summary.files,
         dirs: root_summary.dirs,
+        ignored: root_summary.ignored,
         newest_mtime_ns: root_summary.newest_mtime_ns,
         children: Vec::new(),
         truncated: false,
@@ -1422,6 +1670,7 @@ fn expand(
             allocated: node.allocated,
             files: node.files,
             dirs: node.dirs,
+            ignored: node.ignored,
             newest_mtime_ns: node.newest_mtime_ns,
             children: Vec::new(),
             truncated: false,
@@ -1502,8 +1751,8 @@ fn child_rows(
             continue;
         }
         let summary = match walked {
-            None => index.rollup_scalars_of(child).map(summary_from_scalars).unwrap_or_default(),
-            Some(walked) => walked.per_directory.get(&child).copied().unwrap_or_default(),
+            None => unfiltered_summary(index, child),
+            Some(walked) => walked.summary_of(child),
         };
         let name = child_path
             .file_name()
@@ -1518,6 +1767,7 @@ fn child_rows(
                 allocated: summary.allocated,
                 files: summary.files,
                 dirs: summary.dirs,
+                ignored: summary.ignored,
                 newest_mtime_ns: summary.newest_mtime_ns,
                 children: Vec::new(),
                 truncated: false,
@@ -2196,5 +2446,181 @@ mod tests {
         assert_eq!((rust.files, rust.bytes), (3, 350));
         assert_eq!((rust.share.numerator, rust.share.denominator), (350, 350));
         assert_eq!(languages.share_metric, ShareMetric::ApparentBytes);
+    }
+
+    /// The control file's name, spelled once for the fixtures that write one.
+    const CONTROL: &str = ".gitignore";
+
+    /// A small tree under a control source ignoring `build/` and `*.log`.
+    fn classified_sample() -> Index {
+        let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
+        index
+            .apply(&Observation::new(vec![
+                Op::ControlUpsert {
+                    path: PathBuf::from(CONTROL),
+                    source: b"build/\n*.log\n".to_vec(),
+                },
+                upsert("src", EntryKind::Dir, Attrs::default()),
+                upsert("src/main.rs", EntryKind::File, attrs(100, 10)),
+                upsert("src/lib.rs", EntryKind::File, attrs(200, 20)),
+                upsert("src/debug.log", EntryKind::File, attrs(25, 70)),
+                upsert("docs", EntryKind::Dir, Attrs::default()),
+                upsert("docs/guide.md", EntryKind::File, attrs(300, 30)),
+                upsert("build", EntryKind::Dir, Attrs::default()),
+                upsert("build/cache", EntryKind::Dir, Attrs::default()),
+                upsert("build/cache/out.bin", EntryKind::File, attrs(1_000, 60)),
+            ]))
+            .expect("apply");
+        index
+    }
+
+    fn ignored_of(row: &SummaryRow) -> IgnoredTally {
+        row.ignored.expect("an observing index reports an ignored share")
+    }
+
+    /// Both tiers report the same ignored share on every row kind that carries one: the
+    /// unfiltered tier subtracts the maintained partitions, and the traversal tier counts
+    /// the entries it admits.
+    #[test]
+    fn the_two_tiers_agree_on_the_ignored_share() {
+        let index = classified_sample();
+        let expected = IgnoredTally { files: 2, dirs: 2, bytes: 1_025, allocated: 1_024 + 512 };
+        for selection in
+            [Selection::default(), Selection { min_size: Some(0), ..Selection::default() }]
+        {
+            let unfiltered = selection.is_unfiltered();
+            let summary = summary_of(&run(&index, &query(&[ViewSpec::Summary], selection.clone())));
+            assert_eq!(ignored_of(&summary), expected, "unfiltered: {unfiltered}");
+
+            let tree = tree_of(&run(&index, &query(&[ViewSpec::Tree], selection.clone())));
+            assert_eq!(tree.ignored, Some(expected), "unfiltered: {unfiltered}");
+            let child = |name: &str| {
+                tree.children.iter().find(|node| node.name == name).expect(name).ignored
+            };
+            assert_eq!(
+                child("build"),
+                Some(IgnoredTally { files: 1, dirs: 1, bytes: 1_000, allocated: 1_024 }),
+                "an ignored directory is wholly ignored below it, unfiltered: {unfiltered}"
+            );
+            assert_eq!(
+                child("src"),
+                Some(IgnoredTally { files: 1, dirs: 0, bytes: 25, allocated: 512 }),
+                "unfiltered: {unfiltered}"
+            );
+            assert_eq!(child("docs"), Some(IgnoredTally::default()), "observed, nothing ignored");
+
+            let rows = types_of(&run(&index, &query(&[ViewSpec::Extensions], selection.clone())));
+            let row = |extension: &str| {
+                rows.iter().find(|row| row.extension == extension).expect(extension).ignored
+            };
+            assert_eq!(
+                row(".log"),
+                Some(IgnoredTally { files: 1, dirs: 0, bytes: 25, allocated: 512 }),
+                "unfiltered: {unfiltered}"
+            );
+            assert_eq!(row(".rs"), Some(IgnoredTally::default()), "unfiltered: {unfiltered}");
+
+            let files = files_of(&run(&index, &query(&[ViewSpec::Files], selection)));
+            let flag =
+                |path: PathBuf| files.iter().find(|row| row.path == path).map(|row| row.ignored);
+            assert_eq!(flag(PathBuf::from("build")), Some(Some(true)));
+            assert_eq!(flag(PathBuf::from("src")), Some(Some(false)));
+            assert_eq!(flag(["src", "debug.log"].iter().collect()), Some(Some(true)));
+            assert_eq!(flag(["build", "cache", "out.bin"].iter().collect()), Some(Some(true)));
+        }
+    }
+
+    /// Excluding ignored entries and selecting only them split the tree into two parts that
+    /// sum to it, and each sizes and ranks its rows by what it selected.
+    #[test]
+    fn ignored_entries_partition_the_tree_and_rank_by_what_they_select() {
+        let index = classified_sample();
+        let with = |ignored| Selection { ignored, ..Selection::default() };
+        let summary = |selection| summary_of(&run(&index, &query(&[ViewSpec::Summary], selection)));
+        let total = summary(Selection::default());
+        let kept = summary(with(IgnoredEntries::Exclude));
+        let only = summary(with(IgnoredEntries::Only));
+        assert_eq!(
+            (kept.files + only.files, kept.dirs + only.dirs, kept.bytes + only.bytes),
+            (total.files, total.dirs, total.bytes)
+        );
+        assert_eq!(ignored_of(&kept), IgnoredTally::default());
+        let whole = ignored_of(&only);
+        assert_eq!((whole.files, whole.dirs, whole.bytes), (only.files, only.dirs, only.bytes));
+
+        let ranked = |selection| {
+            tree_of(&run(&index, &query(&[ViewSpec::Tree], selection)))
+                .children
+                .iter()
+                .map(|node| (node.name.clone(), node.bytes))
+                .collect::<Vec<_>>()
+        };
+        let row = |name: &str, bytes: u64| (name.to_string(), bytes);
+        assert_eq!(
+            ranked(Selection::default()),
+            [row("build", 1_000), row("src", 325), row("docs", 300)]
+        );
+        assert_eq!(
+            ranked(with(IgnoredEntries::Exclude)),
+            [row("docs", 300), row("src", 300), row("build", 0)],
+            "unignored sizes rank the rows, with the name breaking the tie"
+        );
+        assert_eq!(
+            ranked(with(IgnoredEntries::Only)),
+            [row("build", 1_000), row("src", 25), row("docs", 0)]
+        );
+    }
+
+    /// An index that read no rule reports no ignored share on any row, and refuses a
+    /// selection by ignored state in the vocabulary of the surface that asked.
+    #[test]
+    fn an_index_that_observed_no_control_state_has_no_ignored_share_to_select_by() {
+        let mut index =
+            Index::new_with_scope("/root", crate::test_support::not_observing_controls());
+        index
+            .apply(&Observation::new(vec![
+                upsert("build", EntryKind::Dir, Attrs::default()),
+                upsert("build/out.bin", EntryKind::File, attrs(1_000, 60)),
+            ]))
+            .expect("apply");
+        let views = [ViewSpec::Summary, ViewSpec::Tree, ViewSpec::Extensions, ViewSpec::Files];
+        let report = run(&index, &query(&views, Selection::default()));
+        let Section::Summary(summary) = &report.sections[0] else { panic!("a summary") };
+        let Section::Tree(tree) = &report.sections[1] else { panic!("a tree") };
+        let Section::Extensions { rows: extensions, .. } = &report.sections[2] else {
+            panic!("extensions")
+        };
+        let Section::Files { rows: files, .. } = &report.sections[3] else { panic!("files") };
+        assert_eq!(summary.ignored, None);
+        assert_eq!(tree.ignored, None);
+        assert!(tree.children.iter().all(|node| node.ignored.is_none()));
+        assert!(extensions.iter().all(|row| row.ignored.is_none()));
+        assert!(files.iter().all(|row| row.ignored.is_none()));
+
+        let exclude = Query {
+            selection: Selection { ignored: IgnoredEntries::Exclude, ..Selection::default() },
+            views: vec![ViewSpec::Summary],
+            ..Query::default()
+        };
+        assert_eq!(
+            Query { axes: AxisNames::FLAGS, ..exclude.clone() }.validate_controls(false),
+            Err("--exclude-ignored needs .gitignore classification, and --no-gitignore turned \
+                 it off; drop one of them"
+                .to_string())
+        );
+        let only = Query {
+            selection: Selection { ignored: IgnoredEntries::Only, ..Selection::default() },
+            ..exclude.clone()
+        };
+        assert_eq!(
+            only.validate_controls(false),
+            Err("ignored=only needs .gitignore classification, and read_controls turned it off; \
+                 drop one of them"
+                .to_string())
+        );
+        assert_eq!(exclude.validate_controls(true), Ok(()));
+        assert_eq!(Query::default().validate_controls(false), Ok(()));
+        // Reached without validating, the selection admits nothing rather than guessing.
+        assert_eq!(summary_of(&run(&index, &exclude)).files, 0);
     }
 }

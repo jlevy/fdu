@@ -62,6 +62,56 @@ impl ModifiedWindow {
     }
 }
 
+/// Which entries a query considers by their `.gitignore` classification.
+///
+/// Selection rather than scope, like every other filter: the scan classifies every entry
+/// and the index keeps both partitions, so choosing one never costs a rescan. An ignored
+/// directory's descendants are all ignored, so rejecting entries one at a time prunes
+/// exactly the subtrees `git` would.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum IgnoredEntries {
+    /// Every entry, ignored or not. Rows carry their ignored share.
+    #[default]
+    Include,
+    /// Only entries no `.gitignore` rule ignores.
+    Exclude,
+    /// Only entries a `.gitignore` rule ignores.
+    Only,
+}
+
+impl IgnoredEntries {
+    /// Whether an entry with this classification passes.
+    pub const fn admits(self, ignored: bool) -> bool {
+        match self {
+            Self::Include => true,
+            Self::Exclude => !ignored,
+            Self::Only => ignored,
+        }
+    }
+
+    /// Parse the library's spelling: `include`, `exclude`, or `only`.
+    ///
+    /// The expectation only, as [`crate::query::ViewSpec::parse`] returns it, so each
+    /// surface names its own knob in front of it.
+    pub fn parse(value: &str) -> std::result::Result<Self, String> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "include" => Ok(Self::Include),
+            "exclude" => Ok(Self::Exclude),
+            "only" => Ok(Self::Only),
+            _ => Err("expected one of include, exclude, only".to_string()),
+        }
+    }
+
+    /// Stable label, the inverse of [`Self::parse`].
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Include => "include",
+            Self::Exclude => "exclude",
+            Self::Only => "only",
+        }
+    }
+}
+
 /// A bound that may be unlimited.
 ///
 /// `--depth all` and `-n all` are spelled the same way as their numeric forms rather than
@@ -106,6 +156,11 @@ pub struct Selection {
     pub kinds: Vec<EntryKind>,
     /// Modification-time window.
     pub modified: ModifiedWindow,
+    /// Entries to consider by `.gitignore` classification.
+    ///
+    /// Anything but [`IgnoredEntries::Include`] needs an index that observed control
+    /// state; [`crate::query::Query::validate_controls`] refuses it otherwise.
+    pub ignored: IgnoredEntries,
     /// How deep a rendered tree descends, or `None` to let each view apply its own.
     ///
     /// Optional for the same reason `limit` and `sort` are. The depth that suits a tree
@@ -157,6 +212,11 @@ pub struct Candidate<'a> {
     pub allocated: u64,
     /// Modification time in nanoseconds since the Unix epoch.
     pub mtime_ns: i64,
+    /// Whether a `.gitignore` rule ignores the entry, or an ancestor of it.
+    ///
+    /// `false` in an index that observed no control state, where no selection by it is
+    /// accepted.
+    pub ignored: bool,
 }
 
 /// Additive selection for portable opened-root entry projections.
@@ -254,11 +314,15 @@ impl Selection {
             && self.min_size.is_none()
             && self.kinds.is_empty()
             && self.modified.is_unbounded()
+            && self.ignored == IgnoredEntries::Include
     }
 
     /// Whether an entry passes every filter.
     pub fn admits(&self, candidate: &Candidate<'_>) -> bool {
         if !self.kinds.is_empty() && !self.kinds.contains(&candidate.kind) {
+            return false;
+        }
+        if !self.ignored.admits(candidate.ignored) {
             return false;
         }
         if let Some(min_size) = self.min_size {
@@ -366,7 +430,7 @@ impl EntrySelection {
     }
 
     /// Whether an entry passes the base query and every opened-row predicate.
-    pub fn admits(&self, candidate: &Candidate<'_>, ignored: bool) -> bool {
+    pub fn admits(&self, candidate: &Candidate<'_>) -> bool {
         if !self.query.admits(candidate) {
             return false;
         }
@@ -375,7 +439,7 @@ impl EntrySelection {
                 return false;
             }
         }
-        if self.exclude_ignored && ignored {
+        if self.exclude_ignored && candidate.ignored {
             return false;
         }
         if !self.logical_extensions.is_empty() || !self.exact_names.is_empty() {
@@ -529,20 +593,29 @@ mod tests {
         ignored: bool,
     ) -> bool {
         let (relative, name) = candidate(path, kind, bytes, mtime);
-        selection.admits(
-            &Candidate {
-                relative: &relative,
-                name: &name,
-                kind,
-                bytes,
-                allocated: bytes.div_ceil(512) * 512,
-                mtime_ns: mtime,
-            },
+        selection.admits(&Candidate {
+            relative: &relative,
+            name: &name,
+            kind,
+            bytes,
+            allocated: bytes.div_ceil(512) * 512,
+            mtime_ns: mtime,
             ignored,
-        )
+        })
     }
 
     fn admits(selection: &Selection, path: &str, kind: EntryKind, bytes: u64, mtime: i64) -> bool {
+        classified_admits(selection, path, kind, bytes, mtime, false)
+    }
+
+    fn classified_admits(
+        selection: &Selection,
+        path: &str,
+        kind: EntryKind,
+        bytes: u64,
+        mtime: i64,
+        ignored: bool,
+    ) -> bool {
         let (relative, name) = candidate(path, kind, bytes, mtime);
         selection.admits(&Candidate {
             relative: &relative,
@@ -551,6 +624,7 @@ mod tests {
             bytes,
             allocated: bytes.div_ceil(512) * 512,
             mtime_ns: mtime,
+            ignored,
         })
     }
 
@@ -618,6 +692,39 @@ mod tests {
             Selection { kinds: vec![EntryKind::File, EntryKind::Dir], ..Selection::default() };
         assert!(admits(&both, "src", EntryKind::Dir, 0, 0));
         assert!(!admits(&both, "link", EntryKind::Symlink, 0, 0));
+    }
+
+    /// Selecting by ignored state is a filter like any other: it forces the traversal tier,
+    /// and each mode admits exactly its partition.
+    #[test]
+    fn ignored_entries_select_one_partition_or_both() {
+        let include = Selection::default();
+        let exclude = Selection { ignored: IgnoredEntries::Exclude, ..Selection::default() };
+        let only = Selection { ignored: IgnoredEntries::Only, ..Selection::default() };
+        assert!(!exclude.is_unfiltered() && !only.is_unfiltered());
+        for (selection, admits_unignored, admits_ignored) in
+            [(&include, true, true), (&exclude, true, false), (&only, false, true)]
+        {
+            assert_eq!(
+                classified_admits(selection, "src/lib.rs", EntryKind::File, 1, 0, false),
+                admits_unignored,
+                "{:?} on an unignored entry",
+                selection.ignored
+            );
+            assert_eq!(
+                classified_admits(selection, "dist", EntryKind::Dir, 0, 0, true),
+                admits_ignored,
+                "{:?} on an ignored entry",
+                selection.ignored
+            );
+        }
+        for mode in [IgnoredEntries::Include, IgnoredEntries::Exclude, IgnoredEntries::Only] {
+            assert_eq!(IgnoredEntries::parse(mode.label()), Ok(mode));
+        }
+        assert_eq!(
+            IgnoredEntries::parse("some"),
+            Err("expected one of include, exclude, only".to_string())
+        );
     }
 
     #[test]

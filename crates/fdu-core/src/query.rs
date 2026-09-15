@@ -13,14 +13,17 @@ mod query_values;
 
 pub use query_glob::Pattern;
 pub use query_report::{
-    AxisNames, ContentReportMetadata, FileRow, MetricGroup, MetricRow, MetricShare, MetricSummary,
-    Provenance, Query, Report, ReportSource, Section, ShareMetric, SummaryRow, TreeNode, TypeRow,
-    ViewSpec, document_words, report,
+    AxisNames, ContentReportMetadata, FileRow, IgnoredTally, MetricGroup, MetricRow, MetricShare,
+    MetricSummary, Provenance, Query, Report, ReportSource, Section, ShareMetric, SummaryRow,
+    TreeNode, TypeRow, ViewSpec, document_words, report,
 };
-pub(crate) use query_report::{display_notes, report_in, report_summary};
+pub(crate) use query_report::{
+    display_notes, forget_ignore_classification, report_in, report_summary,
+};
 pub(crate) use query_selection::NameIdentity;
 pub use query_selection::{
-    Bound, Candidate, EntrySelection, ModifiedWindow, Selection, SizeMetric, SortKey,
+    Bound, Candidate, EntrySelection, IgnoredEntries, ModifiedWindow, Selection, SizeMetric,
+    SortKey,
 };
 pub use query_values::{
     format_rfc3339, parse_control_budget, parse_size, parse_when, system_time_to_nanos,

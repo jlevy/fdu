@@ -14,12 +14,13 @@
 //! passes throttles only how often aggregate views are re-rendered — it plays no part in
 //! detection.
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::engine_contract::{Commit, EffectiveChange, EntryKind, Result};
+use crate::engine_contract::{Commit, EffectiveChange, EntryKind, Error, Result};
 use crate::index::IndexHandle;
-use crate::query::{Provenance, Query, Report, ReportSource, Selection, report};
+use crate::query::{IgnoredEntries, Provenance, Query, Report, ReportSource, Selection, report};
 use crate::scan::ScanConfig;
 use crate::watch::{WatchConfig, Watcher};
 
@@ -79,6 +80,11 @@ pub struct Session {
 
 impl Session {
     /// Start watching an already-opened index.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ControlStateNotObserved`] when the query selects by ignored state and the
+    /// index observed no control state, as [`Query::validate_controls`] refuses it.
     pub fn new(
         index: IndexHandle,
         scan: ScanConfig,
@@ -89,6 +95,9 @@ impl Session {
         // Reject an out-of-scope watch before the backend is bound, so a rejected run
         // never leaves a watcher registered on the tree.
         scan.validate_for_watch_scope(index.scope()?)?;
+        query
+            .validate_controls(index.scope()?.observes_controls())
+            .map_err(|_refused| Error::ControlStateNotObserved)?;
         let watcher = Watcher::new(&root, watch)?;
         Ok(Self { index, watcher, scan, query })
     }
@@ -136,9 +145,10 @@ impl Session {
             changes: Vec::new(),
             dirty: commits.iter().any(|commit| !commit.changes.is_empty()),
         };
+        let ignored = self.ignored_among(&commits)?;
         for commit in &commits {
             for effective in &commit.changes {
-                if let Some(change) = self.change_for(effective, commit.clock.0) {
+                if let Some(change) = self.change_for(effective, commit.clock.0, &ignored) {
                     batch.changes.push(change);
                 }
             }
@@ -146,8 +156,46 @@ impl Session {
         Ok(Some(batch))
     }
 
+    /// The changed entries `.gitignore` rules ignore once these commits applied, when the
+    /// selection filters by it; empty otherwise, since no filter reads it.
+    ///
+    /// Read once under one lock for the batch rather than per change. A control edit that
+    /// moves an entry between partitions repaints the aggregates through `dirty` and adds
+    /// no record to the stream, which reports what changed on disk.
+    fn ignored_among(&self, commits: &[Commit]) -> Result<BTreeSet<PathBuf>> {
+        if self.selection().ignored == IgnoredEntries::Include {
+            return Ok(BTreeSet::new());
+        }
+        let changed: Vec<&PathBuf> = commits
+            .iter()
+            .flat_map(|commit| &commit.changes)
+            .filter_map(|effective| match effective {
+                EffectiveChange::Inserted { path, .. } | EffectiveChange::Updated { path, .. } => {
+                    Some(path)
+                }
+                EffectiveChange::Removed { .. }
+                | EffectiveChange::Invalidated { .. }
+                | EffectiveChange::ControlUpdated { .. }
+                | EffectiveChange::ControlRefusalUpdated { .. }
+                | EffectiveChange::Reclassified { .. } => None,
+            })
+            .collect();
+        self.index.read_with(|index| {
+            changed
+                .into_iter()
+                .filter(|path| matches!(index.is_ignored(path), Ok(Some(true))))
+                .cloned()
+                .collect()
+        })
+    }
+
     /// Translate one exact effective change into the legacy change view.
-    fn change_for(&self, effective: &EffectiveChange, clock: u64) -> Option<Change> {
+    fn change_for(
+        &self,
+        effective: &EffectiveChange,
+        clock: u64,
+        ignored: &BTreeSet<PathBuf>,
+    ) -> Option<Change> {
         match effective {
             EffectiveChange::Inserted { path, kind, attrs }
             | EffectiveChange::Updated { path, kind, current: attrs, .. } => {
@@ -159,6 +207,7 @@ impl Session {
                     bytes: attrs.size,
                     allocated: attrs.allocated,
                     mtime_ns: attrs.mtime_ns,
+                    ignored: ignored.contains(path),
                 };
                 self.selection().admits(&candidate).then(|| Change {
                     path: path.clone(),
@@ -171,8 +220,9 @@ impl Session {
                 })
             }
             // A removal carries no attributes to filter on, so only the path-shaped parts
-            // of a selection can apply. Filtering it out entirely on a size or time bound
-            // would hide the disappearance of something the caller was watching.
+            // of a selection can apply. Filtering it out entirely on a size, time, or
+            // ignored-state bound would hide the disappearance of something the caller was
+            // watching, and a removed entry has no classification left to read.
             EffectiveChange::Removed { path, .. } => {
                 let name = path.file_name()?.to_string_lossy().into_owned();
                 self.admits_by_path(path, &name).then(|| Change {
