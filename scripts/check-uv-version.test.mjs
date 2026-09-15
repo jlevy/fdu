@@ -99,7 +99,13 @@ test("every environment a wheel smoke creates names a GIL-enabled interpreter", 
   // install there, so an environment created without --python fails the gate on such a
   // host (fdu-pd1b). The default is CI's 3.12; UV_PYTHON chooses another.
   const targets = ["python-smoke", "python-sdist-smoke", "parity-venv"];
-  for (const [override, expected] of [[undefined, "3.12"], ["3.13", "3.13"]]) {
+  const requests = [
+    [undefined, "3.12"],
+    ["3.13", "3.13"],
+    // Splitting uv's full request form on its dashes must not invent a free-threaded suffix.
+    ["cpython-3.12.11-macos-aarch64-none", "cpython-3.12.11-macos-aarch64-none"],
+  ];
+  for (const [override, expected] of requests) {
     const env = { ...process.env };
     delete env.UV_PYTHON;
     if (override) env.UV_PYTHON = override;
@@ -113,7 +119,7 @@ test("every environment a wheel smoke creates names a GIL-enabled interpreter", 
       const creations = result.stdout.split("\n").filter((line) => /(?:^|\s)venv\s/.test(line));
       assert(creations.length > 0, `${target} creates no environment`);
       for (const line of creations) {
-        assert.match(line, new RegExp(`\\s--python ${expected.replace(".", "\\.")}\\s`), `${target}: ${line}`);
+        assert.match(line, new RegExp(`\\s--python ${expected.replaceAll(".", "\\.")}\\s`), `${target}: ${line}`);
       }
     }
   }
@@ -123,8 +129,12 @@ test("a free-threaded interpreter request is refused before any environment is c
   // Asking for one explicitly would otherwise reach uv, whose failure names wheel tags
   // rather than the request (fdu-pd1b).
   const targets = ["python-smoke", "python-sdist-smoke", "parity-venv"];
+  // uv reads a `t` after the version, or `td` for the debug build, as free-threaded in
+  // every request form, and so does `+freethreaded`.
   const requests = [
     [{ UV_PYTHON: "3.14t" }, [], "3.14t"],
+    [{ UV_PYTHON: "cpython-3.14t-macos-aarch64-none" }, [], "cpython-3\\.14t-macos-aarch64-none"],
+    [{}, ["WHEEL_PYTHON=3.14td"], "3\\.14td"],
     [{}, ["WHEEL_PYTHON=cpython-3.14+freethreaded"], "cpython-3.14\\+freethreaded"],
   ];
   for (const [overrides, variables, shown] of requests) {

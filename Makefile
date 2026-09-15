@@ -210,10 +210,14 @@ portability:
 # WHEEL_PYTHON on the command line, chooses another GIL-enabled CPython.
 WHEEL_PYTHON ?= $(or $(UV_PYTHON),3.12)
 
-# An explicit free-threaded request (`3.14t`, `cpython-3.14+freethreaded`) would reach
-# `uv venv` and fail on wheel tags, a message that names neither the request nor the
-# remedy. The check is a Make function in the recipe, so `make -n` refuses it too.
-WHEEL_PYTHON_FREE_THREADED = $(filter %0t %1t %2t %3t %4t %5t %6t %7t %8t %9t,$(WHEEL_PYTHON))$(findstring freethreaded,$(WHEEL_PYTHON))
+# An explicit free-threaded request would reach `uv venv` and fail on wheel tags, a
+# message that names neither the request nor the remedy. uv reads a version followed by
+# `t`, or `td` for the debug build, as free-threaded in every request form (`3.14t`,
+# `cpython@3.14t`, `cpython-3.14t-macos-aarch64-none`), and so is `+freethreaded`.
+# Splitting on `-` separates the version from the rest of the full form. The check is a
+# Make function in the recipe, so `make -n` refuses it too.
+WHEEL_PYTHON_FREE_THREADED_SUFFIXES := $(foreach digit,0 1 2 3 4 5 6 7 8 9,%$(digit)t %$(digit)td)
+WHEEL_PYTHON_FREE_THREADED = $(filter $(WHEEL_PYTHON_FREE_THREADED_SUFFIXES),$(subst -, ,$(WHEEL_PYTHON)))$(findstring freethreaded,$(WHEEL_PYTHON))
 WHEEL_PYTHON_REFUSAL = WHEEL_PYTHON=$(WHEEL_PYTHON) is a free-threaded CPython, which cannot install the cp312-abi3 wheel; set UV_PYTHON or WHEEL_PYTHON to a GIL-enabled CPython such as 3.12
 
 wheel-python:
