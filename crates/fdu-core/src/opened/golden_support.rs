@@ -320,6 +320,7 @@ impl SessionModel {
                     );
                 }
                 EffectiveChange::ControlUpdated { .. }
+                | EffectiveChange::ControlRefusalUpdated { .. }
                 | EffectiveChange::Reclassified { .. }
                 | EffectiveChange::Invalidated { .. } => {}
             }
@@ -595,6 +596,7 @@ impl ContractCoverage {
                 EffectiveChange::Updated { .. } => "change.updated",
                 EffectiveChange::Removed { .. } => "change.removed",
                 EffectiveChange::ControlUpdated { .. } => "change.control_updated",
+                EffectiveChange::ControlRefusalUpdated { .. } => "change.control_refusal_updated",
                 EffectiveChange::Reclassified { .. } => "change.reclassified",
                 EffectiveChange::Invalidated { .. } => "change.invalidated",
             });

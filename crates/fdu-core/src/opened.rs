@@ -1097,7 +1097,7 @@ enum DiscoveryStep {
 /// commit is usually news about the world rather than a failure of the walk. Only an
 /// engine failure -- a poisoned lock, an exhausted clock, a malformed observation -- is
 /// returned as an error and ends discovery.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 enum DiscoveryAnswer {
     /// Committed, or verified to change nothing; the listing continues.
     Accepted,
@@ -1109,22 +1109,17 @@ enum DiscoveryAnswer {
     /// this directory was queued, so the frontier entry is stale and the newer commit
     /// stands; whichever producer next verifies the path records what is there now.
     Stale,
-    /// The index refused this directory's listing on a resource bound that does not stop
-    /// the root. The directory stays incomplete and the refusal is retained as an issue
-    /// naming it.
-    Refused(crate::Issue),
 }
 
-/// Classify a refused discovery commit for `directory`'s listing, keeping engine failures
-/// fatal.
-fn discovery_rejection(error: Error, directory: &Path) -> Result<DiscoveryAnswer> {
+/// Classify a refused discovery commit, keeping engine failures fatal.
+///
+/// A control file the control budget or line guard cannot admit is not a refusal of the
+/// commit: the index refuses that one source and commits the listing (fdu-1onj).
+fn discovery_rejection(error: Error) -> Result<DiscoveryAnswer> {
     match error {
         Error::OpenedIndexStopped => Ok(DiscoveryAnswer::Stopped),
         Error::InvalidDirectoryCompletion(_) | Error::UnknownAncestry { .. } => {
             Ok(DiscoveryAnswer::Stale)
-        }
-        Error::ControlSourceLimit { .. } | Error::ControlPatternLimit { .. } => {
-            Ok(DiscoveryAnswer::Refused(crate::Issue::control_refusal(directory, &error)))
         }
         error => Err(error),
     }
@@ -1133,42 +1128,18 @@ fn discovery_rejection(error: Error, directory: &Path) -> Result<DiscoveryAnswer
 /// Stop listing one directory whose commit the index did not accept.
 ///
 /// A directory whose listing was cut short is never marked complete, so absence below it
-/// stays unknown. `committed` holds the subdirectories whose upserts batches before the
-/// unaccepted one had already committed, and what becomes of them depends on the answer:
+/// stays unknown. The answer decides what happens next:
 ///
-/// - `Stale`: the index no longer holds the directory or an ancestor, so those
-///   subdirectories left with it, and the producer that replaced it records what is there.
-/// - `Refused`: the directory is still retained, and so is every subdirectory in
-///   `committed`. Nothing refused those, so they are queued like any other; only the
-///   refused batch's entries and the rest of the listing are dropped. Retrying the refused
-///   batch without its control belongs to the control-degradation design (`fdu-1onj`). A
-///   refusal also keeps the issues the listing had gathered, since that batch may have
-///   carried them.
+/// - `Stale`: the index no longer holds the directory or an ancestor, so the
+///   subdirectories earlier batches committed left with it, and the producer that replaced
+///   it records what is there.
 /// - `Stopped`: the root is terminal and nothing more is queued.
-fn abandon_directory(
-    index: &IndexHandle,
-    journal: &journal::JournalWait,
-    frontier: &DiscoveryFrontier,
-    answer: DiscoveryAnswer,
-    committed: Vec<PendingDirectory>,
-    mut issues: Vec<crate::Issue>,
-    mut omitted: u64,
-) -> Result<DiscoveryStep> {
+fn abandon_directory(frontier: &DiscoveryFrontier, answer: DiscoveryAnswer) -> DiscoveryStep {
     match answer {
-        DiscoveryAnswer::Accepted | DiscoveryAnswer::Stale => Ok(DiscoveryStep::Continue),
+        DiscoveryAnswer::Accepted | DiscoveryAnswer::Stale => DiscoveryStep::Continue,
         DiscoveryAnswer::Stopped => {
             frontier.stop();
-            Ok(DiscoveryStep::Stopped)
-        }
-        DiscoveryAnswer::Refused(issue) => {
-            frontier.extend(committed);
-            retain_local_issue(&mut issues, &mut omitted, issue);
-            publish_discovery_transition(
-                index,
-                journal,
-                DiscoveryTransition::Inaccessible { issues, omitted },
-            )?;
-            Ok(DiscoveryStep::Continue)
+            DiscoveryStep::Stopped
         }
     }
 }
@@ -1220,11 +1191,8 @@ fn discover_directory(
     #[cfg(test)]
     let listing = test_directory_listing(listing, deterministic_discovery_order);
     let mut batch = Vec::with_capacity(scan.batch_size);
-    // Subdirectories to queue once the listing commits. The first `committed` of them are
-    // already in the index, carried by a batch this listing flushed: an accepted push that
-    // leaves the batch empty has committed everything pushed before it.
+    // Subdirectories to queue once the listing commits.
     let mut discovered = Vec::new();
-    let mut committed = 0_usize;
     let mut issues = Vec::new();
     let mut omitted_issues = 0_u64;
 
@@ -1234,13 +1202,12 @@ fn discover_directory(
                 index,
                 journal,
                 &mut batch,
-                &directory.path,
                 None,
                 Some(DiscoveryTransition::Cancelled),
                 budget.max_files,
             )?;
-            if matches!(answer, DiscoveryAnswer::Stale | DiscoveryAnswer::Refused(_)) {
-                // The refused batch carried the transition with it.
+            if matches!(answer, DiscoveryAnswer::Stale) {
+                // The stale batch carried the transition with it.
                 publish_discovery_transition(index, journal, DiscoveryTransition::Cancelled)?;
             }
             frontier.stop();
@@ -1308,31 +1275,18 @@ fn discover_directory(
                     journal,
                     scan.batch_size,
                     &mut batch,
-                    &directory.path,
                     control,
                     budget.max_files,
                 )?;
                 if !matches!(answer, DiscoveryAnswer::Accepted) {
-                    discovered.truncate(committed);
-                    return abandon_directory(
-                        index,
-                        journal,
-                        frontier,
-                        answer,
-                        discovered,
-                        issues,
-                        omitted_issues,
-                    );
-                }
-                if batch.is_empty() {
-                    committed = discovered.len();
+                    return Ok(abandon_directory(frontier, answer));
                 }
             }
             continue;
         }
 
-        // Queued before its upsert is pushed, so the batch that carries the upsert is the
-        // one whose commit moves it into the committed prefix.
+        // Queued before its upsert is pushed; the whole list is queued once the listing
+        // commits.
         if descend {
             discovered.push(PendingDirectory {
                 path: path.clone(),
@@ -1344,24 +1298,11 @@ fn discover_directory(
             journal,
             scan.batch_size,
             &mut batch,
-            &directory.path,
             Op::Upsert { path, kind, attrs },
             budget.max_files,
         )?;
         if !matches!(answer, DiscoveryAnswer::Accepted) {
-            discovered.truncate(committed);
-            return abandon_directory(
-                index,
-                journal,
-                frontier,
-                answer,
-                discovered,
-                issues,
-                omitted_issues,
-            );
-        }
-        if batch.is_empty() {
-            committed = discovered.len();
+            return Ok(abandon_directory(frontier, answer));
         }
         if let Some(control) = control {
             let answer = push_discovery_op(
@@ -1369,24 +1310,11 @@ fn discover_directory(
                 journal,
                 scan.batch_size,
                 &mut batch,
-                &directory.path,
                 control,
                 budget.max_files,
             )?;
             if !matches!(answer, DiscoveryAnswer::Accepted) {
-                discovered.truncate(committed);
-                return abandon_directory(
-                    index,
-                    journal,
-                    frontier,
-                    answer,
-                    discovered,
-                    issues,
-                    omitted_issues,
-                );
-            }
-            if batch.is_empty() {
-                committed = discovered.len();
+                return Ok(abandon_directory(frontier, answer));
             }
         }
     }
@@ -1397,26 +1325,10 @@ fn discover_directory(
         omitted: omitted_issues,
     });
     let complete = (!incomplete).then(|| directory.path.clone());
-    let answer = commit_discovery_batch(
-        index,
-        journal,
-        &mut batch,
-        &directory.path,
-        complete,
-        transition,
-        budget.max_files,
-    )?;
+    let answer =
+        commit_discovery_batch(index, journal, &mut batch, complete, transition, budget.max_files)?;
     if !matches!(answer, DiscoveryAnswer::Accepted) {
-        discovered.truncate(committed);
-        return abandon_directory(
-            index,
-            journal,
-            frontier,
-            answer,
-            discovered,
-            issues,
-            omitted_issues,
-        );
+        return Ok(abandon_directory(frontier, answer));
     }
     frontier.extend(discovered);
     Ok(DiscoveryStep::Continue)
@@ -1456,13 +1368,12 @@ fn push_discovery_op(
     journal: &journal::JournalWait,
     batch_size: usize,
     batch: &mut Vec<ObservationOp>,
-    directory: &Path,
     op: Op,
     max_files: Option<u64>,
 ) -> Result<DiscoveryAnswer> {
     batch.push(ObservationOp::unconditional(op));
     if batch.len() >= batch_size {
-        return commit_discovery_batch(index, journal, batch, directory, None, None, max_files);
+        return commit_discovery_batch(index, journal, batch, None, None, max_files);
     }
     Ok(DiscoveryAnswer::Accepted)
 }
@@ -1472,7 +1383,6 @@ fn commit_discovery_batch(
     index: &IndexHandle,
     journal: &journal::JournalWait,
     batch: &mut Vec<ObservationOp>,
-    directory: &Path,
     directory_complete: Option<PathBuf>,
     transition: Option<DiscoveryTransition>,
     max_files: Option<u64>,
@@ -1484,7 +1394,7 @@ fn commit_discovery_batch(
         max_files,
     ) {
         Ok(outcome) => outcome,
-        Err(error) => return discovery_rejection(error, directory),
+        Err(error) => return discovery_rejection(error),
     };
     if outcome.commit.is_some() {
         journal.notify_commit();
@@ -5776,59 +5686,48 @@ mod tests {
         opened.close().expect("close");
     }
 
-    /// A control-table bound refuses one directory's listing; it does not end discovery.
-    ///
-    /// Pins the interim behavior until control bounds degrade precisely (`fdu-1onj`): the
-    /// refused directory stays incomplete, its refusal is a retained issue, coverage is
-    /// partial, and every other directory is still discovered.
-    #[test]
-    fn a_control_bound_refuses_one_directory_without_ending_discovery() {
-        let root = tempfile::tempdir().expect("temp root");
-        std::fs::create_dir(root.path().join("a")).expect("fixture");
-        let mut line = vec![b'x'; crate::control::MAX_CONTROL_PATTERN_BYTES + 1];
-        line.push(b'\n');
-        std::fs::write(root.path().join("a").join(crate::control::CONTROL_FILE_NAME), &line)
-            .expect("oversized control");
-        std::fs::write(root.path().join("a/inside.txt"), b"i").expect("fixture");
-        std::fs::create_dir(root.path().join("b")).expect("fixture");
-        std::fs::write(root.path().join("b/kept.txt"), b"k").expect("fixture");
-
-        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("open");
-        let state = wait_until_settled(&opened);
-        assert_eq!(state.phase, crate::LifecyclePhase::Ready);
-        assert_eq!(state.coverage, crate::Coverage::Partial(crate::CoverageReason::Inaccessible));
-        let issues = opened.state.index.issues().expect("issues");
-        assert!(
-            issues.iter().any(|issue| issue.message.contains("control pattern requires")),
-            "{issues:?}"
-        );
-        assert_eq!(opened.state.index.directory_complete(Path::new("a")).expect("a"), Some(false));
-        assert_eq!(
-            opened.state.index.kind(Path::new("b/kept.txt")).expect("lookup"),
-            Some(EntryKind::File)
-        );
-        opened.close().expect("close");
-    }
-
-    /// A refused control abandons only what its own batch carried.
-    ///
-    /// `a` lists `-early/`, then a `.gitignore` over the per-line bound, then `zzz.txt`, one
-    /// entry per batch. The `-early` upsert commits before the control is refused, so
-    /// `-early` is a retained directory nothing refused; it used to be left unqueued and
-    /// incomplete, its subtree silently missing and its roll-up answering an empty
-    /// `Present`. The refusal also used to be retained as a pathless provider failure.
-    #[test]
-    fn a_refused_control_still_queues_subdirectories_its_listing_committed() {
-        let controls = Arc::new(TestControls::default());
-        controls.use_deterministic_discovery_order();
+    /// A `.gitignore` in `a` over the per-line guard, listed between `-early/` and
+    /// `zzz.txt`, with one entry per batch so the control lands in a batch of its own.
+    fn tree_with_a_guarded_control() -> tempfile::TempDir {
         let root = tempfile::tempdir().expect("temp root");
         let a = root.path().join("a");
         std::fs::create_dir_all(a.join("-early")).expect("fixture");
         std::fs::write(a.join("-early").join("leaf.txt"), b"l").expect("fixture");
-        let mut line = vec![b'x'; crate::control::MAX_CONTROL_PATTERN_BYTES + 1];
-        line.push(b'\n');
+        let mut line = b"*.txt\n".to_vec();
+        line.extend(std::iter::repeat_n(b'x', crate::control::MAX_CONTROL_PATTERN_BYTES + 1));
         std::fs::write(a.join(crate::control::CONTROL_FILE_NAME), &line).expect("control");
         std::fs::write(a.join("zzz.txt"), b"z").expect("fixture");
+        std::fs::create_dir(root.path().join("b")).expect("fixture");
+        std::fs::write(root.path().join("b/kept.txt"), b"k").expect("fixture");
+        root
+    }
+
+    fn diagnostics(opened: &OpenedIndex) -> crate::ReadDiagnostics {
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Diagnostics],
+                ..crate::ReadRequest::default()
+            })
+            .expect("read");
+        let [crate::ProjectionResult::Diagnostics(diagnostics)] = response.results.as_slice()
+        else {
+            panic!("one diagnostics result: {:?}", response.results);
+        };
+        diagnostics.clone()
+    }
+
+    /// A control over a bound is refused, and the listing that carried it commits.
+    ///
+    /// The directory's other entries land and it completes, so structural coverage stays
+    /// complete and no issue is retained; the refusal is a control-coverage fact naming the
+    /// file (fdu-1onj). The listing used to be refused with its control: the directory
+    /// stayed incomplete, the rest of its entries were dropped, and coverage said
+    /// `Inaccessible` about a file that was perfectly readable.
+    #[test]
+    fn a_control_over_a_bound_is_refused_while_its_listing_commits() {
+        let controls = Arc::new(TestControls::default());
+        controls.use_deterministic_discovery_order();
+        let root = tree_with_a_guarded_control();
         let opened = OpenedIndex::open_for_test(
             root.path(),
             OpenOptions { batch_size: 1, ..OpenOptions::default() },
@@ -5837,41 +5736,112 @@ mod tests {
         .expect("open");
         let state = wait_until_settled(&opened);
         assert_eq!(state.phase, crate::LifecyclePhase::Ready);
-        assert_eq!(state.coverage, crate::Coverage::Partial(crate::CoverageReason::Inaccessible));
+        assert_eq!(state.coverage, crate::Coverage::Complete);
+        assert_eq!(state.issues, crate::IssueSummary::default());
 
         let index = &opened.state.index;
-        assert_eq!(index.directory_complete(Path::new("a")).expect("lookup"), Some(false));
-        assert_eq!(index.kind(Path::new("a/-early")).expect("lookup"), Some(EntryKind::Dir));
+        assert_eq!(index.directory_complete(Path::new("a")).expect("lookup"), Some(true));
         assert_eq!(index.directory_complete(Path::new("a/-early")).expect("lookup"), Some(true));
+        assert_eq!(index.kind(Path::new("a/zzz.txt")).expect("lookup"), Some(EntryKind::File));
+        assert_eq!(index.kind(Path::new("b/kept.txt")).expect("lookup"), Some(EntryKind::File));
         assert_eq!(
-            index.kind(Path::new("a/-early/leaf.txt")).expect("lookup"),
+            index
+                .snapshot()
+                .expect("snapshot")
+                .is_ignored(Path::new("a/zzz.txt"))
+                .expect("observed"),
+            Some(false),
+            "no rule of the refused file applies"
+        );
+        assert_eq!(
+            diagnostics(&opened).controls,
+            crate::control::ControlObservation {
+                budget: Some(crate::control::MAX_CONTROL_TABLE_BYTES),
+                applied: 0,
+                refused: 1,
+                refusals: vec![crate::control::RefusedControl {
+                    path: PathBuf::from("a/.gitignore"),
+                    reason: crate::control::ControlRefusalReason::LineGuard,
+                }],
+            }
+        );
+        opened.close().expect("close");
+    }
+
+    /// Deliver `hints` to a scripted observer, then block until a marker event sent after
+    /// them has been applied, so every earlier event has been too.
+    #[cfg(feature = "watch")]
+    fn observe_then_settle(
+        opened: &OpenedIndex,
+        controls: &TestControls,
+        root: &Path,
+        hints: &str,
+    ) {
+        static MARKERS: AtomicUsize = AtomicUsize::new(0);
+        let marker = format!("settled-{}.txt", MARKERS.fetch_add(1, Ordering::Relaxed));
+        std::fs::write(root.join(&marker), b"marker").expect("marker");
+        controls.send_observation_hints(&format!("{hints}create\t{marker}\n"));
+        let deadline = std::time::Instant::now() + TEST_GATE_TIMEOUT;
+        while opened.state.index.kind(Path::new(&marker)).expect("lookup") != Some(EntryKind::File)
+        {
+            assert!(std::time::Instant::now() < deadline, "{marker} was not applied");
+            std::thread::yield_now();
+        }
+    }
+
+    /// A watched root over a control bound reaches `Watching`, and later events and
+    /// refreshes over the refused directory degrade instead of failing the observer.
+    ///
+    /// The observation handoff's full reconciliation reads the same refused control, and
+    /// used to fail with the error discovery had already walked past, ending the root
+    /// `Failed` after an extra full walk. In steady state, the first event touching the
+    /// control-bearing directory failed it the same way.
+    #[cfg(feature = "watch")]
+    #[test]
+    fn a_watched_root_over_a_control_bound_keeps_watching_through_events() {
+        let root = tree_with_a_guarded_control();
+        let scripts = tempfile::tempdir().expect("script root");
+        let script = scripts.path().join("events.script");
+        std::fs::write(&script, b"").expect("script");
+        let controls = Arc::new(TestControls::default());
+        let opened = OpenedIndex::open_for_test(
+            root.path(),
+            scripted_options(&script),
+            Arc::clone(&controls),
+        )
+        .expect("open");
+        let state = wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+        assert_eq!(state.coverage, crate::Coverage::Complete);
+        assert_eq!(diagnostics(&opened).controls.refused, 1);
+
+        // An edit that keeps the file over the guard, and a sibling created beside it.
+        let control = root.path().join("a/.gitignore");
+        let mut grown = std::fs::read(&control).expect("control");
+        grown.extend_from_slice(b"\n*.md\n");
+        std::fs::write(&control, grown).expect("grown control");
+        std::fs::write(root.path().join("a/new.txt"), b"new").expect("fixture");
+        let hints = "modify\ta/.gitignore\ncreate\ta/new.txt\n";
+        observe_then_settle(&opened, &controls, root.path(), hints);
+        let watching = crate::LifecyclePhase::Watching;
+        assert_eq!(opened.state.index.state().expect("state").phase, watching);
+        assert_eq!(
+            opened.state.index.kind(Path::new("a/new.txt")).expect("lookup"),
             Some(EntryKind::File)
         );
-        // The refused batch and everything after it in the listing are still dropped.
-        assert_eq!(index.kind(Path::new("a/zzz.txt")).expect("lookup"), None);
-        let response = opened
-            .read(crate::ReadRequest {
-                projections: vec![crate::ReadProjection::RollUp {
-                    path: PathBuf::from("a/-early"),
-                }],
-                ..crate::ReadRequest::default()
-            })
-            .expect("read");
-        assert!(
-            matches!(
-                &response.results[0],
-                crate::ProjectionResult::RollUp(crate::Knowledge::Present(summary))
-                    if summary.all.files == 1
-            ),
-            "{:?}",
-            response.results[0]
-        );
+        assert_eq!(diagnostics(&opened).controls.refused, 1);
 
-        let issues = index.issues().expect("issues");
-        assert_eq!(issues.len(), 1, "{issues:?}");
-        assert_eq!(issues[0].kind, crate::IssueKind::ResourceBudget, "{issues:?}");
-        assert_eq!(issues[0].path.as_deref(), Some(Path::new("a")), "{issues:?}");
-        assert!(issues[0].message.contains("control pattern requires"), "{issues:?}");
+        // A refresh over the refused directory commits too.
+        let refreshed = opened.refresh(&[PathBuf::from("a")]).expect("refresh over the refusal");
+        assert_eq!(refreshed.state.phase, watching);
+
+        // Rules that fit lift the refusal and apply.
+        std::fs::write(&control, b"*.txt\n").expect("fitting control");
+        observe_then_settle(&opened, &controls, root.path(), "modify\ta/.gitignore\n");
+        let coverage = diagnostics(&opened).controls;
+        assert_eq!((coverage.applied, coverage.refused), (1, 0));
+        let snapshot = opened.state.index.snapshot().expect("snapshot");
+        assert_eq!(snapshot.is_ignored(Path::new("a/new.txt")).expect("observed"), Some(true));
+        assert_eq!(opened.state.index.state().expect("state").phase, watching);
         opened.close().expect("close");
     }
 

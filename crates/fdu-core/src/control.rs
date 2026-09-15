@@ -74,6 +74,87 @@ struct Holding {
     holders: usize,
 }
 
+/// Why a control table refused a control source instead of applying its rules.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum ControlRefusalReason {
+    /// Retaining the source would have taken the table past its control budget.
+    Budget,
+    /// A line of the source is longer than [`MAX_CONTROL_PATTERN_BYTES`].
+    LineGuard,
+}
+
+impl ControlRefusalReason {
+    /// The stable name every structured output and binding uses for this reason.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Budget => "budget",
+            Self::LineGuard => "line_guard",
+        }
+    }
+}
+
+/// What a control table did with one verified control source.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ControlAdmission {
+    /// The rules apply. `changed` is false when the directory already retained exactly
+    /// these bytes.
+    Retained {
+        /// Whether the table's retained sources changed.
+        changed: bool,
+    },
+    /// The rules do not apply, and the directory retains no source. The refusal is
+    /// recorded, so the table's coverage names it.
+    Refused(ControlRefusalReason),
+}
+
+/// One control file whose rules an index refused, relative to the index root.
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+pub struct RefusedControl {
+    /// The refused `.gitignore`.
+    pub path: PathBuf,
+    /// Which bound refused it.
+    pub reason: ControlRefusalReason,
+}
+
+/// Whether an index's ignore classification applies every control file in its scope.
+///
+/// Sizes and counts never depend on this: a refused control file costs only the
+/// ignored and unignored split. Below a refused file that split is not exact in either
+/// direction, because the file may have held negations as well as ignore rules.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum ControlCoverage {
+    /// The index read no control file, so it classifies nothing as ignored or unignored.
+    NotObserved,
+    /// The index read every control file in its scope and applied the ones it admitted.
+    Observed(ControlObservation),
+}
+
+/// The control files an observing index applied and refused.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ControlObservation {
+    /// Retained-charge budget in bytes, or `None` when unbounded.
+    pub budget: Option<usize>,
+    /// Control files whose rules apply.
+    pub applied: u64,
+    /// Control files refused, counted exactly.
+    pub refused: u64,
+    /// Refused control files in path order, at most [`crate::MAX_RETAINED_ISSUES`] of
+    /// them. A list shorter than [`Self::refused`] is truncated.
+    pub refusals: Vec<RefusedControl>,
+}
+
+impl ControlObservation {
+    /// Whether every control file in scope applies, so ignore classification is exact.
+    pub const fn is_complete(&self) -> bool {
+        self.refused == 0
+    }
+
+    /// Whether [`Self::refusals`] names every refused control file.
+    pub fn lists_every_refusal(&self) -> bool {
+        u64::try_from(self.refusals.len()).is_ok_and(|listed| listed == self.refused)
+    }
+}
+
 /// Exact `.gitignore` sources and parsed matchers, keyed by governing directory.
 ///
 /// Identical sources are stored and parsed once. A tree of package checkouts repeats a few
@@ -81,23 +162,57 @@ struct Holding {
 /// crossed the bound at a fraction of the distinct rules the tree holds (fdu-szkg). Each
 /// directory still pays for its own key, so a tree of empty control files cannot evade the
 /// bound, and removing the last holder of a content releases the content's charge.
-#[derive(Clone, Debug, Default)]
+///
+/// A source the bounds cannot admit is refused, not an error: the table records the
+/// refusal and keeps no rules for that directory, and the scan that read it continues
+/// (fdu-1onj). A refusal ends when the directory's control file is removed or a later
+/// read admits it.
+#[derive(Clone, Debug)]
 pub struct ControlTable {
     by_directory: BTreeMap<PathBuf, Arc<SharedContent>>,
     /// Distinct contents by identity. A list, because an equal length and FNV-1a digest do
     /// not prove equal bytes, and a collision must never share another source's matcher.
     shared: HashMap<ControlIdentity, Vec<Holding>>,
+    /// Every refused source, by governing directory. Kept whole, not bounded like issue
+    /// details, so removing a refused file keeps the refused count exact.
+    refused: BTreeMap<PathBuf, ControlRefusalReason>,
+    budget: Option<usize>,
     source_bytes: usize,
     retained_cost: usize,
 }
 
+impl Default for ControlTable {
+    fn default() -> Self {
+        Self::with_budget(Some(MAX_CONTROL_TABLE_BYTES))
+    }
+}
+
 impl ControlTable {
+    /// An empty table that refuses sources past `budget` bytes of retained charge, or
+    /// none when `budget` is `None`.
+    pub(crate) fn with_budget(budget: Option<usize>) -> Self {
+        Self {
+            by_directory: BTreeMap::new(),
+            shared: HashMap::new(),
+            refused: BTreeMap::new(),
+            budget,
+            source_bytes: 0,
+            retained_cost: 0,
+        }
+    }
+
     /// Insert or replace one verified control source.
     ///
     /// `path` names the control file relative to the index root. The source is retained
     /// exactly, while matching state is derived once per distinct content rather than per
-    /// directory or per entry.
-    pub fn upsert(&mut self, path: &Path, source: Vec<u8>) -> crate::Result<bool> {
+    /// directory or per entry. A source the bounds cannot admit is refused and recorded,
+    /// and a source it replaces is dropped with it: rules no longer on disk must not keep
+    /// applying.
+    ///
+    /// # Errors
+    ///
+    /// [`crate::Error::InvalidControlPath`] when `path` does not name a control file.
+    pub fn upsert(&mut self, path: &Path, source: Vec<u8>) -> crate::Result<ControlAdmission> {
         let identity = identity(&source);
         self.upsert_identified(path, source, identity)
     }
@@ -107,18 +222,17 @@ impl ControlTable {
         path: &Path,
         source: Vec<u8>,
         identity: ControlIdentity,
-    ) -> crate::Result<bool> {
+    ) -> crate::Result<ControlAdmission> {
         let directory = control_directory(path)?;
-        if let Some(line) =
-            source.split(|byte| *byte == b'\n').find(|line| line.len() > MAX_CONTROL_PATTERN_BYTES)
-        {
-            return Err(crate::Error::ControlPatternLimit {
-                attempted: line.len(),
-                limit: MAX_CONTROL_PATTERN_BYTES,
-            });
-        }
         if self.by_directory.get(directory).is_some_and(|current| current.bytes == source) {
-            return Ok(false);
+            return Ok(ControlAdmission::Retained { changed: false });
+        }
+        if self.budget.is_some()
+            && source
+                .split(|byte| *byte == b'\n')
+                .any(|line| line.len() > MAX_CONTROL_PATTERN_BYTES)
+        {
+            return Ok(self.refuse(directory, ControlRefusalReason::LineGuard));
         }
         let content_charge =
             if self.holding(identity, &source).is_some() { 0 } else { content_cost(&source) };
@@ -126,31 +240,49 @@ impl ControlTable {
             .retained_cost
             .checked_sub(self.release_charge(directory))
             .and_then(|bytes| bytes.checked_add(directory_cost(directory)))
-            .and_then(|bytes| bytes.checked_add(content_charge))
-            .ok_or(crate::Error::ControlSourceLimit {
-                attempted: usize::MAX,
-                limit: MAX_CONTROL_TABLE_BYTES,
-            })?;
-        if next > MAX_CONTROL_TABLE_BYTES {
-            return Err(crate::Error::ControlSourceLimit {
-                attempted: next,
-                limit: MAX_CONTROL_TABLE_BYTES,
-            });
-        }
+            .and_then(|bytes| bytes.checked_add(content_charge));
+        let Some(next) = next.filter(|next| self.budget.is_none_or(|budget| *next <= budget))
+        else {
+            return Ok(self.refuse(directory, ControlRefusalReason::Budget));
+        };
 
         self.detach(directory);
         self.attach(directory, source, identity);
+        self.refused.remove(directory);
         debug_assert_eq!(self.retained_cost, next);
-        Ok(true)
+        Ok(ControlAdmission::Retained { changed: true })
     }
 
-    /// Remove one control source. Missing sources are no-ops.
+    /// Restore a refusal a snapshot recorded, without the source that was refused.
+    pub(crate) fn record_refusal(
+        &mut self,
+        path: &Path,
+        reason: ControlRefusalReason,
+    ) -> crate::Result<()> {
+        let directory = control_directory(path)?;
+        self.refuse(directory, reason);
+        Ok(())
+    }
+
+    fn refuse(&mut self, directory: &Path, reason: ControlRefusalReason) -> ControlAdmission {
+        self.detach(directory);
+        self.refused.insert(directory.to_path_buf(), reason);
+        ControlAdmission::Refused(reason)
+    }
+
+    /// Remove one control source, or the record of its refusal. Missing sources are no-ops.
+    ///
+    /// # Errors
+    ///
+    /// [`crate::Error::InvalidControlPath`] when `path` does not name a control file.
     pub fn remove(&mut self, path: &Path) -> crate::Result<bool> {
         let directory = control_directory(path)?;
-        Ok(self.detach(directory))
+        let retained = self.detach(directory);
+        let refused = self.refused.remove(directory).is_some();
+        Ok(retained || refused)
     }
 
-    /// Remove every control file at or below `subtree`.
+    /// Remove every control file, and every refusal, at or below `subtree`.
     pub(crate) fn remove_subtree(&mut self, subtree: &Path) {
         let directories: Vec<PathBuf> = self
             .by_directory
@@ -161,6 +293,7 @@ impl ControlTable {
         for directory in directories {
             self.detach(&directory);
         }
+        self.refused.retain(|directory, _| !directory.starts_with(subtree));
     }
 
     /// The holding for exactly `source`, when some directory already retains it.
@@ -293,11 +426,56 @@ impl ControlTable {
             .collect()
     }
 
+    /// Refusals recorded or lifted between two complete table states.
+    pub(crate) fn refusal_changes_from(
+        &self,
+        previous: &Self,
+    ) -> Vec<(PathBuf, Option<ControlRefusalReason>, Option<ControlRefusalReason>)> {
+        let directories: BTreeSet<&Path> =
+            previous.refused.keys().chain(self.refused.keys()).map(PathBuf::as_path).collect();
+        directories
+            .into_iter()
+            .filter_map(|directory| {
+                let before = previous.refused.get(directory).copied();
+                let after = self.refused.get(directory).copied();
+                (before != after).then(|| (control_path(directory), before, after))
+            })
+            .collect()
+    }
+
     /// Exact sources in deterministic governing-directory order.
     pub(crate) fn sources(&self) -> impl ExactSizeIterator<Item = (PathBuf, &[u8])> {
         self.by_directory
             .iter()
             .map(|(directory, source)| (control_path(directory), source.bytes.as_slice()))
+    }
+
+    /// Every refused control file and its reason, in governing-directory order.
+    pub fn refusals(&self) -> impl ExactSizeIterator<Item = RefusedControl> + '_ {
+        self.refused.iter().map(|(directory, reason)| RefusedControl {
+            path: control_path(directory),
+            reason: *reason,
+        })
+    }
+
+    /// Number of refused control files.
+    pub fn refused_len(&self) -> usize {
+        self.refused.len()
+    }
+
+    /// Retained-charge budget in bytes, or `None` when unbounded.
+    pub const fn budget(&self) -> Option<usize> {
+        self.budget
+    }
+
+    /// This table's coverage, listing at most [`crate::MAX_RETAINED_ISSUES`] refusals.
+    pub fn observation(&self) -> ControlObservation {
+        ControlObservation {
+            budget: self.budget,
+            applied: u64::try_from(self.len()).unwrap_or(u64::MAX),
+            refused: u64::try_from(self.refused_len()).unwrap_or(u64::MAX),
+            refusals: self.refusals().take(crate::MAX_RETAINED_ISSUES).collect(),
+        }
     }
 
     /// Exact retained source bytes across the whole table.
@@ -318,11 +496,14 @@ impl ControlTable {
             .is_some_and(|current| current.bytes == source)
     }
 
-    /// Whether an exact control source is retained at `path`.
+    /// Whether the table holds a record at `path`: a retained source or a refusal.
+    ///
+    /// Reconciliation asks this to decide whether a control file missing from a listing
+    /// needs a removal, and a refused file that disappears must lift its refusal.
     pub(crate) fn contains(&self, path: &Path) -> bool {
-        control_directory(path)
-            .ok()
-            .is_some_and(|directory| self.by_directory.contains_key(directory))
+        control_directory(path).ok().is_some_and(|directory| {
+            self.by_directory.contains_key(directory) || self.refused.contains_key(directory)
+        })
     }
 
     /// Number of retained control files.
@@ -330,9 +511,14 @@ impl ControlTable {
         self.by_directory.len()
     }
 
-    /// Whether no control file is retained.
+    /// Whether no control file is retained. A table may still record refusals.
     pub fn is_empty(&self) -> bool {
         self.by_directory.is_empty()
+    }
+
+    /// Whether the table records nothing at all: no retained source and no refusal.
+    pub(crate) fn is_vacant(&self) -> bool {
+        self.by_directory.is_empty() && self.refused.is_empty()
     }
 }
 
@@ -479,6 +665,11 @@ impl ControlTable {
                 }
             }
         }
+        assert!(
+            self.refused.keys().all(|directory| !self.by_directory.contains_key(directory)),
+            "a refused directory retains no source"
+        );
+        assert!(self.budget.is_none_or(|budget| self.retained_cost <= budget), "within budget");
     }
 }
 
@@ -503,28 +694,58 @@ mod tests {
         }
     }
 
+    /// Every directory's last operation decides whether it holds a record, whatever the
+    /// bounds decided: an upsert leaves exactly one of a source or a refusal, and a removal
+    /// leaves neither. Charges and holder counts are recomputed after every step.
     #[test]
-    fn shared_charges_stay_exact_through_random_upserts_and_removals() {
+    fn charges_and_refusals_stay_exact_through_random_upserts_and_removals() {
         const DIRECTORIES: [&str; 6] = ["", "a", "a/b", "b", "b/c/d", "c"];
-        const CONTENTS: [&[u8]; 4] = [b"*.log\n", b"target/\n", b"!keep\n*.tmp\n", b""];
+        let long_line = [vec![b'x'; MAX_CONTROL_PATTERN_BYTES + 1], b"\n".to_vec()].concat();
+        let large = b"pattern/\n".repeat(40);
+        let contents: [&[u8]; 6] =
+            [b"*.log\n", b"target/\n", b"!keep\n*.tmp\n", b"", &large, &long_line];
+        // Room for a few small sources and one large one, so the budget refuses often.
+        let budget = 2 * retained_source_cost(Path::new("b/c/d"), &large);
         for seed in 0..64 {
             let mut random = SplitMix(seed);
-            let mut table = ControlTable::default();
-            for step in 0..200 {
+            let mut table = ControlTable::with_budget(Some(budget));
+            let mut holds_record: BTreeMap<&Path, bool> = BTreeMap::new();
+            for step in 0..300 {
                 let directory = Path::new(DIRECTORIES[random.below(DIRECTORIES.len())]);
                 let path = directory.join(CONTROL_FILE_NAME);
                 match random.below(8) {
-                    0 => table.remove_subtree(directory),
+                    0 => {
+                        table.remove_subtree(directory);
+                        for (held, record) in &mut holds_record {
+                            if held.starts_with(directory) {
+                                *record = false;
+                            }
+                        }
+                    }
                     1 | 2 => {
                         table.remove(&path).expect("control path");
+                        holds_record.insert(directory, false);
                     }
                     _ => {
-                        let content = CONTENTS[random.below(CONTENTS.len())].to_vec();
-                        table.upsert(&path, content).expect("far below the bound");
+                        let content = contents[random.below(contents.len())].to_vec();
+                        let admission = table.upsert(&path, content.clone()).expect("control path");
+                        if content == long_line {
+                            assert_eq!(
+                                admission,
+                                ControlAdmission::Refused(ControlRefusalReason::LineGuard)
+                            );
+                        }
+                        holds_record.insert(directory, true);
                     }
                 }
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     table.assert_consistent();
+                    for (directory, record) in &holds_record {
+                        let path = directory.join(CONTROL_FILE_NAME);
+                        assert_eq!(table.contains(&path), *record, "{}", path.display());
+                    }
+                    let records = holds_record.values().filter(|record| **record).count();
+                    assert_eq!(table.len() + table.refused_len(), records);
                 }))
                 .unwrap_or_else(|_| panic!("seed {seed}, step {step}: inconsistent table"));
             }
@@ -534,6 +755,7 @@ mod tests {
             assert_eq!(table.retained_cost(), 0, "seed {seed}");
             assert_eq!(table.source_bytes(), 0, "seed {seed}");
             assert!(table.shared.is_empty(), "seed {seed}");
+            assert!(table.is_vacant(), "seed {seed}");
         }
     }
 
@@ -565,17 +787,26 @@ mod tests {
         assert!(table.is_ignored(Path::new("b/x.tmp"), false));
     }
 
+    const CHANGED: ControlAdmission = ControlAdmission::Retained { changed: true };
+    const UNCHANGED: ControlAdmission = ControlAdmission::Retained { changed: false };
+    const OVER_BUDGET: ControlAdmission = ControlAdmission::Refused(ControlRefusalReason::Budget);
+    const OVER_LINE_GUARD: ControlAdmission =
+        ControlAdmission::Refused(ControlRefusalReason::LineGuard);
+
     #[test]
     fn replacing_the_last_holder_releases_its_content_for_the_bound() {
         let mut table = ControlTable::default();
         let first = source_at_test_limit();
-        table.upsert(Path::new(".gitignore"), first.clone()).expect("at the bound");
+        assert_eq!(
+            table.upsert(Path::new(".gitignore"), first.clone()).expect("control path"),
+            CHANGED
+        );
         // The same content elsewhere costs only a key, which still crosses a full table.
-        let error = table
-            .upsert(Path::new("copy/.gitignore"), first)
-            .expect_err("a key alone crosses a table at its bound");
-        assert!(matches!(error, crate::Error::ControlSourceLimit { .. }));
-        table.upsert(Path::new(".gitignore"), b"small\n".to_vec()).expect("replace");
+        assert_eq!(table.upsert(Path::new("copy/.gitignore"), first).expect("path"), OVER_BUDGET);
+        assert_eq!(
+            table.upsert(Path::new(".gitignore"), b"small\n".to_vec()).expect("control path"),
+            CHANGED
+        );
         table.assert_consistent();
         assert_eq!(table.retained_cost(), retained_source_cost(Path::new(""), b"small\n"));
     }
@@ -583,10 +814,19 @@ mod tests {
     #[test]
     fn creation_edit_and_last_removal_are_exact() {
         let mut table = ControlTable::default();
-        assert!(table.upsert(Path::new(".gitignore"), b"*.log\n".to_vec()).expect("insert"));
+        assert_eq!(
+            table.upsert(Path::new(".gitignore"), b"*.log\n".to_vec()).expect("control path"),
+            CHANGED
+        );
         let original = table.clone();
-        assert!(!table.upsert(Path::new(".gitignore"), b"*.log\n".to_vec()).expect("no-op"));
-        assert!(table.upsert(Path::new(".gitignore"), b"*.tmp\n".to_vec()).expect("edit"));
+        assert_eq!(
+            table.upsert(Path::new(".gitignore"), b"*.log\n".to_vec()).expect("control path"),
+            UNCHANGED
+        );
+        assert_eq!(
+            table.upsert(Path::new(".gitignore"), b"*.tmp\n".to_vec()).expect("control path"),
+            CHANGED
+        );
         assert_eq!(table.changes_from(&original).len(), 1);
         assert!(table.remove(Path::new(".gitignore")).expect("remove"));
         assert!(table.is_empty());
@@ -594,21 +834,82 @@ mod tests {
         assert!(!table.remove(Path::new(".gitignore")).expect("missing is a no-op"));
     }
 
+    /// The budget admits a table charged exactly to it and refuses one byte more.
     #[test]
-    fn total_source_bound_is_shared_and_replacement_gets_its_bytes_back() {
+    fn the_budget_admits_its_own_size_and_refuses_one_byte_over_it() {
+        let source = b"*.log\n".to_vec();
+        let exact = retained_source_cost(Path::new("a"), &source);
+        let mut at_budget = ControlTable::with_budget(Some(exact));
+        assert_eq!(
+            at_budget.upsert(Path::new("a/.gitignore"), source.clone()).expect("control path"),
+            CHANGED
+        );
+        assert_eq!(at_budget.retained_cost(), exact);
+
+        let mut under_budget = ControlTable::with_budget(Some(exact - 1));
+        assert_eq!(
+            under_budget.upsert(Path::new("a/.gitignore"), source).expect("control path"),
+            OVER_BUDGET
+        );
+        assert_eq!(under_budget.retained_cost(), 0);
+        assert!(under_budget.contains(Path::new("a/.gitignore")));
+        assert_eq!(
+            under_budget.observation(),
+            ControlObservation {
+                budget: Some(exact - 1),
+                applied: 0,
+                refused: 1,
+                refusals: vec![RefusedControl {
+                    path: PathBuf::from("a/.gitignore"),
+                    reason: ControlRefusalReason::Budget,
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn a_refused_source_drops_the_rules_it_replaces_and_freed_budget_admits_it_later() {
         let mut table = ControlTable::default();
         let first = source_at_test_limit();
-        assert!(table.upsert(Path::new(".gitignore"), first).expect("at the shared bound"));
-        let error = table
-            .upsert(Path::new("nested/.gitignore"), b"ab".to_vec())
-            .expect_err("the table, not each source, is bounded");
-        assert!(matches!(error, crate::Error::ControlSourceLimit { .. }));
-        assert!(table.upsert(Path::new(".gitignore"), b"small\n".to_vec()).expect("replace"));
-        assert!(
-            table
-                .upsert(Path::new("nested/.gitignore"), b"now it fits\n".to_vec())
-                .expect("freed bytes are reusable")
+        assert_eq!(
+            table.upsert(Path::new(".gitignore"), first.clone()).expect("control path"),
+            CHANGED
         );
+        assert_eq!(
+            table
+                .upsert(Path::new("nested/.gitignore"), b"*.log\n".to_vec())
+                .expect("control path"),
+            OVER_BUDGET
+        );
+        let before = table.clone();
+
+        // Replacing the root's source with one that no longer fits drops the old rules
+        // rather than keeping rules that are no longer on disk.
+        let mut grown = first;
+        grown.push(b'\n');
+        assert_eq!(
+            table.upsert(Path::new(".gitignore"), grown).expect("control path"),
+            OVER_BUDGET
+        );
+        assert!(table.is_empty());
+        assert_eq!(table.changes_from(&before).len(), 1);
+        assert_eq!(
+            table.refusal_changes_from(&before),
+            vec![(PathBuf::from(".gitignore"), None, Some(ControlRefusalReason::Budget))]
+        );
+
+        // With the budget free, reading the nested file again admits it and lifts its refusal.
+        assert_eq!(
+            table
+                .upsert(Path::new("nested/.gitignore"), b"*.log\n".to_vec())
+                .expect("control path"),
+            CHANGED
+        );
+        assert_eq!(table.refused_len(), 1);
+        // Removing a refused file lifts its refusal too.
+        assert!(table.remove(Path::new(".gitignore")).expect("remove refused"));
+        assert_eq!(table.refused_len(), 0);
+        table.assert_consistent();
     }
 
     #[test]
@@ -626,17 +927,61 @@ mod tests {
         assert!(table.is_ignored(Path::new("bb/debug.log"), false));
     }
 
+    /// One line at the guard applies; one byte longer refuses the whole source, before any
+    /// parsing, so a hostile rule costs no matching work.
     #[test]
-    fn one_pattern_line_has_an_independent_work_bound() {
-        let source = vec![b'a'; MAX_CONTROL_PATTERN_BYTES + 1];
-        let error = ControlTable::default()
-            .upsert(Path::new(".gitignore"), source)
-            .expect_err("one hostile rule is rejected before parsing");
-        let crate::Error::ControlPatternLimit { attempted, limit } = error else {
-            panic!("unexpected control error: {error}");
-        };
-        assert_eq!(attempted, MAX_CONTROL_PATTERN_BYTES + 1);
-        assert_eq!(limit, MAX_CONTROL_PATTERN_BYTES);
+    fn the_line_guard_admits_its_own_length_and_refuses_one_byte_over_it() {
+        let mut table = ControlTable::default();
+        let at_guard = vec![b'a'; MAX_CONTROL_PATTERN_BYTES];
+        assert_eq!(
+            table.upsert(Path::new("a/.gitignore"), at_guard).expect("control path"),
+            CHANGED
+        );
+        let over = [b"*.log\n".as_slice(), &vec![b'a'; MAX_CONTROL_PATTERN_BYTES + 1]].concat();
+        assert_eq!(
+            table.upsert(Path::new("b/.gitignore"), over).expect("control path"),
+            OVER_LINE_GUARD
+        );
+        assert!(!table.is_ignored(Path::new("b/debug.log"), false), "no rule of it applies");
+        assert_eq!(
+            table.refusals().collect::<Vec<_>>(),
+            vec![RefusedControl {
+                path: PathBuf::from("b/.gitignore"),
+                reason: ControlRefusalReason::LineGuard,
+            }]
+        );
+    }
+
+    #[test]
+    fn an_unbounded_table_applies_what_the_bounds_would_refuse() {
+        let mut table = ControlTable::with_budget(None);
+        let long = [b"*.log\n".as_slice(), &vec![b'a'; MAX_CONTROL_PATTERN_BYTES + 1]].concat();
+        assert_eq!(table.upsert(Path::new(".gitignore"), long).expect("control path"), CHANGED);
+        assert_eq!(
+            table
+                .upsert(Path::new("big/.gitignore"), source_at_test_limit())
+                .expect("control path"),
+            CHANGED
+        );
+        assert!(table.retained_cost() > MAX_CONTROL_TABLE_BYTES);
+        assert!(table.is_ignored(Path::new("debug.log"), false));
+        assert_eq!(table.refused_len(), 0);
+    }
+
+    #[test]
+    fn a_listing_of_refusals_is_bounded_and_says_when_it_is_truncated() {
+        let mut table = ControlTable::with_budget(Some(0));
+        let refused = crate::MAX_RETAINED_ISSUES + 1;
+        for directory in 0..refused {
+            let path = PathBuf::from(format!("d{directory:03}/.gitignore"));
+            assert_eq!(table.upsert(&path, b"*\n".to_vec()).expect("control path"), OVER_BUDGET);
+        }
+        let observation = table.observation();
+        assert_eq!(observation.refused, u64::try_from(refused).expect("small"));
+        assert_eq!(observation.refusals.len(), crate::MAX_RETAINED_ISSUES);
+        assert_eq!(observation.refusals[0].path, Path::new("d000/.gitignore"));
+        assert!(!observation.lists_every_refusal());
+        assert!(!observation.is_complete());
     }
 
     #[test]

@@ -514,6 +514,7 @@ impl PyIndex {
                         item
                     }
                     fdu_core::EffectiveChange::ControlUpdated { .. }
+                    | fdu_core::EffectiveChange::ControlRefusalUpdated { .. }
                     | fdu_core::EffectiveChange::Reclassified { .. } => continue,
                 };
                 ops.append(item)?;

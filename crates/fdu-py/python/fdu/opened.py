@@ -20,12 +20,15 @@ from . import _native
 from ._api import FduError, FilesystemError, InvalidArgumentError, _epoch_nanos, _query_kwargs
 from ._models import (
     Bound,
+    ControlObservation,
+    ControlRefusalReason,
     EntryKind,
     Freshness,
     Query,
     Report,
     Selection,
     ValueSource,
+    control_observation_from_dict,
     report_from_dict,
 )
 
@@ -237,6 +240,7 @@ class EffectiveChangeKind(StrEnum):
     UPDATED = "updated"
     REMOVED = "removed"
     CONTROL_UPDATED = "control_updated"
+    CONTROL_REFUSAL_UPDATED = "control_refusal_updated"
     RECLASSIFIED = "reclassified"
     INVALIDATED = "invalidated"
 
@@ -660,6 +664,8 @@ class ReadDiagnostics:
     scope: ScanScope
     entries: int
     issues: tuple[Issue, ...]
+    #: The opened root always observes `.gitignore` control state.
+    controls: ControlObservation
 
 
 @dataclass(frozen=True, slots=True)
@@ -776,6 +782,8 @@ class EffectiveChange:
     current_attrs: Attributes | None = None
     previous_control: ControlIdentity | None = None
     current_control: ControlIdentity | None = None
+    previous_refusal: ControlRefusalReason | None = None
+    current_refusal: ControlRefusalReason | None = None
     previous_ignored: bool | None = None
     current_ignored: bool | None = None
     reason: InvalidateReason | None = None
@@ -1036,6 +1044,7 @@ def _diagnostics(value: object) -> ReadDiagnostics:
         scope=_scan_scope(raw["scope"]),
         entries=int(raw["entries"]),
         issues=tuple(_issue(issue) for issue in _sequence(raw["issues"], "diagnostic issues")),
+        controls=control_observation_from_dict(_mapping(raw["controls"], "control coverage")),
     )
 
 
@@ -1118,6 +1127,14 @@ def _control_identity(value: object) -> ControlIdentity:
     return ControlIdentity(bytes=int(raw["bytes"]), fingerprint=int(raw["fingerprint"]))
 
 
+def _refusal_reason(
+    raw: dict[str, Any], key: str, kind: EffectiveChangeKind
+) -> ControlRefusalReason | None:
+    if kind is not EffectiveChangeKind.CONTROL_REFUSAL_UPDATED or raw[key] is None:
+        return None
+    return ControlRefusalReason(str(raw[key]))
+
+
 def _effective_change(value: object) -> EffectiveChange:
     raw = _mapping(value, "effective change")
     kind = EffectiveChangeKind(str(raw["kind"]))
@@ -1138,6 +1155,8 @@ def _effective_change(value: object) -> EffectiveChange:
             if kind is EffectiveChangeKind.CONTROL_UPDATED and raw["current"] is not None
             else None
         ),
+        previous_refusal=_refusal_reason(raw, "previous", kind),
+        current_refusal=_refusal_reason(raw, "current", kind),
         previous_ignored=(
             bool(raw["previous_ignored"]) if kind is EffectiveChangeKind.RECLASSIFIED else None
         ),

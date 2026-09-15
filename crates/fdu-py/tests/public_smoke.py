@@ -323,15 +323,15 @@ def check_every_view(root: Path) -> None:
 def check_an_index_can_opt_out_of_control_state() -> None:
     """A default open or scan reads control files; one that opts out shares a report's scope.
 
-    A request that turns ``read_controls`` off reads no control file, so it cannot end on a
-    control-state bound, and its snapshot has a one-shot report's scope. A watch continues
-    its index's scope, so it inherits the same choice.
+    A request that turns ``read_controls`` off reads no control file, and its snapshot has a
+    one-shot report's scope. A watch continues its index's scope, so it inherits the same
+    choice.
     """
 
     root = Path(tempfile.mkdtemp(prefix="fdu-public-controls-"))
     (root / "kept.txt").write_text("kept", encoding="utf-8")
-    # One pattern longer than the engine's 16 KiB per-line bound, which an index that
-    # observed control state could not retain.
+    # One pattern longer than the engine's 16 KiB per-line guard, which an index that
+    # observes control state refuses.
     (root / ".gitignore").write_text("x" * (16 * 1024 + 1) + "\n", encoding="utf-8")
     opted_out = fdu.ScanOptions(read_controls=False)
 
@@ -341,14 +341,11 @@ def check_an_index_can_opt_out_of_control_state() -> None:
     ):
         assert index.status.complete is True, index.status.errors
         assert index.total().files == 2
-    try:
-        observed = fdu.scan(root)
-    except fdu.FduError:
-        pass
-    else:
-        # Degrading to partial coverage instead of failing (fdu-1onj) still shows the
-        # control file was read, which is what the default asks for.
-        assert observed.status.complete is False, "a default scan must read the control file"
+    # A default scan reads the control file and refuses the line over the guard, without
+    # ending the scan or making its sizes partial (fdu-1onj).
+    observed = fdu.scan(root)
+    assert observed.status.complete is True, observed.status.errors
+    assert observed.total().files == 2
 
     # A report and an opted-out open share one snapshot scope, so that open starts warm; a
     # default open observes control state the report's snapshot never held, and scans cold.

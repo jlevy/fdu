@@ -185,7 +185,8 @@ pub struct ScanConfig {
     /// On by default, so an [`Index`] from [`crate::open`] or a scan keeps the exact
     /// control state it exposes and a watch maintains: which entries are ignored, and the
     /// ignored and unignored partitions of every roll-up (fdu-elnn). It costs a read of
-    /// every `.gitignore` in the tree, and exposure to the control bounds.
+    /// every `.gitignore` in the tree. A file past the control bounds is refused and
+    /// named in [`Index::control_coverage`] rather than ending the scan.
     ///
     /// Off, the scan performs no control-file I/O and retains no control table, and that is
     /// stamped into [`ScanScope`], so an index-returning call never serves a snapshot taken
@@ -2993,6 +2994,10 @@ pub(crate) fn read_control_op(
 /// Read one fixed control source without allowing a raced or hostile file to allocate
 /// beyond the index-wide control budget.
 ///
+/// A file longer than the budget is read only to one byte past it. No table under that
+/// budget can admit a source that long, since every retained byte is charged at least
+/// once, so the truncated source it sends is refused for the budget rather than parsed.
+///
 /// Private to this module, so no caller elsewhere can step around the policy gate in
 /// `read_control_op`.
 fn read_control_op_unconditional(root: &Path, path: &Path, kind: EntryKind) -> Result<Option<Op>> {
@@ -3012,12 +3017,6 @@ fn read_control_op_unconditional(root: &Path, path: &Path, kind: EntryKind) -> R
         .saturating_add(1);
     let mut source = Vec::new();
     file.take(read_limit).read_to_end(&mut source).map_err(|error| Error::io(&absolute, error))?;
-    if source.len() >= crate::control::MAX_CONTROL_TABLE_BYTES {
-        return Err(Error::ControlSourceLimit {
-            attempted: source.len().saturating_add(crate::control::CONTROL_SOURCE_OVERHEAD),
-            limit: crate::control::MAX_CONTROL_TABLE_BYTES,
-        });
-    }
     Ok(Some(Op::ControlUpsert { path: path.to_path_buf(), source }))
 }
 
@@ -5756,30 +5755,114 @@ mod tests {
         assert_indexes_equal(&detached, &streaming);
     }
 
+    fn observed_coverage(index: &Index) -> crate::control::ControlObservation {
+        match index.control_coverage() {
+            crate::control::ControlCoverage::Observed(observation) => observation,
+            crate::control::ControlCoverage::NotObserved => panic!("controls were observed"),
+        }
+    }
+
+    /// Both bootstrap lanes refuse a line over the guard and a file over the budget, and
+    /// neither ends the scan or makes it partial. Both refusals are order-independent, so
+    /// the lanes agree on exactly which files they refused.
     #[test]
-    fn detached_control_bootstrap_matches_control_limit_failures() {
-        let pattern_dir = tempfile::tempdir().expect("pattern tempdir");
+    fn both_bootstrap_lanes_refuse_over_bound_controls_without_ending_the_scan() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut long_line = b"*.log\n".to_vec();
+        long_line.extend(std::iter::repeat_n(b'x', crate::control::MAX_CONTROL_PATTERN_BYTES + 1));
+        write_file(&dir.path().join("guarded/.gitignore"), &long_line);
+        write_file(&dir.path().join("guarded/kept.log"), b"guarded");
         write_file(
-            &pattern_dir.path().join(".gitignore"),
+            &dir.path().join("huge/.gitignore"),
+            &b"x\n".repeat(crate::control::MAX_CONTROL_TABLE_BYTES / 2),
+        );
+        write_file(&dir.path().join("applied/.gitignore"), b"*.log\n");
+        write_file(&dir.path().join("applied/dropped.log"), b"applied");
+        let config = ScanConfig { read_controls: true, threads: Some(4), ..ScanConfig::default() };
+
+        let (detached, _) = detached_and_streaming_indexes(dir.path(), &config);
+        let (_, report) = scan_into_index(dir.path(), &config).expect("scan");
+
+        assert!(report.is_complete(), "{:?}", report.errors);
+        let coverage = observed_coverage(&detached);
+        assert_eq!((coverage.applied, coverage.refused), (1, 2));
+        assert_eq!(
+            coverage.refusals,
+            vec![
+                crate::control::RefusedControl {
+                    path: PathBuf::from("guarded/.gitignore"),
+                    reason: crate::control::ControlRefusalReason::LineGuard,
+                },
+                crate::control::RefusedControl {
+                    path: PathBuf::from("huge/.gitignore"),
+                    reason: crate::control::ControlRefusalReason::Budget,
+                },
+            ]
+        );
+        assert_eq!(
+            detached.is_ignored(Path::new("guarded/kept.log")).expect("observed"),
+            Some(false)
+        );
+        assert_eq!(
+            detached.is_ignored(Path::new("applied/dropped.log")).expect("observed"),
+            Some(true)
+        );
+    }
+
+    /// The synthetic tree that ended a cold scan (fdu-1onj): 1,105 directories, each with
+    /// a distinct 510-byte `.gitignore` of short rules, plus one line over the guard. The
+    /// scan completes with every size exact and names what it refused, on both lanes.
+    #[test]
+    fn a_tree_past_both_control_bounds_completes_with_exact_sizes() {
+        const DIRECTORIES: usize = 1_105;
+        let dir = tempfile::tempdir().expect("tempdir");
+        for directory in 0..DIRECTORIES {
+            let mut source = Vec::new();
+            for line in 0..63 {
+                source.extend(format!("p{directory:04}{line:02}\n").bytes());
+            }
+            source.extend(format!("q{directory:04}\n").bytes());
+            assert_eq!(source.len(), 510);
+            let root = dir.path().join(format!("d{directory:04}"));
+            write_file(&root.join(".gitignore"), &source);
+            write_file(&root.join("file.txt"), b"contents");
+        }
+        write_file(
+            &dir.path().join("a-guard/.gitignore"),
             &vec![b'x'; crate::control::MAX_CONTROL_PATTERN_BYTES + 1],
         );
-        let config = ScanConfig { read_controls: true, threads: Some(4), ..ScanConfig::default() };
-        let canonical = pattern_dir.path().canonicalize().expect("canonical pattern root");
-        let Err(detached_error) = scan_into_index(pattern_dir.path(), &config) else {
-            panic!("detached scan accepted an oversized pattern");
-        };
-        let Err(streaming_error) = scan_into_index_via_scanner(&canonical, &config) else {
-            panic!("streaming scan accepted an oversized pattern");
-        };
-        assert!(matches!(detached_error, Error::ControlPatternLimit { .. }));
-        assert_eq!(detached_error.to_string(), streaming_error.to_string());
+        let observing =
+            ScanConfig { read_controls: true, threads: Some(4), ..ScanConfig::default() };
+        let blind = ScanConfig { read_controls: false, ..observing.clone() };
 
-        let source_dir = tempfile::tempdir().expect("source tempdir");
-        write_file(
-            &source_dir.path().join(".gitignore"),
-            &vec![b'x'; crate::control::MAX_CONTROL_TABLE_BYTES],
-        );
-        let _ = detached_and_streaming_indexes(source_dir.path(), &config);
+        let (unobserved, _) = scan_into_index(dir.path(), &blind).expect("controls-off scan");
+        let canonical = dir.path().canonicalize().expect("canonical root");
+        let lanes = [
+            scan_into_index(dir.path(), &observing).expect("detached scan"),
+            scan_into_index_via_scanner(&canonical, &observing).expect("streaming scan"),
+        ];
+        for (index, report) in &lanes {
+            assert!(report.is_complete(), "{:?}", report.errors);
+            assert_eq!(index.total(), unobserved.total(), "sizes do not depend on controls");
+            let coverage = observed_coverage(index);
+            assert!(coverage.refused > 1, "the budget refused sources: {coverage:?}");
+            assert_eq!(
+                coverage.applied + coverage.refused,
+                u64::try_from(DIRECTORIES + 1).expect("small")
+            );
+            assert_eq!(coverage.refusals.len(), crate::MAX_RETAINED_ISSUES);
+            assert!(!coverage.lists_every_refusal());
+            assert_eq!(
+                coverage.refusals[0],
+                crate::control::RefusedControl {
+                    path: PathBuf::from("a-guard/.gitignore"),
+                    reason: crate::control::ControlRefusalReason::LineGuard,
+                }
+            );
+            assert!(
+                index.control_table().retained_cost() <= crate::control::MAX_CONTROL_TABLE_BYTES
+            );
+        }
     }
 
     #[test]
@@ -5882,6 +5965,7 @@ mod tests {
         assert_eq!(left.len(), right.len());
         assert_eq!(left.issues(), right.issues());
         assert_eq!(left.observes_controls(), right.observes_controls());
+        assert_eq!(left.control_coverage(), right.control_coverage());
         assert_eq!(
             left.control_table()
                 .sources()
@@ -5942,6 +6026,7 @@ mod tests {
                     Some(Op::InvalidateSubtree { path: path.clone(), reason: *reason })
                 }
                 crate::EffectiveChange::ControlUpdated { .. }
+                | crate::EffectiveChange::ControlRefusalUpdated { .. }
                 | crate::EffectiveChange::Reclassified { .. } => None,
             })
             .collect();

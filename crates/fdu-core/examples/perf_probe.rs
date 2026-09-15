@@ -1084,7 +1084,9 @@ fn opened_discovery_with_options(
                 EffectiveChange::Invalidated { .. } => {
                     summary.apply.invalidated = summary.apply.invalidated.saturating_add(1);
                 }
-                EffectiveChange::ControlUpdated { .. } | EffectiveChange::Reclassified { .. } => {}
+                EffectiveChange::ControlUpdated { .. }
+                | EffectiveChange::ControlRefusalUpdated { .. }
+                | EffectiveChange::Reclassified { .. } => {}
             }
         }
     }

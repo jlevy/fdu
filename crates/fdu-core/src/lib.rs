@@ -94,8 +94,9 @@ pub use crate::cache::{
     CacheStatus, SnapshotInfo, cache_status, clear_all_caches, clear_cache, list_caches,
 };
 pub use crate::control::{
-    CONTROL_FILE_NAME, ControlIdentity, ControlMatcher, ControlTable, MAX_CONTROL_TABLE_BYTES,
-    is_control_file,
+    CONTROL_FILE_NAME, ControlAdmission, ControlCoverage, ControlIdentity, ControlMatcher,
+    ControlObservation, ControlRefusalReason, ControlTable, MAX_CONTROL_TABLE_BYTES,
+    RefusedControl, is_control_file,
 };
 pub use crate::engine_contract::{
     Attrs, ChangeOutcome, ChangePoll, ChangeRequest, Clock, Commit, ContinuationId, CountResult,
@@ -320,9 +321,9 @@ impl OpenReport {
 /// [`CachePolicy::Only`]. A caller wanting a single answer should use [`prepare_report`].
 ///
 /// A caller that reads no ignore classification may turn the field off. Its `open` reads
-/// no `.gitignore`, cannot end on a control bound, and shares the one-shot report's
-/// snapshot scope, and its index answers [`Index::is_ignored`] and [`Index::controls`]
-/// with [`Error::ControlStateNotObserved`] rather than calling every entry unignored.
+/// no `.gitignore` and shares the one-shot report's snapshot scope, and its index answers
+/// [`Index::is_ignored`] and [`Index::controls`] with [`Error::ControlStateNotObserved`]
+/// rather than calling every entry unignored.
 pub fn open(root: &Path, config: &OpenConfig) -> Result<(Index, OpenReport)> {
     let (index, report, pending) = open_with_pending_save(root, config)?;
     // Joining first is what makes the unwrap infallible: the writer held the only other
@@ -844,10 +845,12 @@ mod tests {
         let mut oversized = vec![b'x'; crate::control::MAX_CONTROL_PATTERN_BYTES + 1];
         oversized.extend_from_slice(b"\n*.log\n");
         write_file(&root.path().join(".gitignore"), &oversized);
-        assert!(
-            open(root.path(), &uncached).map_or(true, |(_, report)| !report.is_complete()),
-            "a default open must read the control file the opt-out skips"
-        );
+        let (index, report) = open(root.path(), &uncached).expect("a refused control ends nothing");
+        assert!(report.is_complete(), "{:?}", report.errors());
+        let crate::control::ControlCoverage::Observed(coverage) = index.control_coverage() else {
+            panic!("a default open reads the control file the opt-out skips");
+        };
+        assert_eq!((coverage.applied, coverage.refused), (0, 1));
 
         let (index, report) = open(root.path(), &opted_out)
             .expect("an opted-out open reads no control line, however long");

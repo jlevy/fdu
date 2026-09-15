@@ -633,12 +633,11 @@ mod tests {
         assert_eq!(performance.source, ReportSource::ColdScan);
     }
 
-    /// Control sources no scan can observe without saying so.
+    /// Control sources past both bounds, so no scan can observe them without saying so.
     ///
-    /// The root rule is longer than the per-pattern bound, so retaining it aborts an index
-    /// build; the nested source is at the table bound, so reading it fails in either tier
-    /// and makes the report partial. A report that stays complete over this tree
-    /// performed no control observation.
+    /// The root rule is longer than the per-line guard and the nested source is past the
+    /// table budget. An observing scan refuses both and records it in its control coverage;
+    /// a report whose scope observes no control state read neither.
     fn write_unobservable_controls(root: &Path) {
         let mut rule = vec![b'a'; crate::control::MAX_CONTROL_PATTERN_BYTES + 1];
         rule.push(b'\n');

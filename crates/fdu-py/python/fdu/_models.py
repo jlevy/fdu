@@ -8,7 +8,7 @@ typed values; callers never need to know the private extension's wire shape.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -169,6 +169,61 @@ class Bound(StrEnum):
     ALL = "all"
 
 
+class ControlRefusalReason(StrEnum):
+    """Which bound refused a ``.gitignore`` instead of applying its rules."""
+
+    #: Retaining it would have taken the index past its control budget.
+    BUDGET = "budget"
+    #: One of its lines is longer than the per-line guard.
+    LINE_GUARD = "line_guard"
+
+
+@dataclass(frozen=True, slots=True)
+class RefusedControl:
+    """One ``.gitignore`` whose rules an index refused, relative to the root."""
+
+    path: Path
+    reason: ControlRefusalReason
+
+
+@dataclass(frozen=True, slots=True)
+class ControlObservation:
+    """The ``.gitignore`` files an index applied and refused.
+
+    Sizes and counts never depend on this. Below a refused file the ignored and unignored
+    split is not exact in either direction, because the file may have held negations.
+    """
+
+    #: Retained-charge budget in bytes, or ``None`` when unbounded.
+    budget: int | None
+    applied: int
+    #: Counted exactly, even when ``refusals`` is truncated.
+    refused: int
+    #: The first refused files in path order; shorter than ``refused`` when truncated.
+    refusals: tuple[RefusedControl, ...] = ()
+
+    @property
+    def is_complete(self) -> bool:
+        return self.refused == 0
+
+    @property
+    def lists_every_refusal(self) -> bool:
+        return len(self.refusals) == self.refused
+
+
+def control_observation_from_dict(value: Mapping[str, Any]) -> ControlObservation:
+    budget = value["budget"]
+    return ControlObservation(
+        budget=None if budget is None else int(budget),
+        applied=int(value["applied"]),
+        refused=int(value["refused"]),
+        refusals=tuple(
+            RefusedControl(path=Path(item["path"]), reason=ControlRefusalReason(item["reason"]))
+            for item in value["refusals"]
+        ),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ScanOptions:
     """Filesystem scope for an initial scan and later refreshes."""
@@ -177,9 +232,8 @@ class ScanOptions:
     one_filesystem: bool = False
     #: Observe ``.gitignore`` control state, as the engine's ``ScanConfig.read_controls``.
     #: On by default, so an index from :func:`fdu.open` or :func:`fdu.scan`, and a watch
-    #: over it, keep the exact control state. Off, they read no control file and cannot fail
-    #: on a control-state bound, and :func:`fdu.open` shares one snapshot scope with
-    #: :func:`fdu.report`.
+    #: over it, keep the exact control state. Off, they read no control file and
+    #: :func:`fdu.open` shares one snapshot scope with :func:`fdu.report`.
     #: :func:`fdu.report` never observes control state and ignores this field, as the
     #: engine's report planner does.
     read_controls: bool = True

@@ -647,6 +647,12 @@ fn control_identity_dict(
     Ok(out)
 }
 
+const fn control_refusal_reason_label(
+    reason: fdu_core::control::ControlRefusalReason,
+) -> &'static str {
+    reason.label()
+}
+
 fn effective_change_dict<'py>(
     py: Python<'py>,
     change: &EffectiveChange,
@@ -683,6 +689,12 @@ fn effective_change_dict<'py>(
                 "current",
                 current.map(|value| control_identity_dict(py, value)).transpose()?,
             )?;
+        }
+        EffectiveChange::ControlRefusalUpdated { path, previous, current } => {
+            out.set_item("kind", "control_refusal_updated")?;
+            out.set_item("path", path.as_os_str())?;
+            out.set_item("previous", previous.map(control_refusal_reason_label))?;
+            out.set_item("current", current.map(control_refusal_reason_label))?;
         }
         EffectiveChange::Reclassified { path, previous_ignored, current_ignored } => {
             out.set_item("kind", "reclassified")?;
@@ -783,6 +795,27 @@ fn diagnostics_dict<'py>(
         issues.append(issue_dict(py, issue)?)?;
     }
     out.set_item("issues", issues)?;
+    out.set_item("controls", control_observation_dict(py, &diagnostics.controls)?)?;
+    Ok(out)
+}
+
+/// The same shape a report's JSON `ignore_rules` field carries.
+pub(crate) fn control_observation_dict<'py>(
+    py: Python<'py>,
+    observation: &fdu_core::control::ControlObservation,
+) -> PyResult<Bound<'py, PyDict>> {
+    let out = PyDict::new(py);
+    out.set_item("budget", observation.budget)?;
+    out.set_item("applied", observation.applied)?;
+    out.set_item("refused", observation.refused)?;
+    let refusals = PyList::empty(py);
+    for refusal in &observation.refusals {
+        let item = PyDict::new(py);
+        item.set_item("path", refusal.path.as_os_str())?;
+        item.set_item("reason", refusal.reason.label())?;
+        refusals.append(item)?;
+    }
+    out.set_item("refusals", refusals)?;
     Ok(out)
 }
 

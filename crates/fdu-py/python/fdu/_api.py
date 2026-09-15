@@ -419,9 +419,8 @@ def report(
     not have, visible to a later cache-only read.
 
     A report never observes ``.gitignore`` control state, because no view reads it, so it
-    opens no control file and cannot fail on the control-state bound, and it ignores
-    ``ScanOptions.read_controls``. See :func:`open` for what that means for sharing a
-    snapshot with an index.
+    opens no control file, and it ignores ``ScanOptions.read_controls``. See :func:`open`
+    for what that means for sharing a snapshot with an index.
 
     Use :func:`open` when you will ask more than one question; the index is the point.
     """
