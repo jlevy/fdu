@@ -300,7 +300,8 @@ impl OpenedIndex {
     /// A poll waiting on an idle journal returns as soon as an owned worker panics, with
     /// [`Error::OpenedWorkerPanicked`] naming the worker -- the cause [`Self::close`] will
     /// report -- rather than at its timeout. Commits retained before the panic are still
-    /// returned first.
+    /// returned first, unless the panic struck inside a commit: that poisons the index,
+    /// which leaves nothing to read, and the poll reports the panic rather than the poison.
     pub fn changes(&self, request: crate::ChangeRequest) -> Result<crate::ChangePoll> {
         self.ensure_open()?;
         journal::poll(self, request)
@@ -1879,18 +1880,18 @@ impl WorkerFailures {
 
     /// The failure close reports.
     ///
-    /// The earliest, unless the earliest is only the trace another worker's panic left. A
-    /// poisoned lock is a consequence: the guard is poisoned while its thread is still
+    /// The earliest, unless the earliest is only the trace a recorded worker panic left. A
+    /// poisoned lock is then a consequence: the guard is poisoned while its thread is still
     /// unwinding, before that thread can record its panic, so the worker that trips over
-    /// the poison can record first. Discovery's `IndexLockPoisoned` then stood in for the
-    /// observation worker's panic.
+    /// the poison can record first, and discovery's `IndexLockPoisoned` would stand in for
+    /// the observation worker's panic. With no panic recorded, nothing here explains the
+    /// poisoning -- the caller's own thread may have panicked inside a commit -- so it is
+    /// a failure like any other, and a later unrelated error does not displace it.
     fn first(&self) -> Option<CloseOutcome> {
         let recorded = self.recorded.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        recorded
-            .iter()
-            .find(|outcome| !outcome.is_poison_trace())
-            .or_else(|| recorded.first())
-            .cloned()
+        let panicked =
+            recorded.iter().any(|outcome| matches!(outcome, CloseOutcome::WorkerPanicked { .. }));
+        recorded.iter().find(|outcome| !(panicked && outcome.is_poison_trace())).cloned()
     }
 }
 
@@ -2354,32 +2355,42 @@ mod tests {
     }
 
     /// A poll blocked on the journal learns of a worker panic when it happens, with the
-    /// cause close will report, instead of sleeping to its timeout.
+    /// cause close will report, instead of sleeping to its timeout. That holds for a panic
+    /// inside a commit too, the likeliest place for one: the unwinding guard poisons the
+    /// index lock, and the poll reports the panic rather than the poisoning it left.
     #[test]
     fn a_worker_panic_wakes_a_blocked_change_poll_with_its_typed_failure() {
-        let controls = Arc::new(TestControls::default());
-        controls.gate(TestPoint::BeforeJournalWait).arm();
-        let (_root, opened) = opened(Arc::clone(&controls));
-        let cursor = current_version(&opened);
-        let poller = opened.clone();
-        let poll = thread::spawn(move || {
-            poller.changes(crate::ChangeRequest {
-                after: cursor,
-                timeout: std::time::Duration::from_secs(60),
-            })
-        });
-        controls.gate(TestPoint::BeforeJournalWait).wait_reached();
-        opened
-            .spawn_worker("panic", |_cancellation| panic!("injected worker panic"))
-            .expect("spawn worker");
-        controls.gate(TestPoint::BeforeJournalWait).release();
+        for holds_index_lock in [false, true] {
+            let controls = Arc::new(TestControls::default());
+            controls.gate(TestPoint::BeforeJournalWait).arm();
+            let (_root, opened) = opened(Arc::clone(&controls));
+            let cursor = current_version(&opened);
+            let poller = opened.clone();
+            let poll = thread::spawn(move || {
+                poller.changes(crate::ChangeRequest {
+                    after: cursor,
+                    timeout: std::time::Duration::from_secs(60),
+                })
+            });
+            controls.gate(TestPoint::BeforeJournalWait).wait_reached();
+            let index = opened.state.index.clone();
+            opened
+                .spawn_worker("panic", move |_cancellation| {
+                    if holds_index_lock {
+                        index.panic_holding_the_write_lock_for_test();
+                    }
+                    panic!("injected worker panic")
+                })
+                .expect("spawn worker");
+            controls.gate(TestPoint::BeforeJournalWait).release();
 
-        let outcome = poll.join().expect("poll thread");
-        assert!(
-            matches!(outcome, Err(Error::OpenedWorkerPanicked { worker: "panic" })),
-            "{outcome:?}"
-        );
-        assert!(matches!(opened.close(), Err(Error::OpenedWorkerPanicked { worker: "panic" })));
+            let outcome = poll.join().expect("poll thread");
+            assert!(
+                matches!(outcome, Err(Error::OpenedWorkerPanicked { worker: "panic" })),
+                "holds index lock {holds_index_lock}: {outcome:?}"
+            );
+            assert!(matches!(opened.close(), Err(Error::OpenedWorkerPanicked { worker: "panic" })));
+        }
     }
 
     /// Close reports the failure that happened first, not the worker that was spawned first.
@@ -2418,6 +2429,36 @@ mod tests {
         wait_for_worker_exit(&opened, "panicked");
 
         assert!(matches!(opened.close(), Err(Error::OpenedWorkerPanicked { worker: "panicked" })));
+    }
+
+    /// Without a recorded panic, nothing explains a poisoning: the caller's own thread can
+    /// poison the index by panicking inside a commit. A worker that trips over it first is
+    /// then the earliest failure, and close reports it rather than a later, unrelated one.
+    #[test]
+    fn close_reports_a_poisoning_no_worker_panic_explains_when_it_came_first() {
+        let (_root, opened) = opened(Arc::default());
+        opened.state.index.poison_for_test();
+        let index = opened.state.index.clone();
+        opened
+            .spawn_worker("tripped", move |_cancellation| index.clock().map(|_| ()))
+            .expect("spawn tripped worker");
+        wait_for_worker_exit(&opened, "tripped");
+        opened
+            .spawn_worker("later", |_cancellation| {
+                Err(Error::CommitRejected("unrelated later failure"))
+            })
+            .expect("spawn later worker");
+        wait_for_worker_exit(&opened, "later");
+
+        let closed = opened.close();
+        assert!(
+            matches!(
+                &closed,
+                Err(Error::OpenedWorkerFailed { worker: "tripped", source })
+                    if matches!(**source, Error::IndexLockPoisoned)
+            ),
+            "{closed:?}"
+        );
     }
 
     #[test]
@@ -2503,9 +2544,9 @@ mod tests {
         ));
 
         let minimum = crate::MIN_JOURNAL_CAPACITY_BYTES;
-        let below_one_commit =
+        let below_minimum =
             OpenOptions { journal_capacity_bytes: minimum - 1, ..OpenOptions::default() };
-        let error = OpenedIndex::open(root.path(), below_one_commit).expect_err("refused");
+        let error = OpenedIndex::open(root.path(), below_minimum).expect_err("refused");
         assert!(
             matches!(error, Error::JournalCapacityTooSmall { requested, minimum: stated }
                 if requested == minimum - 1 && stated == minimum),
@@ -2514,8 +2555,8 @@ mod tests {
         let message = error.to_string();
         assert!(message.contains(&format!("at least {minimum} bytes")), "{message}");
 
-        let one_commit = OpenOptions { journal_capacity_bytes: minimum, ..OpenOptions::default() };
-        OpenedIndex::open(root.path(), one_commit).expect("accepted").close().expect("close");
+        let at_minimum = OpenOptions { journal_capacity_bytes: minimum, ..OpenOptions::default() };
+        OpenedIndex::open(root.path(), at_minimum).expect("accepted").close().expect("close");
     }
 
     #[test]
@@ -2964,8 +3005,8 @@ mod tests {
         second.close().expect("second close");
     }
 
-    #[test]
-    fn a_slow_consumer_gets_one_coherent_all_dirty_reset() {
+    /// Opens a root with no discovery, at the smallest journal budget it accepts.
+    fn opened_at_the_minimum_journal_budget() -> (tempfile::TempDir, OpenedIndex) {
         let controls = Arc::new(TestControls::default());
         controls.discovery_disabled.store(true, Ordering::Release);
         let root = tempfile::tempdir().expect("temp root");
@@ -2978,15 +3019,56 @@ mod tests {
             controls,
         )
         .expect("opened root");
+        (root, opened)
+    }
+
+    /// The least budget accepted holds history worth polling, not one commit: a consumer
+    /// that falls behind by a burst of single-file commits still receives every one.
+    #[test]
+    fn the_minimum_journal_budget_delivers_a_burst_of_single_file_commits() {
+        const BURST: usize = 64;
+        let (_root, opened) = opened_at_the_minimum_journal_budget();
         let after = current_version(&opened);
-        apply_and_notify(
+        for index in 0..BURST {
+            apply_and_notify(
+                &opened,
+                &Observation::new(vec![Op::Upsert {
+                    path: PathBuf::from(format!("file-{index:02}")),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs::default(),
+                }]),
+            );
+        }
+
+        let poll = opened
+            .changes(crate::ChangeRequest { after, timeout: std::time::Duration::ZERO })
+            .expect("burst");
+        let crate::ChangeOutcome::Changes { commits, .. } = &poll.outcome else {
+            panic!("expected the burst's commits: {:?}", poll.outcome);
+        };
+        assert_eq!(commits.len(), BURST);
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn a_slow_consumer_gets_one_coherent_all_dirty_reset() {
+        let (_root, opened) = opened_at_the_minimum_journal_budget();
+        let after = current_version(&opened);
+        // One commit that costs more than the whole budget: many long names at once.
+        let outcome = apply_and_notify(
             &opened,
-            &Observation::new(vec![Op::Upsert {
-                path: PathBuf::from("larger-than-history"),
-                kind: EntryKind::File,
-                attrs: crate::Attrs::default(),
-            }]),
+            &Observation::new(
+                (0..=crate::MAX_DIRTY_PATHS)
+                    .map(|index| Op::Upsert {
+                        path: PathBuf::from(format!("{index:0>200}")),
+                        kind: EntryKind::File,
+                        attrs: crate::Attrs::default(),
+                    })
+                    .collect(),
+            ),
         );
+        let commit = outcome.commit.expect("effective commit");
+        assert!(commit.retained_cost() > crate::MIN_JOURNAL_CAPACITY_BYTES);
 
         let poll = opened
             .changes(crate::ChangeRequest { after, timeout: std::time::Duration::ZERO })
@@ -7019,72 +7101,86 @@ mod tests {
     /// A refresh that commits the very facts the handoff is about to commit is not a
     /// conflict. The handoff's conditional upserts were refused as stale because their
     /// baselines had moved, so it walked the whole root again, and three such refreshes in
-    /// a row failed the root over commits that would have applied as unchanged.
+    /// a row failed the root over commits that would have applied as unchanged. A control
+    /// file is the case with two ops on one baseline, the entry and its rules, and both
+    /// must converge.
     #[cfg(feature = "watch")]
     #[test]
     fn handoff_settles_through_a_convergent_refresh_without_a_second_walk() {
-        let root = tempfile::tempdir().expect("temp root");
-        let scripts = tempfile::tempdir().expect("script root");
-        let path = root.path().join("shared.txt");
-        std::fs::write(&path, b"before").expect("fixture");
-        let script = scripts.path().join("events.script");
-        std::fs::write(&script, b"").expect("script");
-        let controls = Arc::new(TestControls::default());
-        controls.gate(TestPoint::BeforeObservationHandoff).arm();
-        controls.gate(TestPoint::AfterObservationVerification).arm();
-        let opened = OpenedIndex::open_for_test(
-            root.path(),
-            scripted_options(&script),
-            Arc::clone(&controls),
-        )
-        .expect("open scripted observer");
-        controls.gate(TestPoint::BeforeObservationHandoff).wait_reached();
-        // Discovery retained six bytes; the handoff's walk is about to stat seven.
-        std::fs::write(&path, b"changed").expect("mutation before the handoff walk");
-        controls.gate(TestPoint::BeforeObservationHandoff).release();
-        controls.gate(TestPoint::AfterObservationVerification).wait_reached();
+        for name in ["shared.txt", ".gitignore"] {
+            let root = tempfile::tempdir().expect("temp root");
+            let scripts = tempfile::tempdir().expect("script root");
+            let path = root.path().join(name);
+            std::fs::write(&path, b"before").expect("fixture");
+            let script = scripts.path().join("events.script");
+            std::fs::write(&script, b"").expect("script");
+            let controls = Arc::new(TestControls::default());
+            controls.gate(TestPoint::BeforeObservationHandoff).arm();
+            controls.gate(TestPoint::AfterObservationVerification).arm();
+            let opened = OpenedIndex::open_for_test(
+                root.path(),
+                scripted_options(&script),
+                Arc::clone(&controls),
+            )
+            .expect("open scripted observer");
+            controls.gate(TestPoint::BeforeObservationHandoff).wait_reached();
+            // Discovery retained six bytes; the handoff's walk is about to stat seven.
+            std::fs::write(&path, b"changed").expect("mutation before the handoff walk");
+            controls.gate(TestPoint::BeforeObservationHandoff).release();
+            controls.gate(TestPoint::AfterObservationVerification).wait_reached();
 
-        // The refresh sees the same seven bytes and commits them first.
-        let refreshed = opened.refresh(&[PathBuf::from("shared.txt")]).expect("refresh");
-        assert_eq!(refreshed.work.stale, 0);
-        assert_eq!(refreshed.work.observations, 1);
-        controls.gate(TestPoint::AfterObservationVerification).release();
+            // The refresh sees the same seven bytes and commits them first.
+            let refreshed = opened.refresh(&[PathBuf::from(name)]).expect("refresh");
+            assert_eq!(refreshed.work.stale, 0, "{name}");
+            let ops = if name == crate::control::CONTROL_FILE_NAME { 2 } else { 1 };
+            assert_eq!(refreshed.work.observations, ops, "{name}");
+            controls.gate(TestPoint::AfterObservationVerification).release();
 
-        let state = wait_until_phase(&opened, crate::LifecyclePhase::Watching);
-        assert_eq!(state.coverage, crate::Coverage::Complete);
-        assert_eq!(state.freshness, crate::Freshness::Fresh);
-        let since = opened.state.index.since(crate::Clock::ZERO).expect("journal");
-        let transitions: Vec<&crate::StateTransition> =
-            since.commits.iter().flat_map(|commit| commit.state.iter()).collect();
-        // A refused pass leaves the root partial before the retry verifies it.
-        assert!(
-            !transitions.iter().any(|transition| matches!(
-                transition,
-                crate::StateTransition::Freshness { current: crate::Freshness::Partial, .. }
-            )),
-            "the handoff's first pass was refused: {transitions:?}"
-        );
-        assert_eq!(
-            transitions
-                .iter()
-                .filter(|transition| matches!(
+            let state = wait_until_phase(&opened, crate::LifecyclePhase::Watching);
+            assert_eq!(state.coverage, crate::Coverage::Complete, "{name}");
+            assert_eq!(state.freshness, crate::Freshness::Fresh, "{name}");
+            let since = opened.state.index.since(crate::Clock::ZERO).expect("journal");
+            let transitions: Vec<&crate::StateTransition> =
+                since.commits.iter().flat_map(|commit| commit.state.iter()).collect();
+            // A refused pass leaves the root partial before the retry verifies it.
+            assert!(
+                !transitions.iter().any(|transition| matches!(
                     transition,
-                    crate::StateTransition::Verified { path } if path.as_os_str().is_empty()
-                ))
-                .count(),
-            1
-        );
-        assert_eq!(
-            opened
-                .state
-                .index
-                .attrs(Path::new("shared.txt"))
-                .expect("attrs")
-                .expect("retained")
-                .size,
-            7
-        );
-        opened.close().expect("close");
+                    crate::StateTransition::Freshness { current: crate::Freshness::Partial, .. }
+                )),
+                "{name}: the handoff's first pass was refused: {transitions:?}"
+            );
+            assert_eq!(
+                transitions
+                    .iter()
+                    .filter(|transition| matches!(
+                        transition,
+                        crate::StateTransition::Verified { path } if path.as_os_str().is_empty()
+                    ))
+                    .count(),
+                1,
+                "{name}"
+            );
+            let index = &opened.state.index;
+            assert_eq!(
+                index.attrs(Path::new(name)).expect("attrs").expect("retained").size,
+                7,
+                "{name}"
+            );
+            if name == crate::control::CONTROL_FILE_NAME {
+                assert!(
+                    index
+                        .read_with(|index| {
+                            index.controls().is_ok_and(|controls| {
+                                controls.source_is(Path::new(name), b"changed")
+                            })
+                        })
+                        .expect("controls"),
+                    "the refreshed rules are retained"
+                );
+            }
+            opened.close().expect("close");
+        }
     }
 
     #[cfg(feature = "watch")]

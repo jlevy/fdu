@@ -280,13 +280,14 @@ class OpenedOptions:
     max_files: int | None = None
     observe: bool = False
     #: A byte budget for the exact change journal ``changes()`` reads from, or ``None``
-    #: for the engine default of 8 MiB. The smallest budget is 512 bytes, enough to retain
-    #: one commit: a smaller positive value raises ``InvalidArgumentError`` at open. Bytes
-    #: are estimated rather than measured: each retained commit costs a fixed allowance,
-    #: plus, for every change, state transition, and dirty path it holds, a fixed allowance
-    #: and the bytes of the path it names. A consumer that falls further behind than the
-    #: budget is told so with a ``RESET`` outcome and re-reads state; there is no unbounded
-    #: setting.
+    #: for the engine default of 8 MiB. The smallest budget is the engine's minimum,
+    #: ``MIN_JOURNAL_CAPACITY_BYTES`` in Rust: a floor that refuses an item count passed
+    #: where bytes are expected, so a smaller positive value raises ``InvalidArgumentError``
+    #: at open, and the error names the minimum. Bytes are estimated rather than measured:
+    #: each retained commit costs a fixed allowance, plus, for every change, state
+    #: transition, and dirty path it holds, a fixed allowance and the bytes of the path it
+    #: names. A consumer that falls further behind than the budget is told so with a
+    #: ``RESET`` outcome and re-reads state; there is no unbounded setting.
     journal_capacity_bytes: int | None = None
     #: The file-type registry: the text of the File Rollup registry document (what
     #: MetaBrowser calls "the registry", ``recommended-file-types.toml``), or ``None`` for

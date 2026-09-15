@@ -70,7 +70,7 @@ pub(super) fn poll(opened: &OpenedIndex, request: ChangeRequest) -> Result<Chang
             return Err(Error::OpenedIndexClosed);
         }
 
-        let snapshot = opened.state.index.read_with(|index| {
+        let read = opened.state.index.read_with(|index| {
             let scope = index.scope();
             let version = EngineVersion {
                 session: opened.state.session,
@@ -83,7 +83,23 @@ pub(super) fn poll(opened: &OpenedIndex, request: ChangeRequest) -> Result<Chang
             debug_assert_eq!(since.clock, version.sequence);
             debug_assert_eq!(since.state, index.state());
             Ok(JournalSnapshot { version, state: since.state, since })
-        })??;
+        });
+        let snapshot = match read {
+            Ok(snapshot) => snapshot?,
+            Err(Error::IndexLockPoisoned) => {
+                // A worker that panics inside a commit, the likeliest place for a panic,
+                // poisons the index lock as it unwinds. Once the panic is recorded it is
+                // the cause close reports, and the poisoning is only its trace.
+                return Err(opened
+                    .state
+                    .failures
+                    .panicked()
+                    .map_or(Error::IndexLockPoisoned, |worker| Error::OpenedWorkerPanicked {
+                        worker,
+                    }));
+            }
+            Err(error) => return Err(error),
+        };
 
         if opened.state.cancellation.is_cancelled() {
             return Err(Error::OpenedIndexClosed);

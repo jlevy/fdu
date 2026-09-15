@@ -316,7 +316,7 @@ impl OpenReport {
 /// with observation off, so the two keep snapshots of different scope at one cache path.
 /// A default `open` never starts from a report's snapshot: a policy that scans treats it
 /// as a miss and scans cold, and [`CachePolicy::Only`], which never scans, fails with an
-/// error naming the remedy. A report consumes an `open` snapshot only under
+/// error naming the remedy. A report consumes a default `open`'s snapshot only under
 /// [`CachePolicy::Only`]. A caller wanting a single answer should use [`prepare_report`].
 ///
 /// A caller that reads no ignore classification may turn the field off. Its `open` reads

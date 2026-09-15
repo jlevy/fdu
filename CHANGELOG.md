@@ -28,13 +28,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     payload integrity checks, complete-only concurrency-safe atomic replacement, and
     corrupt-equals-empty semantics.
     Unix snapshots are created owner-only (`0600`).
-  - **Watch layer** (`watch.rs`, feature `watch`): notify-backed, coalescing then
+  - **Watch layer** (`watch.rs`, build feature `watch`): notify-backed, coalescing then
     verifying by stat, with `Flag::Rescan` escalated to `InvalidateSubtree` rather than
     dropped, plus an apply/reconcile driver that closes invalidations.
     The applying driver re-verifies queued samples at a clock-stable commit boundary,
     rejects a watcher for another root, and rejects depth- and filesystem-restricted
     scopes until events can be filtered against those boundaries.
-  - **CLI** (feature `cli`): composable scope, selection, view, format, and mode axes;
+  - **CLI** (the `fdu` crate): composable scope, selection, view, format, and mode axes;
     compact human tree output; schema-versioned text/JSON/JSONL/YAML reports; cache
     lifecycle controls; and a `tail -f`-style watch stream.
     Reports require an explicit path, while bare `fdu` prints help without scanning the
@@ -79,8 +79,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   fixed allowance per commit and per retained change, transition, or dirty path, plus
   each path’s bytes, so a budget means the same on every platform.
   The default, `DEFAULT_JOURNAL_CAPACITY_BYTES`, is 8 MiB. Opening a root refuses a
-  budget below `MIN_JOURNAL_CAPACITY_BYTES`, which could not retain a single commit,
-  with an error naming the unit and the minimum (`InvalidArgumentError` in Python).
+  budget below `MIN_JOURNAL_CAPACITY_BYTES`, 64 KiB, with an error naming the unit and
+  the minimum (`InvalidArgumentError` in Python).
+  The floor is the old item-count default, so any count passed as bytes is refused or
+  works, and it holds about a hundred single-file commits.
 - A name a directory listing returned that is gone by the time it is stat’d is recorded
   as deleted on every walk: cold scans, reconciliation, `revalidate`, watches, and
   opened-root discovery and refresh.
@@ -93,6 +95,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Opened-root lifecycle reporting:
   - A panicking worker wakes a blocked `changes()` poll, which returns
     `OpenedWorkerPanicked` after delivering the commits retained before the panic.
+    A panic inside a commit poisons the index and leaves nothing to deliver, and the
+    poll still names the panic rather than the poisoned lock.
     `close()` reports the earliest failure, ranking a panic ahead of the poisoned lock
     it left behind.
   - A refresh or observation pass records each directory it listed as complete unless an
@@ -104,7 +108,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `Watching`.
   - A refresh that verifies the same facts as a concurrent producer applies as unchanged
     rather than as a lost race, so it does not send the observation handoff around again
-    or fail the root.
+    or fail the root. That includes a `.gitignore`’s rules as well as its entry.
   - A refresh on a `Failed` root keeps the issue that explains the failure.
 - An index that did not observe `.gitignore` control state says so instead of calling
   every entry unignored.
@@ -121,12 +125,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   feature is removed from `fdu-core` and `fdu`. `fdu`’s default build features are now
   `["watch"]`, and a dependent that asks for `features = ["gitignore"]` fails to
   resolve. `ScanConfig::read_controls` is the only switch for reading control files.
-  A consumer that built without the `gitignore` build feature sees two changes:
+  A consumer that built without the `gitignore` build feature sees three changes:
+  - A scope with `read_controls` on, which is the default, now observes control state.
+    `Index::is_ignored`, `controls`, and the partition accessors answer instead of
+    refusing, `ChildSnapshot` carries the ignore bit and partitions, the scan reads
+    every `.gitignore` in the tree, and it can reach the control bounds.
   - Control input through `ControlTable::upsert` or `Index::apply` is applied, or
     refused with `Error::ControlStateNotObserved` on a scope that observes no control
     state, where it used to fail with `Error::UnsupportedScanConfig`.
-  - A scope that reads control files now has ignore-rules fingerprint 2 rather than 0,
-    so a snapshot written under it misses once and is rebuilt by a cold scan.
+  - A scope with `read_controls` on now has ignore-rules fingerprint 2 rather than 0, so
+    a snapshot written under it misses once and is rebuilt by a cold scan.
 - One projection of an opened-root read can refuse while the rest of the read answers.
   `ProjectionResult::Refused`, `RefusedResult` in Python, names why: a `Tree` or roll-up
   of a path that is not a directory, a page whose continuation record would exceed its

@@ -351,11 +351,12 @@ def open(
 
     The index observes ``.gitignore`` control state, as the engine's ``open`` does by
     default. :func:`report` never does, so the two keep snapshots of different scope at one
-    cache path. An ``open`` never starts from a ``report``'s snapshot: a policy that scans
-    treats it as a miss and scans cold, and ``CachePolicy.ONLY``, which never scans, raises
-    :class:`FduError` naming the remedy. A ``report`` answers from an ``open`` snapshot only
-    under ``CachePolicy.ONLY``. ``ScanOptions(read_controls=False)`` turns observation off:
-    that ``open`` reads no control file and shares a ``report``'s snapshot scope.
+    cache path. A default ``open`` never starts from a ``report``'s snapshot: a policy that
+    scans treats it as a miss and scans cold, and ``CachePolicy.ONLY``, which never scans,
+    raises :class:`FduError` naming the remedy. A ``report`` answers from a default
+    ``open``'s snapshot only under ``CachePolicy.ONLY``. ``ScanOptions(read_controls=False)``
+    turns observation off: that ``open`` reads no control file and shares a ``report``'s
+    snapshot scope.
     """
 
     scan_options = scan if scan is not None else ScanOptions()
