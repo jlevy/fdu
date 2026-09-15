@@ -263,6 +263,19 @@ PASS [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
   ✓ Clearing Is Idempotent
   ✓ Clear and Status Compose, With Clear First
   ✓ Clear and Status Compose, With Clear First
+  ✓ Snapshots From Another Build Are Stale, Not Foreign
+  ✓ Snapshots From Another Build Are Stale, Not Foreign
+  ✓ Snapshots From Another Build Are Stale, Not Foreign
+  ✓ Snapshots From Another Build Are Stale, Not Foreign
+  ✓ Clearing Everything Takes Stale Snapshots Too, and Nothing Else
+  ✓ Clearing Everything Takes Stale Snapshots Too, and Nothing Else
+  ✓ One Root’s Stale Snapshot Is Cleared by Its Path
+  ✓ One Root’s Stale Snapshot Is Cleared by Its Path
+  ✓ One Root’s Stale Snapshot Is Cleared by Its Path
+  ✓ One Root’s Stale Snapshot Is Cleared by Its Path
+  ✓ A Root’s Cache Path Holding Another File Is Left Alone
+  ✓ A Root’s Cache Path Holding Another File Is Left Alone
+  ✓ A Root’s Cache Path Holding Another File Is Left Alone
   ✓ An Unknown Scope Names Both Accepted Values
 PASS [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
   ✓ An Explicit Path Gives a Useful Project-Shaped Report

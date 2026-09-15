@@ -301,18 +301,37 @@ def run_cache_lifecycle(args: Args) -> int:
                 else:
                     noun = "snapshot" if removed == 1 else "snapshots"
                     print(f"Cache cleared: {removed} {noun}.")
+                left = sum(
+                    status.state is fdu.CacheState.UNRECOGNIZED
+                    for status in fdu.list_caches(directory)
+                )
+                if left == 1:
+                    print(
+                        "Left in place: 1 file that is not an fdu snapshot; "
+                        "fdu --cache-status=all lists it."
+                    )
+                elif left > 1:
+                    print(
+                        f"Left in place: {left} files that are not fdu snapshots; "
+                        "fdu --cache-status=all lists them."
+                    )
         else:
             path = fdu.cache_path(root)
             removed = fdu.clear_cache(root)
             if path is not None:
                 print(f"Cache file: {path}")
             print("Cache cleared." if removed else "Cache already empty.")
+            status = fdu.cache_status(root)
+            if status is not None and status.state is fdu.CacheState.UNRECOGNIZED:
+                print("Left in place: the file is not an fdu snapshot.")
 
     if args.cache_status is not None:
         statuses = _statuses(root, args.cache_status)
         # The one renderer, in every format. A shim formatting these itself would be
         # testing its own layout rather than the API's.
-        print(fdu.render_cache_status(statuses, args.format))
+        print(
+            fdu.render_cache_status(statuses, args.format, scope=fdu.CacheScope(args.cache_status))
+        )
 
     return 0
 

@@ -4,6 +4,7 @@ path:
   - $FDU_BIN
 fixtures:
   - fixtures/project
+  - bin
 env:
   FORCE_COLOR: "0"
   LANG: C
@@ -118,7 +119,7 @@ Agents get cache observability without a second schema style.
 $ fdu --cache-status --format json project
 {
   "caches": [
-    {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "recognized": true, "root": "[SCAN_PATH]", "entries": 10}
+    {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "state": "current", "root": "[SCAN_PATH]", "entries": 10}
   ]
 }
 ? 0
@@ -159,6 +160,135 @@ $ fdu --cache-clear --cache-status project
 Cache file: [CACHE_FILE]
 Cache cleared.
 No cached snapshots.
+? 0
+```
+
+## Snapshots From Another Build Are Stale, Not Foreign
+
+Every release changes the engine fingerprint and some change the snapshot format, so the
+snapshots an earlier build wrote can serve no later one.
+They are still fdu’s files: status names each with the reason this build cannot use it,
+sizes it, and says which command reclaims it.
+A file that is not an fdu snapshot is listed and left alone.
+
+```console
+$ fdu --size apparent project
+     263 B  ██████████   100%  . (6 files)
+     128 B  █████░░░░░    49%    dist (1 file)
+      36 B  █░░░░░░░░░    14%    src (2 files)
+      23 B  █░░░░░░░░░     9%    docs (1 file)
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+```console
+$ node bin/cache-plant.mjs stale
+planted: format 1, another engine, truncated, notes.txt
+? 0
+```
+
+```console
+$ fdu --cache-status=all project
+[CACHE_FILE]  stale (older snapshot format 1), 12 metadata bytes, 0 content bytes
+[CACHE_FILE]  stale (written by another fdu version), [BYTES] metadata bytes, 0 content bytes
+[CACHE_FILE]  stale (truncated or unreadable), [BYTES] metadata bytes, 0 content bytes
+[CACHE_FILE]  10 entries, [BYTES] metadata bytes, 0 content bytes  [SCAN_PATH]
+[CACHE_DIR]notes.txt  unrecognized, 15 bytes
+3 stale snapshots ([BYTES] bytes) cannot be served by this build; fdu --cache-clear=all removes them, along with every current snapshot.
+1 unrecognized file (15 bytes) is not an fdu snapshot, so fdu leaves it in place.
+? 0
+```
+
+```console
+$ fdu --cache-status=all --format json project
+{
+  "caches": [
+    {"path": "[CACHE_FILE]", "bytes": 12, "content_bytes": null, "state": "stale", "stale_reason": "older_format", "format_version": 1},
+    {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "state": "stale", "stale_reason": "other_engine", "format_version": null},
+    {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "state": "stale", "stale_reason": "unreadable", "format_version": null},
+    {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "state": "current", "root": "[SCAN_PATH]", "entries": 10},
+    {"path": "[CACHE_DIR]notes.txt", "bytes": 15, "state": "unrecognized"}
+  ]
+}
+? 0
+```
+
+## Clearing Everything Takes Stale Snapshots Too, and Nothing Else
+
+```console
+$ fdu --cache-clear=all project
+Cache directory: [CACHE_DIR]
+Cache cleared: 4 snapshots.
+Left in place: 1 file that is not an fdu snapshot; fdu --cache-status=all lists it.
+? 0
+```
+
+What is left is still reported, rather than hidden behind “No cached snapshots.”
+
+```console
+$ fdu --cache-status=all project
+[CACHE_DIR]notes.txt  unrecognized, 15 bytes
+1 unrecognized file (15 bytes) is not an fdu snapshot, so fdu leaves it in place.
+? 0
+```
+
+## One Root’s Stale Snapshot Is Cleared by Its Path
+
+```console
+$ fdu --size apparent project
+     263 B  ██████████   100%  . (6 files)
+     128 B  █████░░░░░    49%    dist (1 file)
+      36 B  █░░░░░░░░░    14%    src (2 files)
+      23 B  █░░░░░░░░░     9%    docs (1 file)
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+```console
+$ node bin/cache-plant.mjs other-engine
+planted: another engine
+? 0
+```
+
+```console
+$ fdu --cache-status project
+[CACHE_FILE]  stale (written by another fdu version), [BYTES] metadata bytes, 0 content bytes
+1 stale snapshot ([BYTES] bytes) cannot be served by this build; fdu --cache-clear PATH removes it.
+? 0
+```
+
+```console
+$ fdu --cache-clear project
+Cache file: [CACHE_FILE]
+Cache cleared.
+? 0
+```
+
+## A Root’s Cache Path Holding Another File Is Left Alone
+
+```console
+$ fdu --size apparent project
+     263 B  ██████████   100%  . (6 files)
+     128 B  █████░░░░░    49%    dist (1 file)
+      36 B  █░░░░░░░░░    14%    src (2 files)
+      23 B  █░░░░░░░░░     9%    docs (1 file)
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+```console
+$ node bin/cache-plant.mjs foreign
+planted: not a snapshot
+? 0
+```
+
+```console
+$ fdu --cache-clear --cache-status project
+Cache file: [CACHE_FILE]
+Cache already empty.
+Left in place: the file is not an fdu snapshot.
+[CACHE_FILE]  unrecognized, 14 bytes
+1 unrecognized file (14 bytes) is not an fdu snapshot, so fdu leaves it in place.
 ? 0
 ```
 

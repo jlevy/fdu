@@ -140,6 +140,31 @@ class CacheScope(StrEnum):
     ALL = "all"
 
 
+class CacheState(StrEnum):
+    """What a path in the snapshot cache holds.
+
+    `STALE` is one of fdu's snapshots that this build cannot serve -- an older or newer
+    format, another engine, or a truncated write -- and clearing removes it like a
+    `CURRENT` one. `UNRECOGNIZED` is anything fdu cannot identify as its own snapshot, and
+    clearing never removes it. `ABSENT` means nothing is there, which only a status for one
+    root can report.
+    """
+
+    CURRENT = "current"
+    STALE = "stale"
+    UNRECOGNIZED = "unrecognized"
+    ABSENT = "absent"
+
+
+class StaleReason(StrEnum):
+    """Why a snapshot fdu wrote cannot be served by this build."""
+
+    OLDER_FORMAT = "older_format"
+    NEWER_FORMAT = "newer_format"
+    OTHER_ENGINE = "other_engine"
+    UNREADABLE = "unreadable"
+
+
 class Format(StrEnum):
     """How a report is serialized.
 
@@ -625,10 +650,19 @@ class ChangeSet:
 
 @dataclass(frozen=True, slots=True)
 class CacheStatus:
+    """One file in the snapshot cache.
+
+    `root`, `entries`, `max_depth`, and `one_filesystem` come from the header of a `CURRENT`
+    snapshot and are `None` otherwise; `stale_reason` is set only for a `STALE` one, and
+    `format_version` only when the version is the reason.
+    """
+
     path: Path
     bytes: int
     content_bytes: int | None
-    recognized: bool
+    state: CacheState
+    stale_reason: StaleReason | None
+    format_version: int | None
     root: Path | None
     entries: int | None
     max_depth: int | None

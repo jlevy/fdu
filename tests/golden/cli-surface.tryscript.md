@@ -300,8 +300,11 @@ and use `--allow-partial` only when incomplete totals are acceptable.
 
 The snapshot is one file per root under the user cache directory.
 `--cache-status` maps a hash-named file back to the tree it describes, and
-`--cache-clear` removes it; both run without scanning and never touch files this build
-cannot identify.
+`--cache-clear` removes it; both run without scanning.
+Each status row carries a `state`: `current`, `stale` for a snapshot another fdu version
+wrote or a truncated one, `unrecognized` for a file that is not an fdu snapshot, or
+`absent`. Clearing removes current and stale snapshots, so `--cache-clear=all` reclaims
+what an upgrade leaves behind, and it never removes an unrecognized file.
 
 Verification cost follows the question asked.
 Sizes and timestamps need one stat per entry, because an in-place edit changes a file

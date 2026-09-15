@@ -157,6 +157,24 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   fingerprint, so a schema-3 registry and its schema-4 form share one fingerprint.
   An `icon` under schema 3, and any other schema version, is refused with an error that
   names the supported versions.
+- The cache lifecycle recognizes snapshots that another fdu version wrote, so the
+  snapshots a release upgrade invalidates can be reclaimed rather than deleted by hand.
+  - `--cache-status` reports every file with its size and a state: `current`, `stale`
+    (an older or newer snapshot format, another engine fingerprint, or a truncated
+    file), or `unrecognized`. Its text names the command that reclaims stale snapshots,
+    and it no longer hides files it cannot use behind a report of no cached snapshots.
+  - `--cache-clear` and `--cache-clear=all` remove stale snapshots as well as current
+    ones, and report the files they left in place.
+    A file is removed only if it begins with the snapshot magic and, when found by
+    listing the directory, carries a snapshot’s name; a symbolic link is never followed
+    or removed.
+  - Breaking: machine status rows carry `state` instead of `recognized`, a stale row
+    adds `stale_reason` and `format_version`, and the row for an uncached root is
+    `absent`. In Rust, the `CacheStatus` field `snapshot` is replaced by
+    `state: CacheState` and a `snapshot()` accessor, `is_recognized` by
+    `is_fdu_snapshot`, and `render_cache_status` takes a `CacheScope`. In Python,
+    `CacheStatus.recognized` is replaced by `state`, `stale_reason`, and
+    `format_version`, and `render_cache_status` requires `scope`.
 
 ### Known limitations
 

@@ -25,7 +25,9 @@ use fdu_core::query::{
 };
 use fdu_core::report_format;
 use fdu_core::report_format::human_count;
-use fdu_core::{CachePolicy, EntryKind, OpenConfig, ScanConfig, default_cache_path};
+use fdu_core::{
+    CachePolicy, CacheScope, CacheState, EntryKind, OpenConfig, ScanConfig, default_cache_path,
+};
 use fdu_core::{PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics};
 
 const SKILL_TEMPLATE: &str = include_str!("skills/SKILL.md");
@@ -499,23 +501,14 @@ pub struct Cli {
     pub skill: bool,
 }
 
-/// Which caches a lifecycle flag applies to.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum CacheScope {
-    /// Only the snapshot for the resolved path.
-    Root,
-    /// Every snapshot in the cache directory.
-    All,
-}
-
-impl CacheScope {
-    fn parse(value: &str, flag: &str) -> anyhow::Result<Self> {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "root" => Ok(Self::Root),
-            "all" => Ok(Self::All),
-            other => anyhow::bail!("invalid {flag} {other:?}: expected root or all"),
-        }
-    }
+/// Parse the scope a lifecycle flag applies to.
+fn parse_cache_scope(value: &str, flag: &str) -> anyhow::Result<CacheScope> {
+    CacheScope::parse(value).ok_or_else(|| {
+        anyhow::anyhow!(
+            "invalid {flag} {:?}: expected root or all",
+            value.trim().to_ascii_lowercase()
+        )
+    })
 }
 
 impl Cli {
@@ -938,7 +931,7 @@ impl Cli {
             .and_then(|path| path.parent().map(Path::to_path_buf));
 
         if let Some(scope) = &self.cache_clear {
-            let scope = CacheScope::parse(scope, "--cache-clear").map_err(|e| usage(&e))?;
+            let scope = parse_cache_scope(scope, "--cache-clear").map_err(|e| usage(&e))?;
             match (scope, &cache_dir) {
                 (CacheScope::All, Some(dir)) => {
                     // Echo the directory before acting, so a destructive flag always says
@@ -957,6 +950,24 @@ impl Cli {
                             )
                         }
                     )?;
+                    // Clearing never removes what it cannot identify, so it says what it
+                    // left rather than letting "cleared" imply an empty directory.
+                    let left = fdu_core::list_caches(dir)?
+                        .iter()
+                        .filter(|status| status.state == CacheState::Unrecognized)
+                        .count();
+                    if left > 0 {
+                        writeln!(
+                            out,
+                            "Left in place: {left} {}; fdu --cache-status=all lists {}.",
+                            plural(
+                                left,
+                                "file that is not an fdu snapshot",
+                                "files that are not fdu snapshots"
+                            ),
+                            plural(left, "it", "them")
+                        )?;
+                    }
                 }
                 (CacheScope::Root, _) => {
                     let path = fdu_core::default_cache_path(root);
@@ -972,13 +983,20 @@ impl Cli {
                         "{}",
                         if removed { "Cache cleared." } else { "Cache already empty." }
                     )?;
+                    let left = match &path {
+                        Some(path) => fdu_core::cache_status(path)?.state,
+                        None => CacheState::Absent,
+                    };
+                    if left == CacheState::Unrecognized {
+                        writeln!(out, "Left in place: the file is not an fdu snapshot.")?;
+                    }
                 }
                 (CacheScope::All, None) => writeln!(out, "Cache already empty.")?,
             }
         }
 
         if let Some(scope) = &self.cache_status {
-            let scope = CacheScope::parse(scope, "--cache-status").map_err(|e| usage(&e))?;
+            let scope = parse_cache_scope(scope, "--cache-status").map_err(|e| usage(&e))?;
             let statuses = match (scope, &cache_dir) {
                 (CacheScope::All, Some(dir)) => fdu_core::list_caches(dir)?,
                 (CacheScope::All, None) => Vec::new(),
@@ -987,7 +1005,7 @@ impl Cli {
                     None => Vec::new(),
                 },
             };
-            self.write_cache_status(out, &statuses)?;
+            self.write_cache_status(out, &statuses, scope)?;
         }
 
         Ok(RunOutcome::Complete)
@@ -998,11 +1016,12 @@ impl Cli {
         &self,
         out: &mut dyn Write,
         statuses: &[fdu_core::CacheStatus],
+        scope: CacheScope,
     ) -> anyhow::Result<()> {
         let format = self.parse_format().map_err(|e| usage(&e))?;
         // Every format, human included, comes from the one renderer. While the CLI kept
         // the text layout to itself, no other caller could print what fdu prints.
-        writeln!(out, "{}", report_format::render_cache_status(statuses, format))?;
+        writeln!(out, "{}", report_format::render_cache_status(statuses, scope, format))?;
         Ok(())
     }
 

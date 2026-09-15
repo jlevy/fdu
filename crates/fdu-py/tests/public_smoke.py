@@ -452,6 +452,8 @@ def main() -> None:
     assert contract["size_metrics"] == [value.value for value in fdu.SizeMetric]
     assert contract["sort_keys"] == [value.value for value in fdu.SortKey]
     assert contract["cache_scopes"] == [value.value for value in fdu.CacheScope]
+    assert contract["cache_states"] == [value.value for value in fdu.CacheState]
+    assert contract["stale_reasons"] == [value.value for value in fdu.StaleReason]
     assert contract["formats"] == [value.value for value in fdu.Format]
 
     provenance = index.provenance("src")
@@ -489,7 +491,25 @@ def main() -> None:
     assert cached.status.complete is True
     assert cached.status.freshness is fdu.Freshness.STALE
     status = fdu.cache_status(cache_root)
-    assert status is not None and status.recognized
+    assert status is not None and status.state is fdu.CacheState.CURRENT
+    assert status.stale_reason is None and status.root is not None
+    # A snapshot an earlier format wrote is still fdu's: reported stale with its version,
+    # and cleared, rather than stranded as a file nothing will delete. The version sits
+    # after the eight-byte magic in every format.
+    image = bytearray(status.path.read_bytes())
+    written = int.from_bytes(image[8:12], "little")
+    image[8:12] = (written - 1).to_bytes(4, "little")
+    status.path.write_bytes(bytes(image))
+    stale = fdu.cache_status(cache_root)
+    assert stale is not None and stale.state is fdu.CacheState.STALE, stale
+    assert stale.stale_reason is fdu.StaleReason.OLDER_FORMAT, stale
+    assert stale.format_version == written - 1 and stale.root is None, stale
+    assert fdu.render_cache_status([stale], scope=fdu.CacheScope.ROOT).endswith(
+        "cannot be served by this build; fdu --cache-clear PATH removes it."
+    )
+    assert fdu.clear_cache(cache_root) is True
+    absent = fdu.cache_status(cache_root)
+    assert absent is not None and absent.state is fdu.CacheState.ABSENT, absent
 
     entrypoint = Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu")
     version = subprocess.run([entrypoint, "--version"], check=False, capture_output=True, text=True)

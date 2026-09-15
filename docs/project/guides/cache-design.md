@@ -39,11 +39,45 @@ Three rules keep it honest:
 
 - **Corrupt equals absent.** A truncated, foreign, or version-mismatched file is never
   parsed as data, at any entry point — loading, status, or clearing.
-  Anything this build cannot identify is also something it will not delete.
+  Only the bounded header is read to tell those cases apart, and a file that is not an
+  fdu snapshot is never deleted.
 - **Only complete scans are written.** A snapshot recording a partial view would be
   served as fact on the next run, and an older complete snapshot is better than that.
 - **Writes are atomic.** A temporary file and a rename, so an interrupted write leaves
   the previous snapshot intact rather than a half-file for the next run to reject.
+
+### Stale Snapshots and What Clearing Removes
+
+An invalidated snapshot is useless to this build but still occupies disk, and the root
+that wrote it may never be scanned again to replace it.
+So `--cache-status` and `--cache-clear` identify files by their contents, and sort each
+file in the cache directory into one of three states:
+
+| State | What it is | Cleared? |
+| --- | --- | --- |
+| `current` | A snapshot this build reads | Yes |
+| `stale` | Begins with the snapshot magic, but has an older or newer format version, another engine fingerprint, or a header this build cannot read, such as a truncated file | Yes |
+| `unrecognized` | Anything else: no snapshot magic, a name the cache never gives a snapshot, or not a regular file | Never |
+
+Recognition does not depend on this build’s format.
+Every format fdu has written starts with the same magic, followed by the format version
+and the engine fingerprint at fixed offsets, so a snapshot from any release is
+recognized as stale, and one from an older format reports its version.
+A name alone proves nothing: a listing counts a file as a snapshot only when it has both
+the snapshot’s name pattern (sixteen hex digits and `.fdu`) and the magic.
+
+Clearing a snapshot also removes its `.content` sidecar if the sidecar starts with the
+sidecar magic. Symbolic links in the cache directory are reported as unrecognized, never
+followed, and never removed.
+A file that another process removes during a clear is not an error.
+Each file is identified again immediately before removal, so a file replaced after the
+listing by something that is not a snapshot survives.
+
+Status text names the command that reclaims stale snapshots: `fdu --cache-clear PATH`
+for one root, and `fdu --cache-clear=all` for the directory, which also removes current
+snapshots.
+Status rows in machine formats carry the same `state`, and a stale row carries
+a `stale_reason` and, for a format mismatch, the `format_version`.
 
 Snapshot persistence is available on every platform, including for metadata queries.
 It is not used by every execution plan: the transient summary path does not retain an
@@ -180,7 +214,8 @@ promise a reusable baseline after an arbitrary command.
   deltas, history-replay refresh, and checkpoint-aware retention.
 - **Cache retention.** Nothing prunes snapshots for roots never queried again, and
   nothing bounds the derived layer’s total size.
-  `--cache-clear` is the only reclaim today.
+  `--cache-clear` is the only reclaim today, and no scope removes stale snapshots while
+  keeping current ones: `--cache-clear=all` removes both.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

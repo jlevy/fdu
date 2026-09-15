@@ -202,6 +202,14 @@ cannot hold the tree (CI runners, cloud hosts, whole-drive scans), journal-assis
 revalidation where the OS already recorded what changed, and expensive derived metrics
 like line counts that an unchanged fingerprint lets you skip entirely.
 
+Every release invalidates the snapshots earlier builds wrote, because the engine
+fingerprint includes the version.
+A root scanned again replaces its own snapshot.
+`fdu --cache-status=all` lists the rest as `stale`, and `fdu --cache-clear=all` removes
+them along with the current snapshots.
+Clearing never removes a file that is not an fdu snapshot;
+[the cache design](docs/project/guides/cache-design.md) covers how one is recognized.
+
 A snapshot is usable only under the scan scope that wrote it, and a root has one cache
 path. Neither `fdu PATH` nor `fdu --watch PATH` observes `.gitignore` control state,
 because no command-line view reads it, so the two share one scope and each starts warm
