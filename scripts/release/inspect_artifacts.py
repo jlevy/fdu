@@ -125,12 +125,17 @@ def inspect_directory(
     *,
     require_release_matrix: bool = False,
 ) -> list[Artifact]:
-    """Validate one sdist, one crate per published package, and every wheel."""
+    """Validate one sdist, one crate per published package and no other, and every wheel."""
     paths = sorted(path for path in directory.iterdir() if path.is_file())
     wheels = [path for path in paths if path.suffix == ".whl"]
     sdists = [path for path in paths if path.name == f"fdu-{version}.tar.gz"]
     require(bool(wheels), "no wheels found")
     require(len(sdists) == 1, "expected exactly one fdu source distribution")
+    expected_crates = {f"{package}-{version}.crate" for package in CRATE_PACKAGES}
+    unexpected = [
+        path.name for path in paths if path.suffix == ".crate" and path.name not in expected_crates
+    ]
+    require(not unexpected, f"unexpected crates: {', '.join(unexpected)}")
     crates: dict[str, Path] = {}
     for package in CRATE_PACKAGES:
         matches = [path for path in paths if path.name == f"{package}-{version}.crate"]

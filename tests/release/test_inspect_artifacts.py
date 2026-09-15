@@ -96,6 +96,13 @@ class InspectArtifactsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "expected exactly one fdu-core crate"):
             inspect_directory(self.directory, VERSION)
 
+    def test_an_unexpected_crate_is_rejected_by_name(self) -> None:
+        # Left out, it would reach neither the manifest nor SHA256SUMS, and so never the
+        # registry audit's own unexpected-crate guard.
+        self._write_crate("fdu-py")
+        with self.assertRaisesRegex(ValueError, f"unexpected crates: fdu-py-{VERSION}.crate"):
+            inspect_directory(self.directory, VERSION)
+
     def test_a_core_crate_without_its_library_is_rejected(self) -> None:
         path = self.directory / f"fdu-core-{VERSION}.crate"
         with tarfile.open(path, "w:gz") as archive:
