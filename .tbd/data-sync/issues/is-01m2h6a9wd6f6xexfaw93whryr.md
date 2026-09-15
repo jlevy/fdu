@@ -5,7 +5,7 @@ title: "Release readiness: land the open PR stack and cut the first stable fdu r
 kind: epic
 status: in_progress
 priority: 0
-version: 12
+version: 13
 labels:
   - release
 dependencies: []
@@ -18,7 +18,7 @@ child_order_hints:
   - is-01m2k27z25tt9ygs4c1nchhzez
   - is-01m2k2pp6jw10vq759yyetmcmb
 created_at: 2026-09-15T00:08:53.387Z
-updated_at: 2026-09-15T18:37:24.477Z
+updated_at: 2026-09-15T19:20:54.809Z
 ---
 User goal (2026-09-14): bring fdu to a stable state that can land on main and cut a release. Keep making progress, track everything as beads, stack PRs as needed, and make sure the final PR stack is complete.
 
@@ -67,3 +67,15 @@ Open for 0.1.0:
 - PR A (control bounds, fdu-1onj/okne/szkg): in progress.
 - PR B (default on and CLI split): after PR A.
 - Release prep: fdu-qy8e CHANGELOG, fdu-y5xr perf figure, fdu-ls14 rehearsal.
+
+2026-09-15 merged:
+- #61 (release workflow; crates.io audit fixed and verified against the live registry) as 2007d82. Main CI green.
+- #62 (shipped text: fdu-k4ad, fdu-ih88, fdu-8dou; README doctests and a Python README-example test) as f047dab. Main CI running.
+All reviews on both have disposition replies. Release blockers now closed on main: fdu-y5zc, fdu-0t6d, fdu-pd1b, fdu-k4ad, fdu-ih88, fdu-8dou.
+Remaining for 0.1.0:
+- PR A (fdu-1onj/okne/szkg), in progress;
+- PR B (fdu-elnn/5ryb);
+- fdu-qy8e CHANGELOG and release notes;
+- fdu-y5xr re-measure;
+- fdu-ls14 rehearsal dispatch (needs the user's go-ahead);
+- fdu-9cf0 publish by hand (user).
