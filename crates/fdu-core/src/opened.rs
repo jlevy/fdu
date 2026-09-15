@@ -301,7 +301,10 @@ impl OpenedIndex {
     /// [`Error::OpenedWorkerPanicked`] naming the worker -- the cause [`Self::close`] will
     /// report -- rather than at its timeout. Commits retained before the panic are still
     /// returned first, unless the panic struck inside a commit: that poisons the index,
-    /// which leaves nothing to read, and the poll reports the panic rather than the poison.
+    /// which leaves nothing to read. A poll parked on the journal then reports the panic.
+    /// A poll already reading when the commit panics can observe the poisoned index before
+    /// the worker has recorded its panic, and returns [`Error::IndexLockPoisoned`]; the
+    /// panic is recorded moments later, and [`Self::close`] names it either way.
     pub fn changes(&self, request: crate::ChangeRequest) -> Result<crate::ChangePoll> {
         self.ensure_open()?;
         journal::poll(self, request)
