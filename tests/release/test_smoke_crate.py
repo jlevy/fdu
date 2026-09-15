@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import io
+import os
+import re
 import subprocess
 import tarfile
 import tempfile
@@ -11,8 +13,9 @@ from pathlib import Path
 from textwrap import dedent
 from typing import Any
 
-from scripts.release.smoke_crate import smoke_crate, verify_relock
+from scripts.release.smoke_crate import check_python, smoke_crate, verify_relock
 
+ROOT = Path(__file__).resolve().parents[2]
 VERSION = "0.1.0"
 REGISTRY = "registry+https://github.com/rust-lang/crates.io-index"
 
@@ -101,6 +104,38 @@ class VerifyRelockTests(unittest.TestCase):
         for message, relocked in cases.items():
             with self.subTest(message), self.assertRaisesRegex(ValueError, message):
                 verify_relock(SHIPPED_LOCK, relocked, VERSION)
+
+
+class InvocationTests(unittest.TestCase):
+    """The smoke runs under the interpreter and cargo its callers chose."""
+
+    def test_an_interpreter_without_the_tar_data_filter_is_refused(self) -> None:
+        check_python((3, 12, 0))
+        with self.assertRaisesRegex(ValueError, r"needs Python 3\.12 or newer; this is 3\.11\.9"):
+            check_python((3, 11, 9))
+
+    def test_make_passes_its_cargo_to_the_smoke(self) -> None:
+        # `make CARGO=...` must reach the install the smoke runs, not only `cargo package`.
+        cargo = "/opt/fdu-test/bin/cargo"
+        environment = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"MAKEFLAGS", "MAKELEVEL", "MFLAGS", "MAKEOVERRIDES"}
+        }
+        result = subprocess.run(
+            ["make", "--no-print-directory", "-n", "release-rehearse", f"CARGO={cargo}"],
+            cwd=ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        recipe = result.stdout.replace("\\\n", " ")
+        commands = [part for line in recipe.splitlines() for part in line.split(" && ")]
+        smoke = [command for command in commands if "smoke_crate.py" in command]
+        self.assertEqual(len(smoke), 1, result.stdout)
+        self.assertRegex(smoke[0], rf'--cargo "?{re.escape(cargo)}"?(\s|$)')
 
 
 class SmokeCrateTests(unittest.TestCase):

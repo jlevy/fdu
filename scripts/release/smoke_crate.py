@@ -16,8 +16,8 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 import tarfile
-import tomllib
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -26,6 +26,11 @@ CORE = "fdu-core"
 CLI = "fdu"
 CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
 
+# `tarfile`'s "data" extraction filter, which refuses the escaping paths and links an
+# untrusted archive can carry, is standard from 3.12. The release workflow runs this on
+# the runner's python3, so an older image fails here rather than inside extraction.
+MINIMUM_PYTHON = (3, 12)
+
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
 
@@ -33,6 +38,16 @@ def require(condition: bool, message: str) -> None:
     """Raise a stable validation error when the smoke contract is violated."""
     if not condition:
         raise ValueError(message)
+
+
+def check_python(version: tuple[int, ...]) -> None:
+    """Refuse an interpreter older than `MINIMUM_PYTHON`, naming the one running."""
+    minimum = ".".join(map(str, MINIMUM_PYTHON))
+    require(
+        version[:2] >= MINIMUM_PYTHON,
+        f"smoke_crate.py needs Python {minimum} or newer; this is "
+        f"{'.'.join(map(str, version[:3]))} (run it with `uv run --python {minimum}`)",
+    )
 
 
 def run(runner: Runner, command: list[str], **options: Any) -> subprocess.CompletedProcess[str]:
@@ -53,6 +68,10 @@ def extract_crate(crate: Path, destination: Path) -> Path:
 
 def lock_packages(text: str) -> dict[tuple[str, str], dict[str, Any]]:
     """Index a Cargo.lock's packages by name and version."""
+    # Imported here rather than at the top so that on a Python without `tomllib` (3.10
+    # and older) `main` reaches `check_python` and says so, instead of an import error.
+    import tomllib
+
     packages = tomllib.loads(text).get("package")
     require(isinstance(packages, list), "Cargo.lock has no package list")
     indexed = {(str(item["name"]), str(item["version"])): item for item in packages}
@@ -169,13 +188,15 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("crates", type=Path, help="directory holding both .crate files")
     result.add_argument("--version", required=True)
     result.add_argument("--work-dir", type=Path, required=True)
+    result.add_argument("--cargo", default="cargo", help="the cargo that packaged the crates")
     return result
 
 
 def main() -> None:
     """Smoke-test the packaged crates without contacting a publishing API."""
+    check_python(tuple(sys.version_info))
     args = parser().parse_args()
-    smoke_crate(args.crates, args.version, args.work_dir)
+    smoke_crate(args.crates, args.version, args.work_dir, cargo=args.cargo)
 
 
 if __name__ == "__main__":

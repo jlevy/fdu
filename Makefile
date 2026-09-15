@@ -386,7 +386,7 @@ release-rehearse: release-test
 		$(CARGO) package --locked -p fdu-core -p fdu --allow-dirty && \
 		cp "target/package/fdu-core-$$version.crate" "target/package/fdu-$$version.crate" "$$artifact_dir/" && \
 		$(UV) run --no-project --python 3.12 python scripts/release/smoke_crate.py "$$artifact_dir" --version "$$version" \
-			--work-dir "$$smoke_dir" && \
+			--work-dir "$$smoke_dir" --cargo "$(CARGO)" && \
 		$(UV) build --directory crates/fdu-py --no-sources --sdist --out-dir "$$artifact_dir" && \
 		$(UV) run --directory crates/fdu-py --frozen --only-group dev maturin build --locked --release --out "$$artifact_dir" && \
 		$(UV) run --no-project --python 3.12 python scripts/release/inspect_artifacts.py "$$artifact_dir" --version "$$version" \
