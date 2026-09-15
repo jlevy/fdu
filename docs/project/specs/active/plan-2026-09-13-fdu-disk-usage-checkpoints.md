@@ -446,11 +446,14 @@ measure, from the recorded identities:
   - If either checkpoint refused a source, the ignored and unignored deltas are marked
     partial at every directory at or below a source refused in either checkpoint, and at
     each ancestor, with the refused sources named, the way a gap marks its ancestors.
+    File rows shown below a refused source carry the same marker as their directory.
     Equal refused sets do not lift the marker: below a source both checkpoints refused,
     neither applied its rules, so a new file there is counted in whichever partition the
     loaded rules choose.
-  - A checkpoint that retains only a count of refused sources, not their paths, marks
-    every classification delta of its comparisons partial.
+  - A checkpoint that retains fewer refused-source paths than its refused count, whether
+    none or a truncated list (the engine retains at most `MAX_RETAINED_ISSUES` of them),
+    marks every classification delta of its comparisons partial: an unrecorded source
+    could lie under any directory.
   - The budget is mixed into `ignore_rules_fingerprint`, so checkpoints captured at
     different budgets differ in `SemanticIdentity`, and their classification is not
     comparable under the `SemanticIdentity` rule above.
@@ -611,8 +614,10 @@ path is refused; and a volume that reports no UUID compares as volume-unverified
 Classification cases: a control budget crossed in either checkpoint leaves every byte
 delta exact and marks the ignored and unignored deltas partial at each directory at or
 below a refused source and at its ancestors; a source refused at A and loaded at B is
-marked partial, never shown as bytes moving between partitions; and checkpoints captured
-at different budgets report classification as not comparable.
+shown with the partial marker, not as an unqualified move between partitions; a
+checkpoint whose recorded refused sources are fewer than its refused count marks every
+classification delta partial; and checkpoints captured at different budgets report
+classification as not comparable.
 Accounting cases have stated expected deltas:
 
 - **Hard link added to an existing in-scope file:** per-path allocated grows by the
