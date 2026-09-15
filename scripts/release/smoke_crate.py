@@ -72,12 +72,22 @@ def verify_relock(shipped: str, relocked: str, version: str) -> None:
         before.get(core, {}).get("source") == CRATES_IO,
         f"shipped lock must pin {CORE} to crates.io",
     )
+    require(core in after, f"the relocked lock has no {CORE} {version}")
+    require(
+        "source" not in after[core],
+        f"{CORE} is still resolved from crates.io: the patch did not apply",
+    )
     unpinned = {
         key: value for key, value in before[core].items() if key not in {"source", "checksum"}
     }
+    changed = sorted(
+        key
+        for key in unpinned.keys() | after[core].keys()
+        if unpinned.get(key) != after[core].get(key)
+    )
     require(
-        after.get(core) == unpinned,
-        f"{CORE} is still resolved from crates.io: the patch did not apply",
+        not changed,
+        f"{CORE} {version} differs from the shipped lock beyond its source: {', '.join(changed)}",
     )
     others = (before.keys() | after.keys()) - {core}
     moved = sorted(

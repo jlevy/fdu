@@ -85,8 +85,17 @@ class VerifyRelockTests(unittest.TestCase):
         verify_relock(SHIPPED_LOCK, RELOCKED_LOCK, VERSION)
 
     def test_any_other_difference_is_rejected(self) -> None:
+        # Each failure names its own cause: a relock that dropped the registry source but
+        # changed fdu-core's dependencies is a patched sibling that differs from the
+        # published one, not a patch that failed to apply.
         cases = {
             "the patch did not apply": SHIPPED_LOCK,
+            "fdu-core 0.1.0 differs from the shipped lock beyond its source: dependencies": (
+                RELOCKED_LOCK.replace(' "anstyle",\n]', ' "anstyle",\n "thiserror",\n]')
+            ),
+            "the relocked lock has no fdu-core 0.1.0": RELOCKED_LOCK.replace(
+                f'name = "fdu-core"\nversion = "{VERSION}"', 'name = "fdu-core"\nversion = "0.0.9"'
+            ),
             "moved pins other than fdu-core: anstyle": RELOCKED_LOCK.replace("1.0.13", "1.0.14"),
         }
         for message, relocked in cases.items():
