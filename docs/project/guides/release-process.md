@@ -211,6 +211,10 @@ prompts use `read -s`, which a plain POSIX `sh` such as `dash` rejects.
    curl -sS -o /dev/null -w '%{http_code}\n' https://pypi.org/pypi/fdu/json
    ```
 
+   On the `0.1.1` path, a name `0.1.0` reached prints `200`; step 5 of
+   [Recover From a Partial Publication](#recover-from-a-partial-publication) gives the
+   check that replaces this one for that name.
+
 Every remaining command runs in `$RELEASE/fdu`, whose `rust-toolchain.toml` selects the
 pinned Rust.
 
@@ -403,6 +407,19 @@ is on crates.io.
    [Rehearse the Release Commit](#rehearse-the-release-commit) with `0.1.1` in place of
    `0.1.0`. Both crates are published at `0.1.1`, `fdu-core` included, even if its
    source did not change.
+
+   On that pass, [Tag the Release Commit](#tag-the-release-commit) step 3 still requires
+   `404` for a name `0.1.0` never reached.
+   A name it did reach now prints `200`, so check that name’s new version instead; for
+   each such name, its command here must print `404`:
+
+   ```shell
+   curl -sS -o /dev/null -w '%{http_code}\n' -A 'fdu-release (https://github.com/jlevy/fdu)' \
+     https://crates.io/api/v1/crates/fdu-core/0.1.1
+   curl -sS -o /dev/null -w '%{http_code}\n' -A 'fdu-release (https://github.com/jlevy/fdu)' \
+     https://crates.io/api/v1/crates/fdu/0.1.1
+   curl -sS -o /dev/null -w '%{http_code}\n' https://pypi.org/pypi/fdu/0.1.1/json
+   ```
 
 Whatever the outcome, unset and revoke every token as the steps above describe.
 
