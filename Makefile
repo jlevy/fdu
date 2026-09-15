@@ -367,13 +367,19 @@ release-test:
 # sibling first in a separate run does not help -- that puts a `.crate` in target/package,
 # not in the index. Naming both in one invocation makes cargo verify each against the
 # just-packaged sibling (fdu-pj9w).
+#
+# The crate smoke is the release workflow's own step, run on the copied artifacts: it
+# installs the packaged `fdu`, locked, against the packaged `fdu-core` (fdu-y5zc).
 release-rehearse: release-test
 	artifact_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-release.XXXXXX")" && \
-		trap 'rm -r -- "$$artifact_dir"' EXIT && \
+		smoke_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-crate-smoke.XXXXXX")" && \
+		trap 'rm -r -- "$$artifact_dir" "$$smoke_dir"' EXIT && \
 		version="$$($(UV) run --no-project --python 3.12 python -c 'import pathlib,tomllib; print(tomllib.loads(pathlib.Path("crates/fdu/Cargo.toml").read_text())["package"]["version"])')" && \
 		export FDU_RELEASE_TAG="v$$version" && \
 		$(CARGO) package --locked -p fdu-core -p fdu --allow-dirty && \
 		cp "target/package/fdu-core-$$version.crate" "target/package/fdu-$$version.crate" "$$artifact_dir/" && \
+		$(UV) run --no-project --python 3.12 python scripts/release/smoke_crate.py "$$artifact_dir" --version "$$version" \
+			--work-dir "$$smoke_dir" && \
 		$(UV) build --directory crates/fdu-py --no-sources --sdist --out-dir "$$artifact_dir" && \
 		$(UV) run --directory crates/fdu-py --frozen --only-group dev maturin build --locked --release --out "$$artifact_dir" && \
 		$(UV) run --no-project --python 3.12 python scripts/release/inspect_artifacts.py "$$artifact_dir" --version "$$version" \
