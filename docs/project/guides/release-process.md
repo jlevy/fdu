@@ -187,11 +187,41 @@ prompts use `read -s`, which a plain POSIX `sh` such as `dash` rejects.
    git merge-base --is-ancestor <release-commit> origin/main && echo "on main"
    ```
 
-   Then check out exactly the release commit, and create, verify, and push the signed
-   tag on it:
+   Then check out exactly the release commit, and derive the GitHub release body from
+   its notes, [`docs/project/release-notes/0.1.0.md`](../release-notes/0.1.0.md).
+   GitHub renders a single newline in a release body as a line break, so the
+   flowmark-wrapped file would show every source line break.
+   The body is the file with its HTML comments removed and each paragraph and list item
+   joined onto one line by the Makefile’s pinned flowmark, which changes nothing but
+   whitespace:
 
    ```shell
    git switch --detach <release-commit>
+   uv run --no-project --python 3.12 python -c \
+     'import re, sys; sys.stdout.write(re.sub(r"<!--.*?-->\n*", "", sys.stdin.read(), flags=re.S))' \
+     < docs/project/release-notes/0.1.0.md > "$RELEASE/notes-source.md"
+   uv run --project explorations/benchmarks --frozen --only-group docs \
+     flowmark --width 0 --output "$RELEASE/notes.md" "$RELEASE/notes-source.md"
+   ```
+
+   Check the body before tagging, because a fix after the tag needs a new commit and so
+   a new version. The first command must print `1`, the notes’ standard footer, so no
+   unfilled draft comment was stripped silently; the second must print nothing, so the
+   body differs from the notes only in whitespace; and the third must print `0`, so
+   GitHub’s renderer finds no line break inside a paragraph.
+   Read `$RELEASE/notes.html` as well: it is the body as GitHub will render it.
+
+   ```shell
+   grep -c '<!--' docs/project/release-notes/0.1.0.md
+   cmp <(tr -s '[:space:]' ' ' < "$RELEASE/notes-source.md") \
+     <(tr -s '[:space:]' ' ' < "$RELEASE/notes.md")
+   gh api markdown -f mode=gfm -F text=@"$RELEASE/notes.md" > "$RELEASE/notes.html" &&
+     grep -c '<br>' "$RELEASE/notes.html"
+   ```
+
+   Then create, verify, and push the signed tag on the release commit:
+
+   ```shell
    git tag -s v0.1.0 -m "fdu 0.1.0"
    git tag -v v0.1.0
    git push origin v0.1.0
@@ -346,8 +376,10 @@ pinned Rust.
 
 Once every channel verifies, record the final registry state and attach it with the
 evidence and artifacts to a GitHub release on the tag.
-The notes are the CHANGELOG’s `[0.1.0]` section, saved as `$RELEASE/notes.md`. The
-release is created only if the audit exits 0, which with `--require-identical` means
+The body is `$RELEASE/notes.md`, derived from the release commit’s notes and checked in
+step 1 of [Tag the Release Commit](#tag-the-release-commit); step 2 confirmed that the
+tag names that commit, so the body is the tagged text.
+The release is created only if the audit exits 0, which with `--require-identical` means
 every channel holds exactly the rehearsal’s files:
 
 ```shell
