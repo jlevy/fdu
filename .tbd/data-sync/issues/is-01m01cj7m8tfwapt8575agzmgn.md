@@ -3,9 +3,9 @@ type: is
 id: is-01m01cj7m8tfwapt8575agzmgn
 title: "PR #26 review S2: dispatch release rehearsal to prove full matrix"
 kind: task
-status: open
+status: closed
 priority: 2
-version: 7
+version: 8
 labels:
   - release
 dependencies:
@@ -15,7 +15,11 @@ parent_id: is-01m01chg3gqm5sjf58mt5ng9zw
 child_order_hints:
   - is-01m2nvy6w3zch74wcfbdcgfcbz
 created_at: 2026-08-15T00:18:50.120Z
-updated_at: 2026-09-16T19:43:43.488Z
+updated_at: 2026-09-16T22:14:53.865Z
+closed_at: 2026-09-16T22:14:53.864Z
+close_reason: "Release rehearsal run 35156068769 succeeded on main commit 5f2d36d0c9ba60d454112b322f8cb6816342c4ab: plan audit, both crate packages/install smoke, sdist build/install smoke, all five wheel legs (including Windows installed-wheel UTF-8 smoke), immutable artifact inspection, and read-only registry classification. Downloaded all retained artifacts and independently verified all eight payloads against SHA256SUMS; crates.io fdu-core/fdu and PyPI fdu each classify missing as expected. Run: https://github.com/jlevy/fdu/actions/runs/35156068769"
+resolution: null
+duplicate_of: null
 ---
 Deferred: after R1/R11 land on the PR and merge, dispatch release.yml once so all five wheel legs, evidence, and registry classification actually run before fdu-9cf0.
 
