@@ -41,8 +41,11 @@ ARGUMENTS
 SCOPE
       --scan-depth <N>               Limit scanning and retention to N entry levels
       --one-filesystem               Stay on the filesystem the root lives on
-      --gitignore-budget <SIZE|all>  Bytes of .gitignore rules to apply before refusing more
-                                     [default: 4MiB]; `all` lifts it
+      --gitignore-budget <SIZE>      Bytes of .gitignore rules to retain before refusing more files
+                                     [default: 4MiB]. Accepts `all`, which also reads each
+                                     .gitignore whole
+      --gitignore-line-limit <SIZE>  Longest .gitignore line to apply before refusing its file
+                                     [default: 16KiB]. Accepts `all`
       --no-gitignore                 Read no .gitignore files: rows lose their ignored share, and
                                      the snapshot scope differs
 

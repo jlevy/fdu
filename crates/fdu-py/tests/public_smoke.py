@@ -334,7 +334,7 @@ def check_an_index_can_opt_out_of_control_state() -> None:
 
     root = Path(tempfile.mkdtemp(prefix="fdu-public-controls-"))
     (root / "kept.txt").write_text("kept", encoding="utf-8")
-    # One pattern longer than the engine's 16 KiB per-line guard, which an index that
+    # One pattern longer than the engine's 16 KiB default line limit, which an index that
     # observes control state refuses.
     (root / ".gitignore").write_text("x" * (16 * 1024 + 1) + "\n", encoding="utf-8")
     opted_out = fdu.ScanOptions(read_controls=False)
@@ -347,29 +347,43 @@ def check_an_index_can_opt_out_of_control_state() -> None:
         assert index.total().files == 2
         assert index.status.ignore_rules is None, "a request that read no rule says so"
         assert index.report().status.ignore_rules is None
-    # A default scan reads the control file and refuses the line over the guard, without
+    # A default scan reads the control file and refuses the line over the limit, without
     # ending the scan or making its sizes partial (fdu-1onj).
     observed = fdu.scan(root)
     assert observed.status.complete is True, observed.status.errors
     assert observed.total().files == 2
-    refused = fdu.RefusedControl(Path(".gitignore"), fdu.ControlRefusalReason.LINE_GUARD)
-    expected = fdu.ControlObservation(
-        budget=4 * 1024 * 1024, applied=0, refused=1, refusals=(refused,)
-    )
+    defaults = fdu.ControlLimits(budget=4 * 1024 * 1024, line_limit=16 * 1024)
+    refused = fdu.RefusedControl(Path(".gitignore"), fdu.ControlRefusalReason.LINE_LIMIT)
+    expected = fdu.ControlObservation(limits=defaults, applied=0, refused=1, refusals=(refused,))
     assert observed.status.ignore_rules == expected, observed.status
     observed_report = observed.report(fdu.Query(views=(fdu.View.SUMMARY,)))
     assert observed_report.status.complete is True
     assert observed_report.status.ignore_rules == expected, observed_report.status
     wire = json.loads(observed_report.render(fdu.Format.JSON))
-    assert wire["ignore_rules"]["refusals"] == [{"path": ".gitignore", "reason": "line_guard"}]
-    # The note names the directory and the knob as this surface spells it.
+    assert wire["ignore_rules"] == {
+        "limits": {"budget": 4 * 1024 * 1024, "line_limit": 16 * 1024},
+        "applied": 0,
+        "refused": 1,
+        "refusals": [{"path": ".gitignore", "reason": "line_limit"}],
+    }, wire
+    # The note names the directory and the limit that fired, as this surface spells it.
     (note,) = observed_report.notes
     assert "under . are not exact" in note, note
-    assert "set control_budget to all" in note, note
+    assert "raise control_line_limit above 16 KiB, or set it to all" in note, note
+    assert "control_budget" not in note, note
     assert note in observed_report.render(fdu.Format.TEXT), note
-    # The same knob lifts the guard.
-    lifted = fdu.scan(root, scan=fdu.ScanOptions(control_budget=fdu.Bound.ALL))
-    assert lifted.status.ignore_rules == fdu.ControlObservation(budget=None, applied=1, refused=0)
+    # Lifting the budget leaves the line limit refusing; lifting the line limit applies it.
+    budget_lifted = fdu.scan(root, scan=fdu.ScanOptions(control_budget=fdu.Bound.ALL))
+    assert budget_lifted.status.ignore_rules == fdu.ControlObservation(
+        limits=fdu.ControlLimits(budget=None, line_limit=16 * 1024),
+        applied=0,
+        refused=1,
+        refusals=(refused,),
+    )
+    lifted = fdu.scan(root, scan=fdu.ScanOptions(control_line_limit="all"))
+    assert lifted.status.ignore_rules == fdu.ControlObservation(
+        limits=fdu.ControlLimits(budget=4 * 1024 * 1024, line_limit=None), applied=1, refused=0
+    )
     assert lifted.report().notes == ()
 
     # A default report and a default open share one snapshot scope, so that open starts
@@ -455,6 +469,46 @@ def check_reports_carry_the_ignored_share() -> None:
             raise AssertionError("selecting by ignored state without the rules must be refused")
 
 
+def check_a_one_shot_report_forwards_every_control_knob() -> None:
+    """``fdu.report`` carries each ``ScanOptions`` control knob into the scan it runs.
+
+    A one-shot report is the surface that builds its own scan, so a knob it forgets does
+    nothing quietly: the report still answers, under limits its caller did not ask for.
+    Each knob is pinned by an answer only that knob produces.
+    """
+
+    root = Path(tempfile.mkdtemp(prefix="fdu-public-report-knobs-"))
+    # One ordinary rule, and one pattern long enough to cross a lowered line limit.
+    (root / ".gitignore").write_text("*.log\n" + "a" * 2048 + "\n", encoding="utf-8")
+    (root / "keep.txt").write_text("keep", encoding="utf-8")
+    query = fdu.Query(views=(fdu.View.SUMMARY,))
+
+    def rules(scan: fdu.ScanOptions | None) -> fdu.ControlObservation | None:
+        options = scan if scan is not None else fdu.ScanOptions()
+        return fdu.report(root, query, cache=fdu.CachePolicy.OFF, scan=options).status.ignore_rules
+
+    defaults = fdu.ControlLimits(budget=4 * 1024 * 1024, line_limit=16 * 1024)
+    assert rules(None) == fdu.ControlObservation(limits=defaults, applied=1, refused=0)
+
+    refused = fdu.RefusedControl(Path(".gitignore"), fdu.ControlRefusalReason.LINE_LIMIT)
+    assert rules(fdu.ScanOptions(control_line_limit="1KiB")) == fdu.ControlObservation(
+        limits=fdu.ControlLimits(budget=4 * 1024 * 1024, line_limit=1024),
+        applied=0,
+        refused=1,
+        refusals=(refused,),
+    )
+
+    over_budget = fdu.RefusedControl(Path(".gitignore"), fdu.ControlRefusalReason.BUDGET)
+    assert rules(fdu.ScanOptions(control_budget="1KiB")) == fdu.ControlObservation(
+        limits=fdu.ControlLimits(budget=1024, line_limit=16 * 1024),
+        applied=0,
+        refused=1,
+        refusals=(over_budget,),
+    )
+
+    assert rules(fdu.ScanOptions(read_controls=False)) is None
+
+
 def main() -> None:
     root = Path(tempfile.mkdtemp(prefix="fdu-public-api-"))
     (root / "src").mkdir()
@@ -470,6 +524,7 @@ def main() -> None:
     check_the_one_shot_retains_nothing(root)
     check_an_index_can_opt_out_of_control_state()
     check_reports_carry_the_ignored_share()
+    check_a_one_shot_report_forwards_every_control_knob()
     check_watch_reports_its_own_index(root)
     check_render_matches_the_cli(
         root, str(Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu"))
@@ -621,10 +676,10 @@ def main() -> None:
     for volatile in ("scan_started_at", "generated_at", "source"):
         cli_wire.pop(volatile)
         wire.pop(volatile)
-    # Both surfaces read `.gitignore` control state by default, so the envelopes agree on it
-    # as they agree on every row's ignored share.
+    # Both surfaces read `.gitignore` control state by default, under the same limits, so
+    # the envelopes agree on it as they agree on every row's ignored share.
     assert wire["ignore_rules"] == {
-        "budget": 4 * 1024 * 1024,
+        "limits": {"budget": 4 * 1024 * 1024, "line_limit": 16 * 1024},
         "applied": 0,
         "refused": 0,
         "refusals": [],

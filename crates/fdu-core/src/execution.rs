@@ -648,13 +648,13 @@ mod tests {
         assert_eq!(performance.source, ReportSource::ColdScan);
     }
 
-    /// Control sources past both bounds, so no scan can observe them without saying so.
+    /// Control sources past both limits, so no scan can observe them without saying so.
     ///
-    /// The root rule is longer than the per-line guard and the nested source is past the
+    /// The root rule is longer than the line limit and the nested source is past the
     /// table budget. An observing scan refuses both and records it in its control coverage;
     /// a report whose scope observes no control state read neither.
     fn write_unobservable_controls(root: &Path) {
-        let mut rule = vec![b'a'; crate::control::CONTROL_LINE_GUARD_BYTES + 1];
+        let mut rule = vec![b'a'; crate::control::DEFAULT_CONTROL_LINE_LIMIT + 1];
         rule.push(b'\n');
         fs::write(root.join(".gitignore"), rule).expect("oversized rule");
         fs::create_dir(root.join("vendored")).expect("nested directory");
@@ -848,7 +848,8 @@ mod tests {
                 complete: open_report.is_complete(),
                 errors: Vec::new(),
             },
-        );
+        )
+        .expect("report");
 
         let Section::Summary(compact_row) = compact.sections[0] else {
             panic!("compact plan did not return a summary")

@@ -128,6 +128,7 @@ class Args:
         self.scan_depth: int | None = None
         self.one_filesystem = False
         self.gitignore_budget: str | None = None
+        self.gitignore_line_limit: str | None = None
         self.no_gitignore = False
         self.exclude_ignored = False
         self.only_ignored = False
@@ -194,6 +195,8 @@ def parse_args(argv: list[str]) -> Args:
             args.one_filesystem = True
         elif flag == "--gitignore-budget":
             args.gitignore_budget = take()
+        elif flag == "--gitignore-line-limit":
+            args.gitignore_line_limit = take()
         elif flag == "--no-gitignore":
             args.no_gitignore = True
         elif flag == "--exclude-ignored":
@@ -293,6 +296,7 @@ def scan_options(args: Args) -> fdu.ScanOptions:
         one_filesystem=args.one_filesystem,
         read_controls=not args.no_gitignore,
         control_budget=args.gitignore_budget,
+        control_line_limit=args.gitignore_line_limit,
     )
 
 

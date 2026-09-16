@@ -219,15 +219,17 @@ It stores platform-native path facts, parent relationships, reducers, classifica
 state, control state, provenance, directory completeness, and snapshot metadata.
 
 Control state is bounded without ever bounding the answer.
-The control table charges each directory’s key and each distinct `.gitignore` content
-once against a budget (`ScanConfig::control_budget`, 4 MiB by default, unbounded when
-`None`), and refuses a source past it or with a line over the 16 KiB guard, which an
-unbounded budget also lifts.
+`ScanConfig::control_limits` holds two independent limits, each a size or unbounded.
+The budget, 4 MiB by default, bounds retained memory: the table charges each directory’s
+key and each distinct `.gitignore` content once against it, and a control file is read
+to one byte past it.
+The line limit, 16 KiB by default, bounds what one pattern costs to match.
+The table refuses a source past either, and the refusal names the limit that fired.
 A refusal is recorded state, not an error: the directory keeps no rules, the commit that
 carried the source still lands, and `Index::control_coverage` names the refused files
 beside an exact count.
 Sizes never depend on it; only the ignored and unignored split below a refused file
-does. The budget is part of the scope’s ignore-rules identity.
+does. Both limits are part of the scope’s ignore-rules identity.
 
 A detached index may retain bounded exact history for a nonblocking `since` API. That
 history has no live session identity, waiter, worker, or continuation authority and is

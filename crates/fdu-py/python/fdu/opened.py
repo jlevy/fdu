@@ -35,6 +35,7 @@ from ._models import (
     Report,
     Selection,
     ValueSource,
+    _check_control_limits,
     control_observation_from_dict,
     report_from_dict,
 )
@@ -309,10 +310,15 @@ class OpenedOptions:
     #: that does not parse raises ``InvalidArgumentError`` before discovery starts.
     type_rules: str | None = None
     #: Bytes of retained ``.gitignore`` charge before further files are refused: an int, a
-    #: size such as ``"16MiB"``, ``Bound.ALL`` to lift the budget and the 16 KiB per-line
-    #: guard, or ``None`` for the engine default of 4 MiB. A refused file ends nothing;
-    #: ``ReadDiagnostics.controls`` names it.
+    #: size such as ``"16MiB"``, ``Bound.ALL`` for no bound, which also reads every
+    #: ``.gitignore`` whole however large, or ``None`` for the engine default of 4 MiB. It
+    #: never changes the line limit. A refused file ends nothing;
+    #: ``ReadDiagnostics.controls`` names it and the limit that fired.
     control_budget: int | Bound | str | None = None
+    #: Longest ``.gitignore`` line applied before its file is refused: an int, a size such
+    #: as ``"64KiB"``, ``Bound.ALL`` for no bound, or ``None`` for the engine default of
+    #: 16 KiB. It never changes the budget.
+    control_line_limit: int | Bound | str | None = None
 
     def __post_init__(self) -> None:
         if isinstance(self.hidden_allow, str):
@@ -330,8 +336,7 @@ class OpenedOptions:
                 raise ValueError(f"{name} must be positive")
         if self.max_files is not None and self.max_files <= 0:
             raise ValueError("max_files must be positive")
-        if isinstance(self.control_budget, int) and self.control_budget < 0:
-            raise ValueError("control_budget must be non-negative or Bound.ALL")
+        _check_control_limits(self.control_budget, self.control_line_limit)
         if self.hidden_allow and not self.prune_hidden:
             raise ValueError("hidden_allow requires prune_hidden=True")
 
@@ -1437,6 +1442,7 @@ class OpenedIndex:
             journal_capacity_bytes=selected.journal_capacity_bytes,
             type_rules=selected.type_rules,
             control_budget=_bound(selected.control_budget),
+            control_line_limit=_bound(selected.control_line_limit),
         )
         return cls(cast(_native.OpenedIndex, native))
 

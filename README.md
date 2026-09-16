@@ -248,14 +248,18 @@ A summary-only `fdu --no-gitignore --view summary PATH` saves no snapshot and re
 none; a default summary keeps the index its ignored share needs, and saves it like any
 other report.
 
-Control state has a budget, and crossing it never costs the answer.
-An index that observes `.gitignore` files charges each distinct file’s rules once, up to
-4 MiB by default, and refuses a file past that budget or with a line over 16 KiB. A
-refused file’s rules do not apply, every size stays exact, the result stays complete,
-and the report says which files it refused in its `ignore_rules` field and a note naming
-their directories. `control_budget` in the library and Python, and `--gitignore-budget`
-on the command line, raise the budget or lift both bounds with `all`. The budget is part
-of the snapshot scope, so changing it scans cold once.
+Control state has two limits, and crossing either never costs the answer.
+An index that observes `.gitignore` files charges each distinct file’s rules once
+against a budget, 4 MiB by default, and refuses a file past it; separately, it refuses a
+file with a line longer than the line limit, 16 KiB by default.
+A refused file’s rules do not apply, every size stays exact, the result stays complete,
+and the report says which files it refused, and which limit refused each, in its
+`ignore_rules` field and a note naming their directories.
+`--gitignore-budget` and `--gitignore-line-limit` on the command line, and
+`control_budget` and `control_line_limit` in Python, each take a size or `all`, and
+raising one never moves the other.
+An unbounded budget also reads every `.gitignore` whole, however large.
+Both limits are part of the snapshot scope, so changing either scans cold once.
 
 ### How performance work is done here
 

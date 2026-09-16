@@ -189,7 +189,9 @@ IGNORE RULES
   --no-gitignore reads no rules and shows no share. Only per-directory .gitignore
   files apply, not core.excludesFile, .git/info/exclude, or a global ignore file,
   and matching is case-sensitive on every platform. An unreadable .gitignore makes
-  the result partial, like any unreadable path.
+  the result partial, like any unreadable path. A .gitignore past --gitignore-budget
+  or --gitignore-line-limit is refused whole and named in a note: sizes stay exact,
+  ignored shares under that directory do not.
 
 OUTPUT AND AUTOMATION
   Metadata-only machine output remains fdu.report/5; metric summaries use fdu.report/6.
@@ -378,9 +380,16 @@ pub struct Cli {
     #[arg(long, action = ArgAction::SetTrue, help_heading = "SCOPE")]
     pub one_filesystem: bool,
 
-    /// Bytes of .gitignore rules to apply before refusing more [default: 4MiB]; `all` lifts it
-    #[arg(long, value_name = "SIZE|all", help_heading = "SCOPE")]
+    /// Bytes of .gitignore rules to retain before refusing more files [default: 4MiB]. Accepts `all`, which also reads each .gitignore whole.
+    ///
+    /// `SIZE` rather than `SIZE|all` as the value name, as `--depth` and `--limit` do: the
+    /// longer name pushes this heading's help onto separate lines.
+    #[arg(long, value_name = "SIZE", help_heading = "SCOPE")]
     pub gitignore_budget: Option<String>,
+
+    /// Longest .gitignore line to apply before refusing its file [default: 16KiB]. Accepts `all`.
+    #[arg(long, value_name = "SIZE", help_heading = "SCOPE")]
+    pub gitignore_line_limit: Option<String>,
 
     /// Read no .gitignore files: rows lose their ignored share, and the snapshot scope differs
     #[arg(long, action = ArgAction::SetTrue, help_heading = "SCOPE")]
@@ -597,32 +606,16 @@ impl Cli {
         })?;
 
         let policy = self.parse_cache_policy().map_err(|error| usage(&error))?;
-        let control_budget = parse_gitignore_budget(self.gitignore_budget.as_deref())
-            .map_err(|error| usage(&error))?;
+        let scan = self.scan_config().map_err(|error| usage(&error))?;
         query
             .validate_analysis(analysis.profile)
             .map_err(|message| usage(&anyhow::anyhow!(message)))?;
-        // Every run observes `.gitignore` unless told not to, one-shot and `--watch` alike,
-        // because every row shows the ignored share of its size (fdu-elnn). Sharing the
-        // engine default also gives the command line, the Python package, and a library
-        // `open` one snapshot scope (fdu-w3l5). A selection by ignored state over a scan
-        // that reads no rule has no answer, so the library's refusal is a usage error here.
-        let read_controls = !self.no_gitignore;
+        // A selection by ignored state over a scan that reads no rule has no answer, so
+        // the library's refusal is a usage error here, raised before anything is scanned.
         query
-            .validate_controls(read_controls)
+            .validate_controls(scan.read_controls)
             .map_err(|message| usage(&anyhow::anyhow!(message)))?;
-        let config = OpenConfig {
-            scan: ScanConfig {
-                max_depth: self.scan_depth,
-                one_filesystem: self.one_filesystem,
-                read_controls,
-                control_budget,
-                ..ScanConfig::default()
-            },
-            cache_path: default_cache_path(path),
-            policy,
-            analysis,
-        };
+        let config = OpenConfig { scan, cache_path: default_cache_path(path), policy, analysis };
 
         #[cfg(feature = "watch")]
         if self.watch && (self.scan_depth.is_some() || self.one_filesystem) {
@@ -1045,6 +1038,42 @@ impl Cli {
         Ok(())
     }
 
+    /// Translate the scope flags into the scan configuration every run of this command uses.
+    fn scan_config(&self) -> anyhow::Result<ScanConfig> {
+        // Every run observes `.gitignore` unless told not to, one-shot and `--watch` alike,
+        // because every row shows the ignored share of its size (fdu-elnn). Sharing the
+        // engine default also gives the command line, the Python package, and a library
+        // `open` one snapshot scope (fdu-w3l5). The limits join the cache scope with it,
+        // so a run under other limits scans rather than reusing rules it would not apply.
+        Ok(ScanConfig {
+            max_depth: self.scan_depth,
+            one_filesystem: self.one_filesystem,
+            read_controls: !self.no_gitignore,
+            control_limits: self.parse_gitignore_limits()?,
+            ..ScanConfig::default()
+        })
+    }
+
+    /// Translate the two `.gitignore` limit flags, each on its own: an absent flag keeps its
+    /// own default whatever the other says.
+    fn parse_gitignore_limits(&self) -> anyhow::Result<fdu_core::ControlLimits> {
+        let defaults = fdu_core::ControlLimits::default();
+        Ok(fdu_core::ControlLimits {
+            budget: parse_gitignore_limit(
+                self.gitignore_budget.as_deref(),
+                "--gitignore-budget",
+                fdu_core::query::parse_control_budget,
+                defaults.budget,
+            )?,
+            line_limit: parse_gitignore_limit(
+                self.gitignore_line_limit.as_deref(),
+                "--gitignore-line-limit",
+                fdu_core::query::parse_control_line_limit,
+                defaults.line_limit,
+            )?,
+        })
+    }
+
     /// Translate the cache-policy flag.
     fn parse_cache_policy(&self) -> anyhow::Result<CachePolicy> {
         match self.cache.trim().to_ascii_lowercase().as_str() {
@@ -1430,14 +1459,20 @@ fn parse_kind(token: &str, flag: &str) -> anyhow::Result<EntryKind> {
     }
 }
 
-/// Parse `--gitignore-budget` with the engine's grammar, naming the flag in the rejection.
-fn parse_gitignore_budget(value: Option<&str>) -> anyhow::Result<Option<usize>> {
+/// Parse one `.gitignore` limit flag with the engine's grammar, naming the flag in the
+/// rejection; an absent flag keeps `default`.
+fn parse_gitignore_limit(
+    value: Option<&str>,
+    flag: &str,
+    parse: fn(&str) -> fdu_core::Result<Option<usize>>,
+    default: Option<usize>,
+) -> anyhow::Result<Option<usize>> {
     let Some(value) = value else {
-        return Ok(ScanConfig::default().control_budget);
+        return Ok(default);
     };
-    fdu_core::query::parse_control_budget(value).map_err(|error| match error {
+    parse(value).map_err(|error| match error {
         fdu_core::Error::InvalidValue { value, hint, .. } => {
-            anyhow::anyhow!("invalid --gitignore-budget {value:?}: {hint}")
+            anyhow::anyhow!("invalid {flag} {value:?}: {hint}")
         }
         other => other.into(),
     })
@@ -1796,6 +1831,7 @@ mod tests {
     #[cfg(feature = "watch")]
     use std::time::UNIX_EPOCH;
 
+    /// The two flags select opposite partitions, so asking for both is a usage error.
     #[test]
     fn the_ignored_selection_flags_pick_one_side_and_refuse_both() {
         assert_eq!(
@@ -1853,7 +1889,7 @@ mod tests {
         );
         let observed = |applied, refusals: Vec<RefusedControl>| {
             ControlCoverage::Observed(ControlObservation {
-                budget: Some(fdu_core::control::DEFAULT_CONTROL_BUDGET),
+                limits: fdu_core::ControlLimits::default(),
                 applied,
                 refused: u64::try_from(refusals.len()).expect("a handful"),
                 refusals,
@@ -1862,26 +1898,62 @@ mod tests {
         assert!(footer(&observed(1, Vec::new())).contains("; ignore rules 1 file; "));
         let refused = RefusedControl {
             path: PathBuf::from(".gitignore"),
-            reason: ControlRefusalReason::LineGuard,
+            reason: ControlRefusalReason::LineLimit,
         };
         assert!(
             footer(&observed(0, vec![refused])).contains("; ignore rules 0 files, 1 refused; ")
         );
     }
 
+    /// Each `.gitignore` limit flag sets only its own limit, names itself when rejected, and
+    /// reaches the cache scope, which every run observes unless `--no-gitignore` says not to;
+    /// where nothing is observed, neither flag splits the snapshot scope.
     #[test]
-    fn the_gitignore_budget_takes_a_size_or_all_and_names_itself_when_rejected() {
-        assert_eq!(
-            parse_gitignore_budget(None).expect("default"),
-            Some(fdu_core::control::DEFAULT_CONTROL_BUDGET)
-        );
-        assert_eq!(parse_gitignore_budget(Some("16MiB")).expect("size"), Some(16 * 1024 * 1024));
-        assert_eq!(parse_gitignore_budget(Some("all")).expect("all"), None);
-        assert_eq!(
-            parse_gitignore_budget(Some("lots")).expect_err("not a size").to_string(),
-            "invalid --gitignore-budget \"lots\": expected a number before the unit, as in \
-             `10M`, or `all` for no bound"
-        );
+    fn each_gitignore_limit_flag_sets_only_its_own_limit_and_joins_the_observed_scope() {
+        let scan_config = |flags: &[&str]| {
+            let args = std::iter::once("fdu").chain(flags.iter().copied()).chain(["."]);
+            Cli::try_parse_from(args).expect("parses").scan_config()
+        };
+        let defaults = fdu_core::ControlLimits::default();
+        let unobserved =
+            |config: &ScanConfig| ScanConfig { read_controls: false, ..config.clone() }.scope();
+        let default = scan_config(&[]).expect("defaults");
+        assert_eq!(default.control_limits, defaults);
+        assert!(default.read_controls, "every run observes .gitignore unless told not to");
+
+        for (flags, limits) in [
+            (
+                &["--gitignore-budget", "16MiB"][..],
+                fdu_core::ControlLimits { budget: Some(16 * 1024 * 1024), ..defaults },
+            ),
+            (
+                &["--gitignore-budget", "all"][..],
+                fdu_core::ControlLimits { budget: None, ..defaults },
+            ),
+            (
+                &["--gitignore-line-limit", "64KiB"][..],
+                fdu_core::ControlLimits { line_limit: Some(64 * 1024), ..defaults },
+            ),
+            (
+                &["--gitignore-line-limit", "all"][..],
+                fdu_core::ControlLimits { line_limit: None, ..defaults },
+            ),
+        ] {
+            let config = scan_config(flags).expect("a valid limit");
+            assert_eq!(config.control_limits, limits, "{flags:?}");
+            assert_ne!(config.scope(), default.scope(), "{flags:?} while observed");
+            assert_eq!(unobserved(&config), unobserved(&default), "{flags:?} once unobserved");
+        }
+
+        for flag in ["--gitignore-budget", "--gitignore-line-limit"] {
+            assert_eq!(
+                scan_config(&[flag, "lots"]).expect_err("not a size").to_string(),
+                format!(
+                    "invalid {flag} \"lots\": expected a number before the unit, as in `10M`, \
+                     or `all` for no bound"
+                )
+            );
+        }
     }
 
     /// Every `--watch` run parses an interval before anything else, so this must work on
@@ -2000,6 +2072,7 @@ mod tests {
             scan_depth: None,
             one_filesystem: false,
             gitignore_budget: None,
+            gitignore_line_limit: None,
             no_gitignore: false,
             include: Vec::new(),
             exclude: Vec::new(),

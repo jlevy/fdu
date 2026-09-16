@@ -71,6 +71,10 @@ def test_invalid_option_values_fail_before_crossing_native_boundary() -> None:
         ScanOptions(control_budget=-1)
     with pytest.raises(ValueError, match="control_budget"):
         opened.OpenedOptions(control_budget=-1)
+    with pytest.raises(ValueError, match="control_line_limit"):
+        ScanOptions(control_line_limit=-1)
+    with pytest.raises(ValueError, match="control_line_limit"):
+        opened.OpenedOptions(control_line_limit=-1)
     with pytest.raises(ValueError, match="workers"):
         AnalysisOptions(workers=-1)
     with pytest.raises(ValueError, match="words_per_page"):
