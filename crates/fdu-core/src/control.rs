@@ -174,6 +174,17 @@ pub enum ControlAdmission {
     Refused(ControlRefusalReason),
 }
 
+/// What one upsert would do to a control table, decided before anything moves.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Verdict {
+    /// The directory already retains exactly these bytes.
+    Unchanged,
+    /// The source applies, leaving the table charged `retained_cost` bytes.
+    Admit { retained_cost: usize },
+    /// A limit cannot admit the source.
+    Refuse(ControlRefusalReason),
+}
+
 /// One control file whose rules an index refused, relative to the index root.
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub struct RefusedControl {
@@ -291,32 +302,84 @@ impl ControlTable {
         identity: ControlIdentity,
     ) -> crate::Result<ControlAdmission> {
         let directory = control_directory(path)?;
+        match self.verdict(directory, &source, identity) {
+            Verdict::Unchanged => Ok(ControlAdmission::Retained { changed: false }),
+            Verdict::Refuse(reason) => {
+                crate::counters::bump(|counts| {
+                    counts.control_refused = counts.control_refused.saturating_add(1);
+                });
+                Ok(self.refuse(directory, reason))
+            }
+            Verdict::Admit { retained_cost } => {
+                self.detach(directory);
+                self.attach(directory, source, identity);
+                self.refused.remove(directory);
+                debug_assert_eq!(self.retained_cost, retained_cost);
+                Ok(ControlAdmission::Retained { changed: true })
+            }
+        }
+    }
+
+    /// What upserting `source` at `directory` would do, decided before anything moves.
+    ///
+    /// The decision is a pure function of this table, so a caller can ask whether an
+    /// operation would change anything without projecting a copy of the table to find out.
+    fn verdict(&self, directory: &Path, source: &[u8], identity: ControlIdentity) -> Verdict {
         if self.by_directory.get(directory).is_some_and(|current| current.bytes == source) {
-            return Ok(ControlAdmission::Retained { changed: false });
+            return Verdict::Unchanged;
         }
         if self.limits.line_limit.is_some_and(|line_limit| {
             source.split(|byte| *byte == b'\n').any(|line| line.len() > line_limit)
         }) {
-            return Ok(self.refuse(directory, ControlRefusalReason::LineLimit));
+            return Verdict::Refuse(ControlRefusalReason::LineLimit);
         }
         let content_charge =
-            if self.holding(identity, &source).is_some() { 0 } else { content_cost(&source) };
+            if self.holding(identity, source).is_some() { 0 } else { content_cost(source) };
         // Saturating: every retained charge is a sum of real allocations, so only a source
         // no budget could admit reaches the ceiling, and an unbounded table never refuses.
-        let next = self
+        let retained_cost = self
             .retained_cost
             .saturating_sub(self.release_charge(directory))
             .saturating_add(directory_cost(directory))
             .saturating_add(content_charge);
-        if self.limits.budget.is_some_and(|budget| next > budget) {
-            return Ok(self.refuse(directory, ControlRefusalReason::Budget));
+        if self.limits.budget.is_some_and(|budget| retained_cost > budget) {
+            return Verdict::Refuse(ControlRefusalReason::Budget);
         }
+        Verdict::Admit { retained_cost }
+    }
 
-        self.detach(directory);
-        self.attach(directory, source, identity);
-        self.refused.remove(directory);
-        debug_assert_eq!(self.retained_cost, next);
-        Ok(ControlAdmission::Retained { changed: true })
+    /// Whether upserting `source` at `path` would leave this table exactly as it is.
+    ///
+    /// True when the directory already retains those exact bytes, and when it already
+    /// records a refusal this source would earn again: refusing an already-refused
+    /// directory for the same limit writes the same record. A warm revalidate of a tree
+    /// past its budget re-reads every refused file, and this is what tells the index that
+    /// those reads change nothing (fdu-hzm5).
+    pub(crate) fn upsert_is_inert(&self, path: &Path, source: &[u8]) -> bool {
+        let Ok(directory) = control_directory(path) else {
+            return false;
+        };
+        match self.verdict(directory, source, identity(source)) {
+            Verdict::Unchanged => true,
+            Verdict::Refuse(reason) => self.refused.get(directory) == Some(&reason),
+            Verdict::Admit { .. } => false,
+        }
+    }
+
+    /// Whether removing the control file at `path` would leave this table as it is.
+    pub(crate) fn remove_is_inert(&self, path: &Path) -> bool {
+        control_directory(path).is_ok_and(|directory| {
+            !self.by_directory.contains_key(directory) && !self.refused.contains_key(directory)
+        })
+    }
+
+    /// Whether any directory at or below `subtree` retains a source or records a refusal.
+    ///
+    /// What a structural removal of `subtree` would prune, so a batch that removes nothing
+    /// the table records leaves it alone.
+    pub(crate) fn has_record_at_or_below(&self, subtree: &Path) -> bool {
+        has_key_at_or_below(&self.by_directory, subtree)
+            || has_key_at_or_below(&self.refused, subtree)
     }
 
     /// Restore a refusal a snapshot recorded, without the source that was refused.
@@ -413,6 +476,9 @@ impl ControlTable {
             holdings.iter_mut().find(|holding| holding.content.bytes == source)
         {
             holding.holders += 1;
+            crate::counters::bump(|counts| {
+                counts.control_sources_shared = counts.control_sources_shared.saturating_add(1);
+            });
             Arc::clone(&holding.content)
         } else {
             let content_cost = content_cost(&source);
@@ -622,6 +688,18 @@ impl ControlMatcher<'_> {
         }
         false
     }
+}
+
+/// Whether any key of `directories` is `subtree` or lies below it.
+///
+/// One lookup rather than a scan: [`Path`] orders component by component, so every
+/// descendant of `subtree` sorts immediately after it and before any other key, and the
+/// first key at or after `subtree` decides.
+fn has_key_at_or_below<V>(directories: &BTreeMap<PathBuf, V>, subtree: &Path) -> bool {
+    directories
+        .range::<Path, _>((std::ops::Bound::Included(subtree), std::ops::Bound::Unbounded))
+        .next()
+        .is_some_and(|(directory, _)| directory.starts_with(subtree))
 }
 
 /// Whether a relative path names the fixed control file.

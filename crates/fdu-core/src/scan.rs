@@ -3072,6 +3072,7 @@ fn read_control_op_unconditional(
         .map_or(u64::MAX, |budget| u64::try_from(budget).unwrap_or(u64::MAX).saturating_add(1));
     let mut source = Vec::new();
     file.take(read_limit).read_to_end(&mut source).map_err(|error| Error::io(&absolute, error))?;
+    crate::counters::bump(|counts| counts.control_reads = counts.control_reads.saturating_add(1));
     Ok(Some(Op::ControlUpsert { path: path.to_path_buf(), source }))
 }
 
@@ -5864,6 +5865,37 @@ mod tests {
             detached.is_ignored(Path::new("applied/dropped.log")).expect("observed"),
             Some(true)
         );
+    }
+
+    /// The control counters attribute what a scan's control state cost: files read, sources
+    /// refused, and sources that shared a retained content instead of parsing their own.
+    ///
+    /// Off by default and compiled in, like every counter, so the numbers a speed check
+    /// reads come from the shipped path rather than an instrumented build.
+    #[test]
+    fn control_counters_attribute_reads_refusals_and_sharing() {
+        let _serial = crate::counters::test_serial();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let shared = b"*.log\n".to_vec();
+        write_file(&dir.path().join(".gitignore"), &shared);
+        write_file(&dir.path().join("twin/.gitignore"), &shared);
+        let mut long_line = b"*.tmp\n".to_vec();
+        long_line.extend(std::iter::repeat_n(b'x', crate::control::DEFAULT_CONTROL_LINE_LIMIT + 1));
+        write_file(&dir.path().join("guarded/.gitignore"), &long_line);
+        let config = ScanConfig { read_controls: true, threads: Some(1), ..ScanConfig::default() };
+
+        crate::counters::enable(true);
+        crate::counters::reset();
+        let (index, report) = scan_into_index(dir.path(), &config).expect("scan");
+        crate::counters::flush_thread();
+        let counts = crate::counters::snapshot();
+        crate::counters::enable(false);
+
+        assert!(report.is_complete(), "{:?}", report.errors);
+        assert_eq!(observed_coverage(&index).refused, 1);
+        assert_eq!(counts.control_reads, 3, "one read per .gitignore");
+        assert_eq!(counts.control_refused, 1, "the line over the limit");
+        assert_eq!(counts.control_sources_shared, 1, "the twin shares one parsed content");
     }
 
     /// Both limits are part of the scope, and each lifts only its own refusals: no budget

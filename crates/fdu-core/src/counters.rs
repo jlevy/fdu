@@ -52,6 +52,12 @@ pub struct Counts {
     pub parent_memo_hits: u64,
     /// Roll-up merge operations.
     pub rollup_merges: u64,
+    /// Control files read from the filesystem.
+    pub control_reads: u64,
+    /// Control sources a control table refused for one of its limits.
+    pub control_refused: u64,
+    /// Control sources that joined a retained identical content instead of parsing again.
+    pub control_sources_shared: u64,
     /// Index entries allocated.
     pub entries_allocated: u64,
     /// Successful detached baseline batches arbitrated by the index.
@@ -143,6 +149,9 @@ impl Counts {
         parent_resolutions: 0,
         parent_memo_hits: 0,
         rollup_merges: 0,
+        control_reads: 0,
+        control_refused: 0,
+        control_sources_shared: 0,
         entries_allocated: 0,
         baseline_batches: 0,
         baseline_accepted_ops: 0,
@@ -195,6 +204,9 @@ impl Counts {
             ("index", "parent path resolutions", self.parent_resolutions),
             ("index", "parent memo hits", self.parent_memo_hits),
             ("index", "roll-up merges", self.rollup_merges),
+            ("control state", "control files read", self.control_reads),
+            ("control state", "control sources refused", self.control_refused),
+            ("control state", "control sources shared", self.control_sources_shared),
             ("index", "index entries allocated", self.entries_allocated),
             ("mutation provenance", "baseline batches", self.baseline_batches),
             ("mutation provenance", "baseline accepted ops", self.baseline_accepted_ops),
@@ -264,6 +276,10 @@ impl Counts {
         self.parent_resolutions = self.parent_resolutions.saturating_add(other.parent_resolutions);
         self.parent_memo_hits = self.parent_memo_hits.saturating_add(other.parent_memo_hits);
         self.rollup_merges = self.rollup_merges.saturating_add(other.rollup_merges);
+        self.control_reads = self.control_reads.saturating_add(other.control_reads);
+        self.control_refused = self.control_refused.saturating_add(other.control_refused);
+        self.control_sources_shared =
+            self.control_sources_shared.saturating_add(other.control_sources_shared);
         self.entries_allocated = self.entries_allocated.saturating_add(other.entries_allocated);
         self.baseline_batches = self.baseline_batches.saturating_add(other.baseline_batches);
         self.baseline_accepted_ops =
@@ -340,6 +356,9 @@ struct GlobalCounts {
     parent_resolutions: AtomicU64,
     parent_memo_hits: AtomicU64,
     rollup_merges: AtomicU64,
+    control_reads: AtomicU64,
+    control_refused: AtomicU64,
+    control_sources_shared: AtomicU64,
     entries_allocated: AtomicU64,
     baseline_batches: AtomicU64,
     baseline_accepted_ops: AtomicU64,
@@ -391,6 +410,9 @@ impl GlobalCounts {
             parent_resolutions: AtomicU64::new(0),
             parent_memo_hits: AtomicU64::new(0),
             rollup_merges: AtomicU64::new(0),
+            control_reads: AtomicU64::new(0),
+            control_refused: AtomicU64::new(0),
+            control_sources_shared: AtomicU64::new(0),
             entries_allocated: AtomicU64::new(0),
             baseline_batches: AtomicU64::new(0),
             baseline_accepted_ops: AtomicU64::new(0),
@@ -441,6 +463,9 @@ impl GlobalCounts {
         atomic_saturating_add(&self.parent_resolutions, counts.parent_resolutions);
         atomic_saturating_add(&self.parent_memo_hits, counts.parent_memo_hits);
         atomic_saturating_add(&self.rollup_merges, counts.rollup_merges);
+        atomic_saturating_add(&self.control_reads, counts.control_reads);
+        atomic_saturating_add(&self.control_refused, counts.control_refused);
+        atomic_saturating_add(&self.control_sources_shared, counts.control_sources_shared);
         atomic_saturating_add(&self.entries_allocated, counts.entries_allocated);
         atomic_saturating_add(&self.baseline_batches, counts.baseline_batches);
         atomic_saturating_add(&self.baseline_accepted_ops, counts.baseline_accepted_ops);
@@ -506,6 +531,9 @@ impl GlobalCounts {
             parent_resolutions: self.parent_resolutions.load(Ordering::Relaxed),
             parent_memo_hits: self.parent_memo_hits.load(Ordering::Relaxed),
             rollup_merges: self.rollup_merges.load(Ordering::Relaxed),
+            control_reads: self.control_reads.load(Ordering::Relaxed),
+            control_refused: self.control_refused.load(Ordering::Relaxed),
+            control_sources_shared: self.control_sources_shared.load(Ordering::Relaxed),
             entries_allocated: self.entries_allocated.load(Ordering::Relaxed),
             baseline_batches: self.baseline_batches.load(Ordering::Relaxed),
             baseline_accepted_ops: self.baseline_accepted_ops.load(Ordering::Relaxed),
@@ -558,6 +586,9 @@ impl GlobalCounts {
         self.parent_resolutions.store(0, Ordering::Relaxed);
         self.parent_memo_hits.store(0, Ordering::Relaxed);
         self.rollup_merges.store(0, Ordering::Relaxed);
+        self.control_reads.store(0, Ordering::Relaxed);
+        self.control_refused.store(0, Ordering::Relaxed);
+        self.control_sources_shared.store(0, Ordering::Relaxed);
         self.entries_allocated.store(0, Ordering::Relaxed);
         self.baseline_batches.store(0, Ordering::Relaxed);
         self.baseline_accepted_ops.store(0, Ordering::Relaxed);
