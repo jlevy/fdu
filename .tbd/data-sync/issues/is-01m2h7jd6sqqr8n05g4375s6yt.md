@@ -3,9 +3,9 @@ type: is
 id: is-01m2h7jd6sqqr8n05g4375s6yt
 title: Write the 0.1.0 CHANGELOG section and GitHub release notes
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 5
+version: 6
 delegate: codex@spud10
 labels:
   - release
@@ -14,8 +14,12 @@ parent_id: is-01m2h6a9wd6f6xexfaw93whryr
 hold: null
 hold_until: null
 created_at: 2026-09-15T00:30:47.512Z
-updated_at: 2026-09-16T18:06:10.046Z
+updated_at: 2026-09-16T18:16:55.933Z
 started_at: 2026-09-16T18:06:10.045Z
+closed_at: 2026-09-16T18:16:55.932Z
+close_reason: "PR #64 merged at a74dade1f90d1110e9a5bc3576d66f1ece10d90a with the final 0.1.0 release notes and upgrade guidance; all 19 CI jobs passed."
+resolution: null
+duplicate_of: null
 ---
 Found by the 2026-09-14 release-readiness audit (scratchpad reviews/release-readiness.md, section 5 has the outline). CHANGELOG.md has only [Unreleased] on main (102 lines; 168 at #57's head, 177 at #60's head) and it is a development log: 'Initial scaffold', and several 'Breaking:' entries (journal_capacity -> journal_capacity_bytes, Result-returning ignore accessors, per-projection refusals, portable selection identity, removed gitignore build feature) that describe changes to unreleased contracts. Per tbd guidelines release-notes-guidelines and release-engineering-rules: a first release has no previous release, so nothing is a Fix or Breaking; fold those entries into descriptions of the contract as it stands, and the pre-release gate requires the notes before tagging. Deliverables: (1) '## [0.1.0] - <date>' in CHANGELOG.md, Keep a Changelog form, almost entirely Added, keeping the Known limitations list updated (control bounds, one-shot content analysis, memory vs dust fdu-syyl, no cache pruning beyond --cache-clear); (2) GitHub release notes draft: what fdu is, install commands, features by surface (CLI six axes and the view vocabulary summary/tree/types/extensions/families/languages/documents/largest/recent/files/full which the CHANGELOG never recorded; fdu.report/4 and /5 and fdu.stream/1 and what a consumer pins; exit codes; Python fdu and fdu.opened; Rust fdu-core with watch as the one build feature and read_controls as the per-request switch; .gitignore semantics honoured and not), defaults worth knowing (CLI does not read .gitignore in 0.1.0 while fdu.open does, and read_controls=False), the 'upgrading from a development build' note from fdu-apbl (type-rules and ignore-rules fingerprints moved; first run per cached tree cold-scans; --cache-clear and --cache-status=all; confirm on the release candidate that a pre-#57 v3 snapshot is refused), platform notes (wheel matrix, Linux arm64 structurally validated only, abi3 3.12+, no free-threaded wheel, MSRV 1.85, macOS getattrlistbulk, Linux evidence virtualized, Windows no perf claims, 0600 snapshots), performance claims only as the evidence report supports and dated, SECURITY.md pointer, compare link. Close fdu-apbl with the note's location when done. Acceptance: CHANGELOG has a [0.1.0] section; release notes reviewed by the user before tagging; every item describes the product as released, none the path to it.
 
