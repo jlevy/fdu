@@ -561,7 +561,7 @@ fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     };
     let started = Instant::now();
     for _ in 0..arguments.queries {
-        black_box(fdu_core::query::report(&index, &query, &provenance));
+        black_box(fdu_core::query::report(&index, &query, &provenance).expect("report"));
     }
     let component = started.elapsed();
     let mut summary = summarize_index(arguments, &index)?;

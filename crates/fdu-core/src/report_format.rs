@@ -2148,7 +2148,8 @@ mod tests {
         // The platform spells the refused path, so Windows writes a backslash.
         let refused = Path::new("vendor").join(".gitignore");
         let refused = refused.to_string_lossy();
-        let json = render(&report(&observed, &query, &provenance), Format::Json, false);
+        let json =
+            render(&report(&observed, &query, &provenance).expect("report"), Format::Json, false);
         let expected = format!(
             "\"ignore_rules\": {{\"limits\": {{\"budget\": 4194304, \"line_limit\": 16384}}, \
              \"applied\": 1, \"refused\": 1, \"refusals\": [{{\"path\": {}, \"reason\": \
@@ -2157,7 +2158,8 @@ mod tests {
         );
         assert!(json.contains(&expected), "{json}");
         assert!(json.contains("\"complete\": true"), "a refusal is not an operational partial");
-        let yaml = render(&report(&observed, &query, &provenance), Format::Yaml, false);
+        let yaml =
+            render(&report(&observed, &query, &provenance).expect("report"), Format::Yaml, false);
         let expected = format!(
             "ignore_rules:\n  limits:\n    budget: 4194304\n    line_limit: 16384\n  applied: 1\n  \
              refused: 1\n  refusals:\n    - path: {}\n      reason: line_limit\n",
@@ -2169,7 +2171,8 @@ mod tests {
         let note = "note: 1 .gitignore file not applied (1 with a line over the 16 KiB line \
                     limit), so ignored shares under vendor are not exact; sizes are. To apply \
                     them, raise --gitignore-line-limit above 16 KiB, or set it to all";
-        let text = render(&report(&observed, &flags, &provenance), Format::Text, false);
+        let text =
+            render(&report(&observed, &flags, &provenance).expect("report"), Format::Text, false);
         assert!(text.ends_with(&format!("{note}\n")), "{text}");
         let fields = report(&observed, &query, &provenance).expect("report");
         assert_eq!(fields.notes, [note.replace("--gitignore-line-limit", "control_line_limit")]);

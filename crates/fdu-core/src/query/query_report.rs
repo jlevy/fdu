@@ -2692,7 +2692,7 @@ mod tests {
         for refused in [&exclude, &only] {
             assert!(
                 matches!(
-                    report(&index, refused, &provenance()),
+                    super::report(&index, refused, &provenance()),
                     Err(crate::Error::ControlStateNotObserved)
                 ),
                 "a selection by ignored state over an unobserving index is refused"

@@ -32,7 +32,7 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
   "freshness": "fresh",
   "complete": true,
   "errors": [],
-  "ignore_rules": {"budget": 4194304, "applied": 1, "refused": 0, "refusals": []},
+  "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
   "reports": [
     {
       "view": "tree",
@@ -57,7 +57,7 @@ $ fdu --cache off --format json --size apparent --depth 1 --limit 2 project
   "freshness": "fresh",
   "complete": true,
   "errors": [],
-  "ignore_rules": {"budget": 4194304, "applied": 1, "refused": 0, "refusals": []},
+  "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
   "reports": [
     {
       "view": "tree",
@@ -82,7 +82,7 @@ $ fdu --cache off --format json --size apparent --scan-depth 1 --depth 2 --limit
   "freshness": "fresh",
   "complete": true,
   "errors": [],
-  "ignore_rules": {"budget": 4194304, "applied": 1, "refused": 0, "refusals": []},
+  "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
   "reports": [
     {
       "view": "tree",
@@ -112,7 +112,7 @@ $ fdu --cache off --view types --format json --size apparent project
   "freshness": "fresh",
   "complete": true,
   "errors": [],
-  "ignore_rules": {"budget": 4194304, "applied": 1, "refused": 0, "refusals": []},
+  "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
   "analysis": null,
   "reports": [
     {
