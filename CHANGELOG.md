@@ -128,9 +128,10 @@ The GitHub release text is
     `(128 B ignored)`, and leave it off a row with nothing ignored.
     The performance line counts the rule files read, as `ignore rules 1 file`, or says
     `no ignore rules`.
-  - In machine formats summary, tree, and extension rows carry an `ignored` object
-    (`files`, `dirs`, `bytes`, `allocated`) and file rows an `ignored` flag, `null` in
-    both where no rule was read.
+  - In machine formats summary and tree rows carry an `ignored` object (`files`, `dirs`,
+    `bytes`, `allocated`), extension rows one without `dirs` (`files`, `bytes`,
+    `allocated`), and file rows an `ignored` flag; each is `null` where no rule was
+    read.
   - `--exclude-ignored` and `--only-ignored`, `Selection::ignored` in Rust and
     `Selection(ignored=...)` in Python, report one side; sizes, ordering, and
     `--min-size` follow the entries shown.
@@ -169,9 +170,10 @@ The GitHub release text is
   - `fdu.report` answers one query while retaining the least state it needs; `fdu.open`
     and `fdu.scan` return an `Index` with `total`, `rollup`, `children`, `provenance`,
     `report`, `refresh`, `since`, and `watch`.
-  - `Report.as_dict()` returns the command line’s JSON, rows carry `ignored` and an
-    `IgnoredTally`, and `Status.ignore_rules` reports the limits, what was applied, and
-    what was refused.
+  - `Report.as_dict()` returns the command line’s JSON. A row’s `ignored` is an
+    `IgnoredTally` on `SummaryRow` and `TreeNode`, an `ExtensionTally` on
+    `ExtensionRow`, and a `bool` on `FileRow`, each `None` where no rule was read.
+    `Status.ignore_rules` reports the limits, what was applied, and what was refused.
   - `cache_path`, `cache_status`, `list_caches`, `clear_cache`, and `clear_all_caches`
     manage snapshots. A `CacheStatus` carries `state`, with `stale_reason`,
     `format_version`, and `leftover_kind` where they apply, and a clear returns a
