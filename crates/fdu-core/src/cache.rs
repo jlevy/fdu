@@ -91,9 +91,15 @@ pub fn list_caches(cache_dir: &Path) -> Result<Vec<CacheStatus>> {
     Ok(found)
 }
 
-/// Remove one snapshot, if it is one.
+/// Remove one snapshot, if it is one this build reads.
 ///
 /// Returns whether a file was removed. Idempotent: clearing an absent cache succeeds.
+///
+/// A snapshot from an older format version, or from another engine fingerprint, fails the
+/// header check, so this leaves it where it is rather than delete a file it cannot
+/// identify. A root scanned again replaces its own snapshot, atomically and under the same
+/// hashed name, so only a root that is never scanned again keeps such a file; reclaiming
+/// those is `fdu-lh9x`.
 pub fn clear_cache(path: &Path) -> Result<bool> {
     if snapshot::read_header(path)?.is_none() {
         // Refusing to delete what this code cannot identify is the whole safety property:

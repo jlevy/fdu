@@ -134,8 +134,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Control input through `ControlTable::upsert` or `Index::apply` is applied, or
     refused with `Error::ControlStateNotObserved` on a scope that observes no control
     state, where it used to fail with `Error::UnsupportedScanConfig`.
-  - A scope with `read_controls` on now has ignore-rules fingerprint 2 rather than 0, so
-    a snapshot written under it misses once and is rebuilt by a cold scan.
+  - A scope with `read_controls` on now has an ignore-rules fingerprint of its own
+    rather than 0, so a snapshot written under it misses once, and the next scan of that
+    root replaces it with a cold one.
 - **Breaking:** a `.gitignore` past the control budget, or with a line over the line
   limit, is refused instead of ending the scan.
   Its rules do not apply, every size stays exact, and the result stays complete with
@@ -171,8 +172,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     A note names the refused files’ directories and the flag for each limit that fired.
     The report schema moves to `fdu.report/5`, and to `fdu.report/6` with content
     analysis; Python `Status.ignore_rules` carries the same value.
-  - The snapshot format moves to version 4, carrying both limits and every refusal, so
-    existing snapshots are rebuilt once.
+  - The snapshot format moves to version 4, carrying both limits and every refusal.
+    Scanning a root again writes its snapshot afresh, in place; a root that is never
+    scanned again keeps a file this build does not read.
 - One projection of an opened-root read can refuse while the rest of the read answers.
   `ProjectionResult::Refused`, `RefusedResult` in Python, names why: a `Tree` or roll-up
   of a path that is not a directory, a page whose continuation record would exceed its
