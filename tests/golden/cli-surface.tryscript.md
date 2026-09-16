@@ -457,7 +457,9 @@ IGNORE RULES
   --no-gitignore reads no rules and shows no share. Only per-directory .gitignore
   files apply, not core.excludesFile, .git/info/exclude, or a global ignore file,
   and matching is case-sensitive on every platform. An unreadable .gitignore makes
-  the result partial, like any unreadable path.
+  the result partial, like any unreadable path. A .gitignore past --gitignore-budget
+  or --gitignore-line-limit is refused whole and named in a note: sizes stay exact,
+  ignored shares under that directory do not.
 
 OUTPUT AND AUTOMATION
   Metadata-only machine output remains fdu.report/5; metric summaries use fdu.report/6.
