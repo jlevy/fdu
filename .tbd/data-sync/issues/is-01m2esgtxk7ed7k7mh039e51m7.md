@@ -5,7 +5,7 @@ title: "Release note: the type_rules_fingerprint change cold-rescans every cache
 kind: task
 status: open
 priority: 3
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - stack-followup
@@ -13,7 +13,7 @@ labels:
 dependencies: []
 parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 created_at: 2026-09-14T01:46:47.090Z
-updated_at: 2026-09-16T08:18:40.214Z
+updated_at: 2026-09-16T16:35:00.864Z
 ---
 Release-note follow-up from PR #48's description ("The command line is unmoved"): "One consequence deserves a release note."
 
@@ -44,3 +44,4 @@ What the note now says, in CHANGELOG.md under [0.1.0] 'Upgrading from a pre-rele
 (2) fdu --cache-clear=all reclaims what that strands, and fdu --cache-status=all names each file as stale with its reason first. Files that are not fdu's are never removed.
 The release-candidate check this bead owed is now pinned by a golden rather than owed to a manual run: tests/golden/cli-lifecycle.tryscript.md plants an older-format and an other-engine snapshot through tests/golden/bin/cache-plant.mjs ("exactly the files a release upgrade leaves behind"), goldens --cache-status=all reporting them stale, and goldens --cache-clear=all removing them while leaving unrecognized files in place. crates/fdu-core/src/snapshot.rs::engine_fingerprint_mismatch_discards_the_snapshot covers the refusal itself.
 Close this bead when the final version of PR #64 merges.
+2026-09-16 NARROWED after review 5225288341 (RN64-5), PR #64 commit 79e8241. Point (1) above overstated it: CARGO_PKG_VERSION was already 0.1.0 in development builds (the -dev+g suffix is only build.rs's --version string), so the crate version does not move between a development build and 0.1.0. What decides is the format and the scope. Both documents now say: a snapshot written before format 4, or under different type rules or .gitignore settings, is not served and that tree scans cold once; a snapshot a development build wrote in format 4 under the same settings can be served warm; the version moves at every release, so each later upgrade costs one cold run per cached tree. Point (2) is unchanged. The rename list under the same heading was removed (RN64-4, 5eb497b). Still close on merge.

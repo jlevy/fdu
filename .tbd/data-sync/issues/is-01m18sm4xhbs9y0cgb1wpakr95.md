@@ -5,7 +5,7 @@ title: fdu peak memory runs ~1.5x dust on every macOS tree measured
 kind: bug
 status: open
 priority: 1
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - performance
@@ -14,7 +14,7 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-30T07:37:27.215Z
-updated_at: 2026-08-31T04:15:22.118Z
+updated_at: 2026-09-16T16:33:54.844Z
 ---
 Ad-hoc warm measurements on this host, fdu from main vs dust 1.2.4:
 
@@ -61,3 +61,5 @@ crates/fdu-core/src/execution.rs plan_report() says why:
 Consequence for the fix: reducing this is about the tree view's retention, not about cache policy. Either the depth-2 default tree is served from a bounded structure rather than a full index, or per-entry retained size comes down. Control state built for every scan (fdu-etfj) sits inside that per-entry cost and is the cheapest part to remove first.
 
 Wall time is NOT part of this deficit - see the correction in fdu-zibs. fdu default is faster than dust on this subject.
+
+2026-09-16, CONTRADICTED ON THE RELEASE CANDIDATE, for one subject. PR #68's docs/project/reports/report-2026-09-16-fdu-live-tool-comparison.md (release build of main 16efcd0, balanced recipe at 1,000,001 entries, harness-paired, uncontrolled host) measured fdu's depth-one tree report with --cache off at 285.4 MiB peak RSS, against dust 640.7 MiB, dumac 29.4 MiB and dua 21.2 MiB. The 1.5x-dust figures in the description are single ad-hoc runs on real macOS trees with dust's progress spinner on, so the two results are about different subjects and neither falsifies the other; but this bead's comparison is not claim-grade and must not be quoted. PR #64 (review RN64-1, fdu-pr0v) rewrote the 0.1.0 memory limitation from the harness figures. The acceptance above, harness-measured RSS on nominated real macOS trees with the index separated from incidental retention, still stands.
