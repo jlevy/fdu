@@ -5,7 +5,7 @@ title: "Release note: the type_rules_fingerprint change cold-rescans every cache
 kind: task
 status: open
 priority: 3
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - stack-followup
@@ -13,7 +13,7 @@ labels:
 dependencies: []
 parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 created_at: 2026-09-14T01:46:47.090Z
-updated_at: 2026-09-15T20:14:06.579Z
+updated_at: 2026-09-16T08:18:40.214Z
 ---
 Release-note follow-up from PR #48's description ("The command line is unmoved"): "One consequence deserves a release note."
 
@@ -37,3 +37,10 @@ What it says:
 Still owed before closing:
 - On the release candidate, run over a tree cached by a build of today's main. Confirm the snapshot is refused (cold scan), not served, and that --cache-clear leaves it. Before PR A's format bump, a dev-build 0.1.0 snapshot is still recognized, since the engine fingerprint mixes only CARGO_PKG_VERSION, FORMAT_VERSION and CLASSIFICATION_VERSION.
 Close this bead with the note's location when the final version of PR #64 merges.
+2026-09-16 REWRITTEN AND RESOLVED IN TEXT, on PR #64 commit 1f5586d (merge of main 16efcd0 into claude/release-notes-0.1.0).
+The note's old second half is obsolete. PR #67 makes --cache-clear and --cache-clear=all remove stale snapshots (another fdu version, another format, or an unreadable header) as well as current ones, so the "delete them from the cache directory by hand" instruction is gone from both documents.
+What the note now says, in CHANGELOG.md under [0.1.0] 'Upgrading from a pre-release build' and in docs/project/release-notes/0.1.0.md under 'Upgrading from a Pre-Release Build':
+(1) The first run on each previously cached tree scans cold. A snapshot is keyed on an engine fingerprint mixing CARGO_PKG_VERSION, FORMAT_VERSION and CLASSIFICATION_VERSION (crates/fdu-core/src/snapshot.rs:201-211, FORMAT_VERSION now 4 at :64) plus the type-rule and ignore-rule fingerprints that scope it, so the crate version alone moves it at every release. That one cold run per tree is what every upgrade costs, not a one-off.
+(2) fdu --cache-clear=all reclaims what that strands, and fdu --cache-status=all names each file as stale with its reason first. Files that are not fdu's are never removed.
+The release-candidate check this bead owed is now pinned by a golden rather than owed to a manual run: tests/golden/cli-lifecycle.tryscript.md plants an older-format and an other-engine snapshot through tests/golden/bin/cache-plant.mjs ("exactly the files a release upgrade leaves behind"), goldens --cache-status=all reporting them stale, and goldens --cache-clear=all removing them while leaving unrecognized files in place. crates/fdu-core/src/snapshot.rs::engine_fingerprint_mismatch_discards_the_snapshot covers the refusal itself.
+Close this bead when the final version of PR #64 merges.
