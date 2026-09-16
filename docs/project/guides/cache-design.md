@@ -41,7 +41,9 @@ A request that returns the index or reconciles it against the tree is served onl
 snapshot taken under exactly its scope.
 Alternating `--no-gitignore` with a default run, or changing either limit, finds no
 usable snapshot and, under a write-permitting policy, replaces the root’s one snapshot
-each time (`fdu-w3l5` tracks keying snapshots by scope).
+each time the run retains an index (`fdu-w3l5` tracks keying snapshots by scope).
+A `--no-gitignore` summary answered by the transient tier, described below, retains
+none, so it replaces nothing.
 The one exception is a `--cache only` report that turns observation off, which answers
 from a default snapshot’s all-entry facts.
 
