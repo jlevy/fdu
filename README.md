@@ -6,11 +6,11 @@ fdu answers, for *every* directory in a tree at once: how big is it, how many fi
 it hold, what changed most recently, and what kinds of files live in it.
 One walk, many metrics, cached between runs.
 
-> **Typical macOS/APFS live performance:** fdu built a reusable exact index and ten-row
-> tree over 1,000,001 entries in a **5.206-second median**, against 5.637 seconds for
-> dumac, 6.972 for diskus and 8.292 for dust, each of which returns one number.
-> Measured 2026-09-16 on an M1 Pro MacBook with a local SSD, on a busy machine.
-> See [the full comparison](#speed-and-the-cache).
+> **Exploratory macOS/APFS calibration:** fdu built a reusable exact index and ten-row
+> tree over a reproducible generated corpus of 1,000,001 entries in a **5.206-second
+> median**. Measured 2026-09-16 on an M1 Pro MacBook with a local SSD under uncontrolled
+> host load. This is not a portable absolute time or a cross-tool ranking; see
+> [the full comparison](#speed-and-the-cache).
 
 > **Status: 0.x.** A new minor release may change the Rust API, the Python API, or the
 > command line; [the release process](docs/project/guides/release-process.md) states the
@@ -159,13 +159,14 @@ The full survey, with the techniques worth adapting and their sources, is in
 
 ## Speed and the Cache
 
-**macOS, measured 2026-09-16 on the 0.1.0 release candidate.** On a reproducible
-1,000,001-entry tree, a fresh fdu process with its own cache disabled built a reusable
-exact index and ten-row tree in a **5.206-second median** — the fastest of every tool
-measured, while returning far more than any of them.
-Twelve adjacent paired trials per tool on an M1 Pro MacBook with a local APFS SSD, in a
-warm-steady filesystem-cache state, with one independent full-tree fingerprint verifying
-every tool agreed on the answer.
+**Exploratory macOS calibration, measured 2026-09-16 on the 0.1.0 release candidate.**
+On a reproducible generated tree of 1,000,001 entries, a fresh fdu process with its own
+cache disabled built a reusable exact index and ten-row tree in a **5.206-second
+median**. Twelve adjacent paired trials per tool on an M1 Pro MacBook with a local APFS
+SSD, in a warm-steady filesystem-cache state, with one independent full-tree fingerprint
+verifying every tool agreed on the answer.
+The table records one uncontrolled, busy-host run; it does not establish portable
+absolute times or an ordering between tools.
 
 | Tool | Work returned | Median |
 | --- | --- | ---: |
@@ -177,11 +178,12 @@ every tool agreed on the answer.
 | BSD `du` | one total, serial | 51.226 s |
 | GNU `du` | one total, serial | 65.775 s |
 
-Every competitor returns one number.
+Each competitor was invoked under a contract that reduced its output to one number.
 fdu returned file and directory counts, apparent and allocated bytes, newest file time,
 per-directory roll-ups for the whole tree and per-extension tallies, and kept the index
 that answers the next question without another walk.
-The nearest, dumac, took 11.3% longer (95% interval +5.8% to +13.5%).
+Within this run, dumac’s paired wall-time difference was +11.3% (95% interval +5.8% to
++13.5%).
 
 Two caveats belong with the figure rather than in a footnote.
 The machine was **busy**: load average 7.7 to 9.9 against ten cores, with other work
