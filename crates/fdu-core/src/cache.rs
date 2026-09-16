@@ -329,6 +329,11 @@ enum NameShape {
 /// The file is identified by its contents, because the caller named it: only a name fdu
 /// gives its own staging files and sidecars is read as one, and even then the magic
 /// decides. A symbolic link at `path` is reported unrecognized rather than followed.
+///
+/// One path is all this sees, so a sidecar is judged by its own name and magic:
+/// [`LeftoverKind::OrphanedContent`] here says the file is a sidecar, not that no snapshot
+/// claims it. Whether one does is a fact about the directory, which [`list_caches`]
+/// answers and a clear asks again at the moment of removal.
 pub fn cache_status(path: &Path) -> Result<CacheStatus> {
     Ok(status_at(path)?.unwrap_or_else(|| CacheStatus {
         path: path.to_path_buf(),
@@ -348,28 +353,40 @@ fn status_at(path: &Path) -> Result<Option<CacheStatus>> {
         return Ok(None);
     };
     if !metadata.file_type().is_file() {
-        return Ok(Some(unrecognized(path, metadata.len())));
+        return Ok(Some(unrecognized(path, reportable_bytes(&metadata))));
     }
     // A staging file holds a complete image the moment before its rename, so identifying
     // it by contents alone would call it a current snapshot. The name is what says it was
     // never published, and only fdu's own staging names carry that meaning.
+    //
+    // A leftover's name is answered here and nowhere below: the name has already said
+    // which magic to expect, so contents that are not it leave the file unrecognized.
+    // Falling through to the snapshot identification would read a snapshot image under a
+    // sidecar's name as a snapshot, and then clear it under a name no snapshot is given
+    // and without the age rule that name carries.
     let leftover = match path.file_name().map_or(NameShape::Other, name_shape) {
-        NameShape::SnapshotTemporary => {
-            is_snapshot_image(path)?.then_some(LeftoverKind::StagingTemporary)
-        }
-        NameShape::SidecarTemporary => {
-            is_sidecar_image(path)?.then_some(LeftoverKind::StagingTemporary)
-        }
-        NameShape::Sidecar => is_sidecar_image(path)?.then_some(LeftoverKind::OrphanedContent),
+        NameShape::SnapshotTemporary => Some(leftover_or_unrecognized(
+            path,
+            metadata.len(),
+            LeftoverKind::StagingTemporary,
+            is_snapshot_image(path)?,
+        )),
+        NameShape::SidecarTemporary => Some(leftover_or_unrecognized(
+            path,
+            metadata.len(),
+            LeftoverKind::StagingTemporary,
+            is_sidecar_image(path)?,
+        )),
+        NameShape::Sidecar => Some(leftover_or_unrecognized(
+            path,
+            metadata.len(),
+            LeftoverKind::OrphanedContent,
+            is_sidecar_image(path)?,
+        )),
         NameShape::Snapshot | NameShape::Other => None,
     };
-    if let Some(kind) = leftover {
-        return Ok(Some(CacheStatus {
-            path: path.to_path_buf(),
-            bytes: metadata.len(),
-            content_bytes: None,
-            state: CacheState::Leftover(kind),
-        }));
+    if let Some(status) = leftover {
+        return Ok(Some(status));
     }
     let state = match snapshot::identify(path)? {
         None => return Ok(None),
@@ -417,6 +434,37 @@ fn unrecognized(path: &Path, bytes: u64) -> CacheStatus {
     }
 }
 
+/// A file under one of fdu's own leftover names: the leftover when its contents are the
+/// magic that name implies, and unrecognized when they are not.
+fn leftover_or_unrecognized(
+    path: &Path,
+    bytes: u64,
+    kind: LeftoverKind,
+    has_magic: bool,
+) -> CacheStatus {
+    if has_magic {
+        CacheStatus {
+            path: path.to_path_buf(),
+            bytes,
+            content_bytes: None,
+            state: CacheState::Leftover(kind),
+        }
+    } else {
+        unrecognized(path, bytes)
+    }
+}
+
+/// The byte count to report for a cache entry.
+///
+/// Only a regular file has a size a report is about. A directory's `st_size` is that
+/// directory entry's own accounting, which differs per filesystem and is zero on Windows,
+/// and a symbolic link's is the length of the path it holds. Either would be read as a
+/// file's size and summed into the unrecognized total, so a non-regular entry reports no
+/// bytes.
+fn reportable_bytes(metadata: &fs::Metadata) -> u64 {
+    if metadata.file_type().is_file() { metadata.len() } else { 0 }
+}
+
 /// Keep a filesystem answer, reading "not found" as nothing there rather than an error.
 ///
 /// A path can be absent before the call or removed by another process during it, and a
@@ -437,7 +485,8 @@ fn present<T>(result: io::Result<T>, path: &Path) -> Result<Option<T>> {
 /// name the cache gives snapshots and with the snapshot magic, so neither a stray copy
 /// under another name nor another program's file under a snapshot's name is mistaken for
 /// one. Symbolic links and directories are listed from their own metadata, never followed
-/// or descended into.
+/// or descended into, and report no bytes, because what the filesystem calls their size is
+/// its own accounting rather than anything a clear could reclaim.
 pub fn list_caches(cache_dir: &Path) -> Result<Vec<CacheStatus>> {
     let Some(entries) = present(fs::read_dir(cache_dir), cache_dir)? else {
         // An absent cache directory is an empty cache, not an error.
@@ -454,7 +503,7 @@ pub fn list_caches(cache_dir: &Path) -> Result<Vec<CacheStatus>> {
             status_at(&path)?
         } else {
             present(fs::symlink_metadata(&path), &path)?
-                .map(|metadata| unrecognized(&path, metadata.len()))
+                .map(|metadata| unrecognized(&path, reportable_bytes(&metadata)))
         };
         found.extend(status);
     }
@@ -548,9 +597,11 @@ fn clear_leftover(path: &Path, kind: LeftoverKind) -> Result<bool> {
                 .duration_since(modified)
                 .is_ok_and(|age| age >= snapshot::STALE_TEMP_AGE)
         }
-        // A sidecar whose snapshot is back — or was never gone, because this clear left an
-        // unrecognized file at that path alone — is not orphaned, and a later analyzed
-        // scan can still use it.
+        // Kept only while a snapshot image is at its snapshot path: one this clear left,
+        // or one a writer published since the listing, either of which a later analyzed
+        // scan can still use it for. Anything else there is not a snapshot and cannot
+        // want this sidecar, so the sidecar goes and the scan that writes a snapshot at
+        // that path writes a fresh one.
         LeftoverKind::OrphanedContent => !is_snapshot_image(&sidecar_snapshot_path(path))?,
     };
     if !removable {
@@ -778,6 +829,9 @@ mod tests {
         let listed = list_caches(cache.path()).expect("list");
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].state, CacheState::Unrecognized);
+        // A link's `st_size` is the length of the path it holds, which is the tempdir's,
+        // so reporting it would put a machine-specific number in a byte total.
+        assert_eq!(listed[0].bytes, 0, "a link has no size to report");
         assert_eq!(cache_status(&link).expect("status").state, CacheState::Unrecognized);
 
         assert!(clear_all_caches(cache.path()).expect("clear").is_empty());
@@ -810,7 +864,13 @@ mod tests {
                 .collect::<Vec<_>>(),
             [(snapshot, "current"), (nested.clone(), "unrecognized")]
         );
-        assert_eq!(cache_status(&nested).expect("status").state, CacheState::Unrecognized);
+        // No byte count: `st_size` for a directory is 4096 on one filesystem, 0 on
+        // Windows, and something else on the next, and it would be summed into the bytes
+        // a status attributes to unrecognized files.
+        assert_eq!(listed[1].bytes, 0, "a directory has no size to report");
+        let single = cache_status(&nested).expect("status");
+        assert_eq!(single.state, CacheState::Unrecognized);
+        assert_eq!(single.bytes, 0, "and the single-path route agrees");
 
         assert_eq!(clear_all_caches(cache.path()).expect("clear").snapshots, 1);
         assert!(!clear_cache(&nested).expect("clear"));
@@ -879,6 +939,16 @@ mod tests {
         // A sidecar name over contents that are not fdu's.
         let foreign_sidecar = cache.path().join(format!("{}.content", layout_name(7)));
         std::fs::write(&foreign_sidecar, b"not a sidecar").expect("write");
+        // A snapshot image under a sidecar's name, and under a staged sidecar's name. The
+        // name says which magic to expect and the snapshot's is not it, so both are
+        // unrecognized: reading them as snapshots would clear them under a name no
+        // snapshot is given, and the staged one without the age rule its name carries.
+        let snapshot_under_sidecar_name = cache.path().join(format!("{}.content", layout_name(8)));
+        std::fs::write(&snapshot_under_sidecar_name, &image).expect("write");
+        let snapshot_under_staged_sidecar_name =
+            cache.path().join(staging_name(&format!("{}.content", layout_name(9))));
+        std::fs::write(&snapshot_under_staged_sidecar_name, &image).expect("write");
+        set_modified(&snapshot_under_staged_sidecar_name, beyond_the_reaper());
 
         let listed = list_caches(cache.path()).expect("list");
         assert_eq!(
@@ -888,18 +958,31 @@ mod tests {
                 (in_flight.clone(), "leftover/staging_temporary".to_string()),
                 (impostor.clone(), "unrecognized".to_string()),
                 (staged_sidecar.clone(), "leftover/staging_temporary".to_string()),
+                (snapshot_under_staged_sidecar_name.clone(), "unrecognized".to_string()),
                 (current.clone(), "current".to_string()),
                 (orphan.clone(), "leftover/orphaned_content".to_string()),
                 (foreign_sidecar.clone(), "unrecognized".to_string()),
+                (snapshot_under_sidecar_name.clone(), "unrecognized".to_string()),
             ]
         );
+        // The single-path route says the same, so neither depends on the listing to be
+        // safe.
+        for named in [&snapshot_under_sidecar_name, &snapshot_under_staged_sidecar_name] {
+            assert_eq!(cache_status(named).expect("status").state, CacheState::Unrecognized);
+        }
 
         let summary = clear_all_caches(cache.path()).expect("clear");
         assert_eq!(summary, ClearSummary { snapshots: 1, leftovers: 3 });
         for gone in [&abandoned, &staged_sidecar, &orphan, &current] {
             assert!(!gone.exists(), "{} should be reclaimed", gone.display());
         }
-        for kept in [&in_flight, &impostor, &foreign_sidecar] {
+        for kept in [
+            &in_flight,
+            &impostor,
+            &foreign_sidecar,
+            &snapshot_under_sidecar_name,
+            &snapshot_under_staged_sidecar_name,
+        ] {
             assert!(kept.exists(), "{} must survive", kept.display());
         }
         // Idempotent, and the young temporary is still nobody's business to remove.
