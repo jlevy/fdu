@@ -408,11 +408,11 @@ def check_reports_carry_the_ignored_share() -> None:
     """
 
     root = Path(tempfile.mkdtemp(prefix="fdu-public-ignored-"))
-    (root / ".gitignore").write_text("dist/\n", encoding="utf-8")
+    (root / ".gitignore").write_bytes(b"dist/\n")
     (root / "dist").mkdir()
-    (root / "dist" / "bundle.js").write_text("x" * 100, encoding="utf-8")
+    (root / "dist" / "bundle.js").write_bytes(b"x" * 100)
     (root / "src").mkdir()
-    (root / "src" / "main.rs").write_text("fn main() {}", encoding="utf-8")
+    (root / "src" / "main.rs").write_bytes(b"fn main() {}")
     views = (fdu.View.SUMMARY, fdu.View.TREE, fdu.View.EXTENSIONS, fdu.View.FILES)
     apparent = fdu.SizeMetric.APPARENT
 
