@@ -92,10 +92,12 @@ decisions, including the explicit delivery override recorded below.
 
 ## Current Implementation Status
 
-This status describes the current Phase 3C checkpoint on fdu PR #48. The PR remains
-draft while the native projections, MetaBrowser adoption, and composed proof proceed.
-The registry parser and additive `EntrySelection` landed at `328ca65`, and the three
-ordered-page contracts are now stated in
+This status describes the checkpoint after
+[PR #48](https://github.com/jlevy/fdu/pull/48) merged on 2026-09-14 and its follow-ups
+landed (PRs #50–#52, #56, #57, #60, #63, #65, and #67). The native projections,
+MetaBrowser adoption, and composed proof proceed as ordinary PRs on `main`. The registry
+parser and additive `EntrySelection` landed at `328ca65`, and the three ordered-page
+contracts are now stated in
 [Row order is stated here, not inferred from an implementation](#row-order-is-stated-here-not-inferred-from-an-implementation)
 after implementation work found that none of them was written down: ordered pages were
 specified as prose that did not separate level order from pre-order, ranked recency left
@@ -114,7 +116,7 @@ coordinator assembly, route integration, and full application gate.
 | Architecture and implementation map | Complete | The durable architecture, PR #44 and #47 reconciliation, direct-API correction, file/function map, test design, and reuse ledger are committed and reviewed. |
 | Phase 1: exact engine kernel | Complete | Checkpoints 1A through 1D passed their local gates and the cumulative cross-platform PR gate. |
 | Phase 2: opened-root vertical slice | Complete | The native lifecycle and five transparent session goldens are green. The direct `PyO3` handle, exhaustive value conversion, immutable `fdu.opened` API, typed errors, GIL-detached operations, strict downstream typing fixture, installed-wheel lifecycle, source distribution, CLI parity, and cross-target lint all pass. |
-| Phase 3: MetaBrowser adoption | Checkpoint 3C in progress | MetaBrowser commit `2743064` measures the unchanged contract against the exact fdu wheel from `0583a1a`; `45266a8` completes the shared bounded contract and Python oracle. fdu `a286145` completes the approved optional serving-index set, and `27aeed0` completes the bounded continuation authority with green CI. The current native checkpoint parses the actual File Rollup v3 registry without adding a dependency, projects classification on demand, and adds the selection predicates needed by catalog and filtered reads. The bounded projection readers, Python registry input, and thin production adapter remain open. |
+| Phase 3: MetaBrowser adoption | Checkpoint 3C in progress | MetaBrowser commit `2743064` measures the unchanged contract against the exact fdu wheel from `0583a1a`; `45266a8` completes the shared bounded contract and Python oracle. fdu `a286145` completes the approved optional serving-index set, and `27aeed0` completes the bounded continuation authority with green CI. The current native checkpoint parses the actual File Rollup registry (schema 3 or 4) without adding a dependency, projects classification on demand, and adds the selection predicates needed by catalog and filtered reads. The bounded projection readers, Python registry input, and thin production adapter remain open. |
 | Phase 4: control-state scale | In progress | The control limits degrade: a `.gitignore` past the budget or the line limit is refused and named, sizes stay exact, and nothing ends the scan (`fdu-1onj`). Identical sources are charged once (`fdu-szkg`), and each limit is liftable on its own on every surface (`fdu-okne`). Memory on `~/Library`-shaped trees, the peer-memory gap, and the macOS re-measurement remain. Epic `fdu-2lkf`. |
 | Phase 5: composed proof | Not started | Cross-provider conformance, route and lifecycle integration, installed-wheel proof, and final performance and size acceptance remain required. |
 
@@ -490,7 +492,8 @@ It should not require token signing or a new cryptographic dependency.
 
 The state record keeps orthogonal facts orthogonal:
 
-- **phase:** opening, discovering, reconciling, ready, watching, stopped, or failed;
+- **phase:** discovering, reconciling, ready, watching, stopped, or failed (root binding
+  completes before a handle exists, so there is no opening phase);
 - **coverage:** complete or partial with a typed reason;
 - **freshness:** fresh, reconciling, stale, or partial;
 - **source:** scanned, revalidated, journal-scoped, or cached;
@@ -508,7 +511,7 @@ lossy mapping:
 
 | fdu value | MetaBrowser value after the contract amendment | Rule |
 | --- | --- | --- |
-| phase `opening` | `OPENING` | Rename prototype `OPENING_CACHE`; opening is not necessarily a cache read. |
+| no fdu phase | `OPENING` | MetaBrowser’s `OPENING` is host-side, before an fdu handle exists. Rename prototype `OPENING_CACHE`; opening is not necessarily a cache read. |
 | `discovering`, `reconciling`, `ready`, `watching`, `stopped`, `failed` | same named lifecycle value | Exhaustive one-to-one mapping. |
 | coverage complete or partial with `building`, `budget`, `cancelled`, `inaccessible`, or `failed` | same boolean and reason | No reason folding. |
 | freshness `fresh`, `reconciling`, `stale`, or `partial` | same named freshness value | Per-path `unknown` remains knowledge state, not freshness. |
@@ -1329,6 +1332,13 @@ current `main`, not PR #47. Each checkbox is independently reviewable, each phas
 in a named green commit checkpoint, and work does not advance across a failed phase
 gate. The PR remains a draft until Phase 5 passes.
 
+**Delivered differently (noted 2026-09-16).** PR #48 merged on 2026-09-14, together with
+its stacked PRs #50–#52, before Phase 5: Phases 1, 2, and 3B were complete, and
+checkpoint 3C and Phase 4 were in progress.
+The P0 child of `fdu-2lkf` that was to gate leaving draft, `fdu-1onj`, closed afterwards
+in PR #63. The remaining phases land as ordinary PRs on `main`, each held to its own
+phase gate.
+
 This merge topology explicitly overrides the review report’s preferred sequence of a
 core-integrity PR followed by an opened-root PR. The project owner selected one
 cumulative branch after considering that recommendation so the cross-repository effort
@@ -1664,12 +1674,12 @@ design failure, not an adapter tradeoff.
   file recency through exact insertion, metadata update, kind change, ignore
   reclassification, and subtree removal; prove detached indexes and snapshots retain
   none of that state, and retain a release-build commit-cost and structural-row probe.
-- [x] Parse the actual File Rollup v3 registry once at opened-root setup, derive its
-  identity from validated content, and expose registry-owned classification and browsing
-  taxonomy without a TOML, Python, or MetaBrowser dependency in the standalone binary.
-  Compose the established one-shot `Selection` inside a new additive `EntrySelection`
-  carrying the name, ignored-state, maximum-size, suffix, and ancestor predicates
-  required by bounded native reads.
+- [x] Parse the actual File Rollup registry (schema 3 or 4) once at opened-root setup,
+  derive its identity from validated content, and expose registry-owned classification
+  and browsing taxonomy without a TOML, Python, or MetaBrowser dependency in the
+  standalone binary. Compose the established one-shot `Selection` inside a new additive
+  `EntrySelection` carrying the name, ignored-state, maximum-size, suffix, and ancestor
+  predicates required by bounded native reads.
   Do not add fields to the existing public struct or create adapter-only filtering
   semantics.
 - [x] State the three row orders in the joint contract before implementing against them.
@@ -1714,15 +1724,18 @@ Acceptance for Phase 3:
 ### Phase 4: Control-State Scale and Bound Discipline
 
 Phase 1 built exact control state and proved it on repositories.
-It does not survive a real home directory, and that is a merge blocker rather than a
-tuning question.
+When this phase was written, it did not survive a real home directory, and that was a
+merge blocker rather than a tuning question.
 
 Field agents running ordinary roll-ups on macOS could not complete a scan of `~`,
 `~/wrk`, or `~/Library` with a branch build.
 Two aborted with `control table requires N bytes; limit is 4194304 bytes`; the third was
-SIGKILLed. Current `main`, which has no control table, scans the same `~/wrk` in 15
-seconds and exits 0. The regression is this branch’s, and it arrives on `main` when this
-PR merges.
+SIGKILLed. The `main` of that time, which had no control table, scanned the same `~/wrk`
+in 15 seconds and exited 0. The regression was the branch’s.
+
+**Since then (2026-09-16).** PR #63 (`fdu-1onj`) removed the abort and its error: a
+source past either limit is refused and named, and the scan completes with exact sizes.
+The SIGKILL is still owned by `fdu-6o5o`, and peak memory by `fdu-syyl`.
 
 The overshoot is not marginal, and the reported numbers say otherwise only by accident.
 The budget trips at the first crossing of a running cumulative total, so the number in
@@ -1783,10 +1796,12 @@ moves from 14 MiB under `--view summary` to 66 MiB under the default tree.
 Cache policy adds roughly 9 MiB on top of that, about an eighth of the gap.
 
 `plan_report` in `crates/fdu-core/src/execution.rs` states the rule: `--cache off` does
-not avoid the index, it only permits the summary tier, and `RetainedState::FullIndex` is
-selected by any view other than a bare unfiltered summary.
-The depth-2 default tree therefore retains one node per entry, about 550 bytes per
-retained entry on this subject.
+not avoid the index, and `RetainedState::FullIndex` is selected by any view other than a
+bare unfiltered summary that also turned observation off (`--no-gitignore`). Since
+`fdu-elnn` a default `--view summary` observes `.gitignore` and therefore retains the
+full index too (`fdu-if7o`). The figures in this section were recorded before that
+change. The depth-2 default tree therefore retains one node per entry, about 550 bytes
+per retained entry on this subject.
 
 Reducing it is a question about the default view’s retention rather than about cache
 policy: either the tree is served from a bounded structure instead of a full index, or
@@ -1961,8 +1976,8 @@ before anything tunes what that state costs.
   owns the correctness-first redesign, profiles, allocation guard, and final parity
   evidence.
 - [x] Gate control observation on a runtime capability rather than the `gitignore`
-  compile feature alone (`fdu-etfj`). Landed as `ScanConfig::read_controls`, decided for
-  one-shot reports by the shared planner, with the scope identity and snapshot
+  compile feature alone (`fdu-etfj`). Landed as `ScanConfig::read_controls`, followed by
+  the shared planner as the caller set it, with the scope identity and snapshot
   acceptance described above.
   Acceptance by surface: every default request observes exact control state, and since
   `fdu-1onj` a control bound degrades rather than ends it.
@@ -1988,16 +2003,16 @@ before anything tunes what that state costs.
   (`fdu-syyl`), through the recorded peer comparison rather than by hand (`fdu-zibs`).
 
 This phase does not change what a complete answer means.
-Control state remains exact for the consumers that ask for it; what changes is that a
-roll-up no longer builds it, and that exhausting its budget yields a stated partial
-result instead of an error.
+Control state remains exact wherever it is observed, which is every default request;
+what changes is that a request can turn it off (`--no-gitignore`, `read_controls` off),
+and that crossing a limit yields a stated partial classification instead of an error.
 
 Acceptance for Phase 4:
 
 - a default one-shot roll-up of `~` and of `~/wrk`, from the command line or from
   `fdu.report`, completes on macOS with every size exact, reading `.gitignore` files and
-  naming any the control budget refused, and `--no-gitignore` performs no control-file
-  I/O and retains no control state;
+  naming any file the budget or the line limit refused, and `--no-gitignore` performs no
+  control-file I/O and retains no control state;
 - opened-root and inventory consumers still receive exact, removal-aware control state,
   and the `--no-default-features` build is unaffected;
 - crossing the runtime retention budget produces a usable roll-up plus an explicit
@@ -2005,8 +2020,9 @@ Acceptance for Phase 4:
   scan;
 - retention is deduplicated by fingerprint, with removal semantics unchanged and tested,
   and measured retention on `~/wrk` falls by the predicted order;
-- the runtime budget is settable from the command line and named in its own diagnostic,
-  while the snapshot parser guard stays strict and independent of it;
+- both runtime limits, the budget and the line limit, are settable from the command line
+  and each is named in the refusal note when it fires, while the snapshot parser guard
+  stays strict and independent of them;
 - peak memory on an `~/Library`-shaped tree is bounded and measured, or the SIGKILL is
   attributed to a cause outside fdu with evidence;
 - macOS measurements name platform, host, and cache state, and use `main` as the
@@ -2220,11 +2236,11 @@ Beads `fdu-wzu9` and `fdu-ff6r` finish the kernel before a worker is added.
 
 | File or function | Change | Reuse and proof |
 | --- | --- | --- |
-| New `control.rs` | Add `ControlTable::{upsert, remove, matcher_for, affected_subtree}` with one shared bound enforced at mutation, snapshot save, and load. Store exact source identity and parsed matcher by directory. | Extract control-source and deletion cases from `f4c60ed`, `be04134`, and `d58d9c5`; add last-control deletion, create/delete churn, at-bound self-roundtrip, and no second tree walk. |
+| New `control.rs` | Add `ControlTable::{upsert, remove, matcher_for, affected_subtree}`. As landed, two runtime limits, a budget and a line limit, refuse a source at `upsert` (`ControlLimits`), and a fixed 256 MiB parser ceiling applies at snapshot save and load. Store exact source identity and parsed matcher by directory. | Extract control-source and deletion cases from `f4c60ed`, `be04134`, and `d58d9c5`; add last-control deletion, create/delete churn, at-bound self-roundtrip, and no second tree walk. |
 | New `control/gitignore.rs` | Parse and evaluate the fixed `.gitignore` semantics required by MetaBrowser, including nested negation and removal. Dependency choice is made under supply-chain policy; if the reviewed crate raises MSRV or size without enough benefit, keep the narrow parser in core. | Port the prototype corpus, then compare provider order against MetaBrowser on the shared fixture. |
 | `index.rs` `PartitionRollUp` | Maintain only `all` and `unignored` roll-ups plus the registry-derived classification dimensions used by existing reports. Control changes prepare exact reclassification moves and commit them atomically. | Extract generic-plane merge/unmerge tests from `a6a89ab` and `7aaaf84` without their abstraction. |
 | New `admission.rs`; `scan.rs`; `scan/macos_bulk.rs`; `watch.rs` | Centralize hidden, symlink, filesystem-boundary, and object-kind admission. Every scan acceleration and live path calls the same decision. Control-file signals bypass ordinary row admission without creating a visible row. | Extract `6a8ac6f`, `ff210d0`, and `048b0cc`; add `scripts/check-admission-sites.mjs`, Unix invalid-byte, Windows surrogate/separator, macOS bulk, FIFO/socket, and control-file cases. |
-| `classify.rs` and new `classify/file_rollup_manifest.rs` | Add portable `logical_ext`, registry-owned canonical extension and name classification, ordered browsing groups and families, and the dependency-free validated File Rollup v3 profile. Keep the compiled analyzer registry and existing `derive_ext` answer stable for detached and CLI consumers. | Parse the exact shared document; prove formatting-insensitive semantic identity, exact-basename precedence, longest-suffix matching, unknown fallback, compact-manifest compatibility, and cross-platform components. Reject malformed and unsupported documents before opening a root. |
+| `classify.rs` and new `classify/file_rollup_manifest.rs` | Add portable `logical_ext`, registry-owned canonical extension and name classification, ordered browsing groups and families, and the dependency-free validated File Rollup registry profile (schema 3 or 4). Keep the compiled analyzer registry and existing `derive_ext` answer stable for detached and CLI consumers. | Parse the exact shared document; prove formatting-insensitive semantic identity, exact-basename precedence, longest-suffix matching, unknown fallback, compact-manifest compatibility, and cross-platform components. Reject malformed and unsupported documents before opening a root. |
 | `Index`, `IndexHandle`, and new `OpenedIndex` boundary types | Keep cloned `Index` detached. Do not put session identity, worker ownership, journal waiters, or continuations into it. Reserve those for the Phase 2 opened-root state. | Clone independence, no shared live identity in snapshots, and existing `IndexHandle` read/write behavior. |
 | `snapshot.rs` `save`, `save_handle`, `load`, `put_scope`, `read_scope`, `engine_fingerprint` | Serialize detached facts, control table, reducers, validated scope, and semantic identity only. Bump format/fingerprint once for the cumulative representation change; reject partial-resource baselines. | Existing corruption/size/atomicity tests plus registry, control-removal, portable-path, and partial-baseline cases. |
 | `Cargo.toml`, `crates/fdu-core/Cargo.toml`, `crates/fdu-py/Cargo.toml`, `Makefile`, CI | Make core default features empty; keep `watch` and any `gitignore` dependency removable and explicit; update library-only feature matrix, audit pins, and recorded size commands. The `gitignore` build feature this added needed no dependency, and `fdu-x7yb` removed it, leaving `watch` as the one build feature. | `cargo tree` deltas, `make check`, `make cross-lint`, MSRV, audit, no-default tests, CLI/wheel size baselines. |
@@ -2346,7 +2362,7 @@ green.
 | Bead and files | Work | Acceptance |
 | --- | --- | --- |
 | `fdu-pro1`: whole-scan allocation regression | PR #51 bisected the growth and removed repeated commit derivation, redundant walker-path reconstruction, and empty control projection. Its review found that path-keyed ancestry preflight now dominates detached CPU, impact publication is next, and prepare, effect, and compatibility path copies dominate residual allocations. The [streaming performance parity plan](plan-2026-08-31-fdu-streaming-performance-parity.md) owns the remaining work. | Open: both nominated real trees must meet the new plan’s wall, component, allocation, semantic, and zero-streaming-work thresholds against the pinned pre-rewrite control. |
-| `fdu-etfj`: `crates/fdu-core/src/execution.rs` `plan_report` and `prepare_report`, `crates/fdu-core/src/scan.rs` `read_control_op` and `ScanConfig`, `crates/fdu-core/src/lib.rs` snapshot acceptance | Done. `ScanConfig::read_controls` (default on) gates the one observation funnel that scans and watch verification share. The shared one-shot planner, which the command line and the Python package both call, turns observation off for every report whatever the caller passed, so no front end decides it. `open` keeps the default and the opened root always observes; `fdu --watch` turns it off, because no command-line view reads it. Off is identity `0` in `ScanScope::ignore_rules_fingerprint`, which a build without the `gitignore` build feature shared until `fdu-x7yb` removed it. Snapshot acceptance is exact except for a no-scan `--cache only` report, which may read a controls-on snapshot for a controls-off request. | By surface. Command-line one-shot and Python `fdu.report`: no control-file I/O and no retained control state, proven at the planner by an engine test over control sources that cannot be read or retained without an error. The binding reaches that planner through `fdu_core::prepare_report` and cannot override it; the Python and parity CI jobs cover that it still builds and answers as the command line does. The `file_opens` counter is not evidence here, because it counts only content-analysis opens. Opened root and `open`: exact control state, and a control bound degrades rather than ends them (`fdu-1onj`). An `open`, `fdu.open`, or `fdu.scan` that opts out observes none, and its index answers ignore questions with `ControlStateNotObserved`. `fdu --watch`: no control state, pinned by `crates/fdu/tests/watch_controls.rs`. The `--no-default-features` build is unaffected. |
+| `fdu-etfj`: `crates/fdu-core/src/execution.rs` `plan_report` and `prepare_report`, `crates/fdu-core/src/scan.rs` `read_control_op` and `ScanConfig`, `crates/fdu-core/src/lib.rs` snapshot acceptance | Done. `ScanConfig::read_controls` (default on, `fdu-elnn`) gates the one observation funnel that scans and watch verification share. The shared one-shot planner, which the command line and the Python package both call, follows the caller’s setting; the override that turned observation off for every report was removed with `fdu-elnn`. One-shot reports, `fdu --watch`, `open`, and the opened root all observe by default; `--no-gitignore` and `read_controls=False` opt out per request and keep a snapshot scope of their own. Off is identity `0` in `ScanScope::ignore_rules_fingerprint`, which a build without the `gitignore` build feature shared until `fdu-x7yb` removed it. Snapshot acceptance is exact except for a no-scan `--cache only` report, which may read a controls-on snapshot for a controls-off request. | By surface. Every default surface observes exact control state and shows each row’s ignored share, and a control bound degrades rather than ends it (`fdu-1onj`); a request that turns observation off performs no control-file I/O and retains no control table, an index built that way answers ignore questions with `ControlStateNotObserved`, and a selection by ignored state is refused. The planner’s half is pinned by `a_one_shot_report_observes_control_state_as_its_caller_configures` and `a_report_that_reads_no_gitignore_refuses_to_select_by_ignored_state` in `crates/fdu-core/src/execution.rs`; the binding reaches that planner through `fdu_core::prepare_report`, and the Python and parity CI jobs cover that it answers as the command line does. `fdu --watch` observing by default, sharing the report’s snapshot scope, and surviving a control bound is pinned by `crates/fdu/tests/watch_controls.rs`. The `--no-default-features` build is unaffected. |
 | `fdu-1onj`: `crates/fdu-core/src/control.rs` `ControlTable::upsert`, `crates/fdu-core/src/index.rs` `control_coverage` and `apply_control_transition`, `crates/fdu-core/src/opened.rs` `discovery_rejection`, `crates/fdu-core/src/snapshot.rs` `read_controls` | Done. `ControlSourceLimit` and `ControlPatternLimit` are gone: a source past the budget or the line limit is refused and recorded, its batch commits, and `Index::control_coverage`, `EffectiveChange::ControlRefusalUpdated`, `ReadDiagnostics::controls`, and a report’s `ignore_rules` and note state it. Snapshot format 4 carries the refusals. | Crossing either limit yields a usable roll-up with exact sizes and a named partial boundary on every path: cold detached and streaming bootstraps over the 1,105-directory tree plus a line over the limit, a watched opened root through events and a refresh, and a snapshot round trip. |
 | `fdu-szkg`: `crates/fdu-core/src/control.rs` `ControlTable` `attach` and `detach` | Done. Distinct contents are shared by `ControlIdentity` with a byte comparison and charged once; each directory pays for its key. | A fixed-seed property test recomputes every charge, holder count, and refusal after each random upsert and removal; a forged collision keeps separate matchers; over `~/wrk` the charge falls from 13.84 MiB to 4.10 MiB. |
 | `fdu-okne`: `crates/fdu-core/src/control.rs` `ControlLimits`, `crates/fdu-core/src/scan.rs` `ScanConfig::control_limits`, `crates/fdu-core/src/opened.rs` `OpenOptions::control_limits`, `crates/fdu-core/src/snapshot.rs`, `crates/fdu/src/cli.rs` `--gitignore-budget` and `--gitignore-line-limit`, Python `control_budget` and `control_line_limit` | Done. Two independent runtime limits, a budget and a line limit, each liftable to unbounded on its own, both mixed into the ignore-rules fingerprint, and each named by the refusal note in each surface’s spelling when it fires. The snapshot parser keeps a fixed 256 MiB ceiling. | Both limits are settable on every surface and named in the diagnostic; the parser guard stays independent of them. |
@@ -2385,10 +2401,10 @@ arrow means the bead on the left depends on the bead or beads on the right.
 | 2 session proof | `fdu-0kv7` five session goldens and coverage closure | Closed | `fdu-mkga`, `fdu-194x`, `fdu-r7s7`, `fdu-ngnm`, `fdu-3za7`, `fdu-9jzp` |
 | 2 Python | `fdu-bnsk` synchronous Python surface | Closed | `fdu-r7s7`, `fdu-ngnm`, `fdu-3za7`, `fdu-9jzp`, `fdu-0kv7` |
 | 3A | `fdu-sewa` unchanged-contract measurement | Closed | `fdu-bnsk` |
-| 3B contract | `fdu-m68r` joint contract | Open | `fdu-sewa` |
-| 3B oracle | `fdu-yv1o` Python provider | Open | `fdu-m68r` |
-| 3B application | `fdu-kh2d` coordinator, assembly, runtime, routes | Open | `fdu-m68r`, `fdu-yv1o` |
-| 3C native | `fdu-hgnj` measured indexes and continuations | Open | `fdu-sewa`, `fdu-m68r` |
+| 3B contract | `fdu-m68r` joint contract | In progress | `fdu-sewa` |
+| 3B oracle | `fdu-yv1o` Python provider | Closed | `fdu-m68r` |
+| 3B application | `fdu-kh2d` coordinator, assembly, runtime, routes | Closed | `fdu-m68r`, `fdu-yv1o` |
+| 3C native | `fdu-hgnj` measured indexes and continuations | In progress | `fdu-sewa`, `fdu-m68r` |
 | 3C adapter | `fdu-2xfp` fdu provider and async bridge | Open | `fdu-hgnj`, `fdu-bnsk`, `fdu-m68r` |
 | 4 semantics | `fdu-xu27` two-provider conformance and replay | Open | `fdu-yv1o`, `fdu-2xfp` |
 | 4 product | `fdu-bldb` routes, lifecycle, recovery, wheel | Open | `fdu-kh2d`, `fdu-xu27` |
@@ -2544,7 +2560,7 @@ The initial files are:
 
 | File | Responsibility |
 | --- | --- |
-| `crates/fdu-core/src/opened/test_support.rs` under `cfg(test)` | `OpenedTestControl`, `OpenedIndex::open_for_test`, scenario builder, scripted observer-hint source, deterministic barriers, thin session envelopes over production values, normalization, and invariant collection. The typed control is per opened root and the seams control timing or named faults, not facts. |
+| `crates/fdu-core/src/opened/golden_support.rs` under `cfg(test)`, with the test controls in `opened.rs` | Planned as `test_support.rs` with an `OpenedTestControl` type; landed as `golden_support.rs` (the session trace recorder, normalization, and contract-coverage bookkeeping) plus a private `TestControls` passed to `OpenedIndex::open_for_test`, which carries the scripted observer hints and deterministic barriers. The typed control is per opened root and the seams control timing or named faults, not facts. |
 | `crates/fdu-core/src/opened/golden_tests.rs` | Five scenario definitions driven through real operations and change polls, model comparison after every commit, complete-trace comparison, and contract-coverage closure. |
 | `crates/fdu-core/tests/golden/opened-root/*.golden` | Canonical line-oriented session artifacts, one file per scenario. |
 | `scripts/check-opened-root-goldens.mjs` | Artifact lint, named update workflow, size checks, and unstable-literal checks. |
@@ -2891,7 +2907,9 @@ cache, and filesystem regime.
 6. Add the fdu provider behind explicit configuration and run the complete Phase 5
    installed-artifact integration matrix across both exact PR heads.
 7. Mark the fdu PR ready only after all four phase gates, the second-agent review, and
-   both repositories’ CI pass; merge the complete rewrite as one PR.
+   both repositories’ CI pass; merge the complete rewrite as one PR. Superseded: PR #48
+   merged on 2026-09-14 before Phase 5 (see the note under Implementation Plan), and the
+   remaining phases land as ordinary PRs on `main`.
 8. Change the MetaBrowser default only in a dedicated, reversible change after both
    repositories record acceptance.
 9. Consider explicit CLI progress separately after the client integration has proven the
@@ -2923,7 +2941,7 @@ their status as approval of that shape.
 | `fdu-sgp7` prioritize and close | Phase 2 operations on the one `OpenedIndex`. |
 | `fdu-kl7r`, `fdu-vfyw` agreement proof | Phase 5 two-provider registry and observation replay. |
 | `fdu-gy3g` File Rollup packet | Phase 5, expanded to exercise basename-derived logical extensions. |
-| `fdu-2lkf` control-state scale | Phase 4 epic. Its P0 children gate this PR leaving draft. |
+| `fdu-2lkf` control-state scale | Phase 4 epic. Its P0 children were to gate PR #48 leaving draft; the PR merged first, and the P0 child `fdu-1onj` closed in PR #63. |
 | `fdu-syyl`, `fdu-zibs` peer-comparison deficits | Phase 4. Memory, not wall time, is where fdu trails dust; measure it with the harness. |
 | `fdu-tsdy` regular-file scan root | Outside this plan. Decide deliberately on the CLI surface plan rather than by omission. |
 | `fdu-5ffm` macOS TCC exit 2 | `main` behaviour, not this branch. Tracked against the CLI UX plan beside `fdu-jej9`. |

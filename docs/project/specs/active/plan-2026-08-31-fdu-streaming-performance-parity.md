@@ -1,10 +1,23 @@
 # Feature: Streaming Performance Parity Without One-Shot Overhead
 
-**Date:** 2026-08-31 (last updated 2026-09-07)
+**Date:** 2026-08-31 (last updated 2026-09-16)
 
 **Author:** fdu project, with Codex assistance
 
-**Status:** In Review
+**Status:** Active. Merged in [PR #52](https://github.com/jlevy/fdu/pull/52) on
+2026-09-14 with its CI green, but not complete by this plan’s own acceptance criteria.
+What remains:
+
+- the quiet-host, paired, final-binary one-shot parity measurements against the
+  pre-rewrite control (`b75bf85`) on both nominated real subjects — wall and component
+  medians and their 95% upper bounds within +3%, and allocations, reallocations, and
+  allocated bytes within 1.05× — repeated on the merged engine, together with the
+  opened-discovery noninferiority gate on paired `component_ns` (`fdu-lj4h`, which also
+  keeps `fdu-pro1` open);
+- quiet-host confirmation of exp-102’s public-mutation preflight change (`fdu-0q6w`);
+- the final validation and handoff record (`fdu-rx0d`), and with it the epic `fdu-748k`.
+
+The Linux H86 floor claim is tracked separately on `fdu-xde5`.
 
 ## Overview
 
@@ -23,12 +36,13 @@ opened roots, refresh, observation, and later mutations continue through the exa
 streaming reducer. It does not fork the engine into a fast CLI implementation and a
 correct streaming implementation.
 
-The work is delivered on `codex/streaming-performance-parity`, stacked directly on
-[PR #51](https://github.com/jlevy/fdu/pull/51). PR #51 is stacked on
-[PR #50](https://github.com/jlevy/fdu/pull/50), which is stacked on the
-[opened-root rewrite, PR #48](https://github.com/jlevy/fdu/pull/48). The new pull
-request uses `claude/one-shot-commit-cost` as its GitHub base so the stack remains
-explicit and reviewable.
+The work was delivered on `codex/streaming-performance-parity` as
+[PR #52](https://github.com/jlevy/fdu/pull/52), stacked directly on
+[PR #51](https://github.com/jlevy/fdu/pull/51). PR #51 was stacked on
+[PR #50](https://github.com/jlevy/fdu/pull/50), which was stacked on the
+[opened-root rewrite, PR #48](https://github.com/jlevy/fdu/pull/48). PR #52 used
+`claude/one-shot-commit-cost` as its GitHub base so the stack stayed explicit and
+reviewable, and all four merged on 2026-09-14.
 
 ## Decision Summary
 
@@ -85,7 +99,8 @@ explicit and reviewable.
 
 PR #51 removes several costs introduced by the opened-root rewrite: repeated commit
 pipeline derivation, redundant canonical path rebuilding for walker paths, empty control
-projection, and control observation for ordinary one-shot reports.
+projection, and control observation for ordinary one-shot reports (re-enabled by default
+in PR #65, so a one-shot report now pays that cost unless it passes `--no-gitignore`).
 Those changes cut the PR-base whole-scan time by roughly half, but they do not restore
 `main` performance.
 
@@ -1118,8 +1133,12 @@ unused consequence construction as the leading detached cost.
   discovery records no detached-builder work.
 - [ ] Run `make check`, `make cross-lint`, the exact-commit independent model,
   opened-root goldens, and the paired performance protocol.
+  CI passed for PR #52 at merge (38 checks green); the paired final-binary performance
+  protocol has not run on the merged engine (`fdu-lj4h`).
 - [ ] Record every accepted and rejected experiment, update the opened-root plan’s live
   status, and close the linked beads only after the stacked PR’s CI passes.
+  CI passed and fifteen of the plan’s beads are closed; `fdu-lj4h` and `fdu-0q6w` are in
+  progress, and `fdu-rx0d` and the epic `fdu-748k` remain open.
 
 ## Bead Graph
 
@@ -1222,6 +1241,18 @@ non-watch CLI; it is retained with that qualification and will not support a CLI
 No final timing samples were collected before this correction: two attempts were refused
 by the unchanged quiet-host CPU preflight before sampling.
 
+**Reversed by PR #65 (noted 2026-09-16).** The planner override described above is gone.
+Every one-shot report now observes `.gitignore` by default, and `--no-gitignore` (the
+probe’s `--no-controls`) turns it off per request; the probe asserts that both one-shot
+modes observe by default (`crates/fdu-core/examples/perf_probe.rs`), and its snapshot
+test, `default_tree_snapshot_matches_the_non_watch_cli_scope`, now requires the
+exact-scope cache-only open to admit the probe’s snapshot for controls-on and reject it
+for controls-off. So the command-line and probe default scopes coincide again,
+controls-on, and the qualification above inverts: the `1a39be9` controls-on profile
+matches the shipped default command’s scope, while `default-tree` samples taken
+controls-off between `fdu-ht5q` and PR #65 no longer do.
+The final parity measurements in `fdu-lj4h` must state which scope each arm ran.
+
 The same profiles exposed presentation drift: `getattrlistbulk` and current `fdu_core`
 symbols fell into the “other” layer.
 `fdu-ttpf` adds tested current and historical symbol recognition without changing raw
@@ -1255,10 +1286,10 @@ inclusive apply samples, versus 83% before the change.
 The candidate adds no ordering restriction or dependency.
 
 This remains uncontrolled exploratory evidence.
-Final quiet-host one-shot and opened comparisons are still required, and the campaign is
-not ready for merge.
-The separate corrected-probe allocation checks pass on both nominated trees, but do not
-substitute for elapsed-time evidence.
+Final quiet-host one-shot and opened comparisons are still required.
+At this checkpoint the campaign was not ready for merge; PR #52 merged on 2026-09-14
+with those comparisons still owed to `fdu-lj4h`. The separate corrected-probe allocation
+checks pass on both nominated trees, but do not substitute for elapsed-time evidence.
 
 Cleanup bead `fdu-iyg0` is complete: the source documents and measurement evidence are
 small and retained. Only disposable task-owned build output was previously staged in
@@ -1293,14 +1324,15 @@ behavior and per-batch path-set behavior.
 
 ## Delivery and Stacked Pull Requests
 
-The GitHub stack is:
+The GitHub stack was:
 
-1. opened-root rewrite;
+1. opened-root rewrite (PR #48);
 2. PR #50, control-state scale design;
 3. PR #51, first whole-scan allocation fixes and control-observation gate;
-4. `codex/streaming-performance-parity`, this plan and its implementation.
+4. `codex/streaming-performance-parity` (PR #52), this plan and its implementation.
 
-The fourth pull request remains draft until final correctness and parity gates pass.
+The fourth pull request was to remain draft until final correctness and parity gates
+passed. All four merged on 2026-09-14, before the final parity gates ran; see Status.
 Commits remain reviewable in this order:
 
 1. plan, experiment baseline, and bead graph;
@@ -1312,10 +1344,10 @@ Commits remain reviewable in this order:
 7. exact impact and journal-copy cleanup;
 8. parity evidence and deterministic guards.
 
-If PR #51 changes, rebase this branch onto its updated head and rerun the correctness
-and baseline phases.
-Do not retarget this pull request to `main` while its parents remain open; that would
-turn the stacked diff into the whole opened-root rewrite.
+While the stack was open, a change to PR #51 meant rebasing this branch onto its updated
+head and rerunning the correctness and baseline phases, and this pull request was not to
+be retargeted to `main` while its parents remained open, because that would have turned
+the stacked diff into the whole opened-root rewrite.
 
 ## Rollout Plan
 
@@ -1324,9 +1356,8 @@ The detached path becomes the ordinary one-shot implementation after correctness
 allocation, and performance gates pass.
 Exact opened-root and public mutation paths remain opt-in through their existing APIs.
 
-The pull request stays in the stack until PR #50 and PR #51 merge.
-GitHub then retargets or rebases the child against the merged parent as needed,
-preserving one reviewable functional delta.
+The pull request stayed in the stack until PR #50 and PR #51 merged; the whole stack
+merged on 2026-09-14.
 
 ## Acceptance Criteria
 

@@ -69,11 +69,16 @@ Distance to the floor, warm Linux, from
 
 | Tier | ×floor | The gap is |
 | --- | --- | --- |
-| Aggregate (`--view summary`) | **1.20** synthetic, **1.59** real (`/usr`) | per-entry name and path handling; the real-tree tax lands here |
+| Aggregate (`--view summary`; since PR #65, `--no-gitignore --view summary`) | **1.20** synthetic, **1.59** real (`/usr`) | per-entry name and path handling; the real-tree tax lands here |
 | Index (default tree) | **2.68** on the 420k subject; ~4.3× on the 450k generated tree | the consumer representation: boxed entries, twice-stored names, per-op `PathBuf`s, per-entry ancestor merges, one serialized writer (~38% of elapsed), a 3.3× latency tail |
 | Index, as `arena_spike` builds it | **1.06** | the measured ceiling for the representation change |
 | Snapshot load (`--cache only`) | 0.88 µs/entry against 1.18 to walk and rebuild | re-derivation: roll-ups re-merged and extensions re-interned per record |
 | Content, warm open | ~34% classification + 25 µs/file sidecar restore | recomputing what the index and sidecar already hold |
+
+These ratios were measured when a bare `--view summary` reached the aggregate tier.
+Since PR #65 a default summary observes `.gitignore` and retains the full index, so the
+aggregate tier, and every aggregate threshold below, means a request that turned
+observation off (`plan_report` in `crates/fdu-core/src/execution.rs`).
 
 Three levers are settled for warm Linux and must not be re-run without a new mechanism:
 syscall batching (9% ceiling, measured 6–8× slower twice), terminating-`getdents64`
@@ -155,11 +160,18 @@ Phases 0 and A–C are parallel where their beads say so; D and E follow their g
 ### Phase 0: Instruments (multipliers, each an afternoon-scale item)
 
 - [x] `fdu-tyjx` — the aggregate-tier probe job with a tallies oracle.
-  **Landed.** `perf_probe summary` drives the transient plan through `prepare_report`,
-  and the `aggregate-summary` job measures it with `Job.oracle = "tallies"`. The blocker
-  recorded against this bead — that the planner was `pub(crate)`, so an example could
-  not reach the tier at all — had been removed in the meantime by `fdu-z7sp`, which
-  exported `prepare_report` for an unrelated reason.
+  **Landed**, and since PR #65 no longer measuring the tier by default.
+  `perf_probe summary --no-controls` drives the transient plan through `prepare_report`,
+  as `fdu --no-gitignore --view summary` does; without `--no-controls` the probe
+  observes `.gitignore`, as the command line now does, and the planner falls closed to
+  the index (`crates/fdu-core/examples/perf_probe.rs`). The `aggregate-summary` job
+  (`explorations/benchmarks/realtree/measure.py`) and `make perf-floor`’s `aggregate`
+  instrument (`floor.py`) pass no `--no-controls`, so each now measures the full-index
+  summary under the tallies oracle and must pass the flag before it can decide the
+  aggregate-tier threshold; the matching `fdu-transient-summary` tool contract has the
+  same gap (`fdu-hkyh`). The blocker recorded against this bead — that the planner was
+  `pub(crate)`, so an example could not reach the tier at all — had been removed in the
+  meantime by `fdu-z7sp`, which exported `prepare_report` for an unrelated reason.
   The tier now has a `component_ns`: about 5 ms below wall on a 5,838-entry subject,
   which is most of what exp-043 and exp-044 were arguing over.
 - [x] `fdu-lk9u` — nominate the real-tree subject set.
@@ -250,8 +262,9 @@ item; the beads carry it under the `macos-agenda` label, and
 one round of it.
 
 - **Tier 1, unattended, in order:** `fdu-mx1w` (landed), `fdu-2um8` (skip the identical
-  snapshot rewrite), `fdu-n75m` part 1 (flush the render before the join), `fdu-pdne`
-  (PGO, screen only), `fdu-78q6` (sidecar restore, on the metabrowser clone).
+  snapshot rewrite; landed and closed), `fdu-n75m` part 1 (flush the render before the
+  join; landed, with the bead open for parts 2 and 3), `fdu-pdne` (PGO, screen only),
+  `fdu-78q6` (sidecar restore, on the metabrowser clone).
 - **Tier 2, instruments:** `fdu-9hdc` (a `getattrlistbulk` floor, so `fdu-33ri` can ship
   two scoreboards with the regime difference recorded), `fdu-4xtm`, `fdu-5yjk`,
   `fdu-0pzh` (measure only), and promoting `host_regime` into the artifact schema.
@@ -347,6 +360,19 @@ the following:
 - exact oracles pass, no trial is invalid, and neither subject nor baseline fingerprint
   drifts.
 
+**Controls setting (noted 2026-09-16, not a change to the preregistration).** This stage
+was registered for a route eligible only with control observation off, and the Linux
+stage’s run (exp-103) used binaries built without control handling.
+Two things have moved since.
+PR #65 made observation the default, so `perf_probe default-tree` now observes
+`.gitignore` unless given `--no-controls`, and the `default-tree` jobs in
+`explorations/benchmarks/realtree/measure.py` pass no such flag.
+And the detached cold-bootstrap route that shipped in PR #52 also serves
+controls-enabled scans (`fdu-b6oe`), so the fall-closed sentence above no longer
+describes the code. A rerun of this stage must state each job’s controls setting:
+`--no-controls` reproduces the registered eligibility, and a controls-on measurement is
+a different claim that needs its own registration before any sample is taken.
+
 The second evidence stage retains the original Linux floor claims; Darwin evidence does
 not silently replace them.
 On the primary 450k-entry Linux subject, the candidate must still reach index wall at or
@@ -385,8 +411,8 @@ source — and the cold `content-basic` figure recorded beside it does not: −1
 generated subject, −2.38% on a real one.
 Plan Phase C against the warm number.
 
-- [ ] `fdu-cq7t` follow-on — **the content-tier instance of H86**, and the reason this
-  phase is not finished.
+- [ ] `fdu-cq7t` follow-on, tracked as `fdu-jxhk` (`fdu-cq7t` itself is closed) — **the
+  content-tier instance of H86**, and the reason this phase is not finished.
   Key roll-ups by `EntryId` and defer to one bottom-up pass, the shape that won −51.9%
   on snapshot load in `fdu-91ts`. H94 made the per-file ancestor walk cheap; this
   deletes it. Same argument as H86 on the index tier, same reason not to gate its pieces

@@ -178,6 +178,13 @@ What it found, first against a roughly 60k-entry checkout and then against a
   gains, so the speed effect is explicitly topology-sensitive.
   The planner is internal, has no fast-mode flag, and falls closed to the full index for
   cache participation, filters, multiple views, watch mode, or any unproved request.
+  **Since changed (2026-09-16).** PR #31 made the tier a cost decision rather than a
+  cache-off one, so only `--cache only`, and `--cache refresh` with a cache path, still
+  force the index. PR #65 added a fall-closed case: an observing scan keeps no table the
+  summary could classify with, and `.gitignore` observation is now the default.
+  The transient tier is therefore `fdu --no-gitignore --view summary`, and a bare
+  `--cache off --view summary` retains the full index (`plan_report` in
+  `crates/fdu-core/src/execution.rs`; the memory cost is `fdu-if7o`).
 - **Further rich-summary specialization did not compound.** Worker-local reduction
   improved wall only 1.38% at 901,963 entries and 1.26% at 720,805 entries (exp-041).
   Adding a narrower macOS bulk record changed wall by +1.86% [−1.96%, +4.56%] (exp-042),
