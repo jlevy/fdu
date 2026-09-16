@@ -112,6 +112,7 @@ the human row.
 
 ```console
 $ fdu --cache off --analyze code --view languages --size apparent unsupported-project
+Percentage column: code lines
       15 B       —  Haskell  1 file, 1 unsupported
 Performance: walked 1 file / 15 B; ignore rules 0 files; content read 15 B at [BYTE_RATE]; analysis 1 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
 ? 0
@@ -120,10 +121,12 @@ Performance: walked 1 file / 15 B; ignore rules 0 files; content read 15 B at [B
 ```console
 $ fdu --cache off --analyze code --view languages,documents --size apparent content-project
 LANGUAGES
+Percentage column: code lines
       38 B   75.0%  Rust    1 file, 4 lines (3 code, 0 comment, 1 blank), 5 words (0.0 pages)
       39 B   25.0%  Python  1 file, 3 lines (1 code, 1 comment, 1 blank), 3 words (0.0 pages)
 
 DOCUMENTS
+Percentage column: document words
       42 B   63.6%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 7 words (0.0 pages), 1 documentation
       35 B   36.4%  text               2 files, 3 lines (2 nonblank, 1 blank), 4 words (0.0 pages), 1 documentation, 1 binary
 Performance: walked 7 files / 256 B; ignore rules 0 files; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
@@ -420,6 +423,7 @@ comments.
 
 ```console
 $ fdu --cache off --analyze code --view languages --limit all --size apparent code-project
+Percentage column: code lines
       97 B   12.5%  Python      1 file, 7 lines (5 code, 1 comment, 1 blank), 14 words (0.0 pages)
      129 B   10.0%  Shell       1 file, 7 lines (4 code, 2 comment, 1 blank), 15 words (0.0 pages)
      104 B    7.5%  C++         1 file, 7 lines (3 code, 3 comment, 1 blank), 20 words (0.0 pages)
@@ -468,6 +472,7 @@ Performance: walked 7 files / 256 B; ignore rules 0 files; content read 176 B at
 
 ```console
 $ fdu --cache off --color never --size apparent --analyze code content-project
+Percentage column: code lines
       38 B   75.0%  Rust    1 file, 4 lines (3 code, 0 comment, 1 blank), 5 words (0.0 pages)
       39 B   25.0%  Python  1 file, 3 lines (1 code, 1 comment, 1 blank), 3 words (0.0 pages)
 Performance: walked 7 files / 256 B; ignore rules 0 files; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
@@ -476,6 +481,7 @@ Performance: walked 7 files / 256 B; ignore rules 0 files; content read 176 B at
 
 ```console
 $ fdu --cache off --color never --size apparent --analyze words content-project
+Percentage column: document words
       42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
       35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
 Performance: walked 7 files / 256 B; ignore rules 0 files; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
@@ -580,10 +586,12 @@ EXTENSIONS  (2 of 6; --limit all for every one)
       42 B  .md          1 file
 
 LANGUAGES
+Percentage column: code lines
       38 B   75.0%  Rust    1 file, 4 lines (3 code, 0 comment, 1 blank), 5 words (0.0 pages)
       39 B   25.0%  Python  1 file, 3 lines (1 code, 1 comment, 1 blank), 5 words (0.0 pages)
 
 DOCUMENTS
+Percentage column: document words
       42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
       35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
 
