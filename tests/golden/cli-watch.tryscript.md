@@ -29,11 +29,16 @@ The sequencing is causal, not timed: nothing here depends on how fast the machin
 events backend is.
 
 What this pins: the stream schema on every record, the op vocabulary, which fields are
-present per op, and that removal records carry no metadata — a consumer distinguishes
+present per op, and that a removal carries no size or time — a consumer distinguishes
 “gone” from “unknown” by the fields being absent.
-Every record an observing run emits states the entry’s `.gitignore` classification, the
-same fact the initial rows carry; a run that read no rules omits the field rather than
-calling every entry unignored.
+An upsert an observing run emits states the entry’s `.gitignore` classification, the same
+fact the initial rows carry; a run that read no rules omits the field rather than calling
+every entry unignored. A removal states one only when a rule edit caused it, where the
+new classification is why the row left; an ordinary removal and an invalidation have no
+entry left to classify and carry none.
+Under the default selection the stream maintains membership rather than the bit: a rule
+edit moves entries in and out of `--exclude-ignored` and `--only-ignored`, and leaves an
+unfiltered listing’s rows where they are (`fdu-4239`).
 
 The clock is a named pattern rather than a literal because its starting value depends on
 how the initial scan batched its observations, which is not part of the stream contract.

@@ -203,8 +203,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     A `.gitignore` edit that moves an entry into `--exclude-ignored` or `--only-ignored`
     streams the upsert that draws it, and one that moves it out streams the removal,
     even though nothing about the file changed on disk.
-    Every change record carries `ignored`, absent when the run read no rules, joining
-    `fdu.stream/1`; Rust `Change` and Python `Change` gain the field.
+    Every upsert carries `ignored`, and so does a removal a rule edit caused; an ordinary
+    removal, an invalidation, and every record of a run that read no rules omit it.
+    The field joins `fdu.stream/1`; Rust `Change` and Python `Change` gain it.
+    Under the default selection the stream maintains membership rather than each row's
+    bit.
   - An unfiltered `--view summary` that reads `.gitignore` retains the index to classify
     entries, so it uses more memory than the aggregate-only plan, which
     `--no-gitignore --view summary` still takes, and it saves a snapshot like any other

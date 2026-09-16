@@ -14,7 +14,7 @@
 //! passes throttles only how often aggregate views are re-rendered — it plays no part in
 //! detection.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -41,9 +41,12 @@ pub struct Change {
     pub mtime_ns: Option<i64>,
     /// Whether `.gitignore` rules ignore this entry after the commit.
     ///
-    /// `None` when the session observes no control state, so a record never claims a
-    /// classification an index without rules cannot make. A report's rows carry the same
-    /// split, and a stream that could not would be the one place a consumer had to guess.
+    /// Set on an upsert, and on a removal a rule edit caused, where the new classification
+    /// is why the row left the selection. `None` on every other record: a session that
+    /// observes no control state never claims a classification an index without rules can
+    /// make, and an ordinary removal or an invalidation has no entry left to classify. A
+    /// report's rows carry the same split, and a stream that could not would be the one
+    /// place a consumer had to guess.
     pub ignored: Option<bool>,
     /// The index clock at which this change was committed.
     pub clock: u64,
@@ -78,18 +81,22 @@ pub struct Batch {
 
 /// What one batch of commits needs from the index, read once under one lock.
 struct BatchFacts {
-    /// The touched entries ignore rules ignore once the batch applied, or `None` when the
-    /// index observed no control state and so classifies nothing.
-    ignored: Option<BTreeSet<PathBuf>>,
+    /// How ignore rules classify each touched entry the index still holds once the batch
+    /// applied, or `None` when the index observed no control state and classifies nothing.
+    ///
+    /// A map rather than a set of the ignored: an entry a later commit in the same batch
+    /// removed is in neither partition, and a set could not tell that from unignored.
+    ignored: Option<BTreeMap<PathBuf, bool>>,
     /// The retained facts of each reclassified entry the selection could move, so a rule
     /// edit that admits one can stream the upsert that draws it.
     reclassified: BTreeMap<PathBuf, EntryFacts>,
 }
 
 impl BatchFacts {
-    /// Whether rules ignore a touched entry, or `None` when nothing was classified.
+    /// How rules classify a touched entry: `None` when nothing was classified, and when
+    /// the entry is gone from the index, which leaves no entry to classify.
     fn is_ignored(&self, path: &std::path::Path) -> Option<bool> {
-        Some(self.ignored.as_ref()?.contains(path))
+        self.ignored.as_ref()?.get(path).copied()
     }
 }
 
@@ -204,9 +211,13 @@ impl Session {
                 EffectiveChange::Inserted { path, .. } | EffectiveChange::Updated { path, .. } => {
                     touched.push(path);
                 }
-                // A reclassified entry is read only when the selection can move it: under
-                // `Include` both partitions are in the stream already, so nothing about
-                // its row changed and the facts would be fetched for nobody.
+                // A reclassified entry is read only when the selection can move it.
+                // Under `Include` its membership cannot change, and membership is what
+                // this stream maintains; its `ignored` bit did change, and the record that
+                // would say so is not emitted, so a consumer's row keeps the stale bit
+                // until the next listing. Deliberate for 0.1.0: a directory rule flips
+                // thousands of entries at once, and paying a lookup each to restate a bit
+                // no selection reads is the wrong default. `fdu-4239` carries the fix.
                 EffectiveChange::Reclassified { path, .. } if filters_by_ignored => {
                     reclassified.push(path);
                 }
@@ -240,8 +251,12 @@ impl Session {
                 ignored: observed.then(|| {
                     touched
                         .into_iter()
-                        .filter(|path| matches!(index.is_ignored(path), Ok(Some(true))))
-                        .cloned()
+                        .filter_map(|path| match index.is_ignored(path) {
+                            Ok(Some(ignored)) => Some((path.clone(), ignored)),
+                            // Gone from the index, or the index reads no rules; either
+                            // way there is nothing to say about it.
+                            Ok(None) | Err(_) => None,
+                        })
                         .collect()
                 }),
                 reclassified: entries,
@@ -386,5 +401,38 @@ impl Session {
             complete: true,
             errors: Vec::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A record says what the index can be asked, and nothing more.
+    ///
+    /// The three answers are distinct and a consumer acts on each differently: a bit, "no
+    /// rules were read", and "there is no such entry". A set of the ignored paths collapsed
+    /// the last two into `false`, so a batch that created and removed one file in the same
+    /// window upserted it as unignored before removing it -- a classification claim about
+    /// an entry that never survived the batch.
+    #[test]
+    fn a_record_claims_a_classification_only_for_an_entry_the_index_still_holds() {
+        let unobserved = BatchFacts { ignored: None, reclassified: BTreeMap::new() };
+        assert_eq!(unobserved.is_ignored(std::path::Path::new("any.txt")), None);
+
+        let observed = BatchFacts {
+            ignored: Some(BTreeMap::from([
+                (PathBuf::from("build/out.bin"), true),
+                (PathBuf::from("src/main.rs"), false),
+            ])),
+            reclassified: BTreeMap::new(),
+        };
+        assert_eq!(observed.is_ignored(std::path::Path::new("build/out.bin")), Some(true));
+        assert_eq!(observed.is_ignored(std::path::Path::new("src/main.rs")), Some(false));
+        assert_eq!(
+            observed.is_ignored(std::path::Path::new("gone.tmp")),
+            None,
+            "an entry the batch removed is in neither partition, not in the unignored one"
+        );
     }
 }
