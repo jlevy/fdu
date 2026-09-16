@@ -243,39 +243,10 @@ This applies only to anyone who ran fdu built from a development checkout.
 - **The `gitignore` build feature is gone.** A dependency declaring
   `features = ["gitignore"]` fails to resolve; remove it.
   `fdu`’s default build features are `["watch"]`.
-- **Renamed and removed interfaces:**
-  - `--view all` is `--view full`.
-  - The report schemas are `fdu.report/5` and `fdu.report/6`; a development build
-    emitted lower numbers.
-    Cache status is no longer a report schema at all: it carries `fdu.cache/1`.
-  - `journal_capacity` on Rust `OpenOptions` and Python `OpenedOptions` is
-    `journal_capacity_bytes`, a byte budget; a value below 64 KiB is refused.
-  - `Index::is_ignored`, `controls`, `partition_total`, `partition_rollup`, and
-    `partition_rollup_summary` return `Result`, and `ChildSnapshot.ignored` is
-    `Option<bool>`.
-  - `Error::NotADirectory` and `Error::ContinuationRecordLimit` are removed; those cases
-    refuse one projection instead, and a Python `Tree` of a non-directory returns a
-    `RefusedResult` instead of raising `InvalidArgumentError`.
-  - `EntrySelection` refuses a terminal suffix or ancestor name that can never match,
-    with `Error::InvalidValue`. Opened-root selection globs match portable paths, so a
-    native spelling such as `100%.txt` for `100%25.txt` matches nothing there.
-  - `Error::ControlSourceLimit` and `Error::ControlPatternLimit` are removed, since a
-    control file past a limit is refused rather than fatal.
-    `MAX_CONTROL_TABLE_BYTES` and `MAX_CONTROL_PATTERN_BYTES` are
-    `DEFAULT_CONTROL_BUDGET` and `DEFAULT_CONTROL_LINE_LIMIT`, `ControlTable::upsert`
-    returns a `ControlAdmission`, and saving an index whose table and scope claim
-    different limits is refused with `Error::ControlLimitsOutsideScope`.
-  - The command line and `fdu.report` read `.gitignore` by default; pass
-    `--no-gitignore` or `read_controls=False` to scan without it.
-    `fdu_core::query::report` returns `Result<Report>`, `EntrySelection::admits` reads
-    the ignore bit from the candidate rather than a second argument, and rows and
-    changes gain `ignored`.
-  - Cache status rows carry `state` instead of `recognized`, with `stale_reason`,
-    `format_version`, `leftover_kind`, and `content_bytes` where they apply.
-    In Rust the `CacheStatus` field `snapshot` is replaced by `state: CacheState` and a
-    `snapshot()` accessor, `is_recognized` by `is_fdu_snapshot`, `render_cache_status`
-    takes a `CacheScope`, and `clear_all_caches` returns a `ClearSummary` rather than a
-    count; Python mirrors all of it.
+- **Update names a development build used.** Flags, report schema versions, and Rust and
+  Python interfaces were renamed before this release, and `### Added` gives each under
+  its released name. A consumer pinned to a development build’s `fdu.report` version
+  moves to `fdu.report/5` or `fdu.report/6`.
 
 ### Known limitations
 
