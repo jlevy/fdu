@@ -257,7 +257,8 @@ This applies only to anyone who ran fdu built from a development checkout.
   [The 2026-09-16 tool comparison](docs/project/reports/report-2026-09-16-fdu-live-tool-comparison.md),
   run on the release candidate over a generated 1,000,001-entry tree, measured fdu’s
   depth-one tree report, with its cache off, near 285 MiB of peak RSS, against 29 MiB
-  for dumac, 21 MiB for dua, and 641 MiB for dust, each of which returned only a total.
+  for dumac, 21 MiB for dua, and 641 MiB for dust; each tool was invoked under a
+  comparison contract that returned only a total.
   `--no-gitignore --view summary` retains no index: on that tree it took 4.876 s at 15.0
   MiB, against 4.942 s at 285.7 MiB for the default `--view summary`, with identical
   totals. The default summary retains the index because classifying entries against
