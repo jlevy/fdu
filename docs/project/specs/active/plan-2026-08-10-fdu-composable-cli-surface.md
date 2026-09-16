@@ -4,10 +4,19 @@
 
 **Author:** fdu project
 
-**Status:** Implemented and revised.
-PR #5 shipped the five-axis surface; this revision adds the content axis that arrived
-after it and fixes the display gap that omission created.
-Phase 5 is implemented on `claude/fdu-content-axis`.
+**Status:** Completed.
+[PR #5](https://github.com/jlevy/fdu/pull/5) shipped the five-axis surface (Phases 1–4),
+and [PR #37](https://github.com/jlevy/fdu/pull/37) shipped this revision’s content axis
+and display contract (Phase 5). [PR #39](https://github.com/jlevy/fdu/pull/39) then
+reshaped the view vocabulary under
+[the view vocabulary plan](plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md).
+Later work changed parts of the surface this plan specifies: `.gitignore` observation on
+by default with its scope and selection flags (PRs #63 and #65), report schemas
+`fdu.report/5` and `/6`, and cache states with stale-snapshot clearing (PR #67). Where a
+section below states the shipped behavior, it has been corrected to match `origin/main`
+on 2026-09-16; checked implementation items record what each PR did.
+`fdu --help` and `fdu --docs` are the live reference.
+Follow-ups remain open under the epics `fdu-pxeb` and `fdu-ktyl`.
 
 ## Overview
 
@@ -37,7 +46,8 @@ Bare `fdu` is deliberately safe discovery: it prints help instead of assuming th
 possibly enormous current directory should be scanned.
 The concrete test for “no more complexity”: before adding a view or flag, show it cannot
 be expressed as a composition of the existing axes — `largest` and `recent` views were
-removed from this design by exactly that test.
+first removed from this design by exactly that test, and later reinstated as presets
+because the test conflated capability with interface (see Views).
 
 1. **Six axes, no one-off flags.** Every option belongs to exactly one axis: scan scope,
    content, selection, view, format, or mode.
@@ -191,10 +201,10 @@ flowmark’s *surface* patterns, not its storage.
 
 | Axis | Question it answers | Options | Engine binding |
 | --- | --- | --- | --- |
-| **Scope** | What does the engine observe and retain? | `PATH`, `--scan-depth <N>`, `--one-filesystem` | `ScanConfig` → `ScanScope`, the cache identity |
-| **Selection** | Which retained entries does this query consider, and how are results shaped? | `--include <GLOB>`, `--exclude <GLOB>`, `--min-size <SIZE>`, `--modified-since <WHEN>`, `--modified-before <WHEN>`, `--kind <LIST>` of `file\|dir\|symlink`, `--depth <N>`, `-n/--limit <N>`, `--sort <size\|count\|mtime\|name>`, `--reverse`, `--size <allocated\|apparent>` | View-time filter over the index; never part of the cache key |
+| **Scope** | What does the engine observe and retain? | `PATH`, `--scan-depth <N>`, `--one-filesystem`, `--no-gitignore`, `--gitignore-budget <SIZE\|all>`, `--gitignore-line-limit <SIZE\|all>` | `ScanConfig` → `ScanScope`, the cache identity |
+| **Selection** | Which retained entries does this query consider, and how are results shaped? | `--include <GLOB>`, `--exclude <GLOB>`, `--min-size <SIZE>`, `--modified-since <WHEN>`, `--modified-before <WHEN>`, `--kind <LIST>` of `file\|dir\|symlink\|other`, `--exclude-ignored`, `--only-ignored`, `--depth <N>`, `-n/--limit <N>`, `--sort <size\|count\|mtime\|name>`, `--reverse`, `--size <allocated\|apparent>` | View-time filter over the index; never part of the cache key |
 | **Content** | Which file bodies may be read, and which analyzers run over them? | `--analyze <LIST>` — comma-delimited from `lines`, `code`, `words`, plus the totals `none` and `all`; default `none` | `AnalysisSet` → the analyzer registry; part of the content sidecar identity |
-| **View** | Which roll-ups or listings are reported? | `--view <LIST>` — comma-delimited from `tree`, `types`, `extensions`, `families`, `languages`, `documents`, `files`, `summary`, plus the total `all`; default derived from `--analyze` | Pure projections over `Index` |
+| **View** | Which roll-ups or listings are reported? | `--view <LIST>` — comma-delimited from `summary`, `tree`, `families`, `types`, `extensions`, `languages`, `documents`, `largest`, `recent`, `files`, plus the total `full`; default derived from `--analyze` | Pure projections over `Index` |
 | **Format** | How is the report serialized? | `--format <text\|json\|jsonl\|yaml>`, `--color <auto\|always\|never>` | Serializers over `Report`; schema-versioned |
 | **Mode** | One answer or a live feed, and how is the cache used? | one-shot (default) vs `--watch [--interval <DUR>]`; `--cache <auto\|refresh\|read-only\|only\|off>`; `--allow-partial` | `open()` path selection; `watch::Watcher` driving the same query |
 
@@ -338,12 +348,16 @@ Both are milliseconds warm; neither touches the filesystem.
 `ExtTally` gains an `allocated` field so the `types` view honors `--size allocated`
 instead of silently switching metrics.
 
-*Performance-only implementation amendment.* A one-shot cache-off request whose complete
-view set is exactly one unfiltered `summary` may derive an internal exact-summary plan
-instead of retaining an index.
-This changes neither the axis model nor the `fdu.report/1` bytes: there is no fast-mode
-flag, output depth does not prune scanning, and cache participation, filters, multiple
-views, watch mode, and every unproved composition fall closed to the full index.
+*Performance-only implementation amendment.* A one-shot `--no-gitignore --view summary`
+with no selection filter and no content analysis derives an exact-summary plan instead
+of retaining an index: it retains only aggregate tallies and neither reads nor writes a
+snapshot, under every cache policy except `only`, and `refresh` with a cache path.
+Every other request retains the full index, including the default summary, which
+observes `.gitignore` to report its ignored share and so needs the table the tallies do
+not keep (`fdu-if7o` records the memory this costs).
+This changes neither the axis model nor the report bytes: there is no fast-mode flag,
+output depth does not prune scanning, and filters, multiple views, watch mode, and every
+unproved composition fall closed to the full index.
 The natural text and all three machine-format summary goldens exercise the same command;
 the performance harness additionally compares stable semantic hashes against the
 pre-plan indexed binary.
@@ -556,18 +570,25 @@ At home-folder scale the reverse holds: the tree cannot fit the OS metadata cach
 (`kern.maxvnodes` is ~263k on a 32 GiB Mac), every scan is effectively cold, and the
 snapshot plus a journal resume is the only affordable answer.
 
-So `auto` estimates before it acts, from the snapshot header alone: entry count and the
-µs/entry that tree’s own last scan achieved, against the platform’s metadata-cache
-capacity and the reducer tier the requested views need.
+What ships is a fixed rule rather than an estimate.
+A one-shot report under `auto` or `read-only` reads the snapshot only when content
+analysis is requested, because the sweep’s stats are what avoid re-reading unchanged
+files; a metadata report scans cold, since revalidation stats every entry anyway
+(`plan_report` in `crates/fdu-core/src/execution.rs`). `open()` under `auto` reads and
+revalidates the snapshot, because its caller asked for a retained index.
+
+The planned refinement is for `auto` to estimate before it acts, from the snapshot
+header alone: entry count and the µs/entry that tree’s own last scan achieved, against
+the platform’s metadata-cache capacity and the reducer tier the requested views need.
 Small tree, stat-tier query: rescan and refresh the snapshot.
 Large tree with a usable journal: load, replay, verify only what changed.
-Content-tier query at any size: load and sweep, because the sweep’s stats are what avoid
-re-reading unchanged files.
+Content-tier query at any size: load and sweep.
 The decision function, its self-calibrating cost model, and the derived replay budget
 are specified in the
 [FSEvents-scoped revalidation plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
-(bead `fdu-6ld9`); `refresh`, `read-only`, `only`, and `off` remain explicit overrides
-for anyone who wants a specific path rather than the cheapest one.
+and are not implemented (bead `fdu-6ld9`, open); `refresh`, `read-only`, `only`, and
+`off` remain explicit overrides for anyone who wants a specific path rather than the
+cheapest one.
 
 **When the cache is written.** The policy axis decides *whether* a run may write; these
 rules decide *what and when*, and they are rules, not heuristics (Principle 5):
@@ -623,19 +644,31 @@ and not part of this plan.
 The lifecycle flags are backed by new library functions rather than CLI-side directory
 walking (Principle 7 — the CLI invents nothing):
 
-- `cache_status(root) -> CacheStatus` — snapshot path, presence, size, entry count,
-  scope, saved-at time, and whether the engine fingerprint still matches.
-- `list_caches() -> Vec<CacheStatus>` — enumerates the cache directory and reads each
-  snapshot’s bounded header to recover the root path, fixing today’s “opaque hash files
-  with no reverse mapping” problem.
-  This backs `--cache-status=all`; unrecognized files are listed as unrecognized.
-- `clear_cache(root)` / `clear_all_caches()` — idempotent; `--cache-clear` echoes the
-  cache directory before acting and reports `Cache cleared.` or `Cache already empty.`
-  (flowmark’s pattern), with no prompt and no `--force`. `--cache-clear=all` removes
-  only files that parse as fdu snapshot headers, never unrecognized files.
+- `cache_status(path) -> CacheStatus` — the file’s path, its size and its content
+  sidecar’s, and a `state`, one of five: `current` (a snapshot this build serves, with
+  its root and entry count), `stale` (fdu’s snapshot that this build cannot serve, with
+  a reason — older format, newer format, other engine, or unreadable — and the format
+  version when that is the reason), `leftover` (a staging temporary or an orphaned
+  content sidecar fdu left behind), `unrecognized`, or `absent` (`CacheState` in
+  `crates/fdu-core/src/cache.rs`; Python `CacheStatus.state`).
+- `list_caches(dir) -> Vec<CacheStatus>` — enumerates the cache directory and reads each
+  snapshot’s bounded header to recover the root path, fixing the earlier “opaque hash
+  files with no reverse mapping” problem.
+  This backs `--cache-status=all`; a file fdu cannot identify is listed as unrecognized.
+- `clear_cache(path)` / `clear_all_caches(dir)` — idempotent, with no prompt and no
+  `--force`. `--cache-clear` removes the root’s snapshot, current or stale, with its
+  content sidecar, then names the cache file and reports `Cache cleared.` or
+  `Cache already empty.` (flowmark’s pattern).
+  `--cache-clear=all` echoes the directory, removes every current or stale snapshot, and
+  also reclaims leftovers: staging temporaries older than 24 hours and content sidecars
+  whose snapshot is gone.
+  It reports snapshots and leftovers as two counts (`Cache cleared: N snapshots.` and
+  `Also reclaimed: N files fdu left behind.`), and it never removes an unrecognized
+  file, saying how many it left in place.
 
-`--cache-status` renders through the same format axis (`--format json` works), so agents
-get cache observability without a second schema style.
+`--cache-status` renders through the same format axis (`--format json` works) as its own
+`fdu.cache/1` document rather than as a report, so agents get cache observability in
+every machine format.
 
 ### Watch Mode
 
@@ -662,16 +695,20 @@ work (`fdu-lka2`).
    listing — no dedicated suppress-initial flag needed.
 4. Aggregate views (`tree`, `types`, `summary`) re-render at most once per `--interval`
    (default 2s), only when dirty, separated in text by a timestamped header.
-5. Overflow or subtree invalidation from the watcher appears as an explicit `invalidate`
-   record with its reason, followed by the post-reconciliation report; it is never
-   dropped (Principle 5).
+5. Overflow or subtree invalidation from the watcher appears as an explicit change
+   record with op `invalidate` naming the invalidated path, whatever the selection, and
+   aggregate views re-render as they do for any other change; it is never dropped
+   (Principle 5).
 6. SIGINT/SIGTERM exit 0 after a final snapshot save when the index is `Fresh` and
    policy allows writes; watch errors exit 1.
 
-Streaming machine output uses a new `fdu.stream/1` JSONL schema with tagged record types
-(`report`, `change`, `invalidate`, `status`); one-shot machine output uses
-`fdu.report/1` (below).
-Constraint carried from the engine: watch requires full scope, so `--watch` with
+Streamed changes use the `fdu.stream/1` JSONL schema: each line is a tagged
+`"record": "change"` carrying an `op` of `upsert`, `remove`, or `invalidate`
+(`render_change` in `crates/fdu-core/src/report_format.rs`). The initial report and each
+aggregate repaint are ordinary reports, and machine output for a report uses
+`fdu.report/5`, or `fdu.report/6` when a metric summary or content analysis is present
+(below). The `report` and `status` stream record types this plan first proposed were not
+built. Constraint carried from the engine: watch requires full scope, so `--watch` with
 `--scan-depth` or `--one-filesystem` is a usage error (exit 2) until
 `validate_for_watch_scope` learns otherwise.
 
@@ -705,17 +742,20 @@ all accept identical strings (Principle 7); `parse_when` takes `now` as an argum
 callers and tests control the reference instant.
 
 `Report` and its sections remain dependency-light library values; deterministic,
-hand-written text/JSON/JSONL/YAML serializers live in the CLI feature.
-`cli.rs` shrinks to parsing flags into `(ScanConfig, CachePolicy, Query, Format)` and
-routing streams — the current private rendering methods on `Cli` move behind
+hand-written text/JSON/JSONL/YAML serializers live in `fdu-core`’s ungated
+`report_format` module, so the command line and the Python package render the same
+bytes. `cli.rs` shrinks to parsing flags into `(ScanConfig, CachePolicy, Query, Format)`
+and routing streams — the current private rendering methods on `Cli` move behind
 `query`/`format` types with their own unit tests.
 Watch composes the same pieces: a `Session` owning `IndexHandle` + `Watcher` yields
 batches already filtered through the `Selection`, and the CLI loop is a thin consumer.
 
-The derived summary planner is an internal CLI execution detail, not a second public
-query API. It decides only what state the existing one-shot composition retains; the
-public Rust `report(index, query, provenance)` and Python `Index.report(...)` contracts
-remain unchanged and pure.
+The derived summary planner is an execution strategy in `fdu-core`, not a second public
+query API: `plan_report` stays private behind the public `prepare_report`, which the
+command line and Python `fdu.report` both call.
+It decides only what state a one-shot report retains; the public Rust
+`report(index, query, provenance)` and Python `Index.report(...)` contracts remain
+unchanged and pure.
 
 The parity test for Principle 7 is mechanical: the CLI’s six axes map one-to-one onto
 these library types, so any capability reachable by flags is reachable as one typed
@@ -734,15 +774,32 @@ Supply-chain outcome: the serializers are small first-party writers over the clo
 
 ### Python API
 
-Mirror, not wrapper-of-CLI:
+Mirror, not wrapper-of-CLI. As shipped, the package is `fdu` and the axes are typed
+values ([the release plan](plan-2026-08-14-fdu-release-packaging-python-api-polish.md)
+owns the full API):
 
 ```python
-idx, report = fdu_py.open(root, cache="auto", scan_depth=None)
-r = idx.report(views=["types", "tree"], include=["*.rs"], min_size="10M")
-changed = idx.report(views=["files"], modified_since="2h")      # or a datetime
-resync = idx.report(views=["files"], modified_since=r.scan_started_at)
-for batch in idx.watch(views=["files"], interval=2.0):   # iterator of batches
-    ...
+import fdu
+
+index = fdu.open(root, cache=fdu.CachePolicy.AUTO, scan=fdu.ScanOptions(max_depth=None))
+r = index.report(
+    fdu.Query(
+        views=(fdu.View.TYPES, fdu.View.TREE),
+        selection=fdu.Selection(include=("*.rs",), min_size="10M"),
+    )
+)
+changed = index.report(
+    fdu.Query(views=(fdu.View.FILES,), selection=fdu.Selection(modified_since="2h"))
+)
+resync = index.report(
+    fdu.Query(
+        views=(fdu.View.FILES,),
+        selection=fdu.Selection(modified_since=r.scan_started_at),
+    )
+)
+with index.watch(fdu.WatchOptions(interval=2.0)) as watch:  # batches of changes
+    for batch in watch:
+        ...
 ```
 
 String values accept exactly the CLI grammars (`"2h"`, `"10M"`); native types
@@ -755,11 +812,16 @@ shared process boundary, as today.
 
 ### Schemas and Compatibility
 
-- `fdu.report/1` supersedes `fdu.tree/2`: top level carries `schema`, `generator`,
-  `root`/`root_raw`, `scan_started_at`, `generated_at`, `source`, `cache`, `complete`,
-  `freshness`, `scope`, `selection`, and `reports` (one entry per requested view, in
-  request order). This plan explicitly authorizes the schema replacement the CLI UX plan
-  forbade; the golden fixture and schema-bump test move with it.
+- The report schema supersedes `fdu.tree/2`. This plan introduced it as `fdu.report/1`
+  and explicitly authorized the schema replacement the CLI UX plan forbade; the golden
+  fixture and schema-bump test moved with it.
+  It is now `fdu.report/5`, or `fdu.report/6` when a metric summary or content analysis
+  is present, and its top level carries `schema`, `generator`, `root` (with `root_raw`
+  when the root is not UTF-8), `scan_started_at`, `generated_at`, `source`, `freshness`,
+  `complete`, `errors`, `ignore_rules`, `analysis` under `/6` only, and `reports` (one
+  entry per requested view, in request order), per `write_envelope_json` in
+  `crates/fdu-core/src/report_format.rs`. The `cache`, `scope`, and `selection` fields
+  this plan first listed are not in the envelope.
 - The interface remains pre-release; no aliases for replaced flags.
 - Library compatibility: existing `Index`, `scan`, `snapshot`, and `watch` contracts are
   preserved; `query` is additive, `ExtTally` gains a field (semver-minor while
@@ -903,9 +965,10 @@ lands last.
   rolled-up descendants below the display depth, and no spurious omission marker.
   Focused sessions retain the actual limit-marker boundary and other combinatorial edges
   instead of inflating this product example.
-- Schema tests: `fdu.report/1` and `fdu.stream/1` fixtures that fail on unversioned
-  change. `--view full` and the analyzer-set rename must *not* bump either schema; a test
-  pins that the `reports` array alone communicates which views were produced.
+- Schema tests: report (`fdu.report/1` when this plan landed, `/5` and `/6` now) and
+  `fdu.stream/1` fixtures that fail on unversioned change.
+  `--view full` and the analyzer-set rename must *not* bump either schema; a test pins
+  that the `reports` array alone communicates which views were produced.
 - Content-axis tests: every analyzer set round-trips through the sidecar bitmask; an
   `all` sidecar satisfies a `code` request with zero fresh reads (containment, not
   equality); the default view derived from each set matches the table, and an explicit
@@ -978,9 +1041,11 @@ no automated test asserts well: that an idle tree costs 0% CPU.
 2. Multiple roots per invocation (fd/find allow several): one index per root is easy to
    compose in the library; the CLI ergonomics and cache story are not designed here.
 3. Disposition of `fdu-oqoy` (adaptive terminal width, gitignore display) and `fdu-jej9`
-   (JSONL, schema docs): this plan subsumes their JSONL/sorting/summary scope; the
-   remainder (adaptive width, gitignore tagging) likely re-homes under this epic — needs
-   maintainer sign-off before closing or re-parenting either bead.
+   (JSONL, schema docs): this plan subsumes their JSONL/sorting/summary scope, and
+   gitignore tagging shipped with PR #65 (each row’s ignored share, `--exclude-ignored`,
+   `--only-ignored`, `--no-gitignore`); the remainder (adaptive width) likely re-homes
+   under this epic — needs maintainer sign-off before closing or re-parenting either
+   bead.
 4. Whether a general `--group-by` ever surfaces once the reducer registry lands
    (generalizing `types`), or named views remain the entire vocabulary and new groupings
    arrive only as new views.
@@ -990,14 +1055,16 @@ no automated test asserts well: that an idle tree costs 0% CPU.
    fracture rather than generalize.
    Revisit only if the non-grouping views find another home.
 5. Cache retention: nothing yet prunes snapshots for roots that are never queried again
-   or bounds the derived-data layer’s total size.
-   Age-based GC, size caps, or manual-only (`--cache-clear`) needs a decision before the
-   derived layer ships.
+   or bounds the derived-data layer’s total size (`fdu-558j`). Age-based GC, size caps,
+   or manual-only (`--cache-clear`) needs a decision before the derived layer ships.
    Measured on a development machine 2026-08-20: 63 MB across 52 entries, of which 26
    were unreadable by the current binary — pre-release format churn, handled correctly
    as absent, but reclaimed by nothing.
-   `--cache-clear` is all-or-nothing, so pruning dead entries also discards live ones; a
-   `--cache-clear=unreadable` scope is the cheapest partial answer.
+   PR #67 answered the dead-entry half: `--cache-status` lists a snapshot another fdu
+   version wrote as `stale`, and `--cache-clear` removes stale snapshots and reclaims
+   the leftovers fdu wrote.
+   What remains open is retention and a size bound for roots that are still readable but
+   never queried again.
 6. Whether `--analyze` should expose `text-logical-v1` and `markdown-prose-v1`
    separately rather than jointly as `words`. The registry and the sidecar already
    support it and the grammar makes it additive; deferred under Principle 1 until

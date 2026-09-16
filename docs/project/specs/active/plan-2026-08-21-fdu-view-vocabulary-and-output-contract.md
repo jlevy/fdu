@@ -4,7 +4,18 @@
 
 **Author:** fdu project
 
-**Status:** Draft
+**Status:** Completed.
+[PR #39](https://github.com/jlevy/fdu/pull/39), merged as `a6b670c`, shipped Phase 1:
+the view split, the `full` rename, a stated bound on every bounded section, the
+view-by-format test, and the YAML self-check.
+[PR #62](https://github.com/jlevy/fdu/pull/62) carried the vocabulary through the
+shipped text (`fdu-k4ad`). Two details shipped differently from the design below: the
+presets are resolved in `fdu-core` (`ViewSpec` in
+`crates/fdu-core/src/query/query_report.rs`) rather than at the CLI layer, and `--kind`
+narrows them but cannot widen them past regular files; `--sort` and `--limit` override
+them as designed.
+One residual stays open on `fdu-c2ml`: JSON and YAML output are read by
+real parsers, but JSONL report lines are checked only for balanced braces.
 
 ## Overview
 
@@ -155,19 +166,25 @@ node ships no YAML support — so a pinned `yaml` devDependency goes through
 
 ### Phase 1
 
-- [ ] `files` becomes complete: name ascending, no default bound (`fdu-qbwf`)
-- [ ] Add `largest` and `recent` as presets resolved at the CLI layer, overridable by
-  `--sort`, `--limit`, and `--kind` (`fdu-xc1v`)
-- [ ] `--view all` becomes `--view full`, membership defined as the summary views
+- [x] `files` becomes complete: name ascending, no default bound (`fdu-qbwf`)
+- [x] Add `largest` and `recent` as presets resolved at the CLI layer, overridable by
+  `--sort`, `--limit`, and `--kind` (`fdu-xc1v`). Shipped in `fdu-core`’s `ViewSpec`, so
+  both front ends share it; `--sort` and `--limit` override, while the regular-files
+  restriction holds under any `--kind`
+- [x] `--view all` becomes `--view full`, membership defined as the summary views
   including `largest` and `recent` (`fdu-j1dc`)
-- [ ] Flat sections carry their source total; every bounded view states what it dropped
+- [x] Flat sections carry their source total; every bounded view states what it dropped
   in its header, and names the flag that lifts it, in text and machine formats
   (`fdu-c1qh`)
-- [ ] Cross every view with every format so the render matrix is tested rather than
+- [x] Cross every view with every format so the render matrix is tested rather than
   claimed, closing the `extensions`, `files`, and `yaml` gaps (`fdu-5akc`)
 - [ ] Consume each machine format with a parser rather than only comparing bytes; the
-  `yaml` dependency goes through the supply-chain policy first (`fdu-c2ml`)
-- [ ] Carry the vocabulary through `--docs`, README, SKILL.md, help, the `--view` error
+  `yaml` dependency goes through the supply-chain policy first (`fdu-c2ml`). JSON is
+  parsed by `scripts/content-selfcheck.mjs` and the Python tests, and YAML by
+  `scripts/check-yaml.mjs` in `make test` using the already locked `yaml` package.
+  JSONL report lines are still checked only by the brace-balancing `is_valid_json` in
+  `crates/fdu-core/src/report_format.rs`, which accepts `{"a": }`
+- [x] Carry the vocabulary through `--docs`, README, SKILL.md, help, the `--view` error
   message, the composable CLI spec, and the goldens (`fdu-k4ad`)
 
 The schema bumps once, for `fdu-c1qh` and `fdu-c2ml` together, rather than twice.
@@ -225,8 +242,9 @@ every tree.
 
 - [Design principles: First Principles](../../architecture/fdu-design-principles.md#first-principles)
 - [Composable CLI and query surface](plan-2026-08-10-fdu-composable-cli-surface.md)
-- Beads: `fdu-yov0` (epic), `fdu-qbwf`, `fdu-xc1v`, `fdu-j1dc`, `fdu-c1qh`, `fdu-k4ad`,
-  `fdu-1lj3` (the original silent-truncation report)
+- Beads: `fdu-qbwf`, `fdu-xc1v`, `fdu-j1dc`, `fdu-c1qh`, `fdu-5akc`, `fdu-k4ad`, and
+  `fdu-1lj3` (the original silent-truncation report) are closed; `fdu-c2ml` stays open
+  for the JSONL parser check, and the epic `fdu-yov0` with it
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
