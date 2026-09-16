@@ -176,8 +176,9 @@ The GitHub release text is
     `Status.ignore_rules` reports the limits, what was applied, and what was refused.
   - `cache_path`, `cache_status`, `list_caches`, `clear_cache`, and `clear_all_caches`
     manage snapshots. A `CacheStatus` carries `state`, with `stale_reason`,
-    `format_version`, and `leftover_kind` where they apply, and a clear returns a
-    `ClearSummary` naming what it removed and what it left.
+    `format_version`, and `leftover_kind` where they apply.
+    `clear_cache` returns whether it removed a snapshot, and `clear_all_caches` returns
+    a `ClearSummary` counting the snapshots it removed and the leftovers it reclaimed.
   - Native calls are bulk, and open, scan, and refresh release the GIL. A failure that
     stops an operation raises an `FduError` subclass, and one that makes a scan partial
     is reported on `Status`.
@@ -194,9 +195,14 @@ The GitHub release text is
     consumer that falls further behind receives a reset outcome and re-reads.
   - `refresh()` verifies named paths, `prioritize()` steers discovery, observation keeps
     the root live, and `close()` joins every worker.
-    A worker panic surfaces as `OpenedWorkerPanicked`.
-  - Selection globs match the portable path each row carries, so a path taken from a
-    page can be passed back as a filter.
+    A worker panic surfaces as `Error::OpenedWorkerPanicked` in Rust and as
+    `OpenedIndexError` in Python.
+  - Selection inside a read matches the portable path, in which `%` is written `%25` and
+    a byte that is not UTF-8 is percent-escaped, so `100%.txt` is matched as
+    `100%25.txt`. The `portable_path` a `Lookup`, `Tree`, or `Flat` row carries passes
+    back as a filter unchanged.
+    A `Report` projection’s rows carry only the native path, so a name containing `%` or
+    a byte that is not UTF-8, taken from one, does not.
   - Options cover hidden-name pruning with an allow list, special-file exclusion, a file
     budget, and a custom file-type registry (File Rollup registry schema 3 or 4).
 - **Rust library.** `fdu-core` is the engine, and `fdu` re-exports it alongside the
