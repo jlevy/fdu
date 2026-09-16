@@ -47,11 +47,12 @@ A generated balanced tree is also a different shape from a real checkout, with
 uniform fan-out and no deep dependency thickets, so the absolute second count is not
 comparable across the two subjects in either direction.
 
-**Two of the original comparators are not installed on this host.** `pdu` and the Go
-`gdu` analyzer are absent, so the README’s comparison against them could not be
-re-measured. `/opt/homebrew/bin/gdu` on this machine is GNU coreutils’ `du`, not the
-analyzer; a first run passed it under the `gdu` contract and the harness invalidated all
-twelve samples with “command exited with 1”, which is the validity gate working.
+**Two of the original comparators are not in this table.** `pdu` was absent when this
+matrix ran and was installed afterwards but not measured, as the limits below explain;
+the Go `gdu` analyzer is still absent, so the README’s comparison against either could
+not be re-measured. `/opt/homebrew/bin/gdu` on this machine is GNU coreutils’ `du`, not
+the analyzer; a first run passed it under the `gdu` contract and the harness invalidated
+all twelve samples with “command exited with 1”, which is the validity gate working.
 It appears above under `gnu-du`, the contract that matches what it is, and `bsd-du` was
 added beside it.
 
@@ -129,8 +130,10 @@ supports and no better.
 - Absolute seconds here belong to this subject, this host and this load.
   They are not a portable claim, and the shape of a generated balanced tree is not the
   shape of a real checkout.
-- `pdu` and the Go `gdu` should be installed before the next comparison so the peer set
-  matches the one the project has published historically.
+- `pdu` 0.24.0 (`parallel-disk-usage`, installed with `cargo install --locked`) is now
+  on this host but was not measured: two attempts at a full matrix hit host load above
+  20 and free disk at the 6 GiB floor, and a number from that regime would not be
+  trustworthy. The Go `gdu` analyzer is still not installed.
 - The benchmark harness’s `fdu-transient-summary` contract no longer reaches the tier it
   names, for the reason given above; its argv needs `--no-gitignore` or the contract
   should be retired. Tracked as `fdu-hkyh`.
