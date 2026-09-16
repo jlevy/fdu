@@ -1335,9 +1335,10 @@ gate. The PR remains a draft until Phase 5 passes.
 **Delivered differently (noted 2026-09-16).** PR #48 merged on 2026-09-14, together with
 its stacked PRs #50–#52, before Phase 5: Phases 1, 2, and 3B were complete, and
 checkpoint 3C and Phase 4 were in progress.
-The P0 child of `fdu-2lkf` that was to gate leaving draft, `fdu-1onj`, closed afterwards
-in PR #63. The remaining phases land as ordinary PRs on `main`, each held to its own
-phase gate.
+`fdu-2lkf` has three P0 children, which were to gate leaving draft: `fdu-etfj` closed at
+the merge and `fdu-1onj` afterwards in PR #63, and `fdu-pro1` is in progress under the
+[streaming performance parity plan](plan-2026-08-31-fdu-streaming-performance-parity.md).
+The remaining phases land as ordinary PRs on `main`, each held to its own phase gate.
 
 This merge topology explicitly overrides the review report’s preferred sequence of a
 core-integrity PR followed by an opened-root PR. The project owner selected one
@@ -2941,7 +2942,7 @@ their status as approval of that shape.
 | `fdu-sgp7` prioritize and close | Phase 2 operations on the one `OpenedIndex`. |
 | `fdu-kl7r`, `fdu-vfyw` agreement proof | Phase 5 two-provider registry and observation replay. |
 | `fdu-gy3g` File Rollup packet | Phase 5, expanded to exercise basename-derived logical extensions. |
-| `fdu-2lkf` control-state scale | Phase 4 epic. Its P0 children were to gate PR #48 leaving draft; the PR merged first, and the P0 child `fdu-1onj` closed in PR #63. |
+| `fdu-2lkf` control-state scale | Phase 4 epic. Its three P0 children were to gate PR #48 leaving draft; the PR merged first. `fdu-etfj` closed at the merge and `fdu-1onj` in PR #63; `fdu-pro1` is in progress under the streaming performance parity plan. |
 | `fdu-syyl`, `fdu-zibs` peer-comparison deficits | Phase 4. Memory, not wall time, is where fdu trails dust; measure it with the harness. |
 | `fdu-tsdy` regular-file scan root | Outside this plan. Decide deliberately on the CLI surface plan rather than by omission. |
 | `fdu-5ffm` macOS TCC exit 2 | `main` behaviour, not this branch. Tracked against the CLI UX plan beside `fdu-jej9`. |
