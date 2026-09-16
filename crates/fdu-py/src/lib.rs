@@ -1395,18 +1395,12 @@ fn report_once(
 /// views inside a single report -- so the rule carries the instant it was drawn, which is
 /// also the one fact distinguishing two repaints whose numbers happen to match.
 #[pyfunction]
-fn watch_rule(at_nanos: i64) -> PyResult<String> {
+fn watch_rule(at_nanos: i64) -> String {
     // Nanoseconds because that is what a Change already carries, so a caller repainting
-    // after a batch has the instant to hand without converting through anything.
-    let at = if at_nanos >= 0 {
-        std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_nanos(at_nanos.unsigned_abs()))
-    } else {
-        std::time::UNIX_EPOCH.checked_sub(std::time::Duration::from_nanos(at_nanos.unsigned_abs()))
-    };
-    let at = at.ok_or_else(|| {
-        PyValueError::new_err("timestamp is outside the range this platform can represent")
-    })?;
-    Ok(fdu_core::report_format::watch_rule(at))
+    // after a batch has the instant to hand without converting through a platform clock.
+    // Windows SystemTime has 100-nanosecond precision and would truncate the last two
+    // digits of a value that this API promises to render exactly.
+    fdu_core::report_format::watch_rule_nanos(at_nanos)
 }
 
 /// Render one watch record the way the CLI streams it, in any format.
