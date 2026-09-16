@@ -477,6 +477,14 @@ fdu: invalid --view "bogus": expected one of summary, tree, families, types, ext
 ? 2
 ```
 
+### The Unreleased View Alias Is Rejected
+
+```console
+$ fdu --cache off --view docs project
+fdu: invalid --view "docs": expected one of summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
+? 2
+```
+
 ### A Repeated View Is a Typo, Not a No-Op
 
 ```console
@@ -602,5 +610,13 @@ $ fdu --cache refresh --view tree --format jsonl --size apparent project
 ```console
 $ fdu --cache sometimes project
 fdu: invalid --cache "sometimes": expected one of auto, refresh, read-only, only, off
+? 2
+```
+
+### The Unreleased Cache Alias Is Rejected
+
+```console
+$ fdu --cache readonly project
+fdu: invalid --cache "readonly": expected one of auto, refresh, read-only, only, off
 ? 2
 ```
