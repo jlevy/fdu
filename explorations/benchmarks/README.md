@@ -19,7 +19,7 @@ contact the network.
 Run it from the repository root:
 
 ```shell
-uv run --no-project python -m benchmarks.generate create \
+PYTHONPATH=explorations uv run --no-project python -m benchmarks.generate create \
   --recipe contract \
   --work-dir explorations/benchmarks/corpus
 ```
@@ -28,10 +28,10 @@ The command prints one JSON object.
 Save its `run_root`, then verify or remove that exact run:
 
 ```shell
-uv run --no-project python -m benchmarks.generate verify \
+PYTHONPATH=explorations uv run --no-project python -m benchmarks.generate verify \
   --run-root explorations/benchmarks/corpus/fdu-perf-EXAMPLE
 
-uv run --no-project python -m benchmarks.generate cleanup \
+PYTHONPATH=explorations uv run --no-project python -m benchmarks.generate cleanup \
   --run-root explorations/benchmarks/corpus/fdu-perf-EXAMPLE
 ```
 
@@ -39,12 +39,12 @@ Churn recipes declare an ordered state machine.
 Each transition verifies the current manifest before changing anything:
 
 ```shell
-uv run --no-project python -m benchmarks.generate create \
+PYTHONPATH=explorations uv run --no-project python -m benchmarks.generate create \
   --recipe churn-local \
   --entries 1000 \
   --work-dir explorations/benchmarks/corpus
 
-uv run --no-project python -m benchmarks.generate mutate \
+PYTHONPATH=explorations uv run --no-project python -m benchmarks.generate mutate \
   --run-root explorations/benchmarks/corpus/fdu-perf-EXAMPLE \
   --transition one-change
 ```
@@ -79,7 +79,7 @@ Build and execute it with:
 # The same build as `make perf-probe-release`.
 cargo build --locked --release -p fdu-core --example perf_probe --no-default-features
 
-uv run --no-project python -m benchmarks.run execute \
+PYTHONPATH=explorations uv run --no-project python -m benchmarks.run execute \
   --scenarios explorations/benchmarks/scenarios.json \
   --executable fdu-probe=/absolute/path/to/target/release/examples/perf_probe \
   --work-dir /absolute/scratch/fdu-performance \
@@ -108,14 +108,14 @@ reasons. It writes one exclusive result file; it never replaces an earlier run.
 Validate, render, or compare an existing result without executing a benchmark:
 
 ```shell
-uv run --no-project python -m benchmarks.run validate \
+PYTHONPATH=explorations uv run --no-project python -m benchmarks.run validate \
   --kind result --path /absolute/results/run-EXAMPLE.json
 
-uv run --no-project python -m benchmarks.run render \
+PYTHONPATH=explorations uv run --no-project python -m benchmarks.run render \
   --result /absolute/results/run-EXAMPLE.json \
   --output /absolute/results/report.md
 
-uv run --no-project python -m benchmarks.run compare \
+PYTHONPATH=explorations uv run --no-project python -m benchmarks.run compare \
   --current /absolute/results/current.json \
   --baseline /absolute/results/baseline.json
 ```
@@ -154,15 +154,17 @@ one-number total as equivalent to a reusable index and rendered tree:
 
 ```shell
 make perf-compare-tools \
-  PERF_TREE=benchmarks PERF_LABEL=benchmarks-self-contained \
+  PERF_LABEL=benchmarks-self-contained \
   PERF_TOOL_CONTROL=/tmp/fdu-tool-comparison/bin/fdu \
+  PERF_TOOL_CONTRACT=fdu-index-summary \
   TOOL_ARGS='--tool dust=/path/to/dust --tool gdu=/path/to/gdu-go --tool pdu=/path/to/pdu --tool ncdu=/path/to/ncdu' \
   STORAGE='local APFS SSD' NAME=tree-900k
 
-PYTHONDONTWRITEBYTECODE=1 uv run --project benchmarks --frozen --group dev \
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=explorations \
+  uv run --project explorations/benchmarks --frozen \
   python -m benchmarks.realtree.compare_tools \
-  --root benchmarks --label benchmarks-self-contained \
-  --anchor fdu-transient-summary=/tmp/fdu-tool-comparison/bin/fdu \
+  --root explorations/benchmarks --label benchmarks-self-contained \
+  --anchor fdu-index-summary=/tmp/fdu-tool-comparison/bin/fdu \
   --tool dumac=/path/to/dumac --tool diskus=/path/to/diskus \
   --tool dua=/path/to/dua --tool bsd-du=/usr/bin/du \
   --tool gnu-du=/path/to/gnu-du --trials 12 --warmups 3 \
@@ -180,6 +182,11 @@ allocated bytes, and newest regular-file mtime on every fdu sample.
 Partial, stale, cached, or error-bearing output is invalid.
 Reports label indexed-tree, rendered-tree, transient-summary, and total-only work
 classes because those jobs are not semantically identical.
+A work class is declared by the contract, not inferred from the run.
+`fdu-transient-summary` passes no `--no-gitignore`, so on a binary that reads
+`.gitignore` by default it takes the indexed plan while still recording
+`transient-summary` (`fdu-hkyh`); until it does, anchor on `fdu-index-summary`, as both
+commands above do, rather than on the `PERF_TOOL_CONTRACT` default.
 
 The reviewed M1/APFS result and exact manifest are in the
 [live tool comparison](../../docs/project/reports/report-2026-08-13-fdu-live-tool-comparison.md).
