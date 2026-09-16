@@ -15,6 +15,10 @@ env:
 patterns:
   BYTES: '\d+'
   CACHE_FILE: '[^\r\n]+\.fdu'
+  # A YAML scalar is quoted only when it would otherwise be ambiguous, which a Windows
+  # path with backslashes is and a POSIX path is not. The quoting is the platform's, so
+  # it is matched rather than asserted; every other character still has to be exact.
+  CACHE_FILE_SCALAR: '"?[^\r\n]+\.fdu"?'
   CACHE_DIR: '[^\r\n]+'
   SCAN_PATH: '[^\r\n]+'
   PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
@@ -133,7 +137,7 @@ every machine format.
 $ fdu --cache-status --format yaml project
 schema: fdu.cache/1
 caches:
-  - path: [CACHE_FILE]
+  - path: [CACHE_FILE_SCALAR]
     bytes: [BYTES]
     content_bytes: null
     state: current
