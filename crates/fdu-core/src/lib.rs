@@ -393,37 +393,80 @@ fn snapshot_scope_serves(
         && wanted.ignore_rules_fingerprint == 0
 }
 
+/// A snapshot that could not serve a request, and what it was taken under.
+#[derive(Clone, Copy, Debug)]
+struct RefusedSnapshot {
+    scope: ScanScope,
+    control_limits: crate::control::ControlLimits,
+}
+
 /// Why a policy that cannot scan has no snapshot to answer from, and what recovers.
 ///
 /// [`CachePolicy::Only`] is the one policy that cannot fall back to a scan, so its failure
-/// is the only place a caller learns that the snapshot is missing or of another scope. The
-/// common mismatch is control state: a one-shot report never observes it and an index does
-/// by default, so a cache-only index after a report would otherwise fail with no hint that
-/// a snapshot exists at all.
-fn unusable_snapshot_message(refused: Option<ScanScope>, wanted: ScanScope) -> String {
+/// is the only place a caller learns that the snapshot is missing or of another scope. Two
+/// mismatches are common enough to name. Control state: a one-shot report never observes
+/// it and an index does by default, so a cache-only index after a report would otherwise
+/// fail with no hint that a snapshot exists at all. Control limits: both scopes observe,
+/// and their identities are hashes, so "a different scan scope" would describe a request
+/// whose only difference is a limit the caller chose and can choose again.
+fn unusable_snapshot_message(refused: Option<RefusedSnapshot>, wanted: &ScanConfig) -> String {
     // Not "run once under `auto` to write one": a compact summary scans without retaining
     // an index and writes nothing, so that remedy would fail again for exactly that query.
     const PREFIX: &str = "no usable snapshot for this root and scan scope";
     const NEVER_SCANS: &str = "the `only` cache policy never scans";
-    let lacks_only_control_state = |stored: ScanScope| {
-        stored.ignore_rules_fingerprint == 0
-            && ScanScope { ignore_rules_fingerprint: wanted.ignore_rules_fingerprint, ..stored }
-                == wanted
+    let wanted_scope = wanted.scope();
+    let differs_only_in_ignore_rules = |stored: ScanScope| {
+        ScanScope { ignore_rules_fingerprint: wanted_scope.ignore_rules_fingerprint, ..stored }
+            == wanted_scope
     };
-    match refused {
-        None => format!("{PREFIX}; {NEVER_SCANS}, so use `auto`, which scans when none serves"),
+    let Some(refused) = refused else {
+        return format!("{PREFIX}; {NEVER_SCANS}, so use `auto`, which scans when none serves");
+    };
+    let stored = refused.scope;
+    if differs_only_in_ignore_rules(stored) {
         // Only an index asks for control state, and a complete index scan under `auto` is
         // always saved, so here the second remedy works as well as the first.
-        Some(stored) if lacks_only_control_state(stored) => format!(
-            "{PREFIX}: the cached snapshot has no control state, as a one-shot report writes \
-             it, and this request needs it; {NEVER_SCANS}, so use `auto`, or first open an \
-             index under `auto` to write a snapshot that has it"
-        ),
-        Some(_) => format!(
-            "{PREFIX}: the cached snapshot has a different scan scope; {NEVER_SCANS}, so use \
-             `auto`, which scans when none serves"
-        ),
+        if stored.ignore_rules_fingerprint == 0 {
+            return format!(
+                "{PREFIX}: the cached snapshot has no control state, as a one-shot report \
+                 writes it, and this request needs it; {NEVER_SCANS}, so use `auto`, or first \
+                 open an index under `auto` to write a snapshot that has it"
+            );
+        }
+        if wanted_scope.observes_controls() {
+            let changed = changed_control_limits(refused.control_limits, wanted.control_limits);
+            if !changed.is_empty() {
+                return format!(
+                    "{PREFIX}: the cached snapshot was taken under other .gitignore limits \
+                     ({changed}); {NEVER_SCANS}, so repeat the request with the snapshot's \
+                     limits, or use `auto`, which scans when none serves"
+                );
+            }
+        }
     }
+    format!(
+        "{PREFIX}: the cached snapshot has a different scan scope; {NEVER_SCANS}, so use \
+         `auto`, which scans when none serves"
+    )
+}
+
+/// Each control limit that differs between a snapshot and a request, both values named.
+fn changed_control_limits(
+    stored: crate::control::ControlLimits,
+    wanted: crate::control::ControlLimits,
+) -> String {
+    let display = crate::control::limit_display;
+    let changed: Vec<String> = [
+        ("budget", stored.budget, wanted.budget),
+        ("line limit", stored.line_limit, wanted.line_limit),
+    ]
+    .into_iter()
+    .filter(|(_, stored, wanted)| stored != wanted)
+    .map(|(name, stored, wanted)| {
+        format!("{name} {}, where this request asks for {}", display(stored), display(wanted))
+    })
+    .collect();
+    changed.join(", and ")
 }
 
 /// [`open_with_pending_save`] with the snapshot read under the caller's control.
@@ -449,9 +492,9 @@ pub(crate) fn open_for_report(
     let root = root.canonicalize().map_err(|e| Error::io(root, e))?;
     let policy = config.policy;
 
-    // The scope of a snapshot for this root that could not serve, kept so a policy that
-    // cannot scan says why it has no answer rather than only that it has none.
-    let mut refused_scope = None;
+    // A snapshot for this root that could not serve, kept so a policy that cannot scan says
+    // why it has no answer rather than only that it has none.
+    let mut refused_snapshot = None;
     let loaded = match ((read_snapshot || !policy.scans()) && policy.reads(), &config.cache_path) {
         (true, Some(cache_path)) => {
             snapshot::load_with_types(cache_path, config.scan.types_shared())?
@@ -473,7 +516,10 @@ pub(crate) fn open_for_report(
                         snapshot_use,
                     );
                     if !serves {
-                        refused_scope = Some(index.scope());
+                        refused_snapshot = Some(RefusedSnapshot {
+                            scope: index.scope(),
+                            control_limits: index.control_table().limits(),
+                        });
                     }
                     serves
                 })
@@ -483,10 +529,7 @@ pub(crate) fn open_for_report(
 
     if !policy.scans() {
         let Some(mut index) = loaded else {
-            return Err(Error::Snapshot(unusable_snapshot_message(
-                refused_scope,
-                config.scan.scope(),
-            )));
+            return Err(Error::Snapshot(unusable_snapshot_message(refused_snapshot, &config.scan)));
         };
         // Deliberately no reconciliation: this tier never touches the tree. The index is
         // marked unverified so the answer cannot claim a currency it has not earned — a
@@ -931,6 +974,42 @@ mod tests {
         assert_eq!(report.path_taken, OpenPath::ColdScan);
         assert_eq!(index.scope(), controls_off.scan.scope());
         assert!(matches!(index.controls(), Err(Error::ControlStateNotObserved)));
+    }
+
+    /// A cache-only open refused for the control limits names them and what recovers.
+    ///
+    /// Both scopes observe control state and differ only in their ignore-rules identity,
+    /// which is a hash: without naming the limits, the caller is told "a different scan
+    /// scope" about a request whose only difference is a limit they chose.
+    #[test]
+    fn a_cache_only_open_after_a_limit_change_names_the_limits_that_differ() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        write_file(&root.path().join(".gitignore"), b"ignored.log\n");
+        write_file(&root.path().join("ignored.log"), b"ignored");
+        seed_controls_snapshot(root.path(), snapshot_path.clone());
+
+        let lifted = crate::control::ControlLimits {
+            line_limit: None,
+            ..crate::control::ControlLimits::default()
+        };
+        let mut wanted = controls_config(CachePolicy::Only, snapshot_path, true);
+        wanted.scan.control_limits = lifted;
+        let Err(Error::Snapshot(message)) = open(root.path(), &wanted) else {
+            panic!("a snapshot taken under other limits must not serve a cache-only open");
+        };
+        assert!(
+            message.contains("line limit 16 KiB, where this request asks for all"),
+            "names the limit that differs and both values: {message}"
+        );
+        assert!(!message.contains("budget"), "the budget is unchanged: {message}");
+        assert!(!message.contains("different scan scope"), "says which scope differs: {message}");
+        assert!(
+            message.contains("repeat the request with the snapshot's limits"),
+            "names the remedy: {message}"
+        );
+        assert!(message.contains("`auto`"), "names the other remedy: {message}");
     }
 
     #[test]
