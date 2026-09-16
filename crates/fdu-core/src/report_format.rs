@@ -24,7 +24,7 @@ use crate::engine_contract::{EntryKind, Freshness};
 use crate::query::{
     FileRow, IgnoredEntries, IgnoredTally, MetricGroup, MetricRow, MetricSummary, Report,
     ReportSource, Section, SizeMetric, SummaryRow, TreeNode, TypeRow, ViewSpec, document_words,
-    format_rfc3339,
+    format_rfc3339, format_rfc3339_nanos,
 };
 
 /// The all-caps label naming which view a block of text output belongs to.
@@ -172,7 +172,7 @@ fn render_text(report: &Report, color: bool) -> String {
                     human_bytes(pick(report.size, row.bytes, row.allocated))
                 }),
                 ViewSpec::Recent => render_text_ranked_files(&mut out, rows, report.size, |row| {
-                    format_rfc3339(system_time_from_nanos(row.mtime_ns))
+                    format_rfc3339_nanos(row.mtime_ns)
                 }),
                 _ => {
                     for row in rows {
@@ -479,22 +479,6 @@ fn bound_note(section: &Section) -> String {
         human_count(shown as u64),
         human_count(total as u64)
     )
-}
-
-/// A nanosecond stamp as a `SystemTime`, saturating rather than panicking.
-///
-/// Timestamps before the epoch are legal on disk — an archive can restore one — and a
-/// listing must render them rather than abort, so the conversion is total.
-fn system_time_from_nanos(nanos: i64) -> std::time::SystemTime {
-    const NANOS_PER_SEC: i64 = 1_000_000_000;
-    let (secs, subsec) = (nanos.div_euclid(NANOS_PER_SEC), nanos.rem_euclid(NANOS_PER_SEC));
-    let duration =
-        std::time::Duration::new(secs.unsigned_abs(), u32::try_from(subsec).unwrap_or(0));
-    if secs < 0 {
-        std::time::UNIX_EPOCH.checked_sub(duration).unwrap_or(std::time::UNIX_EPOCH)
-    } else {
-        std::time::UNIX_EPOCH.checked_add(duration).unwrap_or(std::time::UNIX_EPOCH)
-    }
 }
 
 /// A bounded flat listing, showing the measure it was ranked by.
@@ -1491,6 +1475,15 @@ pub const STREAM_SCHEMA: &str = "fdu.stream/1";
 /// drift from it.
 pub fn watch_rule(at: std::time::SystemTime) -> String {
     format!("──── {} ────", format_rfc3339(at))
+}
+
+/// The watch repaint rule for an integer nanosecond timestamp.
+///
+/// This is distinct from [`watch_rule`] because an integer can carry finer precision than
+/// the platform's [`std::time::SystemTime`]. In particular, Windows would otherwise
+/// truncate the final two digits while converting through 100-nanosecond FILETIME ticks.
+pub fn watch_rule_nanos(at_nanos: i64) -> String {
+    format!("──── {} ────", format_rfc3339_nanos(at_nanos))
 }
 
 /// Render one streamed change as a tagged record.

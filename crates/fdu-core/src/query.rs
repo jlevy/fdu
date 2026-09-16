@@ -25,6 +25,7 @@ pub use query_selection::{
     Bound, Candidate, EntrySelection, IgnoredEntries, ModifiedWindow, Selection, SizeMetric,
     SortKey,
 };
+pub(crate) use query_values::format_rfc3339_nanos;
 pub use query_values::{
     format_rfc3339, parse_control_budget, parse_control_line_limit, parse_size, parse_when,
     system_time_to_nanos,

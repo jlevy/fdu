@@ -128,6 +128,23 @@ pub fn format_rfc3339(time: SystemTime) -> String {
         }
     };
 
+    format_rfc3339_parts(seconds, nanos)
+}
+
+/// Render integer nanoseconds since the Unix epoch without passing through [`SystemTime`].
+///
+/// `SystemTime` has platform-defined precision. Windows stores 100-nanosecond FILETIME
+/// ticks, so converting an exact timestamp through it discards the final two digits. The
+/// index and Python API already carry integer nanoseconds; formatting those values directly
+/// keeps their representation byte-for-byte portable.
+pub(crate) fn format_rfc3339_nanos(timestamp: i64) -> String {
+    let nanos_per_second = i64::from(NANOS_PER_SEC);
+    let seconds = timestamp.div_euclid(nanos_per_second);
+    let nanos = u32::try_from(timestamp.rem_euclid(nanos_per_second)).unwrap_or(0);
+    format_rfc3339_parts(seconds, nanos)
+}
+
+fn format_rfc3339_parts(seconds: i64, nanos: u32) -> String {
     let days = seconds.div_euclid(86_400);
     let time_of_day = seconds.rem_euclid(86_400);
     let (year, month, day) = civil_from_days(days);
@@ -781,6 +798,15 @@ mod tests {
             let parsed = parse_when(value, now()).expect("parses");
             assert_eq!(format_rfc3339(parsed), value);
         }
+    }
+
+    #[test]
+    fn integer_nanoseconds_render_byte_for_byte_on_every_platform() {
+        assert_eq!(
+            format_rfc3339_nanos(1_786_386_151_123_456_789),
+            "2026-08-10T18:22:31.123456789Z"
+        );
+        assert_eq!(format_rfc3339_nanos(-1), "1969-12-31T23:59:59.999999999Z");
     }
 
     #[test]
