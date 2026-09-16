@@ -41,8 +41,9 @@ They do not redefine the architecture.
   explicit.
 - Give embedded clients bounded synchronous operations without imposing an async
   runtime, transport, or application vocabulary on the engine.
-- Keep observation removable, and keep control-file reads, content analysis, and
-  persistence dormant when their capabilities are not requested.
+- Keep observation removable, keep content analysis and persistence dormant until
+  requested, and perform no control-file read for a request that turns `read_controls`
+  off.
 - Make a complete causal behavior session recordable from production values, so a small
   transparent-box golden corpus can exercise the orchestration end to end.
 
@@ -304,8 +305,8 @@ impl OpenedIndex {
     pub fn open(root: &Path, options: OpenOptions) -> Result<Self>;
     pub fn read(&self, request: ReadRequest) -> Result<ReadResponse>;
     pub fn changes(&self, request: ChangeRequest) -> Result<ChangePoll>;
-    pub fn refresh(&self, paths: &[RelativePath]) -> Result<RefreshResult>;
-    pub fn prioritize(&self, paths: &[RelativePath]) -> Result<PriorityResult>;
+    pub fn refresh(&self, paths: &[PathBuf]) -> Result<RefreshResult>;
+    pub fn prioritize(&self, paths: &[PathBuf]) -> Result<()>;
     pub fn close(&self) -> Result<()>;
 }
 ~~~
@@ -411,16 +412,20 @@ A query or display depth is selection, not scope.
 The live lifecycle’s observation-compatible default is an unbounded-depth retained
 scope; an application’s viewport depth never narrows discovery.
 
-Semantic identity covers the normalized runtime type registry, fixed ignore semantics,
-classification rules, and versioned reducer behavior.
+Semantic identity covers the normalized runtime type registry, whether control files are
+observed and under which budget and line limit, classification rules, and versioned
+reducer behavior.
 The engine derives scope and semantic identities from validated values.
 It never accepts a caller-supplied fingerprint as proof that independently supplied
 content matches.
 
 Worker count, traversal order, batching, scheduling hints, journal and continuation
 capacity, resource budgets, and observation mode are execution policy.
-A file-retention budget limits resources; it does not promise a deterministic
-cross-provider prefix and is not part of semantic scope.
+The opened root’s file-retention budget limits resources; it does not promise a
+deterministic cross-provider prefix and is not part of semantic scope.
+The `.gitignore` control budget and line limit are not resource policy in this sense:
+they decide which rules apply, so they ride in the ignore-rules identity, and an index
+refuses limits other than the ones its scope was taken under.
 
 The root binding is session-local and platform-native.
 Portable cross-provider path identity is a projection and remains separate from the
@@ -611,6 +616,9 @@ can return one directory and a thousand of its descendants while leaving the cal
 unable to tell whether the parent held two entries or two thousand.
 
 Flat and catalog rows are ordered by complete canonical POSIX-relative UTF-8 bytes.
+No read projection serves ranked recency yet.
+An opened root maintains a newest-first order of regular files for one, and the page
+that serves it must meet this contract.
 Ranked recency has a selection order and a presentation order, and they differ.
 Rows are selected by ignored state, then modification time descending, then canonical
 path ascending; the page that survives is returned in modification time descending, then
@@ -620,8 +628,8 @@ The path is the final key in both, which is what makes each total.
 Ignored entries rank last during selection because installing dependencies writes
 thousands of files at once, and pure recency would answer “what changed recently” with a
 page of vendored output.
-The demotion applies in every branch: applying it only when a page overflows gives one
-query name two ranking contracts.
+The demotion must apply in every branch: applying it only when a page overflows gives
+one query name two ranking contracts.
 
 Excluding ignored entries prunes the excluded directory’s whole subtree, not merely its
 row.
@@ -796,8 +804,8 @@ Mixed-source serving remains additive once its trust model is proven.
 
 ### Fixed ignore partition instead of generic tags
 
-**Chosen approach:** Maintain the demonstrated `all` and `unignored` partition behind an
-explicit capability.
+**Chosen approach:** Maintain the demonstrated `all` and `unignored` partition by
+default, and drop it only for a request that turns `read_controls` off.
 
 **Alternatives considered:** Generic tags and promoted roll-up planes multiply reducer,
 snapshot, query, and live reclassification paths before a second use establishes the
@@ -876,8 +884,6 @@ idle native observer performs no filesystem work.
 - Which network filesystems can support native observation honestly, and which should
   remain explicit refresh-only modes?
 - Does a later client justify resumable sort orders beyond structural path order?
-- Should ignore support ever become a default CLI capability after dependency, binary,
-  and behavior measurements?
 
 ### Potential Improvements
 
