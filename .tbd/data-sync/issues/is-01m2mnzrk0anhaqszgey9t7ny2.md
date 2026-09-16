@@ -5,12 +5,12 @@ title: The fdu-transient-summary benchmark contract no longer reaches the transi
 kind: bug
 status: open
 priority: 2
-version: 2
+version: 3
 labels:
   - stack-followup
 dependencies: []
 created_at: 2026-09-16T08:40:28.503Z
-updated_at: 2026-09-16T16:42:47.903Z
+updated_at: 2026-09-16T17:00:22.820Z
 ---
 explorations/benchmarks/realtree/compare_tools.py: the fdu-transient-summary contract's argv is '--cache off --view summary --format json --color never ROOT'. Since #65 a default run observes .gitignore, so execution::plan_report's summary_is_sufficient is false and that request takes RetainedState::FullIndex, the same plan as fdu-index-summary. The two contracts now measure the same work while declaring different work classes, and the README's 'five-tally exact summary' row describes a tier the argv no longer reaches. Either add --no-gitignore to the transient contract's argv, or retire the contract and say the tier is reached only with that flag. Found while re-measuring the README headline for fdu-y5xr.
 
@@ -23,3 +23,5 @@ Related harness gaps found by the doc-drift audit at 16efcd0 ("Documents that sh
 - The transient tier is reachable in `measure` only as `--variant "name=PATH --no-controls"` (__main__.py:492-506). `make perf-compare` cannot add the flag to the candidate variant (Makefile:514), so a Make-driven aggregate round measures the indexed plan.
 
 The docs PR for root, architecture, and guides describes the harness as it is and points here: docs/project/guides/performance-loop.md ("The aggregate tier", "Comparing against other tools"), performance-loop-runbook.md (MEASURE), and explorations/benchmarks/README.md now anchor on `fdu-index-summary`. When this bead lands, update those three places.
+
+Also affected (found 2026-09-16 while updating plans, PR #71): make perf-floor's aggregate instrument, explorations/benchmarks floor.py, does not pass --no-controls either. Since PR #65 an unfiltered summary observes .gitignore and falls closed to the full index, so floor.py's 'aggregate' measures the full-index summary, not the aggregate tier, the same gap as the aggregate-summary job. Fix both together.
