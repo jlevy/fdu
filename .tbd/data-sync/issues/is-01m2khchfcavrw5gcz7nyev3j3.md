@@ -5,14 +5,14 @@ title: "Default --view summary retains the full index to classify ignored entrie
 kind: task
 status: open
 priority: 1
-version: 2
+version: 3
 labels:
   - stack-followup
   - release
   - scale
 dependencies: []
 created_at: 2026-09-15T22:00:49.899Z
-updated_at: 2026-09-16T00:18:25.506Z
+updated_at: 2026-09-16T08:40:07.338Z
 ---
 Found by the PR B speed gate (branch claude/gitignore-default-on, d95d729), as decision Q7 on fdu-elnn anticipated: the transient summary tier keeps no control table, so with `.gitignore` observed by default an unfiltered `fdu --view summary PATH` falls closed to `RetainedState::FullIndex` (crates/fdu-core/src/execution.rs `plan_report`, `summary_is_sufficient` requires `!config.scan.read_controls`).
 
@@ -28,6 +28,10 @@ Acceptance: default `--view summary` peak RSS within the transient tier's order 
 
 ## Notes
 
-2026-09-15, review of PR #65. Verdict on whether this must be fixed before 0.1.0: no. Wall time passed the gate on both subjects (1.02-1.04); the RSS is the index's, which the default `fdu PATH` has always paid on the same tree, so the summary view loses a special standing rather than regressing below the default; 0.1.0 is the first release, so nobody holds a summary-RSS baseline; and `--no-gitignore --view summary` keeps the 13 MiB path, documented in README, --help, SKILL and the ledger. At a few hundred bytes per entry a multi-million-entry home directory costs the summary several hundred MiB: a resource cost with no correctness hazard and no new crash class.
+2026-09-15, review of PR #65. Verdict on whether this must be fixed before 0.1.0: no. Wall time passed the gate on both subjects (1.02-1.04); the RSS is the index's, which the default `fdu PATH` has always paid on the same tree, so the summary view loses a special standing rather than regressing below the default; 0.1.0 is the first release, so nobody holds a summary-RSS baseline; and `--no-gitignore --view summary` keeps the aggregate-only path, documented in README, --help, SKILL and the ledger. At a few hundred bytes per entry a multi-million-entry home directory costs the summary several hundred MiB: a resource cost with no correctness hazard and no new crash class.
 
 One thing to decide here rather than later, raised by the same review: restoring the transient reducer with a streaming classifier would flip `--cache only --view summary` a second time. PR B made the default summary retain the full index, which is also what lets it save a snapshot; a later streaming classifier would stop it saving one again, so the same command changes behaviour twice across releases. Either accept that flip and note it in the CHANGELOG when it lands, or keep the snapshot write on the streaming path so only memory changes.
+
+2026-09-16, MEASUREMENT: quote a range and the mechanism, never a point. The figure this bead was filed with, "13 MiB to 128 MiB", is one sample of a number that moves. Four paired runs of `fdu --cache off --color never --view summary` on the same control-rich checkout, across the PR's own heads, measured the branch's peak RSS at 128, 101, 68 and 68 MiB, against 13.2, 13.0, 12.4 and 13.9 MiB for the same command before the change. The base is stable because the aggregate-only tier retains nothing per entry; the branch's is not, because it is the index's, and an index's peak depends on how the allocator grew its arenas for that tree on that run.
+
+So the release note and any other text should say: the default `--view summary` now retains the index, so its peak RSS is the index's rather than the reducer's -- on the order of 10 MiB before and 70 to 130 MiB after on a 300k-entry control-rich checkout, scaling with retained entries rather than with a constant. `--no-gitignore --view summary` keeps the aggregate-only tier and its roughly 13 MiB. Do not quote a single multiplier: the same command on the same tree gave between 5x and 10x across four runs.
