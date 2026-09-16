@@ -303,9 +303,11 @@ jobs:
         working-directory: crates/fdu-py
         run: uv run --frozen --only-group dev maturin build --locked --release --out dist
       # A separate venv name on purpose: the build step above already created .venv for
-      # this project, and `uv venv` refuses to overwrite an existing environment.
+      # this project, and `uv venv` refuses to overwrite an existing environment. Bash
+      # makes every platform stop at the first failed native command in this block.
       - name: Install and smoke-test the wheel
         working-directory: crates/fdu-py
+        shell: bash
         run: |
           uv venv --clear .venv-smoke
           uv pip install --python .venv-smoke --no-index --find-links dist fdu
