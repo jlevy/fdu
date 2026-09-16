@@ -292,8 +292,9 @@ Bare `fdu` is safe discovery: it prints help and never assumes that the current
 directory, which may contain millions of entries, was meant to be scanned.
 The concrete test for “no more complexity”: before adding a view or a flag, show it
 cannot be expressed as a composition of what exists.
-`largest` and `recent` were removed from the design by exactly that test; they are
-`--view files --sort size --limit N` and `--view files --modified-since 2h`.
+`largest` and `recent` pass that test only as named presets over `files`
+(`files --sort size --limit 20` and `files --sort mtime --limit 20`, restricted to
+regular files), never as separate machinery.
 
 ### Six Axes, No One-Off Flags
 
@@ -301,11 +302,12 @@ Every option belongs to exactly one axis:
 
 | Axis | Question | Options |
 | --- | --- | --- |
-| Scope | What is scanned and cached? | `PATH`, `--scan-depth` |
-| Selection | Which retained entries does this query consider, and how are results shaped? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--depth`, `--limit`, `--sort`, `--reverse`, `--size` |
-| View | Which roll-up is reported? | `--view tree,extensions,types,families,languages,documents,files,summary`, `--words-per-page` |
+| Scope | What is scanned and cached? | `PATH`, `--scan-depth`, `--one-filesystem`, `--no-gitignore`, `--gitignore-budget`, `--gitignore-line-limit` |
+| Content | Which file bodies are read? | `--analyze` |
+| Selection | Which retained entries does this query consider, and how are results shaped? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--exclude-ignored`, `--only-ignored`, `--depth`, `--limit`, `--sort`, `--reverse`, `--size` |
+| View | Which roll-up is reported? | `--view tree,extensions,types,families,languages,documents,largest,recent,files,summary` or `--view full`, `--words-per-page` |
 | Format | How is it serialized? | `--format`, `--color` |
-| Mode | One answer or a live feed, how is the cache used, and is content read? | `--watch`, `--interval`, `--cache`, `--analyze`, `--analysis-workers`, `--allow-partial` |
+| Mode | One answer or a live feed, and how is the work performed? | `--watch`, `--interval`, `--cache`, `--analysis-workers`, `--allow-partial` |
 
 A proposed flag that fits no axis is a design smell: either it generalizes into an axis
 value, or it does not ship.
@@ -330,9 +332,11 @@ design is legible from the help text alone.
 Views are projections over one consistent scanned state.
 The reusable form of that state is the in-memory index: requesting more views never adds
 filesystem work, and two reports over the same index cannot disagree about when the tree
-was observed. For a one-shot request that proves no cache, live session, second view,
-filter, or later query can consume hierarchy, an internal execution planner may retain
-an exact aggregate instead.
+was observed. For a one-shot request that proves no snapshot read or rewrite, live
+session, second view, filter, ignore classification, or later query can consume
+hierarchy, an internal execution planner may retain an exact aggregate instead.
+Today that is an unfiltered `--no-gitignore --view summary`; a default summary reports
+its ignored share, which needs the index, so it retains the full index.
 It derives that decision from the complete request, exposes no fast-mode flag, and falls
 closed to the full index when any requirement is unproved.
 
@@ -449,6 +453,8 @@ the same `Query`/`Report` layer.
 Every view renders in every format.
 Machine formats are schema-versioned, never colourized, and a schema change without a
 version bump fails a golden test.
+[The surface architecture](fdu-surface-architecture.md#machine-output-schemas) lists the
+schemas and the constant that defines each.
 
 This principle inverted a rule that used to exist: `--by-type` conflicted with `--json`,
 because the type breakdown was human-only.
@@ -458,7 +464,8 @@ One-shot human text has one intentional presentation-only suffix: a compact perf
 line after the report.
 It is transient execution telemetry, not query data, so it stays outside `Report` and
 the versioned JSON, JSONL, and YAML schemas.
-The line records regular files and apparent bytes successfully walked, bytes actually
+The line records regular files and apparent bytes successfully walked, how many
+`.gitignore` files were applied and refused (or that none was read), bytes actually
 returned by fresh content reads, content-analysis file and byte throughput,
 content-sidecar hits and the apparent bytes they represent, the metadata cache tier, and
 total report time. A cache-only answer reports zero walked files rather than pretending
@@ -575,9 +582,14 @@ and suppress the report.
 A missing path is allowed only for these lifecycle operations and discovery surfaces; it
 never creates an implicit report scan.
 A report run never deletes anything.
-Clearing echoes its target before acting, and never removes a file it cannot identify as
-an fdu snapshot. A snapshot another fdu version wrote is still identifiable, so clearing
-removes it rather than stranding it after an upgrade.
+Clearing a directory echoes it before acting.
+Clearing removes only what it can identify as fdu’s own: a snapshot, current or stale,
+and, under `--cache-clear=all` alone, a staging temporary older than 24 hours or a
+content sidecar whose snapshot is gone, reported as a separate count.
+A file whose contents lack the magic its name implies, a file under a name the cache
+does not use, a symbolic link, or a directory is `unrecognized` and is never removed.
+A snapshot another fdu version wrote is still identifiable, so clearing removes it
+rather than stranding it after an upgrade.
 
 ### Every Output Surface Is a Benchmark Job
 
@@ -724,14 +736,17 @@ default as [the rule above](#ignore-rules-are-observed-by-default-and-never-gues
 explains. It was once a build feature as well, which made “observes controls” depend on
 the build: in the build without it, every opened roll-up failed.
 
-### Two Crates, Not More
+### Three Crates, Not More
 
-`fdu` is the library and CLI. `fdu-py` exists only because a cdylib cannot also be the
-crate Rust consumers depend on.
+`fdu-core` is the engine.
+`fdu` is the command line, and depends on the engine as any consumer does.
+`fdu-py` exists only because a cdylib cannot also be the crate Rust consumers depend on.
 
 Module boundaries are free; crate boundaries cost a version number, a publish, and a
 semver promise each.
-Extract a module into a crate when an external consumer exists, not before.
+Extract a module into a crate when an external consumer exists, or when the compiler
+must enforce a boundary review cannot, as it does for
+[the command line](#one-engine-and-surfaces-that-cannot-disagree-with-it); not before.
 
 ### GPL-Derived Designs Are Clean Reimplementations
 
