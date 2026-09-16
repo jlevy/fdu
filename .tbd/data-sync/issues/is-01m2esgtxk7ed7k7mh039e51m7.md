@@ -3,17 +3,21 @@ type: is
 id: is-01m2esgtxk7ed7k7mh039e51m7
 title: "Release note: the type_rules_fingerprint change cold-rescans every cached tree on upgrade"
 kind: task
-status: open
+status: in_progress
 priority: 3
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
+delegate: codex@spud10
 labels:
   - stack-followup
   - release
 dependencies: []
 parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
+hold: null
+hold_until: null
 created_at: 2026-09-14T01:46:47.090Z
-updated_at: 2026-09-16T16:35:00.864Z
+updated_at: 2026-09-16T18:06:12.440Z
+started_at: 2026-09-16T18:06:12.439Z
 ---
 Release-note follow-up from PR #48's description ("The command line is unmoved"): "One consequence deserves a release note."
 
