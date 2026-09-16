@@ -45,12 +45,13 @@ make build
 warning is a build failure.
 
 ```shell
-cargo build --locked -p fdu --no-default-features
+make lib-only
 ```
 
-✅ The library builds without the `cli` feature.
-This is the shape library consumers get and is otherwise never exercised locally; it
-catches a `query` or `index` change that accidentally depends on clap.
+✅ The engine (`fdu-core`) builds and tests the way a consumer gets it, with and without
+`watch`, and the command line builds and lints without `watch`. It fails if `clap` or
+`anyhow` appears in `cargo tree -p fdu-core`, which catches an engine change that
+accidentally depends on the command line’s dependencies.
 
 ## 3. Unit and integration tests
 
@@ -68,14 +69,14 @@ Worth knowing when a failure looks strange:
   assign their internal ids in different first-seen orders.
 - Timestamps in tests come from injected constants, never `SystemTime::now()`. A test
   that reads the clock is a test that fails at midnight or in another timezone.
-- A test that spawns the `fdu` binary needs a `[[test]]` entry in
-  `crates/fdu/Cargo.toml` declaring `required-features = ["cli", ...]`. Without one,
-  cargo auto-discovers it with no requirements and runs it under
-  `--no-default-features`, where the binary is never built.
-  This is the one failure mode `make check` can miss: a stale `target/debug/fdu` from an
-  earlier full-feature build makes the spawn succeed locally, and a clean CI checkout
-  has no such binary. If a feature-boundary job fails on a test that passes for you, run
-  `cargo clean` before believing your local result.
+- A test that drives the `fdu` binary in watch mode needs a `[[test]]` entry in
+  `crates/fdu/Cargo.toml` declaring `required-features = ["watch"]`, as
+  `watch_persistence` and `watch_controls` do.
+  Without one, cargo auto-discovers it with no requirements, and a featureless test run
+  drives a binary that has no `--watch`. A stale `target/debug/fdu` from an earlier full
+  build can make the spawn succeed locally, and a clean CI checkout has no such binary.
+  If a build-feature boundary job fails on a test that passes for you, run `cargo clean`
+  before believing your local result.
 
 ## 4. Golden CLI tests
 
@@ -355,9 +356,9 @@ git status               # leave no unintended working-tree changes
   nothing here produces a number worth quoting.
 - **Cross-platform behavior.** Windows and Linux specifics are proven by the CI matrix,
   not by a local run. A macOS-only pass says nothing about the other two.
-- **Watch mode under real churn.** The watch layer has its own tests; exercising a live
-  watcher by hand needs a scratch tree and a second terminal, and belongs in its own
-  runbook once the CLI surface lands.
+- **Watch mode under real churn.** The watch layer has its own tests, and
+  `crates/fdu/tests/watch_persistence.rs` and `watch_controls.rs` drive the binary;
+  exercising a live watcher by hand needs a scratch tree and a second terminal.
 
 * * *
 
