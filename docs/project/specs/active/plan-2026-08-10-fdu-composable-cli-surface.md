@@ -5,10 +5,12 @@
 **Author:** fdu project
 
 **Status:** Completed.
-[PR #5](https://github.com/jlevy/fdu/pull/5) shipped the five-axis surface (Phases 1–4),
-and [PR #37](https://github.com/jlevy/fdu/pull/37) shipped this revision’s content axis
-and display contract (Phase 5). [PR #39](https://github.com/jlevy/fdu/pull/39) then
-reshaped the view vocabulary under
+[PR #5](https://github.com/jlevy/fdu/pull/5) shipped the five-axis surface (Phases 1–3)
+and folded its principles into the design doc that
+[PR #7](https://github.com/jlevy/fdu/pull/7) created (Phase 4).
+[PR #37](https://github.com/jlevy/fdu/pull/37) shipped this revision’s content axis and
+display contract (Phase 5). [PR #39](https://github.com/jlevy/fdu/pull/39) then reshaped
+the view vocabulary under
 [the view vocabulary plan](plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md).
 Later work changed parts of the surface this plan specifies: `.gitignore` observation on
 by default with its scope and selection flags (PRs #63 and #65), report schemas
