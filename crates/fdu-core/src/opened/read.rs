@@ -271,7 +271,7 @@ fn report_projection(
         &request.query,
         &provenance,
         crate::query::NameIdentity::Portable,
-    );
+    )?;
     work.rows_visited = work.rows_visited.saturating_add(charge.rows);
     work.maintained_index_work = work.maintained_index_work.saturating_add(charge.maintained);
     work.rows_returned = work.rows_returned.saturating_add(report_rows(&report));

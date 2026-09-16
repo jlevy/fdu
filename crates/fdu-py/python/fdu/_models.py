@@ -696,6 +696,8 @@ class Change:
     bytes: int | None = None
     allocated: int | None = None
     mtime_ns: int | None = None
+    #: Whether ignore rules ignore the entry, or ``None`` when the run read none.
+    ignored: bool | None = None
     reason: str | None = None
 
     def render(self, format: Format = Format.JSONL) -> str:
@@ -723,6 +725,7 @@ class Change:
                 bytes=self.bytes,
                 allocated=self.allocated,
                 mtime_ns=self.mtime_ns,
+                ignored=self.ignored,
                 format=str(format),
             ),
         )

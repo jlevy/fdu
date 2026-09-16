@@ -44,8 +44,13 @@ impl Watching {
     }
 
     fn spawn_view(tree: &Path, cache: &Path, view: &str) -> Self {
+        Self::spawn_selecting(tree, cache, view, &[])
+    }
+
+    fn spawn_selecting(tree: &Path, cache: &Path, view: &str, selection: &[&str]) -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_fdu"))
             .args(["--watch", "--view", view, "--format", "jsonl", "--interval", "1s"])
+            .args(selection)
             .arg(tree)
             .env("XDG_CACHE_HOME", cache)
             .stdin(Stdio::null())
@@ -107,6 +112,17 @@ impl Watching {
         let quoted = format!("\"path\": \"{path}\"");
         self.wait_for(&format!("a change record for {path}"), |line| {
             line.contains("\"record\": \"change\"") && line.contains(&quoted)
+        })
+    }
+
+    /// Wait for the change record that applies `op` to `path`.
+    fn wait_for_op(&mut self, op: &str, path: &str) -> String {
+        let quoted = format!("\"path\": \"{path}\"");
+        let operation = format!("\"op\": \"{op}\"");
+        self.wait_for(&format!("a {op} record for {path}"), |line| {
+            line.contains("\"record\": \"change\"")
+                && line.contains(&operation)
+                && line.contains(&quoted)
         })
     }
 
@@ -256,5 +272,82 @@ fn a_watch_and_a_one_shot_report_start_warm_from_each_others_snapshot() {
     assert!(
         envelope.contains("\"source\": \"warm_revalidate\""),
         "a watch after a one-shot report rescanned instead of reusing its snapshot: {envelope}",
+    );
+}
+
+/// The flags name an entry set, so a rule edit that moves an entry across the partition
+/// has to move it in the stream (fdu-kj14, review of #65). Nothing on disk changes for the
+/// file itself: only the rule that classifies it does, and a files-only watch repaints no
+/// aggregate, so the stream is the whole answer.
+#[test]
+fn a_rule_edit_moves_a_streamed_entry_out_of_and_back_into_excluded_ignored() {
+    let (_root, tree) = tree_with(&[
+        (".gitignore", b"# nothing ignored\n"),
+        ("kept.txt", b"kept"),
+        ("debug.log", b"debug"),
+    ]);
+    let cache = tempfile::tempdir().expect("cache tempdir");
+
+    let mut watch =
+        Watching::spawn_selecting(&tree, cache.path(), "files", &["--exclude-ignored"]);
+    // The initial listing contains the file, and its row says no rule ignores it.
+    let row = watch.wait_for("the initial row for debug.log", |line| {
+        line.contains("\"path\": \"debug.log\"")
+    });
+    assert!(
+        row.contains("\"ignored\": false"),
+        "the initial row must state the classification the stream maintains: {row}",
+    );
+
+    fs::write(tree.join(".gitignore"), b"*.log\n").expect("rewrite the control file");
+    let left = watch.wait_for_op("remove", "debug.log");
+    assert!(
+        left.contains("\"ignored\": true"),
+        "the record that drops the row must say why it left: {left}",
+    );
+
+    // And back: lifting the rule returns the entry with the facts needed to draw it.
+    fs::write(tree.join(".gitignore"), b"# nothing ignored\n").expect("rewrite the control file");
+    let returned = watch.wait_for_op("upsert", "debug.log");
+    assert!(
+        returned.contains("\"ignored\": false")
+            && returned.contains("\"kind\": \"file\"")
+            && returned.contains("\"bytes\": 5"),
+        "the record that restores the row must carry the facts to draw it: {returned}",
+    );
+}
+
+/// The mirror: under `--only-ignored` an entry appears when a rule starts ignoring it and
+/// leaves when the rule is lifted.
+#[test]
+fn a_rule_edit_moves_a_streamed_entry_into_and_out_of_only_ignored() {
+    let (_root, tree) = tree_with(&[
+        (".gitignore", b"# nothing ignored\n"),
+        ("kept.txt", b"kept"),
+        ("debug.log", b"debug"),
+    ]);
+    let cache = tempfile::tempdir().expect("cache tempdir");
+
+    let mut watch = Watching::spawn_selecting(&tree, cache.path(), "files", &["--only-ignored"]);
+    let section = watch.wait_for("the initial files section", |line| {
+        line.contains("\"view\": \"files\"")
+    });
+    assert!(
+        !section.contains("debug.log"),
+        "no rule ignores anything yet, so the listing is empty: {section}",
+    );
+
+    fs::write(tree.join(".gitignore"), b"*.log\n").expect("rewrite the control file");
+    let arrived = watch.wait_for_op("upsert", "debug.log");
+    assert!(
+        arrived.contains("\"ignored\": true") && arrived.contains("\"bytes\": 5"),
+        "an entry entering the selection arrives with its facts: {arrived}",
+    );
+
+    fs::write(tree.join(".gitignore"), b"# nothing ignored\n").expect("rewrite the control file");
+    let left = watch.wait_for_op("remove", "debug.log");
+    assert!(
+        left.contains("\"ignored\": false"),
+        "the record that drops the row must say why it left: {left}",
     );
 }

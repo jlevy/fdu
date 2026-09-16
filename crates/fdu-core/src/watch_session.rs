@@ -14,7 +14,7 @@
 //! passes throttles only how often aggregate views are re-rendered — it plays no part in
 //! detection.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -39,6 +39,12 @@ pub struct Change {
     pub allocated: Option<u64>,
     /// Modification time, when the entry still exists.
     pub mtime_ns: Option<i64>,
+    /// Whether `.gitignore` rules ignore this entry after the commit.
+    ///
+    /// `None` when the session observes no control state, so a record never claims a
+    /// classification an index without rules cannot make. A report's rows carry the same
+    /// split, and a stream that could not would be the one place a consumer had to guess.
+    pub ignored: Option<bool>,
     /// The index clock at which this change was committed.
     pub clock: u64,
 }
@@ -68,6 +74,32 @@ pub struct Batch {
     /// was filtered out. Aggregate views re-render on this rather than on `changes`,
     /// because a filtered-out change still moves the totals a tree view reports.
     pub dirty: bool,
+}
+
+/// What one batch of commits needs from the index, read once under one lock.
+struct BatchFacts {
+    /// The touched entries ignore rules ignore once the batch applied, or `None` when the
+    /// index observed no control state and so classifies nothing.
+    ignored: Option<BTreeSet<PathBuf>>,
+    /// The retained facts of each reclassified entry the selection could move, so a rule
+    /// edit that admits one can stream the upsert that draws it.
+    reclassified: BTreeMap<PathBuf, EntryFacts>,
+}
+
+impl BatchFacts {
+    /// Whether rules ignore a touched entry, or `None` when nothing was classified.
+    fn is_ignored(&self, path: &std::path::Path) -> Option<bool> {
+        Some(self.ignored.as_ref()?.contains(path))
+    }
+}
+
+/// One reclassified entry's retained facts.
+#[derive(Clone, Copy)]
+struct EntryFacts {
+    kind: EntryKind,
+    bytes: u64,
+    allocated: u64,
+    mtime_ns: i64,
 }
 
 /// An index paired with a watcher, answering one query continuously.
@@ -113,7 +145,7 @@ impl Session {
     /// makes "watch is the same query repeated" true rather than aspirational.
     pub fn report(&self, provenance: &Provenance) -> Result<Report> {
         let index = self.index.snapshot()?;
-        Ok(report(&index, &self.query, provenance))
+        report(&index, &self.query, provenance)
     }
 
     /// A consistent copy of the current index.
@@ -145,10 +177,10 @@ impl Session {
             changes: Vec::new(),
             dirty: commits.iter().any(|commit| !commit.changes.is_empty()),
         };
-        let ignored = self.ignored_among(&commits)?;
+        let facts = self.batch_facts(&commits)?;
         for commit in &commits {
             for effective in &commit.changes {
-                if let Some(change) = self.change_for(effective, commit.clock.0, &ignored) {
+                if let Some(change) = self.change_for(effective, commit.clock.0, &facts) {
                     batch.changes.push(change);
                 }
             }
@@ -156,36 +188,64 @@ impl Session {
         Ok(Some(batch))
     }
 
-    /// The changed entries `.gitignore` rules ignore once these commits applied, when the
-    /// selection filters by it; empty otherwise, since no filter reads it.
+    /// What one batch needs from the index, read once under one lock rather than per
+    /// change.
     ///
-    /// Read once under one lock for the batch rather than per change. A control edit that
-    /// moves an entry between partitions repaints the aggregates through `dirty` and adds
-    /// no record to the stream, which reports what changed on disk.
-    fn ignored_among(&self, commits: &[Commit]) -> Result<BTreeSet<PathBuf>> {
-        if self.selection().ignored == IgnoredEntries::Include {
-            return Ok(BTreeSet::new());
-        }
-        let changed: Vec<&PathBuf> = commits
-            .iter()
-            .flat_map(|commit| &commit.changes)
-            .filter_map(|effective| match effective {
+    /// Two things: the ignore classification of every entry the batch touched, which each
+    /// record carries and an ignored-state selection filters on, and the retained facts of
+    /// every reclassified entry, which is what lets a rule edit that moves an entry into
+    /// the selection be streamed as the upsert a consumer needs to draw the row.
+    fn batch_facts(&self, commits: &[Commit]) -> Result<BatchFacts> {
+        let filters_by_ignored = self.selection().ignored != IgnoredEntries::Include;
+        let mut touched: Vec<&PathBuf> = Vec::new();
+        let mut reclassified: Vec<&PathBuf> = Vec::new();
+        for effective in commits.iter().flat_map(|commit| &commit.changes) {
+            match effective {
                 EffectiveChange::Inserted { path, .. } | EffectiveChange::Updated { path, .. } => {
-                    Some(path)
+                    touched.push(path);
                 }
-                EffectiveChange::Removed { .. }
+                // A reclassified entry is read only when the selection can move it: under
+                // `Include` both partitions are in the stream already, so nothing about
+                // its row changed and the facts would be fetched for nobody.
+                EffectiveChange::Reclassified { path, .. } if filters_by_ignored => {
+                    reclassified.push(path);
+                }
+                EffectiveChange::Reclassified { .. }
+                | EffectiveChange::Removed { .. }
                 | EffectiveChange::Invalidated { .. }
                 | EffectiveChange::ControlUpdated { .. }
-                | EffectiveChange::ControlRefusalUpdated { .. }
-                | EffectiveChange::Reclassified { .. } => None,
-            })
-            .collect();
+                | EffectiveChange::ControlRefusalUpdated { .. } => {}
+            }
+        }
+
         self.index.read_with(|index| {
-            changed
+            let observed = index.observes_controls();
+            let entries = reclassified
                 .into_iter()
-                .filter(|path| matches!(index.is_ignored(path), Ok(Some(true))))
-                .cloned()
-                .collect()
+                .filter_map(|path| {
+                    let id = index.lookup(path)?;
+                    let attrs = index.attrs_of(id)?;
+                    Some((
+                        path.clone(),
+                        EntryFacts {
+                            kind: index.kind_of(id)?,
+                            bytes: attrs.size,
+                            allocated: attrs.allocated,
+                            mtime_ns: attrs.mtime_ns,
+                        },
+                    ))
+                })
+                .collect();
+            BatchFacts {
+                ignored: observed.then(|| {
+                    touched
+                        .into_iter()
+                        .filter(|path| matches!(index.is_ignored(path), Ok(Some(true))))
+                        .cloned()
+                        .collect()
+                }),
+                reclassified: entries,
+            }
         })
     }
 
@@ -194,7 +254,7 @@ impl Session {
         &self,
         effective: &EffectiveChange,
         clock: u64,
-        ignored: &BTreeSet<PathBuf>,
+        facts: &BatchFacts,
     ) -> Option<Change> {
         match effective {
             EffectiveChange::Inserted { path, kind, attrs }
@@ -207,7 +267,7 @@ impl Session {
                     bytes: attrs.size,
                     allocated: attrs.allocated,
                     mtime_ns: attrs.mtime_ns,
-                    ignored: ignored.contains(path),
+                    ignored: facts.is_ignored(path).unwrap_or(false),
                 };
                 self.selection().admits(&candidate).then(|| Change {
                     path: path.clone(),
@@ -216,6 +276,7 @@ impl Session {
                     bytes: Some(attrs.size),
                     allocated: Some(attrs.allocated),
                     mtime_ns: Some(attrs.mtime_ns),
+                    ignored: facts.is_ignored(path),
                     clock,
                 })
             }
@@ -232,6 +293,7 @@ impl Session {
                     bytes: None,
                     allocated: None,
                     mtime_ns: None,
+                    ignored: None,
                     clock,
                 })
             }
@@ -244,14 +306,60 @@ impl Session {
                 bytes: None,
                 allocated: None,
                 mtime_ns: None,
+                ignored: None,
                 clock,
             }),
+            // A rule edit changes what an ignored-state selection contains without
+            // anything on disk changing for the entry, so the entry set the flag promises
+            // is maintained here rather than left to the aggregates: a row that left is
+            // removed and a row that arrived is upserted with the facts to draw it. Under
+            // `IgnoredEntries::Include` the selection admits both partitions, so `before`
+            // and `after` agree and nothing is emitted.
+            EffectiveChange::Reclassified { path, previous_ignored, current_ignored } => {
+                let name = path.file_name()?.to_string_lossy().into_owned();
+                // Absent when the entry left the index after the commit, and then its own
+                // removal is already in this batch.
+                let entry = facts.reclassified.get(path)?;
+                let admits = |ignored: bool| {
+                    self.selection().admits(&crate::query::Candidate {
+                        relative: path,
+                        name: &name,
+                        kind: entry.kind,
+                        bytes: entry.bytes,
+                        allocated: entry.allocated,
+                        mtime_ns: entry.mtime_ns,
+                        ignored,
+                    })
+                };
+                match (admits(*previous_ignored), admits(*current_ignored)) {
+                    (true, false) => Some(Change {
+                        path: path.clone(),
+                        kind: ChangeKind::Remove,
+                        entry_kind: None,
+                        bytes: None,
+                        allocated: None,
+                        mtime_ns: None,
+                        ignored: Some(*current_ignored),
+                        clock,
+                    }),
+                    (false, true) => Some(Change {
+                        path: path.clone(),
+                        kind: ChangeKind::Upsert,
+                        entry_kind: Some(entry.kind),
+                        bytes: Some(entry.bytes),
+                        allocated: Some(entry.allocated),
+                        mtime_ns: Some(entry.mtime_ns),
+                        ignored: Some(*current_ignored),
+                        clock,
+                    }),
+                    _ => None,
+                }
+            }
             // The legacy watch surface repaints the complete query when `dirty` is true,
-            // so it needs no second row-change vocabulary for control and partition
-            // effects. Opened-root consumers read these exact commit variants directly.
+            // so it needs no second row-change vocabulary for control-file effects.
+            // Opened-root consumers read these exact commit variants directly.
             EffectiveChange::ControlUpdated { .. }
-            | EffectiveChange::ControlRefusalUpdated { .. }
-            | EffectiveChange::Reclassified { .. } => None,
+            | EffectiveChange::ControlRefusalUpdated { .. } => None,
         }
     }
 

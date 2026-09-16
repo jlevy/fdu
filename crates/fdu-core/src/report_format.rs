@@ -1516,6 +1516,11 @@ pub fn render_change(change: &crate::Change, format: Format) -> String {
     if let Some(mtime) = change.mtime_ns {
         let _ = write!(out, ", \"mtime_ns\": {mtime}");
     }
+    // Absent, never false, when the run observed no ignore rules: the same distinction a
+    // report's rows draw between an unclassified entry and one no rule ignores.
+    if let Some(ignored) = change.ignored {
+        let _ = write!(out, ", \"ignored\": {ignored}");
+    }
     out.push('}');
     out
 }
@@ -2324,6 +2329,10 @@ mod tests {
     /// record's shape free to change underneath it, which is the failure the promise
     /// exists to prevent. This pins the whole record, so adding, renaming, or reordering
     /// a field fails here and forces a deliberate version bump.
+    ///
+    /// `ignored` was added to `fdu.stream/1` in place rather than by a bump, for the same
+    /// reason `fdu.report/6` took the ignored share in place: 0.1.0 is the first release,
+    /// so no consumer has ever read the shape it extends.
     #[cfg(feature = "watch")]
     #[test]
     fn a_stream_record_is_pinned_field_by_field() {
@@ -2338,6 +2347,7 @@ mod tests {
             bytes: Some(2_048),
             allocated: Some(4_096),
             mtime_ns: Some(1_700_000_000_000_000_000),
+            ignored: Some(false),
             clock: 7,
         };
         // Path separators differ by platform, so the expectation is built the same way
@@ -2345,6 +2355,18 @@ mod tests {
         let path = upsert.path.to_string_lossy().replace('\\', "\\\\");
         assert_eq!(
             render_change(&upsert, Format::Json),
+            format!(
+                "{{\"schema\": \"fdu.stream/1\", \"record\": \"change\", \"op\": \"upsert\", \
+                 \"path\": \"{path}\", \"clock\": 7, \"kind\": \"file\", \"bytes\": 2048, \
+                 \"allocated\": 4096, \"mtime_ns\": 1700000000000000000, \"ignored\": false}}"
+            )
+        );
+
+        // A run that read no ignore rules classifies nothing, and the field is absent
+        // rather than false: the same distinction every report row draws.
+        let unclassified = Change { ignored: None, ..upsert.clone() };
+        assert_eq!(
+            render_change(&unclassified, Format::Json),
             format!(
                 "{{\"schema\": \"fdu.stream/1\", \"record\": \"change\", \"op\": \"upsert\", \
                  \"path\": \"{path}\", \"clock\": 7, \"kind\": \"file\", \"bytes\": 2048, \
@@ -2362,12 +2384,26 @@ mod tests {
             bytes: None,
             allocated: None,
             mtime_ns: None,
+            ignored: None,
             clock: 8,
         };
         assert_eq!(
             render_change(&removed, Format::Json),
             "{\"schema\": \"fdu.stream/1\", \"record\": \"change\", \"op\": \"remove\", \
              \"path\": \"gone.txt\", \"clock\": 8}"
+        );
+
+        // A removal an ignore-rule edit caused is the one that carries a classification:
+        // the entry is still on disk, and the new bit is why it left the selection.
+        let reclassified = Change {
+            path: PathBuf::from("debug.log"),
+            ignored: Some(true),
+            ..removed.clone()
+        };
+        assert_eq!(
+            render_change(&reclassified, Format::Json),
+            "{\"schema\": \"fdu.stream/1\", \"record\": \"change\", \"op\": \"remove\", \
+             \"path\": \"debug.log\", \"clock\": 8, \"ignored\": true}"
         );
 
         // An invalidation says the consumer's view may have gaps. It is the one record
@@ -2379,6 +2415,7 @@ mod tests {
             bytes: None,
             allocated: None,
             mtime_ns: None,
+            ignored: None,
             clock: 9,
         };
         assert_eq!(
@@ -2618,7 +2655,7 @@ mod tests {
                     complete: true,
                     errors: Vec::new(),
                 };
-                let report = crate::query::report(&index, &query, &provenance);
+                let report = crate::query::report(&index, &query, &provenance).expect("report");
                 for format in [Format::Text, Format::Json, Format::Jsonl, Format::Yaml] {
                     let rendered = render(&report, format, false);
                     assert!(!rendered.is_empty(), "{format:?} rendered nothing for a deep tree");
@@ -2684,7 +2721,7 @@ mod tests {
             complete: true,
             errors: Vec::new(),
         };
-        let report = crate::query::report(&index, &query, &provenance);
+        let report = crate::query::report(&index, &query, &provenance).expect("report");
         let rendered = render(&report, Format::Json, false);
 
         let lossy = first.to_string_lossy();
@@ -2752,7 +2789,7 @@ mod tests {
             },
             ..crate::query::Query::default()
         };
-        let tree = crate::query::report(&dirs, &tree_query, &provenance);
+        let tree = crate::query::report(&dirs, &tree_query, &provenance).expect("report");
         let tree_rendered = render(&tree, Format::Json, false);
         assert!(
             tree_rendered.contains(&format!(

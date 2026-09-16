@@ -319,7 +319,7 @@ fn prepare_report_internal(
                 errors: open_report.error_messages(),
             };
             let performance = PerformanceSummary::from_open_report(&open_report);
-            let mut answer = report(&index, query, &provenance);
+            let mut answer = report(&index, query, &provenance)?;
             // A cache-only report may consume a controls-on snapshot for a controls-off
             // request because reporting reads only the all-entry facts. No Index escapes
             // this boundary, and the projected report must describe the requested scope

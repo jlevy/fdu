@@ -595,7 +595,7 @@ impl PyIndex {
             complete: self.operation_complete,
             errors: self.error_messages(),
         };
-        Ok(fdu_core::query::report(&self.inner, &query, &provenance))
+        fdu_core::query::report(&self.inner, &query, &provenance).map_err(to_py_err)
     }
 }
 
@@ -1131,6 +1131,7 @@ impl PyWatch {
                 dict.set_item("bytes", change.bytes)?;
                 dict.set_item("allocated", change.allocated)?;
                 dict.set_item("mtime_ns", change.mtime_ns)?;
+                dict.set_item("ignored", change.ignored)?;
                 list.append(dict)?;
             }
         }
@@ -1405,7 +1406,7 @@ fn watch_rule(at_nanos: i64) -> PyResult<String> {
 /// record: `Change` carries exactly these, and a parity session pins that the two surfaces
 /// emit the same line.
 #[pyfunction]
-#[pyo3(signature = (path, op, clock, kind = None, bytes = None, allocated = None, mtime_ns = None, format = "jsonl"))]
+#[pyo3(signature = (path, op, clock, kind = None, bytes = None, allocated = None, mtime_ns = None, ignored = None, format = "jsonl"))]
 #[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
 fn render_change(
     path: PathBuf,
@@ -1415,6 +1416,7 @@ fn render_change(
     bytes: Option<u64>,
     allocated: Option<u64>,
     mtime_ns: Option<i64>,
+    ignored: Option<bool>,
     format: &str,
 ) -> PyResult<String> {
     let change = fdu_core::Change {
@@ -1433,6 +1435,7 @@ fn render_change(
         bytes,
         allocated,
         mtime_ns,
+        ignored,
         clock,
     };
     Ok(fdu_core::report_format::render_change(&change, parse_format(format)?))

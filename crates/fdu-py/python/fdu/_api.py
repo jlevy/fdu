@@ -337,6 +337,7 @@ def _change(value: dict[str, Any]) -> Change:
         bytes=int(value["bytes"]) if value.get("bytes") is not None else None,
         allocated=int(value["allocated"]) if value.get("allocated") is not None else None,
         mtime_ns=int(value["mtime_ns"]) if value.get("mtime_ns") is not None else None,
+        ignored=bool(value["ignored"]) if value.get("ignored") is not None else None,
         reason=str(value["reason"]) if value.get("reason") is not None else None,
     )
 

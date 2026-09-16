@@ -930,7 +930,14 @@ fn refused_controls_note(ignore_rules: &ControlCoverage, axes: AxisNames) -> Opt
 ///
 /// Pure: the same index, query, and provenance always produce the same report, and
 /// nothing here reads the filesystem or mutates the index.
-pub fn report(index: &Index, query: &Query, provenance: &Provenance) -> Report {
+///
+/// # Errors
+///
+/// [`Error::ControlStateNotObserved`](crate::Error::ControlStateNotObserved) when the
+/// query selects by ignored state ([`Selection::ignored`]) over an index that read no
+/// `.gitignore`. Such an index can say of no entry that it is ignored or that it is not,
+/// so the request is refused rather than answered with every entry or none.
+pub fn report(index: &Index, query: &Query, provenance: &Provenance) -> crate::Result<Report> {
     report_in(index, query, provenance, NameIdentity::Native)
 }
 
@@ -943,7 +950,15 @@ pub(crate) fn report_in(
     query: &Query,
     provenance: &Provenance,
     identity: NameIdentity,
-) -> Report {
+) -> crate::Result<Report> {
+    // An index that read no rule cannot say of any entry that it is ignored, so a
+    // selection by ignored state is refused here rather than answered with no rows. Every
+    // surface validates before it scans, with the vocabulary its own caller uses; this is
+    // the library path, and the last one.
+    query
+        .validate_controls(index.observes_controls())
+        .map_err(|_refused| crate::Error::ControlStateNotObserved)?;
+
     // One traversal serves every filtered view in the request, so asking for three views
     // costs one pass rather than three.
     let walked =
@@ -956,7 +971,7 @@ pub(crate) fn report_in(
         .collect();
 
     let ignore_rules = index.control_coverage();
-    Report {
+    Ok(Report {
         notes: display_notes(query, &ignore_rules),
         scan_started_at: provenance.scan_started_at,
         generated_at: provenance.generated_at,
@@ -976,7 +991,7 @@ pub(crate) fn report_in(
         ignored_entries: query.selection.ignored,
         ignore_rules,
         sections,
-    }
+    })
 }
 
 /// Drop every ignored share from a report, for a request whose scope observes no control
@@ -1104,12 +1119,12 @@ fn walk(index: &Index, selection: &Selection, identity: NameIdentity) -> Walked 
         ignored_by_ext: BTreeMap::new(),
         rows: Vec::new(),
     };
-    // No entry of an index that read no rule can be shown to be ignored or not, so a
-    // selection by ignored state admits nothing rather than guessing.
-    // `Query::validate_controls` refuses such a request before it gets here.
-    if !observed && selection.ignored != IgnoredEntries::Include {
-        return walked;
-    }
+    // No entry of an index that read no rule can be shown to be ignored or not, so
+    // `report_in` refuses a selection by ignored state before it reaches this walk.
+    debug_assert!(
+        observed || selection.ignored == IgnoredEntries::Include,
+        "a selection by ignored state over an unobserving index is refused before the walk"
+    );
 
     // (id, path, whether its children have already been pushed)
     let mut stack: Vec<(EntryId, PathBuf, bool)> = vec![(EntryId::ROOT, PathBuf::new(), false)];
@@ -1896,7 +1911,7 @@ mod tests {
     }
 
     fn run(index: &Index, request: &Query) -> Report {
-        report(index, request, &provenance())
+        report(index, request, &provenance()).expect("the query is answerable over this index")
     }
 
     fn query(views: &[ViewSpec], selection: Selection) -> Query {
@@ -2620,7 +2635,18 @@ mod tests {
         );
         assert_eq!(exclude.validate_controls(true), Ok(()));
         assert_eq!(Query::default().validate_controls(false), Ok(()));
-        // Reached without validating, the selection admits nothing rather than guessing.
-        assert_eq!(summary_of(&run(&index, &exclude)).files, 0);
+        // The library path refuses it too, rather than answering with no rows: a caller
+        // that reaches `report` without validating gets the same typed answer every other
+        // surface gives.
+        for refused in [&exclude, &only] {
+            assert!(
+                matches!(
+                    report(&index, refused, &provenance()),
+                    Err(crate::Error::ControlStateNotObserved)
+                ),
+                "a selection by ignored state over an unobserving index is refused"
+            );
+        }
+        assert_eq!(summary_of(&run(&index, &query(&views, Selection::default()))).files, 1);
     }
 }
