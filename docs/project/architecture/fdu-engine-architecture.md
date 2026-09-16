@@ -341,7 +341,8 @@ The sparse content index and content roll-ups exist only when an analysis profil
 enabled. Workers submit independently fingerprint-checked analysis results through the
 index’s derived-data boundary; they do not change metadata truth or advance its clock.
 
-The content sidecar is profile-scoped persistence.
+The content sidecar records an analyzer set and can serve a narrower compatible request
+without discarding the wider set.
 It is not embedded in the metadata snapshot and is never loaded by metadata-only work.
 
 ### Serving Lifecycles

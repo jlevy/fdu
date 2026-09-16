@@ -4,7 +4,7 @@
 
 fdu answers, for *every* directory in a tree at once: how big is it, how many files does
 it hold, what changed most recently, and what kinds of files live in it.
-One walk, many metrics, cached between runs.
+One walk, many metrics, with reusable metadata and content state.
 
 > **Exploratory macOS/APFS calibration:** fdu built a reusable exact index and ten-row
 > tree over a reproducible generated corpus of 1,000,001 entries in a **5.206-second
@@ -28,118 +28,108 @@ One walk, many metrics, cached between runs.
 
 ## Start Here
 
-Every report is one command, and they form a ladder.
-Each rung costs more than the one above it and tells you more, so you can stop at the
-cheapest answer that settles your question:
-
-| Question | Command | Reads file contents |
-| --- | --- | --- |
-| How big is this tree? | `fdu --view summary PATH` | no |
-| Which folders are big? | `fdu PATH` | no |
-| What is eating my disk? | `fdu --view largest PATH` | no |
-| What changed? | `fdu --view recent PATH` | no |
-| What kinds of files are in it? | `fdu --view types PATH` | no |
-| Which languages? | `fdu --view languages PATH` | no |
-| How much code? | `fdu --analyze code PATH` | **yes** |
-| How much writing? | `fdu --analyze words PATH` | **yes** |
-| Everything you have | `fdu --analyze all --view full PATH` | **yes** |
-
-Two flags do all of it.
-**`--analyze` decides what gets read**, and it is the only thing that can make a run
-cost more than a single metadata walk.
-**`--view` decides what gets printed**, and it is free — every view is a projection of
-one walk, so asking for more views never touches the filesystem again.
-
-You rarely need both.
-Naming analyzers selects a view that displays them, so `fdu --analyze code PATH` prints
-the language rows with lines of code already:
+fdu requires a path.
+Use `.` to inspect the current directory:
 
 ```console
-$ fdu --analyze code .
-   1.4 MiB   52.9%  Rust        60 files, 34007 lines (26494 code, 4636 comment, 2877 blank), 126662 words (506.6 pages)
-   1.0 MiB   42.1%  Python      71 files, 24198 lines (21067 code, 449 comment, 2682 blank), 75522 words (302.0 pages)
-    96 KiB    3.7%  JavaScript  9 files, 2182 lines (1876 code, 138 comment, 168 blank), 8080 words (32.3 pages)
+$ fdu .
+     2.6 MiB  ██████████   100%  . (144 files)
+     1.5 MiB  ██████░░░░    58%    crates (116 files)
+     827 KiB  ███░░░░░░░    31%    tests (18 files)
 ```
 
-That is this repository, and the word counts come along because a file that is being
-read for its lines is already being counted — useful when the question is really “will
-this fit in a context window”.
+With no other options, this is the `tree` view: allocated sizes, largest first, two
+directory levels, and up to ten children per directory.
+It reads metadata and `.gitignore` files but does not open regular files for content.
+Hidden and ignored entries are included; ignored byte shares are annotated when present.
 
-Name `--view` yourself when you want a different projection of the same numbers, and it
-always wins over the default.
-A view never turns on an analyzer, because choosing how to look at a result should not
-quietly authorize reading every file in the tree — so if you ask for analysis that none
-of your chosen views can display, fdu says so rather than reading for nothing.
+Use the command that matches the question:
 
-### The two axes in full
+| Question | Command | Reads regular file contents? |
+| --- | --- | --- |
+| Which directories are large? | `fdu .` | No |
+| Which directories are large, excluding ignored entries? | `fdu . --exclude-ignored` | No |
+| What is the total usage? | `fdu . --view=summary` | No |
+| Which languages occupy space? | `fdu . --view=languages` | No |
+| Which families, types, and extensions occupy space? | `fdu . --view=families,types,extensions` | No |
+| Which ten files changed most recently? | `fdu . --view=recent --limit=10` | No |
+| How many physical lines and raw words are there? | `fdu . --analyze=lines` | Yes, when not cached |
+| How do those counts break down by language? | `fdu . --analyze=lines --view=languages` | Yes, when not cached |
+| How many standard lines of code are there? | `fdu . --analyze=code` | Yes, when not cached |
+| How much prose is there? | `fdu . --analyze=words` | Yes, when not cached |
 
-`--analyze` takes a comma-separated set: `lines`, `code`, `words`, plus `none` and `all`
-as totals. `code,words` runs both; `lines` comes free with any analyzer, since a file
-that is being read is already being counted.
+`--view` chooses what is reported.
+Several views share the same scan and requested analysis.
+`--analyze` opts into reading file bodies; naming an analyzer without a view selects a
+useful default (`languages` for `code`, `documents` for `words`, and `families` for
+`lines` or `all`). A view never enables analysis implicitly.
+If an explicit view cannot display requested analysis, fdu still performs that analysis
+and prints a note.
 
-`--view` takes a comma-separated list: `summary`, `tree`, `families`, `types`,
-`extensions`, `languages`, `documents`, `largest`, `recent`, `files`, or `full` alone.
-Several views in one run share one scan — `fdu --view tree,types PATH` walks once and
-prints both.
+The percentage column normally shows byte share.
+With `--analyze=code` in the language view it shows code-line share; in the `documents`
+view it shows document-word share.
+Text output labels those two cases explicitly while retaining bytes in the first column.
 
-`files` is complete: every matching entry, in name order, the way `fd` and `find` list a
-tree. `largest` and `recent` are presets over it rather than more views to learn:
+`lines` means physical, blank, and nonblank lines plus raw words.
+`code` adds the versioned common-language SLOC analyzer.
+`words` adds normalized and reader-visible prose volume.
+These are different questions rather than progressively more accurate versions of the
+same number.
 
-```text
-largest = files --sort size  --limit 20, regular files only
-recent  = files --sort mtime --limit 20, regular files only
+### Where the cache helps
+
+No ordinary view needs a preexisting cache.
+Metadata-only one-shot reports must inspect current metadata, so under the default
+`--cache=auto` they do not load a snapshot that cannot make that work cheaper.
+A complete indexed scan may still write one that opened, watch, cache-only, or later
+content-analysis work can consume.
+
+Content analysis is the large repeated-run win.
+On a cold run, fdu reads every eligible file body.
+A compatible later run restores unchanged analysis records and reads only changed or
+newly eligible bodies:
+
+```shell
+fdu . --analyze=code
+fdu . --analyze=code
 ```
 
-`--sort` and `--limit` still override either preset.
+The performance footer distinguishes fresh from cached analysis; on an unchanged tree,
+the second command can report zero content bytes read while still checking current
+metadata. A wider stored analyzer set can answer a narrower request without discarding
+the wider cache.
 
-`--view full` prints every view except `files` that your analyzers can answer, and names
-any it had to skip. `documents` is the only view that needs content, so it is the only
-one that can be skipped.
+| Request | Cache effect under ordinary `auto` runs |
+| --- | --- |
+| `tree`, `summary`, `largest`, `recent`, `files` | No snapshot-load advantage for a fresh one-shot metadata report |
+| `families`, `types`, `extensions`, `languages` without analysis | Path classification only; same metadata behavior |
+| `--analyze=lines`, `code`, or `words` | Reuses compatible results for unchanged file bodies |
+| `--view=documents` | Requires analysis and receives the same content-cache reuse |
+| `--cache=only` | Reads existing compatible cache without verification; explicitly stale and fails on a miss |
 
-`fdu --docs` prints all of this as a guide, without a PATH and without scanning;
-`--help` stays the flag reference.
+### What `.gitignore` selection means
 
-Two details worth knowing early.
-`--view extensions` groups by the raw filename extension rather than a detected type,
-and its rows partition the tree rather than sampling it, so they sum to the total; names
-with no extension, such as `Makefile` and `.gitignore`, land under `(none)`. And sizes
-are allocated bytes by default — add `--size apparent` for logical file lengths.
+`--exclude-ignored` and `--only-ignored` filter the answer after the tree is scanned.
+They change totals and ordering, but they do not prune metadata work or content
+analysis. Only per-directory `.gitignore` files apply; fdu does not read
+`.git/info/exclude`, a global ignore file, or Git trackedness.
+In particular, `.git` is included unless a rule or an explicit pattern excludes it.
 
-### What `.gitignore` covers
+For recent working files rather than recent repository internals, use both selections:
 
-Every report reads the `.gitignore` files in the tree and says how much of each size
-their rules ignore, so build output and dependencies stand out without a second command:
-
-```text
-     269 B  ██████████   100%  . (7 files) (128 B ignored)
-     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
-      36 B  █░░░░░░░░░    13%    src (2 files)
+```shell
+fdu . --view=recent --limit=10 --exclude-ignored --exclude='.git/**'
 ```
 
-The share follows each summary, tree, and extension row, and is left off a row with no
-ignored file.
-`--exclude-ignored` reports only what the rules leave, and `--only-ignored`
-only what they cover; sizes, ordering, and `--min-size` follow the entries shown, so
-`fdu --exclude-ignored PATH` ranks folders by what you would commit, and
-`fdu --view files --only-ignored --format jsonl PATH` lists what the rules cover.
-`--no-gitignore` reads no rules at all and shows no share.
-Under `--watch` either selection keeps the entry set it names as the rules change:
-editing a `.gitignore` streams the upsert that draws an entry the rules stopped
-ignoring, and the removal of one they started ignoring, even though nothing about the
-file itself changed.
-Without either flag the stream maintains membership rather than each row’s ignored bit,
-which does not change what a listing contains.
+`--no-gitignore` means do not read or apply `.gitignore` rules at all; it is not a
+faster spelling of `--exclude-ignored`.
 
-fdu applies per-directory `.gitignore` files the way `git check-ignore` reads them: a
-directory a rule ignores is ignored with everything below it, and a later negation
-cannot re-include a file under it.
-It does not read `core.excludesFile`, `.git/info/exclude`, or a global ignore file, it
-matches case-sensitively on every platform, and a parent’s rules apply through a nested
-repository. Unignored is not the same as tracked: `.git` itself counts as unignored
-unless a rule names it.
-A `.gitignore` fdu cannot read is an unreadable path like any other, so the result is
-partial and the run exits 2 unless `--allow-partial`; `--no-gitignore` avoids reading
-it.
+See the [usage guide](docs/usage.md) for every view, analyzer, cache policy, selection,
+and automation contract.
+`fdu --docs` carries the same essentials offline, `fdu --help` is the flag reference,
+and [the documentation index](docs/README.md) routes library, architecture, performance,
+and contributor topics.
 
 ## Why
 
@@ -518,7 +508,7 @@ fdu --analyze lines --view families .      # lines, blanks, words, and exact byt
 fdu --analyze words .                      # picks the view that displays the words
 fdu --format json .                        # stable, versioned machine output
 fdu --view largest -n 50 ~/src             # the 50 largest files
-fdu --docs                                 # the usage guide: ladder, axes, contracts
+fdu --docs                                 # common commands, cache behavior, contracts
 fdu --skill                                # print the self-contained agent skill
 ```
 

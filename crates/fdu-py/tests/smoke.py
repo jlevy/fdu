@@ -141,7 +141,13 @@ def main() -> None:
         [entrypoint, "--docs"], check=False, capture_output=True, encoding="utf-8"
     )
     assert docs_result.returncode == 0, docs_result
-    for section in ("THE LADDER", "SIX AXES", "CONTENT ANALYSIS", "OUTPUT AND AUTOMATION"):
+    for section in (
+        "START HERE",
+        "SIX AXES",
+        "CONTENT ANALYSIS",
+        "CACHE BEHAVIOR",
+        "OUTPUT AND AUTOMATION",
+    ):
         assert section in docs_result.stdout, (section, docs_result.stdout[:400])
     assert docs_result.stderr == "", docs_result.stderr
 

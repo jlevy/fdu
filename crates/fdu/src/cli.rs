@@ -82,16 +82,22 @@ const CLI_STYLES: Styles = Styles::styled()
     .valid(AnsiColor::Green.on_default())
     .invalid(AnsiColor::Yellow.on_default());
 
-/// The one line `--help` spends on everything `--docs` covers.
+/// The short starting point `--help` gives before handing off to `--docs`.
 ///
 /// Help stays the flag reference it is supposed to be.  The guide it points at used to
 /// be split across `before_help` and `after_help`, which put a page of prose *above* the
 /// tool's own description — the reader met the examples before learning what the command
 /// was.
-const DOCS_POINTER: &str = "Run `fdu --docs` for more help and important usage examples.";
+const DOCS_POINTER: &str = r"Examples:
+  fdu .                     directory sizes (metadata only)
+  fdu . --exclude-ignored   omit entries covered by .gitignore
+  fdu . --view=summary      one total for the tree
+  fdu . --analyze=code      standard lines of code by language
 
-/// The guide `--docs` prints: the ladder, the two axes, and the contracts worth knowing
-/// before automating against the output.
+Run `fdu --docs` for more commands, cache behavior, and the full usage guide.";
+
+/// The guide `--docs` prints: common questions, the two axes, cache behavior, and the
+/// contracts worth knowing before automating against the output.
 ///
 /// Composed per build, because the guide names only flags this binary has. A command
 /// line built without `watch` has no `--watch` or `--interval`, and a guide that still
@@ -104,45 +110,47 @@ macro_rules! docs_guide {
         concat!(
             r"fdu — a fast, incremental file roll-up engine.
 
-THE LADDER
-  Every report is one command, and they form a ladder. Each rung costs more than
-  the one above it and tells you more, so stop at the cheapest answer that
-  settles your question.
+START HERE
+  A report requires a PATH. Use `.` for the current directory.
 
-    fdu --view summary PATH              how big is this tree?        no reads
-    fdu PATH                             which folders are big?       no reads
-    fdu --view largest PATH              what is eating my disk?      no reads
-    fdu --view recent PATH               what changed?                no reads
-    fdu --view types PATH                what kinds of files?         no reads
-    fdu --view languages PATH            which languages?             no reads
-    fdu --analyze code PATH              how much code?               READS FILES
-    fdu --analyze words PATH             how much writing?            READS FILES
-    fdu --analyze all --view full PATH   everything there is          READS FILES
+    fdu .                                      directory sizes (the default)
+    fdu . --exclude-ignored                    omit entries covered by .gitignore
+    fdu . --view=summary                       one total for the tree
+    fdu . --view=languages                     languages by byte size
+    fdu . --view=families,types,extensions     three file-kind breakdowns
+    fdu . --view=recent --limit=10             ten most recently modified files
+    fdu . --analyze=lines                      physical lines and raw words
+    fdu . --analyze=lines --view=languages     those metrics by language
+    fdu . --analyze=code                       standard lines of code by language
+    fdu . --analyze=words                      prose volume by document type
 
-TWO FLAGS DO ALL OF IT
-  --analyze decides what gets read. Anything but `none` opens and reads every
-    eligible file, which is the only setting that makes a run cost more than a
-    single metadata walk.
-  --view decides what gets printed. It is free: every view is a projection over
-    one walk, so asking for more views never touches the filesystem again.
+  `fdu .` is metadata-only. It prints a tree in allocated bytes, largest first,
+  to depth 2, with at most 10 children per directory. Hidden and ignored entries
+  are included; .gitignore is read to label ignored shares, not to exclude them.
 
-  You rarely need both. Naming analyzers selects a view that displays them, so
-  `fdu --analyze code PATH` already prints language rows with lines of code.
-  Name --view yourself for a different projection; it always wins.
+VIEWS AND ANALYSIS
+  --view chooses the question the report answers. Several views share one scan
+    and one requested analysis; adding a view does not run a second scan.
+  --analyze opts into reading eligible file bodies. Without it, regular file
+    contents are not opened. Compatible cached results avoid rereading unchanged
+    bodies, so a repeated content analysis can be much cheaper.
+
+  Naming analyzers selects a view that displays them: code selects languages,
+  words selects documents, and lines or a multi-analyzer set selects families.
+  Name --view for a different projection; it always wins.
 
   A view never turns on an analyzer, because choosing how to look at a result
-  should not quietly authorize reading every file in the tree. So a --view that
-  displays none of what you asked to read says how much was read for nothing,
-  and --view full names any view it had to skip.
+  should not quietly authorize reading every file in the tree. If a selected
+  view cannot display requested analysis, fdu still performs the analysis and
+  prints a note. --view=full names any view it had to skip.
 
 MORE COMPOSITIONS
-  fdu --view extensions ~/Downloads
-  fdu --view types,families --format json .
-  fdu --analyze words --view documents .
-  fdu --view largest -n 100 PATH                            the 100 largest files
-  fdu --view files --modified-since 1h --sort mtime PATH    recent changes
-  fdu --exclude-ignored PATH                                sizes without ignored files
-  fdu --view files --only-ignored --format jsonl PATH       what .gitignore covers
+  fdu ~/Downloads --view=extensions
+  fdu . --view=types,families --format=json
+  fdu . --analyze=words --view=documents
+  fdu PATH --view=largest --limit=100                        the 100 largest files
+  fdu PATH --view=files --modified-since=1h --sort=mtime     recent changes
+  fdu PATH --view=files --only-ignored --format=jsonl        what .gitignore covers
 ",
             $watch_composition,
             r"
@@ -181,14 +189,29 @@ CONTENT ANALYSIS
   --words-per-page changes only report-time page derivation.
   Unchanged results are restored from a separate sidecar; a stored set answers
   any narrower request without re-reading.
-  cache=only never opens source files and fails if requested content is absent.
+  --cache=only never opens source files and fails if requested content is absent.
+
+CACHE BEHAVIOR
+  No ordinary view requires a preexisting cache. Metadata-only one-shot reports
+  still inspect current metadata; under --cache=auto they skip loading a snapshot
+  that cannot make that work cheaper, though a complete indexed scan may write one.
+
+  Content analysis is where repeated-run caching pays most. The first run reads
+  eligible file bodies. A compatible later run reuses results for unchanged files
+  and reads only changed or newly eligible bodies; the performance footer reports
+  fresh and cached analysis separately. Repeat the same --analyze command to see it.
+
+  --cache=only is different: it does no filesystem verification, requires a
+  compatible snapshot and content sidecar for the requested analysis, and labels
+  its answer stale. --cache=off neither reads nor writes fdu's cache.
 
 IGNORE RULES
   Every report reads each .gitignore in the tree, and summary, tree, and extension
   rows end with how much of their size its rules ignore, as `(128 B ignored)`.
   A directory a rule ignores is ignored with everything below it. Unignored is not
   tracked: .git is unignored unless a rule names it. --exclude-ignored and
-  --only-ignored report one side, and sort and --min-size follow the size shown.
+  --only-ignored select one side after the scan; they do not prune metadata work
+  or content analysis. Sort and --min-size follow the size shown.
   --no-gitignore reads no rules and shows no share. Only per-directory .gitignore
   files apply, not core.excludesFile, .git/info/exclude, or a global ignore file,
   and matching is case-sensitive on every platform. An unreadable .gitignore makes
@@ -463,15 +486,14 @@ pub struct Cli {
 
     // ---- view: which roll-ups are reported ----
     /// Views: tree, extensions, types, families, languages, documents, largest, recent,
-    /// files, summary, or full. Defaults to the view that displays what --analyze asked
-    /// for.
+    /// files, summary, or full. Defaults to tree with no analysis, otherwise to a view
+    /// that displays the requested analysis.
     #[arg(long, value_name = "LIST", help_heading = "VIEWS")]
     pub view: Option<String>,
 
     /// Analyzers to run: none, lines, code, words, or all.
     ///
-    /// Anything but none opens and reads every eligible file, which is the only setting
-    /// that makes a run cost more than one metadata walk.
+    /// Anything but none reads each eligible file missing from a compatible content cache.
     #[arg(long, value_name = "LIST", default_value = "none", help_heading = "CONTENT ANALYSIS")]
     pub analyze: String,
 
@@ -499,7 +521,7 @@ pub struct Cli {
     pub color: ColorWhen,
 
     // ---- mode: how the cache is used ----
-    /// Cache policy: auto, refresh, read-only, only, or off.
+    /// Cache policy: auto, refresh, read-only, only (unverified), or off.
     #[arg(long, value_name = "POLICY", default_value = "auto", help_heading = "EXECUTION")]
     pub cache: String,
 
@@ -535,7 +557,7 @@ pub struct Cli {
     #[arg(short = 'V', long = "version", action = ArgAction::Version, help_heading = "OTHER")]
     pub version: Option<bool>,
 
-    /// Print the usage guide: the report ladder, both axes, and the output contracts.
+    /// Print common commands, cache behavior, and the complete usage guide.
     #[arg(long, action = ArgAction::SetTrue, help_heading = "OTHER")]
     pub docs: bool,
 

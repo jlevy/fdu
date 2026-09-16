@@ -154,8 +154,8 @@ for a metadata query loading the snapshot is purely additive cost.
 
 Content-derived metrics — line counts, word counts, hashes, and future plugin analyzers
 — do **not** belong in the core snapshot.
-They live in a separately checksummed `.content` sidecar keyed by the type-rule
-fingerprint, requested profile, semantic options, and ordered analyzer IDs and versions.
+They live in a separately checksummed `.content` sidecar recording the type-rule
+fingerprint, semantic options, and ordered analyzer IDs and versions.
 Each sparse file record also carries size, mtime, ctime, and inode, so a reconciled
 metadata change rejects only the stale record.
 The current sidecar format is version 4; an absent, corrupt, oversized, foreign, or
@@ -170,9 +170,12 @@ Keeping them separate from metadata remains load-bearing rather than tidy:
   An analyzer’s output can be far larger than the tree’s metadata, and paying for it on
   every open would penalize the common query.
 - Content-sidecar invalidation never touches tree truth.
-  The current sidecar is profile-scoped: changing any requested analyzer identity or
-  semantic option misses that sidecar as a unit, but never invalidates metadata sizes.
-  Separate per-analyzer reuse across profile changes remains future work.
+  Compatibility is set containment: a sidecar produced by a wider analyzer set can
+  answer any narrower request whose analyzer versions and semantic options agree.
+  A narrower sidecar cannot invent a wider result, and serving a narrower request
+  preserves the wider stored set rather than replacing it.
+  An incompatible analyzer version or semantic option is a clean content-cache miss and
+  never invalidates metadata sizes.
 - The layer is loaded only for an explicitly requested analysis profile, bounded before
   allocation, and removed through the same cache lifecycle as its recognized snapshot.
   A metadata-only run never opens it and never pays for content structures.

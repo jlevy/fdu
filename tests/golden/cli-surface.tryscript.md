@@ -71,8 +71,8 @@ SELECTION
 
 VIEWS
       --view <LIST>         Views: tree, extensions, types, families, languages, documents, largest,
-                            recent, files, summary, or full. Defaults to the view that displays what
-                            --analyze asked for
+                            recent, files, summary, or full. Defaults to tree with no analysis,
+                            otherwise to a view that displays the requested analysis
       --words-per-page <N>  Logical words per derived document page [default: 250]
 
 CONTENT ANALYSIS
@@ -85,7 +85,8 @@ OUTPUT
       --color <WHEN>     Colorize human output: auto, always, or never [default: auto]
 
 EXECUTION
-      --cache <POLICY>  Cache policy: auto, refresh, read-only, only, or off [default: auto]
+      --cache <POLICY>  Cache policy: auto, refresh, read-only, only (unverified), or off [default:
+                        auto]
       --allow-partial   Accept operationally partial results, including filesystem or analysis
                         failures
       --watch           Stream changes continuously instead of returning one report
@@ -99,10 +100,16 @@ CACHE MANAGEMENT
 OTHER
   -h, --help     Print help
   -V, --version  Print version
-      --docs     Print the usage guide: the report ladder, both axes, and the output contracts
+      --docs     Print common commands, cache behavior, and the complete usage guide
       --skill    Print a portable agent skill to stdout
 
-Run `fdu --docs` for more help and important usage examples.
+Examples:
+  fdu .                     directory sizes (metadata only)
+  fdu . --exclude-ignored   omit entries covered by .gitignore
+  fdu . --view=summary      one total for the tree
+  fdu . --analyze=code      standard lines of code by language
+
+Run `fdu --docs` for more commands, cache behavior, and the full usage guide.
 ? 0
 ```
 
@@ -121,28 +128,39 @@ description: >-
 # fdu Directory Roll-Ups
 
 Use `fdu` to summarize a directory tree without modifying files in that tree.
-`fdu --docs` prints the full usage guide -- the report ladder, both axes, and the output
-contracts -- without a PATH and without scanning.
+`fdu --docs` prints common commands, cache behavior, and the full usage contract without
+a PATH and without scanning.
 Every report requires an explicit `PATH`; bare `fdu` prints help instead of scanning the
 current directory.
 
 ## Run fdu
 
+Use `.` for the current directory.
 Start with the report that answers the question:
 
 ```bash
-fdu --view languages PATH                 # detected language sizes; metadata only
-fdu --analyze code --view languages PATH  # add standard LOC; reads content
-fdu --view types PATH                     # all file types; metadata only
-fdu --view largest PATH                   # the 20 largest files; metadata only
-fdu --view recent PATH                    # 20 most recently modified; metadata only
-fdu PATH                                  # folder-size tree; metadata only
-fdu --view summary PATH                   # one totals row with its ignored share
+fdu .                                      # directory-size tree; metadata only
+fdu . --exclude-ignored                    # select what .gitignore rules leave
+fdu . --view=summary                       # one total with its ignored share
+fdu . --view=languages                     # detected language sizes; metadata only
+fdu . --view=families,types,extensions     # three file-kind breakdowns
+fdu . --view=recent --limit=10             # ten most recently modified files
+fdu . --analyze=lines                      # physical lines and raw words
+fdu . --analyze=lines --view=languages     # those metrics by language
+fdu . --analyze=code                       # standard LOC by language
+fdu . --analyze=words                      # prose volume by document type
 ```
 
+The default is `tree` in allocated bytes, largest first, to depth 2, with at most ten
+children per directory.
+Hidden and ignored entries are included.
+`.gitignore` is read to label ignored shares, not to exclude matching entries.
+
 `--analyze` chooses what may be read and `--view` chooses what is printed.
-The two language commands differ only on the analysis axis: the first uses byte shares
-without content reads, while the second adds code, comment, and blank-line metrics.
+The language commands differ only on the analysis axis: without code analysis
+percentages are byte shares; with it, the report adds code, comment, and blank-line
+metrics and uses code-line shares.
+Text labels a non-byte percentage denominator explicitly.
 Use `--size apparent` when logical file lengths are wanted instead of allocated bytes.
 
 For a bounded machine-readable tree, use:
@@ -176,7 +194,7 @@ Scope versus selection is the distinction that matters: scope decides what is sc
 and cached, so one cache serves every query, while selection filters the retained index
 at query time. Narrowing a selection never costs a rescan.
 
-Cost has three layers.
+Work has three layers.
 A single unfiltered `--no-gitignore --view summary PATH` is the one exact composition
 that retains only aggregate tallies and no index, under every cache policy except `only`
 and `refresh`, whose contracts are about the snapshot itself.
@@ -185,13 +203,13 @@ neither reads nor writes one.
 Without `--no-gitignore` the summary reads `.gitignore` to report its ignored share,
 which needs the index.
 Ordinary metadata requests retain the reusable index but never read regular-file
-contents.
-Any `--analyze` value other than `none` opts into streaming reads through every
-eligible file and a separate sidecar scoped to the selected analyzers.
-A repeated run with the same analyzers and semantic settings reuses unchanged content
-records. Coverage is scoped to the analyzers too: an unsupported deeper analyzer leaves
-byte metadata visible but does not retain a separate lower-level metric record for that
-file.
+contents. One-shot metadata reports under `auto` skip loading a snapshot when it cannot
+avoid the current metadata walk, though a complete indexed report may write one.
+Any `--analyze` value other than `none` opts into a separate content sidecar.
+fdu reads eligible files whose requested result is absent or stale; a compatible
+repeated run reuses unchanged records.
+Coverage is scoped to the analyzers too: an unsupported deeper analyzer leaves byte
+metadata visible but does not retain a separate lower-level metric record for that file.
 
 ## Pick the View, Then Shape It
 
@@ -218,14 +236,16 @@ file.
 
 `--analyze` names a set of analyzers, comma-separated, from `lines`, `code`, and
 `words`; `none` and `all` are totals and cannot be combined with anything else.
-Anything but `none` opens and reads every eligible file, which is the only setting that
-makes a run cost more than one metadata walk.
+Anything but `none` may open eligible files and adds content work beyond the metadata
+walk. Compatible cached results prevent unchanged bodies from being reread.
 
 Add `--analyze lines` to stream physical, blank, and nonblank lines and raw word counts.
 Add `--analyze code` for standard LOC, comment, and code-blank partitions across
-supported common languages; the percentage column then uses code lines instead of bytes.
-Use `--analyze words` for normalized word volume, paragraphs, aggregate-derived pages,
-and reader-visible Markdown that excludes destinations and code.
+supported common languages.
+Text labels its code-line percentage denominator while retaining bytes in the first
+column. Use `--analyze words` for normalized word volume, paragraphs, aggregate-derived
+pages, and reader-visible Markdown that excludes destinations and code.
+The `documents` percentage column is document-word share and is also labeled in text.
 `--analyze code,words` — or `all` — computes both in one streaming pass.
 
 Requesting analysis without naming a view selects one that displays it: `code` reports
@@ -270,17 +290,21 @@ Summary, tree, and extension rows end with the part of their size those rules ig
 rule files read.
 
 ```bash
-fdu --exclude-ignored PATH                              # folders by what the rules leave
-fdu --view files --only-ignored --format jsonl PATH     # every entry the rules cover
-fdu --no-gitignore PATH                                 # read no rules, show no share
+fdu PATH --exclude-ignored                              # folders by what the rules leave
+fdu PATH --view=files --only-ignored --format=jsonl     # every entry the rules cover
+fdu PATH --no-gitignore                                 # read no rules, show no share
 ```
 
 Selecting a side changes sizes, ordering, and `--min-size` together, because they follow
-the entries shown. `--no-gitignore` with either selection is a usage error.
+the entries shown.
+It filters retained results after the scan; it does not prune metadata
+work or content analysis.
+`--no-gitignore` with either selection is a usage error.
 Only per-directory `.gitignore` files apply, not `core.excludesFile`,
 `.git/info/exclude`, or a global ignore file, and matching is case-sensitive.
 Unignored does not mean tracked: `.git` is unignored unless a rule names it.
-An unreadable `.gitignore` makes the result partial (exit 2), while one past
+For recent working files, add both `--exclude-ignored` and `--exclude='.git/**'`. An
+unreadable `.gitignore` makes the result partial (exit 2), while one past
 `--gitignore-budget` or `--gitignore-line-limit` is refused whole and named in a note:
 sizes stay exact, the ignored shares under that directory do not.
 
@@ -345,6 +369,22 @@ and use `--allow-partial` only when incomplete totals are acceptable.
 
 ## Cache Behavior
 
+No ordinary view requires a preexisting cache.
+Metadata-only one-shot reports include current sizes or timestamps, so they must inspect
+every entry; under `auto` they skip loading a snapshot when it cannot make that
+verification cheaper.
+A complete indexed scan may still write one.
+
+Content analysis is where ordinary repeated runs benefit most.
+The first compatible run reads eligible bodies; a later run restores unchanged records
+from the content sidecar and reads only changed or newly eligible files.
+A stored wider analyzer set can answer a narrower request without rereading or narrowing
+the stored set. The performance footer reports fresh and cached analysis separately.
+
+`--cache=only` is a distinct contract: it never verifies the source tree, labels the
+answer stale, and fails unless compatible metadata and any requested content analysis
+already exist. `--cache=off` neither reads nor writes fdu cache data.
+
 The snapshot is one file per root under the user cache directory.
 `--cache-status` maps a hash-named file back to the tree it describes, and
 `--cache-clear` removes it; both run without scanning.
@@ -356,11 +396,11 @@ wrote or one this build cannot read, `leftover` for a file fdu left behind, with
 removes current and stale snapshots, so `--cache-clear=all` reclaims what an upgrade
 leaves behind; it also reclaims leftovers, and it never removes an unrecognized file.
 
-Verification cost follows the question asked.
-Sizes and timestamps need one stat per entry, because an in-place edit changes a file
-without changing any directory.
-Questions answerable from names alone need only one stat per directory.
-Adding metrics within a tier is free; crossing a tier boundary is what costs.
+All shipped metadata views need current per-file attributes because they report sizes or
+timestamps. An in-place edit changes no directory timestamp, so a cached directory
+fingerprint cannot prove those answers current.
+Content reuse still pays because an unchanged file fingerprint avoids the much more
+expensive body read and analysis.
 
 Exact names and ordinary extensions remain path-only classifications.
 When analysis is enabled, unresolved files and ambiguous `.h` headers may use bounded
@@ -386,45 +426,47 @@ dropped section fails here rather than in somebody’s terminal.
 $ fdu --docs
 fdu — a fast, incremental file roll-up engine.
 
-THE LADDER
-  Every report is one command, and they form a ladder. Each rung costs more than
-  the one above it and tells you more, so stop at the cheapest answer that
-  settles your question.
+START HERE
+  A report requires a PATH. Use `.` for the current directory.
 
-    fdu --view summary PATH              how big is this tree?        no reads
-    fdu PATH                             which folders are big?       no reads
-    fdu --view largest PATH              what is eating my disk?      no reads
-    fdu --view recent PATH               what changed?                no reads
-    fdu --view types PATH                what kinds of files?         no reads
-    fdu --view languages PATH            which languages?             no reads
-    fdu --analyze code PATH              how much code?               READS FILES
-    fdu --analyze words PATH             how much writing?            READS FILES
-    fdu --analyze all --view full PATH   everything there is          READS FILES
+    fdu .                                      directory sizes (the default)
+    fdu . --exclude-ignored                    omit entries covered by .gitignore
+    fdu . --view=summary                       one total for the tree
+    fdu . --view=languages                     languages by byte size
+    fdu . --view=families,types,extensions     three file-kind breakdowns
+    fdu . --view=recent --limit=10             ten most recently modified files
+    fdu . --analyze=lines                      physical lines and raw words
+    fdu . --analyze=lines --view=languages     those metrics by language
+    fdu . --analyze=code                       standard lines of code by language
+    fdu . --analyze=words                      prose volume by document type
 
-TWO FLAGS DO ALL OF IT
-  --analyze decides what gets read. Anything but `none` opens and reads every
-    eligible file, which is the only setting that makes a run cost more than a
-    single metadata walk.
-  --view decides what gets printed. It is free: every view is a projection over
-    one walk, so asking for more views never touches the filesystem again.
+  `fdu .` is metadata-only. It prints a tree in allocated bytes, largest first,
+  to depth 2, with at most 10 children per directory. Hidden and ignored entries
+  are included; .gitignore is read to label ignored shares, not to exclude them.
 
-  You rarely need both. Naming analyzers selects a view that displays them, so
-  `fdu --analyze code PATH` already prints language rows with lines of code.
-  Name --view yourself for a different projection; it always wins.
+VIEWS AND ANALYSIS
+  --view chooses the question the report answers. Several views share one scan
+    and one requested analysis; adding a view does not run a second scan.
+  --analyze opts into reading eligible file bodies. Without it, regular file
+    contents are not opened. Compatible cached results avoid rereading unchanged
+    bodies, so a repeated content analysis can be much cheaper.
+
+  Naming analyzers selects a view that displays them: code selects languages,
+  words selects documents, and lines or a multi-analyzer set selects families.
+  Name --view for a different projection; it always wins.
 
   A view never turns on an analyzer, because choosing how to look at a result
-  should not quietly authorize reading every file in the tree. So a --view that
-  displays none of what you asked to read says how much was read for nothing,
-  and --view full names any view it had to skip.
+  should not quietly authorize reading every file in the tree. If a selected
+  view cannot display requested analysis, fdu still performs the analysis and
+  prints a note. --view=full names any view it had to skip.
 
 MORE COMPOSITIONS
-  fdu --view extensions ~/Downloads
-  fdu --view types,families --format json .
-  fdu --analyze words --view documents .
-  fdu --view largest -n 100 PATH                            the 100 largest files
-  fdu --view files --modified-since 1h --sort mtime PATH    recent changes
-  fdu --exclude-ignored PATH                                sizes without ignored files
-  fdu --view files --only-ignored --format jsonl PATH       what .gitignore covers
+  fdu ~/Downloads --view=extensions
+  fdu . --view=types,families --format=json
+  fdu . --analyze=words --view=documents
+  fdu PATH --view=largest --limit=100                        the 100 largest files
+  fdu PATH --view=files --modified-since=1h --sort=mtime     recent changes
+  fdu PATH --view=files --only-ignored --format=jsonl        what .gitignore covers
   fdu --watch --view files --format jsonl PATH              a tail -f for a tree
 
   --interval throttles rendering only; change detection is event-driven and
@@ -463,14 +505,29 @@ CONTENT ANALYSIS
   --words-per-page changes only report-time page derivation.
   Unchanged results are restored from a separate sidecar; a stored set answers
   any narrower request without re-reading.
-  cache=only never opens source files and fails if requested content is absent.
+  --cache=only never opens source files and fails if requested content is absent.
+
+CACHE BEHAVIOR
+  No ordinary view requires a preexisting cache. Metadata-only one-shot reports
+  still inspect current metadata; under --cache=auto they skip loading a snapshot
+  that cannot make that work cheaper, though a complete indexed scan may write one.
+
+  Content analysis is where repeated-run caching pays most. The first run reads
+  eligible file bodies. A compatible later run reuses results for unchanged files
+  and reads only changed or newly eligible bodies; the performance footer reports
+  fresh and cached analysis separately. Repeat the same --analyze command to see it.
+
+  --cache=only is different: it does no filesystem verification, requires a
+  compatible snapshot and content sidecar for the requested analysis, and labels
+  its answer stale. --cache=off neither reads nor writes fdu's cache.
 
 IGNORE RULES
   Every report reads each .gitignore in the tree, and summary, tree, and extension
   rows end with how much of their size its rules ignore, as `(128 B ignored)`.
   A directory a rule ignores is ignored with everything below it. Unignored is not
   tracked: .git is unignored unless a rule names it. --exclude-ignored and
-  --only-ignored report one side, and sort and --min-size follow the size shown.
+  --only-ignored select one side after the scan; they do not prune metadata work
+  or content analysis. Sort and --min-size follow the size shown.
   --no-gitignore reads no rules and shows no share. Only per-directory .gitignore
   files apply, not core.excludesFile, .git/info/exclude, or a global ignore file,
   and matching is case-sensitive on every platform. An unreadable .gitignore makes

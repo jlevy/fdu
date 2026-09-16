@@ -23,8 +23,8 @@ use crate::control::ControlCoverage;
 use crate::engine_contract::{EntryKind, Freshness};
 use crate::query::{
     FileRow, IgnoredEntries, IgnoredTally, MetricGroup, MetricRow, MetricSummary, Report,
-    ReportSource, Section, SizeMetric, SummaryRow, TreeNode, TypeRow, ViewSpec, document_words,
-    format_rfc3339, format_rfc3339_nanos,
+    ReportSource, Section, ShareMetric, SizeMetric, SummaryRow, TreeNode, TypeRow, ViewSpec,
+    document_words, format_rfc3339, format_rfc3339_nanos,
 };
 
 /// The all-caps label naming which view a block of text output belongs to.
@@ -235,6 +235,9 @@ fn render_text_metrics(
     size: SizeMetric,
     color: bool,
 ) {
+    if let Some(note) = share_metric_note(summary.share_metric) {
+        let _ = writeln!(out, "{}", paint(note, STYLE_TELEMETRY, color));
+    }
     // Languages pad one past the longest name; the other groupings share a floor so
     // separate sections still line up with one another.
     let width = if view == ViewSpec::Languages {
@@ -304,6 +307,20 @@ fn render_text_metrics(
             percentage,
             label_cell(human_metric_label(view, &row.id), width, STYLE_TYPE, color),
         );
+    }
+}
+
+/// Explain a percentage column whose denominator is not the byte column beside it.
+///
+/// Byte shares need no annotation because the adjacent size column already names their
+/// numerator. Code and document reports deliberately rank by a content metric while
+/// retaining bytes in the first column, so leaving the percentage unlabeled makes two
+/// unlike quantities look as though they must agree.
+fn share_metric_note(metric: ShareMetric) -> Option<&'static str> {
+    match metric {
+        ShareMetric::CodeLines => Some("Percentage column: code lines"),
+        ShareMetric::DocumentWords => Some("Percentage column: document words"),
+        ShareMetric::ApparentBytes | ShareMetric::AllocatedBytes => None,
     }
 }
 
@@ -2287,6 +2304,33 @@ mod tests {
         assert!(json.contains("\"id\": \"javascript\""), "{json}");
         assert!(!json.contains("\"id\": \"C++\""), "{json}");
         assert!(!json.contains("\"id\": \"JavaScript\""), "{json}");
+    }
+
+    #[test]
+    fn text_labels_a_percentage_that_is_not_a_byte_share() {
+        let mut languages = fixture(&[ViewSpec::Languages]);
+        if let Section::Metrics { summary, .. } = &mut languages.sections[0] {
+            summary.share_metric = ShareMetric::CodeLines;
+        } else {
+            panic!("languages should be a metric section");
+        }
+        let text = render(&languages, Format::Text, false);
+        assert!(text.starts_with("Percentage column: code lines\n"), "{text}");
+
+        let Section::Metrics { summary, .. } = &mut languages.sections[0] else {
+            unreachable!("languages should stay a metric section");
+        };
+        summary.share_metric = ShareMetric::AllocatedBytes;
+        let text = render(&languages, Format::Text, false);
+        assert!(!text.contains("Percentage column:"), "{text}");
+
+        let mut documents = fixture(&[ViewSpec::Documents]);
+        let Section::Metrics { summary, .. } = &mut documents.sections[0] else {
+            panic!("documents should be a metric section");
+        };
+        summary.share_metric = ShareMetric::DocumentWords;
+        let text = render(&documents, Format::Text, false);
+        assert!(text.starts_with("Percentage column: document words\n"), "{text}");
     }
 
     #[test]
