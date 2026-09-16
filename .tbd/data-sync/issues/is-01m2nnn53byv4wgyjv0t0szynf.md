@@ -3,9 +3,9 @@ type: is
 id: is-01m2nnn53byv4wgyjv0t0szynf
 title: "Address review: PR #68 — release-candidate performance claims"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 4
+version: 5
 delegate: claude-code@spud10
 labels: []
 dependencies: []
@@ -15,7 +15,11 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-09-16T17:53:55.300Z
-updated_at: 2026-09-16T17:54:28.019Z
+updated_at: 2026-09-16T17:58:27.923Z
 started_at: 2026-09-16T17:54:28.017Z
+closed_at: 2026-09-16T17:58:27.922Z
+close_reason: "Both formal review findings fixed in PR #68 commit 45e688c; PR description updated and validation passed."
+resolution: null
+duplicate_of: null
 ---
 Address formal review 5226316777 on PR #68. The review found that the README/report turn an uncontrolled generated-corpus run into a release-facing tool ranking and omit the durable raw reproduction artifact. Track each finding explicitly, update the PR, and publish a disposition map.
