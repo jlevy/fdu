@@ -599,9 +599,12 @@ Checkout paths stay local and are not serialized into the manifest.
 Control semantics are always compiled in, so every performance build measures the
 shipped matcher, including on a tree with no control files.
 The default-command and summary probes run through the one-shot report planner, which
-turns control observation off for every report whatever the caller passes, so they
-measure the command line’s controls-off scope and refuse the no-op `--no-controls`;
-index-returning cold scans and opened discovery keep control discovery enabled.
+observes `.gitignore` as the caller says, so by default they measure what `fdu PATH` and
+`fdu --view summary PATH` do, and `--no-controls` measures `--no-gitignore`; an
+observing summary falls closed to the index rather than the aggregate-only plan.
+Artifacts recorded before that change measured the command line’s controls-off scope, so
+compare them with `--no-controls` runs of later revisions.
+Index-returning cold scans and opened discovery keep control discovery enabled.
 Per-request scope is the part of the work contract that decides control observation.
 The `watch` build feature is unnecessary for these jobs: opened discovery does not
 attach an OS watcher.

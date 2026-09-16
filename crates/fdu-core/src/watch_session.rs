@@ -14,12 +14,13 @@
 //! passes throttles only how often aggregate views are re-rendered — it plays no part in
 //! detection.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::engine_contract::{Commit, EffectiveChange, EntryKind, Result};
+use crate::engine_contract::{Commit, EffectiveChange, EntryKind, Error, Result};
 use crate::index::IndexHandle;
-use crate::query::{Provenance, Query, Report, ReportSource, Selection, report};
+use crate::query::{IgnoredEntries, Provenance, Query, Report, ReportSource, Selection, report};
 use crate::scan::ScanConfig;
 use crate::watch::{WatchConfig, Watcher};
 
@@ -38,6 +39,15 @@ pub struct Change {
     pub allocated: Option<u64>,
     /// Modification time, when the entry still exists.
     pub mtime_ns: Option<i64>,
+    /// Whether `.gitignore` rules ignore this entry after the commit.
+    ///
+    /// Set on an upsert, and on a removal a rule edit caused, where the new classification
+    /// is why the row left the selection. `None` on every other record: a session that
+    /// observes no control state never claims a classification an index without rules can
+    /// make, and an ordinary removal or an invalidation has no entry left to classify. A
+    /// report's rows carry the same split, and a stream that could not would be the one
+    /// place a consumer had to guess.
+    pub ignored: Option<bool>,
     /// The index clock at which this change was committed.
     pub clock: u64,
 }
@@ -69,6 +79,36 @@ pub struct Batch {
     pub dirty: bool,
 }
 
+/// What one batch of commits needs from the index, read once under one lock.
+struct BatchFacts {
+    /// How ignore rules classify each touched entry the index still holds once the batch
+    /// applied, or `None` when the index observed no control state and classifies nothing.
+    ///
+    /// A map rather than a set of the ignored: an entry a later commit in the same batch
+    /// removed is in neither partition, and a set could not tell that from unignored.
+    ignored: Option<BTreeMap<PathBuf, bool>>,
+    /// The retained facts of each reclassified entry the selection could move, so a rule
+    /// edit that admits one can stream the upsert that draws it.
+    reclassified: BTreeMap<PathBuf, EntryFacts>,
+}
+
+impl BatchFacts {
+    /// How rules classify a touched entry: `None` when nothing was classified, and when
+    /// the entry is gone from the index, which leaves no entry to classify.
+    fn is_ignored(&self, path: &std::path::Path) -> Option<bool> {
+        self.ignored.as_ref()?.get(path).copied()
+    }
+}
+
+/// One reclassified entry's retained facts.
+#[derive(Clone, Copy)]
+struct EntryFacts {
+    kind: EntryKind,
+    bytes: u64,
+    allocated: u64,
+    mtime_ns: i64,
+}
+
 /// An index paired with a watcher, answering one query continuously.
 pub struct Session {
     index: IndexHandle,
@@ -79,6 +119,11 @@ pub struct Session {
 
 impl Session {
     /// Start watching an already-opened index.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ControlStateNotObserved`] when the query selects by ignored state and the
+    /// index observed no control state, as [`Query::validate_controls`] refuses it.
     pub fn new(
         index: IndexHandle,
         scan: ScanConfig,
@@ -89,6 +134,9 @@ impl Session {
         // Reject an out-of-scope watch before the backend is bound, so a rejected run
         // never leaves a watcher registered on the tree.
         scan.validate_for_watch_scope(index.scope()?)?;
+        query
+            .validate_controls(index.scope()?.observes_controls())
+            .map_err(|_refused| Error::ControlStateNotObserved)?;
         let watcher = Watcher::new(&root, watch)?;
         Ok(Self { index, watcher, scan, query })
     }
@@ -104,7 +152,7 @@ impl Session {
     /// makes "watch is the same query repeated" true rather than aspirational.
     pub fn report(&self, provenance: &Provenance) -> Result<Report> {
         let index = self.index.snapshot()?;
-        Ok(report(&index, &self.query, provenance))
+        report(&index, &self.query, provenance)
     }
 
     /// A consistent copy of the current index.
@@ -136,9 +184,10 @@ impl Session {
             changes: Vec::new(),
             dirty: commits.iter().any(|commit| !commit.changes.is_empty()),
         };
+        let facts = self.batch_facts(&commits)?;
         for commit in &commits {
             for effective in &commit.changes {
-                if let Some(change) = self.change_for(effective, commit.clock.0) {
+                if let Some(change) = self.change_for(effective, commit.clock.0, &facts) {
                     batch.changes.push(change);
                 }
             }
@@ -146,8 +195,82 @@ impl Session {
         Ok(Some(batch))
     }
 
+    /// What one batch needs from the index, read once under one lock rather than per
+    /// change.
+    ///
+    /// Two things: the ignore classification of every entry the batch touched, which each
+    /// record carries and an ignored-state selection filters on, and the retained facts of
+    /// every reclassified entry, which is what lets a rule edit that moves an entry into
+    /// the selection be streamed as the upsert a consumer needs to draw the row.
+    fn batch_facts(&self, commits: &[Commit]) -> Result<BatchFacts> {
+        let filters_by_ignored = self.selection().ignored != IgnoredEntries::Include;
+        let mut touched: Vec<&PathBuf> = Vec::new();
+        let mut reclassified: Vec<&PathBuf> = Vec::new();
+        for effective in commits.iter().flat_map(|commit| &commit.changes) {
+            match effective {
+                EffectiveChange::Inserted { path, .. } | EffectiveChange::Updated { path, .. } => {
+                    touched.push(path);
+                }
+                // A reclassified entry is read only when the selection can move it.
+                // Under `Include` its membership cannot change, and membership is what
+                // this stream maintains; its `ignored` bit did change, and the record that
+                // would say so is not emitted, so a consumer's row keeps the stale bit
+                // until the next listing. Deliberate for 0.1.0: a directory rule flips
+                // thousands of entries at once, and paying a lookup each to restate a bit
+                // no selection reads is the wrong default. `fdu-4239` carries the fix.
+                EffectiveChange::Reclassified { path, .. } if filters_by_ignored => {
+                    reclassified.push(path);
+                }
+                EffectiveChange::Reclassified { .. }
+                | EffectiveChange::Removed { .. }
+                | EffectiveChange::Invalidated { .. }
+                | EffectiveChange::ControlUpdated { .. }
+                | EffectiveChange::ControlRefusalUpdated { .. } => {}
+            }
+        }
+
+        self.index.read_with(|index| {
+            let observed = index.observes_controls();
+            let entries = reclassified
+                .into_iter()
+                .filter_map(|path| {
+                    let id = index.lookup(path)?;
+                    let attrs = index.attrs_of(id)?;
+                    Some((
+                        path.clone(),
+                        EntryFacts {
+                            kind: index.kind_of(id)?,
+                            bytes: attrs.size,
+                            allocated: attrs.allocated,
+                            mtime_ns: attrs.mtime_ns,
+                        },
+                    ))
+                })
+                .collect();
+            BatchFacts {
+                ignored: observed.then(|| {
+                    touched
+                        .into_iter()
+                        .filter_map(|path| match index.is_ignored(path) {
+                            Ok(Some(ignored)) => Some((path.clone(), ignored)),
+                            // Gone from the index, or the index reads no rules; either
+                            // way there is nothing to say about it.
+                            Ok(None) | Err(_) => None,
+                        })
+                        .collect()
+                }),
+                reclassified: entries,
+            }
+        })
+    }
+
     /// Translate one exact effective change into the legacy change view.
-    fn change_for(&self, effective: &EffectiveChange, clock: u64) -> Option<Change> {
+    fn change_for(
+        &self,
+        effective: &EffectiveChange,
+        clock: u64,
+        facts: &BatchFacts,
+    ) -> Option<Change> {
         match effective {
             EffectiveChange::Inserted { path, kind, attrs }
             | EffectiveChange::Updated { path, kind, current: attrs, .. } => {
@@ -159,6 +282,7 @@ impl Session {
                     bytes: attrs.size,
                     allocated: attrs.allocated,
                     mtime_ns: attrs.mtime_ns,
+                    ignored: facts.is_ignored(path).unwrap_or(false),
                 };
                 self.selection().admits(&candidate).then(|| Change {
                     path: path.clone(),
@@ -167,12 +291,14 @@ impl Session {
                     bytes: Some(attrs.size),
                     allocated: Some(attrs.allocated),
                     mtime_ns: Some(attrs.mtime_ns),
+                    ignored: facts.is_ignored(path),
                     clock,
                 })
             }
             // A removal carries no attributes to filter on, so only the path-shaped parts
-            // of a selection can apply. Filtering it out entirely on a size or time bound
-            // would hide the disappearance of something the caller was watching.
+            // of a selection can apply. Filtering it out entirely on a size, time, or
+            // ignored-state bound would hide the disappearance of something the caller was
+            // watching, and a removed entry has no classification left to read.
             EffectiveChange::Removed { path, .. } => {
                 let name = path.file_name()?.to_string_lossy().into_owned();
                 self.admits_by_path(path, &name).then(|| Change {
@@ -182,6 +308,7 @@ impl Session {
                     bytes: None,
                     allocated: None,
                     mtime_ns: None,
+                    ignored: None,
                     clock,
                 })
             }
@@ -194,12 +321,60 @@ impl Session {
                 bytes: None,
                 allocated: None,
                 mtime_ns: None,
+                ignored: None,
                 clock,
             }),
+            // A rule edit changes what an ignored-state selection contains without
+            // anything on disk changing for the entry, so the entry set the flag promises
+            // is maintained here rather than left to the aggregates: a row that left is
+            // removed and a row that arrived is upserted with the facts to draw it.
+            EffectiveChange::Reclassified { path, previous_ignored, current_ignored } => {
+                let name = path.file_name()?.to_string_lossy().into_owned();
+                // Absent in two cases, each meaning there is nothing to emit: a selection
+                // that admits both partitions, whose membership no edit can change, and an
+                // entry that left the index after the commit, whose removal is already in
+                // this batch.
+                let entry = facts.reclassified.get(path)?;
+                let admits = |ignored: bool| {
+                    self.selection().admits(&crate::query::Candidate {
+                        relative: path,
+                        name: &name,
+                        kind: entry.kind,
+                        bytes: entry.bytes,
+                        allocated: entry.allocated,
+                        mtime_ns: entry.mtime_ns,
+                        ignored,
+                    })
+                };
+                match (admits(*previous_ignored), admits(*current_ignored)) {
+                    (true, false) => Some(Change {
+                        path: path.clone(),
+                        kind: ChangeKind::Remove,
+                        entry_kind: None,
+                        bytes: None,
+                        allocated: None,
+                        mtime_ns: None,
+                        ignored: Some(*current_ignored),
+                        clock,
+                    }),
+                    (false, true) => Some(Change {
+                        path: path.clone(),
+                        kind: ChangeKind::Upsert,
+                        entry_kind: Some(entry.kind),
+                        bytes: Some(entry.bytes),
+                        allocated: Some(entry.allocated),
+                        mtime_ns: Some(entry.mtime_ns),
+                        ignored: Some(*current_ignored),
+                        clock,
+                    }),
+                    _ => None,
+                }
+            }
             // The legacy watch surface repaints the complete query when `dirty` is true,
-            // so it needs no second row-change vocabulary for control and partition
-            // effects. Opened-root consumers read these exact commit variants directly.
-            EffectiveChange::ControlUpdated { .. } | EffectiveChange::Reclassified { .. } => None,
+            // so it needs no second row-change vocabulary for control-file effects.
+            // Opened-root consumers read these exact commit variants directly.
+            EffectiveChange::ControlUpdated { .. }
+            | EffectiveChange::ControlRefusalUpdated { .. } => None,
         }
     }
 
@@ -226,5 +401,38 @@ impl Session {
             complete: true,
             errors: Vec::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A record says what the index can be asked, and nothing more.
+    ///
+    /// The three answers are distinct and a consumer acts on each differently: a bit, "no
+    /// rules were read", and "there is no such entry". A set of the ignored paths collapsed
+    /// the last two into `false`, so a batch that created and removed one file in the same
+    /// window upserted it as unignored before removing it -- a classification claim about
+    /// an entry that never survived the batch.
+    #[test]
+    fn a_record_claims_a_classification_only_for_an_entry_the_index_still_holds() {
+        let unobserved = BatchFacts { ignored: None, reclassified: BTreeMap::new() };
+        assert_eq!(unobserved.is_ignored(std::path::Path::new("any.txt")), None);
+
+        let observed = BatchFacts {
+            ignored: Some(BTreeMap::from([
+                (PathBuf::from("build/out.bin"), true),
+                (PathBuf::from("src/main.rs"), false),
+            ])),
+            reclassified: BTreeMap::new(),
+        };
+        assert_eq!(observed.is_ignored(std::path::Path::new("build/out.bin")), Some(true));
+        assert_eq!(observed.is_ignored(std::path::Path::new("src/main.rs")), Some(false));
+        assert_eq!(
+            observed.is_ignored(std::path::Path::new("gone.tmp")),
+            None,
+            "an entry the batch removed is in neither partition, not in the unignored one"
+        );
     }
 }

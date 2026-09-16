@@ -214,9 +214,6 @@ impl Arguments {
         // discovery would silently measure, and the record would claim, something other
         // than what the command line asked for.
         let mut walk_only_flag = None;
-        // Set apart from the walk-only flags because the one-shot report modes refuse it
-        // too, while the index-returning scans still apply it.
-        let mut no_controls = false;
         // Tracked apart from `walk_only_flag`, which only ever refuses these two for
         // opened-discovery: `--diagnostics` is read by scan-producer, scan-index,
         // validate-index, and default-tree (through `prepare_report_with_scan_diagnostics`),
@@ -242,9 +239,10 @@ impl Arguments {
                 }
                 Some("--no-oracle") => oracle_enabled = false,
                 Some("--no-controls") => {
+                    // What `--no-gitignore` does for the command line, in every mode that
+                    // scans, the one-shot report modes included.
                     scan.read_controls = false;
                     walk_only_flag = Some("--no-controls");
-                    no_controls = true;
                 }
                 Some("--diagnostics") => {
                     diagnostics = true;
@@ -307,16 +305,6 @@ impl Arguments {
             return Err(ProbeError(format!(
                 "{flag} does not apply to opened-discovery, whose walk is fixed by the opened \
                  root and records no scan diagnostics"
-            )));
-        }
-        if no_controls && matches!(mode, Mode::DefaultTree | Mode::Summary) {
-            // These modes run through `prepare_report`, whose planner turns control
-            // observation off for every report whatever the scan configuration says
-            // (fdu-etfj). Accepting the flag would record a pinned variable nothing applied.
-            return Err(ProbeError(format!(
-                "--no-controls does not apply to {}: the one-shot report planner decides \
-                 control observation, and a report never observes control state",
-                mode.name()
             )));
         }
         if saw_diagnostics_flag
@@ -573,7 +561,7 @@ fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     };
     let started = Instant::now();
     for _ in 0..arguments.queries {
-        black_box(fdu_core::query::report(&index, &query, &provenance));
+        black_box(fdu_core::query::report(&index, &query, &provenance).expect("report"));
     }
     let component = started.elapsed();
     let mut summary = summarize_index(arguments, &index)?;
@@ -671,8 +659,11 @@ fn scan_index(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
 
 /// The aggregate tier: five exact tallies, no retained index, no snapshot.
 ///
-/// This is `fdu --view summary` -- the plan `plan_report` selects when a caller asks one
-/// unfiltered question and keeps nothing. It is the tier closest to the machine floor
+/// This is `fdu --view summary`. With `--no-controls`, as `fdu --no-gitignore --view
+/// summary`, it is the plan `plan_report` selects when a caller asks one unfiltered
+/// question and keeps nothing. Without it the scan observes `.gitignore`, as the command
+/// line does by default, and the planner falls closed to the index, because the transient
+/// tier keeps no table to classify the summary's ignored share with (fdu-elnn). It is the tier closest to the machine floor
 /// (1.20x on the primary synthetic subject, 1.59x on `/usr`) and it was the only tier
 /// with no probe mode, so every number about it came from the command line and carried
 /// process spawn, argument parsing, canonicalization and rendering. exp-043 and exp-044
@@ -765,11 +756,9 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let snapshot = arguments.snapshot()?.to_path_buf();
     let identity_before = snapshot_identity(&snapshot);
     let config = OpenConfig {
-        // Passed through unchanged, as the command line passes its own: the one-shot
-        // planner inside `prepare_report` turns control observation off for every report
-        // whatever this says (fdu-etfj), so the probe measures the scope the command line
-        // gets without choosing it. `--no-controls` would change nothing here, so this mode
-        // refuses it; it still turns control observation off for the index-returning probes.
+        // Passed through unchanged, as the command line passes its own: observing
+        // `.gitignore` by default, and not under `--no-controls`, which is the probe's
+        // spelling of `--no-gitignore`.
         scan: arguments.scan.clone(),
         cache_path: Some(snapshot.clone()),
         policy: CachePolicy::Auto,
@@ -1084,7 +1073,9 @@ fn opened_discovery_with_options(
                 EffectiveChange::Invalidated { .. } => {
                     summary.apply.invalidated = summary.apply.invalidated.saturating_add(1);
                 }
-                EffectiveChange::ControlUpdated { .. } | EffectiveChange::Reclassified { .. } => {}
+                EffectiveChange::ControlUpdated { .. }
+                | EffectiveChange::ControlRefusalUpdated { .. }
+                | EffectiveChange::Reclassified { .. } => {}
             }
         }
     }
@@ -2215,25 +2206,22 @@ mod tests {
     }
 
     #[test]
-    fn one_shot_report_modes_refuse_no_controls_the_planner_overrides() {
+    fn one_shot_report_modes_apply_no_controls_as_the_command_line_applies_no_gitignore() {
         for mode in ["default-tree", "summary"] {
-            let error = Arguments::parse(
-                [mode, "--root", "/root", "--snapshot", "/snapshot", "--no-controls"]
-                    .into_iter()
-                    .map(OsString::from),
-            )
-            .expect_err("the one-shot planner decides control observation");
-            assert!(error.0.contains("--no-controls"), "{}", error.0);
-            assert!(error.0.contains(mode), "{}", error.0);
-            assert!(error.0.contains("planner"), "{}", error.0);
-
-            // The refusal is of the flag, not of the invocation.
-            Arguments::parse(
+            let observing = Arguments::parse(
                 [mode, "--root", "/root", "--snapshot", "/snapshot"]
                     .into_iter()
                     .map(OsString::from),
             )
-            .expect("the same invocation without the flag");
+            .expect("the default invocation");
+            assert!(observing.scan.read_controls, "{mode} observes .gitignore by default");
+            let blind = Arguments::parse(
+                [mode, "--root", "/root", "--snapshot", "/snapshot", "--no-controls"]
+                    .into_iter()
+                    .map(OsString::from),
+            )
+            .expect("the one-shot planner follows the caller's observation");
+            assert!(!blind.scan.read_controls, "{mode} applies --no-controls");
         }
 
         // An index-returning scan is not planned, so the flag still reaches it.
@@ -2359,21 +2347,22 @@ mod tests {
         let output = default_tree(&arguments).expect("default-tree probe");
 
         assert_eq!(output.summary.files, 2, "the CLI still counts ignored files");
-        // The probe asked for control state, so a controls-off snapshot below proves the
-        // one-shot planner decided the scope, as it does for the command line.
-        assert!(arguments.scan.read_controls, "other probe modes retain control discovery");
+        // The probe observes control state by default, as the command line does, so the
+        // snapshot it writes carries that scope.
+        assert!(arguments.scan.read_controls, "the default command observes .gitignore");
         let mut config = OpenConfig {
-            scan: ScanConfig { read_controls: false, ..arguments.scan.clone() },
+            scan: arguments.scan.clone(),
             cache_path: Some(snapshot),
             policy: CachePolicy::Only,
             analysis: AnalysisRequest::default(),
         };
         // Index-returning cache-only open requires the exact stored scope. Report-only
-        // projection would hide a controls-on snapshot and fail to test the CLI path.
-        let (_, report) = fdu_core::open(root.path(), &config).expect("non-watch CLI scope");
+        // projection would let a controls-off request read it and fail to test the CLI path.
+        let (index, report) = fdu_core::open(root.path(), &config).expect("the CLI scope");
         assert!(report.is_complete());
-        config.scan.read_controls = true;
-        assert!(fdu_core::open(root.path(), &config).is_err(), "controls were not observed");
+        assert_eq!(index.is_ignored(std::path::Path::new("ignored.txt")).ok(), Some(Some(true)));
+        config.scan.read_controls = false;
+        assert!(fdu_core::open(root.path(), &config).is_err(), "controls were observed");
     }
 
     #[test]

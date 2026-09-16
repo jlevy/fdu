@@ -15,19 +15,24 @@ from ._models import (
     AnalysisOptions,
     Bound,
     CachePolicy,
+    CacheScope,
+    CacheState,
     CacheStatus,
     Change,
     ChangeKind,
     ChangeSet,
     Child,
+    ClearSummary,
     EntryKind,
     Format,
+    LeftoverKind,
     Provenance,
     Query,
     RefreshResult,
     Report,
     RollUp,
     ScanOptions,
+    StaleReason,
     Status,
     WatchOptions,
     provenance_from_dict,
@@ -138,6 +143,7 @@ def _query_kwargs(query: Query) -> dict[str, object]:
         "sort": selection.sort.value if selection.sort is not None else None,
         "reverse": selection.reverse,
         "size": selection.size.value,
+        "ignored": selection.ignored.value,
         "words_per_page": query.words_per_page,
     }
 
@@ -147,7 +153,16 @@ def _cache_status(value: dict[str, Any]) -> CacheStatus:
         path=Path(value["path"]),
         bytes=int(value["bytes"]),
         content_bytes=(int(value["content_bytes"]) if value["content_bytes"] is not None else None),
-        recognized=bool(value["recognized"]),
+        state=CacheState(value["state"]),
+        stale_reason=(
+            StaleReason(value["stale_reason"]) if value["stale_reason"] is not None else None
+        ),
+        format_version=(
+            int(value["format_version"]) if value["format_version"] is not None else None
+        ),
+        leftover_kind=(
+            LeftoverKind(value["leftover_kind"]) if value["leftover_kind"] is not None else None
+        ),
         root=Path(value["root"]) if value["root"] is not None else None,
         entries=int(value["entries"]) if value["entries"] is not None else None,
         max_depth=int(value["max_depth"]) if value["max_depth"] is not None else None,
@@ -336,6 +351,7 @@ def _change(value: dict[str, Any]) -> Change:
         bytes=int(value["bytes"]) if value.get("bytes") is not None else None,
         allocated=int(value["allocated"]) if value.get("allocated") is not None else None,
         mtime_ns=int(value["mtime_ns"]) if value.get("mtime_ns") is not None else None,
+        ignored=bool(value["ignored"]) if value.get("ignored") is not None else None,
         reason=str(value["reason"]) if value.get("reason") is not None else None,
     )
 
@@ -350,13 +366,11 @@ def open(
     """Open a root using the requested cache policy, then return a retained index.
 
     The index observes ``.gitignore`` control state, as the engine's ``open`` does by
-    default. :func:`report` never does, so the two keep snapshots of different scope at one
-    cache path. A default ``open`` never starts from a ``report``'s snapshot: a policy that
-    scans treats it as a miss and scans cold, and ``CachePolicy.ONLY``, which never scans,
-    raises :class:`FduError` naming the remedy. A ``report`` answers from a default
-    ``open``'s snapshot only under ``CachePolicy.ONLY``. ``ScanOptions(read_controls=False)``
-    turns observation off: that ``open`` reads no control file and shares a ``report``'s
-    snapshot scope.
+    default, and so does :func:`report`, so the two share one snapshot scope and each starts
+    warm from the other's snapshot. ``ScanOptions(read_controls=False)`` turns observation
+    off: that ``open`` reads no control file and keeps a snapshot of another scope. A policy
+    that scans treats a snapshot of the other scope as a miss and scans cold, and
+    ``CachePolicy.ONLY``, which never scans, raises :class:`FduError` naming the remedy.
     """
 
     scan_options = scan if scan is not None else ScanOptions()
@@ -368,6 +382,8 @@ def open(
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,
         read_controls=scan_options.read_controls,
+        control_budget=_bound(scan_options.control_budget),
+        control_line_limit=_bound(scan_options.control_line_limit),
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
@@ -394,6 +410,8 @@ def scan(
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,
         read_controls=scan_options.read_controls,
+        control_budget=_bound(scan_options.control_budget),
+        control_line_limit=_bound(scan_options.control_line_limit),
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
@@ -418,10 +436,11 @@ def report(
     which meant a Python caller left cache state on a tree that the same command would
     not have, visible to a later cache-only read.
 
-    A report never observes ``.gitignore`` control state, because no view reads it, so it
-    opens no control file and cannot fail on the control-state bound, and it ignores
-    ``ScanOptions.read_controls``. See :func:`open` for what that means for sharing a
-    snapshot with an index.
+    A report observes ``.gitignore`` control state unless ``ScanOptions(read_controls=False)``
+    turns it off: every summary, tree, extension, and file row then carries its ignored
+    share, and ``Selection(ignored=...)`` can select one side. Turned off, rows carry
+    ``ignored=None``, and a selection by ignored state raises
+    :class:`InvalidArgumentError`. See :func:`open` for sharing a snapshot with an index.
 
     Use :func:`open` when you will ask more than one question; the index is the point.
     """
@@ -435,6 +454,9 @@ def report(
         cache=str(cache),
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,
+        read_controls=scan_options.read_controls,
+        control_budget=_bound(scan_options.control_budget),
+        control_line_limit=_bound(scan_options.control_line_limit),
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
         **_query_kwargs(selected),
@@ -493,12 +515,20 @@ def _epoch_nanos(at: datetime | int) -> int:
 
 
 def render_cache_status(
-    caches: Sequence[CacheStatus | Path | str], format: Format = Format.TEXT
+    caches: Sequence[CacheStatus | Path | str],
+    format: Format = Format.TEXT,
+    *,
+    scope: CacheScope,
 ) -> str:
     """Render cache files exactly as ``fdu --cache-status`` prints them.
 
     The same renderer the CLI uses, in every format, so a caller can print what fdu prints
     instead of inventing a layout that will drift from it.
+
+    `scope` is the request the files answer: `ROOT` for one root's `cache_status`, `ALL`
+    for `list_caches`. It is required because it decides which command the text names for
+    reclaiming stale snapshots, and naming the wrong one would send a caller to clear more,
+    or less, than it asked about.
 
     Named for the files rather than for the values: each entry is only a way of naming a
     cache file, and the file is **re-read at render time**. Passing a :class:`CacheStatus`
@@ -510,7 +540,7 @@ def render_cache_status(
     """
 
     paths = [str(cache.path) if isinstance(cache, CacheStatus) else str(cache) for cache in caches]
-    return cast(str, _call(_native.render_cache_status, paths, str(format)))
+    return cast(str, _call(_native.render_cache_status, paths, str(CacheScope(scope)), str(format)))
 
 
 def cache_path(root: str | Path) -> Path | None:
@@ -528,11 +558,20 @@ def list_caches(root: str | Path = Path()) -> tuple[CacheStatus, ...]:
 
 
 def clear_cache(root: str | Path) -> bool:
+    """Remove a root's snapshot, current or stale; return whether one was removed."""
     return bool(_call(_native.clear_cache, root))
 
 
-def clear_all_caches(root: str | Path = Path()) -> int:
-    return int(_call(_native.clear_all_caches, root))
+def clear_all_caches(root: str | Path = Path()) -> ClearSummary:
+    """Remove every fdu snapshot, and the files fdu left behind; return what went.
+
+    A file that is not one of fdu's stays, and `list_caches` reports it as
+    `CacheState.UNRECOGNIZED`. A leftover is reclaimed only under the rules on
+    `LeftoverKind`, so a staging file a running writer may still hold survives and is still
+    listed as `CacheState.LEFTOVER`.
+    """
+    summary = _call(_native.clear_all_caches, root)
+    return ClearSummary(snapshots=int(summary["snapshots"]), leftovers=int(summary["leftovers"]))
 
 
 def _main() -> int:

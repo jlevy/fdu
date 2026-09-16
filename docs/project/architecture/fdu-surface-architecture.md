@@ -105,7 +105,9 @@ still match, so it would silently absorb the next real regression.
 - **Output carrying walk telemetry.** The report envelope deliberately excludes it, so a
   `Report` cannot reproduce the performance footer or a note quoting bytes read.
 - **The same rule in each surface’s knob names.** `--scan-depth` against `max_depth`,
-  from one constant with the names substituted.
+  from one constant with the names substituted; `--gitignore-budget` against
+  `control_budget`, and `--only-ignored` and `--no-gitignore` against `ignored=only` and
+  `read_controls`, from `AxisNames`.
 - **Discovery surfaces.** `--docs` and `--skill` are static documents; `--version` names
   the surface deliberately, which is what keeps the artifact non-empty.
 
@@ -123,6 +125,12 @@ Using `open` for a single question caches state the walk never saved, which a la
 cache-only read can see.
 That was a real defect: a Python run left cache state on a tree that the same command
 would not have.
+
+Both observe `.gitignore` by default, as the command line does, and each surface turns
+it off its own way: `--no-gitignore`, `ScanOptions(read_controls=False)`, or
+`ScanConfig::read_controls`. That keeps one default snapshot scope across all three, and
+it is why a selection by ignored state is refused by the same rule everywhere, in each
+surface’s names for the two knobs.
 
 ## Interactive Client Boundary
 

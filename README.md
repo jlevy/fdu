@@ -104,6 +104,42 @@ and its rows partition the tree rather than sampling it, so they sum to the tota
 with no extension, such as `Makefile` and `.gitignore`, land under `(none)`. And sizes
 are allocated bytes by default — add `--size apparent` for logical file lengths.
 
+### What `.gitignore` covers
+
+Every report reads the `.gitignore` files in the tree and says how much of each size
+their rules ignore, so build output and dependencies stand out without a second command:
+
+```text
+     269 B  ██████████   100%  . (7 files) (128 B ignored)
+     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
+      36 B  █░░░░░░░░░    13%    src (2 files)
+```
+
+The share follows each summary, tree, and extension row, and is left off a row with no
+ignored file.
+`--exclude-ignored` reports only what the rules leave, and `--only-ignored`
+only what they cover; sizes, ordering, and `--min-size` follow the entries shown, so
+`fdu --exclude-ignored PATH` ranks folders by what you would commit, and
+`fdu --view files --only-ignored --format jsonl PATH` lists what the rules cover.
+`--no-gitignore` reads no rules at all and shows no share.
+Under `--watch` either selection keeps the entry set it names as the rules change:
+editing a `.gitignore` streams the upsert that draws an entry the rules stopped
+ignoring, and the removal of one they started ignoring, even though nothing about the
+file itself changed.
+Without either flag the stream maintains membership rather than each row’s ignored bit,
+which does not change what a listing contains.
+
+fdu applies per-directory `.gitignore` files the way `git check-ignore` reads them: a
+directory a rule ignores is ignored with everything below it, and a later negation
+cannot re-include a file under it.
+It does not read `core.excludesFile`, `.git/info/exclude`, or a global ignore file, it
+matches case-sensitively on every platform, and a parent’s rules apply through a nested
+repository. Unignored is not the same as tracked: `.git` itself counts as unignored
+unless a rule names it.
+A `.gitignore` fdu cannot read is an unreadable path like any other, so the result is
+partial and the run exits 2 unless `--allow-partial`; `--no-gitignore` avoids reading
+it.
+
 ## Why
 
 Of a dozen surveyed tools in this space ([du](https://www.gnu.org/software/coreutils/),
@@ -186,8 +222,8 @@ The floor, the peer measurements, and what they change are in
 **Without a usable cache, it is a fast walk and roll-up.** Every entry is enumerated and
 statted once, and per-directory roll-ups accumulate as the walk proceeds — the job `du`
 does, plus the extra metrics, bounded by syscall count and storage latency.
-A summary-only request derives an exact plan instead of retaining an index, which on one
-978,339-entry run cut peak RSS by 95%.
+A summary-only request that reads no `.gitignore` derives an exact plan instead of
+retaining an index, which on one 978,339-entry run cut peak RSS by 95%.
 
 **With a usable cache, it can be much faster** — but only where the cache supplies
 something the filesystem will not.
@@ -202,17 +238,45 @@ cannot hold the tree (CI runners, cloud hosts, whole-drive scans), journal-assis
 revalidation where the OS already recorded what changed, and expensive derived metrics
 like line counts that an unchanged fingerprint lets you skip entirely.
 
+Every release invalidates the snapshots earlier builds wrote, because the engine
+fingerprint includes the version.
+A root scanned again replaces its own snapshot.
+`fdu --cache-status=all` lists the rest as `stale`, and `fdu --cache-clear=all` removes
+them along with the current snapshots.
+It also reclaims what fdu itself left behind — a staging file a killed writer never
+renamed, a content sidecar whose snapshot is gone — which status lists as `leftover`.
+Clearing never removes a file that is not fdu’s;
+[the cache design](docs/project/guides/cache-design.md) covers how one is recognized.
+Cache status in a machine format is its own document, carrying the `fdu.cache/1` schema.
+
 A snapshot is usable only under the scan scope that wrote it, and a root has one cache
-path. Neither `fdu PATH` nor `fdu --watch PATH` observes `.gitignore` control state,
-because no command-line view reads it, so the two share one scope and each starts warm
-from the other’s snapshot: a watch started after `fdu PATH`, and a one-shot run that
-reads the snapshot, such as `--analyze`, after a watch.
-A summary-only `fdu --view summary PATH` saves no snapshot and replaces none.
-Only the library’s default `open`, and `fdu.open` in Python, keep a snapshot that
-observes control state; one opened with `read_controls` off shares the command line’s
-scope.
-A command-line run does not start from a snapshot that observes control state, and
-one that saves replaces it, but `--cache only` still answers a one-shot report from it.
+path. `fdu PATH`, `fdu --watch PATH`, the library’s `open` and `prepare_report`, and
+Python’s `fdu.open` and `fdu.report` all observe `.gitignore` by default, so they share
+one scope and each starts warm from the others’ snapshots: a watch started after
+`fdu PATH`, and a one-shot run that reads the snapshot, such as `--analyze`, after a
+watch. A snapshot written before `.gitignore` was read by default holds no
+classification, so the first default run after upgrading scans cold once.
+`--no-gitignore`, `read_controls` off in the library and Python, is a second scope:
+alternating it with a default run scans cold each time, and a default `--cache only` run
+refuses its snapshot and says how to recover.
+The other direction is spared: `--no-gitignore --cache only` answers from a default
+snapshot, because it reads only the sizes a default scan also recorded.
+A summary-only `fdu --no-gitignore --view summary PATH` saves no snapshot and replaces
+none; a default summary keeps the index its ignored share needs, and saves it like any
+other report.
+
+Control state has two limits, and crossing either never costs the answer.
+An index that observes `.gitignore` files charges each distinct file’s rules once
+against a budget, 4 MiB by default, and refuses a file past it; separately, it refuses a
+file with a line longer than the line limit, 16 KiB by default.
+A refused file’s rules do not apply, every size stays exact, the result stays complete,
+and the report says which files it refused, and which limit refused each, in its
+`ignore_rules` field and a note naming their directories.
+`--gitignore-budget` and `--gitignore-line-limit` on the command line, and
+`control_budget` and `control_line_limit` in Python, each take a size or `all`, and
+raising one never moves the other.
+An unbounded budget also reads every `.gitignore` whole, however large.
+Both limits are part of the snapshot scope, so changing either scans cold once.
 
 ### How performance work is done here
 
@@ -320,15 +384,18 @@ was read for nothing.
 
 | Layer | Representative command | Filesystem work | State retained |
 | --- | --- | --- | --- |
-| Exact summary | `fdu --view summary PATH` | Enumerate and stat every entry; never read file contents | Five aggregate tallies; no index or cache |
+| Exact summary | `fdu --no-gitignore --view summary PATH` | Enumerate and stat every entry; never read file contents | Five aggregate tallies; no index or cache |
 | Metadata index | `fdu PATH` | Enumerate and stat every entry; classify recognized paths without reading contents | Reusable parent-pointer index and, unless disabled, a metadata snapshot |
 | Content index | `fdu --analyze SET PATH` | Metadata work plus streaming reads through every eligible file missing from a compatible content sidecar | Metadata index plus sparse content roll-ups and a separate `.content` sidecar |
 
-The summary-only plan applies to one unfiltered `summary` view under any cache policy
-except `only` and `refresh`, whose contracts are about the snapshot itself rather than
-the cheapest exact answer.
-Filters, multiple views, watch mode, or content analysis fall closed to the full index
-because they need paths, hierarchy, or reusable state.
+The summary-only plan applies to one unfiltered `summary` view that reads no
+`.gitignore`, under any cache policy except `only` and `refresh`, whose contracts are
+about the snapshot itself rather than the cheapest exact answer.
+Filters, multiple views, watch mode, content analysis, or reading `.gitignore` fall
+closed to the full index because they need paths, hierarchy, reusable state, or the
+classification a default summary reports as its ignored share.
+Every tier reads `.gitignore` files unless `--no-gitignore` says otherwise; that is a
+read per rule file, never a read of file contents.
 The planner derives this internally; there is no separate “fast” flag whose semantics
 can drift from the ordinary query.
 
@@ -387,11 +454,15 @@ the same file.
 Every one-shot text report ends with one compact operational summary:
 
 ```text
-Performance: walked 12,345 files / 8.2 GiB; content read 1.4 GiB at 920 MiB/s; analysis 2,104 fresh at 1.3k files/s, 10,241 cached / 6.8 GiB; warm revalidation; total 2.08 s
+Performance: walked 12,345 files / 8.2 GiB; ignore rules 214 files; content read 1.4 GiB at 920 MiB/s; analysis 2,104 fresh at 1.3k files/s, 10,241 cached / 6.8 GiB; warm revalidation; total 2.08 s
 ```
 
 “Walked” counts regular files successfully stated during this run and sums their
 apparent lengths, independent of the report’s selected `--size` metric.
+“Ignore rules” counts the `.gitignore` files whose rules apply, and any the control
+budget refused; `no ignore rules` means `--no-gitignore` read none.
+It is what tells a report whose rules ignore nothing from one that read no rules, since
+neither shows a share.
 “Content read” counts bytes actually returned by fresh analyzer reads, so a known binary
 file can be walked without being opened and an observed binary probe can read less than
 the file’s full length.
@@ -460,14 +531,18 @@ A text report covering more than one view labels each block with an all-caps hea
 naming the view, separated by a blank line, and colorizes that header on the same terms
 as the rest of human output; a single-view report is left bare, so `fdu --view files`
 stays a listing of paths and nothing else.
-Metadata-only machine reports use the versioned `fdu.report/4` schema.
+Metadata-only machine reports use the versioned `fdu.report/5` schema.
+Summary, tree, and extension rows carry an `ignored` object with the ignored part of
+their counts and bytes, zero when nothing is ignored, and file rows carry
+`ignored: true` or `false`; under `--no-gitignore` every one is `null`, never a zero,
+and the envelope’s `ignore_rules` is `null` too.
 An `extension` value is either a derived extension, which always carries a leading dot,
 or the literal `(none)` for names that have none; a consumer matching on the dot should
 expect that one label without it.
 The schema is unchanged by this, because the field’s name and type are: `(none)` is a
 member of its value domain, not a new shape.
 A report that ran content analysis, or that includes the `types`, `families`,
-`languages`, or `documents` metric summaries, uses `fdu.report/5`, adding exact share
+`languages`, or `documents` metric summaries, uses `fdu.report/6`, adding exact share
 numerators and denominators, analyzer coverage, and versioned rule, option, and analyzer
 identities.
 An unavailable metric share is represented as `0/0` in machine output and `—`
@@ -510,7 +585,7 @@ shebangs, modelines, C++ literals, XML and manpage markers, binary signatures, a
 generated-file markers.
 For unresolved paths, NUL and named binary signatures take precedence over shebang and
 modeline hints. A NUL found anywhere in any eligible read discards provisional text
-metrics, and every deeper decision is explainable in `fdu.report/5` rather than silently
+metrics, and every deeper decision is explainable in `fdu.report/6` rather than silently
 guessed.
 
 This surface — composable views, selection filters, time-window and watermark queries,

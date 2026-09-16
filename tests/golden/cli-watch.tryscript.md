@@ -29,8 +29,16 @@ The sequencing is causal, not timed: nothing here depends on how fast the machin
 events backend is.
 
 What this pins: the stream schema on every record, the op vocabulary, which fields are
-present per op, and that removal records carry no metadata — a consumer distinguishes
+present per op, and that a removal carries no size or time — a consumer distinguishes
 “gone” from “unknown” by the fields being absent.
+An upsert an observing run emits states the entry’s `.gitignore` classification, the
+same fact the initial rows carry; a run that read no rules omits the field rather than
+calling every entry unignored.
+A removal states one only when a rule edit caused it, where the new classification is
+why the row left; an ordinary removal and an invalidation have no entry left to classify
+and carry none. Under the default selection the stream maintains membership rather than
+the bit: a rule edit moves entries in and out of `--exclude-ignored` and
+`--only-ignored`, and leaves an unfiltered listing’s rows where they are (`fdu-4239`).
 
 The clock is a named pattern rather than a literal because its starting value depends on
 how the initial scan batched its observations, which is not part of the stream contract.
@@ -48,13 +56,13 @@ $ node -e "require('node:fs').mkdirSync('tree'); require('node:fs').writeFileSyn
 ```console
 $ node bin/watch-capture.mjs tree
 # create a file
-{"schema": "fdu.stream/1", "record": "change", "op": "upsert", "path": "added.txt", "clock": [CLOCK], "kind": "file", "bytes": 5, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS]}
+{"schema": "fdu.stream/1", "record": "change", "op": "upsert", "path": "added.txt", "clock": [CLOCK], "kind": "file", "bytes": 5, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "ignored": false}
 # change its size
-{"schema": "fdu.stream/1", "record": "change", "op": "upsert", "path": "added.txt", "clock": [CLOCK], "kind": "file", "bytes": 12, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS]}
+{"schema": "fdu.stream/1", "record": "change", "op": "upsert", "path": "added.txt", "clock": [CLOCK], "kind": "file", "bytes": 12, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "ignored": false}
 # remove it
 {"schema": "fdu.stream/1", "record": "change", "op": "remove", "path": "added.txt", "clock": [CLOCK]}
 # create a directory
-{"schema": "fdu.stream/1", "record": "change", "op": "upsert", "path": "sub", "clock": [CLOCK], "kind": "dir", "bytes": [DIR_BYTES], "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS]}
+{"schema": "fdu.stream/1", "record": "change", "op": "upsert", "path": "sub", "clock": [CLOCK], "kind": "dir", "bytes": [DIR_BYTES], "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "ignored": false}
 ? 0
 ```
 
@@ -86,7 +94,7 @@ $ node -e "require('node:fs').mkdirSync('sized'); require('node:fs').writeFileSy
 $ node bin/watch-capture.mjs --min-size sized
 # create a file under the bound
 # create a file over the bound
-{"schema": "fdu.stream/1", "record": "change", "op": "upsert", "path": "b-large.txt", "clock": [CLOCK], "kind": "file", "bytes": 200, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS]}
+{"schema": "fdu.stream/1", "record": "change", "op": "upsert", "path": "b-large.txt", "clock": [CLOCK], "kind": "file", "bytes": 200, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "ignored": false}
 # remove the file under the bound
 {"schema": "fdu.stream/1", "record": "change", "op": "remove", "path": "a-small.txt", "clock": [CLOCK]}
 ? 0

@@ -606,6 +606,9 @@ fn model_impact(changes: &[EffectiveChange], state: &[StateTransition]) -> Impac
             EffectiveChange::ControlUpdated { .. } | EffectiveChange::Reclassified { .. } => {
                 domains.extend([ImpactDomain::Classification, ImpactDomain::Aggregates]);
             }
+            EffectiveChange::ControlRefusalUpdated { .. } => {
+                domains.insert(ImpactDomain::Classification);
+            }
         }
         model_dirty(change.path(), &mut dirty_paths, &mut all_dirty, EXPECTED_DIRTY_PATH_LIMIT);
     }

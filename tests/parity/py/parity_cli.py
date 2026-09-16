@@ -127,6 +127,11 @@ class Args:
         self.root: str | None = None
         self.scan_depth: int | None = None
         self.one_filesystem = False
+        self.gitignore_budget: str | None = None
+        self.gitignore_line_limit: str | None = None
+        self.no_gitignore = False
+        self.exclude_ignored = False
+        self.only_ignored = False
         self.include: list[str] = []
         self.exclude: list[str] = []
         self.min_size: str | None = None
@@ -188,6 +193,16 @@ def parse_args(argv: list[str]) -> Args:
             args.scan_depth = int(take())
         elif flag == "--one-filesystem":
             args.one_filesystem = True
+        elif flag == "--gitignore-budget":
+            args.gitignore_budget = take()
+        elif flag == "--gitignore-line-limit":
+            args.gitignore_line_limit = take()
+        elif flag == "--no-gitignore":
+            args.no_gitignore = True
+        elif flag == "--exclude-ignored":
+            args.exclude_ignored = True
+        elif flag == "--only-ignored":
+            args.only_ignored = True
         elif flag == "--include":
             args.include.append(take())
         elif flag == "--exclude":
@@ -261,6 +276,30 @@ def _decline(flag: str) -> int:
     return 2
 
 
+def parse_ignored(args: Args) -> fdu.IgnoredEntries:
+    """Two flags on the command line, one field in the API, so only the CLI can pass both."""
+
+    if args.exclude_ignored and args.only_ignored:
+        raise UsageError(
+            "--exclude-ignored and --only-ignored select opposite entries; use one of them"
+        )
+    if args.exclude_ignored:
+        return fdu.IgnoredEntries.EXCLUDE
+    if args.only_ignored:
+        return fdu.IgnoredEntries.ONLY
+    return fdu.IgnoredEntries.INCLUDE
+
+
+def scan_options(args: Args) -> fdu.ScanOptions:
+    return fdu.ScanOptions(
+        max_depth=args.scan_depth,
+        one_filesystem=args.one_filesystem,
+        read_controls=not args.no_gitignore,
+        control_budget=args.gitignore_budget,
+        control_line_limit=args.gitignore_line_limit,
+    )
+
+
 def build_query(args: Args) -> fdu.Query:
     selection = fdu.Selection(
         include=tuple(args.include),
@@ -274,6 +313,7 @@ def build_query(args: Args) -> fdu.Query:
         sort=args.sort,
         reverse=args.reverse,
         size=args.size,
+        ignored=parse_ignored(args),
     )
     # An empty view tuple means "let the requested analyzers choose", which is the
     # library's own default derivation rather than a default spelled out here.
@@ -296,23 +336,49 @@ def run_cache_lifecycle(args: Args) -> int:
                 # Echoed before acting, so a destructive flag always says where it points.
                 print(f"Cache directory: {directory}")
                 removed = fdu.clear_all_caches(directory)
-                if removed == 0:
+                if removed.snapshots == 0 and removed.leftovers == 0:
                     print("Cache already empty.")
-                else:
-                    noun = "snapshot" if removed == 1 else "snapshots"
-                    print(f"Cache cleared: {removed} {noun}.")
+                if removed.snapshots > 0:
+                    noun = "snapshot" if removed.snapshots == 1 else "snapshots"
+                    print(f"Cache cleared: {removed.snapshots} {noun}.")
+                if removed.leftovers > 0:
+                    noun = "file" if removed.leftovers == 1 else "files"
+                    print(f"Also reclaimed: {removed.leftovers} {noun} fdu left behind.")
+                remaining = fdu.list_caches(directory)
+                left = sum(status.state is fdu.CacheState.UNRECOGNIZED for status in remaining)
+                if left == 1:
+                    print(
+                        "Left in place: 1 file that is not an fdu snapshot; "
+                        "fdu --cache-status=all lists it."
+                    )
+                elif left > 1:
+                    print(
+                        f"Left in place: {left} files that are not fdu snapshots; "
+                        "fdu --cache-status=all lists them."
+                    )
+                staging = sum(status.state is fdu.CacheState.LEFTOVER for status in remaining)
+                if staging > 0:
+                    noun = "file" if staging == 1 else "files"
+                    print(
+                        f"Left in place: {staging} staging {noun} another fdu may still be writing."
+                    )
         else:
             path = fdu.cache_path(root)
             removed = fdu.clear_cache(root)
             if path is not None:
                 print(f"Cache file: {path}")
             print("Cache cleared." if removed else "Cache already empty.")
+            status = fdu.cache_status(root)
+            if status is not None and status.state is fdu.CacheState.UNRECOGNIZED:
+                print("Left in place: the file is not an fdu snapshot.")
 
     if args.cache_status is not None:
         statuses = _statuses(root, args.cache_status)
         # The one renderer, in every format. A shim formatting these itself would be
         # testing its own layout rather than the API's.
-        print(fdu.render_cache_status(statuses, args.format))
+        print(
+            fdu.render_cache_status(statuses, args.format, scope=fdu.CacheScope(args.cache_status))
+        )
 
     return 0
 
@@ -381,9 +447,8 @@ def _repaint(args: Args, watch: fdu.Watch) -> None:
 
 
 def _open(args: Args) -> fdu.Index:
-    scan = fdu.ScanOptions(max_depth=args.scan_depth, one_filesystem=args.one_filesystem)
     analysis = fdu.AnalysisOptions(analyze=args.analyze, workers=args.analysis_workers)
-    return fdu.open(args.root or ".", cache=args.cache, scan=scan, analysis=analysis)
+    return fdu.open(args.root or ".", cache=args.cache, scan=scan_options(args), analysis=analysis)
 
 
 def render(args: Args, report: fdu.Report) -> str:
@@ -431,7 +496,7 @@ def main(argv: list[str] | None = None) -> int:
         args.root or ".",
         build_query(args),
         cache=args.cache,
-        scan=fdu.ScanOptions(max_depth=args.scan_depth, one_filesystem=args.one_filesystem),
+        scan=scan_options(args),
         analysis=fdu.AnalysisOptions(analyze=args.analyze, workers=args.analysis_workers),
     )
     sys.stdout.write(render(args, report))

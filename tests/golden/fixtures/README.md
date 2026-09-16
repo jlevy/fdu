@@ -11,6 +11,10 @@ end-to-end evidence:
 - `README.md` and `docs/FAQ.MD` exercise extension aggregation and case folding
 - `src/alpha.rs` and `src/omega.rs` are equally sized, exercising the name tie-break
 - `dist/acorn-0.1.0.tar.gz` is a valid deterministic archive with a compound extension
+- `.gitignore` ignores `dist/`, as a release project ignores its build output, so every
+  default report shows an ignored share, and the ignored-entry selections have both
+  sides to choose between; the archive stays committed because Git keeps tracking a file
+  it already tracks
 - Three directories exercise nested roll-ups, depth limits, and per-directory row limits
 
 The `realistic-project/` tree is the default-output acceptance fixture.

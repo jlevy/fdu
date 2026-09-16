@@ -25,7 +25,7 @@ fdu --view types PATH                     # all file types; metadata only
 fdu --view largest PATH                   # the 20 largest files; metadata only
 fdu --view recent PATH                    # 20 most recently modified; metadata only
 fdu PATH                                  # folder-size tree; metadata only
-fdu --view summary PATH                   # one totals row; no retained index
+fdu --view summary PATH                   # one totals row with its ignored share
 ```
 
 `--analyze` chooses what may be read and `--view` chooses what is printed.
@@ -53,9 +53,9 @@ There are no subcommands: the grammar is always “report on a path”.
 
 | Axis | Question | Options |
 | --- | --- | --- |
-| Scope | What is scanned and cached? | `PATH`, `--scan-depth N` |
+| Scope | What is scanned and cached? | `PATH`, `--scan-depth N`, `--no-gitignore` |
 | Content | Which file bodies are read? | `--analyze none\|lines\|code\|words\|all` |
-| Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--depth`, `-n/--limit`, `--sort`, `--reverse`, `--size` |
+| Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--exclude-ignored`, `--only-ignored`, `--depth`, `-n/--limit`, `--sort`, `--reverse`, `--size` |
 | View | Which roll-up is reported? | `--view summary,tree,families,types,extensions,languages,documents,largest,recent,files`, or `--view full` |
 | Format | How is it serialized? | `--format text\|json\|jsonl\|yaml`, `--color` |
 | Mode | How is work performed? | `--cache auto\|refresh\|read-only\|only\|off`, `--watch`, `--analysis-workers N` |
@@ -65,11 +65,13 @@ and cached, so one cache serves every query, while selection filters the retaine
 at query time. Narrowing a selection never costs a rescan.
 
 Cost has three layers.
-A single unfiltered `--view summary PATH` is the one exact composition that retains only
-aggregate tallies and no index, under every cache policy except `only` and `refresh`,
-whose contracts are about the snapshot itself.
+A single unfiltered `--no-gitignore --view summary PATH` is the one exact composition
+that retains only aggregate tallies and no index, under every cache policy except `only`
+and `refresh`, whose contracts are about the snapshot itself.
 Under the rest a snapshot cannot save the walk that request is already doing, so it
 neither reads nor writes one.
+Without `--no-gitignore` the summary reads `.gitignore` to report its ignored share,
+which needs the index.
 Ordinary metadata requests retain the reusable index but never read regular-file
 contents.
 Any `--analyze` value other than `none` opts into streaming reads through every
@@ -148,6 +150,36 @@ fdu --view tree --sort mtime PATH                     # an activity map
 `--depth` and `--limit` bound only the rendered view; `--scan-depth` bounds what is
 scanned and retained, so do not reach for it merely to shorten output.
 
+## Read What `.gitignore` Covers
+
+Every report reads the tree’s `.gitignore` files.
+Summary, tree, and extension rows end with the part of their size those rules ignore, as
+`(128 B ignored)`, left off a row with no ignored file; the performance line counts the
+rule files read.
+
+```bash
+fdu --exclude-ignored PATH                              # folders by what the rules leave
+fdu --view files --only-ignored --format jsonl PATH     # every entry the rules cover
+fdu --no-gitignore PATH                                 # read no rules, show no share
+```
+
+Selecting a side changes sizes, ordering, and `--min-size` together, because they follow
+the entries shown. `--no-gitignore` with either selection is a usage error.
+Only per-directory `.gitignore` files apply, not `core.excludesFile`,
+`.git/info/exclude`, or a global ignore file, and matching is case-sensitive.
+Unignored does not mean tracked: `.git` is unignored unless a rule names it.
+An unreadable `.gitignore` makes the result partial (exit 2), while one past
+`--gitignore-budget` or `--gitignore-line-limit` is refused whole and named in a note:
+sizes stay exact, the ignored shares under that directory do not.
+
+Under `--watch`, a rule edit that moves an entry into either selection streams the
+upsert that draws it and one that moves it out streams the removal, so the stream holds
+the entry set the flag names.
+An upsert carries `ignored`, and so does a removal a rule edit caused; an ordinary
+removal, an invalidation, and every record of a run that read no rules omit it.
+Without either flag the stream maintains membership rather than each row’s bit, so
+re-read a listing after a rule edit if the bit matters.
+
 ## Value Grammars
 
 - Sizes: `512`, `10k`, `10M`, `1.5GiB`. Decimal and binary units, case-insensitive.
@@ -174,15 +206,20 @@ before the modification, so only the start bound is conservative.
 
 Check the process exit status and these fields:
 
-- `schema` before parsing anything else: a report carries `fdu.report/5` when it ran
+- `schema` before parsing anything else: a report carries `fdu.report/6` when it ran
   content analysis or includes a metric summary (the `types`, `families`, `languages`,
-  and `documents` views), `fdu.report/4` otherwise, and a `--watch` stream carries
-  `fdu.stream/1`. Treat an unrecognized value as a version you cannot parse rather than
-  guessing at the fields.
+  and `documents` views), `fdu.report/5` otherwise, a `--watch` stream carries
+  `fdu.stream/1`, and `--cache-status` carries `fdu.cache/1`. Treat an unrecognized
+  value as a version you cannot parse rather than guessing at the fields.
 - `complete` and `errors` before trusting totals
 - `freshness` and `source` before presenting data as current
 - `truncated` on a tree node before treating it as exhaustive
 - `coverage` before presenting a metric summary as complete
+- `ignored` on a row before calling anything ignored or not: an object, or `true` and
+  `false` on a file row, where rules were read, and `null` where none were, which never
+  means nothing is ignored
+- `ignore_rules.refused` before trusting an ignored share: below a refused `.gitignore`
+  the split is not exact, though sizes are
 - `detection.sources`, `detection.confidence`, and `detection.flags` before treating a
   deep-detected type or origin label as exact
 
@@ -198,8 +235,14 @@ and use `--allow-partial` only when incomplete totals are acceptable.
 
 The snapshot is one file per root under the user cache directory.
 `--cache-status` maps a hash-named file back to the tree it describes, and
-`--cache-clear` removes it; both run without scanning and never touch files this build
-cannot identify.
+`--cache-clear` removes it; both run without scanning.
+Cache status is its own document, carrying the `fdu.cache/1` schema in every machine
+format rather than a report schema.
+Each status row carries a `state`: `current`, `stale` for a snapshot another fdu version
+wrote or one this build cannot read, `leftover` for a file fdu left behind, with a
+`leftover_kind`, `unrecognized` for a file that is not fdu’s, or `absent`. Clearing
+removes current and stale snapshots, so `--cache-clear=all` reclaims what an upgrade
+leaves behind; it also reclaims leftovers, and it never removes an unrecognized file.
 
 Verification cost follows the question asked.
 Sizes and timestamps need one stat per entry, because an in-place edit changes a file

@@ -32,7 +32,7 @@ const ERROR_KINDS = ['unsupported scan configuration: '];
 // having to restate the pairing -- the pairing lives in cli.rs, where a unit test pins it.
 // Longest first, and one pass, so `depth` cannot match inside `--scan-depth`.
 const KNOBS =
-  /--scan-depth|--one-filesystem|--modified-since|--include|--depth|max_depth|one_filesystem|modified_since|include|depth/g;
+  /--gitignore-budget|--gitignore-line-limit|--exclude-ignored|--only-ignored|--no-gitignore|--scan-depth|--one-filesystem|--modified-since|--include|--depth|ignored=exclude|ignored=only|control_budget|control_line_limit|read_controls|max_depth|one_filesystem|modified_since|include|depth/g;
 const withoutKnobs = (line) => sameSeparator(withoutKind(line)).replace(KNOBS, '<knob>');
 const withoutKind = (line) => {
   // The kind sits after the program name, which both surfaces print: the shim says

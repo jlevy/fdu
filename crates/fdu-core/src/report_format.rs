@@ -19,10 +19,12 @@ use anstyle::{AnsiColor, Style as AnsiStyle};
 
 use crate::classify::{DetectionConfidence, DetectionSource, human_language_name};
 use crate::content::{CoverageReason, MetricValues};
+use crate::control::ControlCoverage;
 use crate::engine_contract::{EntryKind, Freshness};
 use crate::query::{
-    FileRow, MetricGroup, MetricRow, MetricSummary, Report, ReportSource, Section, SizeMetric,
-    SummaryRow, TreeNode, TypeRow, ViewSpec, document_words, format_rfc3339,
+    FileRow, IgnoredEntries, IgnoredTally, MetricGroup, MetricRow, MetricSummary, Report,
+    ReportSource, Section, SizeMetric, SummaryRow, TreeNode, TypeRow, ViewSpec, document_words,
+    format_rfc3339,
 };
 
 /// The all-caps label naming which view a block of text output belongs to.
@@ -56,9 +58,16 @@ const TEXT_TYPE_LABEL_WIDTH: usize = 12;
 ///
 /// Any change to a field's name, type, or meaning bumps this, and a golden test fails if
 /// the schema moves without it — the versioning is the promise, not the intention.
-pub const REPORT_SCHEMA: &str = "fdu.report/4";
+pub const REPORT_SCHEMA: &str = "fdu.report/5";
 /// Machine schema used when a generic metric-summary section is present.
-pub const CONTENT_REPORT_SCHEMA: &str = "fdu.report/5";
+pub const CONTENT_REPORT_SCHEMA: &str = "fdu.report/6";
+/// Machine-output schema identity for cache status.
+///
+/// Its own identity because cache status is its own document: a fact about the cache
+/// directory rather than about a tree, which is why it is not a `Report` section. It
+/// carries the same promise as [`REPORT_SCHEMA`] and versions independently, so a change
+/// to the report shape never invalidates a cache-status consumer, or the reverse.
+pub const CACHE_SCHEMA: &str = "fdu.cache/1";
 
 /// How a report is serialized.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -144,9 +153,11 @@ fn render_text(report: &Report, color: bool) -> String {
             let _ = writeln!(out, "{}", paint(bound.trim_start(), STYLE_TELEMETRY, color));
         }
         match section {
-            Section::Tree(root) => render_text_tree(&mut out, root, report.size, color),
+            Section::Tree(root) => {
+                render_text_tree(&mut out, root, report.size, report.ignored_entries, color);
+            }
             Section::Extensions { rows, .. } => {
-                render_text_types(&mut out, rows, report.size, color);
+                render_text_types(&mut out, rows, report.size, report.ignored_entries, color);
             }
             Section::Metrics { view, summary } => {
                 render_text_metrics(&mut out, *view, summary, report.size, color);
@@ -169,7 +180,9 @@ fn render_text(report: &Report, color: bool) -> String {
                     }
                 }
             },
-            Section::Summary(row) => render_text_summary(&mut out, row, report.size),
+            Section::Summary(row) => {
+                render_text_summary(&mut out, row, report.size, report.ignored_entries);
+            }
         }
     }
     // Remarks about the report, after the report and before the caller's own epilogue.
@@ -309,10 +322,42 @@ fn human_coverage_label(reason: CoverageReason) -> &'static str {
     }
 }
 
+/// The ignored share a text row ends with, as ` (128 B ignored)`, or nothing.
+///
+/// One placement for every row that carries a share: after the row's own detail, so the
+/// fixed size, bar, and percentage columns keep their alignment. Nothing is appended when
+/// no file is ignored, when the index observed no control state, or when the selection
+/// admitted only ignored entries, where the share would repeat the row's size. A share of
+/// ignored directories alone holds no bytes, and `(0 B ignored)` would say nothing a
+/// reader can act on; the machine formats still count them. Text cannot tell "nothing
+/// ignored" from "no rules read"; the performance line says whether any rule was read,
+/// and machine formats carry a zero share and `null` respectively.
+fn ignored_suffix(
+    ignored: Option<IgnoredTally>,
+    size: SizeMetric,
+    selected: IgnoredEntries,
+) -> String {
+    let shown = match selected {
+        IgnoredEntries::Include | IgnoredEntries::Exclude => {
+            ignored.filter(|share| share.files > 0)
+        }
+        IgnoredEntries::Only => None,
+    };
+    shown.map_or_else(String::new, |share| {
+        format!(" ({} ignored)", human_bytes(pick(size, share.bytes, share.allocated)))
+    })
+}
+
 /// Render a tree section with fixed size, bar, and percentage columns.
 ///
 /// Iterative for the same reason the expansion is: a deep tree must render, not panic.
-fn render_text_tree(out: &mut String, root: &TreeNode, size: SizeMetric, color: bool) {
+fn render_text_tree(
+    out: &mut String,
+    root: &TreeNode,
+    size: SizeMetric,
+    selected: IgnoredEntries,
+    color: bool,
+) {
     enum Row<'a> {
         Node(&'a TreeNode, usize),
         Truncation(usize),
@@ -330,13 +375,14 @@ fn render_text_tree(out: &mut String, root: &TreeNode, size: SizeMetric, color: 
                 let indent = "  ".repeat(depth);
                 let _ = writeln!(
                     out,
-                    "{:>10}  {}  {:>4.0}%  {indent}{} ({} {})",
+                    "{:>10}  {}  {:>4.0}%  {indent}{} ({} {}){}",
                     human_bytes(bytes),
                     bar(share, color),
                     share * 100.0,
                     paint(&node.name, STYLE_DIRECTORY, color),
                     node.files,
                     plural(node.files, "file", "files"),
+                    ignored_suffix(node.ignored, size, selected),
                 );
                 // Reaching the requested depth is visible from the outline itself and
                 // marking every boundary directory overwhelms a real tree with dots.
@@ -358,16 +404,23 @@ fn render_text_tree(out: &mut String, root: &TreeNode, size: SizeMetric, color: 
 }
 
 /// Render a types section as aligned rows.
-fn render_text_types(out: &mut String, rows: &[TypeRow], size: SizeMetric, color: bool) {
+fn render_text_types(
+    out: &mut String,
+    rows: &[TypeRow],
+    size: SizeMetric,
+    selected: IgnoredEntries,
+    color: bool,
+) {
     let width = label_width(rows.iter().map(|row| row.extension.as_str()), TEXT_TYPE_LABEL_WIDTH);
     for row in rows {
         let _ = writeln!(
             out,
-            "{:>TEXT_SIZE_WIDTH$}  {} {} {}",
+            "{:>TEXT_SIZE_WIDTH$}  {} {} {}{}",
             human_bytes(pick(size, row.bytes, row.allocated)),
             label_cell(&row.extension, width, STYLE_TYPE, color),
             row.files,
             plural(row.files, "file", "files"),
+            ignored_suffix(row.ignored, size, selected),
         );
     }
 }
@@ -460,15 +513,21 @@ fn render_text_ranked_files(
     }
 }
 
-fn render_text_summary(out: &mut String, row: &SummaryRow, size: SizeMetric) {
+fn render_text_summary(
+    out: &mut String,
+    row: &SummaryRow,
+    size: SizeMetric,
+    selected: IgnoredEntries,
+) {
     let _ = writeln!(
         out,
-        "{:>10}  {} {}, {} {}",
+        "{:>10}  {} {}, {} {}{}",
         human_bytes(pick(size, row.bytes, row.allocated)),
         row.files,
         plural(row.files, "file", "files"),
         row.dirs,
         plural(row.dirs, "directory", "directories"),
+        ignored_suffix(row.ignored, size, selected),
     );
 }
 
@@ -534,8 +593,70 @@ fn write_envelope_json(out: &mut String, report: &Report) {
         let _ = write!(out, "{}\n    {}", if index > 0 { "," } else { "" }, quote(error));
     }
     out.push_str(if report.errors.is_empty() { "]" } else { "\n  ]" });
+    let _ = write!(out, ",\n  \"ignore_rules\": {}", ignore_rules_json(&report.ignore_rules));
     if report_schema(report) == CONTENT_REPORT_SCHEMA {
         let _ = write!(out, ",\n  \"analysis\": {}", analysis_json(report.analysis.as_ref()));
+    }
+}
+
+/// The `ignore_rules` field: `null` when no control file was read, otherwise the `limits`
+/// the rules were applied under, the applied and refused counts, and at most
+/// `MAX_RETAINED_ISSUES` refused files.
+///
+/// `null` rather than a zero object, because a report that read no rule must not say that
+/// every rule applied. Each limit is a byte count, or `null` when unbounded, and a
+/// refusal's `reason` is the key of the limit that refused it.
+fn ignore_rules_json(ignore_rules: &ControlCoverage) -> String {
+    let ControlCoverage::Observed(observed) = ignore_rules else {
+        return "null".to_string();
+    };
+    let mut refusals = String::from("[");
+    for (index, refusal) in observed.refusals.iter().enumerate() {
+        let _ = write!(
+            refusals,
+            "{}{{\"path\": {}{}, \"reason\": {}}}",
+            if index > 0 { ", " } else { "" },
+            quote(&refusal.path.to_string_lossy()),
+            path_raw_field(&refusal.path),
+            quote(refusal.reason.label())
+        );
+    }
+    refusals.push(']');
+    format!(
+        "{{\"limits\": {{\"budget\": {}, \"line_limit\": {}}}, \"applied\": {}, \"refused\": {}, \
+         \"refusals\": {refusals}}}",
+        limit_value(observed.limits.budget),
+        limit_value(observed.limits.line_limit),
+        observed.applied,
+        observed.refused,
+    )
+}
+
+/// One control limit as JSON and YAML write it: its bytes, or `null` when unbounded.
+fn limit_value(limit: Option<usize>) -> String {
+    limit.map_or_else(|| "null".to_string(), |bytes| bytes.to_string())
+}
+
+/// The `ignore_rules` field in YAML, as [`ignore_rules_json`] describes it.
+fn write_ignore_rules_yaml(out: &mut String, ignore_rules: &ControlCoverage) {
+    let ControlCoverage::Observed(observed) = ignore_rules else {
+        out.push_str("ignore_rules: null\n");
+        return;
+    };
+    out.push_str("ignore_rules:\n");
+    out.push_str("  limits:\n");
+    let _ = writeln!(out, "    budget: {}", limit_value(observed.limits.budget));
+    let _ = writeln!(out, "    line_limit: {}", limit_value(observed.limits.line_limit));
+    let _ = writeln!(out, "  applied: {}", observed.applied);
+    let _ = writeln!(out, "  refused: {}", observed.refused);
+    if observed.refusals.is_empty() {
+        out.push_str("  refusals: []\n");
+        return;
+    }
+    out.push_str("  refusals:\n");
+    for refusal in &observed.refusals {
+        let _ = writeln!(out, "    - path: {}", yaml_scalar(&refusal.path.to_string_lossy()));
+        let _ = writeln!(out, "      reason: {}", refusal.reason.label());
     }
 }
 
@@ -576,12 +697,13 @@ fn section_json(section: &Section, _indent: usize) -> String {
             for (index, row) in rows.iter().enumerate() {
                 let _ = write!(
                     out,
-                    "{}\n    {{\"extension\": {}, \"files\": {}, \"bytes\": {}, \"allocated\": {}}}",
+                    "{}\n    {{\"extension\": {}, \"files\": {}, \"bytes\": {}, \"allocated\": {}, \"ignored\": {}}}",
                     if index > 0 { "," } else { "" },
                     quote(&row.extension),
                     row.files,
                     row.bytes,
-                    row.allocated
+                    row.allocated,
+                    ignored_files_json(row.ignored),
                 );
             }
             out.push_str(if rows.is_empty() { "]" } else { "\n  ]" });
@@ -711,14 +833,61 @@ fn coverage_json(coverage: &std::collections::BTreeMap<CoverageReason, u64>) -> 
 /// One file row as a JSON object.
 fn file_json(row: &FileRow) -> String {
     format!(
-        "{{\"path\": {}{}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"mtime_ns\": {}}}",
+        "{{\"path\": {}{}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"mtime_ns\": {}, \"ignored\": {}}}",
         quote(&row.path.to_string_lossy()),
         path_raw_field(&row.path),
         quote(kind_label(row.kind)),
         row.bytes,
         row.allocated,
-        row.mtime_ns
+        row.mtime_ns,
+        row.ignored.map_or_else(|| "null".to_string(), |ignored| ignored.to_string()),
     )
+}
+
+/// A row's ignored share: `null` when the index observed no control state, and an object
+/// otherwise, zero when nothing is ignored.
+///
+/// `null` rather than a zero object, for the reason `ignore_rules` is `null`: a report that
+/// read no rule must not say that nothing is ignored.
+fn ignored_json(ignored: Option<IgnoredTally>) -> String {
+    ignored.map_or_else(
+        || "null".to_string(),
+        |share| {
+            format!(
+                "{{\"files\": {}, \"dirs\": {}, \"bytes\": {}, \"allocated\": {}}}",
+                share.files, share.dirs, share.bytes, share.allocated
+            )
+        },
+    )
+}
+
+/// [`ignored_json`] for an extension row, which counts files and so carries no `dirs`.
+fn ignored_files_json(ignored: Option<IgnoredTally>) -> String {
+    ignored.map_or_else(
+        || "null".to_string(),
+        |share| {
+            format!(
+                "{{\"files\": {}, \"bytes\": {}, \"allocated\": {}}}",
+                share.files, share.bytes, share.allocated
+            )
+        },
+    )
+}
+
+/// A row's ignored share in YAML at `pad`, as [`ignored_json`] describes it; `dirs` only
+/// where the row counts directories.
+fn yaml_ignored(out: &mut String, ignored: Option<IgnoredTally>, pad: &str, with_dirs: bool) {
+    let Some(share) = ignored else {
+        let _ = writeln!(out, "{pad}ignored: null");
+        return;
+    };
+    let _ = writeln!(out, "{pad}ignored:");
+    let _ = writeln!(out, "{pad}  files: {}", share.files);
+    if with_dirs {
+        let _ = writeln!(out, "{pad}  dirs: {}", share.dirs);
+    }
+    let _ = writeln!(out, "{pad}  bytes: {}", share.bytes);
+    let _ = writeln!(out, "{pad}  allocated: {}", share.allocated);
 }
 
 /// The `path_raw` field for a path that cannot survive `to_string_lossy`, or nothing.
@@ -734,11 +903,12 @@ fn path_raw_field(path: &Path) -> String {
 /// A summary row as a JSON object.
 fn summary_json(row: &SummaryRow) -> String {
     format!(
-        "{{\"files\": {}, \"dirs\": {}, \"bytes\": {}, \"allocated\": {}, \"newest_mtime_ns\": {}}}",
+        "{{\"files\": {}, \"dirs\": {}, \"bytes\": {}, \"allocated\": {}, \"ignored\": {}, \"newest_mtime_ns\": {}}}",
         row.files,
         row.dirs,
         row.bytes,
         row.allocated,
+        ignored_json(row.ignored),
         row.newest_mtime_ns.map_or_else(|| "null".to_string(), |value| value.to_string())
     )
 }
@@ -764,7 +934,7 @@ fn tree_json(node: &TreeNode) -> String {
             Step::Open(node) => {
                 let _ = write!(
                     out,
-                    "{{\"name\": {}, \"path\": {}{}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"files\": {}, \"dirs\": {}, \"newest_mtime_ns\": {}, \"truncated\": {}",
+                    "{{\"name\": {}, \"path\": {}{}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"files\": {}, \"dirs\": {}, \"ignored\": {}, \"newest_mtime_ns\": {}, \"truncated\": {}",
                     quote(&node.name),
                     quote(&node.path.to_string_lossy()),
                     path_raw_field(&node.path),
@@ -773,6 +943,7 @@ fn tree_json(node: &TreeNode) -> String {
                     node.allocated,
                     node.files,
                     node.dirs,
+                    ignored_json(node.ignored),
                     node.newest_mtime_ns
                         .map_or_else(|| "null".to_string(), |value| value.to_string()),
                     node.truncated
@@ -824,6 +995,7 @@ fn render_yaml(report: &Report) -> String {
             let _ = writeln!(out, "  - {}", yaml_scalar(error));
         }
     }
+    write_ignore_rules_yaml(&mut out, &report.ignore_rules);
     if report_schema(report) == CONTENT_REPORT_SCHEMA {
         match report.analysis.as_ref() {
             None => out.push_str("analysis: null\n"),
@@ -880,6 +1052,7 @@ fn render_yaml(report: &Report) -> String {
                         let _ = writeln!(out, "        files: {}", row.files);
                         let _ = writeln!(out, "        bytes: {}", row.bytes);
                         let _ = writeln!(out, "        allocated: {}", row.allocated);
+                        yaml_ignored(&mut out, row.ignored, "        ", false);
                     }
                 }
             }
@@ -901,6 +1074,12 @@ fn render_yaml(report: &Report) -> String {
                         let _ = writeln!(out, "        bytes: {}", row.bytes);
                         let _ = writeln!(out, "        allocated: {}", row.allocated);
                         let _ = writeln!(out, "        mtime_ns: {}", row.mtime_ns);
+                        match row.ignored {
+                            Some(ignored) => {
+                                let _ = writeln!(out, "        ignored: {ignored}");
+                            }
+                            None => out.push_str("        ignored: null\n"),
+                        }
                     }
                 }
             }
@@ -910,6 +1089,7 @@ fn render_yaml(report: &Report) -> String {
                 let _ = writeln!(out, "      dirs: {}", row.dirs);
                 let _ = writeln!(out, "      bytes: {}", row.bytes);
                 let _ = writeln!(out, "      allocated: {}", row.allocated);
+                yaml_ignored(&mut out, row.ignored, "      ", true);
                 let _ =
                     writeln!(out, "      newest_mtime_ns: {}", yaml_option(row.newest_mtime_ns));
             }
@@ -1032,6 +1212,7 @@ fn yaml_tree(out: &mut String, root: &TreeNode, pad: usize) {
         let _ = writeln!(out, "{rest}allocated: {}", node.allocated);
         let _ = writeln!(out, "{rest}files: {}", node.files);
         let _ = writeln!(out, "{rest}dirs: {}", node.dirs);
+        yaml_ignored(out, node.ignored, &rest, true);
         let _ = writeln!(out, "{rest}newest_mtime_ns: {}", yaml_option(node.newest_mtime_ns));
         let _ = writeln!(out, "{rest}truncated: {}", node.truncated);
         if node.children.is_empty() {
@@ -1348,6 +1529,11 @@ pub fn render_change(change: &crate::Change, format: Format) -> String {
     if let Some(mtime) = change.mtime_ns {
         let _ = write!(out, ", \"mtime_ns\": {mtime}");
     }
+    // Absent, never false, when the run observed no ignore rules: the same distinction a
+    // report's rows draw between an unclassified entry and one no rule ignores.
+    if let Some(ignored) = change.ignored {
+        let _ = write!(out, ", \"ignored\": {ignored}");
+    }
     out.push('}');
     out
 }
@@ -1398,45 +1584,85 @@ fn raw_identity_object(path: &Path) -> Option<String> {
     Some(format!("{{\"encoding\": {}, \"hex\": {}}}", quote(encoding), quote(&hex)))
 }
 
-/// Render cache status in a machine format.
+/// Render cache status in any format.
 ///
 /// A separate entry point rather than a `Report` section: cache status is a fact about
 /// the cache directory, not about a tree, and folding it into the report schema would
 /// make every consumer parse a variant that is empty on every normal run.
-pub fn render_cache_status(statuses: &[crate::CacheStatus], format: Format) -> String {
-    let row = |status: &crate::CacheStatus| match &status.snapshot {
-        Some(info) => format!(
-            "{{\"path\": {}, \"bytes\": {}, \"content_bytes\": {}, \"recognized\": true, \"root\": {}, \"entries\": {}}}",
-            quote(&status.path.to_string_lossy()),
-            status.bytes,
-            status.content_bytes.map_or_else(|| "null".to_string(), |bytes| bytes.to_string()),
-            quote(&info.root.to_string_lossy()),
-            info.entries
-        ),
-        None => format!(
-            "{{\"path\": {}, \"bytes\": {}, \"recognized\": false}}",
+///
+/// `scope` is the request the statuses answer. It decides only which command the text
+/// names for reclaiming stale snapshots: a root's snapshot is cleared by its path, while a
+/// stale file found by listing the directory may name no root this build can read.
+///
+/// Every machine format carries [`CACHE_SCHEMA`], the way every machine report carries its
+/// own: the first field of the JSON document, an envelope line of its own ahead of the
+/// rows in JSON Lines, and the first line of the YAML.
+pub fn render_cache_status(
+    statuses: &[crate::CacheStatus],
+    scope: crate::CacheScope,
+    format: Format,
+) -> String {
+    use crate::CacheState;
+
+    let row = |status: &crate::CacheStatus| {
+        let mut fields = format!(
+            "{{\"path\": {}, \"bytes\": {}",
             quote(&status.path.to_string_lossy()),
             status.bytes
-        ),
+        );
+        // Every row carries it, whatever the state, so a consumer reads one shape rather
+        // than discovering which keys this row happens to have.
+        let _ = write!(fields, ", \"content_bytes\": {}", json_count(status.content_bytes));
+        let _ = write!(fields, ", \"state\": {}", quote(status.state.label()));
+        match &status.state {
+            CacheState::Current(info) => {
+                let _ = write!(
+                    fields,
+                    ", \"root\": {}, \"entries\": {}",
+                    quote(&info.root.to_string_lossy()),
+                    info.entries
+                );
+            }
+            CacheState::Stale(reason) => {
+                let _ = write!(
+                    fields,
+                    ", \"stale_reason\": {}, \"format_version\": {}",
+                    quote(reason.label()),
+                    json_count(reason.format_version().map(u64::from))
+                );
+            }
+            CacheState::Leftover(kind) => {
+                let _ = write!(fields, ", \"leftover_kind\": {}", quote(kind.label()));
+            }
+            CacheState::Unrecognized | CacheState::Absent => {}
+        }
+        fields.push('}');
+        fields
     };
 
     match format {
-        Format::Jsonl => statuses.iter().map(row).collect::<Vec<_>>().join("\n"),
+        Format::Jsonl => {
+            let mut out = format!("{{\"schema\": {}}}", quote(CACHE_SCHEMA));
+            for status in statuses {
+                let _ = write!(out, "\n{}", row(status));
+            }
+            out
+        }
         Format::Yaml => {
-            let mut out = String::from("caches:");
+            if statuses.is_empty() {
+                // A bare `caches:` is YAML null, where JSON says `[]`. The two formats
+                // carry one schema, so an empty listing has to be an empty sequence in
+                // both, and a parser reading either gets a list it can iterate.
+                return format!("schema: {}\ncaches: []", yaml_scalar(CACHE_SCHEMA));
+            }
+            let mut out = format!("schema: {}\ncaches:", yaml_scalar(CACHE_SCHEMA));
             for status in statuses {
                 let _ = write!(out, "\n  - path: {}", yaml_scalar(&status.path.to_string_lossy()));
                 let _ = write!(out, "\n    bytes: {}", status.bytes);
-                let _ = write!(
-                    out,
-                    "\n    content_bytes: {}",
-                    status
-                        .content_bytes
-                        .map_or_else(|| "null".to_string(), |bytes| bytes.to_string())
-                );
-                match &status.snapshot {
-                    Some(info) => {
-                        let _ = write!(out, "\n    recognized: true");
+                let _ = write!(out, "\n    content_bytes: {}", json_count(status.content_bytes));
+                let _ = write!(out, "\n    state: {}", status.state.label());
+                match &status.state {
+                    CacheState::Current(info) => {
                         let _ = write!(
                             out,
                             "\n    root: {}",
@@ -1444,9 +1670,18 @@ pub fn render_cache_status(statuses: &[crate::CacheStatus], format: Format) -> S
                         );
                         let _ = write!(out, "\n    entries: {}", info.entries);
                     }
-                    None => {
-                        let _ = write!(out, "\n    recognized: false");
+                    CacheState::Stale(reason) => {
+                        let _ = write!(out, "\n    stale_reason: {}", reason.label());
+                        let _ = write!(
+                            out,
+                            "\n    format_version: {}",
+                            json_count(reason.format_version().map(u64::from))
+                        );
                     }
+                    CacheState::Leftover(kind) => {
+                        let _ = write!(out, "\n    leftover_kind: {}", kind.label());
+                    }
+                    CacheState::Unrecognized | CacheState::Absent => {}
                 }
             }
             out
@@ -1455,42 +1690,152 @@ pub fn render_cache_status(statuses: &[crate::CacheStatus], format: Format) -> S
         // the CLI, which meant the only way to print cache status the way fdu prints it
         // was to be the CLI: the Python API returned CacheStatus values nothing could
         // render, so the parity shim printed repr() and nine sessions differed (fdu-1kw3).
-        Format::Text => {
-            // Root scope synthesises a status for the path a snapshot *would* occupy, so
-            // a tree that has never been cached still yields one unrecognized entry. A
-            // request whose every candidate is unrecognized reports no snapshots rather
-            // than describing absent files, or the human and machine answers would
-            // disagree about whether a cache exists.
-            let statuses: &[crate::CacheStatus] =
-                if statuses.iter().all(|status| !status.is_recognized()) { &[] } else { statuses };
-            if statuses.is_empty() {
-                return "No cached snapshots.".to_string();
-            }
-            statuses
-                .iter()
-                .map(|status| match &status.snapshot {
-                    Some(info) => format!(
-                        "{}  {} entries, {} metadata bytes, {} content bytes  {}",
-                        status.path.display(),
-                        info.entries,
-                        status.bytes,
-                        status.content_bytes.unwrap_or(0),
-                        info.root.display()
-                    ),
-                    None => format!("{}  unrecognized", status.path.display()),
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-        }
+        Format::Text => render_cache_status_text(statuses, scope),
         Format::Json => {
+            let schema = format!("{{\n  \"schema\": {},\n", quote(CACHE_SCHEMA));
             let rows = statuses.iter().map(row).collect::<Vec<_>>().join(",\n    ");
             if statuses.is_empty() {
-                "{\n  \"caches\": []\n}".to_string()
+                format!("{schema}  \"caches\": []\n}}")
             } else {
-                format!("{{\n  \"caches\": [\n    {rows}\n  ]\n}}")
+                format!("{schema}  \"caches\": [\n    {rows}\n  ]\n}}")
             }
         }
     }
+}
+
+/// A count as machine output carries it, `null` when there is none.
+fn json_count(value: Option<u64>) -> String {
+    value.map_or_else(|| "null".to_string(), |value| value.to_string())
+}
+
+/// The human cache-status layout: one line per file, then what can be done about the
+/// files this build cannot use.
+fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::CacheScope) -> String {
+    use crate::{CacheScope, CacheState, LeftoverKind, StaleReason};
+
+    let mut lines = Vec::new();
+    let mut current = 0_usize;
+    let (mut stale, mut stale_bytes) = (0_usize, 0_u64);
+    let (mut leftover, mut leftover_bytes, mut staging) = (0_usize, 0_u64, 0_usize);
+    let (mut unrecognized, mut unrecognized_bytes) = (0_usize, 0_u64);
+    for status in statuses {
+        let content_bytes = status.content_bytes.unwrap_or(0);
+        match &status.state {
+            CacheState::Current(info) => {
+                current += 1;
+                lines.push(format!(
+                    "{}  {} entries, {} metadata bytes, {content_bytes} content bytes  {}",
+                    status.path.display(),
+                    info.entries,
+                    status.bytes,
+                    info.root.display()
+                ));
+            }
+            CacheState::Stale(reason) => {
+                stale += 1;
+                stale_bytes =
+                    stale_bytes.saturating_add(status.bytes).saturating_add(content_bytes);
+                let why = match reason {
+                    StaleReason::OlderFormat { version } => {
+                        format!("older snapshot format {version}")
+                    }
+                    StaleReason::NewerFormat { version } => {
+                        format!("newer snapshot format {version}")
+                    }
+                    StaleReason::OtherEngine => "written by another fdu version".to_string(),
+                    StaleReason::Unreadable => "unreadable by this build".to_string(),
+                };
+                lines.push(format!(
+                    "{}  stale ({why}), {} metadata bytes, {content_bytes} content bytes",
+                    status.path.display(),
+                    status.bytes
+                ));
+            }
+            CacheState::Leftover(kind) => {
+                leftover += 1;
+                leftover_bytes = leftover_bytes.saturating_add(status.bytes);
+                let what = match kind {
+                    LeftoverKind::StagingTemporary => {
+                        staging += 1;
+                        "staging temporary"
+                    }
+                    LeftoverKind::OrphanedContent => "orphaned content sidecar",
+                };
+                lines.push(format!(
+                    "{}  leftover ({what}), {} bytes",
+                    status.path.display(),
+                    status.bytes
+                ));
+            }
+            CacheState::Unrecognized => {
+                unrecognized += 1;
+                unrecognized_bytes = unrecognized_bytes.saturating_add(status.bytes);
+                lines.push(format!(
+                    "{}  unrecognized, {} bytes",
+                    status.path.display(),
+                    status.bytes
+                ));
+            }
+            // Root scope synthesises a status for the path a snapshot *would* occupy, so a
+            // tree that has never been cached yields one absent entry. Absence is not a
+            // file to describe.
+            CacheState::Absent => {}
+        }
+    }
+    if lines.is_empty() {
+        return "No cached snapshots.".to_string();
+    }
+
+    if stale > 0 {
+        let (subject, object) = if stale == 1 {
+            ("1 stale snapshot".to_string(), "it")
+        } else {
+            (format!("{stale} stale snapshots"), "them")
+        };
+        let remedy = match scope {
+            CacheScope::Root => format!("fdu --cache-clear PATH removes {object}"),
+            CacheScope::All if current == 0 => format!("fdu --cache-clear=all removes {object}"),
+            CacheScope::All => {
+                format!("fdu --cache-clear=all removes {object}, along with every current snapshot")
+            }
+        };
+        lines.push(format!(
+            "{subject} ({stale_bytes} bytes) cannot be served by this build; {remedy}."
+        ));
+    }
+    if leftover > 0 {
+        // Named as fdu's own, because they are: calling them foreign would tell the user
+        // to leave fdu's debris alone. `=all` is the scope that reclaims them; a root's
+        // clear reaches only the one path that root's snapshot occupies.
+        let (subject, predicate, object) = if leftover == 1 {
+            ("1 leftover file".to_string(), "is", "it")
+        } else {
+            (format!("{leftover} leftover files"), "are", "them")
+        };
+        // A staging file is reclaimed only once it is too old to belong to a running
+        // writer, and a status knows no file's age, so the promise names the exception
+        // rather than counting files the clear will then decline and explain.
+        let caveat = if staging > 0 {
+            ", though a staging file waits until it is too old to be a running writer's"
+        } else {
+            ""
+        };
+        lines.push(format!(
+            "{subject} ({leftover_bytes} bytes) {predicate} fdu's own, left by an interrupted \
+             write; fdu --cache-clear=all reclaims {object}{caveat}."
+        ));
+    }
+    if unrecognized > 0 {
+        let (subject, predicate, object) = if unrecognized == 1 {
+            ("1 unrecognized file".to_string(), "is not an fdu snapshot", "it")
+        } else {
+            (format!("{unrecognized} unrecognized files"), "are not fdu snapshots", "them")
+        };
+        lines.push(format!(
+            "{subject} ({unrecognized_bytes} bytes) {predicate}, so fdu leaves {object} in place."
+        ));
+    }
+    lines.join("\n")
 }
 
 #[cfg(test)]
@@ -1512,6 +1857,159 @@ mod tests {
             ctime_ns: mtime_ns,
             inode: 7,
             dev: 1,
+        }
+    }
+
+    fn cache_file(name: &str, bytes: u64, state: crate::CacheState) -> crate::CacheStatus {
+        let content_bytes = matches!(state, crate::CacheState::Stale(_)).then_some(5);
+        crate::CacheStatus { path: PathBuf::from(name), bytes, content_bytes, state }
+    }
+
+    /// Stale, leftover, and unrecognized files are shown, sized, and followed by what
+    /// reclaims them.
+    ///
+    /// A unit test beside the goldens because a golden cannot produce a newer format or
+    /// every reason at once, and because the remedy depends on the scope and on whether
+    /// clearing would also take current snapshots.
+    #[test]
+    fn cache_status_shows_stale_and_unrecognized_files_with_their_remedy() {
+        use crate::{CacheScope, CacheState, LeftoverKind, StaleReason};
+
+        let stale = [
+            cache_file("a.fdu", 10, CacheState::Stale(StaleReason::OlderFormat { version: 2 })),
+            cache_file("b.fdu", 20, CacheState::Stale(StaleReason::NewerFormat { version: 99 })),
+            cache_file("c.fdu", 30, CacheState::Stale(StaleReason::OtherEngine)),
+            cache_file("d.fdu", 40, CacheState::Stale(StaleReason::Unreadable)),
+            cache_file("notes.txt", 14, CacheState::Unrecognized),
+        ];
+        assert_eq!(
+            render_cache_status(&stale, CacheScope::All, Format::Text),
+            "a.fdu  stale (older snapshot format 2), 10 metadata bytes, 5 content bytes\n\
+             b.fdu  stale (newer snapshot format 99), 20 metadata bytes, 5 content bytes\n\
+             c.fdu  stale (written by another fdu version), 30 metadata bytes, 5 content bytes\n\
+             d.fdu  stale (unreadable by this build), 40 metadata bytes, 5 content bytes\n\
+             notes.txt  unrecognized, 14 bytes\n\
+             4 stale snapshots (120 bytes) cannot be served by this build; \
+             fdu --cache-clear=all removes them.\n\
+             1 unrecognized file (14 bytes) is not an fdu snapshot, so fdu leaves it in place."
+        );
+
+        // fdu's own debris is named as fdu's, so a reader is not told to leave it alone.
+        let leftovers = [
+            cache_file(
+                ".g.fdu.tmp.1.2.3",
+                60,
+                CacheState::Leftover(LeftoverKind::StagingTemporary),
+            ),
+            cache_file("h.fdu.content", 70, CacheState::Leftover(LeftoverKind::OrphanedContent)),
+        ];
+        assert_eq!(
+            render_cache_status(&leftovers, CacheScope::All, Format::Text),
+            ".g.fdu.tmp.1.2.3  leftover (staging temporary), 60 bytes\n\
+             h.fdu.content  leftover (orphaned content sidecar), 70 bytes\n\
+             2 leftover files (130 bytes) are fdu's own, left by an interrupted write; \
+             fdu --cache-clear=all reclaims them, though a staging file waits until it is \
+             too old to be a running writer's."
+        );
+        assert!(render_cache_status(&leftovers[..1], CacheScope::Root, Format::Text).ends_with(
+            "1 leftover file (60 bytes) is fdu's own, left by an interrupted write; \
+                 fdu --cache-clear=all reclaims it, though a staging file waits until it \
+                 is too old to be a running writer's."
+        ));
+        // With no staging file listed, nothing is held back and the promise is plain: a
+        // status that named an exception with no file it could apply to would be noise.
+        assert!(render_cache_status(&leftovers[1..], CacheScope::All, Format::Text).ends_with(
+            "1 leftover file (70 bytes) is fdu's own, left by an interrupted write; \
+                 fdu --cache-clear=all reclaims it."
+        ));
+
+        let root = [cache_file("a.fdu", 10, CacheState::Stale(StaleReason::OtherEngine))];
+        assert!(render_cache_status(&root, CacheScope::Root, Format::Text).ends_with(
+            "1 stale snapshot (15 bytes) cannot be served by this build; \
+                 fdu --cache-clear PATH removes it."
+        ));
+
+        let current = cache_file(
+            "e.fdu",
+            50,
+            CacheState::Current(crate::SnapshotInfo {
+                root: PathBuf::from("/tree"),
+                scope: crate::test_support::not_observing_controls(),
+                entries: 3,
+            }),
+        );
+        let mixed = [stale[0].clone(), current, stale[4].clone(), stale[4].clone()];
+        assert!(render_cache_status(&mixed, CacheScope::All, Format::Text).ends_with(
+            "e.fdu  3 entries, 50 metadata bytes, 0 content bytes  /tree\n\
+             notes.txt  unrecognized, 14 bytes\n\
+             notes.txt  unrecognized, 14 bytes\n\
+             1 stale snapshot (15 bytes) cannot be served by this build; \
+             fdu --cache-clear=all removes it, along with every current snapshot.\n\
+             2 unrecognized files (28 bytes) are not fdu snapshots, so fdu leaves them in place."
+        ));
+
+        let absent = [cache_file("f.fdu", 0, CacheState::Absent)];
+        assert_eq!(
+            render_cache_status(&absent, CacheScope::Root, Format::Text),
+            "No cached snapshots."
+        );
+        // Every row carries the same keys whatever its state, and the envelope line
+        // carries the schema even when nothing follows it.
+        assert_eq!(
+            render_cache_status(
+                &[stale[0].clone(), absent[0].clone(), stale[4].clone(), leftovers[0].clone()],
+                CacheScope::All,
+                Format::Jsonl
+            ),
+            "{\"schema\": \"fdu.cache/1\"}\n\
+             {\"path\": \"a.fdu\", \"bytes\": 10, \"content_bytes\": 5, \"state\": \"stale\", \"stale_reason\": \"older_format\", \"format_version\": 2}\n\
+             {\"path\": \"f.fdu\", \"bytes\": 0, \"content_bytes\": null, \"state\": \"absent\"}\n\
+             {\"path\": \"notes.txt\", \"bytes\": 14, \"content_bytes\": null, \"state\": \"unrecognized\"}\n\
+             {\"path\": \".g.fdu.tmp.1.2.3\", \"bytes\": 60, \"content_bytes\": null, \"state\": \"leftover\", \"leftover_kind\": \"staging_temporary\"}"
+        );
+        assert_eq!(
+            render_cache_status(&[], CacheScope::All, Format::Jsonl),
+            "{\"schema\": \"fdu.cache/1\"}"
+        );
+        assert_eq!(
+            render_cache_status(&[], CacheScope::All, Format::Json),
+            "{\n  \"schema\": \"fdu.cache/1\",\n  \"caches\": []\n}"
+        );
+        // An empty sequence in both formats: a bare `caches:` is YAML null, and a reader
+        // of one schema should not have to tell null from a list it can iterate.
+        assert_eq!(
+            render_cache_status(&[], CacheScope::All, Format::Yaml),
+            "schema: fdu.cache/1\ncaches: []"
+        );
+        assert!(
+            render_cache_status(&stale[2..3], CacheScope::All, Format::Json)
+                .starts_with("{\n  \"schema\": \"fdu.cache/1\",\n  \"caches\": [\n    {")
+        );
+        assert!(
+            render_cache_status(&stale[2..3], CacheScope::All, Format::Yaml)
+                .starts_with("schema: fdu.cache/1\ncaches:\n  - path: c.fdu")
+        );
+        assert!(
+            render_cache_status(&stale[2..3], CacheScope::All, Format::Yaml).ends_with(
+                "state: stale\n    stale_reason: other_engine\n    format_version: null"
+            )
+        );
+        assert!(
+            render_cache_status(&leftovers[1..], CacheScope::All, Format::Yaml)
+                .ends_with("state: leftover\n    leftover_kind: orphaned_content")
+        );
+    }
+
+    /// The cache schema is a promise, like the report schema beside it.
+    ///
+    /// Fails loudly when the string moves, so the field rename this constant was added
+    /// for — `recognized` to `state` — cannot happen again without a version to key on.
+    #[test]
+    fn the_cache_schema_constant_is_the_versioning_promise() {
+        assert_eq!(CACHE_SCHEMA, "fdu.cache/1");
+        for format in [Format::Json, Format::Jsonl, Format::Yaml] {
+            let rendered = render_cache_status(&[], crate::CacheScope::All, format);
+            assert!(rendered.contains(CACHE_SCHEMA), "{format:?} carries no schema: {rendered}");
         }
     }
 
@@ -1666,6 +2164,7 @@ mod tests {
                 errors: Vec::new(),
             },
         )
+        .expect("report")
     }
 
     /// Whether a rendered line is a view header rather than a data row.
@@ -1771,7 +2270,8 @@ mod tests {
                 complete: true,
                 errors: Vec::new(),
             },
-        );
+        )
+        .expect("report");
 
         let plain = render(&report, Format::Text, false);
         assert!(plain.contains("C++"), "{plain}");
@@ -1874,7 +2374,8 @@ mod tests {
                 complete: true,
                 errors: Vec::new(),
             },
-        );
+        )
+        .expect("report");
 
         let json = render(&report, Format::Json, false);
         assert!(is_valid_json(&json), "{json}");
@@ -1902,7 +2403,7 @@ mod tests {
     #[test]
     fn machine_output_carries_the_schema_and_provenance() {
         let json = render(&fixture(&[ViewSpec::Summary]), Format::Json, false);
-        assert!(json.contains("\"schema\": \"fdu.report/4\""));
+        assert!(json.contains("\"schema\": \"fdu.report/5\""));
         assert!(json.contains("\"source\": \"cold_scan\""));
         assert!(json.contains("\"complete\": true"));
         // Timestamps render in the same grammar the CLI accepts back as a watermark.
@@ -1914,21 +2415,243 @@ mod tests {
     fn the_schema_constant_is_the_versioning_promise() {
         // Fails loudly when the schema string moves, so a field rename cannot ship
         // without a deliberate version bump and a golden update.
-        assert_eq!(REPORT_SCHEMA, "fdu.report/4");
-        // /4 and /5 add the section-level `bound`, which reports what a view dropped.
-        // Both lines move because a metadata-only section can be bounded too, so the
-        // field is not confined to content reports.
-        assert_eq!(CONTENT_REPORT_SCHEMA, "fdu.report/5");
+        assert_eq!(REPORT_SCHEMA, "fdu.report/5");
+        // /5 and /6 add the envelope's `ignore_rules`, which says whether ignore
+        // classification applied every `.gitignore`. Both lines move because every report
+        // carries the envelope.
+        assert_eq!(CONTENT_REPORT_SCHEMA, "fdu.report/6");
+    }
+
+    /// Every format says whether ignore rules were read and which files were refused, and
+    /// text names the directories and the knob as the requesting surface spells it.
+    #[test]
+    fn every_format_states_the_ignore_rules_a_report_could_apply() {
+        let unobserved = crate::test_support::not_observing_controls();
+        let mut blind = Index::new_with_scope("/root", unobserved);
+        blind
+            .apply(&Observation::new(vec![Op::Upsert {
+                path: PathBuf::from("a.txt"),
+                kind: EntryKind::File,
+                attrs: attrs(1, 1),
+            }]))
+            .expect("apply");
+        let provenance = Provenance {
+            scan_started_at: None,
+            generated_at: UNIX_EPOCH,
+            source: ReportSource::ColdScan,
+            complete: true,
+            errors: Vec::new(),
+        };
+        let query = Query { views: vec![ViewSpec::Summary], ..Query::default() };
+        let blind_report = report(&blind, &query, &provenance).expect("report");
+        assert!(render(&blind_report, Format::Json, false).contains("\"ignore_rules\": null"));
+        assert!(render(&blind_report, Format::Yaml, false).contains("\nignore_rules: null\n"));
+        assert!(blind_report.notes.is_empty());
+
+        let mut observed =
+            Index::new_with_scope("/root", crate::test_support::observing_controls());
+        let mut long_line = vec![b'x'; crate::control::DEFAULT_CONTROL_LINE_LIMIT + 1];
+        long_line.push(b'\n');
+        observed
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("vendor"),
+                    kind: EntryKind::Dir,
+                    attrs: attrs(0, 1),
+                },
+                Op::ControlUpsert {
+                    path: PathBuf::from(".gitignore"),
+                    source: b"*.log\n".to_vec(),
+                },
+                Op::ControlUpsert { path: PathBuf::from("vendor/.gitignore"), source: long_line },
+            ]))
+            .expect("apply");
+        // The platform spells the refused path, so Windows writes a backslash.
+        let refused = Path::new("vendor").join(".gitignore");
+        let refused = refused.to_string_lossy();
+        let json =
+            render(&report(&observed, &query, &provenance).expect("report"), Format::Json, false);
+        let expected = format!(
+            "\"ignore_rules\": {{\"limits\": {{\"budget\": 4194304, \"line_limit\": 16384}}, \
+             \"applied\": 1, \"refused\": 1, \"refusals\": [{{\"path\": {}, \"reason\": \
+             \"line_limit\"}}]}}",
+            quote(&refused)
+        );
+        assert!(json.contains(&expected), "{json}");
+        assert!(json.contains("\"complete\": true"), "a refusal is not an operational partial");
+        let yaml =
+            render(&report(&observed, &query, &provenance).expect("report"), Format::Yaml, false);
+        let expected = format!(
+            "ignore_rules:\n  limits:\n    budget: 4194304\n    line_limit: 16384\n  applied: 1\n  \
+             refused: 1\n  refusals:\n    - path: {}\n      reason: line_limit\n",
+            yaml_scalar(&refused)
+        );
+        assert!(yaml.contains(&expected), "{yaml}");
+
+        let flags = Query { axes: crate::query::AxisNames::FLAGS, ..query.clone() };
+        let note = "note: 1 .gitignore file not applied (1 with a line over the 16 KiB line \
+                    limit), so ignored shares under vendor are not exact; sizes are. To apply \
+                    them, raise --gitignore-line-limit above 16 KiB, or set it to all";
+        let text =
+            render(&report(&observed, &flags, &provenance).expect("report"), Format::Text, false);
+        assert!(text.ends_with(&format!("{note}\n")), "{text}");
+        let fields = report(&observed, &query, &provenance).expect("report");
+        assert_eq!(fields.notes, [note.replace("--gitignore-line-limit", "control_line_limit")]);
+    }
+
+    /// Every row that carries an ignored share says so in every format: text appends it
+    /// only when something is ignored and the selection is not ignored entries alone, and
+    /// machine formats write a zero share when nothing is and `null` when no rule was read.
+    #[test]
+    fn every_format_carries_each_rows_ignored_share() {
+        let build = |scope: ScanScope| {
+            let mut index = Index::new_with_scope("/root", scope);
+            let mut ops = vec![
+                Op::Upsert {
+                    path: PathBuf::from("dist"),
+                    kind: EntryKind::Dir,
+                    attrs: Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("dist/a.gz"),
+                    kind: EntryKind::File,
+                    attrs: attrs(128, 10),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("src"),
+                    kind: EntryKind::Dir,
+                    attrs: Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("src/b.rs"),
+                    kind: EntryKind::File,
+                    attrs: attrs(36, 20),
+                },
+            ];
+            if scope.observes_controls() {
+                ops.insert(
+                    0,
+                    Op::ControlUpsert {
+                        path: PathBuf::from(".gitignore"),
+                        source: b"dist/\n".to_vec(),
+                    },
+                );
+            }
+            index.apply(&Observation::new(ops)).expect("apply");
+            index
+        };
+        let provenance = Provenance {
+            scan_started_at: None,
+            generated_at: UNIX_EPOCH,
+            source: ReportSource::ColdScan,
+            complete: true,
+            errors: Vec::new(),
+        };
+        let views = vec![ViewSpec::Summary, ViewSpec::Tree, ViewSpec::Extensions, ViewSpec::Files];
+        let query = |ignored| Query {
+            views: views.clone(),
+            selection: Selection {
+                ignored,
+                size: SizeMetric::Apparent,
+                limit: Some(Bound::All),
+                ..Selection::default()
+            },
+            ..Query::default()
+        };
+
+        let observed = build(crate::test_support::observing_controls());
+        let text = render(
+            &report(&observed, &query(IgnoredEntries::Include), &provenance).expect("report"),
+            Format::Text,
+            false,
+        );
+        assert_eq!(
+            text,
+            concat!(
+                "SUMMARY\n",
+                "     164 B  2 files, 2 directories (128 B ignored)\n",
+                "\n",
+                "TREE\n",
+                "     164 B  ██████████   100%  . (2 files) (128 B ignored)\n",
+                "     128 B  ████████░░    78%    dist (1 file) (128 B ignored)\n",
+                "      36 B  ██░░░░░░░░    22%    src (1 file)\n",
+                "\n",
+                "EXTENSIONS\n",
+                "     128 B  .gz          1 file (128 B ignored)\n",
+                "      36 B  .rs          1 file\n",
+                "\n",
+                "FILES\n",
+                "dist\n",
+                "dist/a.gz\n",
+                "src\n",
+                "src/b.rs\n",
+            )
+            .replace('/', std::path::MAIN_SEPARATOR_STR)
+        );
+        // A share of ignored directories alone holds no bytes, so text says nothing of it.
+        let dirs_only = IgnoredTally { files: 0, dirs: 1, bytes: 0, allocated: 0 };
+        assert_eq!(
+            ignored_suffix(Some(dirs_only), SizeMetric::Apparent, IgnoredEntries::Include),
+            ""
+        );
+        let only = render(
+            &report(&observed, &query(IgnoredEntries::Only), &provenance).expect("report"),
+            Format::Text,
+            false,
+        );
+        assert!(only.contains("     128 B  1 file, 1 directory\n"), "{only}");
+        assert!(!only.contains("ignored"), "every row is ignored, so none repeats it: {only}");
+
+        let json = render(
+            &report(&observed, &query(IgnoredEntries::Include), &provenance).expect("report"),
+            Format::Json,
+            false,
+        );
+        assert!(is_valid_json(&json), "{json}");
+        for expected in [
+            "\"summary\": {\"files\": 2, \"dirs\": 2, \"bytes\": 164, \"allocated\": 1024, \
+             \"ignored\": {\"files\": 1, \"dirs\": 1, \"bytes\": 128, \"allocated\": 512}, ",
+            "\"name\": \"src\", \"path\": \"src\", \"kind\": \"dir\", \"bytes\": 36, \
+             \"allocated\": 512, \"files\": 1, \"dirs\": 0, \"ignored\": {\"files\": 0, \
+             \"dirs\": 0, \"bytes\": 0, \"allocated\": 0}, ",
+            "{\"extension\": \".gz\", \"files\": 1, \"bytes\": 128, \"allocated\": 512, \
+             \"ignored\": {\"files\": 1, \"bytes\": 128, \"allocated\": 512}}",
+            "\"kind\": \"dir\", \"bytes\": 0, \"allocated\": 0, \"mtime_ns\": 0, \"ignored\": true}",
+        ] {
+            assert!(json.contains(expected), "missing {expected}\nin {json}");
+        }
+        let yaml = render(
+            &report(&observed, &query(IgnoredEntries::Include), &provenance).expect("report"),
+            Format::Yaml,
+            false,
+        );
+        assert!(
+            yaml.contains(
+                "      allocated: 1024\n      ignored:\n        files: 1\n        dirs: 1\n        \
+                 bytes: 128\n        allocated: 512\n      newest_mtime_ns: 20\n"
+            ),
+            "{yaml}"
+        );
+        assert!(yaml.contains("        ignored: true\n"), "{yaml}");
+
+        let blind = build(crate::test_support::not_observing_controls());
+        let blind_report =
+            report(&blind, &query(IgnoredEntries::Include), &provenance).expect("report");
+        assert!(!render(&blind_report, Format::Text, false).contains("ignored"));
+        let json = render(&blind_report, Format::Json, false);
+        assert!(!json.contains("\"ignored\": {"), "never a zero share for an unread rule: {json}");
+        assert!(json.contains("\"ignored\": null"), "{json}");
+        assert!(render(&blind_report, Format::Yaml, false).contains("ignored: null\n"));
     }
 
     #[test]
     fn metric_sections_upgrade_schema_while_metadata_sections_stay_on_v1() {
         let metadata = render(&fixture(&[ViewSpec::Tree]), Format::Json, false);
-        assert!(metadata.contains("\"schema\": \"fdu.report/4\""));
+        assert!(metadata.contains("\"schema\": \"fdu.report/5\""));
         assert!(!metadata.contains("\"analysis\""));
 
         let metrics = render(&fixture(&[ViewSpec::Types]), Format::Json, false);
-        assert!(metrics.contains("\"schema\": \"fdu.report/5\""));
+        assert!(metrics.contains("\"schema\": \"fdu.report/6\""));
         assert!(metrics.contains("\"analysis\": null"));
         assert!(metrics.contains("\"share\": {\"numerator\":"));
     }
@@ -1939,6 +2662,10 @@ mod tests {
     /// record's shape free to change underneath it, which is the failure the promise
     /// exists to prevent. This pins the whole record, so adding, renaming, or reordering
     /// a field fails here and forces a deliberate version bump.
+    ///
+    /// `ignored` was added to `fdu.stream/1` in place rather than by a bump, for the same
+    /// reason `fdu.report/6` took the ignored share in place: 0.1.0 is the first release,
+    /// so no consumer has ever read the shape it extends.
     #[cfg(feature = "watch")]
     #[test]
     fn a_stream_record_is_pinned_field_by_field() {
@@ -1953,6 +2680,7 @@ mod tests {
             bytes: Some(2_048),
             allocated: Some(4_096),
             mtime_ns: Some(1_700_000_000_000_000_000),
+            ignored: Some(false),
             clock: 7,
         };
         // Path separators differ by platform, so the expectation is built the same way
@@ -1960,6 +2688,18 @@ mod tests {
         let path = upsert.path.to_string_lossy().replace('\\', "\\\\");
         assert_eq!(
             render_change(&upsert, Format::Json),
+            format!(
+                "{{\"schema\": \"fdu.stream/1\", \"record\": \"change\", \"op\": \"upsert\", \
+                 \"path\": \"{path}\", \"clock\": 7, \"kind\": \"file\", \"bytes\": 2048, \
+                 \"allocated\": 4096, \"mtime_ns\": 1700000000000000000, \"ignored\": false}}"
+            )
+        );
+
+        // A run that read no ignore rules classifies nothing, and the field is absent
+        // rather than false: the same distinction every report row draws.
+        let unclassified = Change { ignored: None, ..upsert.clone() };
+        assert_eq!(
+            render_change(&unclassified, Format::Json),
             format!(
                 "{{\"schema\": \"fdu.stream/1\", \"record\": \"change\", \"op\": \"upsert\", \
                  \"path\": \"{path}\", \"clock\": 7, \"kind\": \"file\", \"bytes\": 2048, \
@@ -1977,12 +2717,23 @@ mod tests {
             bytes: None,
             allocated: None,
             mtime_ns: None,
+            ignored: None,
             clock: 8,
         };
         assert_eq!(
             render_change(&removed, Format::Json),
             "{\"schema\": \"fdu.stream/1\", \"record\": \"change\", \"op\": \"remove\", \
              \"path\": \"gone.txt\", \"clock\": 8}"
+        );
+
+        // A removal an ignore-rule edit caused is the one that carries a classification:
+        // the entry is still on disk, and the new bit is why it left the selection.
+        let reclassified =
+            Change { path: PathBuf::from("debug.log"), ignored: Some(true), ..removed.clone() };
+        assert_eq!(
+            render_change(&reclassified, Format::Json),
+            "{\"schema\": \"fdu.stream/1\", \"record\": \"change\", \"op\": \"remove\", \
+             \"path\": \"debug.log\", \"clock\": 8, \"ignored\": true}"
         );
 
         // An invalidation says the consumer's view may have gaps. It is the one record
@@ -1994,6 +2745,7 @@ mod tests {
             bytes: None,
             allocated: None,
             mtime_ns: None,
+            ignored: None,
             clock: 9,
         };
         assert_eq!(
@@ -2233,7 +2985,7 @@ mod tests {
                     complete: true,
                     errors: Vec::new(),
                 };
-                let report = crate::query::report(&index, &query, &provenance);
+                let report = crate::query::report(&index, &query, &provenance).expect("report");
                 for format in [Format::Text, Format::Json, Format::Jsonl, Format::Yaml] {
                     let rendered = render(&report, format, false);
                     assert!(!rendered.is_empty(), "{format:?} rendered nothing for a deep tree");
@@ -2299,7 +3051,7 @@ mod tests {
             complete: true,
             errors: Vec::new(),
         };
-        let report = crate::query::report(&index, &query, &provenance);
+        let report = crate::query::report(&index, &query, &provenance).expect("report");
         let rendered = render(&report, Format::Json, false);
 
         let lossy = first.to_string_lossy();
@@ -2323,7 +3075,8 @@ mod tests {
         for hex in [first_hex, second_hex] {
             let row = format!(
                 "{{\"path\": \"{lossy}\", \"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{hex}\"}}, \
-                 \"kind\": \"file\", \"bytes\": 1, \"allocated\": 1, \"mtime_ns\": 0}}"
+                 \"kind\": \"file\", \"bytes\": 1, \"allocated\": 1, \"mtime_ns\": 0, \
+                 \"ignored\": false}}"
             );
             assert!(
                 rendered.contains(&row),
@@ -2366,7 +3119,7 @@ mod tests {
             },
             ..crate::query::Query::default()
         };
-        let tree = crate::query::report(&dirs, &tree_query, &provenance);
+        let tree = crate::query::report(&dirs, &tree_query, &provenance).expect("report");
         let tree_rendered = render(&tree, Format::Json, false);
         assert!(
             tree_rendered.contains(&format!(

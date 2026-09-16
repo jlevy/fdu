@@ -26,7 +26,7 @@ patterns:
 ```console
 $ fdu --cache off --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/4",
+  "schema": "fdu.report/5",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
@@ -35,10 +35,11 @@ $ fdu --cache off --format json --size apparent --depth 0 --limit 0 project
   "freshness": "fresh",
   "complete": true,
   "errors": [],
+  "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 269, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
     }
   ]
 }
@@ -60,7 +61,7 @@ cache absent
 ```console
 $ fdu --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/4",
+  "schema": "fdu.report/5",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
@@ -69,10 +70,11 @@ $ fdu --format json --size apparent --depth 0 --limit 0 project
   "freshness": "fresh",
   "complete": true,
   "errors": [],
+  "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 269, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
     }
   ]
 }
@@ -97,7 +99,7 @@ rewrite is for.
 ```console
 $ fdu --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/4",
+  "schema": "fdu.report/5",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
@@ -106,10 +108,11 @@ $ fdu --format json --size apparent --depth 0 --limit 0 project
   "freshness": "fresh",
   "complete": true,
   "errors": [],
+  "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 269, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
     }
   ]
 }
@@ -131,7 +134,7 @@ fixture expanded
 ```console
 $ fdu --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/4",
+  "schema": "fdu.report/5",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
@@ -140,10 +143,11 @@ $ fdu --format json --size apparent --depth 0 --limit 0 project
   "freshness": "fresh",
   "complete": true,
   "errors": [],
+  "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 288, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 294, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
     }
   ]
 }
@@ -158,7 +162,7 @@ answers with the changed total rather than the one the first run recorded.
 ```console
 $ fdu --cache only --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/4",
+  "schema": "fdu.report/5",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
@@ -167,10 +171,11 @@ $ fdu --cache only --format json --size apparent --depth 0 --limit 0 project
   "freshness": "stale",
   "complete": true,
   "errors": [],
+  "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 288, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 294, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
     }
   ]
 }
@@ -182,7 +187,7 @@ $ fdu --cache only --format json --size apparent --depth 0 --limit 0 project
 ```console
 $ fdu --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/4",
+  "schema": "fdu.report/5",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
@@ -191,10 +196,11 @@ $ fdu --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
   "freshness": "fresh",
   "complete": true,
   "errors": [],
+  "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 76, "allocated": [ALLOCATED], "files": 2, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 82, "allocated": [ALLOCATED], "files": 3, "dirs": 3, "ignored": {"files": 0, "dirs": 1, "bytes": 0, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
     }
   ]
 }
@@ -216,7 +222,7 @@ snapshot corrupted
 ```console
 $ fdu --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/4",
+  "schema": "fdu.report/5",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
@@ -225,10 +231,11 @@ $ fdu --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
   "freshness": "fresh",
   "complete": true,
   "errors": [],
+  "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 76, "allocated": [ALLOCATED], "files": 2, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 82, "allocated": [ALLOCATED], "files": 3, "dirs": 3, "ignored": {"files": 0, "dirs": 1, "bytes": 0, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
     }
   ]
 }
@@ -241,6 +248,91 @@ $ fdu --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 $ node -e "const fs=require('node:fs'); const path=require('node:path'); const dir='.cache/fdu'; const file=fs.readdirSync(dir).find((name) => name.endsWith('.fdu')); if (!file || fs.readFileSync(path.join(dir, file), 'utf8') === 'corrupt') process.exit(1); console.log('snapshot replaced')"
 snapshot replaced
 ? 0
+```
+
+## Reading No .gitignore Is a Separate Scope
+
+A report that turns `.gitignore` off records a scope without classification.
+A cache-only report that also turns it off may answer from a default snapshot, because
+it reads only the sizes a default scan also recorded; it says it read no rules.
+
+```console
+$ fdu --format json --size apparent --depth 0 --limit 0 project
+{
+  "schema": "fdu.report/5",
+  "generator": "fdu 0.1.0",
+  "root": "[SCAN_PATH]",
+  "scan_started_at": "[RFC3339]",
+  "generated_at": "[RFC3339]",
+  "source": "cold_scan",
+  "freshness": "fresh",
+  "complete": true,
+  "errors": [],
+  "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
+  "reports": [
+    {
+      "view": "tree",
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 294, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+    }
+  ]
+}
+? 0
+```
+
+```console
+$ fdu --no-gitignore --cache only --format json --size apparent --depth 0 --limit 0 project
+{
+  "schema": "fdu.report/5",
+  "generator": "fdu 0.1.0",
+  "root": "[SCAN_PATH]",
+  "scan_started_at": "[RFC3339]",
+  "generated_at": "[RFC3339]",
+  "source": "cache_only",
+  "freshness": "stale",
+  "complete": true,
+  "errors": [],
+  "ignore_rules": null,
+  "reports": [
+    {
+      "view": "tree",
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 294, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": null, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+    }
+  ]
+}
+? 0
+```
+
+The reverse cannot work: a snapshot written without the rules has no classification for
+a default request to report, so a cache-only default request refuses it and names the
+way out.
+
+```console
+$ fdu --no-gitignore --format json --size apparent --depth 0 --limit 0 project
+{
+  "schema": "fdu.report/5",
+  "generator": "fdu 0.1.0",
+  "root": "[SCAN_PATH]",
+  "scan_started_at": "[RFC3339]",
+  "generated_at": "[RFC3339]",
+  "source": "cold_scan",
+  "freshness": "fresh",
+  "complete": true,
+  "errors": [],
+  "ignore_rules": null,
+  "reports": [
+    {
+      "view": "tree",
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 294, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": null, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+    }
+  ]
+}
+? 0
+```
+
+```console
+$ fdu --cache only --format json --size apparent --depth 0 --limit 0 project
+fdu: snapshot is not usable: no usable snapshot for this root and scan scope: the cached snapshot has no .gitignore state, because the request that wrote it did not observe it, and this request does; the `only` cache policy never scans, so use `auto`, or turn .gitignore observation off as that request did
+? 1
 ```
 
 <!-- This document follows common-doc-guidelines.md.

@@ -7,9 +7,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.1.0] - YYYY-MM-DD
+## [0.1.0] - 2026-09-16
 
-<!-- Release date: set when v0.1.0 is tagged -->
+<!-- Release date: 2026-09-16 is a placeholder. Set it to the tag date if v0.1.0 is cut
+on a later day.
+-->
 
 The first release. fdu walks a directory tree once and answers, for every directory at
 once, how big it is, how many files it holds, what changed most recently, and what kinds
@@ -42,13 +44,10 @@ The GitHub release text is
   - `fdu --docs` prints the usage guide and `fdu --skill` prints a portable agent skill,
     both without a `PATH` and without scanning.
 - **Machine output.** Every report carries a versioned `schema`: a metadata-only report
-  uses one report schema, a report that ran content analysis or includes a metric
-  summary (`types`, `families`, `languages`, `documents`) uses the next, and a `--watch`
-  stream uses `fdu.stream/1`.
-  <!-- PR A / PR B: confirm the final names.
-  On main they are fdu.report/4 and fdu.report/5; PR A's branch moves them to
-  fdu.report/5 and fdu.report/6, and PR B may move them again.
-  -->
+  uses `fdu.report/5`, a report that ran content analysis or includes a metric summary
+  (`types`, `families`, `languages`, `documents`) uses `fdu.report/6`, a `--watch`
+  stream uses `fdu.stream/1`, and `--cache-status` carries `fdu.cache/1`, its own
+  document identity rather than a report schema.
   A field change bumps the schema version.
   Completeness (`complete`, `errors`) is separate from what a view chose not to render,
   and a path that is not valid Unicode keeps a lossless, platform-tagged raw identity.
@@ -79,64 +78,104 @@ The GitHub release text is
     snapshots without scanning.
   - A snapshot serves only the scan scope that wrote it, and a corrupt, truncated, or
     unrecognized file is treated as absent.
-    `--cache-clear` never deletes a file it does not recognize, and Unix snapshots are
-    created owner-only (`0600`).
-  - An unfiltered `--view summary` retains no index and writes no snapshot.
-    <!-- PR B: confirm. With .gitignore observed by default, the summary tier falls
-    closed to the full index (fdu-elnn Q7); say what it retains and saves.
-    -->
+    Unix snapshots are created owner-only (`0600`).
+  - Cache status reports every file in the cache directory with a `state`: `current`,
+    `stale` for a snapshot another fdu version or format wrote or a header this build
+    cannot read, `leftover` for one of fdu’s own files left by an interrupted write,
+    `unrecognized` for a file that is not fdu’s, and `absent` for a root with no
+    snapshot. A stale row names why (`older_format`, `newer_format`, `other_engine`,
+    `unreadable`) and a leftover row what it is.
+  - `--cache-clear` and `--cache-clear=all` remove stale snapshots as well as current
+    ones, so an upgrade’s invalidated snapshots are reclaimed rather than deleted by
+    hand, and `--cache-clear=all` also reclaims fdu’s own leftovers: a staging file a
+    killed writer never renamed, once it is older than the age its reaper uses, and a
+    content sidecar whose snapshot is gone.
+    A file is removed only if its name and its magic both say it is fdu’s; a symbolic
+    link or a directory is never followed or removed, and an unrecognized file is always
+    left in place and reported.
+  - An unfiltered `--no-gitignore --view summary` is the one composition that retains no
+    index and writes no snapshot.
+    Reading `.gitignore`, which is the default, needs the index to classify entries, so
+    an unfiltered `--view summary` retains it and saves a snapshot like any other
+    report.
 - **Watch.** `fdu --watch` repeats the same query as the tree changes.
   Aggregate views repaint at most every `--interval` (2 seconds by default), and
   `--view files --format jsonl` emits one `fdu.stream/1` record per change.
   Events are verified by stat, and a backend overflow or rescan request becomes a
   reconcile of the affected subtree rather than a dropped event.
+  An upsert carries `ignored`, and so does a removal a rule edit caused; an ordinary
+  removal, an invalidation, and every record of a run that read no rules omit it.
   A watch is metadata-only and refuses `--analyze`.
-- **`.gitignore` roll-ups.** An index that observes `.gitignore` files keeps ignored and
-  unignored roll-ups for every directory beside the totals.
+- **`.gitignore` roll-ups**, read by default on every surface.
+  An index keeps ignored and unignored roll-ups for every directory beside the totals,
+  and every report says how much of each size the tree’s own rules ignore.
   - Every `.gitignore` inside the scanned root governs its own directory and everything
     below it, and deeper files take precedence.
     Negation, anchored and directory-only patterns, `**`, and git’s bracket expressions
     follow git, pinned against verdicts recorded from `git check-ignore`. Matching is
     byte-exact and case-sensitive on every platform.
   - A watch or refresh that sees a `.gitignore` change re-reads its rules.
-  - An index that did not observe control state says so: `Index::is_ignored`,
-    `controls`, and the partition accessors return `Error::ControlStateNotObserved`
-    rather than calling every entry unignored.
-  - `ScanConfig::read_controls` in Rust and `ScanOptions.read_controls` in Python turn
-    observation off for one request.
-    <!-- PR A: draft from the fdu-1onj, fdu-okne, and fdu-szkg decisions and PR A's branch; confirm against the merged PR. -->
-  - Identical `.gitignore` contents are stored and charged once.
-  - Rules are retained up to a budget, 4 MiB by default.
-    A `.gitignore` past the budget, or with a line longer than 16 KiB, is refused: its
-    rules do not apply, every size stays exact, and the result stays complete with exit
-    status 0. The report names the directories whose rules were refused, in its
-    `ignore_rules` field and in a text note that names the knob.
-  - `--gitignore-budget SIZE|all` on the command line, and `control_budget` on Rust
-    `ScanConfig` and `OpenOptions` and Python `ScanOptions` and `OpenedOptions`, raise
-    the budget or lift both bounds.
-    The budget is part of the snapshot scope.
-    <!-- /PR A -->
-    <!-- PR B: draft from the fdu-elnn and fdu-5ryb decisions; confirm against the merged PR. -->
-  - Every surface observes `.gitignore` by default: `fdu PATH`, `fdu --watch`,
-    `fdu.report`, `fdu.open`, `fdu.scan`, `fdu_core::open`, and opened roots.
-    `--no-gitignore` turns it off on the command line and changes the cache scope.
-  - Text summary, tree, and extension rows say how much of each size is ignored, such as
-    `(340 MiB ignored)`, and say nothing when none is.
-    In machine formats those rows and file rows carry the split, as a zero when nothing
-    is ignored and `null` when `.gitignore` was not read.
-  - `--exclude-ignored` and `--only-ignored` select entries by ignore state, and sorting
-    and `--min-size` use the size a row displays.
-    Either filter with `--no-gitignore` is a usage error.
+  - `fdu PATH`, `fdu --watch`, `fdu.report`, `fdu.open`, `fdu.scan`, `fdu_core::open`,
+    `prepare_report`, and opened roots all observe control state.
+    `--no-gitignore` on the command line, and `read_controls` off on Rust `ScanConfig`
+    or Python `ScanOptions`, reads no rules for one request and is a snapshot scope of
+    its own.
+  - An index that did not observe control state says so rather than guessing:
+    `Index::is_ignored`, `controls`, and the partition accessors return
+    `Error::ControlStateNotObserved` instead of calling every entry unignored, and a row
+    from such a run carries `null` rather than “nothing ignored”.
+  - Text summary, tree, and extension rows end with the ignored part of their size, as
+    `(128 B ignored)`, and leave it off a row with nothing ignored.
+    The performance line counts the rule files read, as `ignore rules 1 file`, or says
+    `no ignore rules`.
+  - In machine formats summary, tree, and extension rows carry an `ignored` object
+    (`files`, `dirs`, `bytes`, `allocated`) and file rows an `ignored` flag, `null` in
+    both where no rule was read.
+  - `--exclude-ignored` and `--only-ignored`, `Selection::ignored` in Rust and
+    `Selection(ignored=...)` in Python, report one side; sizes, ordering, and
+    `--min-size` follow the entries shown.
+    Either filter over a run that read no rules is refused, not answered with an empty
+    report: a usage error on the command line, `InvalidArgumentError` in Python, and
+    `Error::ControlStateNotObserved` from `prepare_report` and a watch session.
+  - A `--watch` stream maintains the entry set its selection names, so a rule edit that
+    moves an entry into `--exclude-ignored` or `--only-ignored` streams the upsert that
+    draws it and one that moves it out streams the removal, even though nothing about
+    the file changed on disk.
   - A `.gitignore` that cannot be read makes the result partial, exit status 2 unless
     `--allow-partial`.
-    <!-- /PR B -->
+  - **Two independent limits bound the rules an index retains**, each a size or
+    unbounded, and each liftable without moving the other.
+    `--gitignore-budget SIZE|all` bounds the retained control state, 4 MiB by default;
+    `--gitignore-line-limit SIZE|all` bounds one pattern, 16 KiB by default.
+    They are `ControlLimits { budget, line_limit }` on `ScanConfig::control_limits` and
+    `OpenOptions::control_limits`, and `control_budget` and `control_line_limit` on
+    Python `ScanOptions` and `OpenedOptions`. Both are part of the snapshot scope.
+  - A `.gitignore` past either limit is refused rather than ending the scan: its rules
+    do not apply, every size stays exact, and the result stays complete with exit status
+    0\. An opened root completes the directory and keeps watching, and a watch keeps
+    applying events. Identical `.gitignore` contents are stored and charged once, so a
+    tree of package checkouts spends a fraction of the budget it otherwise would.
+  - A refusal is reported, not silent.
+    Reports carry `ignore_rules` in every machine format: `null` when the run read no
+    rules at all, otherwise `limits` (`budget` and `line_limit`, each bytes or `null`),
+    the `applied` and `refused` counts, and `refusals`, each with a `path` and a
+    `reason` naming the limit that fired.
+    A text note names the refused files’ directories and the flag that lifts each limit
+    that fired. `Index::control_coverage` and `ReadDiagnostics::controls` carry the same,
+    Python mirrors both, and `EffectiveChange::ControlRefusalUpdated` reports a refusal
+    recorded or lifted.
 - **Python package.** `import fdu` gives typed, immutable options, reports, roll-ups,
   provenance, cache values, and change feeds.
   - `fdu.report` answers one query while retaining the least state it needs; `fdu.open`
     and `fdu.scan` return an `Index` with `total`, `rollup`, `children`, `provenance`,
     `report`, `refresh`, `since`, and `watch`.
-  - `Report.as_dict()` returns the command line’s JSON. `cache_path`, `cache_status`,
-    `list_caches`, `clear_cache`, and `clear_all_caches` manage snapshots.
+  - `Report.as_dict()` returns the command line’s JSON, rows carry `ignored` and an
+    `IgnoredTally`, and `Status.ignore_rules` reports the limits, what was applied, and
+    what was refused.
+  - `cache_path`, `cache_status`, `list_caches`, `clear_cache`, and `clear_all_caches`
+    manage snapshots. A `CacheStatus` carries `state`, with `stale_reason`,
+    `format_version`, and `leftover_kind` where they apply, and a clear returns a
+    `ClearSummary` naming what it removed and what it left.
   - Native calls are bulk, and open, scan, and refresh release the GIL. A failure that
     stops an operation raises an `FduError` subclass, and one that makes a scan partial
     is reported on `Status`.
@@ -176,26 +215,26 @@ The GitHub release text is
 
 This applies only to anyone who ran fdu built from a development checkout.
 
-- **Each cached tree scans cold once.** A snapshot written by a development build from
-  before the release does not serve 0.1.0: the snapshot format changed, and so did the
-  type-rule and ignore-rule fingerprints that scope a snapshot.
-  The first run on each previously cached tree scans cold and replaces the snapshot when
-  that run saves one.
-  <!-- PR A: the snapshot format moves to version 4. Confirm on the release candidate
-  that a snapshot written by a pre-release build is refused rather than served
-  (fdu-apbl). -->
-- **fdu does not remove old snapshots.** <!-- PR A, true once the format bump lands -->
-  `--cache-clear` and `--cache-clear=all` delete only snapshots this build recognizes,
-  so a snapshot in an earlier format stays until a run on the same root replaces it.
-  `fdu --cache-status=all --format json` lists such files with `"recognized": false`;
-  delete them from the cache directory by hand to reclaim the space.
+- **Each cached tree scans cold once.** No snapshot written by an earlier build serves
+  0.1.0. A snapshot is keyed on an engine fingerprint that mixes the crate version with
+  the snapshot format, which is now version 4, and on the type-rule and ignore-rule
+  fingerprints that scope it; all three moved, and the version alone moves at every
+  release. The first run on each previously cached tree scans cold and replaces the
+  snapshot when that run saves one.
+- **`fdu --cache-clear=all` reclaims the rest.** A root that is never scanned again
+  keeps a file this build cannot read, and clearing now takes it: `--cache-clear` and
+  `--cache-clear=all` remove stale snapshots as well as current ones.
+  `fdu --cache-status=all` lists each one as `stale` with the reason first, so you can
+  see what a clear would take before running it.
+  Files that are not fdu’s are never removed, and are reported as left in place.
 - **The `gitignore` build feature is gone.** A dependency declaring
   `features = ["gitignore"]` fails to resolve; remove it.
   `fdu`’s default build features are `["watch"]`.
 - **Renamed and removed interfaces:**
   - `--view all` is `--view full`.
-  - The report schema versions moved.
-    <!-- PR A / PR B: name the final versions -->
+  - The report schemas are `fdu.report/5` and `fdu.report/6`; a development build
+    emitted lower numbers.
+    Cache status is no longer a report schema at all: it carries `fdu.cache/1`.
   - `journal_capacity` on Rust `OpenOptions` and Python `OpenedOptions` is
     `journal_capacity_bytes`, a byte budget; a value below 64 KiB is refused.
   - `Index::is_ignored`, `controls`, `partition_total`, `partition_rollup`, and
@@ -207,37 +246,69 @@ This applies only to anyone who ran fdu built from a development checkout.
   - `EntrySelection` refuses a terminal suffix or ancestor name that can never match,
     with `Error::InvalidValue`. Opened-root selection globs match portable paths, so a
     native spelling such as `100%.txt` for `100%25.txt` matches nothing there.
-  - <!-- PR A --> `Error::ControlSourceLimit` and `Error::ControlPatternLimit` are
-    removed, `MAX_CONTROL_TABLE_BYTES` and `MAX_CONTROL_PATTERN_BYTES` are
-    `DEFAULT_CONTROL_BUDGET` and `CONTROL_LINE_GUARD_BYTES`, and `ControlTable::upsert`
-    returns a `ControlAdmission`.
-  - <!-- PR B --> The command line and `fdu.report` read `.gitignore` by default; pass
+  - `Error::ControlSourceLimit` and `Error::ControlPatternLimit` are removed, since a
+    control file past a limit is refused rather than fatal.
+    `MAX_CONTROL_TABLE_BYTES` and `MAX_CONTROL_PATTERN_BYTES` are
+    `DEFAULT_CONTROL_BUDGET` and `DEFAULT_CONTROL_LINE_LIMIT`, `ControlTable::upsert`
+    returns a `ControlAdmission`, and saving an index whose table and scope claim
+    different limits is refused with `Error::ControlLimitsOutsideScope`.
+  - The command line and `fdu.report` read `.gitignore` by default; pass
     `--no-gitignore` or `read_controls=False` to scan without it.
+    `fdu_core::query::report` returns `Result<Report>`, `EntrySelection::admits` reads
+    the ignore bit from the candidate rather than a second argument, and rows and
+    changes gain `ignored`.
+  - Cache status rows carry `state` instead of `recognized`, with `stale_reason`,
+    `format_version`, `leftover_kind`, and `content_bytes` where they apply.
+    In Rust the `CacheStatus` field `snapshot` is replaced by `state: CacheState` and a
+    `snapshot()` accessor, `is_recognized` by `is_fdu_snapshot`, `render_cache_status`
+    takes a `CacheScope`, and `clear_all_caches` returns a `ClearSummary` rather than a
+    count; Python mirrors all of it.
 
 ### Known limitations
 
-- **Memory.** Views other than an unfiltered summary retain the whole index, so peak
-  memory on a large tree can exceed that of a tool that builds a throwaway tree, such as
-  dust.
+- **Memory.** Every report but an unfiltered `--no-gitignore --view summary` retains the
+  whole index, so peak memory on a large tree exceeds that of a tool that builds a
+  throwaway tree, such as dust.
+  Reading `.gitignore` is what costs the default summary its aggregate-only plan: it
+  needs the index to classify entries.
+  On one 328k-file checkout, three runs of the same default `--view summary` command
+  reached 68, 101 and 128 MiB of peak RSS, against about 13 MiB for the aggregate-only
+  plan. Quote it as that range rather than a figure: what the index costs varies run to
+  run. `--no-gitignore --view summary` keeps the 13 MiB tier.
 - **Cache retention.** Nothing prunes snapshots of roots that are never scanned again,
   or bounds the cache directory’s size.
-- **Cache scope.** <!-- PR B, confirm --> `fdu PATH` and `fdu --no-gitignore PATH` keep
-  snapshots of different scope at one path, so alternating them scans cold each time.
+  `--cache-clear` takes a root or the whole directory, so there is no way to clear only
+  the stale snapshots an upgrade left; and because a snapshot in a *newer* format is
+  stale to an older build in exactly the way an older one is, running an older build’s
+  `--cache-clear=all` removes a newer build’s snapshots.
+  Status names every file and its state before anything is removed.
+- **Cache scope.** `fdu PATH` and `fdu --no-gitignore PATH` keep snapshots of different
+  scope at one path, so alternating them scans cold each time.
+  Changing either `.gitignore` limit does the same.
 - **Content analysis** is one-shot: `--watch` is metadata-only, and a refresh reanalyzes
   after reconciling. SLOC covers 15 languages, with no embedded-language or syntax-tree
   metrics. Sidecars and coverage are scoped to the analyzer set, so a request for
   analyzers the stored set lacks reads the files again.
 - **`.gitignore` fidelity.** `.git/info/exclude`, `core.excludesFile`, and `.gitignore`
   files above the scanned root are not read, and a nested repository is not a boundary.
-  A `.gitignore` inside an ignored directory is still read, which git skips.
   Three unusual patterns match differently from git: `a/\/b`, `a//b`, and `***` between
   separators.
-- **Ignored shares** <!-- PR B, confirm --> appear in summary, tree, and extension rows
-  only; `types`, `families`, `languages`, and `documents` rows do not show them, though
-  the ignore filters apply there.
+- **`.gitignore` budget.** A `.gitignore` inside a directory an ancestor’s rules already
+  ignore is still read and charged against the budget, which git never does.
+  Classification stays right, because an ignored parent settles its descendants, but a
+  tree whose ignored directories hold most of its rule files can reach the 4 MiB default
+  and see refusals for rules that could not have changed a verdict.
+  `--gitignore-budget` lifts it.
+- **Ignored shares** appear in summary, tree, extension, and file rows only; `types`,
+  `families`, `languages`, and `documents` rows do not carry one yet, though
+  `--exclude-ignored` and `--only-ignored` do filter those views.
 - **Watch backends.** A watch uses the platform’s native event backend on every
   filesystem, with no polling fallback for network filesystems that do not deliver
   events.
+- **A watched row’s ignored bit.** Under `--exclude-ignored` or `--only-ignored` a
+  stream keeps its entry set exact across rule edits.
+  Under the default selection it keeps membership live but does not restate a row’s
+  `ignored` bit after a rule edit, so re-read a listing when the bit itself matters.
 - **Opened roots.** A `Tree` page can exceed its `max_work` by the width of one
   directory level.
 - **Roll-up metrics** are a fixed set; there is no interface for custom per-directory

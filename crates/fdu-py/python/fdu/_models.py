@@ -8,7 +8,7 @@ typed values; callers never need to know the private extension's wire shape.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -140,6 +140,46 @@ class CacheScope(StrEnum):
     ALL = "all"
 
 
+class CacheState(StrEnum):
+    """What a path in the snapshot cache holds.
+
+    `STALE` is one of fdu's snapshots that this build cannot serve -- an older or newer
+    format, another engine, or a header this build cannot read -- and clearing removes it
+    like a `CURRENT` one. `LEFTOVER` is a file fdu wrote that is not a snapshot in place,
+    which `clear_all_caches` reclaims under the rules on `LeftoverKind`. `UNRECOGNIZED` is
+    anything fdu cannot identify as its own, and clearing never removes it. `ABSENT` means
+    nothing is there, which only a status for one root can report.
+    """
+
+    CURRENT = "current"
+    STALE = "stale"
+    LEFTOVER = "leftover"
+    UNRECOGNIZED = "unrecognized"
+    ABSENT = "absent"
+
+
+class StaleReason(StrEnum):
+    """Why a snapshot fdu wrote cannot be served by this build."""
+
+    OLDER_FORMAT = "older_format"
+    NEWER_FORMAT = "newer_format"
+    OTHER_ENGINE = "other_engine"
+    UNREADABLE = "unreadable"
+
+
+class LeftoverKind(StrEnum):
+    """Which of fdu's own files a `CacheState.LEFTOVER` is.
+
+    `STAGING_TEMPORARY` is the file a killed writer left beside its target, never renamed
+    into place; it is reclaimed only once it is too old to belong to a running writer.
+    `ORPHANED_CONTENT` is a content sidecar whose snapshot is gone; it is reclaimed only
+    while no snapshot claims it.
+    """
+
+    STAGING_TEMPORARY = "staging_temporary"
+    ORPHANED_CONTENT = "orphaned_content"
+
+
 class Format(StrEnum):
     """How a report is serialized.
 
@@ -169,6 +209,107 @@ class Bound(StrEnum):
     ALL = "all"
 
 
+class IgnoredEntries(StrEnum):
+    """Which entries a report selects by their ``.gitignore`` classification.
+
+    A selection rather than a scan setting: every entry is classified, so choosing a side
+    never rescans. The command line spells ``EXCLUDE`` and ``ONLY`` as
+    ``--exclude-ignored`` and ``--only-ignored``. Anything but ``INCLUDE`` needs a scan
+    that reads ``.gitignore``, and is refused under ``ScanOptions(read_controls=False)``.
+    """
+
+    #: Every entry; rows carry their ignored share.
+    INCLUDE = "include"
+    #: Only entries no ``.gitignore`` rule ignores.
+    EXCLUDE = "exclude"
+    #: Only entries a ``.gitignore`` rule ignores.
+    ONLY = "only"
+
+
+class ControlRefusalReason(StrEnum):
+    """Which of the :class:`ControlLimits` refused a ``.gitignore`` instead of applying it.
+
+    Each value is also the name of the limit that fired.
+    """
+
+    #: Retaining it would have taken the index past its budget.
+    BUDGET = "budget"
+    #: One of its lines is longer than the line limit.
+    LINE_LIMIT = "line_limit"
+
+
+@dataclass(frozen=True, slots=True)
+class RefusedControl:
+    """One ``.gitignore`` whose rules an index refused, relative to the root."""
+
+    path: Path
+    reason: ControlRefusalReason
+
+
+@dataclass(frozen=True, slots=True)
+class ControlLimits:
+    """The two independent bounds an index applied ``.gitignore`` files under.
+
+    The budget bounds how much control state the whole index retains; the line limit bounds
+    what one pattern costs to match. Each is a byte count, or ``None`` when unbounded.
+    """
+
+    budget: int | None
+    line_limit: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class ControlObservation:
+    """The ``.gitignore`` files an index applied and refused.
+
+    Sizes and counts never depend on this. Below a refused file the ignored and unignored
+    split is not exact in either direction, because the file may have held negations.
+    """
+
+    limits: ControlLimits
+    applied: int
+    #: Counted exactly, even when ``refusals`` is truncated.
+    refused: int
+    #: The first refused files in path order; shorter than ``refused`` when truncated.
+    refusals: tuple[RefusedControl, ...] = ()
+
+    @property
+    def is_complete(self) -> bool:
+        return self.refused == 0
+
+    @property
+    def lists_every_refusal(self) -> bool:
+        return len(self.refusals) == self.refused
+
+
+def _limit(value: object) -> int | None:
+    return None if value is None else int(cast(int, value))
+
+
+def _check_control_limits(budget: object, line_limit: object) -> None:
+    """Reject a negative control limit before it crosses the native boundary."""
+
+    for name, value in (("control_budget", budget), ("control_line_limit", line_limit)):
+        if isinstance(value, int) and value < 0:
+            raise ValueError(f"{name} must be non-negative or Bound.ALL")
+
+
+def control_observation_from_dict(value: Mapping[str, Any]) -> ControlObservation:
+    raw_limits = value["limits"]
+    limits = ControlLimits(
+        budget=_limit(raw_limits["budget"]), line_limit=_limit(raw_limits["line_limit"])
+    )
+    return ControlObservation(
+        limits=limits,
+        applied=int(value["applied"]),
+        refused=int(value["refused"]),
+        refusals=tuple(
+            RefusedControl(path=Path(item["path"]), reason=ControlRefusalReason(item["reason"]))
+            for item in value["refusals"]
+        ),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ScanOptions:
     """Filesystem scope for an initial scan and later refreshes."""
@@ -176,17 +317,29 @@ class ScanOptions:
     max_depth: int | None = None
     one_filesystem: bool = False
     #: Observe ``.gitignore`` control state, as the engine's ``ScanConfig.read_controls``.
-    #: On by default, so an index from :func:`fdu.open` or :func:`fdu.scan`, and a watch
-    #: over it, keep the exact control state. Off, they read no control file and cannot fail
-    #: on a control-state bound, and :func:`fdu.open` shares one snapshot scope with
-    #: :func:`fdu.report`.
-    #: :func:`fdu.report` never observes control state and ignores this field, as the
-    #: engine's report planner does.
+    #: On by default for :func:`fdu.open`, :func:`fdu.scan`, :func:`fdu.report`, and a
+    #: watch, so an index keeps the exact control state and every report row carries its
+    #: ignored share. Off, no control file is read, rows carry ``ignored=None`` rather than
+    #: a zero share, a selection by ``IgnoredEntries`` is refused, and the snapshot is of a
+    #: separate scope. The command line spells it ``--no-gitignore``.
     read_controls: bool = True
+    #: Bytes of retained ``.gitignore`` charge before further files are refused, as the
+    #: engine's ``ControlLimits.budget``: an int, a size such as ``"16MiB"``, ``Bound.ALL``
+    #: for no bound, which also reads every ``.gitignore`` whole however large, or ``None``
+    #: for the default of 4 MiB. It never changes the line limit. A refused file ends
+    #: nothing; its report's ``status.ignore_rules`` names it. Part of the snapshot scope,
+    #: so a different budget scans cold once.
+    control_budget: int | Bound | str | None = None
+    #: Longest ``.gitignore`` line applied before its file is refused, as the engine's
+    #: ``ControlLimits.line_limit``: an int, a size such as ``"64KiB"``, ``Bound.ALL`` for no
+    #: bound, or ``None`` for the default of 16 KiB. It never changes the budget. Part of the
+    #: snapshot scope, like ``control_budget``.
+    control_line_limit: int | Bound | str | None = None
 
     def __post_init__(self) -> None:
         if self.max_depth is not None and self.max_depth < 0:
             raise ValueError("max_depth must be non-negative")
+        _check_control_limits(self.control_budget, self.control_line_limit)
 
 
 @dataclass(frozen=True, slots=True)
@@ -220,6 +373,9 @@ class Selection:
     sort: SortKey | None = None
     reverse: bool = False
     size: SizeMetric = SizeMetric.ALLOCATED
+    #: Entries to consider by ``.gitignore`` classification. Sizes, ordering, and
+    #: ``min_size`` follow the entries selected.
+    ignored: IgnoredEntries = IgnoredEntries.INCLUDE
 
     def __post_init__(self) -> None:
         # A bare string is iterable, so without this guard `include="*.rs"` would run
@@ -296,6 +452,10 @@ class Status:
     freshness: Freshness
     source: ReportSource
     errors: tuple[OperationError, ...] = ()
+    #: Which ``.gitignore`` files apply, or ``None`` when none was read. A refused file
+    #: leaves ``complete`` true and every size exact; only the ignored and unignored split
+    #: below it is not.
+    ignore_rules: ControlObservation | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -341,12 +501,31 @@ class Child:
 
 
 @dataclass(frozen=True, slots=True)
+class IgnoredTally:
+    """The part of a row's tallies that ``.gitignore`` rules ignore.
+
+    An entry is ignored when a rule matches it or any directory above it. Counted over the
+    selected entries, like the row itself. Below a ``.gitignore`` the control budget
+    refused (``Status.ignore_rules``) the split is not exact in either direction; the
+    sizes it divides are.
+    """
+
+    files: int
+    dirs: int
+    bytes: int
+    allocated: int
+
+
+@dataclass(frozen=True, slots=True)
 class SummaryRow:
     files: int
     dirs: int
     bytes: int
     allocated: int
     newest_mtime_ns: int | None
+    #: The ignored share, zero when nothing is ignored, or ``None`` when no ``.gitignore``
+    #: was read.
+    ignored: IgnoredTally | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -358,6 +537,9 @@ class ExtensionRow:
     files: int
     bytes: int
     allocated: int
+    #: The ignored share of this extension's files, or ``None`` when no ``.gitignore`` was
+    #: read.
+    ignored: ExtensionTally | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -367,6 +549,8 @@ class FileRow:
     bytes: int
     allocated: int
     mtime_ns: int
+    #: Whether ``.gitignore`` rules ignore this entry, or ``None`` when none was read.
+    ignored: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -381,6 +565,8 @@ class TreeNode:
     newest_mtime_ns: int | None
     truncated: bool
     children: tuple[TreeNode, ...]
+    #: The ignored share of this subtree, or ``None`` when no ``.gitignore`` was read.
+    ignored: IgnoredTally | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -584,6 +770,8 @@ class Change:
     bytes: int | None = None
     allocated: int | None = None
     mtime_ns: int | None = None
+    #: Whether ignore rules ignore the entry, or ``None`` when the run read none.
+    ignored: bool | None = None
     reason: str | None = None
 
     def render(self, format: Format = Format.JSONL) -> str:
@@ -611,6 +799,7 @@ class Change:
                 bytes=self.bytes,
                 allocated=self.allocated,
                 mtime_ns=self.mtime_ns,
+                ignored=self.ignored,
                 format=str(format),
             ),
         )
@@ -625,14 +814,37 @@ class ChangeSet:
 
 @dataclass(frozen=True, slots=True)
 class CacheStatus:
+    """One file in the snapshot cache.
+
+    `root`, `entries`, `max_depth`, and `one_filesystem` come from the header of a `CURRENT`
+    snapshot and are `None` otherwise; `stale_reason` is set only for a `STALE` one,
+    `format_version` only when the version is the reason, and `leftover_kind` only for a
+    `LEFTOVER` one.
+    """
+
     path: Path
     bytes: int
     content_bytes: int | None
-    recognized: bool
+    state: CacheState
+    stale_reason: StaleReason | None
+    format_version: int | None
+    leftover_kind: LeftoverKind | None
     root: Path | None
     entries: int | None
     max_depth: int | None
     one_filesystem: bool | None
+
+
+@dataclass(frozen=True, slots=True)
+class ClearSummary:
+    """What one `clear_all_caches` removed.
+
+    Two counts rather than one total: snapshots someone could have used, and files fdu
+    itself left behind. Reporting them as one number would overstate what was cleared.
+    """
+
+    snapshots: int
+    leftovers: int
 
 
 def _datetime(value: object) -> datetime | None:
@@ -662,12 +874,21 @@ def _operation_error(value: object) -> OperationError:
     )
 
 
+def _ignore_rules(value: object) -> ControlObservation | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TypeError("ignore_rules must be an object or null")
+    return control_observation_from_dict(cast(dict[str, Any], value))
+
+
 def status_from_dict(value: dict[str, Any]) -> Status:
     return Status(
         complete=bool(value["complete"]),
         freshness=Freshness(str(value["freshness"])),
         source=ReportSource(str(value["source"])),
         errors=tuple(_operation_error(item) for item in value.get("errors", [])),
+        ignore_rules=_ignore_rules(value["ignore_rules"]),
     )
 
 
@@ -726,6 +947,39 @@ def _metric_row(value: dict[str, Any]) -> MetricRow:
     )
 
 
+def _ignored_tally(value: object) -> IgnoredTally | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TypeError("an ignored share must be an object or null")
+    share = cast(dict[str, Any], value)
+    return IgnoredTally(
+        files=int(share["files"]),
+        dirs=int(share["dirs"]),
+        bytes=int(share["bytes"]),
+        allocated=int(share["allocated"]),
+    )
+
+
+def _ignored_files(value: object) -> ExtensionTally | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TypeError("an ignored share must be an object or null")
+    share = cast(dict[str, Any], value)
+    return ExtensionTally(
+        files=int(share["files"]), bytes=int(share["bytes"]), allocated=int(share["allocated"])
+    )
+
+
+def _ignored_flag(value: object) -> bool | None:
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise TypeError("a file row's ignored flag must be a boolean or null")
+    return value
+
+
 def _tree(value: dict[str, Any]) -> TreeNode:
     return TreeNode(
         name=str(value["name"]),
@@ -740,6 +994,7 @@ def _tree(value: dict[str, Any]) -> TreeNode:
         ),
         truncated=bool(value["truncated"]),
         children=tuple(_tree(child) for child in value["children"]),
+        ignored=_ignored_tally(value["ignored"]),
     )
 
 
@@ -775,13 +1030,42 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
             row = raw["summary"]
             if not isinstance(row, dict):
                 raise TypeError("summary section must be an object")
-            sections.append(SummarySection(view, SummaryRow(**row)))
+            sections.append(
+                SummarySection(
+                    view,
+                    SummaryRow(
+                        files=int(row["files"]),
+                        dirs=int(row["dirs"]),
+                        bytes=int(row["bytes"]),
+                        allocated=int(row["allocated"]),
+                        newest_mtime_ns=(
+                            int(row["newest_mtime_ns"])
+                            if row["newest_mtime_ns"] is not None
+                            else None
+                        ),
+                        ignored=_ignored_tally(row["ignored"]),
+                    ),
+                )
+            )
         elif view is View.EXTENSIONS:
             rows = raw["extensions"]
             if not isinstance(rows, list):
                 raise TypeError("extensions section must be a list")
             sections.append(
-                ExtensionsSection(view, tuple(ExtensionRow(**row) for row in rows), _bound(raw))
+                ExtensionsSection(
+                    view,
+                    tuple(
+                        ExtensionRow(
+                            extension=str(row["extension"]),
+                            files=int(row["files"]),
+                            bytes=int(row["bytes"]),
+                            allocated=int(row["allocated"]),
+                            ignored=_ignored_files(row["ignored"]),
+                        )
+                        for row in rows
+                    ),
+                    _bound(raw),
+                )
             )
         elif view in (View.FILES, View.LARGEST, View.RECENT):
             rows = raw["files"]
@@ -797,6 +1081,7 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                             bytes=int(row["bytes"]),
                             allocated=int(row["allocated"]),
                             mtime_ns=int(row["mtime_ns"]),
+                            ignored=_ignored_flag(row["ignored"]),
                         )
                         for row in rows
                     ),
@@ -836,6 +1121,7 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
         freshness=Freshness(str(wire["freshness"])),
         source=ReportSource(str(wire["source"])),
         errors=tuple(_operation_error(item) for item in raw_errors),
+        ignore_rules=_ignore_rules(wire["ignore_rules"]),
     )
     raw_analysis = wire.get("analysis")
     analysis = None
