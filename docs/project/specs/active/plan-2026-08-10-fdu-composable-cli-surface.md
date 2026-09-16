@@ -812,16 +812,20 @@ shared process boundary, as today.
 
 ### Schemas and Compatibility
 
-- The report schema supersedes `fdu.tree/2`. This plan introduced it as `fdu.report/1`
-  and explicitly authorized the schema replacement the CLI UX plan forbade; the golden
-  fixture and schema-bump test moved with it.
-  It is now `fdu.report/5`, or `fdu.report/6` when a metric summary or content analysis
-  is present, and its top level carries `schema`, `generator`, `root` (with `root_raw`
-  when the root is not UTF-8), `scan_started_at`, `generated_at`, `source`, `freshness`,
-  `complete`, `errors`, `ignore_rules`, `analysis` under `/6` only, and `reports` (one
-  entry per requested view, in request order), per `write_envelope_json` in
-  `crates/fdu-core/src/report_format.rs`. The `cache`, `scope`, and `selection` fields
-  this plan first listed are not in the envelope.
+- `fdu.report/1` supersedes `fdu.tree/2`: top level carries `schema`, `generator`,
+  `root`/`root_raw`, `scan_started_at`, `generated_at`, `source`, `cache`, `complete`,
+  `freshness`, `scope`, `selection`, and `reports` (one entry per requested view, in
+  request order). This plan explicitly authorizes the schema replacement the CLI UX plan
+  forbade; the golden fixture and schema-bump test move with it.
+  **Since moved (noted 2026-09-16).** The report schema is now `fdu.report/5`, or
+  `fdu.report/6` when content analysis ran or a `types`, `families`, `languages`, or
+  `documents` section is present; watch change records carry `fdu.stream/1`, and cache
+  status carries `fdu.cache/1` (`REPORT_SCHEMA`, `CONTENT_REPORT_SCHEMA`,
+  `STREAM_SCHEMA`, and `CACHE_SCHEMA` in `crates/fdu-core/src/report_format.rs`). The
+  report envelope moved with it: it now carries `errors`, `ignore_rules`, and, under
+  `/6`, `analysis`, and it has no `cache`, `scope`, or `selection` field.
+  [The surface architecture’s Machine Output Schemas section](../../architecture/fdu-surface-architecture.md#machine-output-schemas)
+  owns these identities now; this bullet records what the plan specified.
 - The interface remains pre-release; no aliases for replaced flags.
 - Library compatibility: existing `Index`, `scan`, `snapshot`, and `watch` contracts are
   preserved; `query` is additive, `ExtTally` gains a field (semver-minor while
