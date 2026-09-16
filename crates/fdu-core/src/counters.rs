@@ -55,6 +55,11 @@ pub struct Counts {
     /// Control files read from the filesystem.
     pub control_reads: u64,
     /// Control sources a control table refused for one of its limits.
+    ///
+    /// Counted where the table decides, so a re-read of a file it has already refused is
+    /// not: that batch cannot change the table and is never projected. A warm revalidate
+    /// of a refused tree therefore reports its reads against no refusals, which is the
+    /// projection being skipped rather than a refusal being lifted.
     pub control_refused: u64,
     /// Control sources that joined a retained identical content instead of parsing again.
     pub control_sources_shared: u64,
