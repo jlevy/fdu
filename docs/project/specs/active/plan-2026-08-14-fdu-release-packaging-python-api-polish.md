@@ -1,6 +1,6 @@
 # Feature: Release Packaging and Python API Polish
 
-**Date:** 2026-08-14 (last updated 2026-08-14)
+**Date:** 2026-08-14 (last updated 2026-09-16)
 
 **Author:** fdu project
 
@@ -395,8 +395,10 @@ Use maturin’s mixed Rust/Python layout:
 crates/fdu-py/
   python/fdu/
     __init__.py
+    _api.py
     _models.py
     _native.pyi
+    opened.py
     py.typed
   src/lib.rs
   pyproject.toml
@@ -559,7 +561,9 @@ inspect, install, type-check, smoke, compare, checksum, and attest
 ```
 
 `workflow_dispatch` runs the same graph in a non-uploading rehearsal mode; a release tag
-runs publication mode.
+will run publication mode once the publisher jobs land.
+Today `.github/workflows/release.yml` is the rehearsal only: it is named “Release
+rehearsal”, triggers on `workflow_dispatch` alone, and has no publisher jobs.
 The resolver rejects a dirty or non-tagged source, a tag that differs from
 `v{Cargo version}`, a tag that does not identify the workflow commit, an unexpected
 package version, or an incomplete artifact matrix.
@@ -585,11 +589,13 @@ scripts/release/
   resolve_plan.py
   inspect_artifacts.py
   registry_state.py
+  smoke_crate.py
 tests/release/
   test_resolve_plan.py
   test_inspect_artifacts.py
   test_registry_state.py
   test_metadata.py
+  test_smoke_crate.py
 ```
 
 Artifact-manifest and checksum assembly lives in `inspect_artifacts.py` rather than a
@@ -820,6 +826,8 @@ outstanding Phase 1 CLI, agent-schema, watch, or performance dependencies.
 ## References
 
 - [fdu design principles](../../architecture/fdu-design-principles.md)
+- [Release process guide](../../guides/release-process.md), the live runbook for this
+  plan’s workflow
 - [Phase 1 plan](plan-2026-08-08-fdu-phase-1.md)
 - [Rust engineering quality plan](plan-2026-08-09-fdu-rust-engineering-quality.md)
 - [Composable CLI surface plan](plan-2026-08-10-fdu-composable-cli-surface.md)
