@@ -153,7 +153,8 @@ MORE COMPOSITIONS
   matching entry, in name order. full is every view except files.
 
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
-  Scope      PATH, --scan-depth, --no-gitignore         what is scanned and cached
+  Scope      PATH, --scan-depth, --one-filesystem       what is scanned and cached
+             --gitignore-budget, --gitignore-line-limit, --no-gitignore
   Content    --analyze none|lines|code|words|all        which file bodies are read
   Selection  --include, --exclude, --depth, --limit     which entries are considered
              --exclude-ignored, --only-ignored
