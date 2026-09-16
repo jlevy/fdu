@@ -126,7 +126,7 @@ Under `--watch` either selection keeps the entry set it names as the rules chang
 editing a `.gitignore` streams the upsert that draws an entry the rules stopped
 ignoring, and the removal of one they started ignoring, even though nothing about the
 file itself changed.
-Without either flag the stream maintains membership rather than each row's ignored bit,
+Without either flag the stream maintains membership rather than each row’s ignored bit,
 which does not change what a listing contains.
 
 fdu applies per-directory `.gitignore` files the way `git check-ignore` reads them: a

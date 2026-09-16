@@ -174,10 +174,11 @@ sizes stay exact, the ignored shares under that directory do not.
 
 Under `--watch`, a rule edit that moves an entry into either selection streams the
 upsert that draws it and one that moves it out streams the removal, so the stream holds
-the entry set the flag names. An upsert carries `ignored`, and so does a removal a rule
-edit caused; an ordinary removal, an invalidation, and every record of a run that read no
-rules omit it. Without either flag the stream maintains membership rather than each row's
-bit, so re-read a listing after a rule edit if the bit matters.
+the entry set the flag names.
+An upsert carries `ignored`, and so does a removal a rule edit caused; an ordinary
+removal, an invalidation, and every record of a run that read no rules omit it.
+Without either flag the stream maintains membership rather than each row’s bit, so
+re-read a listing after a rule edit if the bit matters.
 
 ## Value Grammars
 
