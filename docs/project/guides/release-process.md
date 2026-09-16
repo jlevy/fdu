@@ -341,6 +341,9 @@ Once every channel verifies, record the final registry state and attach it with 
 evidence and artifacts to a GitHub release on the tag.
 The notes are [`docs/project/release-notes/0.1.0.md`](../release-notes/0.1.0.md) as
 tagged, so they must be final, with no draft comments left, before the tag is cut.
+The file is flowmark-formatted with semantic line breaks, and a GitHub release body may
+render a single newline as a line break; add `--draft` to the command below, read the
+rendered page, and unwrap the paragraphs if it looks ragged before publishing.
 The release is created only if the audit exits 0, which with `--require-identical` means
 every channel holds exactly the rehearsal’s files:
 
