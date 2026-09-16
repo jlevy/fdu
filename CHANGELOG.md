@@ -26,6 +26,7 @@ The GitHub release text is
 
 - **Command line.** `fdu PATH` prints a size-sorted tree two levels deep with ten rows
   per directory; bare `fdu` prints help and scans nothing.
+  Sizes are allocated bytes unless `--size apparent` asks for file lengths.
   - Every option belongs to one axis: scope (`PATH`, `--scan-depth`,
     `--one-filesystem`), content (`--analyze`), selection (`--include`, `--exclude`,
     `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--depth`,
@@ -265,6 +266,11 @@ This applies only to anyone who ran fdu built from a development checkout.
   peaked at 68, 68, 101 and 128 MiB, against 12 to 14 MiB without the index.
   The cost is the index’s, so it follows the entries retained and how the allocator grew
   on that run, and is a range rather than a fixed multiple.
+- **Links.** A symbolic link is listed as an entry but never followed, and adds nothing
+  to a directory’s totals; no command-line option follows links, and a `ScanConfig` or
+  `OpenOptions` with `follow_symlinks` set is refused.
+  A file with several hard links is counted once for each path, where `du` counts it
+  once.
 - **Cache retention.** Nothing prunes snapshots of roots that are never scanned again,
   or bounds the cache directory’s size.
   `--cache-clear` takes a root or the whole directory, so there is no way to clear only
