@@ -189,19 +189,21 @@ pub(crate) fn plan_report(config: &OpenConfig, query: &Query) -> ReportPlan {
 /// This is the contract the command line has always run under, and until now the only way
 /// to get it was to be the command line. `open` takes the session path: it retains an
 /// index and writes a snapshot, which is right for a caller asking many questions and
-/// wrong for one asking a single question -- an unfiltered summary is answered by a
-/// transient tier that retains nothing, and writing a snapshot for it caches state the
-/// walk did not save. A Python caller therefore left cache state on a tree that the same
-/// command would not have, which a later cache-only read could see (fdu-4msv).
+/// wrong for one asking a single question -- an unfiltered summary that reads no
+/// `.gitignore` is answered by a transient tier that retains nothing, and writing a
+/// snapshot for it caches state the walk did not save. A Python caller therefore left
+/// cache state on a tree that the same command would not have, which a later cache-only
+/// read could see (fdu-4msv).
 ///
 /// The report observes `.gitignore` control state as `config.scan.read_controls` says,
 /// on by default as for [`crate::open`], so the two share one snapshot scope. Observing,
 /// every tree, summary, extension, and file row carries its ignored share, and
-/// [`Report::ignore_rules`](crate::query::Report::ignore_rules) names any file the control
-/// budget refused. Turned off, no `.gitignore` is read, every share is `None`, and a
-/// selection by ignored state is refused with [`Error::ControlStateNotObserved`]. Such a
-/// report reads a default snapshot under [`CachePolicy::Only`], consuming its all-entry
-/// facts and describing none of its classification.
+/// [`Report::ignore_rules`](crate::query::Report::ignore_rules) names any file a control
+/// limit refused, by the budget or by the line limit. Turned off, no `.gitignore` is
+/// read, every share is `None`, and a selection by ignored state is refused with
+/// [`Error::ControlStateNotObserved`]. Such a report reads a default snapshot under
+/// [`CachePolicy::Only`], consuming its all-entry facts and describing none of its
+/// classification.
 ///
 /// The caller owns the returned [`PendingSave`] and decides when to join it, exactly as
 /// the command line does, so a renderer can run while the snapshot is still being written.

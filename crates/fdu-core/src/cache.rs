@@ -78,7 +78,8 @@ pub enum CacheState {
     Current(SnapshotInfo),
     /// One of fdu's snapshots that this build cannot serve. Clearing removes it.
     Stale(StaleReason),
-    /// A file fdu wrote that is not a snapshot in place: debris from an interrupted write.
+    /// A file fdu wrote that is not a snapshot in place: a staging file a killed writer
+    /// never renamed, or a content sidecar whose snapshot is gone.
     ///
     /// Clearing the whole directory reclaims it, under the rules on [`LeftoverKind`].
     Leftover(LeftoverKind),
