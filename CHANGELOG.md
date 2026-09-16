@@ -223,12 +223,17 @@ The GitHub release text is
 
 This applies only to anyone who ran fdu built from a development checkout.
 
-- **Each cached tree scans cold once.** No snapshot written by an earlier build serves
-  0.1.0. A snapshot is keyed on an engine fingerprint that mixes the crate version with
-  the snapshot format, which is now version 4, and on the type-rule and ignore-rule
-  fingerprints that scope it; all three moved, and the version alone moves at every
-  release. The first run on each previously cached tree scans cold and replaces the
-  snapshot when that run saves one.
+- **A cached tree can scan cold once.** A snapshot is keyed on an engine fingerprint
+  that mixes the crate version with the snapshot format, now version 4, and on the
+  type-rule and ignore-rule fingerprints that scope it.
+  Development builds already carried version `0.1.0`, so the format and the scope
+  decide: a snapshot written before format 4, or under different type rules or
+  `.gitignore` settings, does not serve 0.1.0, and the first run on that tree scans cold
+  and replaces it when the run saves one.
+  A snapshot a development build wrote in format 4 under the same settings can be
+  served, and that tree’s first run is warm.
+  The crate version moves at every release, so each later upgrade costs one cold run per
+  cached tree.
 - **`fdu --cache-clear=all` reclaims the rest.** A root that is never scanned again
   keeps a file this build cannot read, and clearing now takes it: `--cache-clear` and
   `--cache-clear=all` remove stale snapshots as well as current ones.
