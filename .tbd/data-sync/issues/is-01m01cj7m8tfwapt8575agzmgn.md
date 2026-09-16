@@ -5,7 +5,7 @@ title: "PR #26 review S2: dispatch release rehearsal to prove full matrix"
 kind: task
 status: open
 priority: 2
-version: 5
+version: 6
 labels:
   - release
 dependencies:
@@ -13,7 +13,7 @@ dependencies:
     target: is-01kzg4c6vnh98mqrpkzw7ydne0
 parent_id: is-01m01chg3gqm5sjf58mt5ng9zw
 created_at: 2026-08-15T00:18:50.120Z
-updated_at: 2026-09-16T08:37:42.314Z
+updated_at: 2026-09-16T08:38:38.259Z
 ---
 Deferred: after R1/R11 land on the PR and merge, dispatch release.yml once so all five wheel legs, evidence, and registry classification actually run before fdu-9cf0.
 
@@ -29,3 +29,5 @@ Dispatch is impossible until the workflow reaches main: GitHub only registers wo
 - Host wheel is fdu-0.1.0-cp312-abi3-macosx_11_0_arm64.whl, Requires-Python >=3.12, License-Expression MIT, typed facade, py.typed, private _native.abi3.so, CycloneDX SBOM, console script fdu=fdu:_main. inspect_artifacts.py --require-release-matrix correctly refuses a single-host set ("expected exactly five wheels"), so only the dispatch can prove the five-wheel matrix.
 - registry_state.py verified against the live registries: fdu-core, fdu and PyPI fdu all classify `missing` (exit 0; exit 3 under --require-identical). All three names are still free (crates.io and PyPI answer 404). The live 200 path was proven separately by driving the shipped code at a real published crate record: the record's checksum equals the published .crate digest, a matching manifest yields `identical` (exit 0) and a wrong digest yields `conflict` (exit 2).
 So the local half of the rehearsal needs nothing further; what remains is exactly this bead's dispatch.
+
+2026-09-16 THE DISPATCH BLOCKER IS CLEARED. release.yml is now registered on the default branch (gh workflow list: "Release rehearsal  active  334851160") and has never been run (gh run list --workflow release.yml is empty). CI on main 16efcd0 is green (run 35072033017). So the remaining work on this bead is the dispatch itself, which needs the user's explicit go-ahead.
