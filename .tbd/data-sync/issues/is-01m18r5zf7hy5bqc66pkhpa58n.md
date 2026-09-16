@@ -5,7 +5,7 @@ title: Control-table budget aborts the scan instead of degrading to partial
 kind: bug
 status: closed
 priority: 0
-version: 13
+version: 14
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - scale
@@ -15,7 +15,7 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-30T07:12:14.310Z
-updated_at: 2026-09-15T21:25:45.278Z
+updated_at: 2026-09-16T06:02:47.165Z
 closed_at: 2026-09-15T20:00:41.665Z
 close_reason: "d910079, 2255593, 256053e: a source past the budget or the 16 KiB line guard is refused and recorded instead of returning an error, on the cold, streaming, reconcile, watch, and opened-root paths; the batch commits and sizes stay exact. Index::control_coverage (exact count, at most MAX_RETAINED_ISSUES listed), EffectiveChange::ControlRefusalUpdated, ReadDiagnostics::controls, snapshot format 4, and a report's ignore_rules field and note (exit 0) state it. Residual (4), reads under ignored directories, filed as fdu-9jfj. PR #63."
 resolution: null
@@ -68,3 +68,11 @@ The budget and the per-line guard bound different things: total retained memory,
 - Both limits are part of snapshot scope.
 - Every refusal records which limit fired, and its note names that limit's flag.
 Rejected alternatives: a line guard that scales with the budget couples unrelated bounds; lifting it only with `all` leaves no bounded option and lifts memory too. Implemented in PR #63's review-fix round.
+
+2026-09-15 (PR #63 delta review 5218970886, PR63D-SNAP-1): why the control section's layout change keeps FORMAT_VERSION = 4 rather than bumping to 5.
+
+Q11 bumped 3 to 4 for a control section carrying a u64 budget and the refusals. The two-limits round then changed that section's layout under the same version: it is now a tag byte plus an optional 8 bytes for the budget, then the same pair for the line limit (snapshot.rs:754-761, 838-848 @9105768). A version is meant to move on a layout change, so the reason it did not is recorded here.
+
+No released build could have written a file the new loader accepts wrongly. main is format 3 and there is no 0.1.0 tag, and a v3 file fails both parse_header and parse_stream on FORMAT_VERSION and on engine_fingerprint, which mixes it (snapshot.rs:197-208, 529, 555). The only v4 files with the old layout come from builds of this branch between eed4f62 and 1fd71a9, whose engine_fingerprint is unchanged, so such a file does pass the header. The delta review traced every path one takes through the new reader: the default budget's bytes read as budget unbounded, line limit unbounded, refused count 0x40, then a path length taken from the remaining budget bytes and a reason byte of 0x00, which is Invalid (snapshot.rs:736-740); an unbounded budget (FF...) is Invalid at the first tag (:760). Every path ends Invalid, then Ok(None), then a cold scan, so a wrong table cannot load.
+
+So the exposure is one developer machine rescanning once, which is what a bump would have cost anyway. If a later change to this section lands after a release, or after any build outside this stack has written a v4 file, bump to 5 instead of repeating this argument.
