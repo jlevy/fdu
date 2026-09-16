@@ -5,14 +5,14 @@ title: "Default --view summary retains the full index to classify ignored entrie
 kind: task
 status: open
 priority: 1
-version: 1
+version: 2
 labels:
   - stack-followup
   - release
   - scale
 dependencies: []
 created_at: 2026-09-15T22:00:49.899Z
-updated_at: 2026-09-15T22:00:49.899Z
+updated_at: 2026-09-16T00:18:25.506Z
 ---
 Found by the PR B speed gate (branch claude/gitignore-default-on, d95d729), as decision Q7 on fdu-elnn anticipated: the transient summary tier keeps no control table, so with `.gitignore` observed by default an unfiltered `fdu --view summary PATH` falls closed to `RetainedState::FullIndex` (crates/fdu-core/src/execution.rs `plan_report`, `summary_is_sufficient` requires `!config.scan.read_controls`).
 
@@ -25,3 +25,9 @@ Wall time passes the 10% gate; memory does not have a gate, and this is the cont
 Direction (plan section 5 and Q7): a streaming classifier in the summary reducer: controls emitted before their directory's entries, the ignore decision per entry from the governing sources, and a top-most-ignored-directory set so descendants of an ignored directory are counted without a table walk. It must report the same `SummaryRow.ignored` as the index tier, pinned by the existing compact-versus-indexed equality test extended to the share.
 
 Acceptance: default `--view summary` peak RSS within the transient tier's order of magnitude on both subjects, identical totals and ignored share, recorded with `make perf-record`.
+
+## Notes
+
+2026-09-15, review of PR #65. Verdict on whether this must be fixed before 0.1.0: no. Wall time passed the gate on both subjects (1.02-1.04); the RSS is the index's, which the default `fdu PATH` has always paid on the same tree, so the summary view loses a special standing rather than regressing below the default; 0.1.0 is the first release, so nobody holds a summary-RSS baseline; and `--no-gitignore --view summary` keeps the 13 MiB path, documented in README, --help, SKILL and the ledger. At a few hundred bytes per entry a multi-million-entry home directory costs the summary several hundred MiB: a resource cost with no correctness hazard and no new crash class.
+
+One thing to decide here rather than later, raised by the same review: restoring the transient reducer with a streaming classifier would flip `--cache only --view summary` a second time. PR B made the default summary retain the full index, which is also what lets it save a snapshot; a later streaming classifier would stop it saving one again, so the same command changes behaviour twice across releases. Either accept that flip and note it in the CHANGELOG when it lands, or keep the snapshot write on the streaming path so only memory changes.

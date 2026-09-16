@@ -5,13 +5,13 @@ title: Roll up .gitignore information by default on every surface, with a per-re
 kind: feature
 status: closed
 priority: 1
-version: 7
+version: 8
 labels:
   - stack-followup
   - release
 dependencies: []
 created_at: 2026-09-14T20:54:48.425Z
-updated_at: 2026-09-15T22:17:59.533Z
+updated_at: 2026-09-16T00:17:55.936Z
 closed_at: 2026-09-15T22:17:59.532Z
 close_reason: "dcdec5a, 3ddec4c, d108786 (PR #65): one-shot reports, fdu PATH, --watch, and fdu.report observe .gitignore by default; --no-gitignore and read_controls=False opt out; the summary tier falls closed to the index when observing (Q7); an unreadable .gitignore exits 2 unless --allow-partial (Q10), pinned in crates/fdu/tests/cli_exit.rs; speed gate passed (median pair ratios 0.92-1.04), summary RSS follow-up fdu-if7o"
 resolution: null
@@ -42,3 +42,9 @@ Recommendations taken without asking:
 - Q8: annotate extension rows in B, not types/families/languages/documents; follow up afterwards.
 - Q9: the flag is --no-gitignore (the user's name).
 Release: all of this ships in 0.1.0.
+
+2026-09-15, review of PR #65 (F4, P3), on Q10. The reviewer agrees exit 2 ships as decided, and records the reasoning on both sides because the question returns when the checkpoints plan gives ignore_rules.refusals a partial marker.
+Why exit 2 is not a P0 risk: the report still prints with every size exact, so only complete and the status change; a readable directory holding an unreadable .gitignore is rare, because macOS TCC and ordinary permission models protect whole directories, which already made such a result partial before this PR; and --no-gitignore is a one-flag escape. The weakness is that --allow-partial is coarse: a script that adds it to survive one mode-000 .gitignore also silences unreadable directories.
+The case for modelling it as ControlRefusalReason::Unreadable instead, with exit 0 and the existing coverage note: (a) no size is missing, so complete: false overstates what went wrong; (b) the design principles separate expected coverage from operational completeness, and an unapplied rule file is coverage; (c) a refused and an unreadable .gitignore leave the same tree in the same state, and would then be reported the same way.
+The case for Q10 as decided, which is what ships: every other I/O error at a path is operational, and a refusal is a policy the caller can lift where an EACCES is not.
+Revisit when ignore_rules.refusals grows the checkpoints plan's partial marker, and decide then whether unreadable joins it. Pinned by crates/fdu/tests/cli_exit.rs::an_unreadable_gitignore_is_a_partial_result_that_no_gitignore_avoids.
