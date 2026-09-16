@@ -1464,15 +1464,22 @@ fn render_change(
 /// is cheap, keeps one definition of what a status *is*, and means a caller cannot hand
 /// the renderer a status the engine never produced.
 #[pyfunction]
-#[pyo3(signature = (paths, format = "text"))]
+#[pyo3(signature = (paths, scope, format = "text"))]
 #[allow(clippy::needless_pass_by_value)]
-fn render_cache_status(paths: Vec<PathBuf>, format: &str) -> PyResult<String> {
+fn render_cache_status(paths: Vec<PathBuf>, scope: &str, format: &str) -> PyResult<String> {
+    let scope = fdu_core::CacheScope::parse(scope).ok_or_else(|| {
+        PyValueError::new_err(format!(
+            "invalid cache scope {:?}: expected one of {}",
+            scope.trim(),
+            fdu_core::CacheScope::LABELS.join(", ")
+        ))
+    })?;
     let format = parse_format(format)?;
     let statuses = paths
         .iter()
         .map(|path| fdu_core::cache_status(path).map_err(to_py_err))
         .collect::<PyResult<Vec<_>>>()?;
-    Ok(fdu_core::report_format::render_cache_status(&statuses, format))
+    Ok(fdu_core::report_format::render_cache_status(&statuses, scope, format))
 }
 
 /// One cache file's status as a dict.
@@ -1484,8 +1491,26 @@ fn cache_status_dict<'py>(
     dict.set_item("path", status.path.as_os_str())?;
     dict.set_item("bytes", status.bytes)?;
     dict.set_item("content_bytes", status.content_bytes)?;
-    dict.set_item("recognized", status.is_recognized())?;
-    if let Some(info) = &status.snapshot {
+    dict.set_item("state", status.state.label())?;
+    dict.set_item("leftover_kind", py.None())?;
+    match &status.state {
+        fdu_core::CacheState::Stale(reason) => {
+            dict.set_item("stale_reason", reason.label())?;
+            dict.set_item("format_version", reason.format_version())?;
+        }
+        fdu_core::CacheState::Leftover(kind) => {
+            dict.set_item("leftover_kind", kind.label())?;
+            dict.set_item("stale_reason", py.None())?;
+            dict.set_item("format_version", py.None())?;
+        }
+        fdu_core::CacheState::Current(_)
+        | fdu_core::CacheState::Unrecognized
+        | fdu_core::CacheState::Absent => {
+            dict.set_item("stale_reason", py.None())?;
+            dict.set_item("format_version", py.None())?;
+        }
+    }
+    if let Some(info) = status.snapshot() {
         dict.set_item("root", info.root.as_os_str())?;
         dict.set_item("entries", info.entries)?;
         dict.set_item("max_depth", info.scope.max_depth)?;
@@ -1533,7 +1558,7 @@ fn list_caches(py: Python<'_>, root: PathBuf) -> PyResult<Bound<'_, PyList>> {
     Ok(list)
 }
 
-/// Remove the snapshot for one root. Returns whether a file was removed.
+/// Remove the snapshot for one root, current or stale. Returns whether one was removed.
 #[pyfunction]
 #[allow(clippy::needless_pass_by_value)]
 fn clear_cache(root: PathBuf) -> PyResult<bool> {
@@ -1543,14 +1568,20 @@ fn clear_cache(root: PathBuf) -> PyResult<bool> {
     }
 }
 
-/// Remove every recognized snapshot, leaving unrecognized files alone.
+/// Remove every fdu snapshot, current or stale, and reclaim the files fdu left behind,
+/// leaving unrecognized files alone. Returns the two counts as a dict.
 #[pyfunction]
 #[allow(clippy::needless_pass_by_value)]
-fn clear_all_caches(root: PathBuf) -> PyResult<usize> {
-    match fdu_core::default_cache_path(&root).and_then(|p| p.parent().map(Path::to_path_buf)) {
-        Some(dir) => fdu_core::clear_all_caches(&dir).map_err(to_py_err),
-        None => Ok(0),
-    }
+fn clear_all_caches(py: Python<'_>, root: PathBuf) -> PyResult<Bound<'_, PyDict>> {
+    let summary =
+        match fdu_core::default_cache_path(&root).and_then(|p| p.parent().map(Path::to_path_buf)) {
+            Some(dir) => fdu_core::clear_all_caches(&dir).map_err(to_py_err)?,
+            None => fdu_core::ClearSummary::default(),
+        };
+    let dict = PyDict::new(py);
+    dict.set_item("snapshots", summary.snapshots)?;
+    dict.set_item("leftovers", summary.leftovers)?;
+    Ok(dict)
 }
 
 /// Open a directory tree, using the snapshot cache according to `cache`.
@@ -1728,7 +1759,10 @@ fn contract(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     contract.set_item("entry_kinds", ["file", "dir", "symlink", "other"])?;
     contract.set_item("size_metrics", ["allocated", "apparent"])?;
     contract.set_item("sort_keys", ["size", "count", "mtime", "name"])?;
-    contract.set_item("cache_scopes", ["root", "all"])?;
+    contract.set_item("cache_scopes", fdu_core::CacheScope::LABELS)?;
+    contract.set_item("cache_states", fdu_core::CacheState::LABELS)?;
+    contract.set_item("stale_reasons", fdu_core::StaleReason::LABELS)?;
+    contract.set_item("leftover_kinds", fdu_core::LeftoverKind::LABELS)?;
     Ok(contract)
 }
 

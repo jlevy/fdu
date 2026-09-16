@@ -238,6 +238,17 @@ cannot hold the tree (CI runners, cloud hosts, whole-drive scans), journal-assis
 revalidation where the OS already recorded what changed, and expensive derived metrics
 like line counts that an unchanged fingerprint lets you skip entirely.
 
+Every release invalidates the snapshots earlier builds wrote, because the engine
+fingerprint includes the version.
+A root scanned again replaces its own snapshot.
+`fdu --cache-status=all` lists the rest as `stale`, and `fdu --cache-clear=all` removes
+them along with the current snapshots.
+It also reclaims what fdu itself left behind — a staging file a killed writer never
+renamed, a content sidecar whose snapshot is gone — which status lists as `leftover`.
+Clearing never removes a file that is not fdu’s;
+[the cache design](docs/project/guides/cache-design.md) covers how one is recognized.
+Cache status in a machine format is its own document, carrying the `fdu.cache/1` schema.
+
 A snapshot is usable only under the scan scope that wrote it, and a root has one cache
 path. `fdu PATH`, `fdu --watch PATH`, the library’s `open` and `prepare_report`, and
 Python’s `fdu.open` and `fdu.report` all observe `.gitignore` by default, so they share
