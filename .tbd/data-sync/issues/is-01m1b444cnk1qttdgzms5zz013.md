@@ -5,7 +5,7 @@ title: "PR #48 branch is 3.6-10x slower than main: allocator churn, not I/O"
 kind: bug
 status: in_progress
 priority: 0
-version: 8
+version: 9
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
 labels:
   - performance
@@ -14,7 +14,7 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-31T05:19:25.577Z
-updated_at: 2026-09-14T02:30:46.616Z
+updated_at: 2026-09-16T17:39:56.157Z
 ---
 The opened-root-inventory-rewrite branch has an unreported whole-scan performance regression against main that is larger and broader than the control-table cap this epic started from. It affects trees with NO .gitignore files, so it is not control-file I/O.
 
@@ -64,3 +64,5 @@ All were measured before COMMIT-4's port (50e6ca5) replaced the canonical-path c
 When closing, also record whether #52's detached builder (no commits, impacts, or journals for detached cold scans) settles #51's "Open for review and redesign" question: should effect recording be lifecycle-gated? Record too where the counters-based per-entry allocation guard landed.
 
 2026-09-14 (triage at c0511e9): not re-measured at the combined head; the acceptance remains `plan-2026-08-31:419-437`. Two of this bead's closing questions are answerable now: the counters-based per-entry allocation guard is `crates/fdu/tests/detached_performance_invariants.rs:66@c0511e9` (both routes, slope between two fixture sizes); and detached cold scans record no effects, impacts, or journal clones by construction (`scan.rs:3530-3536` -> builder under `NoConsequences`, `index.rs:768-792, 1658`), which settles #51's lifecycle-gating question for one-shot. Timing evidence still needs fdu-lj4h's quiet-host or Linux run.
+
+2026-09-16, sanity check on the 0.1.0 release candidate, NOT the plan's parity verdict. Release CLIs `fdu 0.1.0-dev+gb75bf85a3` (pre-rewrite control) and `fdu 0.1.0-dev+g16efcd0ad` (release candidate), `fdu --cache off --color never ~/.rustup/toolchains`, the candidate with `--no-gitignore` so both do the same work (b75bf85 reads no .gitignore; the subject has none). 10 interleaved pairs after 2 warm-ups each, order alternating, bootstrap 95% interval on the median pair ratio. Result: 0.315 s control vs 0.292 s candidate, median pair ratio 0.941 (95% CI 0.813-1.023); peak RSS 49.6 -> 29.5 MiB; totals identical. No sign of the 3.6x whole-scan regression this bead was filed for. Regime: M1 Pro, macOS/APFS, warm cache, host uncontrolled at load average 14.6-16.0 with the user's other Codex and Claude sessions active, and another agent's build lock held during the run. Why this is not the acceptance at plan-2026-08-31:419-437: one subject rather than a control-free and a control-rich tree, CLI wall time only with no component time or allocation counters, 10 pairs, and a loaded host, which the plan says cannot produce a parity verdict. Left open.
