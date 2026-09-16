@@ -5,7 +5,7 @@ title: "Release readiness: land the open PR stack and cut the first stable fdu r
 kind: epic
 status: in_progress
 priority: 0
-version: 13
+version: 14
 labels:
   - release
 dependencies: []
@@ -17,8 +17,9 @@ child_order_hints:
   - is-01m2jzadk7w8m1xcsewzwg5wj1
   - is-01m2k27z25tt9ygs4c1nchhzez
   - is-01m2k2pp6jw10vq759yyetmcmb
+  - is-01m2nrqeqa5pf3j4d548wygd0a
 created_at: 2026-09-15T00:08:53.387Z
-updated_at: 2026-09-15T19:20:54.809Z
+updated_at: 2026-09-16T18:47:36.425Z
 ---
 User goal (2026-09-14): bring fdu to a stable state that can land on main and cut a release. Keep making progress, track everything as beads, stack PRs as needed, and make sure the final PR stack is complete.
 
