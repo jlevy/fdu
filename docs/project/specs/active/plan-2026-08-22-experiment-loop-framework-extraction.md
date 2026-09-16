@@ -4,7 +4,10 @@
 
 **Author:** fdu project
 
-**Status:** Draft
+**Status:** Draft.
+Counts of fdu’s record below are as of 2026-08-22; the record held 105
+experiment artifacts on 2026-09-16, and the Phase 2 acceptance applies to every
+committed artifact.
 
 ## Overview
 
@@ -58,7 +61,7 @@ systematic hypotheses meet an iteration loop, a record, and generated reporting.
 - **Not a monolith.** A loop that wants only the artifact contract and a ledger must not
   inherit the harness, the statistics, or the report renderer.
 - **Not a rewrite of either project’s committed record.** If the generic contract cannot
-  validate fdu’s 64 artifacts unchanged, the contract is wrong.
+  validate every fdu artifact unchanged, the contract is wrong.
 - **Not a CI gate.** “An exploration answers a question once; a benchmark defends an
   answer forever” (metabrowser’s README) — only the second belongs in a release gate,
   and this framework is for the first.
@@ -307,7 +310,7 @@ framework with fdu’s adapter and config.
 
 ### Phase 2: Re-host fdu; prove nothing was lost
 
-- [ ] fdu’s 64 artifacts validate against the generic contract unchanged
+- [ ] Every committed fdu artifact validates against the generic contract unchanged
 - [ ] `perf-record`, `perf-ledger`, `perf-report`, and the checks run through the
   framework; regenerated ledger, projection, and report are byte-identical
 - [ ] Convert fdu’s hypothesis table to registry artifacts; the reference check passes
