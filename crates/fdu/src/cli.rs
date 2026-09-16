@@ -1124,7 +1124,7 @@ impl Cli {
         match self.cache.trim().to_ascii_lowercase().as_str() {
             "auto" => Ok(CachePolicy::Auto),
             "refresh" => Ok(CachePolicy::Refresh),
-            "read-only" | "readonly" => Ok(CachePolicy::ReadOnly),
+            "read-only" => Ok(CachePolicy::ReadOnly),
             "only" => Ok(CachePolicy::Only),
             "off" => Ok(CachePolicy::Off),
             other => anyhow::bail!(
@@ -2215,6 +2215,23 @@ mod tests {
             assert!(message.contains(label), "{label} missing from: {message}");
         }
         assert!(message.contains("full"), "the total must be listed too: {message}");
+    }
+
+    #[test]
+    fn the_undocumented_readonly_cache_alias_is_rejected() {
+        assert_eq!(
+            Cli { cache: "read-only".to_string(), ..cli() }
+                .parse_cache_policy()
+                .expect("the canonical policy name parses"),
+            CachePolicy::ReadOnly
+        );
+        let error = Cli { cache: "readonly".to_string(), ..cli() }
+            .parse_cache_policy()
+            .expect_err("an unreleased alias must not become a contract");
+        assert_eq!(
+            error.to_string(),
+            "invalid --cache \"readonly\": expected one of auto, refresh, read-only, only, off"
+        );
     }
 
     #[test]

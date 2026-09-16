@@ -148,7 +148,7 @@ impl ViewSpec {
             "extensions" => Ok(Self::Extensions),
             "families" => Ok(Self::Families),
             "languages" => Ok(Self::Languages),
-            "documents" | "docs" => Ok(Self::Documents),
+            "documents" => Ok(Self::Documents),
             "largest" => Ok(Self::Largest),
             "recent" => Ok(Self::Recent),
             "files" => Ok(Self::Files),
@@ -1915,6 +1915,18 @@ mod tests {
             ]))
             .expect("apply");
         index
+    }
+
+    #[test]
+    fn the_undocumented_docs_view_alias_is_rejected() {
+        assert_eq!(
+            ViewSpec::parse("documents").expect("the canonical view name parses"),
+            ViewSpec::Documents
+        );
+        assert_eq!(
+            ViewSpec::parse("docs").expect_err("an unreleased alias must not become a contract"),
+            format!("expected one of {}", ViewSpec::vocabulary())
+        );
     }
 
     fn provenance() -> Provenance {

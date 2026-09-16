@@ -41,9 +41,9 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 23 sessions differ, and every one of them has a named cause.
+# 24 sessions differ, and every one of them has a named cause.
 #
-#  13  Each surface names its own parameter  [surface-label]
+#  14  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
 #      Everything after the label is identical, and that is the part encoding behaviour:
 #      the rule the caller hits is the same rule, proven line by line rather than assumed.
@@ -125,6 +125,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
 @@ -1,1 +1,1 @@
 -fdu: invalid --view "bogus": expected one of summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
 +fdu: invalid view "bogus": expected one of summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
+  ✗ The Unreleased View Alias Is Rejected
+@@ -1,1 +1,1 @@
+-fdu: invalid --view "docs": expected one of summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
++fdu: invalid view "docs": expected one of summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
   ✗ A Repeated View Is a Typo, Not a No-Op
 @@ -1,1 +1,1 @@
 -fdu: invalid --view "tree,tree": "tree" appears more than once
@@ -148,6 +152,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Cache-Only Answers Without Touching the Tree, and Says It Is Stale
   ✓ Refresh Ignores the Snapshot and Scans Cold Again
   ✓ An Unknown Policy Lists Every Valid One
+  ✓ The Unreleased Cache Alias Is Rejected
 PASS [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✓ Scan Without a Cache
   ✓ Verify No Cache Was Created

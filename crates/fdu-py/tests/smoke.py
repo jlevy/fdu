@@ -333,6 +333,12 @@ def main() -> None:
     assert markdown["physical_lines"] == 1, markdown
     assert markdown["raw_words"] == 1, markdown
     assert markdown["words_per_page"] == 250, markdown
+    try:
+        analyzed.report(views=["docs"], words_per_page=250)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected the unreleased docs view alias to be rejected")
 
     tree = index.report(views=["tree"], depth="all")["reports"][0]["tree"]
     assert tree["name"] == ".", tree
@@ -400,12 +406,13 @@ def main() -> None:
     assert refreshed["errors"] == [], refreshed
 
     # Cache policy is the same closed vocabulary the CLI accepts.
-    try:
-        fdu_py.open(str(cache_root), cache="sometimes")
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("expected an invalid cache policy to be rejected")
+    for bad_cache in ["sometimes", "readonly"]:
+        try:
+            fdu_py.open(str(cache_root), cache=bad_cache)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"expected cache policy {bad_cache!r} to be rejected")
 
     # The watch feed: event-driven, and closable without hanging the interpreter.
     watch_root = pathlib.Path(tempfile.mkdtemp())

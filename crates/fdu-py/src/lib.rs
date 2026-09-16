@@ -607,7 +607,7 @@ fn parse_cache_policy(value: &str) -> PyResult<CachePolicy> {
     match value.trim().to_ascii_lowercase().as_str() {
         "auto" => Ok(CachePolicy::Auto),
         "refresh" => Ok(CachePolicy::Refresh),
-        "read-only" | "readonly" => Ok(CachePolicy::ReadOnly),
+        "read-only" => Ok(CachePolicy::ReadOnly),
         "only" => Ok(CachePolicy::Only),
         "off" => Ok(CachePolicy::Off),
         other => Err(PyValueError::new_err(format!(
@@ -1804,6 +1804,18 @@ mod tests {
     use super::*;
     use std::sync::mpsc::sync_channel;
     use std::time::Duration;
+
+    #[test]
+    fn cache_policy_accepts_only_the_canonical_read_only_spelling() {
+        assert_eq!(
+            parse_cache_policy("read-only").expect("the canonical policy name parses"),
+            CachePolicy::ReadOnly
+        );
+        assert!(
+            parse_cache_policy("readonly").is_err(),
+            "an unreleased alias must not become a contract"
+        );
+    }
 
     #[test]
     fn same_python_index_uses_runtime_borrow_exclusion() {
