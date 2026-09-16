@@ -4,7 +4,9 @@
 
 **Author:** fdu project
 
-**Status:** Active — PR #1 merged; CLI stack hardening in follow-up validation
+**Status:** Active — PR #1 merged; CLI stack hardening landed (`fdu-zsdy` and the CLI UX
+epic `fdu-6c8n` are closed); the snapshot fault-state suite (`fdu-471a`) and the epic
+`fdu-dxee` remain open
 
 ## Overview
 

@@ -39,7 +39,7 @@ and nothing re-verified.
 | Capability | Behavior on `main` | Consequence for daily comparison |
 | --- | --- | --- |
 | Metadata inventory | Each entry retains apparent and allocated bytes, mtime, ctime, inode, and device (`Attrs`); the index maintains directory roll-ups. No link count or clone identity is retained | Reuse these facts and reducers; hard links are detectable only by grouping `(dev, inode)` across an inventory |
-| Default one-shot metadata report | `plan_report` reads the snapshot under `auto` and `read-only` only when content analysis is requested; a summary-only query retains no index and writes no snapshot | A cache does not currently avoid the next traversal |
+| Default one-shot metadata report | `plan_report` reads the snapshot under `auto` and `read-only` only when content analysis is requested; a summary-only query that also turned `.gitignore` observation off (`--no-gitignore`) retains no index and writes no snapshot, while a default summary observes and retains the full index | A cache does not currently avoid the next traversal |
 | `open()` with a usable snapshot | Loads the image and reconciles every entry before returning | Reuse is still proportional to tree size |
 | `--cache only` | Loads saved facts without filesystem verification and labels them stale | Useful for viewing an old inventory, not for discovering changes |
 | Snapshot persistence | One replaceable flat image per root, at the current format version (`snapshot::FORMAT_VERSION`). `engine_fingerprint` mixes the crate version, format version, and classification version; a mismatch, or a stored scan scope that cannot serve the request, is a miss, and the next complete indexed scan replaces the image | No baseline survives an upgrade, a rules change, or a scope change; loading materializes the full index |
@@ -283,8 +283,9 @@ Checkpoints captured before the upgrade stay retained, and they remain comparabl
 the checkpoint the refresh publishes, because neither the crate version nor the snapshot
 `FORMAT_VERSION` affects comparability.
 `--cache-clear` has the same effect.
-So does alternating between report and opened-root scopes, until `fdu-w3l5` keys
-snapshots by scope.
+So does a request that turns observation off (`--no-gitignore`, `read_controls=False`)
+or otherwise changes the scan scope, until `fdu-w3l5` keys snapshots by scope; a default
+report, `open`, and `--watch` share one scope.
 
 Keeping the inventory in the checkpoint store instead would let replay survive an
 upgrade. It would also make derived state user-owned data under the store’s SUPPORT BOTH
@@ -344,8 +345,8 @@ The snapshot cache is built to be discarded.
 `engine_fingerprint` includes the crate version, so every release misses every existing
 snapshot, and a scope mismatch cold-scans and replaces the root’s single image.
 A checkpoint keyed the same way would be lost on every upgrade, every classification
-change, and every alternation between report and opened-root scopes (`fdu-w3l5`), none
-of which a user would recognize as eviction.
+change, and every change of scan scope, such as turning `.gitignore` observation off
+(`fdu-w3l5`), none of which a user would recognize as eviction.
 
 **Separate store.** Checkpoints live in a store under the user data directory, not the
 cache directory that users and cleanup tools treat as disposable.
@@ -578,18 +579,17 @@ Slice 2 can provide useful comparisons before the replay optimization.
 Slice 4 is needed before claiming fast whole-home refresh independent of inventory size.
 The slices build on the opened-root lifecycle that the
 [opened-root inventory engine plan](plan-2026-08-25-fdu-opened-root-inventory-engine.md)
-delivered to `main`. Slice 2 also depends on three adjacent contracts.
-Before slice 2 fixes its API, confirm on `main` that:
+delivered to `main`. Slice 2 also builds on three adjacent contracts, all now on `main`:
 
-- the index journal is bounded in bytes (`journal_capacity_bytes`), as proposed in
-  [#56](https://github.com/jlevy/fdu/pull/56);
-- an index built without control state answers with a typed not-observed value rather
-  than as if nothing were ignored, as proposed in
-  [#57](https://github.com/jlevy/fdu/pull/57), which is what a checkpoint captured
-  without control observation records;
-- a crossed control budget leaves the index, including one loaded from a snapshot, a
-  typed record of its budget and refused control sources (`fdu-1onj`), which is what a
-  checkpoint with partially observed classification records.
+- the index journal is bounded in bytes (`OpenOptions::journal_capacity_bytes`,
+  [#56](https://github.com/jlevy/fdu/pull/56));
+- an index built without control state answers with `Error::ControlStateNotObserved`
+  rather than as if nothing were ignored ([#57](https://github.com/jlevy/fdu/pull/57)),
+  which is what a checkpoint captured without control observation records;
+- a crossed control limit leaves the index, including one loaded from a snapshot, a
+  typed record of both limits and every refused control source
+  (`Index::control_coverage`, `fdu-1onj`, [#63](https://github.com/jlevy/fdu/pull/63)),
+  which is what a checkpoint with partially observed classification records.
 
 Use the existing [performance loop](../../guides/performance-loop.md) and predeclare
 accept rules before trials.

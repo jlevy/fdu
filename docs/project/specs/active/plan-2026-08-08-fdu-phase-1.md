@@ -16,9 +16,9 @@ Phase 0 merged to `main` through [PR #1](https://github.com/jlevy/fdu/pull/1) at
 commit `92ee5ab`. All P0, concurrency, and final-validation blockers in **Wave 0** below
 are closed. The merged revision passed the complete local handoff gate and the fresh
 [Linux/macOS/Windows matrix](https://github.com/jlevy/fdu/actions/runs/31339731585). The
-focused CLI UX, agent-skill, and wheel-entry-point follow-up is tracked by `fdu-6c8n` on
-a new branch from `origin/main`; Phase 1 performance work remains separate and makes no
-claim about the portable walker.
+focused CLI UX, agent-skill, and wheel-entry-point follow-up, `fdu-6c8n`, shipped in
+[PR #2](https://github.com/jlevy/fdu/pull/2) and is closed; Phase 1 performance work
+remains separate and makes no claim about the portable walker.
 
 Beads live on the `tbd-sync` branch and are visible from any clone (`tbd list`).
 `make check` is the handoff gate;
@@ -26,6 +26,14 @@ Beads live on the `tbd-sync` branch and are visible from any clone (`tbd list`).
 rules worth not rediscovering.
 
 ## Where This Stands
+
+**Superseded in part (2026-09-16).** This section records the state when PR #1 merged,
+and several of its facts have since moved on `main`: the snapshot format is 4
+(`snapshot::FORMAT_VERSION`), machine reports carry `fdu.report/5` or `fdu.report/6`,
+Python exposes `Index.watch()` (there is still no server integration), and `.gitignore`
+observation is on by default (PR #65). The order of performance work is owned by
+[performance campaign 2](plan-2026-08-23-fdu-performance-campaign-2.md), not by the
+waves below. The epic `fdu-qfz6` remains open.
 
 The Phase 0 product slice is implemented: the repository exists, the architecture is
 expressed in code, and the whole pipeline runs end to end.
@@ -180,21 +188,21 @@ No Phase 1 optimization is a substitute for closing this gate.
 
 ### Wave 1: Establish Safe Refactor and Evidence Foundations
 
-The [Rust quality plan](plan-2026-08-09-fdu-rust-engineering-quality.md) has already
-pinned and proved the normal/MSRV feature matrix (`fdu-zga3`). It next adds the
-independent index model (`fdu-o8r8`) and snapshot fault-state suite (`fdu-471a`). The
-guard-free API is already closed in Wave 0. Stack-safe rendering (`fdu-zsdy`) is
-implemented in the focused CLI follow-up and remains blocked only on its validation
-gate; lossless classification and Python identity (`fdu-k8zw`) follows the API work.
+The [Rust quality plan](plan-2026-08-09-fdu-rust-engineering-quality.md) has pinned and
+proved the normal/MSRV feature matrix (`fdu-zga3`) and added the independent index model
+(`fdu-o8r8`, closed).
+The snapshot fault-state suite (`fdu-471a`) is still open.
+The guard-free API closed in Wave 0. Stack-safe rendering (`fdu-zsdy`) and lossless
+classification and Python identity (`fdu-k8zw`) are both closed.
 
 In parallel, the
 [performance plan](plan-2026-08-09-fdu-end-to-end-performance-testing.md) builds one
 shared evidence foundation instead of separate ad hoc benchmark scripts:
 
-1. `fdu-rq5m`: deterministic corpora and semantic oracle;
-2. `fdu-d8kq`: strict scenario/result schemas and state-machine runner;
-3. `fdu-oj25`: fdu component probe and resource collectors;
-4. `fdu-k5t5`: pinned dut/gdu adapters after the cool-off gate.
+1. `fdu-rq5m`: deterministic corpora and semantic oracle (closed);
+2. `fdu-d8kq`: strict scenario/result schemas and state-machine runner (closed);
+3. `fdu-oj25`: fdu component probe and resource collectors (closed);
+4. `fdu-k5t5`: pinned dut/gdu adapters after the cool-off gate (open).
 
 ### Wave 2: Resolve Load-Bearing Decisions
 
@@ -263,6 +271,12 @@ material enough that it must not be added to the default metadata walk.
 Content/type analysis may reuse this pattern only when requested and must measure it
 together with file reads rather than call it “free.”
 The one-off probe dependency was removed after recording the result.
+**Reversed (2026-09-16).** PR #65 (`fdu-elnn`) made `.gitignore` observation the default
+on every surface by maintainer decision, so that every row shows its ignored share, and
+the default walk now pays this cost.
+`--no-gitignore` (`read_controls` off in the library) opts out per request, and only
+such a request can reach the transient summary tier (`plan_report` in
+`crates/fdu-core/src/execution.rs`).
 - `fdu-lka2` hardens platform backend failure, rename handling, descriptor limits, and
   reconciliation after the shared-index API and bounded generic transport are sealed.
 - `fdu-8z5l` establishes stable regression and claim governance on the completed runner,
@@ -366,7 +380,7 @@ the queued Phase 1 work.
 | --- | --- | --- | --- |
 | `fdu-qfz6` | Active | — | This Phase 1 plan |
 | `fdu-dxee` | Active; owns Wave 0 | — | [Rust engineering quality](plan-2026-08-09-fdu-rust-engineering-quality.md) |
-| `fdu-6c8n` | Active follow-up | `fdu-sn43` | [CLI UX and zero-install skill](plan-2026-08-09-fdu-cli-ux-and-agent-skill.md) |
+| `fdu-6c8n` | Closed | `fdu-sn43` | [CLI UX and zero-install skill](plan-2026-08-09-fdu-cli-ux-and-agent-skill.md) |
 | `fdu-d5e1` | Active | `fdu-sn43` (closed) | [End-to-end performance evidence](plan-2026-08-09-fdu-end-to-end-performance-testing.md) |
 | `fdu-x746` | Future | `fdu-9cf0` | [Post-Phase 1 roadmap](../future/plan-2026-08-09-fdu-post-phase-1-roadmap.md) |
 
