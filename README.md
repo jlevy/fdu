@@ -122,6 +122,9 @@ only what they cover; sizes, ordering, and `--min-size` follow the entries shown
 `fdu --exclude-ignored PATH` ranks folders by what you would commit, and
 `fdu --view files --only-ignored --format jsonl PATH` lists what the rules cover.
 `--no-gitignore` reads no rules at all and shows no share.
+Under `--watch` either selection keeps the entry set it names as the rules change: editing
+a `.gitignore` streams the upsert that draws an entry the rules stopped ignoring, and the
+removal of one they started ignoring, even though nothing about the file itself changed.
 
 fdu applies per-directory `.gitignore` files the way `git check-ignore` reads them: a
 directory a rule ignores is ignored with everything below it, and a later negation

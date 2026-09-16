@@ -168,7 +168,13 @@ the entries shown. `--no-gitignore` with either selection is a usage error.
 Only per-directory `.gitignore` files apply, not `core.excludesFile`,
 `.git/info/exclude`, or a global ignore file, and matching is case-sensitive.
 Unignored does not mean tracked: `.git` is unignored unless a rule names it.
-An unreadable `.gitignore` makes the result partial (exit 2).
+An unreadable `.gitignore` makes the result partial (exit 2), while one past
+`--gitignore-budget` or `--gitignore-line-limit` is refused whole and named in a note:
+sizes stay exact, the ignored shares under that directory do not.
+
+Under `--watch`, a rule edit that moves an entry into either selection streams the upsert
+that draws it and one that moves it out streams the removal, so the stream holds the entry
+set the flag names; every change record carries `ignored`, absent where no rule was read.
 
 ## Value Grammars
 
