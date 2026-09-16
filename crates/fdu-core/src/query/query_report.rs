@@ -2089,6 +2089,15 @@ mod tests {
              To apply them, raise --gitignore-budget above 4.0 MiB, or set it to all"
         );
 
+        // No engine path records a refusal by an unbounded limit, and the snapshot loader
+        // rejects one, but a hand-built observation can still carry it: the note names the
+        // limit without a size rather than a zero one, and raises only bounded limits.
+        assert_eq!(
+            note(ControlLimits { budget: None, ..defaults }, vec![refused("a", budget)], 1),
+            "note: 1 .gitignore file not applied (1 over the ignore-rule budget), so ignored \
+             shares under a are not exact; sizes are."
+        );
+
         let complete = ControlCoverage::Observed(ControlObservation {
             limits: defaults,
             applied: 3,

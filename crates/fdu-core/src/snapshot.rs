@@ -694,8 +694,8 @@ fn read_bytes(reader: &mut impl Read) -> ParseResult<Vec<u8>> {
 ///
 /// Every source is admitted again under the recorded limits. The charge does not depend
 /// on admission order, so a table a scan retained always fits; one that does not, a
-/// repeated path, or a refusal naming a retained or repeated path was not written by
-/// [`save`].
+/// repeated path, a refusal naming a retained or repeated path, or a refusal by a limit
+/// recorded as unbounded was not written by [`save`].
 fn read_controls(reader: &mut impl Read) -> ParseResult<crate::control::ControlTable> {
     let control_count = read_u32(reader)?;
     if usize::try_from(control_count)
@@ -738,7 +738,11 @@ fn read_controls(reader: &mut impl Read) -> ParseResult<crate::control::ControlT
             REFUSED_FOR_LINE_LIMIT => crate::control::ControlRefusalReason::LineLimit,
             _ => return Err(ParseError::Invalid),
         };
-        if !crate::control::is_control_file(&path) || controls.contains(&path) {
+        // An unbounded limit refuses nothing, so no save records a refusal by one.
+        if !crate::control::is_control_file(&path)
+            || controls.contains(&path)
+            || limits.limit_for(reason).is_none()
+        {
             return Err(ParseError::Invalid);
         }
         controls.record_refusal(&path, reason).map_err(|_| ParseError::Invalid)?;
@@ -1693,36 +1697,53 @@ mod tests {
         fs::write(&path, &unknown_reason).expect("write corrupt reason");
         assert!(load(&path).expect("corrupt equals absent").is_none());
 
-        // A refusal naming a retained source, or one already refused, is corrupt. Built with
-        // the platform's own path encoding, so the same bytes mean the same on every target.
-        let section = |retained: &str, refusals: &[&str]| {
+        // A refusal naming a retained source, or one already refused, is corrupt, and so is a
+        // refusal by a limit the section records as unbounded, which refuses nothing. Built
+        // with the platform's own path encoding, so the same bytes mean the same on every
+        // target.
+        let defaults = crate::control::ControlLimits::default();
+        let section = |limits: crate::control::ControlLimits, refusals: &[(&str, u8)]| {
             let mut section = Vec::new();
             section.extend_from_slice(&1_u32.to_le_bytes());
-            put_os_str(&mut section, OsStr::new(retained)).expect("retained path");
+            put_os_str(&mut section, OsStr::new(".gitignore")).expect("retained path");
             section.extend_from_slice(&6_u32.to_le_bytes());
             section.extend_from_slice(b"*.log\n");
-            put_control_limit(&mut section, Some(crate::control::DEFAULT_CONTROL_BUDGET))
-                .expect("budget");
-            put_control_limit(&mut section, Some(crate::control::DEFAULT_CONTROL_LINE_LIMIT))
-                .expect("line limit");
+            put_control_limit(&mut section, limits.budget).expect("budget");
+            put_control_limit(&mut section, limits.line_limit).expect("line limit");
             let count = u32::try_from(refusals.len()).expect("few refusals");
             section.extend_from_slice(&count.to_le_bytes());
-            for refusal in refusals {
+            for (refusal, reason) in refusals {
                 put_os_str(&mut section, OsStr::new(refusal)).expect("refused path");
-                section.push(REFUSED_FOR_BUDGET);
+                section.push(*reason);
             }
             section
         };
-        let valid = read_controls(&mut section(".gitignore", &["a/.gitignore"][..]).as_slice())
-            .expect("a well-formed control section");
-        assert_eq!((valid.len(), valid.refused_len()), (1, 1));
-        for refusals in [&[".gitignore"][..], &["a/.gitignore", "a/.gitignore"][..]] {
+        let no_budget = crate::control::ControlLimits { budget: None, ..defaults };
+        let no_line_limit = crate::control::ControlLimits { line_limit: None, ..defaults };
+        for (limits, refusals) in [
+            (defaults, &[("a/.gitignore", REFUSED_FOR_BUDGET)][..]),
+            (no_budget, &[("a/.gitignore", REFUSED_FOR_LINE_LIMIT)][..]),
+            (no_line_limit, &[("a/.gitignore", REFUSED_FOR_BUDGET)][..]),
+        ] {
+            let valid = read_controls(&mut section(limits, refusals).as_slice())
+                .expect("a well-formed control section");
+            assert_eq!((valid.len(), valid.refused_len()), (1, 1));
+        }
+        for (limits, refusals) in [
+            (defaults, &[(".gitignore", REFUSED_FOR_BUDGET)][..]),
+            (
+                defaults,
+                &[("a/.gitignore", REFUSED_FOR_BUDGET), ("a/.gitignore", REFUSED_FOR_BUDGET)][..],
+            ),
+            (no_budget, &[("a/.gitignore", REFUSED_FOR_BUDGET)][..]),
+            (no_line_limit, &[("a/.gitignore", REFUSED_FOR_LINE_LIMIT)][..]),
+        ] {
             assert!(
                 matches!(
-                    read_controls(&mut section(".gitignore", refusals).as_slice()),
+                    read_controls(&mut section(limits, refusals).as_slice()),
                     Err(ParseError::Invalid)
                 ),
-                "{refusals:?}"
+                "{limits:?} {refusals:?}"
             );
         }
     }
