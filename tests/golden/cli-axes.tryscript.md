@@ -376,7 +376,8 @@ fdu: --only-ignored needs .gitignore classification, and --no-gitignore turned i
 ### A Rule File the Budget Refuses Is Named, and Sizes Stay Exact
 
 A `.gitignore` with a line over the 16 KiB line limit is refused rather than ending the
-scan. The note names where the split is not exact and the flag that raises the limit that
+scan.
+The note names where the split is not exact and the flag that raises the limit that
 fired, not the other one.
 
 ```console

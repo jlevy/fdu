@@ -116,8 +116,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✗ A Rule File the Budget Refuses Is Named, and Sizes Stay Exact
 @@ -1,2 +1,2 @@
      16 KiB  2 files, 0 directories
--note: 1 .gitignore file not applied (1 with a line over the 16 KiB line guard), so ignored shares under . are not exact; sizes are. To apply them, set --gitignore-budget to all to lift the line guard
-+note: 1 .gitignore file not applied (1 with a line over the 16 KiB line guard), so ignored shares under . are not exact; sizes are. To apply them, set control_budget to all to lift the line guard
+-note: 1 .gitignore file not applied (1 with a line over the 16 KiB line limit), so ignored shares under . are not exact; sizes are. To apply them, raise --gitignore-line-limit above 16 KiB, or set it to all
++note: 1 .gitignore file not applied (1 with a line over the 16 KiB line limit), so ignored shares under . are not exact; sizes are. To apply them, raise control_line_limit above 16 KiB, or set it to all
   ✓ JSON Carries the Versioned Envelope
   ✓ JSONL Is One Document per Line
   ✓ YAML Quotes Only What Would Be Ambiguous
@@ -288,7 +288,7 @@ PASS [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,106 +1,1 @@
+@@ -1,108 +1,1 @@
 -fdu — a fast, incremental file roll-up engine.
 -
 -THE LADDER
@@ -378,7 +378,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  --no-gitignore reads no rules and shows no share. Only per-directory .gitignore
 -  files apply, not core.excludesFile, .git/info/exclude, or a global ignore file,
 -  and matching is case-sensitive on every platform. An unreadable .gitignore makes
--  the result partial, like any unreadable path.
+-  the result partial, like any unreadable path. A .gitignore past --gitignore-budget
+-  or --gitignore-line-limit is refused whole and named in a note: sizes stay exact,
+-  ignored shares under that directory do not.
 -
 -OUTPUT AND AUTOMATION
 -  Metadata-only machine output remains fdu.report/5; metric summaries use fdu.report/6.

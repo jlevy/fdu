@@ -5883,17 +5883,33 @@ mod tests {
         let config = ScanConfig { read_controls: true, threads: Some(1), ..ScanConfig::default() };
 
         crate::counters::enable(true);
-        crate::counters::reset();
+        // Deltas around the scan rather than absolute totals, for the reason
+        // `a_walk_moves_every_counter_it_should` gives: the counters are process-global,
+        // `test_serial` only serializes the tests that take it, and every report in this
+        // binary now reads `.gitignore` by default, so a test running beside this one can
+        // add control reads of its own.
+        let before = crate::counters::snapshot();
         let (index, report) = scan_into_index(dir.path(), &config).expect("scan");
         crate::counters::flush_thread();
-        let counts = crate::counters::snapshot();
+        let after = crate::counters::snapshot();
         crate::counters::enable(false);
 
         assert!(report.is_complete(), "{:?}", report.errors);
         assert_eq!(observed_coverage(&index).refused, 1);
-        assert_eq!(counts.control_reads, 3, "one read per .gitignore");
-        assert_eq!(counts.control_refused, 1, "the line over the limit");
-        assert_eq!(counts.control_sources_shared, 1, "the twin shares one parsed content");
+        // `>=` in the one direction concurrency can move them. A count that is too low
+        // means a path ran uninstrumented, which is the defect worth catching; too high
+        // is another test's tree, which is not.
+        for (label, observed, expected) in [
+            ("one read per .gitignore", after.control_reads - before.control_reads, 3),
+            ("the line over the limit", after.control_refused - before.control_refused, 1),
+            (
+                "the twin shares one parsed content",
+                after.control_sources_shared - before.control_sources_shared,
+                1,
+            ),
+        ] {
+            assert!(observed >= expected, "{label}: counted {observed}, expected {expected}");
+        }
     }
 
     /// Both limits are part of the scope, and each lifts only its own refusals: no budget

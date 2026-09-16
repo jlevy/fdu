@@ -31,7 +31,7 @@ events backend is.
 What this pins: the stream schema on every record, the op vocabulary, which fields are
 present per op, and that removal records carry no metadata — a consumer distinguishes
 “gone” from “unknown” by the fields being absent.
-Every record an observing run emits states the entry's `.gitignore` classification, the
+Every record an observing run emits states the entry’s `.gitignore` classification, the
 same fact the initial rows carry; a run that read no rules omits the field rather than
 calling every entry unignored.
 

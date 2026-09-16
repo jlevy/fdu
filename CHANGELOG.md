@@ -199,12 +199,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     from `prepare_report` and a watch session.
     `fdu_core::query::report` returns `Result<Report>` and refuses the same way, so no
     entry point answers an unanswerable selection with an empty report.
-  - A `--watch` stream maintains the entry set its selection names. A `.gitignore` edit
-    that moves an entry into `--exclude-ignored` or `--only-ignored` streams the upsert
-    that draws it, and one that moves it out streams the removal, even though nothing
-    about the file changed on disk. Every change record carries `ignored`, absent when
-    the run read no rules, joining `fdu.stream/1`; Rust `Change` and Python `Change`
-    gain the field.
+  - A `--watch` stream maintains the entry set its selection names.
+    A `.gitignore` edit that moves an entry into `--exclude-ignored` or `--only-ignored`
+    streams the upsert that draws it, and one that moves it out streams the removal,
+    even though nothing about the file changed on disk.
+    Every change record carries `ignored`, absent when the run read no rules, joining
+    `fdu.stream/1`; Rust `Change` and Python `Change` gain the field.
   - An unfiltered `--view summary` that reads `.gitignore` retains the index to classify
     entries, so it uses more memory than the aggregate-only plan, which
     `--no-gitignore --view summary` still takes, and it saves a snapshot like any other

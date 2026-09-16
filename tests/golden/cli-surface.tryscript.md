@@ -284,9 +284,10 @@ An unreadable `.gitignore` makes the result partial (exit 2), while one past
 `--gitignore-budget` or `--gitignore-line-limit` is refused whole and named in a note:
 sizes stay exact, the ignored shares under that directory do not.
 
-Under `--watch`, a rule edit that moves an entry into either selection streams the upsert
-that draws it and one that moves it out streams the removal, so the stream holds the entry
-set the flag names; every change record carries `ignored`, absent where no rule was read.
+Under `--watch`, a rule edit that moves an entry into either selection streams the
+upsert that draws it and one that moves it out streams the removal, so the stream holds
+the entry set the flag names; every change record carries `ignored`, absent where no
+rule was read.
 
 ## Value Grammars
 
