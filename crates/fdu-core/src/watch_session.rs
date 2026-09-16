@@ -312,13 +312,13 @@ impl Session {
             // A rule edit changes what an ignored-state selection contains without
             // anything on disk changing for the entry, so the entry set the flag promises
             // is maintained here rather than left to the aggregates: a row that left is
-            // removed and a row that arrived is upserted with the facts to draw it. Under
-            // `IgnoredEntries::Include` the selection admits both partitions, so `before`
-            // and `after` agree and nothing is emitted.
+            // removed and a row that arrived is upserted with the facts to draw it.
             EffectiveChange::Reclassified { path, previous_ignored, current_ignored } => {
                 let name = path.file_name()?.to_string_lossy().into_owned();
-                // Absent when the entry left the index after the commit, and then its own
-                // removal is already in this batch.
+                // Absent in two cases, each meaning there is nothing to emit: a selection
+                // that admits both partitions, whose membership no edit can change, and an
+                // entry that left the index after the commit, whose removal is already in
+                // this batch.
                 let entry = facts.reclassified.get(path)?;
                 let admits = |ignored: bool| {
                     self.selection().admits(&crate::query::Candidate {
