@@ -505,9 +505,9 @@ class IgnoredTally:
     """The part of a row's tallies that ``.gitignore`` rules ignore.
 
     An entry is ignored when a rule matches it or any directory above it. Counted over the
-    selected entries, like the row itself. Below a ``.gitignore`` the control budget
-    refused (``Status.ignore_rules``) the split is not exact in either direction; the
-    sizes it divides are.
+    selected entries, like the row itself. Below a ``.gitignore`` that a control limit
+    refused (the budget or the line limit; ``Status.ignore_rules`` names which), the split
+    is not exact in either direction; the sizes it divides are.
     """
 
     files: int
@@ -707,11 +707,12 @@ class Report:
     analysis: AnalysisMetadata | None
     sections: tuple[ReportSection, ...]
     #: Remarks the report makes about itself, in the order a renderer prints them --
-    #: today, the views `full` had to drop for want of an analyzer. Carried as values
-    #: rather than left inside the text rendering, because a caller reading `sections`
-    #: would otherwise find one absent with no way to learn why (fdu-7wd1). Deliberately
-    #: not in `as_dict`: the wire envelope excludes them, and a machine consumer reads
-    #: the omission from which sections are present.
+    #: the views `full` had to drop for want of an analyzer, and the ``.gitignore`` files a
+    #: control limit refused. Carried as values rather than left inside the text
+    #: rendering, because a caller reading `sections` would otherwise find one absent with
+    #: no way to learn why (fdu-7wd1). Deliberately not in `as_dict`: the wire envelope
+    #: excludes them, and a machine consumer reads the omission from which sections are
+    #: present and the refusals from ``status.ignore_rules``.
     notes: tuple[str, ...]
     _wire: dict[str, JsonValue] = field(repr=False, compare=False)
     #: Bound renderer, supplied by `Index.report`. Absent on a report built by hand.

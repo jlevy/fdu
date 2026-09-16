@@ -83,9 +83,11 @@ Literal syntax stays as Cargo spells it: `[features]`, `--features watch`,
 `cfg(feature = "watch")`. `watch` is the engine’s only optional-capability build
 feature: it carries a real dependency tree and must stay deletable.
 `extension-module` in `fdu-py` is a packaging switch for the Python extension, not a
-capability. `.gitignore` handling is built in, and `read_controls` switches it per
-request: on by default for `open` and `scan` in Rust and Python, and off for one-shot
-reports and `fdu --watch` until `fdu-elnn` lands.
+capability. `.gitignore` handling is built in and read by default on every surface:
+`open`, `scan`, one-shot reports, and `fdu --watch`, in Rust, Python, and the command
+line. `read_controls` turns it off per request (`--no-gitignore` on the command line,
+`ScanOptions(read_controls=False)` in Python), and such a request is a separate snapshot
+scope. An opened root always reads it.
 
 ### Platform-gated code
 

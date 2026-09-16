@@ -45,8 +45,9 @@ network filesystems may legally return a short buffer mid-stream.
 The parallel companion to `walkspike.c`, and the denominator for any question of the
 form “how close is fdu to the machine”.
 `walkspike` is single-threaded, which is right for ranking syscall strategies and wrong
-as a lower bound for a parallel walker: fdu’s aggregate tier runs four workers, so a
-one-thread floor sits above it rather than below.
+as a lower bound for a parallel walker: fdu’s automatic pool, shared by the aggregate
+and indexed tiers, starts at the available cores capped at six, so a one-thread floor
+sits above it rather than below.
 `parfloor` runs N workers over a shared directory queue, doing raw `getdents64` plus one
 `statx` per entry into four integer accumulators, and nothing else — no index, no
 retained paths, no per-entry allocation, no delta contract.
@@ -66,8 +67,12 @@ Isolating it costs nothing else, so the gap prices that choice alone.
 
 ```shell
 gcc -O2 -pthread -o parfloor parfloor.c
-./parfloor stat /path/to/tree 4
+./parfloor stat /path/to/tree 6
 ```
+
+Give it the same N as the fdu measurement it is the floor for, fixed on fdu’s side with
+the probe’s `--threads N`, as [`floor.py`](../realtree/floor.py) does; six is the
+automatic starting pool on a machine with at least six cores.
 
 Tallies match `walkspike`, `arena_spike`, `peerwalk` and fdu’s summary, so any variant
 or thread count that disagrees is broken rather than fast.
@@ -156,8 +161,12 @@ SPIKE_TREE=/path/to/tree SPIKE_FDU=target/release/fdu \
   python3 paired_runner.py warm "fdu-summary:diskus,fdu-tree:dut" 10
 ```
 
-Edit the `TOOLS` table for the binaries under test; entries reference competitor
-binaries by absolute path so the exact artifact measured is unambiguous.
+Edit the `TOOLS` table for the binaries under test, or point `SPIKE_TOOLS` at a JSON
+object of extra entries; entries reference competitor binaries by absolute path so the
+exact artifact measured is unambiguous.
+`fdu-summary` is `fdu --cache off --view summary`, which reads `.gitignore` and so
+retains the index. Pairing the transient tier against total-only tools needs an entry
+that adds `--no-gitignore`.
 
 ## gen_tree.py
 
@@ -173,10 +182,6 @@ python3 gen_tree.py /tmp/fdu-spike/tree 450000
 Sizes use sparse files, so apparent sizes are realistic while disk use stays small;
 allocated-size distributions are therefore *not* realistic, which is fine for
 metadata-path timing and wrong for anything comparing allocated-byte semantics.
-
-<!-- This document follows common-doc-guidelines.md.
-See github.com/jlevy/practical-prose and review guidelines before editing.
--->
 
 ## ttfb.py
 
@@ -195,3 +200,7 @@ python3 ttfb.py /path/to/tree /tmp/fdu.control /tmp/fdu.candidate 12 first
 ```
 
 exp-068 is the worked example.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

@@ -4,9 +4,18 @@
 
 **Author:** fdu project
 
-**Status:** Complete and merged; every bead under it is closed.
-It stays in `active/` only because open follow-up epics still cite it, and it is listed
-in [the archive](../../../../TODO.archive.md)
+**Status:** Completed.
+[PR #2](https://github.com/jlevy/fdu/pull/2) shipped it, and the epic `fdu-6c8n` and
+every bead under it are closed.
+It stays in `active/` only until its inbound links move with it, and it is listed in
+[the archive](../../../../TODO.archive.md).
+
+**Superseded by
+[the composable CLI plan](plan-2026-08-10-fdu-composable-cli-surface.md).** The body
+below is the record of PR #2, not a description of the shipped surface: the automation
+flag is now `--format json`, the Python package is `fdu` with the console script
+`fdu = "fdu:_main"`, and the fields an agent must check are listed under “Validate Every
+Automated Result” in `fdu --skill`.
 
 ## Overview
 

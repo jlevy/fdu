@@ -66,10 +66,13 @@ each reader has to reconstruct.
 
 ### What the record does and does not hold
 
-66 artifacts across 20 subjects.
-The `Subject` model pins identity precisely — a `fdu-index-record-v1` digest over every
-entry’s path, kind, size, mtime, ctime, inode and device — so any reader can tell
-whether the tree in front of them is the one measured.
+66 artifacts across 20 subjects when this was drafted; on 2026-09-16 the generated
+projection (`docs/project/reports/performance-evidence/timeline.json`) lists 105
+experiments across 33 subjects, and the experiment schema still has neither
+`verdict.scope` nor a subject profile, so all of them predate Phase 1. The `Subject`
+model pins identity precisely — a `fdu-index-record-v1` digest over every entry’s path,
+kind, size, mtime, ctime, inode and device — so any reader can tell whether the tree in
+front of them is the one measured.
 
 That answers “is this the same tree?”
 and nothing else. Until PR #38 the record could not answer “how do I get one?”, and of
@@ -214,8 +217,9 @@ record.
   `perf-record`; the materially-different predicate with tests over the real corpus of
   20 subjects.
 - [ ] `fdu-i4u4` — `verdict.scope` on the model, required for new artifacts; backfill
-  the existing 66 as `untested` except exp-064/065, which are `subject-specific` and
-  `transfers` respectively.
+  every artifact that predates the field (66 when drafted, 105 on 2026-09-16) as
+  `untested` except exp-064/065, which are `subject-specific` and `transfers`
+  respectively.
 - [ ] `fdu-b6lz` — ledger and evidence report render scope and profile inline with every
   headline figure.
 - [ ] `fdu-1xlb` — provenance required past the cutover; variant-spelling hypothesis ids

@@ -47,7 +47,7 @@ a library caller the whole API: one name to know either way.
 `fdu-core` exists so that the command line can depend on the engine **as an external
 crate**, which is what makes the boundary real.
 
-Two Rust crates, and no more.
+Two published Rust crates, and no more; `fdu-py` is built only into the Python package.
 The Python binding needs the command line reachable as a library — its console script
 compiles `run_process` into the extension module — which is why `fdu` is a library as
 well as a binary.
@@ -106,8 +106,9 @@ still match, so it would silently absorb the next real regression.
   `Report` cannot reproduce the performance footer or a note quoting bytes read.
 - **The same rule in each surface’s knob names.** `--scan-depth` against `max_depth`,
   from one constant with the names substituted; `--gitignore-budget` against
-  `control_budget`, and `--only-ignored` and `--no-gitignore` against `ignored=only` and
-  `read_controls`, from `AxisNames`.
+  `control_budget`, `--only-ignored` and `--no-gitignore` against `ignored=only` and
+  `read_controls`, and the other pairs `KNOBS` in `parity-classes.mjs` elides, from
+  `AxisNames`.
 - **Discovery surfaces.** `--docs` and `--skill` are static documents; `--version` names
   the surface deliberately, which is what keeps the artifact non-empty.
 
@@ -118,8 +119,9 @@ observable.
 
 `open` retains an index and writes a snapshot: right for a caller asking many questions.
 `report` runs the command line’s one-shot contract, retaining the least state the
-request needs — an unfiltered summary is answered by a transient tier that retains
-nothing and therefore writes no snapshot.
+request needs. An unfiltered summary that turns `.gitignore` observation off is answered
+by a transient tier that retains nothing and therefore writes no snapshot; the default
+summary reports its ignored share, which needs the index.
 
 Using `open` for a single question caches state the walk never saved, which a later
 cache-only read can see.
@@ -131,6 +133,28 @@ it off its own way: `--no-gitignore`, `ScanOptions(read_controls=False)`, or
 `ScanConfig::read_controls`. That keeps one default snapshot scope across all three, and
 it is why a selection by ignored state is refused by the same rule everywhere, in each
 surface’s names for the two knobs.
+
+## Machine Output Schemas
+
+Machine output names its schema in a `schema` field: at the top of a JSON or YAML
+document, in the first record of JSON Lines, and on every watch stream record.
+The version is the compatibility promise: changing a field’s name, type, or meaning
+bumps it, and a golden fails when the output moves without a bump.
+Each identity is a constant in the engine’s
+[`report_format`](../../../crates/fdu-core/src/report_format.rs) module, so every
+surface emits the same string.
+
+| Schema | Document | Constant |
+| --- | --- | --- |
+| `fdu.report/5` | A report, one-shot or each one a watch run prints, with no content analysis and no metric summary | `REPORT_SCHEMA` |
+| `fdu.report/6` | A report that ran content analysis or has a `types`, `families`, `languages`, or `documents` section | `CONTENT_REPORT_SCHEMA` |
+| `fdu.stream/1` | A watch run’s `change` record, with `op` of `upsert`, `remove`, or `invalidate`: one per applied change under the `files` view, and every invalidation | `STREAM_SCHEMA` |
+| `fdu.cache/1` | Cache status, a fact about the cache directory rather than about a tree | `CACHE_SCHEMA` |
+
+The three families version independently, so a report change never bumps the stream or
+cache-status schema, or the reverse.
+No document yet states each envelope field by field (`fdu-c5v1`); until one does, the
+renderers in `report_format.rs` and the goldens under `tests/golden/` are the reference.
 
 ## Interactive Client Boundary
 

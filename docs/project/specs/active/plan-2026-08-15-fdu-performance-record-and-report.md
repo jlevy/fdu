@@ -5,7 +5,10 @@
 **Author:** fdu project
 
 **Status:** Active. Phase A landed and Phase B’s harness landed; Phase B’s artifact
-backfill is blocked on a quiet host, and Phases C–D are open.
+backfill is blocked on a quiet host, and Phase C is open.
+Phase D landed in a different shape from the one below: a generated, charted
+[performance evidence report](../../reports/report-2026-08-20-fdu-performance-evidence.md)
+rather than one section per improvement, with per-platform absolute walls still to add.
 Scheduled as Phase E of
 [the campaign-2 plan](plan-2026-08-23-fdu-performance-campaign-2.md), which owns the
 work order; this plan owns what the record must contain.
@@ -17,9 +20,10 @@ record, ending in a generated technical report: every improvement step, accepted
 rejected, with absolute timings on macOS and Linux.
 
 The audit behind this plan found the record stronger than feared and narrower than
-wanted. All 64 committed artifacts already carry absolute wall medians for control and
-candidate in nanoseconds, the subject tree’s fingerprint and entry counts, and the host,
-filesystem, and cache state.
+wanted.
+All 64 artifacts committed at the time (105 on 2026-09-16) already carry absolute
+wall medians for control and candidate in nanoseconds, the subject tree’s fingerprint
+and entry counts, and the host, filesystem, and cache state.
 Nothing historical needs re-measuring to state what was measured.
 What the record lacks is surface and span: the ledger’s tables show relative deltas
 only, so the absolutes are buried in artifact bodies; and almost every experiment ran in
@@ -50,7 +54,7 @@ cells.
 ## Background
 
 Two campaigns collided on experiment ids 056–059 and were resolved by renumbering and
-regeneration during the PR 29 re-stack; the ledger now validates 64 artifacts with both
+regeneration during the PR 29 re-stack; the ledger then validated 64 artifacts with both
 campaigns coexisting.
 The same review found the session-scale evidence for the snapshot-read gate
 (`fdu-wpku`), the macOS validation of the consumer campaign (`fdu-m4r6`), and the peer
@@ -78,12 +82,15 @@ numbers stay machine-read from artifacts.
   comparable only within one tree on one machine — and the record turns out to span 24
   such groups, so a flat list would have invited exactly the cross-subject reading the
   loop forbids.
-- [x] Add the collision check to `perf-ledger` (`fdu-f8ni`). A duplicate experiment id
-  is fatal. Hypothesis reuse is a warning rather than an error, because the obvious
-  stricter rule is wrong: a hypothesis is *supposed* to span experiments under different
-  titles, which is how a claim is carried through a cumulative run or confirmed on a
-  second platform — `H31` spans twelve experiments here, all correct, and a title-keyed
-  rule would have rejected the committed record.
+- [x] Add the collision check to `perf-ledger` (`fdu-f8ni`; `check_identifiers` in
+  `explorations/benchmarks/realtree/summary.py`). The bead stays open for its larger
+  scope, reserving ids at registration time.
+  A duplicate experiment id is fatal.
+  Hypothesis reuse is a warning rather than an error, because the obvious stricter rule
+  is wrong: a hypothesis is *supposed* to span experiments under different titles, which
+  is how a claim is carried through a cumulative run or confirmed on a second platform —
+  `H31` spans twelve experiments here, all correct, and a title-keyed rule would have
+  rejected the committed record.
   What the check flags instead is one base number wearing several label spellings, the
   signature the real collision left.
 
@@ -135,6 +142,16 @@ no measurement changed.
   hypothesis, decision, and per-platform absolute walls with intervals, grouped by
   subject; accepted and rejected both, because the rejections are the reusable half.
 - [ ] Wire it into `perf-ledger` so ledger and report regenerate together.
+
+What landed instead (PR #36): `make perf-report` projects every artifact into
+`docs/project/reports/performance-evidence/timeline.json` and renders a self-contained
+page with absolute milliseconds at the cumulative checkpoints, per-entry cost per
+subject, and every experiment’s paired effect with its 95% interval, accepted and
+rejected. It is a separate target from `perf-ledger`, and `make check` runs
+`perf-ledger-check` and `perf-report-check` together, so neither generated file can
+drift from the artifacts.
+The per-improvement sections with per-platform absolute walls are not in it, and they
+depend on Phase C’s cross-platform cells.
 
 ## Testing Strategy
 

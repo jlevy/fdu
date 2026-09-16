@@ -33,8 +33,8 @@ metadata layout move as a unit.
 
 | Platform | Status | What is different about it |
 | --- | --- | --- |
-| macOS / APFS | Primary; 57 of the 66 ledger experiments | `getattrlistbulk` returns enumeration and complete stat-tier metadata per directory, so the per-entry metadata wait the portable path pays is largely hidden |
-| Linux / ext4 | 9 ledger experiments, all virtualized | No bulk-metadata analog is profitable; the standard library already issues `getdents64` + dirfd-relative `statx`, so per-entry kernel time is the floor |
+| macOS / APFS | Primary; most ledger experiments, counted in its regime coverage table | `getattrlistbulk` returns enumeration and complete stat-tier metadata per directory, so the per-entry metadata wait the portable path pays is largely hidden |
+| Linux / ext4 | A minority of ledger experiments, all on virtualized hosts | No bulk-metadata analog is profitable; the standard library already issues `getdents64` + dirfd-relative `statx`, so per-entry kernel time is the floor |
 | Windows / NTFS | CI-tested for correctness; unmeasured for speed | — |
 
 ### Host
@@ -72,8 +72,10 @@ needs a measurement in both.
 
 ## Constants and where their evidence comes from
 
-Every value below is in `crates/fdu-core/src/scan.rs` unless noted, and every one
-carries a doc comment citing the measurement that chose it.
+The scan constants below are read from the per-platform tables (`MACOS` and `PORTABLE`)
+in `crates/fdu-core/src/platform_tuning.rs`, whose readers are the named constants in
+`scan.rs`; the two buffer sizes are constants in the modules their names give.
+Every one carries a doc comment citing the measurement that chose it.
 The column that matters is the last one.
 
 This table is written by hand because nothing else records the link it carries.
@@ -96,7 +98,6 @@ Prefer the doc comment: it is what the next person editing the value will read.
 | `DEFAULT_BATCH_SIZE` | 1,024 | M1 Pro | **None** |
 | `macos_bulk::BUFFER_BYTES` | 64 KiB | M1 Pro; 256 KiB refuted (exp-029/039) | Not applicable — macOS only |
 | `content_analysis::READ_CHUNK_BYTES` | 64 KiB | M1 Pro, 307–2,001-entry trees | **None** |
-| `DEFAULT_MAX_FILE_BYTES` | 16 MiB | Policy choice, not a measured knee | Not a tuning constant |
 | Global allocator | system | Never chosen by measurement | Measured, not adopted. mimalloc wins **only the aggregate tier** (−23.0% [−28.4%, −16.7%]); the index tier and snapshot load both span zero. Costs +139% peak RSS on that tier and is unmeasured on macOS, where the system allocator differs. See H74/H85 |
 
 ### The adaptive threshold is the clearest suspected mismatch
@@ -220,9 +221,10 @@ one instead argued against it.
 The reason belongs beside the others.
 
 Measured on Linux/ext4 over 84,539 entries, warm operating-system cache, nine
-interleaved paired trials: an unfiltered metadata summary answered transiently in 71 ms,
-while the same request under a warm revalidating `auto` policy took 161 ms, and a
-no-scan `only` read took 81 ms.
+interleaved paired trials: an unfiltered metadata summary answered transiently in 71 ms
+(measured before `.gitignore` was read by default; on a current build that tier is
+`--no-gitignore --view summary`), while the same request under a warm revalidating
+`auto` policy took 161 ms, and a no-scan `only` read took 81 ms.
 The mechanism is that revalidation stats every entry regardless of what the snapshot
 holds, so for a metadata query the snapshot avoids no filesystem work; deserialisation
 then costs about what a warm walk costs, roughly 0.96 against 0.84 microseconds per
@@ -241,11 +243,11 @@ supports is roughly 250,000 entries, measured on a virtualised host.
 Measuring it on Apple Silicon and APFS did not confirm that number.
 It removed the premise underneath it.
 Over 175,128 entries, warm, nine interleaved paired trials on an uncontrolled host, a
-transient summary took 521 ms (2.97 microseconds per entry) while a no-scan `only` read
-took 146 ms (0.83). Deserialisation costs about the same on both filesystems, but an
-APFS metadata walk costs roughly three and a half times what an ext4 one does, so the
-comparison that came out at +18% against the snapshot on ext4 comes out at more than
-three times *for* it here.
+transient summary (again the `--no-gitignore` tier today) took 521 ms (2.97 microseconds
+per entry) while a no-scan `only` read took 146 ms (0.83). Deserialisation costs about
+the same on both filesystems, but an APFS metadata walk costs roughly three and a half
+times what an ext4 one does, so the comparison that came out at +18% against the
+snapshot on ext4 comes out at more than three times *for* it here.
 The snapshot write measured 90 ms (0.51 per entry) against a 375 ms saving on each later
 `only` read: it repays itself about four times over on the first reuse, at any tree
 size.
@@ -299,7 +301,6 @@ gap, and
 which measured the aggregate, index, and content tiers together and found the warm-open
 inversion scale-independent.
 
-* * *
-
-*Part of the fdu project documentation.
-See [AGENTS.md](../../../AGENTS.md).*
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

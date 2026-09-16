@@ -657,18 +657,20 @@ fn scan_index(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     Ok(ProbeOutput::new(arguments.mode, "scan", component, summary))
 }
 
-/// The aggregate tier: five exact tallies, no retained index, no snapshot.
+/// The aggregate tier, under `--no-controls`: five exact tallies, no retained index, no
+/// snapshot.
 ///
-/// This is `fdu --view summary`. With `--no-controls`, as `fdu --no-gitignore --view
-/// summary`, it is the plan `plan_report` selects when a caller asks one unfiltered
-/// question and keeps nothing. Without it the scan observes `.gitignore`, as the command
-/// line does by default, and the planner falls closed to the index, because the transient
-/// tier keeps no table to classify the summary's ignored share with (fdu-elnn). It is the tier closest to the machine floor
-/// (1.20x on the primary synthetic subject, 1.59x on `/usr`) and it was the only tier
-/// with no probe mode, so every number about it came from the command line and carried
-/// process spawn, argument parsing, canonicalization and rendering. exp-043 and exp-044
-/// both resolved on wall changes of +0.67% and -1.15% while user CPU fell 40% and 50%,
-/// with no component timer available to tell dilution from a real effect.
+/// This is `fdu --no-gitignore --view summary`: the plan `plan_report` selects when a
+/// caller asks one unfiltered question, reads no `.gitignore`, and keeps nothing. Without
+/// `--no-controls` the mode runs `fdu --view summary`, whose scan observes `.gitignore` as
+/// the command line does by default, and the planner falls closed to the index, because
+/// the transient tier keeps no table to classify the summary's ignored share with
+/// (fdu-elnn). The aggregate tier is the tier closest to the machine floor (1.20x on the
+/// primary synthetic subject, 1.59x on `/usr`) and it was the only tier with no probe
+/// mode, so every number about it came from the command line and carried process spawn,
+/// argument parsing, canonicalization and rendering. exp-043 and exp-044 both resolved on
+/// wall changes of +0.67% and -1.15% while user CPU fell 40% and 50%, with no component
+/// timer available to tell dilution from a real effect.
 ///
 /// The blocker recorded against this in `fdu-tyjx` was that the planner was
 /// `pub(crate)`, so an example could not reach the tier at all. `fdu-z7sp` has since
@@ -682,9 +684,10 @@ fn scan_index(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
 /// third-party walkers; `Job.oracle` selects it. A tier that reported no oracle at all
 /// would be a tier whose speed nobody could trust.
 fn summary_tier(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
-    // `cache_path: None` with `CachePolicy::Off` is what keeps the planner on the
-    // transient tier: `Refresh` would demand an index to write, and `Only` would demand
-    // a snapshot to read. Off is also what the measured invocation uses.
+    // Once `--no-controls` has turned `.gitignore` observation off, `cache_path: None`
+    // with `CachePolicy::Off` is what keeps the planner on the transient tier: `Refresh`
+    // would demand an index to write, and `Only` would demand a snapshot to read. Off is
+    // also what the measured invocation uses.
     let config = OpenConfig {
         scan: arguments.scan.clone(),
         cache_path: None,

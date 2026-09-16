@@ -6,7 +6,13 @@ roll-up engine.
 The public package is `fdu`; `fdu._native` is private build machinery.
 The supported API includes typed query and scan options, immutable report sections,
 roll-ups, per-path provenance, cache management, refresh results, and change feeds.
-Filesystem failures that prevent an operation from starting remain exceptions.
+`.gitignore` is read by default: tree, summary, extension, and file rows carry their
+ignored share, `Selection(ignored=...)` selects one side, and `Status.ignore_rules`
+names any file the limits refused.
+`ScanOptions` carries the switch (`read_controls`) and both limits (`control_budget`,
+`control_line_limit`). Cache status is typed as `CacheState`, with `StaleReason` and
+`LeftoverKind`, and `clear_all_caches` returns a `ClearSummary`. Filesystem failures
+that prevent an operation from starting remain exceptions.
 Errors that make a scan partial remain structured data on `Status`, so callers can use
 the covered result without losing the reason it is incomplete.
 The

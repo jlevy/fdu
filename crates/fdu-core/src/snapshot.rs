@@ -58,9 +58,9 @@ const CRC32C_TABLES: [[u32; 256]; 8] = make_crc32c_tables();
 /// On-disk format version. Bump on any layout change; old snapshots are then discarded
 /// rather than misread.
 ///
-/// 4: the control section also carries the control budget and every refused control
-/// file, so a snapshot of an index that refused some reloads with the same coverage
-/// rather than claiming every rule applied.
+/// 4: the control section also carries both control limits, the budget and the line
+/// limit, and every refused control file, so a snapshot of an index that refused some
+/// reloads with the same coverage rather than claiming every rule applied.
 const FORMAT_VERSION: u32 = 4;
 
 /// Version of the rules that decide which bucket an entry's bytes are tallied under.
