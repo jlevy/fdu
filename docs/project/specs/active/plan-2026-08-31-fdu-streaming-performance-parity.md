@@ -1139,6 +1139,9 @@ unused consequence construction as the leading detached cost.
   status, and close the linked beads only after the stacked PR’s CI passes.
   CI passed and fifteen of the plan’s beads are closed; `fdu-lj4h` and `fdu-0q6w` are in
   progress, and `fdu-rx0d` and the epic `fdu-748k` remain open.
+  The P0 regression bead `fdu-pro1`, which records the 3.6–10× whole-scan slowdown found
+  on the rewrite branch, is also in progress, and stays open until a quiet-host parity
+  run against the pre-rewrite control (`b75bf85`) proves parity.
 
 ## Bead Graph
 
