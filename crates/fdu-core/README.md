@@ -30,7 +30,8 @@ The `fdu` command and Python package enable it explicitly, while embedding consu
 leave it out along with its dependency tree.
 `.gitignore` handling is always compiled in, because it has no dependency to shed.
 Whether a request reads `.gitignore` files is decided at runtime by its
-`ScanConfig::read_controls`.
+`ScanConfig::read_controls`, which is on by default; a request that turns it off is a
+separate snapshot scope.
 
 Content inspection is optional and disabled by default.
 `OpenConfig::analysis` enables bounded streaming line, prose, and common-language SLOC
