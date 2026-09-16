@@ -3,14 +3,18 @@ type: is
 id: is-01m0k3ta5nqsq1hdnnn3bqmydh
 title: The files view truncates silently while the tree view marks it
 kind: bug
-status: open
+status: closed
 priority: 2
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md
 labels: []
 dependencies: []
 created_at: 2026-08-21T21:32:17.460Z
-updated_at: 2026-08-21T21:50:34.699Z
+updated_at: 2026-09-16T16:50:16.674Z
+closed_at: 2026-09-16T16:50:16.673Z
+close_reason: "a6b670c (PR #39): files is unbounded by default, and a files listing bounded with --limit states what it dropped and names --limit all in its header and machine bound; --limit help now reads 'Rows to show, per group'."
+resolution: null
+duplicate_of: null
 ---
 `--view files` stops at `--limit` (default 10) and prints nothing to say it truncated.
 Reproduced on a 192,871-entry tree: 10 rows, no marker, no count -- the listing simply

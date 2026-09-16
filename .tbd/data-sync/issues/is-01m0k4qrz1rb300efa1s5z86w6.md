@@ -5,7 +5,7 @@ title: Split the files view into files, largest, and recent; --view all becomes 
 kind: epic
 status: open
 priority: 1
-version: 9
+version: 10
 spec_path: docs/project/specs/active/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md
 labels: []
 dependencies: []
@@ -18,7 +18,7 @@ child_order_hints:
   - is-01m0k512k9a6dq2k51fbfe5xn4
   - is-01m0k5dv7ssrm0z1saak7ghcaq
 created_at: 2026-08-21T21:48:22.881Z
-updated_at: 2026-08-21T22:00:26.104Z
+updated_at: 2026-09-16T16:50:39.914Z
 ---
 `files` was three views wearing one name, which is why it could not have a coherent
 default: name-ascending order (right for an enumeration) plus a ten-row cap (right for a
@@ -47,3 +47,7 @@ summary. The rename carries meaning -- `--analyze all` is literally every analyz
 `--view full` is a curated digest, and the different word marks the different semantics.
 
 No backward compatibility is owed; this is pre-release.
+
+## Notes
+
+2026-09-16 (doc-drift audit package 4, verified at 16efcd0): the split shipped in PR #39 (a6b670c) and its shipped text in PR #62 (fdu-k4ad). Closed with commit citations: fdu-qbwf, fdu-xc1v, fdu-j1dc, fdu-c1qh, fdu-5akc, fdu-1lj3. Left open because fdu-c2ml is still open: JSONL report lines are checked only by the brace-balancing is_valid_json, never a real JSON parser. Close this epic when fdu-c2ml closes. The plan is marked Completed with that residual named.
