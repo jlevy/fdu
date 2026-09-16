@@ -981,7 +981,6 @@ sparse/preallocated size ordering before timing.
 `dust`, `gdu`, and `diskus` mainly reinforce work already measured: recursive high
 concurrency is not a new hypothesis after H52/H57 rejected over-threading on APFS.
 
-* * *
-
-*Part of the fdu project documentation.
-See [AGENTS.md](../../../AGENTS.md).*
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

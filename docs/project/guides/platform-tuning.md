@@ -301,7 +301,6 @@ gap, and
 which measured the aggregate, index, and content tiers together and found the warm-open
 inversion scale-independent.
 
-* * *
-
-*Part of the fdu project documentation.
-See [AGENTS.md](../../../AGENTS.md).*
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

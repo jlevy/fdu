@@ -295,7 +295,6 @@ hdiutil info | grep -c image-path   # no RAM disk left behind: expect 0
 tbd sync
 ```
 
-* * *
-
-*Part of the fdu project documentation.
-See [AGENTS.md](../../../AGENTS.md).*
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

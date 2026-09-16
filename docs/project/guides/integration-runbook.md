@@ -360,7 +360,6 @@ git status               # leave no unintended working-tree changes
   `crates/fdu/tests/watch_persistence.rs` and `watch_controls.rs` drive the binary;
   exercising a live watcher by hand needs a scratch tree and a second terminal.
 
-* * *
-
-*Part of the fdu project documentation.
-See [AGENTS.md](../../../AGENTS.md).*
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->
