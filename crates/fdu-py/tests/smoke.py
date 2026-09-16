@@ -110,7 +110,11 @@ def main() -> None:
     entrypoint = pathlib.Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu")
     assert entrypoint.is_file(), entrypoint
 
-    version = subprocess.run([entrypoint, "--version"], check=False, capture_output=True, text=True)
+    # Captured CLI output is UTF-8 on every platform. Decoding with the Windows locale
+    # silently turns non-ASCII text into different code points.
+    version = subprocess.run(
+        [entrypoint, "--version"], check=False, capture_output=True, encoding="utf-8"
+    )
     assert version.returncode == 0, version
     # A wheel built from a checkout carries the git revision as semver build metadata;
     # one built without git metadata reports the bare semver. Either way the semver
@@ -120,7 +124,7 @@ def main() -> None:
     assert version.stderr == "", version.stderr
 
     help_result = subprocess.run(
-        [entrypoint, "--help"], check=False, capture_output=True, text=True
+        [entrypoint, "--help"], check=False, capture_output=True, encoding="utf-8"
     )
     assert help_result.returncode == 0, help_result
     # Help is the flag reference. The prose it used to carry now lives behind --docs, so
@@ -134,7 +138,7 @@ def main() -> None:
     # The guide answers without a PATH and without scanning, from the installed wheel's
     # own entry point.
     docs_result = subprocess.run(
-        [entrypoint, "--docs"], check=False, capture_output=True, text=True
+        [entrypoint, "--docs"], check=False, capture_output=True, encoding="utf-8"
     )
     assert docs_result.returncode == 0, docs_result
     for section in ("THE LADDER", "SIX AXES", "CONTENT ANALYSIS", "OUTPUT AND AUTOMATION"):
@@ -156,7 +160,7 @@ def main() -> None:
         ],
         check=False,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
     )
     assert cli_scan.returncode == 0, cli_scan
     cli_data = json.loads(cli_scan.stdout)
@@ -174,7 +178,7 @@ def main() -> None:
         [entrypoint, "--definitely-not-an-option"],
         check=False,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
     )
     assert usage.returncode == 2, usage
     assert usage.stdout == "", usage.stdout

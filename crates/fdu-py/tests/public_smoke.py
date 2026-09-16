@@ -128,6 +128,9 @@ def check_render_matches_the_cli(root: Path, binary: str) -> None:
         report = index.report(fdu.Query(views=(view,)))
         for fmt in fdu.Format:
             rendered = report.render(fmt)
+            # Rust writes UTF-8 when stdout is a pipe. Windows' locale codec can decode
+            # those bytes into different code points that round-trip to the same log
+            # bytes, making identical-looking output compare unequal.
             cli = subprocess.run(
                 [
                     binary,
@@ -142,7 +145,7 @@ def check_render_matches_the_cli(root: Path, binary: str) -> None:
                     str(root),
                 ],
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 check=True,
             ).stdout
             # The CLI appends a performance footer; the schema excludes that telemetry and
@@ -671,7 +674,9 @@ def main() -> None:
         orphan.unlink()
 
     entrypoint = Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu")
-    version = subprocess.run([entrypoint, "--version"], check=False, capture_output=True, text=True)
+    version = subprocess.run(
+        [entrypoint, "--version"], check=False, capture_output=True, encoding="utf-8"
+    )
     assert version.returncode == 0, version
     assert version.stdout.startswith(f"fdu {fdu.__version__}"), version.stdout
     assert version.stderr == "", version.stderr
@@ -699,7 +704,7 @@ def main() -> None:
         ],
         check=False,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
     )
     assert cli_report.returncode == 0, cli_report
     cli_wire = json.loads(cli_report.stdout)
