@@ -1470,6 +1470,12 @@ pub fn render_cache_status(
             out
         }
         Format::Yaml => {
+            if statuses.is_empty() {
+                // A bare `caches:` is YAML null, where JSON says `[]`. The two formats
+                // carry one schema, so an empty listing has to be an empty sequence in
+                // both, and a parser reading either gets a list it can iterate.
+                return format!("schema: {}\ncaches: []", yaml_scalar(CACHE_SCHEMA));
+            }
             let mut out = format!("schema: {}\ncaches:", yaml_scalar(CACHE_SCHEMA));
             for status in statuses {
                 let _ = write!(out, "\n  - path: {}", yaml_scalar(&status.path.to_string_lossy()));
@@ -1531,7 +1537,7 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
     let mut lines = Vec::new();
     let mut current = 0_usize;
     let (mut stale, mut stale_bytes) = (0_usize, 0_u64);
-    let (mut leftover, mut leftover_bytes) = (0_usize, 0_u64);
+    let (mut leftover, mut leftover_bytes, mut staging) = (0_usize, 0_u64, 0_usize);
     let (mut unrecognized, mut unrecognized_bytes) = (0_usize, 0_u64);
     for status in statuses {
         let content_bytes = status.content_bytes.unwrap_or(0);
@@ -1570,7 +1576,10 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
                 leftover += 1;
                 leftover_bytes = leftover_bytes.saturating_add(status.bytes);
                 let what = match kind {
-                    LeftoverKind::StagingTemporary => "staging temporary",
+                    LeftoverKind::StagingTemporary => {
+                        staging += 1;
+                        "staging temporary"
+                    }
                     LeftoverKind::OrphanedContent => "orphaned content sidecar",
                 };
                 lines.push(format!(
@@ -1624,9 +1633,17 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
         } else {
             (format!("{leftover} leftover files"), "are", "them")
         };
+        // A staging file is reclaimed only once it is too old to belong to a running
+        // writer, and a status knows no file's age, so the promise names the exception
+        // rather than counting files the clear will then decline and explain.
+        let caveat = if staging > 0 {
+            ", though a staging file waits until it is too old to be a running writer's"
+        } else {
+            ""
+        };
         lines.push(format!(
             "{subject} ({leftover_bytes} bytes) {predicate} fdu's own, left by an interrupted \
-             write; fdu --cache-clear=all reclaims {object}."
+             write; fdu --cache-clear=all reclaims {object}{caveat}."
         ));
     }
     if unrecognized > 0 {
@@ -1712,10 +1729,18 @@ mod tests {
             ".g.fdu.tmp.1.2.3  leftover (staging temporary), 60 bytes\n\
              h.fdu.content  leftover (orphaned content sidecar), 70 bytes\n\
              2 leftover files (130 bytes) are fdu's own, left by an interrupted write; \
-             fdu --cache-clear=all reclaims them."
+             fdu --cache-clear=all reclaims them, though a staging file waits until it is \
+             too old to be a running writer's."
         );
         assert!(render_cache_status(&leftovers[..1], CacheScope::Root, Format::Text).ends_with(
             "1 leftover file (60 bytes) is fdu's own, left by an interrupted write; \
+                 fdu --cache-clear=all reclaims it, though a staging file waits until it \
+                 is too old to be a running writer's."
+        ));
+        // With no staging file listed, nothing is held back and the promise is plain: a
+        // status that named an exception with no file it could apply to would be noise.
+        assert!(render_cache_status(&leftovers[1..], CacheScope::All, Format::Text).ends_with(
+            "1 leftover file (70 bytes) is fdu's own, left by an interrupted write; \
                  fdu --cache-clear=all reclaims it."
         ));
 
@@ -1770,6 +1795,12 @@ mod tests {
         assert_eq!(
             render_cache_status(&[], CacheScope::All, Format::Json),
             "{\n  \"schema\": \"fdu.cache/1\",\n  \"caches\": []\n}"
+        );
+        // An empty sequence in both formats: a bare `caches:` is YAML null, and a reader
+        // of one schema should not have to tell null from a list it can iterate.
+        assert_eq!(
+            render_cache_status(&[], CacheScope::All, Format::Yaml),
+            "schema: fdu.cache/1\ncaches: []"
         );
         assert!(
             render_cache_status(&stale[2..3], CacheScope::All, Format::Json)

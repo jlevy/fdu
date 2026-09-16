@@ -190,7 +190,9 @@ Every release changes the engine fingerprint and some change the snapshot format
 snapshots an earlier build wrote can serve no later one.
 They are still fdu’s files: status names each with the reason this build cannot use it,
 sizes it, and says which command reclaims it.
-A file that is not an fdu snapshot is listed and left alone.
+A file that is not an fdu snapshot is listed and left alone, and so is a directory,
+which is sized at nothing: what a filesystem calls a directory’s size is its own
+accounting, it differs per platform, and it is not bytes a clear could reclaim.
 
 ```console
 $ fdu --size apparent project
@@ -209,16 +211,26 @@ planted: format 1, another engine, truncated, notes.txt
 ```
 
 ```console
+$ node bin/cache-plant.mjs directory
+planted: a directory under a snapshot's name
+? 0
+```
+
+```console
 $ fdu --cache-status=all project
 [CACHE_FILE]  stale (older snapshot format 1), 12 metadata bytes, 0 content bytes
 [CACHE_FILE]  stale (written by another fdu version), [BYTES] metadata bytes, 0 content bytes
 [CACHE_FILE]  stale (unreadable by this build), [BYTES] metadata bytes, 0 content bytes
+[CACHE_FILE]  unrecognized, 0 bytes
 [CACHE_FILE]  10 entries, [BYTES] metadata bytes, 0 content bytes  [SCAN_PATH]
 [CACHE_DIR]notes.txt  unrecognized, 15 bytes
 3 stale snapshots ([BYTES] bytes) cannot be served by this build; fdu --cache-clear=all removes them, along with every current snapshot.
-1 unrecognized file (15 bytes) is not an fdu snapshot, so fdu leaves it in place.
+2 unrecognized files (15 bytes) are not fdu snapshots, so fdu leaves them in place.
 ? 0
 ```
+
+The two unrecognized entries total the one file’s fifteen bytes: the directory adds
+nothing to a figure that is meant to say how much a clear would leave behind.
 
 ```console
 $ fdu --cache-status=all --format json project
@@ -228,6 +240,7 @@ $ fdu --cache-status=all --format json project
     {"path": "[CACHE_FILE]", "bytes": 12, "content_bytes": null, "state": "stale", "stale_reason": "older_format", "format_version": 1},
     {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "state": "stale", "stale_reason": "other_engine", "format_version": null},
     {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "state": "stale", "stale_reason": "unreadable", "format_version": null},
+    {"path": "[CACHE_FILE]", "bytes": 0, "content_bytes": null, "state": "unrecognized"},
     {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "state": "current", "root": "[SCAN_PATH]", "entries": 10},
     {"path": "[CACHE_DIR]notes.txt", "bytes": 15, "content_bytes": null, "state": "unrecognized"}
   ]
@@ -241,7 +254,7 @@ $ fdu --cache-status=all --format json project
 $ fdu --cache-clear=all project
 Cache directory: [CACHE_DIR]
 Cache cleared: 4 snapshots.
-Left in place: 1 file that is not an fdu snapshot; fdu --cache-status=all lists it.
+Left in place: 2 files that are not fdu snapshots; fdu --cache-status=all lists them.
 ? 0
 ```
 
@@ -249,8 +262,9 @@ What is left is still reported, rather than hidden behind “No cached snapshots
 
 ```console
 $ fdu --cache-status=all project
+[CACHE_FILE]  unrecognized, 0 bytes
 [CACHE_DIR]notes.txt  unrecognized, 15 bytes
-1 unrecognized file (15 bytes) is not an fdu snapshot, so fdu leaves it in place.
+2 unrecognized files (15 bytes) are not fdu snapshots, so fdu leaves them in place.
 ? 0
 ```
 
@@ -343,22 +357,24 @@ $ fdu --cache-status=all project
 [CACHE_FILE].tmp.1.0011223344556677.0  leftover (staging temporary), [BYTES] bytes
 [CACHE_FILE].tmp.1.0011223344556677.0  leftover (staging temporary), [BYTES] bytes
 [CACHE_FILE].content  leftover (orphaned content sidecar), 15 bytes
+[CACHE_FILE]  unrecognized, 0 bytes
 [CACHE_FILE]  10 entries, [BYTES] metadata bytes, 0 content bytes  [SCAN_PATH]
 [CACHE_DIR]notes.txt  unrecognized, 15 bytes
-3 leftover files ([BYTES] bytes) are fdu's own, left by an interrupted write; fdu --cache-clear=all reclaims them.
-1 unrecognized file (15 bytes) is not an fdu snapshot, so fdu leaves it in place.
+3 leftover files ([BYTES] bytes) are fdu's own, left by an interrupted write; fdu --cache-clear=all reclaims them, though a staging file waits until it is too old to be a running writer's.
+2 unrecognized files (15 bytes) are not fdu snapshots, so fdu leaves them in place.
 ? 0
 ```
 
 The staging file written a moment ago stays: nothing here can prove no writer still
 holds it, and the age threshold is what stands in for that proof.
+Status says so while counting it, rather than promising three and reclaiming two.
 
 ```console
 $ fdu --cache-clear=all project
 Cache directory: [CACHE_DIR]
 Cache cleared: 1 snapshot.
 Also reclaimed: 2 files fdu left behind.
-Left in place: 1 file that is not an fdu snapshot; fdu --cache-status=all lists it.
+Left in place: 2 files that are not fdu snapshots; fdu --cache-status=all lists them.
 Left in place: 1 staging file another fdu may still be writing.
 ? 0
 ```

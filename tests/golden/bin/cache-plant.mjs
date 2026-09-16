@@ -8,18 +8,20 @@
 // every format shares: the eight-byte magic, then the format version, then the engine
 // fingerprint. It never runs fdu and prints no product output, only what it planted.
 //
-// Usage: cache-plant <stale|other-engine|foreign|leftovers>
+// Usage: cache-plant <stale|directory|other-engine|foreign|leftovers>
 //
 //   stale         beside the current snapshot, add one in format version 1, a copy
 //                 under another engine fingerprint, a truncated copy, and a file that is
 //                 not a snapshot at all
+//   directory     add a directory under a snapshot's name, so a listing has to describe
+//                 something that is not a regular file and has no size to report
 //   other-engine  give the current snapshot another engine fingerprint, in place
 //   foreign       replace the current snapshot with a file that is not a snapshot
 //   leftovers     add what a killed writer leaves: a staging file too old to be anyone's,
 //                 one young enough to be a live writer's, and a sidecar with no snapshot.
 //                 Ages are set outright, so the session never waits for a clock.
 
-import { readdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 // The cache directory the sessions set through XDG_CACHE_HOME.
@@ -67,6 +69,11 @@ switch (action) {
     console.log("planted: format 1, another engine, truncated, notes.txt");
     break;
   }
+  case "directory":
+    // Under a snapshot's own name, so the name cannot be what saves it from a clear.
+    mkdirSync(join(CACHE_DIR, `${PLANTED_PREFIX}7.fdu`), { recursive: true });
+    console.log("planted: a directory under a snapshot's name");
+    break;
   case "other-engine":
     writeFileSync(currentPath, withOtherEngine(current));
     console.log("planted: another engine");
@@ -85,6 +92,6 @@ switch (action) {
     break;
   }
   default:
-    console.error("usage: cache-plant <stale|other-engine|foreign|leftovers>");
+    console.error("usage: cache-plant <stale|directory|other-engine|foreign|leftovers>");
     process.exit(2);
 }

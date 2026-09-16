@@ -164,7 +164,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     build cannot read), `leftover` (one of fdu’s own files that is not a snapshot in
     place), or `unrecognized`. Its text names the command that reclaims stale snapshots,
     and it no longer hides files it cannot use behind a report of no cached snapshots.
-    A directory in the cache directory is listed as `unrecognized` rather than skipped.
+    A directory in the cache directory is listed as `unrecognized` rather than skipped,
+    with no byte count, since what a filesystem calls its size is its own accounting
+    rather than space a clear could reclaim.
   - `--cache-clear` and `--cache-clear=all` remove stale snapshots as well as current
     ones, and report the files they left in place.
     A file is removed only if it begins with the snapshot magic and, when found by
@@ -173,9 +175,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - `--cache-clear=all` also reclaims what fdu left behind: a staging file a killed
     writer never renamed, once it is older than the age its own reaper uses, and a
     content sidecar whose snapshot is gone, while no snapshot claims it.
-    Each must match both fdu’s name for it and the magic its contents carry.
+    Each must match both fdu’s name for it and the magic its contents carry; one of
+    fdu’s names over the wrong magic is `unrecognized`, never removed.
+    Status names the staging rule it cannot apply, since it reads names and magic rather
+    than clocks, instead of promising a count the clear then declines.
   - Machine cache status carries the `fdu.cache/1` schema, in JSON, JSON Lines and YAML:
     its own document identity, since cache status is not a report.
+    An empty cache directory is an empty sequence in all three, never a null.
   - Breaking: machine status rows carry `state` instead of `recognized`, a stale row
     adds `stale_reason` and `format_version`, a leftover row adds `leftover_kind`, every
     row carries `content_bytes`, and the row for an uncached root is `absent`. In Rust,

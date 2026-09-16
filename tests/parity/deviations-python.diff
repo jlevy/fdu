@@ -268,6 +268,7 @@ PASS [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
   ✓ Snapshots From Another Build Are Stale, Not Foreign
   ✓ Snapshots From Another Build Are Stale, Not Foreign
   ✓ Snapshots From Another Build Are Stale, Not Foreign
+  ✓ Snapshots From Another Build Are Stale, Not Foreign
   ✓ Clearing Everything Takes Stale Snapshots Too, and Nothing Else
   ✓ Clearing Everything Takes Stale Snapshots Too, and Nothing Else
   ✓ One Root’s Stale Snapshot Is Cleared by Its Path
