@@ -1951,7 +1951,8 @@ mod tests {
                 complete: true,
                 errors: Vec::new(),
             },
-        ).expect("report");
+        )
+        .expect("report");
 
         let plain = render(&report, Format::Text, false);
         assert!(plain.contains("C++"), "{plain}");
@@ -2054,7 +2055,8 @@ mod tests {
                 complete: true,
                 errors: Vec::new(),
             },
-        ).expect("report");
+        )
+        .expect("report");
 
         let json = render(&report, Format::Json, false);
         assert!(is_valid_json(&json), "{json}");
@@ -2407,11 +2409,8 @@ mod tests {
 
         // A removal an ignore-rule edit caused is the one that carries a classification:
         // the entry is still on disk, and the new bit is why it left the selection.
-        let reclassified = Change {
-            path: PathBuf::from("debug.log"),
-            ignored: Some(true),
-            ..removed.clone()
-        };
+        let reclassified =
+            Change { path: PathBuf::from("debug.log"), ignored: Some(true), ..removed.clone() };
         assert_eq!(
             render_change(&reclassified, Format::Json),
             "{\"schema\": \"fdu.stream/1\", \"record\": \"change\", \"op\": \"remove\", \

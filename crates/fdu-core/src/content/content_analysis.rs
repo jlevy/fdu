@@ -635,7 +635,8 @@ mod tests {
                 complete: true,
                 errors: Vec::new(),
             },
-        ).expect("report");
+        )
+        .expect("report");
         let crate::query::Section::Metrics { summary, .. } = &report.sections[0] else {
             panic!("expected metric summary")
         };
@@ -695,7 +696,8 @@ mod tests {
                 complete: false,
                 errors: Vec::new(),
             },
-        ).expect("report");
+        )
+        .expect("report");
         let crate::query::Section::Metrics { summary, .. } = &rendered.sections[0] else {
             panic!("expected language metrics")
         };
@@ -740,7 +742,8 @@ mod tests {
                 complete: true,
                 errors: Vec::new(),
             },
-        ).expect("report");
+        )
+        .expect("report");
         let crate::query::Section::Metrics { summary, .. } = &rendered.sections[0] else {
             panic!("expected document metrics")
         };
@@ -805,7 +808,8 @@ mod tests {
                 complete: true,
                 errors: Vec::new(),
             },
-        ).expect("report");
+        )
+        .expect("report");
         let json =
             crate::report_format::render(&summary, crate::report_format::Format::Json, false);
         assert!(json.contains("\"schema\": \"fdu.report/6\""), "{json}");
@@ -835,7 +839,8 @@ mod tests {
                 complete: false,
                 errors: Vec::new(),
             },
-        ).expect("report");
+        )
+        .expect("report");
         let text =
             crate::report_format::render(&languages, crate::report_format::Format::Text, false);
         assert!(text.contains("—"), "an unavailable 0/0 share needs a distinct marker: {text}");

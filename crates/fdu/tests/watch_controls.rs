@@ -288,12 +288,10 @@ fn a_rule_edit_moves_a_streamed_entry_out_of_and_back_into_excluded_ignored() {
     ]);
     let cache = tempfile::tempdir().expect("cache tempdir");
 
-    let mut watch =
-        Watching::spawn_selecting(&tree, cache.path(), "files", &["--exclude-ignored"]);
+    let mut watch = Watching::spawn_selecting(&tree, cache.path(), "files", &["--exclude-ignored"]);
     // The initial listing contains the file, and its row says no rule ignores it.
-    let row = watch.wait_for("the initial row for debug.log", |line| {
-        line.contains("\"path\": \"debug.log\"")
-    });
+    let row = watch
+        .wait_for("the initial row for debug.log", |line| line.contains("\"path\": \"debug.log\""));
     assert!(
         row.contains("\"ignored\": false"),
         "the initial row must state the classification the stream maintains: {row}",
@@ -329,9 +327,8 @@ fn a_rule_edit_moves_a_streamed_entry_into_and_out_of_only_ignored() {
     let cache = tempfile::tempdir().expect("cache tempdir");
 
     let mut watch = Watching::spawn_selecting(&tree, cache.path(), "files", &["--only-ignored"]);
-    let section = watch.wait_for("the initial files section", |line| {
-        line.contains("\"view\": \"files\"")
-    });
+    let section =
+        watch.wait_for("the initial files section", |line| line.contains("\"view\": \"files\""));
     assert!(
         !section.contains("debug.log"),
         "no rule ignores anything yet, so the listing is empty: {section}",
