@@ -34,6 +34,18 @@ this cache.
 The file also records the scan scope it was built under.
 A snapshot whose scope cannot serve the request is a miss as well, and under a
 write-permitting policy the next complete indexed scan replaces it.
+The scope is the depth, symlink, filesystem-boundary, hidden-entry, and special-object
+settings, the type-rules and reducer fingerprints, whether `.gitignore` was observed,
+and, if it was, the budget and line limit.
+A request that returns the index or reconciles it against the tree is served only by a
+snapshot taken under exactly its scope.
+Alternating `--no-gitignore` with a default run, or changing either limit, finds no
+usable snapshot and, under a write-permitting policy, replaces the root’s one snapshot
+each time the run retains an index (`fdu-w3l5` tracks keying snapshots by scope).
+A `--no-gitignore` summary answered by the transient tier, described below, retains
+none, so it replaces nothing.
+The one exception is a `--cache only` report that turns observation off, which answers
+from a default snapshot’s all-entry facts.
 
 Three rules keep it honest:
 
@@ -129,12 +141,14 @@ is an empty sequence in every machine format, never a null, so one reader works 
 or not anything is cached.
 
 Snapshot persistence is available on every platform, including for metadata queries.
-It is not used by every execution plan: the transient summary path does not retain an
-index or write a snapshot.
+It is not used by every execution plan.
+An unfiltered `--view summary` under `--no-gitignore` is answered by the transient tier,
+which retains no index and writes no snapshot; the default summary reads `.gitignore` to
+report its ignored share, which needs the index, so it does write one.
 For indexed reports, a complete scan and a write-permitting cache policy are both
-required.
-The planner may also skip reading a snapshot when loading it and performing the
-full metadata sweep would cost more than scanning directly.
+required. A one-shot report under `auto` or `read-only` reads the snapshot only when
+content analysis could reuse its sidecar: revalidation stats every entry regardless, so
+for a metadata query loading the snapshot is purely additive cost.
 
 ## Layer Two: Derived Content Data
 

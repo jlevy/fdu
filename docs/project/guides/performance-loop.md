@@ -168,7 +168,7 @@ stdout is unchanged, because counters describe an implementation rather than the
 measurement contract.
 
 ```shell
-make perf-probe-release  # the probe lives in fdu-core and is built with gitignore
+make perf-probe-release  # the probe lives in fdu-core; control handling is always compiled in
 FDU_COUNTERS=1 ./target/release/examples/perf_probe scan-index --root TREE 2>&1 >/dev/null
 ```
 
@@ -187,7 +187,9 @@ They localize cost to a layer without attributing it to a call site — no stack
 no live-byte tracking, both of which cost enough to change what they measure.
 When a counter raises a question it cannot answer, the answer is a callgrind caller
 tree, read as a tree and not as a flat profile.
-`fdu-zgxd` is currently that question.
+The 11.0 reallocations per entry above were such a question (`fdu-zgxd`): a heap profile
+attributed most of them to the probe’s own verification oracle, so an attribution run
+passes the probe’s `--no-oracle` flag to keep harness allocations out of the counters.
 
 ## The reference tree
 
@@ -436,7 +438,7 @@ The Make defaults use `/tmp/fdu-realtree`, and the harness rejects explicit stat
 inside the measured root.
 Then run no benchmark test, environment update, corpus mutation, or other writer until
 the post-run fingerprint completes.
-The v2 fingerprint records redacted counts, depth, byte totals, and in-tree hard-link
+The v3 fingerprint records redacted counts, depth, byte totals, and in-tree hard-link
 duplication.
 A precomputed baseline is optional: the tool-comparison harness always takes
 its own immediate pre-run fingerprint, and any pre/post drift makes the run
@@ -814,7 +816,7 @@ Status is updated as experiments resolve them; see the ledger for results.
 | H53 | Full reconciliation still uses portable enumeration plus one `fstatat` per entry even though H26’s audited macOS reader returns the same complete stat-tier contract in bulk. Reusing it per directory should remove the warm profile’s 29.25% `fstatat` and 6.76% `getdirentries64` costs while preserving complete-directory fallback. | `warm-revalidate` wall and component down at least 3%; `system_cpu_ns` down; oracle parity at 60k and, if scale-sensitive, 720k | **Confirmed on macOS** (exp-026): warm wall −18.97% at 60k and −34.39% at 720k; large component −39.05%, CPU −44.06%, system CPU −53.97%, RSS neutral. Direct, shared, and scoped reconciliation reuse the existing reader. |
 | H75 | H9’s inversion persists on Linux, where no bulk reader hides it: snapshot load rebuilds every record through the full apply path, reconciliation re-stats every entry, and a quiet warm open still deep-clones the index and rewrites a byte-equivalent snapshot. Removing the load and save bookends should make warm open beat a cold scan. | verified warm open below cold-scan wall on Linux; warm RSS no higher than cold | **Confirmed and closed.** Both bookends are gone. `fdu-maxn` removed the byte-identical rewrite and the clone it required (−20.6% [−21.2%, −16.6%], RSS 411→195 MB); `fdu-91ts` removed the per-record path rediscovery in the loader (load −51.9% [−53.2%, −51.0%], warm open −41.9% [−43.3%, −40.6%]). At 450,463 entries a warm open now runs **762 ms against a 984 ms cold scan — 22.6% faster, with lower RSS** (191 vs 278 MB), where it began this campaign 69% slower. The cold path is untouched: +0.8% [−2.6%, +4.3%]. `fdu-niuz` still owns the clone on the *changed* path, which no longer sits on the quiet warm run. |
 | H83 | The content sidecar rebuilds per-record state on load exactly as the metadata snapshot does, so warm content runs are bound by restoring precomputed metrics rather than by analysis. | `--cache only` content load component down several-fold; warm content wall below the profile-independent floor | **Open, measured** (`fdu-78q6`): the sidecar load costs about 370 ms for 14,542 files, roughly 25 µs per file against about 3 µs per metadata record, and all three analysis profiles converge on the same ~520 ms warm floor regardless of how much analysis the sidecar saved. Same shape as H78 and probably the same answer. |
-| H84 | `ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY` was placed between APFS regimes of ~18, 22 and 42 µs per entry, but the Linux warm floor is about 1.5 µs, so the adaptive unlock never fires on Linux and an automatic scan stays at its six-worker cap in every regime the threshold was meant to separate. | calibration never crossing the threshold on a Linux warm scan; a `--threads` sweep finding a knee above six | **Queued** (`fdu-mjwr`, with H76/`fdu-tk1b`). A mechanism for the cold scalar-class gap, not yet a measurement — but the sign now has independent support: guest-cold at the raw syscall floor itself, sixteen workers beat four by 32% on four cores, which can only be queue depth. Gated on the aggregate probe (`fdu-tyjx`); bare metal (`fdu-lf3v`) sizes it. See [platform tuning](platform-tuning.md). |
+| H84 | `ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY` was placed between APFS regimes of ~18, 22 and 42 µs per entry, but the Linux warm floor is about 1.5 µs, so the adaptive unlock never fires on Linux and an automatic scan stays at its six-worker cap in every regime the threshold was meant to separate. | calibration never crossing the threshold on a Linux warm scan; a `--threads` sweep finding a knee above six | **Queued** (`fdu-mjwr`, with H76/`fdu-tk1b`). A mechanism for the cold scalar-class gap, not yet a measurement — but the sign now has independent support: guest-cold at the raw syscall floor itself, sixteen workers beat four by 32% on four cores, which can only be queue depth. The aggregate probe it waited on (`fdu-tyjx`) has landed; bare metal (`fdu-lf3v`) sizes it. See [platform tuning](platform-tuning.md). |
 | S1 | `apply_upsert` resolved every entry’s parent by splitting the path into a component vector and descending from the root, one `BTreeMap` lookup per level, to reach a directory the walker was standing in when it produced the record. A walker reports a directory’s children consecutively, so remembering the previous upsert’s parent answers almost every entry with one path comparison. | cold-scan-index wall down at least 15% | **Confirmed, at a different number than predicted** (exp-051, `fdu-ypk2`). Wall fell 7.35% [−10.42%, −6.12%]; the index-build *component* fell 16.6%, which is what the 15% prediction actually described. Stating a component prediction against a wall-clock accept rule is the mistake to avoid repeating. `normalize` instructions fell 89%, so the memo hits; the remaining gap to the loader’s −51.9% is the producer’s per-entry `PathBuf`, which needs a batch-shaped observation (`fdu-2ubt`). |
 | H100 | The default command never reads its snapshot for a metadata query, yet the cold-scan path rewrites it on every run: serialization is deterministic, so an unchanged tree encodes to the bytes already on disk, and the full write, `F_FULLFSYNC` and rename replace a file with itself. Comparing the encoded bytes against the page-cached file before writing removes that cost on the repeated run and cannot go stale, because the bytes are the same bytes. | `default-tree` wall down at least 15% on the 175k subject; `default-tree-first` and `cold-scan-index` unchanged; RSS flat | **Confirmed, smaller than predicted** (exp-067): `default-tree` −10.61% [−14.85%, −6.05%] at 16 trials, the other two jobs unchanged, RSS flat, the snapshot left in place on every candidate trial. The write was about 40 ms of the run, not the 70 ms the render and write share. |
 | H101 | The command line renders its report into an 8 KiB buffer and joins the snapshot writer — serialization, `F_FULLFSYNC`, rename, index teardown — before that buffer is flushed, so a default depth-2 tree reaches the terminal only after all of it completes. Flushing before the join moves no work and changes no bytes; it changes when the user sees them. | time to first stdout byte on the command line down by the join’s duration; total wall unchanged | **Confirmed** (exp-068): first byte −7.54% [−8.55%, −5.18%] on a repeated run and −12.47% [−15.66%, −9.84%] on a first run over 175k entries, total wall unchanged; the report now lands 41–49 ms before exit. Parts 2 and 3 of `fdu-n75m` (teardown off the exit path, the fsync policy) remain, bounded by those 41 ms. |
@@ -865,9 +867,33 @@ reasoning.
 
 ### The aggregate tier
 
-`--job aggregate-summary` measures the transient plan: five exact tallies, no retained
-index, no snapshot — the shape of `fdu --view summary`, and the tier the floor report
-puts closest to the machine floor at 1.20× synthetic and 1.59× on `/usr`.
+`--job aggregate-summary` measures `fdu --view summary` as shipped: five exact tallies
+and no snapshot. By default that request observes `.gitignore`, so it retains the index
+to classify entries and is *not* the transient aggregate plan.
+The transient plan — no retained index, and the tier the floor report puts closest to
+the machine floor at 1.20× synthetic and 1.59× on `/usr` — is reached only with the
+probe’s `--no-controls`, its spelling of `--no-gitignore`, passed in the variant:
+
+```shell
+PYTHONPATH=explorations uv run --project explorations/benchmarks --frozen \
+  python -m benchmarks.realtree measure --root /path/to/tree --label mytree \
+  --job aggregate-summary \
+  --variant "control=/tmp/fdu-realtree/perf_probe.control --no-controls" \
+  --variant "candidate=target/release/examples/perf_probe --no-controls" \
+  --trials 12 --name exp-NNN-aggregate
+```
+
+`make perf-compare` cannot express that: `CONTROL` can carry the flag, but the candidate
+variant is fixed to the bare probe, so a Make-driven `aggregate-summary` round measures
+the indexed plan for the candidate.
+The `fdu-transient-summary` tool contract has the same gap and records transient work
+for a request that takes the indexed plan.
+`fdu-hkyh` tracks that harness defect, and
+[comparing against other tools](#comparing-against-other-tools) says which contract to
+use until it is fixed.
+An aggregate-tier experiment recorded before `.gitignore` became the default measured
+the transient plan with the bare job; compare it with `--no-controls` runs of later
+revisions.
 
 It was the last tier with no probe mode, so every number about it came from the command
 line and carried process spawn, argument parsing and rendering: exp-043 and exp-044 both
@@ -892,7 +918,7 @@ anchor, alternates pair order, and reports paired bootstrap intervals.
 `PERF_TOOL_LABEL` and `PERF_TOOL_CONTRACT` identify that anchor in its provenance
 manifest; held-out installed-command cells also set `PERF_INSTALLATION_ATTESTATION` and,
 for a wheel, pass its native extension through `PERF_TOOL_SUPPORTING_ARGS`. The
-immediate pre/post v2 fingerprints must agree; results and the baseline live outside the
+immediate pre/post v3 fingerprints must agree; results and the baseline live outside the
 measured root. Each artifact retains binary hashes, versions, command templates, work
 classes, resource use, and redacted output hashes.
 When fdu summary contracts are measured, the harness hashes the stable report payload
@@ -904,13 +930,19 @@ A semantic or oracle mismatch invalidates the sample; a timing for a changed ans
 not performance evidence.
 
 Which anchor contract to use is a real choice, because the contracts measure different
-questions. `fdu-transient-summary` and `fdu-index-summary` isolate engine work with
-`--cache off`, which is what a change to the walker or the index should be judged on.
+questions. `fdu-index-summary` isolates engine work with `--cache off`, which is what a
+change to the walker or the index should be judged on.
+`fdu-transient-summary` passes the same arguments, so on a binary that reads
+`.gitignore` by default it takes the same indexed plan while recording the
+`transient-summary` work class.
+Until that contract passes `--no-gitignore` (`fdu-hkyh`), `fdu-index-summary` is the
+only summary contract that measures what its name says, and `PERF_TOOL_CONTRACT`, which
+defaults to `fdu-transient-summary`, has to be set explicitly.
 `fdu-default-tree` is the bare `fdu PATH` invocation — cache `auto`, tree view, snapshot
 written on every run — and is the only contract that measures what a user gets by typing
 nothing else.
 
-Prefer the summary contracts for engine work and the default contract for user-visible
+Prefer `fdu-index-summary` for engine work and the default contract for user-visible
 claims; a change can move one and not the other, and for three campaigns nothing
 measured the second, which is how a default-path regression stayed invisible while every
 `--cache off` cell looked healthy.
@@ -949,7 +981,6 @@ sparse/preallocated size ordering before timing.
 `dust`, `gdu`, and `diskus` mainly reinforce work already measured: recursive high
 concurrency is not a new hypothesis after H52/H57 rejected over-threading on APFS.
 
-* * *
-
-*Part of the fdu project documentation.
-See [AGENTS.md](../../../AGENTS.md).*
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->
