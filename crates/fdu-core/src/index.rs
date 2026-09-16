@@ -3775,12 +3775,27 @@ impl Index {
     /// (fdu-pro1). A malformed control path is never inert, so the projection still
     /// reports it.
     fn controls_unchanged_by<'a>(&self, ops: impl Iterator<Item = &'a Op>) -> bool {
+        // A vacant table decides every op from its kind alone, which is what the cold
+        // no-controls lane costs per entry: there is nothing for a structural op to drop or
+        // prune, and no source is inert against it, since `Unchanged` needs a retained
+        // source and `Refuse` a matching refusal. A removal still asks, so a malformed
+        // control path stays non-inert and the projection reports it.
+        if self.controls.is_vacant() {
+            return ops.into_iter().all(|op| match op {
+                Op::ControlUpsert { .. } => false,
+                Op::ControlRemove { path } => self.controls.remove_is_inert(path),
+                Op::Upsert { .. } | Op::Remove { .. } | Op::InvalidateSubtree { .. } => true,
+            });
+        }
+
         ops.into_iter().all(|op| match op {
             Op::ControlUpsert { path, source } => self.controls.upsert_is_inert(path, source),
             Op::ControlRemove { path } => self.controls.remove_is_inert(path),
             Op::Upsert { path, kind, .. } => {
-                let drops_control = crate::control::is_control_file(path)
-                    && *kind != EntryKind::File
+                // The kind first: it is one discriminant test, where naming a control file
+                // parses the path's last component.
+                let drops_control = *kind != EntryKind::File
+                    && crate::control::is_control_file(path)
                     && self.controls.contains(path);
                 let prunes_subtree = !kind.is_dir() && self.controls.has_record_at_or_below(path);
                 !drops_control && !prunes_subtree
@@ -8399,6 +8414,18 @@ mod tests {
             (CONTROL_PROJECTION_CLONES.with(std::cell::Cell::get), outcome)
         };
         let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
+
+        // The cold lane first: against a table that records nothing, a batch of ordinary
+        // entries has nothing to drop or prune, so it never projects (fdu-pro1).
+        let (clones, _) = projection_clones(
+            &mut index,
+            vec![
+                upsert("cold", EntryKind::Dir, file_attrs(0, 1)),
+                upsert("cold/file.txt", EntryKind::File, file_attrs(1, 1)),
+            ],
+        );
+        assert_eq!(clones, 0, "an empty table has nothing a structural batch can change");
+
         let mut over_budget = vec![b'x'; crate::control::DEFAULT_CONTROL_LINE_LIMIT + 1];
         over_budget.push(b'\n');
         index.apply_ok(&Observation::new(vec![
