@@ -150,6 +150,11 @@ What the flags mean, and what happens when they bite:
   wrote to the subject, and run again.
 - Content-tier hypotheses use `make perf-content-compare` with the same variables; its
   jobs are the content set.
+- An aggregate-tier hypothesis (H72, H85) cannot name `aggregate-summary` alone.
+  That job measures `fdu --view summary`, which reads `.gitignore` and so retains the
+  index; the transient tier needs the probe’s `--no-controls` on both variants.
+  `make perf-compare` cannot add it to the candidate, so run `measure` directly, as
+  [the aggregate tier](performance-loop.md#the-aggregate-tier) shows.
 
 Run on at least one deciding subject.
 A screening subject (`cargo-registry-src`) is for checking that a job works, and its
