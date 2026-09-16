@@ -59,6 +59,13 @@ const TEXT_TYPE_LABEL_WIDTH: usize = 12;
 pub const REPORT_SCHEMA: &str = "fdu.report/4";
 /// Machine schema used when a generic metric-summary section is present.
 pub const CONTENT_REPORT_SCHEMA: &str = "fdu.report/5";
+/// Machine-output schema identity for cache status.
+///
+/// Its own identity because cache status is its own document: a fact about the cache
+/// directory rather than about a tree, which is why it is not a `Report` section. It
+/// carries the same promise as [`REPORT_SCHEMA`] and versions independently, so a change
+/// to the report shape never invalidates a cache-status consumer, or the reverse.
+pub const CACHE_SCHEMA: &str = "fdu.cache/1";
 
 /// How a report is serialized.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -1398,45 +1405,85 @@ fn raw_identity_object(path: &Path) -> Option<String> {
     Some(format!("{{\"encoding\": {}, \"hex\": {}}}", quote(encoding), quote(&hex)))
 }
 
-/// Render cache status in a machine format.
+/// Render cache status in any format.
 ///
 /// A separate entry point rather than a `Report` section: cache status is a fact about
 /// the cache directory, not about a tree, and folding it into the report schema would
 /// make every consumer parse a variant that is empty on every normal run.
-pub fn render_cache_status(statuses: &[crate::CacheStatus], format: Format) -> String {
-    let row = |status: &crate::CacheStatus| match &status.snapshot {
-        Some(info) => format!(
-            "{{\"path\": {}, \"bytes\": {}, \"content_bytes\": {}, \"recognized\": true, \"root\": {}, \"entries\": {}}}",
-            quote(&status.path.to_string_lossy()),
-            status.bytes,
-            status.content_bytes.map_or_else(|| "null".to_string(), |bytes| bytes.to_string()),
-            quote(&info.root.to_string_lossy()),
-            info.entries
-        ),
-        None => format!(
-            "{{\"path\": {}, \"bytes\": {}, \"recognized\": false}}",
+///
+/// `scope` is the request the statuses answer. It decides only which command the text
+/// names for reclaiming stale snapshots: a root's snapshot is cleared by its path, while a
+/// stale file found by listing the directory may name no root this build can read.
+///
+/// Every machine format carries [`CACHE_SCHEMA`], the way every machine report carries its
+/// own: the first field of the JSON document, an envelope line of its own ahead of the
+/// rows in JSON Lines, and the first line of the YAML.
+pub fn render_cache_status(
+    statuses: &[crate::CacheStatus],
+    scope: crate::CacheScope,
+    format: Format,
+) -> String {
+    use crate::CacheState;
+
+    let row = |status: &crate::CacheStatus| {
+        let mut fields = format!(
+            "{{\"path\": {}, \"bytes\": {}",
             quote(&status.path.to_string_lossy()),
             status.bytes
-        ),
+        );
+        // Every row carries it, whatever the state, so a consumer reads one shape rather
+        // than discovering which keys this row happens to have.
+        let _ = write!(fields, ", \"content_bytes\": {}", json_count(status.content_bytes));
+        let _ = write!(fields, ", \"state\": {}", quote(status.state.label()));
+        match &status.state {
+            CacheState::Current(info) => {
+                let _ = write!(
+                    fields,
+                    ", \"root\": {}, \"entries\": {}",
+                    quote(&info.root.to_string_lossy()),
+                    info.entries
+                );
+            }
+            CacheState::Stale(reason) => {
+                let _ = write!(
+                    fields,
+                    ", \"stale_reason\": {}, \"format_version\": {}",
+                    quote(reason.label()),
+                    json_count(reason.format_version().map(u64::from))
+                );
+            }
+            CacheState::Leftover(kind) => {
+                let _ = write!(fields, ", \"leftover_kind\": {}", quote(kind.label()));
+            }
+            CacheState::Unrecognized | CacheState::Absent => {}
+        }
+        fields.push('}');
+        fields
     };
 
     match format {
-        Format::Jsonl => statuses.iter().map(row).collect::<Vec<_>>().join("\n"),
+        Format::Jsonl => {
+            let mut out = format!("{{\"schema\": {}}}", quote(CACHE_SCHEMA));
+            for status in statuses {
+                let _ = write!(out, "\n{}", row(status));
+            }
+            out
+        }
         Format::Yaml => {
-            let mut out = String::from("caches:");
+            if statuses.is_empty() {
+                // A bare `caches:` is YAML null, where JSON says `[]`. The two formats
+                // carry one schema, so an empty listing has to be an empty sequence in
+                // both, and a parser reading either gets a list it can iterate.
+                return format!("schema: {}\ncaches: []", yaml_scalar(CACHE_SCHEMA));
+            }
+            let mut out = format!("schema: {}\ncaches:", yaml_scalar(CACHE_SCHEMA));
             for status in statuses {
                 let _ = write!(out, "\n  - path: {}", yaml_scalar(&status.path.to_string_lossy()));
                 let _ = write!(out, "\n    bytes: {}", status.bytes);
-                let _ = write!(
-                    out,
-                    "\n    content_bytes: {}",
-                    status
-                        .content_bytes
-                        .map_or_else(|| "null".to_string(), |bytes| bytes.to_string())
-                );
-                match &status.snapshot {
-                    Some(info) => {
-                        let _ = write!(out, "\n    recognized: true");
+                let _ = write!(out, "\n    content_bytes: {}", json_count(status.content_bytes));
+                let _ = write!(out, "\n    state: {}", status.state.label());
+                match &status.state {
+                    CacheState::Current(info) => {
                         let _ = write!(
                             out,
                             "\n    root: {}",
@@ -1444,9 +1491,18 @@ pub fn render_cache_status(statuses: &[crate::CacheStatus], format: Format) -> S
                         );
                         let _ = write!(out, "\n    entries: {}", info.entries);
                     }
-                    None => {
-                        let _ = write!(out, "\n    recognized: false");
+                    CacheState::Stale(reason) => {
+                        let _ = write!(out, "\n    stale_reason: {}", reason.label());
+                        let _ = write!(
+                            out,
+                            "\n    format_version: {}",
+                            json_count(reason.format_version().map(u64::from))
+                        );
                     }
+                    CacheState::Leftover(kind) => {
+                        let _ = write!(out, "\n    leftover_kind: {}", kind.label());
+                    }
+                    CacheState::Unrecognized | CacheState::Absent => {}
                 }
             }
             out
@@ -1455,42 +1511,152 @@ pub fn render_cache_status(statuses: &[crate::CacheStatus], format: Format) -> S
         // the CLI, which meant the only way to print cache status the way fdu prints it
         // was to be the CLI: the Python API returned CacheStatus values nothing could
         // render, so the parity shim printed repr() and nine sessions differed (fdu-1kw3).
-        Format::Text => {
-            // Root scope synthesises a status for the path a snapshot *would* occupy, so
-            // a tree that has never been cached still yields one unrecognized entry. A
-            // request whose every candidate is unrecognized reports no snapshots rather
-            // than describing absent files, or the human and machine answers would
-            // disagree about whether a cache exists.
-            let statuses: &[crate::CacheStatus] =
-                if statuses.iter().all(|status| !status.is_recognized()) { &[] } else { statuses };
-            if statuses.is_empty() {
-                return "No cached snapshots.".to_string();
-            }
-            statuses
-                .iter()
-                .map(|status| match &status.snapshot {
-                    Some(info) => format!(
-                        "{}  {} entries, {} metadata bytes, {} content bytes  {}",
-                        status.path.display(),
-                        info.entries,
-                        status.bytes,
-                        status.content_bytes.unwrap_or(0),
-                        info.root.display()
-                    ),
-                    None => format!("{}  unrecognized", status.path.display()),
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-        }
+        Format::Text => render_cache_status_text(statuses, scope),
         Format::Json => {
+            let schema = format!("{{\n  \"schema\": {},\n", quote(CACHE_SCHEMA));
             let rows = statuses.iter().map(row).collect::<Vec<_>>().join(",\n    ");
             if statuses.is_empty() {
-                "{\n  \"caches\": []\n}".to_string()
+                format!("{schema}  \"caches\": []\n}}")
             } else {
-                format!("{{\n  \"caches\": [\n    {rows}\n  ]\n}}")
+                format!("{schema}  \"caches\": [\n    {rows}\n  ]\n}}")
             }
         }
     }
+}
+
+/// A count as machine output carries it, `null` when there is none.
+fn json_count(value: Option<u64>) -> String {
+    value.map_or_else(|| "null".to_string(), |value| value.to_string())
+}
+
+/// The human cache-status layout: one line per file, then what can be done about the
+/// files this build cannot use.
+fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::CacheScope) -> String {
+    use crate::{CacheScope, CacheState, LeftoverKind, StaleReason};
+
+    let mut lines = Vec::new();
+    let mut current = 0_usize;
+    let (mut stale, mut stale_bytes) = (0_usize, 0_u64);
+    let (mut leftover, mut leftover_bytes, mut staging) = (0_usize, 0_u64, 0_usize);
+    let (mut unrecognized, mut unrecognized_bytes) = (0_usize, 0_u64);
+    for status in statuses {
+        let content_bytes = status.content_bytes.unwrap_or(0);
+        match &status.state {
+            CacheState::Current(info) => {
+                current += 1;
+                lines.push(format!(
+                    "{}  {} entries, {} metadata bytes, {content_bytes} content bytes  {}",
+                    status.path.display(),
+                    info.entries,
+                    status.bytes,
+                    info.root.display()
+                ));
+            }
+            CacheState::Stale(reason) => {
+                stale += 1;
+                stale_bytes =
+                    stale_bytes.saturating_add(status.bytes).saturating_add(content_bytes);
+                let why = match reason {
+                    StaleReason::OlderFormat { version } => {
+                        format!("older snapshot format {version}")
+                    }
+                    StaleReason::NewerFormat { version } => {
+                        format!("newer snapshot format {version}")
+                    }
+                    StaleReason::OtherEngine => "written by another fdu version".to_string(),
+                    StaleReason::Unreadable => "unreadable by this build".to_string(),
+                };
+                lines.push(format!(
+                    "{}  stale ({why}), {} metadata bytes, {content_bytes} content bytes",
+                    status.path.display(),
+                    status.bytes
+                ));
+            }
+            CacheState::Leftover(kind) => {
+                leftover += 1;
+                leftover_bytes = leftover_bytes.saturating_add(status.bytes);
+                let what = match kind {
+                    LeftoverKind::StagingTemporary => {
+                        staging += 1;
+                        "staging temporary"
+                    }
+                    LeftoverKind::OrphanedContent => "orphaned content sidecar",
+                };
+                lines.push(format!(
+                    "{}  leftover ({what}), {} bytes",
+                    status.path.display(),
+                    status.bytes
+                ));
+            }
+            CacheState::Unrecognized => {
+                unrecognized += 1;
+                unrecognized_bytes = unrecognized_bytes.saturating_add(status.bytes);
+                lines.push(format!(
+                    "{}  unrecognized, {} bytes",
+                    status.path.display(),
+                    status.bytes
+                ));
+            }
+            // Root scope synthesises a status for the path a snapshot *would* occupy, so a
+            // tree that has never been cached yields one absent entry. Absence is not a
+            // file to describe.
+            CacheState::Absent => {}
+        }
+    }
+    if lines.is_empty() {
+        return "No cached snapshots.".to_string();
+    }
+
+    if stale > 0 {
+        let (subject, object) = if stale == 1 {
+            ("1 stale snapshot".to_string(), "it")
+        } else {
+            (format!("{stale} stale snapshots"), "them")
+        };
+        let remedy = match scope {
+            CacheScope::Root => format!("fdu --cache-clear PATH removes {object}"),
+            CacheScope::All if current == 0 => format!("fdu --cache-clear=all removes {object}"),
+            CacheScope::All => {
+                format!("fdu --cache-clear=all removes {object}, along with every current snapshot")
+            }
+        };
+        lines.push(format!(
+            "{subject} ({stale_bytes} bytes) cannot be served by this build; {remedy}."
+        ));
+    }
+    if leftover > 0 {
+        // Named as fdu's own, because they are: calling them foreign would tell the user
+        // to leave fdu's debris alone. `=all` is the scope that reclaims them; a root's
+        // clear reaches only the one path that root's snapshot occupies.
+        let (subject, predicate, object) = if leftover == 1 {
+            ("1 leftover file".to_string(), "is", "it")
+        } else {
+            (format!("{leftover} leftover files"), "are", "them")
+        };
+        // A staging file is reclaimed only once it is too old to belong to a running
+        // writer, and a status knows no file's age, so the promise names the exception
+        // rather than counting files the clear will then decline and explain.
+        let caveat = if staging > 0 {
+            ", though a staging file waits until it is too old to be a running writer's"
+        } else {
+            ""
+        };
+        lines.push(format!(
+            "{subject} ({leftover_bytes} bytes) {predicate} fdu's own, left by an interrupted \
+             write; fdu --cache-clear=all reclaims {object}{caveat}."
+        ));
+    }
+    if unrecognized > 0 {
+        let (subject, predicate, object) = if unrecognized == 1 {
+            ("1 unrecognized file".to_string(), "is not an fdu snapshot", "it")
+        } else {
+            (format!("{unrecognized} unrecognized files"), "are not fdu snapshots", "them")
+        };
+        lines.push(format!(
+            "{subject} ({unrecognized_bytes} bytes) {predicate}, so fdu leaves {object} in place."
+        ));
+    }
+    lines.join("\n")
 }
 
 #[cfg(test)]
@@ -1512,6 +1678,159 @@ mod tests {
             ctime_ns: mtime_ns,
             inode: 7,
             dev: 1,
+        }
+    }
+
+    fn cache_file(name: &str, bytes: u64, state: crate::CacheState) -> crate::CacheStatus {
+        let content_bytes = matches!(state, crate::CacheState::Stale(_)).then_some(5);
+        crate::CacheStatus { path: PathBuf::from(name), bytes, content_bytes, state }
+    }
+
+    /// Stale, leftover, and unrecognized files are shown, sized, and followed by what
+    /// reclaims them.
+    ///
+    /// A unit test beside the goldens because a golden cannot produce a newer format or
+    /// every reason at once, and because the remedy depends on the scope and on whether
+    /// clearing would also take current snapshots.
+    #[test]
+    fn cache_status_shows_stale_and_unrecognized_files_with_their_remedy() {
+        use crate::{CacheScope, CacheState, LeftoverKind, StaleReason};
+
+        let stale = [
+            cache_file("a.fdu", 10, CacheState::Stale(StaleReason::OlderFormat { version: 2 })),
+            cache_file("b.fdu", 20, CacheState::Stale(StaleReason::NewerFormat { version: 99 })),
+            cache_file("c.fdu", 30, CacheState::Stale(StaleReason::OtherEngine)),
+            cache_file("d.fdu", 40, CacheState::Stale(StaleReason::Unreadable)),
+            cache_file("notes.txt", 14, CacheState::Unrecognized),
+        ];
+        assert_eq!(
+            render_cache_status(&stale, CacheScope::All, Format::Text),
+            "a.fdu  stale (older snapshot format 2), 10 metadata bytes, 5 content bytes\n\
+             b.fdu  stale (newer snapshot format 99), 20 metadata bytes, 5 content bytes\n\
+             c.fdu  stale (written by another fdu version), 30 metadata bytes, 5 content bytes\n\
+             d.fdu  stale (unreadable by this build), 40 metadata bytes, 5 content bytes\n\
+             notes.txt  unrecognized, 14 bytes\n\
+             4 stale snapshots (120 bytes) cannot be served by this build; \
+             fdu --cache-clear=all removes them.\n\
+             1 unrecognized file (14 bytes) is not an fdu snapshot, so fdu leaves it in place."
+        );
+
+        // fdu's own debris is named as fdu's, so a reader is not told to leave it alone.
+        let leftovers = [
+            cache_file(
+                ".g.fdu.tmp.1.2.3",
+                60,
+                CacheState::Leftover(LeftoverKind::StagingTemporary),
+            ),
+            cache_file("h.fdu.content", 70, CacheState::Leftover(LeftoverKind::OrphanedContent)),
+        ];
+        assert_eq!(
+            render_cache_status(&leftovers, CacheScope::All, Format::Text),
+            ".g.fdu.tmp.1.2.3  leftover (staging temporary), 60 bytes\n\
+             h.fdu.content  leftover (orphaned content sidecar), 70 bytes\n\
+             2 leftover files (130 bytes) are fdu's own, left by an interrupted write; \
+             fdu --cache-clear=all reclaims them, though a staging file waits until it is \
+             too old to be a running writer's."
+        );
+        assert!(render_cache_status(&leftovers[..1], CacheScope::Root, Format::Text).ends_with(
+            "1 leftover file (60 bytes) is fdu's own, left by an interrupted write; \
+                 fdu --cache-clear=all reclaims it, though a staging file waits until it \
+                 is too old to be a running writer's."
+        ));
+        // With no staging file listed, nothing is held back and the promise is plain: a
+        // status that named an exception with no file it could apply to would be noise.
+        assert!(render_cache_status(&leftovers[1..], CacheScope::All, Format::Text).ends_with(
+            "1 leftover file (70 bytes) is fdu's own, left by an interrupted write; \
+                 fdu --cache-clear=all reclaims it."
+        ));
+
+        let root = [cache_file("a.fdu", 10, CacheState::Stale(StaleReason::OtherEngine))];
+        assert!(render_cache_status(&root, CacheScope::Root, Format::Text).ends_with(
+            "1 stale snapshot (15 bytes) cannot be served by this build; \
+                 fdu --cache-clear PATH removes it."
+        ));
+
+        let current = cache_file(
+            "e.fdu",
+            50,
+            CacheState::Current(crate::SnapshotInfo {
+                root: PathBuf::from("/tree"),
+                scope: crate::test_support::not_observing_controls(),
+                entries: 3,
+            }),
+        );
+        let mixed = [stale[0].clone(), current, stale[4].clone(), stale[4].clone()];
+        assert!(render_cache_status(&mixed, CacheScope::All, Format::Text).ends_with(
+            "e.fdu  3 entries, 50 metadata bytes, 0 content bytes  /tree\n\
+             notes.txt  unrecognized, 14 bytes\n\
+             notes.txt  unrecognized, 14 bytes\n\
+             1 stale snapshot (15 bytes) cannot be served by this build; \
+             fdu --cache-clear=all removes it, along with every current snapshot.\n\
+             2 unrecognized files (28 bytes) are not fdu snapshots, so fdu leaves them in place."
+        ));
+
+        let absent = [cache_file("f.fdu", 0, CacheState::Absent)];
+        assert_eq!(
+            render_cache_status(&absent, CacheScope::Root, Format::Text),
+            "No cached snapshots."
+        );
+        // Every row carries the same keys whatever its state, and the envelope line
+        // carries the schema even when nothing follows it.
+        assert_eq!(
+            render_cache_status(
+                &[stale[0].clone(), absent[0].clone(), stale[4].clone(), leftovers[0].clone()],
+                CacheScope::All,
+                Format::Jsonl
+            ),
+            "{\"schema\": \"fdu.cache/1\"}\n\
+             {\"path\": \"a.fdu\", \"bytes\": 10, \"content_bytes\": 5, \"state\": \"stale\", \"stale_reason\": \"older_format\", \"format_version\": 2}\n\
+             {\"path\": \"f.fdu\", \"bytes\": 0, \"content_bytes\": null, \"state\": \"absent\"}\n\
+             {\"path\": \"notes.txt\", \"bytes\": 14, \"content_bytes\": null, \"state\": \"unrecognized\"}\n\
+             {\"path\": \".g.fdu.tmp.1.2.3\", \"bytes\": 60, \"content_bytes\": null, \"state\": \"leftover\", \"leftover_kind\": \"staging_temporary\"}"
+        );
+        assert_eq!(
+            render_cache_status(&[], CacheScope::All, Format::Jsonl),
+            "{\"schema\": \"fdu.cache/1\"}"
+        );
+        assert_eq!(
+            render_cache_status(&[], CacheScope::All, Format::Json),
+            "{\n  \"schema\": \"fdu.cache/1\",\n  \"caches\": []\n}"
+        );
+        // An empty sequence in both formats: a bare `caches:` is YAML null, and a reader
+        // of one schema should not have to tell null from a list it can iterate.
+        assert_eq!(
+            render_cache_status(&[], CacheScope::All, Format::Yaml),
+            "schema: fdu.cache/1\ncaches: []"
+        );
+        assert!(
+            render_cache_status(&stale[2..3], CacheScope::All, Format::Json)
+                .starts_with("{\n  \"schema\": \"fdu.cache/1\",\n  \"caches\": [\n    {")
+        );
+        assert!(
+            render_cache_status(&stale[2..3], CacheScope::All, Format::Yaml)
+                .starts_with("schema: fdu.cache/1\ncaches:\n  - path: c.fdu")
+        );
+        assert!(
+            render_cache_status(&stale[2..3], CacheScope::All, Format::Yaml).ends_with(
+                "state: stale\n    stale_reason: other_engine\n    format_version: null"
+            )
+        );
+        assert!(
+            render_cache_status(&leftovers[1..], CacheScope::All, Format::Yaml)
+                .ends_with("state: leftover\n    leftover_kind: orphaned_content")
+        );
+    }
+
+    /// The cache schema is a promise, like the report schema beside it.
+    ///
+    /// Fails loudly when the string moves, so the field rename this constant was added
+    /// for — `recognized` to `state` — cannot happen again without a version to key on.
+    #[test]
+    fn the_cache_schema_constant_is_the_versioning_promise() {
+        assert_eq!(CACHE_SCHEMA, "fdu.cache/1");
+        for format in [Format::Json, Format::Jsonl, Format::Yaml] {
+            let rendered = render_cache_status(&[], crate::CacheScope::All, format);
+            assert!(rendered.contains(CACHE_SCHEMA), "{format:?} carries no schema: {rendered}");
         }
     }
 

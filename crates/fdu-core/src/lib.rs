@@ -100,7 +100,8 @@ pub use crate::watch_session as session;
 
 pub use crate::admission::HiddenPolicy;
 pub use crate::cache::{
-    CacheStatus, SnapshotInfo, cache_status, clear_all_caches, clear_cache, list_caches,
+    CacheScope, CacheState, CacheStatus, ClearSummary, LeftoverKind, SnapshotInfo, StaleReason,
+    cache_status, clear_all_caches, clear_cache, list_caches,
 };
 pub use crate::control::{
     CONTROL_FILE_NAME, ControlIdentity, ControlMatcher, ControlTable, MAX_CONTROL_TABLE_BYTES,
@@ -741,7 +742,7 @@ pub fn default_cache_path(root: &Path) -> Option<PathBuf> {
         hash ^= u64::from(*byte);
         hash = hash.wrapping_mul(0x1000_0000_01b3);
     }
-    Some(user_cache_dir()?.join("fdu").join(format!("{hash:016x}.fdu")))
+    Some(user_cache_dir()?.join("fdu").join(cache::snapshot_file_name(hash)))
 }
 
 fn user_cache_dir() -> Option<PathBuf> {

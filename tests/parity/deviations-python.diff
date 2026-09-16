@@ -259,17 +259,36 @@ PASS [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
   ✓ The Compact Summary Retains Nothing, and Cache-Only Says So
   ✓ Status Maps a Hash-Named File Back to Its Tree
   ✓ Status Renders Through the Format Axis
+  ✓ Status Renders Through the Format Axis
   ✓ Clearing Echoes the Target Before Acting
   ✓ Clearing Is Idempotent
   ✓ Clear and Status Compose, With Clear First
   ✓ Clear and Status Compose, With Clear First
+  ✓ Snapshots From Another Build Are Stale, Not Foreign
+  ✓ Snapshots From Another Build Are Stale, Not Foreign
+  ✓ Snapshots From Another Build Are Stale, Not Foreign
+  ✓ Snapshots From Another Build Are Stale, Not Foreign
+  ✓ Snapshots From Another Build Are Stale, Not Foreign
+  ✓ Clearing Everything Takes Stale Snapshots Too, and Nothing Else
+  ✓ Clearing Everything Takes Stale Snapshots Too, and Nothing Else
+  ✓ One Root’s Stale Snapshot Is Cleared by Its Path
+  ✓ One Root’s Stale Snapshot Is Cleared by Its Path
+  ✓ One Root’s Stale Snapshot Is Cleared by Its Path
+  ✓ One Root’s Stale Snapshot Is Cleared by Its Path
+  ✓ A Root’s Cache Path Holding Another File Is Left Alone
+  ✓ A Root’s Cache Path Holding Another File Is Left Alone
+  ✓ A Root’s Cache Path Holding Another File Is Left Alone
+  ✓ fdu’s Own Leftovers Are Named as fdu’s, and Reclaimed on Its Own Terms
+  ✓ fdu’s Own Leftovers Are Named as fdu’s, and Reclaimed on Its Own Terms
+  ✓ fdu’s Own Leftovers Are Named as fdu’s, and Reclaimed on Its Own Terms
+  ✓ fdu’s Own Leftovers Are Named as fdu’s, and Reclaimed on Its Own Terms
   ✓ An Unknown Scope Names Both Accepted Values
 PASS [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
   ✓ An Explicit Path Gives a Useful Project-Shaped Report
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,91 +1,1 @@
+@@ -1,92 +1,1 @@
 -fdu — a fast, incremental file roll-up engine.
 -
 -THE LADDER
@@ -349,6 +368,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -
 -OUTPUT AND AUTOMATION
 -  Metadata-only machine output remains fdu.report/4; metric summaries use fdu.report/5.
+-  Cache status is its own document in every machine format: fdu.cache/1.
 -  Text language rows use canonical names; machine formats retain lowercase IDs.
 -  Metric rows include detection source, confidence, origin flags, and coverage.
 -  One-shot text reports end with a gray performance line; machine formats omit it.

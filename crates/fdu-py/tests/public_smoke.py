@@ -452,6 +452,9 @@ def main() -> None:
     assert contract["size_metrics"] == [value.value for value in fdu.SizeMetric]
     assert contract["sort_keys"] == [value.value for value in fdu.SortKey]
     assert contract["cache_scopes"] == [value.value for value in fdu.CacheScope]
+    assert contract["cache_states"] == [value.value for value in fdu.CacheState]
+    assert contract["stale_reasons"] == [value.value for value in fdu.StaleReason]
+    assert contract["leftover_kinds"] == [value.value for value in fdu.LeftoverKind]
     assert contract["formats"] == [value.value for value in fdu.Format]
 
     provenance = index.provenance("src")
@@ -489,7 +492,36 @@ def main() -> None:
     assert cached.status.complete is True
     assert cached.status.freshness is fdu.Freshness.STALE
     status = fdu.cache_status(cache_root)
-    assert status is not None and status.recognized
+    assert status is not None and status.state is fdu.CacheState.CURRENT
+    assert status.stale_reason is None and status.root is not None
+    # A snapshot an earlier format wrote is still fdu's: reported stale with its version,
+    # and cleared, rather than stranded as a file nothing will delete. The version sits
+    # after the eight-byte magic in every format.
+    image = bytearray(status.path.read_bytes())
+    written = int.from_bytes(image[8:12], "little")
+    image[8:12] = (written - 1).to_bytes(4, "little")
+    status.path.write_bytes(bytes(image))
+    stale = fdu.cache_status(cache_root)
+    assert stale is not None and stale.state is fdu.CacheState.STALE, stale
+    assert stale.stale_reason is fdu.StaleReason.OLDER_FORMAT, stale
+    assert stale.format_version == written - 1 and stale.root is None, stale
+    assert fdu.render_cache_status([stale], scope=fdu.CacheScope.ROOT).endswith(
+        "cannot be served by this build; fdu --cache-clear PATH removes it."
+    )
+    assert fdu.clear_cache(cache_root) is True
+    absent = fdu.cache_status(cache_root)
+    assert absent is not None and absent.state is fdu.CacheState.ABSENT, absent
+    # A sidecar with no snapshot is fdu's own leftover, not a foreign file. Only the
+    # classification is asserted here: this test shares the developer's real cache
+    # directory, so it plants one file of its own and removes it, and never clears.
+    orphan = status.path.with_name(status.path.name + ".content")
+    orphan.write_bytes(b"FDUCTNT\0planted")
+    try:
+        listed = {cache.path: cache for cache in fdu.list_caches(cache_root)}
+        assert listed[orphan].state is fdu.CacheState.LEFTOVER, listed
+        assert listed[orphan].leftover_kind is fdu.LeftoverKind.ORPHANED_CONTENT, listed
+    finally:
+        orphan.unlink()
 
     entrypoint = Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu")
     version = subprocess.run([entrypoint, "--version"], check=False, capture_output=True, text=True)

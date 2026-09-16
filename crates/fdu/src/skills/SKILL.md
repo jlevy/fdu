@@ -176,9 +176,9 @@ Check the process exit status and these fields:
 
 - `schema` before parsing anything else: a report carries `fdu.report/5` when it ran
   content analysis or includes a metric summary (the `types`, `families`, `languages`,
-  and `documents` views), `fdu.report/4` otherwise, and a `--watch` stream carries
-  `fdu.stream/1`. Treat an unrecognized value as a version you cannot parse rather than
-  guessing at the fields.
+  and `documents` views), `fdu.report/4` otherwise, a `--watch` stream carries
+  `fdu.stream/1`, and `--cache-status` carries `fdu.cache/1`. Treat an unrecognized
+  value as a version you cannot parse rather than guessing at the fields.
 - `complete` and `errors` before trusting totals
 - `freshness` and `source` before presenting data as current
 - `truncated` on a tree node before treating it as exhaustive
@@ -198,8 +198,14 @@ and use `--allow-partial` only when incomplete totals are acceptable.
 
 The snapshot is one file per root under the user cache directory.
 `--cache-status` maps a hash-named file back to the tree it describes, and
-`--cache-clear` removes it; both run without scanning and never touch files this build
-cannot identify.
+`--cache-clear` removes it; both run without scanning.
+Cache status is its own document, carrying the `fdu.cache/1` schema in every machine
+format rather than a report schema.
+Each status row carries a `state`: `current`, `stale` for a snapshot another fdu version
+wrote or one this build cannot read, `leftover` for a file fdu left behind, with a
+`leftover_kind`, `unrecognized` for a file that is not fdu’s, or `absent`. Clearing
+removes current and stale snapshots, so `--cache-clear=all` reclaims what an upgrade
+leaves behind; it also reclaims leftovers, and it never removes an unrecognized file.
 
 Verification cost follows the question asked.
 Sizes and timestamps need one stat per entry, because an in-place edit changes a file

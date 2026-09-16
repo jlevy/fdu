@@ -153,7 +153,11 @@ const MAX_TEMP_CREATE_ATTEMPTS: usize = 1024;
 /// is what makes this safe without any liveness check: a temporary this old cannot
 /// belong to a writer that is still running, and pid-based liveness tests are both
 /// unportable and wrong under pid reuse.
-const STALE_TEMP_AGE: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+///
+/// Shared with the cache lifecycle, which reclaims the same corpses on request rather
+/// than waiting for the next writer, and must answer "old enough to be nobody's" the same
+/// way this does.
+pub(crate) const STALE_TEMP_AGE: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
 
 /// Largest encoded root or entry name accepted from a snapshot.
 const MAX_PATH_BYTES: u32 = 1024 * 1024;
@@ -456,28 +460,98 @@ const fn make_crc32c_tables() -> [[u32; 256]; 8] {
 
 /// Read only a snapshot's header, without materializing its index.
 ///
-/// Returns `None` for anything this build cannot identify — absent, truncated, foreign,
+/// Returns `None` for anything this build cannot serve — absent, truncated, foreign,
 /// a different format version, or a mismatched engine fingerprint. Corrupt equals
 /// absent here exactly as it does on the load path: a caller asking what is in the cache
-/// must not be stopped by one unreadable file, and a file this code cannot identify is
-/// not a file it should later delete.
+/// must not be stopped by one unreadable file.
 pub fn read_header(path: &Path) -> Result<Option<crate::cache::SnapshotInfo>> {
+    Ok(match identify(path)? {
+        Some(Identity::Current(info)) => Some(info),
+        Some(Identity::Stale(_) | Identity::Foreign) | None => None,
+    })
+}
+
+/// What a file's leading bytes and trailer say it is.
+#[derive(Debug)]
+pub(crate) enum Identity {
+    /// A snapshot this build reads.
+    Current(crate::cache::SnapshotInfo),
+    /// It begins with the snapshot magic, so fdu wrote it, but this build cannot serve it.
+    Stale(crate::cache::StaleReason),
+    /// It does not begin with the snapshot magic.
+    Foreign,
+}
+
+/// Identify the file at `path` by its contents, or return `None` when nothing is there.
+///
+/// The magic alone decides whether a file is fdu's; the rest of the prologue decides
+/// whether this build can serve it. Every format fdu has written puts the version and the
+/// engine fingerprint at the same offsets after the magic, so a snapshot from another
+/// release is recognised as stale rather than mistaken for a foreign file. That is what
+/// lets the cache lifecycle reclaim the snapshots an upgrade leaves behind.
+///
+/// Opening follows a symbolic link at `path`, so a caller that must not follow one checks
+/// the path's own metadata first.
+pub(crate) fn identify(path: &Path) -> Result<Option<Identity>> {
     let file = match fs::File::open(path) {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(Error::io(path, error)),
     };
-    if !has_intact_trailer(&file).map_err(|error| Error::io(path, error))? {
-        // Truncation removes the tail and leaves the prologue readable, so a
-        // header-only check would call a half-written file a snapshot.
-        return Ok(None);
-    }
+    let trailer_intact = has_intact_trailer(&file).map_err(|error| Error::io(path, error))?;
     // The trailer check left the cursor at the end; the header lives at the start.
     let mut file = file;
     file.seek(SeekFrom::Start(0)).map_err(|error| Error::io(path, error))?;
+    identify_prologue(&mut BufReader::new(file), trailer_intact)
+        .map(Some)
+        .map_err(|error| Error::io(path, error))
+}
 
-    let mut reader = BufReader::new(file);
-    Ok(parse_header(&mut reader).ok())
+/// Classify a file from its prologue. Only an I/O failure is an error; every malformed
+/// byte is an answer.
+fn identify_prologue(reader: &mut impl Read, trailer_intact: bool) -> io::Result<Identity> {
+    use crate::cache::StaleReason;
+
+    match read_array::<_, 8>(reader) {
+        Ok(magic) if magic == *MAGIC => {}
+        Ok(_) | Err(ParseError::Invalid) => return Ok(Identity::Foreign),
+        Err(ParseError::Io(error)) => return Err(error),
+    }
+    let Some(version) = invalid_as_none(read_u32(reader))? else {
+        return Ok(Identity::Stale(StaleReason::Unreadable));
+    };
+    match version.cmp(&FORMAT_VERSION) {
+        std::cmp::Ordering::Less => {
+            return Ok(Identity::Stale(StaleReason::OlderFormat { version }));
+        }
+        std::cmp::Ordering::Greater => {
+            return Ok(Identity::Stale(StaleReason::NewerFormat { version }));
+        }
+        std::cmp::Ordering::Equal => {}
+    }
+    match invalid_as_none(read_u64(reader))? {
+        Some(fingerprint) if fingerprint == engine_fingerprint() => {}
+        Some(_) => return Ok(Identity::Stale(StaleReason::OtherEngine)),
+        None => return Ok(Identity::Stale(StaleReason::Unreadable)),
+    }
+    if !trailer_intact {
+        // Truncation removes the tail and leaves the prologue readable, so a header-only
+        // check would call a half-written file current.
+        return Ok(Identity::Stale(StaleReason::Unreadable));
+    }
+    Ok(match invalid_as_none(parse_header_fields(reader))? {
+        Some(info) => Identity::Current(info),
+        None => Identity::Stale(StaleReason::Unreadable),
+    })
+}
+
+/// Separate a malformed value, which is an answer, from an I/O failure, which is not.
+fn invalid_as_none<T>(result: ParseResult<T>) -> io::Result<Option<T>> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(ParseError::Invalid) => Ok(None),
+        Err(ParseError::Io(error)) => Err(error),
+    }
 }
 
 /// Whether a file ends with the snapshot trailer.
@@ -501,14 +575,8 @@ fn has_intact_trailer(file: &fs::File) -> io::Result<bool> {
     }
 }
 
-/// Parse the fixed prologue every snapshot begins with.
-fn parse_header(reader: &mut impl Read) -> ParseResult<crate::cache::SnapshotInfo> {
-    if read_array::<_, 8>(reader)? != *MAGIC {
-        return Err(ParseError::Invalid);
-    }
-    if read_u32(reader)? != FORMAT_VERSION || read_u64(reader)? != engine_fingerprint() {
-        return Err(ParseError::Invalid);
-    }
+/// Parse the header fields after the magic, format version, and engine fingerprint.
+fn parse_header_fields(reader: &mut impl Read) -> ParseResult<crate::cache::SnapshotInfo> {
     if read_u8(reader)? != path_encoding() {
         return Err(ParseError::Invalid);
     }
