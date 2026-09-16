@@ -434,14 +434,16 @@ measure, from the recorded identities:
   count.
 - A checkpoint captured without control observation has no ignored partition, and
   comparisons report that measure as not observed.
-- A checkpoint captured over its control budget has a partially observed ignored
-  partition. For 0.1.0, `fdu-1onj` makes crossing that budget, or the per-line guard the
-  same setting raises, refuse the control source instead of ending the scan: sizes stay
+- A checkpoint captured over its control limits has a partially observed ignored
+  partition. For 0.1.0, `fdu-1onj` makes crossing the budget or the line limit, two
+  independent settings, refuse the control source instead of ending the scan: sizes stay
   exact, the result is complete with exit status 0, and a coverage note names the
   directories whose control sources were refused.
-  With `.gitignore` roll-ups on by default (`fdu-elnn`), a large home folder reaches it
-  without any fault. Each checkpoint therefore records its control budget and every
-  refused control source, read from the index, and a comparison applies these rules:
+  With `.gitignore` roll-ups on by default (`fdu-elnn`), a large home folder reaches the
+  budget without any fault.
+  Each checkpoint therefore records both control limits and every refused control source
+  with the limit that refused it, read from the index, and a comparison applies these
+  rules:
   - Byte and count deltas stay exact, whatever either checkpoint refused.
   - If either checkpoint refused a source, the ignored and unignored deltas are marked
     partial at every directory at or below a source refused in either checkpoint, and at
@@ -451,15 +453,16 @@ measure, from the recorded identities:
     neither applied its rules, so a new file there is counted in whichever partition the
     loaded rules choose.
   - A checkpoint that retains fewer refused-source paths than its refused count, whether
-    none or a truncated list (the engine retains at most `MAX_RETAINED_ISSUES` of them),
-    marks every classification delta of its comparisons partial: an unrecorded source
-    could lie under any directory.
-  - The budget is mixed into `ignore_rules_fingerprint`, so checkpoints captured at
-    different budgets differ in `SemanticIdentity`, and their classification is not
+    none or a truncated list (`Index::control_coverage` lists at most
+    `MAX_RETAINED_ISSUES` of them beside the exact count), marks every classification
+    delta of its comparisons partial: an unrecorded source could lie under any
+    directory.
+  - Both limits are mixed into `ignore_rules_fingerprint`, so checkpoints captured under
+    different limits differ in `SemanticIdentity`, and their classification is not
     comparable under the `SemanticIdentity` rule above.
-    The recorded budget lets that reason name the two budgets.
+    The recorded limits let that reason name the limits that differ.
     Two complete checkpoints whose classifications agree are also reported as not
-    comparable when their budgets differ, which is conservative rather than wrong.
+    comparable when their limits differ, which is conservative rather than wrong.
 - A measure not recorded in both checkpoints is unavailable for that pair: for example,
   unique allocated bytes from before link counts were retained, or from a platform that
   observes no file identity.

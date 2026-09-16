@@ -115,9 +115,10 @@ reducer rules and returns an ordinary `Index`. Subsequent public mutations use t
 reducer without a separate engine or a caller-asserted trust flag.
 
 One-shot execution may retain less state only when the complete request proves that no
-cache, later query, live lifecycle, content analysis, or second view can consume the
-hierarchy. That derived-report optimization must produce the same `Report` contract; it
-is not a second engine or a user-selectable fast mode.
+cache, later query, live lifecycle, content analysis, second view, or ignore
+classification can consume the hierarchy.
+That derived-report optimization must produce the same `Report` contract; it is not a
+second engine or a user-selectable fast mode.
 
 #### One opened root has one authority
 
@@ -217,6 +218,19 @@ needs an interface.
 It stores platform-native path facts, parent relationships, reducers, classification
 state, control state, provenance, directory completeness, and snapshot metadata.
 
+Control state is bounded without ever bounding the answer.
+`ScanConfig::control_limits` holds two independent limits, each a size or unbounded.
+The budget, 4 MiB by default, bounds retained memory: the table charges each directory’s
+key and each distinct `.gitignore` content once against it, and a control file is read
+to one byte past it.
+The line limit, 16 KiB by default, bounds what one pattern costs to match.
+The table refuses a source past either, and the refusal names the limit that fired.
+A refusal is recorded state, not an error: the directory keeps no rules, the commit that
+carried the source still lands, and `Index::control_coverage` names the refused files
+beside an exact count.
+Sizes never depend on it; only the ignored and unignored split below a refused file
+does. Both limits are part of the scope’s ignore-rules identity.
+
 A detached index may retain bounded exact history for a nonblocking `since` API. That
 history has no live session identity, waiter, worker, or continuation authority and is
 never persisted. A cloned `Index` is a separate value.
@@ -310,6 +324,15 @@ A derived report plan is transient execution state for a provably one-shot reque
 It produces the same `Report` shape and semantic hash as indexed execution.
 It never becomes a hidden cache or alternate query grammar.
 
+Every report row that carries a size also carries the part of it `.gitignore` rules
+ignore: `TreeNode`, `SummaryRow`, and `TypeRow` an `IgnoredTally`, and `FileRow` a flag.
+The unfiltered tier derives the share from the maintained `all` and `unignored`
+partitions; the traversal tier counts it over the entries the selection admits, so a
+selection by ignored state (`Selection::ignored`) sizes, sorts, and bounds rows by what
+it selected. The share is `None` when the index observed no control state, and the
+aggregate-only plan, which keeps no control table, is taken only by a scan that turned
+observation off.
+
 #### Content index and sidecar
 
 Content analysis is a derived tier over metadata facts.
@@ -336,6 +359,8 @@ work, and any partial errors.
 
 One-shot `report()` may use the derived-report plan when the request proves that
 retained state has no consumer.
+It observes control state as `ScanConfig::read_controls` says, on by default as for
+`open()`, so a default report and a default index share one snapshot scope.
 One-shot and retained paths must remain semantically identical for the same request.
 
 #### Opened and long-lived

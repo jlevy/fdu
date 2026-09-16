@@ -105,6 +105,7 @@ fn parse_selection(dict: Option<&Bound<'_, PyDict>>, now: SystemTime) -> PyResul
     let modified_since = optional_string(dict, "modified_since")?;
     let modified_before = optional_string(dict, "modified_before")?;
     let kind = optional_strings(dict, "kind")?;
+    let ignored = optional_string(dict, "ignored")?;
     let depth = optional_string(dict, "depth")?;
     let limit = optional_string(dict, "limit")?;
     let sort = optional_string(dict, "sort")?;
@@ -129,6 +130,7 @@ fn parse_selection(dict: Option<&Bound<'_, PyDict>>, now: SystemTime) -> PyResul
         modified_since.as_deref(),
         modified_before.as_deref(),
         kind,
+        ignored.as_deref(),
         depth.as_deref(),
         limit.as_deref(),
         sort.as_deref(),
@@ -647,6 +649,12 @@ fn control_identity_dict(
     Ok(out)
 }
 
+const fn control_refusal_reason_label(
+    reason: fdu_core::control::ControlRefusalReason,
+) -> &'static str {
+    reason.label()
+}
+
 fn effective_change_dict<'py>(
     py: Python<'py>,
     change: &EffectiveChange,
@@ -683,6 +691,12 @@ fn effective_change_dict<'py>(
                 "current",
                 current.map(|value| control_identity_dict(py, value)).transpose()?,
             )?;
+        }
+        EffectiveChange::ControlRefusalUpdated { path, previous, current } => {
+            out.set_item("kind", "control_refusal_updated")?;
+            out.set_item("path", path.as_os_str())?;
+            out.set_item("previous", previous.map(control_refusal_reason_label))?;
+            out.set_item("current", current.map(control_refusal_reason_label))?;
         }
         EffectiveChange::Reclassified { path, previous_ignored, current_ignored } => {
             out.set_item("kind", "reclassified")?;
@@ -783,6 +797,30 @@ fn diagnostics_dict<'py>(
         issues.append(issue_dict(py, issue)?)?;
     }
     out.set_item("issues", issues)?;
+    out.set_item("controls", control_observation_dict(py, &diagnostics.controls)?)?;
+    Ok(out)
+}
+
+/// The same shape a report's JSON `ignore_rules` field carries.
+pub(crate) fn control_observation_dict<'py>(
+    py: Python<'py>,
+    observation: &fdu_core::control::ControlObservation,
+) -> PyResult<Bound<'py, PyDict>> {
+    let out = PyDict::new(py);
+    let limits = PyDict::new(py);
+    limits.set_item("budget", observation.limits.budget)?;
+    limits.set_item("line_limit", observation.limits.line_limit)?;
+    out.set_item("limits", limits)?;
+    out.set_item("applied", observation.applied)?;
+    out.set_item("refused", observation.refused)?;
+    let refusals = PyList::empty(py);
+    for refusal in &observation.refusals {
+        let item = PyDict::new(py);
+        item.set_item("path", refusal.path.as_os_str())?;
+        item.set_item("reason", refusal.reason.label())?;
+        refusals.append(item)?;
+    }
+    out.set_item("refusals", refusals)?;
     Ok(out)
 }
 
@@ -1042,7 +1080,9 @@ impl PyOpenedIndex {
         max_files = None,
         observe = false,
         journal_capacity_bytes = None,
-        type_rules = None
+        type_rules = None,
+        control_budget = None,
+        control_line_limit = None
     ))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn open(
@@ -1058,6 +1098,8 @@ impl PyOpenedIndex {
         observe: bool,
         journal_capacity_bytes: Option<usize>,
         type_rules: Option<String>,
+        control_budget: Option<&str>,
+        control_line_limit: Option<&str>,
     ) -> PyResult<Self> {
         let allowed = hidden_allow.unwrap_or_default();
         if !prune_hidden && !allowed.is_empty() {
@@ -1079,6 +1121,7 @@ impl PyOpenedIndex {
         if let Some(value) = journal_capacity_bytes {
             options.journal_capacity_bytes = value;
         }
+        options.control_limits = super::parse_control_limits(control_budget, control_line_limit)?;
         let inner = py
             .detach(move || {
                 // The document, never a fingerprint beside it: the engine derives the

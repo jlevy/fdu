@@ -76,6 +76,40 @@ pub fn parse_size(input: &str) -> Result<u64> {
     })
 }
 
+/// Parse a control budget: a [`parse_size`] value, or `all` for no bound.
+///
+/// The grammar of [`crate::control::ControlLimits::budget`], shared so the command line's
+/// `--gitignore-budget` and the Python API's `control_budget` accept the same words.
+pub fn parse_control_budget(input: &str) -> Result<Option<usize>> {
+    parse_control_limit(input, "control budget")
+}
+
+/// Parse a control line limit: a [`parse_size`] value, or `all` for no bound.
+///
+/// The grammar of [`crate::control::ControlLimits::line_limit`], shared so the command
+/// line's `--gitignore-line-limit` and the Python API's `control_line_limit` accept the same
+/// words.
+pub fn parse_control_line_limit(input: &str) -> Result<Option<usize>> {
+    parse_control_limit(input, "control line limit")
+}
+
+fn parse_control_limit(input: &str, kind: &'static str) -> Result<Option<usize>> {
+    if input.trim().eq_ignore_ascii_case("all") {
+        return Ok(None);
+    }
+    let bytes = parse_size(input).map_err(|error| match error {
+        Error::InvalidValue { value, hint, .. } => {
+            Error::InvalidValue { kind, value, hint: format!("{hint}, or `all` for no bound") }
+        }
+        other => other,
+    })?;
+    usize::try_from(bytes).map(Some).map_err(|_| Error::InvalidValue {
+        kind,
+        value: input.to_string(),
+        hint: "larger than this machine can address; use `all` for no bound".to_string(),
+    })
+}
+
 /// Render an instant as an RFC 3339 timestamp in UTC, with nanosecond precision.
 ///
 /// The exact inverse of the RFC 3339 branch of [`parse_when`], so a report's
@@ -686,6 +720,27 @@ mod tests {
         assert!(size_rejection("1.2.3M").contains("not a number"));
         // A size that cannot fit in a byte count is rejected, never wrapped.
         assert!(size_rejection("99999999P").contains("not a number"));
+    }
+
+    #[test]
+    fn each_control_limit_is_a_size_or_all_and_names_itself_when_rejected() {
+        assert_eq!(parse_control_budget("16M").expect("size"), Some(16_000_000));
+        assert_eq!(parse_control_budget("4MiB").expect("size"), Some(4 * 1024 * 1024));
+        assert_eq!(parse_control_budget(" ALL ").expect("all"), None);
+        assert_eq!(parse_control_line_limit("64KiB").expect("size"), Some(64 * 1024));
+        assert_eq!(parse_control_line_limit("all").expect("all"), None);
+        for (parse, kind) in [
+            (parse_control_budget as fn(&str) -> Result<Option<usize>>, "control budget"),
+            (parse_control_line_limit, "control line limit"),
+        ] {
+            assert_eq!(
+                parse("lots").expect_err("not a size").to_string(),
+                format!(
+                    "invalid {kind} \"lots\": expected a number before the unit, as in `10M`, \
+                     or `all` for no bound"
+                )
+            );
+        }
     }
 
     #[test]

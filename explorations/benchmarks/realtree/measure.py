@@ -350,9 +350,10 @@ PROBE_JOBS: Dict[str, Job] = {
         argv=("{binary}", "summary", "--root", "{root}"),
         start_state="cold",
         description=(
-            "The aggregate tier: five exact tallies through the transient plan, no "
-            "retained index and no snapshot. The shape of `fdu --view summary`, and "
-            "the tier closest to the machine floor."
+            "The shape of `fdu --view summary`: five exact tallies, no snapshot. It reads "
+            ".gitignore by default, which retains the index to classify entries; with "
+            "--no-controls it is the transient aggregate plan, the tier closest to the "
+            "machine floor."
         ),
         oracle="tallies",
         parallel_cpu=True,

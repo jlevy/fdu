@@ -143,6 +143,7 @@ def _query_kwargs(query: Query) -> dict[str, object]:
         "sort": selection.sort.value if selection.sort is not None else None,
         "reverse": selection.reverse,
         "size": selection.size.value,
+        "ignored": selection.ignored.value,
         "words_per_page": query.words_per_page,
     }
 
@@ -350,6 +351,7 @@ def _change(value: dict[str, Any]) -> Change:
         bytes=int(value["bytes"]) if value.get("bytes") is not None else None,
         allocated=int(value["allocated"]) if value.get("allocated") is not None else None,
         mtime_ns=int(value["mtime_ns"]) if value.get("mtime_ns") is not None else None,
+        ignored=bool(value["ignored"]) if value.get("ignored") is not None else None,
         reason=str(value["reason"]) if value.get("reason") is not None else None,
     )
 
@@ -364,13 +366,11 @@ def open(
     """Open a root using the requested cache policy, then return a retained index.
 
     The index observes ``.gitignore`` control state, as the engine's ``open`` does by
-    default. :func:`report` never does, so the two keep snapshots of different scope at one
-    cache path. A default ``open`` never starts from a ``report``'s snapshot: a policy that
-    scans treats it as a miss and scans cold, and ``CachePolicy.ONLY``, which never scans,
-    raises :class:`FduError` naming the remedy. A ``report`` answers from a default
-    ``open``'s snapshot only under ``CachePolicy.ONLY``. ``ScanOptions(read_controls=False)``
-    turns observation off: that ``open`` reads no control file and shares a ``report``'s
-    snapshot scope.
+    default, and so does :func:`report`, so the two share one snapshot scope and each starts
+    warm from the other's snapshot. ``ScanOptions(read_controls=False)`` turns observation
+    off: that ``open`` reads no control file and keeps a snapshot of another scope. A policy
+    that scans treats a snapshot of the other scope as a miss and scans cold, and
+    ``CachePolicy.ONLY``, which never scans, raises :class:`FduError` naming the remedy.
     """
 
     scan_options = scan if scan is not None else ScanOptions()
@@ -382,6 +382,8 @@ def open(
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,
         read_controls=scan_options.read_controls,
+        control_budget=_bound(scan_options.control_budget),
+        control_line_limit=_bound(scan_options.control_line_limit),
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
@@ -408,6 +410,8 @@ def scan(
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,
         read_controls=scan_options.read_controls,
+        control_budget=_bound(scan_options.control_budget),
+        control_line_limit=_bound(scan_options.control_line_limit),
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
@@ -432,10 +436,11 @@ def report(
     which meant a Python caller left cache state on a tree that the same command would
     not have, visible to a later cache-only read.
 
-    A report never observes ``.gitignore`` control state, because no view reads it, so it
-    opens no control file and cannot fail on the control-state bound, and it ignores
-    ``ScanOptions.read_controls``. See :func:`open` for what that means for sharing a
-    snapshot with an index.
+    A report observes ``.gitignore`` control state unless ``ScanOptions(read_controls=False)``
+    turns it off: every summary, tree, extension, and file row then carries its ignored
+    share, and ``Selection(ignored=...)`` can select one side. Turned off, rows carry
+    ``ignored=None``, and a selection by ignored state raises
+    :class:`InvalidArgumentError`. See :func:`open` for sharing a snapshot with an index.
 
     Use :func:`open` when you will ask more than one question; the index is the point.
     """
@@ -449,6 +454,9 @@ def report(
         cache=str(cache),
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,
+        read_controls=scan_options.read_controls,
+        control_budget=_bound(scan_options.control_budget),
+        control_line_limit=_bound(scan_options.control_line_limit),
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
         **_query_kwargs(selected),

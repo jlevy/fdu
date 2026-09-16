@@ -38,7 +38,7 @@ $ fdu --cache off --color never --size apparent realistic-project
      973 B  █░░░░░░░░░    12%      cli (2 files)
      232 B  ░░░░░░░░░░     3%      unit (1 file)
      285 B  ░░░░░░░░░░     4%    benches (1 file)
-Performance: walked 16 files / 7.6 KiB; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Performance: walked 16 files / 7.6 KiB; ignore rules 0 files; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 

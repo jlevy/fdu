@@ -571,7 +571,7 @@ mod tests {
         // its `[` a member. Rescanning from every one, as git does, would read this line's
         // bytes thousands of times for each byte of the name. The short forms of both
         // shapes are in `BRACKET_CASES`.
-        let openers = crate::control::MAX_CONTROL_PATTERN_BYTES / 2 - 4;
+        let openers = crate::control::DEFAULT_CONTROL_LINE_LIMIT / 2 - 4;
         let mut source = b"*[".to_vec();
         source.extend(b"[:".repeat(openers));
         source.extend_from_slice(b"a]z\n");

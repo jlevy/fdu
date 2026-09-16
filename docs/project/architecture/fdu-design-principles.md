@@ -518,6 +518,34 @@ Descending and admitting stay separate decisions.
 Rejecting a directory removes it from the tally, never the entries beneath it, which is
 what makes `--kind file` mean “report files” rather than “look only at the top level”.
 
+### Ignore Rules Are Observed by Default, and Never Guessed
+
+`.gitignore` handling is built in, and every surface observes it by default: `fdu PATH`
+and `--watch`, the engine’s `open` and `prepare_report`, and Python’s `fdu.open`,
+`fdu.scan`, and `fdu.report`. Each request can turn it off, as `--no-gitignore` or
+`read_controls`, and a request that did answers every question about ignored state with
+a typed “not observed” (`ControlStateNotObserved`, or `null` in machine output), never
+with “not ignored” and never with a zero share.
+
+The default is on because the question it answers is the one people ask of a large tree
+first — how much of this is build output and dependencies — and because one default
+leaves one default snapshot scope.
+The default went on, off, and on again within one day while it was argued, each time for
+a reason that held on its own: off kept one-shot reports cheap and out of reach of the
+control bounds, and on made the index answer exactly.
+What settled it was checking the defaults together.
+A report that read every `.gitignore` and showed nothing would have broken
+[display follows cost](#one-scan-many-views), off alone left `open` and the command line
+in different cache scopes, and the bounds that made observation risky now degrade
+instead of ending the scan.
+So the view and the default arrived together: every row shows the ignored share of its
+size, and the cost of reading the rules is measured against the default it replaced.
+
+Turning observation off is a scope, not a filter, because what was never read cannot be
+selected afterwards.
+Selecting by ignored state over such a scan is refused rather than answered with every
+entry or none.
+
 ### A Roll-Up Partitions What It Reports On
 
 Every grouped view divides the selected set into buckets, so its rows sum to the total
@@ -691,9 +719,10 @@ The index must never learn what a filesystem event is.
 
 A build feature is for a capability with a dependency tree to shed.
 `.gitignore` handling has none, so it is always compiled in, and
-`ScanConfig::read_controls` is the per-request switch for its filesystem reads.
-It was once a build feature as well, which made “observes controls” depend on the build:
-in the build without it, every opened roll-up failed.
+`ScanConfig::read_controls` is the per-request switch for its filesystem reads, on by
+default as [the rule above](#ignore-rules-are-observed-by-default-and-never-guessed)
+explains. It was once a build feature as well, which made “observes controls” depend on
+the build: in the build without it, every opened roll-up failed.
 
 ### Two Crates, Not More
 

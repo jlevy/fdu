@@ -21,11 +21,11 @@ patterns:
 
 ```console
 $ fdu --cache off --color never --size apparent --depth 2 --limit 10 project
-     263 B  ██████████   100%  . (6 files)
-     128 B  █████░░░░░    49%    dist (1 file)
-      36 B  █░░░░░░░░░    14%    src (2 files)
+     269 B  ██████████   100%  . (7 files) (128 B ignored)
+     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
+      36 B  █░░░░░░░░░    13%    src (2 files)
       23 B  █░░░░░░░░░     9%    docs (1 file)
-Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -33,11 +33,11 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 
 ```console
 $ fdu --cache off --color never --size apparent --depth 1 --limit 2 project
-     263 B  ██████████   100%  . (6 files)
-     128 B  █████░░░░░    49%    dist (1 file)
-      36 B  █░░░░░░░░░    14%    src (2 files)
+     269 B  ██████████   100%  . (7 files) (128 B ignored)
+     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
+      36 B  █░░░░░░░░░    13%    src (2 files)
                                  …
-Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -51,11 +51,12 @@ what makes this block stable across platforms.
 
 ```console
 $ fdu --cache off --color never --view types --limit 10 --size apparent project
-     128 B   48.7%  archive            1 file
-      71 B   27.0%  markdown           2 files, 2 documentation
-      36 B   13.7%  rust               2 files
-      28 B   10.6%  make               1 file
-Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+     128 B   47.6%  archive            1 file
+      71 B   26.4%  markdown           2 files, 2 documentation
+      36 B   13.4%  rust               2 files
+      28 B   10.4%  make               1 file
+       6 B    2.2%  unknown            1 file
+Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -70,25 +71,27 @@ An all-caps header above each block, one blank line between blocks, is enough to
 ```console
 $ fdu --cache off --color never --view tree,types,families,summary --size apparent --depth 1 --limit 10 project
 TREE
-     263 B  ██████████   100%  . (6 files)
-     128 B  █████░░░░░    49%    dist (1 file)
-      36 B  █░░░░░░░░░    14%    src (2 files)
+     269 B  ██████████   100%  . (7 files) (128 B ignored)
+     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
+      36 B  █░░░░░░░░░    13%    src (2 files)
       23 B  █░░░░░░░░░     9%    docs (1 file)
 
 TYPES
-     128 B   48.7%  archive            1 file
-      71 B   27.0%  markdown           2 files, 2 documentation
-      36 B   13.7%  rust               2 files
-      28 B   10.6%  make               1 file
+     128 B   47.6%  archive            1 file
+      71 B   26.4%  markdown           2 files, 2 documentation
+      36 B   13.4%  rust               2 files
+      28 B   10.4%  make               1 file
+       6 B    2.2%  unknown            1 file
 
 FAMILIES
-     128 B   48.7%  binary             1 file
-      71 B   27.0%  prose              2 files, 2 documentation
-      64 B   24.3%  code               3 files
+     128 B   47.6%  binary             1 file
+      71 B   26.4%  prose              2 files, 2 documentation
+      64 B   23.8%  code               3 files
+       6 B    2.2%  unknown            1 file
 
 SUMMARY
-     263 B  6 files, 3 directories
-Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+     269 B  7 files, 3 directories (128 B ignored)
+Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -103,7 +106,7 @@ the property behind piping it into `xargs`.
 $ fdu --cache off --color never --view files --include "*.rs" project
 src[SEP]alpha.rs
 src[SEP]omega.rs
-Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -120,7 +123,7 @@ $ fdu --cache off --color never --view files,types --include "*.nomatch" project
 FILES
 
 TYPES
-Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -138,7 +141,7 @@ src[SEP]omega.rs
 
 SUMMARY
       36 B  2 files, 0 directories
-Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 

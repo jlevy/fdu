@@ -60,6 +60,13 @@ std::thread_local! {
     /// The walk changes nothing when no bit moves, so a test cannot see it through the
     /// index. Per thread, because tests run in parallel and a load runs on its caller's.
     pub(crate) static RECLASSIFY_VISITS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+
+    /// Control tables copied to project a batch, on this thread.
+    ///
+    /// A projection that changes nothing is indistinguishable from one that was never
+    /// made, through the index; this is how a test sees which one happened.
+    pub(crate) static CONTROL_PROJECTION_CLONES: std::cell::Cell<u64> =
+        const { std::cell::Cell::new(0) };
 }
 
 /// Approximate bytes the exact commit history used by [`Index::since`] may retain.
@@ -1424,6 +1431,12 @@ impl DetachedIndexBuilder {
         }
     }
 
+    /// Refuse control sources past either of `limits` while building.
+    pub(crate) fn with_control_limits(mut self, limits: crate::control::ControlLimits) -> Self {
+        self.index.set_control_limits(limits);
+        self
+    }
+
     /// Consume one listing after its parent listing has already been consumed.
     ///
     /// An enumerator can repeat a name while its directory is modified, which the
@@ -1574,12 +1587,29 @@ impl Index {
     }
 
     /// Create an empty index with an explicit semantic scan scope.
+    ///
+    /// Its control table applies the default
+    /// [`ControlLimits`](crate::control::ControlLimits), whatever limits the scope was
+    /// taken under, so a snapshot of it saves only when those agree. Build an index for any
+    /// other limits with [`Self::new_with_config`].
     pub fn new_with_scope(root_path: impl Into<PathBuf>, scope: ScanScope) -> Self {
         Self::new_with_scope_and_types(
             root_path,
             scope,
             crate::classify::TypeRegistry::compiled_shared(),
         )
+    }
+
+    /// Create an empty index with the scope, file-type rules, and control limits of
+    /// `config`, as the scans behind [`crate::open`] and [`crate::OpenedIndex`] do.
+    ///
+    /// The scope and the control table come from one configuration, so the table enforces
+    /// exactly the limits the scope's ignore-rules identity claims.
+    pub fn new_with_config(root_path: impl Into<PathBuf>, config: &crate::ScanConfig) -> Self {
+        let mut index =
+            Self::new_with_scope_and_types(root_path, config.scope(), config.types_shared());
+        index.set_control_limits(config.control_limits);
+        index
     }
 
     /// Create an index whose registry is part of its validated semantic scope.
@@ -1734,20 +1764,64 @@ impl Index {
         &self.controls
     }
 
-    /// Install a complete bounded control table while restoring a detached snapshot.
+    /// Whether this index's ignore classification applies every control file in scope.
+    ///
+    /// [`crate::control::ControlCoverage::NotObserved`] when the index read no control
+    /// file. Otherwise the limits, the applied and refused counts, and the first refused
+    /// files. Sizes and counts are exact either way; only the ignored and unignored split
+    /// below a refused file is not.
+    pub fn control_coverage(&self) -> crate::control::ControlCoverage {
+        if self.observes_controls() {
+            crate::control::ControlCoverage::Observed(self.controls.observation())
+        } else {
+            crate::control::ControlCoverage::NotObserved
+        }
+    }
+
+    /// Refuse control sources past either of `limits`, as the scan configuration that
+    /// builds this index asks. Set once, before any control input arrives: a table's
+    /// refusals are only meaningful under the limits that made them.
+    pub(crate) fn set_control_limits(&mut self, limits: crate::control::ControlLimits) {
+        debug_assert!(self.controls.is_vacant(), "the control limits are set before any control");
+        self.controls = crate::control::ControlTable::with_limits(limits);
+    }
+
+    /// Refuse `limits` unless they are the ones this index's scope was taken under.
+    ///
+    /// A scope that observes control state names its limits in its ignore-rules identity,
+    /// and an index's scope and its table must never disagree: a table refusing under other
+    /// limits would be served, and saved, as if it applied the scope's. A scope that
+    /// observes nothing retains no table, so its limits decide nothing.
+    pub(crate) fn require_control_limits_in_scope(
+        &self,
+        limits: crate::control::ControlLimits,
+    ) -> crate::Result<()> {
+        if self.scope.observes_controls()
+            && crate::scan::observed_ignore_rules_fingerprint(limits)
+                != self.scope.ignore_rules_fingerprint
+        {
+            return Err(crate::Error::ControlLimitsOutsideScope { limits });
+        }
+        Ok(())
+    }
+
+    /// Install a complete control table while restoring a detached snapshot.
     pub(crate) fn install_controls(
         &mut self,
         controls: crate::control::ControlTable,
     ) -> crate::Result<()> {
-        if controls.retained_cost() > crate::control::MAX_CONTROL_TABLE_BYTES {
-            return Err(crate::Error::ControlSourceLimit {
-                attempted: controls.retained_cost(),
-                limit: crate::control::MAX_CONTROL_TABLE_BYTES,
-            });
+        self.require_control_limits_in_scope(controls.limits())?;
+        // Every source a table retains was admitted under its own budget, and the charge
+        // does not depend on admission order, so a larger total was not written by one.
+        if controls.limits().budget.is_some_and(|budget| controls.retained_cost() > budget) {
+            return Err(crate::Error::Snapshot(
+                "a snapshot's control table exceeds its own control budget".into(),
+            ));
         }
-        // A scope that observed no control state retains no table; a snapshot carrying
-        // one under such a scope was not written by a scan that honoured it.
-        if !controls.is_empty() {
+        // A scope that observed no control state retains no table and refuses nothing; a
+        // snapshot carrying either under such a scope was not written by a scan that
+        // honoured it.
+        if !controls.is_vacant() {
             self.require_observed_controls()?;
         }
         // Every entry's ignored bit agrees with the table it replaces, so when neither table
@@ -2195,7 +2269,7 @@ impl Index {
     #[allow(clippy::too_many_arguments)] // One shared tail keeps both reducer lanes identical.
     fn finish_reduction<C: ConsequenceSink>(
         &mut self,
-        projected_controls: crate::control::ControlTable,
+        projected_controls: Option<crate::control::ControlTable>,
         stats: &mut ApplyStats,
         discovery: Option<DiscoveryCommit>,
         observation: Option<ObservationTransition>,
@@ -3262,10 +3336,30 @@ impl Index {
         entry.kind.is_dir().then(|| self.named_rollup(&entry.rollup().all))
     }
 
-    /// Map-free directory totals for in-crate reporting paths.
-    pub(crate) fn rollup_scalars_of(&self, id: EntryId) -> Option<RollUpScalars> {
+    /// Map-free totals of a directory's `all` and `unignored` partitions, in that order,
+    /// for reporting paths that derive an ignored share.
+    ///
+    /// No observation check: in an index that observed no control state the two are equal,
+    /// so a caller that has not checked [`Self::observes_controls`] derives a zero share
+    /// rather than an error, and must not present it as one.
+    pub(crate) fn partition_scalars_of(
+        &self,
+        id: EntryId,
+    ) -> Option<(RollUpScalars, RollUpScalars)> {
         let entry = self.try_entry(id)?;
-        entry.kind.is_dir().then(|| RollUpScalars::from(&entry.rollup().all))
+        entry.kind.is_dir().then(|| {
+            let rollup = entry.rollup();
+            (RollUpScalars::from(&rollup.all), RollUpScalars::from(&rollup.unignored))
+        })
+    }
+
+    /// The retained ignore bit of a live entry, without the observation check
+    /// [`Self::is_ignored`] makes, or `None` for a stale handle.
+    ///
+    /// `false` throughout an index that observed no control state, for the reason
+    /// [`Self::partition_scalars_of`] gives.
+    pub(crate) fn ignored_bit_of(&self, id: EntryId) -> Option<bool> {
+        Some(self.try_entry(id)?.ignored)
     }
 
     /// Attributes for an entry id, or `None` when the handle is stale.
@@ -3630,14 +3724,14 @@ impl Index {
 
     /// Evaluate the complete resulting control table before any fact or reducer moves.
     ///
-    /// Parsing is infallible, but the shared source bound is not. Building the projected
-    /// table here makes an over-limit observation fault-atomic even when the same batch
-    /// also inserts or removes ordinary entries.
+    /// Only a malformed control path fails here; a source the bounds cannot admit is
+    /// refused inside the projection. Building the whole table first keeps a failing
+    /// observation fault-atomic even when the same batch also moves ordinary entries.
     fn projected_controls(
         &self,
         ops: &[ObservationOp],
         accepted: &[bool],
-    ) -> crate::Result<crate::control::ControlTable> {
+    ) -> crate::Result<Option<crate::control::ControlTable>> {
         self.projected_controls_from(
             ops.iter()
                 .zip(accepted)
@@ -3645,27 +3739,17 @@ impl Index {
         )
     }
 
+    /// The table this batch would leave behind, or `None` when it leaves the current one.
     fn projected_controls_from<'a>(
         &self,
         ops: impl Iterator<Item = &'a Op> + Clone,
-    ) -> crate::Result<crate::control::ControlTable> {
-        // When the retained table is empty and the batch carries no control op of any
-        // kind, projection cannot change anything: only control ops write the table, and
-        // there is nothing retained for a structural removal to prune. A cold scan of a
-        // tree without control files takes this lane for every batch, instead of paying
-        // one structural-overlay insertion per op to project a table that was empty onto
-        // a table that stays empty (fdu-pro1).
-        //
-        // Both control op kinds disqualify, not just upserts, so every control op reaches
-        // the table and this lane never has to decide which control input is inert.
-        if self.controls.is_empty()
-            && !ops
-                .clone()
-                .any(|op| matches!(op, Op::ControlUpsert { .. } | Op::ControlRemove { .. }))
-        {
-            return Ok(self.controls.clone());
+    ) -> crate::Result<Option<crate::control::ControlTable>> {
+        if self.controls_unchanged_by(ops.clone()) {
+            return Ok(None);
         }
         let mut projected = self.controls.clone();
+        #[cfg(test)]
+        CONTROL_PROJECTION_CLONES.with(|clones| clones.set(clones.get() + 1));
         let mut structure = StructuralOverlay::default();
         for op in ops {
             match op {
@@ -3694,17 +3778,69 @@ impl Index {
                 Op::InvalidateSubtree { .. } => {}
             }
         }
-        Ok(projected)
+        Ok(Some(projected))
+    }
+
+    /// Whether no operation in the batch can change the retained control table.
+    ///
+    /// Only control ops write the table, and only a structural removal prunes it, so a
+    /// batch whose control ops are all inert against this table and whose structural ops
+    /// touch nothing it records leaves it exactly as it is. Each op is decided against the
+    /// current table rather than against the projection, which is the same thing: an inert
+    /// op leaves the state the next one is decided against unchanged.
+    ///
+    /// This is what keeps a warm revalidate of a tree past its budget from cloning the
+    /// whole table for every batch of re-read refusals (fdu-hzm5), and a cold scan of a
+    /// tree with no control files from projecting an empty table onto an empty one
+    /// (fdu-pro1). A malformed control path is never inert, so the projection still
+    /// reports it.
+    fn controls_unchanged_by<'a>(&self, ops: impl Iterator<Item = &'a Op>) -> bool {
+        // A vacant table decides every op from its kind alone, which is what the cold
+        // no-controls lane costs per entry: there is nothing for a structural op to drop or
+        // prune, and no source is inert against it, since `Unchanged` needs a retained
+        // source and `Refuse` a matching refusal. A removal still asks, so a malformed
+        // control path stays non-inert and the projection reports it.
+        if self.controls.is_vacant() {
+            return ops.into_iter().all(|op| match op {
+                Op::ControlUpsert { .. } => false,
+                Op::ControlRemove { path } => self.controls.remove_is_inert(path),
+                Op::Upsert { .. } | Op::Remove { .. } | Op::InvalidateSubtree { .. } => true,
+            });
+        }
+
+        ops.into_iter().all(|op| match op {
+            Op::ControlUpsert { path, source } => self.controls.upsert_is_inert(path, source),
+            Op::ControlRemove { path } => self.controls.remove_is_inert(path),
+            Op::Upsert { path, kind, .. } => {
+                // The kind first: it is one discriminant test, where naming a control file
+                // parses the path's last component.
+                let drops_control = *kind != EntryKind::File
+                    && crate::control::is_control_file(path)
+                    && self.controls.contains(path);
+                let prunes_subtree = !kind.is_dir() && self.controls.has_record_at_or_below(path);
+                !drops_control && !prunes_subtree
+            }
+            Op::Remove { path } => {
+                let drops_control =
+                    crate::control::is_control_file(path) && self.controls.contains(path);
+                !drops_control && !self.controls.has_record_at_or_below(path)
+            }
+            Op::InvalidateSubtree { .. } => true,
+        })
     }
 
     fn apply_control_transition<C: ConsequenceSink>(
         &mut self,
-        projected: crate::control::ControlTable,
+        projected: Option<crate::control::ControlTable>,
         stats: &mut ApplyStats,
         effects: &mut C,
     ) {
+        let Some(projected) = projected else {
+            return;
+        };
         let changes = projected.changes_from(&self.controls);
-        if changes.is_empty() {
+        let refusals = projected.refusal_changes_from(&self.controls);
+        if changes.is_empty() && refusals.is_empty() {
             return;
         }
         let affected: Vec<PathBuf> = changes
@@ -3712,9 +3848,14 @@ impl Index {
             .filter_map(|(path, _, _)| crate::control::ControlTable::affected_subtree(path).ok())
             .collect();
         self.controls = projected;
-        stats.controls = u64::try_from(changes.len()).unwrap_or(u64::MAX);
+        stats.controls = u64::try_from(changes.len() + refusals.len()).unwrap_or(u64::MAX);
         for (path, previous, current) in changes {
             effects.change(|| EffectiveChange::ControlUpdated { path, previous, current });
+        }
+        // A refusal changes what classification covers, not what it says, so it moves no
+        // entry by itself; the source it may have dropped arrived as a change above.
+        for (path, previous, current) in refusals {
+            effects.change(|| EffectiveChange::ControlRefusalUpdated { path, previous, current });
         }
         self.reclassify_controlled_subtrees(&affected, stats, effects);
     }
@@ -4909,6 +5050,9 @@ fn derive_impact(changes: &[EffectiveChange], state: &[StateTransition]) -> Impa
             }
             EffectiveChange::ControlUpdated { .. } | EffectiveChange::Reclassified { .. } => {
                 domains.extend([ImpactDomain::Classification, ImpactDomain::Aggregates]);
+            }
+            EffectiveChange::ControlRefusalUpdated { .. } => {
+                domains.insert(ImpactDomain::Classification);
             }
             EffectiveChange::Invalidated { .. } => {
                 domains.insert(ImpactDomain::State);
@@ -8208,31 +8352,167 @@ mod tests {
         ));
     }
 
+    /// A control the budget cannot admit is refused inside the commit that carried it: the
+    /// batch's ordinary entries land, the refusal is a change of its own, and a source it
+    /// replaces is dropped and its entries reclassified.
     #[test]
-    fn control_bound_failure_is_atomic_with_ordinary_entry_work() {
+    fn an_over_budget_control_is_refused_while_its_batch_commits() {
         let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
             "/root",
             crate::test_support::observing_controls(),
             crate::classify::TypeRegistry::compiled_shared(),
             DEFAULT_JOURNAL_CAPACITY_BYTES,
         );
-        let before = index.clone();
+        index.apply_ok(&Observation::new(vec![
+            Op::ControlUpsert { path: PathBuf::from(".gitignore"), source: b"*.log\n".to_vec() },
+            upsert("debug.log", EntryKind::File, file_attrs(10, 1)),
+        ]));
+        assert_eq!(index.is_ignored(Path::new("debug.log")).expect("observed"), Some(true));
         let mut oversized = crate::control::source_at_test_limit();
         oversized.push(b'a');
-        let error = index
-            .apply(&Observation::new(vec![
-                upsert("ordinary.txt", EntryKind::File, file_attrs(1, 1)),
-                Op::ControlUpsert { path: PathBuf::from(".gitignore"), source: oversized },
-            ]))
-            .expect_err("the complete batch must fail before any mutation");
 
-        assert!(matches!(error, crate::Error::ControlSourceLimit { .. }));
-        assert_eq!(index.clock(), before.clock());
-        assert_eq!(index.len(), before.len());
-        assert_eq!(index.total(), before.total());
-        assert_eq!(index.serving, before.serving);
-        assert!(index.lookup(Path::new("ordinary.txt")).is_none());
-        assert!(index.controls().expect("control state observed").is_empty());
+        let outcome = index.apply_ok(&Observation::new(vec![
+            upsert("ordinary.txt", EntryKind::File, file_attrs(1, 2)),
+            Op::ControlUpsert { path: PathBuf::from(".gitignore"), source: oversized },
+        ]));
+
+        assert!(index.lookup(Path::new("ordinary.txt")).is_some(), "ordinary work commits");
+        assert_eq!(index.total().files, 2);
+        assert_eq!(
+            index.is_ignored(Path::new("debug.log")).expect("observed"),
+            Some(false),
+            "the rules the refused source replaced no longer apply"
+        );
+        let changes = &outcome.commit.as_ref().expect("one commit").changes;
+        let refused = Some(crate::control::ControlRefusalReason::Budget);
+        assert!(changes.iter().any(|change| matches!(
+            change,
+            EffectiveChange::ControlUpdated { previous: Some(_), current: None, .. }
+        )));
+        assert!(changes.iter().any(|change| matches!(
+            change,
+            EffectiveChange::ControlRefusalUpdated { previous: None, current, .. }
+                if *current == refused
+        )));
+        let crate::control::ControlCoverage::Observed(coverage) = index.control_coverage() else {
+            panic!("an observing index reports observed coverage");
+        };
+        assert_eq!((coverage.applied, coverage.refused), (0, 1));
+        assert_eq!(coverage.refusals[0].path, Path::new(".gitignore"));
+
+        // Removing the refused file lifts the refusal in a commit of its own.
+        let lifted = index.apply_ok(&Observation::new(vec![Op::ControlRemove {
+            path: PathBuf::from(".gitignore"),
+        }]));
+        assert!(matches!(
+            lifted.commit.as_ref().expect("lifting a refusal commits").changes.as_slice(),
+            [EffectiveChange::ControlRefusalUpdated { previous, current: None, .. }]
+                if *previous == refused
+        ));
+        assert_eq!(
+            index.control_coverage(),
+            crate::control::ControlCoverage::Observed(crate::control::ControlObservation {
+                limits: crate::control::ControlLimits::default(),
+                applied: 0,
+                refused: 0,
+                refusals: Vec::new(),
+            })
+        );
+    }
+
+    /// A batch that cannot change the control table does not copy it.
+    ///
+    /// Every warm revalidate re-reads each refused `.gitignore`, because nothing is
+    /// retained where one was refused, and re-upserts it; projecting each such batch copied
+    /// the whole table, once per batch, to arrive at the table it started from (fdu-hzm5).
+    /// A batch that does change it still projects.
+    #[test]
+    fn a_batch_that_cannot_change_the_control_table_does_not_copy_it() {
+        let projection_clones = |index: &mut Index, ops: Vec<Op>| {
+            CONTROL_PROJECTION_CLONES.with(|clones| clones.set(0));
+            let outcome = index.apply_ok(&Observation::new(ops));
+            (CONTROL_PROJECTION_CLONES.with(std::cell::Cell::get), outcome)
+        };
+        let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
+
+        // The cold lane first: against a table that records nothing, a batch of ordinary
+        // entries has nothing to drop or prune, so it never projects (fdu-pro1).
+        let (clones, _) = projection_clones(
+            &mut index,
+            vec![
+                upsert("cold", EntryKind::Dir, file_attrs(0, 1)),
+                upsert("cold/file.txt", EntryKind::File, file_attrs(1, 1)),
+            ],
+        );
+        assert_eq!(clones, 0, "an empty table has nothing a structural batch can change");
+
+        let mut over_budget = vec![b'x'; crate::control::DEFAULT_CONTROL_LINE_LIMIT + 1];
+        over_budget.push(b'\n');
+        index.apply_ok(&Observation::new(vec![
+            upsert("keep", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("keep/file.txt", EntryKind::File, file_attrs(3, 1)),
+            upsert("vendor", EntryKind::Dir, file_attrs(0, 1)),
+            Op::ControlUpsert { path: PathBuf::from(".gitignore"), source: b"*.log\n".to_vec() },
+            Op::ControlUpsert {
+                path: PathBuf::from("vendor/.gitignore"),
+                source: over_budget.clone(),
+            },
+        ]));
+        let coverage = index.control_coverage();
+
+        // A warm revalidate's shape: the refused source re-read, the retained one re-read
+        // unchanged, and ordinary entries beside them.
+        let (clones, outcome) = projection_clones(
+            &mut index,
+            vec![
+                upsert("keep/file.txt", EntryKind::File, file_attrs(4, 1)),
+                Op::ControlUpsert {
+                    path: PathBuf::from(".gitignore"),
+                    source: b"*.log\n".to_vec(),
+                },
+                Op::ControlUpsert { path: PathBuf::from("vendor/.gitignore"), source: over_budget },
+            ],
+        );
+        assert_eq!(clones, 0, "no control op changes anything");
+        assert_eq!(index.control_coverage(), coverage);
+        assert!(!outcome.commit.expect("the file's size changed").changes.iter().any(
+            |change| matches!(
+                change,
+                EffectiveChange::ControlUpdated { .. }
+                    | EffectiveChange::ControlRefusalUpdated { .. }
+            )
+        ));
+
+        // Removing the refused file is a change, so this batch projects.
+        let (clones, _) = projection_clones(
+            &mut index,
+            vec![Op::ControlRemove { path: PathBuf::from("vendor/.gitignore") }],
+        );
+        assert_eq!(clones, 1);
+        assert_eq!(index.controls().expect("observed").refused_len(), 0);
+    }
+
+    /// A structural removal takes the refusals under it along, even when no rule is retained.
+    #[test]
+    fn removing_a_subtree_lifts_the_refusals_beneath_it() {
+        let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
+        let mut line = vec![b'x'; crate::control::DEFAULT_CONTROL_LINE_LIMIT + 1];
+        line.push(b'\n');
+        index.apply_ok(&Observation::new(vec![
+            upsert("vendor", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("vendor/.gitignore", EntryKind::File, file_attrs(16_386, 1)),
+            Op::ControlUpsert { path: PathBuf::from("vendor/.gitignore"), source: line },
+        ]));
+        assert_eq!(index.controls().expect("observed").refused_len(), 1);
+
+        let outcome =
+            index.apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("vendor") }]));
+
+        assert_eq!(index.controls().expect("observed").refused_len(), 0);
+        assert!(outcome.commit.expect("commit").changes.iter().any(|change| matches!(
+            change,
+            EffectiveChange::ControlRefusalUpdated { current: None, .. }
+        )));
     }
 
     #[test]

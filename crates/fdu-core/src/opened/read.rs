@@ -202,6 +202,7 @@ pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadRes
                         scope,
                         entries: index.len(),
                         issues: index.issues().to_vec(),
+                        controls: index.control_table().observation(),
                     }));
                 }
             }
@@ -270,7 +271,7 @@ fn report_projection(
         &request.query,
         &provenance,
         crate::query::NameIdentity::Portable,
-    );
+    )?;
     work.rows_visited = work.rows_visited.saturating_add(charge.rows);
     work.maintained_index_work = work.maintained_index_work.saturating_add(charge.maintained);
     work.rows_returned = work.rows_returned.saturating_add(report_rows(&report));
@@ -419,6 +420,7 @@ fn portable_candidate<'a>(
         bytes: row.attrs.size,
         allocated: row.attrs.allocated,
         mtime_ns: row.attrs.mtime_ns,
+        ignored: row.ignored,
     }
 }
 
@@ -685,7 +687,7 @@ fn flat_projection(
         }
         let native = index.path_of(*id).unwrap_or_default();
         let mut row = index.entry_value_of(*id, &native);
-        if !selection.admits(&portable_candidate(portable, &row), row.ignored) {
+        if !selection.admits(&portable_candidate(portable, &row)) {
             continue;
         }
         if shape == crate::RowShape::Compact {
@@ -752,7 +754,7 @@ fn aggregate_projection(
         }
         let native = index.path_of(*id).unwrap_or_default();
         let row = index.entry_value_of(*id, &native);
-        if !selection.admits(&portable_candidate(portable, &row), row.ignored) {
+        if !selection.admits(&portable_candidate(portable, &row)) {
             continue;
         }
         if matches == count_cap {

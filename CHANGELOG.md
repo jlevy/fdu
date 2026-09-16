@@ -134,8 +134,89 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Control input through `ControlTable::upsert` or `Index::apply` is applied, or
     refused with `Error::ControlStateNotObserved` on a scope that observes no control
     state, where it used to fail with `Error::UnsupportedScanConfig`.
-  - A scope with `read_controls` on now has ignore-rules fingerprint 2 rather than 0, so
-    a snapshot written under it misses once and is rebuilt by a cold scan.
+  - A scope with `read_controls` on now has an ignore-rules fingerprint of its own
+    rather than 0, so a snapshot written under it misses once, and the next scan of that
+    root replaces it with a cold one.
+- **Breaking:** a `.gitignore` past the control budget, or with a line over the line
+  limit, is refused instead of ending the scan.
+  Its rules do not apply, every size stays exact, and the result stays complete with
+  exit status 0; the batch that carried it commits, an opened root completes the
+  directory and keeps watching, and a watch keeps applying events.
+  Identical `.gitignore` files are stored and charged once, so a tree of package
+  checkouts uses a fraction of the budget it did.
+  - `Error::ControlSourceLimit` and `Error::ControlPatternLimit` are removed.
+    `ControlTable::upsert` returns a `ControlAdmission`, `Index::control_coverage`
+    returns the limits, the applied and refused counts, and at most
+    `MAX_RETAINED_ISSUES` refused files with an exact count and the limit that refused
+    each, and `EffectiveChange::ControlRefusalUpdated` reports a refusal recorded or
+    lifted. `ReadDiagnostics::controls` carries the same for an opened root, and Python
+    mirrors all three.
+  - Two independent limits, each a size or unbounded, and each liftable without moving
+    the other. The budget bounds the control state the whole index retains, 4 MiB by
+    default; unbounded, it also reads every `.gitignore` whole.
+    The line limit bounds one pattern, 16 KiB by default.
+    They are `ControlLimits { budget, line_limit }` on `ScanConfig::control_limits` and
+    `OpenOptions::control_limits`, `control_budget` and `control_line_limit` on Python
+    `ScanOptions` and `OpenedOptions`, and `--gitignore-budget SIZE|all` and
+    `--gitignore-line-limit SIZE|all` on the command line.
+    `MAX_CONTROL_TABLE_BYTES` and `MAX_CONTROL_PATTERN_BYTES` are renamed
+    `DEFAULT_CONTROL_BUDGET` and `DEFAULT_CONTROL_LINE_LIMIT`. Both limits are part of
+    the snapshot scope, so changing either scans cold once.
+    `Index::new_with_config` builds an index whose table enforces the limits its scope
+    claims. Saving an index whose table and scope disagree is refused with
+    `Error::ControlLimitsOutsideScope`; a snapshot that carries such a pair is treated
+    as absent at load, like any other unreadable one, and the root scans cold.
+  - Reports carry `ignore_rules` in every machine format: `null` when no `.gitignore`
+    was read, otherwise `limits` (`budget` and `line_limit`, each bytes or `null`), the
+    `applied` and `refused` counts, and `refusals`, each with a `path` and the `reason`
+    naming the limit that fired.
+    A note names the refused files’ directories and the flag for each limit that fired.
+    The report schema moves to `fdu.report/5`, and to `fdu.report/6` with content
+    analysis; Python `Status.ignore_rules` carries the same value.
+  - The snapshot format moves to version 4, carrying both limits and every refusal.
+    Scanning a root again writes its snapshot afresh, in place; a root that is never
+    scanned again keeps a file this build does not read.
+- **Breaking:** every surface reads `.gitignore` by default and reports how much of each
+  size its rules ignore.
+  - `fdu PATH` and `fdu --watch PATH` observe control state, as `prepare_report`,
+    `fdu.report`, `open`, and `fdu.open` now all do: the one-shot planner no longer
+    turns it off. `--no-gitignore` on the command line, and `read_controls` off in the
+    library and Python, reads no rules.
+  - Text summary, tree, and extension rows end with `(N ignored)` when they hold an
+    ignored file, and the performance line counts the rule files read or says
+    `no ignore rules`.
+  - Machine summary, tree, and extension rows carry an `ignored` object and file rows an
+    `ignored` flag, `null` when no rule was read.
+    The fields join the `fdu.report/5` and `fdu.report/6` schemas this release already
+    introduced. Rust `SummaryRow`, `TreeNode`, `TypeRow`, and `FileRow` gain `ignored`,
+    `Report` gains `ignored_entries`, `Candidate` gains `ignored`, and
+    `EntrySelection::admits` reads the bit from the candidate instead of a second
+    argument; Python rows gain `ignored` and `IgnoredTally`.
+  - `--exclude-ignored` and `--only-ignored`, `Selection::ignored` in Rust, and
+    `Selection(ignored=IgnoredEntries...)` in Python report one side; sizes, sorting,
+    and `--min-size` follow the entries shown.
+    Over a scan that read no rules the selection is refused: a usage error on the
+    command line, `InvalidArgumentError` in Python, and `Error::ControlStateNotObserved`
+    from `prepare_report` and a watch session.
+    `fdu_core::query::report` returns `Result<Report>` and refuses the same way, so no
+    entry point answers an unanswerable selection with an empty report.
+  - A `--watch` stream maintains the entry set its selection names.
+    A `.gitignore` edit that moves an entry into `--exclude-ignored` or `--only-ignored`
+    streams the upsert that draws it, and one that moves it out streams the removal,
+    even though nothing about the file changed on disk.
+    Every upsert carries `ignored`, and so does a removal a rule edit caused; an
+    ordinary removal, an invalidation, and every record of a run that read no rules omit
+    it. The field joins `fdu.stream/1`; Rust `Change` and Python `Change` gain it.
+    Under the default selection the stream maintains membership rather than each row’s
+    bit.
+  - An unfiltered `--view summary` that reads `.gitignore` retains the index to classify
+    entries, so it uses more memory than the aggregate-only plan, which
+    `--no-gitignore --view summary` still takes, and it saves a snapshot like any other
+    report.
+  - An unreadable `.gitignore` is an unreadable path: the result is partial and the
+    command exits 2 unless `--allow-partial`.
+  - Default snapshots now carry control state, so the first default run after upgrading
+    scans cold once, and `fdu --no-gitignore` keeps a snapshot scope of its own.
 - One projection of an opened-root read can refuse while the rest of the read answers.
   `ProjectionResult::Refused`, `RefusedResult` in Python, names why: a `Tree` or roll-up
   of a path that is not a directory, a page whose continuation record would exceed its

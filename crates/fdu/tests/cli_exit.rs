@@ -89,6 +89,47 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
     assert!(human_stderr.starts_with("warning:"), "missing stderr warning: {human_stderr}");
 }
 
+/// Every report reads `.gitignore`, so one it cannot read is an unreadable path like any
+/// other: the report is partial and exits 2, `--allow-partial` accepts it, and
+/// `--no-gitignore`, which reads no rule, is the escape (fdu-elnn).
+#[test]
+fn an_unreadable_gitignore_is_a_partial_result_that_no_gitignore_avoids() {
+    if !permission_bits_are_enforced() {
+        eprintln!("skipped: this process is not subject to Unix permission bits");
+        return;
+    }
+
+    let root = tempfile::tempdir().expect("tempdir");
+    let control = root.path().join(".gitignore");
+    fs::write(&control, b"*.log\n").expect("write the control file");
+    fs::write(root.path().join("kept.txt"), b"kept").expect("write a file");
+    fs::set_permissions(&control, fs::Permissions::from_mode(0o000)).expect("deny reads");
+
+    let run = |extra: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_fdu"))
+            .args(["--cache", "off", "--format", "json", "--view", "summary"])
+            .args(extra)
+            .arg(root.path())
+            .output()
+            .expect("run fdu")
+    };
+    let partial = run(&[]);
+    let allowed = run(&["--allow-partial"]);
+    let unread = run(&["--no-gitignore"]);
+    fs::set_permissions(&control, fs::Permissions::from_mode(0o600)).expect("restore reads");
+
+    assert_eq!(partial.status.code(), Some(2), "{}", String::from_utf8_lossy(&partial.stderr));
+    let stdout = String::from_utf8(partial.stdout).expect("JSON is UTF-8");
+    assert!(stdout.contains("\"complete\": false"), "{stdout}");
+    assert!(stdout.contains(".gitignore"), "the error names the control file: {stdout}");
+    assert!(allowed.status.success(), "{}", String::from_utf8_lossy(&allowed.stderr));
+
+    assert!(unread.status.success(), "{}", String::from_utf8_lossy(&unread.stderr));
+    let stdout = String::from_utf8(unread.stdout).expect("JSON is UTF-8");
+    assert!(stdout.contains("\"complete\": true"), "{stdout}");
+    assert!(stdout.contains("\"ignore_rules\": null"), "{stdout}");
+}
+
 #[test]
 fn runtime_instrumentation_is_available_on_the_shipped_binary() {
     let enabled = Command::new(env!("CARGO_BIN_EXE_fdu"))
