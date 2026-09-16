@@ -7,9 +7,10 @@ it hold, what changed most recently, and what kinds of files live in it.
 One walk, many metrics, cached between runs.
 
 > **Typical macOS/APFS live performance:** fdu built a reusable exact index and ten-row
-> tree over 901,963 entries in a **3.324-second median**, versus 5.657 seconds for pdu,
-> 6.016 for dust, and 6.782 for Go gdu on an M1 Pro MacBook with a local SSD. See
-> [the full comparison](#speed-and-the-cache).
+> tree over 1,000,001 entries in a **5.206-second median**, against 5.637 seconds for
+> dumac, 6.972 for diskus and 8.292 for dust, each of which returns one number.
+> Measured 2026-09-16 on an M1 Pro MacBook with a local SSD, on a busy machine.
+> See [the full comparison](#speed-and-the-cache).
 
 > **Status: 0.x.** A new minor release may change the Rust API, the Python API, or the
 > command line; [the release process](docs/project/guides/release-process.md) states the
@@ -158,27 +159,50 @@ The full survey, with the techniques worth adapting and their sources, is in
 
 ## Speed and the Cache
 
-**macOS, measured.** On a self-contained 901,963-entry tree, a fresh fdu process with
-its own cache disabled built a reusable exact index and ten-row tree in a **3.324-second
-median** — the fastest of every tree or index tool measured, while returning more than
-any of them. Twelve adjacent paired trials per tool on an M1 Pro MacBook with a local
-APFS SSD, in a warm-steady filesystem-cache state, with one independent full-tree
-fingerprint verifying every tool agreed on the answer.
+**macOS, measured 2026-09-16 on the 0.1.0 release candidate.** On a reproducible
+1,000,001-entry tree, a fresh fdu process with its own cache disabled built a reusable
+exact index and ten-row tree in a **5.206-second median** — the fastest of every tool
+measured, while returning far more than any of them.
+Twelve adjacent paired trials per tool on an M1 Pro MacBook with a local APFS SSD, in a
+warm-steady filesystem-cache state, with one independent full-tree fingerprint verifying
+every tool agreed on the answer.
 
-| Tool | Work returned | Typical median |
+| Tool | Work returned | Median |
 | --- | --- | ---: |
-| **fdu** | reusable exact index and ten-row tree | **3.324 s** |
-| **fdu** | five-tally exact summary | **3.125 s** |
-| dumac | allocated-byte total only | 2.980 s (statistical tie) |
-| dua | scalar total only | 5.459 s |
-| pdu | rendered depth-one tree | 5.657 s |
-| diskus | scalar total only | 5.708 s |
-| dust | rendered ten-row tree | 6.016 s |
-| gdu | rendered ten-row tree | 6.782 s |
+| **fdu** | reusable exact index and ten-row tree | **5.206 s** |
+| dumac | allocated-byte total only | 5.637 s |
+| diskus | scalar total only | 6.972 s |
+| dust | allocated-byte total only | 8.292 s |
+| dua | scalar total only | 8.744 s |
+| BSD `du` | one total, serial | 51.226 s |
+| GNU `du` | one total, serial | 65.775 s |
 
-Dumac’s narrower total was a statistical tie (95% interval −5.7% to +1.7%), and fdu
-returned file and directory counts, apparent bytes, and newest file time while using
-13.6 MiB against dumac’s 44.4 MiB peak RSS.
+Every competitor returns one number.
+fdu returned file and directory counts, apparent and allocated bytes, newest file time,
+per-directory roll-ups for the whole tree and per-extension tallies, and kept the index
+that answers the next question without another walk.
+The nearest, dumac, took 11.3% longer (95% interval +5.8% to +13.5%).
+
+Two caveats belong with the figure rather than in a footnote.
+The machine was **busy**: load average 7.7 to 9.9 against ten cores, with other work
+running. Pairing is what makes the comparison hold — each pair’s two runs meet the same
+machine milliseconds apart — but the absolute seconds are a loaded-host number and a
+quiet machine gives smaller ones.
+And the subject changed: the 901,963-entry tree behind the previous 3.324-second figure
+was this repository’s own generated corpus, which the performance loop says must never
+be compared across machines and which was cleaned up after that campaign.
+This one is built from a committed recipe and a fixed seed, so anyone can rebuild it.
+The two numbers are not comparable, and neither is a speed change.
+
+fdu’s peak RSS here was 285.4 MiB against dumac’s 29.4 MiB, because fdu retained an
+index of a million entries and dumac retained one integer.
+`fdu --no-gitignore --view summary` keeps the aggregate-only tier, which answered the
+same tallies in 4.876 s using **15.0 MiB**; without that flag the summary classifies
+entries and so retains the index too.
+
+[The full comparison report](docs/project/reports/report-2026-09-16-fdu-live-tool-comparison.md)
+has the method, the validity counters, and what moved since
+[the 2026-08-13 measurement](docs/project/reports/report-2026-08-13-fdu-live-tool-comparison.md).
 
 **Linux, recent and improving.** The most recent campaign measured, end to end against
 its own starting point on a 450k-entry tree: warm snapshot load **−31.4%**, warm
