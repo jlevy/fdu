@@ -37,10 +37,11 @@ write-permitting policy the next complete indexed scan replaces it.
 
 Three rules keep it honest:
 
-- **Corrupt equals absent.** A truncated, foreign, or version-mismatched file is never
-  parsed as data, at any entry point — loading, status, or clearing.
-  Only the bounded header is read to tell those cases apart, and a file that is not an
-  fdu snapshot is never deleted.
+- **Corrupt equals absent, on the load path.** A truncated, foreign, or
+  version-mismatched file is never parsed as data: loading treats it as no snapshot at
+  all and scans. Status and clearing are the entry points that do look at it, and only
+  through the bounded header — enough to say what it is, never enough to serve it.
+  A file that is not fdu’s is never deleted.
 - **Only complete scans are written.** A snapshot recording a partial view would be
   served as fact on the next run, and an older complete snapshot is better than that.
 - **Writes are atomic.** A temporary file and a rename, so an interrupted write leaves
@@ -51,13 +52,14 @@ Three rules keep it honest:
 An invalidated snapshot is useless to this build but still occupies disk, and the root
 that wrote it may never be scanned again to replace it.
 So `--cache-status` and `--cache-clear` identify files by their contents, and sort each
-file in the cache directory into one of three states:
+entry in the cache directory into one of four states:
 
 | State | What it is | Cleared? |
 | --- | --- | --- |
 | `current` | A snapshot this build reads | Yes |
-| `stale` | Begins with the snapshot magic, but has an older or newer format version, another engine fingerprint, or a header this build cannot read, such as a truncated file | Yes |
-| `unrecognized` | Anything else: no snapshot magic, a name the cache never gives a snapshot, or not a regular file | Never |
+| `stale` | Begins with the snapshot magic, but has an older or newer format version, another engine fingerprint, or a header this build cannot read — a truncated file, or one whose paths another operating system encoded | Yes |
+| `leftover` | One of fdu’s own files that is not a snapshot in place: a staging file a killed writer never renamed, or a content sidecar whose snapshot is gone | By `=all`, under the rules below |
+| `unrecognized` | Anything else: no magic behind the name, a name the cache gives nothing, or not a regular file (a directory or a symbolic link) | Never |
 
 Recognition does not depend on this build’s format.
 Every format fdu has written starts with the same magic, followed by the format version
@@ -67,17 +69,49 @@ A name alone proves nothing: a listing counts a file as a snapshot only when it 
 the snapshot’s name pattern (sixteen hex digits and `.fdu`) and the magic.
 
 Clearing a snapshot also removes its `.content` sidecar if the sidecar starts with the
-sidecar magic. Symbolic links in the cache directory are reported as unrecognized, never
-followed, and never removed.
+sidecar magic. Symbolic links and directories in the cache directory are reported as
+unrecognized, never followed or descended into, and never removed.
 A file that another process removes during a clear is not an error.
 Each file is identified again immediately before removal, so a file replaced after the
-listing by something that is not a snapshot survives.
+listing by something that is not fdu’s survives.
+
+### Leftovers, and the Two Rules That Let a Clear Take Them
+
+Two files here are fdu’s without being a snapshot in place.
+A writer killed between staging and rename leaves `.{16 hex}.fdu.tmp.{…}`, which begins
+with the snapshot magic; removing a snapshot whose sidecar removal is interrupted leaves
+a `{16 hex}.fdu.content` with no snapshot.
+Both used to be reported as “not an fdu snapshot”, which told the user to leave fdu’s
+own debris alone, and nothing collected either one — the temporary only when the same
+root is written again, the sidecar never.
+
+`--cache-clear=all` reclaims them, under rules that make removal safe without asking the
+operating system a question it cannot answer:
+
+- A leftover must match both the name fdu gives that file **and** the magic its contents
+  should start with. Either alone proves nothing.
+- A staging file is removed only once it is older than the age at which the writer’s own
+  reaper would collect it (a day), so a clear can never take a file a running writer
+  still holds. No liveness check is portable, and pid-based ones are wrong under pid
+  reuse.
+- A content sidecar is removed only while no snapshot claims it — decided after the
+  snapshots this clear removes are gone, so the sidecar of a snapshot that survives
+  stays, and a later analyzed scan can still use it.
+- Snapshots go first and leftovers second, for exactly that reason.
+
+A root’s own `--cache-clear PATH` reaches only the one path that root’s snapshot
+occupies, so leftovers are an `=all` matter.
 
 Status text names the command that reclaims stale snapshots: `fdu --cache-clear PATH`
 for one root, and `fdu --cache-clear=all` for the directory, which also removes current
-snapshots.
-Status rows in machine formats carry the same `state`, and a stale row carries
-a `stale_reason` and, for a format mismatch, the `format_version`.
+snapshots. Clearing says what it removed and what it left, including a staging file too
+young to be anyone’s but a running writer’s.
+
+Machine formats carry the `fdu.cache/1` schema — its own document identity, not a report
+schema, because cache status is a fact about the cache directory rather than about a
+tree. Every row carries `path`, `bytes`, `content_bytes`, and `state`; a `current` row
+adds `root` and `entries`, a `stale` row a `stale_reason` and, for a format mismatch,
+the `format_version`, and a `leftover` row its `leftover_kind`.
 
 Snapshot persistence is available on every platform, including for metadata queries.
 It is not used by every execution plan: the transient summary path does not retain an

@@ -144,14 +144,16 @@ class CacheState(StrEnum):
     """What a path in the snapshot cache holds.
 
     `STALE` is one of fdu's snapshots that this build cannot serve -- an older or newer
-    format, another engine, or a truncated write -- and clearing removes it like a
-    `CURRENT` one. `UNRECOGNIZED` is anything fdu cannot identify as its own snapshot, and
-    clearing never removes it. `ABSENT` means nothing is there, which only a status for one
-    root can report.
+    format, another engine, or a header this build cannot read -- and clearing removes it
+    like a `CURRENT` one. `LEFTOVER` is a file fdu wrote that is not a snapshot in place,
+    which `clear_all_caches` reclaims under the rules on `LeftoverKind`. `UNRECOGNIZED` is
+    anything fdu cannot identify as its own, and clearing never removes it. `ABSENT` means
+    nothing is there, which only a status for one root can report.
     """
 
     CURRENT = "current"
     STALE = "stale"
+    LEFTOVER = "leftover"
     UNRECOGNIZED = "unrecognized"
     ABSENT = "absent"
 
@@ -163,6 +165,19 @@ class StaleReason(StrEnum):
     NEWER_FORMAT = "newer_format"
     OTHER_ENGINE = "other_engine"
     UNREADABLE = "unreadable"
+
+
+class LeftoverKind(StrEnum):
+    """Which of fdu's own files a `CacheState.LEFTOVER` is.
+
+    `STAGING_TEMPORARY` is the file a killed writer left beside its target, never renamed
+    into place; it is reclaimed only once it is too old to belong to a running writer.
+    `ORPHANED_CONTENT` is a content sidecar whose snapshot is gone; it is reclaimed only
+    while no snapshot claims it.
+    """
+
+    STAGING_TEMPORARY = "staging_temporary"
+    ORPHANED_CONTENT = "orphaned_content"
 
 
 class Format(StrEnum):
@@ -653,8 +668,9 @@ class CacheStatus:
     """One file in the snapshot cache.
 
     `root`, `entries`, `max_depth`, and `one_filesystem` come from the header of a `CURRENT`
-    snapshot and are `None` otherwise; `stale_reason` is set only for a `STALE` one, and
-    `format_version` only when the version is the reason.
+    snapshot and are `None` otherwise; `stale_reason` is set only for a `STALE` one,
+    `format_version` only when the version is the reason, and `leftover_kind` only for a
+    `LEFTOVER` one.
     """
 
     path: Path
@@ -663,10 +679,23 @@ class CacheStatus:
     state: CacheState
     stale_reason: StaleReason | None
     format_version: int | None
+    leftover_kind: LeftoverKind | None
     root: Path | None
     entries: int | None
     max_depth: int | None
     one_filesystem: bool | None
+
+
+@dataclass(frozen=True, slots=True)
+class ClearSummary:
+    """What one `clear_all_caches` removed.
+
+    Two counts rather than one total: snapshots someone could have used, and files fdu
+    itself left behind. Reporting them as one number would overstate what was cleared.
+    """
+
+    snapshots: int
+    leftovers: int
 
 
 def _datetime(value: object) -> datetime | None:

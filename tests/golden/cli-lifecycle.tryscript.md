@@ -118,10 +118,27 @@ Agents get cache observability without a second schema style.
 ```console
 $ fdu --cache-status --format json project
 {
+  "schema": "fdu.cache/1",
   "caches": [
     {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "state": "current", "root": "[SCAN_PATH]", "entries": 10}
   ]
 }
+? 0
+```
+
+Cache status is its own document, not a report, so it carries its own schema identity in
+every machine format.
+
+```console
+$ fdu --cache-status --format yaml project
+schema: fdu.cache/1
+caches:
+  - path: [CACHE_FILE]
+    bytes: [BYTES]
+    content_bytes: null
+    state: current
+    root: [SCAN_PATH]
+    entries: 10
 ? 0
 ```
 
@@ -191,7 +208,7 @@ planted: format 1, another engine, truncated, notes.txt
 $ fdu --cache-status=all project
 [CACHE_FILE]  stale (older snapshot format 1), 12 metadata bytes, 0 content bytes
 [CACHE_FILE]  stale (written by another fdu version), [BYTES] metadata bytes, 0 content bytes
-[CACHE_FILE]  stale (truncated or unreadable), [BYTES] metadata bytes, 0 content bytes
+[CACHE_FILE]  stale (unreadable by this build), [BYTES] metadata bytes, 0 content bytes
 [CACHE_FILE]  10 entries, [BYTES] metadata bytes, 0 content bytes  [SCAN_PATH]
 [CACHE_DIR]notes.txt  unrecognized, 15 bytes
 3 stale snapshots ([BYTES] bytes) cannot be served by this build; fdu --cache-clear=all removes them, along with every current snapshot.
@@ -202,12 +219,13 @@ $ fdu --cache-status=all project
 ```console
 $ fdu --cache-status=all --format json project
 {
+  "schema": "fdu.cache/1",
   "caches": [
     {"path": "[CACHE_FILE]", "bytes": 12, "content_bytes": null, "state": "stale", "stale_reason": "older_format", "format_version": 1},
     {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "state": "stale", "stale_reason": "other_engine", "format_version": null},
     {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "state": "stale", "stale_reason": "unreadable", "format_version": null},
     {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "state": "current", "root": "[SCAN_PATH]", "entries": 10},
-    {"path": "[CACHE_DIR]notes.txt", "bytes": 15, "state": "unrecognized"}
+    {"path": "[CACHE_DIR]notes.txt", "bytes": 15, "content_bytes": null, "state": "unrecognized"}
   ]
 }
 ? 0
@@ -289,6 +307,55 @@ Cache already empty.
 Left in place: the file is not an fdu snapshot.
 [CACHE_FILE]  unrecognized, 14 bytes
 1 unrecognized file (14 bytes) is not an fdu snapshot, so fdu leaves it in place.
+? 0
+```
+
+## fdu’s Own Leftovers Are Named as fdu’s, and Reclaimed on Its Own Terms
+
+A killed writer leaves a staging file it never renamed, and a removed snapshot can leave
+its content sidecar behind.
+Both begin with an fdu magic, so calling them foreign would tell the user to leave fdu’s
+own debris alone. Clearing the directory takes them, but only a staging file too old to
+belong to a running writer, and only a sidecar no snapshot still wants.
+
+```console
+$ fdu --size apparent project
+     263 B  ██████████   100%  . (6 files)
+     128 B  █████░░░░░    49%    dist (1 file)
+      36 B  █░░░░░░░░░    14%    src (2 files)
+      23 B  █░░░░░░░░░     9%    docs (1 file)
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+```console
+$ node bin/cache-plant.mjs leftovers
+planted: abandoned staging file, in-flight staging file, orphaned sidecar
+? 0
+```
+
+```console
+$ fdu --cache-status=all project
+[CACHE_FILE].tmp.1.0011223344556677.0  leftover (staging temporary), [BYTES] bytes
+[CACHE_FILE].tmp.1.0011223344556677.0  leftover (staging temporary), [BYTES] bytes
+[CACHE_FILE].content  leftover (orphaned content sidecar), 15 bytes
+[CACHE_FILE]  10 entries, [BYTES] metadata bytes, 0 content bytes  [SCAN_PATH]
+[CACHE_DIR]notes.txt  unrecognized, 15 bytes
+3 leftover files ([BYTES] bytes) are fdu's own, left by an interrupted write; fdu --cache-clear=all reclaims them.
+1 unrecognized file (15 bytes) is not an fdu snapshot, so fdu leaves it in place.
+? 0
+```
+
+The staging file written a moment ago stays: nothing here can prove no writer still
+holds it, and the age threshold is what stands in for that proof.
+
+```console
+$ fdu --cache-clear=all project
+Cache directory: [CACHE_DIR]
+Cache cleared: 1 snapshot.
+Also reclaimed: 2 files fdu left behind.
+Left in place: 1 file that is not an fdu snapshot; fdu --cache-status=all lists it.
+Left in place: 1 staging file another fdu may still be writing.
 ? 0
 ```
 

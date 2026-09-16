@@ -207,8 +207,11 @@ fingerprint includes the version.
 A root scanned again replaces its own snapshot.
 `fdu --cache-status=all` lists the rest as `stale`, and `fdu --cache-clear=all` removes
 them along with the current snapshots.
-Clearing never removes a file that is not an fdu snapshot;
+It also reclaims what fdu itself left behind — a staging file a killed writer never
+renamed, a content sidecar whose snapshot is gone — which status lists as `leftover`.
+Clearing never removes a file that is not fdu’s;
 [the cache design](docs/project/guides/cache-design.md) covers how one is recognized.
+Cache status in a machine format is its own document, carrying the `fdu.cache/1` schema.
 
 A snapshot is usable only under the scan scope that wrote it, and a root has one cache
 path. Neither `fdu PATH` nor `fdu --watch PATH` observes `.gitignore` control state,

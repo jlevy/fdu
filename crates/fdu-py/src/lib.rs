@@ -1386,10 +1386,16 @@ fn cache_status_dict<'py>(
     dict.set_item("bytes", status.bytes)?;
     dict.set_item("content_bytes", status.content_bytes)?;
     dict.set_item("state", status.state.label())?;
+    dict.set_item("leftover_kind", py.None())?;
     match &status.state {
         fdu_core::CacheState::Stale(reason) => {
             dict.set_item("stale_reason", reason.label())?;
             dict.set_item("format_version", reason.format_version())?;
+        }
+        fdu_core::CacheState::Leftover(kind) => {
+            dict.set_item("leftover_kind", kind.label())?;
+            dict.set_item("stale_reason", py.None())?;
+            dict.set_item("format_version", py.None())?;
         }
         fdu_core::CacheState::Current(_)
         | fdu_core::CacheState::Unrecognized
@@ -1456,14 +1462,20 @@ fn clear_cache(root: PathBuf) -> PyResult<bool> {
     }
 }
 
-/// Remove every fdu snapshot, current or stale, leaving unrecognized files alone.
+/// Remove every fdu snapshot, current or stale, and reclaim the files fdu left behind,
+/// leaving unrecognized files alone. Returns the two counts as a dict.
 #[pyfunction]
 #[allow(clippy::needless_pass_by_value)]
-fn clear_all_caches(root: PathBuf) -> PyResult<usize> {
-    match fdu_core::default_cache_path(&root).and_then(|p| p.parent().map(Path::to_path_buf)) {
-        Some(dir) => fdu_core::clear_all_caches(&dir).map_err(to_py_err),
-        None => Ok(0),
-    }
+fn clear_all_caches(py: Python<'_>, root: PathBuf) -> PyResult<Bound<'_, PyDict>> {
+    let summary =
+        match fdu_core::default_cache_path(&root).and_then(|p| p.parent().map(Path::to_path_buf)) {
+            Some(dir) => fdu_core::clear_all_caches(&dir).map_err(to_py_err)?,
+            None => fdu_core::ClearSummary::default(),
+        };
+    let dict = PyDict::new(py);
+    dict.set_item("snapshots", summary.snapshots)?;
+    dict.set_item("leftovers", summary.leftovers)?;
+    Ok(dict)
 }
 
 /// Open a directory tree, using the snapshot cache according to `cache`.
@@ -1620,6 +1632,7 @@ fn contract(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     contract.set_item("cache_scopes", fdu_core::CacheScope::LABELS)?;
     contract.set_item("cache_states", fdu_core::CacheState::LABELS)?;
     contract.set_item("stale_reasons", fdu_core::StaleReason::LABELS)?;
+    contract.set_item("leftover_kinds", fdu_core::LeftoverKind::LABELS)?;
     Ok(contract)
 }
 

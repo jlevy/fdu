@@ -180,6 +180,7 @@ CONTENT ANALYSIS
 
 OUTPUT AND AUTOMATION
   Metadata-only machine output remains fdu.report/4; metric summaries use fdu.report/5.
+  Cache status is its own document in every machine format: fdu.cache/1.
   Text language rows use canonical names; machine formats retain lowercase IDs.
   Metric rows include detection source, confidence, origin flags, and coverage.
   One-shot text reports end with a gray performance line; machine formats omit it.
@@ -938,21 +939,31 @@ impl Cli {
                     // where it is pointed.
                     writeln!(out, "Cache directory: {}", dir.display())?;
                     let removed = fdu_core::clear_all_caches(dir)?;
-                    writeln!(
-                        out,
-                        "{}",
-                        if removed == 0 {
-                            "Cache already empty.".to_string()
-                        } else {
-                            format!(
-                                "Cache cleared: {removed} {}.",
-                                plural(removed, "snapshot", "snapshots")
-                            )
-                        }
-                    )?;
+                    if removed.is_empty() {
+                        writeln!(out, "Cache already empty.")?;
+                    }
+                    if removed.snapshots > 0 {
+                        writeln!(
+                            out,
+                            "Cache cleared: {} {}.",
+                            removed.snapshots,
+                            plural(removed.snapshots, "snapshot", "snapshots")
+                        )?;
+                    }
+                    // Said separately because it is a different fact: these are fdu's own
+                    // files, and none of them was a snapshot anyone could have used.
+                    if removed.leftovers > 0 {
+                        writeln!(
+                            out,
+                            "Also reclaimed: {} {} fdu left behind.",
+                            removed.leftovers,
+                            plural(removed.leftovers, "file", "files")
+                        )?;
+                    }
                     // Clearing never removes what it cannot identify, so it says what it
                     // left rather than letting "cleared" imply an empty directory.
-                    let left = fdu_core::list_caches(dir)?
+                    let remaining = fdu_core::list_caches(dir)?;
+                    let left = remaining
                         .iter()
                         .filter(|status| status.state == CacheState::Unrecognized)
                         .count();
@@ -966,6 +977,20 @@ impl Cli {
                                 "files that are not fdu snapshots"
                             ),
                             plural(left, "it", "them")
+                        )?;
+                    }
+                    // A staging file young enough to belong to a running writer is the one
+                    // leftover a clear leaves, and saying so beats a silent survival.
+                    let staging = remaining
+                        .iter()
+                        .filter(|status| matches!(status.state, CacheState::Leftover(_)))
+                        .count();
+                    if staging > 0 {
+                        writeln!(
+                            out,
+                            "Left in place: {staging} staging {} another fdu may still be \
+                             writing.",
+                            plural(staging, "file", "files")
                         )?;
                     }
                 }
@@ -2194,23 +2219,37 @@ mod tests {
     /// full `make check`, because no test compared prose against the constants.
     #[test]
     fn no_surface_names_a_schema_the_binary_does_not_emit() {
-        const PREFIX: &str = "fdu.report/";
-        let live = [report_format::REPORT_SCHEMA, report_format::CONTENT_REPORT_SCHEMA];
+        // Every schema family the prose may name, so a new one is checked the day it is
+        // mentioned rather than the day someone remembers this test.
+        const PREFIX: &str = "fdu.";
+        let live = [
+            report_format::REPORT_SCHEMA,
+            report_format::CONTENT_REPORT_SCHEMA,
+            report_format::CACHE_SCHEMA,
+            report_format::STREAM_SCHEMA,
+        ];
         for (surface, text) in [("--docs", DOCS.to_string()), ("--skill", compose_skill())] {
             let mut rest = text.as_str();
             let mut found = 0;
             while let Some(at) = rest.find(PREFIX) {
                 rest = &rest[at..];
-                // The version is the digit run after the prefix; whatever punctuation
-                // follows belongs to the sentence, not to the schema string.
-                let digits = rest[PREFIX.len()..].chars().take_while(char::is_ascii_digit).count();
-                let named = &rest[..PREFIX.len() + digits];
+                // A schema string is the prefix, a family name, a slash, and a version;
+                // whatever punctuation follows belongs to the sentence, not to the schema.
+                let tail = &rest[PREFIX.len()..];
+                let family = tail.chars().take_while(char::is_ascii_alphabetic).count();
+                if !tail[family..].starts_with('/') {
+                    // Not a schema string at all: `fdu.` also begins ordinary prose.
+                    rest = &rest[PREFIX.len()..];
+                    continue;
+                }
+                let digits = tail[family + 1..].chars().take_while(char::is_ascii_digit).count();
+                let named = &rest[..PREFIX.len() + family + 1 + digits];
                 assert!(
                     live.contains(&named),
                     "{surface} names {named}, but the binary emits {live:?}"
                 );
                 found += 1;
-                rest = &rest[PREFIX.len() + digits..];
+                rest = &rest[named.len()..];
             }
             assert!(found > 0, "{surface} should state which schema it emits");
         }

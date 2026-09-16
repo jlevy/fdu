@@ -296,15 +296,16 @@ def run_cache_lifecycle(args: Args) -> int:
                 # Echoed before acting, so a destructive flag always says where it points.
                 print(f"Cache directory: {directory}")
                 removed = fdu.clear_all_caches(directory)
-                if removed == 0:
+                if removed.snapshots == 0 and removed.leftovers == 0:
                     print("Cache already empty.")
-                else:
-                    noun = "snapshot" if removed == 1 else "snapshots"
-                    print(f"Cache cleared: {removed} {noun}.")
-                left = sum(
-                    status.state is fdu.CacheState.UNRECOGNIZED
-                    for status in fdu.list_caches(directory)
-                )
+                if removed.snapshots > 0:
+                    noun = "snapshot" if removed.snapshots == 1 else "snapshots"
+                    print(f"Cache cleared: {removed.snapshots} {noun}.")
+                if removed.leftovers > 0:
+                    noun = "file" if removed.leftovers == 1 else "files"
+                    print(f"Also reclaimed: {removed.leftovers} {noun} fdu left behind.")
+                remaining = fdu.list_caches(directory)
+                left = sum(status.state is fdu.CacheState.UNRECOGNIZED for status in remaining)
                 if left == 1:
                     print(
                         "Left in place: 1 file that is not an fdu snapshot; "
@@ -314,6 +315,12 @@ def run_cache_lifecycle(args: Args) -> int:
                     print(
                         f"Left in place: {left} files that are not fdu snapshots; "
                         "fdu --cache-status=all lists them."
+                    )
+                staging = sum(status.state is fdu.CacheState.LEFTOVER for status in remaining)
+                if staging > 0:
+                    noun = "file" if staging == 1 else "files"
+                    print(
+                        f"Left in place: {staging} staging {noun} another fdu may still be writing."
                     )
         else:
             path = fdu.cache_path(root)

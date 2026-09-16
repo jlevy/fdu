@@ -8,15 +8,18 @@
 // every format shares: the eight-byte magic, then the format version, then the engine
 // fingerprint. It never runs fdu and prints no product output, only what it planted.
 //
-// Usage: cache-plant <stale|other-engine|foreign>
+// Usage: cache-plant <stale|other-engine|foreign|leftovers>
 //
 //   stale         beside the current snapshot, add one in format version 1, a copy
 //                 under another engine fingerprint, a truncated copy, and a file that is
 //                 not a snapshot at all
 //   other-engine  give the current snapshot another engine fingerprint, in place
 //   foreign       replace the current snapshot with a file that is not a snapshot
+//   leftovers     add what a killed writer leaves: a staging file too old to be anyone's,
+//                 one young enough to be a live writer's, and a sidecar with no snapshot.
+//                 Ages are set outright, so the session never waits for a clock.
 
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 // The cache directory the sessions set through XDG_CACHE_HOME.
@@ -25,6 +28,9 @@ const MAGIC = Buffer.from("FDUSNAP\0", "latin1");
 const VERSION_OFFSET = MAGIC.length;
 const FINGERPRINT_OFFSET = VERSION_OFFSET + 4;
 const FINGERPRINT_BYTES = 8;
+const CONTENT_MAGIC = Buffer.from("FDUCTNT\0planted", "latin1");
+// Older than the day a writer's own reaper waits, so a clear may take it.
+const BEYOND_THE_REAPER = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
 // Every planted name sorts ahead of any real root hash, so listings stay in a fixed
 // order whatever the sandbox path hashes to.
 const PLANTED_PREFIX = "000000000000000";
@@ -69,7 +75,16 @@ switch (action) {
     writeFileSync(currentPath, "not a snapshot");
     console.log("planted: not a snapshot");
     break;
+  case "leftovers": {
+    const abandoned = join(CACHE_DIR, `.${PLANTED_PREFIX}4.fdu.tmp.1.0011223344556677.0`);
+    writeFileSync(abandoned, current);
+    utimesSync(abandoned, BEYOND_THE_REAPER, BEYOND_THE_REAPER);
+    writeFileSync(join(CACHE_DIR, `.${PLANTED_PREFIX}6.fdu.tmp.1.0011223344556677.0`), current);
+    writeFileSync(join(CACHE_DIR, `${PLANTED_PREFIX}5.fdu.content`), CONTENT_MAGIC);
+    console.log("planted: abandoned staging file, in-flight staging file, orphaned sidecar");
+    break;
+  }
   default:
-    console.error("usage: cache-plant <stale|other-engine|foreign>");
+    console.error("usage: cache-plant <stale|other-engine|foreign|leftovers>");
     process.exit(2);
 }

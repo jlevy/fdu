@@ -22,8 +22,10 @@ from ._models import (
     ChangeKind,
     ChangeSet,
     Child,
+    ClearSummary,
     EntryKind,
     Format,
+    LeftoverKind,
     Provenance,
     Query,
     RefreshResult,
@@ -156,6 +158,9 @@ def _cache_status(value: dict[str, Any]) -> CacheStatus:
         ),
         format_version=(
             int(value["format_version"]) if value["format_version"] is not None else None
+        ),
+        leftover_kind=(
+            LeftoverKind(value["leftover_kind"]) if value["leftover_kind"] is not None else None
         ),
         root=Path(value["root"]) if value["root"] is not None else None,
         entries=int(value["entries"]) if value["entries"] is not None else None,
@@ -549,13 +554,16 @@ def clear_cache(root: str | Path) -> bool:
     return bool(_call(_native.clear_cache, root))
 
 
-def clear_all_caches(root: str | Path = Path()) -> int:
-    """Remove every fdu snapshot, current or stale; return how many were removed.
+def clear_all_caches(root: str | Path = Path()) -> ClearSummary:
+    """Remove every fdu snapshot, and the files fdu left behind; return what went.
 
-    A file that is not one of fdu's snapshots stays, and `list_caches` reports it as
-    `CacheState.UNRECOGNIZED`.
+    A file that is not one of fdu's stays, and `list_caches` reports it as
+    `CacheState.UNRECOGNIZED`. A leftover is reclaimed only under the rules on
+    `LeftoverKind`, so a staging file a running writer may still hold survives and is still
+    listed as `CacheState.LEFTOVER`.
     """
-    return int(_call(_native.clear_all_caches, root))
+    summary = _call(_native.clear_all_caches, root)
+    return ClearSummary(snapshots=int(summary["snapshots"]), leftovers=int(summary["leftovers"]))
 
 
 def _main() -> int:

@@ -153,7 +153,11 @@ const MAX_TEMP_CREATE_ATTEMPTS: usize = 1024;
 /// is what makes this safe without any liveness check: a temporary this old cannot
 /// belong to a writer that is still running, and pid-based liveness tests are both
 /// unportable and wrong under pid reuse.
-const STALE_TEMP_AGE: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+///
+/// Shared with the cache lifecycle, which reclaims the same corpses on request rather
+/// than waiting for the next writer, and must answer "old enough to be nobody's" the same
+/// way this does.
+pub(crate) const STALE_TEMP_AGE: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
 
 /// Largest encoded root or entry name accepted from a snapshot.
 const MAX_PATH_BYTES: u32 = 1024 * 1024;
