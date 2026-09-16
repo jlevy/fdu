@@ -547,8 +547,9 @@ and suppress the report.
 A missing path is allowed only for these lifecycle operations and discovery surfaces; it
 never creates an implicit report scan.
 A report run never deletes anything.
-Clearing echoes its target before acting, and never removes a file this build cannot
-identify.
+Clearing echoes its target before acting, and never removes a file it cannot identify as
+an fdu snapshot. A snapshot another fdu version wrote is still identifiable, so clearing
+removes it rather than stranding it after an upgrade.
 
 ### Every Output Surface Is a Benchmark Job
 

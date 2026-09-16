@@ -15,19 +15,24 @@ from ._models import (
     AnalysisOptions,
     Bound,
     CachePolicy,
+    CacheScope,
+    CacheState,
     CacheStatus,
     Change,
     ChangeKind,
     ChangeSet,
     Child,
+    ClearSummary,
     EntryKind,
     Format,
+    LeftoverKind,
     Provenance,
     Query,
     RefreshResult,
     Report,
     RollUp,
     ScanOptions,
+    StaleReason,
     Status,
     WatchOptions,
     provenance_from_dict,
@@ -147,7 +152,16 @@ def _cache_status(value: dict[str, Any]) -> CacheStatus:
         path=Path(value["path"]),
         bytes=int(value["bytes"]),
         content_bytes=(int(value["content_bytes"]) if value["content_bytes"] is not None else None),
-        recognized=bool(value["recognized"]),
+        state=CacheState(value["state"]),
+        stale_reason=(
+            StaleReason(value["stale_reason"]) if value["stale_reason"] is not None else None
+        ),
+        format_version=(
+            int(value["format_version"]) if value["format_version"] is not None else None
+        ),
+        leftover_kind=(
+            LeftoverKind(value["leftover_kind"]) if value["leftover_kind"] is not None else None
+        ),
         root=Path(value["root"]) if value["root"] is not None else None,
         entries=int(value["entries"]) if value["entries"] is not None else None,
         max_depth=int(value["max_depth"]) if value["max_depth"] is not None else None,
@@ -496,12 +510,20 @@ def _epoch_nanos(at: datetime | int) -> int:
 
 
 def render_cache_status(
-    caches: Sequence[CacheStatus | Path | str], format: Format = Format.TEXT
+    caches: Sequence[CacheStatus | Path | str],
+    format: Format = Format.TEXT,
+    *,
+    scope: CacheScope,
 ) -> str:
     """Render cache files exactly as ``fdu --cache-status`` prints them.
 
     The same renderer the CLI uses, in every format, so a caller can print what fdu prints
     instead of inventing a layout that will drift from it.
+
+    `scope` is the request the files answer: `ROOT` for one root's `cache_status`, `ALL`
+    for `list_caches`. It is required because it decides which command the text names for
+    reclaiming stale snapshots, and naming the wrong one would send a caller to clear more,
+    or less, than it asked about.
 
     Named for the files rather than for the values: each entry is only a way of naming a
     cache file, and the file is **re-read at render time**. Passing a :class:`CacheStatus`
@@ -513,7 +535,7 @@ def render_cache_status(
     """
 
     paths = [str(cache.path) if isinstance(cache, CacheStatus) else str(cache) for cache in caches]
-    return cast(str, _call(_native.render_cache_status, paths, str(format)))
+    return cast(str, _call(_native.render_cache_status, paths, str(CacheScope(scope)), str(format)))
 
 
 def cache_path(root: str | Path) -> Path | None:
@@ -531,11 +553,20 @@ def list_caches(root: str | Path = Path()) -> tuple[CacheStatus, ...]:
 
 
 def clear_cache(root: str | Path) -> bool:
+    """Remove a root's snapshot, current or stale; return whether one was removed."""
     return bool(_call(_native.clear_cache, root))
 
 
-def clear_all_caches(root: str | Path = Path()) -> int:
-    return int(_call(_native.clear_all_caches, root))
+def clear_all_caches(root: str | Path = Path()) -> ClearSummary:
+    """Remove every fdu snapshot, and the files fdu left behind; return what went.
+
+    A file that is not one of fdu's stays, and `list_caches` reports it as
+    `CacheState.UNRECOGNIZED`. A leftover is reclaimed only under the rules on
+    `LeftoverKind`, so a staging file a running writer may still hold survives and is still
+    listed as `CacheState.LEFTOVER`.
+    """
+    summary = _call(_native.clear_all_caches, root)
+    return ClearSummary(snapshots=int(summary["snapshots"]), leftovers=int(summary["leftovers"]))
 
 
 def _main() -> int:

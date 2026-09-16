@@ -366,7 +366,7 @@ def main() -> None:
     (cache_root / "a.txt").write_text("hello")
     fdu_py.open(str(cache_root), cache="auto")
     status = fdu_py.cache_status(str(cache_root))
-    assert status is not None and status["recognized"], status
+    assert status is not None and status["state"] == "current", status
     cached_index = fdu_py.open(str(cache_root), cache="only")
     # Coverage and currency are independent: the cache represents the full scope even
     # though this cache-only open deliberately did not revalidate it.
@@ -377,7 +377,7 @@ def main() -> None:
     # weakening native long-path behavior to satisfy a string.
     assert os.path.samefile(status["root"], cache_root), status
     assert fdu_py.clear_cache(str(cache_root)) is True
-    assert fdu_py.cache_status(str(cache_root))["recognized"] is False
+    assert fdu_py.cache_status(str(cache_root))["state"] == "absent"
 
     # Expected coverage exclusions remain queryable without becoming operational errors.
     partial_root = pathlib.Path(tempfile.mkdtemp())

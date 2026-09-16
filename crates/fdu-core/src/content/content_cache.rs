@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs;
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
 use crate::classify::{
@@ -173,17 +174,31 @@ pub fn load_content_cache(
     Ok(loaded)
 }
 
-pub(crate) fn is_recognized_content_cache(path: &Path) -> Result<bool> {
-    let metadata = match fs::metadata(path) {
+/// The size of the content sidecar at `path`, when fdu wrote the file there.
+///
+/// Decided by the magic alone, deliberately not by the integrity check: a truncated or
+/// older-format sidecar is still fdu's, and it goes when its snapshot goes. Only a regular
+/// file is opened, so a symbolic link is never followed out of the cache directory.
+pub(crate) fn content_sidecar_bytes(path: &Path) -> Result<Option<u64>> {
+    let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(Error::io(path, error)),
     };
-    if metadata.len() > MAX_CACHE_BYTES {
-        return Ok(false);
+    if !metadata.file_type().is_file() {
+        return Ok(None);
     }
-    let image = fs::read(path).map_err(|error| Error::io(path, error))?;
-    Ok(integrity_payload(&image).is_some())
+    let mut file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(Error::io(path, error)),
+    };
+    let mut magic = [0u8; MAGIC.len()];
+    match file.read_exact(&mut magic) {
+        Ok(()) => Ok((&magic == MAGIC).then_some(metadata.len())),
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(None),
+        Err(error) => Err(Error::io(path, error)),
+    }
 }
 
 fn put_record(buffer: &mut Vec<u8>, path: &Path, record: &FileAnalysis) -> Result<()> {
