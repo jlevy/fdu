@@ -1281,8 +1281,9 @@ impl PyOneShot {
 /// Python caller therefore left cache state on a tree that the same command would not
 /// have, which a later cache-only read could see (fdu-4msv).
 ///
-/// `read_controls` and `control_budget` are the engine's, on and 4 MiB by default as for
-/// [`open`]; the report observes `.gitignore` as they say (fdu-elnn).
+/// `read_controls`, `control_budget`, and `control_line_limit` are the engine's, with the
+/// defaults [`open`] has: on, 4 MiB, and 16 KiB. The report observes `.gitignore` as they
+/// say (fdu-elnn).
 #[pyfunction]
 #[pyo3(signature = (
     root,
@@ -1460,6 +1461,9 @@ fn render_change(
 /// holding `CacheStatus` values had no way to print them as fdu prints them, and the
 /// parity shim fell back to `repr()`.
 ///
+/// `scope` is the request the statuses answer, `root` or `all`. It decides only which
+/// clearing command the text rendering names.
+///
 /// Takes the statuses as paths rather than as reconstructed values: re-reading the files
 /// is cheap, keeps one definition of what a status *is*, and means a caller cannot hand
 /// the renderer a status the engine never produced.
@@ -1587,8 +1591,10 @@ fn clear_all_caches(py: Python<'_>, root: PathBuf) -> PyResult<Bound<'_, PyDict>
 /// Open a directory tree, using the snapshot cache according to `cache`.
 ///
 /// `read_controls` is the engine's [`ScanConfig::read_controls`], on by default as it is
-/// there. Off, the index observes no `.gitignore` control state and shares a one-shot
-/// report's snapshot scope.
+/// there. On, the index shares its snapshot scope with a one-shot report that observes
+/// too, under the same control limits. Off, it observes no `.gitignore` control state,
+/// which is a snapshot scope of its own, shared only with a report or scan that also
+/// turned observation off.
 #[pyfunction]
 #[pyo3(signature = (
     root,
