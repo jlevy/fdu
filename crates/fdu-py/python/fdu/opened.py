@@ -68,6 +68,7 @@ __all__ = [
     "EngineVersion",
     "Entry",
     "EntryKind",
+    "EntryScope",
     "EntrySelection",
     "Flat",
     "FlatPage",
@@ -113,7 +114,6 @@ __all__ = [
     "RollUpSummary",
     "RowShape",
     "ScanScope",
-    "ScopeIdentity",
     "Selection",
     "SemanticIdentity",
     "StateTransition",
@@ -342,7 +342,7 @@ class OpenedOptions:
 
 
 @dataclass(frozen=True, slots=True)
-class ScopeIdentity:
+class EntryScope:
     max_depth: int | None
     follow_symlinks: bool
     one_filesystem: bool
@@ -361,7 +361,7 @@ class SemanticIdentity:
 class EngineVersion:
     session: int
     sequence: int
-    scope: ScopeIdentity
+    scope: EntryScope
     semantics: SemanticIdentity
 
 
@@ -874,9 +874,9 @@ def _sequence(value: object, label: str) -> list[Any]:
     return cast(list[Any], value)
 
 
-def _scope(value: object) -> ScopeIdentity:
-    raw = _mapping(value, "scope identity")
-    return ScopeIdentity(
+def _scope(value: object) -> EntryScope:
+    raw = _mapping(value, "entry scope")
+    return EntryScope(
         max_depth=int(raw["max_depth"]) if raw["max_depth"] is not None else None,
         follow_symlinks=bool(raw["follow_symlinks"]),
         one_filesystem=bool(raw["one_filesystem"]),

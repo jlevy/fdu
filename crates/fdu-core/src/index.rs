@@ -850,14 +850,16 @@ pub struct Index {
     /// When the snapshot this index was loaded from captured the tree. Zero when the
     /// index was never loaded from one.
     captured_at_ns: i64,
-    /// The start of the pass that verified the facts this index holds, as a snapshot of it
-    /// records: construction for an index built by a walk, which starts it, and the stamp
-    /// a loaded snapshot carried for one loaded from a snapshot.
+    /// The start of the pass a snapshot of this index records as the one that last wrote
+    /// its image: construction for an index built by a walk, which precedes the walk, and
+    /// the stamp a loaded snapshot carried for one loaded from a snapshot.
     ///
-    /// Never later than the truth. A reconciliation that verifies a loaded index again
-    /// leaves it at the snapshot's stamp, which understates how recently the facts were
-    /// verified.
-    verified_started_at_ns: i64,
+    /// A lower bound on when the facts were last verified, never later than the truth. A
+    /// later pass that verifies the same facts keeps the image on disk and its stamp, and a
+    /// reconciliation that verifies a loaded index again leaves this at the snapshot's
+    /// stamp, so the value can predate many verifying passes until P1.4.4 stamps completed
+    /// passes.
+    writing_pass_started_at_ns: i64,
     /// Subtrees a completed reconciliation has verified, with when it finished.
     ///
     /// Kept as intervals rather than per-entry flags because a sweep verifies
@@ -1711,7 +1713,7 @@ impl Index {
             applying_source: Source::Scanned,
             scanned_at_ns: constructed_at_ns,
             captured_at_ns: 0,
-            verified_started_at_ns: constructed_at_ns,
+            writing_pass_started_at_ns: constructed_at_ns,
             verified: Vec::new(),
             ext_names: Vec::new(),
             ext_ids: BTreeMap::new(),
@@ -1819,6 +1821,11 @@ impl Index {
     /// and an index's scope and its table must never disagree: a table refusing under other
     /// limits would be served, and saved, as if it applied the scope's. A scope that
     /// observes nothing retains no table, so its limits decide nothing.
+    ///
+    /// The guard is for [`crate::snapshot::save`], whose index may have been built with a
+    /// scope and a table set apart (as [`Self::new_with_scope`] does), and for callers of
+    /// [`Self::install_controls`] other than the loader. On the load path it cannot fail,
+    /// because the loader builds the scope and the table from the same header limits.
     pub(crate) fn require_control_limits_in_scope(
         &self,
         limits: crate::control::ControlLimits,
@@ -4356,14 +4363,15 @@ impl Index {
         }
     }
 
-    /// The start of the pass that verified the facts this index holds.
-    pub(crate) const fn verified_started_at_ns(&self) -> i64 {
-        self.verified_started_at_ns
+    /// The start of the pass a snapshot of this index records as the one that wrote its
+    /// image.
+    pub(crate) const fn writing_pass_started_at_ns(&self) -> i64 {
+        self.writing_pass_started_at_ns
     }
 
     /// Record the pass start a loaded snapshot carried for the facts it restored.
-    pub(crate) fn set_verified_started_at_ns(&mut self, verified_started_at_ns: i64) {
-        self.verified_started_at_ns = verified_started_at_ns;
+    pub(crate) fn set_writing_pass_started_at_ns(&mut self, writing_pass_started_at_ns: i64) {
+        self.writing_pass_started_at_ns = writing_pass_started_at_ns;
     }
 
     /// Stamp deltas applied from here on with `source`, restoring the previous value

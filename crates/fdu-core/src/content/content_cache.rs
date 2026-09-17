@@ -10,13 +10,14 @@ use crate::classify::{
     Classification, ClassificationFlags, ContentFamily, DetectionConfidence, DetectionSource,
     FileTypeId,
 };
-use crate::stored_state::{ContentTierIdentity, ENTRY_TIER_BYTES, EntryTierIdentity};
+use crate::stored_state::{
+    AnalyzerProvenance, ContentTierIdentity, ENTRY_TIER_BYTES, EntryTierIdentity,
+};
 use crate::{Error, Fingerprint, Index, Result};
 
 use super::{
     AnalysisApplyOutcome, AnalysisObservation, AnalysisRequest, AnalysisSet, AnalyzerId,
-    AnalyzerVersion, ContentProvenance, CoverageReason, FileAnalysis, LogicalWordStats,
-    MetricValues,
+    AnalyzerVersion, CoverageReason, FileAnalysis, LogicalWordStats, MetricValues,
 };
 
 const MAGIC: &[u8; 8] = b"FDUCTNT\0";
@@ -26,7 +27,8 @@ const TRAILER: &[u8; 8] = b"FDUCTEND";
 ///
 /// 5: the header records the engine fingerprint beside the version, at the offset a
 /// snapshot's prologue gives it, and the content tier identity after the path encoding:
-/// the entry tier the records were analyzed over, then the analyzer set and provenance.
+/// the entry tier the records were analyzed over, which holds their type rules, then the
+/// analyzer set, the options fingerprint, and the analyzers.
 const FORMAT_VERSION: u32 = 5;
 const CHECKSUM_BYTES: usize = 4;
 const MAX_CACHE_BYTES: u64 = 512 * 1024 * 1024;
@@ -92,10 +94,14 @@ pub fn save_content_cache(index: &Index, request: AnalysisRequest, path: &Path) 
         return Err(Error::Snapshot("content sidecar exceeds record limit".into()));
     }
 
-    let identity = ContentTierIdentity {
-        entries: EntryTierIdentity::of_scope(index.scope()),
-        analysis: stored,
-        provenance,
+    let Some(identity) = ContentTierIdentity::of_records(
+        EntryTierIdentity::of_scope(index.scope()),
+        stored,
+        &provenance,
+    ) else {
+        return Err(Error::Snapshot(
+            "content records were classified under other type rules than their index".into(),
+        ));
     };
     let mut buffer = Vec::new();
     buffer.extend_from_slice(MAGIC);
@@ -139,7 +145,6 @@ pub fn load_content_cache(
         root: index.root_path(),
         entries: EntryTierIdentity::of_scope(index.scope()),
         request,
-        type_rules_fingerprint: index.types().fingerprint(),
     };
     let Some(records) = parse(&image, &wanted) else {
         return Ok(ContentCacheLoad::default());
@@ -234,20 +239,19 @@ fn put_record(buffer: &mut Vec<u8>, path: &Path, record: &FileAnalysis) -> Resul
 struct Wanted<'a> {
     /// The root the index describes.
     root: &'a Path,
-    /// The index's entry tier, which the records must have been analyzed over.
+    /// The index's entry tier, which the records must have been analyzed over, including
+    /// the type rules the index classifies under.
     entries: EntryTierIdentity,
     /// The analysis the caller requested.
     request: AnalysisRequest,
-    /// The type rules the index classifies under.
-    type_rules_fingerprint: u64,
 }
 
 /// Write the content tier identity after the prologue and path encoding: the entry tier's
-/// fixed-width fields, the analyzer set, then the provenance.
+/// fixed-width fields, which hold the type rules, then the analyzer set, the options
+/// fingerprint, and the analyzers.
 fn put_identity(buffer: &mut Vec<u8>, identity: &ContentTierIdentity) -> Result<()> {
-    buffer.extend_from_slice(&identity.entries.encode()?);
+    buffer.extend_from_slice(&identity.entries.encode());
     put_profile(buffer, identity.analysis);
-    buffer.extend_from_slice(&identity.provenance.type_rules_fingerprint.to_le_bytes());
     buffer.extend_from_slice(&identity.provenance.options_fingerprint.0.to_le_bytes());
     put_analyzers(buffer, &identity.provenance.analyzers)
 }
@@ -259,8 +263,7 @@ fn read_identity(reader: &mut Reader<'_>, engine: u64) -> Option<ContentTierIden
     Some(ContentTierIdentity {
         entries,
         analysis: read_profile(reader.u8()?)?,
-        provenance: ContentProvenance {
-            type_rules_fingerprint: reader.u64()?,
+        provenance: AnalyzerProvenance {
             options_fingerprint: super::OptionsFingerprint(reader.u64()?),
             analyzers: read_analyzers(reader)?,
         },
@@ -277,14 +280,15 @@ fn parse(image: &[u8], wanted: &Wanted<'_>) -> Option<Vec<(PathBuf, FileAnalysis
     if reader.u8()? != crate::snapshot::path_encoding() {
         return None;
     }
-    let ContentTierIdentity { entries, analysis: profile, provenance } =
-        read_identity(&mut reader, engine)?;
+    let identity = read_identity(&mut reader, engine)?;
     // Records analyzed by another engine, or over another entry tier, answer another
     // request: a miss, whatever their analyzer set.
-    if entries != wanted.entries {
+    if identity.entries != wanted.entries {
         return None;
     }
-    if !provenance.satisfies(profile, wanted.request.profile, wanted.type_rules_fingerprint) {
+    let (profile, provenance) = (identity.analysis, identity.record_provenance());
+    if !provenance.satisfies(profile, wanted.request.profile, wanted.entries.type_rules_fingerprint)
+    {
         return None;
     }
     if reader.os_string()?.as_os_str() != wanted.root.as_os_str() {
@@ -844,6 +848,33 @@ mod tests {
         }
         let blind = ScanConfig { read_controls: false, ..ScanConfig::default() };
         assert_eq!(load_into(&blind), hit, "observation is not part of the content identity");
+    }
+
+    /// The sidecar reads its entry tier through the shared codec, so a sealed image whose
+    /// entry tier holds a byte no encoder writes is a clean miss rather than an identity
+    /// that happens to compare unequal.
+    #[test]
+    fn a_sidecar_entry_tier_no_encoder_writes_is_a_clean_miss() {
+        let (root, index, request) = analyzed_index();
+        let cache_dir = tempfile::tempdir().expect("cache dir");
+        let cache = cache_dir.path().join("content.cache");
+        save_content_cache(&index, request, &cache).expect("save");
+        let saved = fs::read(&cache).expect("read");
+        let load = || {
+            let (mut restored, _) =
+                crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+            load_content_cache(&mut restored, request, &cache).expect("load")
+        };
+        assert!(load().usable, "the saved sidecar restores");
+
+        // The entry tier follows the path encoding; its scope flags follow the depth bound.
+        let flags_at = PATH_ENCODING_OFFSET + 1 + crate::stored_state::BOUND_BYTES;
+        let mut unknown_flag = saved;
+        assert_eq!(unknown_flag[flags_at], 0, "the default scope sets no flag");
+        unknown_flag[flags_at] |= 1 << 7;
+        reseal(&mut unknown_flag);
+        fs::write(&cache, unknown_flag).expect("rewrite");
+        assert_eq!(load(), ContentCacheLoad::default());
     }
 
     /// Re-address the sidecar's one record, leaving the image otherwise valid.

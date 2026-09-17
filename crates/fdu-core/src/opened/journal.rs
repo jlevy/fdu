@@ -75,7 +75,7 @@ pub(super) fn poll(opened: &OpenedIndex, request: ChangeRequest) -> Result<Chang
             let version = EngineVersion {
                 session: opened.state.session,
                 sequence: index.clock(),
-                scope: scope.scope_identity(),
+                scope: scope.entry_scope(),
                 semantics: scope.semantic_identity(),
             };
             validate_cursor(request.after, version)?;

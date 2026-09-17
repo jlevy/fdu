@@ -68,8 +68,8 @@ const CRC32C_TABLES: [[u32; 256]; 8] = make_crc32c_tables();
 /// reducer set, and the control tier's observation and limits. Observation and limits are
 /// no longer mixed into the scope as one hash, and the limits moved out of the control
 /// section, so a section is re-admitted under the header's limits and one they would not
-/// admit is refused. The header also records `verified_started_at_ns`, the start of the
-/// pass that verified the facts the image encodes.
+/// admit is refused. The header also records `writing_pass_started_at_ns`, the start of the
+/// pass that last wrote the image.
 const FORMAT_VERSION: u32 = 5;
 
 /// Version of the rules that decide which bucket an entry's bytes are tallied under.
@@ -98,15 +98,15 @@ const PATH_ENCODING_UTF8: u8 = 3;
 /// Marks the root's absent parent.
 const NO_PARENT: u32 = u32::MAX;
 
-/// Byte offset of `verified_started_at_ns`: after the magic, the format version, the
+/// Byte offset of `writing_pass_started_at_ns`: after the magic, the format version, the
 /// engine fingerprint, and the path encoding.
 ///
 /// Fixed, so a save can read the stamp of the image already at its path without parsing
 /// the rest of it.
-const VERIFIED_STARTED_AT_OFFSET: usize = MAGIC.len() + 4 + 8 + 1;
+const WRITING_PASS_STARTED_AT_OFFSET: usize = MAGIC.len() + 4 + 8 + 1;
 
 /// Byte offset of the tier identities, which follow the stamp.
-const IDENTITY_OFFSET: usize = VERIFIED_STARTED_AT_OFFSET + 8;
+const IDENTITY_OFFSET: usize = WRITING_PASS_STARTED_AT_OFFSET + 8;
 
 /// Byte offset of the root path, which follows the tier identities.
 #[cfg(test)]
@@ -228,10 +228,10 @@ pub fn save(index: &Index, path: &Path) -> Result<()> {
     buf.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
     buf.extend_from_slice(&engine_fingerprint().to_le_bytes());
     buf.push(path_encoding());
-    debug_assert_eq!(buf.len(), VERIFIED_STARTED_AT_OFFSET);
-    buf.extend_from_slice(&index.verified_started_at_ns().to_le_bytes());
+    debug_assert_eq!(buf.len(), WRITING_PASS_STARTED_AT_OFFSET);
+    buf.extend_from_slice(&index.writing_pass_started_at_ns().to_le_bytes());
     // Every tier identity shares the prologue's engine fingerprint, which is this build's.
-    buf.extend_from_slice(&index.snapshot_identity().encode()?);
+    buf.extend_from_slice(&index.snapshot_identity().encode());
 
     put_os_str(&mut buf, index.root_path().as_os_str())?;
 
@@ -282,13 +282,14 @@ pub fn save(index: &Index, path: &Path) -> Result<()> {
 /// Seal a snapshot payload and write it to `path`, keeping an image already there that
 /// encodes the same facts.
 ///
-/// Two passes over an unchanged tree encode identical images except for the stamp of the
-/// pass that verified them, and rewriting for the stamp alone would give back the skip
-/// [`write_atomically`] exists for: on the default command that was a 14 MB write and
-/// `F_FULLFSYNC` on every run (exp-067). So an image at `path` that differs only in its
-/// stamp is kept, stamp included, and only its mtime moves. The kept stamp is the start of
-/// an earlier pass that verified exactly these facts, which can understate how recently
-/// they were verified and never overstates it.
+/// Two passes over an unchanged tree encode identical images except for each pass's
+/// start, and rewriting for the stamp alone would give back the skip [`write_atomically`]
+/// exists for. A default run never reads its snapshot for a metadata query, so on that path
+/// the rewrite was the whole cost of having a cache: about 70 ms of a 375 ms run over 175k
+/// entries (exp-066), and a 14 MB write and `F_FULLFSYNC` on every run (exp-067). So an image at `path` that differs only in its stamp is kept, stamp
+/// included, and only its mtime moves. The kept stamp is the start of an earlier pass that
+/// wrote exactly these facts, which can understate how recently they were verified and
+/// never overstates it.
 fn publish(path: &Path, mut payload: Vec<u8>) -> Result<()> {
     if keep_equivalent_image(path, &payload) {
         return Ok(());
@@ -300,7 +301,13 @@ fn publish(path: &Path, mut payload: Vec<u8>) -> Result<()> {
 }
 
 /// Keep the file at `path` when it is `payload` sealed under any pass's stamp, moving only
-/// its mtime.
+/// its mtime, to the stamp in `payload`.
+///
+/// The loader reads the mtime as every cached entry's observation time. Moving it to the
+/// start of the pass that would have stamped the image, rather than to now, keeps it from
+/// overstating by that pass's duration. It never moves backwards: a save of an index
+/// loaded under an older stamp leaves a later mtime in place, since that time was already
+/// true of these facts.
 ///
 /// One read through one handle, comparing every payload byte before computing the
 /// checksum, so a changed tree stops at its first difference and costs no checksum here,
@@ -316,7 +323,7 @@ fn keep_equivalent_image(path: &Path, payload: &[u8]) -> bool {
         return false;
     }
     let (before_stamp, after_stamp) =
-        (&payload[..VERIFIED_STARTED_AT_OFFSET], &payload[IDENTITY_OFFSET..]);
+        (&payload[..WRITING_PASS_STARTED_AT_OFFSET], &payload[IDENTITY_OFFSET..]);
     let mut stamp = [0u8; 8];
     if !reads_as(&mut file, before_stamp)
         || file.read_exact(&mut stamp).is_err()
@@ -335,7 +342,20 @@ fn keep_equivalent_image(path: &Path, payload: &[u8]) -> bool {
     {
         return false;
     }
-    let _ = touch(path);
+    let pass_started = payload
+        .get(WRITING_PASS_STARTED_AT_OFFSET..IDENTITY_OFFSET)
+        .and_then(|stamp| <[u8; 8]>::try_from(stamp).ok())
+        .map(i64::from_le_bytes)
+        .and_then(|nanos| u64::try_from(nanos).ok())
+        .and_then(|nanos| {
+            std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_nanos(nanos))
+        });
+    if let Some(pass_started) = pass_started {
+        if !matches!(metadata.modified(), Ok(modified) if modified >= pass_started) {
+            // Best effort, as for any kept image: a stale mtime understates freshness.
+            let _ = touch(path, pass_started);
+        }
+    }
     true
 }
 
@@ -429,10 +449,13 @@ fn load_with_types_and_size_limit(
     // corruption: the parser may do work before the mismatch is known, and the
     // result is then discarded. Structural corruption is caught by the parser's own
     // bounds and consistency checks exactly as before, fail-closed either way.
-    // The tree was captured shortly before this file was written, so the file's own
-    // mtime is the closest "as of" available without a format change. It slightly
-    // overstates freshness — the walk began earlier — which is why format v3 should
-    // carry the true capture instant and this should read that instead.
+    // The file's mtime is the observation time of every cached entry: the end of the pass
+    // that wrote the image, which slightly overstates freshness because the walk began
+    // earlier, or the start of a later pass that kept it (`keep_equivalent_image`). The
+    // header's `writing_pass_started_at_ns` is not read here: it is a lower bound that
+    // can predate many passes that verified the same facts, so it would understate a kept
+    // image by as much. The mtime remains the observation time until P1.4.4 gives
+    // `scan_started_at` one meaning and unifies the two.
     let captured_at_ns = file
         .metadata()
         .ok()
@@ -668,8 +691,14 @@ fn has_intact_trailer(file: &fs::File) -> io::Result<bool> {
 
 /// The header fields after a snapshot's prologue.
 struct Header {
-    /// The start of the pass that verified the facts the image encodes.
-    verified_started_at_ns: i64,
+    /// The start of the pass that last wrote the image.
+    ///
+    /// A later pass that verifies the same facts keeps the image and this stamp rather
+    /// than rewriting for the stamp alone, so the value is a lower bound on when the facts
+    /// were last verified: it can predate many verifying passes and never postdates the one
+    /// that wrote them. Until P1.4.4 stamps completed passes, reconciliation does not
+    /// advance it either.
+    writing_pass_started_at_ns: i64,
     /// The identity of every tier the snapshot holds.
     identity: SnapshotIdentity,
     /// The absolute root the snapshot describes.
@@ -683,7 +712,7 @@ fn parse_header_fields(reader: &mut impl Read, engine: u64) -> ParseResult<Heade
     if read_u8(reader)? != path_encoding() {
         return Err(ParseError::Invalid);
     }
-    let verified_started_at_ns = read_i64(reader)?;
+    let writing_pass_started_at_ns = read_i64(reader)?;
     let identity =
         SnapshotIdentity::decode(engine, &read_array::<_, SNAPSHOT_IDENTITY_BYTES>(reader)?)
             .ok_or(ParseError::Invalid)?;
@@ -692,7 +721,7 @@ fn parse_header_fields(reader: &mut impl Read, engine: u64) -> ParseResult<Heade
     if entries == 0 || entries > MAX_SNAPSHOT_ENTRIES {
         return Err(ParseError::Invalid);
     }
-    Ok(Header { verified_started_at_ns, identity, root, entries })
+    Ok(Header { writing_pass_started_at_ns, identity, root, entries })
 }
 
 /// Parse a bounded payload. Records are applied one at a time so bootstrap paths are not
@@ -710,7 +739,7 @@ fn parse_stream(
     if read_u32(reader)? != FORMAT_VERSION || read_u64(reader)? != engine {
         return Err(ParseError::Invalid);
     }
-    let Header { verified_started_at_ns, identity, root: root_path, entries: count } =
+    let Header { writing_pass_started_at_ns, identity, root: root_path, entries: count } =
         parse_header_fields(reader, engine)?;
     let scope = identity.scan_scope();
     if scope.type_rules_fingerprint != types.fingerprint() {
@@ -725,7 +754,7 @@ fn parse_stream(
 
     let mut index = Index::new_with_scope_and_types(&root_path, scope, types);
     // The facts below were verified by the pass that wrote them, not by this load.
-    index.set_verified_started_at_ns(verified_started_at_ns);
+    index.set_writing_pass_started_at_ns(writing_pass_started_at_ns);
     // Everything this loader inserts describes the tree as the snapshot found it, not
     // as this process has seen it. Stamping the entries `Cached` is what lets a
     // consumer paint them immediately and label them honestly; without it a loaded
@@ -855,6 +884,9 @@ fn read_controls(
     let limits = match tier {
         ControlTierIdentity::Observed { limits } => limits,
         // Limits decide nothing when nothing was observed, and the section must be empty.
+        // So a loaded blind table holds the default limits where the scanning index kept
+        // the request's; no reader consults a blind table's limits, and a cache status or
+        // projection that reports them must not show that as a difference.
         ControlTierIdentity::NotObserved => crate::control::ControlLimits::default(),
     };
     let control_count = read_u32(reader)?;
@@ -1058,14 +1090,12 @@ fn os_string_from_bytes(bytes: &[u8]) -> Option<OsString> {
 /// or the whole new one. The temporary must be a sibling for that to hold — a rename
 /// across filesystems is a copy, and copies are not atomic.
 pub(crate) fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
-    // Serialization is deterministic -- pre-order over name-sorted children, the same
-    // fields in the same order -- so an unchanged tree encodes to the bytes already on
-    // disk, and replacing them is a full write, an `F_FULLFSYNC`, and a rename that
-    // leave the file exactly as it was. A default run never reads its snapshot for a
-    // metadata query, so on that path the rewrite was the whole cost of having a cache:
-    // about 70 ms of a 375 ms run over 175k entries (exp-066). Comparing against the
-    // page-cached file costs a few milliseconds and the cache cannot go stale, because
-    // the bytes are the same bytes.
+    // Serialization is deterministic, so unchanged input encodes to the bytes already on
+    // disk, and replacing them is a full write, an `F_FULLFSYNC`, and a rename that leave
+    // the file exactly as it was. Comparing against the page-cached file costs a few
+    // milliseconds and cannot go stale, because the bytes are the same bytes. The metadata
+    // snapshot, whose images also differ in their pass-start stamp, compares in `publish`
+    // instead, which records what the skip is worth (exp-066, exp-067).
     if keep_identical(path, bytes) {
         return Ok(());
     }
@@ -1093,17 +1123,17 @@ fn replace_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Leave `path` in place when it already holds exactly `bytes`, moving only its mtime.
+/// Leave `path` in place when it already holds exactly `bytes`, moving only its mtime to
+/// now.
 ///
-/// The file's mtime is the snapshot's "as of": the loader reads it as the observation time
-/// of every cached entry. The tree was just verified to encode identically, so that time is
-/// now, and moving the mtime says so without writing the payload. Best effort: a stale "as
-/// of" understates freshness, which fails safe.
+/// The bytes were just produced again, so now is when they were last known to be current,
+/// and moving the mtime says so without writing the payload. Best effort: a stale mtime
+/// understates that, which fails safe.
 fn keep_identical(path: &Path, bytes: &[u8]) -> bool {
     if !same_bytes_on_disk(path, bytes) {
         return false;
     }
-    let _ = touch(path);
+    let _ = touch(path, std::time::SystemTime::now());
     true
 }
 
@@ -1145,10 +1175,10 @@ fn reads_as(file: &mut fs::File, bytes: &[u8]) -> bool {
     true
 }
 
-/// Move `path`'s modification time to now without touching its contents.
-fn touch(path: &Path) -> io::Result<()> {
+/// Move `path`'s modification time to `when` without touching its contents.
+fn touch(path: &Path, when: std::time::SystemTime) -> io::Result<()> {
     let file = OpenOptions::new().write(true).open(path)?;
-    file.set_modified(std::time::SystemTime::now())
+    file.set_modified(when)
 }
 
 /// Remove long-abandoned temporaries beside `path`.
@@ -1719,7 +1749,7 @@ mod tests {
         let controls = controls_at..controls_at + crate::stored_state::CONTROL_TIER_BYTES;
         let forge = |tier: ControlTierIdentity| {
             let mut forged = saved.clone();
-            forged[controls.clone()].copy_from_slice(&tier.encode().expect("encode"));
+            forged[controls.clone()].copy_from_slice(&tier.encode());
             rewrite_checksum(&mut forged);
             fs::write(&path, &forged).expect("write forged limits");
             load(&path).expect("forged equals absent")
@@ -2566,16 +2596,9 @@ mod tests {
 
         let mut image = MAGIC.to_vec();
         image.extend_from_slice(&V4.to_le_bytes());
-        let mut engine = 0xcbf2_9ce4_8422_2325_u64;
-        for byte in env!("CARGO_PKG_VERSION")
-            .as_bytes()
-            .iter()
-            .chain(&V4.to_le_bytes())
-            .chain(&CLASSIFICATION_VERSION.to_le_bytes())
-        {
-            engine = (engine ^ u64::from(*byte)).wrapping_mul(0x1000_0000_01b3);
-        }
-        image.extend_from_slice(&engine.to_le_bytes());
+        // The v4 engine fingerprint. Recognition reads the version before the engine, so a
+        // format-4 image is older whatever these eight bytes hold.
+        image.extend_from_slice(&0x4444_4444_4444_4444_u64.to_le_bytes());
         image.push(path_encoding());
         // The v4 scope: depth, flags, and the hidden, ignore-rules, type-rules, and reducer
         // fingerprints.
@@ -2622,33 +2645,55 @@ mod tests {
 
     /// A later pass over an unchanged tree encodes the same facts under a newer pass start.
     /// The image already on disk is kept, its stamp included, rather than rewritten for the
-    /// stamp alone; a changed tree is written with the new pass's stamp.
+    /// stamp alone, and its mtime moves to the later pass's start, never backwards; a
+    /// changed tree is written with the new pass's stamp.
     #[test]
     fn a_later_pass_over_the_same_facts_keeps_the_snapshot_in_place() {
+        use std::time::{Duration, UNIX_EPOCH};
+
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("snap.fdu");
         let stamp_at = |bytes: &[u8]| {
             i64::from_le_bytes(
-                bytes[VERIFIED_STARTED_AT_OFFSET..IDENTITY_OFFSET].try_into().expect("stamp"),
+                bytes[WRITING_PASS_STARTED_AT_OFFSET..IDENTITY_OFFSET].try_into().expect("stamp"),
             )
+        };
+        let mtime = || fs::metadata(&path).expect("metadata").modified().expect("mtime");
+        let nanos = |time: std::time::SystemTime| {
+            i64::try_from(time.duration_since(UNIX_EPOCH).expect("after the epoch").as_nanos())
+                .expect("nanoseconds")
         };
 
         let mut first = sample_index();
-        first.set_verified_started_at_ns(1_000);
+        first.set_writing_pass_started_at_ns(1_000);
         save(&first, &path).expect("first save");
         let written = fs::metadata(&path).expect("metadata");
         assert_eq!(stamp_at(&fs::read(&path).expect("read")), 1_000);
-        assert_eq!(load(&path).expect("load").expect("present").verified_started_at_ns(), 1_000);
+        assert_eq!(
+            load(&path).expect("load").expect("present").writing_pass_started_at_ns(),
+            1_000
+        );
 
+        // A pass that started after the image was written, on a whole second so every
+        // filesystem's mtime holds the instant exactly.
+        let later_started = UNIX_EPOCH
+            + Duration::from_secs(
+                mtime().duration_since(UNIX_EPOCH).expect("after the epoch").as_secs() + 1,
+            );
         let mut later = sample_index();
-        later.set_verified_started_at_ns(2_000);
-        let before = std::time::SystemTime::now();
+        later.set_writing_pass_started_at_ns(nanos(later_started));
         save(&later, &path).expect("unchanged save");
         let kept = fs::metadata(&path).expect("metadata");
         assert_same_file(&written, &kept);
-        assert!(kept.modified().expect("mtime") >= before);
+        assert_eq!(kept.modified().expect("mtime"), later_started, "the kept image's as-of");
         assert_eq!(stamp_at(&fs::read(&path).expect("read")), 1_000);
         assert!(load(&path).expect("load").is_some(), "the kept image is still valid");
+
+        // An equivalent save under an older stamp, as of an index loaded from an earlier
+        // image, keeps the later mtime, which was already true of these facts.
+        save(&first, &path).expect("older unchanged save");
+        assert_same_file(&written, &fs::metadata(&path).expect("metadata"));
+        assert_eq!(mtime(), later_started);
 
         // A kept image must still verify: one whose own checksum is wrong reads as absent,
         // so it is replaced rather than kept under an older stamp forever.
@@ -2658,11 +2703,11 @@ mod tests {
         fs::write(&path, &corrupt).expect("corrupt the checksum");
         assert!(load(&path).expect("load").is_none());
         save(&later, &path).expect("save over a corrupt image");
-        assert_eq!(stamp_at(&fs::read(&path).expect("read")), 2_000);
+        assert_eq!(stamp_at(&fs::read(&path).expect("read")), nanos(later_started));
         assert!(load(&path).expect("load").is_some());
 
         let mut changed = sample_index();
-        changed.set_verified_started_at_ns(3_000);
+        changed.set_writing_pass_started_at_ns(3_000);
         changed.apply_ok(&Observation::new(vec![Op::Upsert {
             path: PathBuf::from("notes.md"),
             kind: EntryKind::File,
@@ -2672,7 +2717,7 @@ mod tests {
         let rewritten = fs::read(&path).expect("read");
         assert_eq!(stamp_at(&rewritten), 3_000);
         let restored = load(&path).expect("load").expect("present");
-        assert_eq!(restored.verified_started_at_ns(), 3_000);
+        assert_eq!(restored.writing_pass_started_at_ns(), 3_000);
         assert_eq!(restored.total(), changed.total());
     }
 

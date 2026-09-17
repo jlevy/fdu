@@ -241,7 +241,7 @@ The target models are in
 | Request | Scope, content axis, selection, views, defaults, validation | `ScanConfig` and `ScanScope`; `AnalysisRequest` and `CachePolicy` on `OpenConfig`, not on `Query`; `Query`, `Selection`, and `ViewSpec::resolve`; `OpenOptions` and `ReportRequest` for opened roots | No. `cli.rs` and `fdu-py` each assemble it; defaults differ by surface; `Query::validate_controls` is called at seven sites, and `Query::validate_analysis` only in the two surfaces |
 | Delivery | Cache policy, worker counts, partial acceptance, watch | `CachePolicy` on `OpenConfig`; `AnalysisRequest.workers`; `--allow-partial` as an exit-code mapping in `cli.rs`; watch interval as a command-line value | No. Each route reads the parts it uses, and no type enumerates them |
 | Execution plan | Which path answers, and what each cache policy reads and writes | `plan_report` (`execution.rs`); `open_for_report`, `SaveTargets`, and `cold_scan_save_targets` (`lib.rs`); the command line’s `save_live` for watch | No. Read and write rules are coded per path |
-| Stored-state identity | Metadata snapshot, control state, classification, content sidecar, and which requests each may serve | `engine_fingerprint` and snapshot parsing (`snapshot.rs`); `ScanScope`; `snapshot_scope_serves` (`lib.rs`); `ContentProvenance::satisfies` (`content_model.rs`) | No. Each tier codes its own identity and compatibility: exact scope with one report-only projection for snapshots, analyzer-set containment for content |
+| Stored-state identity | Metadata snapshot, control state, classification, content sidecar, and which requests each may serve | `EntryScope`, `EntryTierIdentity`, `ControlTierIdentity`, `SnapshotIdentity`, `ContentTierIdentity`, their fixed-width codecs, and `serves_snapshot` (`stored_state.rs`), recorded in the format-5 snapshot and sidecar headers; `snapshot_scope_serves` (`lib.rs`); `ContentProvenance::satisfies` (`content_model.rs`) | Partly. A snapshot is served by equality on its typed identity (`serves_snapshot`), apart from one report-only projection in `snapshot_scope_serves`; a sidecar records its typed identity but still serves by analyzer-set containment |
 | Per-item validity | When a stored entry or record is still current | `Attrs` equality in index upserts; `Fingerprint` checks in content loading, `pending_analysis_candidates`, and `apply_analysis` | Partly. Metadata compares six attributes and content five, each at its own call sites |
 | Measured value | What each metric means, and how coverage is decided | Analyzer identities and `MetricValues` in `content_model.rs`; per-file `CoverageReason` in `FileAnalysis`; `document_words` in `query_report.rs` | No. Coverage is one outcome per file for the whole analyzer set, and `document_words` changes meaning with the analyzers a record ran under |
 | Provenance | Source, freshness, observation time, completeness, errors | `query::Provenance`, built at six production sites; `Index::freshness`; per-entry `Provenance` in `engine_contract.rs` | No. Each site fills the fields its own way, and `scan_started_at` has three meanings |
@@ -452,7 +452,8 @@ is a permanent cost on every commit paid for an intermittent read.
 
 Configuration separates answer semantics from execution policy and query selection.
 
-Scope identity contains values that change which facts the engine may retain:
+Scope identity (`EntryScope`, which an opened root’s `EngineVersion` and a store’s entry
+tier both record) contains values that change which facts the engine may retain:
 
 - hidden-component admission and any exact-name allowlist;
 - symlink-following behavior;

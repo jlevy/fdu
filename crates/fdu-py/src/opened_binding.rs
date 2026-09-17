@@ -18,11 +18,11 @@ use fdu_core::content::AnalysisSet;
 use fdu_core::query::{AxisNames, EntrySelection, Query, Selection};
 use fdu_core::{
     ChangeOutcome, ChangePoll, ChangeRequest, ContinuationId, CountResult, Coverage,
-    CoverageReason, EffectiveChange, EngineVersion, EntryKind, EntryValue, Freshness, Impact,
-    ImpactDomain, IndexState, Issue, IssueKind, Knowledge, LifecyclePhase, LimitedProjection,
-    OpenOptions, OpenedIndex, PageRequest, ProjectionRefusal, ProjectionResult, ReadDiagnostics,
-    ReadProjection, ReadRequest, ReadResponse, RefreshResult, RollUpSummary, RowShape,
-    ScopeIdentity, SemanticIdentity, Source, StateTransition, Work,
+    CoverageReason, EffectiveChange, EngineVersion, EntryKind, EntryScope, EntryValue, Freshness,
+    Impact, ImpactDomain, IndexState, Issue, IssueKind, Knowledge, LifecyclePhase,
+    LimitedProjection, OpenOptions, OpenedIndex, PageRequest, ProjectionRefusal, ProjectionResult,
+    ReadDiagnostics, ReadProjection, ReadRequest, ReadResponse, RefreshResult, RollUpSummary,
+    RowShape, SemanticIdentity, Source, StateTransition, Work,
 };
 
 create_exception!(fdu, OpenedIndexError, PyRuntimeError);
@@ -173,12 +173,12 @@ fn parse_entry_selection(
     Ok(selection)
 }
 
-fn parse_scope(dict: &Bound<'_, PyDict>) -> PyResult<ScopeIdentity> {
+fn parse_scope(dict: &Bound<'_, PyDict>) -> PyResult<EntryScope> {
     let max_depth = match dict.get_item("max_depth")? {
         Some(value) if !value.is_none() => Some(value.extract()?),
         _ => None,
     };
-    Ok(ScopeIdentity {
+    Ok(EntryScope {
         max_depth,
         follow_symlinks: required(dict, "follow_symlinks")?.extract()?,
         one_filesystem: required(dict, "one_filesystem")?.extract()?,
@@ -450,7 +450,7 @@ fn limited_projection_label(value: LimitedProjection) -> &'static str {
     }
 }
 
-fn scope_dict(py: Python<'_>, scope: ScopeIdentity) -> PyResult<Bound<'_, PyDict>> {
+fn scope_dict(py: Python<'_>, scope: EntryScope) -> PyResult<Bound<'_, PyDict>> {
     let out = PyDict::new(py);
     out.set_item("max_depth", scope.max_depth)?;
     out.set_item("follow_symlinks", scope.follow_symlinks)?;
