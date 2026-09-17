@@ -3406,7 +3406,7 @@ mod tests {
                     selection: selection.query.clone(),
                     ..crate::query::Query::default()
                 },
-                generated_at: std::time::SystemTime::UNIX_EPOCH,
+                now: std::time::SystemTime::UNIX_EPOCH,
                 max_work: 1_000,
             });
             let response = opened
@@ -5069,7 +5069,7 @@ mod tests {
                         views: vec![crate::query::ViewSpec::Summary; crate::MAX_REPORT_VIEWS + 1],
                         ..crate::query::Query::default()
                     },
-                    generated_at: std::time::UNIX_EPOCH,
+                    now: std::time::UNIX_EPOCH,
                     max_work: crate::MAX_PAGE_WORK,
                 })],
                 ..crate::ReadRequest::default()
@@ -5220,7 +5220,7 @@ mod tests {
             .read(crate::ReadRequest {
                 projections: vec![crate::ReadProjection::Report(crate::ReportRequest {
                     query: query.clone(),
-                    generated_at: std::time::UNIX_EPOCH,
+                    now: std::time::UNIX_EPOCH,
                     max_work: 1,
                 })],
                 ..crate::ReadRequest::default()
@@ -5245,7 +5245,7 @@ mod tests {
                         views: vec![crate::query::ViewSpec::Summary],
                         ..crate::query::Query::default()
                     },
-                    generated_at: std::time::UNIX_EPOCH,
+                    now: std::time::UNIX_EPOCH,
                     max_work: 1,
                 })],
                 ..crate::ReadRequest::default()

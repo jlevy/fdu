@@ -46,12 +46,39 @@ pub struct Basis {
     pub content: AnalysisSet,
 }
 
+impl Basis {
+    /// The basis a retained index holds, as the index itself can still state it.
+    ///
+    /// Scope comes back from [`ScanScope`](crate::ScanScope) and the control tier rather
+    /// than from the `ScanConfig` that made it: what a read validates against is what the
+    /// index observed, and the fields a config keeps beyond that -- threads, batch size,
+    /// order -- are delivery, which no answer depends on.
+    pub fn held_by(index: &crate::Index) -> Self {
+        let scope = index.scope();
+        Self {
+            root: index.root_path().to_path_buf(),
+            scope: ScanConfig {
+                max_depth: scope.max_depth,
+                follow_symlinks: scope.follow_symlinks,
+                one_filesystem: scope.one_filesystem,
+                exclude_special: scope.exclude_special,
+                read_controls: index.control_identity().is_observed(),
+                ..ScanConfig::default()
+            },
+            content: index.content_set(),
+        }
+    }
+}
+
 /// How a request is carried out, which never changes what its answer says.
 ///
-/// No worker counts yet: they stay in [`ScanConfig::threads`] and
-/// [`AnalysisRequest::workers`](crate::content::AnalysisRequest::workers) until the
-/// execution plan model takes them.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// One worker count is here, because it has nowhere else to wait: scan threads ride in
+/// [`ScanConfig::threads`] inside [`Basis::scope`] until the execution plan model takes
+/// them, and the content readers' count rides in
+/// [`AnalysisRequest`](crate::content::AnalysisRequest), which a request does not carry --
+/// [`Basis::content`] is the analyzer set, which is what changes an answer. Phase 2 replaces
+/// both with one `Workers`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Delivery {
     /// How the snapshot cache may be used.
     pub cache: CachePolicy,
@@ -61,6 +88,8 @@ pub struct Delivery {
     pub accept_partial: bool,
     /// Whether the answer repeats as a watch, and how.
     pub watch: Option<WatchDelivery>,
+    /// Content-reader workers; zero asks for the machine's available parallelism.
+    pub analysis_workers: usize,
 }
 
 /// How a watch repeats its answer.
@@ -1290,6 +1319,30 @@ mod tests {
             documents.validate_read(&basis(AnalysisSet::NONE, true)),
             Err(RequestError::ContentMismatch { .. })
         ));
+    }
+
+    /// What a read validates against is what the index observed, not the configuration that
+    /// happened to make it: a `ScanConfig`'s delivery fields cannot be recovered from an
+    /// index and no answer depends on them.
+    #[test]
+    fn the_basis_a_retained_index_holds_is_what_it_observed() {
+        let blind =
+            crate::Index::new_with_scope("/root", crate::test_support::not_observing_controls());
+        let held = Basis::held_by(&blind);
+        assert_eq!(held.root, Path::new("/root"));
+        assert!(!held.scope.read_controls, "an index that read no rule says so");
+        assert_eq!(held.content, AnalysisSet::NONE, "a metadata index holds no analyzer");
+
+        let observing =
+            crate::Index::new_with_scope("/root", crate::test_support::observing_controls());
+        assert!(Basis::held_by(&observing).scope.read_controls);
+
+        // The scope a request would have to be built with to read this index.
+        let request =
+            built(&RequestSpec { read_controls: Some(false), ..RequestSpec::new(root()) });
+        request
+            .validate_read(&Basis::held_by(&blind))
+            .expect("the index's own basis answers a request built the same way");
     }
 
     #[test]

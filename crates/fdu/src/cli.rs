@@ -21,9 +21,9 @@ use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, Value
 use fdu_core::content::{AnalysisRequest, AnalysisSet};
 use fdu_core::control::ControlCoverage;
 use fdu_core::query::{
-    AxisNames, IgnoredEntries, Pattern, Query, ReportSource, RequestError, Selection, ViewSpec,
-    bound_nanos, parse_bound, parse_cache_policy, parse_kinds, parse_size, parse_size_metric,
-    parse_sort, parse_when,
+    AxisNames, Basis, Delivery, IgnoredEntries, Pattern, Query, ReportSource, Request,
+    RequestError, Selection, ViewSpec, bound_nanos, parse_bound, parse_cache_policy, parse_kinds,
+    parse_size, parse_size_metric, parse_sort, parse_when,
 };
 use fdu_core::report_format;
 use fdu_core::report_format::human_count;
@@ -618,15 +618,26 @@ impl Cli {
 
         let policy = self.parse_cache_policy().map_err(|error| usage(&error))?;
         let scan = self.scan_config().map_err(|error| usage(&error))?;
-        query
-            .validate_analysis(analysis.profile)
-            .map_err(|message| usage(&anyhow::anyhow!(message)))?;
-        // A selection by ignored state over a scan that reads no rule has no answer, so
-        // the library's refusal is a usage error here, raised before anything is scanned.
-        query
-            .validate_controls(scan.read_controls)
-            .map_err(|message| usage(&anyhow::anyhow!(message)))?;
         let config = OpenConfig { scan, cache_path: default_cache_path(path), policy, analysis };
+        let request = Request {
+            basis: Basis {
+                root: path.to_path_buf(),
+                scope: config.scan.clone(),
+                content: analysis.profile,
+            },
+            query,
+            now: SystemTime::now(),
+        };
+        let delivery = Delivery {
+            cache: policy,
+            cache_path: config.cache_path.clone(),
+            analysis_workers: analysis.workers,
+            ..Delivery::default()
+        };
+        // A view nothing analyzed cannot answer, and a selection by ignored state over a
+        // scan that reads no rule, are both refused here: before anything is scanned, and in
+        // this surface's words rather than the library's.
+        request.validate().map_err(|error| usage(&refused(&error)))?;
 
         #[cfg(feature = "watch")]
         if self.watch && (self.scan_depth.is_some() || self.one_filesystem) {
@@ -651,16 +662,16 @@ impl Cli {
                 stdout_is_terminal,
             )
             .enabled();
-            return self.run_watch(out, diagnostic, format, query, &config, color);
+            return self.run_watch(out, diagnostic, format, request.query.clone(), &config, color);
         }
 
         let report_started = Instant::now();
         let collect_scan_diagnostics =
             std::env::var_os(SCAN_DIAGNOSTICS_ENV).is_some_and(|value| value == OsStr::new("1"));
         let (report, pending_save, performance, scan_diagnostics) = if collect_scan_diagnostics {
-            prepare_report_with_scan_diagnostics(path, &config, &query)?
+            prepare_report_with_scan_diagnostics(&request, &delivery)?
         } else {
-            let (report, pending_save, performance) = prepare_report(path, &config, &query)?;
+            let (report, pending_save, performance) = prepare_report(&request, &delivery)?;
             (report, pending_save, performance, None)
         };
         if let Some(scan_diagnostics) = scan_diagnostics {

@@ -906,13 +906,19 @@ pub enum CountResult {
     AtLeast(u64),
 }
 
-/// Existing fdu query plus deterministic opened-read inputs and work bound.
+/// The read half of a request at an opened root, plus one read's work bound.
+///
+/// The basis is the opened root's own and is never supplied here: a caller names what each
+/// read asks -- the query and the instant it is asked at -- and [`crate::query::Request`]
+/// composes the two for validation.
 #[derive(Clone, Debug)]
 pub struct ReportRequest {
     /// Existing selection and view vocabulary shared by one-shot surfaces.
     pub query: crate::query::Query,
-    /// Caller-supplied render instant, keeping the projection deterministic.
-    pub generated_at: std::time::SystemTime,
+    /// The instant this read resolves against, which is also the report's `generated_at`.
+    ///
+    /// Caller-supplied, keeping the projection deterministic.
+    pub now: std::time::SystemTime,
     /// Maximum retained-index and maintained-index rows read by the report.
     pub max_work: u64,
 }
@@ -1880,6 +1886,15 @@ pub enum Error {
         /// Maximum accepted count cap.
         limit: u64,
     },
+
+    /// A request no holder of its own basis could answer, or that this holder cannot.
+    ///
+    /// The refusal is a value, rendered here in the library's field names; a surface that
+    /// built the request renders the same value in its own words through
+    /// [`RequestError::message`](crate::query::RequestError::message), which is why every
+    /// door refuses one request with one rule.
+    #[error(transparent)]
+    InvalidRequest(crate::query::RequestError),
 
     /// A report request exceeded the bounded section vocabulary for one read.
     #[error("report request contains {attempted} views or omissions; limit is {limit}")]

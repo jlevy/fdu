@@ -253,7 +253,7 @@ fn report_projection(
 
     let provenance = crate::query::Provenance {
         scan_started_at: None,
-        generated_at: request.generated_at,
+        generated_at: request.now,
         source: match state.source {
             crate::Source::Scanned => crate::query::ReportSource::ColdScan,
             crate::Source::Revalidated => crate::query::ReportSource::WarmRevalidate,
@@ -268,7 +268,7 @@ fn report_projection(
     // opened read matches portable names, where a one-shot report matches native ones.
     let report = crate::query::report_in(
         index,
-        &request.query,
+        &read_request(index, request),
         &provenance,
         crate::query::NameIdentity::Portable,
     )?;
@@ -276,6 +276,20 @@ fn report_projection(
     work.maintained_index_work = work.maintained_index_work.saturating_add(charge.maintained);
     work.rows_returned = work.rows_returned.saturating_add(report_rows(&report));
     Ok(ProjectionResult::Report(report))
+}
+
+/// The whole request one opened-root read makes: the root's own basis, plus the query and
+/// the instant this read supplies.
+///
+/// A caller names neither root, scope, nor analyzers, because an opened root owns them for
+/// its lifetime; composing them here is what lets one rule refuse a read that the root
+/// cannot answer.
+fn read_request(index: &crate::Index, request: &crate::ReportRequest) -> crate::query::Request {
+    crate::query::Request {
+        basis: crate::query::Basis::held_by(index),
+        query: request.query.clone(),
+        now: request.now,
+    }
 }
 
 fn validate_report(request: &crate::ReportRequest) -> Result<()> {

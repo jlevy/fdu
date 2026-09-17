@@ -24,9 +24,9 @@ use pyo3::types::{PyDict, PyList};
 
 use fdu_core::content::{AnalysisRequest, AnalysisSet, CoverageReason};
 use fdu_core::query::{
-    AxisNames, IgnoredEntries, IgnoredTally, MetricRow, MetricSummary, Pattern, Provenance, Query,
-    Report, ReportSource, Request, RequestError, Section, Selection, SummaryRow, TreeNode,
-    ViewSpec, bound_nanos, document_words, parse_bound, parse_cache_policy, parse_kind,
+    AxisNames, Basis, Delivery, IgnoredEntries, IgnoredTally, MetricRow, MetricSummary, Pattern,
+    Provenance, Query, Report, ReportSource, Request, RequestError, Section, Selection, SummaryRow,
+    TreeNode, ViewSpec, bound_nanos, document_words, parse_bound, parse_cache_policy, parse_kind,
     parse_size_metric, parse_sort,
 };
 use fdu_core::watch::WatchConfig;
@@ -373,9 +373,7 @@ impl PyIndex {
         )?;
 
         // Refused here, in the API's own names, rather than as the session's typed error.
-        query
-            .validate_controls(self.inner.control_identity().is_observed())
-            .map_err(PyValueError::new_err)?;
+        let query = self.request(query, SystemTime::now())?.query;
 
         // The index is cloned into the session: a watcher owns its own handle, so closing
         // the feed cannot disturb the caller's index.
@@ -590,9 +588,7 @@ impl PyIndex {
             Some(size),
             words_per_page,
         )?;
-        query
-            .validate_controls(self.inner.control_identity().is_observed())
-            .map_err(PyValueError::new_err)?;
+        let request = self.request(query, now)?;
         let provenance = Provenance {
             scan_started_at: self.scan_started_at,
             generated_at: now,
@@ -600,7 +596,25 @@ impl PyIndex {
             complete: self.operation_complete,
             errors: self.error_messages(),
         };
-        fdu_core::query::report(&self.inner, &query, &provenance).map_err(to_py_err)
+        fdu_core::query::report(&self.inner, &request, &provenance).map_err(to_py_err)
+    }
+
+    /// The whole request one read of this index makes, refused in this API's own names.
+    ///
+    /// The basis is the index's: a caller names the query and nothing else, because root,
+    /// scope, and analyzers were fixed when the index was opened.
+    fn request(&self, query: Query, now: SystemTime) -> PyResult<Request> {
+        let request = Request {
+            basis: Basis {
+                root: self.inner.root_path().to_path_buf(),
+                scope: self.config.clone(),
+                content: self.analysis.profile,
+            },
+            query,
+            now,
+        };
+        request.validate().map_err(|error| value_error(&error))?;
+        Ok(request)
     }
 }
 
@@ -1183,10 +1197,9 @@ fn build_query_at(
         return Err(PyValueError::new_err("words_per_page must be positive"));
     }
     // The Python API names these axes with fields, so its diagnostics do too: there is no
-    // `--analyze` for a caller here to add (fdu-4apt).
-    let query = Query { selection, views, omitted_views, axes, words_per_page };
-    query.validate_analysis(profile).map_err(PyValueError::new_err)?;
-    Ok(query)
+    // `--analyze` for a caller here to add (fdu-4apt). A view the requested analyzers cannot
+    // answer is the request model's refusal, raised where the whole request is validated.
+    Ok(Query { selection, views, omitted_views, axes, words_per_page })
 }
 
 /// One report, holding only what the request needed.
@@ -1320,11 +1333,22 @@ fn report_once(
         words_per_page,
     )?;
 
+    let request = Request {
+        basis: Basis { root: root.clone(), scope: config.scan.clone(), content: analysis.profile },
+        query,
+        now: SystemTime::now(),
+    };
+    let delivery = Delivery {
+        cache: config.policy,
+        cache_path: config.cache_path.clone(),
+        analysis_workers: analysis.workers,
+        ..Delivery::default()
+    };
     // Refused before any scan, in the API's own names; the engine refuses the same request
-    // with a typed error for a Rust caller.
-    query.validate_controls(config.scan.read_controls).map_err(PyValueError::new_err)?;
+    // with the same typed value for a Rust caller.
+    request.validate().map_err(|error| value_error(&error))?;
 
-    let prepared = py.detach(|| fdu_core::prepare_report(&root, &config, &query));
+    let prepared = py.detach(|| fdu_core::prepare_report(&request, &delivery));
     let (report, pending_save, _performance) = prepared.map_err(to_py_err)?;
     // Joined before returning: the command line overlaps the write with rendering, but a
     // caller who gets a value back should not still owe the filesystem a write.

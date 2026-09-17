@@ -278,7 +278,9 @@ fn parse_report(dict: &Bound<'_, PyDict>) -> PyResult<fdu_core::ReportRequest> {
     let query = Query { selection, views, omitted_views, axes: &AxisNames::FIELDS, words_per_page };
     Ok(fdu_core::ReportRequest {
         query,
-        generated_at,
+        // The instant this read resolves against, which is also what it reports as its
+        // `generated_at`; the wire field keeps its name.
+        now: generated_at,
         max_work: required(dict, "max_work")?.extract()?,
     })
 }

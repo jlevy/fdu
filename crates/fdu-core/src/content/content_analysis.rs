@@ -627,7 +627,7 @@ mod tests {
         };
         let report = crate::query::report(
             &index,
-            &query,
+            &crate::test_support::read_of(&index, query),
             &crate::query::Provenance {
                 scan_started_at: None,
                 generated_at: std::time::UNIX_EPOCH,
@@ -688,7 +688,7 @@ mod tests {
         };
         let rendered = crate::query::report(
             &index,
-            &query,
+            &crate::test_support::read_of(&index, query),
             &crate::query::Provenance {
                 scan_started_at: None,
                 generated_at: std::time::UNIX_EPOCH,
@@ -734,7 +734,7 @@ mod tests {
         };
         let rendered = crate::query::report(
             &index,
-            &query,
+            &crate::test_support::read_of(&index, query),
             &crate::query::Provenance {
                 scan_started_at: None,
                 generated_at: std::time::UNIX_EPOCH,
@@ -794,10 +794,13 @@ mod tests {
         );
         let summary = crate::query::report(
             &empty_index,
-            &crate::query::Query {
-                views: vec![crate::query::ViewSpec::Summary],
-                ..crate::query::Query::default()
-            },
+            &crate::test_support::read_of(
+                &empty_index,
+                crate::query::Query {
+                    views: vec![crate::query::ViewSpec::Summary],
+                    ..crate::query::Query::default()
+                },
+            ),
             &crate::query::Provenance {
                 scan_started_at: None,
                 generated_at: std::time::UNIX_EPOCH,
@@ -825,10 +828,13 @@ mod tests {
         );
         let languages = crate::query::report(
             &unsupported_index,
-            &crate::query::Query {
-                views: vec![crate::query::ViewSpec::Languages],
-                ..crate::query::Query::default()
-            },
+            &crate::test_support::read_of(
+                &unsupported_index,
+                crate::query::Query {
+                    views: vec![crate::query::ViewSpec::Languages],
+                    ..crate::query::Query::default()
+                },
+            ),
             &crate::query::Provenance {
                 scan_started_at: None,
                 generated_at: std::time::UNIX_EPOCH,

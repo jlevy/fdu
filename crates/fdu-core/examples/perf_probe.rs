@@ -17,7 +17,7 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use fdu_core::content::{AnalysisRequest, AnalysisSet, CoverageReason};
-use fdu_core::query::{Provenance, Query, ReportSource, ViewSpec};
+use fdu_core::query::{Basis, Delivery, Provenance, Query, ReportSource, Request, ViewSpec};
 use fdu_core::{
     Attrs, CachePolicy, ChangeOutcome, ChangeRequest, Clock, Commit, Coverage, EffectiveChange,
     EngineVersion, EntryId, EntryKind, Index, Knowledge, LifecyclePhase, Observation, Op,
@@ -479,6 +479,27 @@ fn classification_probe(arguments: &Arguments, ambiguous: bool) -> ProbeResult<P
     Ok(ProbeOutput::new(arguments.mode, "synthetic", component, summary))
 }
 
+/// The request and the delivery one probe mode asks for, composed from the configuration
+/// it measures exactly as the command line composes them.
+fn asked(root: &Path, config: &OpenConfig, query: Query) -> (Request, Delivery) {
+    let request = Request {
+        basis: Basis {
+            root: root.to_path_buf(),
+            scope: config.scan.clone(),
+            content: config.analysis.profile,
+        },
+        query,
+        now: std::time::SystemTime::now(),
+    };
+    let delivery = Delivery {
+        cache: config.policy,
+        cache_path: config.cache_path.clone(),
+        analysis_workers: config.analysis.workers,
+        ..Delivery::default()
+    };
+    (request, delivery)
+}
+
 fn basic_request() -> AnalysisRequest {
     AnalysisRequest { profile: AnalysisSet::NONE.with_lines(), ..AnalysisRequest::default() }
 }
@@ -559,9 +580,18 @@ fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         complete: analysis.is_complete(),
         errors: Vec::new(),
     };
+    let read = Request {
+        basis: Basis {
+            root: index.root_path().to_path_buf(),
+            scope: arguments.scan.clone(),
+            content: index.content_set(),
+        },
+        query,
+        now: std::time::SystemTime::now(),
+    };
     let started = Instant::now();
     for _ in 0..arguments.queries {
-        black_box(fdu_core::query::report(&index, &query, &provenance).expect("report"));
+        black_box(fdu_core::query::report(&index, &read, &provenance).expect("report"));
     }
     let component = started.elapsed();
     let mut summary = summarize_index(arguments, &index)?;
@@ -696,11 +726,11 @@ fn summary_tier(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     };
     let query = Query { views: vec![ViewSpec::Summary], ..Query::default() };
 
+    let (request, delivery) = asked(&arguments.root, &config, query);
     let started = Instant::now();
     // `_performance` is what the command line prints in its footer; this tier's tallies
     // come out of the report itself, so it is deliberately unused here.
-    let (report, pending, _performance) =
-        fdu_core::prepare_report(&arguments.root, &config, &query)?;
+    let (report, pending, _performance) = fdu_core::prepare_report(&request, &delivery)?;
     let component = started.elapsed();
     // Nothing to join on this tier -- it writes no cache -- but joining is what the
     // command line does, and a mode that skipped it would stop measuring the same thing
@@ -769,13 +799,13 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     };
     let query = Query { views: vec![ViewSpec::Tree], ..Query::default() };
 
+    let (request, delivery) = asked(&arguments.root, &config, query);
     let counters = begin_component_counters();
     let started = Instant::now();
     let (report, pending, _performance, scan_diagnostics) = if arguments.diagnostics {
-        fdu_core::prepare_report_with_scan_diagnostics(&arguments.root, &config, &query)?
+        fdu_core::prepare_report_with_scan_diagnostics(&request, &delivery)?
     } else {
-        let (report, pending, performance) =
-            fdu_core::prepare_report(&arguments.root, &config, &query)?;
+        let (report, pending, performance) = fdu_core::prepare_report(&request, &delivery)?;
         (report, pending, performance, None)
     };
     // Rendered to a string the way the command line renders into its writer; the bytes

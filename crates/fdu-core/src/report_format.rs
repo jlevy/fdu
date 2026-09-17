@@ -2413,6 +2413,16 @@ mod tests {
 
     fn fixture_for(query: &Query) -> Report {
         let mut index = Index::new_with_scope("/root", ScanScope::default());
+        // A documents view is an answer about analyzers, so the index it is rendered from
+        // holds one: the request model refuses that view over an index with no content tier,
+        // whichever door the request came through. `words` and not `all`, because the code
+        // analyzer would move the languages view's share off bytes.
+        if query.views.contains(&ViewSpec::Documents) {
+            index.prepare_content_analysis(crate::content::AnalysisRequest {
+                profile: crate::content::AnalysisSet::NONE.with_words(),
+                ..crate::content::AnalysisRequest::default()
+            });
+        }
         index
             .apply(&Observation::new(vec![
                 Op::Upsert {
@@ -2434,7 +2444,7 @@ mod tests {
             .expect("apply");
         report(
             &index,
-            query,
+            &crate::test_support::read_of(&index, query.clone()),
             &Provenance {
                 scan_started_at: Some(UNIX_EPOCH + Duration::from_secs(1_786_386_151)),
                 generated_at: UNIX_EPOCH + Duration::from_secs(1_786_386_152),
@@ -2551,7 +2561,10 @@ mod tests {
             .expect("apply");
         let report = report(
             &index,
-            &Query { views: vec![ViewSpec::Languages], ..Query::default() },
+            &crate::test_support::read_of(
+                &index,
+                Query { views: vec![ViewSpec::Languages], ..Query::default() },
+            ),
             &Provenance {
                 scan_started_at: None,
                 generated_at: UNIX_EPOCH,
@@ -2678,11 +2691,14 @@ mod tests {
             .expect("apply");
         let report = report(
             &index,
-            &Query {
-                selection: Selection { depth: Some(Bound::All), ..Selection::default() },
-                views: vec![ViewSpec::Tree],
-                ..Query::default()
-            },
+            &crate::test_support::read_of(
+                &index,
+                Query {
+                    selection: Selection { depth: Some(Bound::All), ..Selection::default() },
+                    views: vec![ViewSpec::Tree],
+                    ..Query::default()
+                },
+            ),
             &Provenance {
                 scan_started_at: None,
                 generated_at: UNIX_EPOCH,
@@ -2759,7 +2775,9 @@ mod tests {
             errors: Vec::new(),
         };
         let query = Query { views: vec![ViewSpec::Summary], ..Query::default() };
-        let blind_report = report(&blind, &query, &provenance).expect("report");
+        let blind_report =
+            report(&blind, &crate::test_support::read_of(&blind, query.clone()), &provenance)
+                .expect("report");
         assert!(render(&blind_report, Format::Json, false).contains("\"ignore_rules\": null"));
         assert!(render(&blind_report, Format::Yaml, false).contains("\nignore_rules: null\n"));
         assert!(blind_report.notes.is_empty());
@@ -2785,8 +2803,16 @@ mod tests {
         // The platform spells the refused path, so Windows writes a backslash.
         let refused = Path::new("vendor").join(".gitignore");
         let refused = refused.to_string_lossy();
-        let json =
-            render(&report(&observed, &query, &provenance).expect("report"), Format::Json, false);
+        let json = render(
+            &report(
+                &observed,
+                &crate::test_support::read_of(&observed, query.clone()),
+                &provenance,
+            )
+            .expect("report"),
+            Format::Json,
+            false,
+        );
         let expected = format!(
             "\"ignore_rules\": {{\"limits\": {{\"budget\": 4194304, \"line_limit\": 16384}}, \
              \"applied\": 1, \"refused\": 1, \"refusals\": [{{\"path\": {}, \"reason\": \
@@ -2795,8 +2821,16 @@ mod tests {
         );
         assert!(json.contains(&expected), "{json}");
         assert!(json.contains("\"complete\": true"), "a refusal is not an operational partial");
-        let yaml =
-            render(&report(&observed, &query, &provenance).expect("report"), Format::Yaml, false);
+        let yaml = render(
+            &report(
+                &observed,
+                &crate::test_support::read_of(&observed, query.clone()),
+                &provenance,
+            )
+            .expect("report"),
+            Format::Yaml,
+            false,
+        );
         let expected = format!(
             "ignore_rules:\n  limits:\n    budget: 4194304\n    line_limit: 16384\n  applied: 1\n  \
              refused: 1\n  refusals:\n    - path: {}\n      reason: line_limit\n",
@@ -2808,10 +2842,20 @@ mod tests {
         let note = "note: 1 .gitignore file not applied (1 with a line over the 16 KiB line \
                     limit), so ignored shares under vendor are not exact; sizes are. To apply \
                     them, raise --gitignore-line-limit above 16 KiB, or set it to all";
-        let text =
-            render(&report(&observed, &flags, &provenance).expect("report"), Format::Text, false);
+        let text = render(
+            &report(
+                &observed,
+                &crate::test_support::read_of(&observed, flags.clone()),
+                &provenance,
+            )
+            .expect("report"),
+            Format::Text,
+            false,
+        );
         assert!(text.ends_with(&format!("{note}\n")), "{text}");
-        let fields = report(&observed, &query, &provenance).expect("report");
+        let fields =
+            report(&observed, &crate::test_support::read_of(&observed, query.clone()), &provenance)
+                .expect("report");
         assert_eq!(fields.notes, [note.replace("--gitignore-line-limit", "control_line_limit")]);
     }
 
@@ -2877,7 +2921,12 @@ mod tests {
 
         let observed = build(crate::test_support::observing_controls());
         let text = render(
-            &report(&observed, &query(IgnoredEntries::Include), &provenance).expect("report"),
+            &report(
+                &observed,
+                &crate::test_support::read_of(&observed, query(IgnoredEntries::Include)),
+                &provenance,
+            )
+            .expect("report"),
             Format::Text,
             false,
         );
@@ -2911,7 +2960,12 @@ mod tests {
             ""
         );
         let only = render(
-            &report(&observed, &query(IgnoredEntries::Only), &provenance).expect("report"),
+            &report(
+                &observed,
+                &crate::test_support::read_of(&observed, query(IgnoredEntries::Only)),
+                &provenance,
+            )
+            .expect("report"),
             Format::Text,
             false,
         );
@@ -2919,7 +2973,12 @@ mod tests {
         assert!(!only.contains("ignored"), "every row is ignored, so none repeats it: {only}");
 
         let json = render(
-            &report(&observed, &query(IgnoredEntries::Include), &provenance).expect("report"),
+            &report(
+                &observed,
+                &crate::test_support::read_of(&observed, query(IgnoredEntries::Include)),
+                &provenance,
+            )
+            .expect("report"),
             Format::Json,
             false,
         );
@@ -2937,7 +2996,12 @@ mod tests {
             assert!(json.contains(expected), "missing {expected}\nin {json}");
         }
         let yaml = render(
-            &report(&observed, &query(IgnoredEntries::Include), &provenance).expect("report"),
+            &report(
+                &observed,
+                &crate::test_support::read_of(&observed, query(IgnoredEntries::Include)),
+                &provenance,
+            )
+            .expect("report"),
             Format::Yaml,
             false,
         );
@@ -2951,8 +3015,12 @@ mod tests {
         assert!(yaml.contains("        ignored: true\n"), "{yaml}");
 
         let blind = build(crate::test_support::not_observing_controls());
-        let blind_report =
-            report(&blind, &query(IgnoredEntries::Include), &provenance).expect("report");
+        let blind_report = report(
+            &blind,
+            &crate::test_support::read_of(&blind, query(IgnoredEntries::Include)),
+            &provenance,
+        )
+        .expect("report");
         assert!(!render(&blind_report, Format::Text, false).contains("ignored"));
         let json = render(&blind_report, Format::Json, false);
         assert!(!json.contains("\"ignored\": {"), "never a zero share for an unread rule: {json}");
@@ -3301,7 +3369,12 @@ mod tests {
                     complete: true,
                     errors: Vec::new(),
                 };
-                let report = crate::query::report(&index, &query, &provenance).expect("report");
+                let report = crate::query::report(
+                    &index,
+                    &crate::test_support::read_of(&index, query.clone()),
+                    &provenance,
+                )
+                .expect("report");
                 for format in [Format::Text, Format::Json, Format::Jsonl, Format::Yaml] {
                     let rendered = render(&report, format, false);
                     assert!(!rendered.is_empty(), "{format:?} rendered nothing for a deep tree");
@@ -3367,7 +3440,12 @@ mod tests {
             complete: true,
             errors: Vec::new(),
         };
-        let report = crate::query::report(&index, &query, &provenance).expect("report");
+        let report = crate::query::report(
+            &index,
+            &crate::test_support::read_of(&index, query.clone()),
+            &provenance,
+        )
+        .expect("report");
         let rendered = render(&report, Format::Json, false);
 
         let lossy = first.to_string_lossy();
@@ -3435,7 +3513,12 @@ mod tests {
             },
             ..crate::query::Query::default()
         };
-        let tree = crate::query::report(&dirs, &tree_query, &provenance).expect("report");
+        let tree = crate::query::report(
+            &dirs,
+            &crate::test_support::read_of(&dirs, tree_query.clone()),
+            &provenance,
+        )
+        .expect("report");
         let tree_rendered = render(&tree, Format::Json, false);
         assert!(
             tree_rendered.contains(&format!(

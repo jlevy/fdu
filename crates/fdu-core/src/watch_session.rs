@@ -20,7 +20,9 @@ use std::time::Duration;
 
 use crate::engine_contract::{Commit, EffectiveChange, EntryKind, Error, Result};
 use crate::index::IndexHandle;
-use crate::query::{IgnoredEntries, Provenance, Query, Report, ReportSource, Selection, report};
+use crate::query::{
+    Basis, IgnoredEntries, Provenance, Query, Report, ReportSource, Request, Selection, report,
+};
 use crate::scan::ScanConfig;
 use crate::watch::{WatchConfig, Watcher};
 
@@ -109,12 +111,12 @@ struct EntryFacts {
     mtime_ns: i64,
 }
 
-/// An index paired with a watcher, answering one query continuously.
+/// An index paired with a watcher, answering one request continuously.
 pub struct Session {
     index: IndexHandle,
     watcher: Watcher,
     scan: ScanConfig,
-    query: Query,
+    request: Request,
 }
 
 impl Session {
@@ -122,8 +124,8 @@ impl Session {
     ///
     /// # Errors
     ///
-    /// [`Error::ControlStateNotObserved`] when the query selects by ignored state and the
-    /// index observed no control state, as [`Query::validate_controls`] refuses it.
+    /// [`Error::InvalidRequest`] when this index cannot answer the request -- when it
+    /// selects by ignored state and the index observed no control state, for one.
     pub fn new(
         index: IndexHandle,
         scan: ScanConfig,
@@ -135,17 +137,25 @@ impl Session {
         // never leaves a watcher registered on the tree.
         scan.validate_for_watch_scope(index.scope()?)?;
         // The scope check above proved the index was taken under exactly this scan's
-        // identity, control tier included.
-        query
-            .validate_controls(scan.control_identity().is_observed())
-            .map_err(|_refused| Error::ControlStateNotObserved)?;
+        // identity, control tier included, so the scan is this session's basis.
+        //
+        // `now` is fixed here rather than per repaint: a watch answers one request as the
+        // tree changes, and a relative time window that slid under it would make two
+        // repaints answer two different questions.
+        let content = index.read_with(crate::Index::content_set)?;
+        let request = Request {
+            basis: Basis { root: root.clone(), scope: scan.clone(), content },
+            query,
+            now: std::time::SystemTime::now(),
+        };
+        request.validate().map_err(Error::InvalidRequest)?;
         let watcher = Watcher::new(&root, watch)?;
-        Ok(Self { index, watcher, scan, query })
+        Ok(Self { index, watcher, scan, request })
     }
 
     /// The query this session answers.
     pub fn query(&self) -> &Query {
-        &self.query
+        &self.request.query
     }
 
     /// Render the current answer.
@@ -154,7 +164,7 @@ impl Session {
     /// makes "watch is the same query repeated" true rather than aspirational.
     pub fn report(&self, provenance: &Provenance) -> Result<Report> {
         let index = self.index.snapshot()?;
-        report(&index, &self.query, provenance)
+        report(&index, &self.request, provenance)
     }
 
     /// A consistent copy of the current index.
@@ -391,7 +401,7 @@ impl Session {
     }
 
     fn selection(&self) -> &Selection {
-        &self.query.selection
+        &self.request.query.selection
     }
 
     /// Provenance for a live report, which is always warm by construction.
