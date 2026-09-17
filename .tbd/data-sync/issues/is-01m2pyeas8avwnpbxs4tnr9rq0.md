@@ -1,0 +1,39 @@
+---
+type: is
+id: is-01m2pyeas8avwnpbxs4tnr9rq0
+title: "P2.2.5: YAML through the walk, matching JSON's shape"
+kind: task
+status: open
+priority: 0
+version: 5
+spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
+labels:
+  - core-models
+dependencies:
+  - type: blocks
+    target: is-01m2pye8ptnr6019rcb15g4w69
+  - type: blocks
+    target: is-01m2pyeb3yz78d3d94dv78dv4g
+  - type: blocks
+    target: is-01m0k512k9a6dq2k51fbfe5xn4
+  - type: blocks
+    target: is-01m2pj0g6c5fswmdcbbzjhx0rx
+parent_id: is-01m2pj0f459s8ad1efzyn2qmbq
+created_at: 2026-09-17T05:46:43.367Z
+updated_at: 2026-09-17T05:47:45.303Z
+---
+Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 2: The Answer Model and Writers", commit 5. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
+
+**Change**
+
+- `report_format.rs`: delete the YAML writers (`:450`, `:642`, `:880`, `:976-1234`) and `indent` (`:1257-1264`); YAML through `YamlSink` with the same walk as JSON.
+
+**Tests**
+
+- Extend the stack-safety and non-Unicode path tests to YAML; rewrite the schema-version test (`:2685`).
+- `check-yaml.mjs` shows every document kind parses to the same value from JSON, JSON Lines, and YAML.
+
+**Done when**
+
+- `make check` passes; from P1.1.3 on it includes the path-independence subset, which reports no unregistered difference.
+- Every golden diff is read and attributed to this commit; none is regenerated blind.
