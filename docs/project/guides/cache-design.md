@@ -47,14 +47,17 @@ treated as absent. Because the crate version is part of the fingerprint, every r
 invalidates every existing snapshot; nothing that must outlive an upgrade belongs in
 this cache.
 
-The file also records the scan scope it was built under.
+The file’s header also records the scan scope it was built under, as the identity of
+each tier the snapshot holds, and the start of the pass that last wrote the image.
 A snapshot whose scope cannot serve the request is a miss as well, and under a
 write-permitting policy the next complete indexed scan replaces it.
-The scope is the depth, symlink, filesystem-boundary, hidden-entry, and special-object
-settings, the type-rules fingerprint, a reducer-set fingerprint that is a constant
-today, whether `.gitignore` was observed, and, if it was, the budget and line limit.
-A request that returns the index or reconciles it against the tree is served only by a
-snapshot taken under exactly its scope.
+The scope is the entry tier’s depth, symlink, filesystem-boundary, hidden-entry, and
+special-object settings, type-rules fingerprint, and a reducer-set fingerprint that is a
+constant today, and the control tier’s record of whether `.gitignore` was observed and,
+if it was, the budget and line limit.
+Snapshots taken with observation on and off hold equal entry tiers and differ only in
+the control tier. A request that returns the index or reconciles it against the tree is
+served only by a snapshot taken under exactly its scope.
 The file name is keyed by root alone, so alternating a default run with
 `--no-gitignore`, another `.gitignore` limit, `--scan-depth`, or `--one-filesystem`
 finds no usable snapshot and, under a write-permitting policy, replaces the root’s one
@@ -64,6 +67,12 @@ retains none, so it replaces nothing.
 The one exception is a one-shot `--cache only` report that turns observation off, which
 answers from a default snapshot’s all-entry facts and retags the report to its own
 scope. `open` with the same options refuses that snapshot.
+
+The pass start is a lower bound on when the snapshot’s facts were last verified.
+A later pass that encodes the same facts keeps the file, stamp included, rather than
+rewriting it for the stamp alone, and moves only the file’s modification time, forward
+to its own start; reconciliation does not advance the stamp.
+Loading still reads the modification time as the observation time of the cached entries.
 
 Three rules keep it honest:
 
