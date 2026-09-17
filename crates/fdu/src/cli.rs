@@ -18,15 +18,24 @@ use std::borrow::Cow;
 use clap::builder::styling::{AnsiColor, Style as AnsiStyle, Styles};
 use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, ValueEnum};
 
-use fdu_core::content::{AnalysisRequest, AnalysisSet};
+use fdu_core::content::AnalysisSet;
+// The open configuration, the analyzer request, and the age grammar are the watch path's
+// alone now: everything else composes a request and a delivery and hands them to the
+// engine.
+#[cfg(feature = "watch")]
+use fdu_core::OpenConfig;
+#[cfg(feature = "watch")]
+use fdu_core::content::AnalysisRequest;
 use fdu_core::control::ControlCoverage;
+#[cfg(feature = "watch")]
+use fdu_core::query::parse_when;
 use fdu_core::query::{
     AxisNames, Delivery, IgnoredEntries, ReportSource, Request, RequestError, RequestSpec,
-    ViewSpec, WatchDelivery, parse_cache_policy, parse_when,
+    ViewSpec, WatchDelivery, parse_cache_policy,
 };
 use fdu_core::report_format;
 use fdu_core::report_format::human_count;
-use fdu_core::{CachePolicy, CacheScope, CacheState, OpenConfig, default_cache_path};
+use fdu_core::{CachePolicy, CacheScope, CacheState, default_cache_path};
 use fdu_core::{PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics};
 
 const SKILL_TEMPLATE: &str = include_str!("skills/SKILL.md");
@@ -625,7 +634,9 @@ impl Cli {
             cache_path: default_cache_path(path),
             analysis_workers: self.analysis_workers,
             watch: self.watch_delivery().map_err(|error| usage(&error))?,
-            ..Delivery::default()
+            // What `--allow-partial` says: a partial answer is a success. Only this
+            // command's exit mapping reads it today, and the execution plan model will.
+            accept_partial: self.allow_partial,
         };
         // What a watch cannot carry -- a narrowed scan scope, content analysis nothing
         // re-reads, a snapshot nothing verified -- is the model's rule now, so a library
