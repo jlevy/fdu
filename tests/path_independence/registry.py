@@ -338,7 +338,9 @@ def main(argv: list[str] | None = None) -> int:
     merged = merge(load(args.registry), runs)
     args.registry.write_text(dump(merged), encoding="utf-8")
     unclassified = sum(1 for entry in merged.all_entries() if entry.klass == UNCLASSIFIED)
-    print(f"merged {sorted(runs)}: {len(merged.all_entries())} entries, {unclassified} unclassified")
+    print(
+        f"merged {sorted(runs)}: {len(merged.all_entries())} entries, {unclassified} unclassified"
+    )
     return 0
 
 
