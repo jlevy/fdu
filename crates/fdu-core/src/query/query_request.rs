@@ -371,13 +371,34 @@ impl Request {
 
     /// Refuse a delivery that cannot carry this request out.
     ///
-    /// Declared with the model so the harness and the execution plan can be written against
-    /// it, but it refuses nothing yet. The watch refusals ([`RequestError::WatchScope`],
-    /// [`RequestError::WatchContent`], and [`RequestError::WatchCacheOnly`]) move here when
-    /// the command line and the watch session call it; until then the command line's
-    /// guards and `ScanConfig`'s watch-scope check are the rule.
+    /// Everything a watch cannot do, in one place, because a watch is the one delivery that
+    /// changes which requests can be answered at all:
+    ///
+    /// - A narrowed scan scope ([`RequestError::WatchScope`]): a watcher cannot filter its
+    ///   backend's events against a boundary the scan drew. Selection still works, because
+    ///   it filters the retained index rather than the scan.
+    /// - Content analysis ([`RequestError::WatchContent`]): nothing re-reads a file the
+    ///   watch sees change, so a session would go on reporting the metrics it started with
+    ///   as fresh.
+    /// - A snapshot nothing verified ([`RequestError::WatchCacheOnly`]): the window between
+    ///   the snapshot and the session's start is never observed, so the first answer would
+    ///   describe a tree that may have moved and every later one would build on it.
+    ///
+    /// Each was a guard on one surface, which is why a library caller and a Python caller
+    /// could ask for what the command line refuses.
     pub fn validate_delivery(&self, delivery: &Delivery) -> Result<(), RequestError> {
-        let _ = (self, delivery);
+        if delivery.watch.is_none() {
+            return Ok(());
+        }
+        if self.basis.scope.max_depth.is_some() || self.basis.scope.one_filesystem {
+            return Err(RequestError::WatchScope);
+        }
+        if self.basis.content.is_enabled() {
+            return Err(RequestError::WatchContent);
+        }
+        if delivery.cache == CachePolicy::Only {
+            return Err(RequestError::WatchCacheOnly);
+        }
         Ok(())
     }
 
@@ -1343,6 +1364,47 @@ mod tests {
         request
             .validate_read(&Basis::held_by(&blind))
             .expect("the index's own basis answers a request built the same way");
+    }
+
+    /// Each rule in the order `validate_delivery` applies it, and each one only under a
+    /// watch: every one of these is a legal one-shot request.
+    #[test]
+    fn a_watch_refuses_what_it_cannot_keep_current() {
+        let watching = Delivery {
+            watch: Some(WatchDelivery { interval: Duration::from_secs(2) }),
+            ..Delivery::default()
+        };
+        let one_shot = Delivery::default();
+        let cases = [
+            (
+                RequestSpec { scan_depth: Some("2"), ..RequestSpec::new(root()) },
+                RequestError::WatchScope,
+            ),
+            (
+                RequestSpec { one_filesystem: true, ..RequestSpec::new(root()) },
+                RequestError::WatchScope,
+            ),
+            (
+                RequestSpec { analyze: Some("lines"), ..RequestSpec::new(root()) },
+                RequestError::WatchContent,
+            ),
+        ];
+        for (spec, expected) in cases {
+            let request = built(&spec);
+            assert_eq!(request.validate_delivery(&watching), Err(expected));
+            request.validate_delivery(&one_shot).expect("a one-shot delivers all three");
+        }
+
+        let plain = built(&RequestSpec::new(root()));
+        plain.validate_delivery(&watching).expect("a full-scope metadata watch is deliverable");
+        assert_eq!(
+            plain.validate_delivery(&Delivery { cache: CachePolicy::Only, ..watching.clone() }),
+            Err(RequestError::WatchCacheOnly),
+            "nothing verifies the window between the snapshot and the start of the watch"
+        );
+        plain
+            .validate_delivery(&Delivery { cache: CachePolicy::Only, ..one_shot })
+            .expect("a one-shot report is exactly what a snapshot answers");
     }
 
     #[test]

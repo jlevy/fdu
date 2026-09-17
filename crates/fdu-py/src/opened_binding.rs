@@ -127,7 +127,6 @@ fn parse_selection(dict: Option<&Bound<'_, PyDict>>, now: SystemTime) -> PyResul
             content: AnalysisSet::NONE,
         },
         None,
-        None,
         include,
         exclude,
         min_size.as_deref(),

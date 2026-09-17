@@ -10,7 +10,8 @@ use std::fs;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use fdu_core::query::{Bound, Query, Selection, ViewSpec};
+use fdu_core::content::{AnalysisRequest, AnalysisSet};
+use fdu_core::query::{Basis, Bound, Query, Request, Selection, ViewSpec};
 use fdu_core::session::{ChangeKind, Session};
 use fdu_core::watch::WatchConfig;
 use fdu_core::{CachePolicy, IndexHandle, OpenConfig, ScanConfig, open};
@@ -23,11 +24,19 @@ fn session(root: &Path, selection: Selection, views: Vec<ViewSpec>) -> Session {
     let (index, _report) = open(root, &config).expect("open");
     Session::new(
         IndexHandle::new(index),
-        ScanConfig::default(),
-        Query { selection, views, ..Query::default() },
+        request(root, AnalysisSet::NONE, Query { selection, views, ..Query::default() }),
         WatchConfig::default(),
     )
     .expect("session")
+}
+
+/// The request a watch answers: the basis its index was opened under, and this query.
+fn request(root: &Path, content: AnalysisSet, query: Query) -> Request {
+    Request {
+        basis: Basis { root: root.to_path_buf(), scope: ScanConfig::default(), content },
+        query,
+        now: std::time::SystemTime::now(),
+    }
 }
 
 /// Disturb `warm` until the session's watch is provably live, then return.
@@ -269,4 +278,53 @@ fn a_live_report_is_the_same_query_re_evaluated() {
     };
     assert_eq!(second.files, 2, "the live report reflects the applied change");
     assert_eq!(second.bytes, first.bytes + 3);
+}
+
+/// Analysis is one-shot on every surface. Nothing re-reads a file a watch sees change, so
+/// a session over an analyzed index would keep serving the metrics it opened with, marked
+/// fresh (fdu-snv3). The engine refuses the pairing rather than leaving only the command
+/// line to, and it refuses a request that claims no analyzers over such an index too --
+/// that one is a read the index cannot answer at all.
+#[test]
+fn a_session_refuses_an_analyzed_index() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("a.txt"), b"one two\n").expect("seed");
+    let lines = AnalysisSet::NONE.with_lines();
+    let config = OpenConfig {
+        policy: CachePolicy::Off,
+        analysis: AnalysisRequest { profile: lines, ..AnalysisRequest::default() },
+        ..OpenConfig::default()
+    };
+    let (index, _report) = open(dir.path(), &config).expect("open");
+    let handle = IndexHandle::new(index);
+
+    let refused = Session::new(
+        handle.clone(),
+        request(dir.path(), lines, Query::default()),
+        WatchConfig::default(),
+    );
+    assert!(
+        matches!(
+            refused,
+            Err(fdu_core::Error::InvalidRequest(fdu_core::query::RequestError::WatchContent))
+        ),
+        "expected a refusal, got {:?}",
+        refused.err().map(|error| error.to_string())
+    );
+
+    let mismatched = Session::new(
+        handle,
+        request(dir.path(), AnalysisSet::NONE, Query::default()),
+        WatchConfig::default(),
+    );
+    assert!(
+        matches!(
+            mismatched,
+            Err(fdu_core::Error::InvalidRequest(
+                fdu_core::query::RequestError::ContentMismatch { .. }
+            ))
+        ),
+        "expected a refusal, got {:?}",
+        mismatched.err().map(|error| error.to_string())
+    );
 }

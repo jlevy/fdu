@@ -464,6 +464,29 @@ def main() -> None:
     with watch_index.watch(interval=0.1) as scoped:
         assert next(scoped) is not None
 
+    # Analysis is one-shot on every surface. A watch over an analyzed index would keep
+    # serving the metrics it opened with as fresh, so it is refused here as `--watch
+    # --analyze` has always been refused.
+    analyzed_watch = fdu_py.scan(str(watch_root), analyze="lines")
+    try:
+        analyzed_watch.watch(interval=0.1)
+    except ValueError as error:
+        assert "one-shot report" in str(error), error
+    else:
+        raise AssertionError("watching an analyzed index must be refused")
+
+    # Nothing observes the window between a snapshot and the start of a watch, so an index
+    # opened from one alone cannot be watched either.
+    cache_only_index = fdu_py.open(str(watch_root), cache="auto")
+    del cache_only_index
+    cache_only_index = fdu_py.open(str(watch_root), cache="only")
+    try:
+        cache_only_index.watch(interval=0.1)
+    except ValueError as error:
+        assert "nothing verifies" in str(error), error
+    else:
+        raise AssertionError("watching a cache-only index must be refused")
+
     # The long-lived surface owns one native engine and returns complete immutable
     # values. Drive one lifecycle through the installed wheel rather than importing a
     # sibling checkout, because that is the artifact MetaBrowser and other clients use.

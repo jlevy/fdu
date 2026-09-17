@@ -26,7 +26,7 @@ use fdu_core::content::{AnalysisRequest, AnalysisSet, CoverageReason};
 use fdu_core::query::{
     AxisNames, Basis, Delivery, IgnoredTally, MetricRow, MetricSummary, Provenance, Report,
     ReportSource, Request, RequestError, RequestSpec, Section, SummaryRow, TreeNode, ViewSpec,
-    document_words, parse_cache_policy, parse_kind,
+    WatchDelivery, document_words, parse_cache_policy, parse_kind,
 };
 use fdu_core::watch::WatchConfig;
 use fdu_core::watch_session::{ChangeKind, Session};
@@ -140,9 +140,10 @@ pub struct PyIndex {
     /// Root, scope, and analyzers: what this index holds for its lifetime, and what every
     /// read of it is validated against.
     basis: Basis,
-    /// The one value of an `open` that is delivery rather than request, kept because a
-    /// later `refresh` re-runs the analyzers this index holds.
-    analysis_workers: usize,
+    /// How this index was delivered: the cache policy it was opened under, which decides
+    /// whether it may be watched, and the worker count a later `refresh` re-runs its
+    /// analyzers with.
+    delivery: Delivery,
     errors: Vec<ErrorDetail>,
     operation_complete: bool,
     scan_started_at: Option<SystemTime>,
@@ -359,10 +360,12 @@ impl PyIndex {
         size: Option<&str>,
         words_per_page: u64,
     ) -> PyResult<PyWatch> {
+        // No default view of its own: a watch serves what a report of the same basis serves,
+        // which for an index with no analyzers is the tree. Passing `files` here was the
+        // last place a request meant one thing at this door and another at the next.
         let request = build_request(
             SystemTime::now(),
             &self.basis,
-            Some(ViewSpec::Files),
             views,
             include,
             exclude,
@@ -379,12 +382,19 @@ impl PyIndex {
             words_per_page,
         )?;
 
+        // Refused here, in this API's own names, rather than as the session's typed error:
+        // an index that holds analyzers, or one opened from a snapshot nothing verified,
+        // cannot be watched, exactly as `--watch` refuses both.
+        let delivery = Delivery {
+            watch: Some(WatchDelivery { interval: Duration::from_secs_f64(interval) }),
+            ..self.delivery.clone()
+        };
+        request.validate_delivery(&delivery).map_err(|error| value_error(&error))?;
+
         // The index is cloned into the session: a watcher owns its own handle, so closing
         // the feed cannot disturb the caller's index.
         let handle = IndexHandle::new(self.inner.clone());
-        let session =
-            Session::new(handle, self.basis.scope.clone(), request.query, WatchConfig::default())
-                .map_err(to_py_err)?;
+        let session = Session::new(handle, request, WatchConfig::default()).map_err(to_py_err)?;
 
         Ok(PyWatch { session: Some(session), timeout: Duration::from_secs_f64(interval) })
     }
@@ -577,7 +587,6 @@ impl PyIndex {
         let request = build_request(
             now,
             &self.basis,
-            None,
             views,
             include,
             exclude,
@@ -606,7 +615,7 @@ impl PyIndex {
     /// The analysis pass this index's basis asks for, with the worker count it was opened
     /// under.
     fn analysis_request(&self) -> AnalysisRequest {
-        AnalysisRequest { profile: self.basis.content, workers: self.analysis_workers }
+        AnalysisRequest { profile: self.basis.content, workers: self.delivery.analysis_workers }
     }
 }
 
@@ -1133,7 +1142,6 @@ impl PyWatch {
 fn build_request(
     now: SystemTime,
     basis: &Basis,
-    default_view: Option<ViewSpec>,
     views: Option<Vec<String>>,
     include: Option<Vec<String>>,
     exclude: Option<Vec<String>>,
@@ -1195,9 +1203,6 @@ fn build_request(
     // The basis is the holder's, never the caller's: an index was opened with its root,
     // scope, and analyzers, and a read of it names only what this read asks.
     request.basis = basis.clone();
-    if let Some(view) = default_view.filter(|_| spec.views.is_none()) {
-        request.query.views = vec![view];
-    }
     request.validate().map_err(|error| value_error(&error))?;
     Ok(request)
 }
@@ -1324,7 +1329,6 @@ fn report_once(
     let request = build_request(
         now,
         &basis,
-        None,
         views,
         include,
         exclude,
@@ -1706,7 +1710,7 @@ fn open(
     Ok(PyIndex {
         inner: index,
         basis,
-        analysis_workers,
+        delivery,
         errors,
         operation_complete,
         scan_started_at,
@@ -1773,7 +1777,7 @@ fn scan(
     Ok(PyIndex {
         inner: index,
         basis,
-        analysis_workers,
+        delivery,
         errors,
         operation_complete,
         scan_started_at,

@@ -21,8 +21,8 @@ use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, Value
 use fdu_core::content::{AnalysisRequest, AnalysisSet};
 use fdu_core::control::ControlCoverage;
 use fdu_core::query::{
-    AxisNames, Delivery, IgnoredEntries, Query, ReportSource, Request, RequestError, RequestSpec,
-    ViewSpec, parse_cache_policy, parse_when,
+    AxisNames, Delivery, IgnoredEntries, ReportSource, Request, RequestError, RequestSpec,
+    ViewSpec, WatchDelivery, parse_cache_policy, parse_when,
 };
 use fdu_core::report_format;
 use fdu_core::report_format::human_count;
@@ -624,8 +624,13 @@ impl Cli {
             cache: self.parse_cache_policy().map_err(|error| usage(&error))?,
             cache_path: default_cache_path(path),
             analysis_workers: self.analysis_workers,
+            watch: self.watch_delivery().map_err(|error| usage(&error))?,
             ..Delivery::default()
         };
+        // What a watch cannot carry -- a narrowed scan scope, content analysis nothing
+        // re-reads, a snapshot nothing verified -- is the model's rule now, so a library
+        // caller and a Python caller meet the same wall this command line has always been.
+        request.validate_delivery(&delivery).map_err(|error| usage(&refused(&error)))?;
 
         #[cfg(feature = "watch")]
         let config = OpenConfig {
@@ -639,20 +644,6 @@ impl Cli {
         };
 
         #[cfg(feature = "watch")]
-        if self.watch && (self.scan_depth.is_some() || self.one_filesystem) {
-            // Scope narrows what is observed, and a watcher cannot filter raw backend
-            // events against that boundary yet. Selection flags stay legal with --watch
-            // precisely because they filter the retained index instead, and the message
-            // says so rather than only naming the conflict.
-            return Err(usage(&refused(&RequestError::WatchScope)));
-        }
-
-        #[cfg(feature = "watch")]
-        if self.watch && request.basis.content.is_enabled() {
-            return Err(usage(&refused(&RequestError::WatchContent)));
-        }
-
-        #[cfg(feature = "watch")]
         if self.watch {
             let color = ColorContext::from_environment(
                 self.color,
@@ -661,7 +652,7 @@ impl Cli {
                 stdout_is_terminal,
             )
             .enabled();
-            return self.run_watch(out, diagnostic, format, request.query.clone(), &config, color);
+            return self.run_watch(out, diagnostic, format, &request, &config, color);
         }
 
         let report_started = Instant::now();
@@ -766,7 +757,7 @@ impl Cli {
         out: &mut dyn Write,
         diagnostic: &mut dyn Write,
         format: report_format::Format,
-        query: Query,
+        request: &Request,
         config: &OpenConfig,
         color: bool,
     ) -> anyhow::Result<RunOutcome> {
@@ -791,15 +782,15 @@ impl Cli {
         // A streaming run keeps only the views it can render incrementally plus the
         // aggregates it repaints; both come from the same query, so nothing here is a
         // second grammar.
-        let streams_changes = query.views.contains(&ViewSpec::Files);
-        let has_aggregates = query.views.iter().any(|view| *view != ViewSpec::Files);
+        let streams_changes = request.query.views.contains(&ViewSpec::Files);
+        let has_aggregates = request.query.views.iter().any(|view| *view != ViewSpec::Files);
 
         // The save above was joined, so the writer has dropped its reference and this
         // is the only one left; the watch session needs the index by value.
         let index = std::sync::Arc::into_inner(index)
             .expect("the joined writer released the only other reference");
         let handle = fdu_core::IndexHandle::new(index);
-        let mut session = Session::new(handle, config.scan.clone(), query, WatchConfig::default())?;
+        let mut session = Session::new(handle, request.clone(), WatchConfig::default())?;
 
         // The initial answer, identical to a one-shot run's.
         let provenance = Provenance {
@@ -1169,6 +1160,26 @@ impl Cli {
         })
     }
 
+    /// Whether this run is a watch, and how often it repaints.
+    ///
+    /// The interval is parsed here because a bad one is a usage error like any other, and
+    /// because the delivery a request is validated against has to say what it is before
+    /// anything is opened.
+    #[cfg(feature = "watch")]
+    fn watch_delivery(&self) -> anyhow::Result<Option<WatchDelivery>> {
+        if !self.watch {
+            return Ok(None);
+        }
+        Ok(Some(WatchDelivery { interval: parse_duration(&self.interval)? }))
+    }
+
+    /// A command line built without the watch feature delivers no watch.
+    #[cfg(not(feature = "watch"))]
+    #[allow(clippy::unnecessary_wraps, clippy::unused_self)]
+    fn watch_delivery(&self) -> anyhow::Result<Option<WatchDelivery>> {
+        Ok(None)
+    }
+
     /// The ignored-state axis, which this surface spells as two switches.
     ///
     /// Naming both of them is a conflict between flags rather than an invalid value, so it
@@ -1206,7 +1217,7 @@ impl Cli {
     /// the grammars or the defaults cannot pass the suite while changing what the command
     /// does.
     #[cfg(test)]
-    fn resolved_query(&self) -> anyhow::Result<Query> {
+    fn resolved_query(&self) -> anyhow::Result<fdu_core::query::Query> {
         Ok(self.resolved_request()?.query)
     }
 

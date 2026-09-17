@@ -434,7 +434,10 @@ class WatchOptions:
     """Configuration for an event-driven change feed."""
 
     interval: float = 2.0
-    query: Query = field(default_factory=lambda: Query(views=(View.FILES,)))
+    #: What the watch answers. A default `Query` takes the request model's own defaults, so
+    #: a watch shows what a report of the same index shows; this named `files` of its own,
+    #: which made one request mean two things depending on which door it came through.
+    query: Query = field(default_factory=Query)
 
     def __post_init__(self) -> None:
         if self.interval <= 0:

@@ -21,7 +21,8 @@ use std::time::Duration;
 use crate::engine_contract::{Commit, EffectiveChange, EntryKind, Error, Result};
 use crate::index::IndexHandle;
 use crate::query::{
-    Basis, IgnoredEntries, Provenance, Query, Report, ReportSource, Request, Selection, report,
+    Basis, Delivery, IgnoredEntries, Provenance, Query, Report, ReportSource, Request, Selection,
+    WatchDelivery, report,
 };
 use crate::scan::ScanConfig;
 use crate::watch::{WatchConfig, Watcher};
@@ -120,37 +121,50 @@ pub struct Session {
 }
 
 impl Session {
-    /// Start watching an already-opened index.
+    /// Start watching an already-opened index, answering `request` as the tree changes.
+    ///
+    /// `request` carries its own `now`, fixed when it was built: a watch answers one
+    /// request as the tree changes, and a relative time window that slid under it would
+    /// make two repaints answer two different questions.
     ///
     /// # Errors
     ///
-    /// [`Error::InvalidRequest`] when this index cannot answer the request -- when it
-    /// selects by ignored state and the index observed no control state, for one.
-    pub fn new(
-        index: IndexHandle,
-        scan: ScanConfig,
-        query: Query,
-        watch: WatchConfig,
-    ) -> Result<Self> {
+    /// [`Error::InvalidRequest`] when this index cannot answer the request, or when a watch
+    /// cannot deliver it: a narrowed scan scope, content analysis nothing re-reads, or a
+    /// selection by ignored state over an index that observed no control state.
+    /// [`Error::ScanScopeMismatch`] when the index was not taken under the request's scope.
+    pub fn new(index: IndexHandle, request: Request, watch: WatchConfig) -> Result<Self> {
         let root = index.root_path()?;
+        let scan = request.basis.scope.clone();
         // Reject an out-of-scope watch before the backend is bound, so a rejected run
         // never leaves a watcher registered on the tree.
-        scan.validate_for_watch_scope(index.scope()?)?;
+        scan.validate_for_scope(index.scope()?)?;
         // The scope check above proved the index was taken under exactly this scan's
-        // identity, control tier included, so the scan is this session's basis.
-        //
-        // `now` is fixed here rather than per repaint: a watch answers one request as the
-        // tree changes, and a relative time window that slid under it would make two
-        // repaints answer two different questions.
-        let content = index.read_with(crate::Index::content_set)?;
-        let request = Request {
-            basis: Basis { root: root.clone(), scope: scan.clone(), content },
-            query,
-            now: std::time::SystemTime::now(),
+        // identity, control tier included, so what remains is what this index holds and
+        // what a watch can carry. Both are refused here rather than at one surface, which
+        // is how a library caller could watch an analyzed index that `--watch --analyze`
+        // has always refused.
+        let held = Basis {
+            root: root.clone(),
+            scope: scan.clone(),
+            content: index.read_with(crate::Index::content_set)?,
         };
-        request.validate().map_err(Error::InvalidRequest)?;
+        request.validate_read(&held).map_err(Error::InvalidRequest)?;
+        request
+            .validate_delivery(&Delivery {
+                // The repaint interval is the caller's, and no watch refusal depends on
+                // it; what this says is that the delivery is a watch at all.
+                watch: Some(WatchDelivery { interval: watch.settle }),
+                ..Delivery::default()
+            })
+            .map_err(Error::InvalidRequest)?;
         let watcher = Watcher::new(&root, watch)?;
         Ok(Self { index, watcher, scan, request })
+    }
+
+    /// The request this session answers.
+    pub fn request(&self) -> &Request {
+        &self.request
     }
 
     /// The query this session answers.

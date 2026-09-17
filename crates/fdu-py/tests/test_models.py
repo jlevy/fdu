@@ -26,6 +26,8 @@ from fdu import (
     SummarySection,
     TreeSection,
     View,
+    WatchOptions,
+    _native,
     opened,
 )
 from fdu._api import FduError, FilesystemError, InvalidArgumentError, _call, _query_kwargs
@@ -62,6 +64,13 @@ def test_public_defaults_match_cli_semantics() -> None:
     # Empty means "let the analyzers choose", which is the CLI semantics this test is
     # named for: `--analyze code` with no `--view` reports languages, not tree.
     assert Query().views == ()
+    # A watch answers the same request a report of the same index answers, so it brings no
+    # view of its own: this named `files`, and `--watch` never has.
+    assert WatchOptions().query == Query()
+    # The page denominator and the size metric come from the request model's defaults
+    # table, so this package states neither on its own.
+    assert Query().words_per_page == _native.DEFAULT_WORDS_PER_PAGE
+    assert Selection().size.value == _native.DEFAULT_SIZE
 
 
 def test_invalid_option_values_fail_before_crossing_native_boundary() -> None:

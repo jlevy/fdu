@@ -385,6 +385,14 @@ impl ScanConfig {
         Ok(())
     }
 
+    /// Scope equality, plus the boundary a watcher cannot filter its backend's events
+    /// against.
+    ///
+    /// The rule belongs to the request model, which refuses a watch of a narrowed scope
+    /// before anything is opened ([`RequestError::WatchScope`](crate::query::RequestError));
+    /// this is the same rule where a watcher is bound without a request -- an opened root
+    /// that observes, and each batch the adapter applies -- and it renders the one
+    /// guidance string the model renders.
     #[cfg(feature = "watch")]
     pub(crate) fn validate_for_watch_scope(&self, indexed: ScanScope) -> Result<()> {
         self.validate_for_scope(indexed)?;
