@@ -758,7 +758,6 @@ fn spawn_save(
     // Sharing is what buys the independence a clone was buying; a run with nothing to
     // write still returns above rather than reaching this point.
     let snapshot_source = std::sync::Arc::clone(index);
-    let analysis = config.analysis;
     let mut workers = Vec::with_capacity(2);
     if writes.metadata {
         let metadata_source = std::sync::Arc::clone(&snapshot_source);
@@ -792,7 +791,7 @@ fn spawn_save(
                 if !stored_state::content_tier_writable(&snapshot_source, stored_entries) {
                     return Ok(());
                 }
-                content::save_content_cache(&snapshot_source, analysis, &content_path)
+                content::save_content_cache(&snapshot_source, &content_path)
             })
         {
             workers.push(("content", worker));

@@ -63,10 +63,12 @@ pub fn content_cache_path(snapshot_path: &Path) -> PathBuf {
 
 /// Persist the content tier's sparse records as a separately invalidated sidecar, under the
 /// identity the tier holds.
-pub fn save_content_cache(index: &Index, request: AnalysisRequest, path: &Path) -> Result<()> {
-    if !request.profile.is_enabled() {
-        return Ok(());
-    }
+///
+/// The tier's own identity decides everything a request could have said: an index with no
+/// prepared tier writes nothing, and a prepared tier names an enabled analyzer set. A
+/// request argument could only disagree with it, and a sidecar labelled with the tier's set
+/// after a caller asked for another is worse than no argument at all.
+pub fn save_content_cache(index: &Index, path: &Path) -> Result<()> {
     let Some(content) = index.content() else {
         return Ok(());
     };
@@ -850,7 +852,7 @@ mod tests {
     fn a_wider_sidecar_is_a_clean_miss_for_a_narrower_request() {
         let (root, cache_dir, index) = containment_fixture(AnalysisSet::ALL);
         let cache = cache_dir.path().join("content.cache");
-        save_content_cache(&index, request_for(AnalysisSet::ALL), &cache).expect("save");
+        save_content_cache(&index, &cache).expect("save");
 
         let narrower = request_for(AnalysisSet::NONE.with_code());
         let (mut restored, _) =
@@ -875,7 +877,7 @@ mod tests {
         for (stored, wanted) in [(code, AnalysisSet::ALL), (code, words), (words, code)] {
             let (root, cache_dir, index) = containment_fixture(stored);
             let cache = cache_dir.path().join("content.cache");
-            save_content_cache(&index, request_for(stored), &cache).expect("save");
+            save_content_cache(&index, &cache).expect("save");
 
             let (mut restored, _) =
                 crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
@@ -897,7 +899,7 @@ mod tests {
     fn a_different_analyzer_set_replaces_the_sidecar() {
         let (root, cache_dir, index) = containment_fixture(AnalysisSet::ALL);
         let cache = cache_dir.path().join("content.cache");
-        save_content_cache(&index, request_for(AnalysisSet::ALL), &cache).expect("save");
+        save_content_cache(&index, &cache).expect("save");
 
         let narrower = request_for(AnalysisSet::NONE.with_code());
         let (mut restored, _) =
@@ -905,7 +907,7 @@ mod tests {
         load(&mut restored, narrower, &cache);
         let analysis = super::super::analyze_index(&mut restored, narrower);
         assert_eq!(analysis.applied, 2, "the narrower run reads every file");
-        save_content_cache(&restored, narrower, &cache).expect("resave");
+        save_content_cache(&restored, &cache).expect("resave");
 
         let (mut wide, _) =
             crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
@@ -938,7 +940,7 @@ mod tests {
     fn corruption_is_a_clean_miss() {
         let (root, index, request) = analyzed_index();
         let cache = root.path().join("content.cache");
-        save_content_cache(&index, request, &cache).expect("save");
+        save_content_cache(&index, &cache).expect("save");
         let mut bytes = fs::read(&cache).expect("read");
         assert_eq!(bytes[PATH_ENCODING_OFFSET], crate::snapshot::path_encoding());
         // A header byte flipped without resealing: the checksum no longer matches.
@@ -959,7 +961,7 @@ mod tests {
         let (root, index, request) = analyzed_index();
         let cache_dir = tempfile::tempdir().expect("cache dir");
         let cache = cache_dir.path().join("content.cache");
-        save_content_cache(&index, request, &cache).expect("save");
+        save_content_cache(&index, &cache).expect("save");
         let saved = fs::read(&cache).expect("read");
         let load_into = |config: &ScanConfig| {
             let (mut restored, _) =
@@ -1001,7 +1003,7 @@ mod tests {
         let (root, index, request) = analyzed_index();
         let cache_dir = tempfile::tempdir().expect("cache dir");
         let cache = cache_dir.path().join("content.cache");
-        save_content_cache(&index, request, &cache).expect("save");
+        save_content_cache(&index, &cache).expect("save");
         let saved = fs::read(&cache).expect("read");
         let reload = || {
             let (mut restored, _) =
@@ -1028,7 +1030,7 @@ mod tests {
         let (root, index, request) = analyzed_index();
         let cache_dir = tempfile::tempdir().expect("cache dir");
         let cache = cache_dir.path().join("content.cache");
-        save_content_cache(&index, request, &cache).expect("save");
+        save_content_cache(&index, &cache).expect("save");
         let saved = fs::read(&cache).expect("read");
         let reload = |cache: &Path| {
             let (mut restored, _) =
@@ -1082,7 +1084,7 @@ mod tests {
         let (mut scanned, _) = crate::scan::scan_into_index(root.path(), &config).expect("scan");
         super::super::analyze_index(&mut scanned, lines);
         crate::snapshot::save(&scanned, &snapshot_path).expect("save snapshot");
-        save_content_cache(&scanned, lines, &cache).expect("save sidecar");
+        save_content_cache(&scanned, &cache).expect("save sidecar");
 
         let mut restored = crate::snapshot::load_with_types(&snapshot_path, config.types_shared())
             .expect("load")
@@ -1100,7 +1102,7 @@ mod tests {
         assert!(!writable("sub/inner.md"), "a record under an unverified subtree is not");
 
         let rewritten = store.path().join("second");
-        save_content_cache(&restored, lines, &rewritten).expect("resave");
+        save_content_cache(&restored, &rewritten).expect("resave");
         let (mut fresh, _) = crate::scan::scan_into_index(root.path(), &config).expect("scan");
         let loaded = load(&mut fresh, lines, &rewritten);
         assert!(loaded.usable && loaded.hits == 1, "only the verified record: {loaded:?}");
@@ -1165,7 +1167,7 @@ mod tests {
 
             let (root, index, request) = analyzed_index();
             let cache = root.path().join("content.cache");
-            save_content_cache(&index, request, &cache).expect("save");
+            save_content_cache(&index, &cache).expect("save");
             let image = fs::read(&cache).expect("read");
             let rewritten = readdress_record(&image, Path::new("notes.md"), Path::new(record_path));
             fs::write(&cache, rewritten).expect("re-address");

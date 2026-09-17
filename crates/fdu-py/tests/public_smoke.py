@@ -603,6 +603,7 @@ def main() -> None:
     assert contract["sort_keys"] == [value.value for value in fdu.SortKey]
     assert contract["cache_scopes"] == [value.value for value in fdu.CacheScope]
     assert contract["cache_states"] == [value.value for value in fdu.CacheState]
+    assert contract["content_states"] == [value.value for value in fdu.ContentState]
     assert contract["stale_reasons"] == [value.value for value in fdu.StaleReason]
     assert contract["leftover_kinds"] == [value.value for value in fdu.LeftoverKind]
     assert contract["formats"] == [value.value for value in fdu.Format]
