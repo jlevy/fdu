@@ -80,6 +80,22 @@ impl Basis {
         }
     }
 
+    /// The basis a spec names, without the read half it also carries.
+    ///
+    /// What a holder is fixed with for its lifetime: root, scope, and analyzers. A caller
+    /// that opens an index and then reads it many times parses these once, and each read
+    /// hands them back to [`Request::read`]; building a whole request and discarding its
+    /// query was the shape that made the basis look like the read's to overwrite.
+    ///
+    /// # Errors
+    ///
+    /// [`RequestError`] for a value no grammar accepts, named as `axes` spells its axis.
+    pub fn build(spec: &RequestSpec<'_>, axes: &'static AxisNames) -> Result<Self, RequestError> {
+        let content = parse_content(spec, axes)?;
+        let scope = parse_scope(spec, axes)?;
+        Ok(Self { root: spec.root.to_path_buf(), scope, content })
+    }
+
     /// The limits a basis records when its scan observed no control state at all.
     ///
     /// The defaults table's, because they are what the scope would have been taken under
@@ -155,6 +171,19 @@ pub struct RequestSpec<'a> {
     pub control_line_limit: Option<&'a str>,
     /// Analyzers: a comma list of `none`, `lines`, `code`, `words`, or `all`.
     pub analyze: Option<&'a str>,
+    /// What this read asks of the basis the axes above describe.
+    pub read: ReadSpec<'a>,
+}
+
+/// What one read supplies, as its caller wrote it: the [`Query`] half of a request.
+///
+/// Split from the basis half rather than flattened beside it, because a holder of stored
+/// state fixes root, scope, and analyzers once and then answers many reads: a read names
+/// only this, and [`Request::read`] is what takes the two together. A field declared in
+/// both halves is a field one of them could silently drop, which is why this is the one
+/// declaration and [`RequestSpec`] contains it.
+#[derive(Clone, Copy, Debug)]
+pub struct ReadSpec<'a> {
     /// Views: a comma list, or `full`.
     pub views: Option<&'a str>,
     /// Logical words per document page: a positive integer.
@@ -185,17 +214,10 @@ pub struct RequestSpec<'a> {
     pub size: Option<&'a str>,
 }
 
-impl<'a> RequestSpec<'a> {
-    /// A spec that names only its root, so every other axis takes its default.
-    pub const fn new(root: &'a Path) -> Self {
+impl ReadSpec<'_> {
+    /// A read that names nothing, so every axis takes its default.
+    pub const fn new() -> Self {
         Self {
-            root,
-            scan_depth: None,
-            one_filesystem: false,
-            read_controls: None,
-            control_budget: None,
-            control_line_limit: None,
-            analyze: None,
             views: None,
             words_per_page: None,
             include: &[],
@@ -210,6 +232,28 @@ impl<'a> RequestSpec<'a> {
             sort: None,
             reverse: false,
             size: None,
+        }
+    }
+}
+
+impl Default for ReadSpec<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'a> RequestSpec<'a> {
+    /// A spec that names only its root, so every other axis takes its default.
+    pub const fn new(root: &'a Path) -> Self {
+        Self {
+            root,
+            scan_depth: None,
+            one_filesystem: false,
+            read_controls: None,
+            control_budget: None,
+            control_line_limit: None,
+            analyze: None,
+            read: ReadSpec::new(),
         }
     }
 }
@@ -268,6 +312,45 @@ impl Request {
         },
     };
 
+    /// One read of what `basis` holds, from a query its caller already has typed.
+    ///
+    /// The composition six call sites wrote out by hand, each of them a holder's basis and
+    /// one read's query and instant. A literal is not wrong, but a name is where the rule
+    /// can be stated: `basis` is the holder's, never the read's, and `now` is this read's,
+    /// fixed so a watch that repaints does not slide its own window.
+    ///
+    /// No validation, because the query is already typed and its holder is the one that
+    /// knows which rule applies -- [`Self::validate_read`] for a retained index,
+    /// [`Self::validate`] for a request that is its own basis. [`Self::read`] is the
+    /// constructor that parses and validates in one step.
+    pub const fn new(basis: Basis, query: Query, now: SystemTime) -> Self {
+        Self { basis, query, now }
+    }
+
+    /// One read of what `basis` holds, written in the value grammars.
+    ///
+    /// The constructor every read site wants: a holder supplies the basis it was opened
+    /// with, and the caller supplies only what this read asks. The view default comes from
+    /// the analyzers the basis already holds, so a typed set never has to be spelled back
+    /// into the grammar to find out what a request that read files displays, and no caller
+    /// builds a request with a throw-away basis and overwrites it afterwards.
+    ///
+    /// # Errors
+    ///
+    /// [`RequestError`] for a value no grammar accepts, and for a read the basis cannot
+    /// answer: [`Self::validate`]'s rules, which here are the holder's own.
+    pub fn read(
+        basis: Basis,
+        spec: &ReadSpec<'_>,
+        now: SystemTime,
+        axes: &'static AxisNames,
+    ) -> Result<Self, RequestError> {
+        let query = build_query(basis.content, spec, now, axes)?;
+        let request = Self::new(basis, query, now);
+        request.validate()?;
+        Ok(request)
+    }
+
     /// Parse a spec into a request, resolving relative time windows against `now`.
     ///
     /// Refusals name each axis as `axes` spells it, and so do the report diagnostics of the
@@ -279,86 +362,14 @@ impl Request {
         now: SystemTime,
         axes: &'static AxisNames,
     ) -> Result<Self, RequestError> {
-        let content = spec.analyze.map_or(Ok(Self::DEFAULTS.content), |value| {
-            AnalysisSet::parse_rejecting(value).map_err(|rejection| rejection.on(axes.analyze))
-        })?;
-        let (views, omitted_views) = ViewSpec::resolve_rejecting(spec.views, content)
-            .map_err(|rejection| rejection.on(axes.view))?;
-
-        let mut selection = Selection {
-            depth: spec.depth.map(|value| parse_bound(value, axes.depth)).transpose()?,
-            limit: spec.limit.map(|value| parse_bound(value, axes.limit)).transpose()?,
-            reverse: spec.reverse,
-            size: spec
-                .size
-                .map_or(Ok(Self::DEFAULTS.size), |value| parse_size_metric(value, axes.size))?,
-            ..Selection::default()
-        };
-        for pattern in spec.include {
-            selection.include.push(Pattern::parse(pattern).map_err(grammar_refusal)?);
-        }
-        for pattern in spec.exclude {
-            selection.exclude.push(Pattern::parse(pattern).map_err(grammar_refusal)?);
-        }
-        if let Some(value) = spec.min_size {
-            selection.min_size = Some(parse_size(value).map_err(grammar_refusal)?);
-        }
-        if let Some(value) = spec.modified_since {
-            let when = parse_when(value, now).map_err(grammar_refusal)?;
-            selection.modified.since = Some(bound_nanos(value, when, axes.modified_since)?);
-        }
-        if let Some(value) = spec.modified_before {
-            let when = parse_when(value, now).map_err(grammar_refusal)?;
-            selection.modified.before = Some(bound_nanos(value, when, axes.modified_before)?);
-        }
-        if let Some(value) = spec.kinds {
-            selection.kinds = parse_kinds(value, axes.kind)?;
-        }
-        if let Some(value) = spec.sort {
-            selection.sort = Some(parse_sort(value, axes.sort)?);
-        }
-        if let Some(value) = spec.ignored {
-            selection.ignored = IgnoredEntries::parse(value)
-                .map_err(|expected| Rejection::new(value, expected).on(axes.ignored))?;
-        }
-        let words_per_page =
-            spec.words_per_page.map_or(Ok(Self::DEFAULTS.words_per_page), |value| {
-                value.trim().parse::<u64>().ok().filter(|words| *words > 0).ok_or_else(|| {
-                    invalid(axes.words_per_page, value, "expected a positive integer")
-                })
-            })?;
-
-        let limits = Self::DEFAULTS.control_limits;
-        let scope = ScanConfig {
-            max_depth: spec
-                .scan_depth
-                .map(|value| {
-                    value
-                        .trim()
-                        .parse::<usize>()
-                        .map_err(|_| invalid(axes.scan_depth, value, "expected a whole number"))
-                })
-                .transpose()?,
-            one_filesystem: spec.one_filesystem,
-            read_controls: spec.read_controls.unwrap_or(Self::DEFAULTS.read_controls),
-            control_limits: ControlLimits {
-                budget: spec.control_budget.map_or(Ok(limits.budget), |value| {
-                    parse_control_budget(value)
-                        .map_err(|error| named_refusal(error, axes.control_budget))
-                })?,
-                line_limit: spec.control_line_limit.map_or(Ok(limits.line_limit), |value| {
-                    parse_control_line_limit(value)
-                        .map_err(|error| named_refusal(error, axes.control_line_limit))
-                })?,
-            },
-            ..ScanConfig::default()
-        };
-
-        Ok(Self {
-            basis: Basis { root: spec.root.to_path_buf(), scope, content },
-            query: Query { selection, views, omitted_views, axes, words_per_page },
-            now,
-        })
+        // The three steps in the order the command line reads its flags, which is the order
+        // a refusal names when two axes are both wrong: content, then everything this read
+        // supplies, then scope. `Basis::build` runs the first and the third together, for
+        // the callers that fix a basis and read it many times.
+        let content = parse_content(spec, axes)?;
+        let query = build_query(content, &spec.read, now, axes)?;
+        let scope = parse_scope(spec, axes)?;
+        Ok(Self::new(Basis { root: spec.root.to_path_buf(), scope, content }, query, now))
     }
 
     /// Refuse a request no holder of its own basis could answer.
@@ -438,6 +449,115 @@ impl Request {
         check_views(&self.query.views, basis.content)?;
         check_observation(self.query.selection.ignored, basis.scope.read_controls)
     }
+}
+
+/// The analyzers a spec names, or the table's default.
+fn parse_content(
+    spec: &RequestSpec<'_>,
+    axes: &'static AxisNames,
+) -> Result<AnalysisSet, RequestError> {
+    spec.analyze.map_or(Ok(Request::DEFAULTS.content), |value| {
+        AnalysisSet::parse_rejecting(value).map_err(|rejection| rejection.on(axes.analyze))
+    })
+}
+
+/// The scan scope a spec names, with the table's defaults for what it leaves out.
+///
+/// The delivery fields a `ScanConfig` still carries -- threads, batch size, order -- are
+/// its own defaults: no answer depends on them, and they move into `Delivery` with
+/// `Workers`.
+fn parse_scope(
+    spec: &RequestSpec<'_>,
+    axes: &'static AxisNames,
+) -> Result<ScanConfig, RequestError> {
+    let limits = Request::DEFAULTS.control_limits;
+    Ok(ScanConfig {
+        max_depth: spec
+            .scan_depth
+            .map(|value| {
+                value
+                    .trim()
+                    .parse::<usize>()
+                    .map_err(|_| invalid(axes.scan_depth, value, "expected a whole number"))
+            })
+            .transpose()?,
+        one_filesystem: spec.one_filesystem,
+        read_controls: spec.read_controls.unwrap_or(Request::DEFAULTS.read_controls),
+        control_limits: ControlLimits {
+            budget: spec.control_budget.map_or(Ok(limits.budget), |value| {
+                parse_control_budget(value)
+                    .map_err(|error| named_refusal(error, axes.control_budget))
+            })?,
+            line_limit: spec.control_line_limit.map_or(Ok(limits.line_limit), |value| {
+                parse_control_line_limit(value)
+                    .map_err(|error| named_refusal(error, axes.control_line_limit))
+            })?,
+        },
+        ..ScanConfig::default()
+    })
+}
+
+/// The query one read supplies, parsed against the analyzers its basis holds.
+///
+/// `content` decides the view default and nothing else here: a request that paid to read
+/// files displays what it read. Every value is parsed before any is checked against
+/// another, in one order for every surface -- views, selection, then the page denominator.
+fn build_query(
+    content: AnalysisSet,
+    spec: &ReadSpec<'_>,
+    now: SystemTime,
+    axes: &'static AxisNames,
+) -> Result<Query, RequestError> {
+    let (views, omitted_views) = ViewSpec::resolve_rejecting(spec.views, content)
+        .map_err(|rejection| rejection.on(axes.view))?;
+
+    let mut selection = Selection {
+        depth: spec.depth.map(|value| parse_bound(value, axes.depth)).transpose()?,
+        limit: spec.limit.map(|value| parse_bound(value, axes.limit)).transpose()?,
+        reverse: spec.reverse,
+        size: spec
+            .size
+            .map_or(Ok(Request::DEFAULTS.size), |value| parse_size_metric(value, axes.size))?,
+        ..Selection::default()
+    };
+    for pattern in spec.include {
+        selection.include.push(Pattern::parse(pattern).map_err(grammar_refusal)?);
+    }
+    for pattern in spec.exclude {
+        selection.exclude.push(Pattern::parse(pattern).map_err(grammar_refusal)?);
+    }
+    if let Some(value) = spec.min_size {
+        selection.min_size = Some(parse_size(value).map_err(grammar_refusal)?);
+    }
+    if let Some(value) = spec.modified_since {
+        let when = parse_when(value, now).map_err(grammar_refusal)?;
+        selection.modified.since = Some(bound_nanos(value, when, axes.modified_since)?);
+    }
+    if let Some(value) = spec.modified_before {
+        let when = parse_when(value, now).map_err(grammar_refusal)?;
+        selection.modified.before = Some(bound_nanos(value, when, axes.modified_before)?);
+    }
+    if let Some(value) = spec.kinds {
+        selection.kinds = parse_kinds(value, axes.kind)?;
+    }
+    if let Some(value) = spec.sort {
+        selection.sort = Some(parse_sort(value, axes.sort)?);
+    }
+    if let Some(value) = spec.ignored {
+        selection.ignored = IgnoredEntries::parse(value)
+            .map_err(|expected| Rejection::new(value, expected).on(axes.ignored))?;
+    }
+    let words_per_page =
+        spec.words_per_page.map_or(Ok(Request::DEFAULTS.words_per_page), |value| {
+            value
+                .trim()
+                .parse::<u64>()
+                .ok()
+                .filter(|words| *words > 0)
+                .ok_or_else(|| invalid(axes.words_per_page, value, "expected a positive integer"))
+        })?;
+
+    Ok(Query { selection, views, omitted_views, axes, words_per_page })
 }
 
 /// A scan-scope axis a build may be unable to honour at all.
@@ -1110,6 +1230,11 @@ mod tests {
         SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000)
     }
 
+    /// A spec over the test root whose basis is every default and whose read is `read`.
+    fn reading(read: ReadSpec<'_>) -> RequestSpec<'_> {
+        RequestSpec { read, ..RequestSpec::new(root()) }
+    }
+
     fn built(spec: &RequestSpec<'_>) -> Request {
         Request::build(spec, instant(), &AxisNames::FIELDS).expect("the spec parses")
     }
@@ -1181,20 +1306,22 @@ mod tests {
             control_budget: Some("all"),
             control_line_limit: Some("64KiB"),
             analyze: Some("code"),
-            views: Some("languages,tree"),
-            words_per_page: Some("300"),
-            include: &include,
-            exclude: &exclude,
-            min_size: Some("1KiB"),
-            modified_since: Some("@1700000000"),
-            modified_before: Some("@1800000000"),
-            kinds: Some("file,dir"),
-            ignored: Some("include"),
-            depth: Some("all"),
-            limit: Some("5"),
-            sort: Some("name"),
-            reverse: true,
-            size: Some("apparent"),
+            read: ReadSpec {
+                views: Some("languages,tree"),
+                words_per_page: Some("300"),
+                include: &include,
+                exclude: &exclude,
+                min_size: Some("1KiB"),
+                modified_since: Some("@1700000000"),
+                modified_before: Some("@1800000000"),
+                kinds: Some("file,dir"),
+                ignored: Some("include"),
+                depth: Some("all"),
+                limit: Some("5"),
+                sort: Some("name"),
+                reverse: true,
+                size: Some("apparent"),
+            },
             ..RequestSpec::new(root())
         };
         let request = Request::build(&spec, instant(), &AxisNames::FLAGS).expect("parses");
@@ -1227,11 +1354,11 @@ mod tests {
     /// selects exactly the same entries however much later that happens.
     #[test]
     fn relative_windows_resolve_against_the_requests_instant() {
-        let spec = RequestSpec {
+        let spec = reading(ReadSpec {
             modified_since: Some("2h"),
             modified_before: Some("now"),
-            ..RequestSpec::new(root())
-        };
+            ..ReadSpec::new()
+        });
         let request = built(&spec);
         let now = system_time_to_nanos(instant()).expect("representable");
         let two_hours = 2 * 60 * 60 * 1_000_000_000;
@@ -1257,7 +1384,7 @@ mod tests {
             assert_eq!(refusal(&analyze, axes), today);
         }
         for views in ["tree,tree", "tree,,types", "full,tree", "bogus"] {
-            let spec = RequestSpec { views: Some(views), ..spec };
+            let spec = reading(ReadSpec { views: Some(views), ..ReadSpec::new() });
             for (axes, label) in [(&AxisNames::FLAGS, "--view"), (&AxisNames::FIELDS, "view")] {
                 let today =
                     ViewSpec::resolve(Some(views), AnalysisSet::NONE, label).expect_err("refused");
@@ -1267,7 +1394,7 @@ mod tests {
 
         let cases: [(RequestSpec<'_>, &str, &str); 7] = [
             (
-                RequestSpec { words_per_page: Some("0"), ..spec },
+                reading(ReadSpec { words_per_page: Some("0"), ..ReadSpec::new() }),
                 "invalid --words-per-page \"0\": expected a positive integer",
                 "invalid words_per_page \"0\": expected a positive integer",
             ),
@@ -1284,25 +1411,28 @@ mod tests {
                  `10M`, or `all` for no bound",
             ),
             (
-                RequestSpec { ignored: Some("maybe"), ..spec },
+                reading(ReadSpec { ignored: Some("maybe"), ..ReadSpec::new() }),
                 "invalid --exclude-ignored/--only-ignored \"maybe\": expected one of include, \
                  exclude, only",
                 "invalid ignored \"maybe\": expected one of include, exclude, only",
             ),
             (
-                RequestSpec { kinds: Some("file,socket"), ..spec },
+                reading(ReadSpec { kinds: Some("file,socket"), ..ReadSpec::new() }),
                 "invalid --kind \"socket\": expected one of file, dir, symlink, other",
                 "invalid kind \"socket\": expected one of file, dir, symlink, other",
             ),
             (
-                RequestSpec { min_size: Some("10X"), ..spec },
+                reading(ReadSpec { min_size: Some("10X"), ..ReadSpec::new() }),
                 "invalid size \"10X\": unknown size unit \"X\"; use B, K/KB, M/MB, G/GB, T/TB, \
                  P/PB, or the binary forms KiB, MiB, GiB, TiB, PiB",
                 "invalid size \"10X\": unknown size unit \"X\"; use B, K/KB, M/MB, G/GB, T/TB, \
                  P/PB, or the binary forms KiB, MiB, GiB, TiB, PiB",
             ),
             (
-                RequestSpec { modified_since: Some("2300-01-01T00:00:00Z"), ..spec },
+                reading(ReadSpec {
+                    modified_since: Some("2300-01-01T00:00:00Z"),
+                    ..ReadSpec::new()
+                }),
                 "invalid --modified-since \"2300-01-01T00:00:00Z\": that time is outside the \
                  range fdu can represent (about 1677 to 2262)",
                 "invalid modified_since \"2300-01-01T00:00:00Z\": that time is outside the range \
@@ -1463,7 +1593,7 @@ mod tests {
             .expect("equal content serves");
 
         // The remaining rules read what the holder observed, not what the request assumed.
-        let exclude = built(&RequestSpec { ignored: Some("exclude"), ..RequestSpec::new(root()) });
+        let exclude = built(&reading(ReadSpec { ignored: Some("exclude"), ..ReadSpec::new() }));
         assert_eq!(
             exclude.validate_read(&basis(AnalysisSet::NONE, false)),
             Err(RequestError::IgnoredWithoutObservation(IgnoredEntries::Exclude))

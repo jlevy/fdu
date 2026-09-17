@@ -268,7 +268,7 @@ fn report_projection(
     // opened read matches portable names, where a one-shot report matches native ones.
     let report = crate::query::report_in(
         index,
-        &read_request(index, request),
+        &read_request(request),
         &provenance,
         crate::query::NameIdentity::Portable,
     )?;
@@ -283,27 +283,11 @@ fn report_projection(
 ///
 /// A caller names neither root, scope, nor analyzers, because an opened root owns them for
 /// its lifetime; composing them here is what lets one rule refuse a read that the root
-/// cannot answer.
-fn read_request(index: &crate::Index, request: &crate::ReportRequest) -> crate::query::Request {
-    crate::query::Request {
-        basis: crate::query::Basis::held_by(index),
-        query: request.query.clone(),
-        now: request.now,
-    }
-}
-
-/// The basis every opened root holds.
-///
-/// No analyzers, because an opened root runs none, and control state always observed,
-/// because its ignored and unignored partitions are part of what it serves. Stated rather
-/// than read from the index, so a read is refused before any retained state is touched --
-/// which is where every other surface refuses one.
-fn opened_basis() -> crate::query::Basis {
-    crate::query::Basis {
-        root: PathBuf::new(),
-        scope: crate::ScanConfig::default(),
-        content: crate::content::AnalysisSet::NONE,
-    }
+/// cannot answer. The basis is [`OpenedIndex::basis`](crate::OpenedIndex::basis), the one
+/// statement of what an opened root holds, rather than a second reading of the index this
+/// read already validated against.
+fn read_request(request: &crate::ReportRequest) -> crate::query::Request {
+    crate::query::Request::new(crate::OpenedIndex::basis(), request.query.clone(), request.now)
 }
 
 fn validate_report(request: &crate::ReportRequest) -> Result<()> {
@@ -320,9 +304,7 @@ fn validate_report(request: &crate::ReportRequest) -> Result<()> {
     // The same rules every other read is held to, applied to what an opened root holds: a
     // `documents` view is refused here rather than answered with zero words, because
     // nothing analyzed a file.
-    crate::query::Request { basis: opened_basis(), query: request.query.clone(), now: request.now }
-        .validate()
-        .map_err(Error::InvalidRequest)
+    read_request(request).validate().map_err(Error::InvalidRequest)
 }
 
 #[derive(Clone, Copy, Default)]

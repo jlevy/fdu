@@ -23,9 +23,9 @@ pub(crate) use query_report::{
 };
 pub(crate) use query_request::Rejection;
 pub use query_request::{
-    Basis, Delivery, Request, RequestDefaults, RequestError, RequestSpec, ScopeAxis, WatchDelivery,
-    bound_nanos, parse_bound, parse_cache_policy, parse_kind, parse_kinds, parse_size_metric,
-    parse_sort,
+    Basis, Delivery, ReadSpec, Request, RequestDefaults, RequestError, RequestSpec, ScopeAxis,
+    WatchDelivery, bound_nanos, parse_bound, parse_cache_policy, parse_kind, parse_kinds,
+    parse_size_metric, parse_sort,
 };
 pub(crate) use query_selection::NameIdentity;
 pub use query_selection::{

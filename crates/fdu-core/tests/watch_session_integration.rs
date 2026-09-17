@@ -32,11 +32,11 @@ fn session(root: &Path, selection: Selection, views: Vec<ViewSpec>) -> Session {
 
 /// The request a watch answers: the basis its index was opened under, and this query.
 fn request(root: &Path, content: AnalysisSet, query: Query) -> Request {
-    Request {
-        basis: Basis { root: root.to_path_buf(), scope: ScanConfig::default(), content },
+    Request::new(
+        Basis { root: root.to_path_buf(), scope: ScanConfig::default(), content },
         query,
-        now: std::time::SystemTime::now(),
-    }
+        std::time::SystemTime::now(),
+    )
 }
 
 /// Disturb `warm` until the session's watch is provably live, then return.

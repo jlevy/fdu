@@ -164,6 +164,51 @@ pub struct OpenConfig {
     pub analysis: content::AnalysisRequest,
 }
 
+impl OpenConfig {
+    /// Today's open configuration, composed from the request and the delivery that carry
+    /// it.
+    ///
+    /// One direction of a temporary bridge, and the only place it is spliced: the
+    /// execution plan model replaces `OpenConfig` with `Basis` and `Delivery`, and one
+    /// splice is one thing to delete rather than three. Scan workers ride in the request's
+    /// scope and content workers in the delivery, because that is where each waits until
+    /// one `Workers` takes both.
+    pub fn of(request: &query::Request, delivery: &query::Delivery) -> Self {
+        Self {
+            scan: request.basis.scope.clone(),
+            cache_path: delivery.cache_path.clone(),
+            policy: delivery.cache,
+            analysis: content::AnalysisRequest {
+                profile: request.basis.content,
+                workers: delivery.analysis_workers,
+            },
+        }
+    }
+
+    /// The other direction, for a caller that still holds a configuration: the basis and
+    /// the delivery it spells, over `root`.
+    ///
+    /// The inverse of [`Self::of`] and deleted with it. Fixtures and probes that name one
+    /// configuration read it this way rather than each writing the division out, so the
+    /// two halves are divided in one place whichever way a caller crosses the bridge.
+    pub fn split(&self, root: impl Into<PathBuf>) -> (query::Basis, query::Delivery) {
+        (
+            query::Basis {
+                root: root.into(),
+                scope: self.scan.clone(),
+                content: self.analysis.profile,
+            },
+            query::Delivery {
+                cache: self.policy,
+                cache_path: self.cache_path.clone(),
+                accept_partial: false,
+                watch: None,
+                analysis_workers: self.analysis.workers,
+            },
+        )
+    }
+}
+
 /// How an [`open`] may use the snapshot cache.
 ///
 /// One explicit axis rather than a pair of booleans, because "did this answer touch the

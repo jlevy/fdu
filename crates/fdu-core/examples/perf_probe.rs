@@ -482,22 +482,8 @@ fn classification_probe(arguments: &Arguments, ambiguous: bool) -> ProbeResult<P
 /// The request and the delivery one probe mode asks for, composed from the configuration
 /// it measures exactly as the command line composes them.
 fn asked(root: &Path, config: &OpenConfig, query: Query) -> (Request, Delivery) {
-    let request = Request {
-        basis: Basis {
-            root: root.to_path_buf(),
-            scope: config.scan.clone(),
-            content: config.analysis.profile,
-        },
-        query,
-        now: std::time::SystemTime::now(),
-    };
-    let delivery = Delivery {
-        cache: config.policy,
-        cache_path: config.cache_path.clone(),
-        analysis_workers: config.analysis.workers,
-        ..Delivery::default()
-    };
-    (request, delivery)
+    let (basis, delivery) = config.split(root);
+    (Request::new(basis, query, std::time::SystemTime::now()), delivery)
 }
 
 fn basic_request() -> AnalysisRequest {
@@ -580,15 +566,15 @@ fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         complete: analysis.is_complete(),
         errors: Vec::new(),
     };
-    let read = Request {
-        basis: Basis {
+    let read = Request::new(
+        Basis {
             root: index.root_path().to_path_buf(),
             scope: arguments.scan.clone(),
             content: index.content_set(),
         },
         query,
-        now: std::time::SystemTime::now(),
-    };
+        std::time::SystemTime::now(),
+    );
     let started = Instant::now();
     for _ in 0..arguments.queries {
         black_box(fdu_core::query::report(&index, &read, &provenance).expect("report"));

@@ -9,7 +9,6 @@
 
 use std::time::SystemTime;
 
-use crate::content::AnalysisRequest;
 use crate::query::{
     Delivery, Provenance, Query, Report, ReportSource, Request, SummaryRow, ViewSpec, report,
     report_summary,
@@ -18,24 +17,6 @@ use crate::{
     CachePolicy, EntryKind, Error, Freshness, OpenConfig, OpenPath, PendingSave, Result,
     SnapshotUse, open_for_report,
 };
-
-/// Today's open configuration, composed from the request and the delivery that carry it.
-///
-/// One direction only, and temporary: the execution plan model replaces `OpenConfig`, and
-/// until then this is the single place the two models are spliced back into it. Scan
-/// workers ride in the request's scope and content workers in the delivery, because that is
-/// where each waits until one `Workers` takes both.
-fn open_config(request: &Request, delivery: &Delivery) -> OpenConfig {
-    OpenConfig {
-        scan: request.basis.scope.clone(),
-        cache_path: delivery.cache_path.clone(),
-        policy: delivery.cache,
-        analysis: AnalysisRequest {
-            profile: request.basis.content,
-            workers: delivery.analysis_workers,
-        },
-    }
-}
 
 /// The minimum state a one-shot report plan retains while scanning.
 ///
@@ -262,7 +243,7 @@ fn prepare_report_internal(
     // keeps the refusal independent of the delivery: the cache-only tier never scans and
     // the cold tier never loads, so a rule stated at either would hold for one of them.
     request.validate().map_err(Error::InvalidRequest)?;
-    let config = &open_config(request, delivery);
+    let config = &OpenConfig::of(request, delivery);
     let query = &request.query;
     let root = request.basis.root.as_path();
     let scan_started_at = SystemTime::now();
@@ -368,7 +349,7 @@ mod tests {
 
     use super::*;
     use crate::ScanConfig;
-    use crate::query::{Basis, IgnoredEntries, Pattern, Section};
+    use crate::query::{IgnoredEntries, Pattern, Section};
 
     fn summary_query() -> Query {
         Query { views: vec![ViewSpec::Summary], ..Query::default() }
@@ -377,22 +358,8 @@ mod tests {
     /// The request and the delivery a test's `OpenConfig` spells, split the way the two
     /// models now divide it: what the answer says, and how it is carried out.
     fn split(root: &Path, config: &OpenConfig, query: &Query) -> (Request, Delivery) {
-        let request = Request {
-            basis: Basis {
-                root: root.to_path_buf(),
-                scope: config.scan.clone(),
-                content: config.analysis.profile,
-            },
-            query: query.clone(),
-            now: SystemTime::now(),
-        };
-        let delivery = Delivery {
-            cache: config.policy,
-            cache_path: config.cache_path.clone(),
-            analysis_workers: config.analysis.workers,
-            ..Delivery::default()
-        };
-        (request, delivery)
+        let (basis, delivery) = config.split(root);
+        (Request::new(basis, query.clone(), SystemTime::now()), delivery)
     }
 
     /// [`prepare_report`] as these tests ask for it: one configuration, one query.

@@ -46,9 +46,9 @@ pub(crate) fn not_observing_controls() -> crate::ScanScope {
 /// admits it and the test is about the report rather than about composing a request. A test
 /// *about* a refusal builds its own mismatched basis instead.
 pub(crate) fn read_of(index: &crate::Index, query: crate::query::Query) -> crate::query::Request {
-    crate::query::Request {
-        basis: crate::query::Basis::held_by(index),
+    crate::query::Request::new(
+        crate::query::Basis::held_by(index),
         query,
-        now: std::time::SystemTime::now(),
-    }
+        std::time::SystemTime::now(),
+    )
 }

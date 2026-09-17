@@ -161,10 +161,9 @@ impl OpenOptions {
             threads: Some(1),
             order: crate::ScanOrder::BreadthFirst,
             types: self.types,
-            // The opened root exists to serve interactive consumers, and its
-            // ignored/unignored partitions are part of that contract, so control
-            // observation is never optional here.
-            read_controls: true,
+            // Never optional here: the basis an opened root holds says control state is
+            // always observed, and this scan is what makes that true.
+            read_controls: OpenedIndex::basis().scope.read_controls,
             control_limits: self.control_limits,
         };
         (scan, self.budget, self.journal_capacity_bytes)
@@ -192,6 +191,24 @@ impl std::fmt::Debug for OpenedIndex {
 }
 
 impl OpenedIndex {
+    /// The basis every opened root holds, stated once for every route into one.
+    ///
+    /// No analyzers, because an opened root runs none, and control state always observed,
+    /// because its ignored and unignored partitions are part of what it serves --
+    /// [`OpenOptions`] has no switch for either, and reads this rather than restating it.
+    /// The root is empty because no rule in the request model compares roots and an opened
+    /// read names none: it asks the root it already holds.
+    ///
+    /// Stated rather than read back from the retained index, so a read is refused before
+    /// any stored state is touched, which is where every other surface refuses one.
+    pub fn basis() -> crate::query::Basis {
+        crate::query::Basis {
+            root: PathBuf::new(),
+            scope: ScanConfig { read_controls: true, ..ScanConfig::default() },
+            content: crate::content::AnalysisSet::NONE,
+        }
+    }
+
     /// Open one live root without changing the existing blocking [`crate::open`] API.
     ///
     /// This constructor validates and binds the root and semantic configuration, starts

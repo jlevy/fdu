@@ -30,8 +30,8 @@ use fdu_core::control::ControlCoverage;
 #[cfg(feature = "watch")]
 use fdu_core::query::parse_when;
 use fdu_core::query::{
-    AxisNames, Delivery, IgnoredEntries, ReportSource, Request, RequestError, RequestSpec,
-    ViewSpec, WatchDelivery, parse_cache_policy,
+    AxisNames, Delivery, IgnoredEntries, ReadSpec, ReportSource, Request, RequestError,
+    RequestSpec, ViewSpec, WatchDelivery, parse_cache_policy,
 };
 use fdu_core::report_format;
 use fdu_core::report_format::human_count;
@@ -1154,20 +1154,22 @@ impl Cli {
             control_budget: self.gitignore_budget.as_deref(),
             control_line_limit: self.gitignore_line_limit.as_deref(),
             analyze: Some(&self.analyze),
-            views: self.view.as_deref(),
-            words_per_page: Some(&typed.words_per_page),
-            include: &self.include,
-            exclude: &self.exclude,
-            min_size: self.min_size.as_deref(),
-            modified_since: self.modified_since.as_deref(),
-            modified_before: self.modified_before.as_deref(),
-            kinds: self.kind.as_deref(),
-            ignored: self.ignored_selection()?,
-            depth: self.depth.as_deref(),
-            limit: self.limit.as_deref(),
-            sort: self.sort.as_deref(),
-            reverse: self.reverse,
-            size: Some(&self.size),
+            read: ReadSpec {
+                views: self.view.as_deref(),
+                words_per_page: Some(&typed.words_per_page),
+                include: &self.include,
+                exclude: &self.exclude,
+                min_size: self.min_size.as_deref(),
+                modified_since: self.modified_since.as_deref(),
+                modified_before: self.modified_before.as_deref(),
+                kinds: self.kind.as_deref(),
+                ignored: self.ignored_selection()?,
+                depth: self.depth.as_deref(),
+                limit: self.limit.as_deref(),
+                sort: self.sort.as_deref(),
+                reverse: self.reverse,
+                size: Some(&self.size),
+            },
         })
     }
 

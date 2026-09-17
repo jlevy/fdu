@@ -24,9 +24,9 @@ use pyo3::types::{PyDict, PyList};
 
 use fdu_core::content::{AnalysisRequest, AnalysisSet, CoverageReason};
 use fdu_core::query::{
-    AxisNames, Basis, Delivery, IgnoredTally, MetricRow, MetricSummary, Provenance, Report,
-    ReportSource, Request, RequestError, RequestSpec, Section, SummaryRow, TreeNode, ViewSpec,
-    WatchDelivery, document_words, parse_cache_policy, parse_kind,
+    AxisNames, Basis, Delivery, IgnoredTally, MetricRow, MetricSummary, Provenance, ReadSpec,
+    Report, ReportSource, Request, RequestError, RequestSpec, Section, SummaryRow, TreeNode,
+    ViewSpec, WatchDelivery, document_words, parse_cache_policy, parse_kind,
 };
 use fdu_core::watch::WatchConfig;
 use fdu_core::watch_session::{ChangeKind, Session};
@@ -634,7 +634,6 @@ fn value_error(error: &RequestError) -> PyErr {
 /// through `Display`, as the command line's typed flags do.
 #[allow(clippy::too_many_arguments)]
 fn build_basis(
-    now: SystemTime,
     root: &Path,
     max_depth: Option<usize>,
     one_filesystem: bool,
@@ -653,7 +652,7 @@ fn build_basis(
         analyze: Some(analyze),
         ..RequestSpec::new(root)
     };
-    Ok(Request::build(&spec, now, &AxisNames::FIELDS).map_err(|error| value_error(&error))?.basis)
+    Basis::build(&spec, &AxisNames::FIELDS).map_err(|error| value_error(&error))
 }
 
 /// The open configuration a basis and its delivery spell, until the execution plan model
@@ -1170,18 +1169,7 @@ fn build_request(
     // Typed by this API and read back through `Display`, exactly as the command line's
     // typed flags are, so both doors hand the model the same words.
     let words_per_page = words_per_page.to_string();
-    // The holder's analyzers, spelled as the grammar spells them, because the view axis
-    // defaults from the content axis: a request that paid to read files displays what it
-    // read, and resolving that against an empty set would hand back a directory tree
-    // containing none of the results. `labels` is the vocabulary `parse` accepts, which the
-    // analyzer set's own tests pin.
-    let analyze = if basis.content.is_enabled() {
-        basis.content.labels().join(",")
-    } else {
-        "none".to_string()
-    };
-    let spec = RequestSpec {
-        analyze: Some(&analyze),
+    let spec = ReadSpec {
         views: views.as_deref(),
         words_per_page: Some(&words_per_page),
         include: &include,
@@ -1196,15 +1184,14 @@ fn build_request(
         sort,
         reverse,
         size,
-        ..RequestSpec::new(&basis.root)
     };
-    let mut request =
-        Request::build(&spec, now, &AxisNames::FIELDS).map_err(|error| value_error(&error))?;
     // The basis is the holder's, never the caller's: an index was opened with its root,
-    // scope, and analyzers, and a read of it names only what this read asks.
-    request.basis = basis.clone();
-    request.validate().map_err(|error| value_error(&error))?;
-    Ok(request)
+    // scope, and analyzers, and a read of it names only what this read asks. Handing it to
+    // the model up front is what lets the view axis default from the analyzers the holder
+    // already holds -- a request that paid to read files displays what it read -- rather
+    // than spelling that typed set back into the grammar to ask.
+    Request::read(basis.clone(), &spec, now, &AxisNames::FIELDS)
+        .map_err(|error| value_error(&error))
 }
 
 /// One report, holding only what the request needed.
@@ -1308,7 +1295,6 @@ fn report_once(
     // bounds resolve against come from one reading rather than two.
     let now = SystemTime::now();
     let basis = build_basis(
-        now,
         &root,
         max_depth,
         one_filesystem,
@@ -1681,7 +1667,6 @@ fn open(
 ) -> PyResult<PyIndex> {
     let operation_started_at = SystemTime::now();
     let basis = build_basis(
-        operation_started_at,
         &root,
         max_depth,
         one_filesystem,
@@ -1760,7 +1745,6 @@ fn scan(
     let started_at = SystemTime::now();
     let scan_started_at = Some(started_at);
     let basis = build_basis(
-        started_at,
         &root,
         max_depth,
         one_filesystem,
