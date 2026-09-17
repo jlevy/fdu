@@ -3457,7 +3457,14 @@ impl Index {
 
     /// Capture every regular-file analysis candidate without retaining a lock or entry
     /// borrow across filesystem I/O.
-    pub fn analysis_candidates(&self, profile: AnalysisSet) -> Vec<AnalysisCandidate> {
+    ///
+    /// Crate-private until the request model (P1.3) decides whether an out-of-crate
+    /// analyzer is a supported surface (`fdu-5upj`). A caller outside the crate cannot
+    /// prepare the content tier, so every result it produced would commit as
+    /// [`AnalysisApplyOutcome::Stale`]; [`analyze_index`] is the entry that works.
+    ///
+    /// [`analyze_index`]: crate::content::analyze_index
+    pub(crate) fn analysis_candidates(&self, profile: AnalysisSet) -> Vec<AnalysisCandidate> {
         if !profile.is_enabled() {
             return Vec::new();
         }
@@ -3482,7 +3489,6 @@ impl Index {
                     classification: self.classify(&relative_path),
                     relative_path,
                     attrs: entry.attrs,
-                    profile,
                 });
             }
         }
@@ -3516,7 +3522,12 @@ impl Index {
     /// A result of another identity is [`AnalysisApplyOutcome::Stale`]: it answers another
     /// request than the one the tier holds, so committing it would mix records of two
     /// identities in one tier.
-    pub fn apply_analysis(&mut self, observation: AnalysisObservation) -> AnalysisApplyOutcome {
+    ///
+    /// Crate-private with [`Index::analysis_candidates`], and for the same reason.
+    pub(crate) fn apply_analysis(
+        &mut self,
+        observation: AnalysisObservation,
+    ) -> AnalysisApplyOutcome {
         let candidate = &observation.candidate;
         let Some(entry) = self.try_entry(candidate.entry_id) else {
             return AnalysisApplyOutcome::Stale;
@@ -8019,18 +8030,16 @@ mod tests {
             upsert("src", EntryKind::Dir, file_attrs(0, 1)),
             upsert("src/lib.rs", EntryKind::File, file_attrs(10, 1)),
         ]));
-        let candidate = index
-            .analysis_candidates(AnalysisSet::NONE.with_lines())
-            .into_iter()
-            .next()
-            .expect("file candidate");
+        let profile = AnalysisSet::NONE.with_lines();
+        let candidate =
+            index.analysis_candidates(profile).into_iter().next().expect("file candidate");
         let analysis = FileAnalysis {
             classification: candidate.classification.clone(),
             fingerprint: candidate.attrs.fingerprint(),
             bytes: candidate.attrs.size,
-            profile: candidate.profile,
+            profile,
             provenance: ContentProvenance::for_request(
-                AnalysisRequest { profile: candidate.profile, ..AnalysisRequest::default() },
+                AnalysisRequest { profile, ..AnalysisRequest::default() },
                 crate::classify::type_rule_fingerprint(),
             ),
             metrics: MetricValues {
@@ -8050,11 +8059,8 @@ mod tests {
         );
         assert!(index.content().is_none());
 
-        index.prepare_content_analysis(AnalysisRequest {
-            profile: candidate.profile,
-            ..AnalysisRequest::default()
-        });
-        assert_eq!(index.content_set(), candidate.profile);
+        index.prepare_content_analysis(AnalysisRequest { profile, ..AnalysisRequest::default() });
+        assert_eq!(index.content_set(), profile);
         assert_eq!(index.apply_analysis(observation), AnalysisApplyOutcome::Applied);
         assert_eq!(
             index.content_rollup(Path::new("")).expect("content root").total.metrics.physical_lines,
