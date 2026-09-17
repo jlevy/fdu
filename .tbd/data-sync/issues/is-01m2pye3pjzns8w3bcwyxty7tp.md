@@ -3,10 +3,11 @@ type: is
 id: is-01m2pye3pjzns8w3bcwyxty7tp
 title: "P1.3.1: Request model: Basis, Request, Delivery (no workers), RequestError, grammars, defaults, validate"
 kind: task
-status: open
+status: in_progress
 priority: 0
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
+delegate: claude-code@spud10
 labels:
   - core-models
 dependencies:
@@ -15,8 +16,11 @@ dependencies:
   - type: blocks
     target: is-01m2pye4c1h1kfcnsq59yfsnbt
 parent_id: is-01m2pmr9ytx0ye8d701mr5vp9s
+hold: null
+hold_until: null
 created_at: 2026-09-17T05:46:36.114Z
-updated_at: 2026-09-17T05:46:52.470Z
+updated_at: 2026-09-17T15:27:19.155Z
+started_at: 2026-09-17T15:27:19.154Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 3: The Request Model", commit 1. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 
