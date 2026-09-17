@@ -579,8 +579,8 @@ at `lib.rs`, `crates/fdu-py/src/lib.rs`, `examples/perf_probe.rs`, and the
   `control_limits_that_disagree_with_the_scope_are_refused_at_save_and_load`; add
   `a_v4_snapshot_is_older_format` and
   `controls_on_and_off_snapshots_share_the_entry_identity`.
-- `lib.rs`: add `a_partial_scan_writes_neither_tier_until_failed_paths_are_marked`
-  and `a_warm_partial_pass_leaves_a_complete_sidecar_whole`; recheck
+- `lib.rs`: add `a_partial_scan_writes_neither_tier_until_failed_paths_are_marked` and
+  `a_warm_partial_pass_leaves_a_complete_sidecar_whole`; recheck
   `content_sidecar_skips_unchanged_reads_and_serves_cache_only` and
   `cache_only_analysis_fails_closed_without_its_sidecar`. `cache.rs`: add
   `a_stale_sidecar_beside_a_current_snapshot_is_labelled_and_cleared`.
@@ -719,17 +719,17 @@ P1.4.4 also passes the execution instant down, so one pass-start instant exists,
 pins the stamp to an instant taken before the walk.
 
 **P1.4.2 re-enables the partial-pass sidecar write.** Item 2 shipped the per-tier write
-rules with the content tier’s partial-pass arm held off, because a partial pass marks its
-root `Partial` rather than the paths it failed: `content_record_writable` then promotes no
-entry the pass elided as unchanged, so the only records it could write are the files that
-changed since the last complete snapshot, and writing those replaces a complete sidecar
-with that handful.
+rules with the content tier’s partial-pass arm held off, because a partial pass marks
+its root `Partial` rather than the paths it failed: `content_record_writable` then
+promotes no entry the pass elided as unchanged, so the only records it could write are
+the files that changed since the last complete snapshot, and writing those replaces a
+complete sidecar with that handful.
 Once P1.4.2 marks the failed paths, an elided entry under a listable parent is `Fresh`,
 `content_record_writable` needs no change, and `content_tier_writable` returns to its
 pairing rule by restoring its second operand.
 **Acceptance test:** after a warm partial pass over a tree with one unlistable directory
-and one changed file, the sidecar holds a record for every file the pass stat’d unchanged
-and none under the unlistable directory.
+and one changed file, the sidecar holds a record for every file the pass stat’d
+unchanged and none under the unlistable directory.
 `a_warm_partial_pass_leaves_a_complete_sidecar_whole` (`lib.rs`) pins today’s weaker
 claim — the complete sidecar is left whole — and is replaced by that test.
 
@@ -854,7 +854,7 @@ as C. The content digest in the performance ledger changes at this commit.
 | `report_format.rs` | new `emit_report`, `emit_change`, `emit_cache_status`; `Field { name, presence: Presence }` with `Presence::{Always, Nullable, WhenLossy, WhenAnalyzer(AnalysisSet), WhenSet}` | The only declarations of document structure; the tree walk uses an explicit stack |
 | `report_format.rs` | `render` | Keep, and add `write(report, format, color, out: &mut dyn io::Write)` for streaming |
 | `report_format.rs` | JSON writers, YAML writers, `indent`, `collapse`, `json_count` | Delete |
-| `report_format.rs` | `render_change`, `render_cache_status`, `report_schema` and schema constants, `render_text_metrics`, `share_metric_note` | Machine formats through the walks, with YAML change records as `---` documents; `fdu.report/7`, `fdu.stream/2`, `fdu.cache/2`; text decides what to show from unit presence and `pages()` |
+| `report_format.rs` | `render_change`, `render_cache_status`, `report_schema` and schema constants, `render_text_metrics`, `share_metric_note` | Machine formats through the walks, with YAML change records as `---` documents; `fdu.report/7`, `fdu.stream/2`, `fdu.cache/2`; text decides what to show from unit presence and `pages()`; one encoding rule for 64-bit fingerprints across all three documents (`fdu-cggg`), which today are bare JSON numbers an IEEE-double reader rounds above 2^53, making two different stores compare equal |
 | `query/query_report.rs` | `Report` | Carries `status`, `provenance`, and the request echo; `notes` and `ignored_entries` stay text-only and the schema marks them off the wire |
 | `crates/fdu-py/src/lib.rs` | `PyIndex::report`, `report_dict` through `tree_dict`; `cache_status_dict`; `Index.since` change dicts | Delete the native dict after migrating its test; cache status and change sets read wire keys (`invalidate`, a labelled reason) |
 | Documentation | `fdu.report/7` and `fdu.stream/2` in `docs/project/guides/cache-design.md`, `docs/project/architecture/fdu-surface-architecture.md`, `docs/project/architecture/fdu-engine-architecture.md`, `docs/project/release-notes/0.1.0.md`, `docs/project/guides/release-process.md`, `crates/fdu/src/skills/SKILL.md`, and `README.md` | Update |

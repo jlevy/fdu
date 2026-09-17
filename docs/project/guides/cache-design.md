@@ -175,8 +175,14 @@ the analyzer set, the options fingerprint, and the analyzers under the names a r
 `analysis` object uses, or `stale`, with its `stale_reason` and `format_version`.
 Whether the sidecar is grouped with its snapshot and cleared with it is still decided by
 its magic, so a stale sidecar is labelled and removed like a current one.
-An empty cache directory is an empty sequence in every machine format, never a null, so
-one reader works whether or not anything is cached.
+Every fingerprint in either identity is a full 64-bit integer, written as a JSON number,
+and a consumer has to parse it exactly: a reader that converts numbers to IEEE doubles —
+JavaScript’s `JSON.parse`, jq before 1.7 — rounds values above 2^53, and a rounded
+identity field makes two different stores compare equal.
+One encoding rule for fingerprints across `fdu.report`, `fdu.stream`, and `fdu.cache` is
+decided once, with the answer model’s field schema (`fdu-cggg`), rather than per
+document. An empty cache directory is an empty sequence in every machine format, never a
+null, so one reader works whether or not anything is cached.
 
 Snapshot persistence is available on every platform, including for metadata queries.
 It is not used by every execution plan.
