@@ -5,7 +5,7 @@ title: "P1.4.2: Record walk failures per path; TreeStatus::of with bounded, path
 kind: task
 status: open
 priority: 0
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - core-models
@@ -16,7 +16,7 @@ dependencies:
     target: is-01m2pye70x3nc8p6t827sywb23
 parent_id: is-01m2pmra8yqrcxg27kc6ezg9vd
 created_at: 2026-09-17T05:46:38.515Z
-updated_at: 2026-09-17T05:46:54.769Z
+updated_at: 2026-09-17T20:20:00.014Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 4: Provenance and Tree Status", commit 2. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 
@@ -39,3 +39,7 @@ Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, s
 - Every golden diff is read and attributed to this commit; none is regenerated blind.
 
 Risk: issues are capped at 64 while scan errors are not, so `errors` becomes bounded with `errors_omitted`.
+
+## Notes
+
+Acceptance for the sidecar (PR #82 review F1, fdu-iiy5): layer 3 holds the partial-pass sidecar write behind this bead, because a partial pass marks the pass root Partial, so provenance_of promotes nothing and content_record_writable answers false for every unchanged file. When failed paths are marked per path, re-enable the write in content_tier_writable and pin it: after a warm partial pass with one changed file over a tree with an unlistable directory, the sidecar holds a record for every file the pass stat'd unchanged and none under the unlistable directory (the reviewer measured 7 records, not 1).
