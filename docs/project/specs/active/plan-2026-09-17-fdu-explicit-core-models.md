@@ -208,9 +208,10 @@ Surfaces construct and render models; they never re-derive a rule a model owns.
   seven `validate_controls` sites, and per-surface defaults.
 
 **Execution plan model.**
-- **Inputs:** a validated request, a typed `Delivery { cache, accept_partial, watch }`,
-  which gains `workers` when Phase 2 moves worker counts out of `ScanConfig` and
-  `AnalysisRequest`, and the stored state available.
+- **Inputs:** a validated request, a typed
+  `Delivery { cache, cache_path, accept_partial, watch, analysis_workers }`, whose two
+  worker fields become one `workers` when Phase 2 moves the counts out of `ScanConfig`
+  and `AnalysisRequest`, and the stored state available.
   The path-independence harness iterates deliveries through this type.
 - **Owns:** which tiers are needed, which stored tiers answer through the stored-state
   model, what is verified, computed, and written, and which provenance results.
@@ -428,7 +429,7 @@ sequencing below.
 | Type or function | Defined by | Used by |
 | --- | --- | --- |
 | `Basis { root: PathBuf, scope: ScanConfig, content: AnalysisSet }`, `Request { basis, query: Query, now: SystemTime }`, `RequestError` | Phase 1 item 3 | Every other item |
-| `Delivery { cache, cache_path, accept_partial, watch: Option<WatchDelivery> }`, gaining `workers: Workers` in Phase 2 | The struct in Phase 1 item 3 commit 1; `workers` and planning behavior in Phase 2 item 3 | Harness, sessions, execution plan |
+| `Delivery { cache, cache_path, accept_partial, watch: Option<WatchDelivery>, analysis_workers: usize }`, whose `analysis_workers` becomes `workers: Workers` in Phase 2 | The struct in Phase 1 item 3 commit 1; `workers` and planning behavior in Phase 2 item 3 | Harness, sessions, execution plan |
 | `EntryScope`, `SnapshotIdentity { entries: EntryTierIdentity, controls: ControlTierIdentity }`, `ContentTierIdentity { entries, analysis, provenance: AnalyzerProvenance { options_fingerprint, analyzers } }` (the entry tier alone holds the type-rules fingerprint), `serves_snapshot` (`Exact` or `Refuse`), `entries_writable`, `content_record_writable` | Phase 1 item 2 (`stored_state.rs`); Phase 2 item 4 adds `ProjectControlsOff` | Projection, execution plan, cache status |
 | `Index::content_set() -> AnalysisSet` | Phase 1 item 2 | Request validation, sessions |
 | `TreeStatus { complete, coverage, errors, errors_omitted }`, `ReportProvenance { source, freshness, scan_started_at, generated_at, tiers }` | Phase 1 item 4 | Answer model, execution plan |
@@ -609,15 +610,24 @@ The request model lives in `query/query_request.rs`, re-exported from `query.rs`
 
 ```rust
 pub struct Basis { pub root: PathBuf, pub scope: ScanConfig, pub content: AnalysisSet }
-pub struct Delivery { pub cache: CachePolicy, pub cache_path: Option<PathBuf>, pub accept_partial: bool, pub watch: Option<WatchDelivery> }
+pub struct Delivery { pub cache: CachePolicy, pub cache_path: Option<PathBuf>, pub accept_partial: bool,
+  pub watch: Option<WatchDelivery>, pub analysis_workers: usize }
 pub struct Request { pub basis: Basis, pub query: Query, pub now: SystemTime }
-pub struct RequestSpec<'a> { /* surface-neutral raw values, Option<&'a str> per axis */ }
+pub struct ReadSpec<'a> { /* what one read supplies, Option<&'a str> per axis */ }
+pub struct RequestSpec<'a> { /* the basis axes, plus `read: ReadSpec<'a>` */ }
 pub enum RequestError { InvalidValue { axis: &'static str, value: String, expected: String },
   ViewNeedsContent(ViewSpec), IgnoredWithoutObservation(IgnoredEntries),
+  ScopeUnsupported { axis: ScopeAxis, reason: &'static str },
   ContentMismatch { held: AnalysisSet, requested: AnalysisSet },
   WatchScope, WatchContent, WatchCacheOnly, ViewLimit { attempted: usize, limit: usize } }
+impl Basis {
+  pub fn build(spec: &RequestSpec, axes: AxisNames) -> Result<Self, RequestError>;
+  pub fn held_by(index: &Index) -> Self;
+}
 impl Request {
   pub fn build(spec: &RequestSpec, now: SystemTime, axes: AxisNames) -> Result<Self, RequestError>;
+  pub fn read(basis: Basis, spec: &ReadSpec, now: SystemTime, axes: AxisNames) -> Result<Self, RequestError>;
+  pub const fn new(basis: Basis, query: Query, now: SystemTime) -> Self;
   pub fn validate(&self) -> Result<(), RequestError>;
   pub fn validate_read(&self, held: &Basis) -> Result<(), RequestError>;
   pub fn validate_delivery(&self, delivery: &Delivery) -> Result<(), RequestError>;
@@ -633,7 +643,7 @@ Typed command-line values (for example `--scan-depth`) reach `RequestSpec` throu
 | --- | --- | --- |
 | Size | Allocated | `SizeMetric` defaults to apparent (`query/query_selection.rs`); the opened-root binding uses `"apparent"` (`crates/fdu-py/src/opened_binding.rs`) |
 | Views (report) | `ViewSpec::default_for(content)` | None |
-| Views (watch) | `tree`, the default for no content | Python passes `Files` (`crates/fdu-py/src/lib.rs`); `WatchOptions` defaults to `files` (`crates/fdu-py/python/fdu/_models.py`) |
+| Views (watch) | Derived, not declared: a watch serves no content, so it is the report default for none, which is `tree` | Python passes `Files` (`crates/fdu-py/src/lib.rs`); `WatchOptions` defaults to `files` (`crates/fdu-py/python/fdu/_models.py`) |
 | `words_per_page` | 250 | Declared at `crates/fdu/src/cli.rs`, `query/query_report.rs`, and the binding signatures |
 | Analysis and controls | None; `read_controls` on; `ControlLimits::default()` | None |
 
@@ -643,7 +653,7 @@ Typed command-line values (for example `--scan-depth`) reach `RequestSpec` throu
 | `query/query_report.rs` | `Query::validate_analysis`, `validate_controls`, `AxisNames`, `report`, `report_in`, share metric in `metric_summary` | Delete both validators into `Request`; extend `AxisNames`; `report` and `report_in` take `&Request`, validate the read against the index’s basis, and read `analysis` and the share metric from the request |
 | `query/query_selection.rs` | `SizeMetric` default | Allocated |
 | `execution.rs` | `prepare_report`, `prepare_report_with_scan_diagnostics`, `prepare_report_internal` | Take `(&Request, &Delivery)`, the root being in `Basis`; build today’s `OpenConfig` from them internally until Phase 2 item 3 deletes it; delete its `validate_controls` call |
-| `watch_session.rs` | `Session::new`, `query()` | `new(handle, Request, WatchConfig)`; refuse when `content_set()` is not empty and run the delivery checks; `query()` becomes `request()` |
+| `watch_session.rs` | `Session::new`, `query()` | `new(handle, Request, &Delivery, WatchConfig)`; refuse when `content_set()` is not empty and run the delivery checks against the caller’s own delivery; `query()` becomes `request()` |
 | `scan.rs` | `validate_for_watch_scope` | Keep scope equality for its callers; the depth and one-filesystem rule becomes `RequestError::WatchScope` |
 | `engine_contract.rs` | `ReportRequest`, `Error` | A read spec whose `now` is `generated_at`; add `Error::InvalidRequest(RequestError)` |
 | `opened/read.rs` | `report_projection`, `validate_report` | Validate reads against `Basis { content: NONE }`, so `documents` is refused |
@@ -685,6 +695,44 @@ expects `InvalidRequest(IgnoredWithoutObservation)`. Goldens: add
 4. The command line and the binding build through `RequestSpec`.
 5. `validate_delivery`: the watch refusals and the tree default.
 6. Opened reads validate their read spec.
+
+**Deviations, as implemented (2026-09-17).** Recorded here rather than in a pull request
+body, so the combined stack review has them without reading five of those.
+
+1. **`Delivery` gained `analysis_workers`.** The plan leaves worker counts to Phase 2,
+   which would have made `--analysis-workers` inert in between.
+   The cost is asymmetry: scan threads still ride in `Basis.scope.threads`, a request
+   field carrying a delivery knob that `Basis::held_by` then has to leave out.
+   Phase 2 item 3 replaces both with one `Workers`.
+2. **`ScanConfig::validate_for_watch_scope` stays**, for the two callers that bind a
+   watcher without a request: opened-root observation and the per-batch apply.
+   Both render the same guidance constant.
+3. **A scope this build cannot honour is a refused request.** Written first as
+   `Error::UnsupportedScanConfig` moved earlier, on the argument that it is a capability
+   of the build rather than a malformed request; changed to
+   `RequestError::ScopeUnsupported`, refused by `validate` on every route, because the
+   exit code disagreed with every other refusal of the same request — the command line
+   exited 1 where a bad value exits 2, and Python already called it
+   `InvalidArgumentError` like the others.
+   The sentence is unchanged, with only the axis renamed, and the engine-internal
+   callers that never build a request still print it verbatim.
+4. **`build_request` takes the keyword values** and composes the spec internally, so the
+   three Python paths share one composition.
+5. **The refusal half of the ignored-state test stays in `query_report.rs`**, which
+   covers the library path; the model’s half is in `query_request.rs`.
+6. **`RequestSpec` carries a `ReadSpec`**, and `Request::read(basis, spec, now, axes)`
+   builds one read against a holder’s basis.
+   Not in the plan’s interface list, but the split it names — a basis is what a holder
+   holds, a query and `now` are what each read supplies — had six call sites composing
+   that read by hand and one spelling a typed `AnalysisSet` back into the string grammar
+   to find the view default.
+7. **`Session::new` takes the caller’s `Delivery`.** The plan’s signature omitted it,
+   and a session that fabricated one validated against `cache: Auto` whatever its caller
+   had asked for, so `WatchCacheOnly` could not fire inside the engine at all.
+   Phase 2 item 3 hands sessions `(request, delivery)` anyway.
+8. **`RequestDefaults` has no `watch_view`.** A watch serves no content, because
+   `WatchContent` refuses one that names an analyzer, so its view is the report default
+   for none: derived rather than declared, and the table’s doc says so.
 
 **Risks:** the allocated default reaches opened-root selection through `EntrySelection`,
 which MetaBrowser sees; `RequestError` must reproduce each surface’s current wording,
@@ -927,6 +975,14 @@ impl Delivery { pub fn enumerate() -> impl Iterator<Item = Delivery> }
 Plans for the same request may differ only in what they load and in provenance.
 `Delivery::enumerate()` yields representative values for the axes that can be enumerated
 (cache policy, `accept_partial`, and watch), with worker counts and `cache_path` fixed.
+
+The repaint interval is a delivery default still stated twice: `--interval` defaults to
+`2s` in `cli.rs` and `WatchOptions.interval` to `2.0` in `_models.py`, so two doors
+decide independently how often a watch repaints.
+Phase 1 item 3 left it there because `Delivery` had no defaults table entry of its own;
+when `Delivery` becomes a planning input here, the default belongs with it and both
+doors read it, as they already read `Request::DEFAULTS` for the size metric, the
+analyzer set, and the page denominator.
 
 | File | Function or type | Change |
 | --- | --- | --- |

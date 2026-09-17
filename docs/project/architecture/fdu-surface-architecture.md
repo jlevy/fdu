@@ -99,10 +99,12 @@ Parity checks agreement after the fact.
 [Model Every Key Concept Explicitly, in One Place](fdu-design-principles.md#model-every-key-concept-explicitly-in-one-place)
 asks for it by construction: one request model and one answer shape in the engine, which
 each surface parses into and serializes from.
-Today each surface assembles its own request over the engine’s value grammars —
-`scan_config`, `parse_query`, and `parse_analysis` in `cli.rs`, and `build_query_at` in
-`fdu-py` — and several writers serialize a `Report` independently.
-[Known Gaps](#known-gaps) lists where they differ, and
+The request half is built that way now: both surfaces fill one surface-neutral
+`RequestSpec`, `Request::build` parses it, and each renders whatever refusal comes back
+through its own `AxisNames`, so a grammar, a default, and a rule that relates one axis
+to another are each stated once.
+The answer half is not: several writers serialize a `Report` independently.
+[Known Gaps](#known-gaps) lists where they still differ, and
 [the explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
 tracks the work.
 
@@ -232,9 +234,9 @@ tracks them. Engine-side gaps are in
   path `a [ b/f { g }.txt` is emitted as `a [b/f {g}.txt`. `--watch --format yaml` emits
   JSON change records, and text output carries no source or freshness label.
 - **Defaults and validation are the request model’s.** One defaults table
-  (`Request::DEFAULTS`) decides the size metric, the page denominator, and the view a
-  watch reports, and `Request::build` parses every axis from the words a caller wrote,
-  so each surface supplies only its own names for them.
+  (`Request::DEFAULTS`) decides the size metric, the page denominator, the analyzer set,
+  and the view a report displays, and `Request::build` parses every axis from the words
+  a caller wrote, so each surface supplies only its own names for them.
   `Request::validate`, `validate_read`, and `validate_delivery` state every rule once —
   a view its content cannot answer, a selection by ignored state a scope never observed,
   a read another analyzer set holds, and the three a watch cannot carry — and each route
