@@ -3,18 +3,22 @@ type: is
 id: is-01m2pye2d1y7k090q6k9d8mcc8
 title: "P1.2.3: Content sidecar format 5 with ContentTierIdentity and identify_sidecar"
 kind: task
-status: open
+status: in_progress
 priority: 0
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
+delegate: claude-code@spud10
 labels:
   - core-models
 dependencies:
   - type: blocks
     target: is-01m2pye2qa2z80jqz73hnp5y2h
 parent_id: is-01m2pmram44dgp78vm6xq4w7k7
+hold: null
+hold_until: null
 created_at: 2026-09-17T05:46:34.784Z
-updated_at: 2026-09-17T05:46:51.347Z
+updated_at: 2026-09-17T06:17:21.466Z
+started_at: 2026-09-17T06:17:21.463Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 2: Store Identity, Equality Serve, and Per-Tier Writes", commit 3. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 

@@ -3,10 +3,11 @@ type: is
 id: is-01m2pye1qvvx4zgsqxxg4wpsa2
 title: "P1.2.1: stored_state.rs: tier identities, EntryScope, serves_snapshot (Exact, Refuse), codecs"
 kind: task
-status: open
+status: in_progress
 priority: 0
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
+delegate: claude-code@spud10
 labels:
   - core-models
 dependencies:
@@ -15,8 +16,11 @@ dependencies:
   - type: blocks
     target: is-01m2pye2d1y7k090q6k9d8mcc8
 parent_id: is-01m2pmram44dgp78vm6xq4w7k7
+hold: null
+hold_until: null
 created_at: 2026-09-17T05:46:34.107Z
-updated_at: 2026-09-17T05:46:51.048Z
+updated_at: 2026-09-17T06:17:20.325Z
+started_at: 2026-09-17T06:17:20.323Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 2: Store Identity, Equality Serve, and Per-Tier Writes", commit 1. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 

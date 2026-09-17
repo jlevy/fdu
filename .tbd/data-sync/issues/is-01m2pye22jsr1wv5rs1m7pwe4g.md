@@ -3,10 +3,11 @@ type: is
 id: is-01m2pye22jsr1wv5rs1m7pwe4g
 title: "P1.2.2: Snapshot format 5 with tier identities and verified_started_at_ns"
 kind: task
-status: open
+status: in_progress
 priority: 0
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
+delegate: claude-code@spud10
 labels:
   - core-models
 dependencies:
@@ -17,8 +18,11 @@ dependencies:
   - type: blocks
     target: is-01m2pyeeppbcbq3hfepwjcthyw
 parent_id: is-01m2pmram44dgp78vm6xq4w7k7
+hold: null
+hold_until: null
 created_at: 2026-09-17T05:46:34.449Z
-updated_at: 2026-09-17T05:47:01.064Z
+updated_at: 2026-09-17T06:17:20.900Z
+started_at: 2026-09-17T06:17:20.898Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 2: Store Identity, Equality Serve, and Per-Tier Writes", commit 2. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 

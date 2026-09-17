@@ -3,16 +3,20 @@ type: is
 id: is-01m2pye12ype0stny4rb63rh5t
 title: "P1.1.5: Run the subset in CI and add the full-matrix workflow"
 kind: task
-status: open
+status: in_progress
 priority: 0
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
+delegate: claude-code@spud10
 labels:
   - core-models
 dependencies: []
 parent_id: is-01m2pmr9n3mq4nb2r1pc328qpz
+hold: null
+hold_until: null
 created_at: 2026-09-17T05:46:33.437Z
-updated_at: 2026-09-17T05:46:33.437Z
+updated_at: 2026-09-17T06:17:19.141Z
+started_at: 2026-09-17T06:17:19.138Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 1: The Path-Independence Harness", commit 5. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 
