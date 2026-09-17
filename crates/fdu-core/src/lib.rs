@@ -588,7 +588,7 @@ pub(crate) fn open_for_report(
                 || content_cache.stale > 0,
         };
         let index = std::sync::Arc::new(index);
-        let pending = spawn_save(&index, config, scan_report.is_complete(), writes);
+        let pending = spawn_save(&index, config, writes);
         return Ok((
             index,
             OpenReport {
@@ -617,12 +617,7 @@ pub(crate) fn open_for_report(
         .is_enabled()
         .then(|| content::analyze_index(&mut index, config.analysis));
     let index = std::sync::Arc::new(index);
-    let pending = spawn_save(
-        &index,
-        config,
-        scan_report.is_complete(),
-        cold_scan_save_targets(&index, config),
-    );
+    let pending = spawn_save(&index, config, cold_scan_save_targets(&index, config));
     Ok((
         index,
         OpenReport { path_taken: OpenPath::ColdScan, scan: scan_report, analysis, content_cache },
@@ -727,21 +722,31 @@ fn load_content(index: &mut Index, config: &OpenConfig) -> Result<content::Conte
     content::load_content_cache(index, &wanted, &content::content_cache_path(snapshot_path))
 }
 
-/// Start a snapshot write, when policy and completeness allow one.
+/// Start the cache writes a completed open still needs, each tier under its own rule.
 ///
-/// Only a complete scan is written: a snapshot recording a partial view would be served
-/// as fact on the next run, and the existing complete snapshot is better than that.
+/// The snapshot is written only after a complete pass
+/// ([`stored_state::entries_writable`]): a snapshot recording a partial view would be
+/// served as fact on the next run, and the existing complete snapshot is better than that.
+/// The content sidecar keeps the records the pass verified, after a complete pass or beside
+/// a stored snapshot of the same entry tier ([`stored_state::content_tier_writable`]).
 fn spawn_save(
     index: &std::sync::Arc<Index>,
     config: &OpenConfig,
-    complete: bool,
     writes: SaveTargets,
 ) -> PendingSave {
-    let (Some(cache_path), true, true, false) =
-        (config.cache_path.clone(), config.policy.writes(), complete, writes.none())
+    let (Some(cache_path), true, false) =
+        (config.cache_path.clone(), config.policy.writes(), writes.none())
     else {
         return PendingSave::none();
     };
+    let entries_writable = stored_state::entries_writable(index);
+    let writes = SaveTargets {
+        metadata: writes.metadata && entries_writable,
+        content: writes.content && config.analysis.profile.is_enabled(),
+    };
+    if writes.none() {
+        return PendingSave::none();
+    }
 
     // The index is read-only from here, so the writer and the caller's rendering are two
     // readers of one index rather than of two copies. This used to deep-clone — every
@@ -764,11 +769,25 @@ fn spawn_save(
             workers.push(("metadata", worker));
         }
     }
-    if writes.content && analysis.profile.is_enabled() {
+    if writes.content {
         let content_path = content::content_cache_path(&cache_path);
         if let Ok(worker) =
             std::thread::Builder::new().name("fdu-content-cache".to_string()).spawn(move || {
                 let _counter_guard = counters::thread_flush_guard();
+                // Read the stored snapshot's header only when this pass wrote no snapshot:
+                // no metadata writer is running then, and a complete pass needs no answer.
+                let stored_entries = || {
+                    snapshot::read_header(&cache_path)
+                        .ok()
+                        .flatten()
+                        .filter(|stored| stored.root == snapshot_source.root_path())
+                        .map(|stored| EntryTierIdentity::of_scope(stored.scope))
+                };
+                let writable = entries_writable
+                    || stored_state::content_tier_writable(&snapshot_source, stored_entries());
+                if !writable {
+                    return Ok(());
+                }
                 content::save_content_cache(&snapshot_source, analysis, &content_path)
             })
         {
@@ -1727,6 +1746,89 @@ mod save_tests {
             fs::metadata(&snapshot_path).expect("still there").len(),
             complete_len,
             "a partial scan must not overwrite a complete snapshot"
+        );
+    }
+
+    /// Each tier is written by its own rule. A partial pass writes no snapshot, because an
+    /// absent entry would change totals, but it writes the content records it verified
+    /// beside the snapshot of the same entry identity already stored, and leaves out the
+    /// records under the directory it could not list. A partial pass under another entry
+    /// identity writes no sidecar, so the one that pairs with the stored snapshot survives.
+    #[test]
+    #[cfg(unix)]
+    fn a_partial_scan_writes_verified_content_but_no_snapshot() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        let sidecar_path = content::content_cache_path(&snapshot_path);
+        write_file(&dir.path().join("notes.md"), b"one two\n");
+        write_file(&dir.path().join("locked/old.md"), b"three\n");
+        let analysis = content::AnalysisRequest {
+            profile: content::AnalysisSet::NONE.with_lines(),
+            ..content::AnalysisRequest::default()
+        };
+        let auto = OpenConfig {
+            cache_path: Some(snapshot_path.clone()),
+            policy: CachePolicy::Auto,
+            analysis,
+            ..OpenConfig::default()
+        };
+        let (_, seeded) = open(dir.path(), &auto).expect("seed both tiers");
+        assert!(seeded.is_complete());
+        let snapshot_before = fs::read(&snapshot_path).expect("a snapshot");
+
+        // Change a file the next pass can verify, and lock the directory holding another.
+        write_file(&dir.path().join("notes.md"), b"one two three\n");
+        let locked = dir.path().join("locked");
+        let run = |config: &OpenConfig| {
+            fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("deny");
+            let opened = open(dir.path(), config);
+            fs::set_permissions(&locked, fs::Permissions::from_mode(0o700)).expect("restore");
+            let (_, report) = opened.expect("a partial open still answers");
+            assert!(!report.is_complete(), "the pass should be partial");
+        };
+
+        // Under another entry identity: neither tier is written.
+        let sidecar_before = fs::read(&sidecar_path).expect("a sidecar");
+        let other_scope = OpenConfig {
+            scan: ScanConfig { max_depth: Some(8), ..ScanConfig::default() },
+            ..auto.clone()
+        };
+        run(&other_scope);
+        assert_eq!(fs::read(&snapshot_path).expect("snapshot"), snapshot_before);
+        assert_eq!(
+            fs::read(&sidecar_path).expect("sidecar"),
+            sidecar_before,
+            "a partial run under another entry identity must not evict the paired sidecar"
+        );
+
+        // Under the stored snapshot's identity: the verified record is written, and only it.
+        run(&auto);
+        assert_eq!(
+            fs::read(&snapshot_path).expect("snapshot"),
+            snapshot_before,
+            "a partial scan must not overwrite a complete snapshot"
+        );
+        let (mut fresh, _) =
+            scan::scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
+        let wanted = fresh.content_identity(analysis.profile);
+        let loaded = content::load_content_cache(&mut fresh, &wanted, &sidecar_path).expect("load");
+        assert_eq!((loaded.usable, loaded.hits, loaded.stale), (true, 1, 0), "{loaded:?}");
+        let content = fresh.content().expect("content");
+        assert_eq!(
+            content.file(Path::new("notes.md")).expect("the verified record").metrics.raw_words,
+            3
+        );
+        assert!(
+            content.file(Path::new("locked/old.md")).is_none(),
+            "the record under the directory the pass could not list is not written"
         );
     }
 

@@ -71,12 +71,11 @@ pub fn save_content_cache(index: &Index, request: AnalysisRequest, path: &Path) 
     let Some(identity) = content.identity() else {
         return Ok(());
     };
-    // Every record the tier holds carries its identity: the tier refuses any other.
+    // Every record the tier holds carries its identity, because the tier refuses any other,
+    // so which records are written is decided per record: those this pass verified.
     let records = content
         .records()
-        .filter(|(_, record)| {
-            !matches!(record.coverage, CoverageReason::IoError | CoverageReason::ChangedDuringRead)
-        })
+        .filter(|(path, record)| crate::stored_state::content_record_writable(index, path, record))
         .collect::<Vec<_>>();
     let record_count = u64::try_from(records.len())
         .map_err(|_| Error::Snapshot("content sidecar record count overflow".into()))?;
@@ -884,6 +883,52 @@ mod tests {
         }
         fs::write(&cache, &saved).expect("restore");
         assert_eq!(reload(&cache), hit, "the unchanged image still restores");
+    }
+
+    /// A save writes a record only for a file this pass verified. Records restored beside
+    /// a snapshot over a subtree whose verification was withdrawn, here by a pass that
+    /// began over `sub` and has not finished, describe retained facts nobody re-checked,
+    /// so they stay out of the sidecar while records for the verified rest of the tree
+    /// are written.
+    #[test]
+    fn records_under_an_unverified_subtree_are_not_written() {
+        let root = tempfile::tempdir().expect("root");
+        let store = tempfile::tempdir().expect("cache dir");
+        fs::write(root.path().join("top.md"), "one two\n").expect("write");
+        fs::create_dir(root.path().join("sub")).expect("mkdir");
+        fs::write(root.path().join("sub").join("inner.md"), "three\n").expect("write");
+        let config = ScanConfig::default();
+        let lines = request_for(AnalysisSet::NONE.with_lines());
+        let (snapshot_path, cache) = (store.path().join("tree.fdu"), store.path().join("first"));
+
+        let (mut scanned, _) = crate::scan::scan_into_index(root.path(), &config).expect("scan");
+        super::super::analyze_index(&mut scanned, lines);
+        crate::snapshot::save(&scanned, &snapshot_path).expect("save snapshot");
+        save_content_cache(&scanned, lines, &cache).expect("save sidecar");
+
+        let mut restored = crate::snapshot::load_with_types(&snapshot_path, config.types_shared())
+            .expect("load")
+            .expect("a usable snapshot");
+        assert_eq!(load(&mut restored, lines, &cache).hits, 2);
+        crate::scan::reconcile(&mut restored, &config, &mut |_| {}).expect("reconcile");
+        restored.begin_reconcile(Path::new("sub")).expect("withdraw trust over sub");
+
+        let content = restored.content().expect("content");
+        let writable = |path: &str| {
+            let record = content.file(Path::new(path)).expect("a restored record");
+            crate::stored_state::content_record_writable(&restored, Path::new(path), record)
+        };
+        assert!(writable("top.md"), "a verified file's record is written");
+        assert!(!writable("sub/inner.md"), "a record under an unverified subtree is not");
+
+        let rewritten = store.path().join("second");
+        save_content_cache(&restored, lines, &rewritten).expect("resave");
+        let (mut fresh, _) = crate::scan::scan_into_index(root.path(), &config).expect("scan");
+        let loaded = load(&mut fresh, lines, &rewritten);
+        assert!(loaded.usable && loaded.hits == 1, "only the verified record: {loaded:?}");
+        let fresh_content = fresh.content().expect("content");
+        assert!(fresh_content.file(Path::new("top.md")).is_some());
+        assert!(fresh_content.file(Path::new("sub/inner.md")).is_none());
     }
 
     /// Re-address the sidecar's one record, leaving the image otherwise valid.

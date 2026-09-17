@@ -33,9 +33,7 @@ use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::engine_contract::{
-    Attrs, Coverage, EntryKind, Error, Freshness, Observation, Op, Result, Source,
-};
+use crate::engine_contract::{Attrs, EntryKind, Error, Observation, Op, Result, Source};
 use crate::index::{EntryId, Index, IndexHandle};
 use crate::stored_state::{ControlTierIdentity, SNAPSHOT_IDENTITY_BYTES, SnapshotIdentity};
 
@@ -215,7 +213,7 @@ pub fn engine_fingerprint() -> u64 {
 
 /// Write `index` to `path`, replacing any existing snapshot atomically.
 pub fn save(index: &Index, path: &Path) -> Result<()> {
-    if index.freshness() != Freshness::Fresh || index.state().coverage != Coverage::Complete {
+    if !crate::stored_state::entries_writable(index) {
         return Err(Error::Snapshot(
             "refusing to persist an index that is stale, reconciling, or incomplete".into(),
         ));

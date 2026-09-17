@@ -290,8 +290,15 @@ What a policy reads and writes also depends on the path that answers:
 - **Live updates.** Under a write-permitting policy, the command line’s `--watch` saves
   a throttled snapshot whenever the index is fresh.
   Python `Index.refresh` and `Index.watch` never write.
-- **Content sidecar.** Written after a complete cold scan with analysis, and after a
-  warm open whose analysis applied a record or found a stale one.
+- **Content sidecar.** Written after a cold scan with analysis, and after a warm open
+  whose analysis applied a record or found a stale one.
+  Each tier has its own write rule.
+  After a partial pass the snapshot is not written, but the sidecar is, when a snapshot
+  of the same entry tier is already stored: it keeps a record only for a file the pass
+  scanned or revalidated and read without error, so a record for a file retained under a
+  directory the pass could not list is left out and read again later.
+  A partial pass under another entry tier writes no sidecar, so the one that pairs with
+  the stored snapshot survives.
   A run with another analyzer set misses the stored sidecar and replaces it, under
   `refresh` because no sidecar is read and under `auto` because the stored one is
   another identity.
@@ -311,7 +318,8 @@ standard error.
 [`open_for_report`](../../../crates/fdu-core/src/lib.rs) implement these policies.
 The transient summary path and snapshot-read bypass mean that `--cache auto` does not
 promise a reusable baseline after an arbitrary command.
-`--allow-partial` changes exit acceptance; it does not make a partial scan cacheable.
+`--allow-partial` changes exit acceptance; it does not make a partial scan’s snapshot
+cacheable.
 
 ## Future Considerations
 
