@@ -452,7 +452,8 @@ is a permanent cost on every commit paid for an intermittent read.
 
 Configuration separates answer semantics from execution policy and query selection.
 
-Scope identity contains values that change which facts the engine may retain:
+Scope identity (`EntryScope`, which an opened root’s `EngineVersion` and a store’s entry
+tier both record) contains values that change which facts the engine may retain:
 
 - hidden-component admission and any exact-name allowlist;
 - symlink-following behavior;

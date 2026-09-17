@@ -226,7 +226,7 @@ mod tests {
         EngineVersion {
             session,
             sequence: crate::Clock::ZERO,
-            scope: crate::ScopeIdentity {
+            scope: crate::EntryScope {
                 max_depth: None,
                 follow_symlinks: false,
                 one_filesystem: false,

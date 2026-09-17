@@ -16,7 +16,7 @@ use crate::content::{
     AnalysisSet, AnalyzerId, AnalyzerVersion, ContentProvenance, OptionsFingerprint,
 };
 use crate::control::ControlLimits;
-use crate::engine_contract::{ScanScope, ScopeIdentity};
+use crate::engine_contract::ScanScope;
 
 /// Version of the fixed `.gitignore` control semantics, the first thing
 /// [`ControlTierIdentity::ignore_rules_fingerprint`] hashes.
@@ -26,10 +26,24 @@ const IGNORE_RULES_VERSION: u64 = 2;
 /// and special-object settings.
 ///
 /// This is [`ScanScope`] without its type-rules, reducer-set, and ignore-rules
-/// fingerprints. It is the same filesystem-admission identity an opened root binds as
-/// [`ScopeIdentity`], so the stored-state model names that type rather than keeping a
-/// second struct with the same fields that could drift from it.
-pub type EntryScope = ScopeIdentity;
+/// fingerprints: the filesystem-admission identity of a validated scan configuration. A
+/// store's entry tier records it, and an opened root binds it in
+/// [`EngineVersion::scope`](crate::EngineVersion::scope). Root binding and execution policy
+/// are deliberately absent, so two roots may share it without claiming to be the same live
+/// session.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct EntryScope {
+    /// Maximum retained relative depth, or unlimited when absent.
+    pub max_depth: Option<usize>,
+    /// Whether directory symlinks are followed.
+    pub follow_symlinks: bool,
+    /// Whether traversal stays on the root filesystem.
+    pub one_filesystem: bool,
+    /// Identity of leading-dot component admission and its exact-name allowlist.
+    pub hidden_fingerprint: u64,
+    /// Whether filesystem objects outside files, directories, and symlinks are excluded.
+    pub exclude_special: bool,
+}
 
 /// Identity of an entry tier: the entries a store holds and the roll-ups derived from
 /// them.
@@ -56,7 +70,7 @@ impl EntryTierIdentity {
     pub fn of_scope(scope: ScanScope) -> Self {
         Self {
             engine: crate::snapshot::engine_fingerprint(),
-            scope: scope.scope_identity(),
+            scope: scope.entry_scope(),
             type_rules_fingerprint: scope.type_rules_fingerprint,
             reducers_fingerprint: scope.reducers_fingerprint,
         }
