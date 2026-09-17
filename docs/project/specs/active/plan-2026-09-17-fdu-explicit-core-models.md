@@ -471,10 +471,10 @@ half needs; model unit tests stay in Rust.
 | --- | --- | --- |
 | `tests/path_independence/fixture.py` | `build_fixture(root) -> FixtureFacts` | Port `explorations/path-independence/make_fixture.sh`: seeded bytes instead of `/dev/urandom`, `os.utime` instead of `touch -t`, symlinks skipped and recorded where `os.symlink` fails |
 | `tests/path_independence/matrix.py` | `REQUESTS`, `WARMERS`, `MUTATIONS`, `ROUTES`, `SUBSET` | Move the exploration’s `R`, `W`, `mutate`, and `MUTATIONS`; add the `unreadable` mutation (`chmod 000` on `src/nested`, restored in `finally`, skipped where permission bits are not enforced); routes `cli-report`, `py-report`, `py-open`, `py-scan`, and later `cli-watch-initial` |
-| `tests/path_independence/runner.py` | `run_cli`, `run_py`, `normalize`, `compare -> Verdict`, `case_key` | Move the exploration’s runner; `normalize` drops only `source`, `freshness`, `scan_started_at`, and `generated_at`; verdicts are `same`, `differs`, or `outcome_class` |
+| `tests/path_independence/runner.py` | `run_cli`, `run_py`, `normalize`, `compare -> Verdict`, `case_key` | Move the exploration’s runner; `normalize` drops only `source`, `freshness`, `scan_started_at`, and `generated_at`; verdicts are `same`, `stale`, and `refused` (the Rule’s allowed outcomes), `differs`, or `outcome_class`; lists of objects align by `path`, `id`, or `name`, and the answer’s root is a placeholder |
 | `tests/path_independence/pyrun.py` | `main` | Move; refuse to run when `fdu` imports from `crates/fdu-py/python`, the parity safety property |
-| `tests/path_independence/registry.py` | `load`, `verify`, `record` | Add |
-| `tests/path_independence/known-violations.toml` | registry | Add, seeded from a full Linux run |
+| `tests/path_independence/registry.py` | `load`, `verify`, `record`, `merge` | Add; `merge` combines judged runs from several platforms |
+| `tests/path_independence/known-violations.toml` | registry | Add, merged from the full matrix’s judged cases on Linux, macOS, and Windows |
 | `tests/path_independence/test_harness.py` | comparator and registry unit tests | Add; needs no fdu build |
 | `tests/path_independence/test_path_independence.py` | `PathIndependence.test_matrix` | Add; `FDU_PI_TIER=subset\|full`, `FDU_PI_SURFACES=cli\|cli,python` |
 | `Makefile` | `path-independence`, `test-path-independence`, `path-independence-full`, `path-independence-record`; `check`, `UV_BACKED_TARGETS`, `PYTHON_LINT_PATHS` | Add the targets; `check` runs the subset after `parity-check` with `FDU_PYTHON=$(SMOKE_PYTHON)` |
@@ -490,38 +490,46 @@ The registry is TOML, read with `tomllib` and reviewed like a golden:
 
 ```toml
 [classes.content-containment]
+description = "An analysis request answered from stored records of another analyzer set"
 clears_with = "Phase 1 item 2: content identity and equality serve"
 bead = "fdu-gija"
 
 [[violation]]
-key = "warm/cli-report/auto/W_all/-/a_lines"
 class = "content-containment"
 paths = ["analysis.analyze[]", "reports[].metrics.total.metrics.physical_lines"]
+keys = ["warm/cli-report/auto/W_all/-/a_lines"]
 ```
 
 A run fails on an unregistered difference, a registered key whose generalized paths
 changed, a registered key that now matches cold and the other routes, a class with no
 entries, an entry still marked `unclassified`, or a run with zero cases or zero
 parseable cold answers.
-An optional `platforms` field records a genuinely platform-specific entry, which is
-itself a finding to explain.
+An optional `platforms` field records an entry that occurs, or takes its shape, only on
+some platforms, which is itself a finding to explain; one case may carry a different
+shape per platform. Entries sharing a class, shape, and platforms are grouped under one
+`keys` list.
 
-The subset is 16 requests (`default`, `nogi`, `budget1k`, `scandepth1`, `exclign`,
+The subset is 17 requests (`default`, `nogi`, `budget1k`, `scandepth1`, `exclign`,
 `onlyign`, `v_summary`, `v_summary_nogi`, `v_types`, `a_lines`, `a_code`, `a_words`,
-`a_all`, `a_lines_v_documents`, `a_code_langs_name_lim1`, `a_all_nogi`) across five
-warmers and three policies on `cli-report`, five mutations after two warmers, and the
-Python routes after two warmers: about 1,200 invocations, budgeted at 90 seconds on
-Linux and 4 minutes on Windows, where process creation is slower.
-The full matrix is about 20,000 invocations, budgeted at 30 minutes per platform.
+`a_all`, `a_lines_v_documents`, `a_code_langs_name_lim1`, `a_all_nogi`, `onefs`) across
+five warmers and three policies on `cli-report`, seven mutations (one per way a change
+is detected) after two warmers, and the Python routes after two warmers: about 1,600
+cases, budgeted at 90 seconds on Linux and 4 minutes on Windows, where process creation
+is slower. The full matrix is about 20,000 invocations, budgeted at 30 minutes per
+platform.
 
-The seed classes are `content-containment`, `mixed-records`, `projection-route`, and
-`unverified-subtree`, each naming the item that clears it.
+The seed classes each name the item that clears it: `content-containment` and
+`mixed-records` (item 2), `unverified-subtree` (item 4), `refusal-kind` and
+`refusal-order` (item 3), and `projection-route` (Phase 2 item 4). `windows-change-time`
+records that the validity fingerprint reads no change time on Windows, so a same-size
+rewrite that keeps its mtime goes unseen there; `fdu-6act` decides whether to read the
+NTFS change time.
 
 **Commits:**
 1. Move the fixture, comparator, and matrix with `test_harness.py`; add lint paths.
 2. Add `registry.py`, its tests, and `--record`.
-3. Seed the registry from a full Linux run; add the Make targets and the subset in
-   `make check`.
+3. Seed the registry from the full matrix’s judged runs on all three platforms; add the
+   Make targets and the subset in `make check`.
 4. Add the `unreadable` mutation and its entries.
 5. Add the CI steps and the full-matrix workflow with its supply-chain inventory.
 6. Retire the exploration scripts and update links.
