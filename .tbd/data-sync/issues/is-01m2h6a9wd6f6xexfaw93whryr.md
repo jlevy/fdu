@@ -5,7 +5,7 @@ title: "Release readiness: stabilize, verify, and publish fdu 0.1.0"
 kind: epic
 status: in_progress
 priority: 0
-version: 31
+version: 32
 labels:
   - release
 dependencies: []
@@ -34,8 +34,9 @@ child_order_hints:
   - is-01kzg4c6vnh98mqrpkzw7ydne0
   - is-01m2pmr9aftb3vzfyjyanndny3
   - is-01m2pj0hc166t091a4k04kks9t
+  - is-01m2q1amctg37zcrd417xcmjzs
 created_at: 2026-09-15T00:08:53.387Z
-updated_at: 2026-09-17T03:39:02.334Z
+updated_at: 2026-09-17T06:37:07.865Z
 ---
 User goal (2026-09-14): bring fdu to a stable state that can land on main and cut a release. Keep making progress, track everything as beads, stack PRs as needed, and make sure the final PR stack is complete.
 
