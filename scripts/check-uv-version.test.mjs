@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -172,10 +172,16 @@ test("the bootstrap policy enforces one reviewed uv version in Make and CI", () 
     (release) => release.repository === "astral-sh/uv",
   );
   assert(uvRelease);
-  assert.deepEqual(
-    new Set(uvRelease.files),
-    new Set([".github/workflows/ci.yml", ".github/workflows/release.yml", "Makefile"]),
-  );
+  // Every workflow that installs uv is inventoried, so a new one cannot pin a version
+  // the policy never reviewed.
+  const workflowsDirectory = join(ROOT, ".github", "workflows");
+  const installsUv = readdirSync(workflowsDirectory)
+    .filter((name) => name.endsWith(".yml"))
+    .filter((name) =>
+      readFileSync(join(workflowsDirectory, name), "utf8").includes("uses: astral-sh/setup-uv@"),
+    )
+    .map((name) => `.github/workflows/${name}`);
+  assert.deepEqual(new Set(uvRelease.files), new Set([...installsUv, "Makefile"]));
 
   const makefile = readFileSync(join(ROOT, "Makefile"), "utf8");
   const makeVersion = makefile.match(/^UV_MIN_VERSION := (\S+)$/m)?.[1];
