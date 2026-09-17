@@ -241,7 +241,7 @@ The target models are in
 | Request | Scope, content axis, selection, views, defaults, validation | `ScanConfig` and `ScanScope`; `AnalysisRequest` and `CachePolicy` on `OpenConfig`, not on `Query`; `Query`, `Selection`, and `ViewSpec::resolve`; `OpenOptions` and `ReportRequest` for opened roots | No. `cli.rs` and `fdu-py` each assemble it; defaults differ by surface; `Query::validate_controls` is called at seven sites, and `Query::validate_analysis` only in the two surfaces |
 | Delivery | Cache policy, worker counts, partial acceptance, watch | `CachePolicy` on `OpenConfig`; `AnalysisRequest.workers`; `--allow-partial` as an exit-code mapping in `cli.rs`; watch interval as a command-line value | No. Each route reads the parts it uses, and no type enumerates them |
 | Execution plan | Which path answers, and what each cache policy reads and writes | `plan_report` (`execution.rs`); `open_for_report`, `SaveTargets`, and `cold_scan_save_targets` (`lib.rs`); the command line’s `save_live` for watch | No. Read and write rules are coded per path |
-| Stored-state identity | Metadata snapshot, control state, classification, content sidecar, and which requests each may serve | `EntryScope`, `EntryTierIdentity`, `ControlTierIdentity`, `SnapshotIdentity`, `ContentTierIdentity`, their fixed-width codecs, and `serves_snapshot` (`stored_state.rs`), recorded in the format-5 snapshot and sidecar headers; `snapshot_scope_serves` (`lib.rs`); `ContentProvenance::satisfies` (`content_model.rs`) | Partly. A snapshot is served by equality on its typed identity (`serves_snapshot`), apart from one report-only projection in `snapshot_scope_serves`; a sidecar records its typed identity but still serves by analyzer-set containment |
+| Stored-state identity | Metadata snapshot, control state, classification, content sidecar, and which requests each may serve | `EntryScope`, `EntryTierIdentity`, `ControlTierIdentity`, `SnapshotIdentity`, `ContentTierIdentity` with its `AnalyzerProvenance`, their fixed-width codecs, `serves_snapshot`, and the per-tier write rules (`stored_state.rs`), recorded in the format-5 snapshot and sidecar headers (`snapshot.rs`, `content_cache.rs`), which cache status reports as `fdu.cache/2`; `snapshot_scope_serves` (`lib.rs`); `ContentIndex::prepare` and `load_content_cache` | Partly. Every tier records its typed identity, serves by equality, and is written by its own rule, but the snapshot’s one report-only projection is coded in `snapshot_scope_serves` on one route |
 | Per-item validity | When a stored entry or record is still current | `Attrs` equality in index upserts; `Fingerprint` checks in content loading, `pending_analysis_candidates`, and `apply_analysis` | Partly. Metadata compares six attributes and content five, each at its own call sites |
 | Measured value | What each metric means, and how coverage is decided | Analyzer identities and `MetricValues` in `content_model.rs`; per-file `CoverageReason` in `FileAnalysis`; `document_words` in `query_report.rs` | No. Coverage is one outcome per file for the whole analyzer set, and `document_words` changes meaning with the analyzers a record ran under |
 | Provenance | Source, freshness, observation time, completeness, errors | `query::Provenance`, built at six production sites; `Index::freshness`; per-entry `Provenance` in `engine_contract.rs` | No. Each site fills the fields its own way, and `scan_started_at` has three meanings |
@@ -382,17 +382,14 @@ enabled. Workers submit independently fingerprint-checked analysis results throu
 index’s derived-data boundary; they do not change metadata truth or advance its clock.
 
 The content sidecar holds one analyzer set per root.
-It serves a request whose analyzer set it contains, under the same type-rules
-fingerprint, without discarding the wider set.
-Containment is not projection.
-The tier keeps the stored set as its label, each record keeps the set it was analyzed
-under, and a report aggregates the records as stored, so a narrower request served from
-a wider tier reports the wider set’s metrics and label.
-A record a narrower request analyzes inside a wider tier carries the narrower set, and a
-save drops it. Under the caching commitment a wider stored set may answer a narrower
-request only through a projection that reproduces the cold answer, and none exists yet
-([Known Gaps](#known-gaps)). It is not embedded in the metadata snapshot and is never
-loaded by metadata-only work.
+It serves a request whose content tier identity equals its own: the same engine, entry
+tier (which alone holds the type rules), analyzer set, options, and analyzer versions.
+The in-memory tier holds records of that one identity: preparing it for another clears
+it, and `apply_analysis` refuses a record of another as stale.
+Under the caching commitment a wider stored set may answer a narrower request only
+through a projection that reproduces the cold answer, and none exists yet, so a
+different analyzer set reads its files again and replaces the sidecar.
+It is not embedded in the metadata snapshot and is never loaded by metadata-only work.
 
 ### Serving Lifecycles
 

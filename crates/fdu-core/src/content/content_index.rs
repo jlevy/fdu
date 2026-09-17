@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use crate::classify::ContentFamily;
+use crate::stored_state::ContentTierIdentity;
 
 use super::content_model::{
     AnalysisSet, ContentProvenance, CoverageReason, FileAnalysis, MetricValues,
@@ -163,10 +164,13 @@ fn path_bytes(path: &Path) -> &[u8] {
 }
 
 /// Optional derived-data tier owned by an index only after analysis is enabled.
+///
+/// The tier holds records of exactly one [`ContentTierIdentity`]: preparing it for another
+/// identity clears it, and a record of another identity is refused. So every record the
+/// tier holds answers the request it was prepared for, and none answers any other.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct ContentIndex {
-    profile: Option<AnalysisSet>,
-    provenance: Option<ContentProvenance>,
+    identity: Option<ContentTierIdentity>,
     files: BTreeMap<PathKey, FileAnalysis>,
     rollups: HashMap<PathBuf, ContentRollUp>,
 }
@@ -182,14 +186,20 @@ impl ContentIndex {
         self.files.is_empty()
     }
 
-    /// Requested profile represented by this derived tier, even when the tree is empty.
-    pub fn profile(&self) -> Option<AnalysisSet> {
-        self.profile
+    /// The identity every record in this tier was produced under, even when the tree is
+    /// empty.
+    pub fn identity(&self) -> Option<&ContentTierIdentity> {
+        self.identity.as_ref()
     }
 
-    /// Analyzer, rule, and option identity represented by this derived tier.
-    pub fn provenance(&self) -> Option<&ContentProvenance> {
-        self.provenance.as_ref()
+    /// Analyzer set this derived tier holds records for, even when the tree is empty.
+    pub fn profile(&self) -> Option<AnalysisSet> {
+        self.identity.as_ref().map(|identity| identity.analysis)
+    }
+
+    /// Analyzer, rule, and option identity every record in this derived tier carries.
+    pub fn provenance(&self) -> Option<ContentProvenance> {
+        self.identity.as_ref().map(ContentTierIdentity::record_provenance)
     }
 
     /// Borrow one file's analysis.
@@ -206,14 +216,27 @@ impl ContentIndex {
         self.files.iter().map(|(key, analysis)| (key.0.as_path(), analysis))
     }
 
-    pub(crate) fn commit(&mut self, path: PathBuf, analysis: FileAnalysis) {
-        self.prepare(analysis.profile, analysis.provenance.clone());
+    /// Commit one record, or refuse it when it was produced under another identity than
+    /// the one this tier was prepared for.
+    ///
+    /// A refusal changes nothing. Adopting the record's identity instead would clear
+    /// every record of the prepared one, and keeping both would leave a tier whose totals
+    /// match neither request.
+    #[must_use = "a refused record was not committed"]
+    pub(crate) fn commit(&mut self, path: PathBuf, analysis: FileAnalysis) -> bool {
+        let Some(identity) = &self.identity else {
+            return false;
+        };
+        if !identity.holds_record(analysis.profile, &analysis.provenance) {
+            return false;
+        }
         let key = PathKey::new(path);
         if let Some(previous) = self.files.remove(key.bytes()) {
             self.merge_ancestors(&key.0, &previous, false);
         }
         self.merge_ancestors(&key.0, &analysis, true);
         self.files.insert(key, analysis);
+        true
     }
 
     pub(crate) fn invalidate(&mut self, path: &Path) {
@@ -249,26 +272,18 @@ impl ContentIndex {
         }
     }
 
-    pub(crate) fn prepare(&mut self, profile: AnalysisSet, provenance: ContentProvenance) {
-        // Keep a wider tier intact when a narrower request arrives: its records already
-        // answer the narrower question, and overwriting the stored set with the request's
-        // would discard analyzers the records still carry.
-        //
-        // The incoming provenance carries the rules now in effect, so the comparison is
-        // held-against-incoming rather than held-against-a-global: different rules mean
-        // the stored records answer a different question and must go.
-        let retained = self.profile.is_some_and(|stored| {
-            self.provenance.as_ref().is_some_and(|held| {
-                held.satisfies(stored, profile, provenance.type_rules_fingerprint)
-            })
-        });
-        if retained {
+    /// Hold records of `identity` from here on.
+    ///
+    /// Equality, not containment: records of any other identity answer another request,
+    /// so a tier prepared for a different one is cleared, whether the stored analyzer set
+    /// is wider, narrower, or produced under other rules, versions, options, or entries.
+    pub(crate) fn prepare(&mut self, identity: ContentTierIdentity) {
+        if self.identity.as_ref() == Some(&identity) {
             return;
         }
         self.files.clear();
         self.rollups.clear();
-        self.profile = Some(profile);
-        self.provenance = Some(provenance);
+        self.identity = Some(identity);
     }
 
     fn merge_ancestors(&mut self, file: &Path, analysis: &FileAnalysis, add: bool) {
@@ -297,23 +312,39 @@ impl ContentIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Fingerprint;
     use crate::classify::classify_path;
     use crate::content::{AnalysisRequest, AnalysisSet, ContentProvenance, FileAnalysis};
+    use crate::{AnalyzerProvenance, EntryTierIdentity, Fingerprint, ScanConfig};
+
+    fn lines() -> AnalysisSet {
+        AnalysisSet::NONE.with_lines()
+    }
+
+    fn identity_for(analysis: AnalysisSet) -> ContentTierIdentity {
+        let entries = ScanConfig::default().snapshot_identity().entries;
+        let records = ContentProvenance::for_request(
+            AnalysisRequest { profile: analysis, ..AnalysisRequest::default() },
+            entries.type_rules_fingerprint,
+        );
+        ContentTierIdentity::of_records(entries, analysis, &records)
+            .expect("records under the entry tier's type rules")
+    }
+
+    /// A tier prepared for the `lines` identity every [`analysis`] record carries.
+    fn prepared() -> ContentIndex {
+        let mut index = ContentIndex::default();
+        index.prepare(identity_for(lines()));
+        index
+    }
 
     fn analysis(path: &str, lines: u64) -> FileAnalysis {
+        let identity = identity_for(self::lines());
         FileAnalysis {
             classification: classify_path(Path::new(path)),
             fingerprint: Fingerprint::default(),
             bytes: 10,
-            profile: AnalysisSet::NONE.with_lines(),
-            provenance: ContentProvenance::for_request(
-                AnalysisRequest {
-                    profile: AnalysisSet::NONE.with_lines(),
-                    ..AnalysisRequest::default()
-                },
-                crate::classify::type_rule_fingerprint(),
-            ),
+            profile: identity.analysis,
+            provenance: identity.record_provenance(),
             metrics: MetricValues {
                 physical_lines: lines,
                 nonblank_lines: lines,
@@ -324,15 +355,111 @@ mod tests {
         }
     }
 
+    /// Commit a record the test expects the tier to accept.
+    fn commit(index: &mut ContentIndex, path: &str, record: FileAnalysis) {
+        assert!(index.commit(PathBuf::from(path), record), "{path} must commit");
+    }
+
+    #[test]
+    fn prepare_clears_on_any_identity_change() {
+        let base = identity_for(lines());
+        let mut other_version = base.clone();
+        other_version.provenance.analyzers[0].1 = crate::content::AnalyzerVersion(2);
+        let changes = [
+            ("a wider analyzer set", identity_for(AnalysisSet::ALL)),
+            ("another analyzer set", identity_for(AnalysisSet::NONE.with_code())),
+            (
+                "another entry tier",
+                ContentTierIdentity {
+                    entries: EntryTierIdentity { engine: base.entries.engine ^ 1, ..base.entries },
+                    ..base.clone()
+                },
+            ),
+            (
+                "other type rules",
+                ContentTierIdentity {
+                    entries: EntryTierIdentity {
+                        type_rules_fingerprint: base.entries.type_rules_fingerprint ^ 1,
+                        ..base.entries
+                    },
+                    ..base.clone()
+                },
+            ),
+            (
+                "other options",
+                ContentTierIdentity {
+                    provenance: AnalyzerProvenance {
+                        options_fingerprint: crate::content::OptionsFingerprint(
+                            base.provenance.options_fingerprint.0 ^ 1,
+                        ),
+                        ..base.provenance.clone()
+                    },
+                    ..base.clone()
+                },
+            ),
+            ("another analyzer version", other_version),
+        ];
+        for (name, identity) in changes {
+            let mut index = prepared();
+            commit(&mut index, "src/lib.rs", analysis("src/lib.rs", 2));
+            index.prepare(base.clone());
+            assert_eq!(index.len(), 1, "the same identity keeps its records");
+
+            index.prepare(identity.clone());
+            assert!(index.is_empty(), "{name} clears the records");
+            assert!(index.rollup(Path::new("")).is_none(), "{name} clears the roll-ups");
+            assert_eq!(index.identity(), Some(&identity), "{name} is the tier's identity now");
+        }
+    }
+
+    #[test]
+    fn commit_refuses_a_record_of_another_identity() {
+        let mut unprepared = ContentIndex::default();
+        assert!(
+            !unprepared.commit(PathBuf::from("a.rs"), analysis("a.rs", 1)),
+            "a tier prepared for nothing holds no record"
+        );
+        assert_eq!(unprepared, ContentIndex::default());
+
+        let mut index = prepared();
+        commit(&mut index, "a.rs", analysis("a.rs", 1));
+        let before = index.clone();
+
+        let wider = identity_for(AnalysisSet::ALL);
+        let mut other_version = analysis("a.rs", 5);
+        other_version.provenance.analyzers[0].1 = crate::content::AnalyzerVersion(2);
+        let mut other_rules = analysis("a.rs", 5);
+        other_rules.provenance.type_rules_fingerprint ^= 1;
+        for (name, record) in [
+            (
+                "a record of a wider set",
+                FileAnalysis {
+                    profile: wider.analysis,
+                    provenance: wider.record_provenance(),
+                    ..analysis("a.rs", 5)
+                },
+            ),
+            (
+                "a record labelled with another set",
+                FileAnalysis { profile: AnalysisSet::ALL, ..analysis("a.rs", 5) },
+            ),
+            ("a record of another analyzer version", other_version),
+            ("a record classified under other type rules", other_rules),
+        ] {
+            assert!(!index.commit(PathBuf::from("a.rs"), record), "{name} is refused");
+            assert_eq!(index, before, "{name} changes nothing");
+        }
+    }
+
     #[test]
     fn replacement_and_subtree_invalidation_update_every_rollup() {
-        let mut index = ContentIndex::default();
-        index.commit(PathBuf::from("src/lib.rs"), analysis("src/lib.rs", 2));
-        index.commit(PathBuf::from("src/main.rs"), analysis("src/main.rs", 3));
+        let mut index = prepared();
+        commit(&mut index, "src/lib.rs", analysis("src/lib.rs", 2));
+        commit(&mut index, "src/main.rs", analysis("src/main.rs", 3));
         assert_eq!(index.rollup(Path::new("")).expect("root").total.metrics.physical_lines, 5);
         assert_eq!(index.rollup(Path::new("src")).expect("src").total.files, 2);
 
-        index.commit(PathBuf::from("src/lib.rs"), analysis("src/lib.rs", 7));
+        commit(&mut index, "src/lib.rs", analysis("src/lib.rs", 7));
         assert_eq!(index.rollup(Path::new("")).expect("root").total.metrics.physical_lines, 10);
 
         index.invalidate(Path::new("src"));
@@ -346,9 +473,9 @@ mod tests {
         // it; neither is beneath `src`, and the separator in the prefix is what keeps
         // them out. The root invalidates everything, and a file path invalidates only
         // its own record.
-        let mut index = ContentIndex::default();
+        let mut index = prepared();
         for path in ["src/a.rs", "src/deep/b.rs", "src-extra/a.rs", "src2/b.rs", "srcfile"] {
-            index.commit(PathBuf::from(path), analysis(path, 1));
+            commit(&mut index, path, analysis(path, 1));
         }
         assert_eq!(index.len(), 5);
 
@@ -356,7 +483,7 @@ mod tests {
         // so -- Windows -- and a different file named `src\\c.rs` at the root everywhere
         // else. Either way the map agrees with `Path::starts_with` and `Path::eq`.
         let other = PathBuf::from("src\\c.rs");
-        index.commit(other.clone(), analysis("src/c.rs", 1));
+        assert!(index.commit(other.clone(), analysis("src/c.rs", 1)));
         let beneath = other.starts_with("src");
         assert_eq!(index.file(Path::new("src/c.rs")).is_some(), beneath);
         assert!(index.file(&other).is_some());
@@ -386,9 +513,9 @@ mod tests {
 
     #[test]
     fn records_are_ordered_deterministically_by_bytes() {
-        let mut index = ContentIndex::default();
+        let mut index = prepared();
         for path in ["b/x.rs", "a/z.rs", "a/y.rs", "a-b/q.rs"] {
-            index.commit(PathBuf::from(path), analysis(path, 1));
+            commit(&mut index, path, analysis(path, 1));
         }
         let order: Vec<&Path> = index.records().map(|(path, _)| path).collect();
         assert_eq!(

@@ -151,7 +151,8 @@ Content results are different.
 They live in a sidecar keyed by analyzer identities and semantic options.
 After the metadata check, fdu restores compatible results for unchanged files and opens
 only changed or newly eligible bodies.
-A stored wider analyzer set can serve a narrower request and remains wider on disk.
+The sidecar answers only the analyzer set that wrote it: a different set, wider or
+narrower, reads the files again and replaces it.
 
 Run the same analysis twice to see the distinction:
 

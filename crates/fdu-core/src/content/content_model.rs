@@ -90,15 +90,6 @@ impl AnalysisSet {
         self.0 & Self::WORDS != 0
     }
 
-    /// Whether every analyzer in `other` is also in `self`.
-    ///
-    /// This is what lets a stored record answer a narrower request: a sidecar written by
-    /// a superset already holds every metric the narrower one would recompute, so reuse
-    /// is containment rather than equality.
-    pub const fn contains(self, other: Self) -> bool {
-        self.0 & other.0 == other.0
-    }
-
     /// Stable on-disk and fingerprint encoding.
     pub const fn bits(self) -> u8 {
         self.0
@@ -259,26 +250,6 @@ impl ContentProvenance {
             options_fingerprint: request.options_fingerprint(),
             analyzers,
         }
-    }
-
-    /// Whether content produced under `self` with `stored` analyzers answers `wanted`.
-    ///
-    /// Containment rather than equality.  Every field here except the type-rule
-    /// fingerprint is derived from the analyzer set — `options_fingerprint` hashes the
-    /// set's bits and `analyzers` lists what those bits select — so comparing them by
-    /// equality is the same test as set equality, spelled three times, and it is what
-    /// forced a complete re-read whenever a wider cached set met a narrower request.
-    ///
-    /// The type-rule fingerprint still has to match exactly: a classification change can
-    /// move a file between families, which invalidates the metrics themselves rather
-    /// than merely how they are labelled.
-    pub fn satisfies(
-        &self,
-        stored: AnalysisSet,
-        wanted: AnalysisSet,
-        type_rules_fingerprint: u64,
-    ) -> bool {
-        self.type_rules_fingerprint == type_rules_fingerprint && stored.contains(wanted)
     }
 }
 
@@ -579,18 +550,6 @@ mod tests {
             );
             assert!(error.starts_with("invalid --analyze "), "{error} must carry the label");
         }
-    }
-
-    #[test]
-    fn containment_is_reflexive_and_ordered_by_membership() {
-        let code = AnalysisSet::NONE.with_code();
-        let words = AnalysisSet::NONE.with_words();
-        assert!(AnalysisSet::ALL.contains(code) && AnalysisSet::ALL.contains(words));
-        assert!(!code.contains(words) && !words.contains(code));
-        assert!(code.contains(code), "a set answers its own request");
-        assert!(code.contains(AnalysisSet::NONE), "every set answers an empty request");
-        assert!(!AnalysisSet::NONE.is_enabled(), "an empty set opens no file");
-        assert!(code.contains(AnalysisSet::NONE.with_lines()), "lines ride along with code");
     }
 
     #[test]

@@ -166,7 +166,7 @@ surface emits the same string.
 | `fdu.report/5` | A report, one-shot or each one a watch run prints, over an index with no content tier and with no metric section | `REPORT_SCHEMA` |
 | `fdu.report/6` | A report over an index that holds a content tier, or with a `types`, `families`, `languages`, or `documents` section | `CONTENT_REPORT_SCHEMA` |
 | `fdu.stream/1` | A watch run’s `change` record, with `op` of `upsert`, `remove`, or `invalidate`: one per applied change under the `files` view, and every invalidation | `STREAM_SCHEMA` |
-| `fdu.cache/1` | Cache status, a fact about the cache directory rather than about a tree | `CACHE_SCHEMA` |
+| `fdu.cache/2` | Cache status, a fact about the cache directory rather than about a tree, with the identity of every tier each store holds | `CACHE_SCHEMA` |
 
 The report version follows the content tier the index holds, not the request, so a
 Python `Index` opened with analysis emits `fdu.report/6` even for a tree view.

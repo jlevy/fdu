@@ -1052,7 +1052,7 @@ pub(crate) fn report_in(
         analysis: index.content().and_then(|content| {
             Some(ContentReportMetadata {
                 profile: content.profile()?,
-                provenance: content.provenance()?.clone(),
+                provenance: content.provenance()?,
             })
         }),
         ignored_entries: query.selection.ignored,

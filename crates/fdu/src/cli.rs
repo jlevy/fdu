@@ -186,8 +186,8 @@ CONTENT ANALYSIS
   Analysis streams every eligible file through EOF; files are never size-truncated.
   --analysis-workers bounds concurrency.
   --words-per-page changes only report-time page derivation.
-  Unchanged results are restored from a separate sidecar; a stored set answers
-  any narrower request without re-reading.
+  Unchanged results are restored from a separate sidecar written by the same
+  analyzer set; any other set, wider or narrower, reads the files again.
   --cache=only never opens source files and fails if requested content is absent.
 
 CACHE BEHAVIOR
@@ -220,7 +220,7 @@ IGNORE RULES
 
 OUTPUT AND AUTOMATION
   Metadata-only machine output remains fdu.report/5; metric summaries use fdu.report/6.
-  Cache status is its own document in every machine format: fdu.cache/1.
+  Cache status is its own document in every machine format: fdu.cache/2.
   Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
   Text language rows use canonical names; machine formats retain lowercase IDs.
   Metric rows include detection source, confidence, origin flags, and coverage.

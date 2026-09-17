@@ -12,10 +12,10 @@ mod content_model;
 
 pub use content_analysis::{AnalysisReport, analyze_index};
 pub use content_basic_metrics::{BasicAccumulator, TextAdmission};
-pub(crate) use content_cache::content_sidecar_bytes;
 pub use content_cache::{
     ContentCacheLoad, content_cache_path, load_content_cache, save_content_cache,
 };
+pub(crate) use content_cache::{content_sidecar_bytes, identify_sidecar};
 pub use content_code_metrics::CodeAccumulator;
 pub use content_index::{ContentIndex, ContentRollUp, MetricTally};
 pub use content_model::{

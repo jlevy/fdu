@@ -33,9 +33,7 @@ use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::engine_contract::{
-    Attrs, Coverage, EntryKind, Error, Freshness, Observation, Op, Result, Source,
-};
+use crate::engine_contract::{Attrs, EntryKind, Error, Observation, Op, Result, Source};
 use crate::index::{EntryId, Index, IndexHandle};
 use crate::stored_state::{ControlTierIdentity, SNAPSHOT_IDENTITY_BYTES, SnapshotIdentity};
 
@@ -215,7 +213,7 @@ pub fn engine_fingerprint() -> u64 {
 
 /// Write `index` to `path`, replacing any existing snapshot atomically.
 pub fn save(index: &Index, path: &Path) -> Result<()> {
-    if index.freshness() != Freshness::Fresh || index.state().coverage != Coverage::Complete {
+    if !crate::stored_state::entries_writable(index) {
         return Err(Error::Snapshot(
             "refusing to persist an index that is stale, reconciling, or incomplete".into(),
         ));
@@ -652,7 +650,7 @@ fn identify_prologue(reader: &mut impl Read, trailer_intact: bool) -> io::Result
     Ok(match invalid_as_none(parse_header_fields(reader, engine))? {
         Some(header) => Identity::Current(crate::cache::SnapshotInfo {
             root: header.root,
-            scope: header.identity.scan_scope(),
+            identity: header.identity,
             entries: header.entries,
         }),
         None => Identity::Stale(StaleReason::Unreadable),
@@ -2549,7 +2547,8 @@ mod tests {
             assert_eq!(restored.snapshot_identity(), identity);
             assert_eq!(restored.scope(), identity.scan_scope());
             let info = read_header(&path).expect("read header").expect("current");
-            assert_eq!(info.scope, identity.scan_scope());
+            assert_eq!(info.identity, identity);
+            assert_eq!(info.scope(), identity.scan_scope());
         }
     }
 

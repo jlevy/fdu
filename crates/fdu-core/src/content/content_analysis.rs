@@ -776,10 +776,7 @@ mod tests {
         assert_eq!(content.profile(), Some(request.profile));
         assert_eq!(
             content.provenance(),
-            Some(&ContentProvenance::for_request(
-                request,
-                crate::classify::type_rule_fingerprint()
-            ))
+            Some(ContentProvenance::for_request(request, crate::classify::type_rule_fingerprint()))
         );
     }
 

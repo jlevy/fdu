@@ -224,6 +224,22 @@ impl ContentTierIdentity {
             analyzers: self.provenance.analyzers.clone(),
         }
     }
+
+    /// Whether a record of `analysis` carrying `provenance` is one of this tier's: the same
+    /// analyzer set, and the provenance [`Self::record_provenance`] gives, compared field by
+    /// field so a commit never builds it.
+    pub(crate) fn holds_record(
+        &self,
+        analysis: AnalysisSet,
+        provenance: &ContentProvenance,
+    ) -> bool {
+        let ContentProvenance { type_rules_fingerprint, options_fingerprint, analyzers } =
+            provenance;
+        analysis == self.analysis
+            && *type_rules_fingerprint == self.entries.type_rules_fingerprint
+            && *options_fingerprint == self.provenance.options_fingerprint
+            && *analyzers == self.provenance.analyzers
+    }
 }
 
 /// How a stored tier answers a request.
@@ -243,6 +259,70 @@ pub enum Serves {
 /// run of `wanted` would, and is proven by its own test.
 pub fn serves_snapshot(stored: SnapshotIdentity, wanted: SnapshotIdentity) -> Serves {
     if stored == wanted { Serves::Exact } else { Serves::Refuse }
+}
+
+// ---- write rules ----
+//
+// Each tier is written by what an absent item in it means. An absent entry changes every
+// roll-up above it, so the entry tier is written only when the pass verified all of it.
+// An absent content record is a miss that reads the file again, so records are written one
+// at a time, each when the pass verified it.
+
+/// Whether `index`'s entry tier, and the control tier stored with it, may be written.
+///
+/// Only a complete, fresh index: a snapshot missing an entry would be served as the tree's
+/// totals on the next run, and an older complete snapshot is better than that.
+pub(crate) fn entries_writable(index: &crate::Index) -> bool {
+    index.freshness() == crate::Freshness::Fresh
+        && index.state().coverage == crate::engine_contract::Coverage::Complete
+}
+
+/// Whether the content record `record` for the file at `path` may be written.
+///
+/// A record is written when it describes a file this pass verified: the index holds a
+/// regular file there whose fingerprint is the record's, the entry was scanned or
+/// revalidated by the pass rather than retained from a snapshot, and reading it did not
+/// fail. A file the pass verified was listed by its parent, so its subtree was verified
+/// down to it. A record under a subtree the pass could not verify describes a retained
+/// file nobody checked, so it is left out, and the next run that verifies the file reads
+/// it again.
+pub(crate) fn content_record_writable(
+    index: &crate::Index,
+    path: &std::path::Path,
+    record: &crate::content::FileAnalysis,
+) -> bool {
+    use crate::content::CoverageReason;
+
+    if matches!(record.coverage, CoverageReason::IoError | CoverageReason::ChangedDuringRead) {
+        return false;
+    }
+    // A complete, fresh pass verified every entry, and the content tier holds only records
+    // that match their live entry, because a metadata change invalidates a file's record
+    // and a commit checks the entry it lands on. So only a partial pass asks per file, and
+    // the common write pays no lookup per record.
+    if entries_writable(index) {
+        return true;
+    }
+    let crate::PathState::Present { kind: crate::EntryKind::File, attrs } = index.path_state(path)
+    else {
+        return false;
+    };
+    attrs.fingerprint() == record.fingerprint
+        && index.provenance(path).is_some_and(crate::Provenance::is_verified)
+}
+
+/// Whether `index`'s content tier may be written beside the store that holds
+/// `stored_entries`, the entry tier of the snapshot already stored for its root, if any.
+///
+/// After a complete pass, always: the snapshot is written with it. After a partial pass,
+/// only beside a snapshot of the same entry tier, which the sidecar pairs with. A partial
+/// pass under another identity writes no snapshot, so replacing the sidecar would evict the
+/// records that pair with the snapshot that stays.
+pub(crate) fn content_tier_writable(
+    index: &crate::Index,
+    stored_entries: Option<EntryTierIdentity>,
+) -> bool {
+    entries_writable(index) || stored_entries == Some(index.snapshot_identity().entries)
 }
 
 // ---- fixed-width codecs ----
@@ -581,6 +661,32 @@ mod tests {
         }
     }
 
+    #[test]
+    fn each_tier_is_writable_by_its_own_rule() {
+        let config = ScanConfig::default();
+        let entries = config.snapshot_identity().entries;
+        let other =
+            ScanConfig { max_depth: Some(2), ..ScanConfig::default() }.snapshot_identity().entries;
+
+        let mut complete = crate::Index::new_with_config("/root", &config);
+        complete.set_initial_freshness(true);
+        assert!(entries_writable(&complete));
+        for stored in [None, Some(entries), Some(other)] {
+            assert!(content_tier_writable(&complete, stored), "a complete pass writes: {stored:?}");
+        }
+
+        let mut partial = crate::Index::new_with_config("/root", &config);
+        partial.set_initial_freshness(false);
+        assert!(!entries_writable(&partial), "an absent entry would change totals");
+        assert!(content_tier_writable(&partial, Some(entries)), "it pairs with the stored tier");
+        assert!(!content_tier_writable(&partial, Some(other)), "it would evict another pair");
+        assert!(!content_tier_writable(&partial, None), "nothing stored pairs with it");
+
+        let mut unverified = complete.clone();
+        unverified.mark_unverified();
+        assert!(!entries_writable(&unverified), "a cache-only index verified nothing");
+    }
+
     /// Identities that each differ from the default in one encoded field, including the
     /// edges of each range, so a codec that dropped any one field would alias two of them.
     fn identities() -> Vec<SnapshotIdentity> {
@@ -702,9 +808,13 @@ mod tests {
         let identity = ContentTierIdentity::of_records(entries, request.profile, &records)
             .expect("records under the entry tier's type rules");
         assert_eq!(identity.record_provenance(), records);
+        assert!(identity.holds_record(request.profile, &records));
 
         let other_rules = ContentProvenance::for_request(request, !entries.type_rules_fingerprint);
         assert_eq!(ContentTierIdentity::of_records(entries, request.profile, &other_rules), None);
+        assert!(!identity.holds_record(request.profile, &other_rules), "other type rules");
+        let lines = AnalysisSet::NONE.with_lines();
+        assert!(!identity.holds_record(lines, &records), "another analyzer set's label");
     }
 
     #[test]
