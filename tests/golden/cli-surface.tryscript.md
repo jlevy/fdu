@@ -345,7 +345,7 @@ Check the process exit status and these fields:
 - `schema` before parsing anything else: a report carries `fdu.report/6` when it ran
   content analysis or includes a metric summary (the `types`, `families`, `languages`,
   and `documents` views), `fdu.report/5` otherwise, a `--watch` stream carries
-  `fdu.stream/1`, and `--cache-status` carries `fdu.cache/1`. Treat an unrecognized
+  `fdu.stream/1`, and `--cache-status` carries `fdu.cache/2`. Treat an unrecognized
   value as a version you cannot parse rather than guessing at the fields.
 - `complete` and `errors` before trusting totals
 - `freshness` and `source` before presenting data as current
@@ -389,8 +389,11 @@ already exist. `--cache=off` neither reads nor writes fdu cache data.
 The snapshot is one file per root under the user cache directory.
 `--cache-status` maps a hash-named file back to the tree it describes, and
 `--cache-clear` removes it; both run without scanning.
-Cache status is its own document, carrying the `fdu.cache/1` schema in every machine
+Cache status is its own document, carrying the `fdu.cache/2` schema in every machine
 format rather than a report schema.
+A current snapshot’s row carries the `identity` of the entry and `.gitignore` tiers it
+holds, and every row a `content` object for the sidecar beside it, with its own `state`
+and a current sidecar’s `identity`, or `null` when there is none.
 Each status row carries a `state`: `current`, `stale` for a snapshot another fdu version
 wrote or one this build cannot read, `leftover` for a file fdu left behind, with a
 `leftover_kind`, `unrecognized` for a file that is not fdu’s, or `absent`. Clearing
@@ -538,7 +541,7 @@ IGNORE RULES
 
 OUTPUT AND AUTOMATION
   Metadata-only machine output remains fdu.report/5; metric summaries use fdu.report/6.
-  Cache status is its own document in every machine format: fdu.cache/1.
+  Cache status is its own document in every machine format: fdu.cache/2.
   Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
   Text language rows use canonical names; machine formats retain lowercase IDs.
   Metric rows include detection source, confidence, origin flags, and coverage.

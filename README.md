@@ -264,7 +264,8 @@ It also reclaims what fdu itself left behind — a staging file a killed writer 
 renamed, a content sidecar whose snapshot is gone — which status lists as `leftover`.
 Clearing never removes a file that is not fdu’s;
 [the cache design](docs/project/guides/cache-design.md) covers how one is recognized.
-Cache status in a machine format is its own document, carrying the `fdu.cache/1` schema.
+Cache status in a machine format is its own document, carrying the `fdu.cache/2` schema
+and the identity of every tier each cached file holds.
 
 A snapshot is usable only under the scan scope that wrote it, and a root has one cache
 path. `fdu PATH`, `fdu --watch PATH`, the library’s `open` and `prepare_report`, and

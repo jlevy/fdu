@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs;
-use std::io::Read;
+use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
 
 use crate::classify::{
@@ -185,7 +185,7 @@ pub fn load_content_cache(
 pub(crate) fn content_sidecar_bytes(path: &Path) -> Result<Option<u64>> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(Error::io(path, error)),
     };
     if !metadata.file_type().is_file() {
@@ -193,7 +193,7 @@ pub(crate) fn content_sidecar_bytes(path: &Path) -> Result<Option<u64>> {
     }
     let mut file = match fs::File::open(path) {
         Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(Error::io(path, error)),
     };
     let mut magic = [0u8; MAGIC.len()];
@@ -201,6 +201,147 @@ pub(crate) fn content_sidecar_bytes(path: &Path) -> Result<Option<u64>> {
         Ok(()) => Ok((&magic == MAGIC).then_some(metadata.len())),
         Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(None),
         Err(error) => Err(Error::io(path, error)),
+    }
+}
+
+/// Identify the content sidecar at `path` by its contents, or return `None` when no sidecar
+/// fdu wrote is there.
+///
+/// Mirrors [`crate::snapshot::identify`]. The magic alone decides whether the file is fdu's
+/// sidecar, as [`content_sidecar_bytes`] decides it for pairing and clearing; the rest of
+/// the header decides whether this build can serve it. Every sidecar format puts its
+/// version after the magic, and format 5 put the engine fingerprint after the version, so
+/// a sidecar from another release is recognized as stale rather than mistaken for a
+/// foreign file. Only the bounded header and the trailer are read, never the records, and
+/// only a regular file is opened, so a symbolic link is never followed out of the cache
+/// directory.
+pub(crate) fn identify_sidecar(path: &Path) -> Result<Option<crate::cache::ContentStatus>> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(Error::io(path, error)),
+    };
+    if !metadata.file_type().is_file() {
+        return Ok(None);
+    }
+    let mut file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(Error::io(path, error)),
+    };
+    let state = identify_sidecar_contents(&mut file).map_err(|error| Error::io(path, error))?;
+    Ok(state.map(|state| crate::cache::ContentStatus { bytes: metadata.len(), state }))
+}
+
+/// Classify a sidecar from its header and trailer, or `None` when it lacks the sidecar
+/// magic. Only an I/O failure is an error; every malformed byte is an answer.
+fn identify_sidecar_contents(
+    file: &mut fs::File,
+) -> io::Result<Option<crate::cache::ContentState>> {
+    use crate::cache::{ContentInfo, ContentState, StaleReason};
+
+    let stale = |reason| Ok(Some(ContentState::Stale(reason)));
+    let trailer_intact = sidecar_trailer_intact(file)?;
+    file.seek(SeekFrom::Start(0))?;
+    let mut header = Vec::new();
+    if !read_more(file, &mut header, MAGIC.len())? || header != MAGIC {
+        return Ok(None);
+    }
+    if !read_more(file, &mut header, 4)? {
+        return stale(StaleReason::Unreadable);
+    }
+    let version = u32::from_le_bytes(header[MAGIC.len()..].try_into().expect("four bytes"));
+    match version.cmp(&FORMAT_VERSION) {
+        std::cmp::Ordering::Less => return stale(StaleReason::OlderFormat { version }),
+        std::cmp::Ordering::Greater => return stale(StaleReason::NewerFormat { version }),
+        std::cmp::Ordering::Equal => {}
+    }
+    if !read_more(file, &mut header, 8)? {
+        return stale(StaleReason::Unreadable);
+    }
+    let engine = u64::from_le_bytes(header[MAGIC.len() + 4..].try_into().expect("eight bytes"));
+    if engine != crate::snapshot::engine_fingerprint() {
+        return stale(StaleReason::OtherEngine);
+    }
+    // Truncation removes the tail and leaves the header readable, so a header-only check
+    // would call a half-written sidecar current.
+    if !trailer_intact || !read_sidecar_header(file, &mut header)? {
+        return stale(StaleReason::Unreadable);
+    }
+    let parsed = (|| {
+        let mut reader = Reader::new(header.get(MAGIC.len() + 4 + 8..)?);
+        if reader.u8()? != crate::snapshot::path_encoding() {
+            return None;
+        }
+        let identity = read_identity(&mut reader, engine)?;
+        reader.os_string()?;
+        let records = reader.u64()?;
+        (records <= MAX_RECORDS && reader.is_empty()).then_some(ContentInfo { identity, records })
+    })();
+    Ok(Some(parsed.map_or(ContentState::Stale(StaleReason::Unreadable), ContentState::Current)))
+}
+
+/// Read the header fields after a format-5 prologue into `header`: each field's length is
+/// bounded before it is read. `false` when the file ends first or a bound is exceeded.
+fn read_sidecar_header(file: &mut fs::File, header: &mut Vec<u8>) -> io::Result<bool> {
+    // The path encoding, the entry tier, the analyzer set, the type-rules and options
+    // fingerprints, and the analyzer count.
+    if !read_more(file, header, 1 + ENTRY_TIER_BYTES + 1 + 8 + 8 + 1)? {
+        return Ok(false);
+    }
+    let analyzers = usize::from(*header.last().expect("the analyzer count"));
+    if analyzers > MAX_ANALYZERS {
+        return Ok(false);
+    }
+    for _ in 0..analyzers {
+        let Some(length) = read_length(file, header, MAX_ANALYZER_ID_BYTES)? else {
+            return Ok(false);
+        };
+        if !read_more(file, header, length + 2)? {
+            return Ok(false);
+        }
+    }
+    let Some(root) = read_length(file, header, MAX_PATH_BYTES)? else { return Ok(false) };
+    Ok(read_more(file, header, root)? && read_more(file, header, 8)?)
+}
+
+/// Read a four-byte length into `header` and return it, when the file holds it and it is at
+/// most `max`.
+fn read_length(file: &mut fs::File, header: &mut Vec<u8>, max: usize) -> io::Result<Option<usize>> {
+    if !read_more(file, header, 4)? {
+        return Ok(None);
+    }
+    let bytes = header[header.len() - 4..].try_into().expect("four bytes");
+    Ok(usize::try_from(u32::from_le_bytes(bytes)).ok().filter(|length| *length <= max))
+}
+
+/// Append exactly `count` more bytes of `file` to `buffer`, or return `false` when it ends
+/// first.
+fn read_more(file: &mut fs::File, buffer: &mut Vec<u8>, count: usize) -> io::Result<bool> {
+    let start = buffer.len();
+    buffer.resize(start + count, 0);
+    match file.read_exact(&mut buffer[start..]) {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => {
+            buffer.truncate(start);
+            Ok(false)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// Whether a file ends with the sidecar trailer, which is what a truncated write destroys.
+fn sidecar_trailer_intact(file: &mut fs::File) -> io::Result<bool> {
+    let footer = u64::try_from(CHECKSUM_BYTES + TRAILER.len()).expect("a small footer");
+    if file.metadata()?.len() < footer {
+        return Ok(false);
+    }
+    file.seek(SeekFrom::End(-i64::try_from(TRAILER.len()).expect("a small trailer")))?;
+    let mut trailer = [0u8; TRAILER.len()];
+    match file.read_exact(&mut trailer) {
+        Ok(()) => Ok(&trailer == TRAILER),
+        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => Ok(false),
+        Err(error) => Err(error),
     }
 }
 

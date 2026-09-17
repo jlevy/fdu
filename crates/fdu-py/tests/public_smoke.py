@@ -644,6 +644,12 @@ def main() -> None:
     status = fdu.cache_status(cache_root)
     assert status is not None and status.state is fdu.CacheState.CURRENT
     assert status.stale_reason is None and status.root is not None
+    # Cache status carries the identity of every tier the store holds: a default open
+    # observes .gitignore under the default limits, and wrote no content sidecar.
+    assert status.identity is not None, status
+    assert status.identity.ignore_rules is not None, status
+    assert status.identity.entries.max_depth is None, status
+    assert status.content is None, status
     # A snapshot an earlier format wrote is still fdu's: reported stale with its version,
     # and cleared, rather than stranded as a file nothing will delete. The version sits
     # after the eight-byte magic in every format.
@@ -655,6 +661,7 @@ def main() -> None:
     assert stale is not None and stale.state is fdu.CacheState.STALE, stale
     assert stale.stale_reason is fdu.StaleReason.OLDER_FORMAT, stale
     assert stale.format_version == written - 1 and stale.root is None, stale
+    assert stale.identity is None, stale
     assert fdu.render_cache_status([stale], scope=fdu.CacheScope.ROOT).endswith(
         "cannot be served by this build; fdu --cache-clear PATH removes it."
     )

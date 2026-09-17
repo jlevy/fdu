@@ -25,6 +25,7 @@ use std::path::{Path, PathBuf};
 
 use crate::engine_contract::{Error, Result, ScanScope};
 use crate::snapshot::{self, Identity};
+use crate::stored_state::{ContentTierIdentity, SnapshotIdentity};
 
 /// Hex digits in a snapshot's file name, one per nibble of the 64-bit root hash.
 const SNAPSHOT_NAME_HEX_DIGITS: usize = 16;
@@ -46,8 +47,9 @@ pub struct CacheStatus {
     pub path: PathBuf,
     /// Size on disk, in bytes.
     pub bytes: u64,
-    /// Size of the content sidecar fdu wrote beside this snapshot, current or stale.
-    pub content_bytes: Option<u64>,
+    /// The content sidecar fdu wrote beside this snapshot, current or stale, when there is
+    /// one.
+    pub content: Option<ContentStatus>,
     /// What the file is, as far as this build can tell.
     pub state: CacheState,
 }
@@ -69,6 +71,55 @@ impl CacheStatus {
     pub fn is_fdu_snapshot(&self) -> bool {
         matches!(self.state, CacheState::Current(_) | CacheState::Stale(_))
     }
+
+    /// Size of the content sidecar beside this snapshot, current or stale.
+    pub fn content_bytes(&self) -> Option<u64> {
+        self.content.as_ref().map(|content| content.bytes)
+    }
+}
+
+/// What is known about the content sidecar beside a snapshot.
+///
+/// Whether a sidecar is there is decided by its magic, as for a snapshot, so a sidecar this
+/// build cannot serve is still reported and cleared with its snapshot. Whether it is
+/// current is decided by its own header: its format version and engine fingerprint.
+/// Whether it pairs with the snapshot beside it is a question of identity equality, which
+/// loading asks and status reports by carrying both identities.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ContentStatus {
+    /// Size on disk, in bytes.
+    pub bytes: u64,
+    /// What the sidecar is, as far as this build can tell.
+    pub state: ContentState,
+}
+
+/// What a content sidecar beside a snapshot holds.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ContentState {
+    /// A sidecar this build reads.
+    Current(ContentInfo),
+    /// One of fdu's sidecars that this build cannot serve: another format or engine, or a
+    /// header this build cannot read.
+    Stale(StaleReason),
+}
+
+impl ContentState {
+    /// The label machine output carries, one of [`CacheState::LABELS`].
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Current(_) => "current",
+            Self::Stale(_) => "stale",
+        }
+    }
+}
+
+/// The header facts that identify a content sidecar.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ContentInfo {
+    /// The identity of the content tier it holds.
+    pub identity: ContentTierIdentity,
+    /// How many file records it holds.
+    pub records: u64,
 }
 
 /// What a path in the cache holds.
@@ -246,10 +297,17 @@ impl CacheScope {
 pub struct SnapshotInfo {
     /// Absolute path of the tree this snapshot describes.
     pub root: PathBuf,
-    /// The scan scope it was captured under.
-    pub scope: ScanScope,
+    /// The identity of every tier it holds.
+    pub identity: SnapshotIdentity,
     /// How many entries it holds.
     pub entries: u64,
+}
+
+impl SnapshotInfo {
+    /// The scan scope an index loaded from it records.
+    pub fn scope(&self) -> ScanScope {
+        self.identity.scan_scope()
+    }
 }
 
 /// The name the cache gives the snapshot of a root with this hash.
@@ -339,7 +397,7 @@ pub fn cache_status(path: &Path) -> Result<CacheStatus> {
     Ok(status_at(path)?.unwrap_or_else(|| CacheStatus {
         path: path.to_path_buf(),
         bytes: 0,
-        content_bytes: None,
+        content: None,
         state: CacheState::Absent,
     }))
 }
@@ -395,9 +453,8 @@ fn status_at(path: &Path) -> Result<Option<CacheStatus>> {
         Some(Identity::Current(info)) => CacheState::Current(info),
         Some(Identity::Stale(reason)) => CacheState::Stale(reason),
     };
-    let content_bytes =
-        crate::content::content_sidecar_bytes(&crate::content::content_cache_path(path))?;
-    Ok(Some(CacheStatus { path: path.to_path_buf(), bytes: metadata.len(), content_bytes, state }))
+    let content = crate::content::identify_sidecar(&crate::content::content_cache_path(path))?;
+    Ok(Some(CacheStatus { path: path.to_path_buf(), bytes: metadata.len(), content, state }))
 }
 
 /// Whether a regular file at `path` begins with the snapshot magic.
@@ -427,12 +484,7 @@ fn sidecar_snapshot_path(path: &Path) -> PathBuf {
 }
 
 fn unrecognized(path: &Path, bytes: u64) -> CacheStatus {
-    CacheStatus {
-        path: path.to_path_buf(),
-        bytes,
-        content_bytes: None,
-        state: CacheState::Unrecognized,
-    }
+    CacheStatus { path: path.to_path_buf(), bytes, content: None, state: CacheState::Unrecognized }
 }
 
 /// A file under one of fdu's own leftover names: the leftover when its contents are the
@@ -447,7 +499,7 @@ fn leftover_or_unrecognized(
         CacheStatus {
             path: path.to_path_buf(),
             bytes,
-            content_bytes: None,
+            content: None,
             state: CacheState::Leftover(kind),
         }
     } else {
@@ -510,7 +562,7 @@ pub fn list_caches(cache_dir: &Path) -> Result<Vec<CacheStatus>> {
     }
     let paired_sidecars = found
         .iter()
-        .filter(|status| status.is_fdu_snapshot() && status.content_bytes.is_some())
+        .filter(|status| status.is_fdu_snapshot() && status.content.is_some())
         .map(|status| crate::content::content_cache_path(&status.path))
         .collect::<std::collections::BTreeSet<_>>();
     found.retain(|status| !paired_sidecars.contains(&status.path));
@@ -677,11 +729,23 @@ mod tests {
             },
             ..OpenConfig::default()
         };
-        open(tree.path(), &config).expect("seed analyzed cache");
+        let (index, _) = open(tree.path(), &config).expect("seed analyzed cache");
 
         let listed = list_caches(cache.path()).expect("list");
         assert_eq!(listed.len(), 1, "a sidecar is grouped with its snapshot");
-        assert!(listed[0].content_bytes.is_some());
+        let Some(CacheState::Current(snapshot)) = listed.first().map(|status| &status.state) else {
+            panic!("a current snapshot: {listed:?}");
+        };
+        assert_eq!(snapshot.identity, index.snapshot_identity());
+        let content = listed[0].content.as_ref().expect("its sidecar");
+        assert_eq!(
+            content.state,
+            ContentState::Current(ContentInfo {
+                identity: index.content_identity(config.analysis.profile),
+                records: 1,
+            }),
+            "status reports the identity the sidecar serves"
+        );
         assert!(clear_cache(&path).expect("clear"));
         assert!(!path.exists());
         assert!(!crate::content::content_cache_path(&path).exists());
@@ -770,9 +834,63 @@ mod tests {
         let listed = list_caches(cache.path()).expect("list");
         assert_eq!(listed.len(), 1, "a stale snapshot's sidecar is grouped with it");
         assert!(matches!(listed[0].state, CacheState::Stale(StaleReason::OlderFormat { .. })));
-        assert!(listed[0].content_bytes.is_some());
+        assert!(listed[0].content.is_some());
         assert_eq!(clear_all_caches(cache.path()).expect("clear").snapshots, 1);
         assert!(!crate::content::content_cache_path(&path).exists());
+    }
+
+    /// A sidecar this build cannot serve beside a snapshot it can is still fdu's: status
+    /// labels it stale with the reason, whatever its contents after the magic, and
+    /// clearing the snapshot takes it too, because pairing and clearing decide by magic.
+    #[test]
+    fn a_stale_sidecar_beside_a_current_snapshot_is_labelled_and_cleared() {
+        let tree = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache");
+        let path = cache.path().join(layout_name(1));
+        std::fs::write(tree.path().join("notes.md"), b"one two\n").expect("write");
+        let config = OpenConfig {
+            cache_path: Some(path.clone()),
+            policy: CachePolicy::Auto,
+            analysis: crate::content::AnalysisRequest {
+                profile: crate::content::AnalysisSet::NONE.with_lines(),
+                ..crate::content::AnalysisRequest::default()
+            },
+            ..OpenConfig::default()
+        };
+        open(tree.path(), &config).expect("seed analyzed cache");
+        let sidecar = crate::content::content_cache_path(&path);
+        let written = std::fs::read(&sidecar).expect("a sidecar");
+
+        let mut older = written.clone();
+        older[VERSION_OFFSET..FINGERPRINT_OFFSET].copy_from_slice(&4_u32.to_le_bytes());
+        let mut newer = written.clone();
+        newer[VERSION_OFFSET..FINGERPRINT_OFFSET].copy_from_slice(&99_u32.to_le_bytes());
+        let mut other_engine = written.clone();
+        other_engine[FINGERPRINT_OFFSET] ^= 0xff;
+        let truncated = written[..written.len() - 1].to_vec();
+        let mut unreadable_header = written.clone();
+        let path_encoding_at = FINGERPRINT_OFFSET + 8;
+        unreadable_header[path_encoding_at] ^= 0xff;
+        for (image, reason) in [
+            (older, StaleReason::OlderFormat { version: 4 }),
+            (newer, StaleReason::NewerFormat { version: 99 }),
+            (other_engine, StaleReason::OtherEngine),
+            (truncated, StaleReason::Unreadable),
+            (unreadable_header, StaleReason::Unreadable),
+        ] {
+            std::fs::write(&sidecar, &image).expect("rewrite the sidecar");
+            let listed = list_caches(cache.path()).expect("list");
+            assert_eq!(listed.len(), 1, "a stale sidecar is still grouped with its snapshot");
+            assert!(matches!(listed[0].state, CacheState::Current(_)), "{listed:?}");
+            let content = listed[0].content.as_ref().expect("its sidecar");
+            assert_eq!(content.bytes, u64::try_from(image.len()).expect("small"));
+            assert_eq!(content.state, ContentState::Stale(reason), "{reason:?}");
+            assert_eq!(cache_status(&path).expect("status").content, listed[0].content);
+        }
+
+        assert!(clear_cache(&path).expect("clear"));
+        assert!(!path.exists());
+        assert!(!sidecar.exists(), "the stale sidecar goes with its snapshot");
     }
 
     #[test]
@@ -1004,7 +1122,7 @@ mod tests {
         // Grouped with its snapshot rather than listed as debris.
         let listed = list_caches(cache.path()).expect("list");
         assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].content_bytes, Some(15));
+        assert_eq!(listed[0].content_bytes(), Some(15));
         assert!(!clear_leftover(&sidecar, LeftoverKind::OrphanedContent).expect("clear"));
         assert!(sidecar.exists(), "its snapshot is still there");
 
@@ -1101,7 +1219,7 @@ mod tests {
         let states = [
             CacheState::Current(SnapshotInfo {
                 root: PathBuf::new(),
-                scope: crate::test_support::not_observing_controls(),
+                identity: crate::ScanConfig::default().snapshot_identity(),
                 entries: 1,
             }),
             CacheState::Stale(StaleReason::Unreadable),

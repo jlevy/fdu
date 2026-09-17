@@ -47,9 +47,9 @@ The GitHub release text is
 - **Machine output.** Every report carries a versioned `schema`: a metadata-only report
   uses `fdu.report/5`, a report that ran content analysis or includes a metric summary
   (`types`, `families`, `languages`, `documents`) uses `fdu.report/6`, a `--watch`
-  stream uses `fdu.stream/1`, and `--cache-status` carries `fdu.cache/1`, its own
-  document identity rather than a report schema.
-  A field change bumps the schema version.
+  stream uses `fdu.stream/1`, and `--cache-status` carries `fdu.cache/2`, its own
+  document identity rather than a report schema, with the identity of every tier each
+  cached file holds. A field change bumps the schema version.
   Completeness (`complete`, `errors`) is separate from what a view chose not to render,
   and a path that is not valid Unicode keeps a lossless, platform-tagged raw identity.
 - **Content analysis**, opt-in with `--analyze`, which takes `lines`, `code`, `words`, a

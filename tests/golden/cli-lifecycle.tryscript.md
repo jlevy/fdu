@@ -125,9 +125,9 @@ Agents get cache observability without a second schema style.
 ```console
 $ fdu --cache-status --format json project
 {
-  "schema": "fdu.cache/1",
+  "schema": "fdu.cache/2",
   "caches": [
-    {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "state": "current", "root": "[SCAN_PATH]", "entries": 11}
+    {"path": "[CACHE_FILE]", "bytes": [BYTES], "state": "current", "root": "[SCAN_PATH]", "entries": 11, "identity": {"entries": {"engine": 2764270474160771455, "max_depth": null, "follow_symlinks": false, "one_filesystem": false, "hidden_fingerprint": 0, "exclude_special": false, "type_rules_fingerprint": 12438660251313372799, "reducers_fingerprint": 1}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}}}, "content": null}
   ]
 }
 ? 0
@@ -138,14 +138,28 @@ every machine format.
 
 ```console
 $ fdu --cache-status --format yaml project
-schema: fdu.cache/1
+schema: fdu.cache/2
 caches:
   - path: [CACHE_FILE_SCALAR]
     bytes: [BYTES]
-    content_bytes: null
     state: current
     root: [SCAN_PATH]
     entries: 11
+    identity:
+      entries:
+        engine: 2764270474160771455
+        max_depth: null
+        follow_symlinks: false
+        one_filesystem: false
+        hidden_fingerprint: 0
+        exclude_special: false
+        type_rules_fingerprint: 12438660251313372799
+        reducers_fingerprint: 1
+      ignore_rules:
+        limits:
+          budget: 4194304
+          line_limit: 16384
+    content: null
 ? 0
 ```
 
@@ -238,14 +252,14 @@ nothing to a figure that is meant to say how much a clear would leave behind.
 ```console
 $ fdu --cache-status=all --format json project
 {
-  "schema": "fdu.cache/1",
+  "schema": "fdu.cache/2",
   "caches": [
-    {"path": "[CACHE_FILE]", "bytes": 12, "content_bytes": null, "state": "stale", "stale_reason": "older_format", "format_version": 1},
-    {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "state": "stale", "stale_reason": "other_engine", "format_version": null},
-    {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "state": "stale", "stale_reason": "unreadable", "format_version": null},
-    {"path": "[CACHE_FILE]", "bytes": 0, "content_bytes": null, "state": "unrecognized"},
-    {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "state": "current", "root": "[SCAN_PATH]", "entries": 11},
-    {"path": "[CACHE_DIR]notes.txt", "bytes": 15, "content_bytes": null, "state": "unrecognized"}
+    {"path": "[CACHE_FILE]", "bytes": 12, "state": "stale", "stale_reason": "older_format", "format_version": 1, "content": null},
+    {"path": "[CACHE_FILE]", "bytes": [BYTES], "state": "stale", "stale_reason": "other_engine", "format_version": null, "content": null},
+    {"path": "[CACHE_FILE]", "bytes": [BYTES], "state": "stale", "stale_reason": "unreadable", "format_version": null, "content": null},
+    {"path": "[CACHE_FILE]", "bytes": 0, "state": "unrecognized", "content": null},
+    {"path": "[CACHE_FILE]", "bytes": [BYTES], "state": "current", "root": "[SCAN_PATH]", "entries": 11, "identity": {"entries": {"engine": 2764270474160771455, "max_depth": null, "follow_symlinks": false, "one_filesystem": false, "hidden_fingerprint": 0, "exclude_special": false, "type_rules_fingerprint": 12438660251313372799, "reducers_fingerprint": 1}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}}}, "content": null},
+    {"path": "[CACHE_DIR]notes.txt", "bytes": 15, "state": "unrecognized", "content": null}
   ]
 }
 ? 0

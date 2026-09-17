@@ -101,8 +101,9 @@ pub use crate::watch_session as session;
 
 pub use crate::admission::HiddenPolicy;
 pub use crate::cache::{
-    CacheScope, CacheState, CacheStatus, ClearSummary, LeftoverKind, SnapshotInfo, StaleReason,
-    cache_status, clear_all_caches, clear_cache, list_caches,
+    CacheScope, CacheState, CacheStatus, ClearSummary, ContentInfo, ContentState, ContentStatus,
+    LeftoverKind, SnapshotInfo, StaleReason, cache_status, clear_all_caches, clear_cache,
+    list_caches,
 };
 pub use crate::control::{
     CONTROL_FILE_NAME, ControlAdmission, ControlCoverage, ControlIdentity, ControlLimits,
@@ -781,7 +782,7 @@ fn spawn_save(
                         .ok()
                         .flatten()
                         .filter(|stored| stored.root == snapshot_source.root_path())
-                        .map(|stored| EntryTierIdentity::of_scope(stored.scope))
+                        .map(|stored| stored.identity.entries)
                 };
                 let writable = entries_writable
                     || stored_state::content_tier_writable(&snapshot_source, stored_entries());

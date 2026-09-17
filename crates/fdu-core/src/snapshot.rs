@@ -627,7 +627,7 @@ fn identify_prologue(reader: &mut impl Read, trailer_intact: bool) -> io::Result
     Ok(match invalid_as_none(parse_header_fields(reader, engine))? {
         Some(header) => Identity::Current(crate::cache::SnapshotInfo {
             root: header.root,
-            scope: header.identity.scan_scope(),
+            identity: header.identity,
             entries: header.entries,
         }),
         None => Identity::Stale(StaleReason::Unreadable),
@@ -2517,7 +2517,8 @@ mod tests {
             assert_eq!(restored.snapshot_identity(), identity);
             assert_eq!(restored.scope(), identity.scan_scope());
             let info = read_header(&path).expect("read header").expect("current");
-            assert_eq!(info.scope, identity.scan_scope());
+            assert_eq!(info.identity, identity);
+            assert_eq!(info.scope(), identity.scan_scope());
         }
     }
 

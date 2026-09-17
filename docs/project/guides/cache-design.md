@@ -150,13 +150,24 @@ names and magic, not clocks — so when it lists a staging file it says that one
 until it is too old to be a running writer’s, rather than promising a count the clear
 will then decline and explain.
 
-Machine formats carry the `fdu.cache/1` schema — its own document identity, not a report
+Machine formats carry the `fdu.cache/2` schema — its own document identity, not a report
 schema, because cache status is a fact about the cache directory rather than about a
-tree. Every row carries `path`, `bytes`, `content_bytes`, and `state`; a `current` row
-adds `root` and `entries`, a `stale` row a `stale_reason` and, for a format mismatch,
-the `format_version`, and a `leftover` row its `leftover_kind`. An empty cache directory
-is an empty sequence in every machine format, never a null, so one reader works whether
-or not anything is cached.
+tree. Every row carries `path`, `bytes`, `state`, and `content`; a `current` row adds
+`root`, `entries`, and the `identity` of every tier the snapshot holds, a `stale` row a
+`stale_reason` and, for a format mismatch, the `format_version`, and a `leftover` row
+its `leftover_kind`. A snapshot’s `identity` names its entry tier (the engine
+fingerprint, the scope fields, and the type-rules and reducer-set fingerprints) and its
+control tier as `ignore_rules`: `null` when no `.gitignore` was read, otherwise the
+`limits` it was read under.
+`content` is `null` when no sidecar with the sidecar magic sits beside the file, and
+otherwise its `bytes` and its own `state`: `current`, with its `records` and an
+`identity` that adds the analyzer set and provenance to the entry tier under the names a
+report’s `analysis` object uses, or `stale`, with its `stale_reason` and
+`format_version`. Whether the sidecar is grouped with its snapshot and cleared with it
+is still decided by its magic, so a stale sidecar is labelled and removed like a current
+one.
+An empty cache directory is an empty sequence in every machine format, never a null,
+so one reader works whether or not anything is cached.
 
 Snapshot persistence is available on every platform, including for metadata queries.
 It is not used by every execution plan.

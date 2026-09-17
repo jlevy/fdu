@@ -814,26 +814,93 @@ class ChangeSet:
 
 
 @dataclass(frozen=True, slots=True)
+class EntryTierIdentity:
+    """Which entries a store holds: the engine that built it, the scope it retained, and
+    the type rules and reducer set its roll-ups were tallied under.
+
+    `.gitignore` observation is not part of it, because reading rules changes which entries
+    are ignored, never which exist or what they measure.
+    """
+
+    engine: int
+    max_depth: int | None
+    follow_symlinks: bool
+    one_filesystem: bool
+    hidden_fingerprint: int
+    exclude_special: bool
+    type_rules_fingerprint: int
+    reducers_fingerprint: int
+
+
+@dataclass(frozen=True, slots=True)
+class ControlTierIdentity:
+    """The ``.gitignore`` control tier of a store that observed rules, under its limits."""
+
+    limits: ControlLimits
+
+
+@dataclass(frozen=True, slots=True)
+class SnapshotIdentity:
+    """The identity of every tier a snapshot holds.
+
+    `ignore_rules` is ``None`` when the snapshot read no ``.gitignore`` file.
+    """
+
+    entries: EntryTierIdentity
+    ignore_rules: ControlTierIdentity | None
+
+
+@dataclass(frozen=True, slots=True)
+class ContentTierIdentity:
+    """The identity of a content sidecar's records: the entry tier they were analyzed
+    over, then the analyzer set and provenance as a report's `AnalysisMetadata` names them.
+    """
+
+    entries: EntryTierIdentity
+    analyze: tuple[Analysis, ...]
+    type_rules_fingerprint: int
+    options_fingerprint: int
+    analyzers: tuple[Analyzer, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ContentStatus:
+    """The content sidecar fdu wrote beside a snapshot.
+
+    `state` is `CURRENT` or `STALE`. `records` and `identity` come from the header of a
+    `CURRENT` sidecar and are `None` otherwise; `stale_reason` is set only for a `STALE`
+    one, and `format_version` only when the version is the reason.
+    """
+
+    bytes: int
+    state: CacheState
+    stale_reason: StaleReason | None
+    format_version: int | None
+    records: int | None
+    identity: ContentTierIdentity | None
+
+
+@dataclass(frozen=True, slots=True)
 class CacheStatus:
     """One file in the snapshot cache.
 
-    `root`, `entries`, `max_depth`, and `one_filesystem` come from the header of a `CURRENT`
-    snapshot and are `None` otherwise; `stale_reason` is set only for a `STALE` one,
-    `format_version` only when the version is the reason, and `leftover_kind` only for a
-    `LEFTOVER` one.
+    `root`, `entries`, and `identity` come from the header of a `CURRENT` snapshot and are
+    `None` otherwise; `stale_reason` is set only for a `STALE` one, `format_version` only
+    when the version is the reason, and `leftover_kind` only for a `LEFTOVER` one.
+    `content` describes the sidecar beside a snapshot, current or stale, and is `None`
+    when there is none.
     """
 
     path: Path
     bytes: int
-    content_bytes: int | None
     state: CacheState
     stale_reason: StaleReason | None
     format_version: int | None
     leftover_kind: LeftoverKind | None
     root: Path | None
     entries: int | None
-    max_depth: int | None
-    one_filesystem: bool | None
+    identity: SnapshotIdentity | None
+    content: ContentStatus | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -854,6 +921,81 @@ def _datetime(value: object) -> datetime | None:
     if not isinstance(value, str):
         raise TypeError(f"expected timestamp string, got {type(value).__name__}")
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _entry_tier_identity(value: Mapping[str, Any]) -> EntryTierIdentity:
+    return EntryTierIdentity(
+        engine=int(value["engine"]),
+        max_depth=_limit(value["max_depth"]),
+        follow_symlinks=bool(value["follow_symlinks"]),
+        one_filesystem=bool(value["one_filesystem"]),
+        hidden_fingerprint=int(value["hidden_fingerprint"]),
+        exclude_special=bool(value["exclude_special"]),
+        type_rules_fingerprint=int(value["type_rules_fingerprint"]),
+        reducers_fingerprint=int(value["reducers_fingerprint"]),
+    )
+
+
+def _snapshot_identity(value: Mapping[str, Any] | None) -> SnapshotIdentity | None:
+    if value is None:
+        return None
+    raw_controls = value["ignore_rules"]
+    controls = None
+    if raw_controls is not None:
+        raw_limits = raw_controls["limits"]
+        controls = ControlTierIdentity(
+            ControlLimits(
+                budget=_limit(raw_limits["budget"]), line_limit=_limit(raw_limits["line_limit"])
+            )
+        )
+    return SnapshotIdentity(entries=_entry_tier_identity(value["entries"]), ignore_rules=controls)
+
+
+def _content_status(value: Mapping[str, Any] | None) -> ContentStatus | None:
+    if value is None:
+        return None
+    raw_identity = value["identity"]
+    identity = None
+    if raw_identity is not None:
+        identity = ContentTierIdentity(
+            entries=_entry_tier_identity(raw_identity["entries"]),
+            analyze=tuple(Analysis(str(name)) for name in raw_identity["analyze"]),
+            type_rules_fingerprint=int(raw_identity["type_rules_fingerprint"]),
+            options_fingerprint=int(raw_identity["options_fingerprint"]),
+            analyzers=tuple(
+                Analyzer(str(item["id"]), int(item["version"]))
+                for item in raw_identity["analyzers"]
+            ),
+        )
+    return ContentStatus(
+        bytes=int(value["bytes"]),
+        state=CacheState(value["state"]),
+        stale_reason=_stale_reason(value["stale_reason"]),
+        format_version=_limit(value["format_version"]),
+        records=_limit(value["records"]),
+        identity=identity,
+    )
+
+
+def _stale_reason(value: object) -> StaleReason | None:
+    return None if value is None else StaleReason(str(value))
+
+
+def cache_status_from_dict(value: Mapping[str, Any]) -> CacheStatus:
+    return CacheStatus(
+        path=Path(value["path"]),
+        bytes=int(value["bytes"]),
+        state=CacheState(value["state"]),
+        stale_reason=_stale_reason(value["stale_reason"]),
+        format_version=_limit(value["format_version"]),
+        leftover_kind=(
+            LeftoverKind(value["leftover_kind"]) if value["leftover_kind"] is not None else None
+        ),
+        root=Path(value["root"]) if value["root"] is not None else None,
+        entries=_limit(value["entries"]),
+        identity=_snapshot_identity(value["identity"]),
+        content=_content_status(value["content"]),
+    )
 
 
 def _int_map(value: dict[str, Any]) -> MappingProxyType[str, int]:
