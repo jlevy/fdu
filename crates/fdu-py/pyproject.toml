@@ -43,7 +43,7 @@ dev = [
 
 [project.urls]
 Repository = "https://github.com/jlevy/fdu"
-Documentation = "https://docs.rs/fdu"
+Documentation = "https://github.com/jlevy/fdu/blob/main/docs/usage.md"
 
 [tool.maturin]
 # Keep one extension module rather than duplicating the native payload as a bundled

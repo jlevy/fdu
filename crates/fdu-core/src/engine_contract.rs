@@ -812,7 +812,7 @@ pub enum ReadProjection {
         /// Directory relative to the opened root.
         path: PathBuf,
     },
-    /// Return one directories-first page of direct portable children.
+    /// Return one page of portable descendants, level by level to `depth`.
     Tree {
         /// Directory relative to the opened root.
         path: PathBuf,
@@ -877,12 +877,13 @@ pub struct ReadDiagnostics {
     pub controls: crate::control::ControlObservation,
 }
 
-/// One depth-one structural page.
+/// One structural page of a directory's descendants, to the requested depth.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TreePage {
-    /// Directory whose direct children are listed.
+    /// Directory whose descendants are listed.
     pub directory: EntryValue,
-    /// Portable child rows in directories-first canonical byte order.
+    /// Portable rows in breadth-first level order; each parent's children are
+    /// directories-first in canonical byte order.
     pub rows: Vec<EntryValue>,
     /// Opaque continuation when another page exists at this version.
     pub next: Option<ContinuationId>,
@@ -932,7 +933,7 @@ pub struct ReportRequest {
 /// Projection whose deterministic work allowance was exhausted.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum LimitedProjection {
-    /// Depth-one structural page.
+    /// Structural tree page.
     Tree,
     /// Portable flat page.
     Flat,
@@ -1014,7 +1015,7 @@ pub enum ProjectionResult {
     Lookup(Knowledge<EntryValue>),
     /// Three-valued directory roll-up lookup.
     RollUp(Knowledge<crate::index::PartitionRollUpSummary>),
-    /// Three-valued depth-one structural page.
+    /// Three-valued structural tree page.
     Tree(Knowledge<TreePage>),
     /// Portable flat entry page.
     Flat(FlatPage),

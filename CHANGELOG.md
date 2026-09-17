@@ -106,7 +106,9 @@ The GitHub release text is
   reconcile of the affected subtree rather than a dropped event.
   An upsert carries `ignored`, and so does a removal a rule edit caused; an ordinary
   removal, an invalidation, and every record of a run that read no rules omit it.
-  A watch is metadata-only and refuses `--analyze`.
+  A watch is metadata-only on every surface: the command line refuses `--analyze` with
+  `--watch`, and a Rust `Session` or Python `Index.watch()` refuses an index opened with
+  content analysis, as `Error::UnsupportedScanConfig` or `InvalidArgumentError`.
 - **`.gitignore` roll-ups**, read by default on every surface.
   An index keeps ignored and unignored roll-ups for every directory beside the totals,
   and every report says how much of each size the tree’s own rules ignore.
@@ -282,10 +284,15 @@ This applies only to anyone who ran fdu built from a development checkout.
 - **Cache scope.** `fdu PATH` and `fdu --no-gitignore PATH` keep snapshots of different
   scope at one path, so alternating them scans cold each time.
   Changing either `.gitignore` limit does the same.
-- **Content analysis** is one-shot: `--watch` is metadata-only, and a refresh reanalyzes
-  after reconciling. SLOC covers 15 languages, with no embedded-language or syntax-tree
-  metrics. Sidecars and coverage are scoped to the analyzer set, so a request for
-  analyzers the stored set lacks reads the files again.
+- **Content analysis** is one-shot on every surface: the command line refuses
+  `--analyze` with `--watch`, a Rust `Session` and Python `Index.watch()` refuse an
+  index opened with analysis, and a refresh reanalyzes after reconciling.
+  SLOC covers 15 languages, with no embedded-language or syntax-tree metrics.
+  Sidecars and coverage are scoped to the analyzer set, so a request for analyzers the
+  stored set lacks reads the files again.
+- **Analysis memory.** `--analyze code` holds a whole file in memory while it analyzes a
+  file of unknown type, and `--analyze words` does the same for Markdown and unknown
+  types, so a very large such file raises peak memory by its size.
 - **`.gitignore` fidelity.** `.git/info/exclude`, `core.excludesFile`, and `.gitignore`
   files above the scanned root are not read, and a nested repository is not a boundary.
   Three unusual patterns match differently from git: `a/\/b`, `a//b`, and `***` between
@@ -307,15 +314,24 @@ This applies only to anyone who ran fdu built from a development checkout.
   Under the default selection it keeps membership live but does not restate a row’s
   `ignored` bit after a rule edit, so re-read a listing when the bit itself matters.
 - **Opened roots.** A `Tree` page can exceed its `max_work` by the width of one
-  directory level.
+  directory level. The opened-root types (`OpenedIndex` and its `ReadProjection`
+  projections, `TreePage`, `ReadResponse`, and the `fdu.opened` types that mirror them)
+  are expected to change in 0.2, as the `0.x` rule allows.
+- **JSON integers.** Fingerprints such as `type_rules_fingerprint` and nanosecond
+  timestamps such as `newest_mtime_ns` exceed 2^53, so JavaScript’s `JSON.parse` loses
+  their precision; use a parser that preserves big integers.
 - **Roll-up metrics** are a fixed set; there is no interface for custom per-directory
   reducers.
 - **Performance evidence** comes mainly from an M1 Pro MacBook with a local APFS SSD.
   Linux measurements are from virtualized hosts, Windows has none, and CI checks
   behavior rather than timing.
 - **Platform coverage.** Linux arm64 wheels are cross-built and inspected, not executed,
-  before release. There is no wheel for free-threaded CPython, musl Linux, or Windows
-  arm64; those systems build from the source distribution with Rust 1.85 or newer.
+  before release. There is no wheel for musl Linux or Windows arm64; those systems build
+  from the source distribution with Rust 1.85 or newer.
+- **Free-threaded CPython** (such as `3.14t`) is not supported.
+  It cannot install the `abi3` wheels, and an installer there falls back to building the
+  source distribution; if uv selects a free-threaded interpreter, pass `--python 3.14`
+  or `--python 3.12`.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
