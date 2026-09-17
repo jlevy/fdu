@@ -112,7 +112,14 @@ impl Basis {
 /// [`AnalysisRequest`](crate::content::AnalysisRequest), which a request does not carry --
 /// [`Basis::content`] is the analyzer set, which is what changes an answer. Phase 2 replaces
 /// both with one `Workers`.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+///
+/// No `Default`, deliberately. Every field here is a decision its caller has already made,
+/// and the cache policy is the one that decides whether an answer touches the filesystem
+/// and whether it leaves a trace; a default one reads `cache: Auto` whatever the caller
+/// asked for, which is exactly how the watch session came to validate against a cache
+/// policy nobody had chosen and `WatchCacheOnly` became unreachable inside the engine
+/// (fdu-i18y). A caller that wants the ordinary delivery names it.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Delivery {
     /// How the snapshot cache may be used.
     pub cache: CachePolicy,
@@ -1654,11 +1661,17 @@ mod tests {
     /// watch: every one of these is a legal one-shot request.
     #[test]
     fn a_watch_refuses_what_it_cannot_keep_current() {
+        let one_shot = Delivery {
+            cache: CachePolicy::Auto,
+            cache_path: None,
+            accept_partial: false,
+            watch: None,
+            analysis_workers: 0,
+        };
         let watching = Delivery {
             watch: Some(WatchDelivery { interval: Duration::from_secs(2) }),
-            ..Delivery::default()
+            ..one_shot.clone()
         };
-        let one_shot = Delivery::default();
         let cases = [
             (
                 RequestSpec { scan_depth: Some("2"), ..RequestSpec::new(root()) },

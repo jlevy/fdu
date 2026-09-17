@@ -11,7 +11,10 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use fdu_core::content::{AnalysisRequest, AnalysisSet};
-use fdu_core::query::{Basis, Bound, Query, Request, Selection, ViewSpec};
+use fdu_core::query::{Basis, Bound, Query, Request, Selection, ViewSpec, WatchDelivery};
+// The module's own `Delivery` is how a change reached this process; the request model's is
+// how an answer is carried out. Two different questions, so the import names the crate.
+use fdu_core::query::Delivery as RequestDelivery;
 use fdu_core::session::{ChangeKind, Session};
 use fdu_core::watch::WatchConfig;
 use fdu_core::{CachePolicy, IndexHandle, OpenConfig, ScanConfig, open};
@@ -25,9 +28,22 @@ fn session(root: &Path, selection: Selection, views: Vec<ViewSpec>) -> Session {
     Session::new(
         IndexHandle::new(index),
         request(root, AnalysisSet::NONE, Query { selection, views, ..Query::default() }),
+        &watching(&config),
         WatchConfig::default(),
     )
     .expect("session")
+}
+
+/// The delivery a test watch runs under: the one its index was opened with, repeating.
+///
+/// Named rather than defaulted, because the cache policy is what a session validates the
+/// cache-only rule against and a fabricated one always read `auto` (fdu-i18y).
+fn watching(config: &OpenConfig) -> RequestDelivery {
+    let (_basis, delivery) = config.split(Path::new("/unused"));
+    RequestDelivery {
+        watch: Some(WatchDelivery { interval: Duration::from_millis(200) }),
+        ..delivery
+    }
 }
 
 /// The request a watch answers: the basis its index was opened under, and this query.
@@ -301,6 +317,7 @@ fn a_session_refuses_an_analyzed_index() {
     let refused = Session::new(
         handle.clone(),
         request(dir.path(), lines, Query::default()),
+        &watching(&config),
         WatchConfig::default(),
     );
     assert!(
@@ -315,6 +332,7 @@ fn a_session_refuses_an_analyzed_index() {
     let mismatched = Session::new(
         handle,
         request(dir.path(), AnalysisSet::NONE, Query::default()),
+        &watching(&config),
         WatchConfig::default(),
     );
     assert!(
@@ -326,5 +344,59 @@ fn a_session_refuses_an_analyzed_index() {
         ),
         "expected a refusal, got {:?}",
         mismatched.err().map(|error| error.to_string())
+    );
+}
+
+/// The three rules a watch cannot meet are the engine's, not the two front doors'.
+///
+/// `Session::new` used to fabricate the delivery it validated against, which read
+/// `cache: Auto` whatever its caller had opened with, so the cache-only rule could not
+/// fire here at all and a library caller reached a watch the command line refuses
+/// (fdu-i18y). It also asked the index's scope before the request's own rule, so the same
+/// narrowed request was a scope mismatch to a library caller and a watch-scope refusal on
+/// the command line.
+#[test]
+fn a_session_refuses_what_its_callers_delivery_cannot_carry() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("a.txt"), b"one\n").expect("seed");
+    let config = OpenConfig { policy: CachePolicy::Off, ..OpenConfig::default() };
+    let (index, _report) = open(dir.path(), &config).expect("open");
+    let handle = IndexHandle::new(index);
+
+    let cache_only = Session::new(
+        handle.clone(),
+        request(dir.path(), AnalysisSet::NONE, Query::default()),
+        &RequestDelivery { cache: CachePolicy::Only, ..watching(&config) },
+        WatchConfig::default(),
+    );
+    assert!(
+        matches!(
+            cache_only,
+            Err(fdu_core::Error::InvalidRequest(fdu_core::query::RequestError::WatchCacheOnly))
+        ),
+        "expected a refusal, got {:?}",
+        cache_only.err().map(|error| error.to_string())
+    );
+
+    // A narrowed scan scope is refused as the request-level rule it is, before the index
+    // is asked what scope it was taken under: both are true of this call, and the one the
+    // caller can act on is the one that speaks.
+    let narrowed = Request::new(
+        Basis {
+            root: dir.path().to_path_buf(),
+            scope: ScanConfig { max_depth: Some(2), ..ScanConfig::default() },
+            content: AnalysisSet::NONE,
+        },
+        Query::default(),
+        std::time::SystemTime::now(),
+    );
+    let refused = Session::new(handle, narrowed, &watching(&config), WatchConfig::default());
+    assert!(
+        matches!(
+            refused,
+            Err(fdu_core::Error::InvalidRequest(fdu_core::query::RequestError::WatchScope))
+        ),
+        "expected a watch-scope refusal, got {:?}",
+        refused.err().map(|error| error.to_string())
     );
 }

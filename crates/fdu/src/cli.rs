@@ -641,9 +641,6 @@ impl Cli {
         request.validate_delivery(&delivery).map_err(|error| usage(&refused(&error)))?;
 
         #[cfg(feature = "watch")]
-        let config = OpenConfig::of(&request.basis, &delivery);
-
-        #[cfg(feature = "watch")]
         if self.watch {
             let color = ColorContext::from_environment(
                 self.color,
@@ -652,7 +649,7 @@ impl Cli {
                 stdout_is_terminal,
             )
             .enabled();
-            return self.run_watch(out, diagnostic, format, &request, &config, color);
+            return self.run_watch(out, diagnostic, format, &request, &delivery, color);
         }
 
         let report_started = Instant::now();
@@ -758,7 +755,7 @@ impl Cli {
         diagnostic: &mut dyn Write,
         format: report_format::Format,
         request: &Request,
-        config: &OpenConfig,
+        delivery: &Delivery,
         color: bool,
     ) -> anyhow::Result<RunOutcome> {
         use fdu_core::open_with_pending_save;
@@ -767,9 +764,19 @@ impl Cli {
         use fdu_core::watch_session::{ChangeKind, Session};
 
         let path = self.path.as_deref().expect("run() validates the report path first");
-        let interval = parse_duration(&self.interval).map_err(|error| usage(&error))?;
+        // The repaint interval the delivery already carries, rather than a second reading
+        // of `--interval`: `run` refused an unparseable one before it opened anything, and
+        // a value parsed twice is a value that can mean two things.
+        let interval = delivery
+            .watch
+            .expect("run() builds a watch delivery before it takes the watch path")
+            .interval;
 
         let scan_started_at = SystemTime::now();
+        // The one splice of the two models back into today's open configuration, made
+        // here rather than by the caller: the watch path is its only remaining user on
+        // this surface.
+        let config = &OpenConfig::of(&request.basis, delivery);
         let (index, open_report, pending_save) = open_with_pending_save(path, config)?;
         if let Err(error) = pending_save.join() {
             let _ = writeln!(
@@ -790,7 +797,7 @@ impl Cli {
         let index = std::sync::Arc::into_inner(index)
             .expect("the joined writer released the only other reference");
         let handle = fdu_core::IndexHandle::new(index);
-        let mut session = Session::new(handle, request.clone(), WatchConfig::default())?;
+        let mut session = Session::new(handle, request.clone(), delivery, WatchConfig::default())?;
 
         // The initial answer, identical to a one-shot run's.
         let provenance = Provenance {

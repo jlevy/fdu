@@ -394,7 +394,8 @@ impl PyIndex {
         // The index is cloned into the session: a watcher owns its own handle, so closing
         // the feed cannot disturb the caller's index.
         let handle = IndexHandle::new(self.inner.clone());
-        let session = Session::new(handle, request, WatchConfig::default()).map_err(to_py_err)?;
+        let session =
+            Session::new(handle, request, &delivery, WatchConfig::default()).map_err(to_py_err)?;
 
         Ok(PyWatch { session: Some(session), timeout: Duration::from_secs_f64(interval) })
     }
@@ -1297,7 +1298,10 @@ fn report_once(
             .map_err(|error| value_error(&error))?,
         cache_path: fdu_core::default_cache_path(&root),
         analysis_workers,
-        ..Delivery::default()
+        // A one-shot report is neither partial-tolerant nor repeated: this function
+        // returns one complete answer or raises.
+        accept_partial: false,
+        watch: None,
     };
     // Refused before any scan, in the API's own names; the engine refuses the same request
     // with the same typed value for a Rust caller.
@@ -1669,7 +1673,10 @@ fn open(
             .map_err(|error| value_error(&error))?,
         cache_path: fdu_core::default_cache_path(&root),
         analysis_workers,
-        ..Delivery::default()
+        accept_partial: false,
+        // An index is opened here and may be watched later; `Index.watch` states the
+        // watch delivery then, over this one.
+        watch: None,
     };
     let config = OpenConfig::of(&basis, &delivery);
 
@@ -1743,7 +1750,13 @@ fn scan(
         analyze,
     )?;
     // A bare scan consults no cache at all, so its delivery names none.
-    let delivery = Delivery { cache: CachePolicy::Off, analysis_workers, ..Delivery::default() };
+    let delivery = Delivery {
+        cache: CachePolicy::Off,
+        cache_path: None,
+        analysis_workers,
+        accept_partial: false,
+        watch: None,
+    };
     let config = OpenConfig::of(&basis, &delivery);
     let scanned = py.detach(|| fdu_core::open(&root, &config));
     let (index, report) = scanned.map_err(to_py_err)?;
@@ -1870,7 +1883,13 @@ mod tests {
                         scope: fdu_core::ScanConfig::default(),
                         content: AnalysisSet::NONE,
                     },
-                    delivery: Delivery::default(),
+                    delivery: Delivery {
+                        cache: CachePolicy::Off,
+                        cache_path: None,
+                        accept_partial: false,
+                        watch: None,
+                        analysis_workers: 0,
+                    },
                     errors: Vec::new(),
                     operation_complete: true,
                     scan_started_at: None,

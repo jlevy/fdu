@@ -127,37 +127,53 @@ impl Session {
     /// request as the tree changes, and a relative time window that slid under it would
     /// make two repaints answer two different questions.
     ///
+    /// `delivery` is the one its caller opened the index under. It is taken rather than
+    /// composed here because the cache policy is part of it: a session built against a
+    /// fabricated `Delivery` read `cache: Auto` whatever the caller had asked for, so
+    /// [`RequestError::WatchCacheOnly`](crate::query::RequestError::WatchCacheOnly) could
+    /// not fire inside the engine at all and the rule held only at the two front doors
+    /// (fdu-i18y). Starting a session is what a watch *is*, so the delivery is read as a
+    /// watch whether or not the caller remembered to say so.
+    ///
+    /// Refusals are in the order every route publishes: what no delivery can carry first,
+    /// then what this index was taken under, then what it holds. The request-level rule
+    /// speaks first, so a library caller watching a depth-2 request is told the watch
+    /// cannot narrow its scope rather than that the index has another scope.
+    ///
     /// # Errors
     ///
-    /// [`Error::InvalidRequest`] when this index cannot answer the request, or when a watch
-    /// cannot deliver it: a narrowed scan scope, content analysis nothing re-reads, or a
-    /// selection by ignored state over an index that observed no control state.
+    /// [`Error::InvalidRequest`] when a watch cannot deliver the request -- a narrowed scan
+    /// scope, content analysis nothing re-reads, a snapshot nothing verified -- or when
+    /// this index cannot answer it, including a selection by ignored state over an index
+    /// that observed no control state.
     /// [`Error::ScanScopeMismatch`] when the index was not taken under the request's scope.
-    pub fn new(index: IndexHandle, request: Request, watch: WatchConfig) -> Result<Self> {
+    pub fn new(
+        index: IndexHandle,
+        request: Request,
+        delivery: &Delivery,
+        watch: WatchConfig,
+    ) -> Result<Self> {
         let root = index.root_path()?;
         let scan = request.basis.scope.clone();
+        // What no delivery can carry, before anything stored is read and before the
+        // backend is bound: this is the rule each surface used to keep for itself, so a
+        // library caller could watch what `--watch` has always refused.
+        let delivery = Delivery {
+            watch: delivery.watch.or(Some(WatchDelivery { interval: watch.settle })),
+            ..delivery.clone()
+        };
+        request.validate_delivery(&delivery).map_err(Error::InvalidRequest)?;
         // Reject an out-of-scope watch before the backend is bound, so a rejected run
         // never leaves a watcher registered on the tree.
         scan.validate_for_scope(index.scope()?)?;
         // The scope check above proved the index was taken under exactly this scan's
-        // identity, control tier included, so what remains is what this index holds and
-        // what a watch can carry. Both are refused here rather than at one surface, which
-        // is how a library caller could watch an analyzed index that `--watch --analyze`
-        // has always refused.
+        // identity, control tier included, so what remains is what this index holds.
         let held = Basis {
             root: root.clone(),
             scope: scan.clone(),
             content: index.read_with(crate::Index::content_set)?,
         };
         request.validate_read(&held).map_err(Error::InvalidRequest)?;
-        request
-            .validate_delivery(&Delivery {
-                // The repaint interval is the caller's, and no watch refusal depends on
-                // it; what this says is that the delivery is a watch at all.
-                watch: Some(WatchDelivery { interval: watch.settle }),
-                ..Delivery::default()
-            })
-            .map_err(Error::InvalidRequest)?;
         let watcher = Watcher::new(&root, watch)?;
         Ok(Self { index, watcher, scan, request })
     }
