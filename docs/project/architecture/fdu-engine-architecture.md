@@ -238,8 +238,8 @@ The target models are in
 
 | Concept | Covers | Defined today | One explicit model? |
 | --- | --- | --- | --- |
-| Request | Scope, content axis, selection, views, defaults, validation | `ScanConfig` and `ScanScope`; `AnalysisRequest` and `CachePolicy` on `OpenConfig`, not on `Query`; `Query`, `Selection`, and `ViewSpec::resolve`; `OpenOptions` and `ReportRequest` for opened roots | No. `cli.rs` and `fdu-py` each assemble it; defaults differ by surface; `Query::validate_controls` is called at seven sites, and `Query::validate_analysis` only in the two surfaces |
-| Delivery | Cache policy, worker counts, partial acceptance, watch | `CachePolicy` on `OpenConfig`; `AnalysisRequest.workers`; `--allow-partial` as an exit-code mapping in `cli.rs`; watch interval as a command-line value | No. Each route reads the parts it uses, and no type enumerates them |
+| Request | Scope, content axis, selection, views, defaults, validation | `Request { basis: Basis { root, scope, content }, query, now }`, `RequestSpec`, `RequestError`, and one defaults table (`query/query_request.rs`); `ReportRequest` carries the read half at an opened root | Yes. Both surfaces build through `RequestSpec`, `report` and `prepare_report*` take a validated `Request`, and every route validates before it reads stored state |
+| Delivery | Cache policy, worker counts, partial acceptance, watch | `Delivery { cache, cache_path, accept_partial, watch, analysis_workers }` (`query/query_request.rs`), consumed by `prepare_report*`, the watch session, and both surfaces | Partly. One type enumerates them, and `ScanConfig`’s `threads`, `batch_size`, and `order` stay there until one `Workers` takes both counts |
 | Execution plan | Which path answers, and what each cache policy reads and writes | `plan_report` (`execution.rs`); `open_for_report`, `SaveTargets`, and `cold_scan_save_targets` (`lib.rs`); the command line’s `save_live` for watch | No. Read and write rules are coded per path |
 | Stored-state identity | Metadata snapshot, control state, classification, content sidecar, and which requests each may serve | `EntryScope`, `EntryTierIdentity`, `ControlTierIdentity`, `SnapshotIdentity`, `ContentTierIdentity` with its `AnalyzerProvenance`, their fixed-width codecs, `serves_snapshot`, and the per-tier write rules (`stored_state.rs`), recorded in the format-5 snapshot and sidecar headers (`snapshot.rs`, `content_cache.rs`), which cache status reports as `fdu.cache/2`; `snapshot_scope_serves` (`lib.rs`); `ContentIndex::prepare` and `load_content_cache` | Partly. Every tier records its typed identity, serves by equality, and is written by its own rule, but the snapshot’s one report-only projection is coded in `snapshot_scope_serves` on one route |
 | Per-item validity | When a stored entry or record is still current | `Attrs` equality in index upserts; `Fingerprint` checks in content loading, `pending_analysis_candidates`, and `apply_analysis` | Partly. Metadata compares six attributes and content five, each at its own call sites |
@@ -951,10 +951,9 @@ store identity, compatibility, policy, and write-rule gaps are listed once, in
   metric sections, the `analysis` metadata, and the schema version follow the content
   tier the index holds.
   A Python `Index` opened with analysis emits `fdu.report/6` for a tree view.
-- **Live paths decay content silently.** `watch_session::Session::new` accepts an
-  analyzed index, and later commits invalidate changed files’ records without
-  re-analysis. Opened-root reads accept a `documents` view without
-  `Query::validate_analysis` and answer zero words.
+- **Live paths refuse what they cannot keep current.** `watch_session::Session::new`
+  refuses an analyzed index rather than reporting the metrics it opened with as fresh,
+  and an opened-root read refuses a `documents` view rather than answering zero words.
 - **Classification depends on history.** Metric views prefer a content record’s
   classification, which analysis derives from the file’s leading bytes, over the
   name-based `Index::classify`, so one path can count under a different type or family

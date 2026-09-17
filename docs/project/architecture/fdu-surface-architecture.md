@@ -231,15 +231,14 @@ tracks them. Engine-side gaps are in
   and omits a tree node’s `kind`. JSON Lines’ `collapse` rewrites string content, so the
   path `a [ b/f { g }.txt` is emitted as `a [b/f {g}.txt`. `--watch --format yaml` emits
   JSON change records, and text output carries no source or freshness label.
-- **Defaults differ by surface.** The Rust `Selection` answers in apparent bytes while
-  the command line and Python default to allocated bytes.
-  A watch defaults to the tree view on the command line and to the files view in
-  Python’s `Index.watch` and `WatchOptions`.
-- **Validation is repeated rather than owned.** `Query::validate_controls` is called at
-  seven sites: the command line, three in `fdu-py`, the one-shot executor, the watch
-  session, and `query::report_in`, which opened-root reads call directly.
-  `Query::validate_analysis` runs only in the command line and `fdu-py`, so an engine
-  caller or an opened-root read can request a `documents` view with no analysis.
+- **Defaults and validation are the request model’s.** One defaults table
+  (`Request::DEFAULTS`) decides the size metric, the page denominator, and the view a
+  watch reports, and `Request::build` parses every axis from the words a caller wrote,
+  so each surface supplies only its own names for them.
+  `Request::validate`, `validate_read`, and `validate_delivery` state every rule once —
+  a view its content cannot answer, a selection by ignored state a scope never observed,
+  a read another analyzer set holds, and the three a watch cannot carry — and each route
+  applies them before it reads any stored state.
 
 ### Open Questions
 
