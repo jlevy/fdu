@@ -5,7 +5,7 @@ title: "Phase 1 item 2: store identity, equality serve, and per-tier writes"
 kind: epic
 status: open
 priority: 0
-version: 18
+version: 19
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - design
@@ -23,8 +23,9 @@ child_order_hints:
   - is-01m2pye3bwkv6049gkcyh3rrcp
   - is-01m2qygtb7z3mehzrgzwz3mtx3
   - is-01m2qz74mbthxxy2eky1qgb7eh
+  - is-01m2rgb3631yn1waftyaj31wca
 created_at: 2026-09-17T02:57:25.124Z
-updated_at: 2026-09-17T15:19:30.697Z
+updated_at: 2026-09-17T20:18:46.072Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 2: Store Identity, Equality Serve, and Per-Tier Writes", moved here when the item became beads (PR #78 at `e52383d4`; locators verified at `5f2d36d`). The commits are this bead's children, P1.2.1 to P1.2.6; their blockers carry the ordering, so this bead only groups them and closes when they do.
 
