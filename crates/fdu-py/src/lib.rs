@@ -1230,7 +1230,7 @@ impl PyOneShot {
     cache = "auto",
     max_depth = None,
     one_filesystem = false,
-    read_controls = true,
+    read_controls = fdu_core::query::Request::DEFAULTS.read_controls,
     control_budget = None,
     control_line_limit = None,
     analyze = "none",
@@ -1635,7 +1635,7 @@ fn clear_all_caches(py: Python<'_>, root: PathBuf) -> PyResult<Bound<'_, PyDict>
     cache = "auto",
     max_depth = None,
     one_filesystem = false,
-    read_controls = true,
+    read_controls = fdu_core::query::Request::DEFAULTS.read_controls,
     control_budget = None,
     control_line_limit = None,
     analyze = "none",
@@ -1716,7 +1716,7 @@ fn open(
     *,
     max_depth = None,
     one_filesystem = false,
-    read_controls = true,
+    read_controls = fdu_core::query::Request::DEFAULTS.read_controls,
     control_budget = None,
     control_line_limit = None,
     analyze = "none",
@@ -1825,6 +1825,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // of it: `Query.words_per_page` and `Selection.size` read these.
     m.add("DEFAULT_WORDS_PER_PAGE", Request::DEFAULTS.words_per_page)?;
     m.add("DEFAULT_SIZE", Request::DEFAULTS.size.label())?;
+    m.add("DEFAULT_READ_CONTROLS", Request::DEFAULTS.read_controls)?;
     m.add_class::<PyIndex>()?;
     m.add_class::<PyWatch>()?;
     m.add_function(wrap_pyfunction!(open, m)?)?;

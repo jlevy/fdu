@@ -337,6 +337,18 @@ fn pending_after(outcome: SaveOutcome) -> bool {
 /// text states it; what it must not have is a default of its own.
 const SIZE_DEFAULT: &str = Request::DEFAULTS.size.label();
 
+/// The default analyzer set, as the grammar spells it.
+///
+/// Read from the model the same way, and for the same reason: the flag keeps a clap
+/// default because `--help` prints it, and what it must not have is a default of its own.
+/// The empty set is the one analyzer set a `const` can spell, so the assertion is what
+/// makes this a reading of the table rather than a guess about it.
+const ANALYZE_DEFAULT: &str = AnalysisSet::NONE_LABEL;
+const _: () = assert!(
+    !Request::DEFAULTS.content.is_enabled(),
+    "--help prints the default analyzer set; a table that enables one needs a spelling here"
+);
+
 /// The request model's refusal, in the command line's words.
 fn refused(error: &RequestError) -> anyhow::Error {
     anyhow::anyhow!(error.message(&AxisNames::FLAGS))
@@ -495,7 +507,12 @@ pub struct Cli {
     /// Analyzers to run: none, lines, code, words, or all.
     ///
     /// Anything but none reads each eligible file missing from a compatible content cache.
-    #[arg(long, value_name = "LIST", default_value = "none", help_heading = "CONTENT ANALYSIS")]
+    #[arg(
+        long,
+        value_name = "LIST",
+        default_value = ANALYZE_DEFAULT,
+        help_heading = "CONTENT ANALYSIS"
+    )]
     pub analyze: String,
 
     /// Content reader workers; zero selects available parallelism.

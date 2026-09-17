@@ -271,7 +271,7 @@ impl<'a> RequestSpec<'a> {
 /// | --- | --- |
 /// | Size | allocated |
 /// | Views of a report | [`Self::report_view`]: [`ViewSpec::default_for`] the content |
-/// | Views of a watch | `tree`, the report default for no content, which is all a watch serves |
+/// | Views of a watch | [`Self::report_view`] of no content, which is `tree` |
 /// | Words per page | 250 |
 /// | Content | no analyzer |
 /// | `.gitignore` | observed, under the default budget and line limit |
@@ -281,12 +281,16 @@ impl<'a> RequestSpec<'a> {
 /// what "what is big here" looks like. Surfaces take these rather than declaring their own,
 /// because a default declared twice drifts: size was apparent in Rust and allocated
 /// everywhere else, and `words_per_page` was written out in three places.
+///
+/// A watch has no view default of its own, and no field here for one. It is derived rather
+/// than declared because it is not a separate decision: [`RequestError::WatchContent`]
+/// refuses a watch that names an analyzer, so the content a watch serves is always none and
+/// its view is the report default for none. A field would have restated `tree` beside the
+/// rule that makes it true, which is the shape a default drifts out of.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RequestDefaults {
     /// The size metric.
     pub size: SizeMetric,
-    /// The view a watch reports.
-    pub watch_view: ViewSpec,
     /// Logical words per derived document page.
     pub words_per_page: u64,
     /// The analyzers a request enables.
@@ -309,7 +313,6 @@ impl Request {
     /// The defaults table.
     pub const DEFAULTS: RequestDefaults = RequestDefaults {
         size: SizeMetric::Allocated,
-        watch_view: ViewSpec::Tree,
         words_per_page: 250,
         content: AnalysisSet::NONE,
         read_controls: true,
@@ -725,7 +728,7 @@ impl std::error::Error for RequestError {}
 
 /// An analyzer set as its axis spells it back: `none`, or the analyzers joined by commas.
 fn analysis_label(set: AnalysisSet) -> String {
-    if set.is_enabled() { set.labels().join(",") } else { "none".to_string() }
+    if set.is_enabled() { set.labels().join(",") } else { AnalysisSet::NONE_LABEL.to_string() }
 }
 
 /// The watch-scope rule, with each knob named as `axes` names it.
@@ -1260,9 +1263,9 @@ mod tests {
         assert_eq!(defaults.content, AnalysisSet::NONE);
         assert!(defaults.read_controls);
         assert_eq!(defaults.control_limits, ControlLimits::default());
-        assert_eq!(defaults.watch_view, ViewSpec::Tree);
-        // A watch serves no content, so its view is the report default for none.
-        assert_eq!(defaults.watch_view, defaults.report_view(AnalysisSet::NONE));
+        // A watch serves no content -- `WatchContent` refuses one that names an analyzer
+        // -- so its view is the report default for none, derived rather than declared.
+        assert_eq!(defaults.report_view(AnalysisSet::NONE), ViewSpec::Tree);
         for content in [
             AnalysisSet::NONE,
             AnalysisSet::NONE.with_lines(),

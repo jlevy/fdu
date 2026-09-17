@@ -344,7 +344,7 @@ class ScanOptions:
     #: ignored share. Off, no control file is read, rows carry ``ignored=None`` rather than
     #: a zero share, a selection by ``IgnoredEntries`` is refused, and the snapshot is of a
     #: separate scope. The command line spells it ``--no-gitignore``.
-    read_controls: bool = True
+    read_controls: bool = _native.DEFAULT_READ_CONTROLS
     #: Bytes of retained ``.gitignore`` charge before further files are refused, as the
     #: engine's ``ControlLimits.budget``: an int, a size such as ``"16MiB"``, ``Bound.ALL``
     #: for no bound, which also reads every ``.gitignore`` whole however large, or ``None``

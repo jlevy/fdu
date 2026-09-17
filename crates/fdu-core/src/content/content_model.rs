@@ -97,6 +97,13 @@ impl AnalysisSet {
 
     /// Decode [`Self::bits`], rejecting any analyzer this build does not know.
     ///
+    /// How the grammar spells the empty set, and the one spelling of an analyzer set a
+    /// `const` can state: every other set is a list [`Self::labels`] builds.
+    ///
+    /// Named because a surface whose help text states the default analyzer set must read
+    /// that spelling rather than write the word again.
+    pub const NONE_LABEL: &'static str = "none";
+
     /// Unknown bits mean a record written by a newer build whose extra analyzers cannot
     /// be honored, so it is refused rather than silently under-reported.
     pub const fn from_bits(bits: u8) -> Option<Self> {
@@ -142,7 +149,7 @@ impl AnalysisSet {
             }
             seen.push(token.clone());
             match token.as_str() {
-                "none" => total = Some("none"),
+                "none" => total = Some(Self::NONE_LABEL),
                 "all" => {
                     total = Some("all");
                     set = Self::ALL;
@@ -165,7 +172,7 @@ impl AnalysisSet {
                     format!("{total:?} names the whole axis and cannot be combined"),
                 ));
             }
-            if total == "none" {
+            if total == Self::NONE_LABEL {
                 return Ok(Self::NONE);
             }
         }
