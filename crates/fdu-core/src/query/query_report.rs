@@ -973,7 +973,7 @@ pub(crate) fn report_in(
     // surface validates before it scans, with the vocabulary its own caller uses; this is
     // the library path, and the last one.
     query
-        .validate_controls(index.observes_controls())
+        .validate_controls(index.control_identity().is_observed())
         .map_err(|_refused| crate::Error::ControlStateNotObserved)?;
 
     // One traversal serves every filtered view in the request, so asking for three views

@@ -28,6 +28,7 @@ use crate::engine_contract::{
     Result, ScanScope,
 };
 use crate::index::{DetachedIndexBuilder, Index, IndexHandle, collect_child_expectations};
+use crate::stored_state::{ControlTierIdentity, EntryScope, EntryTierIdentity, SnapshotIdentity};
 
 // Keep the FFI exception at the platform boundary. The rest of the engine, including
 // every consumer of these observations, remains under the workspace's unsafe-code
@@ -60,43 +61,6 @@ const MAX_DEFERRED_RECONCILE_OPS: usize = MAX_SCAN_BATCH_SIZE;
 /// changed tree publishes progress throughout a long reconciliation.
 const RECONCILE_WAVE_DIRECTORIES: usize =
     crate::platform_tuning::tuning().reconcile_wave_directories.get();
-
-/// Identity of the current fixed `.gitignore` control semantics.
-///
-/// Zero is reserved for a scope that observed no control state, which is what
-/// [`ScanScope::observes_controls`] tests.
-const IGNORE_RULES_FINGERPRINT: u64 = 2;
-
-/// The ignore-rules fingerprint of a scope that observes control state under `limits`.
-///
-/// The limits decide which sources apply, so both are part of the scope: a snapshot taken
-/// under one budget or line limit never serves a request for another, and changing either
-/// scans cold once. FNV-1a over the semantics version and each limit in turn, never zero.
-pub(crate) fn observed_ignore_rules_fingerprint(limits: crate::control::ControlLimits) -> u64 {
-    const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
-    const FNV_PRIME: u64 = 0x100_0000_01b3;
-    const UNBOUNDED: u8 = 0;
-    const BOUNDED: u8 = 1;
-
-    let mut fingerprint = FNV_OFFSET_BASIS;
-    let mut mix = |bytes: &[u8]| {
-        for byte in bytes {
-            fingerprint ^= u64::from(*byte);
-            fingerprint = fingerprint.wrapping_mul(FNV_PRIME);
-        }
-    };
-    mix(&IGNORE_RULES_FINGERPRINT.to_le_bytes());
-    for limit in [limits.budget, limits.line_limit] {
-        match limit {
-            None => mix(&[UNBOUNDED]),
-            Some(limit) => {
-                mix(&[BOUNDED]);
-                mix(&u64::try_from(limit).unwrap_or(u64::MAX).to_le_bytes());
-            }
-        }
-    }
-    fingerprint.max(1)
-}
 
 /// Identity of the fixed stat-tier reducer set.
 const REDUCERS_FINGERPRINT: u64 = 1;
@@ -315,25 +279,50 @@ impl ScanConfig {
 
     /// Semantic cache identity, excluding operational batching choices.
     ///
+    /// Composed from [`Self::snapshot_identity`], so the scope an index records and the
+    /// tier identities a snapshot of it carries are one value in two shapes.
+    ///
     /// No longer `const`: the type-rule fingerprint is now a property of the registry in
     /// effect rather than a compiled-in constant, which is the whole point of letting a
     /// caller supply one. A snapshot taken under different rules must not be reused.
     pub fn scope(&self) -> ScanScope {
-        ScanScope {
+        self.snapshot_identity().scan_scope()
+    }
+
+    /// Which entries this scan retains, the part of its scope no `.gitignore` setting
+    /// changes.
+    pub fn entry_scope(&self) -> EntryScope {
+        EntryScope {
             max_depth: self.max_depth,
             follow_symlinks: self.follow_symlinks,
             one_filesystem: self.one_filesystem,
             hidden_fingerprint: self.hidden().fingerprint(),
             exclude_special: self.exclude_special,
-            // Zero means no control reads and no ignore classification, which is what
-            // `ScanScope::observes_controls` tests.
-            ignore_rules_fingerprint: if self.read_controls {
-                observed_ignore_rules_fingerprint(self.control_limits)
-            } else {
-                0
+        }
+    }
+
+    /// Whether this scan observes `.gitignore` control state, and under which limits.
+    ///
+    /// The limits are part of the identity only when control state is observed: a scan
+    /// that reads no control file applies none, whatever [`Self::control_limits`] says.
+    pub fn control_identity(&self) -> ControlTierIdentity {
+        if self.read_controls {
+            ControlTierIdentity::Observed { limits: self.control_limits }
+        } else {
+            ControlTierIdentity::NotObserved
+        }
+    }
+
+    /// The identity of every tier a snapshot of this scan holds.
+    pub fn snapshot_identity(&self) -> SnapshotIdentity {
+        SnapshotIdentity {
+            entries: EntryTierIdentity {
+                engine: crate::snapshot::engine_fingerprint(),
+                scope: self.entry_scope(),
+                type_rules_fingerprint: self.types().fingerprint(),
+                reducers_fingerprint: REDUCERS_FINGERPRINT,
             },
-            type_rules_fingerprint: self.types().fingerprint(),
-            reducers_fingerprint: REDUCERS_FINGERPRINT,
+            controls: self.control_identity(),
         }
     }
 

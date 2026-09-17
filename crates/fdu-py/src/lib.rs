@@ -372,7 +372,9 @@ impl PyIndex {
         )?;
 
         // Refused here, in the API's own names, rather than as the session's typed error.
-        query.validate_controls(self.inner.observes_controls()).map_err(PyValueError::new_err)?;
+        query
+            .validate_controls(self.inner.control_identity().is_observed())
+            .map_err(PyValueError::new_err)?;
 
         // The index is cloned into the session: a watcher owns its own handle, so closing
         // the feed cannot disturb the caller's index.
@@ -587,7 +589,9 @@ impl PyIndex {
             size,
             words_per_page,
         )?;
-        query.validate_controls(self.inner.observes_controls()).map_err(PyValueError::new_err)?;
+        query
+            .validate_controls(self.inner.control_identity().is_observed())
+            .map_err(PyValueError::new_err)?;
         let provenance = Provenance {
             scan_started_at: self.scan_started_at,
             generated_at: now,

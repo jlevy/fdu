@@ -71,6 +71,7 @@ mod platform_tuning;
 pub mod query;
 pub mod scan;
 pub mod snapshot;
+mod stored_state;
 #[cfg(test)]
 mod test_support;
 
@@ -136,6 +137,9 @@ pub use crate::execution::{
     PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics,
 };
 pub use crate::scan::{ReconcileReport, ScanConfig, ScanOrder, ScanReport};
+pub use crate::stored_state::{
+    ControlTierIdentity, EntryScope, EntryTierIdentity, Serves, SnapshotIdentity, serves_snapshot,
+};
 #[cfg(feature = "watch")]
 pub use crate::watch_session::{Batch, Change, ChangeKind, Session};
 
@@ -373,20 +377,21 @@ pub(crate) enum SnapshotUse {
     ReportOnly,
 }
 
-/// Whether `stored` can answer `wanted` for this consumer and cache policy.
+/// Whether the loaded `stored` index can answer `wanted` for this consumer and cache policy.
 fn snapshot_scope_serves(
-    stored: ScanScope,
-    wanted: ScanScope,
+    stored: &Index,
+    wanted: &ScanConfig,
     policy: CachePolicy,
     snapshot_use: SnapshotUse,
 ) -> bool {
-    if stored == wanted {
+    if serves_snapshot(stored.snapshot_identity(), wanted.snapshot_identity()) == Serves::Exact {
         return true;
     }
     // A no-scan report consumes only the all-entry facts, never the control table or
     // ignored partition. It may therefore project controls-on to controls-off and retag
     // the report before return. Any path that exposes the index remains exact, and any
     // path that will reconcile treats the mismatch as a miss and scans cold.
+    let (stored, wanted) = (stored.scope(), wanted.scope());
     snapshot_use == SnapshotUse::ReportOnly
         && !policy.scans()
         && ScanScope { ignore_rules_fingerprint: wanted.ignore_rules_fingerprint, ..stored }
@@ -512,12 +517,7 @@ pub(crate) fn open_for_report(
                     if index.root_path() != root {
                         return false;
                     }
-                    let serves = snapshot_scope_serves(
-                        index.scope(),
-                        config.scan.scope(),
-                        policy,
-                        snapshot_use,
-                    );
+                    let serves = snapshot_scope_serves(index, &config.scan, policy, snapshot_use);
                     if !serves {
                         refused_snapshot = Some(RefusedSnapshot {
                             scope: index.scope(),

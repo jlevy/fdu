@@ -328,7 +328,7 @@ fn prepare_report_internal(
             // rather than the stronger internal snapshot it consumed, including what it
             // says about ignore rules and every row's ignored share.
             answer.scope = config.scan.scope();
-            if !answer.scope.observes_controls() {
+            if !config.scan.control_identity().is_observed() {
                 crate::query::forget_ignore_classification(&mut answer);
                 answer.notes = crate::query::display_notes(query, &answer.ignore_rules);
             }

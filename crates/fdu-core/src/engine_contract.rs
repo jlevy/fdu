@@ -232,6 +232,10 @@ impl ScanScope {
     /// forms) refuse with [`Error::ControlStateNotObserved`] rather than answer "not
     /// ignored" for everything, and a shared
     /// [`ChildSnapshot`](crate::ChildSnapshot) carries no ignore bit or partitions.
+    ///
+    /// The ignore-rules fingerprint is derived from the scope's
+    /// [`ControlTierIdentity`](crate::ControlTierIdentity), which reserves zero for a tier
+    /// that observed nothing; a caller holding the identity asks it directly.
     pub const fn observes_controls(self) -> bool {
         self.ignore_rules_fingerprint != 0
     }

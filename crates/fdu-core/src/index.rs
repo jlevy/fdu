@@ -1737,6 +1737,23 @@ impl Index {
         self.scope.observes_controls()
     }
 
+    /// Whether this index observed `.gitignore` control state, and under which limits.
+    pub fn control_identity(&self) -> crate::ControlTierIdentity {
+        if self.observes_controls() {
+            crate::ControlTierIdentity::Observed { limits: self.controls.limits() }
+        } else {
+            crate::ControlTierIdentity::NotObserved
+        }
+    }
+
+    /// The identity of every tier a snapshot of this index holds.
+    pub fn snapshot_identity(&self) -> crate::SnapshotIdentity {
+        crate::SnapshotIdentity {
+            entries: crate::EntryTierIdentity::of_scope(self.scope),
+            controls: self.control_identity(),
+        }
+    }
+
     fn require_observed_controls(&self) -> crate::Result<()> {
         if self.observes_controls() { Ok(()) } else { Err(crate::Error::ControlStateNotObserved) }
     }
@@ -1797,7 +1814,7 @@ impl Index {
         limits: crate::control::ControlLimits,
     ) -> crate::Result<()> {
         if self.scope.observes_controls()
-            && crate::scan::observed_ignore_rules_fingerprint(limits)
+            && (crate::ControlTierIdentity::Observed { limits }).ignore_rules_fingerprint()
                 != self.scope.ignore_rules_fingerprint
         {
             return Err(crate::Error::ControlLimitsOutsideScope { limits });

@@ -134,8 +134,10 @@ impl Session {
         // Reject an out-of-scope watch before the backend is bound, so a rejected run
         // never leaves a watcher registered on the tree.
         scan.validate_for_watch_scope(index.scope()?)?;
+        // The scope check above proved the index was taken under exactly this scan's
+        // identity, control tier included.
         query
-            .validate_controls(index.scope()?.observes_controls())
+            .validate_controls(scan.control_identity().is_observed())
             .map_err(|_refused| Error::ControlStateNotObserved)?;
         let watcher = Watcher::new(&root, watch)?;
         Ok(Self { index, watcher, scan, query })
