@@ -26,6 +26,7 @@ use crate::content::{
 use crate::control::ControlCoverage;
 use crate::engine_contract::{EntryKind, Freshness, ScanScope};
 use crate::index::{EntryId, ExtTally, Index, RollUpScalars};
+use crate::query::Rejection;
 use crate::query::query_request::{check_observation, check_views};
 use crate::query::query_selection::{
     Bound, Candidate, IgnoredEntries, NameIdentity, Selection, SizeMetric, SortKey,
@@ -218,6 +219,15 @@ impl ViewSpec {
         analysis: AnalysisSet,
         label: &str,
     ) -> Result<(Vec<Self>, Vec<Self>), String> {
+        Self::resolve_rejecting(spec, analysis).map_err(|rejection| rejection.labeled(label))
+    }
+
+    /// [`Self::resolve`], refusing with the value and expectation rather than a sentence, so
+    /// the request model can name the axis in a typed refusal.
+    pub(crate) fn resolve_rejecting(
+        spec: Option<&str>,
+        analysis: AnalysisSet,
+    ) -> Result<(Vec<Self>, Vec<Self>), Rejection> {
         let Some(spec) = spec else {
             return Ok((vec![Self::default_for(analysis)], Vec::new()));
         };
@@ -227,22 +237,21 @@ impl ViewSpec {
         for raw in spec.split(',') {
             let token = raw.trim();
             if token.is_empty() {
-                return Err(format!("invalid {label} {spec:?}: empty entry in the list"));
+                return Err(Rejection::new(spec, "empty entry in the list"));
             }
             if token.eq_ignore_ascii_case("full") {
                 if full_seen || !parsed.is_empty() {
-                    return Err(format!("invalid {label} \"full\": {}", Self::FULL_IS_EXCLUSIVE));
+                    return Err(Rejection::new("full", Self::FULL_IS_EXCLUSIVE));
                 }
                 full_seen = true;
                 continue;
             }
             if full_seen {
-                return Err(format!("invalid {label} \"full\": {}", Self::FULL_IS_EXCLUSIVE));
+                return Err(Rejection::new("full", Self::FULL_IS_EXCLUSIVE));
             }
-            let view = Self::parse(token)
-                .map_err(|expected| format!("invalid {label} {token:?}: {expected}"))?;
+            let view = Self::parse(token).map_err(|expected| Rejection::new(token, expected))?;
             if parsed.contains(&view) {
-                return Err(format!("invalid {label} {spec:?}: {token:?} appears more than once"));
+                return Err(Rejection::new(spec, format!("{token:?} appears more than once")));
             }
             parsed.push(view);
         }
@@ -446,7 +455,7 @@ impl Default for Query {
             views: Vec::new(),
             omitted_views: Vec::new(),
             axes: &AxisNames::FIELDS,
-            words_per_page: 250,
+            words_per_page: crate::query::Request::DEFAULTS.words_per_page,
         }
     }
 }
@@ -1988,39 +1997,6 @@ mod tests {
         Query { selection, views: views.to_vec(), ..Query::default() }
     }
 
-    #[test]
-    fn language_grouping_is_metadata_only_while_documents_require_analysis() {
-        let languages = query(&[ViewSpec::Languages], Selection::default());
-        for profile in [
-            AnalysisSet::NONE,
-            AnalysisSet::NONE.with_lines(),
-            AnalysisSet::NONE.with_code(),
-            AnalysisSet::NONE.with_words(),
-            AnalysisSet::ALL,
-        ] {
-            languages
-                .validate_analysis(profile)
-                .expect("language grouping never requires content I/O");
-        }
-
-        let documents = query(&[ViewSpec::Documents], Selection::default());
-        assert!(documents.validate_analysis(AnalysisSet::NONE).is_err());
-        for profile in [
-            AnalysisSet::NONE.with_lines(),
-            AnalysisSet::NONE.with_code(),
-            AnalysisSet::NONE.with_words(),
-            AnalysisSet::ALL,
-        ] {
-            documents
-                .validate_analysis(profile)
-                .expect("every enabled profile includes the basic document metrics");
-        }
-
-        query(&[ViewSpec::Types, ViewSpec::Families], Selection::default())
-            .validate_analysis(AnalysisSet::NONE)
-            .expect("metadata grouping never requires content I/O");
-    }
-
     fn pattern(source: &str) -> Pattern {
         Pattern::parse(source).expect("pattern compiles")
     }
@@ -2721,27 +2697,14 @@ mod tests {
             views: vec![ViewSpec::Summary],
             ..Query::default()
         };
-        assert_eq!(
-            Query { axes: &AxisNames::FLAGS, ..exclude.clone() }.validate_controls(false),
-            Err("--exclude-ignored needs .gitignore classification, and --no-gitignore turned \
-                 it off; drop one of them"
-                .to_string())
-        );
         let only = Query {
             selection: Selection { ignored: IgnoredEntries::Only, ..Selection::default() },
             ..exclude.clone()
         };
-        assert_eq!(
-            only.validate_controls(false),
-            Err("ignored=only needs .gitignore classification, and read_controls turned it off; \
-                 drop one of them"
-                .to_string())
-        );
-        assert_eq!(exclude.validate_controls(true), Ok(()));
-        assert_eq!(Query::default().validate_controls(false), Ok(()));
-        // The library path refuses it too, rather than answering with no rows: a caller
-        // that reaches `report` without validating gets the same typed answer every other
-        // surface gives.
+        // The request model refuses such a request before it reaches a reader, in each
+        // surface's words (`query_request`'s tests). The library path refuses it too, rather
+        // than answering with no rows: a caller that reaches `report` without validating gets
+        // the same typed answer every other surface gives.
         for refused in [&exclude, &only] {
             assert!(
                 matches!(

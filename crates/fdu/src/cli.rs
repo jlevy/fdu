@@ -491,7 +491,12 @@ pub struct Cli {
     pub analysis_workers: usize,
 
     /// Logical words per derived document page.
-    #[arg(long, value_name = "N", default_value_t = 250, help_heading = "VIEWS")]
+    #[arg(
+        long,
+        value_name = "N",
+        default_value_t = fdu_core::query::Request::DEFAULTS.words_per_page,
+        help_heading = "VIEWS"
+    )]
     pub words_per_page: u64,
 
     // ---- format: how the report is serialized ----

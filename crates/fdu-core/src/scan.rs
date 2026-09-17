@@ -225,8 +225,8 @@ impl Default for ScanConfig {
             threads: None,
             order: ScanOrder::default(),
             types: None,
-            read_controls: true,
-            control_limits: crate::control::ControlLimits::default(),
+            read_controls: crate::query::Request::DEFAULTS.read_controls,
+            control_limits: crate::query::Request::DEFAULTS.control_limits,
         }
     }
 }

@@ -159,7 +159,7 @@ pub struct Selection {
     /// Entries to consider by `.gitignore` classification.
     ///
     /// Anything but [`IgnoredEntries::Include`] needs an index that observed control
-    /// state; [`crate::query::Query::validate_controls`] refuses it otherwise.
+    /// state; [`crate::query::Request::validate`] refuses it otherwise.
     pub ignored: IgnoredEntries,
     /// How deep a rendered tree descends, or `None` to let each view apply its own.
     ///

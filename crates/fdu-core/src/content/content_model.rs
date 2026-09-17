@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use crate::classify::Classification;
+use crate::query::Rejection;
 use crate::{Attrs, EntryId, Fingerprint};
 
 /// Stable analyzer identity.
@@ -131,16 +132,22 @@ impl AnalysisSet {
     /// user's own token: `--analyze analyzer` reported `invalid --analyze "--analyzer"`,
     /// misquoting the very value it was rejecting (fdu-7j6z).
     pub fn parse_labeled(value: &str, label: &str) -> Result<Self, String> {
+        Self::parse_rejecting(value).map_err(|rejection| rejection.labeled(label))
+    }
+
+    /// [`Self::parse_labeled`], refusing with the value and expectation rather than a
+    /// sentence, so the request model can name the axis in a typed refusal.
+    pub(crate) fn parse_rejecting(value: &str) -> Result<Self, Rejection> {
         let mut set = Self::NONE;
         let mut seen: Vec<String> = Vec::new();
         let mut total: Option<&'static str> = None;
         for raw in value.split(',') {
             let token = raw.trim().to_ascii_lowercase();
             if token.is_empty() {
-                return Err(format!("invalid {label} {value:?}: empty entry in the list"));
+                return Err(Rejection::new(value, "empty entry in the list"));
             }
             if seen.contains(&token) {
-                return Err(format!("invalid {label} {value:?}: {token:?} appears more than once"));
+                return Err(Rejection::new(value, format!("{token:?} appears more than once")));
             }
             seen.push(token.clone());
             match token.as_str() {
@@ -153,16 +160,18 @@ impl AnalysisSet {
                 "code" => set = set.with_code(),
                 "words" => set = set.with_words(),
                 other => {
-                    return Err(format!(
-                        "invalid {label} {other:?}: expected one of none, lines, code, words, all"
+                    return Err(Rejection::new(
+                        other,
+                        "expected one of none, lines, code, words, all",
                     ));
                 }
             }
         }
         if let Some(total) = total {
             if seen.len() > 1 {
-                return Err(format!(
-                    "invalid {label} {value:?}: {total:?} names the whole axis and cannot be combined"
+                return Err(Rejection::new(
+                    value,
+                    format!("{total:?} names the whole axis and cannot be combined"),
                 ));
             }
             if total == "none" {

@@ -209,7 +209,7 @@ impl PyIndex {
         sort = None,
         reverse = false,
         size = "allocated",
-        words_per_page = 250
+        words_per_page = fdu_core::query::Request::DEFAULTS.words_per_page
     ))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn report<'py>(
@@ -272,7 +272,7 @@ impl PyIndex {
         sort = None,
         reverse = false,
         size = "allocated",
-        words_per_page = 250
+        words_per_page = fdu_core::query::Request::DEFAULTS.words_per_page
     ))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn report_handle(
@@ -331,7 +331,7 @@ impl PyIndex {
         sort = None,
         reverse = false,
         size = "allocated",
-        words_per_page = 250
+        words_per_page = fdu_core::query::Request::DEFAULTS.words_per_page
     ))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn watch(
@@ -1251,7 +1251,7 @@ impl PyOneShot {
     sort = None,
     reverse = false,
     size = "allocated",
-    words_per_page = 250,
+    words_per_page = fdu_core::query::Request::DEFAULTS.words_per_page,
 ))]
 #[allow(
     clippy::too_many_arguments,

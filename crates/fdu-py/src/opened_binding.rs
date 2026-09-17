@@ -136,7 +136,7 @@ fn parse_selection(dict: Option<&Bound<'_, PyDict>>, now: SystemTime) -> PyResul
         sort.as_deref(),
         reverse,
         &size,
-        250,
+        fdu_core::query::Request::DEFAULTS.words_per_page,
     )?
     .selection)
 }
@@ -267,7 +267,7 @@ fn parse_report(dict: &Bound<'_, PyDict>) -> PyResult<fdu_core::ReportRequest> {
         .get_item("words_per_page")?
         .map(|value| value.extract::<u64>())
         .transpose()?
-        .unwrap_or(250);
+        .unwrap_or(fdu_core::query::Request::DEFAULTS.words_per_page);
     let (views, omitted_views) = fdu_core::query::ViewSpec::resolve(
         views.as_ref().map(|values| values.join(",")).as_deref(),
         AnalysisSet::NONE,
