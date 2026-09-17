@@ -10,6 +10,7 @@ use crate::classify::{
     Classification, ClassificationFlags, ContentFamily, DetectionConfidence, DetectionSource,
     FileTypeId,
 };
+use crate::stored_state::{ContentTierIdentity, ENTRY_TIER_BYTES, EntryTierIdentity};
 use crate::{Error, Fingerprint, Index, Result};
 
 use super::{
@@ -20,7 +21,13 @@ use super::{
 
 const MAGIC: &[u8; 8] = b"FDUCTNT\0";
 const TRAILER: &[u8; 8] = b"FDUCTEND";
-const FORMAT_VERSION: u32 = 4;
+/// On-disk format version. Bump on any layout change or any change to what a record means;
+/// a sidecar of another version is a clean miss.
+///
+/// 5: the header records the engine fingerprint beside the version, at the offset a
+/// snapshot's prologue gives it, and the content tier identity after the path encoding:
+/// the entry tier the records were analyzed over, then the analyzer set and provenance.
+const FORMAT_VERSION: u32 = 5;
 const CHECKSUM_BYTES: usize = 4;
 const MAX_CACHE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_RECORDS: u64 = 5_000_000;
@@ -85,14 +92,17 @@ pub fn save_content_cache(index: &Index, request: AnalysisRequest, path: &Path) 
         return Err(Error::Snapshot("content sidecar exceeds record limit".into()));
     }
 
+    let identity = ContentTierIdentity {
+        entries: EntryTierIdentity::of_scope(index.scope()),
+        analysis: stored,
+        provenance,
+    };
     let mut buffer = Vec::new();
     buffer.extend_from_slice(MAGIC);
     buffer.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
+    buffer.extend_from_slice(&identity.entries.engine.to_le_bytes());
     buffer.push(crate::snapshot::path_encoding());
-    put_profile(&mut buffer, stored);
-    buffer.extend_from_slice(&provenance.type_rules_fingerprint.to_le_bytes());
-    buffer.extend_from_slice(&provenance.options_fingerprint.0.to_le_bytes());
-    put_analyzers(&mut buffer, &provenance.analyzers)?;
+    put_identity(&mut buffer, &identity)?;
     crate::snapshot::put_os_str(&mut buffer, index.root_path().as_os_str())?;
     buffer.extend_from_slice(&record_count.to_le_bytes());
     for (relative_path, record) in records {
@@ -125,8 +135,13 @@ pub fn load_content_cache(
         return Ok(ContentCacheLoad::default());
     }
     let image = fs::read(path).map_err(|error| Error::io(path, error))?;
-    let Some(records) = parse(&image, index.root_path(), request, index.types().fingerprint())
-    else {
+    let wanted = Wanted {
+        root: index.root_path(),
+        entries: EntryTierIdentity::of_scope(index.scope()),
+        request,
+        type_rules_fingerprint: index.types().fingerprint(),
+    };
+    let Some(records) = parse(&image, &wanted) else {
         return Ok(ContentCacheLoad::default());
     };
     index.prepare_content_analysis(request);
@@ -215,27 +230,64 @@ fn put_record(buffer: &mut Vec<u8>, path: &Path, record: &FileAnalysis) -> Resul
     put_bounded_bytes(buffer, record.error.as_deref().unwrap_or("").as_bytes(), MAX_ERROR_BYTES)
 }
 
-fn parse(
-    image: &[u8],
-    expected_root: &Path,
+/// What a loading index asks of a sidecar.
+struct Wanted<'a> {
+    /// The root the index describes.
+    root: &'a Path,
+    /// The index's entry tier, which the records must have been analyzed over.
+    entries: EntryTierIdentity,
+    /// The analysis the caller requested.
     request: AnalysisRequest,
+    /// The type rules the index classifies under.
     type_rules_fingerprint: u64,
-) -> Option<Vec<(PathBuf, FileAnalysis)>> {
+}
+
+/// Write the content tier identity after the prologue and path encoding: the entry tier's
+/// fixed-width fields, the analyzer set, then the provenance.
+fn put_identity(buffer: &mut Vec<u8>, identity: &ContentTierIdentity) -> Result<()> {
+    buffer.extend_from_slice(&identity.entries.encode()?);
+    put_profile(buffer, identity.analysis);
+    buffer.extend_from_slice(&identity.provenance.type_rules_fingerprint.to_le_bytes());
+    buffer.extend_from_slice(&identity.provenance.options_fingerprint.0.to_le_bytes());
+    put_analyzers(buffer, &identity.provenance.analyzers)
+}
+
+/// Read what [`put_identity`] wrote, under the prologue's `engine` fingerprint.
+fn read_identity(reader: &mut Reader<'_>, engine: u64) -> Option<ContentTierIdentity> {
+    let entries =
+        EntryTierIdentity::decode(engine, reader.take(ENTRY_TIER_BYTES)?.try_into().ok()?)?;
+    Some(ContentTierIdentity {
+        entries,
+        analysis: read_profile(reader.u8()?)?,
+        provenance: ContentProvenance {
+            type_rules_fingerprint: reader.u64()?,
+            options_fingerprint: super::OptionsFingerprint(reader.u64()?),
+            analyzers: read_analyzers(reader)?,
+        },
+    })
+}
+
+fn parse(image: &[u8], wanted: &Wanted<'_>) -> Option<Vec<(PathBuf, FileAnalysis)>> {
     let payload = integrity_payload(image)?;
     let mut reader = Reader::new(payload.get(MAGIC.len()..)?);
-    if reader.u32()? != FORMAT_VERSION || reader.u8()? != crate::snapshot::path_encoding() {
+    if reader.u32()? != FORMAT_VERSION {
         return None;
     }
-    let profile = read_profile(reader.u8()?)?;
-    let provenance = ContentProvenance {
-        type_rules_fingerprint: reader.u64()?,
-        options_fingerprint: super::OptionsFingerprint(reader.u64()?),
-        analyzers: read_analyzers(&mut reader)?,
-    };
-    if !provenance.satisfies(profile, request.profile, type_rules_fingerprint) {
+    let engine = reader.u64()?;
+    if reader.u8()? != crate::snapshot::path_encoding() {
         return None;
     }
-    if reader.os_string()?.as_os_str() != expected_root.as_os_str() {
+    let ContentTierIdentity { entries, analysis: profile, provenance } =
+        read_identity(&mut reader, engine)?;
+    // Records analyzed by another engine, or over another entry tier, answer another
+    // request: a miss, whatever their analyzer set.
+    if entries != wanted.entries {
+        return None;
+    }
+    if !provenance.satisfies(profile, wanted.request.profile, wanted.type_rules_fingerprint) {
+        return None;
+    }
+    if reader.os_string()?.as_os_str() != wanted.root.as_os_str() {
         return None;
     }
     let count = reader.u64()?;
@@ -718,13 +770,29 @@ mod tests {
         assert_eq!(wide.hits, 2, "and still carries every record: {wide:?}");
     }
 
+    /// Byte offset of the engine fingerprint: after the magic and the format version, where
+    /// a snapshot's prologue puts it.
+    const ENGINE_OFFSET: usize = MAGIC.len() + 4;
+
+    /// Byte offset of the path encoding, which follows the engine fingerprint.
+    const PATH_ENCODING_OFFSET: usize = ENGINE_OFFSET + 8;
+
+    /// Recompute a rewritten image's checksum, so the rewrite is the only thing wrong with it.
+    fn reseal(image: &mut [u8]) {
+        let payload_len = image.len() - CHECKSUM_BYTES - TRAILER.len();
+        let checksum = crate::snapshot::crc32c(&image[..payload_len]);
+        image[payload_len..payload_len + CHECKSUM_BYTES].copy_from_slice(&checksum.to_le_bytes());
+    }
+
     #[test]
     fn corruption_is_a_clean_miss() {
         let (root, index, request) = analyzed_index();
         let cache = root.path().join("content.cache");
         save_content_cache(&index, request, &cache).expect("save");
         let mut bytes = fs::read(&cache).expect("read");
-        bytes[MAGIC.len() + 4] ^= 0xff;
+        assert_eq!(bytes[PATH_ENCODING_OFFSET], crate::snapshot::path_encoding());
+        // A header byte flipped without resealing: the checksum no longer matches.
+        bytes[PATH_ENCODING_OFFSET] ^= 0xff;
         fs::write(&cache, bytes).expect("corrupt");
         let (mut restored, _) =
             crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
@@ -732,6 +800,50 @@ mod tests {
             load_content_cache(&mut restored, request, &cache).expect("load"),
             ContentCacheLoad::default()
         );
+    }
+
+    /// A sidecar's records answer only the engine and entry tier they were analyzed under.
+    /// Another engine's sidecar, one of another format, and one analyzed over another scope
+    /// are clean misses even though every record's path and fingerprint still match; one
+    /// analyzed with `.gitignore` observation off answers a request with it on, because no
+    /// metric depends on observation.
+    #[test]
+    fn a_sidecar_from_another_engine_or_scope_is_a_clean_miss() {
+        let (root, index, request) = analyzed_index();
+        let cache_dir = tempfile::tempdir().expect("cache dir");
+        let cache = cache_dir.path().join("content.cache");
+        save_content_cache(&index, request, &cache).expect("save");
+        let saved = fs::read(&cache).expect("read");
+        let load_into = |config: &ScanConfig| {
+            let (mut restored, _) =
+                crate::scan::scan_into_index(root.path(), config).expect("scan");
+            load_content_cache(&mut restored, request, &cache).expect("load")
+        };
+        let hit = load_into(&ScanConfig::default());
+        assert!(hit.usable && hit.hits == 1, "the saved sidecar restores: {hit:?}");
+
+        let mut other_engine = saved.clone();
+        for byte in &mut other_engine[ENGINE_OFFSET..ENGINE_OFFSET + 8] {
+            *byte = !*byte;
+        }
+        reseal(&mut other_engine);
+        let mut older_format = saved.clone();
+        older_format[MAGIC.len()..ENGINE_OFFSET].copy_from_slice(&4_u32.to_le_bytes());
+        reseal(&mut older_format);
+        for (name, image) in [("another engine", other_engine), ("format 4", older_format)] {
+            fs::write(&cache, image).expect("rewrite");
+            assert_eq!(load_into(&ScanConfig::default()), ContentCacheLoad::default(), "{name}");
+        }
+
+        fs::write(&cache, &saved).expect("restore");
+        for config in [
+            ScanConfig { max_depth: Some(4), ..ScanConfig::default() },
+            ScanConfig { exclude_special: true, ..ScanConfig::default() },
+        ] {
+            assert_eq!(load_into(&config), ContentCacheLoad::default(), "{:?}", config.scope());
+        }
+        let blind = ScanConfig { read_controls: false, ..ScanConfig::default() };
+        assert_eq!(load_into(&blind), hit, "observation is not part of the content identity");
     }
 
     /// Re-address the sidecar's one record, leaving the image otherwise valid.

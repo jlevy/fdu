@@ -173,14 +173,16 @@ regardless, so loading the snapshot is purely additive cost.
 Content-derived metrics — line counts, word counts, hashes, and future plugin analyzers
 — do **not** belong in the core snapshot.
 They live in a separately checksummed sidecar beside the snapshot, `<snapshot>.content`,
-recording the root, the stored analyzer set, the type-rule fingerprint, an options
-fingerprint, and ordered analyzer IDs and versions.
-It records no scan scope and no engine fingerprint, and it holds one analyzer set per
-root. Each sparse file record carries its classification and a fingerprint of size,
-mtime, ctime, inode, and device, so a reconciled metadata change rejects only the stale
-record. In memory a record also keeps the analyzer set it was produced under, and a save
-keeps only records whose set equals the stored one.
-The current sidecar format is version 4; an absent, corrupt, oversized, foreign, or
+recording the engine fingerprint, the entry tier identity the records were analyzed over
+(the snapshot’s scope without `.gitignore` observation, which no metric depends on), the
+root, the stored analyzer set, the type-rule fingerprint, an options fingerprint, and
+ordered analyzer IDs and versions.
+It holds one analyzer set per root.
+Each sparse file record carries its classification and a fingerprint of size, mtime,
+ctime, inode, and device, so a reconciled metadata change rejects only the stale record.
+In memory a record also keeps the analyzer set it was produced under, and a save keeps
+only records whose set equals the stored one.
+The current sidecar format is version 5; an absent, corrupt, oversized, foreign, or
 version-mismatched sidecar is a clean analyzer-cache miss and never invalidates the core
 snapshot.
 
@@ -192,12 +194,12 @@ Keeping them separate from metadata remains load-bearing rather than tidy:
   An analyzer’s output can be far larger than the tree’s metadata, and paying for it on
   every open would penalize the common query.
 - Content-sidecar invalidation never touches tree truth.
-  A sidecar is usable when its format version and root match, its type-rule fingerprint
-  equals the registry in use, and its stored analyzer set contains the requested one
-  (`ContentProvenance::satisfies`). The options fingerprint and analyzer versions are
-  recorded but not compared; both are derived from the analyzer set today, so a change
-  to an analyzer’s output invalidates stored records only through a sidecar
-  format-version bump.
+  A sidecar is usable when its format version, engine fingerprint, entry tier identity,
+  and root match, its type-rule fingerprint equals the registry in use, and its stored
+  analyzer set contains the requested one (`ContentProvenance::satisfies`). The options
+  fingerprint and analyzer versions are recorded but not compared; both are derived from
+  the analyzer set today, so a change to an analyzer’s output invalidates stored records
+  only through a sidecar format-version bump.
   A narrower sidecar cannot invent a wider result, and a narrower request leaves the
   wider stored set in place.
   Containment is not projection: a report reads the stored records as they are, so a
@@ -331,10 +333,10 @@ tracks them.
   record under the narrower set.
   Reports aggregate each record by its own set, so totals can match neither cold answer,
   and the save drops those records, so each later run reads the files again.
-- **The sidecar’s identity is incomplete.** Analyzer versions and options are not
-  compared. With no engine fingerprint, a sidecar survives the crate upgrade that
-  invalidates its snapshot, and with no scope, one sidecar serves every scope for its
-  root.
+- **The sidecar’s identity is compared by containment.** A sidecar records its engine
+  fingerprint and entry tier and serves only those, but its analyzer versions and
+  options are recorded without being compared, and its analyzer set answers any request
+  it contains.
 - **The one projection exists on one path.** A one-shot cache-only report may answer a
   `.gitignore`-off request from a controls-on snapshot; `open` refuses the same request.
 - **Policies mean different things per path.** `read-only` revalidates for `open` but

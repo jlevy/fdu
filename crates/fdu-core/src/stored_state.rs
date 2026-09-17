@@ -147,6 +147,22 @@ impl SnapshotIdentity {
     }
 }
 
+/// Identity of a content tier: the per-file analysis records a sidecar holds.
+///
+/// The entry tier's identity rather than the whole snapshot's, because no metric depends on
+/// `.gitignore` observation: every regular file in scope is an analysis candidate whether
+/// or not it is ignored. Then the analyzer set the records were produced for, and the
+/// analyzers' identities, versions, and options.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ContentTierIdentity {
+    /// The entry tier the records were analyzed over.
+    pub entries: EntryTierIdentity,
+    /// The analyzer set the tier holds records for.
+    pub analysis: crate::content::AnalysisSet,
+    /// The type rules, options, and analyzer versions the records were produced under.
+    pub provenance: crate::content::ContentProvenance,
+}
+
 /// How a stored tier answers a request.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum Serves {
