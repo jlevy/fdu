@@ -1,0 +1,242 @@
+FAILURES (not ok) per emitter x parser; req = failures on the required 49-string set
+emitter                           PyYAML(1.1,libyaml    PyYAML(1.1,pure)       npm-yaml(1.1)       npm-yaml(1.2)      ruamel-rt(1.2)    ruamel-safe(1.2)
+fdu-branch-rules                            1(req 0)            1(req 0)            4(req 1)            0(req 0)            3(req 0)            3(req 0)
+fdu-branch-rust-verbatim                    1(req 0)            1(req 0)            4(req 1)            0(req 0)            3(req 0)            3(req 0)
+fdu-release-0.1.0-rules                   13(req 10)          13(req 10)          15(req 10)            4(req 4)          16(req 11)          16(req 11)
+frontmatter-format(ruamel rt)              11(req 5)           11(req 5)          19(req 10)            5(req 2)            2(req 1)            2(req 1)
+frontmatter-format-fixed-prototype            0(req 0)            0(req 0)            0(req 0)            0(req 0)            0(req 0)            0(req 0)
+npm-yaml-stringify(1.1)                     9(req 5)           10(req 6)            0(req 0)            1(req 1)            9(req 6)            9(req 6)
+npm-yaml-stringify(1.2)                   24(req 12)          25(req 13)          22(req 11)            0(req 0)           16(req 8)           16(req 8)
+proposed-B-strict-policy                    0(req 0)            0(req 0)            0(req 0)            0(req 0)            0(req 0)            0(req 0)
+pyyaml-safe_dump                            1(req 1)            1(req 1)           13(req 7)            7(req 4)            7(req 3)            7(req 3)
+pyyaml-safe_dump-ascii                      0(req 0)            0(req 0)           10(req 5)            4(req 2)            6(req 2)            6(req 2)
+ruamel-safe-pure                           10(req 5)           10(req 5)          17(req 10)            3(req 2)            1(req 1)            1(req 1)
+saphyr                                     13(req 8)           13(req 8)            8(req 6)            1(req 1)           12(req 8)           12(req 8)
+saphyr-multiline                           15(req 8)           15(req 8)           10(req 6)            3(req 1)           14(req 8)           14(req 8)
+serde-saphyr                               10(req 3)           10(req 3)            9(req 2)            1(req 0)            9(req 2)            9(req 2)
+serde_norway                               16(req 6)           16(req 6)          23(req 11)            2(req 1)            9(req 2)            9(req 2)
+
+===== fdu-branch-rules
+  '.'                          npm-yaml(1.1):wrong:number:null
+  '._1'                        ruamel-safe(1.2):wrong:float:0.1 | ruamel-rt(1.2):wrong:ScalarFloat:0.1 | npm-yaml(1.1):wrong:number:0.1
+  '._'                         ruamel-safe(1.2):error:ValueError: could not convert string to float: '.' | ruamel-rt(1.2):error:ValueError: could not convert string to float: '.' | npm-yaml(1.1):wrong:number:null
+  '.1_0'                       PyYAML(1.1,pure):wrong:float:0.1 | ruamel-safe(1.2):wrong:float:0.1 | ruamel-rt(1.2):wrong:ScalarFloat:0.1 | PyYAML(1.1,libyaml C):wrong:float:0.1 | npm-yaml(1.1):wrong:number:0.1
+===== fdu-branch-rust-verbatim
+  '.'                          npm-yaml(1.1):wrong:number:null
+  '._1'                        ruamel-safe(1.2):wrong:float:0.1 | ruamel-rt(1.2):wrong:ScalarFloat:0.1 | npm-yaml(1.1):wrong:number:0.1
+  '._'                         ruamel-safe(1.2):error:ValueError: could not convert string to float: '.' | ruamel-rt(1.2):error:ValueError: could not convert string to float: '.' | npm-yaml(1.1):wrong:number:null
+  '.1_0'                       PyYAML(1.1,pure):wrong:float:0.1 | ruamel-safe(1.2):wrong:float:0.1 | ruamel-rt(1.2):wrong:ScalarFloat:0.1 | PyYAML(1.1,libyaml C):wrong:float:0.1 | npm-yaml(1.1):wrong:number:0.1
+===== fdu-release-0.1.0-rules
+  '0x10'                       PyYAML(1.1,pure):wrong:int:16 | ruamel-safe(1.2):wrong:int:16 | ruamel-rt(1.2):wrong:HexInt:16 | PyYAML(1.1,libyaml C):wrong:int:16 | npm-yaml(1.2):wrong:number:16 | npm-yaml(1.1):wrong:number:16
+  '1_000'                      PyYAML(1.1,pure):wrong:int:1000 | ruamel-safe(1.2):wrong:int:1000 | ruamel-rt(1.2):wrong:ScalarInt:1000 | PyYAML(1.1,libyaml C):wrong:int:1000 | npm-yaml(1.1):wrong:number:1000
+  '0b101'                      PyYAML(1.1,pure):wrong:int:5 | ruamel-safe(1.2):wrong:int:5 | ruamel-rt(1.2):wrong:BinaryInt:5 | PyYAML(1.1,libyaml C):wrong:int:5 | npm-yaml(1.1):wrong:number:5
+  '0o17'                       ruamel-safe(1.2):wrong:int:15 | ruamel-rt(1.2):wrong:OctalInt:15 | npm-yaml(1.2):wrong:number:15
+  '.inf'                       PyYAML(1.1,pure):wrong:float:inf | ruamel-safe(1.2):wrong:float:inf | ruamel-rt(1.2):wrong:float:inf | PyYAML(1.1,libyaml C):wrong:float:inf | npm-yaml(1.2):wrong:number:null | npm-yaml(1.1):wrong:number:null
+  '.NaN'                       PyYAML(1.1,pure):wrong:float:nan | ruamel-safe(1.2):wrong:float:nan | ruamel-rt(1.2):wrong:float:nan | PyYAML(1.1,libyaml C):wrong:float:nan | npm-yaml(1.2):wrong:number:null | npm-yaml(1.1):wrong:number:null
+  'y'                          npm-yaml(1.1):wrong:boolean:true
+  'n'                          npm-yaml(1.1):wrong:boolean:false
+  'Y'                          npm-yaml(1.1):wrong:boolean:true
+  '2024-01-01'                 PyYAML(1.1,pure):wrong:date:datetime.date(2024, 1, 1) | ruamel-safe(1.2):wrong:date:datetime.date(2024, 1, 1) | ruamel-rt(1.2):wrong:date:datetime.date(2024, 1, 1) | PyYAML(1.1,libyaml C):wrong:date:datetime.date(2024, 1, 1) | npm-yaml(1.1):wrong:object:"2024-01-01T00:00:00.000Z"
+  'del\x7fname'                PyYAML(1.1,pure):error:ReaderError: unacceptable character #x007f: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #x007f: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #x007f: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #x007f: control characters are not allowed
+  'nel\x85name'                PyYAML(1.1,pure):wrong:str:'nel name' | ruamel-safe(1.2):wrong:str:'nel name' | ruamel-rt(1.2):wrong:str:'nel name' | PyYAML(1.1,libyaml C):wrong:str:'nel name'
+  'c1\x9bname'                 PyYAML(1.1,pure):error:ReaderError: unacceptable character #x009b: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #x009b: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #x009b: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #x009b: control characters are not allowed
+  'nonchar\ufffe'              PyYAML(1.1,pure):error:ReaderError: unacceptable character #xfffe: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #xfffe: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #xfffe: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #xfffe: control characters are not allowed
+  '.'                          npm-yaml(1.1):wrong:number:null
+  '._1'                        ruamel-safe(1.2):wrong:float:0.1 | ruamel-rt(1.2):wrong:ScalarFloat:0.1 | npm-yaml(1.1):wrong:number:0.1
+  '._'                         ruamel-safe(1.2):error:ValueError: could not convert string to float: '.' | ruamel-rt(1.2):error:ValueError: could not convert string to float: '.' | npm-yaml(1.1):wrong:number:null
+  '.1_0'                       PyYAML(1.1,pure):wrong:float:0.1 | ruamel-safe(1.2):wrong:float:0.1 | ruamel-rt(1.2):wrong:ScalarFloat:0.1 | PyYAML(1.1,libyaml C):wrong:float:0.1 | npm-yaml(1.1):wrong:number:0.1
+  'N'                          npm-yaml(1.1):wrong:boolean:false
+  '2002-12-14'                 PyYAML(1.1,pure):wrong:date:datetime.date(2002, 12, 14) | ruamel-safe(1.2):wrong:date:datetime.date(2002, 12, 14) | ruamel-rt(1.2):wrong:date:datetime.date(2002, 12, 14) | PyYAML(1.1,libyaml C):wrong:date:datetime.date(2002, 12, 14) | npm-yaml(1.1):wrong:object:"2002-12-14T00:00:00.000Z"
+  'nonchar\uffff'              PyYAML(1.1,pure):error:ReaderError: unacceptable character #xffff: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #xffff: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #xffff: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #xffff: control characters are not allowed
+===== frontmatter-format(ruamel rt)
+  'y'                          npm-yaml(1.1):wrong:boolean:true
+  'n'                          npm-yaml(1.1):wrong:boolean:false
+  'Y'                          npm-yaml(1.1):wrong:boolean:true
+  'yes'                        PyYAML(1.1,pure):wrong:bool:True | PyYAML(1.1,libyaml C):wrong:bool:True | npm-yaml(1.1):wrong:boolean:true
+  'on'                         PyYAML(1.1,pure):wrong:bool:True | PyYAML(1.1,libyaml C):wrong:bool:True | npm-yaml(1.1):wrong:boolean:true
+  'off'                        PyYAML(1.1,pure):wrong:bool:False | PyYAML(1.1,libyaml C):wrong:bool:False | npm-yaml(1.1):wrong:boolean:false
+  '12:30:00'                   PyYAML(1.1,pure):wrong:int:45000 | PyYAML(1.1,libyaml C):wrong:int:45000 | npm-yaml(1.1):wrong:number:45000
+  'nel\x85name'                PyYAML(1.1,pure):wrong:str:'nel name' | ruamel-safe(1.2):wrong:str:'nel name' | ruamel-rt(1.2):wrong:str:'nel name' | PyYAML(1.1,libyaml C):wrong:str:'nel name' | npm-yaml(1.2):wrong:string:"nel  name" | npm-yaml(1.1):wrong:string:"nel  name"
+  'ls\u2028name'               npm-yaml(1.2):wrong:string:"ls   name" | npm-yaml(1.1):wrong:string:"ls   name"
+  '.'                          npm-yaml(1.1):wrong:number:null
+  '1:30'                       PyYAML(1.1,pure):wrong:int:90 | PyYAML(1.1,libyaml C):wrong:int:90 | npm-yaml(1.1):wrong:number:90
+  '190:20:30'                  PyYAML(1.1,pure):wrong:int:685230 | PyYAML(1.1,libyaml C):wrong:int:685230 | npm-yaml(1.1):wrong:number:685230
+  'No'                         PyYAML(1.1,pure):wrong:bool:False | PyYAML(1.1,libyaml C):wrong:bool:False | npm-yaml(1.1):wrong:boolean:false
+  'NO'                         PyYAML(1.1,pure):wrong:bool:False | PyYAML(1.1,libyaml C):wrong:bool:False | npm-yaml(1.1):wrong:boolean:false
+  'Off'                        PyYAML(1.1,pure):wrong:bool:False | PyYAML(1.1,libyaml C):wrong:bool:False | npm-yaml(1.1):wrong:boolean:false
+  'N'                          npm-yaml(1.1):wrong:boolean:false
+  'x\r\ny'                     PyYAML(1.1,pure):wrong:str:'x\ny' | ruamel-safe(1.2):wrong:str:'x\ny' | ruamel-rt(1.2):wrong:str:'x\ny' | PyYAML(1.1,libyaml C):wrong:str:'x\ny' | npm-yaml(1.2):wrong:string:"x\ny" | npm-yaml(1.1):wrong:string:"x\ny"
+  '  \n  '                     npm-yaml(1.2):wrong:string:"" | npm-yaml(1.1):wrong:string:""
+  'ps\u2029name'               npm-yaml(1.2):wrong:string:"ps   name" | npm-yaml(1.1):wrong:string:"ps   name"
+===== frontmatter-format-fixed-prototype
+===== npm-yaml-stringify(1.1)
+  '0o17'                       ruamel-safe(1.2):wrong:int:15 | ruamel-rt(1.2):wrong:OctalInt:15 | npm-yaml(1.2):wrong:number:15
+  'tab\tx'                     PyYAML(1.1,pure):error:ScannerError: while scanning for the next token | ruamel-safe(1.2):error:ScannerError: while scanning for the next token | ruamel-rt(1.2):error:ScannerError: while scanning for the next token
+  'del\x7fname'                PyYAML(1.1,pure):error:ReaderError: unacceptable character #x007f: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #x007f: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #x007f: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #x007f: control characters are not allowed
+  'nel\x85name'                PyYAML(1.1,pure):wrong:str:'nel name' | ruamel-safe(1.2):wrong:str:'nel name' | ruamel-rt(1.2):wrong:str:'nel name' | PyYAML(1.1,libyaml C):wrong:str:'nel name'
+  'c1\x9bname'                 PyYAML(1.1,pure):error:ReaderError: unacceptable character #x009b: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #x009b: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #x009b: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #x009b: control characters are not allowed
+  'ls\u2028name'               PyYAML(1.1,pure):error:ScannerError: while scanning a simple key | PyYAML(1.1,libyaml C):error:ScannerError: while scanning a simple key
+  'nonchar\ufffe'              PyYAML(1.1,pure):error:ReaderError: unacceptable character #xfffe: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #xfffe: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #xfffe: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #xfffe: control characters are not allowed
+  '='                          PyYAML(1.1,pure):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20 | ruamel-safe(1.2):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20 | ruamel-rt(1.2):wrong:TaggedScalar:TaggedScalar(value='=', style=None, tag=Tag('tag:yaml.org,2002:valu | PyYAML(1.1,libyaml C):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20
+  '<<'                         PyYAML(1.1,pure):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20 | ruamel-safe(1.2):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20 | ruamel-rt(1.2):wrong:TaggedScalar:TaggedScalar(value='<<', style=None, tag=Tag('tag:yaml.org,2002:mer | PyYAML(1.1,libyaml C):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20
+  'ps\u2029name'               PyYAML(1.1,pure):error:ScannerError: while scanning a simple key | PyYAML(1.1,libyaml C):error:ScannerError: while scanning a simple key
+  'nonchar\uffff'              PyYAML(1.1,pure):error:ReaderError: unacceptable character #xffff: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #xffff: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #xffff: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #xffff: control characters are not allowed
+===== npm-yaml-stringify(1.2)
+  '1_000'                      PyYAML(1.1,pure):wrong:int:1000 | ruamel-safe(1.2):wrong:int:1000 | ruamel-rt(1.2):wrong:ScalarInt:1000 | PyYAML(1.1,libyaml C):wrong:int:1000 | npm-yaml(1.1):wrong:number:1000
+  '0b101'                      PyYAML(1.1,pure):wrong:int:5 | ruamel-safe(1.2):wrong:int:5 | ruamel-rt(1.2):wrong:BinaryInt:5 | PyYAML(1.1,libyaml C):wrong:int:5 | npm-yaml(1.1):wrong:number:5
+  'y'                          npm-yaml(1.1):wrong:boolean:true
+  'n'                          npm-yaml(1.1):wrong:boolean:false
+  'Y'                          npm-yaml(1.1):wrong:boolean:true
+  'yes'                        PyYAML(1.1,pure):wrong:bool:True | PyYAML(1.1,libyaml C):wrong:bool:True | npm-yaml(1.1):wrong:boolean:true
+  'on'                         PyYAML(1.1,pure):wrong:bool:True | PyYAML(1.1,libyaml C):wrong:bool:True | npm-yaml(1.1):wrong:boolean:true
+  'off'                        PyYAML(1.1,pure):wrong:bool:False | PyYAML(1.1,libyaml C):wrong:bool:False | npm-yaml(1.1):wrong:boolean:false
+  '2024-01-01'                 PyYAML(1.1,pure):wrong:date:datetime.date(2024, 1, 1) | ruamel-safe(1.2):wrong:date:datetime.date(2024, 1, 1) | ruamel-rt(1.2):wrong:date:datetime.date(2024, 1, 1) | PyYAML(1.1,libyaml C):wrong:date:datetime.date(2024, 1, 1) | npm-yaml(1.1):wrong:object:"2024-01-01T00:00:00.000Z"
+  '12:30:00'                   PyYAML(1.1,pure):wrong:int:45000 | PyYAML(1.1,libyaml C):wrong:int:45000 | npm-yaml(1.1):wrong:number:45000
+  'tab\tx'                     PyYAML(1.1,pure):error:ScannerError: while scanning for the next token | ruamel-safe(1.2):error:ScannerError: while scanning for the next token | ruamel-rt(1.2):error:ScannerError: while scanning for the next token
+  'del\x7fname'                PyYAML(1.1,pure):error:ReaderError: unacceptable character #x007f: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #x007f: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #x007f: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #x007f: control characters are not allowed
+  'nel\x85name'                PyYAML(1.1,pure):wrong:str:'nel name' | ruamel-safe(1.2):wrong:str:'nel name' | ruamel-rt(1.2):wrong:str:'nel name' | PyYAML(1.1,libyaml C):wrong:str:'nel name'
+  'c1\x9bname'                 PyYAML(1.1,pure):error:ReaderError: unacceptable character #x009b: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #x009b: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #x009b: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #x009b: control characters are not allowed
+  'ls\u2028name'               PyYAML(1.1,pure):error:ScannerError: while scanning a simple key | PyYAML(1.1,libyaml C):error:ScannerError: while scanning a simple key
+  'nonchar\ufffe'              PyYAML(1.1,pure):error:ReaderError: unacceptable character #xfffe: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #xfffe: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #xfffe: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #xfffe: control characters are not allowed
+  '.'                          npm-yaml(1.1):wrong:number:null
+  '._1'                        ruamel-safe(1.2):wrong:float:0.1 | ruamel-rt(1.2):wrong:ScalarFloat:0.1 | npm-yaml(1.1):wrong:number:0.1
+  '._'                         ruamel-safe(1.2):error:ValueError: could not convert string to float: '.' | ruamel-rt(1.2):error:ValueError: could not convert string to float: '.' | npm-yaml(1.1):wrong:number:null
+  '.1_0'                       PyYAML(1.1,pure):wrong:float:0.1 | ruamel-safe(1.2):wrong:float:0.1 | ruamel-rt(1.2):wrong:ScalarFloat:0.1 | PyYAML(1.1,libyaml C):wrong:float:0.1 | npm-yaml(1.1):wrong:number:0.1
+  '1:30'                       PyYAML(1.1,pure):wrong:int:90 | PyYAML(1.1,libyaml C):wrong:int:90 | npm-yaml(1.1):wrong:number:90
+  '190:20:30'                  PyYAML(1.1,pure):wrong:int:685230 | PyYAML(1.1,libyaml C):wrong:int:685230 | npm-yaml(1.1):wrong:number:685230
+  'No'                         PyYAML(1.1,pure):wrong:bool:False | PyYAML(1.1,libyaml C):wrong:bool:False | npm-yaml(1.1):wrong:boolean:false
+  'NO'                         PyYAML(1.1,pure):wrong:bool:False | PyYAML(1.1,libyaml C):wrong:bool:False | npm-yaml(1.1):wrong:boolean:false
+  'Off'                        PyYAML(1.1,pure):wrong:bool:False | PyYAML(1.1,libyaml C):wrong:bool:False | npm-yaml(1.1):wrong:boolean:false
+  'N'                          npm-yaml(1.1):wrong:boolean:false
+  '='                          PyYAML(1.1,pure):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20 | ruamel-safe(1.2):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20 | ruamel-rt(1.2):wrong:TaggedScalar:TaggedScalar(value='=', style=None, tag=Tag('tag:yaml.org,2002:valu | PyYAML(1.1,libyaml C):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20
+  '<<'                         PyYAML(1.1,pure):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20 | ruamel-safe(1.2):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20 | ruamel-rt(1.2):wrong:TaggedScalar:TaggedScalar(value='<<', style=None, tag=Tag('tag:yaml.org,2002:mer | PyYAML(1.1,libyaml C):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20
+  '2001-12-14t21:59:43.10-05:00' PyYAML(1.1,pure):wrong:datetime:datetime.datetime(2001, 12, 14, 21, 59, 43, 100000, tzinfo=datetime.tim | ruamel-safe(1.2):wrong:datetime:datetime.datetime(2001, 12, 14, 21, 59, 43, 100000, tzinfo=datetime.tim | ruamel-rt(1.2):wrong:TimeStamp:TimeStamp(2001, 12, 14, 21, 59, 43, 100000, tzinfo=datetime.timezone(d | PyYAML(1.1,libyaml C):wrong:datetime:datetime.datetime(2001, 12, 14, 21, 59, 43, 100000, tzinfo=datetime.tim | npm-yaml(1.1):wrong:object:"2001-12-15T02:59:43.100Z"
+  '2002-12-14'                 PyYAML(1.1,pure):wrong:date:datetime.date(2002, 12, 14) | ruamel-safe(1.2):wrong:date:datetime.date(2002, 12, 14) | ruamel-rt(1.2):wrong:date:datetime.date(2002, 12, 14) | PyYAML(1.1,libyaml C):wrong:date:datetime.date(2002, 12, 14) | npm-yaml(1.1):wrong:object:"2002-12-14T00:00:00.000Z"
+  'ps\u2029name'               PyYAML(1.1,pure):error:ScannerError: while scanning a simple key | PyYAML(1.1,libyaml C):error:ScannerError: while scanning a simple key
+  'nonchar\uffff'              PyYAML(1.1,pure):error:ReaderError: unacceptable character #xffff: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #xffff: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #xffff: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #xffff: control characters are not allowed
+===== proposed-B-strict-policy
+===== pyyaml-safe_dump
+  '0o17'                       ruamel-safe(1.2):wrong:int:15 | ruamel-rt(1.2):wrong:OctalInt:15 | npm-yaml(1.2):wrong:number:15
+  '1e3'                        ruamel-safe(1.2):wrong:float:1000.0 | ruamel-rt(1.2):wrong:ScalarFloat:1000.0 | npm-yaml(1.2):wrong:number:1000 | npm-yaml(1.1):wrong:number:1000
+  'y'                          npm-yaml(1.1):wrong:boolean:true
+  'n'                          npm-yaml(1.1):wrong:boolean:false
+  'Y'                          npm-yaml(1.1):wrong:boolean:true
+  'nel\x85name'                PyYAML(1.1,pure):wrong:str:'nel name' | ruamel-safe(1.2):wrong:str:'nel name' | ruamel-rt(1.2):wrong:str:'nel name' | PyYAML(1.1,libyaml C):wrong:str:'nel name' | npm-yaml(1.2):wrong:string:"nel  name" | npm-yaml(1.1):wrong:string:"nel  name"
+  'ls\u2028name'               npm-yaml(1.2):wrong:string:"ls   name" | npm-yaml(1.1):wrong:string:"ls   name"
+  '.'                          npm-yaml(1.1):wrong:number:null
+  '._1'                        ruamel-safe(1.2):wrong:float:0.1 | ruamel-rt(1.2):wrong:ScalarFloat:0.1 | npm-yaml(1.1):wrong:number:0.1
+  '._'                         ruamel-safe(1.2):error:ValueError: could not convert string to float: '.' | ruamel-rt(1.2):error:ValueError: could not convert string to float: '.' | npm-yaml(1.1):wrong:number:null
+  '1e+3'                       ruamel-safe(1.2):wrong:float:1000.0 | ruamel-rt(1.2):wrong:ScalarFloat:1000.0 | npm-yaml(1.2):wrong:number:1000 | npm-yaml(1.1):wrong:number:1000
+  '1E3'                        ruamel-safe(1.2):wrong:float:1000.0 | ruamel-rt(1.2):wrong:ScalarFloat:1000.0 | npm-yaml(1.2):wrong:number:1000 | npm-yaml(1.1):wrong:number:1000
+  'N'                          npm-yaml(1.1):wrong:boolean:false
+  'ps\u2029name'               npm-yaml(1.2):wrong:string:"ps   name" | npm-yaml(1.1):wrong:string:"ps   name"
+===== pyyaml-safe_dump-ascii
+  '0o17'                       ruamel-safe(1.2):wrong:int:15 | ruamel-rt(1.2):wrong:OctalInt:15 | npm-yaml(1.2):wrong:number:15
+  '1e3'                        ruamel-safe(1.2):wrong:float:1000.0 | ruamel-rt(1.2):wrong:ScalarFloat:1000.0 | npm-yaml(1.2):wrong:number:1000 | npm-yaml(1.1):wrong:number:1000
+  'y'                          npm-yaml(1.1):wrong:boolean:true
+  'n'                          npm-yaml(1.1):wrong:boolean:false
+  'Y'                          npm-yaml(1.1):wrong:boolean:true
+  '.'                          npm-yaml(1.1):wrong:number:null
+  '._1'                        ruamel-safe(1.2):wrong:float:0.1 | ruamel-rt(1.2):wrong:ScalarFloat:0.1 | npm-yaml(1.1):wrong:number:0.1
+  '._'                         ruamel-safe(1.2):error:ValueError: could not convert string to float: '.' | ruamel-rt(1.2):error:ValueError: could not convert string to float: '.' | npm-yaml(1.1):wrong:number:null
+  '1e+3'                       ruamel-safe(1.2):wrong:float:1000.0 | ruamel-rt(1.2):wrong:ScalarFloat:1000.0 | npm-yaml(1.2):wrong:number:1000 | npm-yaml(1.1):wrong:number:1000
+  '1E3'                        ruamel-safe(1.2):wrong:float:1000.0 | ruamel-rt(1.2):wrong:ScalarFloat:1000.0 | npm-yaml(1.2):wrong:number:1000 | npm-yaml(1.1):wrong:number:1000
+  'N'                          npm-yaml(1.1):wrong:boolean:false
+===== ruamel-safe-pure
+  'y'                          npm-yaml(1.1):wrong:boolean:true
+  'n'                          npm-yaml(1.1):wrong:boolean:false
+  'Y'                          npm-yaml(1.1):wrong:boolean:true
+  'yes'                        PyYAML(1.1,pure):wrong:bool:True | PyYAML(1.1,libyaml C):wrong:bool:True | npm-yaml(1.1):wrong:boolean:true
+  'on'                         PyYAML(1.1,pure):wrong:bool:True | PyYAML(1.1,libyaml C):wrong:bool:True | npm-yaml(1.1):wrong:boolean:true
+  'off'                        PyYAML(1.1,pure):wrong:bool:False | PyYAML(1.1,libyaml C):wrong:bool:False | npm-yaml(1.1):wrong:boolean:false
+  '12:30:00'                   PyYAML(1.1,pure):wrong:int:45000 | PyYAML(1.1,libyaml C):wrong:int:45000 | npm-yaml(1.1):wrong:number:45000
+  'nel\x85name'                PyYAML(1.1,pure):wrong:str:'nel name' | ruamel-safe(1.2):wrong:str:'nel name' | ruamel-rt(1.2):wrong:str:'nel name' | PyYAML(1.1,libyaml C):wrong:str:'nel name' | npm-yaml(1.2):wrong:string:"nel  name" | npm-yaml(1.1):wrong:string:"nel  name"
+  'ls\u2028name'               npm-yaml(1.2):wrong:string:"ls   name" | npm-yaml(1.1):wrong:string:"ls   name"
+  '.'                          npm-yaml(1.1):wrong:number:null
+  '1:30'                       PyYAML(1.1,pure):wrong:int:90 | PyYAML(1.1,libyaml C):wrong:int:90 | npm-yaml(1.1):wrong:number:90
+  '190:20:30'                  PyYAML(1.1,pure):wrong:int:685230 | PyYAML(1.1,libyaml C):wrong:int:685230 | npm-yaml(1.1):wrong:number:685230
+  'No'                         PyYAML(1.1,pure):wrong:bool:False | PyYAML(1.1,libyaml C):wrong:bool:False | npm-yaml(1.1):wrong:boolean:false
+  'NO'                         PyYAML(1.1,pure):wrong:bool:False | PyYAML(1.1,libyaml C):wrong:bool:False | npm-yaml(1.1):wrong:boolean:false
+  'Off'                        PyYAML(1.1,pure):wrong:bool:False | PyYAML(1.1,libyaml C):wrong:bool:False | npm-yaml(1.1):wrong:boolean:false
+  'N'                          npm-yaml(1.1):wrong:boolean:false
+  'ps\u2029name'               npm-yaml(1.2):wrong:string:"ps   name" | npm-yaml(1.1):wrong:string:"ps   name"
+===== saphyr
+  '1_000'                      PyYAML(1.1,pure):wrong:int:1000 | ruamel-safe(1.2):wrong:int:1000 | ruamel-rt(1.2):wrong:ScalarInt:1000 | PyYAML(1.1,libyaml C):wrong:int:1000 | npm-yaml(1.1):wrong:number:1000
+  '0b101'                      PyYAML(1.1,pure):wrong:int:5 | ruamel-safe(1.2):wrong:int:5 | ruamel-rt(1.2):wrong:BinaryInt:5 | PyYAML(1.1,libyaml C):wrong:int:5 | npm-yaml(1.1):wrong:number:5
+  '0o17'                       ruamel-safe(1.2):wrong:int:15 | ruamel-rt(1.2):wrong:OctalInt:15 | npm-yaml(1.2):wrong:number:15
+  'y'                          npm-yaml(1.1):wrong:boolean:true
+  'n'                          npm-yaml(1.1):wrong:boolean:false
+  'Y'                          npm-yaml(1.1):wrong:boolean:true
+  '2024-01-01'                 PyYAML(1.1,pure):wrong:date:datetime.date(2024, 1, 1) | ruamel-safe(1.2):wrong:date:datetime.date(2024, 1, 1) | ruamel-rt(1.2):wrong:date:datetime.date(2024, 1, 1) | PyYAML(1.1,libyaml C):wrong:date:datetime.date(2024, 1, 1) | npm-yaml(1.1):wrong:object:"2024-01-01T00:00:00.000Z"
+  'del\x7fname'                PyYAML(1.1,pure):error:ReaderError: unacceptable character #x007f: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #x007f: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #x007f: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #x007f: control characters are not allowed
+  'nel\x85name'                PyYAML(1.1,pure):error:ScannerError: while scanning a simple key | ruamel-safe(1.2):wrong:str:'nel name' | ruamel-rt(1.2):wrong:str:'nel name' | PyYAML(1.1,libyaml C):error:ScannerError: while scanning a simple key
+  'c1\x9bname'                 PyYAML(1.1,pure):error:ReaderError: unacceptable character #x009b: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #x009b: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #x009b: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #x009b: control characters are not allowed
+  'ls\u2028name'               PyYAML(1.1,pure):error:ScannerError: while scanning a simple key | PyYAML(1.1,libyaml C):error:ScannerError: while scanning a simple key
+  'nonchar\ufffe'              PyYAML(1.1,pure):error:ReaderError: unacceptable character #xfffe: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #xfffe: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #xfffe: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #xfffe: control characters are not allowed
+  'N'                          npm-yaml(1.1):wrong:boolean:false
+  '2002-12-14'                 PyYAML(1.1,pure):wrong:date:datetime.date(2002, 12, 14) | ruamel-safe(1.2):wrong:date:datetime.date(2002, 12, 14) | ruamel-rt(1.2):wrong:date:datetime.date(2002, 12, 14) | PyYAML(1.1,libyaml C):wrong:date:datetime.date(2002, 12, 14) | npm-yaml(1.1):wrong:object:"2002-12-14T00:00:00.000Z"
+  'ps\u2029name'               PyYAML(1.1,pure):error:ScannerError: while scanning a simple key | PyYAML(1.1,libyaml C):error:ScannerError: while scanning a simple key
+  'vt\x0bx'                    PyYAML(1.1,pure):error:ReaderError: unacceptable character #x000b: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #x000b: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #x000b: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #x000b: control characters are not allowed
+  'esc\x1bx'                   PyYAML(1.1,pure):error:ReaderError: unacceptable character #x001b: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #x001b: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #x001b: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #x001b: control characters are not allowed
+  'nonchar\uffff'              PyYAML(1.1,pure):error:ReaderError: unacceptable character #xffff: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #xffff: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #xffff: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #xffff: control characters are not allowed
+===== saphyr-multiline
+  '1_000'                      PyYAML(1.1,pure):wrong:int:1000 | ruamel-safe(1.2):wrong:int:1000 | ruamel-rt(1.2):wrong:ScalarInt:1000 | PyYAML(1.1,libyaml C):wrong:int:1000 | npm-yaml(1.1):wrong:number:1000
+  '0b101'                      PyYAML(1.1,pure):wrong:int:5 | ruamel-safe(1.2):wrong:int:5 | ruamel-rt(1.2):wrong:BinaryInt:5 | PyYAML(1.1,libyaml C):wrong:int:5 | npm-yaml(1.1):wrong:number:5
+  '0o17'                       ruamel-safe(1.2):wrong:int:15 | ruamel-rt(1.2):wrong:OctalInt:15 | npm-yaml(1.2):wrong:number:15
+  'y'                          npm-yaml(1.1):wrong:boolean:true
+  'n'                          npm-yaml(1.1):wrong:boolean:false
+  'Y'                          npm-yaml(1.1):wrong:boolean:true
+  '2024-01-01'                 PyYAML(1.1,pure):wrong:date:datetime.date(2024, 1, 1) | ruamel-safe(1.2):wrong:date:datetime.date(2024, 1, 1) | ruamel-rt(1.2):wrong:date:datetime.date(2024, 1, 1) | PyYAML(1.1,libyaml C):wrong:date:datetime.date(2024, 1, 1) | npm-yaml(1.1):wrong:object:"2024-01-01T00:00:00.000Z"
+  'del\x7fname'                PyYAML(1.1,pure):error:ReaderError: unacceptable character #x007f: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #x007f: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #x007f: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #x007f: control characters are not allowed
+  'nel\x85name'                PyYAML(1.1,pure):error:ScannerError: while scanning a simple key | ruamel-safe(1.2):wrong:str:'nel name' | ruamel-rt(1.2):wrong:str:'nel name' | PyYAML(1.1,libyaml C):error:ScannerError: while scanning a simple key
+  'c1\x9bname'                 PyYAML(1.1,pure):error:ReaderError: unacceptable character #x009b: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #x009b: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #x009b: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #x009b: control characters are not allowed
+  'ls\u2028name'               PyYAML(1.1,pure):error:ScannerError: while scanning a simple key | PyYAML(1.1,libyaml C):error:ScannerError: while scanning a simple key
+  'nonchar\ufffe'              PyYAML(1.1,pure):error:ReaderError: unacceptable character #xfffe: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #xfffe: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #xfffe: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #xfffe: control characters are not allowed
+  'N'                          npm-yaml(1.1):wrong:boolean:false
+  '2002-12-14'                 PyYAML(1.1,pure):wrong:date:datetime.date(2002, 12, 14) | ruamel-safe(1.2):wrong:date:datetime.date(2002, 12, 14) | ruamel-rt(1.2):wrong:date:datetime.date(2002, 12, 14) | PyYAML(1.1,libyaml C):wrong:date:datetime.date(2002, 12, 14) | npm-yaml(1.1):wrong:object:"2002-12-14T00:00:00.000Z"
+  'x\r\ny'                     PyYAML(1.1,pure):wrong:str:'x\ny' | ruamel-safe(1.2):wrong:str:'x\ny' | ruamel-rt(1.2):wrong:str:'x\ny' | PyYAML(1.1,libyaml C):wrong:str:'x\ny' | npm-yaml(1.2):wrong:string:"x\ny" | npm-yaml(1.1):wrong:string:"x\ny"
+  '  \n  '                     PyYAML(1.1,pure):wrong:str:'' | ruamel-safe(1.2):wrong:str:'' | ruamel-rt(1.2):wrong:str:'' | PyYAML(1.1,libyaml C):wrong:str:'' | npm-yaml(1.2):wrong:string:"" | npm-yaml(1.1):wrong:string:""
+  'ps\u2029name'               PyYAML(1.1,pure):error:ScannerError: while scanning a simple key | PyYAML(1.1,libyaml C):error:ScannerError: while scanning a simple key
+  'vt\x0bx'                    PyYAML(1.1,pure):error:ReaderError: unacceptable character #x000b: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #x000b: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #x000b: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #x000b: control characters are not allowed
+  'esc\x1bx'                   PyYAML(1.1,pure):error:ReaderError: unacceptable character #x001b: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #x001b: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #x001b: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #x001b: control characters are not allowed
+  'nonchar\uffff'              PyYAML(1.1,pure):error:ReaderError: unacceptable character #xffff: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #xffff: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #xffff: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #xffff: control characters are not allowed
+===== serde-saphyr
+  '2024-01-01'                 PyYAML(1.1,pure):wrong:date:datetime.date(2024, 1, 1) | ruamel-safe(1.2):wrong:date:datetime.date(2024, 1, 1) | ruamel-rt(1.2):wrong:date:datetime.date(2024, 1, 1) | PyYAML(1.1,libyaml C):wrong:date:datetime.date(2024, 1, 1) | npm-yaml(1.1):wrong:object:"2024-01-01T00:00:00.000Z"
+  '12:30:00'                   PyYAML(1.1,pure):wrong:int:45000 | PyYAML(1.1,libyaml C):wrong:int:45000 | npm-yaml(1.1):wrong:number:45000
+  'nonchar\ufffe'              PyYAML(1.1,pure):error:ReaderError: unacceptable character #xfffe: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #xfffe: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #xfffe: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #xfffe: control characters are not allowed
+  '._1'                        ruamel-safe(1.2):wrong:float:0.1 | ruamel-rt(1.2):wrong:ScalarFloat:0.1 | npm-yaml(1.1):wrong:number:0.1
+  '._'                         ruamel-safe(1.2):error:ValueError: could not convert string to float: '.' | ruamel-rt(1.2):error:ValueError: could not convert string to float: '.' | npm-yaml(1.1):wrong:number:null
+  '1:30'                       PyYAML(1.1,pure):wrong:int:90 | PyYAML(1.1,libyaml C):wrong:int:90 | npm-yaml(1.1):wrong:number:90
+  '190:20:30'                  PyYAML(1.1,pure):wrong:int:685230 | PyYAML(1.1,libyaml C):wrong:int:685230 | npm-yaml(1.1):wrong:number:685230
+  '='                          PyYAML(1.1,pure):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20 | ruamel-safe(1.2):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20 | ruamel-rt(1.2):wrong:TaggedScalar:TaggedScalar(value='=', style=None, tag=Tag('tag:yaml.org,2002:valu | PyYAML(1.1,libyaml C):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20
+  '<<'                         PyYAML(1.1,pure):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20 | ruamel-safe(1.2):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20 | ruamel-rt(1.2):wrong:TaggedScalar:TaggedScalar(value='<<', style=None, tag=Tag('tag:yaml.org,2002:mer | PyYAML(1.1,libyaml C):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20
+  '2001-12-14t21:59:43.10-05:00' PyYAML(1.1,pure):wrong:datetime:datetime.datetime(2001, 12, 14, 21, 59, 43, 100000, tzinfo=datetime.tim | ruamel-safe(1.2):wrong:datetime:datetime.datetime(2001, 12, 14, 21, 59, 43, 100000, tzinfo=datetime.tim | ruamel-rt(1.2):wrong:TimeStamp:TimeStamp(2001, 12, 14, 21, 59, 43, 100000, tzinfo=datetime.timezone(d | PyYAML(1.1,libyaml C):wrong:datetime:datetime.datetime(2001, 12, 14, 21, 59, 43, 100000, tzinfo=datetime.tim | npm-yaml(1.1):wrong:object:"2001-12-15T02:59:43.100Z"
+  '2002-12-14'                 PyYAML(1.1,pure):wrong:date:datetime.date(2002, 12, 14) | ruamel-safe(1.2):wrong:date:datetime.date(2002, 12, 14) | ruamel-rt(1.2):wrong:date:datetime.date(2002, 12, 14) | PyYAML(1.1,libyaml C):wrong:date:datetime.date(2002, 12, 14) | npm-yaml(1.1):wrong:object:"2002-12-14T00:00:00.000Z"
+  '  \n  '                     npm-yaml(1.2):wrong:string:"" | npm-yaml(1.1):wrong:string:""
+  'nonchar\uffff'              PyYAML(1.1,pure):error:ReaderError: unacceptable character #xffff: special characters are not allowed | ruamel-safe(1.2):error:ReaderError: unacceptable character #xffff: special characters are not allowed | ruamel-rt(1.2):error:ReaderError: unacceptable character #xffff: special characters are not allowed | PyYAML(1.1,libyaml C):error:ReaderError: unacceptable character #xffff: control characters are not allowed
+===== serde_norway
+  '1_000'                      PyYAML(1.1,pure):wrong:int:1000 | ruamel-safe(1.2):wrong:int:1000 | ruamel-rt(1.2):wrong:ScalarInt:1000 | PyYAML(1.1,libyaml C):wrong:int:1000 | npm-yaml(1.1):wrong:number:1000
+  'y'                          npm-yaml(1.1):wrong:boolean:true
+  'n'                          npm-yaml(1.1):wrong:boolean:false
+  'Y'                          npm-yaml(1.1):wrong:boolean:true
+  'yes'                        PyYAML(1.1,pure):wrong:bool:True | PyYAML(1.1,libyaml C):wrong:bool:True | npm-yaml(1.1):wrong:boolean:true
+  'on'                         PyYAML(1.1,pure):wrong:bool:True | PyYAML(1.1,libyaml C):wrong:bool:True | npm-yaml(1.1):wrong:boolean:true
+  'off'                        PyYAML(1.1,pure):wrong:bool:False | PyYAML(1.1,libyaml C):wrong:bool:False | npm-yaml(1.1):wrong:boolean:false
+  '2024-01-01'                 PyYAML(1.1,pure):wrong:date:datetime.date(2024, 1, 1) | ruamel-safe(1.2):wrong:date:datetime.date(2024, 1, 1) | ruamel-rt(1.2):wrong:date:datetime.date(2024, 1, 1) | PyYAML(1.1,libyaml C):wrong:date:datetime.date(2024, 1, 1) | npm-yaml(1.1):wrong:object:"2024-01-01T00:00:00.000Z"
+  '12:30:00'                   PyYAML(1.1,pure):wrong:int:45000 | PyYAML(1.1,libyaml C):wrong:int:45000 | npm-yaml(1.1):wrong:number:45000
+  'ls\u2028name'               npm-yaml(1.2):wrong:string:"ls   name" | npm-yaml(1.1):wrong:string:"ls   name"
+  '.'                          npm-yaml(1.1):wrong:number:null
+  '._1'                        ruamel-safe(1.2):wrong:float:0.1 | ruamel-rt(1.2):wrong:ScalarFloat:0.1 | npm-yaml(1.1):wrong:number:0.1
+  '._'                         ruamel-safe(1.2):error:ValueError: could not convert string to float: '.' | ruamel-rt(1.2):error:ValueError: could not convert string to float: '.' | npm-yaml(1.1):wrong:number:null
+  '.1_0'                       PyYAML(1.1,pure):wrong:float:0.1 | ruamel-safe(1.2):wrong:float:0.1 | ruamel-rt(1.2):wrong:ScalarFloat:0.1 | PyYAML(1.1,libyaml C):wrong:float:0.1 | npm-yaml(1.1):wrong:number:0.1
+  '1:30'                       PyYAML(1.1,pure):wrong:int:90 | PyYAML(1.1,libyaml C):wrong:int:90 | npm-yaml(1.1):wrong:number:90
+  '190:20:30'                  PyYAML(1.1,pure):wrong:int:685230 | PyYAML(1.1,libyaml C):wrong:int:685230 | npm-yaml(1.1):wrong:number:685230
+  'No'                         PyYAML(1.1,pure):wrong:bool:False | PyYAML(1.1,libyaml C):wrong:bool:False | npm-yaml(1.1):wrong:boolean:false
+  'NO'                         PyYAML(1.1,pure):wrong:bool:False | PyYAML(1.1,libyaml C):wrong:bool:False | npm-yaml(1.1):wrong:boolean:false
+  'Off'                        PyYAML(1.1,pure):wrong:bool:False | PyYAML(1.1,libyaml C):wrong:bool:False | npm-yaml(1.1):wrong:boolean:false
+  'N'                          npm-yaml(1.1):wrong:boolean:false
+  '='                          PyYAML(1.1,pure):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20 | ruamel-safe(1.2):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20 | ruamel-rt(1.2):wrong:TaggedScalar:TaggedScalar(value='=', style=None, tag=Tag('tag:yaml.org,2002:valu | PyYAML(1.1,libyaml C):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20
+  '<<'                         PyYAML(1.1,pure):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20 | ruamel-safe(1.2):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20 | ruamel-rt(1.2):wrong:TaggedScalar:TaggedScalar(value='<<', style=None, tag=Tag('tag:yaml.org,2002:mer | PyYAML(1.1,libyaml C):error:ConstructorError: could not determine a constructor for the tag 'tag:yaml.org,20
+  '2001-12-14t21:59:43.10-05:00' PyYAML(1.1,pure):wrong:datetime:datetime.datetime(2001, 12, 14, 21, 59, 43, 100000, tzinfo=datetime.tim | ruamel-safe(1.2):wrong:datetime:datetime.datetime(2001, 12, 14, 21, 59, 43, 100000, tzinfo=datetime.tim | ruamel-rt(1.2):wrong:TimeStamp:TimeStamp(2001, 12, 14, 21, 59, 43, 100000, tzinfo=datetime.timezone(d | PyYAML(1.1,libyaml C):wrong:datetime:datetime.datetime(2001, 12, 14, 21, 59, 43, 100000, tzinfo=datetime.tim | npm-yaml(1.1):wrong:object:"2001-12-15T02:59:43.100Z"
+  '2002-12-14'                 PyYAML(1.1,pure):wrong:date:datetime.date(2002, 12, 14) | ruamel-safe(1.2):wrong:date:datetime.date(2002, 12, 14) | ruamel-rt(1.2):wrong:date:datetime.date(2002, 12, 14) | PyYAML(1.1,libyaml C):wrong:date:datetime.date(2002, 12, 14) | npm-yaml(1.1):wrong:object:"2002-12-14T00:00:00.000Z"
+  'ps\u2029name'               npm-yaml(1.2):wrong:string:"ps   name" | npm-yaml(1.1):wrong:string:"ps   name"
