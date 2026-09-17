@@ -5,7 +5,7 @@ title: "Address review: PR #83 — request model layer"
 kind: task
 status: closed
 priority: 1
-version: 14
+version: 15
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - review
@@ -25,8 +25,10 @@ child_order_hints:
   - is-01m2rndgdacy0ytwkf673ntcvs
   - is-01m2rndjnr893jbcsp3sy8r6ef
 created_at: 2026-09-17T21:47:11.525Z
-updated_at: 2026-09-17T23:46:49.404Z
+updated_at: 2026-09-17T23:46:52.901Z
 closed_at: 2026-09-17T23:46:49.404Z
 close_reason: "PR #83 review addressed and merged to main via stack merge 98379c76."
+duplicate_of: null
+resolution: null
 ---
 Senior review of PR #83 (layer 4), published at https://github.com/jlevy/fdu/pull/83#issuecomment-5721669598. Verdict: request changes. R1-R2 blockers (CI), R3 high, R4-R7 medium, R8-R12 low.
