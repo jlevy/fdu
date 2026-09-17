@@ -1455,12 +1455,87 @@ mod tests {
         }
     }
 
-    fn request_with(views: &[ViewSpec], selection: Selection, basis: Basis) -> Request {
-        Request {
-            basis,
-            query: Query { selection, views: views.to_vec(), ..Query::default() },
-            now: instant(),
+    /// The order `build` names axes in, when more than one of them is wrong.
+    ///
+    /// A contract, not an accident: every surface renders the first refusal and stops, so
+    /// the order decides which mistake a caller is told about, and one that drifted would
+    /// change what two doors say about the same command line. Pinned by fixing one axis at
+    /// a time and watching the next one speak -- content, views, the selection, the page
+    /// denominator, then scope, which is the order the doc comment publishes and the order
+    /// the command line reads its flags.
+    #[test]
+    fn build_names_a_bad_axis_in_the_order_it_publishes() {
+        let everything = RequestSpec {
+            scan_depth: Some("deep"),
+            analyze: Some("deep"),
+            read: ReadSpec {
+                views: Some("bogus"),
+                depth: Some("two"),
+                words_per_page: Some("0"),
+                ..ReadSpec::new()
+            },
+            ..RequestSpec::new(root())
+        };
+        let steps: [(RequestSpec<'_>, &str); 5] = [
+            (everything, "analyze"),
+            (RequestSpec { analyze: None, ..everything }, "view"),
+            (
+                RequestSpec {
+                    analyze: None,
+                    read: ReadSpec { views: None, ..everything.read },
+                    ..everything
+                },
+                "depth",
+            ),
+            (
+                RequestSpec {
+                    analyze: None,
+                    read: ReadSpec { views: None, depth: None, ..everything.read },
+                    ..everything
+                },
+                "words_per_page",
+            ),
+            (
+                RequestSpec {
+                    analyze: None,
+                    read: ReadSpec {
+                        views: None,
+                        depth: None,
+                        words_per_page: None,
+                        ..everything.read
+                    },
+                    ..everything
+                },
+                "max_depth",
+            ),
+        ];
+        for (spec, axis) in steps {
+            let refused = refusal(&spec, &AxisNames::FIELDS);
+            assert!(
+                refused.starts_with(&format!("invalid {axis} ")),
+                "expected {axis} to speak next, got {refused}"
+            );
         }
+        // And the last step is the only thing still wrong, so fixing it parses.
+        Request::build(
+            &RequestSpec {
+                scan_depth: None,
+                analyze: None,
+                read: ReadSpec::new(),
+                ..RequestSpec::new(root())
+            },
+            instant(),
+            &AxisNames::FIELDS,
+        )
+        .expect("nothing left to refuse");
+    }
+
+    fn request_with(views: &[ViewSpec], selection: Selection, basis: Basis) -> Request {
+        Request::new(
+            basis,
+            Query { selection, views: views.to_vec(), ..Query::default() },
+            instant(),
+        )
     }
 
     fn basis(content: AnalysisSet, read_controls: bool) -> Basis {
@@ -1705,6 +1780,43 @@ mod tests {
         plain
             .validate_delivery(&Delivery { cache: CachePolicy::Only, ..one_shot })
             .expect("a one-shot report is exactly what a snapshot answers");
+    }
+
+    /// The order the three watch rules speak in, when a request breaks more than one.
+    ///
+    /// The command line and the Python API both render the first refusal and stop, so this
+    /// decides which of three true statements a caller is told, and a rule moved within
+    /// `validate_delivery` would silently change that. Scope first, because it is a fact
+    /// about what a watcher can observe at all; then content, which is about what stays
+    /// current; then the cache policy, which is about the window before the watch started.
+    #[test]
+    fn the_watch_rules_speak_in_one_order() {
+        let cache_only_watch = Delivery {
+            cache: CachePolicy::Only,
+            cache_path: None,
+            accept_partial: false,
+            watch: Some(WatchDelivery { interval: Duration::from_secs(2) }),
+            analysis_workers: 0,
+        };
+        let everything = RequestSpec {
+            scan_depth: Some("2"),
+            analyze: Some("lines"),
+            ..RequestSpec::new(root())
+        };
+        let steps = [
+            (everything, RequestError::WatchScope),
+            (RequestSpec { scan_depth: None, ..everything }, RequestError::WatchContent),
+            (
+                RequestSpec { scan_depth: None, analyze: None, ..everything },
+                RequestError::WatchCacheOnly,
+            ),
+        ];
+        for (spec, expected) in steps {
+            assert_eq!(built(&spec).validate_delivery(&cache_only_watch), Err(expected));
+        }
+        built(&RequestSpec::new(root()))
+            .validate_delivery(&Delivery { cache: CachePolicy::Auto, ..cache_only_watch })
+            .expect("nothing left to refuse");
     }
 
     #[test]

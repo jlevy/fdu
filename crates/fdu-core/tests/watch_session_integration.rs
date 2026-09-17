@@ -8,10 +8,13 @@
 
 use std::fs;
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use fdu_core::content::{AnalysisRequest, AnalysisSet};
-use fdu_core::query::{Basis, Bound, Query, Request, Selection, ViewSpec, WatchDelivery};
+use fdu_core::query::{
+    AxisNames, Basis, Bound, Query, ReadSpec, Request, RequestSpec, Selection, ViewSpec,
+    WatchDelivery,
+};
 // The module's own `Delivery` is how a change reached this process; the request model's is
 // how an answer is carried out. Two different questions, so the import names the crate.
 use fdu_core::query::Delivery as RequestDelivery;
@@ -398,5 +401,55 @@ fn a_session_refuses_what_its_callers_delivery_cannot_carry() {
         ),
         "expected a watch-scope refusal, got {:?}",
         refused.err().map(|error| error.to_string())
+    );
+}
+
+/// A watch answers one request, so a relative time window is resolved once and never
+/// slides underneath it.
+///
+/// The claim `Session::new`'s doc makes: `now` is fixed when the request is built, so two
+/// repaints of one session answer one question. A window re-resolved per repaint would
+/// quietly drop entries out of `--modified-since 2h` as the session aged, which reads as
+/// the tree changing rather than as the question changing.
+#[test]
+fn a_watchs_time_window_is_fixed_when_its_request_is_built() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("a.txt"), b"one\n").expect("seed");
+    let config = OpenConfig { policy: CachePolicy::Off, ..OpenConfig::default() };
+    let (index, _report) = open(dir.path(), &config).expect("open");
+
+    let started = SystemTime::now();
+    let spec = RequestSpec {
+        read: ReadSpec { modified_since: Some("2h"), ..ReadSpec::new() },
+        ..RequestSpec::new(dir.path())
+    };
+    let request = Request::build(&spec, started, &AxisNames::FIELDS).expect("the spec parses");
+    let session =
+        Session::new(IndexHandle::new(index), request, &watching(&config), WatchConfig::default())
+            .expect("session");
+
+    let window = session.query().selection.modified.since.expect("a resolved lower bound");
+    assert_eq!(session.request().now, started, "the session keeps the instant it was built at");
+
+    // Two repaints, separated by a change the session applies.
+    let first = session.report(&session.live_provenance(SystemTime::now())).expect("report");
+    fs::write(dir.path().join("b.txt"), b"two\n").expect("write");
+    let second = session.report(&session.live_provenance(SystemTime::now())).expect("report");
+    assert!(!first.sections.is_empty() && !second.sections.is_empty());
+
+    assert_eq!(session.request().now, started, "a repaint does not re-read the clock");
+    assert_eq!(
+        session.query().selection.modified.since,
+        Some(window),
+        "the window a watch selects by is absolute"
+    );
+
+    // And it is the instant the request was built at, not one re-resolved since: the same
+    // spec built later names a later window, which is what the session must not do.
+    let later = Request::build(&spec, started + Duration::from_secs(60), &AxisNames::FIELDS)
+        .expect("the spec parses");
+    assert!(
+        later.query.selection.modified.since > Some(window),
+        "a window rebuilt a minute later must have moved, or this test proves nothing"
     );
 }
