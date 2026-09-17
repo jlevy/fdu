@@ -243,7 +243,7 @@ fn prepare_report_internal(
     // keeps the refusal independent of the delivery: the cache-only tier never scans and
     // the cold tier never loads, so a rule stated at either would hold for one of them.
     request.validate().map_err(Error::InvalidRequest)?;
-    let config = &OpenConfig::of(request, delivery);
+    let config = &OpenConfig::of(&request.basis, delivery);
     let query = &request.query;
     let root = request.basis.root.as_path();
     let scan_started_at = SystemTime::now();

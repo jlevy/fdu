@@ -655,17 +655,6 @@ fn build_basis(
     Basis::build(&spec, &AxisNames::FIELDS).map_err(|error| value_error(&error))
 }
 
-/// The open configuration a basis and its delivery spell, until the execution plan model
-/// takes it.
-fn open_config(basis: &Basis, delivery: &Delivery) -> OpenConfig {
-    OpenConfig {
-        scan: basis.scope.clone(),
-        cache_path: delivery.cache_path.clone(),
-        policy: delivery.cache,
-        analysis: AnalysisRequest { profile: basis.content, workers: delivery.analysis_workers },
-    }
-}
-
 fn append_analysis_error(
     errors: &mut Vec<ErrorDetail>,
     analysis: fdu_core::content::AnalysisReport,
@@ -1682,7 +1671,7 @@ fn open(
         analysis_workers,
         ..Delivery::default()
     };
-    let config = open_config(&basis, &delivery);
+    let config = OpenConfig::of(&basis, &delivery);
 
     let opened = py.detach(|| fdu_core::open(&root, &config));
     let (index, report) = opened.map_err(to_py_err)?;
@@ -1755,7 +1744,7 @@ fn scan(
     )?;
     // A bare scan consults no cache at all, so its delivery names none.
     let delivery = Delivery { cache: CachePolicy::Off, analysis_workers, ..Delivery::default() };
-    let config = open_config(&basis, &delivery);
+    let config = OpenConfig::of(&basis, &delivery);
     let scanned = py.detach(|| fdu_core::open(&root, &config));
     let (index, report) = scanned.map_err(to_py_err)?;
     let operation_complete = report.is_complete();

@@ -19,13 +19,10 @@ use clap::builder::styling::{AnsiColor, Style as AnsiStyle, Styles};
 use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, ValueEnum};
 
 use fdu_core::content::AnalysisSet;
-// The open configuration, the analyzer request, and the age grammar are the watch path's
-// alone now: everything else composes a request and a delivery and hands them to the
-// engine.
+// The open configuration and the age grammar are the watch path's alone now: everything
+// else composes a request and a delivery and hands them to the engine.
 #[cfg(feature = "watch")]
 use fdu_core::OpenConfig;
-#[cfg(feature = "watch")]
-use fdu_core::content::AnalysisRequest;
 use fdu_core::control::ControlCoverage;
 #[cfg(feature = "watch")]
 use fdu_core::query::parse_when;
@@ -644,15 +641,7 @@ impl Cli {
         request.validate_delivery(&delivery).map_err(|error| usage(&refused(&error)))?;
 
         #[cfg(feature = "watch")]
-        let config = OpenConfig {
-            scan: request.basis.scope.clone(),
-            cache_path: delivery.cache_path.clone(),
-            policy: delivery.cache,
-            analysis: AnalysisRequest {
-                profile: request.basis.content,
-                workers: delivery.analysis_workers,
-            },
-        };
+        let config = OpenConfig::of(&request.basis, &delivery);
 
         #[cfg(feature = "watch")]
         if self.watch {

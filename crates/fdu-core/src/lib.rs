@@ -165,21 +165,23 @@ pub struct OpenConfig {
 }
 
 impl OpenConfig {
-    /// Today's open configuration, composed from the request and the delivery that carry
-    /// it.
+    /// Today's open configuration, composed from the basis and the delivery that carry a
+    /// request.
     ///
     /// One direction of a temporary bridge, and the only place it is spliced: the
     /// execution plan model replaces `OpenConfig` with `Basis` and `Delivery`, and one
-    /// splice is one thing to delete rather than three. Scan workers ride in the request's
-    /// scope and content workers in the delivery, because that is where each waits until
-    /// one `Workers` takes both.
-    pub fn of(request: &query::Request, delivery: &query::Delivery) -> Self {
+    /// splice is one thing to delete rather than four. A basis rather than a whole
+    /// request, because opening a root is what a basis is for and no query has been named
+    /// yet on two of the routes that open one. Scan workers ride in the basis's scope and
+    /// content workers in the delivery, because that is where each waits until one
+    /// `Workers` takes both.
+    pub fn of(basis: &query::Basis, delivery: &query::Delivery) -> Self {
         Self {
-            scan: request.basis.scope.clone(),
+            scan: basis.scope.clone(),
             cache_path: delivery.cache_path.clone(),
             policy: delivery.cache,
             analysis: content::AnalysisRequest {
-                profile: request.basis.content,
+                profile: basis.content,
                 workers: delivery.analysis_workers,
             },
         }
