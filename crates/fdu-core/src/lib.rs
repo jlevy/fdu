@@ -500,6 +500,11 @@ pub(crate) fn open_for_report(
     collect_scan_diagnostics: bool,
 ) -> Result<(std::sync::Arc<Index>, OpenReport, PendingSave, Option<scan::ScanDiagnostics>)> {
     let root = root.canonicalize().map_err(|e| Error::io(root, e))?;
+    // Before the snapshot, not at the scan that may never happen: a scope this build cannot
+    // honour has no answer at any delivery, and checking it where the scan runs made
+    // `--cache only` report a snapshot miss for a request every other policy refuses --
+    // which failure a run named then depended on how it was delivered (`refusal-order`).
+    config.scan.validate()?;
     let policy = config.policy;
 
     // A snapshot for this root that could not serve, kept so a policy that cannot scan says

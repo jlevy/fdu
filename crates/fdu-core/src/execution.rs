@@ -259,6 +259,11 @@ fn prepare_report_internal(
     // has no answer at any cost, and the compact summary tier below never reaches a reader,
     // so a check made there would not cover this route at all.
     request.validate().map_err(Error::InvalidRequest)?;
+    // The scope a request names must be one this build can honour, whatever the delivery.
+    // It is checked here rather than only where a scan starts, because the compact summary
+    // tier and the cache-only tier each reach a different part of the engine and one of
+    // them never scans at all.
+    request.basis.scope.validate()?;
     let config = &open_config(request, delivery);
     let query = &request.query;
     let root = request.basis.root.as_path();
@@ -766,6 +771,50 @@ mod tests {
                 .expect("the index tier persisted");
             assert_eq!(saved.scope(), caller.scan.scope());
             assert_eq!(saved.controls().is_ok(), read_controls);
+        }
+    }
+
+    /// Which failure a run names must not depend on how it was delivered.
+    ///
+    /// A scope this build cannot honour is refused by every policy, including the one that
+    /// never scans: under `--cache only` the scan that would have refused it never runs, so
+    /// the run used to report a snapshot miss instead -- the same request naming two
+    /// different failures depending on its delivery, which the path-independence registry
+    /// records as `refusal-order` for `--one-filesystem` on Windows. `follow_symlinks` is
+    /// the same rule on every platform, so this test runs where the Windows case cannot.
+    #[test]
+    fn a_scope_this_build_cannot_honour_is_refused_before_any_snapshot_is_read() {
+        let root = tempfile::tempdir().expect("tempdir");
+        fs::write(root.path().join("file.txt"), b"contents").expect("file");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let cache_path = cache.path().join("cache.fdu");
+
+        // A usable snapshot exists, so a cache-only read of a scope this build supports
+        // answers from it.
+        let warm = config(CachePolicy::Auto, Some(cache_path.clone()));
+        let (_, pending, _) = prepared(root.path(), &warm, &summary_query()).expect("warm");
+        pending.join().expect("save");
+        let (_, pending, _) = prepared(
+            root.path(),
+            &config(CachePolicy::Only, Some(cache_path.clone())),
+            &summary_query(),
+        )
+        .expect("the snapshot answers a supported scope");
+        pending.join().expect("no save");
+
+        let unsupported = ScanConfig { follow_symlinks: true, ..ScanConfig::default() };
+        for policy in [CachePolicy::Only, CachePolicy::Off, CachePolicy::Auto] {
+            let asked = OpenConfig {
+                scan: unsupported.clone(),
+                ..config(policy, Some(cache_path.clone()))
+            };
+            assert!(
+                matches!(
+                    prepared(root.path(), &asked, &summary_query()),
+                    Err(Error::UnsupportedScanConfig(_))
+                ),
+                "{policy:?} must name the scope it cannot honour"
+            );
         }
     }
 
