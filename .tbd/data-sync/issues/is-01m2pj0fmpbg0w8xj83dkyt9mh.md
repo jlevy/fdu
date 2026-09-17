@@ -5,8 +5,8 @@ title: Evaluate standard Rust YAML emitters against a reusable fdu YAML utility
 kind: task
 status: closed
 priority: 1
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md
+version: 5
+spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - output
 dependencies:
@@ -14,7 +14,7 @@ dependencies:
     target: is-01m2pj0g6c5fswmdcbbzjhx0rx
 parent_id: is-01m2pj0f459s8ad1efzyn2qmbq
 created_at: 2026-09-17T02:09:26.675Z
-updated_at: 2026-09-17T02:11:49.370Z
+updated_at: 2026-09-17T02:57:33.423Z
 closed_at: 2026-09-17T02:11:49.369Z
 close_reason: "Evaluated: no standard Rust YAML emitter is conformant for YAML 1.1 and 1.2 readers; recommend an owned policy and streaming JSON/YAML sink (see notes)"
 resolution: null

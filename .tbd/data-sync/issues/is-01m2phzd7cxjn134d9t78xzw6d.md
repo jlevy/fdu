@@ -5,14 +5,15 @@ title: "Decide: Rust API extensibility before 0.1.0 (#[non_exhaustive] or docume
 kind: task
 status: open
 priority: 1
-version: 1
+version: 2
+spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - release
   - decision
 dependencies: []
 parent_id: is-01m2h6a9wd6f6xexfaw93whryr
 created_at: 2026-09-17T02:08:51.435Z
-updated_at: 2026-09-17T02:08:51.435Z
+updated_at: 2026-09-17T02:57:36.779Z
 ---
 Exhaustive public types that planned work would extend, each a breaking change within 0.1.x:
 opened-root `ReadProjection`, `ProjectionResult`, `ProjectionRefusal`, `LimitedProjection`, `IssueKind`,

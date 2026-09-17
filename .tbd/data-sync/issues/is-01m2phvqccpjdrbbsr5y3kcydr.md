@@ -5,16 +5,17 @@ title: "Content analysis answers depend on cache history: narrower --analyze ser
 kind: bug
 status: open
 priority: 0
-version: 2
+version: 4
+spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - release
   - content
 dependencies:
   - type: blocks
     target: is-01m2phzegm4b3scda7d1xq3gnm
-parent_id: is-01m2h6a9wd6f6xexfaw93whryr
+parent_id: is-01m2phzn814exmf4ty5vw6zha0
 created_at: 2026-09-17T02:06:50.763Z
-updated_at: 2026-09-17T02:08:52.755Z
+updated_at: 2026-09-17T02:57:32.502Z
 ---
 The same `--analyze` request gives different answers depending on which request warmed the content sidecar. Reproduced on the 0.1.0 release candidate (5f2d36d) through the CLI and the Python API.
 
@@ -28,3 +29,9 @@ Fix options for 0.1.0 (user decision pending):
 - Request-scoped projection now: carry the requested set to the report and project metrics, derived words, and metadata to it; Unsupported records never answer a set without `code`.
 
 Either way: a warm-versus-cold equivalence test over every analyzer-set pair (CLI and Python), and docs that state the chosen reuse rule (design principles, cache design, engine architecture, usage, README, CHANGELOG). Branch claude/release-e2e-fixes has the Unsupported slice and a test that exposed the wider case.
+
+## Notes
+
+2026-09-17: Not to be point-patched (maintainer). Resolved by the explicit core models plan: per-analyzer
+records and one definition per metric (this epic), the request model giving the reader the requested analyzers,
+and the path-independence test. The Unsupported-record rule on branch claude/release-e2e-fixes is superseded.

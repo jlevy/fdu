@@ -4,9 +4,9 @@ id: is-01m2pj0gs0cyxp178kz5kktpbb
 title: Shared adversarial YAML conformance corpus, tested with real parsers in CI
 kind: task
 status: open
-priority: 2
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md
+priority: 1
+version: 5
+spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - output
   - testing
@@ -15,7 +15,7 @@ dependencies:
     target: is-01m2pj0hxv9y019pxwhnvpgkx8
 parent_id: is-01m2pj0f459s8ad1efzyn2qmbq
 created_at: 2026-09-17T02:09:27.839Z
-updated_at: 2026-09-17T02:11:52.621Z
+updated_at: 2026-09-17T02:57:34.361Z
 ---
 Strings that must round-trip as strings: number forms in every base (0x10, 1_000, 0b101, 0o17, .inf,
 .NaN), YAML 1.1 booleans (y, n, on, off), sexagesimal (12:30:00), dates, indicators (: # - ? * & ! % @ `),

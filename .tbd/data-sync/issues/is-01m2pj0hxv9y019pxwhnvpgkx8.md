@@ -5,15 +5,15 @@ title: "frontmatter-format: YAML 1.1 readers misread plain scalars and NEL folds
 kind: bug
 status: open
 priority: 2
-version: 2
-spec_path: docs/project/specs/active/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md
+version: 3
+spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - output
   - external
 dependencies: []
 parent_id: is-01m2pj0f459s8ad1efzyn2qmbq
 created_at: 2026-09-17T02:09:29.017Z
-updated_at: 2026-09-17T02:11:51.815Z
+updated_at: 2026-09-17T02:57:33.423Z
 ---
 In jlevy/frontmatter-format (attic/frontmatter-format), ruamel.yaml (YAML 1.2) dumps `on` and `12:30:00`
 plain; PyYAML (YAML 1.1) reads them back as True and 45000. A string containing NEL (U+0085) is emitted

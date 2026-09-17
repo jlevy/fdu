@@ -4,15 +4,16 @@ id: is-01m2pj0g6c5fswmdcbbzjhx0rx
 title: One ordered value model rendered by the JSON and YAML serializers
 kind: task
 status: open
-priority: 2
-version: 2
-spec_path: docs/project/specs/active/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md
+priority: 0
+version: 4
+spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - output
+  - release
 dependencies: []
 parent_id: is-01m2pj0f459s8ad1efzyn2qmbq
 created_at: 2026-09-17T02:09:27.242Z
-updated_at: 2026-09-17T02:11:50.205Z
+updated_at: 2026-09-17T02:57:34.062Z
 ---
 Build each machine document once and render it through generic serializers, replacing the parallel
 per-field writers for reports, watch changes and cache status. Byte-stable goldens for JSON; YAML shape

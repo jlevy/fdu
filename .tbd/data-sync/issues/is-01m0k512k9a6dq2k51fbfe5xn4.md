@@ -5,14 +5,14 @@ title: "YAML output contract: metric-row shape, forbidden characters, number-lik
 kind: bug
 status: open
 priority: 0
-version: 6
-spec_path: docs/project/specs/active/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md
+version: 7
+spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - release
 dependencies: []
-parent_id: is-01m2h6a9wd6f6xexfaw93whryr
+parent_id: is-01m2pj0f459s8ad1efzyn2qmbq
 created_at: 2026-08-21T21:53:27.657Z
-updated_at: 2026-09-17T02:11:50.993Z
+updated_at: 2026-09-17T02:57:34.929Z
 ---
 A byte-stable golden proves the output has not *changed*. It does not prove the output is
 *valid*: a consistently malformed document passes forever, and the serializers here are

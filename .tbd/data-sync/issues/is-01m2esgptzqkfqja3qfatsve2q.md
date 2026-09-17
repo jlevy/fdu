@@ -4,15 +4,16 @@ id: is-01m2esgptzqkfqja3qfatsve2q
 title: Key snapshots by scan scope so report, open, and --watch snapshots stop evicting each other
 kind: feature
 status: open
-priority: 2
-version: 5
-spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
+priority: 0
+version: 6
+spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - stack-followup
+  - release
 dependencies: []
-parent_id: is-01m18r51dyvcp3bzw8yca45ph7
+parent_id: is-01m2pmram44dgp78vm6xq4w7k7
 created_at: 2026-09-14T01:46:42.910Z
-updated_at: 2026-09-15T22:18:19.644Z
+updated_at: 2026-09-17T02:57:25.986Z
 ---
 One cause behind two stack follow-ups: PR #51 review COMMIT-3's cache split (fdu-etfj) and PR #52 review BUILD-3 (fdu-ughl, closed as documented). The fixer's recommended fix is to key snapshots by scan scope.
 

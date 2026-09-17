@@ -1,23 +1,28 @@
 ---
 type: is
 id: is-01m2phzn814exmf4ty5vw6zha0
-title: "Content analysis answers are a function of the request: per-analyzer records and request-scoped reports"
+title: "Content tier under the stored-state model: per-analyzer records, one definition per metric"
 kind: epic
 status: open
-priority: 1
-version: 5
-spec_path: docs/project/specs/done/plan-2026-08-12-fdu-file-content-metrics.md
+priority: 0
+version: 8
+spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - content
   - design
-dependencies: []
+  - release
+dependencies:
+  - type: blocks
+    target: is-01m2pmrn6ka9kt7f4kcjcmvn8c
+parent_id: is-01m2pmr9aftb3vzfyjyanndny3
 child_order_hints:
   - is-01kzyqkgbvy3cmmc3qx9zwfnzp
   - is-01kzyp8vpx1852y9sjnb7k6w2g
   - is-01m2pj058tjrqdmdexgt0r88q6
   - is-01m2pj0eknqard0k8za13xygp8
+  - is-01m2phvqccpjdrbbsr5y3kcydr
 created_at: 2026-09-17T02:08:59.648Z
-updated_at: 2026-09-17T02:09:25.618Z
+updated_at: 2026-09-17T02:57:35.954Z
 ---
 The design problem behind fdu-gija. The analysis request is index state, set when a tree is opened,
 while every other report dimension (views, selection, size, ignored) is a Query parameter projected

@@ -5,13 +5,14 @@ title: Implement or explicitly defer content analysis in watch mode
 kind: bug
 status: open
 priority: 0
-version: 4
+version: 5
+spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - release
 dependencies: []
-parent_id: is-01m2h6a9wd6f6xexfaw93whryr
+parent_id: is-01m2pmrcrmjrm62bm1x3mxwgvm
 created_at: 2026-08-13T23:14:08.460Z
-updated_at: 2026-09-17T02:08:56.103Z
+updated_at: 2026-09-17T02:57:28.107Z
 ---
 The CLI now explicitly rejects enabled content analysis with --watch, the Python watch feed remains metadata-only, and user-facing docs call content analysis one-shot. Implement incremental content reanalysis on metadata deltas before claiming full mode composability.
 
