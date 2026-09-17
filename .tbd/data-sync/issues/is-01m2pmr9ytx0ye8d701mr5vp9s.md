@@ -3,9 +3,9 @@ type: is
 id: is-01m2pmr9ytx0ye8d701mr5vp9s
 title: "Phase 1 item 3: request model with one defaults table, grammars, and validation"
 kind: epic
-status: open
+status: closed
 priority: 0
-version: 20
+version: 21
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - design
@@ -22,7 +22,9 @@ child_order_hints:
   - is-01m2pye5cp0wgy9w2acq4f5v2z
   - is-01m2rnd0960gme4anbj6wq8m71
 created_at: 2026-09-17T02:57:24.441Z
-updated_at: 2026-09-17T21:47:11.525Z
+updated_at: 2026-09-17T23:46:48.771Z
+closed_at: 2026-09-17T23:46:48.771Z
+close_reason: "Phase 1 item 3 (request model) shipped in PR #83 and landed on main via stack merge 98379c76."
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 3: The Request Model", moved here when the item became beads (PR #78 at `e52383d4`; locators verified at `5f2d36d`). The commits are this bead's children, P1.3.1 to P1.3.6; their blockers carry the ordering, so this bead only groups them and closes when they do.
 

@@ -3,21 +3,23 @@ type: is
 id: is-01m2pye0422qnb6171mmxabt4x
 title: "P1.1.2: Add the known-violation registry and --record"
 kind: task
-status: in_progress
+status: closed
 priority: 0
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
-delegate: claude-code@spud10
 labels:
   - core-models
 dependencies:
   - type: blocks
     target: is-01m2pye0e9mmthdmnttkmbfpgq
 parent_id: is-01m2pmr9n3mq4nb2r1pc328qpz
+created_at: 2026-09-17T05:46:32.449Z
+updated_at: 2026-09-17T23:46:47.259Z
+closed_at: 2026-09-17T23:46:47.259Z
+close_reason: "Shipped in PR #79 and landed on main via stack merge 98379c76."
+delegate: claude-code@spud10
 hold: null
 hold_until: null
-created_at: 2026-09-17T05:46:32.449Z
-updated_at: 2026-09-17T06:44:15.540Z
 started_at: 2026-09-17T06:17:16.970Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 1: The Path-Independence Harness", commit 2. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.

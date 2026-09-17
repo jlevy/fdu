@@ -3,11 +3,10 @@ type: is
 id: is-01m2pye4c1h1kfcnsq59yfsnbt
 title: "P1.3.3: report, report_in, and prepare_report* take &Request; delete the old validators"
 kind: task
-status: in_progress
+status: closed
 priority: 0
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
-delegate: claude-code@spud10
 labels:
   - core-models
 dependencies:
@@ -20,10 +19,13 @@ dependencies:
   - type: blocks
     target: is-01m2pye8ptnr6019rcb15g4w69
 parent_id: is-01m2pmr9ytx0ye8d701mr5vp9s
+created_at: 2026-09-17T05:46:36.800Z
+updated_at: 2026-09-17T23:46:48.477Z
+closed_at: 2026-09-17T23:46:48.477Z
+close_reason: "Shipped in PR #83 and landed on main via stack merge 98379c76."
+delegate: claude-code@spud10
 hold: null
 hold_until: null
-created_at: 2026-09-17T05:46:36.800Z
-updated_at: 2026-09-17T16:27:30.487Z
 started_at: 2026-09-17T16:27:30.484Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 3: The Request Model", commit 3. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.

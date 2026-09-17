@@ -3,9 +3,9 @@ type: is
 id: is-01m2pmram44dgp78vm6xq4w7k7
 title: "Phase 1 item 2: store identity, equality serve, and per-tier writes"
 kind: epic
-status: open
+status: closed
 priority: 0
-version: 19
+version: 20
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - design
@@ -25,7 +25,9 @@ child_order_hints:
   - is-01m2qz74mbthxxy2eky1qgb7eh
   - is-01m2rgb3631yn1waftyaj31wca
 created_at: 2026-09-17T02:57:25.124Z
-updated_at: 2026-09-17T20:18:46.072Z
+updated_at: 2026-09-17T23:46:48.126Z
+closed_at: 2026-09-17T23:46:48.126Z
+close_reason: "Phase 1 item 2 (store identity, equality serve, per-tier writes) shipped in PRs #81/#82 and landed on main via stack merge 98379c76."
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 2: Store Identity, Equality Serve, and Per-Tier Writes", moved here when the item became beads (PR #78 at `e52383d4`; locators verified at `5f2d36d`). The commits are this bead's children, P1.2.1 to P1.2.6; their blockers carry the ordering, so this bead only groups them and closes when they do.
 

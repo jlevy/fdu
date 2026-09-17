@@ -3,9 +3,9 @@ type: is
 id: is-01m2pmr9n3mq4nb2r1pc328qpz
 title: "Phase 1 item 1: path-independence harness with a known-violation registry"
 kind: epic
-status: open
+status: closed
 priority: 0
-version: 14
+version: 15
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - testing
@@ -22,7 +22,9 @@ child_order_hints:
   - is-01m2pye1dfapb52r07ztah5nap
   - is-01m2q2zbmwp3dd406y9dwbm3q5
 created_at: 2026-09-17T02:57:24.130Z
-updated_at: 2026-09-17T07:05:55.611Z
+updated_at: 2026-09-17T23:46:47.556Z
+closed_at: 2026-09-17T23:46:47.556Z
+close_reason: "Phase 1 item 1 (path-independence harness) shipped in PR #79 and landed on main via stack merge 98379c76."
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 1: The Path-Independence Harness", moved here when the item became beads (PR #78 at `e52383d4`; locators verified at `5f2d36d`). The commits are this bead's children, P1.1.1 to P1.1.6; their blockers carry the ordering, so this bead only groups them and closes when they do.
 

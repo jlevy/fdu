@@ -3,21 +3,23 @@ type: is
 id: is-01m2pye3bwkv6049gkcyh3rrcp
 title: "P1.2.6: Cache status carries tier identities (fdu.cache/2), with bindings, goldens, and docs"
 kind: task
-status: in_progress
+status: closed
 priority: 0
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
-delegate: claude-code@spud10
 labels:
   - core-models
 dependencies:
   - type: blocks
     target: is-01m2pyeb3yz78d3d94dv78dv4g
 parent_id: is-01m2pmram44dgp78vm6xq4w7k7
+created_at: 2026-09-17T05:46:35.771Z
+updated_at: 2026-09-17T23:46:47.860Z
+closed_at: 2026-09-17T23:46:47.860Z
+close_reason: "Shipped in PRs #81/#82 and landed on main via stack merge 98379c76."
+delegate: claude-code@spud10
 hold: null
 hold_until: null
-created_at: 2026-09-17T05:46:35.771Z
-updated_at: 2026-09-17T16:27:30.036Z
 started_at: 2026-09-17T15:02:01.502Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 2: Store Identity, Equality Serve, and Per-Tier Writes", commit 6. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
