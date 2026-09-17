@@ -5,6 +5,19 @@ proving an answer current depends on which question was asked.
 
 This is a design reference, not a tutorial; `fdu --help` is the usage contract.
 
+Two design principles govern this layer.
+[Model Every Key Concept Explicitly, in One Place](../architecture/fdu-design-principles.md#model-every-key-concept-explicitly-in-one-place)
+asks that each tier’s identity, its per-item validity rule, and the requests it may
+serve be stated once rather than coded into every path that reads or writes it.
+[Caching Improves Performance, Never Semantics](../architecture/fdu-design-principles.md#caching-improves-performance-never-semantics)
+follows from it: snapshots, content sidecars, the summary-reducer tier, and retained
+indexes exist to make answers cheaper, and a cache hit, miss, eviction, cache policy, or
+execution path may change only how fast an answer arrives and what its provenance fields
+report, never what the answer says.
+The code does not meet that bar everywhere; [Known Gaps](#known-gaps) lists where, and
+[the explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
+tracks the work.
+
 ## Why a Cache Exists at All
 
 A filesystem tells you almost nothing about what changed.
@@ -35,17 +48,19 @@ The file also records the scan scope it was built under.
 A snapshot whose scope cannot serve the request is a miss as well, and under a
 write-permitting policy the next complete indexed scan replaces it.
 The scope is the depth, symlink, filesystem-boundary, hidden-entry, and special-object
-settings, the type-rules and reducer fingerprints, whether `.gitignore` was observed,
-and, if it was, the budget and line limit.
+settings, the type-rules fingerprint, a reducer-set fingerprint that is a constant
+today, whether `.gitignore` was observed, and, if it was, the budget and line limit.
 A request that returns the index or reconciles it against the tree is served only by a
 snapshot taken under exactly its scope.
-Alternating `--no-gitignore` with a default run, or changing either limit, finds no
-usable snapshot and, under a write-permitting policy, replaces the root’s one snapshot
-each time the run retains an index (`fdu-w3l5` tracks keying snapshots by scope).
-A `--no-gitignore` summary answered by the transient tier, described below, retains
-none, so it replaces nothing.
-The one exception is a `--cache only` report that turns observation off, which answers
-from a default snapshot’s all-entry facts.
+The file name is keyed by root alone, so alternating a default run with
+`--no-gitignore`, another `.gitignore` limit, `--scan-depth`, or `--one-filesystem`
+finds no usable snapshot and, under a write-permitting policy, replaces the root’s one
+snapshot each time the run retains an index (`fdu-w3l5` tracks keying snapshots by
+scope). A `--no-gitignore` summary answered by the transient tier, described below,
+retains none, so it replaces nothing.
+The one exception is a one-shot `--cache only` report that turns observation off, which
+answers from a default snapshot’s all-entry facts and retags the report to its own
+scope. `open` with the same options refuses that snapshot.
 
 Three rules keep it honest:
 
@@ -146,18 +161,22 @@ An unfiltered `--view summary` under `--no-gitignore` is answered by the transie
 which retains no index and writes no snapshot; the default summary reads `.gitignore` to
 report its ignored share, which needs the index, so it does write one.
 For indexed reports, a complete scan and a write-permitting cache policy are both
-required. A one-shot report under `auto` or `read-only` reads the snapshot only when
-content analysis could reuse its sidecar: revalidation stats every entry regardless, so
-for a metadata query loading the snapshot is purely additive cost.
+required, and [the policy axis](#the-policy-axis) lists which paths read and write.
+A one-shot metadata report skips the read because revalidation stats every entry
+regardless, so loading the snapshot is purely additive cost.
 
 ## Layer Two: Derived Content Data
 
 Content-derived metrics — line counts, word counts, hashes, and future plugin analyzers
 — do **not** belong in the core snapshot.
-They live in a separately checksummed `.content` sidecar recording the type-rule
-fingerprint, semantic options, and ordered analyzer IDs and versions.
-Each sparse file record also carries size, mtime, ctime, and inode, so a reconciled
-metadata change rejects only the stale record.
+They live in a separately checksummed sidecar beside the snapshot, `<snapshot>.content`,
+recording the root, the stored analyzer set, the type-rule fingerprint, an options
+fingerprint, and ordered analyzer IDs and versions.
+It records no scan scope and no engine fingerprint, and it holds one analyzer set per
+root. Each sparse file record carries its classification and a fingerprint of size,
+mtime, ctime, inode, and device, so a reconciled metadata change rejects only the stale
+record. In memory a record also keeps the analyzer set it was produced under, and a save
+keeps only records whose set equals the stored one.
 The current sidecar format is version 4; an absent, corrupt, oversized, foreign, or
 version-mismatched sidecar is a clean analyzer-cache miss and never invalidates the core
 snapshot.
@@ -170,19 +189,24 @@ Keeping them separate from metadata remains load-bearing rather than tidy:
   An analyzer’s output can be far larger than the tree’s metadata, and paying for it on
   every open would penalize the common query.
 - Content-sidecar invalidation never touches tree truth.
-  Compatibility is set containment: a sidecar produced by a wider analyzer set can
-  answer any narrower request whose analyzer versions and semantic options agree.
-  A narrower sidecar cannot invent a wider result, and serving a narrower request
-  preserves the wider stored set rather than replacing it.
-  An incompatible analyzer version or semantic option is a clean content-cache miss and
-  never invalidates metadata sizes.
+  A sidecar is usable when its format version and root match, its type-rule fingerprint
+  equals the registry in use, and its stored analyzer set contains the requested one
+  (`ContentProvenance::satisfies`). The options fingerprint and analyzer versions are
+  recorded but not compared; both are derived from the analyzer set today, so a change
+  to an analyzer’s output invalidates stored records only through a sidecar
+  format-version bump.
+  A narrower sidecar cannot invent a wider result, and a narrower request leaves the
+  wider stored set in place.
+  Containment is not projection: a report reads the stored records as they are, so a
+  narrower request served from a wider sidecar reports the wider set’s metrics and
+  label. A mismatch is a clean content-cache miss and never invalidates metadata sizes.
 - The layer is loaded only for an explicitly requested analysis profile, bounded before
   allocation, and removed through the same cache lifecycle as its recognized snapshot.
   A metadata-only run never opens it and never pays for content structures.
 
 The payback is largest here.
 Re-deriving content over a large repository is minutes; re-deriving only what changed is
-seconds, and unchanged files are never re-read.
+seconds, and an unchanged file whose record the sidecar holds is not re-read.
 
 ## Verification Cost Follows the Question
 
@@ -219,7 +243,11 @@ changes verification cost by integer factors while staying sound.
 
 ## Fingerprints, and the Race They Have to Survive
 
-An entry is unchanged when size, mtime, ctime, and inode all match.
+A metadata entry is unchanged when every stored attribute matches: size, allocated
+bytes, mtime, ctime, inode, and device.
+A content record is current when its five-field fingerprint matches: the same attributes
+without allocated bytes, because a filesystem can repack a file without changing its
+contents.
 
 mtime alone is not enough: it is settable by userspace, and some tools restore it after
 modifying a file. ctime is kernel-controlled and catches that.
@@ -241,19 +269,39 @@ belongs.
 
 | Policy | Reads snapshot | Touches filesystem | Writes snapshot |
 | --- | --- | --- | --- |
-| `auto` (default) | when the execution plan benefits | full scan or full revalidation | complete indexed scans |
+| `auto` (default) | per path, below | full scan or full revalidation | per path, below |
 | `refresh` | no | full scan | complete indexed scans |
-| `read-only` | when the execution plan benefits | full scan or full revalidation | never |
-| `only` | yes | never | never |
+| `read-only` | per path, below | full scan or full revalidation | never |
+| `only` | yes | never, except under `--watch` | never |
 | `off` | no | full scan | never |
+
+What a policy reads and writes also depends on the path that answers:
+
+- **One-shot report.** Under `auto` and `read-only` it reads the snapshot only when
+  content analysis is requested, so a metadata-only report is a cold scan, and under
+  `auto` it rewrites the snapshot after every complete scan.
+  The summary-reducer tier writes nothing, so `--view summary --no-gitignore` under
+  `auto` never leaves a snapshot.
+- **`open` and the first answer of `--watch`.** Both always read a usable snapshot and
+  reconcile it. A warm open writes only when reconciliation changed something; a cold
+  open writes after a complete scan.
+- **Live updates.** Under a write-permitting policy, the command line’s `--watch` saves
+  a throttled snapshot whenever the index is fresh.
+  Python `Index.refresh` and `Index.watch` never write.
+- **Content sidecar.** Written after a complete cold scan with analysis, and after a
+  warm open whose analysis applied a record or found a stale one.
+  Under `refresh` no sidecar is read, so a narrower analyzer set replaces a wider one.
 
 `only` is the one tier that can be stale, and it says so: its report carries
 `source: cache_only` and `freshness: stale`. It fails outright when no usable snapshot
 exists rather than quietly scanning, because a fast path that is sometimes a full walk —
 with nothing in the output to say which happened — is worse than no fast path.
+`--watch --cache only` is accepted: its first answer comes from the snapshot, and it
+then verifies and applies live filesystem events.
 
-Every report carries `source`, `freshness`, `complete`, and `errors` in every format, so
-no policy can silently serve old or partial data as current.
+Every machine-format report carries `source`, `freshness`, `complete`, and `errors`.
+Text output names none of them; a partial text run prints its errors as warnings on
+standard error.
 
 [`plan_report`](../../../crates/fdu-core/src/execution.rs) and
 [`open_for_report`](../../../crates/fdu-core/src/lib.rs) implement these policies.
@@ -261,7 +309,53 @@ The transient summary path and snapshot-read bypass mean that `--cache auto` doe
 promise a reusable baseline after an arbitrary command.
 `--allow-partial` changes exit acceptance; it does not make a partial scan cacheable.
 
-## What Is Not Built Yet
+## Future Considerations
+
+### Known Gaps
+
+Each item is a way the present code falls short of
+[Caching Improves Performance, Never Semantics](../architecture/fdu-design-principles.md#caching-improves-performance-never-semantics).
+[The explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
+tracks them.
+
+- **Content containment is not projection.** A narrower request served from a wider
+  sidecar answers with the stored records and label: `--analyze lines` after
+  `--analyze all` reports different `physical_lines`, `document_words`, share metric,
+  and `analysis.analyze` than a cold `--analyze lines`.
+- **Mixed records.** A file a narrower request analyzes inside a wider tier gets a
+  record under the narrower set.
+  Reports aggregate each record by its own set, so totals can match neither cold answer,
+  and the save drops those records, so each later run reads the files again.
+- **The sidecar’s identity is incomplete.** Analyzer versions and options are not
+  compared. With no engine fingerprint, a sidecar survives the crate upgrade that
+  invalidates its snapshot; with no scope, one sidecar serves every scope for its root;
+  and with one analyzer set per root, `--cache refresh` with a narrower set discards a
+  wider one.
+- **Snapshots are keyed by root, not scope.** A request in another scope replaces the
+  default snapshot (`fdu-w3l5`).
+- **The one projection exists on one path.** A one-shot cache-only report may answer a
+  `.gitignore`-off request from a controls-on snapshot; `open` refuses the same request.
+- **Policies mean different things per path.** `read-only` revalidates for `open` but
+  behaves as `off` for a one-shot metadata report, and `auto` reads for `open` but not
+  for that report. Write rules differ by path as listed above, so whether a later
+  `--cache only` succeeds depends on which command ran last.
+- **Live provenance is asserted, not derived.** Watch repaints report
+  `source: warm_revalidate`, `complete: true`, and no errors whatever the index holds,
+  including a partial or cache-only one.
+  A Python `Index.watch()` over an analyzed index drops changed files’ content records
+  without re-analysis and still reports a complete answer.
+- **A type-rules mismatch is silent.** A snapshot taken under another type registry
+  parses as absent, so a `--cache only` failure cannot name the registry as the cause.
+
+### Open Questions
+
+- Should a wider stored analyzer set answer a narrower request by projection, or should
+  content compatibility be equality until a path-independence test proves a projection?
+- Can one content sidecar soundly serve every scope for its root, given that its metrics
+  depend on file bytes and type rules, or should it carry the snapshot’s scope and
+  engine fingerprint?
+
+### Potential Improvements
 
 - **The block snapshot format.** Today’s flat image is read and rebuilt in full.
   Persisted aggregates and indexed blocks could make bounded summary queries avoid

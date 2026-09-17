@@ -89,6 +89,23 @@ The harness asserts that every other golden participates.
 It never relies on a remembered session count, which would become stale as the corpus
 grows.
 
+The shim prints through `Report.render`, which calls the same Rust renderer the command
+line does. Parity therefore proves that the Python API builds the same request and takes
+the same path as the command line.
+It does not compare the native dict or the Python models with the rendered formats, and
+it does not compare a warm answer with a cold one.
+
+Parity checks agreement after the fact.
+[Model Every Key Concept Explicitly, in One Place](fdu-design-principles.md#model-every-key-concept-explicitly-in-one-place)
+asks for it by construction: one request model and one answer shape in the engine, which
+each surface parses into and serializes from.
+Today each surface assembles its own request over the engine’s value grammars —
+`scan_config`, `parse_query`, and `parse_analysis` in `cli.rs`, and `build_query_at` in
+`fdu-py` — and several writers serialize a `Report` independently.
+[Known Gaps](#known-gaps) lists where they differ, and
+[the explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
+tracks the work.
+
 Differences land in `tests/parity/deviations-python.diff`, committed and reviewed like
 any golden. Each is matched against a named class in `scripts/parity-classes.mjs`, and
 **a difference matching none fails the run**.
@@ -146,15 +163,23 @@ surface emits the same string.
 
 | Schema | Document | Constant |
 | --- | --- | --- |
-| `fdu.report/5` | A report, one-shot or each one a watch run prints, with no content analysis and no metric summary | `REPORT_SCHEMA` |
-| `fdu.report/6` | A report that ran content analysis or has a `types`, `families`, `languages`, or `documents` section | `CONTENT_REPORT_SCHEMA` |
+| `fdu.report/5` | A report, one-shot or each one a watch run prints, over an index with no content tier and with no metric section | `REPORT_SCHEMA` |
+| `fdu.report/6` | A report over an index that holds a content tier, or with a `types`, `families`, `languages`, or `documents` section | `CONTENT_REPORT_SCHEMA` |
 | `fdu.stream/1` | A watch run’s `change` record, with `op` of `upsert`, `remove`, or `invalidate`: one per applied change under the `files` view, and every invalidation | `STREAM_SCHEMA` |
 | `fdu.cache/1` | Cache status, a fact about the cache directory rather than about a tree | `CACHE_SCHEMA` |
 
+The report version follows the content tier the index holds, not the request, so a
+Python `Index` opened with analysis emits `fdu.report/6` even for a tree view.
 The three families version independently, so a report change never bumps the stream or
 cache-status schema, or the reverse.
-No document yet states each envelope field by field (`fdu-c5v1`); until one does, the
-renderers in `report_format.rs` and the goldens under `tests/golden/` are the reference.
+
+One `Report` reaches callers through six writers: text, JSON, and YAML in
+`report_format.rs`; JSON Lines, which collapses the JSON fragments onto one line by
+string replacement; the native dict in `fdu-py`; and the Python models, parsed from the
+JSON rendering. Change records and cache status have writers of their own.
+No document yet states each envelope field by field (`fdu-c5v1`), so nothing holds the
+writers to one shape; until one does, the renderers in `report_format.rs` and the
+goldens under `tests/golden/` are the reference.
 
 ## Interactive Client Boundary
 
@@ -189,6 +214,31 @@ client has proven it.
 
 ## Future Considerations
 
+### Known Gaps
+
+Each item is a way the surfaces fall short of
+[Model Every Key Concept Explicitly, in One Place](fdu-design-principles.md#model-every-key-concept-explicitly-in-one-place)
+or
+[Caching Improves Performance, Never Semantics](fdu-design-principles.md#caching-improves-performance-never-semantics);
+[the explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
+tracks them. Engine-side gaps are in
+[the engine architecture](fdu-engine-architecture.md#known-gaps).
+
+- **Writers disagree.** YAML flattens metric rows that JSON nests under `metrics`, and
+  omits `root_raw` and `path_raw`. The native dict follows YAML rather than JSON and
+  omits a tree node’s `kind`. JSON Lines’ `collapse` rewrites string content, so the
+  path `a [ b/f { g }.txt` is emitted as `a [b/f {g}.txt`. `--watch --format yaml` emits
+  JSON change records, and text output carries no source or freshness label.
+- **Defaults differ by surface.** The Rust `Selection` answers in apparent bytes while
+  the command line and Python default to allocated bytes.
+  A watch defaults to the tree view on the command line and to the files view in
+  Python’s `Index.watch` and `WatchOptions`.
+- **Validation is repeated rather than owned.** `Query::validate_controls` is called at
+  seven sites: the command line, three in `fdu-py`, the one-shot executor, the watch
+  session, and `query::report` itself.
+  `Query::validate_analysis` runs only in the command line and `fdu-py`, so an engine
+  caller or an opened-root read can request a `documents` view with no analysis.
+
 ### Open Questions
 
 - Which opened-lifecycle capabilities should eventually receive an explicit CLI
@@ -200,6 +250,10 @@ client has proven it.
 
 ### Potential Improvements
 
+- Hold every writer to one field-level schema, and compare the native dict and Python
+  models with the rendered formats, so writer agreement is tested rather than assumed.
+- Add warm-history replays to parity, so a golden also checks that a cached answer
+  equals the cold one.
 - Generalize the parity runner to register another public binding without copying the
   golden corpus or expected output.
 - Reduce deviation classes whenever public types can carry the missing information

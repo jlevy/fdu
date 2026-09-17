@@ -115,11 +115,23 @@ Detached cold scans may use a private builder that shares admission, classificat
 reducer rules and returns an ordinary `Index`. Subsequent public mutations use the exact
 reducer without a separate engine or a caller-asserted trust flag.
 
-One-shot execution may retain less state only when the complete request proves that no
-cache, later query, live lifecycle, content analysis, second view, or ignore
-classification can consume the hierarchy.
+One-shot execution retains less state only when the request is one unfiltered summary
+with no content analysis and no ignore classification, under a cache policy that neither
+answers from the snapshot nor explicitly rewrites it.
 That derived-report optimization must produce the same `Report` contract; it is not a
 second engine or a user-selectable fast mode.
+It writes no snapshot, so a later cache-only read finds none.
+
+#### Retained state changes cost, never answers
+
+Retained and cached state exists to make answers cheaper: the index a lifecycle keeps,
+the metadata snapshot, the content sidecar, and the summary-reducer tier that retains
+nothing at all. Under
+[Caching Improves Performance, Never Semantics](fdu-design-principles.md#caching-improves-performance-never-semantics),
+a cache hit, miss, eviction, cache policy, or execution path may change how fast an
+answer arrives and what its provenance fields report, never what the answer says.
+Metadata-only requests meet that today; content analysis, live repaints, and several
+provenance fields do not ([Known Gaps](#known-gaps)).
 
 #### One opened root has one authority
 
@@ -211,6 +223,24 @@ not choose internal storage or mutation strategies.
 Keep implementation choices private until a second backend demonstrates a boundary that
 needs an interface.
 
+### Core Models
+
+[Model Every Key Concept Explicitly, in One Place](fdu-design-principles.md#model-every-key-concept-explicitly-in-one-place)
+asks that what a request is, and how it is answered, be modeled once rather than
+declared imperatively on each path that handles it; the caching commitment above is one
+consequence. The table records where each key concept is defined today.
+The target models are in
+[the explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md).
+
+| Concept | Covers | Defined today | One explicit model? |
+| --- | --- | --- | --- |
+| Request | Scope, content axis, selection, views, defaults, validation | `ScanConfig` and `ScanScope`; `AnalysisRequest` and `CachePolicy` on `OpenConfig`, not on `Query`; `Query`, `Selection`, and `ViewSpec::resolve`; `OpenOptions` and `ReportRequest` for opened roots | No. `cli.rs` and `fdu-py` each assemble it; defaults differ by surface; `Query::validate_controls` is called at seven sites, and `Query::validate_analysis` only in the two surfaces |
+| Execution plan | Which path answers, and what each cache policy reads and writes | `plan_report` (`execution.rs`); `open_for_report`, `SaveTargets`, and `cold_scan_save_targets` (`lib.rs`); the command line’s `save_live` for watch | No. Read and write rules are coded per path |
+| Stored-state identity | Metadata snapshot, control state, classification, content sidecar, and which requests each may serve | `engine_fingerprint` and snapshot parsing (`snapshot.rs`); `ScanScope`; `snapshot_scope_serves` (`lib.rs`); `ContentProvenance::satisfies` (`content_model.rs`) | No. Each tier codes its own identity and compatibility: exact scope with one report-only projection for snapshots, analyzer-set containment for content |
+| Per-item validity | When a stored entry or record is still current | `Attrs` equality in index upserts; `Fingerprint` checks in content loading, `pending_analysis_candidates`, and `apply_analysis` | Partly. Metadata compares six attributes and content five, each at its own call sites |
+| Provenance | Source, freshness, observation time, completeness, errors | `query::Provenance`, built at six production sites; `Index::freshness`; per-entry `Provenance` in `engine_contract.rs` | No. Each site fills the fields its own way, and `scan_started_at` has three meanings |
+| Answer shape | Report, change-record, and cache-status documents | `Report`, `Change`, and `CacheStatus`; schema constants in `report_format.rs` | No. Six writers render a `Report` with no field-level schema (`fdu-c5v1`) |
+
 ### Core Values and Ownership
 
 #### Detached index
@@ -264,8 +294,12 @@ together. There is no route that changes one without the others.
 #### Persisted snapshot
 
 A snapshot is a detached representation, not a dormant opened root.
-It contains complete retained facts, reducers, validated scope and semantic identities,
-and the control state required to interpret them.
+It contains the complete retained entry facts, the engine fingerprint, the validated
+scope and semantic identities, and the control table required to interpret them.
+It stores no roll-ups and no classification: loading rebuilds roll-ups from the entries
+and classifies names with the registry in use, and the reducer-set identity it records
+is a constant today.
+Like every cache tier it may change the cost of an answer, never the answer.
 It never contains a live session identity, version sequence, journal history, waiter,
 continuation, worker, or discovery frontier.
 
@@ -322,7 +356,7 @@ The associated constructor preserves the existing blocking free `open()` contrac
 Formatting serializes a report and never changes query semantics.
 
 A derived report plan is transient execution state for a provably one-shot request.
-It produces the same `Report` shape and semantic hash as indexed execution.
+It produces the same `Report` shape and values as indexed execution.
 It never becomes a hidden cache or alternate query grammar.
 
 Every report row that carries a size also carries the part of it `.gitignore` rules
@@ -341,9 +375,18 @@ The sparse content index and content roll-ups exist only when an analysis profil
 enabled. Workers submit independently fingerprint-checked analysis results through the
 index’s derived-data boundary; they do not change metadata truth or advance its clock.
 
-The content sidecar records an analyzer set and can serve a narrower compatible request
-without discarding the wider set.
-It is not embedded in the metadata snapshot and is never loaded by metadata-only work.
+The content sidecar holds one analyzer set per root.
+It serves a request whose analyzer set it contains, under the same type-rules
+fingerprint, without discarding the wider set.
+Containment is not projection.
+The tier keeps the stored set as its label, each record keeps the set it was analyzed
+under, and a report aggregates the records as stored, so a narrower request served from
+a wider tier reports the wider set’s metrics and label.
+A record a narrower request analyzes inside a wider tier carries the narrower set, and a
+save drops it. Under the caching commitment a wider stored set may answer a narrower
+request only through a projection that reproduces the cold answer, and none exists yet
+([Known Gaps](#known-gaps)). It is not embedded in the metadata snapshot and is never
+loaded by metadata-only work.
 
 ### Serving Lifecycles
 
@@ -363,7 +406,12 @@ One-shot `report()` may use the derived-report plan when the request proves that
 retained state has no consumer.
 It observes control state as `ScanConfig::read_controls` says, on by default as for
 `open()`, so a default report and a default index share one snapshot scope.
-One-shot and retained paths must remain semantically identical for the same request.
+One-shot and retained paths must answer the same request identically.
+Metadata-only requests do: a matrix of 38 request variants across 10 warm histories,
+three cache policies, file mutations, and both the command line and Python found no
+difference from the cold answer.
+Content analysis does not: 89 warm cases differed, and totals over mixed records matched
+neither cold answer ([Known Gaps](#known-gaps)).
 
 #### Opened and long-lived
 
@@ -413,9 +461,11 @@ A query or display depth is selection, not scope.
 The live lifecycle’s observation-compatible default is an unbounded-depth retained
 scope; an application’s viewport depth never narrows discovery.
 
-Semantic identity covers the normalized runtime type registry, whether control files are
-observed and under which budget and line limit, classification rules, and versioned
-reducer behavior.
+Semantic identity (`SemanticIdentity`, whose fields `ScanScope` also carries) covers the
+runtime type registry’s fingerprint, whether control files are observed and under which
+budget and line limit, and a reducer-set fingerprint that is a constant today.
+The compiled classification-rules version is not part of it: `CLASSIFICATION_VERSION`
+rides in the snapshot’s engine fingerprint with the crate and format versions.
 The engine derives scope and semantic identities from validated values.
 It never accepts a caller-supplied fingerprint as proof that independently supplied
 content matches.
@@ -472,7 +522,10 @@ Every returned value carries enough context to calibrate it:
 
 - source records whether facts were scanned, revalidated, journal-scoped, or cached;
 - coverage records whether the relevant retained scope is complete or partial;
-- observation time records when the underlying evidence was collected;
+- observation time records when the underlying evidence was collected: a report’s
+  `scan_started_at` and each entry’s `observed_at_ns`, which for an entry still carrying
+  a loaded snapshot’s value is the snapshot file’s modification time rather than its
+  capture instant;
 - lifecycle records whether the opened root is discovering, reconciling, watching,
   resource-stopped, closing, closed, or terminally failed;
 - bounded issues explain operational conditions that affect the answer.
@@ -844,6 +897,9 @@ Portable diagnostics escape and bound path examples.
 
 Snapshots fail closed on checksum, format, fingerprint, scope, semantic, or root
 mismatch and use owner-only permissions where supported.
+The one scope exception is a one-shot cache-only report, which may read a snapshot that
+observed `.gitignore` for a request that turned observation off; it consumes only the
+all-entry facts and retags the report to the requested scope.
 
 ## Operational Concerns
 
@@ -878,6 +934,45 @@ idle native observer performs no filesystem work.
 
 ## Future Considerations
 
+### Known Gaps
+
+Each item is a way the present engine falls short of
+[Model Every Key Concept Explicitly, in One Place](fdu-design-principles.md#model-every-key-concept-explicitly-in-one-place)
+or
+[Caching Improves Performance, Never Semantics](fdu-design-principles.md#caching-improves-performance-never-semantics).
+[The explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
+tracks them; cache-policy and write-rule gaps are listed once, in
+[the cache design’s Known Gaps](../guides/cache-design.md#known-gaps).
+
+- **Content answers depend on history.** A wider content tier serves a narrower request
+  without projection, and records analyzed under different sets aggregate together, so a
+  warm content report can differ from the cold answer to the same request, and totals
+  over mixed records can match no cold answer at all.
+- **Reports take their content axis from the index.** `query::report` receives an index,
+  a query, and provenance but no analysis request, because `Query` carries none, so
+  metric sections, the `analysis` metadata, and the schema version follow the content
+  tier the index holds.
+  A Python `Index` opened with analysis emits `fdu.report/6` for a tree view.
+- **Live paths decay content silently.** `watch_session::Session::new` accepts an
+  analyzed index, and later commits invalidate changed files’ records without
+  re-analysis. Opened-root reads accept a `documents` view without
+  `Query::validate_analysis` and answer zero words.
+- **Classification depends on history.** Metric views prefer a content record’s
+  classification, which analysis derives from the file’s leading bytes, over the
+  name-based `Index::classify`, so one path can count under a different type or family
+  depending on whether analysis ran.
+  A snapshot whose type-rules fingerprint differs from the registry in use parses as
+  absent, so no refusal names the registry.
+- **Provenance is filled per site.** `scan_started_at` is the run’s start in a one-shot
+  report, even one answered from cache; the open or refresh start for a Python `Index`,
+  except `None` when it was opened cache-only; and `None` for opened reads and watch
+  repaints. Watch repaints hard-code `source: warm_revalidate`, `complete: true`, and no
+  errors, including over a partial or cache-only index.
+- **Scope identity is not the storage key.** Snapshots are keyed by root (`fdu-w3l5`),
+  and the content sidecar records neither scope nor engine fingerprint.
+- **The one scope projection is path-specific.** A one-shot cache-only report may
+  project a controls-on snapshot to a controls-off request; `open` refuses it.
+
 ### Open Questions
 
 - What trust representation and measurements would justify progressively serving a warm
@@ -888,6 +983,9 @@ idle native observer performs no filesystem work.
 
 ### Potential Improvements
 
+- Model the request, execution plan, stored-state identity, per-item validity,
+  provenance, and answer shape once in the engine, as the explicit core models plan
+  describes, so every path and surface applies the same rules.
 - Add mixed-source progressive serving after per-subtree trust and deletion semantics
   have a reviewed composition proof.
 - Add maintained projections only when recorded read workloads show that bounded
@@ -917,6 +1015,8 @@ An engine change is sound only if these answers remain yes:
 - Can observation and other optional capabilities be removed without breaking the base
   engine?
 - Are scope, execution policy, and query selection still separate?
+- Does every cache tier, cache policy, and execution path give the cold answer to the
+  same request, apart from provenance?
 - Does async adaptation remain outside core?
 - Does every adapter translate engine values rather than recreate inventory state?
 - Can a complete causal session be recorded without a parallel test-only behavior log?
