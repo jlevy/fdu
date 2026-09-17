@@ -625,18 +625,6 @@ $ fdu --watch --one-filesystem .
 ? 2
 ```
 
-## Watching Rejects a Snapshot Nothing Verified
-
-Nothing observes the window between a snapshot and the start of a watch, so the first
-answer could describe a tree that has already moved and every later one would build on
-it.
-
-```console
-$ fdu --watch --cache only .
-! fdu: --watch cannot start from --cache only: nothing verifies what changed between the snapshot and the start of the watch; use --cache auto or read-only
-? 2
-```
-
 ## A Missing Root Is a Fatal Filesystem Error
 
 ```console

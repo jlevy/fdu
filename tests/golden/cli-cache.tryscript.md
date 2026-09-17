@@ -182,6 +182,18 @@ $ fdu --cache only --format json --size apparent --depth 0 --limit 0 project
 ? 0
 ```
 
+## Watching Rejects a Snapshot Nothing Verified
+
+The snapshot above is usable, and that is not enough: nothing observes the window between
+when it was written and when a watch starts, so the first answer could describe a tree
+that has already moved and every later one would build on it.
+
+```console
+$ fdu --watch --cache only project
+! fdu: --watch cannot start from --cache only: nothing verifies what changed between the snapshot and the start of the watch; use --cache auto or read-only
+? 2
+```
+
 ## A Different Semantic Scan Scope Misses the Snapshot
 
 ```console

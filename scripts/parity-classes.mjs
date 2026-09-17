@@ -29,10 +29,15 @@ const ERROR_KINDS = ['unsupported scan configuration: '];
 // The two surfaces have different NAMES for the same knob, not merely different
 // punctuation: the flag is --scan-depth and the field is max_depth. Comparing with these
 // elided on both sides proves the rest of the sentence is identical without this file
-// having to restate the pairing -- the pairing lives in cli.rs, where a unit test pins it.
+// having to restate the pairing -- the pairing lives in `AxisNames`, where a unit test
+// renders every refusal in both vocabularies and pins the result.
 // Longest first, and one pass, so `depth` cannot match inside `--scan-depth`.
+//
+// `cache policy` is the one name that is not a field: the Python parameter is `cache`, and
+// its refusals have always said `invalid cache policy`, which `AxisNames::FIELDS` kept
+// rather than changing the wording when the rule moved into the request model.
 const KNOBS =
-  /--gitignore-budget|--gitignore-line-limit|--exclude-ignored|--only-ignored|--no-gitignore|--scan-depth|--one-filesystem|--modified-since|--include|--depth|ignored=exclude|ignored=only|control_budget|control_line_limit|read_controls|max_depth|one_filesystem|modified_since|include|depth/g;
+  /--gitignore-budget|--gitignore-line-limit|--exclude-ignored|--only-ignored|--no-gitignore|--scan-depth|--one-filesystem|--modified-since|--include|--depth|--cache|--watch|cache policy|ignored=exclude|ignored=only|control_budget|control_line_limit|read_controls|max_depth|one_filesystem|modified_since|include|depth|watch/g;
 const withoutKnobs = (line) => sameSeparator(withoutKind(line)).replace(KNOBS, '<knob>');
 const withoutKind = (line) => {
   // The kind sits after the program name, which both surfaces print: the shim says
