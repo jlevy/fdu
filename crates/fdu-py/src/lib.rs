@@ -1892,8 +1892,12 @@ mod tests {
                 py,
                 PyIndex {
                     inner: fdu_core::Index::new("/unused"),
-                    config: ScanConfig::default(),
-                    analysis: AnalysisRequest::default(),
+                    basis: Basis {
+                        root: PathBuf::from("/unused"),
+                        scope: fdu_core::ScanConfig::default(),
+                        content: AnalysisSet::NONE,
+                    },
+                    delivery: Delivery::default(),
                     errors: Vec::new(),
                     operation_complete: true,
                     scan_started_at: None,
