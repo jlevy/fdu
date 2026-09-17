@@ -41,7 +41,7 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 24 sessions differ, and every one of them has a named cause.
+# 25 sessions differ, and every one of them has a named cause.
 #
 #  14  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
@@ -53,7 +53,7 @@
 #      reports a usage error, which exits 2 rather than 1. The rule text is one constant
 #      either way, with only the knob names substituted, and a unit test pins that.
 #
-#   4  The same rule, in each surface's own names for the same knobs  [surface-vocabulary]
+#   5  The same rule, in each surface's own names for the same knobs  [surface-vocabulary]
 #      The command line calls it --scan-depth and the API calls it max_depth. They are
 #      different words, not different punctuation, so this is checked by eliding the knob
 #      names on both sides and requiring the rest of the sentence to be identical.
@@ -153,7 +153,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Refresh Ignores the Snapshot and Scans Cold Again
   ✓ An Unknown Policy Lists Every Valid One
   ✓ The Unreleased Cache Alias Is Rejected
-PASS [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
+FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✓ Scan Without a Cache
   ✓ Verify No Cache Was Created
   ✓ Create the Snapshot
@@ -162,6 +162,11 @@ PASS [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✓ Expand the Fixture
   ✓ Report the Changed Tree
   ✓ The Rewrite Kept the Snapshot Current for Cache-Only
+  ✗ Watching Rejects a Snapshot Nothing Verified
+    stderr:
+@@ -1,1 +1,1 @@
+-fdu: --watch cannot start from --cache only: nothing verifies what changed between the snapshot and the start of the watch; use --cache auto or read-only
++fdu: watch cannot start from cache policy only: nothing verifies what changed between the snapshot and the start of the watch; use cache policy auto or read-only
   ✓ A Different Semantic Scan Scope Misses the Snapshot
   ✓ Corrupt the Snapshot
   ✓ Recover with a Cold Scan
@@ -459,12 +464,12 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
     stderr:
 @@ -1,1 +1,1 @@
 -fdu: watching requires full scope and cannot be combined with --scan-depth or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --modified-since does work while watching, because it filters the retained index rather than narrowing the scan
-+fdu: unsupported scan configuration: watching requires full scope and cannot be combined with max_depth or one_filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as depth, include, and modified_since does work while watching, because it filters the retained index rather than narrowing the scan
++fdu: watching requires full scope and cannot be combined with max_depth or one_filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as depth, include, and modified_since does work while watching, because it filters the retained index rather than narrowing the scan
   ✗ Watching Rejects a Narrowed Scan Scope
     stderr:
 @@ -1,1 +1,1 @@
 -fdu: watching requires full scope and cannot be combined with --scan-depth or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --modified-since does work while watching, because it filters the retained index rather than narrowing the scan
-+fdu: unsupported scan configuration: watching requires full scope and cannot be combined with max_depth or one_filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as depth, include, and modified_since does work while watching, because it filters the retained index rather than narrowing the scan
++fdu: watching requires full scope and cannot be combined with max_depth or one_filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as depth, include, and modified_since does work while watching, because it filters the retained index rather than narrowing the scan
   ✓ A Missing Root Is a Fatal Filesystem Error
   ✓ Create a Regular File
   ✓ Reject It as the Root
