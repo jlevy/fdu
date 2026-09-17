@@ -5,7 +5,10 @@
 **Author:** fdu project
 
 **Status:** Implemented for the non-publishing release-engineering scope; registry
-publication remains in `fdu-9cf0`
+publication remains in `fdu-9cf0`. By the 2026-09-15 decision, `0.1.0` is published by
+hand from a signed tag, as [the release process](../../guides/release-process.md)
+describes; workflow publish jobs, the protected `release` environment, and trusted
+publishers follow `0.1.0`.
 
 ## Overview
 
@@ -34,10 +37,11 @@ contract needs stronger guarantees than a binary-only Python distribution.
 
 ## Goals
 
-- Publish one coherent `0.1.0` product version as the `fdu` crate and `fdu` PyPI project
+- Publish one coherent `0.1.0` product version as the `fdu-core` and `fdu` crates and
+  the `fdu` PyPI project
 - Make `cargo install fdu` and `uvx fdu` expose the same native command-line contract
-- Keep the Rust crate usable with minimal dependencies through
-  `default-features = false`
+- Keep a minimal-dependency Rust library: `fdu-core` is the engine, with no default
+  build features, and `fdu` carries the command line and re-exports it
 - Make `import fdu` expose a typed, documented Python API for reusable structured
   roll-ups
 - Preserve provenance, completeness, freshness, scope, errors, and cache semantics
@@ -302,9 +306,10 @@ sharing one project’s publisher subject with another project.
 | Channel | fdu setup |
 | --- | --- |
 | GitHub Releases | Publish from `jlevy/fdu` with the workflow’s built-in token, granting `contents: write` only to the announcement job. |
-| PyPI | Create the pending `fdu` project for repository `jlevy/fdu`, top-level workflow `release.yml`, and protected environment `release`. The publish job receives `id-token: write`, downloads only validated artifacts, and holds no API token. |
-| crates.io bootstrap | Publish `fdu 0.1.0` from the same crates.io owner account with a narrowly scoped, short-lived token because trusted publishing cannot be configured until the crate exists. Remove the token after verifying the release. |
-| crates.io steady state | Configure the new `fdu` crate’s trusted publisher for `jlevy/fdu`, `release.yml`, and environment `release`; exchange OIDC only inside the publish job. |
+| PyPI bootstrap | A maintainer uploads `0.1.0` by hand with a short-lived account-scoped API token, because a project-scoped token needs an existing project. Delete the token after verifying the release. |
+| PyPI steady state | After `0.1.0`, once the `release` environment exists and is protected, register the trusted publisher for repository `jlevy/fdu`, top-level workflow `release.yml`, and environment `release`. The publish job receives `id-token: write`, downloads only validated artifacts, and holds no API token. |
+| crates.io bootstrap | Publish `fdu-core 0.1.0`, then `fdu 0.1.0`, by hand from the same crates.io owner account with a narrowly scoped, short-lived token, because trusted publishing cannot be configured until a crate exists. Remove the token after verifying the release. |
+| crates.io steady state | After `0.1.0`, once the `release` environment is protected, configure both crates’ trusted publishers for `jlevy/fdu`, `release.yml`, and environment `release`; exchange OIDC only inside the publish job. |
 
 No credential is committed, inherited across workflows, printed, or retained in an
 artifact. The protected environment separates approval from build jobs.
@@ -342,7 +347,8 @@ The first release is `0.1.0`, not another `0.0.x` snapshot.
 
 | Role | Public name |
 | --- | --- |
-| crates.io package and Rust crate | `fdu` |
+| crates.io engine crate | `fdu-core` |
+| crates.io command-line crate, re-exporting the engine | `fdu` |
 | Cargo-installed binary | `fdu` |
 | PyPI distribution | `fdu` |
 | Python import package | `fdu` |
@@ -374,7 +380,7 @@ cargo install fdu --version 0.1.0
 ```toml
 # Embedded library; no CLI or watcher dependency tree.
 [dependencies]
-fdu = { version = "0.1.0", default-features = false }
+fdu-core = "0.1.0"
 ```
 
 The `.crate` must contain the exact license text, crate README, rules used by the build
@@ -619,9 +625,11 @@ publish. The GitHub announcement job alone receives `contents: write`. Every act
 pinned to a reviewed commit, every installed tool is pinned through the repository’s
 supply-chain policy, and no job persists checkout credentials.
 
-PyPI uses a pending trusted publisher for the first release.
-The crates.io bootstrap uses a narrowly scoped short-lived API token for `0.1.0`, then
-configures the repository’s trusted publisher for later releases.
+`0.1.0` is uploaded by hand: PyPI with a short-lived account-scoped API token, and
+crates.io with a narrowly scoped short-lived token, each removed after verification.
+Trusted publishers for later releases are registered only after `0.1.0`, once the
+`release` environment exists with a required reviewer and a `v*` deployment policy;
+GitHub creates an unprotected environment the first time a job names it.
 Both records use the same owner account as Flowmark but identify the `jlevy/fdu`
 repository, top-level `release.yml`, and protected `release` environment.
 The runbook records the unavoidable asymmetric case where one registry succeeds and the
@@ -649,7 +657,7 @@ upstream-reference improvements also remain separate follow-up work.
 | `fdu-5eqk` | Portable abi3 matrix and artifact-first release workflow | Depends on API layout and artifact identity |
 | `fdu-wp21` | Installed-consumer, CLI parity, typing, and downstream acceptance | Depends on API layout and artifact identity |
 | `fdu-lidi` | Policy, rehearsal, and first-release evidence | Depends on workflow and acceptance gates |
-| `fdu-9cf0` | Existing final crates.io and PyPI publication gate | Depends on `fdu-3d8c` plus its earlier Phase 1 blockers |
+| `fdu-9cf0` | Existing final crates.io and PyPI publication gate | Depends on `fdu-3d8c`; its earlier Phase 1 blockers are waived for `0.1.0` by the 2026-09-15 decision |
 | `fdu-eu8t` | Progressive Python `IndexSession` | Post-release; does not block `0.1.0` |
 | `fdu-8bn9` | Upstream validated release-hardening findings | Post-release; does not block `0.1.0` |
 
@@ -660,7 +668,7 @@ upstream-reference improvements also remain separate follow-up work.
 - [x] Add a machine-readable or tested parity inventory for engine-facing options and
   default values
 - [ ] Resolve the existing CLI, agent-schema, watch-hardening, and performance blockers
-  already attached to `fdu-9cf0`
+  already attached to `fdu-9cf0` (waived for `0.1.0` by the 2026-09-15 decision)
 
 ### Phase 1: Typed Python Package and Roll-Up API
 
@@ -702,22 +710,27 @@ upstream-reference improvements also remain separate follow-up work.
 - [x] Pin every action and installed release tool immutably and keep publication
   authority out of build and validation jobs
 - [ ] Add direct, minimal, protected PyPI trusted publishing and the documented
-  crates.io bootstrap path under the same maintainer accounts as Flowmark
+  crates.io bootstrap path under the same maintainer accounts as Flowmark (post-`0.1.0`:
+  the by-hand bootstrap is documented in the release process; workflow publish jobs
+  follow it)
 - [x] Emit checksums and SBOM evidence from the non-publishing workflow
 - [ ] Add attestations and a GitHub release only after registry state is verified
+  (post-`0.1.0` in the workflow; `0.1.0`’s GitHub release is created by hand after the
+  audit)
 
 ### Phase 4: First-Release Rehearsal and Publication
 
 - [ ] Re-verify registry names through authoritative APIs immediately before release
-- [ ] Configure the PyPI pending publisher for `jlevy/fdu`, `release.yml`, and the
-  protected `release` environment
-- [ ] Run the workflow’s non-uploading mode from the exact proposed tag and rehearse an
+- [ ] Configure the PyPI trusted publisher for `jlevy/fdu`, `release.yml`, and the
+  protected `release` environment (post-`0.1.0`, once the environment is protected)
+- [ ] Rehearse the release commit on `main`, then tag that commit, and rehearse an
   identical-channel retry and a simulated conflicting-channel stop
 - [ ] Inspect every archive and execute every supported install path
 - [ ] Publish `0.1.0`, verify registry metadata and fresh-user installs, and retain
   release evidence
-- [ ] Remove the one-time crates.io bootstrap token, then configure trusted publishing
-  for `jlevy/fdu`, `release.yml`, and the `release` environment
+- [ ] Remove the one-time bootstrap tokens; configure trusted publishing for
+  `jlevy/fdu`, `release.yml`, and the `release` environment after `0.1.0`, once the
+  environment is protected
 
 ### Phase 5: Progressive Downstream Adapter
 
@@ -739,7 +752,8 @@ upstream-reference improvements also remain separate follow-up work.
 
 ### Rust Artifact Gates
 
-- `cargo publish --dry-run --locked -p fdu`
+- `cargo package --locked -p fdu-core -p fdu` (a dry-run publish of `fdu` cannot resolve
+  `fdu-core` before it exists on crates.io)
 - exact archive manifest, license, README, and unexpected-file assertions
 - build, test where applicable, and `cargo install` from the extracted `.crate`
 - compile a minimal external library consumer with `default-features = false`
@@ -783,10 +797,10 @@ racing path. It then:
   against the published registry checksum
 - registry-state tests distinguish missing, identical, and conflicting immutable
   versions
-- TestPyPI or equivalent install rehearsal for the Python artifact
-- crates.io dry run and manual first-release bootstrap checklist
+- TestPyPI install rehearsal for the Python artifact: not scheduled
+- crates.io package reproduction and manual first-release bootstrap checklist
 - fresh registry installs, docs.rs build, PyPI metadata, and `uvx` verification after
-  publication
+  publication, as the release process’s after-publishing checklist lists
 - documented retry and incident paths exercised without overwriting a version
 
 ## Rollout and Compatibility
@@ -830,7 +844,7 @@ outstanding Phase 1 CLI, agent-schema, watch, or performance dependencies.
   plan’s workflow
 - [Phase 1 plan](plan-2026-08-08-fdu-phase-1.md)
 - [Rust engineering quality plan](plan-2026-08-09-fdu-rust-engineering-quality.md)
-- [Composable CLI surface plan](plan-2026-08-10-fdu-composable-cli-surface.md)
+- [Composable CLI surface plan](../done/plan-2026-08-10-fdu-composable-cli-surface.md)
 - `fdu-9cf0`: existing crates.io and PyPI publishing bead
 - [Cargo publishing](https://doc.rust-lang.org/cargo/reference/publishing.html)
 - [maturin mixed-project layout](https://www.maturin.rs/index.html#mixed-rustpython-projects)
