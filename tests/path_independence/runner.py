@@ -105,11 +105,41 @@ def case_key(phase: str, route: str, policy: str, history: str, mutation: str, r
     return "/".join((phase, route, policy, history or "-", mutation or "-", request))
 
 
+ROOT_PLACEHOLDER = "<root>"
+
+
 def normalize(answer: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Split an answer into compared content and excluded provenance."""
+    """Split an answer into compared content and excluded provenance.
+
+    The root names where the tree was read, not what it contains: a copy of the tree
+    lives elsewhere, and each platform spells a path its own way. So the answer's own
+    root string is replaced by a placeholder wherever it appears.
+    """
+    root = answer.get("root")
+    if isinstance(root, str) and root:
+        encoded = json.dumps(answer).replace(json.dumps(root)[1:-1], ROOT_PLACEHOLDER)
+        answer = json.loads(encoded)
     content = dict(answer)
     provenance = {key: content.pop(key, None) for key in PROVENANCE_KEYS}
     return content, provenance
+
+
+# Keys that identify an element of a list of objects: a file's path, a metric row's id,
+# a tree node's name. Lists are aligned by them, so one inserted file reads as one
+# difference rather than as every later element compared with its neighbour.
+IDENTITY_KEYS = ("path", "id", "name")
+
+
+def _identity_key(items: list[Any]) -> str | None:
+    if not all(isinstance(item, dict) for item in items):
+        return None
+    for key in IDENTITY_KEYS:
+        values = [item.get(key) for item in items]
+        if all(isinstance(value, str | int) for value in values) and len(set(values)) == len(
+            values
+        ):
+            return key
+    return None
 
 
 def json_diff(left: Any, right: Any, path: str = "") -> list[tuple[str, Any, Any]]:
@@ -126,6 +156,9 @@ def json_diff(left: Any, right: Any, path: str = "") -> list[tuple[str, Any, Any
                 out += json_diff(left[key], right[key], child)
         return out
     if isinstance(left, list) and isinstance(right, list):
+        key = _identity_key(left) if left else _identity_key(right)
+        if key is not None and (not left or not right or key == _identity_key(right)):
+            return _aligned_diff(left, right, key, path)
         out = []
         for index in range(max(len(left), len(right))):
             child = f"{path}[{index}]"
@@ -139,9 +172,35 @@ def json_diff(left: Any, right: Any, path: str = "") -> list[tuple[str, Any, Any
     return [] if left == right else [(path, left, right)]
 
 
+def _aligned_diff(
+    left: list[dict[str, Any]], right: list[dict[str, Any]], key: str, path: str
+) -> list[tuple[str, Any, Any]]:
+    by_left = {item[key]: item for item in left}
+    by_right = {item[key]: item for item in right}
+    out: list[tuple[str, Any, Any]] = []
+    shared_left = [item[key] for item in left if item[key] in by_right]
+    shared_right = [item[key] for item in right if item[key] in by_left]
+    if shared_left != shared_right:
+        out.append((f"{path}<order>", shared_left, shared_right))
+    for identity in [item[key] for item in left] + [
+        item[key] for item in right if item[key] not in by_left
+    ]:
+        child = f"{path}[{key}={json.dumps(identity)}]"
+        if identity not in by_right:
+            out.append((child, by_left[identity], "<absent>"))
+        elif identity not in by_left:
+            out.append((child, "<absent>", by_right[identity]))
+        else:
+            out += json_diff(by_left[identity], by_right[identity], child)
+    return out
+
+
+_ELEMENT = re.compile(r'\[(?:\d+|[a-z_]+=(?:-?\d+|"(?:[^"\\]|\\.)*"))\]')
+
+
 def generalize(path: str) -> str:
-    """A diff path with list indices erased, so reordering reads as one path."""
-    return re.sub(r"\[\d+\]", "[]", path)
+    """A diff path with list positions and identities erased."""
+    return _ELEMENT.sub("[]", path)
 
 
 def compare(
@@ -412,7 +471,7 @@ class MatrixRun:
                 built = [
                     (
                         (mutation, request_id),
-                        _rerooted(self._oracle(tree, request_id), tree, self.facts.root),
+                        _rerooted(self._oracle(tree, request_id), tree),
                     )
                     for request_id in self.tier.requests
                 ]
@@ -440,7 +499,7 @@ class MatrixRun:
                             self.surfaces, tree, matrix.REQUESTS[request_id], policy, xdg
                         )
                         shutil.rmtree(xdg, ignore_errors=True)
-                        measured = _rerooted(invocation, tree, self.facts.root)
+                        measured = _rerooted(invocation, tree)
                         key = case_key(
                             "mutation", matrix.CLI_ROUTE, policy, warmer, mutation, request_id
                         )
@@ -518,21 +577,18 @@ def _mutated(tree: Path, mutation: matrix.Mutation) -> Iterator[None]:
             mutation.restore(tree)
 
 
-def _rerooted(invocation: Invocation, actual: Path, canonical: Path) -> Invocation:
-    """Report an answer from a tree copy as if it came from the canonical fixture root.
+def _rerooted(invocation: Invocation, actual: Path) -> Invocation:
+    """Name a tree copy's root by placeholder in a failure message.
 
-    The root path is part of an answer, and a copy lives elsewhere; nothing else in an
-    answer names the absolute root.
+    Answers carry their root and `normalize` replaces it; a failure has only its message,
+    so the copy's path is replaced there, in each spelling a platform may print.
     """
-    if invocation.answer is None:
-        stderr = invocation.stderr.replace(str(actual), str(canonical))
-        return Invocation(invocation.route, invocation.command, invocation.exit, stderr, None)
-    encoded = json.dumps(invocation.answer)
-    actual_text, canonical_text = json.dumps(str(actual))[1:-1], json.dumps(str(canonical))[1:-1]
-    answer = json.loads(encoded.replace(actual_text, canonical_text))
-    return Invocation(
-        invocation.route, invocation.command, invocation.exit, invocation.stderr, answer
-    )
+    if invocation.answer is not None:
+        return invocation
+    stderr = invocation.stderr
+    for spelling in sorted({str(actual), actual.as_posix()}, key=len, reverse=True):
+        stderr = stderr.replace(spelling, ROOT_PLACEHOLDER)
+    return Invocation(invocation.route, invocation.command, invocation.exit, stderr, None)
 
 
 # --- Reporting -----------------------------------------------------------------------

@@ -66,6 +66,26 @@ class CompareTests(unittest.TestCase):
         verdict = compare(cli(answer()), cli(swapped), policy="auto")
         self.assertEqual(verdict.paths, ("reports[].rows[].bytes",))
 
+    def test_list_elements_align_by_identity(self) -> None:
+        rows = [{"name": "b", "bytes": 2}, {"name": "c", "bytes": 3}]
+        inserted = answer(reports=[{"rows": [{"name": "a", "bytes": 1}, *rows]}])
+        cold = answer(reports=[{"rows": rows}])
+        verdict = compare(cli(cold), cli(inserted), policy="auto")
+        self.assertEqual(verdict.paths, ("reports[].rows[]",))
+
+    def test_reordering_is_a_difference(self) -> None:
+        rows = [{"name": "a", "bytes": 1}, {"name": "b", "bytes": 2}]
+        reordered = answer(reports=[{"rows": list(reversed(rows))}])
+        verdict = compare(cli(answer(reports=[{"rows": rows}])), cli(reordered), policy="auto")
+        self.assertEqual(verdict.paths, ("reports[].rows<order>",))
+
+    def test_the_root_is_compared_by_placeholder(self) -> None:
+        here = answer(root="/tmp/one/tree", errors=["/tmp/one/tree/src: denied"])
+        there = answer(root="C:\\copy\\tree", errors=["C:\\copy\\tree/src: denied"])
+        self.assertEqual(compare(cli(here), cli(there), policy="auto").kind, "same")
+        elsewhere = answer(root="/tmp/one/tree", errors=["/tmp/one/tree/docs: denied"])
+        self.assertEqual(compare(cli(here), cli(elsewhere), policy="auto").paths, ("errors[]",))
+
     def test_a_cache_only_failure_is_a_named_refusal(self) -> None:
         miss = cli(None, exit=1, stderr="fdu: snapshot is not usable")
         self.assertEqual(compare(cli(answer()), miss, policy="only").kind, "refused")
