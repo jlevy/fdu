@@ -53,8 +53,15 @@ impl Basis {
     /// than from the `ScanConfig` that made it: what a read validates against is what the
     /// index observed, and the fields a config keeps beyond that -- threads, batch size,
     /// order -- are delivery, which no answer depends on.
+    ///
+    /// The control tier carries both halves of what the scan observed, so both are read
+    /// from it: whether any rule was read, and the limits the ones that were read were
+    /// admitted under. An index that observed nothing applied no limits, and the table's
+    /// are what a scope that reads no rule would have been taken under; nothing in a basis
+    /// that observes no control state depends on them.
     pub fn held_by(index: &crate::Index) -> Self {
         let scope = index.scope();
+        let controls = index.control_identity();
         Self {
             root: index.root_path().to_path_buf(),
             scope: ScanConfig {
@@ -62,12 +69,23 @@ impl Basis {
                 follow_symlinks: scope.follow_symlinks,
                 one_filesystem: scope.one_filesystem,
                 exclude_special: scope.exclude_special,
-                read_controls: index.control_identity().is_observed(),
+                read_controls: controls.is_observed(),
+                control_limits: match controls {
+                    crate::ControlTierIdentity::Observed { limits } => limits,
+                    crate::ControlTierIdentity::NotObserved => Self::UNOBSERVED_LIMITS,
+                },
                 ..ScanConfig::default()
             },
             content: index.content_set(),
         }
     }
+
+    /// The limits a basis records when its scan observed no control state at all.
+    ///
+    /// The defaults table's, because they are what the scope would have been taken under
+    /// had it read a rule; no rule this model states reads them when `read_controls` is
+    /// off, so this is a placeholder named rather than a value implied.
+    const UNOBSERVED_LIMITS: ControlLimits = Request::DEFAULTS.control_limits;
 }
 
 /// How a request is carried out, which never changes what its answer says.
@@ -1477,6 +1495,22 @@ mod tests {
         let observing =
             crate::Index::new_with_scope("/root", crate::test_support::observing_controls());
         assert!(Basis::held_by(&observing).scope.read_controls);
+
+        // The limits are the tier's own, not the table's: an index admitted its control
+        // files under the limits it was built with, and a basis that restated the defaults
+        // here would compare equal to one taken under any other budget.
+        let tight = ControlLimits { budget: Some(4_096), line_limit: None };
+        let narrow = crate::Index::new_with_config(
+            "/root",
+            &ScanConfig { read_controls: true, control_limits: tight, ..ScanConfig::default() },
+        );
+        assert_eq!(Basis::held_by(&narrow).scope.control_limits, tight);
+        assert_ne!(tight, Request::DEFAULTS.control_limits, "the fixture must differ");
+        assert_eq!(
+            Basis::held_by(&blind).scope.control_limits,
+            Request::DEFAULTS.control_limits,
+            "a scan that read no rule applied none, and names the table's"
+        );
 
         // The scope a request would have to be built with to read this index.
         let request =
