@@ -104,7 +104,14 @@ pub enum ContentState {
 }
 
 impl ContentState {
-    /// The label machine output carries, one of [`CacheState::LABELS`].
+    /// Every label a content sidecar's state can carry, in declaration order.
+    ///
+    /// The two a sidecar can be, which is narrower than [`CacheState::LABELS`]: a sidecar
+    /// is never leftover, unrecognized, or absent under its own status, because it is
+    /// reported only where one was found beside a snapshot.
+    pub const LABELS: [&'static str; 2] = ["current", "stale"];
+
+    /// The label machine output carries, one of [`Self::LABELS`].
     pub fn label(&self) -> &'static str {
         match self {
             Self::Current(_) => "current",

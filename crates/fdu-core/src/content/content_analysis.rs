@@ -70,7 +70,8 @@ impl AnalysisReport {
 ///
 /// Workers own immutable candidates and never retain an index borrow during I/O. The
 /// caller thread applies observations afterward, so metadata changes remain serialized
-/// through [`Index::apply_analysis`].
+/// through the index's own apply step, which is crate-private until the request model
+/// decides the public analysis surface.
 pub fn analyze_index(index: &mut Index, request: AnalysisRequest) -> AnalysisReport {
     if !request.profile.is_enabled() {
         return AnalysisReport::default();

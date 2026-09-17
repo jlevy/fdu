@@ -610,6 +610,7 @@ def main() -> None:
     assert contract["sort_keys"] == [value.value for value in fdu.SortKey]
     assert contract["cache_scopes"] == [value.value for value in fdu.CacheScope]
     assert contract["cache_states"] == [value.value for value in fdu.CacheState]
+    assert contract["content_states"] == [value.value for value in fdu.ContentState]
     assert contract["stale_reasons"] == [value.value for value in fdu.StaleReason]
     assert contract["leftover_kinds"] == [value.value for value in fdu.LeftoverKind]
     assert contract["formats"] == [value.value for value in fdu.Format]
@@ -686,6 +687,33 @@ def main() -> None:
         assert listed[orphan].leftover_kind is fdu.LeftoverKind.ORPHANED_CONTENT, listed
     finally:
         orphan.unlink()
+
+    # An analyzed open leaves a content sidecar, and status reports it as the snapshot's
+    # own `content`: its records and the identity that decides which requests they serve.
+    # The sidecar's entry tier is the snapshot's, because a record is only as valid as the
+    # entry it was analyzed over.
+    analyzed_root = Path(tempfile.mkdtemp(prefix="fdu-public-analyzed-"))
+    (analyzed_root / "notes.md").write_text("one two\nthree\n", encoding="utf-8")
+    fdu.open(
+        analyzed_root,
+        cache=fdu.CachePolicy.AUTO,
+        analysis=fdu.AnalysisOptions(analyze=fdu.Analysis.LINES),
+    )
+    analyzed = fdu.cache_status(analyzed_root)
+    assert analyzed is not None and analyzed.state is fdu.CacheState.CURRENT, analyzed
+    content = analyzed.content
+    assert content is not None, analyzed
+    assert content.state is fdu.ContentState.CURRENT, content
+    assert content.stale_reason is None and content.format_version is None, content
+    assert content.records == 1, content
+    assert content.identity is not None, content
+    assert content.identity.analyze == (fdu.Analysis.LINES,), content
+    assert content.identity.analyzers and all(
+        analyzer.version > 0 for analyzer in content.identity.analyzers
+    ), content
+    assert analyzed.identity is not None, analyzed
+    assert content.identity.entries == analyzed.identity.entries, analyzed
+    assert fdu.clear_cache(analyzed_root) is True
 
     entrypoint = Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu")
     version = subprocess.run(

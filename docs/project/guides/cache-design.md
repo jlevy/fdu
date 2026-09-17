@@ -175,8 +175,14 @@ the analyzer set, the options fingerprint, and the analyzers under the names a r
 `analysis` object uses, or `stale`, with its `stale_reason` and `format_version`.
 Whether the sidecar is grouped with its snapshot and cleared with it is still decided by
 its magic, so a stale sidecar is labelled and removed like a current one.
-An empty cache directory is an empty sequence in every machine format, never a null, so
-one reader works whether or not anything is cached.
+Every fingerprint in either identity is a full 64-bit integer, written as a JSON number,
+and a consumer has to parse it exactly: a reader that converts numbers to IEEE doubles —
+JavaScript’s `JSON.parse`, jq before 1.7 — rounds values above 2^53, and a rounded
+identity field makes two different stores compare equal.
+One encoding rule for fingerprints across `fdu.report`, `fdu.stream`, and `fdu.cache` is
+decided once, with the answer model’s field schema (`fdu-cggg`), rather than per
+document. An empty cache directory is an empty sequence in every machine format, never a
+null, so one reader works whether or not anything is cached.
 
 Snapshot persistence is available on every platform, including for metadata queries.
 It is not used by every execution plan.
@@ -315,12 +321,18 @@ What a policy reads and writes also depends on the path that answers:
 - **Content sidecar.** Written after a cold scan with analysis, and after a warm open
   whose analysis applied a record or found a stale one.
   Each tier has its own write rule.
-  After a partial pass the snapshot is not written, but the sidecar is, when a snapshot
-  of the same entry tier is already stored: it keeps a record only for a file the pass
-  scanned or revalidated and read without error, so a record for a file retained under a
-  directory the pass could not list is left out and read again later.
-  A partial pass under another entry tier writes no sidecar, so the one that pairs with
-  the stored snapshot survives.
+  After a partial pass neither tier is written, so the stored snapshot and the sidecar
+  that pairs with it both survive whole.
+  The rule the sidecar is heading for is narrower — written when a snapshot of the same
+  entry tier is already stored, keeping a record only for a file the pass scanned or
+  revalidated and read without error, so a record for a file retained under a directory
+  the pass could not list is left out and read again later — and it waits on a partial
+  pass marking the paths it failed rather than its root.
+  Until then a partial pass can name only the files that *changed* as verified, and
+  writing those would replace a complete sidecar with that handful, so every later run
+  would re-read the tree for as long as one directory stayed unlistable.
+  A partial pass under another entry tier will write no sidecar either way, so the one
+  that pairs with the stored snapshot survives.
   A run with another analyzer set misses the stored sidecar and replaces it, under
   `refresh` because no sidecar is read and under `auto` because the stored one is
   another identity.

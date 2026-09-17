@@ -733,8 +733,10 @@ fn load_content(index: &mut Index, config: &OpenConfig) -> Result<content::Conte
 /// The snapshot is written only after a complete pass
 /// ([`stored_state::entries_writable`]): a snapshot recording a partial view would be
 /// served as fact on the next run, and the existing complete snapshot is better than that.
-/// The content sidecar keeps the records the pass verified, after a complete pass or beside
-/// a stored snapshot of the same entry tier ([`stored_state::content_tier_writable`]).
+/// The content sidecar keeps the records the pass verified
+/// ([`stored_state::content_tier_writable`]), which today means after a complete pass only;
+/// that rule admits a partial pass beside a stored snapshot of the same entry tier once
+/// P1.4.2 (`fdu-rjv3`) makes a partial pass keep the records it verified.
 fn spawn_save(
     index: &std::sync::Arc<Index>,
     config: &OpenConfig,
@@ -761,7 +763,6 @@ fn spawn_save(
     // Sharing is what buys the independence a clone was buying; a run with nothing to
     // write still returns above rather than reaching this point.
     let snapshot_source = std::sync::Arc::clone(index);
-    let analysis = config.analysis;
     let mut workers = Vec::with_capacity(2);
     if writes.metadata {
         let metadata_source = std::sync::Arc::clone(&snapshot_source);
@@ -780,8 +781,11 @@ fn spawn_save(
         if let Ok(worker) =
             std::thread::Builder::new().name("fdu-content-cache".to_string()).spawn(move || {
                 let _counter_guard = counters::thread_flush_guard();
-                // Read the stored snapshot's header only when this pass wrote no snapshot:
-                // no metadata writer is running then, and a complete pass needs no answer.
+                // The pairing check reads the stored snapshot's header, and only when this
+                // pass wrote no snapshot: no metadata writer is running then, and a
+                // complete pass needs no answer. It is passed unevaluated because the rule
+                // is held until P1.4.2 (`fdu-rjv3`) and does not ask, so a partial pass
+                // opens nothing.
                 let stored_entries = || {
                     snapshot::read_header(&cache_path)
                         .ok()
@@ -789,12 +793,10 @@ fn spawn_save(
                         .filter(|stored| stored.root == snapshot_source.root_path())
                         .map(|stored| stored.identity.entries)
                 };
-                let writable = entries_writable
-                    || stored_state::content_tier_writable(&snapshot_source, stored_entries());
-                if !writable {
+                if !stored_state::content_tier_writable(&snapshot_source, stored_entries) {
                     return Ok(());
                 }
-                content::save_content_cache(&snapshot_source, analysis, &content_path)
+                content::save_content_cache(&snapshot_source, &content_path)
             })
         {
             workers.push(("content", worker));
@@ -1755,14 +1757,16 @@ mod save_tests {
         );
     }
 
-    /// Each tier is written by its own rule. A partial pass writes no snapshot, because an
-    /// absent entry would change totals, but it writes the content records it verified
-    /// beside the snapshot of the same entry identity already stored, and leaves out the
-    /// records under the directory it could not list. A partial pass under another entry
-    /// identity writes no sidecar, so the one that pairs with the stored snapshot survives.
+    /// Each tier is written by its own rule, and a partial pass writes neither: no
+    /// snapshot, because an absent entry would change totals, and no sidecar, because a
+    /// partial pass marks its root `Partial` and so can name only the files that changed
+    /// as verified. Writing those would evict the complete sidecar that pairs with the
+    /// stored snapshot. P1.4.2 (`fdu-rjv3`) marks the failed paths instead, after which a
+    /// partial pass writes every record it verified beside a snapshot of the same entry
+    /// identity, and still writes nothing under any other identity.
     #[test]
     #[cfg(unix)]
-    fn a_partial_scan_writes_verified_content_but_no_snapshot() {
+    fn a_partial_scan_writes_neither_tier_until_failed_paths_are_marked() {
         use std::os::unix::fs::PermissionsExt;
 
         if !crate::test_support::permission_bits_are_enforced() {
@@ -1815,26 +1819,97 @@ mod save_tests {
             "a partial run under another entry identity must not evict the paired sidecar"
         );
 
-        // Under the stored snapshot's identity: the verified record is written, and only it.
+        // Under the stored snapshot's identity: neither tier is written either, because the
+        // only records this pass can name as verified are the files that changed.
         run(&auto);
         assert_eq!(
             fs::read(&snapshot_path).expect("snapshot"),
             snapshot_before,
             "a partial scan must not overwrite a complete snapshot"
         );
+        assert_eq!(
+            fs::read(&sidecar_path).expect("sidecar"),
+            sidecar_before,
+            "held until P1.4.2 (`fdu-rjv3`): writing here would evict the complete sidecar \
+             and leave only the changed file"
+        );
+        // What the stored pair still holds: a record for each of the two seeded files,
+        // including the one under the directory this pass could not list, and the older
+        // metrics for the file that changed, which a later complete pass replaces.
         let (mut fresh, _) =
             scan::scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
         let wanted = fresh.content_identity(analysis.profile);
         let loaded = content::load_content_cache(&mut fresh, &wanted, &sidecar_path).expect("load");
-        assert_eq!((loaded.usable, loaded.hits, loaded.stale), (true, 1, 0), "{loaded:?}");
+        assert_eq!((loaded.usable, loaded.hits, loaded.stale), (true, 1, 1), "{loaded:?}");
         let content = fresh.content().expect("content");
         assert_eq!(
-            content.file(Path::new("notes.md")).expect("the verified record").metrics.raw_words,
-            3
+            content.file(Path::new("locked/old.md")).expect("the seeded record").metrics.raw_words,
+            1
         );
-        assert!(
-            content.file(Path::new("locked/old.md")).is_none(),
-            "the record under the directory the pass could not list is not written"
+    }
+
+    /// The cost the hold above avoids: a warm partial pass must leave a complete sidecar
+    /// whole, not shrink it to the files that changed, or every later run re-reads the
+    /// whole tree for as long as the tree holds one unlistable directory.
+    ///
+    /// P1.4.2 (`fdu-rjv3`) replaces this with the stronger claim: after the same pass the
+    /// sidecar holds a record for every file the pass stat'd unchanged and none under the
+    /// unlistable directory.
+    #[test]
+    #[cfg(unix)]
+    fn a_warm_partial_pass_leaves_a_complete_sidecar_whole() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        let sidecar_path = content::content_cache_path(&snapshot_path);
+        for index in 0..7 {
+            write_file(&dir.path().join(format!("f{index}.md")), b"alpha\nbeta\n");
+        }
+        write_file(&dir.path().join("locked/old.md"), b"three\n");
+        let analysis = content::AnalysisRequest {
+            profile: content::AnalysisSet::NONE.with_lines(),
+            ..content::AnalysisRequest::default()
+        };
+        let auto = OpenConfig {
+            cache_path: Some(snapshot_path.clone()),
+            policy: CachePolicy::Auto,
+            analysis,
+            ..OpenConfig::default()
+        };
+
+        let records_in_sidecar = |path: &Path| {
+            let (mut fresh, _) = scan::scan_into_index(path, &ScanConfig::default()).expect("scan");
+            let wanted = fresh.content_identity(analysis.profile);
+            let loaded =
+                content::load_content_cache(&mut fresh, &wanted, &sidecar_path).expect("load");
+            assert!(loaded.usable, "the sidecar should still be readable");
+            loaded.hits + loaded.stale
+        };
+
+        let (_, seeded) = open(dir.path(), &auto).expect("seed both tiers");
+        assert!(seeded.is_complete());
+        assert_eq!(records_in_sidecar(dir.path()), 8, "one record per seeded file");
+
+        // One file changes, one directory becomes unlistable: the warm pass is partial.
+        write_file(&dir.path().join("f0.md"), b"alpha\nbeta\ngamma\n");
+        let locked = dir.path().join("locked");
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("deny");
+        let opened = open(dir.path(), &auto);
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o700)).expect("restore");
+        let (_, report) = opened.expect("a partial open still answers");
+        assert!(!report.is_complete(), "the pass should be partial");
+
+        assert_eq!(
+            records_in_sidecar(dir.path()),
+            8,
+            "a warm partial pass must not shrink the sidecar to the files that changed"
         );
     }
 

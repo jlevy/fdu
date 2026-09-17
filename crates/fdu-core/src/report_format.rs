@@ -1691,15 +1691,25 @@ impl CacheField {
         }
     }
 
-    /// A scalar, or an empty collection, as both formats spell it bare.
+    /// The value on one line, as both formats spell it.
+    ///
+    /// The invariant: every caller reaches this with a scalar or an empty collection,
+    /// because the YAML writers expand a non-empty list or map into an indented block and
+    /// `json` recurses into one itself. Only the shapes `fdu.cache/2` has today keep that
+    /// true — no list of lists, and no list whose items are not maps other than
+    /// `analyze`'s strings — so a field added later can reach here with something to say.
+    /// It is spelled as its one-line JSON form rather than as `[]` or `{}`, because that
+    /// is valid YAML flow style and holds everything the value holds: a walker that has
+    /// not learned to indent a shape must not answer by dropping it.
     fn plain(&self) -> String {
         match self {
             Self::Null => "null".to_string(),
             Self::Bool(value) => value.to_string(),
             Self::Count(value) => value.to_string(),
             Self::Text(text) => yaml_scalar(text),
-            Self::List(_) => "[]".to_string(),
-            Self::Map(_) => "{}".to_string(),
+            Self::List(items) if items.is_empty() => "[]".to_string(),
+            Self::Map(fields) if fields.is_empty() => "{}".to_string(),
+            collection => collection.json(),
         }
     }
 
@@ -2197,6 +2207,28 @@ mod tests {
                 "state: leftover\n    leftover_kind: orphaned_content\n    content: null"
             )
         );
+    }
+
+    /// A field shape the YAML writers have no block form for is still rendered whole.
+    ///
+    /// No `fdu.cache/2` field is a list of collections, so nothing reaches `plain` with
+    /// anything to say today; this pins what happens when the answer model adds one, since
+    /// the alternative this replaces printed the item as `[]` and dropped what it held.
+    #[test]
+    fn a_collection_with_no_yaml_block_form_is_rendered_whole() {
+        let nested = CacheField::List(vec![CacheField::List(vec![
+            CacheField::Count(7),
+            CacheField::Text("lines".to_string()),
+        ])]);
+        assert_eq!(nested.json(), "[[7, \"lines\"]]");
+        let mut yaml = String::new();
+        nested.write_yaml_field(&mut yaml, 2, "nested");
+        assert_eq!(yaml, "\n  nested:\n    - [7, \"lines\"]");
+
+        let map = CacheField::Map(vec![("records", CacheField::Count(3))]);
+        assert_eq!(CacheField::List(vec![map]).json(), "[{\"records\": 3}]");
+        assert_eq!(CacheField::List(Vec::new()).plain(), "[]");
+        assert_eq!(CacheField::Map(Vec::new()).plain(), "{}");
     }
 
     /// A current snapshot carries the identity of every tier it holds, and the sidecar

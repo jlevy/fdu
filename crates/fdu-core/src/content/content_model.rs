@@ -429,8 +429,16 @@ pub struct FileAnalysis {
 }
 
 /// Owned immutable candidate captured before worker execution.
+///
+/// Crate-private with [`Index::analysis_candidates`] and [`Index::apply_analysis`] until
+/// the request model (P1.3) decides whether an out-of-crate analyzer is a supported
+/// surface (`fdu-5upj`): the tier must be prepared for a candidate's identity before a
+/// result for it can commit, and preparation is crate-private.
+///
+/// [`Index::analysis_candidates`]: crate::Index::analysis_candidates
+/// [`Index::apply_analysis`]: crate::Index::apply_analysis
 #[derive(Clone, Debug)]
-pub struct AnalysisCandidate {
+pub(crate) struct AnalysisCandidate {
     /// Generation-safe index identity.
     pub entry_id: EntryId,
     /// Entry revision at capture time.
@@ -443,13 +451,11 @@ pub struct AnalysisCandidate {
     pub attrs: Attrs,
     /// Metadata-only classification.
     pub classification: Classification,
-    /// Requested analyzer profile.
-    pub profile: AnalysisSet,
 }
 
 /// Worker result submitted to the index's derived-data mutation boundary.
 #[derive(Clone, Debug)]
-pub struct AnalysisObservation {
+pub(crate) struct AnalysisObservation {
     /// Candidate identity and expectation.
     pub candidate: AnalysisCandidate,
     /// Completed or skipped analysis record.
@@ -458,10 +464,12 @@ pub struct AnalysisObservation {
 
 /// Result of conditionally committing one worker observation.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum AnalysisApplyOutcome {
+pub(crate) enum AnalysisApplyOutcome {
     /// The sparse record and ancestor rollups changed.
     Applied,
-    /// Metadata changed after candidate capture; the result was discarded.
+    /// The result was discarded: metadata changed after candidate capture, or the content
+    /// tier holds another identity than the one the result was produced under, which is
+    /// the same answer because both mean the result describes something else.
     Stale,
 }
 

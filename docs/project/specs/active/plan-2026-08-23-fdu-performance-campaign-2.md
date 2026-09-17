@@ -423,9 +423,11 @@ Plan Phase C against the warm number.
   wrong.** The bead claimed ~34% of a warm content open from a flat callgrind profile;
   the caller tree put classification at 11.11% inclusive, and H95’s indexed tiers have
   since taken −41.4% absolute off `classify_path_with_prefix`. What remains is the
-  double classification in `apply_analysis`’s staleness guard, which is a
-  public-contract change (`AnalysisCandidate` is constructible by callers) for a corner
-  of 11%. Re-scope or close; do not carry it as P0.
+  double classification in `apply_analysis`’s staleness guard, for a corner of 11%. That
+  was a public-contract change while `AnalysisCandidate` was constructible by callers;
+  it is crate-private as of the explicit-core-models layer 3, so the guard can now trust
+  what built the candidate.
+  Re-scope or close; do not carry it as P0.
 - [ ] `fdu-78q6` — the sidecar restore path (H83): 25 µs/file against 3 µs for a
   metadata record, same re-derivation shape as the snapshot loader had; expect the same
   class of fix. Now the largest unexamined item on this tier after the structural one.

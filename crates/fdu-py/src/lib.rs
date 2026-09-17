@@ -1458,14 +1458,22 @@ fn cache_status_dict<'py>(
     dict.set_item("path", status.path.as_os_str())?;
     dict.set_item("bytes", status.bytes)?;
     dict.set_item("state", status.state.label())?;
+    // Named arms, not a catch-all: a new `CacheState` variant should stop here and be
+    // decided, rather than compile into a row whose reason and kind are silently `None`.
     let stale = match &status.state {
         fdu_core::CacheState::Stale(reason) => Some(*reason),
-        _ => None,
+        fdu_core::CacheState::Current(_)
+        | fdu_core::CacheState::Leftover(_)
+        | fdu_core::CacheState::Unrecognized
+        | fdu_core::CacheState::Absent => None,
     };
     set_stale_items(&dict, stale)?;
     match &status.state {
         fdu_core::CacheState::Leftover(kind) => dict.set_item("leftover_kind", kind.label())?,
-        _ => dict.set_item("leftover_kind", py.None())?,
+        fdu_core::CacheState::Current(_)
+        | fdu_core::CacheState::Stale(_)
+        | fdu_core::CacheState::Unrecognized
+        | fdu_core::CacheState::Absent => dict.set_item("leftover_kind", py.None())?,
     }
     if let Some(info) = status.snapshot() {
         dict.set_item("root", info.root.as_os_str())?;
@@ -1818,6 +1826,7 @@ fn contract(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     contract.set_item("sort_keys", ["size", "count", "mtime", "name"])?;
     contract.set_item("cache_scopes", fdu_core::CacheScope::LABELS)?;
     contract.set_item("cache_states", fdu_core::CacheState::LABELS)?;
+    contract.set_item("content_states", fdu_core::ContentState::LABELS)?;
     contract.set_item("stale_reasons", fdu_core::StaleReason::LABELS)?;
     contract.set_item("leftover_kinds", fdu_core::LeftoverKind::LABELS)?;
     Ok(contract)

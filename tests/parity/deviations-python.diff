@@ -284,6 +284,10 @@ PASS [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
   ✓ Status Maps a Hash-Named File Back to Its Tree
   ✓ Status Renders Through the Format Axis
   ✓ Status Renders Through the Format Axis
+  ✓ A Content Sidecar Is Reported Beside Its Snapshot
+  ✓ A Content Sidecar Is Reported Beside Its Snapshot
+  ✓ A Content Sidecar Is Reported Beside Its Snapshot
+  ✓ A Content Sidecar Is Reported Beside Its Snapshot
   ✓ Clearing Echoes the Target Before Acting
   ✓ Clearing Is Idempotent
   ✓ Clear and Status Compose, With Clear First

@@ -167,6 +167,19 @@ class CacheState(StrEnum):
     ABSENT = "absent"
 
 
+class ContentState(StrEnum):
+    """What the content sidecar beside a snapshot holds.
+
+    Narrower than `CacheState`, and the two values are spelled the same: a sidecar is
+    reported only where one was found beside a snapshot, so it is never `LEFTOVER`,
+    `UNRECOGNIZED`, or `ABSENT` here. A sidecar with no snapshot is a file of its own in
+    the cache listing, and that one is `CacheState.LEFTOVER`.
+    """
+
+    CURRENT = "current"
+    STALE = "stale"
+
+
 class StaleReason(StrEnum):
     """Why a snapshot fdu wrote cannot be served by this build."""
 
@@ -877,13 +890,14 @@ class ContentTierIdentity:
 class ContentStatus:
     """The content sidecar fdu wrote beside a snapshot.
 
-    `state` is `CURRENT` or `STALE`. `records` and `identity` come from the header of a
-    `CURRENT` sidecar and are `None` otherwise; `stale_reason` is set only for a `STALE`
-    one, and `format_version` only when the version is the reason.
+    `state` is one of the two values a sidecar takes, `ContentState.CURRENT` or
+    `ContentState.STALE`. `records` and `identity` come from the header of a `CURRENT`
+    sidecar and are `None` otherwise; `stale_reason` is set only for a `STALE` one, and
+    `format_version` only when the version is the reason.
     """
 
     bytes: int
-    state: CacheState
+    state: ContentState
     stale_reason: StaleReason | None
     format_version: int | None
     records: int | None
@@ -978,7 +992,7 @@ def _content_status(value: Mapping[str, Any] | None) -> ContentStatus | None:
         )
     return ContentStatus(
         bytes=int(value["bytes"]),
-        state=CacheState(value["state"]),
+        state=ContentState(value["state"]),
         stale_reason=_stale_reason(value["stale_reason"]),
         format_version=_limit(value["format_version"]),
         records=_limit(value["records"]),
