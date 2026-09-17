@@ -401,9 +401,27 @@ These are breaking changes, and they land before 0.1.0 is published.
 
 File and function names below were verified against `5f2d36d`. Paths are relative to
 `crates/fdu-core/src/` unless they start with `crates/`, `tests/`, `scripts/`,
-`explorations/`, `.github/`, or `Makefile`. Line numbers locate today’s code and will
-drift as items land; when an item becomes beads, its table moves into them and the plan
-keeps the function names.
+`explorations/`, `.github/`, or `Makefile`. Each item is an epic bead whose children are
+its commits, one bead per commit; the beads carry the line locators verified at
+`5f2d36d`, and the plan keeps the file and function names, which survive as code moves.
+
+### Beads
+
+The epic `fdu-h7xy` holds the eight items, and `fdu-xgjx` closes conformance after all
+of them.
+Commit beads are named `P<phase>.<item>.<commit>`, and their blockers encode the
+sequencing below.
+
+| Item | Epic bead | Commit beads |
+| --- | --- | --- |
+| Phase 1 item 1: The path-independence harness | `fdu-pncf` | `fdu-6dwc` (P1.1.1), `fdu-d3se` (P1.1.2), `fdu-whdi` (P1.1.3), `fdu-zf0f` (P1.1.4), `fdu-u9do` (P1.1.5), `fdu-km7w` (P1.1.6) |
+| Phase 1 item 2: Store identity, equality serve, and per-tier writes | `fdu-kg2i` | `fdu-nz0e` (P1.2.1), `fdu-ziu0` (P1.2.2), `fdu-7swa` (P1.2.3), `fdu-o6vm` (P1.2.4), `fdu-ss0m` (P1.2.5), `fdu-ptj8` (P1.2.6) |
+| Phase 1 item 3: The request model | `fdu-vi8z` | `fdu-ve5k` (P1.3.1), `fdu-15gv` (P1.3.2), `fdu-xnjy` (P1.3.3), `fdu-sm9z` (P1.3.4), `fdu-890m` (P1.3.5), `fdu-cevv` (P1.3.6) |
+| Phase 1 item 4: Provenance and tree status | `fdu-awjm` | `fdu-c7gc` (P1.4.1), `fdu-rjv3` (P1.4.2), `fdu-wuip` (P1.4.3), `fdu-8x1d` (P1.4.4), `fdu-szll` (P1.4.5), `fdu-tngk` (P1.4.6) |
+| Phase 2 item 1: Measured values | `fdu-azz3` | `fdu-ogg0` (P2.1.1), `fdu-xras` (P2.1.2), `fdu-ibu1` (P2.1.3), `fdu-am8r` (P2.1.4), `fdu-ufjb` (P2.1.5) |
+| Phase 2 item 2: The answer model and writers | `fdu-fft9` | `fdu-aow4` (P2.2.1), `fdu-3ex4` (P2.2.2), `fdu-5at8` (P2.2.3), `fdu-7bfu` (P2.2.4), `fdu-joqd` (P2.2.5), `fdu-lkuj` (P2.2.6), `fdu-jppg` (P2.2.7), `fdu-8ihl` (P2.2.8) |
+| Phase 2 item 3: The execution plan model | `fdu-838z` | `fdu-ehk4` (P2.3.1), `fdu-a9wi` (P2.3.2), `fdu-rtfc` (P2.3.3), `fdu-sbg9` (P2.3.4), `fdu-b7df` (P2.3.5), `fdu-3uit` (P2.3.6), `fdu-xm3m` (P2.3.7), `fdu-7t60` (P2.3.8) |
+| Phase 2 item 4: The `.gitignore` observation projection | `fdu-ssyf` | `fdu-ay3c` (P2.4.1), `fdu-xwmv` (P2.4.2), `fdu-qxgh` (P2.4.3), `fdu-brun` (P2.4.4), `fdu-u767` (P2.4.5) |
 
 ### Interfaces Between Items
 
@@ -433,8 +451,9 @@ keeps the function names.
   once in the walk rather than in each writer.
 - Per-analyzer records either share the sidecar format bump with item 2 or take the next
   one; both land before 0.1.0.
-- Phase 2 item 1 commit 4 waits on Phase 2 item 2 commits 3 to 5, so beads for Phase 2
-  are created per commit where a commit depends on another item.
+- Phase 2 item 1 commit 4 waits on Phase 2 item 2 commits 3 to 5, which is why every
+  item is split into one bead per commit and the blockers sit on the commits (P2.1.4
+  waits on P2.2.5).
 - The `.gitignore` projection needs item 2’s snapshot identity and item 3’s refusal of
   `--watch --cache only`; if the execution plan lands first, `Plan::admit` calls
   `serves_snapshot`.
@@ -442,9 +461,9 @@ keeps the function names.
 ### Phase 1, Item 1: The Path-Independence Harness
 
 The harness is Python `unittest` using only the standard library, run through uv’s
-Python 3.12 as `release-test` is (`Makefile:380-381`). The invariant spans the command
-line and the Python package, which a Rust test cannot reach, and tryscript compares
-bytes rather than parsed answers.
+Python 3.12 as `release-test` is (`Makefile`). The invariant spans the command line and
+the Python package, which a Rust test cannot reach, and tryscript compares bytes rather
+than parsed answers.
 The case against is speed (one subprocess per case) and the installed wheel the Python
 half needs; model unit tests stay in Rust.
 
@@ -458,14 +477,14 @@ half needs; model unit tests stay in Rust.
 | `tests/path_independence/known-violations.toml` | registry | Add, seeded from a full Linux run |
 | `tests/path_independence/test_harness.py` | comparator and registry unit tests | Add; needs no fdu build |
 | `tests/path_independence/test_path_independence.py` | `PathIndependence.test_matrix` | Add; `FDU_PI_TIER=subset\|full`, `FDU_PI_SURFACES=cli\|cli,python` |
-| `Makefile` | `path-independence`, `test-path-independence`, `path-independence-full`, `path-independence-record`; `check` (`:113`), `UV_BACKED_TARGETS` (`:163`), `PYTHON_LINT_PATHS` (`:345`) | Add the targets; `check` runs the subset after `parity-check` with `FDU_PYTHON=$(SMOKE_PYTHON)` |
-| `.github/workflows/ci.yml` | `test` job (`:61-111`), `parity` job (`:228-274`) | Add the pinned `setup-uv` step to the `test` job, which has none, and run the command-line subset on three platforms through the Make target, so the harness runs on uv’s Python 3.12 (`tomllib` needs 3.11); the two-surface subset runs in the parity job with `.venv-parity` |
+| `Makefile` | `path-independence`, `test-path-independence`, `path-independence-full`, `path-independence-record`; `check`, `UV_BACKED_TARGETS`, `PYTHON_LINT_PATHS` | Add the targets; `check` runs the subset after `parity-check` with `FDU_PYTHON=$(SMOKE_PYTHON)` |
+| `.github/workflows/ci.yml` | `test` job, `parity` job | Add the pinned `setup-uv` step to the `test` job, which has none, and run the command-line subset on three platforms through the Make target, so the harness runs on uv’s Python 3.12 (`tomllib` needs 3.11); the two-surface subset runs in the parity job with `.venv-parity` |
 | `.github/workflows/path-independence.yml` | full matrix | Add: schedule, `workflow_dispatch`, and the `path-independence-full` label; three platforms; failing diffs uploaded; toolchain and uv pins inventoried in `supply-chain-policy.json` |
 | `explorations/path-independence/` | scripts | Delete once moved; keep `results/` and a README pointing to `tests/path_independence` |
 
 `FDU_BIN` is an absolute path, defaulting to `target/debug/fdu` from `make build` and
 never resolved through `PATH`. Each invocation gets its own `XDG_CACHE_HOME`, which
-`user_cache_dir` honors on every platform (`lib.rs:794-799`).
+`user_cache_dir` honors on every platform (`lib.rs`).
 
 The registry is TOML, read with `tomllib` and reviewed like a golden:
 
@@ -517,45 +536,44 @@ workflow must pass `validateWorkflowSecurity` in `scripts/check-supply-chain.mjs
 | File | Function or type | Change |
 | --- | --- | --- |
 | `stored_state.rs` (new) | `EntryScope` (today’s `ScanScope` without `type_rules_fingerprint`, `reducers_fingerprint`, and `ignore_rules_fingerprint`), `serves_snapshot(stored, wanted) -> Serves::{Exact, Refuse}`, `EntryTierIdentity { engine, scope: EntryScope, type_rules_fingerprint, reducers_fingerprint }`, `ControlTierIdentity::{NotObserved, Observed { limits }}`, `SnapshotIdentity { entries, controls }`, `ContentTierIdentity { entries, analysis, provenance }` with `serves` as equality, `entries_writable(&Index)`, `content_record_writable(&Index, &Path, &FileAnalysis)`, and shared fixed-width codecs | Add |
-| `snapshot.rs` | `FORMAT_VERSION` (`:64`); `save` (`:216-281`); `put_scope`/`read_scope` (`:924-969`); `read_controls` limits (`:788-791`); `parse_header_fields` (`:599-611`); `parse_stream` (`:614-708`) | Format 5 with header identities and the verifying pass’s start (`verified_started_at_ns`), which `save` writes; today’s `captured_at_ns` is the file’s modification time (`snapshot.rs:369-375`); the save guard becomes `entries_writable`; control limits move into the header and a disagreeing table is refused. `identify_prologue` (`:532-566`) keeps its offsets, so format 4 reads as `OlderFormat` |
-| `content/content_cache.rs` | `FORMAT_VERSION` (`:23`); `save_content_cache` (`:56-105`); `load_content_cache` (`:109-175`); `parse` (`:218-282`) | Format 5 with the engine fingerprint and `ContentTierIdentity`; the save filter (`:71-81`) becomes `content_record_writable`; loading compares identity by equality |
-| `content/content_cache.rs` | `identify_sidecar(path)` | Add, mirroring `snapshot::identify` (`:515-529`); `content_sidecar_bytes` (`:182-202`) stays magic-only so older sidecars are still reclaimed |
-| `engine_contract.rs`, `scan.rs` | `ScanScope` (`engine_contract.rs:137-153`), `observes_controls()` (`:235-237`), `ScanConfig::scope()` (`scan.rs:325-335`) | `ScanConfig::scope()` builds `EntryScope` and `ControlTierIdentity`; observation is read from `ControlTierIdentity` at `execution.rs:331`, `watch_session.rs:138`, `query/query_report.rs:976`, and `crates/fdu-py/src/lib.rs:375` and `:590` |
-| `content/content_model.rs` | `ContentProvenance::satisfies` (`:266-273`), `AnalysisSet::contains` (`:92-99`) | Delete |
-| `content/content_index.rs` | `ContentIndex` (`:166-172`), `profile`/`provenance` (`:186-193`), `prepare` (`:252-272`), `commit` (`:209-217`) | Hold `identity: Option<ContentTierIdentity>`; `prepare` clears on any inequality; `commit` refuses a record of another identity instead of calling `prepare` |
-| `index.rs` | `prepare_content_analysis` (`:3390-3398`), `pending_analysis_candidates` (`:3434-3453`), `apply_analysis` (`:3457-3474`) | Build the identity from the index’s scope and registry; pending compares fingerprint and identity; `apply_analysis` returns `Stale` when `commit` refuses; add `content_set()` |
-| `lib.rs` | `load_content` (`:719-724`), cache-only check (`:541-551`), `SaveTargets` (`:636-653`), `cold_scan_save_targets_with` (`:699-717`), `spawn_save` (`:730-777`) | Pass the content identity; keep the cache-only count, which now means complete; drop the joint completeness gate (`:736-737`) for per-tier rules; write the sidecar after a partial scan only when a snapshot of the same entry identity is already stored, so a partial run under another identity never evicts the sidecar that pairs with the stored snapshot |
-| `cache.rs` | `SnapshotInfo` (`:245-253`), `CacheStatus` (`:43-53`), `status_at` (`:398-400`) | `SnapshotInfo.identity`; `CacheStatus.content` from `identify_sidecar`; pairing, `clear_cache`, and the `OrphanedContent` rule stay magic-based |
-| `report_format.rs`, `crates/fdu-py/src/lib.rs`, `crates/fdu-py/python/fdu/_models.py` | `CACHE_SCHEMA` (`:70`), `render_cache_status` (`:1610-1714`); `cache_status_dict` (`:1484-1523`); `CacheStatus` model (`:817-836`) | `fdu.cache/2` with identities, coordinated with the answer model |
+| `snapshot.rs` | `FORMAT_VERSION`; `save`; `put_scope`/`read_scope`; `read_controls` limits; `parse_header_fields`; `parse_stream` | Format 5 with header identities and the verifying pass’s start (`verified_started_at_ns`), which `save` writes; today’s `captured_at_ns` is the file’s modification time (`snapshot.rs`); the save guard becomes `entries_writable`; control limits move into the header and a disagreeing table is refused. `identify_prologue` keeps its offsets, so format 4 reads as `OlderFormat` |
+| `content/content_cache.rs` | `FORMAT_VERSION`; `save_content_cache`; `load_content_cache`; `parse` | Format 5 with the engine fingerprint and `ContentTierIdentity`; the save filter becomes `content_record_writable`; loading compares identity by equality |
+| `content/content_cache.rs` | `identify_sidecar(path)` | Add, mirroring `snapshot::identify`; `content_sidecar_bytes` stays magic-only so older sidecars are still reclaimed |
+| `engine_contract.rs`, `scan.rs` | `ScanScope` (`engine_contract.rs`), `observes_controls()`, `ScanConfig::scope()` (`scan.rs`) | `ScanConfig::scope()` builds `EntryScope` and `ControlTierIdentity`; observation is read from `ControlTierIdentity` at `execution.rs`, `watch_session.rs`, `query/query_report.rs`, and `crates/fdu-py/src/lib.rs` |
+| `content/content_model.rs` | `ContentProvenance::satisfies`, `AnalysisSet::contains` | Delete |
+| `content/content_index.rs` | `ContentIndex`, `profile`/`provenance`, `prepare`, `commit` | Hold `identity: Option<ContentTierIdentity>`; `prepare` clears on any inequality; `commit` refuses a record of another identity instead of calling `prepare` |
+| `index.rs` | `prepare_content_analysis`, `pending_analysis_candidates`, `apply_analysis` | Build the identity from the index’s scope and registry; pending compares fingerprint and identity; `apply_analysis` returns `Stale` when `commit` refuses; add `content_set()` |
+| `lib.rs` | `load_content`, cache-only check, `SaveTargets`, `cold_scan_save_targets_with`, `spawn_save` | Pass the content identity; keep the cache-only count, which now means complete; drop the joint completeness gate for per-tier rules; write the sidecar after a partial scan only when a snapshot of the same entry identity is already stored, so a partial run under another identity never evicts the sidecar that pairs with the stored snapshot |
+| `cache.rs` | `SnapshotInfo`, `CacheStatus`, `status_at` | `SnapshotInfo.identity`; `CacheStatus.content` from `identify_sidecar`; pairing, `clear_cache`, and the `OrphanedContent` rule stay magic-based |
+| `report_format.rs`, `crates/fdu-py/src/lib.rs`, `crates/fdu-py/python/fdu/_models.py` | `CACHE_SCHEMA`, `render_cache_status`; `cache_status_dict`; `CacheStatus` model | `fdu.cache/2` with identities, coordinated with the answer model |
 | Documentation | `fdu.cache/2` and formats 5 in `docs/project/guides/cache-design.md`, `docs/project/architecture/fdu-surface-architecture.md`, `docs/project/architecture/fdu-engine-architecture.md`, `docs/project/release-notes/0.1.0.md`, and `docs/project/guides/release-process.md` | Update |
 
-**Call sites:** `SnapshotInfo` constructions at `snapshot.rs:609`, `cache.rs:1102`,
-`report_format.rs:1945`, and its readers at `crates/fdu-py/src/lib.rs:1514-1515`;
-`satisfies` at `content/content_cache.rs:235`, `content/content_index.rs:262`,
-`index.rs:3445`; `save_content_cache` at `lib.rs:768`; `load_content_cache` at
-`lib.rs:723`; `analyze_index`, whose behavior changes, at `lib.rs:574` and `:615`,
-`crates/fdu-py/src/lib.rs:466`, `examples/perf_probe.rs:501` and `:550`, and the
-`content/content_cache.rs` tests at `:634` and `:650`.
+**Call sites:** `SnapshotInfo` constructions at `snapshot.rs`, `cache.rs`,
+`report_format.rs`, and its readers at `crates/fdu-py/src/lib.rs`; `satisfies` at
+`content/content_cache.rs`, `content/content_index.rs`, `index.rs`; `save_content_cache`
+at `lib.rs`; `load_content_cache` at `lib.rs`; `analyze_index`, whose behavior changes,
+at `lib.rs`, `crates/fdu-py/src/lib.rs`, `examples/perf_probe.rs`, and the
+`analyzed_index` and `containment_fixture` test helpers in `content/content_cache.rs`.
 
 **Tests:**
-- `content/content_cache.rs`: turn the containment tests (`:661`, `:682`, `:701`) into
+- `content/content_cache.rs`: turn the containment tests into
   `a_wider_sidecar_is_a_clean_miss_for_a_narrower_request`,
   `another_analyzer_set_is_a_clean_miss`, and
   `a_different_analyzer_set_replaces_the_sidecar`; recheck `corruption_is_a_clean_miss`
-  (`:721`) offsets; add `a_sidecar_from_another_engine_or_scope_is_a_clean_miss`,
+  offsets; add `a_sidecar_from_another_engine_or_scope_is_a_clean_miss`,
   `an_analyzer_version_change_invalidates_records`, and
   `records_under_an_unverified_subtree_are_not_written`.
 - `content/content_model.rs`: delete
-  `containment_is_reflexive_and_ordered_by_membership` (`:575-585`).
-  `content/content_index.rs`: add `prepare_clears_on_any_identity_change` and
+  `containment_is_reflexive_and_ordered_by_membership`. `content/content_index.rs`: add
+  `prepare_clears_on_any_identity_change` and
   `commit_refuses_a_record_of_another_identity`.
-- `snapshot.rs`: update `semantic_scan_scope_round_trips` (`:2435`) and
-  `control_limits_that_disagree_with_the_scope_are_refused_at_save_and_load` (`:1639`);
-  add `a_v4_snapshot_is_older_format` and
+- `snapshot.rs`: update `semantic_scan_scope_round_trips` and
+  `control_limits_that_disagree_with_the_scope_are_refused_at_save_and_load`; add
+  `a_v4_snapshot_is_older_format` and
   `controls_on_and_off_snapshots_share_the_entry_identity`.
 - `lib.rs`: add `a_partial_scan_writes_verified_content_but_no_snapshot`; recheck
-  `content_sidecar_skips_unchanged_reads_and_serves_cache_only` (`:1286`) and
-  `cache_only_analysis_fails_closed_without_its_sidecar` (`:1362`). `cache.rs`: add
+  `content_sidecar_skips_unchanged_reads_and_serves_cache_only` and
+  `cache_only_analysis_fails_closed_without_its_sidecar`. `cache.rs`: add
   `a_stale_sidecar_beside_a_current_snapshot_is_labelled_and_cleared`.
 - Goldens: `cli-lifecycle` cache status in JSON and YAML and the stale listing change
   for `fdu.cache/2`; `cli-surface`’s `--docs` text changes; `cli-cache` and
@@ -604,44 +622,47 @@ Typed command-line values (for example `--scan-depth`) reach `RequestSpec` throu
 
 | Axis | Default | Where it differs today |
 | --- | --- | --- |
-| Size | Allocated | `SizeMetric` defaults to apparent (`query/query_selection.rs:18-19`); the opened-root binding uses `"apparent"` (`crates/fdu-py/src/opened_binding.rs:121`) |
+| Size | Allocated | `SizeMetric` defaults to apparent (`query/query_selection.rs`); the opened-root binding uses `"apparent"` (`crates/fdu-py/src/opened_binding.rs`) |
 | Views (report) | `ViewSpec::default_for(content)` | None |
-| Views (watch) | `tree`, the default for no content | Python passes `Files` (`crates/fdu-py/src/lib.rs:357`); `WatchOptions` defaults to `files` (`crates/fdu-py/python/fdu/_models.py:430`) |
-| `words_per_page` | 250 | Declared at `crates/fdu/src/cli.rs:505`, `query/query_report.rs:380`, and the binding signatures |
+| Views (watch) | `tree`, the default for no content | Python passes `Files` (`crates/fdu-py/src/lib.rs`); `WatchOptions` defaults to `files` (`crates/fdu-py/python/fdu/_models.py`) |
+| `words_per_page` | 250 | Declared at `crates/fdu/src/cli.rs`, `query/query_report.rs`, and the binding signatures |
 | Analysis and controls | None; `read_controls` on; `ControlLimits::default()` | None |
 
 | File | Function or type | Change |
 | --- | --- | --- |
-| `query/query_request.rs` | new | The types above, and the value grammars moved in from both surfaces: `parse_kind` (`cli.rs:1519`, `crates/fdu-py/src/lib.rs:1012`), `parse_bound` (`:1549`/`:1066`), `parse_sort` (`:1561`/`:1025`), `parse_size_metric` (`:1574`/`:1055`), `bound_nanos` (`:335`/`:709`), `parse_cache_policy` (`:1145`/`:606`) |
-| `query/query_report.rs` | `Query::validate_analysis` (`:400`), `validate_controls` (`:429`), `AxisNames` (`:298`), `report` (`:957`), `report_in` (`:965`), share metric in `metric_summary` (`:1514-1522`) | Delete both validators into `Request`; extend `AxisNames`; `report` and `report_in` take `&Request`, validate the read against the index’s basis, and read `analysis` and the share metric from the request |
-| `query/query_selection.rs` | `SizeMetric` default (`:18-19`) | Allocated |
-| `execution.rs` | `prepare_report` (`:210`), `prepare_report_with_scan_diagnostics` (`:227`), `prepare_report_internal` (`:235`) | Take `(&Request, &Delivery)`, the root being in `Basis`; build today’s `OpenConfig` from them internally until Phase 2 item 3 deletes it; delete the check at `:242-244` |
-| `watch_session.rs` | `Session::new` (`:127-142`), `query()` (`:145`) | `new(handle, Request, WatchConfig)`; refuse when `content_set()` is not empty and run the delivery checks; `query()` becomes `request()` |
-| `scan.rs` | `validate_for_watch_scope` (`:400-406`) | Keep scope equality for its callers; the depth and one-filesystem rule becomes `RequestError::WatchScope` |
-| `engine_contract.rs` | `ReportRequest` (`:923-930`), `Error` | A read spec whose `now` is `generated_at`; add `Error::InvalidRequest(RequestError)` |
-| `opened/read.rs` | `report_projection` (`:236`), `validate_report` (`:281`) | Validate reads against `Basis { content: NONE }`, so `documents` is refused |
-| `crates/fdu/src/cli.rs` | `run` (`:612-651`), `scan_config` (`:1109`), `parse_query` (`:1186`), `parse_analysis` (`:1245`), `resolved_query` (`:1180`), `resolve_views` (`:1488`), `run_watch` (`:760`) | `Cli::spec()` and `Request::build(.., SystemTime::now(), AxisNames::FLAGS)`; delete `:627-634` and the watch guards `:638-651`; add the `--watch --cache only` refusal |
-| `crates/fdu-py/src/lib.rs` | `PyIndex` (`:134-147`), `build_query_at` (`:1172-1246`), `build_report` (`:551`), `watch` (`:336`), `report_once` (`:1319`), `open` (`:1610`), `scan` (`:1685`), `to_py_err` (`:38`) | Hold `basis`; `build_request(now, basis, spec)`; delete validation at `:375`, `:590`, `:1380`, `:1244`; `watch` refuses an analyzed or cache-only index; map `InvalidRequest` to `ValueError` |
-| `crates/fdu-py/src/opened_binding.rs`, `crates/fdu-py/python/fdu/_models.py` | `parse_selection` (`:98-145`), `parse_report` (`:260-286`); `WatchOptions.query` (`:430`) | Defaults from the model; `WatchOptions` defaults to `Query()` |
+| `query/query_request.rs` | new | The types above, and the value grammars moved in from both surfaces: `parse_kind` (`cli.rs`, `crates/fdu-py/src/lib.rs`), `parse_bound`, `parse_sort`, `parse_size_metric`, `bound_nanos`, `parse_cache_policy` |
+| `query/query_report.rs` | `Query::validate_analysis`, `validate_controls`, `AxisNames`, `report`, `report_in`, share metric in `metric_summary` | Delete both validators into `Request`; extend `AxisNames`; `report` and `report_in` take `&Request`, validate the read against the index’s basis, and read `analysis` and the share metric from the request |
+| `query/query_selection.rs` | `SizeMetric` default | Allocated |
+| `execution.rs` | `prepare_report`, `prepare_report_with_scan_diagnostics`, `prepare_report_internal` | Take `(&Request, &Delivery)`, the root being in `Basis`; build today’s `OpenConfig` from them internally until Phase 2 item 3 deletes it; delete its `validate_controls` call |
+| `watch_session.rs` | `Session::new`, `query()` | `new(handle, Request, WatchConfig)`; refuse when `content_set()` is not empty and run the delivery checks; `query()` becomes `request()` |
+| `scan.rs` | `validate_for_watch_scope` | Keep scope equality for its callers; the depth and one-filesystem rule becomes `RequestError::WatchScope` |
+| `engine_contract.rs` | `ReportRequest`, `Error` | A read spec whose `now` is `generated_at`; add `Error::InvalidRequest(RequestError)` |
+| `opened/read.rs` | `report_projection`, `validate_report` | Validate reads against `Basis { content: NONE }`, so `documents` is refused |
+| `crates/fdu/src/cli.rs` | `run`, `scan_config`, `parse_query`, `parse_analysis`, `resolved_query`, `resolve_views`, `run_watch` | `Cli::spec()` and `Request::build(.., SystemTime::now(), AxisNames::FLAGS)`; delete its `validate_analysis` and `validate_controls` calls and its two watch guards; add the `--watch --cache only` refusal |
+| `crates/fdu-py/src/lib.rs` | `PyIndex`, `build_query_at`, `build_report`, `watch`, `report_once`, `open`, `scan`, `to_py_err` | Hold `basis`; `build_request(now, basis, spec)`; delete the validation in `watch`, `build_report`, `report_once`, and `build_query_at`; `watch` refuses an analyzed or cache-only index; map `InvalidRequest` to `ValueError` |
+| `crates/fdu-py/src/opened_binding.rs`, `crates/fdu-py/python/fdu/_models.py` | `parse_selection`, `parse_report`; `WatchOptions.query` | Defaults from the model; `WatchOptions` defaults to `Query()` |
 
-**Call sites:** `query::report` at `execution.rs:324`, `watch_session.rs:155`,
-`crates/fdu-py/src/lib.rs:598`, `examples/perf_probe.rs:564`, and tests in
+**Call sites:** `query::report` at `execution.rs`, `watch_session.rs`,
+`crates/fdu-py/src/lib.rs`, `examples/perf_probe.rs`, and tests in
 `query/query_report.rs`, `report_format.rs`, and `content/content_analysis.rs`;
-`report_in` at `opened/read.rs:269`; `Session::new` at `crates/fdu/src/cli.rs:798`,
-`crates/fdu-py/src/lib.rs:380`, `crates/fdu-core/tests/watch_session_integration.rs:24`;
-`prepare_report*` at `crates/fdu/src/cli.rs:669` and `:671`,
-`crates/fdu-py/src/lib.rs:1382`, three calls in `examples/perf_probe.rs`, and 17 in
-`execution.rs` tests; `ReportRequest` at `opened.rs:3403`, `:5067`, `:5221`, `:5239`,
-`opened/golden_tests.rs:245`, `crates/fdu-py/src/opened_binding.rs:281`; the seven
+`report_in` at `opened/read.rs`; `Session::new` at `crates/fdu/src/cli.rs`,
+`crates/fdu-py/src/lib.rs`, `crates/fdu-core/tests/watch_session_integration.rs`;
+`prepare_report*` at `crates/fdu/src/cli.rs`, `crates/fdu-py/src/lib.rs`, three calls in
+`examples/perf_probe.rs`, and 17 in `execution.rs` tests; `ReportRequest` at
+`opened.rs`, `opened/golden_tests.rs`, `crates/fdu-py/src/opened_binding.rs`; the seven
 `validate_controls` and two `validate_analysis` sites.
 
 **Tests:** in `query/query_request.rs`, the defaults table, every `RequestError` with
 flag and field wording, `now` resolution against a fixed instant, the watch refusals,
 and `ContentMismatch`; in `watch_session_integration.rs`, refusal of an analyzed index;
-move `query/query_report.rs:1951-1980` and `:2680-2707` into the module; repoint the
-grammar tests in `crates/fdu/src/cli.rs`; `execution.rs:713` expects
-`InvalidRequest(IgnoredWithoutObservation)`. Goldens: add `fdu --watch --cache only .`
-near `cli-surface.tryscript.md:608-620`; regenerate
+move `language_grouping_is_metadata_only_while_documents_require_analysis` and the
+refusal half of
+`an_index_that_observed_no_control_state_has_no_ignored_share_to_select_by` from
+`query/query_report.rs` into the module; repoint the grammar tests in
+`crates/fdu/src/cli.rs`;
+`a_report_that_reads_no_gitignore_refuses_to_select_by_ignored_state` in `execution.rs`
+expects `InvalidRequest(IgnoredWithoutObservation)`. Goldens: add
+`fdu --watch --cache only .` near `cli-surface.tryscript.md`; regenerate
 `opened-root/coherent-projections-and-continuations.golden`. Python: assert
 `WatchOptions().query == Query()`, and add refusals for `Index.watch()` and an opened
 `documents` read.
@@ -676,7 +697,7 @@ impl ReportProvenance { pub fn of(index: &Index, generated_at: SystemTime) -> Se
 ```
 
 The types live in `query/query_status.rs`; the report type is renamed from `Provenance`,
-which also names the per-entry type at the crate root (`lib.rs:120`).
+which also names the per-entry type at the crate root (`lib.rs`).
 `report(index, request, generated_at)` computes both, so no caller builds provenance.
 `scan_started_at` means the start of the oldest verification pass whose facts the answer
 serves: for a stale answer, the pass that wrote the snapshot, read from the format-5
@@ -684,30 +705,34 @@ header’s `verified_started_at_ns`.
 
 | File | Function or type | Change |
 | --- | --- | --- |
-| `query/query_report.rs` | `Provenance` (`:463-481`), `Report` (`:779-829`), `report_in` (`:965-1012`), `report_summary` (`:1053`) | Split into `status` and `provenance`; compute both; stop reading `index.freshness()` directly (`:998`) |
-| `scan.rs` | `consolidate_detached_index` (`:3739-3755`); error branches in `reconcile_target_inner` (for example `:4352-4355`) | `index.record_walk(&errors, started_at)` marks each failed path `Partial` and retains its issue; a pass that cannot list a directory removes its retained descendants through `remove_known_children` (`:5178`) |
-| `index.rs` | `set_initial_freshness` (`:2671`), `begin_reconcile` (`:2692`), `finish_reconcile` (`:2728`, `:2776`), `IndexState.source` (set at `snapshot.rs:650`, `:710`) | Mark failed paths rather than the pass root; stamp `verified_started_at_ns`; producers keep `source` current (`Scanned`, `Revalidated`, `Cached`) |
-| `watch_session.rs` | `live_provenance` (`:396-404`), `report` (`:153`) | Delete `live_provenance`; `report(generated_at)` |
-| `opened/read.rs` | `:254-264` | Replaced by `TreeStatus::of` and `ReportProvenance::of` |
-| `execution.rs` | `:279-285`, `:310-322` | Delete; the reader computes both |
-| `crates/fdu/src/cli.rs` | `:777`, `:801-811`, `:962`; `run` (`:729-742`) | Delete construction; read `report.status` |
-| `crates/fdu-py/src/lib.rs` | `PyIndex` fields `errors`, `operation_complete`, `scan_started_at`, `source` (`:138-146`), set in `open` (`:1640-1653`), `scan` (`:1696-1727`), `refresh` (`:457-472`); `status_dict` (`:646`); getters (`:165`, `:177`); `build_report` (`:591-597`) | Delete the fields; compute from the index |
-| `crates/fdu-py/python/fdu/_api.py` | `Index.report` (`:260-270`) | Delete the errors override |
-| `report_format.rs` | JSON envelope (`:575-600`), YAML (`:976-996`) | Read the split fields with the same output |
+| `query/query_report.rs` | `Provenance`, `Report`, `report_in`, `report_summary` | Split into `status` and `provenance`; compute both; stop reading `index.freshness()` directly |
+| `scan.rs` | `consolidate_detached_index`; error branches in `reconcile_target_inner` | `index.record_walk(&errors, started_at)` marks each failed path `Partial` and retains its issue; a pass that cannot list a directory removes its retained descendants through `remove_known_children` |
+| `index.rs` | `set_initial_freshness`, `begin_reconcile`, `finish_reconcile`, `IndexState.source` (set at `snapshot.rs`) | Mark failed paths rather than the pass root; stamp `verified_started_at_ns`; producers keep `source` current (`Scanned`, `Revalidated`, `Cached`) |
+| `watch_session.rs` | `live_provenance`, `report` | Delete `live_provenance`; `report(generated_at)` |
+| `opened/read.rs` | Provenance construction in `report_projection` | Replaced by `TreeStatus::of` and `ReportProvenance::of` |
+| `execution.rs` | Both provenance constructions in `prepare_report_internal` | Delete; the reader computes both |
+| `crates/fdu/src/cli.rs` | Provenance construction in `run_watch` and `render_live`; `run` | Delete construction; read `report.status` |
+| `crates/fdu-py/src/lib.rs` | `PyIndex` fields `errors`, `operation_complete`, `scan_started_at`, `source`, set in `open`, `scan`, `refresh`; `status_dict`; getters; `build_report` | Delete the fields; compute from the index |
+| `crates/fdu-py/python/fdu/_api.py` | `Index.report` | Delete the errors override |
+| `report_format.rs` | JSON envelope, YAML | Read the split fields with the same output |
 
-**Call sites:** the six production constructions (`execution.rs:279`, `:310`;
-`crates/fdu/src/cli.rs:801`; `watch_session.rs:397`; `crates/fdu-py/src/lib.rs:591`;
-`opened/read.rs:254`), `examples/perf_probe.rs:555-561`, test constructions in
+**Call sites:** the six production constructions (`execution.rs`;
+`crates/fdu/src/cli.rs`; `watch_session.rs`; `crates/fdu-py/src/lib.rs`;
+`opened/read.rs`), `examples/perf_probe.rs`, test constructions in
 `query/query_report.rs`, `report_format.rs`, `content/content_analysis.rs`, and
-`execution.rs`, and `live_provenance` callers at `crates/fdu/src/cli.rs:962`,
-`crates/fdu-py/src/lib.rs:1105`, and `watch_session_integration.rs:246` and `:264`.
+`execution.rs`, and `live_provenance` callers at `crates/fdu/src/cli.rs`,
+`crates/fdu-py/src/lib.rs`, and `watch_session_integration.rs`.
 
 **Tests:** `TreeStatus::of` names each failed path on a partial one-shot index; a watch
 repaint over an unreadable subtree reports `complete: false`; cold and warm answers are
 equal with an unreadable subtree; cache-only `scan_started_at` is the writing pass’s
 start; content freshness is stale under cache-only; a tree with more than 64 failed
-paths gives equal cold and warm `errors` and `errors_omitted`. Update `scan.rs:8218` and
-`:8580` for dropped descendants, review `index.rs:8524-8608`, and regenerate the
+paths gives equal cold and warm `errors` and `errors_omitted`. Update
+`reconciling_an_unreadable_control_file_root_keeps_its_rules_and_stays_partial` and
+`partial_shared_pending_reconciliation_settles_instead_of_retrying` in `scan.rs` for
+dropped descendants, review
+`one_sweep_reports_one_as_of_time_for_everything_it_verified` and
+`withdrawn_trust_beats_a_verification_interval` in `index.rs`, and regenerate the
 opened-root golden. Envelopes are unchanged, so machine goldens should not change.
 
 **Commits:**
@@ -722,9 +747,9 @@ opened-root golden. Envelopes are unchanged, so machine goldens should not chang
 
 **Order of errors:** `errors` holds the 64 failures smallest by path and
 `errors_omitted` counts the rest.
-One-shot scan errors are already sorted (`scan.rs:2414`), while retained issues are
-capped at insertion in walk order (`index.rs:2486`), so `record_walk` keeps retained
-failures in path order regardless of walk order.
+One-shot scan errors are already sorted (`scan.rs`), while retained issues are capped at
+insertion in walk order (`index.rs`), so `record_walk` keeps retained failures in path
+order regardless of walk order.
 
 **Risks:** issues are capped at 64 while scan errors are not, so `errors` becomes
 bounded with `errors_omitted`; dropping descendants matches a cold walk and keeps
@@ -734,34 +759,33 @@ unknown, and a transient permission error forces a re-walk.
 ### Phase 2, Item 1: Measured Values
 
 The engine currently loses measured work in two ways, both explained by the evidence:
-- The `Unsupported` gate (`content/content_analysis.rs:302-313`) returns
+- The `Unsupported` gate (`content/content_analysis.rs`) returns
   `MetricValues::default()` for a Haskell file under `code` (no arm in
-  `content/content_code_metrics.rs:105-124`), which accounts for every loss in the
-  matrix: 5 physical lines, 14 raw words, and the 666-to-656 logical-word difference,
-  because logical words are derived after summing.
+  `content/content_code_metrics.rs`), which accounts for every loss in the matrix: 5
+  physical lines, 14 raw words, and the 666-to-656 logical-word difference, because
+  logical words are derived after summing.
 - Paragraphs are counted only when `collect_logical` is on
-  (`content/content_basic_metrics.rs:170-178`), which only `words` enables
-  (`content/content_analysis.rs:189`), so `lines` and `code` report a false zero; code
-  files’ paragraphs are zeroed (`content/content_analysis.rs:289`), and Markdown
-  paragraphs are overwritten by the prose analyzer (`content/content_analysis.rs:328`).
+  (`content/content_basic_metrics.rs`), which only `words` enables
+  (`content/content_analysis.rs`), so `lines` and `code` report a false zero; code
+  files’ paragraphs are zeroed (`content/content_analysis.rs`), and Markdown paragraphs
+  are overwritten by the prose analyzer (`content/content_analysis.rs`).
 
 | File | Function or type | Change |
 | --- | --- | --- |
-| `content/content_model.rs` | `MetricSlotId` (`:18`, unused internally but re-exported at `content.rs:24`, so its removal is public) | Replace with `MetricDef { name, owner: AnalysisSet, analyzer: AnalyzerId, doc }` and `METRICS`: `lines` owns `physical_lines`, `blank_lines`, `nonblank_lines`, `raw_words`; `code` owns `code_lines`, `comment_lines`, `code_blank_lines`; `words` owns `logical_words`, `paragraphs`, `visible_words`, `visible_logical_words`, `document_words` |
-| `content/content_model.rs` | `MetricValues` (`:313-410`), `FileAnalysis` (`:432-449`) | `BasicMetrics`, `CodeMetrics`, `WordMetrics`; `FileAnalysis { fingerprint, bytes, detection: ContentDetection, lines: AnalyzerOutcome<BasicMetrics>, code: Option<AnalyzerOutcome<CodeMetrics>>, words: Option<AnalyzerOutcome<WordMetrics>>, error }`; drop `classification`, `profile`, `provenance`; add `document_word_stats` |
-| `content/content_analysis.rs` | `analyze_open_file` (`:161-341`), `record` (`:382-400`), `analyzed_record` (`:343-354`), `io_record` (`:356-372`), `count_coverage` (`:402-412`), `AnalysisReport` (`:24-47`) | Remove the early return; unsupported code becomes a code outcome while lines and words continue; paragraphs come only from `words`; probe results go into `detection`; file-level reasons apply to every requested unit |
-| `content/content_index.rs` | `MetricTally` (`:16-45`), `ContentRollUp` (`:49-94`), `commit`, `prepare` | Tally per unit; delete `by_type` and `by_family`, which nothing reads; a public API removal, since `content.rs:20` re-exports `ContentRollUp` |
-| `content/content_cache.rs` | `put_record` (`:204-216`), `parse` (`:218-282`), `put_metrics`/`read_metrics` (`:332-376`), classification codecs (`:428-509`) | Write detection and one block per requested unit |
+| `content/content_model.rs` | `MetricSlotId` (unused internally but re-exported from `content.rs`, so its removal is public) | Replace with `MetricDef { name, owner: AnalysisSet, analyzer: AnalyzerId, doc }` and `METRICS`: `lines` owns `physical_lines`, `blank_lines`, `nonblank_lines`, `raw_words`; `code` owns `code_lines`, `comment_lines`, `code_blank_lines`; `words` owns `logical_words`, `paragraphs`, `visible_words`, `visible_logical_words`, `document_words` |
+| `content/content_model.rs` | `MetricValues`, `FileAnalysis` | `BasicMetrics`, `CodeMetrics`, `WordMetrics`; `FileAnalysis { fingerprint, bytes, detection: ContentDetection, lines: AnalyzerOutcome<BasicMetrics>, code: Option<AnalyzerOutcome<CodeMetrics>>, words: Option<AnalyzerOutcome<WordMetrics>>, error }`; drop `classification`, `profile`, `provenance`; add `document_word_stats` |
+| `content/content_analysis.rs` | `analyze_open_file`, `record`, `analyzed_record`, `io_record`, `count_coverage`, `AnalysisReport` | Remove the early return; unsupported code becomes a code outcome while lines and words continue; paragraphs come only from `words`; probe results go into `detection`; file-level reasons apply to every requested unit |
+| `content/content_index.rs` | `MetricTally`, `ContentRollUp`, `commit`, `prepare` | Tally per unit; delete `by_type` and `by_family`, which nothing reads; a public API removal, since `content.rs` re-exports `ContentRollUp` |
+| `content/content_cache.rs` | `put_record`, `parse`, `put_metrics`/`read_metrics`, classification codecs | Write detection and one block per requested unit |
 | `index.rs` | `pending_analysis_candidates`, `apply_analysis` | Drop `record.profile`; compare against the name-only classification |
-| `query/query_report.rs` | `metric_summary` (`:1380-1565`), `MetricRow` (`:627-662`), `document_words` (`:1577-1583`), `share_value` (`:1567-1574`), `ShareMetric` (`:602-623`) | Group by `index.classify` only (delete `:1390-1392`); aggregate per unit; the share metric comes from the request (`CodeLines` only with `code`; `DocumentWords` only with `words`, otherwise the new `RawWords`); `document_words` and `pages` return `Option` and name their source |
-| `examples/perf_probe.rs` | `attach_content_summary` (`:1400-1438`) | Rebuild the digest per unit and version it as `fdu-content-summary-v2` |
+| `query/query_report.rs` | `metric_summary`, `MetricRow`, `document_words`, `share_value`, `ShareMetric` | Group by `index.classify` only (stop preferring the cached record’s classification); aggregate per unit; the share metric comes from the request (`CodeLines` only with `code`; `DocumentWords` only with `words`, otherwise the new `RawWords`); `document_words` and `pages` return `Option` and name their source |
+| `examples/perf_probe.rs` | `attach_content_summary` | Rebuild the digest per unit and version it as `fdu-content-summary-v2` |
 
-**Call sites:** `lib.rs:541-551` and tests at `lib.rs:1286-1395` and
-`index.rs:7934-7984`; content tests in `content/content_index.rs:304-325`,
-`content/content_cache.rs:625-818`, and `content/content_analysis.rs:453-849`; the text,
-JSON, and YAML writers; `query.rs:18` and `content.rs:20-26` re-exports;
-`crates/fdu-py/python/fdu/_models.py` `MetricValues` and `_metric_row` (`:573-616`,
-`:924-948`); `scripts/content-selfcheck.mjs:85-114`.
+**Call sites:** `lib.rs` and tests at `lib.rs` and `index.rs`; content tests in
+`content/content_index.rs`, `content/content_cache.rs`, and
+`content/content_analysis.rs`; the text, JSON, and YAML writers; `query.rs` and
+`content.rs` re-exports; `crates/fdu-py/python/fdu/_models.py` `MetricValues` and
+`_metric_row`; `scripts/content-selfcheck.mjs`.
 
 **Tests:** a new `crates/fdu-core/tests/metric_independence.rs` over Rust, Python,
 Haskell, Markdown, `.txt`, a C++ `.h`, an extensionless shebang script, an extensionless
@@ -770,10 +794,12 @@ entry on every row and total, the cold value is identical under every analyzer s
 including its owner and absent under every set that does not, and grouping is identical
 under every set. Update
 `code_profile_partitions_supported_languages_and_marks_others_unsupported`
-(`content/content_analysis.rs:653`),
-`deep_detection_drives_named_consumers_and_report_evidence` (`:576`), and the paragraph
-and document tests (`:453`, `:710`, `:787`). Goldens in `cli-content.tryscript.md`
-change where values were erased or files regroup.
+(`content/content_analysis.rs`),
+`deep_detection_drives_named_consumers_and_report_evidence`, and
+`code_carries_word_volume_but_never_paragraphs`,
+`document_profile_uses_visible_markdown_and_logical_plain_text`, and
+`content_reports_preserve_empty_profiles_and_unavailable_shares`. Goldens in
+`cli-content.tryscript.md` change where values were erased or files regroup.
 
 **Commits:**
 1. The `METRICS` table and a test that every emitted metric key appears in it once.
@@ -793,24 +819,22 @@ as C. The content digest in the performance ledger changes at this commit.
 | File | Function or type | Change |
 | --- | --- | --- |
 | `emit.rs`, `emit/emit_json.rs`, `emit/emit_yaml.rs`, `emit/emit_scalar.rs` (new) | `trait Sink { begin_map(Shape), end_map, begin_seq(Shape), end_seq, key(&'static str), str, u64, i64, bool, null }` with `enum Shape { Block, Inline }`; `JsonSink::{pretty, line}`; `YamlSink`; `is_plain_safe`, `write_json_string`, `write_yaml_scalar` | Add; zero dependencies; generic, not `dyn`, so scalar calls monomorphize |
-| `emit/emit_scalar.rs` | replaces `quote` (`report_format.rs:1277-1295`) and `yaml_scalar` (`:1240-1252`) | The `fdu-4xy9` policy: plain only for non-empty ASCII `[A-Za-z0-9._/+-]` that does not start with a digit or sign, is not dot-numeric or `.inf`/`.nan`, and is not a YAML 1.1 boolean or null spelling; otherwise double-quoted, escaping `"`, `\`, controls below 0x20, 0x7F-0x9F, U+2028, U+2029, U+FEFF, U+FFFE, and U+FFFF |
+| `emit/emit_scalar.rs` | replaces `quote` (`report_format.rs`) and `yaml_scalar` | The `fdu-4xy9` policy: plain only for non-empty ASCII `[A-Za-z0-9._/+-]` that does not start with a digit or sign, is not dot-numeric or `.inf`/`.nan`, and is not a YAML 1.1 boolean or null spelling; otherwise double-quoted, escaping `"`, `\`, controls below 0x20, 0x7F-0x9F, U+2028, U+2029, U+FEFF, U+FFFE, and U+FFFF |
 | `report_format.rs` | new `emit_report`, `emit_change`, `emit_cache_status`; `Field { name, presence: Presence }` with `Presence::{Always, Nullable, WhenLossy, WhenAnalyzer(AnalysisSet), WhenSet}` | The only declarations of document structure; the tree walk uses an explicit stack |
-| `report_format.rs` | `render` (`:106-113`) | Keep, and add `write(report, format, color, out: &mut dyn io::Write)` for streaming |
-| `report_format.rs` | JSON writers (`:466-471`, `:538-976`), YAML writers (`:450`, `:642`, `:880`, `:976-1234`), `indent` (`:1257-1264`), `collapse` (`:1271-1274`), `json_count` (`:1717-1719`) | Delete |
-| `report_format.rs` | `render_change` (`:1507-1549`), `render_cache_status` (`:1610-1714`), `report_schema` and schema constants (`:61`, `:63`, `:70`, `:1324-1332`, `:1481`), `render_text_metrics` (`:231-311`), `share_metric_note` (`:319-325`) | Machine formats through the walks, with YAML change records as `---` documents; `fdu.report/7`, `fdu.stream/2`, `fdu.cache/2`; text decides what to show from unit presence and `pages()` |
-| `query/query_report.rs` | `Report` (`:779-829`) | Carries `status`, `provenance`, and the request echo; `notes` and `ignored_entries` stay text-only and the schema marks them off the wire |
-| `crates/fdu-py/src/lib.rs` | `PyIndex::report` (`:191-249`), `report_dict` through `tree_dict` (`:718-975`); `cache_status_dict` (`:1484-1523`); `Index.since` change dicts (`:500-530`) | Delete the native dict after migrating its test; cache status and change sets read wire keys (`invalidate`, a labelled reason) |
+| `report_format.rs` | `render` | Keep, and add `write(report, format, color, out: &mut dyn io::Write)` for streaming |
+| `report_format.rs` | JSON writers, YAML writers, `indent`, `collapse`, `json_count` | Delete |
+| `report_format.rs` | `render_change`, `render_cache_status`, `report_schema` and schema constants, `render_text_metrics`, `share_metric_note` | Machine formats through the walks, with YAML change records as `---` documents; `fdu.report/7`, `fdu.stream/2`, `fdu.cache/2`; text decides what to show from unit presence and `pages()` |
+| `query/query_report.rs` | `Report` | Carries `status`, `provenance`, and the request echo; `notes` and `ignored_entries` stay text-only and the schema marks them off the wire |
+| `crates/fdu-py/src/lib.rs` | `PyIndex::report`, `report_dict` through `tree_dict`; `cache_status_dict`; `Index.since` change dicts | Delete the native dict after migrating its test; cache status and change sets read wire keys (`invalidate`, a labelled reason) |
 | Documentation | `fdu.report/7` and `fdu.stream/2` in `docs/project/guides/cache-design.md`, `docs/project/architecture/fdu-surface-architecture.md`, `docs/project/architecture/fdu-engine-architecture.md`, `docs/project/release-notes/0.1.0.md`, `docs/project/guides/release-process.md`, `crates/fdu/src/skills/SKILL.md`, and `README.md` | Update |
-| `crates/fdu-py/python/fdu/_models.py`, `_api.py` | `MetricValues`, `MetricRow`, `Detection`, `_metric_row`, `_tree`, `report_from_dict` (`:573-1155`); `_cache_status` (`:151-172`), `_change` (`:344-356`) | Optional metric fields, `Pages`, per-unit coverage, paths preferring `path_raw`, an iterative `_tree`; read only wire keys |
+| `crates/fdu-py/python/fdu/_models.py`, `_api.py` | `MetricValues`, `MetricRow`, `Detection`, `_metric_row`, `_tree`, `report_from_dict`; `_cache_status`, `_change` | Optional metric fields, `Pages`, per-unit coverage, paths preferring `path_raw`, an iterative `_tree`; read only wire keys |
 
-**Call sites:** `crates/fdu/src/cli.rs:692`, `:707`, `:729`, `:746-751`, `:812`, `:847`,
-`:849`, `:956-978`, `:1095-1106`, `:1159-1166`, and tests `:2514-2517` and `:2796-2799`;
-`execution.rs:624-625`; `examples/perf_probe.rs:785`;
-`crates/fdu-py/src/opened_binding.rs:935-941` and `opened.py:1089-1098`;
-`crates/fdu-py/src/lib.rs:981-992`, `:1102`, `:1260`, `:1418-1449`, `:1467-1481`;
-`_api.py:198-207`, `:258-272`, `:464-473`; `_models.py:778-800`; documentation in
-`crates/fdu/src/skills/SKILL.md:226-229` and `:272` and `README.md:266`, `:550`, `:561`,
-`:604`.
+**Call sites:** `crates/fdu/src/cli.rs` and its tests
+`no_surface_names_a_schema_the_binary_does_not_emit` and
+`formats_parse_and_machine_formats_are_never_colorized`; `execution.rs`;
+`examples/perf_probe.rs`; `crates/fdu-py/src/opened_binding.rs` and `opened.py`;
+`crates/fdu-py/src/lib.rs`; `_api.py`; `_models.py`; documentation in
+`crates/fdu/src/skills/SKILL.md` and `README.md`.
 
 **Tests:**
 - `emit` unit tests: the scalar policy over the 121-string corpus from
@@ -819,21 +843,19 @@ as C. The content digest in the performance ledger changes at this commit.
   errors; a `SchemaCheck` adapter checking key order and presence against `Field`
   tables.
 - `report_format.rs`: rewrite the YAML quoting, JSON escaping, JSON Lines,
-  schema-version, stream-record, and cache-schema tests (`:2902`, `:2915`, `:2429`,
-  `:2685`, `:2708`, `:2018`); extend stack-safety and non-Unicode path tests (`:2957`,
-  `:3175`, `:3192`, `:2465`, `:2543`) to YAML; add a JSON Lines test with `{ ` in a
-  name.
+  schema-version, stream-record, and cache-schema tests; extend stack-safety and
+  non-Unicode path tests to YAML; add a JSON Lines test with `{ ` in a name.
 - `scripts/check-yaml.mjs`, reusing the unmerged YAML fixes recorded on `fdu-c2ml`:
   awkward and non-UTF-8 names, `documents`, strict YAML 1.2 (`strict`, `uniqueKeys`,
   `intAsBigInt`) and YAML 1.1 parsing of every document kind deep-equal to exactly
   parsed JSON (the `JSON.parse` reviver’s `context.source`) and to reassembled JSON
   Lines, across views and analyzer sets, cache status, and a watch stream; no raw C1,
   U+2028, or U+FFFE.
-- Python: move `crates/fdu-py/tests/smoke.py:324-412` to parsed `render("json")`; add a
+- Python: move `crates/fdu-py/tests/smoke.py` to parsed `render("json")`; add a
   writer-equality test in `test_models.py`. YAML parser parity stays in Node unless a
   reviewed Python YAML dependency is added.
 - Goldens: `cli-json`, `cli-content`, `cli-axes`, `cli-lifecycle`, `cli-cache`,
-  `cli-surface`, and `cli-watch`; `crates/fdu/tests/cli_color.rs:45` and `:118`.
+  `cli-surface`, and `cli-watch`; `crates/fdu/tests/cli_color.rs`.
 
 **Commits:**
 1. The emit module and scalar policy with unit tests.
@@ -877,32 +899,30 @@ Plans for the same request may differ only in what they load and in provenance.
 
 | File | Function or type | Change |
 | --- | --- | --- |
-| `execution.rs` | `ReportPlan` (`:39`), `plan_report` (`:147-182`), `prepare_report_internal` (`:235-338`) | Replace with `Plan` and `plan(.., OneShot)`, keeping `RetainedState` (`:27`); execute the plan |
-| `lib.rs` | `OpenConfig` (`:147-159`), `open` (`:337`), `open_with_pending_save` (`:359`), `open_for_report` (`:488-629`), `SaveTargets` and warm targets (`:579-586`, `:636-653`), `SNAPSHOT_MIN_ENTRIES` (`:687`), `cold_scan_save_targets` (`:693-717`), `load_content` (`:719`), `spawn_save` (`:730-777`) | Delete `OpenConfig` in favor of `Basis` and `Delivery`; `open(&Basis, &Delivery)`; `open_for_report` becomes `execute(&Plan, &Basis)`, with the cache-only content check moving into `admit`; `Plan::writes` replaces the save-target logic; `load_content` and `spawn_save` become pure executors |
+| `execution.rs` | `ReportPlan`, `plan_report`, `prepare_report_internal` | Replace with `Plan` and `plan(.., OneShot)`, keeping `RetainedState`; execute the plan |
+| `lib.rs` | `OpenConfig`, `open`, `open_with_pending_save`, `open_for_report`, `SaveTargets` and warm targets, `SNAPSHOT_MIN_ENTRIES`, `cold_scan_save_targets`, `load_content`, `spawn_save` | Delete `OpenConfig` in favor of `Basis` and `Delivery`; `open(&Basis, &Delivery)`; `open_for_report` becomes `execute(&Plan, &Basis)`, with the cache-only content check moving into `admit`; `Plan::writes` replaces the save-target logic; `load_content` and `spawn_save` become pure executors |
 | `lib.rs` | new `refresh(&mut Index, &Basis, &Delivery)` | `Route::Refresh`: reconcile, load the sidecar, analyze, and write per the plan |
-| `watch_session.rs` | `Session` (`:113`) | Hold the plan; add `Session::start(request, delivery)` and `persist_due(now) -> SaveOutcome` |
-| `crates/fdu/src/cli.rs` | `SaveOutcome` (`:297`), `save_is_due` (`:313`), `pending_after` (`:322`), `save_if_pending` (`:889`), `save_live` (`:931-948`), `run_watch` (`:760-879`), `allow_partial` (`:530`), `run` (`:742`), `finish` (`:1737-1746`) | Move throttling into `Session`; `accept_partial` in `Delivery`; exit status from `Plan::outcome` |
-| `crates/fdu-py/src/lib.rs` | `refresh` (`:456-489`), `watch` (`:336`), `PyWatch.__next__` (`:1115`), `open` (`:1610`), `scan` (`:1685`), `report_once` (`:1319`) | Build a `Delivery`; `refresh` calls core `refresh`; `__next__` calls `persist_due`; the `Index.refresh` and `Index.watch` docstrings and the CHANGELOG say both write under `auto` |
+| `watch_session.rs` | `Session` | Hold the plan; add `Session::start(request, delivery)` and `persist_due(now) -> SaveOutcome` |
+| `crates/fdu/src/cli.rs` | `SaveOutcome`, `save_is_due`, `pending_after`, `save_if_pending`, `save_live`, `run_watch`, `allow_partial`, `run`, `finish` | Move throttling into `Session`; `accept_partial` in `Delivery`; exit status from `Plan::outcome` |
+| `crates/fdu-py/src/lib.rs` | `refresh`, `watch`, `PyWatch.__next__`, `open`, `scan`, `report_once` | Build a `Delivery`; `refresh` calls core `refresh`; `__next__` calls `persist_due`; the `Index.refresh` and `Index.watch` docstrings and the CHANGELOG say both write under `auto` |
 | `opened.rs` | `OpenedIndex::open` | Take a plan with `Route::Opened` |
-| `content/content_model.rs`, `content/content_analysis.rs`, `content/content_cache.rs` | `AnalysisRequest.workers` (`:193`), `analyze_index` (`:74`), `save_content_cache` (`:56`) | Workers move to `Delivery.workers` |
+| `content/content_model.rs`, `content/content_analysis.rs`, `content/content_cache.rs` | `AnalysisRequest.workers`, `analyze_index`, `save_content_cache` | Workers move to `Delivery.workers` |
 
 **Call sites:** `OpenConfig` literals (36 in `lib.rs` tests, 10 in `execution.rs`,
-`cache.rs:632`, `:671`, `:758`, `opened.rs:2193`,
-`crates/fdu-core/tests/watch_session_integration.rs:22`, five in
-`examples/perf_probe.rs`, `crates/fdu-py/src/lib.rs:1346`, `:1625`, `:1698`,
-`crates/fdu/src/cli.rs:635`); `open` calls in `lib.rs`, `execution.rs`, `cache.rs`,
-`opened.rs:2191`, `examples/perf_probe.rs`, `watch_session_integration.rs:23`,
-`crates/fdu-py/src/lib.rs:1638` and `:1710`, and `crates/fdu/src/cli.rs:778`;
-`plan_report` in `execution.rs` tests (`:386-520`).
+`cache.rs`, `opened.rs`, `crates/fdu-core/tests/watch_session_integration.rs`, five in
+`examples/perf_probe.rs`, `crates/fdu-py/src/lib.rs`, `crates/fdu/src/cli.rs`); `open`
+calls in `lib.rs`, `execution.rs`, `cache.rs`, `opened.rs`, `examples/perf_probe.rs`,
+`watch_session_integration.rs`, `crates/fdu-py/src/lib.rs`, and `crates/fdu/src/cli.rs`;
+`plan_report` in `execution.rs` tests.
 
 **Tests:** for every `Delivery::enumerate()` value and route, `writes` is identical for
 the same run facts; content is written after a partial scan when verified and a snapshot
 of its entry identity exists, entries never; Python `Index.refresh()` writes so a later
 cache-only open succeeds; a Python watch persists under `auto`. Retarget the planner
-tests, turn `save_tests` (`lib.rs:1623`) and `cold_scan_persistence_tests` (`:1730`)
-into `Plan::writes` tests, move the throttle tests (`crates/fdu/src/cli.rs:2068`,
-`:2089`, `:2103`) into `watch_session.rs`, and use `OutcomeClass` in
-`crates/fdu/src/cli.rs:2931` and `crates/fdu/tests/cli_exit.rs`.
+tests, turn `save_tests` (`lib.rs`) and `cold_scan_persistence_tests` into
+`Plan::writes` tests, move the throttle tests (`crates/fdu/src/cli.rs`) into
+`watch_session.rs`, and use `OutcomeClass` in `crates/fdu/src/cli.rs` and
+`crates/fdu/tests/cli_exit.rs`.
 
 **Commits:**
 1. `Plan` for the one-shot route with no behavior change.
@@ -929,17 +949,21 @@ report, and warm revalidation alike.
 | File | Function or type | Change |
 | --- | --- | --- |
 | `stored_state.rs` | `serves_snapshot` | Extend item 2’s `Exact` and `Refuse` with `ProjectControlsOff`; it takes no policy and no consumer |
-| `snapshot.rs` | `load_serving(path, types, wanted) -> LoadOutcome::{Served(Index, Serves), Refused(SnapshotIdentity), Absent}`; `parse_stream` (`:614-708`) | Add; a projection builds the index with the requested scope and skips installing the control section (`:699-700`) |
-| `lib.rs` | `snapshot_scope_serves` (`:377-395`), `SnapshotUse` (`:368-374`), `RefusedSnapshot` (`:398-402`), `open_for_report` load filter (`:501-531`), `unusable_snapshot_message` (`:415-454`), `OpenReport` (`:282-291`) | Delete the first three; load through `load_serving`; the refusal message takes the refused identity; add `OpenReport.projected`, and a projected load does not overwrite the stronger snapshot |
-| `execution.rs` | retag (`:324-334`) | Delete, with a debug assertion that the answer’s scope equals the request’s |
-| `query/query_report.rs` | `forget_ignore_classification` (`:1014-1046`), export at `query.rs:21` | Delete |
-| `crates/fdu/src/cli.rs` | `run_watch` (`:760-798`), `save_live` (`:931-948`) | The initial report warm-starts through `open_with_pending_save`; `save_live` skips writing while projected |
-| Documentation | `lib.rs:174-183`, `:331-336`; `execution.rs:198-206`; `_api.py:367-374`; `cli-cache.tryscript.md:253-257`; cache design Known Gaps | Rewrite |
+| `snapshot.rs` | `load_serving(path, types, wanted) -> LoadOutcome::{Served(Index, Serves), Refused(SnapshotIdentity), Absent}`; `parse_stream` | Add; a projection builds the index with the requested scope and skips installing the control section |
+| `lib.rs` | `snapshot_scope_serves`, `SnapshotUse`, `RefusedSnapshot`, `open_for_report` load filter, `unusable_snapshot_message`, `OpenReport` | Delete the first three; load through `load_serving`; the refusal message takes the refused identity; add `OpenReport.projected`, and a projected load does not overwrite the stronger snapshot |
+| `execution.rs` | retag | Delete, with a debug assertion that the answer’s scope equals the request’s |
+| `query/query_report.rs` | `forget_ignore_classification`, export at `query.rs` | Delete |
+| `crates/fdu/src/cli.rs` | `run_watch`, `save_live` | The initial report warm-starts through `open_with_pending_save`; `save_live` skips writing while projected |
+| Documentation | `lib.rs`; `execution.rs`; `_api.py`; `cli-cache.tryscript.md`; cache design Known Gaps | Rewrite |
 
 **Tests:** `snapshot_serving_is_equality_plus_observation_on_to_off`;
-`a_projected_load_equals_a_controls_off_scan`; the `lib.rs` tests at `:966` and `:1019`
-become projection tests, plus `a_projected_open_leaves_the_stronger_snapshot_in_place`;
-extend `execution.rs:584` across policies and routes and flip `:630`;
+`a_projected_load_equals_a_controls_off_scan`;
+`controls_on_snapshot_does_not_serve_controls_off_auto_open` and
+`controls_on_snapshot_does_not_serve_controls_off_cache_only_open` in `lib.rs` become
+projection tests, plus `a_projected_open_leaves_the_stronger_snapshot_in_place`; extend
+`controls_on_snapshot_projects_to_an_equivalent_controls_off_cache_only_report` in
+`execution.rs` across policies and routes and flip
+`controls_on_snapshot_does_not_serve_controls_off_auto_report`;
 `a_session_over_a_projected_index_refuses_an_ignored_selection`; a Python smoke check
 that a controls-off open answers from a default snapshot; a `cli-cache` golden answering
 `warm_revalidate`; the `cli-watch-initial` harness route, clearing `projection-route`.
