@@ -3,9 +3,9 @@ type: is
 id: is-01m2rgb3631yn1waftyaj31wca
 title: "Address review: PR #82 — equality serve layer"
 kind: task
-status: open
+status: closed
 priority: 1
-version: 9
+version: 10
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - review
@@ -21,6 +21,10 @@ child_order_hints:
   - is-01m2rgb5yzw82eb7awhdawj6qf
   - is-01m2rgb6b2rc074zhx5nynx2tx
 created_at: 2026-09-17T20:18:46.072Z
-updated_at: 2026-09-17T20:18:49.313Z
+updated_at: 2026-09-17T21:10:35.599Z
+closed_at: 2026-09-17T21:10:35.593Z
+close_reason: "All PR #82 review findings addressed; disposition posted"
+resolution: null
+duplicate_of: null
 ---
 Senior review of PR #82 (layer 3), published at https://github.com/jlevy/fdu/pull/82#issuecomment-5720664716. Verdict: approve the design, one change required before landing (F1). F1 high; F2-F4 medium; F5-F8 low.
