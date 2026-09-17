@@ -559,6 +559,16 @@ def main() -> None:
     else:
         raise AssertionError("an opened documents read must be refused")
 
+    # The same grammar refuses the page denominator on this route as on every other, in
+    # the same words: an opened read had its own sentence for it until the whole read was
+    # built through the request model (fdu-ra64).
+    try:
+        opened.read(ReportProjection(query=Query(words_per_page=0)))
+    except ValueError as error:
+        assert 'invalid words_per_page "0"' in str(error), error
+    else:
+        raise AssertionError("an opened read must refuse a zero page denominator")
+
     # Version and cursor identities are scoped to one opened session. Crossing them
     # between roots must remain a typed recovery condition rather than a generic native
     # exception or an accidentally accepted read.
