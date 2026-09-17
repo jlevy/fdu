@@ -292,6 +292,20 @@ fn read_request(index: &crate::Index, request: &crate::ReportRequest) -> crate::
     }
 }
 
+/// The basis every opened root holds.
+///
+/// No analyzers, because an opened root runs none, and control state always observed,
+/// because its ignored and unignored partitions are part of what it serves. Stated rather
+/// than read from the index, so a read is refused before any retained state is touched --
+/// which is where every other surface refuses one.
+fn opened_basis() -> crate::query::Basis {
+    crate::query::Basis {
+        root: PathBuf::new(),
+        scope: crate::ScanConfig::default(),
+        content: crate::content::AnalysisSet::NONE,
+    }
+}
+
 fn validate_report(request: &crate::ReportRequest) -> Result<()> {
     if request.max_work == 0 || request.max_work > crate::MAX_PAGE_WORK {
         return Err(Error::PageWorkLimit {
@@ -303,7 +317,12 @@ fn validate_report(request: &crate::ReportRequest) -> Result<()> {
     if views > crate::MAX_REPORT_VIEWS {
         return Err(Error::ReportViewLimit { attempted: views, limit: crate::MAX_REPORT_VIEWS });
     }
-    Ok(())
+    // The same rules every other read is held to, applied to what an opened root holds: a
+    // `documents` view is refused here rather than answered with zero words, because
+    // nothing analyzed a file.
+    crate::query::Request { basis: opened_basis(), query: request.query.clone(), now: request.now }
+        .validate()
+        .map_err(Error::InvalidRequest)
 }
 
 #[derive(Clone, Copy, Default)]

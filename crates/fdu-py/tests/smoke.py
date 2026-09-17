@@ -549,6 +549,16 @@ def main() -> None:
     assert json.loads(opened_report.render(Format.JSON)) == opened_report.as_dict()
     assert response.results[6].kind == "diagnostics", response.results[6]
 
+    # An opened root runs no analyzer, so a view that needs one has no answer here: it is
+    # refused, not reported with zero words. The whole read fails, because the request's
+    # own shape is what is wrong (fdu-cevv).
+    try:
+        opened.read(ReportProjection(query=Query(views=(View.DOCUMENTS,))))
+    except ValueError as error:
+        assert "documents requires content analysis" in str(error), error
+    else:
+        raise AssertionError("an opened documents read must be refused")
+
     # Version and cursor identities are scoped to one opened session. Crossing them
     # between roots must remain a typed recovery condition rather than a generic native
     # exception or an accidentally accepted read.
