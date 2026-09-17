@@ -1588,7 +1588,8 @@ fn entry_identity_dict(
     Ok(dict)
 }
 
-/// A content tier's entry tier, analyzer set, and provenance.
+/// A content tier's entry tier, which holds its type rules, then its analyzer set, options,
+/// and analyzers.
 fn content_identity_dict<'py>(
     py: Python<'py>,
     identity: &fdu_core::ContentTierIdentity,
@@ -1596,7 +1597,6 @@ fn content_identity_dict<'py>(
     let dict = PyDict::new(py);
     dict.set_item("entries", entry_identity_dict(py, identity.entries)?)?;
     dict.set_item("analyze", analysis_set_labels(identity.analysis))?;
-    dict.set_item("type_rules_fingerprint", identity.provenance.type_rules_fingerprint)?;
     dict.set_item("options_fingerprint", identity.provenance.options_fingerprint.0)?;
     let analyzers = PyList::empty(py);
     for (id, version) in &identity.provenance.analyzers {

@@ -121,8 +121,8 @@ pub use crate::engine_contract::{
     Observation, ObservationOp, Op, PageRequest, PathExpectation, PathState, PortablePath,
     ProjectionRefusal, ProjectionResult, Provenance, QueryLimit, ReadDiagnostics, ReadProjection,
     ReadRequest, ReadResponse, RefreshRejection, RefreshResult, RejectedRefreshPath, ReportRequest,
-    Result, RowShape, ScanScope, ScopeIdentity, SemanticIdentity, SessionId, Source,
-    StateTransition, Status, TreePage, Work,
+    Result, RowShape, ScanScope, SemanticIdentity, SessionId, Source, StateTransition, Status,
+    TreePage, Work,
 };
 pub use crate::index::{
     ApplyOutcome, ApplyStats, ChildSnapshot, DEFAULT_JOURNAL_CAPACITY_BYTES, EntryId, ExtTally,
@@ -139,8 +139,8 @@ pub use crate::execution::{
 };
 pub use crate::scan::{ReconcileReport, ScanConfig, ScanOrder, ScanReport};
 pub use crate::stored_state::{
-    ContentTierIdentity, ControlTierIdentity, EntryScope, EntryTierIdentity, Serves,
-    SnapshotIdentity, serves_snapshot,
+    AnalyzerProvenance, ContentTierIdentity, ControlTierIdentity, EntryScope, EntryTierIdentity,
+    Serves, SnapshotIdentity, serves_snapshot,
 };
 #[cfg(feature = "watch")]
 pub use crate::watch_session::{Batch, Change, ChangeKind, Session};

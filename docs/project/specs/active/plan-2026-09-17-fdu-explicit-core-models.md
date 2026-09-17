@@ -429,7 +429,7 @@ sequencing below.
 | --- | --- | --- |
 | `Basis { root: PathBuf, scope: ScanConfig, content: AnalysisSet }`, `Request { basis, query: Query, now: SystemTime }`, `RequestError` | Phase 1 item 3 | Every other item |
 | `Delivery { cache, cache_path, accept_partial, watch: Option<WatchDelivery> }`, gaining `workers: Workers` in Phase 2 | The struct in Phase 1 item 3 commit 1; `workers` and planning behavior in Phase 2 item 3 | Harness, sessions, execution plan |
-| `EntryScope`, `SnapshotIdentity { entries: EntryTierIdentity, controls: ControlTierIdentity }`, `ContentTierIdentity { entries, analysis, provenance }`, `serves_snapshot` (`Exact` or `Refuse`), `entries_writable`, `content_record_writable` | Phase 1 item 2 (`stored_state.rs`); Phase 2 item 4 adds `ProjectControlsOff` | Projection, execution plan, cache status |
+| `EntryScope`, `SnapshotIdentity { entries: EntryTierIdentity, controls: ControlTierIdentity }`, `ContentTierIdentity { entries, analysis, provenance: AnalyzerProvenance { options_fingerprint, analyzers } }` (the entry tier alone holds the type-rules fingerprint), `serves_snapshot` (`Exact` or `Refuse`), `entries_writable`, `content_record_writable` | Phase 1 item 2 (`stored_state.rs`); Phase 2 item 4 adds `ProjectControlsOff` | Projection, execution plan, cache status |
 | `Index::content_set() -> AnalysisSet` | Phase 1 item 2 | Request validation, sessions |
 | `TreeStatus { complete, coverage, errors, errors_omitted }`, `ReportProvenance { source, freshness, scan_started_at, generated_at, tiers }` | Phase 1 item 4 | Answer model, execution plan |
 | Per-analyzer `FileAnalysis`, `METRICS: &[MetricDef]`, `document_words(row) -> Option<u64>`, `pages(row, words_per_page)` | Phase 2 item 1 | Answer model, content store |
@@ -543,8 +543,8 @@ workflow must pass `validateWorkflowSecurity` in `scripts/check-supply-chain.mjs
 
 | File | Function or type | Change |
 | --- | --- | --- |
-| `stored_state.rs` (new) | `EntryScope` (today’s `ScanScope` without `type_rules_fingerprint`, `reducers_fingerprint`, and `ignore_rules_fingerprint`), `serves_snapshot(stored, wanted) -> Serves::{Exact, Refuse}`, `EntryTierIdentity { engine, scope: EntryScope, type_rules_fingerprint, reducers_fingerprint }`, `ControlTierIdentity::{NotObserved, Observed { limits }}`, `SnapshotIdentity { entries, controls }`, `ContentTierIdentity { entries, analysis, provenance }` with `serves` as equality, `entries_writable(&Index)`, `content_record_writable(&Index, &Path, &FileAnalysis)`, and shared fixed-width codecs | Add |
-| `snapshot.rs` | `FORMAT_VERSION`; `save`; `put_scope`/`read_scope`; `read_controls` limits; `parse_header_fields`; `parse_stream` | Format 5 with header identities and the verifying pass’s start (`verified_started_at_ns`), which `save` writes; today’s `captured_at_ns` is the file’s modification time (`snapshot.rs`); the save guard becomes `entries_writable`; control limits move into the header and a disagreeing table is refused. `identify_prologue` keeps its offsets, so format 4 reads as `OlderFormat` |
+| `stored_state.rs` (new) | `EntryScope` (today’s `ScanScope` without `type_rules_fingerprint`, `reducers_fingerprint`, and `ignore_rules_fingerprint`), `serves_snapshot(stored, wanted) -> Serves::{Exact, Refuse}`, `EntryTierIdentity { engine, scope: EntryScope, type_rules_fingerprint, reducers_fingerprint }`, `ControlTierIdentity::{NotObserved, Observed { limits }}`, `SnapshotIdentity { entries, controls }`, `ContentTierIdentity { entries, analysis, provenance: AnalyzerProvenance }` with `serves` as equality, where the entry tier alone holds the type-rules fingerprint and a record’s `ContentProvenance` is those rules plus the `AnalyzerProvenance`, `entries_writable(&Index)`, `content_record_writable(&Index, &Path, &FileAnalysis)`, and shared fixed-width codecs | Add |
+| `snapshot.rs` | `FORMAT_VERSION`; `save`; `put_scope`/`read_scope`; `read_controls` limits; `parse_header_fields`; `parse_stream` | Format 5 with header identities and the writing pass’s start (`writing_pass_started_at_ns`), which `save` writes; today’s `captured_at_ns` is the file’s modification time (`snapshot.rs`); the save guard becomes `entries_writable`; control limits move into the header and a disagreeing table is refused. `identify_prologue` keeps its offsets, so format 4 reads as `OlderFormat` |
 | `content/content_cache.rs` | `FORMAT_VERSION`; `save_content_cache`; `load_content_cache`; `parse` | Format 5 with the engine fingerprint and `ContentTierIdentity`; the save filter becomes `content_record_writable`; loading compares identity by equality |
 | `content/content_cache.rs` | `identify_sidecar(path)` | Add, mirroring `snapshot::identify`; `content_sidecar_bytes` stays magic-only so older sidecars are still reclaimed |
 | `engine_contract.rs`, `scan.rs` | `ScanScope` (`engine_contract.rs`), `observes_controls()`, `ScanConfig::scope()` (`scan.rs`) | `ScanConfig::scope()` builds `EntryScope` and `ControlTierIdentity`; observation is read from `ControlTierIdentity` at `execution.rs`, `watch_session.rs`, `query/query_report.rs`, and `crates/fdu-py/src/lib.rs` |
@@ -591,7 +591,7 @@ at `lib.rs`, `crates/fdu-py/src/lib.rs`, `examples/perf_probe.rs`, and the
 **Commits:**
 1. `stored_state.rs` types, `EntryScope`, `serves_snapshot` with `Exact` and `Refuse`,
    and codecs, with unit tests.
-2. Snapshot format 5, including `verified_started_at_ns`.
+2. Snapshot format 5, including `writing_pass_started_at_ns`.
 3. Sidecar format 5 and `identify_sidecar`.
 4. Equality serve; delete `satisfies` and `contains`; clear two registry classes after a
    full Linux run.
@@ -709,13 +709,19 @@ which also names the per-entry type at the crate root (`lib.rs`).
 `report(index, request, generated_at)` computes both, so no caller builds provenance.
 `scan_started_at` means the start of the oldest verification pass whose facts the answer
 serves: for a stale answer, the pass that wrote the snapshot, read from the format-5
-header’s `verified_started_at_ns`.
+header’s `writing_pass_started_at_ns`. That field is the start of the pass that last
+wrote the image.
+A later pass that verifies the same facts keeps the image and its stamp,
+so the value is a lower bound on when the facts were last verified, and P1.4.4 advances
+it on completed passes.
+P1.4.4 also passes the execution instant down, so one pass-start instant exists, and
+pins the stamp to an instant taken before the walk.
 
 | File | Function or type | Change |
 | --- | --- | --- |
 | `query/query_report.rs` | `Provenance`, `Report`, `report_in`, `report_summary` | Split into `status` and `provenance`; compute both; stop reading `index.freshness()` directly |
 | `scan.rs` | `consolidate_detached_index`; error branches in `reconcile_target_inner` | `index.record_walk(&errors, started_at)` marks each failed path `Partial` and retains its issue; a pass that cannot list a directory removes its retained descendants through `remove_known_children` |
-| `index.rs` | `set_initial_freshness`, `begin_reconcile`, `finish_reconcile`, `IndexState.source` (set at `snapshot.rs`) | Mark failed paths rather than the pass root; stamp `verified_started_at_ns`; producers keep `source` current (`Scanned`, `Revalidated`, `Cached`) |
+| `index.rs` | `set_initial_freshness`, `begin_reconcile`, `finish_reconcile`, `IndexState.source` (set at `snapshot.rs`) | Mark failed paths rather than the pass root; stamp `writing_pass_started_at_ns`; producers keep `source` current (`Scanned`, `Revalidated`, `Cached`) |
 | `watch_session.rs` | `live_provenance`, `report` | Delete `live_provenance`; `report(generated_at)` |
 | `opened/read.rs` | Provenance construction in `report_projection` | Replaced by `TreeStatus::of` and `ReportProvenance::of` |
 | `execution.rs` | Both provenance constructions in `prepare_report_internal` | Delete; the reader computes both |
@@ -748,8 +754,8 @@ opened-root golden. Envelopes are unchanged, so machine goldens should not chang
 2. Record walk failures per path and add `TreeStatus::of`.
 3. Producers maintain `IndexState.source`; add `ReportProvenance::of`; delete
    `live_provenance` and the Python fields.
-4. One `scan_started_at`, reading `verified_started_at_ns` from the snapshot header item
-   2 writes.
+4. One `scan_started_at`, reading `writing_pass_started_at_ns` from the snapshot header
+   item 2 writes.
 5. Reconciliation drops facts under unverified directories; clear `unverified-subtree`.
 6. Per-tier content provenance.
 

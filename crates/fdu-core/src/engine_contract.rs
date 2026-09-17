@@ -18,6 +18,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::stored_state::EntryScope;
+
 /// A monotonic logical clock, in the spirit of Watchman's clockspec but process-local.
 ///
 /// Every [`Commit`] is stamped, so a consumer can ask "what changed since C?"
@@ -153,24 +155,6 @@ pub struct ScanScope {
     pub reducers_fingerprint: u64,
 }
 
-/// Filesystem-admission identity derived from a validated scan configuration.
-///
-/// Root binding and execution policy are deliberately absent. Two roots may share this
-/// configuration identity without claiming to be the same live session.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub struct ScopeIdentity {
-    /// Maximum retained relative depth, or unlimited when absent.
-    pub max_depth: Option<usize>,
-    /// Whether directory symlinks are followed.
-    pub follow_symlinks: bool,
-    /// Whether traversal stays on the root filesystem.
-    pub one_filesystem: bool,
-    /// Identity of leading-dot component admission and its exact-name allowlist.
-    pub hidden_fingerprint: u64,
-    /// Whether filesystem objects outside files, directories, and symlinks are excluded.
-    pub exclude_special: bool,
-}
-
 /// Answer-semantics identity derived from validated classification and reducer rules.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct SemanticIdentity {
@@ -215,7 +199,7 @@ pub struct EngineVersion {
     /// Exact committed index sequence observed by the read.
     pub sequence: Clock,
     /// Filesystem-fact identity bound when the root was opened.
-    pub scope: ScopeIdentity,
+    pub scope: EntryScope,
     /// Classification and reducer identity bound when the root was opened.
     pub semantics: SemanticIdentity,
 }
@@ -241,8 +225,8 @@ impl ScanScope {
     }
 
     /// The part of this validated scope that determines retained filesystem facts.
-    pub const fn scope_identity(self) -> ScopeIdentity {
-        ScopeIdentity {
+    pub const fn entry_scope(self) -> EntryScope {
+        EntryScope {
             max_depth: self.max_depth,
             follow_symlinks: self.follow_symlinks,
             one_filesystem: self.one_filesystem,
@@ -2078,9 +2062,9 @@ mod tests {
         let changed_semantics =
             ScanScope { reducers_fingerprint: base.reducers_fingerprint.wrapping_add(1), ..base };
 
-        assert_ne!(base.scope_identity(), changed_admission.scope_identity());
+        assert_ne!(base.entry_scope(), changed_admission.entry_scope());
         assert_eq!(base.semantic_identity(), changed_admission.semantic_identity());
-        assert_eq!(base.scope_identity(), changed_semantics.scope_identity());
+        assert_eq!(base.entry_scope(), changed_semantics.entry_scope());
         assert_ne!(base.semantic_identity(), changed_semantics.semantic_identity());
     }
 }

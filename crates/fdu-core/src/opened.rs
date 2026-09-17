@@ -352,7 +352,7 @@ impl OpenedIndex {
             let version = crate::EngineVersion {
                 session: self.state.session,
                 sequence: since.clock,
-                scope: scope.scope_identity(),
+                scope: scope.entry_scope(),
                 semantics: scope.semantic_identity(),
             };
             let impact = journal::interval_impact(&since);
@@ -412,7 +412,7 @@ impl OpenedIndex {
                 crate::EngineVersion {
                     session: self.state.session,
                     sequence: index.clock(),
-                    scope: scope.scope_identity(),
+                    scope: scope.entry_scope(),
                     semantics: scope.semantic_identity(),
                 },
                 index.state(),

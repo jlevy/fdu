@@ -34,7 +34,7 @@ pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadRes
         let version = EngineVersion {
             session: opened.state.session,
             sequence: index.clock(),
-            scope: scope.scope_identity(),
+            scope: scope.entry_scope(),
             semantics: scope.semantic_identity(),
         };
         if let Some(expected) = request.expected {

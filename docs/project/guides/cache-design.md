@@ -47,14 +47,17 @@ treated as absent. Because the crate version is part of the fingerprint, every r
 invalidates every existing snapshot; nothing that must outlive an upgrade belongs in
 this cache.
 
-The file also records the scan scope it was built under.
+The file’s header also records the scan scope it was built under, as the identity of
+each tier the snapshot holds, and the start of the pass that last wrote the image.
 A snapshot whose scope cannot serve the request is a miss as well, and under a
 write-permitting policy the next complete indexed scan replaces it.
-The scope is the depth, symlink, filesystem-boundary, hidden-entry, and special-object
-settings, the type-rules fingerprint, a reducer-set fingerprint that is a constant
-today, whether `.gitignore` was observed, and, if it was, the budget and line limit.
-A request that returns the index or reconciles it against the tree is served only by a
-snapshot taken under exactly its scope.
+The scope is the entry tier’s depth, symlink, filesystem-boundary, hidden-entry, and
+special-object settings, type-rules fingerprint, and a reducer-set fingerprint that is a
+constant today, and the control tier’s record of whether `.gitignore` was observed and,
+if it was, the budget and line limit.
+Snapshots taken with observation on and off hold equal entry tiers and differ only in
+the control tier. A request that returns the index or reconciles it against the tree is
+served only by a snapshot taken under exactly its scope.
 The file name is keyed by root alone, so alternating a default run with
 `--no-gitignore`, another `.gitignore` limit, `--scan-depth`, or `--one-filesystem`
 finds no usable snapshot and, under a write-permitting policy, replaces the root’s one
@@ -64,6 +67,12 @@ retains none, so it replaces nothing.
 The one exception is a one-shot `--cache only` report that turns observation off, which
 answers from a default snapshot’s all-entry facts and retags the report to its own
 scope. `open` with the same options refuses that snapshot.
+
+The pass start is a lower bound on when the snapshot’s facts were last verified.
+A later pass that encodes the same facts keeps the file, stamp included, rather than
+rewriting it for the stamp alone, and moves only the file’s modification time, forward
+to its own start; reconciliation does not advance the stamp.
+Loading still reads the modification time as the observation time of the cached entries.
 
 Three rules keep it honest:
 
@@ -161,13 +170,13 @@ control tier as `ignore_rules`: `null` when no `.gitignore` was read, otherwise 
 `limits` it was read under.
 `content` is `null` when no sidecar with the sidecar magic sits beside the file, and
 otherwise its `bytes` and its own `state`: `current`, with its `records` and an
-`identity` that adds the analyzer set and provenance to the entry tier under the names a
-report’s `analysis` object uses, or `stale`, with its `stale_reason` and
-`format_version`. Whether the sidecar is grouped with its snapshot and cleared with it
-is still decided by its magic, so a stale sidecar is labelled and removed like a current
-one.
-An empty cache directory is an empty sequence in every machine format, never a null,
-so one reader works whether or not anything is cached.
+`identity` that adds to the entry tier, which alone carries the type-rules fingerprint,
+the analyzer set, the options fingerprint, and the analyzers under the names a report’s
+`analysis` object uses, or `stale`, with its `stale_reason` and `format_version`.
+Whether the sidecar is grouped with its snapshot and cleared with it is still decided by
+its magic, so a stale sidecar is labelled and removed like a current one.
+An empty cache directory is an empty sequence in every machine format, never a null, so
+one reader works whether or not anything is cached.
 
 Snapshot persistence is available on every platform, including for metadata queries.
 It is not used by every execution plan.
@@ -185,9 +194,10 @@ Content-derived metrics — line counts, word counts, hashes, and future plugin 
 — do **not** belong in the core snapshot.
 They live in a separately checksummed sidecar beside the snapshot, `<snapshot>.content`,
 recording the engine fingerprint, the entry tier identity the records were analyzed over
-(the snapshot’s scope without `.gitignore` observation, which no metric depends on), the
-root, the stored analyzer set, the type-rule fingerprint, an options fingerprint, and
-ordered analyzer IDs and versions.
+(the snapshot’s scope, type-rule fingerprint, and reducer set, without `.gitignore`
+observation, which no metric depends on), the stored analyzer set, an options
+fingerprint, ordered analyzer IDs and versions, and the root.
+The type-rule fingerprint is recorded once, in the entry tier.
 It holds one analyzer set per root.
 Each sparse file record carries its classification and a fingerprint of size, mtime,
 ctime, inode, and device, so a reconciled metadata change rejects only the stale record.
@@ -206,10 +216,11 @@ Keeping them separate from metadata remains load-bearing rather than tidy:
   every open would penalize the common query.
 - Content-sidecar invalidation never touches tree truth.
   A sidecar is usable when its format version and root match and its content tier
-  identity equals the requested one: the engine fingerprint, the entry tier, the
-  analyzer set, the type-rule and options fingerprints, and each analyzer’s ID and
-  version. Equality, not containment: a wider sidecar holds metrics a narrower request
-  did not ask for, so it misses, and the narrower run reads every file and replaces it.
+  identity equals the requested one: the engine fingerprint, the entry tier (whose
+  type-rule fingerprint is the registry in use), the analyzer set, the options
+  fingerprint, and each analyzer’s ID and version.
+  Equality, not containment: a wider sidecar holds metrics a narrower request did not
+  ask for, so it misses, and the narrower run reads every file and replaces it.
   A mismatch is a clean content-cache miss and never invalidates metadata sizes.
 - The layer is loaded only for an explicitly requested analysis profile, bounded before
   allocation, and removed through the same cache lifecycle as its recognized snapshot.

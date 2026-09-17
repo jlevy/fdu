@@ -1844,8 +1844,9 @@ fn entry_identity_field(identity: crate::EntryTierIdentity) -> CacheField {
     ])
 }
 
-/// A content tier's identity: the entry tier it was analyzed over, then the analyzer set
-/// and provenance under the names a report's `analysis` object gives them.
+/// A content tier's identity: the entry tier it was analyzed over, which holds its type
+/// rules, then the analyzer set, options, and analyzers under the names a report's
+/// `analysis` object gives them.
 fn content_identity_field(identity: &crate::ContentTierIdentity) -> CacheField {
     let analyze = analysis_set_labels(identity.analysis)
         .into_iter()
@@ -1865,7 +1866,6 @@ fn content_identity_field(identity: &crate::ContentTierIdentity) -> CacheField {
     CacheField::Map(vec![
         ("entries", entry_identity_field(identity.entries)),
         ("analyze", CacheField::List(analyze)),
-        ("type_rules_fingerprint", CacheField::Count(identity.provenance.type_rules_fingerprint)),
         ("options_fingerprint", CacheField::Count(identity.provenance.options_fingerprint.0)),
         ("analyzers", CacheField::List(analyzers)),
     ])
@@ -2201,8 +2201,9 @@ mod tests {
 
     /// A current snapshot carries the identity of every tier it holds, and the sidecar
     /// beside it its own, nested the same way in JSON and YAML: the entry tier, then the
-    /// control tier as the report's `ignore_rules` names it, and for content the analyzer
-    /// set and provenance under the names a report's `analysis` object gives them.
+    /// control tier as the report's `ignore_rules` names it, and for content its entry tier,
+    /// which alone holds the type rules, then the analyzer set, options, and analyzers under
+    /// the names a report's `analysis` object gives them.
     #[test]
     fn cache_status_carries_every_stored_tier_identity() {
         use crate::{CacheScope, CacheState, ContentInfo, ContentState, ContentStatus};
@@ -2211,8 +2212,7 @@ mod tests {
         let content = crate::ContentTierIdentity {
             entries: snapshot.entries,
             analysis: crate::content::AnalysisSet::NONE.with_lines(),
-            provenance: crate::content::ContentProvenance {
-                type_rules_fingerprint: 3,
+            provenance: crate::AnalyzerProvenance {
                 options_fingerprint: crate::content::OptionsFingerprint(5),
                 analyzers: vec![(
                     crate::content::CONTENT_BASIC,
@@ -2244,7 +2244,7 @@ mod tests {
                  \"entries\": 3, \"identity\": {{\"entries\": {entries}, \"ignore_rules\": \
                  {{\"limits\": {{\"budget\": 10, \"line_limit\": null}}}}}}, \"content\": {{\"bytes\": 9, \
                  \"state\": \"current\", \"records\": 2, \"identity\": {{\"entries\": {entries}, \
-                 \"analyze\": [\"lines\"], \"type_rules_fingerprint\": 3, \"options_fingerprint\": 5, \
+                 \"analyze\": [\"lines\"], \"options_fingerprint\": 5, \
                  \"analyzers\": [{{\"id\": \"content-basic-v1\", \"version\": 1}}]}}}}}}"
             )
         );
@@ -2259,7 +2259,7 @@ mod tests {
                  root: /tree\n    entries: 3\n    identity:\n      entries:{}\n      \
                  ignore_rules:\n        limits:\n          budget: 10\n          line_limit: null\n    \
                  content:\n      bytes: 9\n      state: current\n      records: 2\n      identity:\n        \
-                 entries:{entries}\n        analyze:\n          - lines\n        type_rules_fingerprint: 3\n        \
+                 entries:{entries}\n        analyze:\n          - lines\n        \
                  options_fingerprint: 5\n        analyzers:\n          - id: content-basic-v1\n            \
                  version: 1",
                 entries.replace("\n  ", "\n")

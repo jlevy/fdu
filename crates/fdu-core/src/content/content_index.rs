@@ -197,9 +197,9 @@ impl ContentIndex {
         self.identity.as_ref().map(|identity| identity.analysis)
     }
 
-    /// Analyzer, rule, and option identity represented by this derived tier.
-    pub fn provenance(&self) -> Option<&ContentProvenance> {
-        self.identity.as_ref().map(|identity| &identity.provenance)
+    /// Analyzer, rule, and option identity every record in this derived tier carries.
+    pub fn provenance(&self) -> Option<ContentProvenance> {
+        self.identity.as_ref().map(ContentTierIdentity::record_provenance)
     }
 
     /// Borrow one file's analysis.
@@ -227,7 +227,7 @@ impl ContentIndex {
         let Some(identity) = &self.identity else {
             return false;
         };
-        if analysis.profile != identity.analysis || analysis.provenance != identity.provenance {
+        if !identity.holds_record(analysis.profile, &analysis.provenance) {
             return false;
         }
         let key = PathKey::new(path);
@@ -314,21 +314,20 @@ mod tests {
     use super::*;
     use crate::classify::classify_path;
     use crate::content::{AnalysisRequest, AnalysisSet, ContentProvenance, FileAnalysis};
-    use crate::{EntryTierIdentity, Fingerprint, ScanConfig};
+    use crate::{AnalyzerProvenance, EntryTierIdentity, Fingerprint, ScanConfig};
 
     fn lines() -> AnalysisSet {
         AnalysisSet::NONE.with_lines()
     }
 
     fn identity_for(analysis: AnalysisSet) -> ContentTierIdentity {
-        ContentTierIdentity {
-            entries: ScanConfig::default().snapshot_identity().entries,
-            analysis,
-            provenance: ContentProvenance::for_request(
-                AnalysisRequest { profile: analysis, ..AnalysisRequest::default() },
-                crate::classify::type_rule_fingerprint(),
-            ),
-        }
+        let entries = ScanConfig::default().snapshot_identity().entries;
+        let records = ContentProvenance::for_request(
+            AnalysisRequest { profile: analysis, ..AnalysisRequest::default() },
+            entries.type_rules_fingerprint,
+        );
+        ContentTierIdentity::of_records(entries, analysis, &records)
+            .expect("records under the entry tier's type rules")
     }
 
     /// A tier prepared for the `lines` identity every [`analysis`] record carries.
@@ -345,7 +344,7 @@ mod tests {
             fingerprint: Fingerprint::default(),
             bytes: 10,
             profile: identity.analysis,
-            provenance: identity.provenance,
+            provenance: identity.record_provenance(),
             metrics: MetricValues {
                 physical_lines: lines,
                 nonblank_lines: lines,
@@ -379,9 +378,9 @@ mod tests {
             (
                 "other type rules",
                 ContentTierIdentity {
-                    provenance: ContentProvenance {
-                        type_rules_fingerprint: base.provenance.type_rules_fingerprint ^ 1,
-                        ..base.provenance.clone()
+                    entries: EntryTierIdentity {
+                        type_rules_fingerprint: base.entries.type_rules_fingerprint ^ 1,
+                        ..base.entries
                     },
                     ..base.clone()
                 },
@@ -389,7 +388,7 @@ mod tests {
             (
                 "other options",
                 ContentTierIdentity {
-                    provenance: ContentProvenance {
+                    provenance: AnalyzerProvenance {
                         options_fingerprint: crate::content::OptionsFingerprint(
                             base.provenance.options_fingerprint.0 ^ 1,
                         ),
@@ -429,12 +428,14 @@ mod tests {
         let wider = identity_for(AnalysisSet::ALL);
         let mut other_version = analysis("a.rs", 5);
         other_version.provenance.analyzers[0].1 = crate::content::AnalyzerVersion(2);
+        let mut other_rules = analysis("a.rs", 5);
+        other_rules.provenance.type_rules_fingerprint ^= 1;
         for (name, record) in [
             (
                 "a record of a wider set",
                 FileAnalysis {
                     profile: wider.analysis,
-                    provenance: wider.provenance.clone(),
+                    provenance: wider.record_provenance(),
                     ..analysis("a.rs", 5)
                 },
             ),
@@ -443,6 +444,7 @@ mod tests {
                 FileAnalysis { profile: AnalysisSet::ALL, ..analysis("a.rs", 5) },
             ),
             ("a record of another analyzer version", other_version),
+            ("a record classified under other type rules", other_rules),
         ] {
             assert!(!index.commit(PathBuf::from("a.rs"), record), "{name} is refused");
             assert_eq!(index, before, "{name} changes nothing");

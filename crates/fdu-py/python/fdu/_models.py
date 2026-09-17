@@ -853,12 +853,12 @@ class SnapshotIdentity:
 @dataclass(frozen=True, slots=True)
 class ContentTierIdentity:
     """The identity of a content sidecar's records: the entry tier they were analyzed
-    over, then the analyzer set and provenance as a report's `AnalysisMetadata` names them.
+    over, which alone holds their type rules, then the analyzer set, options, and analyzers
+    as a report's `AnalysisMetadata` names them.
     """
 
     entries: EntryTierIdentity
     analyze: tuple[Analysis, ...]
-    type_rules_fingerprint: int
     options_fingerprint: int
     analyzers: tuple[Analyzer, ...]
 
@@ -960,7 +960,6 @@ def _content_status(value: Mapping[str, Any] | None) -> ContentStatus | None:
         identity = ContentTierIdentity(
             entries=_entry_tier_identity(raw_identity["entries"]),
             analyze=tuple(Analysis(str(name)) for name in raw_identity["analyze"]),
-            type_rules_fingerprint=int(raw_identity["type_rules_fingerprint"]),
             options_fingerprint=int(raw_identity["options_fingerprint"]),
             analyzers=tuple(
                 Analyzer(str(item["id"]), int(item["version"]))
