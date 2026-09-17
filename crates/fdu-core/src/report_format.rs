@@ -2239,7 +2239,17 @@ mod tests {
 
     #[test]
     fn text_tree_restores_compact_bars_and_keeps_structural_indent_in_the_name_column() {
-        let text = render(&fixture(&[ViewSpec::Tree]), Format::Text, false);
+        // Apparent, so both rows print sizes of one width and the alignment below is about
+        // the layout rather than about which sizes happen to round to the same block.
+        let apparent = Query {
+            views: vec![ViewSpec::Tree],
+            selection: crate::query::Selection {
+                size: crate::query::SizeMetric::Apparent,
+                ..crate::query::Selection::default()
+            },
+            ..Query::default()
+        };
+        let text = render(&fixture_for(&apparent), Format::Text, false);
         assert_eq!(
             text,
             concat!(

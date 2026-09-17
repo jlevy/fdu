@@ -2201,10 +2201,12 @@ mod tests {
     fn sorting_and_limiting_compose_without_a_dedicated_view() {
         // "Largest files" is not a view; it is files plus sort plus limit.
         let index = sample();
+        // Apparent, because the sample's allocated sizes round to 512-byte blocks and tie.
         let selection = Selection {
             kinds: vec![EntryKind::File],
             sort: Some(SortKey::Size),
             limit: Some(Bound::Limit(2)),
+            size: SizeMetric::Apparent,
             ..Selection::default()
         };
         let rows = files_of(&run(&index, &query(&[ViewSpec::Files], selection)));
@@ -2220,6 +2222,7 @@ mod tests {
             kinds: vec![EntryKind::File],
             sort: Some(SortKey::Size),
             reverse: true,
+            size: SizeMetric::Apparent,
             ..Selection::default()
         };
         let rows = files_of(&run(&index, &query(&[ViewSpec::Files], selection)));
@@ -2512,12 +2515,10 @@ mod tests {
     #[test]
     fn metadata_grouping_views_use_the_generic_metric_projection() {
         let index = sample();
+        let apparent = Selection { size: SizeMetric::Apparent, ..Selection::default() };
         let report = run(
             &index,
-            &query(
-                &[ViewSpec::Types, ViewSpec::Families, ViewSpec::Languages],
-                Selection::default(),
-            ),
+            &query(&[ViewSpec::Types, ViewSpec::Families, ViewSpec::Languages], apparent),
         );
         let Section::Metrics { summary: types, .. } = &report.sections[0] else {
             panic!("expected type metrics")
@@ -2630,9 +2631,12 @@ mod tests {
     #[test]
     fn ignored_entries_partition_the_tree_and_rank_by_what_they_select() {
         let index = classified_sample();
-        let with = |ignored| Selection { ignored, ..Selection::default() };
+        // Apparent, so the ranking is by the distinct sizes the sample wrote rather than by
+        // the 512-byte blocks they round up to.
+        let apparent = Selection { size: SizeMetric::Apparent, ..Selection::default() };
+        let with = |ignored| Selection { ignored, ..apparent.clone() };
         let summary = |selection| summary_of(&run(&index, &query(&[ViewSpec::Summary], selection)));
-        let total = summary(Selection::default());
+        let total = summary(apparent.clone());
         let kept = summary(with(IgnoredEntries::Exclude));
         let only = summary(with(IgnoredEntries::Only));
         assert_eq!(
@@ -2652,7 +2656,7 @@ mod tests {
         };
         let row = |name: &str, bytes: u64| (name.to_string(), bytes);
         assert_eq!(
-            ranked(Selection::default()),
+            ranked(apparent.clone()),
             [row("build", 1_000), row("src", 325), row("docs", 300)]
         );
         assert_eq!(

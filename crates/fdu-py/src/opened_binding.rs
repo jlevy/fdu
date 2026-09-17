@@ -114,11 +114,9 @@ fn parse_selection(dict: Option<&Bound<'_, PyDict>>, now: SystemTime) -> PyResul
         .map(|value| value.extract::<bool>())
         .transpose()?
         .unwrap_or(false);
-    let size = dict
-        .get_item("size")?
-        .map(|value| value.extract::<String>())
-        .transpose()?
-        .unwrap_or_else(|| "apparent".to_owned());
+    // Absent means the caller named no metric, so the request model's default applies,
+    // as it does on every other surface.
+    let size = dict.get_item("size")?.map(|value| value.extract::<String>()).transpose()?;
     Ok(super::build_query_at(
         now,
         AnalysisSet::NONE,
@@ -135,7 +133,7 @@ fn parse_selection(dict: Option<&Bound<'_, PyDict>>, now: SystemTime) -> PyResul
         limit.as_deref(),
         sort.as_deref(),
         reverse,
-        &size,
+        size.as_deref(),
         fdu_core::query::Request::DEFAULTS.words_per_page,
     )?
     .selection)

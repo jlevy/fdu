@@ -25,9 +25,9 @@ use pyo3::types::{PyDict, PyList};
 use fdu_core::content::{AnalysisRequest, AnalysisSet, CoverageReason};
 use fdu_core::query::{
     AxisNames, IgnoredEntries, IgnoredTally, MetricRow, MetricSummary, Pattern, Provenance, Query,
-    Report, ReportSource, RequestError, Section, Selection, SummaryRow, TreeNode, ViewSpec,
-    bound_nanos, document_words, parse_bound, parse_cache_policy, parse_kind, parse_size_metric,
-    parse_sort,
+    Report, ReportSource, Request, RequestError, Section, Selection, SummaryRow, TreeNode,
+    ViewSpec, bound_nanos, document_words, parse_bound, parse_cache_policy, parse_kind,
+    parse_size_metric, parse_sort,
 };
 use fdu_core::watch::WatchConfig;
 use fdu_core::watch_session::{ChangeKind, Session};
@@ -368,7 +368,7 @@ impl PyIndex {
             limit,
             sort,
             reverse,
-            size,
+            Some(size),
             words_per_page,
         )?;
 
@@ -587,7 +587,7 @@ impl PyIndex {
             limit,
             sort,
             reverse,
-            size,
+            Some(size),
             words_per_page,
         )?;
         query
@@ -1120,14 +1120,16 @@ fn build_query_at(
     limit: Option<&str>,
     sort: Option<&str>,
     reverse: bool,
-    size: &str,
+    size: Option<&str>,
     words_per_page: u64,
 ) -> PyResult<Query> {
     let axes = &AxisNames::FIELDS;
     let refused = |error: RequestError| value_error(&error);
     let mut selection = Selection {
         reverse,
-        size: parse_size_metric(size, axes.size).map_err(refused)?,
+        size: size
+            .map_or(Ok(Request::DEFAULTS.size), |value| parse_size_metric(value, axes.size))
+            .map_err(refused)?,
         ..Selection::default()
     };
     if let Some(value) = depth {
@@ -1314,7 +1316,7 @@ fn report_once(
         limit,
         sort,
         reverse,
-        size,
+        Some(size),
         words_per_page,
     )?;
 

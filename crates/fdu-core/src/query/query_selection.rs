@@ -12,13 +12,23 @@ use crate::engine_contract::{EntryKind, Error, Result};
 use crate::query::query_glob::Pattern;
 
 /// Which size metric a report answers in.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SizeMetric {
     /// Bytes the file's contents occupy logically.
-    #[default]
     Apparent,
     /// Bytes the filesystem allocated, which sparse files and clones make differ.
     Allocated,
+}
+
+/// Allocated, from the request model's defaults table.
+///
+/// Read from the table rather than declared here, because this was the one place the
+/// default was apparent: every surface answered in allocated bytes, and a Rust caller or
+/// an opened-root read that named no metric got a different answer to the same request.
+impl Default for SizeMetric {
+    fn default() -> Self {
+        crate::query::Request::DEFAULTS.size
+    }
 }
 
 /// Which key results are ordered by.
@@ -730,6 +740,8 @@ mod tests {
     #[test]
     fn portable_catalog_predicates_compose_without_client_side_filtering() {
         let selection = EntrySelection {
+            // Apparent, so the bound reads the sizes written below rather than their blocks.
+            query: Selection { size: SizeMetric::Apparent, ..Selection::default() },
             max_size: Some(10),
             exclude_ignored: true,
             terminal_extensions: vec![".rs".to_string(), ".md".to_string()],

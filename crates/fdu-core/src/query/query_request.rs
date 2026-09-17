@@ -1011,6 +1011,8 @@ mod tests {
         request.validate().expect("the defaults are a valid request");
 
         // The other homes of these defaults read the table rather than restating it.
+        assert_eq!(SizeMetric::default(), defaults.size);
+        assert_eq!(Selection::default().size, defaults.size);
         assert_eq!(Query::default().words_per_page, defaults.words_per_page);
         assert_eq!(ScanConfig::default().read_controls, defaults.read_controls);
         assert_eq!(ScanConfig::default().control_limits, defaults.control_limits);
