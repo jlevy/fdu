@@ -1067,8 +1067,8 @@ convenience and none changes an answer or leaves a concept without its model:
   [engine architecture](../../architecture/fdu-engine-architecture.md),
   [surface architecture](../../architecture/fdu-surface-architecture.md), and
   [cache design](../../guides/cache-design.md)
-- The [path-independence harness](../../../../explorations/path-independence/README.md)
-  and its 2026-09-17 summary
+- The [path-independence harness](../../../../tests/path_independence/README.md) and its
+  2026-09-17 summary
 - Related plans:
   [file content metrics](../done/plan-2026-08-12-fdu-file-content-metrics.md),
   [cache layers and defaults](../done/plan-2026-08-15-fdu-cache-layers-and-defaults.md),

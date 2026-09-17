@@ -76,6 +76,12 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.18.0
+      # uv provides the Python the path-independence harness runs on (it needs 3.11+ for
+      # tomllib), so the check never depends on a runner's system Python.
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: "0.12.1"
+          enable-cache: false
       - run: npm ci --ignore-scripts
       - name: Test Rust module filename policy
         run: node --test scripts/check-rust-module-names.test.mjs
@@ -97,6 +103,22 @@ jobs:
         run: cargo build --locked -p fdu --all-features
       - name: Compare the CLI golden contract
         run: npm run test:golden
+      # The subset of the path-independence matrix that reaches the command line alone:
+      # every answer after other requests, cache policies, and file changes must equal a
+      # cold run's, or be a registered known violation. The Python routes run in the
+      # parity job, which builds the wheel. The full matrix is its own workflow.
+      - name: Check answers against cold runs across cache histories
+        env:
+          FDU_PI_SURFACES: cli
+          FDU_PI_OUT: path-independence-out
+        run: uv run --no-project --python 3.12 python -m unittest discover -s tests/path_independence -p "test_*.py"
+      - name: Upload the path-independence diffs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: path-independence-subset-${{ matrix.os }}
+          path: path-independence-out
+          if-no-files-found: ignore
       - name: Test the performance probe and its semantic oracle
         run: cargo test --locked -p fdu-core --example perf_probe --no-default-features
       - name: Build the performance probe the harness tests run
@@ -272,6 +294,23 @@ jobs:
         with:
           name: deviations-python-linux
           path: tests/parity/deviations-python.diff
+      - name: Build the CLI the path-independence routes compare against
+        if: success() || steps.parity-diff.outcome == 'failure'
+        run: cargo build --locked -p fdu --all-features
+      # The same subset with the Python routes: fdu.report, fdu.open, and fdu.scan must
+      # agree with the command line's cold answer and return the same kind of outcome.
+      - name: Check answers against cold runs across both surfaces
+        if: success() || steps.parity-diff.outcome == 'failure'
+        run: |
+          FDU_PYTHON="$GITHUB_WORKSPACE/crates/fdu-py/.venv-parity/bin/python" FDU_PI_OUT=path-independence-out \
+            uv run --no-project --python 3.12 python -m unittest discover -s tests/path_independence -p "test_path_independence.py"
+      - name: Upload the path-independence diffs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: path-independence-subset-linux
+          path: path-independence-out
+          if-no-files-found: ignore
 
   python:
     name: Python ${{ matrix.python }} wheel (${{ matrix.os }})
