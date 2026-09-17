@@ -3,15 +3,19 @@ type: is
 id: is-01kzsjn8rgp71n66hyt2mzq6ne
 title: Machine output lost per-entry raw identity in the five-axis rewrite
 kind: task
-status: open
+status: closed
 priority: 2
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies: []
 parent_id: is-01kzq1vhvfdyrrhmz3343qh5nr
 created_at: 2026-08-11T23:31:25.583Z
-updated_at: 2026-08-11T23:41:34.777Z
+updated_at: 2026-09-17T02:10:43.073Z
+closed_at: 2026-09-17T02:10:43.073Z
+close_reason: path_raw shipped in 163046f (report_format.rs:894-901)
+resolution: null
+duplicate_of: null
 ---
 Found while resolving a merge conflict from PR #6, not by any test. The pre-five-axis CLI emitted name_raw beside every entry name in JSON, carrying the raw OS bytes for a path that to_string_lossy cannot represent. The rewrite kept raw_identity_json and kept root_raw on the envelope, but no view emitted it per entry, so two files whose names differ only in bytes that are not valid Unicode rendered identically in machine output with no way to tell them apart. That is the lossless-identity guarantee, and it is exactly the class of silent wrongness the project forbids.
 

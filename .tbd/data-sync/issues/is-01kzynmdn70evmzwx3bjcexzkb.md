@@ -4,8 +4,8 @@ id: is-01kzynmdn70evmzwx3bjcexzkb
 title: "Clarify and validate PR #15 content performance layers"
 kind: task
 status: open
-priority: 1
-version: 31
+priority: 2
+version: 32
 labels: []
 dependencies: []
 child_order_hints:
@@ -29,7 +29,7 @@ child_order_hints:
   - is-01kzyzpjp5rz94mz5ma25t0tdz
   - is-01kzz1krveqzt0ap63a4wjk961
 created_at: 2026-08-13T22:59:35.718Z
-updated_at: 2026-09-13T16:50:53.914Z
+updated_at: 2026-09-17T02:10:50.256Z
 ---
 
 ## Notes

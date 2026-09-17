@@ -1,11 +1,11 @@
 ---
 type: is
 id: is-01m1b444cnk1qttdgzms5zz013
-title: "PR #48 branch is 3.6-10x slower than main: allocator churn, not I/O"
+title: Prove no one-shot regression vs b75bf85 on the merged engine
 kind: bug
-status: in_progress
-priority: 0
-version: 9
+status: open
+priority: 1
+version: 10
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
 labels:
   - performance
@@ -14,7 +14,7 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-31T05:19:25.577Z
-updated_at: 2026-09-16T17:39:56.157Z
+updated_at: 2026-09-17T02:10:29.443Z
 ---
 The opened-root-inventory-rewrite branch has an unreported whole-scan performance regression against main that is larger and broader than the control-table cap this epic started from. It affects trees with NO .gitignore files, so it is not control-file I/O.
 

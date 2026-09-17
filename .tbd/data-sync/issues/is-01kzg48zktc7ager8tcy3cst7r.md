@@ -3,9 +3,9 @@ type: is
 id: is-01kzg48zktc7ager8tcy3cst7r
 title: "Spike: snapshot format candidates, open latency vs first-listing latency"
 kind: task
-status: open
+status: closed
 priority: 1
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels:
   - phase1-foundation
@@ -14,7 +14,11 @@ dependencies:
     target: is-01kzg4ajxc0pvgcmj834gahcgt
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:26:53.050Z
-updated_at: 2026-08-09T20:36:45.687Z
+updated_at: 2026-09-17T02:10:37.936Z
+closed_at: 2026-09-17T02:10:37.935Z
+close_reason: Superseded by fdu-pdra (H78) and fdu-yr23 (H92) in campaign-2 Phase D
+resolution: canceled
+duplicate_of: null
 ---
 Time flat-read-everything (fsearch model) against block-compressed-with-tail-index (ncdu 2 model) on a 500k-entry snapshot.
 

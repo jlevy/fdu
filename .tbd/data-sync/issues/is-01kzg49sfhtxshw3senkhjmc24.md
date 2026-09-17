@@ -3,9 +3,9 @@ type: is
 id: is-01kzg49sfhtxshw3senkhjmc24
 title: "Packed entry records: hit the 25-32 bytes per file budget"
 kind: feature
-status: open
+status: closed
 priority: 1
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels:
   - pr-review
@@ -14,7 +14,11 @@ dependencies:
     target: is-01kzg4ajxc0pvgcmj834gahcgt
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:27:19.537Z
-updated_at: 2026-08-09T18:28:33.704Z
+updated_at: 2026-09-17T02:10:39.335Z
+closed_at: 2026-09-17T02:10:39.334Z
+close_reason: Superseded by H86 (fdu-xde5); narrower records refuted as H62-H65
+resolution: canceled
+duplicate_of: null
 ---
 The current Entry uses String names and a BTreeMap of children per directory, which is nowhere near the memory target. ncdu 2 reaches 25 bytes per regular file and 56-64 per directory; a full root-filesystem scan dropped 429 MB -> 162 MB.
 

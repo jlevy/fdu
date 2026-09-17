@@ -3,9 +3,9 @@ type: is
 id: is-01m0wqh3nwzjz4naa9rap02sq5
 title: Clock cap-refused upserts that mutate existing index state
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
@@ -23,7 +23,11 @@ labels:
 dependencies: []
 parent_id: is-01m0vx6yw0f8bddcwggvk2ha0p
 created_at: 2026-08-25T15:09:57.307Z
-updated_at: 2026-08-25T23:47:05.398Z
+updated_at: 2026-09-17T02:10:35.586Z
+closed_at: 2026-09-17T02:10:35.585Z
+close_reason: "Superseded by exact commits (947cd49): budget refusal preflighted per operation before any mutation (index.rs:2117-2121, 2225-2229); test refresh_refusal_is_atomic_with_the_shared_file_budget"
+resolution: canceled
+duplicate_of: null
 ---
 At PR #47 exact head d58d9c5036818f33fe390c31453eb7548ba7abfa, cap-refused mutations now advance the clock, but AppliedDelta is inaccurate. apply_upsert returns true when ensure_dir_chain created ancestors or upsert_beneath removed a kind-changing row; apply_validated_with then appends the original observed Op::Upsert to effective. That leaf file was refused and is absent, while the actual directory insertions or removal are omitted. The public journal therefore claims an effective mutation that did not happen and loses the mutations that did. The new tests assert only that since().deltas is nonempty, so they accept this false delta and do not exercise WatchBatch. Return a structured apply result separating refusal from the exact effective operations (or an explicit dirty/invalidation carrier that is not documented as replayable ops), and preserve the actual created-directory/removal paths under the same clock. Assert the complete delta contents, absence of the refused upsert, exact terminal state clock, WatchBatch dirty/state, and tally conservation for first and later refusals.
 

@@ -3,14 +3,18 @@ type: is
 id: is-01kzz1krveqzt0ap63a4wjk961
 title: Normalize fdu product name casing
 kind: task
-status: open
+status: closed
 priority: 1
-version: 7
+version: 8
 labels: []
 dependencies: []
 parent_id: is-01kzynmdn70evmzwx3bjcexzkb
 created_at: 2026-08-14T02:28:57.317Z
-updated_at: 2026-09-13T16:51:01.515Z
+updated_at: 2026-09-17T02:10:45.057Z
+closed_at: 2026-09-17T02:10:45.056Z
+close_reason: "Lowercase fdu naming landed in PRs #18 and #19"
+resolution: null
+duplicate_of: null
 ---
 Use lowercase fdu consistently for the product and command name, by analogy with du. Preserve uppercase only inside conventional identifiers such as FDU_BUILD_VERSION or environment variables.
 

@@ -3,13 +3,17 @@ type: is
 id: is-01m19txpnb1qrgdt42kmmp01cg
 title: MetaBrowser branch chain cannot reach main as it stands
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 1
+version: 2
 labels: []
 dependencies: []
 created_at: 2026-08-30T17:19:23.306Z
-updated_at: 2026-08-30T17:19:23.306Z
+updated_at: 2026-09-17T02:10:55.046Z
+closed_at: 2026-09-17T02:10:55.045Z
+close_reason: Chain merged to MetaBrowser main 2026-09-09 (19e90b0)
+resolution: null
+duplicate_of: null
 ---
 The paired MetaBrowser work is a three-layer stack, and the middle layer has no pull
 request, so nothing in it has a path to `main`.

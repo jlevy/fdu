@@ -5,14 +5,13 @@ title: "Default --view summary retains the full index to classify ignored entrie
 kind: task
 status: open
 priority: 1
-version: 3
+version: 4
 labels:
   - stack-followup
-  - release
   - scale
 dependencies: []
 created_at: 2026-09-15T22:00:49.899Z
-updated_at: 2026-09-16T08:40:07.338Z
+updated_at: 2026-09-17T02:10:33.442Z
 ---
 Found by the PR B speed gate (branch claude/gitignore-default-on, d95d729), as decision Q7 on fdu-elnn anticipated: the transient summary tier keeps no control table, so with `.gitignore` observed by default an unfiltered `fdu --view summary PATH` falls closed to `RetainedState::FullIndex` (crates/fdu-core/src/execution.rs `plan_report`, `summary_is_sufficient` requires `!config.scan.read_controls`).
 

@@ -4,8 +4,8 @@ id: is-01m0y1sjbfs5h264xhme2vqymg
 title: Implement the thin MetaBrowser fdu backend and async change bridge
 kind: feature
 status: open
-priority: 1
-version: 9
+priority: 2
+version: 10
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - opened-root-rewrite
@@ -21,6 +21,6 @@ child_order_hints:
   - is-01m10nsed829d5v3qndj1a2hg7
   - is-01m10nseqmb4w4n271gyre0xnp
 created_at: 2026-08-26T03:28:34.671Z
-updated_at: 2026-08-27T03:57:21.830Z
+updated_at: 2026-09-17T02:10:56.818Z
 ---
 Add FduInventoryBackend and its handle on PR #74. Map the eight queries, config, paths, rows, state, work, and impacts without a second index. Run bounded operations with the existing asyncio.to_thread policy. Give each handle one dedicated change-poll worker, a one-slot locked mailbox, and an asyncio.Event woken through loop.call_soon_threadsafe; keep one result pending without advancing the cursor until consumption. Prove iterator-only cancellation, explicit optional packaging, typed unavailable errors, and no silent fallback.

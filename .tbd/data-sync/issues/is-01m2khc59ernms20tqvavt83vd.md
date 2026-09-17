@@ -5,13 +5,12 @@ title: Annotate types, families, languages, and documents rows with their ignore
 kind: feature
 status: open
 priority: 2
-version: 2
+version: 3
 labels:
   - stack-followup
-  - release
 dependencies: []
 created_at: 2026-09-15T22:00:37.421Z
-updated_at: 2026-09-16T00:18:22.125Z
+updated_at: 2026-09-17T02:10:54.154Z
 ---
 Follow-up to fdu-5ryb, decided as Q8 (recorded on fdu-elnn and fdu-5ryb, PR B design): PR B (branch claude/gitignore-default-on) annotates summary, tree, and extension rows with their ignored share, and leaves the grouped metric views unannotated.
 

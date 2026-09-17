@@ -3,13 +3,17 @@ type: is
 id: is-01kzyev98rtws5r6q3gswp7jt0
 title: "Retarget the stranded content-metrics work onto the PR #14 branch"
 kind: task
-status: open
+status: closed
 priority: 1
-version: 2
+version: 3
 labels: []
 dependencies: []
 created_at: 2026-08-13T21:01:00.568Z
-updated_at: 2026-08-13T21:58:42.712Z
+updated_at: 2026-09-17T02:10:52.356Z
+closed_at: 2026-09-17T02:10:52.355Z
+close_reason: "PR #14 merged; content re-landed by #15 with experiments renumbered exp-047..050"
+resolution: null
+duplicate_of: null
 ---
 Follow-up to fdu-dn4u. Re-land the content-metrics work (branch codex/file-content-metrics-plan at fbb36f8) on top of the PR #14 branch claude/pr-8-senior-review-egv3mq. GitHub cannot reopen or retarget closed PR #10 because its base branch is deleted, so this becomes a new PR with base claude/pr-8-senior-review-egv3mq.
 

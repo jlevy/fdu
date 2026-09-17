@@ -3,9 +3,9 @@ type: is
 id: is-01m0vrk2scfs6rfsm2hfnwkz50
 title: "Two-engine agreement oracle: conformance packet and recorded-observation replay"
 kind: task
-status: open
+status: closed
 priority: 1
-version: 8
+version: 9
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
@@ -21,7 +21,11 @@ labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-25T06:09:16.076Z
-updated_at: 2026-08-26T07:01:50.826Z
+updated_at: 2026-09-17T02:10:56.227Z
+closed_at: 2026-09-17T02:10:56.225Z
+close_reason: Split into fdu-ekga, fdu-m51u, fdu-e76r under fdu-xu27
+resolution: canceled
+duplicate_of: null
 ---
 Split out of fdu-vfyw, which shipped fdu's side of the contract: the reference embedder
 example (crates/fdu-py/examples/browser_provider.py), the semantic_fingerprint recipe,

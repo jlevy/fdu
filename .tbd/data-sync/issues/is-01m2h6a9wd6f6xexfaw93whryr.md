@@ -1,11 +1,11 @@
 ---
 type: is
 id: is-01m2h6a9wd6f6xexfaw93whryr
-title: "Release readiness: land the open PR stack and cut the first stable fdu release"
+title: "Release readiness: stabilize, verify, and publish fdu 0.1.0"
 kind: epic
 status: in_progress
 priority: 0
-version: 14
+version: 29
 labels:
   - release
 dependencies: []
@@ -18,8 +18,22 @@ child_order_hints:
   - is-01m2k27z25tt9ygs4c1nchhzez
   - is-01m2k2pp6jw10vq759yyetmcmb
   - is-01m2nrqeqa5pf3j4d548wygd0a
+  - is-01m2phvqccpjdrbbsr5y3kcydr
+  - is-01m2phzbwx3qzvf77e6xajdsj9
+  - is-01m2phzc8bg4js1chd86rs8pyj
+  - is-01m2phzcjkthhqf430p6mhdmad
+  - is-01m2phzcwqp3jxmcb2gsxb3n5q
+  - is-01m2phzd7cxjn134d9t78xzw6d
+  - is-01m2phzdhny16vmrqfv9a6cejz
+  - is-01m2phzdw3ynn562960wk9jfw0
+  - is-01m2phze6caa00vy4yfkrf6xm3
+  - is-01m2phzegm4b3scda7d1xq3gnm
+  - is-01m2phzevyf68fdz9zcs3yzncw
+  - is-01m0k512k9a6dq2k51fbfe5xn4
+  - is-01kzypf1yd2v4g8q8tk2v1xmxs
+  - is-01kzg4c6vnh98mqrpkzw7ydne0
 created_at: 2026-09-15T00:08:53.387Z
-updated_at: 2026-09-16T18:47:36.425Z
+updated_at: 2026-09-17T02:12:08.331Z
 ---
 User goal (2026-09-14): bring fdu to a stable state that can land on main and cut a release. Keep making progress, track everything as beads, stack PRs as needed, and make sure the final PR stack is complete.
 
@@ -80,3 +94,22 @@ Remaining for 0.1.0:
 - fdu-y5xr re-measure;
 - fdu-ls14 rehearsal dispatch (needs the user's go-ahead);
 - fdu-9cf0 publish by hand (user).
+
+2026-09-17 STATUS AND RE-SCOPE. Everything planned for 0.1.0 merged by 5f2d36d (#63-#76); CI and release
+rehearsal 35156068769 green; the 8 artifacts match SHA256SUMS. Five read-only audits and end-to-end testing
+of the rehearsal wheel on macOS then found release blockers, now children of this epic:
+- fdu-gija: content analysis answers depend on cache history (design problem: the analysis request is
+  index state, not a report parameter; post-release redesign in fdu-azz3). Fix approach awaits the
+  maintainer: exact-match reuse or request-scoped projection.
+- fdu-snv3: watching an analyzed index serves stale metrics (fix on claude/release-e2e-fixes).
+- fdu-18vk: wheel console command ignores Ctrl-C during --watch (fix on the branch).
+- fdu-c2ml: YAML contract defects (fixes on the branch; evaluation fdu-4xy9 recommends an owned policy and
+  streaming JSON/YAML sink, fdu-fft9).
+- fdu-i142, fdu-nwud: registry pages and artifact identity; fdu-obh2: runbook and plan specs (docs PR).
+- Decisions: fdu-p7vb exact pins in published fdu-core; Rust API extensibility is a P1 decision bead under this epic.
+- Maintainer actions: fdu-atbv repository security settings; fdu-znb0 SSH signing identity.
+- fdu-tyvq end-to-end verification, then fdu-9cf0 publication by hand (tag, crates.io, PyPI, GitHub
+  Release children), then the global dev install chore.
+Not blocking (documented limitations or post-release): memory beads fdu-if7o, fdu-syyl, fdu-6o5o; parity
+proof fdu-lj4h and fdu-pro1; release automation epic fdu-zr73. The audits also closed or reprioritized ~60
+stale beads (every open P0 is now release work).

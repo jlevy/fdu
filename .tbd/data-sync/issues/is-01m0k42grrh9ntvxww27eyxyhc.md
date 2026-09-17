@@ -5,12 +5,13 @@ title: The extensions view has no share column while its three sibling views do
 kind: task
 status: open
 priority: 3
-version: 1
+version: 2
+spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies: []
-parent_id: is-01m0k41ks4s0nxzfxj3v141nx8
+parent_id: is-01kzq1vhvfdyrrhmz3343qh5nr
 created_at: 2026-08-21T21:36:46.359Z
-updated_at: 2026-08-21T21:36:46.359Z
+updated_at: 2026-09-17T02:10:46.500Z
 ---
 `families`, `types`, and `languages` each print a share column; `extensions` does not, so
 one grouped view is shaped unlike its three siblings.

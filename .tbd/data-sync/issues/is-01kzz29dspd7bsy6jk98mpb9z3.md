@@ -3,9 +3,9 @@ type: is
 id: is-01kzz29dspd7bsy6jk98mpb9z3
 title: "Salvage the still-valid fixes from PR #4 and retire the rest"
 kind: epic
-status: open
+status: closed
 priority: 1
-version: 12
+version: 13
 labels:
   - performance
   - correctness
@@ -23,7 +23,11 @@ child_order_hints:
   - is-01kzz2bbj7wbktyst23qwx2c8t
   - is-01kzz31zpz1y045pvjf6k77ccw
 created_at: 2026-08-14T02:40:46.901Z
-updated_at: 2026-08-14T02:54:11.679Z
+updated_at: 2026-09-17T02:10:45.636Z
+closed_at: 2026-09-17T02:10:45.636Z
+close_reason: "All still-valid PR #4 fixes salvaged (#20); last child resolved"
+resolution: null
+duplicate_of: null
 ---
 PR #4 (codex/address-pr3-review, head 8a13373) branched from e7e2e08 on 2026-08-10 and never merged. main has since advanced through PRs #5, #8, #9, #14, #15, #16, and #18, which renumbered the experiment ledger to exp-050, replaced the cross-environment matrix approach with the platform-tuning guide plus the spike harness, and rebuilt much of the scan and index hot path.
 

@@ -3,9 +3,9 @@ type: is
 id: is-01kzg49rw1p40pjc18feb9ghpv
 title: "Walk layer: raw getdents64 and dirfd-relative statx"
 kind: feature
-status: open
+status: closed
 priority: 1
-version: 9
+version: 10
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels: []
 dependencies:
@@ -19,7 +19,11 @@ parent_id: is-01kzy554jjg27mz97mryenftym
 child_order_hints:
   - is-01kzmzmcszb269mrex4hzdcp3y
 created_at: 2026-08-08T07:27:18.913Z
-updated_at: 2026-08-13T18:11:55.487Z
+updated_at: 2026-09-17T02:10:38.723Z
+closed_at: 2026-09-17T02:10:38.722Z
+close_reason: "Campaign-2 non-goal after measurement: getdents64 elision under 1%, io_uring 6-8x slower; stat is already dirfd-relative"
+resolution: canceled
+duplicate_of: null
 ---
 Replace the portable read_dir + symlink_metadata walker. Goal 1 is not met, and must not be claimed, until this lands and the benchmark gate passes.
 

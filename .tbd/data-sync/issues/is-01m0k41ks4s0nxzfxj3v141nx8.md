@@ -3,9 +3,9 @@ type: is
 id: is-01m0k41ks4s0nxzfxj3v141nx8
 title: "Output design system: written layout rules every renderer follows"
 kind: epic
-status: open
+status: closed
 priority: 1
-version: 5
+version: 6
 labels: []
 dependencies: []
 child_order_hints:
@@ -14,7 +14,11 @@ child_order_hints:
   - is-01m0k42ge85tythbv93tmp02jw
   - is-01m0k42grrh9ntvxww27eyxyhc
 created_at: 2026-08-21T21:36:16.675Z
-updated_at: 2026-08-21T21:36:46.359Z
+updated_at: 2026-09-17T02:10:46.797Z
+closed_at: 2026-09-17T02:10:46.797Z
+close_reason: Layout rules written (report_format.rs:198-213, fdu-z44m); schema-bump residual fdu-8nq9 moved to fdu-pxeb
+resolution: null
+duplicate_of: null
 ---
 The colour roles are named but the layout rules are not, so each renderer invents its own
 column handling and they disagree. Report output should follow one written contract the

@@ -4,14 +4,14 @@ id: is-01m0rm411csthct7rcayfhs1y0
 title: Price the leaf-count field that already shipped on the ancestor-merge path
 kind: task
 status: open
-priority: 1
-version: 2
+priority: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
 dependencies: []
 parent_id: is-01m0racd5dxjfx1g5e0dsfay8q
 created_at: 2026-08-24T00:53:25.163Z
-updated_at: 2026-08-24T15:23:03.474Z
+updated_at: 2026-09-17T02:10:35.873Z
 ---
 fdu-5hip added `others` to InternedRollUp, so every ancestor merge now carries one more
 u64 add and every unmerge one more saturating_sub. That shipped WITHOUT a measurement.

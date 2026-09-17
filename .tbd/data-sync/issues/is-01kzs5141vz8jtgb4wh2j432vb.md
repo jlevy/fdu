@@ -4,8 +4,8 @@ id: is-01kzs5141vz8jtgb4wh2j432vb
 title: "Warm progressive results: lazy open and per-value provenance"
 kind: epic
 status: open
-priority: 0
-version: 18
+priority: 2
+version: 19
 spec_path: docs/project/specs/active/plan-2026-08-11-fdu-progressive-results.md
 labels: []
 dependencies: []
@@ -27,7 +27,7 @@ child_order_hints:
   - is-01kzs6jne1jffaaxcyt67knzxt
   - is-01m03b9adz8y72n0gw98j1f6w6
 created_at: 2026-08-11T19:33:13.914Z
-updated_at: 2026-08-26T02:44:44.755Z
+updated_at: 2026-09-17T02:10:47.083Z
 ---
 Own warm persisted roll-ups, lazy warm open, prefer-cache policy, and honest per-value mixed-source provenance. Cold progressive discovery, the opened-root lifecycle, coherent mid-discovery reads, and the no-gap observation handoff are owned by fdu-snej and plan-2026-08-25-fdu-opened-root-inventory-engine.md. Traversal-order work from this epic has landed and remains shared background.
 

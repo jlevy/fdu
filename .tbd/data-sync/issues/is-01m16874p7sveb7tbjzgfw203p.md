@@ -3,15 +3,19 @@ type: is
 id: is-01m16874p7sveb7tbjzgfw203p
 title: Align the MetaBrowser contract with the total portable encoding
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 4
+version: 5
 labels: []
 dependencies:
   - type: blocks
     target: is-01m0y1sjbfs5h264xhme2vqymg
 created_at: 2026-08-29T07:54:46.342Z
-updated_at: 2026-08-30T17:11:05.822Z
+updated_at: 2026-09-17T02:10:54.747Z
+closed_at: 2026-09-17T02:10:54.747Z
+close_reason: "Contract on MetaBrowser main (c585f20, a5f5e55); residue: MetaBrowser plan line 391 and fdu-jng6"
+resolution: null
+duplicate_of: null
 ---
 fdu made the portable encoding total in `13fe8b4`, and MetaBrowser has not followed. Until
 it does, the two providers disagree about a value that appears on every row, so any

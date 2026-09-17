@@ -4,8 +4,8 @@ id: is-01kzsa4b2j0b3rmvkhf4r0ktxz
 title: "Address review: PR #6 — senior engineering review, code and design"
 kind: task
 status: open
-priority: 1
-version: 21
+priority: 2
+version: 22
 labels: []
 dependencies: []
 child_order_hints:
@@ -30,5 +30,5 @@ child_order_hints:
   - is-01kzt7d70km4apzv80f8z7ask8
   - is-01kzt7d78remd9rawjk1a8scty
 created_at: 2026-08-11T21:02:22.289Z
-updated_at: 2026-08-12T05:34:02.007Z
+updated_at: 2026-09-17T02:10:49.960Z
 ---

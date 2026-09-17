@@ -3,14 +3,18 @@ type: is
 id: is-01m2m1ncwwfw6sk3ytrngg8avh
 title: "Unpushed review-fix checkpoints for #63, #65 and #67"
 kind: task
-status: open
+status: closed
 priority: 1
-version: 2
+version: 3
 labels:
   - stack-followup
 dependencies: []
 created_at: 2026-09-16T02:45:17.337Z
-updated_at: 2026-09-16T03:15:51.715Z
+updated_at: 2026-09-17T02:10:34.451Z
+closed_at: 2026-09-17T02:10:34.450Z
+close_reason: "Redone in pushed fixes: f39b701..d911ecb (#67) and c63988f (#65); w-63 fully merged; dispositions posted"
+resolution: canceled
+duplicate_of: null
 ---
 Three review-fix streams were stopped mid-flight by an API session limit at about 19:35 on 2026-09-15. Their work is checkpointed locally so a lost worktree does not lose it.
 

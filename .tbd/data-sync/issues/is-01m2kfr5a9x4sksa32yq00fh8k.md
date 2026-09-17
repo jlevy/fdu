@@ -3,9 +3,9 @@ type: is
 id: is-01m2kfr5a9x4sksa32yq00fh8k
 title: "Address review: PR #63 — control bounds degrade, two independent limits"
 kind: task
-status: open
+status: closed
 priority: 1
-version: 13
+version: 14
 labels: []
 dependencies: []
 child_order_hints:
@@ -22,6 +22,10 @@ child_order_hints:
   - is-01m2mcrvpq9j94e3fcqw8d0gk1
   - is-01m2mcs08xztcdv5e9fn0gw402
 created_at: 2026-09-15T21:32:13.511Z
-updated_at: 2026-09-16T05:59:29.819Z
+updated_at: 2026-09-17T02:10:34.045Z
+closed_at: 2026-09-17T02:10:34.044Z
+close_reason: "Both #63 reviews answered (5691381828, 5692967039); PR merged 2026-09-16"
+resolution: null
+duplicate_of: null
 ---
 Review https://github.com/jlevy/fdu/pull/63#pullrequestreview-5215446267 at 1fd71a9. Seven findings: PR63-Q-1 (split budget and line limit, user decision recorded on fdu-okne/fdu-1onj as 'DECISION, refining Q3'), PR63-SCOPE-1 (P2), PR63-SNAP-1, PR63-CACHE-1, PR63-CLI-1, PR63-PERF-1, PR63-DOC-1 (P3).

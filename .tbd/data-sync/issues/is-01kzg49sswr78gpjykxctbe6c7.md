@@ -4,8 +4,8 @@ id: is-01kzg49sswr78gpjykxctbe6c7
 title: "Reducer registry: make metrics registrations, not engine changes"
 kind: feature
 status: open
-priority: 1
-version: 5
+priority: 2
+version: 7
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels: []
 dependencies:
@@ -17,7 +17,7 @@ dependencies:
     target: is-01kzg4d256qmchmtyvttnpvn4y
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:27:19.867Z
-updated_at: 2026-08-09T20:37:10.341Z
+updated_at: 2026-09-17T02:10:42.505Z
 ---
 Today RollUp is a fixed struct. Goal 6 requires new roll-up dimensions to be registrations against a stable interface.
 

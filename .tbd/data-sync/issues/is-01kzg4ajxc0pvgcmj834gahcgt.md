@@ -3,9 +3,9 @@ type: is
 id: is-01kzg4ajxc0pvgcmj834gahcgt
 title: "Block snapshot format: compressed blocks, tail index, lazy directory listing"
 kind: feature
-status: open
+status: closed
 priority: 1
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels: []
 dependencies:
@@ -17,7 +17,11 @@ dependencies:
     target: is-01kzg4d256qmchmtyvttnpvn4y
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:27:45.580Z
-updated_at: 2026-08-09T20:37:10.361Z
+updated_at: 2026-09-17T02:10:39.903Z
+closed_at: 2026-09-17T02:10:39.902Z
+close_reason: Superseded by fdu-pdra (H78), then H35/H61 in campaign-2
+resolution: canceled
+duplicate_of: null
 ---
 Replace the flat, uncompressed bootstrap format v2. Its lifecycle invariants—engine-fingerprint invalidation, semantic scope, payload integrity verification, exclusive temporary-file reservation plus atomic rename, corrupt-equals-empty behavior, complete-only persistence, and bounded allocation—must survive unchanged.
 

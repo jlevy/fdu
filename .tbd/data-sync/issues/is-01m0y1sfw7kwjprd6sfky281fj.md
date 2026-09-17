@@ -3,9 +3,9 @@ type: is
 id: is-01m0y1sfw7kwjprd6sfky281fj
 title: Revise the MetaBrowser provider contract from measured evidence
 kind: feature
-status: in_progress
+status: closed
 priority: 1
-version: 16
+version: 17
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - opened-root-rewrite
@@ -33,7 +33,11 @@ child_order_hints:
   - is-01m10nr925xb4ybt40q2pw7zpn
   - is-01m10nr9f2mkwdtp8ad88ms621
 created_at: 2026-08-26T03:28:32.134Z
-updated_at: 2026-09-14T01:49:45.660Z
+updated_at: 2026-09-17T02:10:54.455Z
+closed_at: 2026-09-17T02:10:54.454Z
+close_reason: "Landed on MetaBrowser main via #74/#91 (19e90b0, 2026-09-09); ignored-entry demotion kept unconditional"
+resolution: null
+duplicate_of: null
 ---
 Update contract.py and its conformance registry: registry document input, DiscoveryBudget execution policy, max depth as selection, explicit scope values, derived identities, exhaustive state vocabulary, exact tree/flat order, portable-path issues, work limits, opaque pages without remaining_rows, and exact-or-capped totals.
 

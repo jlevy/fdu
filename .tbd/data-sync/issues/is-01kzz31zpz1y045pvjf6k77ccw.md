@@ -3,14 +3,18 @@ type: is
 id: is-01kzz31zpz1y045pvjf6k77ccw
 title: Decide how the supply-chain audit should honour first-party PyPI exemptions
 kind: task
-status: open
+status: closed
 priority: 2
-version: 1
+version: 2
 labels: []
 dependencies: []
 parent_id: is-01kzz29dspd7bsy6jk98mpb9z3
 created_at: 2026-08-14T02:54:11.679Z
-updated_at: 2026-08-14T02:54:11.679Z
+updated_at: 2026-09-17T02:10:45.346Z
+closed_at: 2026-09-17T02:10:45.346Z
+close_reason: "Resolved by 670fe41: versionless firstParty list in supply-chain-policy.json"
+resolution: null
+duplicate_of: null
 ---
 Extending scripts/check-supply-chain.mjs to benchmarks/uv.lock immediately surfaced softschema 0.6.0 and its dependency frontmatter-format 0.4.0 inside the 14-day cool-off. Both are first-party, and AGENTS.md plus SUPPLY-CHAIN-SECURITY.md already say first-party packages are exempt because the cool-off exists to let somebody else notice a compromised upstream release, which does not apply to a package this project's own authors publish.
 
