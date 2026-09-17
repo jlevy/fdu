@@ -117,9 +117,15 @@ fn parse_selection(dict: Option<&Bound<'_, PyDict>>, now: SystemTime) -> PyResul
     // Absent means the caller named no metric, so the request model's default applies,
     // as it does on every other surface.
     let size = dict.get_item("size")?.map(|value| value.extract::<String>()).transpose()?;
-    Ok(super::build_query_at(
+    Ok(super::build_request(
         now,
-        AnalysisSet::NONE,
+        // An opened root holds no analyzers and always observes control state; a selection
+        // it cannot answer is refused against that basis, not against a stronger one.
+        &fdu_core::query::Basis {
+            root: std::path::PathBuf::new(),
+            scope: fdu_core::ScanConfig::default(),
+            content: AnalysisSet::NONE,
+        },
         None,
         None,
         include,
@@ -136,6 +142,7 @@ fn parse_selection(dict: Option<&Bound<'_, PyDict>>, now: SystemTime) -> PyResul
         size.as_deref(),
         fdu_core::query::Request::DEFAULTS.words_per_page,
     )?
+    .query
     .selection)
 }
 

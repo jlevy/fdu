@@ -584,8 +584,15 @@ def main() -> None:
     stub_path = package_dir / "_native.pyi"
     assert stub_path.is_file()
     stub_tree = ast.parse(stub_path.read_text(encoding="utf-8"))
+    # Classes, functions, and the module-level constants the stub declares: the native
+    # module publishes the request model's defaults, so a stub that listed only callables
+    # would go stale the moment one of them moved.
     stub_exports = {
         node.name for node in stub_tree.body if isinstance(node, (ast.ClassDef, ast.FunctionDef))
+    } | {
+        node.target.id
+        for node in stub_tree.body
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
     }
     stub_exports.add("__version__")
     runtime_exports = {name for name in dir(_native) if not name.startswith("__")}

@@ -74,10 +74,16 @@ def main() -> None:
         else:
             raise RuntimeError(f"unknown mode {mode!r}")
         envelope: dict[str, Any] = {"ok": True, "answer": report.as_dict()}
+    except fdu.InvalidArgumentError as error:
+        # How the Python API refuses a request it cannot answer, in its own names. It is
+        # both an `FduError` and a `ValueError`, so which arm catches it is the question
+        # this order answers: asking `FduError` first reported every refused request as an
+        # operation that failed, and the command line's refusal then looked like a
+        # different outcome than the same refusal one door over.
+        envelope = {"ok": False, "kind": "refused", "error": f"ValueError: {error}"}
     except fdu.FduError as error:
         envelope = {"ok": False, "kind": "fdu", "error": f"FduError: {error}"}
     except ValueError as error:
-        # How the Python API refuses a request it cannot answer, in its own names.
         envelope = {"ok": False, "kind": "refused", "error": f"ValueError: {error}"}
     except Exception as error:
         envelope = {"ok": False, "kind": "unexpected", "error": f"{type(error).__name__}: {error}"}

@@ -349,6 +349,14 @@ def main() -> None:
         pass
     else:
         raise AssertionError("expected the unreleased docs view alias to be rejected")
+    # The page denominator is the request model's, so it is refused by the one grammar
+    # rather than by a check this package keeps of its own.
+    try:
+        analyzed.report(views=["documents"], words_per_page=0)
+    except ValueError as error:
+        assert "words_per_page" in str(error), error
+    else:
+        raise AssertionError("expected a zero page denominator to be rejected")
 
     tree = index.report(views=["tree"], depth="all")["reports"][0]["tree"]
     assert tree["name"] == ".", tree

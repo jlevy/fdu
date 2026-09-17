@@ -17,6 +17,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, cast
 
+from . import _native
+
 type JsonScalar = bool | int | float | str | None
 type JsonValue = JsonScalar | list[JsonValue] | dict[str, JsonValue]
 
@@ -100,6 +102,13 @@ class SizeMetric(StrEnum):
 
     ALLOCATED = "allocated"
     APPARENT = "apparent"
+
+
+#: The metric a selection answers in when the caller names none, from the request model's
+#: defaults table. Read rather than written out, so one table decides what every surface
+#: answers: this default was the one place a Rust caller got another metric than everyone
+#: else.
+_DEFAULT_SIZE = SizeMetric(_native.DEFAULT_SIZE)
 
 
 class SortKey(StrEnum):
@@ -372,7 +381,7 @@ class Selection:
     limit: int | Bound | str | None = None
     sort: SortKey | None = None
     reverse: bool = False
-    size: SizeMetric = SizeMetric.ALLOCATED
+    size: SizeMetric = _DEFAULT_SIZE
     #: Entries to consider by ``.gitignore`` classification. Sizes, ordering, and
     #: ``min_size`` follow the entries selected.
     ignored: IgnoredEntries = IgnoredEntries.INCLUDE
@@ -408,7 +417,7 @@ class Query:
     #: different answer than the CLI for the same string.
     views: tuple[View, ...] | str = ()
     selection: Selection = field(default_factory=Selection)
-    words_per_page: int = 250
+    words_per_page: int = _native.DEFAULT_WORDS_PER_PAGE
 
     def __post_init__(self) -> None:
         # A lone `View` is a `StrEnum` and therefore an iterable string, so passing one
@@ -418,8 +427,6 @@ class Query:
         # grammar, which is why the check names the enum rather than the type it inherits.
         if isinstance(self.views, View):
             raise TypeError("views takes a tuple of View values; wrap the single view in a tuple")
-        if self.words_per_page <= 0:
-            raise ValueError("words_per_page must be positive")
 
 
 @dataclass(frozen=True, slots=True)

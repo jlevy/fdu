@@ -21,13 +21,12 @@ use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, Value
 use fdu_core::content::{AnalysisRequest, AnalysisSet};
 use fdu_core::control::ControlCoverage;
 use fdu_core::query::{
-    AxisNames, Basis, Delivery, IgnoredEntries, Pattern, Query, ReportSource, Request,
-    RequestError, Selection, ViewSpec, bound_nanos, parse_bound, parse_cache_policy, parse_kinds,
-    parse_size, parse_size_metric, parse_sort, parse_when,
+    AxisNames, Delivery, IgnoredEntries, Query, ReportSource, Request, RequestError, RequestSpec,
+    ViewSpec, parse_cache_policy, parse_when,
 };
 use fdu_core::report_format;
 use fdu_core::report_format::human_count;
-use fdu_core::{CachePolicy, CacheScope, CacheState, OpenConfig, ScanConfig, default_cache_path};
+use fdu_core::{CachePolicy, CacheScope, CacheState, OpenConfig, default_cache_path};
 use fdu_core::{PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics};
 
 const SKILL_TEMPLATE: &str = include_str!("skills/SKILL.md");
@@ -325,6 +324,13 @@ fn pending_after(outcome: SaveOutcome) -> bool {
     }
 }
 
+/// The default size metric, as the defaults table spells it.
+///
+/// Read from the model rather than written out here, so `--help` cannot say one metric
+/// while the engine answers in another. The flag still has a clap default because the help
+/// text states it; what it must not have is a default of its own.
+const SIZE_DEFAULT: &str = Request::DEFAULTS.size.label();
+
 /// The request model's refusal, in the command line's words.
 fn refused(error: &RequestError) -> anyhow::Error {
     anyhow::anyhow!(error.message(&AxisNames::FLAGS))
@@ -470,7 +476,7 @@ pub struct Cli {
     pub reverse: bool,
 
     /// Which size metric to report: allocated or apparent.
-    #[arg(long, value_name = "METRIC", default_value = "allocated", help_heading = "SELECTION")]
+    #[arg(long, value_name = "METRIC", default_value = SIZE_DEFAULT, help_heading = "SELECTION")]
     pub size: String,
 
     // ---- view: which roll-ups are reported ----
@@ -604,40 +610,33 @@ impl Cli {
         // time costs nothing and reports its own spelling rather than a scan's worth of
         // waiting followed by an error.
         let format = self.parse_format().map_err(|error| usage(&error))?;
-        // The content axis is parsed first because the view axis defaults from it: a
-        // request that pays to read files should display what it read.
-        let analysis = self.parse_analysis().map_err(|error| usage(&error))?;
-        let views =
-            resolve_views(self.view.as_deref(), analysis.profile).map_err(|error| usage(&error))?;
-        let query = self.parse_query(&views).map_err(|error| usage(&error))?;
         let path = self.path.as_deref().ok_or_else(|| {
             usage(&anyhow::anyhow!(
                 "missing PATH: specify the directory to summarize, for example `fdu .`"
             ))
         })?;
-
-        let policy = self.parse_cache_policy().map_err(|error| usage(&error))?;
-        let scan = self.scan_config().map_err(|error| usage(&error))?;
-        let config = OpenConfig { scan, cache_path: default_cache_path(path), policy, analysis };
-        let request = Request {
-            basis: Basis {
-                root: path.to_path_buf(),
-                scope: config.scan.clone(),
-                content: analysis.profile,
-            },
-            query,
-            now: SystemTime::now(),
-        };
+        // One grammar, one defaults table, one set of rules: this command line hands the
+        // model the words its caller typed and renders whatever comes back in flag names.
+        // It used to parse each axis itself, which is how a default could differ between
+        // the doors into the same engine.
+        let request = self.request(path, SystemTime::now())?;
         let delivery = Delivery {
-            cache: policy,
-            cache_path: config.cache_path.clone(),
-            analysis_workers: analysis.workers,
+            cache: self.parse_cache_policy().map_err(|error| usage(&error))?,
+            cache_path: default_cache_path(path),
+            analysis_workers: self.analysis_workers,
             ..Delivery::default()
         };
-        // A view nothing analyzed cannot answer, and a selection by ignored state over a
-        // scan that reads no rule, are both refused here: before anything is scanned, and in
-        // this surface's words rather than the library's.
-        request.validate().map_err(|error| usage(&refused(&error)))?;
+
+        #[cfg(feature = "watch")]
+        let config = OpenConfig {
+            scan: request.basis.scope.clone(),
+            cache_path: delivery.cache_path.clone(),
+            policy: delivery.cache,
+            analysis: AnalysisRequest {
+                profile: request.basis.content,
+                workers: delivery.analysis_workers,
+            },
+        };
 
         #[cfg(feature = "watch")]
         if self.watch && (self.scan_depth.is_some() || self.one_filesystem) {
@@ -649,7 +648,7 @@ impl Cli {
         }
 
         #[cfg(feature = "watch")]
-        if self.watch && analysis.profile.is_enabled() {
+        if self.watch && request.basis.content.is_enabled() {
             return Err(usage(&refused(&RequestError::WatchContent)));
         }
 
@@ -724,7 +723,9 @@ impl Cli {
                     color,
                 )
             )?;
-            for note in display_notes(&views, analysis.profile, performance.bytes_read) {
+            for note in
+                display_notes(&request.query.views, request.basis.content, performance.bytes_read)
+            {
                 writeln!(out, "{}", paint(&note, STYLE_PERFORMANCE, color))?;
             }
         }
@@ -1108,40 +1109,79 @@ impl Cli {
         Ok(())
     }
 
-    /// Translate the scope flags into the scan configuration every run of this command uses.
-    fn scan_config(&self) -> anyhow::Result<ScanConfig> {
-        // Every run observes `.gitignore` unless told not to, one-shot and `--watch` alike,
-        // because every row shows the ignored share of its size (fdu-elnn). Sharing the
-        // engine default also gives the command line, the Python package, and a library
-        // `open` one snapshot scope (fdu-w3l5). The limits join the cache scope with it,
-        // so a run under other limits scans rather than reusing rules it would not apply.
-        Ok(ScanConfig {
-            max_depth: self.scan_depth,
+    /// The request this invocation asks for, built and validated by the one model.
+    ///
+    /// Every axis reaches the model as the caller wrote it, so the grammars, the defaults,
+    /// and the rules that relate one axis to another are stated once for every surface, and
+    /// the refusal that comes back is rendered here in flag names.
+    fn request(&self, root: &Path, now: SystemTime) -> anyhow::Result<Request> {
+        let typed = self.typed_values();
+        let request = Request::build(&self.spec(root, &typed)?, now, &AxisNames::FLAGS)
+            .map_err(|error| usage(&refused(&error)))?;
+        // A view nothing analyzed cannot answer, and a selection by ignored state over a
+        // scan that reads no rule, are both refused before anything is scanned.
+        request.validate().map_err(|error| usage(&refused(&error)))?;
+        Ok(request)
+    }
+
+    /// The flags clap already typed, rendered back into the words the model reads.
+    ///
+    /// A value the model parses is a value one grammar owns; handing it clap's `usize`
+    /// instead would be a second grammar that agrees today. Through `Display` a
+    /// disagreement shows up as a golden difference rather than as a silent one.
+    fn typed_values(&self) -> TypedValues {
+        TypedValues {
+            scan_depth: self.scan_depth.map(|depth| depth.to_string()),
+            words_per_page: self.words_per_page.to_string(),
+        }
+    }
+
+    /// This invocation as a surface-neutral request spec.
+    fn spec<'a>(
+        &'a self,
+        root: &'a Path,
+        typed: &'a TypedValues,
+    ) -> anyhow::Result<RequestSpec<'a>> {
+        Ok(RequestSpec {
+            root,
+            scan_depth: typed.scan_depth.as_deref(),
             one_filesystem: self.one_filesystem,
-            read_controls: !self.no_gitignore,
-            control_limits: self.parse_gitignore_limits()?,
-            ..ScanConfig::default()
+            // The flag says what it turns off, so only its presence is an instruction; the
+            // default belongs to the model.
+            read_controls: self.no_gitignore.then_some(false),
+            control_budget: self.gitignore_budget.as_deref(),
+            control_line_limit: self.gitignore_line_limit.as_deref(),
+            analyze: Some(&self.analyze),
+            views: self.view.as_deref(),
+            words_per_page: Some(&typed.words_per_page),
+            include: &self.include,
+            exclude: &self.exclude,
+            min_size: self.min_size.as_deref(),
+            modified_since: self.modified_since.as_deref(),
+            modified_before: self.modified_before.as_deref(),
+            kinds: self.kind.as_deref(),
+            ignored: self.ignored_selection()?,
+            depth: self.depth.as_deref(),
+            limit: self.limit.as_deref(),
+            sort: self.sort.as_deref(),
+            reverse: self.reverse,
+            size: Some(&self.size),
         })
     }
 
-    /// Translate the two `.gitignore` limit flags, each on its own: an absent flag keeps its
-    /// own default whatever the other says.
-    fn parse_gitignore_limits(&self) -> anyhow::Result<fdu_core::ControlLimits> {
-        let defaults = fdu_core::ControlLimits::default();
-        Ok(fdu_core::ControlLimits {
-            budget: parse_gitignore_limit(
-                self.gitignore_budget.as_deref(),
-                "--gitignore-budget",
-                fdu_core::query::parse_control_budget,
-                defaults.budget,
-            )?,
-            line_limit: parse_gitignore_limit(
-                self.gitignore_line_limit.as_deref(),
-                "--gitignore-line-limit",
-                fdu_core::query::parse_control_line_limit,
-                defaults.line_limit,
-            )?,
-        })
+    /// The ignored-state axis, which this surface spells as two switches.
+    ///
+    /// Naming both of them is a conflict between flags rather than an invalid value, so it
+    /// is refused here; every other axis is one flag and one value the model reads.
+    fn ignored_selection(&self) -> anyhow::Result<Option<&'static str>> {
+        match (self.exclude_ignored, self.only_ignored) {
+            (false, false) => Ok(None),
+            (true, false) => Ok(Some(IgnoredEntries::Exclude.label())),
+            (false, true) => Ok(Some(IgnoredEntries::Only.label())),
+            (true, true) => Err(usage(&anyhow::anyhow!(
+                "--exclude-ignored and --only-ignored select opposite entries; use one of them"
+            ))),
+        }
     }
 
     /// Translate the cache-policy flag.
@@ -1160,87 +1200,27 @@ impl Cli {
         })
     }
 
-    /// Translate every selection and view flag into the library's own types.
+    /// The query this invocation asks for, as the model builds it.
     ///
-    /// This is all the CLI does: parse flags into `Query`, hand it to the library, and
-    /// serialize what comes back. Any logic beyond that belongs in the library, where
-    /// Rust and Python callers get it too.
-    /// Resolve the content and view axes exactly as [`Cli::run`] does.
-    ///
-    /// Tests go through this rather than calling `parse_query` with a hand-written view
-    /// list, so a change to the resolution order cannot pass the suite while breaking the
-    /// command.
+    /// Tests go through this rather than assembling a `Query` of their own, so a change to
+    /// the grammars or the defaults cannot pass the suite while changing what the command
+    /// does.
     #[cfg(test)]
     fn resolved_query(&self) -> anyhow::Result<Query> {
-        let analysis = self.parse_analysis()?;
-        let views = resolve_views(self.view.as_deref(), analysis.profile)?;
-        self.parse_query(&views)
+        Ok(self.resolved_request()?.query)
     }
 
-    fn parse_query(&self, views: &ResolvedViews) -> anyhow::Result<Query> {
-        let now = SystemTime::now();
-
-        let axes = &AxisNames::FLAGS;
-        let bound = |value: &str, axis| parse_bound(value, axis).map_err(|error| refused(&error));
-        let mut selection = Selection {
-            depth: self.depth.as_deref().map(|value| bound(value, axes.depth)).transpose()?,
-            limit: self.limit.as_deref().map(|value| bound(value, axes.limit)).transpose()?,
-            reverse: self.reverse,
-            size: parse_size_metric(&self.size, axes.size).map_err(|error| refused(&error))?,
-            ..Selection::default()
-        };
-
-        for pattern in &self.include {
-            selection.include.push(Pattern::parse(pattern)?);
-        }
-        for pattern in &self.exclude {
-            selection.exclude.push(Pattern::parse(pattern)?);
-        }
-        if let Some(min_size) = &self.min_size {
-            selection.min_size = Some(parse_size(min_size)?);
-        }
-        if let Some(since) = &self.modified_since {
-            let when = parse_when(since, now)?;
-            selection.modified.since = Some(
-                bound_nanos(since, when, axes.modified_since).map_err(|error| refused(&error))?,
-            );
-        }
-        if let Some(before) = &self.modified_before {
-            let when = parse_when(before, now)?;
-            selection.modified.before = Some(
-                bound_nanos(before, when, axes.modified_before).map_err(|error| refused(&error))?,
-            );
-        }
-        if let Some(kinds) = &self.kind {
-            selection.kinds = parse_kinds(kinds, axes.kind).map_err(|error| refused(&error))?;
-        }
-        if let Some(sort) = &self.sort {
-            selection.sort = Some(parse_sort(sort, axes.sort).map_err(|error| refused(&error))?);
-        }
-        selection.ignored = match (self.exclude_ignored, self.only_ignored) {
-            (false, false) => IgnoredEntries::Include,
-            (true, false) => IgnoredEntries::Exclude,
-            (false, true) => IgnoredEntries::Only,
-            (true, true) => anyhow::bail!(
-                "--exclude-ignored and --only-ignored select opposite entries; use one of them"
-            ),
-        };
-
-        let omitted_views = views.omitted.clone();
-        let views = views.selected.clone();
-        if self.words_per_page == 0 {
-            anyhow::bail!("invalid --words-per-page 0: expected a positive integer");
-        }
-        // The command line names these axes with flags; a library caller names them with
-        // fields, and the report's own diagnostics follow whichever asked.
-        Ok(Query { selection, views, omitted_views, axes, words_per_page: self.words_per_page })
+    /// [`Cli::request`] for a test, over a root no test reads.
+    #[cfg(test)]
+    fn resolved_request(&self) -> anyhow::Result<Request> {
+        self.request(self.path.as_deref().unwrap_or(Path::new(".")), SystemTime::now())
     }
+}
 
-    fn parse_analysis(&self) -> anyhow::Result<AnalysisRequest> {
-        let profile = AnalysisSet::parse_labeled(&self.analyze, "--analyze")
-            .map_err(|message| anyhow::anyhow!(message))?;
-        Ok(AnalysisRequest { profile, workers: self.analysis_workers })
-    }
+/// Flags clap typed, rendered back into the words [`Request::build`] reads.
+struct TypedValues {
+    scan_depth: Option<String>,
+    words_per_page: String,
 }
 
 /// Format transient one-shot work without adding it to the machine-report schema.
@@ -1400,6 +1380,7 @@ const fn view_displays_analysis(view: ViewSpec) -> bool {
 }
 
 /// Views to render, plus any `--view full` could not satisfy.
+#[cfg(test)]
 #[derive(Debug)]
 struct ResolvedViews {
     selected: Vec<ViewSpec>,
@@ -1410,7 +1391,9 @@ struct ResolvedViews {
 ///
 /// `full` expands to what the requested analyzers can answer rather than failing the
 /// whole run over one unsatisfiable view, and reports what it dropped so the omission is
-/// stated rather than hidden.
+/// stated rather than hidden. The command builds its views through the request model; this
+/// is what the tests of that axis call, one layer below it.
+#[cfg(test)]
 fn resolve_views(spec: Option<&str>, profile: AnalysisSet) -> anyhow::Result<ResolvedViews> {
     // The whole axis -- list grammar, `full` expansion, and the default -- lives in the
     // library, so the CLI and the Python API cannot disagree about what a spec means.
@@ -1425,13 +1408,13 @@ fn resolve_views(spec: Option<&str>, profile: AnalysisSet) -> anyhow::Result<Res
 /// and a view it could not render is named rather than quietly dropped.  Machine formats
 /// carry neither, because the `reports` array already enumerates exactly which views were
 /// produced — a consumer reads the omission from what is absent.
-fn display_notes(views: &ResolvedViews, profile: AnalysisSet, bytes_read: u64) -> Vec<String> {
+fn display_notes(views: &[ViewSpec], profile: AnalysisSet, bytes_read: u64) -> Vec<String> {
     // Only the note that needs telemetry. The omission note is a fact about the report and
     // travels on it, so every surface states it rather than just this one (fdu-x8u6).
     //
     // Never an error: warming the content sidecar so a later run is warm is a supported
     // use, and `--cache`-aware callers depend on it.  Silence would hide the cost instead.
-    if profile.is_enabled() && !views.selected.iter().any(|view| view_displays_analysis(*view)) {
+    if profile.is_enabled() && !views.iter().any(|view| view_displays_analysis(*view)) {
         return vec![format!(
             "note: --analyze {} read {}; no selected view displays content metrics — try --view families, languages, or full",
             profile.labels().join(","),
@@ -1439,25 +1422,6 @@ fn display_notes(views: &ResolvedViews, profile: AnalysisSet, bytes_read: u64) -
         )];
     }
     Vec::new()
-}
-
-/// Parse one `.gitignore` limit flag with the engine's grammar, naming the flag in the
-/// rejection; an absent flag keeps `default`.
-fn parse_gitignore_limit(
-    value: Option<&str>,
-    flag: &str,
-    parse: fn(&str) -> fdu_core::Result<Option<usize>>,
-    default: Option<usize>,
-) -> anyhow::Result<Option<usize>> {
-    let Some(value) = value else {
-        return Ok(default);
-    };
-    parse(value).map_err(|error| match error {
-        fdu_core::Error::InvalidValue { value, hint, .. } => {
-            anyhow::anyhow!("invalid {flag} {value:?}: {hint}")
-        }
-        other => other.into(),
-    })
 }
 
 /// Run `fdu` through its real process boundary and return its stable numeric exit code.
@@ -1862,11 +1826,15 @@ mod tests {
     fn each_gitignore_limit_flag_sets_only_its_own_limit_and_joins_the_observed_scope() {
         let scan_config = |flags: &[&str]| {
             let args = std::iter::once("fdu").chain(flags.iter().copied()).chain(["."]);
-            Cli::try_parse_from(args).expect("parses").scan_config()
+            Cli::try_parse_from(args)
+                .expect("parses")
+                .resolved_request()
+                .map(|request| request.basis.scope)
         };
         let defaults = fdu_core::ControlLimits::default();
-        let unobserved =
-            |config: &ScanConfig| ScanConfig { read_controls: false, ..config.clone() }.scope();
+        let unobserved = |config: &fdu_core::ScanConfig| {
+            fdu_core::ScanConfig { read_controls: false, ..config.clone() }.scope()
+        };
         let default = scan_config(&[]).expect("defaults");
         assert_eq!(default.control_limits, defaults);
         assert!(default.read_controls, "every run observes .gitignore unless told not to");
@@ -2037,11 +2005,11 @@ mod tests {
             limit: None,
             sort: None,
             reverse: false,
-            size: "allocated".to_string(),
+            size: SIZE_DEFAULT.to_string(),
             view: Some("tree".to_string()),
             analyze: "none".to_string(),
             analysis_workers: 0,
-            words_per_page: 250,
+            words_per_page: Request::DEFAULTS.words_per_page,
             format: "text".to_string(),
             color: ColorWhen::Auto,
             cache: "off".to_string(),
@@ -2449,7 +2417,7 @@ mod tests {
     #[test]
     fn the_display_contract_reports_unspent_reads_from_the_cli() {
         let unspent = resolve_views(Some("tree"), AnalysisSet::ALL).expect("resolve");
-        let notes = display_notes(&unspent, AnalysisSet::ALL, 1_200);
+        let notes = display_notes(&unspent.selected, AnalysisSet::ALL, 1_200);
         assert_eq!(notes.len(), 1, "{notes:?}");
         assert!(notes[0].contains("no selected view displays content metrics"), "{notes:?}");
         assert!(notes[0].contains("1.1 KiB"), "the note quantifies what was read: {notes:?}");
@@ -2462,17 +2430,17 @@ mod tests {
 
         // A view that does display the metrics earns no note at all.
         let spent = resolve_views(Some("families"), AnalysisSet::ALL).expect("resolve");
-        assert!(display_notes(&spent, AnalysisSet::ALL, 1_200).is_empty());
+        assert!(display_notes(&spent.selected, AnalysisSet::ALL, 1_200).is_empty());
 
         // Neither does a metadata-only run, which bought nothing to display.
         let plain = resolve_views(None, AnalysisSet::NONE).expect("resolve");
-        assert!(display_notes(&plain, AnalysisSet::NONE, 0).is_empty());
+        assert!(display_notes(&plain.selected, AnalysisSet::NONE, 0).is_empty());
 
         // And the omission note is no longer the CLI's to make, in either direction.
         let omitted = resolve_views(Some("full"), AnalysisSet::NONE).expect("resolve");
         assert!(!omitted.omitted.is_empty(), "full without analyzers must drop documents");
         assert!(
-            display_notes(&omitted, AnalysisSet::NONE, 0).is_empty(),
+            display_notes(&omitted.selected, AnalysisSet::NONE, 0).is_empty(),
             "the omission travels on the report now"
         );
     }
@@ -2484,9 +2452,18 @@ mod tests {
         for view in ViewSpec::ALL {
             let spec = view.label();
             let cli = Cli { view: Some(spec.to_string()), ..cli() };
-            let profile = cli.parse_analysis().expect("analysis").profile;
+            // Built rather than validated, because a view that needs content is refused
+            // rather than answered: what this test pins is that naming it never turns an
+            // analyzer on behind the caller's back.
+            let typed = cli.typed_values();
+            let built = Request::build(
+                &cli.spec(Path::new("."), &typed).expect("the spec composes"),
+                SystemTime::now(),
+                &AxisNames::FLAGS,
+            )
+            .expect("every view parses");
             assert_eq!(
-                profile,
+                built.basis.content,
                 AnalysisSet::NONE,
                 "--view {spec} must leave the content axis empty"
             );
@@ -2495,18 +2472,20 @@ mod tests {
 
     #[test]
     fn analysis_profile_workers_and_page_denominator_parse_before_io() {
-        let parsed =
-            Cli { analyze: "lines".to_string(), analysis_workers: 3, words_per_page: 250, ..cli() };
-        assert_eq!(
-            parsed.parse_analysis().expect("analysis"),
-            AnalysisRequest { profile: AnalysisSet::NONE.with_lines(), workers: 3 }
-        );
-        assert_eq!(parsed.resolved_query().expect("query").words_per_page, 250);
+        let parsed = Cli {
+            analyze: "lines".to_string(),
+            analysis_workers: 3,
+            words_per_page: Request::DEFAULTS.words_per_page,
+            ..cli()
+        };
+        let request = parsed.resolved_request().expect("request");
+        assert_eq!(request.basis.content, AnalysisSet::NONE.with_lines());
+        // The one axis of a request that is delivery: it reaches the engine beside the
+        // request rather than inside it.
+        assert_eq!(parsed.analysis_workers, 3);
+        assert_eq!(request.query.words_per_page, Request::DEFAULTS.words_per_page);
 
-        let invalid = Cli { analyze: "deep".to_string(), ..cli() }
-            .parse_analysis()
-            .expect_err("invalid profile")
-            .to_string();
+        let invalid = query_error(&Cli { analyze: "deep".to_string(), ..cli() });
         assert!(invalid.contains("none, lines, code, words, all"), "{invalid}");
         assert!(invalid.contains("--analyze"), "the message names the flag: {invalid}");
         assert!(query_error(&Cli { words_per_page: 0, ..cli() }).contains("positive"));

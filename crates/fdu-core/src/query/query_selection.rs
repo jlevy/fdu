@@ -20,6 +20,20 @@ pub enum SizeMetric {
     Allocated,
 }
 
+impl SizeMetric {
+    /// Stable label, the inverse of [`parse_size_metric`](crate::query::parse_size_metric).
+    ///
+    /// `const` so a surface can declare the default metric's spelling from the defaults
+    /// table rather than writing the word out again: the command line's `--size` help said
+    /// `allocated` in a literal of its own.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Apparent => "apparent",
+            Self::Allocated => "allocated",
+        }
+    }
+}
+
 /// Allocated, from the request model's defaults table.
 ///
 /// Read from the table rather than declared here, because this was the one place the
