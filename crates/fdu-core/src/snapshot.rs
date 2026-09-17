@@ -284,8 +284,9 @@ pub fn save(index: &Index, path: &Path) -> Result<()> {
 ///
 /// Two passes over an unchanged tree encode identical images except for each pass's
 /// start, and rewriting for the stamp alone would give back the skip [`write_atomically`]
-/// exists for: on the default command that was a 14 MB write and `F_FULLFSYNC` on every
-/// run (exp-067). So an image at `path` that differs only in its stamp is kept, stamp
+/// exists for. A default run never reads its snapshot for a metadata query, so on that path
+/// the rewrite was the whole cost of having a cache: about 70 ms of a 375 ms run over 175k
+/// entries (exp-066), and a 14 MB write and `F_FULLFSYNC` on every run (exp-067). So an image at `path` that differs only in its stamp is kept, stamp
 /// included, and only its mtime moves. The kept stamp is the start of an earlier pass that
 /// wrote exactly these facts, which can understate how recently they were verified and
 /// never overstates it.
@@ -448,10 +449,13 @@ fn load_with_types_and_size_limit(
     // corruption: the parser may do work before the mismatch is known, and the
     // result is then discarded. Structural corruption is caught by the parser's own
     // bounds and consistency checks exactly as before, fail-closed either way.
-    // The tree was captured shortly before this file was written, so the file's own
-    // mtime is the closest "as of" available without a format change. It slightly
-    // overstates freshness — the walk began earlier — which is why format v3 should
-    // carry the true capture instant and this should read that instead.
+    // The file's mtime is the observation time of every cached entry: the end of the pass
+    // that wrote the image, which slightly overstates freshness because the walk began
+    // earlier, or the start of a later pass that kept it (`keep_equivalent_image`). The
+    // header's `writing_pass_started_at_ns` is not read here: it is a lower bound that
+    // can predate many passes that verified the same facts, so it would understate a kept
+    // image by as much. The mtime remains the observation time until P1.4.4 gives
+    // `scan_started_at` one meaning and unifies the two.
     let captured_at_ns = file
         .metadata()
         .ok()
@@ -880,6 +884,9 @@ fn read_controls(
     let limits = match tier {
         ControlTierIdentity::Observed { limits } => limits,
         // Limits decide nothing when nothing was observed, and the section must be empty.
+        // So a loaded blind table holds the default limits where the scanning index kept
+        // the request's; no reader consults a blind table's limits, and a cache status or
+        // projection that reports them must not show that as a difference.
         ControlTierIdentity::NotObserved => crate::control::ControlLimits::default(),
     };
     let control_count = read_u32(reader)?;
@@ -1083,14 +1090,12 @@ fn os_string_from_bytes(bytes: &[u8]) -> Option<OsString> {
 /// or the whole new one. The temporary must be a sibling for that to hold — a rename
 /// across filesystems is a copy, and copies are not atomic.
 pub(crate) fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
-    // Serialization is deterministic -- pre-order over name-sorted children, the same
-    // fields in the same order -- so an unchanged tree encodes to the bytes already on
-    // disk, and replacing them is a full write, an `F_FULLFSYNC`, and a rename that
-    // leave the file exactly as it was. A default run never reads its snapshot for a
-    // metadata query, so on that path the rewrite was the whole cost of having a cache:
-    // about 70 ms of a 375 ms run over 175k entries (exp-066). Comparing against the
-    // page-cached file costs a few milliseconds and the cache cannot go stale, because
-    // the bytes are the same bytes.
+    // Serialization is deterministic, so unchanged input encodes to the bytes already on
+    // disk, and replacing them is a full write, an `F_FULLFSYNC`, and a rename that leave
+    // the file exactly as it was. Comparing against the page-cached file costs a few
+    // milliseconds and cannot go stale, because the bytes are the same bytes. The metadata
+    // snapshot, whose images also differ in their pass-start stamp, compares in `publish`
+    // instead, which records what the skip is worth (exp-066, exp-067).
     if keep_identical(path, bytes) {
         return Ok(());
     }
@@ -1118,12 +1123,12 @@ fn replace_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Leave `path` in place when it already holds exactly `bytes`, moving only its mtime.
+/// Leave `path` in place when it already holds exactly `bytes`, moving only its mtime to
+/// now.
 ///
-/// The file's mtime is the snapshot's "as of": the loader reads it as the observation time
-/// of every cached entry. The tree was just verified to encode identically, so that time is
-/// now, and moving the mtime says so without writing the payload. Best effort: a stale "as
-/// of" understates freshness, which fails safe.
+/// The bytes were just produced again, so now is when they were last known to be current,
+/// and moving the mtime says so without writing the payload. Best effort: a stale mtime
+/// understates that, which fails safe.
 fn keep_identical(path: &Path, bytes: &[u8]) -> bool {
     if !same_bytes_on_disk(path, bytes) {
         return false;
@@ -2591,16 +2596,9 @@ mod tests {
 
         let mut image = MAGIC.to_vec();
         image.extend_from_slice(&V4.to_le_bytes());
-        let mut engine = 0xcbf2_9ce4_8422_2325_u64;
-        for byte in env!("CARGO_PKG_VERSION")
-            .as_bytes()
-            .iter()
-            .chain(&V4.to_le_bytes())
-            .chain(&CLASSIFICATION_VERSION.to_le_bytes())
-        {
-            engine = (engine ^ u64::from(*byte)).wrapping_mul(0x1000_0000_01b3);
-        }
-        image.extend_from_slice(&engine.to_le_bytes());
+        // The v4 engine fingerprint. Recognition reads the version before the engine, so a
+        // format-4 image is older whatever these eight bytes hold.
+        image.extend_from_slice(&0x4444_4444_4444_4444_u64.to_le_bytes());
         image.push(path_encoding());
         // The v4 scope: depth, flags, and the hidden, ignore-rules, type-rules, and reducer
         // fingerprints.

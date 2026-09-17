@@ -7658,6 +7658,30 @@ mod tests {
         assert!(should_descend(EntryKind::Dir, Attrs { dev: 11, ..attrs }, 0, 11, &config,));
     }
 
+    /// A cold scan's index records its own pass start, the stamp a snapshot of it writes:
+    /// never earlier than an instant taken before the scan, so it is not a stale or zero
+    /// stamp, and never later than one taken after it. The builder constructs the index,
+    /// and so takes the stamp, before the walk begins.
+    #[test]
+    fn a_cold_scan_stamps_its_own_pass_start() {
+        let nanos = || {
+            i64::try_from(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .expect("after the epoch")
+                    .as_nanos(),
+            )
+            .expect("nanoseconds")
+        };
+        let dir = sample_tree();
+        let before = nanos();
+        let (index, report) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
+        let after = nanos();
+        assert!(report.is_complete() && report.entries > 0, "{report:?}");
+        let stamp = index.writing_pass_started_at_ns();
+        assert!(before <= stamp && stamp <= after, "{before} <= {stamp} <= {after}");
+    }
+
     #[test]
     fn scanning_a_file_is_an_error_not_a_panic() {
         let dir = sample_tree();

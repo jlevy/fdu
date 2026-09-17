@@ -1821,6 +1821,11 @@ impl Index {
     /// and an index's scope and its table must never disagree: a table refusing under other
     /// limits would be served, and saved, as if it applied the scope's. A scope that
     /// observes nothing retains no table, so its limits decide nothing.
+    ///
+    /// The guard is for [`crate::snapshot::save`], whose index may have been built with a
+    /// scope and a table set apart (as [`Self::new_with_scope`] does), and for callers of
+    /// [`Self::install_controls`] other than the loader. On the load path it cannot fail,
+    /// because the loader builds the scope and the table from the same header limits.
     pub(crate) fn require_control_limits_in_scope(
         &self,
         limits: crate::control::ControlLimits,
