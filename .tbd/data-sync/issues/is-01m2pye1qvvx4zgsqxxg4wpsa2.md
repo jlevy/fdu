@@ -5,7 +5,7 @@ title: "P1.2.1: stored_state.rs: tier identities, EntryScope, serves_snapshot (E
 kind: task
 status: in_progress
 priority: 0
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 delegate: claude-code@spud10
 labels:
@@ -19,7 +19,7 @@ parent_id: is-01m2pmram44dgp78vm6xq4w7k7
 hold: null
 hold_until: null
 created_at: 2026-09-17T05:46:34.107Z
-updated_at: 2026-09-17T06:17:20.325Z
+updated_at: 2026-09-17T15:01:59.723Z
 started_at: 2026-09-17T06:17:20.323Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 2: Store Identity, Equality Serve, and Per-Tier Writes", commit 1. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
@@ -38,3 +38,7 @@ Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, s
 
 - `make check` passes; from P1.1.3 on it includes the path-independence subset, which reports no unregistered difference.
 - Every golden diff is read and attributed to this commit; none is regenerated blind.
+
+## Notes
+
+Layer 2 of the core-models stack: branch claude/core-models-2-store-identity, PR https://github.com/jlevy/fdu/pull/81 (stack #80: #78 <- #79 <- #81). Commits 81703b48, d0881a23, d04c5b79. Close when the layer merges.
