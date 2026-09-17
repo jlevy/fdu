@@ -3,16 +3,20 @@ type: is
 id: is-01m2qz78ez09azhdbbzadbkhm8
 title: "PR #81 review R8: Test gaps in identities, sidecar forged bytes, v4 test, stamp before walk"
 kind: task
-status: open
+status: closed
 priority: 3
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - review
 dependencies: []
 parent_id: is-01m2qz74mbthxxy2eky1qgb7eh
 created_at: 2026-09-17T15:19:34.623Z
-updated_at: 2026-09-17T15:19:34.623Z
+updated_at: 2026-09-17T16:06:04.356Z
+closed_at: 2026-09-17T16:06:04.355Z
+close_reason: "Addressed in PR #81 (477d1f4b..a96d577c); CI passes"
+resolution: null
+duplicate_of: null
 ---
 PR #81 review (https://github.com/jlevy/fdu/pull/81#issuecomment-5716816329), finding R8.
 
