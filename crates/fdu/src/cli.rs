@@ -187,8 +187,8 @@ CONTENT ANALYSIS
   Analysis streams every eligible file through EOF; files are never size-truncated.
   --analysis-workers bounds concurrency.
   --words-per-page changes only report-time page derivation.
-  Unchanged results are restored from a separate sidecar; a stored set answers
-  any narrower request without re-reading.
+  Unchanged results are restored from a separate sidecar written by the same
+  analyzer set; any other set, wider or narrower, reads the files again.
   --cache=only never opens source files and fails if requested content is absent.
 
 CACHE BEHAVIOR

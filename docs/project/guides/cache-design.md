@@ -180,8 +180,8 @@ ordered analyzer IDs and versions.
 It holds one analyzer set per root.
 Each sparse file record carries its classification and a fingerprint of size, mtime,
 ctime, inode, and device, so a reconciled metadata change rejects only the stale record.
-In memory a record also keeps the analyzer set it was produced under, and a save keeps
-only records whose set equals the stored one.
+In memory the content tier holds records of exactly one content tier identity: preparing
+it for another identity clears it, and a record produced under another is refused.
 The current sidecar format is version 5; an absent, corrupt, oversized, foreign, or
 version-mismatched sidecar is a clean analyzer-cache miss and never invalidates the core
 snapshot.
@@ -194,17 +194,12 @@ Keeping them separate from metadata remains load-bearing rather than tidy:
   An analyzer’s output can be far larger than the tree’s metadata, and paying for it on
   every open would penalize the common query.
 - Content-sidecar invalidation never touches tree truth.
-  A sidecar is usable when its format version, engine fingerprint, entry tier identity,
-  and root match, its type-rule fingerprint equals the registry in use, and its stored
-  analyzer set contains the requested one (`ContentProvenance::satisfies`). The options
-  fingerprint and analyzer versions are recorded but not compared; both are derived from
-  the analyzer set today, so a change to an analyzer’s output invalidates stored records
-  only through a sidecar format-version bump.
-  A narrower sidecar cannot invent a wider result, and a narrower request leaves the
-  wider stored set in place.
-  Containment is not projection: a report reads the stored records as they are, so a
-  narrower request served from a wider sidecar reports the wider set’s metrics and
-  label. A mismatch is a clean content-cache miss and never invalidates metadata sizes.
+  A sidecar is usable when its format version and root match and its content tier
+  identity equals the requested one: the engine fingerprint, the entry tier, the
+  analyzer set, the type-rule and options fingerprints, and each analyzer’s ID and
+  version. Equality, not containment: a wider sidecar holds metrics a narrower request
+  did not ask for, so it misses, and the narrower run reads every file and replaces it.
+  A mismatch is a clean content-cache miss and never invalidates metadata sizes.
 - The layer is loaded only for an explicitly requested analysis profile, bounded before
   allocation, and removed through the same cache lifecycle as its recognized snapshot.
   A metadata-only run never opens it and never pays for content structures.
@@ -297,7 +292,9 @@ What a policy reads and writes also depends on the path that answers:
   Python `Index.refresh` and `Index.watch` never write.
 - **Content sidecar.** Written after a complete cold scan with analysis, and after a
   warm open whose analysis applied a record or found a stale one.
-  Under `refresh` no sidecar is read, so a narrower analyzer set replaces a wider one.
+  A run with another analyzer set misses the stored sidecar and replaces it, under
+  `refresh` because no sidecar is read and under `auto` because the stored one is
+  another identity.
 
 `only` is the one tier that can be stale, and it says so: its report carries
 `source: cache_only` and `freshness: stale`. It fails outright when no usable snapshot
@@ -325,18 +322,6 @@ Each item is a way the present code falls short of
 [The explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
 tracks them.
 
-- **Content containment is not projection.** A narrower request served from a wider
-  sidecar answers with the stored records and label: `--analyze lines` after
-  `--analyze all` reports different `physical_lines`, `document_words`, share metric,
-  and `analysis.analyze` than a cold `--analyze lines`.
-- **Mixed records.** A file a narrower request analyzes inside a wider tier gets a
-  record under the narrower set.
-  Reports aggregate each record by its own set, so totals can match neither cold answer,
-  and the save drops those records, so each later run reads the files again.
-- **The sidecar’s identity is compared by containment.** A sidecar records its engine
-  fingerprint and entry tier and serves only those, but its analyzer versions and
-  options are recorded without being compared, and its analyzer set answers any request
-  it contains.
 - **The one projection exists on one path.** A one-shot cache-only report may answer a
   `.gitignore`-off request from a controls-on snapshot; `open` refuses the same request.
 - **Policies mean different things per path.** `read-only` revalidates for `open` but
@@ -352,9 +337,10 @@ tracks them.
 
 - **Stores keyed by identity.** One snapshot and one sidecar per root means a request in
   another scope or analyzer set misses and rescans, then replaces the stored one
-  (`fdu-w3l5`); `--cache refresh` with a narrower analyzer set likewise replaces a wider
-  sidecar. That costs time, never correctness, so keying stores by tier identity is a
-  performance improvement rather than a semantic fix.
+  (`fdu-w3l5`), so alternating analyzer sets re-reads every file each time.
+  That costs time, never correctness, so keying stores by tier identity, or serving a
+  narrower set from a wider one through a projection proven to reproduce the cold
+  answer, is a performance improvement rather than a semantic fix.
 - **The block snapshot format.** Today’s flat image is read and rebuilt in full.
   Persisted aggregates and indexed blocks could make bounded summary queries avoid
   materializing every entry; that cost must be measured with validation and persistence

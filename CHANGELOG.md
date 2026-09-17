@@ -67,7 +67,7 @@ The GitHub release text is
     binary signatures, and generated-file markers, and every metric row reports how its
     files were detected and with what confidence.
   - A content sidecar keyed by the analyzer set keeps results between runs, so an
-    unchanged file is not reopened and a stored set answers any narrower request.
+    unchanged file is not reopened; it answers only the analyzer set that wrote it.
   - `--view` never turns on an analyzer, and a view that displays none of what was read
     says so.
 - **Cache.** By default a report or open saves a snapshot of its index under the user

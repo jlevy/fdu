@@ -540,6 +540,8 @@ pub(crate) fn open_for_report(
         // snapshot records the freshness it was written with, which was true then.
         index.mark_unverified();
         let content_cache = load_content(&mut index, config)?;
+        // A sidecar serves only its own identity, so restoring one record per candidate
+        // means the sidecar holds the complete answer to this request.
         if config.analysis.profile.is_enabled()
             && (!content_cache.usable
                 || content_cache.hits
@@ -721,7 +723,8 @@ fn load_content(index: &mut Index, config: &OpenConfig) -> Result<content::Conte
     let (true, Some(snapshot_path)) = (config.policy.reads(), config.cache_path.as_deref()) else {
         return Ok(content::ContentCacheLoad::default());
     };
-    content::load_content_cache(index, config.analysis, &content::content_cache_path(snapshot_path))
+    let wanted = index.content_identity(config.analysis.profile);
+    content::load_content_cache(index, &wanted, &content::content_cache_path(snapshot_path))
 }
 
 /// Start a snapshot write, when policy and completeness allow one.
@@ -1382,14 +1385,30 @@ mod tests {
         };
         assert!(matches!(open(dir.path(), &only), Err(Error::Snapshot(_))));
 
-        let analyzed = OpenConfig { policy: CachePolicy::Auto, ..only.clone() };
-        open(dir.path(), &analyzed).expect("write an explicit empty content sidecar");
-        let (cached, report) = open(dir.path(), &only).expect("restore empty analyzed state");
+        // A sidecar of another analyzer set is not this request's, whether it is wider or
+        // narrower: cache-only fails closed rather than answering with the stored set.
+        let with_set = |policy, profile| OpenConfig {
+            policy,
+            analysis: content::AnalysisRequest { profile, ..content::AnalysisRequest::default() },
+            ..only.clone()
+        };
+        let lines = content::AnalysisSet::NONE.with_lines();
+        for (stored, wanted) in
+            [(content::AnalysisSet::ALL, lines), (lines, content::AnalysisSet::ALL)]
+        {
+            open(dir.path(), &with_set(CachePolicy::Auto, stored)).expect("write a sidecar");
+            let refused = open(dir.path(), &with_set(CachePolicy::Only, wanted));
+            assert!(
+                matches!(refused, Err(Error::Snapshot(_))),
+                "a {stored:?} sidecar must not serve a cache-only {wanted:?} request"
+            );
+        }
+
+        open(dir.path(), &with_set(CachePolicy::Auto, lines)).expect("write the lines sidecar");
+        let (cached, report) = open(dir.path(), &only).expect("restore the analyzed state");
         assert!(report.content_cache.usable);
-        assert_eq!(
-            cached.content().and_then(content::ContentIndex::profile),
-            Some(content::AnalysisSet::NONE.with_lines())
-        );
+        assert_eq!(report.content_cache.hits, 1, "one record per candidate is complete");
+        assert_eq!(cached.content_set(), lines);
     }
 
     #[test]

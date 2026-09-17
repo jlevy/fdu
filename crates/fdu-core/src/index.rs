@@ -3414,14 +3414,36 @@ impl Index {
         self.content()?.rollup(path)
     }
 
+    /// The analyzer set this index's content tier holds records for, or
+    /// [`AnalysisSet::NONE`] when it holds no content tier.
+    pub fn content_set(&self) -> AnalysisSet {
+        self.content().and_then(ContentIndex::profile).unwrap_or(AnalysisSet::NONE)
+    }
+
+    /// The content tier identity this index gives records of `analysis`: its own entry tier,
+    /// the analyzer set, and the analyzers' versions and options under its type rules.
+    pub fn content_identity(&self, analysis: AnalysisSet) -> crate::ContentTierIdentity {
+        crate::ContentTierIdentity {
+            entries: crate::EntryTierIdentity::of_scope(self.scope),
+            analysis,
+            provenance: crate::content::ContentProvenance::for_request(
+                crate::content::AnalysisRequest {
+                    profile: analysis,
+                    ..crate::content::AnalysisRequest::default()
+                },
+                self.types.fingerprint(),
+            ),
+        }
+    }
+
+    /// Prepare the content tier to hold records of `request`'s identity, clearing it when
+    /// it holds any other.
     pub(crate) fn prepare_content_analysis(&mut self, request: crate::content::AnalysisRequest) {
         if !request.profile.is_enabled() {
             return;
         }
-        self.content.get_or_insert_with(|| Box::new(ContentIndex::default())).prepare(
-            request.profile,
-            crate::content::ContentProvenance::for_request(request, self.types.fingerprint()),
-        );
+        let identity = self.content_identity(request.profile);
+        self.content.get_or_insert_with(|| Box::new(ContentIndex::default())).prepare(identity);
     }
 
     /// Capture every regular-file analysis candidate without retaining a lock or entry
@@ -3458,29 +3480,33 @@ impl Index {
         candidates
     }
 
+    /// The candidates `request` still has to read: every one, unless the content tier
+    /// holds exactly `request`'s identity, and then those without a record whose
+    /// fingerprint matches.
     pub(crate) fn pending_analysis_candidates(
         &self,
         request: crate::content::AnalysisRequest,
     ) -> Vec<AnalysisCandidate> {
+        let wanted = self.content_identity(request.profile);
+        // The tier refuses a record of any identity but its own, so one comparison here
+        // decides for every record it holds.
+        let held = self.content().filter(|content| content.identity() == Some(&wanted));
         self.analysis_candidates(request.profile)
             .into_iter()
             .filter(|candidate| {
-                self.content()
-                    .and_then(|content| content.file(&candidate.relative_path))
-                    .is_none_or(|record| {
-                        record.fingerprint != candidate.attrs.fingerprint()
-                            || !record.provenance.satisfies(
-                                record.profile,
-                                request.profile,
-                                self.types.fingerprint(),
-                            )
-                    })
+                held.and_then(|content| content.file(&candidate.relative_path))
+                    .is_none_or(|record| record.fingerprint != candidate.attrs.fingerprint())
             })
             .collect()
     }
 
     /// Conditionally commit a worker result if its entry and metadata expectation still
-    /// match.
+    /// match, and the content tier was prepared for the identity the result was produced
+    /// under.
+    ///
+    /// A result of another identity is [`AnalysisApplyOutcome::Stale`]: it answers another
+    /// request than the one the tier holds, so committing it would mix records of two
+    /// identities in one tier.
     pub fn apply_analysis(&mut self, observation: AnalysisObservation) -> AnalysisApplyOutcome {
         let candidate = &observation.candidate;
         let Some(entry) = self.try_entry(candidate.entry_id) else {
@@ -3493,10 +3519,14 @@ impl Index {
         {
             return AnalysisApplyOutcome::Stale;
         }
-        self.content
-            .get_or_insert_with(|| Box::new(ContentIndex::default()))
-            .commit(candidate.relative_path.clone(), observation.analysis);
-        AnalysisApplyOutcome::Applied
+        let Some(content) = self.content.as_mut() else {
+            return AnalysisApplyOutcome::Stale;
+        };
+        if content.commit(candidate.relative_path.clone(), observation.analysis) {
+            AnalysisApplyOutcome::Applied
+        } else {
+            AnalysisApplyOutcome::Stale
+        }
     }
 
     /// Drop all derived content while preserving metadata and snapshot compatibility.
@@ -8001,13 +8031,21 @@ mod tests {
             coverage: CoverageReason::Analyzed,
             error: None,
         };
+        let observation =
+            AnalysisObservation { candidate: candidate.clone(), analysis: analysis.clone() };
         assert_eq!(
-            index.apply_analysis(AnalysisObservation {
-                candidate: candidate.clone(),
-                analysis: analysis.clone(),
-            }),
-            AnalysisApplyOutcome::Applied
+            index.apply_analysis(observation.clone()),
+            AnalysisApplyOutcome::Stale,
+            "an index prepared for no content identity holds no record"
         );
+        assert!(index.content().is_none());
+
+        index.prepare_content_analysis(AnalysisRequest {
+            profile: candidate.profile,
+            ..AnalysisRequest::default()
+        });
+        assert_eq!(index.content_set(), candidate.profile);
+        assert_eq!(index.apply_analysis(observation), AnalysisApplyOutcome::Applied);
         assert_eq!(
             index.content_rollup(Path::new("")).expect("content root").total.metrics.physical_lines,
             2

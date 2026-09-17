@@ -378,8 +378,9 @@ A complete indexed scan may still write one.
 Content analysis is where ordinary repeated runs benefit most.
 The first compatible run reads eligible bodies; a later run restores unchanged records
 from the content sidecar and reads only changed or newly eligible files.
-A stored wider analyzer set can answer a narrower request without rereading or narrowing
-the stored set. The performance footer reports fresh and cached analysis separately.
+A stored analyzer set answers only the same set: a different one, wider or narrower,
+reads the files again and replaces it.
+The performance footer reports fresh and cached analysis separately.
 
 `--cache=only` is a distinct contract: it never verifies the source tree, labels the
 answer stale, and fails unless compatible metadata and any requested content analysis
@@ -503,8 +504,8 @@ CONTENT ANALYSIS
   Analysis streams every eligible file through EOF; files are never size-truncated.
   --analysis-workers bounds concurrency.
   --words-per-page changes only report-time page derivation.
-  Unchanged results are restored from a separate sidecar; a stored set answers
-  any narrower request without re-reading.
+  Unchanged results are restored from a separate sidecar written by the same
+  analyzer set; any other set, wider or narrower, reads the files again.
   --cache=only never opens source files and fails if requested content is absent.
 
 CACHE BEHAVIOR
