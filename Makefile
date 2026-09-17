@@ -266,7 +266,7 @@ check: PATH_INDEPENDENCE_PYTHON = $(SMOKE_PYTHON)
 PATH_INDEPENDENCE_ENV = FDU_BIN="$(CURDIR)/target/debug/fdu" \
 	FDU_PYTHON="$(abspath $(PATH_INDEPENDENCE_PYTHON))"
 PATH_INDEPENDENCE_PYTHON_REQUIRED = @test -x "$(PATH_INDEPENDENCE_PYTHON)" || \
-	{ echo "error: $(PATH_INDEPENDENCE_PYTHON) is missing; run 'make parity-venv' first"; exit 1; }
+	{ echo "error: $(PATH_INDEPENDENCE_PYTHON) is missing; build it with 'make parity-venv' (or 'make python-smoke' for .venv-smoke)"; exit 1; }
 
 test-path-independence:
 	$(UV) run --no-project --python 3.12 python -m unittest discover -s tests/path_independence -p 'test_harness.py'

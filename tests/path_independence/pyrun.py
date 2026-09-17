@@ -4,8 +4,10 @@ Usage: pyrun.py '<job>', where job is
     {"root": str, "mode": "report" | "open" | "scan", "cache": str, "spec": {...}}
 and the caller has set XDG_CACHE_HOME.
 
-The envelope is {"ok": true, "answer": {...}}, {"ok": false, "error": "..."} when fdu
-raised, or {"refused": "..."} when this interpreter would test the wrong fdu.
+The envelope is {"ok": true, "answer": {...}}; {"ok": false, "kind": ..., "error": "..."}
+when the request raised, where kind is "fdu" for fdu.FduError, "refused" for ValueError,
+and "unexpected" for anything else; or {"refused": "..."} when this interpreter would
+test the wrong fdu.
 """
 
 from __future__ import annotations
@@ -70,10 +72,15 @@ def main() -> None:
         elif mode == "scan":
             report = fdu.scan(job["root"], scan=scan, analysis=analysis).report(query)
         else:
-            raise ValueError(f"unknown mode {mode!r}")
+            raise RuntimeError(f"unknown mode {mode!r}")
         envelope: dict[str, Any] = {"ok": True, "answer": report.as_dict()}
+    except fdu.FduError as error:
+        envelope = {"ok": False, "kind": "fdu", "error": f"FduError: {error}"}
+    except ValueError as error:
+        # How the Python API refuses a request it cannot answer, in its own names.
+        envelope = {"ok": False, "kind": "refused", "error": f"ValueError: {error}"}
     except Exception as error:
-        envelope = {"ok": False, "error": f"{type(error).__name__}: {error}"}
+        envelope = {"ok": False, "kind": "unexpected", "error": f"{type(error).__name__}: {error}"}
     print(json.dumps(envelope, default=str))
 
 

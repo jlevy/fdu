@@ -321,10 +321,21 @@ SUBSET = Tier(
         "a_lines_v_documents",
         "a_code_langs_name_lim1",
         "a_all_nogi",
+        "onefs",
     ),
     warmers=("W_default", "W_nogi", "W_all", "W_code", "W_words"),
     selfwarm=False,
-    mutations=("samesize", "add", "delete", "gitignore_root", "symlink", "unreadable"),
+    # One mutation per way a change can be detected: a visible mtime, content alone,
+    # entries added and removed, a rule change, a link retarget, and an unlistable tree.
+    mutations=(
+        "samesize",
+        "samesize_keepmtime",
+        "add",
+        "delete",
+        "gitignore_root",
+        "symlink",
+        "unreadable",
+    ),
     mutation_warmers=("W_default", "W_all"),
     cross_warmers=("W_default", "W_all"),
 )

@@ -9,7 +9,7 @@ same request, delivery, and history.
 
 Usage:
     python tests/path_independence/runner.py [--tier subset|full] [--surfaces cli,python]
-        [--record] [--out DIR]
+        [--record [PATH]] [--judged PATH] [--out DIR]
 """
 
 from __future__ import annotations
@@ -38,11 +38,20 @@ sys.path.insert(0, str(HERE))
 
 import matrix  # noqa: E402
 import registry  # noqa: E402
-from fixture import FixtureFacts, build_fixture  # noqa: E402
+from fixture import FixtureFacts, build_fixture, copy_fixture  # noqa: E402
 
 PROVENANCE_KEYS = ("source", "freshness", "scan_started_at", "generated_at")
 
 Outcome = Literal["complete", "partial", "failure"]
+
+# The one failure `--cache only` may answer with: no stored state serves the request.
+# The command line exits 1 with this message, and Python raises fdu.FduError with it.
+CACHE_MISS = "snapshot is not usable"
+
+# Exit codes a Python route reports, mirroring the command line's: 1 for fdu's own
+# error, 2 for a refused request (ValueError), and 3 for anything else, which is never
+# a named failure.
+PY_FDU_ERROR, PY_REFUSED, PY_UNEXPECTED = 1, 2, 3
 VerdictKind = Literal["same", "stale", "refused", "differs", "outcome_class"]
 ALLOWED: frozenset[str] = frozenset({"same", "stale", "refused"})
 
@@ -217,11 +226,14 @@ def compare(
     """
     if measured.outcome == "failure":
         if oracle.outcome == "failure":
-            same_surface = oracle.route.startswith("py") == measured.route.startswith("py")
-            if not same_surface or (oracle.exit, oracle.stderr) == (measured.exit, measured.stderr):
+            same_surface = is_python(oracle) == is_python(measured)
+            if (oracle.exit, oracle.stderr if same_surface else "") == (
+                measured.exit,
+                measured.stderr if same_surface else "",
+            ):
                 return Verdict("same")
             return Verdict("differs", ("<error>",), (oracle.stderr, measured.stderr))
-        if policy == "only":
+        if policy == "only" and is_cache_miss(measured):
             return Verdict("refused")
         return Verdict("outcome_class", (f"<outcome:{oracle.outcome}>{measured.outcome}>",))
     if oracle.outcome == "failure":
@@ -243,7 +255,16 @@ def compare(
     return Verdict("differs", tuple(sorted({generalize(p) for p, _, _ in diff})), sample)
 
 
-# --- Invoking fdu --------------------------------------------------------------------
+def is_python(invocation: Invocation) -> bool:
+    return invocation.route != matrix.CLI_ROUTE
+
+
+def is_cache_miss(invocation: Invocation) -> bool:
+    """Whether a failure is the named cache-only miss rather than a crash or other error."""
+    if invocation.answer is not None or invocation.exit != 1:
+        return False
+    prefix = "FduError: " if is_python(invocation) else "fdu: "
+    return invocation.stderr.startswith(prefix + CACHE_MISS)
 
 
 @dataclass(frozen=True)
@@ -298,7 +319,8 @@ def run_py(
         raise RuntimeError(envelope["refused"])
     if envelope["ok"]:
         return Invocation(route, command, 0, "", envelope["answer"])
-    return Invocation(route, command, 1, envelope["error"], None)
+    exit_code = {"fdu": PY_FDU_ERROR, "refused": PY_REFUSED}.get(envelope["kind"], PY_UNEXPECTED)
+    return Invocation(route, command, exit_code, envelope["error"], None)
 
 
 def run_route(
@@ -307,9 +329,6 @@ def run_route(
     if route == matrix.CLI_ROUTE:
         return run_cli(surfaces, root, request, policy, xdg)
     return run_py(surfaces, root, request, policy, xdg, route)
-
-
-# --- Phases --------------------------------------------------------------------------
 
 
 class Workspace:
@@ -339,12 +358,6 @@ def _parallel(function: Callable[[Any], list[Any]], items: Iterable[Any]) -> lis
     workers = min(32, (os.cpu_count() or 4) * 2)
     with ThreadPoolExecutor(workers) as pool:
         return [result for results in pool.map(function, list(items)) for result in results]
-
-
-def _copy_tree(source: Path, destination: Path) -> None:
-    # copytree copies directory metadata after contents and keeps symlinks as links, so
-    # the copy has the fixture's mtimes.
-    shutil.copytree(source, destination, symlinks=True)
 
 
 class MatrixRun:
@@ -466,7 +479,7 @@ class MatrixRun:
         def build_oracles(mutation: str) -> list[tuple[tuple[str, str], Invocation]]:
             base = self.ws.fresh(f"oracle-{mutation}")
             tree = base / "tree"
-            _copy_tree(self.facts.root, tree)
+            copy_fixture(self.facts, tree)
             with _mutated(tree, matrix.MUTATIONS[mutation]):
                 built = [
                     (
@@ -486,7 +499,7 @@ class MatrixRun:
             mutation, warmer = pair
             base = self.ws.fresh(f"mutation-{mutation}-{warmer}")
             tree = base / "tree"
-            _copy_tree(self.facts.root, tree)
+            copy_fixture(self.facts, tree)
             warmed = base / "xdg-warmed"
             history = (self._warm(tree, warmer, warmed),)
             results: list[CaseResult] = []
@@ -585,13 +598,14 @@ def _rerooted(invocation: Invocation, actual: Path) -> Invocation:
     """
     if invocation.answer is not None:
         return invocation
+    real = os.path.realpath(actual)
+    # fdu prints the canonical root: `/private/var/...` for `/var/...` on macOS, and the
+    # verbatim `\\?\C:\...` form on Windows.
+    spellings = {str(actual), actual.as_posix(), real, "\\\\?\\" + real}
     stderr = invocation.stderr
-    for spelling in sorted({str(actual), actual.as_posix()}, key=len, reverse=True):
+    for spelling in sorted(spellings, key=len, reverse=True):
         stderr = stderr.replace(spelling, ROOT_PLACEHOLDER)
     return Invocation(invocation.route, invocation.command, invocation.exit, stderr, None)
-
-
-# --- Reporting -----------------------------------------------------------------------
 
 
 def write_diffs(result: RunResult, keys: set[str], out: Path) -> None:
@@ -610,7 +624,7 @@ def write_diffs(result: RunResult, keys: set[str], out: Path) -> None:
             right = _render(case.measured)
             lines += difflib.unified_diff(left, right, "cold", "measured", lineterm="")
         name = re.sub(r"[^A-Za-z0-9_.-]", "_", case.key) + ".diff"
-        (out / name).write_text("\n".join(lines) + "\n")
+        (out / name).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _render(invocation: Invocation) -> list[str]:
@@ -633,8 +647,8 @@ def discover_surfaces(surface_names: Iterable[str]) -> Surfaces:
     python: Path | None = None
     if "python" in names:
         value = os.environ.get("FDU_PYTHON")
-        if not value or not Path(value).is_absolute():
-            raise SystemExit("the python surface needs FDU_PYTHON, an absolute path")
+        if not value or not Path(value).is_absolute() or not Path(value).is_file():
+            raise SystemExit(f"the python surface needs FDU_PYTHON, an absolute path: {value}")
         python = Path(value)
     return Surfaces(fdu_bin, python)
 
@@ -643,6 +657,26 @@ def run_tier(tier: matrix.Tier, surfaces: Surfaces, base: Path) -> RunResult:
     """Build a fixture under `base` and run `tier` against it."""
     facts = build_fixture(base / "fixture")
     return MatrixRun(tier, surfaces, Workspace(base), facts).run()
+
+
+def judge(
+    result: RunResult, known: registry.Registry, out: Path | None = None
+) -> list[registry.Failure]:
+    """Verify a run against the registry, writing a diff per failing case to `out`."""
+    failures = registry.verify(
+        known,
+        judged_cases(result),
+        full=result.complete_matrix,
+        platform=sys.platform,
+        cold_answers=result.cold_answers,
+    )
+    if out is not None and failures:
+        write_diffs(result, {failure.key for failure in failures if failure.key}, out)
+    return failures
+
+
+def judged_cases(result: RunResult) -> list[registry.Judged]:
+    return [(case.key, case.verdict.allowed, case.verdict.paths) for case in result.cases]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -660,6 +694,12 @@ def main(argv: list[str] | None = None) -> int:
         help="write the registry this run observes (default: rewrite the committed one)",
     )
     parser.add_argument("--out", type=Path, help="write a diff for every failing case here")
+    parser.add_argument(
+        "--judged",
+        type=Path,
+        metavar="PATH",
+        help="write every judged case as JSON, for `registry.py merge` across platforms",
+    )
     args = parser.parse_args(argv)
 
     surfaces = discover_surfaces(args.surfaces.split(","))
@@ -667,24 +707,18 @@ def main(argv: list[str] | None = None) -> int:
     with tempfile.TemporaryDirectory(prefix="fdu-path-independence-") as scratch:
         result = run_tier(tier, surfaces, Path(scratch))
     known = registry.load(registry.DEFAULT_PATH)
-    judged = [(case.key, case.verdict.allowed, case.verdict.paths) for case in result.cases]
+    if args.judged is not None:
+        args.judged.parent.mkdir(parents=True, exist_ok=True)
+        registry.write_judged(args.judged, sys.platform, judged_cases(result))
     if args.record is not None:
-        recorded = registry.record(known, judged, platform=sys.platform)
+        recorded = registry.record(known, judged_cases(result), platform=sys.platform)
         args.record.parent.mkdir(parents=True, exist_ok=True)
         args.record.write_text(registry.dump(recorded), encoding="utf-8")
-        print(f"recorded {len(recorded.entries)} known violations to {args.record}")
+        print(f"recorded {len(recorded.all_entries())} known violations to {args.record}")
         if args.record.resolve() == registry.DEFAULT_PATH:
             known = recorded
-    failures = registry.verify(
-        known,
-        judged,
-        full=result.complete_matrix,
-        platform=sys.platform,
-        cold_answers=result.cold_answers,
-    )
+    failures = judge(result, known, args.out)
     print(summary(result, failures))
-    if args.out is not None and failures:
-        write_diffs(result, {failure.key for failure in failures if failure.key}, args.out)
     return 1 if failures else 0
 
 

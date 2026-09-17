@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import random
+import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -173,7 +174,13 @@ def _permissions_enforced(root: Path) -> bool:
 
 
 def _create_symlinks(root: Path) -> bool:
-    """Create the fixture's symlinks, or none where the platform refuses them."""
+    """Create the fixture's symlinks, or none where the platform cannot stamp them.
+
+    A link's mtime is part of an answer, so a link whose mtime cannot be set would differ
+    between the fixture and every copy of it.
+    """
+    if os.utime not in os.supports_follow_symlinks:
+        return False
     created: list[Path] = []
     try:
         for link, target, is_directory in SYMLINKS:
@@ -186,7 +193,39 @@ def _create_symlinks(root: Path) -> bool:
         for path in created:
             path.unlink()
         return False
-    if os.utime in os.supports_follow_symlinks:
-        for link, _, _ in SYMLINKS:
-            os.utime(root / link, ns=(SYMLINK_MTIME, SYMLINK_MTIME), follow_symlinks=False)
+    _stamp_symlinks(root)
     return True
+
+
+def _stamp_symlinks(root: Path) -> None:
+    for link, _, _ in SYMLINKS:
+        os.utime(root / link, ns=(SYMLINK_MTIME, SYMLINK_MTIME), follow_symlinks=False)
+
+
+def copy_fixture(facts: FixtureFacts, destination: Path) -> None:
+    """Copy the fixture so that every entry keeps its mtime, links included.
+
+    copytree copies a directory's metadata after its contents and keeps links as links,
+    but a link's own mtime is not carried on every platform, so links are re-stamped and
+    the copy is checked entry by entry: a copy that differs fails here, not as hundreds
+    of differing cases.
+    """
+    shutil.copytree(facts.root, destination, symlinks=True)
+    if facts.symlinks:
+        _stamp_symlinks(destination)
+    source, copy = entry_mtimes(facts.root), entry_mtimes(destination)
+    if source != copy:
+        differing = sorted(
+            name for name in set(source) | set(copy) if source.get(name) != copy.get(name)
+        )
+        raise AssertionError(f"fixture copy differs from the fixture at {differing}")
+
+
+def entry_mtimes(root: Path) -> dict[str, int]:
+    """Every entry's own mtime (links not followed), by path relative to `root`."""
+    mtimes = {".": root.lstat().st_mtime_ns}
+    for directory, names, files in os.walk(root):
+        for name in [*names, *files]:
+            path = Path(directory) / name
+            mtimes[path.relative_to(root).as_posix()] = path.lstat().st_mtime_ns
+    return mtimes

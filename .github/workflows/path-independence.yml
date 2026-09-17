@@ -6,9 +6,10 @@ name: Path independence
 # in CI, so this runs weekly, on demand, and on a pull request labelled
 # `path-independence-full`.
 #
-# Each platform records the registry it observed. A failing run uploads that recording
-# with a diff per failing case, so re-seeding tests/path_independence/known-violations.toml
-# is a download from the platform that is the authority, not a local guess.
+# Each platform uploads every case it judged, the registry it would record, and a diff per
+# failing case. Merging the three platforms' judged cases regenerates
+# tests/path_independence/known-violations.toml from what each platform observed, not
+# from a local guess.
 
 on:
   schedule:
@@ -19,6 +20,11 @@ on:
 
 permissions:
   contents: read
+
+# A new push to a labelled pull request supersedes the runs for the previous one.
+concurrency:
+  group: path-independence-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -85,9 +91,12 @@ jobs:
           fi
           uv run --no-project --python 3.12 python tests/path_independence/runner.py \
             --tier full --out path-independence-out \
+            --judged "path-independence-out/judged-$RUNNER_OS.json" \
             --record path-independence-out/known-violations.toml
-      - name: Upload the recorded registry and failing diffs
-        if: failure()
+      # Uploaded on success too: merging every platform's judged cases is how the
+      # committed registry is regenerated (tests/path_independence/README.md).
+      - name: Upload the judged cases, recorded registry, and failing diffs
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: path-independence-${{ matrix.os }}

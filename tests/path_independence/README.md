@@ -40,19 +40,25 @@ A run fails on a new difference, on a registered difference whose shape changed,
 a registered case that now conforms, so the registry shrinks as the fixes land.
 Read it like a golden: every entry is a wrong answer the code gives today.
 
-When a change adds or removes violations, re-record from a full run, then read each new
-entry and give it a class:
+Each case has one class, the cause that clears last.
+A case with two causes shows as a changed shape when the first is fixed; re-read it
+rather than deleting it.
+An entry that occurs, or takes its shape, on only some platforms names them in
+`platforms`, which is itself a finding to explain: a directory’s size changes with its
+entries on APFS but not on ext4, for example.
+
+The registry is regenerated from what each platform observed, not from one machine.
+The [full-matrix workflow](../../.github/workflows/path-independence.yml) uploads every
+case it judged on Linux, macOS, and Windows; download the three `judged-*.json` files
+from a run, merge them, then read each new entry and give it a class:
 
 ```shell
-make parity-venv               # the wheel the Python routes run
-make path-independence-record  # rewrites known-violations.toml; new entries are unclassified
-make path-independence-full    # passes once every entry is classified
+python tests/path_independence/registry.py judged-Linux.json judged-macOS.json judged-Windows.json
+make path-independence-full   # passes once every entry is classified
 ```
 
-A failing full run in CI uploads the registry that platform observed and a diff per
-failing case, with the history that produced it.
-Linux is the authority for the committed registry; an entry that occurs on only one
-platform carries `platforms` and is a finding to explain.
+`make path-independence-record` does the same for the local platform alone, which is
+enough to classify a change while working; CI then shows what the other platforms add.
 
 ## Running It
 

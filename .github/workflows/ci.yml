@@ -110,7 +110,15 @@ jobs:
       - name: Check answers against cold runs across cache histories
         env:
           FDU_PI_SURFACES: cli
+          FDU_PI_OUT: path-independence-out
         run: uv run --no-project --python 3.12 python -m unittest discover -s tests/path_independence -p "test_*.py"
+      - name: Upload the path-independence diffs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: path-independence-subset-${{ matrix.os }}
+          path: path-independence-out
+          if-no-files-found: ignore
       - name: Test the performance probe and its semantic oracle
         run: cargo test --locked -p fdu-core --example perf_probe --no-default-features
       - name: Build the performance probe the harness tests run

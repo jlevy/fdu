@@ -9,8 +9,8 @@ The registry is reviewed like a golden. A run fails on:
 - an entry still marked `unclassified`;
 - a run with zero cases or zero parseable cold answers.
 
-A class is emptied only by a full run, because only the full matrix executes every
-case; a subset run checks the entries it executed and nothing else.
+A class is emptied only by a run that executed every case, because a subset run checks
+the entries it executed and nothing else.
 
 Format:
 
@@ -24,22 +24,36 @@ Format:
     paths = ["analysis.analyze[]"]
     keys = ["warm/cli-report/auto/W_all/-/a_lines"]
 
-A violation may carry `platforms = ["win32"]` (values of `sys.platform`) when it occurs
-only there; that is itself a finding to explain. Entries sharing a class, path set, and
-platforms are grouped under one `keys` list.
+Entries sharing a class, path set, and platforms are grouped under one `keys` list.
+A class is assigned per case, not per path: a case with two causes carries the class of
+the one that clears last, and shows as a changed shape when the first cause is fixed.
+
+A violation may carry `platforms = ["win32"]` (values of `sys.platform`) when it occurs,
+or takes its shape, only there; that is itself a finding to explain. One key may appear
+in several groups only when every such group names its platforms and no platform is
+named twice.
 """
 
 from __future__ import annotations
 
+import argparse
+import json
+import sys
 import tomllib
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 DEFAULT_PATH = Path(__file__).resolve().parent / "known-violations.toml"
 UNCLASSIFIED = "unclassified"
+KEY_SEGMENTS = 6
+# The platforms the registry describes: the values of `sys.platform` CI runs on. An entry
+# naming no platforms applies to all of them.
+PLATFORMS = ("darwin", "linux", "win32")
+
+CLASS_FIELDS = frozenset({"description", "clears_with", "bead"})
+VIOLATION_FIELDS = frozenset({"class", "paths", "keys", "platforms"})
 
 # One judged case: its key, whether its verdict is an allowed outcome, and the
 # generalized paths that differ when it is not.
@@ -58,7 +72,7 @@ class ViolationClass:
 
 @dataclass(frozen=True)
 class Entry:
-    """One registered violation."""
+    """One registered violation, on every platform or on the named ones."""
 
     key: str
     klass: str
@@ -74,7 +88,25 @@ class Registry:
     """The classes table and every registered violation, by case key."""
 
     classes: dict[str, ViolationClass] = field(default_factory=dict)
-    entries: dict[str, Entry] = field(default_factory=dict)
+    entries: dict[str, list[Entry]] = field(default_factory=dict)
+
+    def entry_for(self, key: str, platform: str) -> Entry | None:
+        """The entry that applies to `key` on `platform`, if any."""
+        return next((e for e in self.entries.get(key, []) if e.applies_on(platform)), None)
+
+    def add(self, entry: Entry) -> None:
+        """Register `entry`, refusing a platform overlap with another entry for its key."""
+        existing = self.entries.setdefault(entry.key, [])
+        if existing and (
+            entry.platforms is None
+            or any(other.platforms is None for other in existing)
+            or any(set(entry.platforms) & set(other.platforms or ()) for other in existing)
+        ):
+            raise ValueError(f"key registered twice for the same platform: {entry.key}")
+        existing.append(entry)
+
+    def all_entries(self) -> list[Entry]:
+        return [entry for entries in self.entries.values() for entry in entries]
 
 
 @dataclass(frozen=True)
@@ -103,24 +135,34 @@ def load(path: Path) -> Registry:
 
 def parse(text: str) -> Registry:
     data = tomllib.loads(text)
-    unknown = set(data) - {"classes", "violation"}
-    if unknown:
-        raise ValueError(f"unknown registry tables: {sorted(unknown)}")
+    _refuse_unknown("registry", set(data), frozenset({"classes", "violation"}))
     registry = Registry()
     for name, table in data.get("classes", {}).items():
+        _refuse_unknown(f"class {name}", set(table), CLASS_FIELDS, required=CLASS_FIELDS)
         registry.classes[name] = ViolationClass(
             name, table["description"], table["clears_with"], table["bead"]
         )
     for group in data.get("violation", []):
-        keys = group.get("keys", [])
-        if "key" in group:
-            keys = [group["key"], *keys]
+        _refuse_unknown(
+            "violation", set(group), VIOLATION_FIELDS, required={"class", "paths", "keys"}
+        )
+        if not group["paths"]:
+            raise ValueError(f"violation with no paths: {group['keys'][:1]}")
         platforms = tuple(group["platforms"]) if "platforms" in group else None
-        for key in keys:
-            if key in registry.entries:
-                raise ValueError(f"key registered twice: {key}")
-            registry.entries[key] = Entry(key, group["class"], tuple(group["paths"]), platforms)
+        for key in group["keys"]:
+            if len(key.split("/")) != KEY_SEGMENTS:
+                raise ValueError(f"key must have {KEY_SEGMENTS} segments: {key}")
+            registry.add(Entry(key, group["class"], tuple(group["paths"]), platforms))
     return registry
+
+
+def _refuse_unknown(
+    where: str, fields: set[str], allowed: frozenset[str], required: Iterable[str] = ()
+) -> None:
+    unknown = fields - allowed
+    missing = set(required) - fields
+    if unknown or missing:
+        raise ValueError(f"{where}: unknown fields {sorted(unknown)}, missing {sorted(missing)}")
 
 
 def verify(
@@ -139,16 +181,14 @@ def verify(
     if cold_answers == 0:
         failures.append(Failure("run parsed no cold answers"))
 
-    for entry in registry.entries.values():
+    for entry in registry.all_entries():
         if entry.klass == UNCLASSIFIED:
             failures.append(Failure("entry is unclassified", entry.key))
         elif entry.klass not in registry.classes:
             failures.append(Failure("entry names an undefined class", entry.key, entry.klass))
 
     for key, allowed, paths in cases:
-        entry = registry.entries.get(key)
-        if entry is not None and not entry.applies_on(platform):
-            entry = None
+        entry = registry.entry_for(key, platform)
         if allowed:
             if entry is not None:
                 failures.append(Failure("registered case now conforms; remove its entry", key))
@@ -159,39 +199,56 @@ def verify(
             failures.append(Failure("difference changed shape", key, detail))
 
     if full:
-        used = {entry.klass for entry in registry.entries.values()}
+        used = {entry.klass for entry in registry.all_entries()}
         for name in sorted(set(registry.classes) - used):
             failures.append(Failure("class has no entries; remove it", None, name))
         executed = {key for key, _, _ in cases}
-        for entry in registry.entries.values():
+        for entry in registry.all_entries():
             if entry.applies_on(platform) and entry.key not in executed:
                 failures.append(Failure("registered case is not in the full matrix", entry.key))
     return failures
 
 
 def record(registry: Registry, judged: Iterable[Judged], *, platform: str) -> Registry:
-    """The registry rewritten to match `judged`.
+    """The registry rewritten to match what `judged` observed on `platform`."""
+    return merge(registry, {platform: judged})
 
-    Classes and platforms of retained keys are kept; a new key is `unclassified`, so the
-    run fails until someone reads the difference and names its cause. Keys this run did
-    not execute are kept unchanged.
+
+def merge(registry: Registry, judged_by_platform: dict[str, Iterable[Judged]]) -> Registry:
+    """The registry rewritten to match what each platform's run observed.
+
+    For every case a platform executed, that platform's entry becomes what it observed:
+    the difference's shape, or nothing when the case conforms. A platform that did not
+    execute a case keeps its entry, so a local run never erases what CI recorded
+    elsewhere. A case keeps its class; a case new to the registry is `unclassified`, so
+    the run fails until someone reads the difference and names its cause. Platforms
+    sharing a class and shape share one entry, which names no platforms when it covers
+    all of them.
     """
+    unknown = set(judged_by_platform) - set(PLATFORMS)
+    if unknown:
+        raise ValueError(f"record on {', '.join(PLATFORMS)}, not {sorted(unknown)}")
+    assigned: dict[str, dict[str, tuple[str, tuple[str, ...]]]] = defaultdict(dict)
+    for entry in registry.all_entries():
+        for target in entry.platforms or PLATFORMS:
+            assigned[entry.key][target] = (entry.klass, entry.paths)
+    for platform, judged in judged_by_platform.items():
+        for key, allowed, paths in judged:
+            by_platform = assigned[key]
+            if allowed:
+                by_platform.pop(platform, None)
+                continue
+            klass = next((k for k, _ in by_platform.values()), UNCLASSIFIED)
+            by_platform[platform] = (klass, tuple(sorted(paths)))
+
     updated = Registry(classes=dict(registry.classes))
-    executed: set[str] = set()
-    for key, allowed, paths in judged:
-        executed.add(key)
-        if allowed:
-            continue
-        previous = registry.entries.get(key)
-        if previous is not None and previous.applies_on(platform):
-            updated.entries[key] = Entry(
-                key, previous.klass, tuple(sorted(paths)), previous.platforms
-            )
-        else:
-            updated.entries[key] = Entry(key, UNCLASSIFIED, tuple(sorted(paths)))
-    for key, entry in registry.entries.items():
-        if key not in executed or not entry.applies_on(platform):
-            updated.entries.setdefault(key, entry)
+    for key, by_platform in assigned.items():
+        groups: dict[tuple[str, tuple[str, ...]], list[str]] = defaultdict(list)
+        for target, shape in by_platform.items():
+            groups[shape].append(target)
+        for (klass, paths), targets in groups.items():
+            platforms = None if set(targets) == set(PLATFORMS) else tuple(sorted(targets))
+            updated.add(Entry(key, klass, paths, platforms))
     return updated
 
 
@@ -211,7 +268,7 @@ def dump(registry: Registry) -> str:
             f"bead = {_string(klass.bead)}",
         ]
     groups: dict[tuple[str, tuple[str, ...], tuple[str, ...] | None], list[str]] = defaultdict(list)
-    for entry in registry.entries.values():
+    for entry in registry.all_entries():
         groups[(entry.klass, entry.paths, entry.platforms)].append(entry.key)
     for (klass, paths, platforms), keys in sorted(groups.items(), key=_group_order):
         lines += ["", "[[violation]]", f"class = {_string(klass)}"]
@@ -222,9 +279,11 @@ def dump(registry: Registry) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _group_order(item: tuple[tuple[str, tuple[str, ...], Any], list[str]]) -> tuple[str, str]:
-    (klass, _, _), keys = item
-    return (klass, min(keys))
+def _group_order(
+    item: tuple[tuple[str, tuple[str, ...], tuple[str, ...] | None], list[str]],
+) -> tuple[str, tuple[str, ...], str]:
+    (klass, _, platforms), keys = item
+    return (klass, platforms or (), min(keys))
 
 
 def _bare_or_quoted(name: str) -> str:
@@ -234,7 +293,7 @@ def _bare_or_quoted(name: str) -> str:
 
 
 def _string(value: str) -> str:
-    escaped = []
+    escaped: list[str] = []
     for char in value:
         if char in '"\\':
             escaped.append("\\" + char)
@@ -250,3 +309,38 @@ def _array(values: Iterable[str]) -> str:
     if not items:
         return "[]"
     return "[\n" + "".join(f"  {item},\n" for item in items) + "]"
+
+
+def write_judged(path: Path, platform: str, judged: Iterable[Judged]) -> None:
+    """Write one run's judged cases, so runs on several platforms can be merged."""
+    cases = [[key, allowed, list(paths)] for key, allowed, paths in judged]
+    path.write_text(json.dumps({"platform": platform, "cases": cases}), encoding="utf-8")
+
+
+def read_judged(path: Path) -> tuple[str, list[Judged]]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return data["platform"], [(key, allowed, tuple(paths)) for key, allowed, paths in data["cases"]]
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Merge judged runs from several platforms into the committed registry."
+    )
+    parser.add_argument("judged", nargs="+", type=Path, help="judged JSON from runner.py --judged")
+    parser.add_argument("--registry", type=Path, default=DEFAULT_PATH)
+    args = parser.parse_args(argv)
+    runs: dict[str, list[Judged]] = {}
+    for path in args.judged:
+        platform, cases = read_judged(path)
+        if platform in runs:
+            raise SystemExit(f"two runs from {platform}: {path}")
+        runs[platform] = cases
+    merged = merge(load(args.registry), runs)
+    args.registry.write_text(dump(merged), encoding="utf-8")
+    unclassified = sum(1 for entry in merged.all_entries() if entry.klass == UNCLASSIFIED)
+    print(f"merged {sorted(runs)}: {len(merged.all_entries())} entries, {unclassified} unclassified")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

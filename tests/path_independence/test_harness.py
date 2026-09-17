@@ -15,7 +15,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import registry
-from fixture import build_fixture
+from fixture import build_fixture, copy_fixture
 from runner import Invocation, case_key, compare, normalize
 
 
@@ -36,10 +36,6 @@ def answer(**overrides: Any) -> dict[str, Any]:
 
 def cli(result: dict[str, Any] | None, *, exit: int = 0, stderr: str = "") -> Invocation:
     return Invocation("cli-report", "fdu", exit, stderr, result)
-
-
-def py(result: dict[str, Any] | None, *, error: str = "") -> Invocation:
-    return Invocation("py-open", "py-open", 0 if result else 1, error, result)
 
 
 class CompareTests(unittest.TestCase):
@@ -87,9 +83,23 @@ class CompareTests(unittest.TestCase):
         self.assertEqual(compare(cli(here), cli(elsewhere), policy="auto").paths, ("errors[]",))
 
     def test_a_cache_only_failure_is_a_named_refusal(self) -> None:
-        miss = cli(None, exit=1, stderr="fdu: snapshot is not usable")
+        miss = cli(None, exit=1, stderr="fdu: snapshot is not usable: no usable snapshot")
         self.assertEqual(compare(cli(answer()), miss, policy="only").kind, "refused")
         self.assertEqual(compare(cli(answer()), miss, policy="auto").kind, "outcome_class")
+        py_miss = Invocation("py-open", "py-open", 1, "FduError: snapshot is not usable: x", None)
+        self.assertEqual(compare(cli(answer()), py_miss, policy="only").kind, "refused")
+
+    def test_a_crash_under_cache_only_is_not_a_refusal(self) -> None:
+        crashes = [
+            cli(None, exit=101, stderr="thread 'main' panicked at src/lib.rs"),
+            cli(None, exit=1, stderr="fdu: I/O error: permission denied"),
+            cli(None, exit=-11, stderr=""),
+            Invocation("py-report", "py-report", 3, "TypeError: bad argument", None),
+        ]
+        for crash in crashes:
+            with self.subTest(crash.stderr):
+                verdict = compare(cli(answer()), crash, policy="only")
+                self.assertEqual(verdict.kind, "outcome_class")
 
     def test_an_answer_where_cold_refused_is_an_outcome_difference(self) -> None:
         refused = cli(None, exit=2, stderr="fdu: requires content analysis")
@@ -103,7 +113,10 @@ class CompareTests(unittest.TestCase):
         )
         reworded = cli(None, exit=2, stderr="fdu: needs analysis")
         self.assertEqual(compare(cold, reworded, policy="auto").paths, ("<error>",))
-        self.assertEqual(compare(cold, py(None, error="ValueError: x"), policy="auto").kind, "same")
+        refused_in_python = Invocation("py-open", "py-open", 2, "ValueError: x", None)
+        self.assertEqual(compare(cold, refused_in_python, policy="auto").kind, "same")
+        crashed_in_python = Invocation("py-open", "py-open", 3, "TypeError: x", None)
+        self.assertEqual(compare(cold, crashed_in_python, policy="auto").paths, ("<error>",))
 
     def test_stale_needs_cache_only_the_earlier_answer_and_its_label(self) -> None:
         earlier = cli(answer())
@@ -124,7 +137,14 @@ class CompareTests(unittest.TestCase):
         )
 
 
-REGISTRY = """
+A = "warm/cli-report/auto/W_all/-/a_lines"
+B = "warm/cli-report/auto/W_all/-/a_code"
+C = "warm/cli-report/auto/W_all/-/a_words"
+D = "warm/cli-report/auto/W_all/-/a_all"
+NEW = "warm/cli-report/auto/W_code/-/a_lines"
+SHAPE = ("analysis.analyze[]",)
+
+REGISTRY = f"""
 [classes.content-containment]
 description = "A narrower request served from a wider record"
 clears_with = "Phase 1 item 2"
@@ -133,8 +153,13 @@ bead = "fdu-gija"
 [[violation]]
 class = "content-containment"
 paths = ["analysis.analyze[]"]
-keys = ["warm/a", "warm/b"]
+keys = ["{A}", "{B}"]
 """
+
+
+def entry(known: registry.Registry, key: str, platform: str) -> tuple[Any, ...] | None:
+    found = known.entry_for(key, platform)
+    return None if found is None else (found.klass, found.paths, found.platforms)
 
 
 class RegistryTests(unittest.TestCase):
@@ -146,32 +171,29 @@ class RegistryTests(unittest.TestCase):
         return [failure.reason for failure in failures]
 
     def conforming(self) -> list[registry.Judged]:
-        paths = ("analysis.analyze[]",)
-        return [("warm/a", False, paths), ("warm/b", False, paths), ("warm/c", True, ())]
+        return [(A, False, SHAPE), (B, False, SHAPE), (C, True, ())]
 
     def test_a_conforming_run_passes(self) -> None:
         self.assertEqual(self.verify(self.conforming(), full=True), [])
 
     def test_an_unregistered_difference_fails(self) -> None:
-        judged = [*self.conforming(), ("warm/d", False, ("reports[]",))]
+        judged = [*self.conforming(), (D, False, ("reports[]",))]
         self.assertEqual(self.verify(judged), ["unregistered difference"])
 
     def test_a_changed_difference_fails(self) -> None:
-        judged = [("warm/a", False, ("reports[]",)), ("warm/b", False, ("analysis.analyze[]",))]
+        judged = [(A, False, ("reports[]",)), (B, False, SHAPE)]
         self.assertEqual(self.verify(judged), ["difference changed shape"])
 
     def test_a_registered_case_that_now_conforms_fails(self) -> None:
-        judged = [("warm/a", True, ()), ("warm/b", False, ("analysis.analyze[]",))]
+        judged = [(A, True, ()), (B, False, SHAPE)]
         self.assertEqual(self.verify(judged), ["registered case now conforms; remove its entry"])
 
     def test_empty_classes_and_unexecuted_entries_fail_only_a_full_run(self) -> None:
-        text = (
-            REGISTRY + '\n[classes.unused]\ndescription = "x"\nclears_with = "x"\nbead = "fdu-x"\n'
-        )
-        judged = [("warm/a", False, ("analysis.analyze[]",))]
-        self.assertEqual(self.verify(judged, text), [])
+        unused = '\n[classes.unused]\ndescription = "x"\nclears_with = "x"\nbead = "fdu-x"\n'
+        judged = [(A, False, SHAPE)]
+        self.assertEqual(self.verify(judged, REGISTRY + unused), [])
         self.assertEqual(
-            sorted(self.verify(judged, text, full=True)),
+            sorted(self.verify(judged, REGISTRY + unused, full=True)),
             ["class has no entries; remove it", "registered case is not in the full matrix"],
         )
 
@@ -193,31 +215,59 @@ class RegistryTests(unittest.TestCase):
             self.verify(self.conforming(), text, platform="linux"), ["unregistered difference"] * 2
         )
 
+    def test_one_case_may_take_a_different_shape_per_platform(self) -> None:
+        text = REGISTRY.replace("keys =", 'platforms = ["darwin", "linux"]\nkeys =') + (
+            '\n[[violation]]\nclass = "content-containment"\nplatforms = ["win32"]\n'
+            f'paths = ["reports[].allocated"]\nkeys = ["{A}"]\n'
+        )
+        self.assertEqual(self.verify(self.conforming(), text, platform="linux"), [])
+        windows = [(A, False, ("reports[].allocated",)), (B, True, ())]
+        self.assertEqual(self.verify(windows, text, platform="win32"), [])
+
+    def test_overlapping_platforms_and_malformed_entries_are_refused(self) -> None:
+        overlap = f'\n[[violation]]\nclass = "content-containment"\npaths = ["x"]\nkeys = ["{A}"]\n'
+        malformed = {
+            "overlap": REGISTRY + overlap,
+            "unknown field": REGISTRY.replace("keys =", 'platform = ["win32"]\nkeys ='),
+            "short key": REGISTRY.replace(A, "warm/a"),
+            "no paths": REGISTRY.replace('paths = ["analysis.analyze[]"]', "paths = []"),
+            "class field": REGISTRY.replace("bead =", "owner = 1\nbead ="),
+        }
+        for name, text in malformed.items():
+            with self.subTest(name), self.assertRaises(ValueError):
+                registry.parse(text)
+
     def test_record_keeps_classes_marks_new_cases_and_round_trips(self) -> None:
         known = registry.parse(REGISTRY)
-        judged = [
-            ("warm/a", False, ("analysis.analyze[]",)),
-            ("warm/b", True, ()),
-            ("warm/new", False, ("reports[]",)),
-        ]
+        judged = [(A, False, SHAPE), (B, True, ()), (NEW, False, ("reports[]",))]
         updated = registry.record(known, judged, platform="linux")
-        self.assertEqual(updated.entries["warm/a"].klass, "content-containment")
-        self.assertNotIn("warm/b", updated.entries)
-        self.assertEqual(updated.entries["warm/new"].klass, registry.UNCLASSIFIED)
+        self.assertEqual(entry(updated, A, "win32"), ("content-containment", SHAPE, None))
+        self.assertIsNone(entry(updated, B, "linux"))
+        self.assertEqual(entry(updated, B, "win32")[2], ("darwin", "win32"))  # type: ignore[index]
+        self.assertEqual(entry(updated, NEW, "linux"), ("unclassified", ("reports[]",), ("linux",)))
+        self.assertIsNone(entry(updated, NEW, "darwin"))
         reparsed = registry.parse(registry.dump(updated))
         self.assertEqual(reparsed.entries, updated.entries)
         self.assertEqual(reparsed.classes, updated.classes)
 
-    def test_record_keeps_cases_it_did_not_execute(self) -> None:
-        updated = registry.record(
-            registry.parse(REGISTRY), [("warm/a", True, ())], platform="linux"
-        )
-        self.assertEqual(set(updated.entries), {"warm/b"})
+    def test_merging_every_platform_regroups_shared_shapes(self) -> None:
+        known = registry.parse(REGISTRY)
+        runs = {
+            "linux": [(A, False, SHAPE), (NEW, False, ("reports[]",))],
+            "darwin": [(A, False, ("reports[].bytes", *SHAPE)), (NEW, False, ("reports[]",))],
+            "win32": [(A, False, SHAPE), (NEW, False, ("reports[]",))],
+        }
+        merged = registry.merge(known, runs)
+        self.assertEqual(entry(merged, NEW, "win32"), ("unclassified", ("reports[]",), None))
+        self.assertEqual(entry(merged, A, "linux")[2], ("linux", "win32"))  # type: ignore[index]
+        self.assertEqual(entry(merged, A, "darwin")[1], ("analysis.analyze[]", "reports[].bytes"))  # type: ignore[index]
+        self.assertEqual(entry(merged, B, "linux"), ("content-containment", SHAPE, None))
 
     def test_dump_escapes_strings(self) -> None:
+        key = 'a/b/c/d/e/"f'
         known = registry.Registry(
             classes={"c": registry.ViolationClass("c", "d", 'quote " and \\ and \t', "fdu-x")},
-            entries={'k"1': registry.Entry('k"1', "c", ("p",))},
+            entries={key: [registry.Entry(key, "c", ("p",))]},
         )
         self.assertEqual(registry.parse(registry.dump(known)), known)
 
@@ -233,7 +283,7 @@ class FixtureTests(unittest.TestCase):
                 stat = path.lstat()
                 relative = path.relative_to(root).as_posix()
                 if path.is_symlink():
-                    seen[relative] = ("link", os.readlink(path))
+                    seen[relative] = ("link", os.readlink(path), stat.st_mtime_ns)
                 elif path.is_dir():
                     seen[relative] = ("dir", stat.st_mtime_ns)
                 else:
@@ -248,6 +298,12 @@ class FixtureTests(unittest.TestCase):
             self.assertEqual(first.symlinks, second.symlinks)
             self.assertEqual(self.snapshot(first.root), self.snapshot(second.root))
             self.assertEqual(len((first.root / "data/blob.bin").read_bytes()), 9000)
+
+    def test_a_copy_keeps_every_mtime(self) -> None:
+        with tempfile.TemporaryDirectory() as scratch:
+            facts = build_fixture(Path(scratch) / "fixture")
+            copy_fixture(facts, Path(scratch) / "copy")
+            self.assertEqual(self.snapshot(facts.root), self.snapshot(Path(scratch) / "copy"))
 
 
 if __name__ == "__main__":

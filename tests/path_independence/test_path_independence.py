@@ -28,27 +28,17 @@ class PathIndependence(unittest.TestCase):
 
     def test_matrix(self) -> None:
         tier = matrix.TIERS[os.environ.get("FDU_PI_TIER", "subset")]
-        surfaces = runner.discover_surfaces(
-            os.environ.get("FDU_PI_SURFACES", "cli,python").split(",")
-        )
+        surface_names = os.environ.get("FDU_PI_SURFACES", "cli,python").split(",")
+        surfaces = runner.discover_surfaces(surface_names)
         with tempfile.TemporaryDirectory(prefix="fdu-path-independence-") as scratch:
             result = runner.run_tier(tier, surfaces, Path(scratch))
-        judged = [(case.key, case.verdict.allowed, case.verdict.paths) for case in result.cases]
-        failures = registry.verify(
-            registry.load(registry.DEFAULT_PATH),
-            judged,
-            full=result.complete_matrix,
-            platform=sys.platform,
-            cold_answers=result.cold_answers,
-        )
         out = os.environ.get("FDU_PI_OUT")
-        if out and failures:
-            runner.write_diffs(
-                result, {failure.key for failure in failures if failure.key}, Path(out)
-            )
+        known = registry.load(registry.DEFAULT_PATH)
+        failures = runner.judge(result, known, Path(out) if out else None)
         report = runner.summary(result, failures)
         print(report)
-        self.assertEqual(failures, [], report)
+        if failures:
+            self.fail(report)
 
 
 if __name__ == "__main__":

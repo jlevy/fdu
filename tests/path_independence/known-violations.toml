@@ -16,6 +16,11 @@ description = "A .gitignore-observing snapshot serves a request that does not ob
 clears_with = "Phase 2 item 4: the observation projection on every route (P2.4.5)"
 bead = "fdu-u767"
 
+[classes.refusal-kind]
+description = "Python raises fdu's engine error, not ValueError, for a request the command line refuses as invalid, so the surfaces report different kinds of failure"
+clears_with = "Phase 1 item 3: request errors map to ValueError in Python (P1.3.4)"
+bead = "fdu-sm9z"
+
 [classes.unverified-subtree]
 description = "A warm run over a directory it cannot list serves facts retained from before instead of the partial answer a cold run gives"
 clears_with = "Phase 1 item 4: reconciliation drops facts under unverified directories (P1.4.5)"
@@ -23,6 +28,9 @@ bead = "fdu-szll"
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -133,6 +141,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -465,6 +476,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -601,6 +615,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -708,6 +725,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -762,6 +782,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -841,6 +864,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -922,6 +948,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -962,6 +991,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1027,6 +1059,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1073,6 +1108,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1103,6 +1141,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1175,6 +1216,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1192,6 +1236,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1249,6 +1296,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1266,6 +1316,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1319,6 +1372,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1338,6 +1394,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1391,6 +1450,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1462,6 +1524,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1478,6 +1543,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1534,6 +1602,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1582,6 +1653,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1601,6 +1675,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1641,6 +1718,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1659,6 +1739,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1675,6 +1758,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1703,6 +1789,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1719,6 +1808,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1775,6 +1867,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1793,6 +1888,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1838,6 +1936,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1853,6 +1954,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1883,6 +1987,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1902,6 +2009,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1935,6 +2045,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -1972,6 +2085,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2011,6 +2127,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2037,6 +2156,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2075,6 +2197,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2122,6 +2247,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2139,6 +2267,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2171,6 +2302,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2186,6 +2320,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2229,6 +2366,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2257,6 +2397,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2271,6 +2414,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2313,6 +2459,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2327,6 +2476,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2360,6 +2512,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2409,6 +2564,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2460,6 +2618,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2508,6 +2669,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2551,6 +2715,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2588,6 +2755,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2618,6 +2788,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2647,6 +2820,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2688,6 +2864,9 @@ keys = [
 
 [[violation]]
 class = "content-containment"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2715,6 +2894,9 @@ keys = [
 
 [[violation]]
 class = "mixed-records"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2743,6 +2925,9 @@ keys = [
 
 [[violation]]
 class = "mixed-records"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2769,6 +2954,9 @@ keys = [
 
 [[violation]]
 class = "mixed-records"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2801,6 +2989,9 @@ keys = [
 
 [[violation]]
 class = "mixed-records"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2825,6 +3016,9 @@ keys = [
 
 [[violation]]
 class = "mixed-records"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2868,6 +3062,9 @@ keys = [
 
 [[violation]]
 class = "mixed-records"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2886,6 +3083,9 @@ keys = [
 
 [[violation]]
 class = "mixed-records"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -2927,6 +3127,9 @@ keys = [
 
 [[violation]]
 class = "projection-route"
+platforms = [
+  "darwin",
+]
 paths = [
   "<outcomes:cli-report=complete,py-open=failure,py-report=complete>",
 ]
@@ -2952,7 +3155,56 @@ keys = [
 ]
 
 [[violation]]
+class = "refusal-kind"
+platforms = [
+  "darwin",
+]
+paths = [
+  "<error>",
+]
+keys = [
+  "cross/py-open/auto/W_all/-/v_documents",
+  "cross/py-open/auto/W_default/-/v_documents",
+  "cross/py-open/auto/W_lines/-/v_documents",
+  "cross/py-open/auto/W_summary/-/v_documents",
+  "cross/py-open/auto/py-open:W_all/-/v_documents",
+  "cross/py-open/auto/py-open:W_default/-/v_documents",
+  "cross/py-open/auto/py-open:W_lines/-/v_documents",
+  "cross/py-open/auto/py-open:W_summary/-/v_documents",
+  "cross/py-open/off/cold/-/v_documents",
+  "cross/py-open/only/W_all/-/v_documents",
+  "cross/py-open/only/W_default/-/v_documents",
+  "cross/py-open/only/W_lines/-/v_documents",
+  "cross/py-open/only/W_summary/-/v_documents",
+  "cross/py-open/only/py-open:W_all/-/v_documents",
+  "cross/py-open/only/py-open:W_default/-/v_documents",
+  "cross/py-open/only/py-open:W_lines/-/v_documents",
+  "cross/py-open/only/py-open:W_summary/-/v_documents",
+  "cross/py-report/auto/W_all/-/v_documents",
+  "cross/py-report/auto/W_default/-/v_documents",
+  "cross/py-report/auto/W_lines/-/v_documents",
+  "cross/py-report/auto/W_summary/-/v_documents",
+  "cross/py-report/auto/py-open:W_all/-/v_documents",
+  "cross/py-report/auto/py-open:W_default/-/v_documents",
+  "cross/py-report/auto/py-open:W_lines/-/v_documents",
+  "cross/py-report/auto/py-open:W_summary/-/v_documents",
+  "cross/py-report/off/cold/-/v_documents",
+  "cross/py-report/only/W_all/-/v_documents",
+  "cross/py-report/only/W_default/-/v_documents",
+  "cross/py-report/only/W_lines/-/v_documents",
+  "cross/py-report/only/W_summary/-/v_documents",
+  "cross/py-report/only/py-open:W_all/-/v_documents",
+  "cross/py-report/only/py-open:W_default/-/v_documents",
+  "cross/py-report/only/py-open:W_lines/-/v_documents",
+  "cross/py-report/only/py-open:W_summary/-/v_documents",
+  "cross/py-scan/off/cold/-/v_documents",
+]
+
+[[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "reports[].metrics.rows<order>",
   "reports[].metrics.rows[].allocated",
@@ -2999,6 +3251,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "reports[].metrics.rows[].allocated",
   "reports[].metrics.rows[].analyzed_files",
@@ -3042,6 +3297,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "reports[].files[]",
 ]
@@ -3052,6 +3310,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "reports[].extensions[].allocated",
   "reports[].extensions[].bytes",
@@ -3122,6 +3383,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -3171,6 +3435,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -3202,6 +3469,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -3220,6 +3490,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -3251,6 +3524,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -3330,6 +3606,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -3350,6 +3629,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -3403,6 +3685,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -3447,6 +3732,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -3495,6 +3783,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -3510,6 +3801,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -3561,6 +3855,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -3587,6 +3884,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "reports[].summary.allocated",
   "reports[].summary.bytes",
@@ -3602,6 +3902,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "errors[]",
   "reports[].metrics.rows<order>",
@@ -3643,6 +3946,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "errors[]",
   "reports[].metrics.rows[].allocated",
@@ -3673,6 +3979,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "errors[]",
   "reports[].files[]",
@@ -3688,6 +3997,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "errors[]",
   "reports[].extensions[].allocated",
@@ -3745,6 +4057,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "reports[].metrics.rows<order>",
   "reports[].metrics.rows[].allocated",
@@ -3789,6 +4104,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "reports[].metrics.rows[].share.denominator",
   "reports[].metrics.total.allocated",
@@ -3815,6 +4133,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "reports[].extensions[].allocated",
   "reports[].extensions[].bytes",
@@ -3883,6 +4204,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -3928,6 +4252,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -3964,6 +4291,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -4010,6 +4340,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -4059,6 +4392,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "errors[]",
 ]
@@ -4079,6 +4415,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "errors[]",
   "reports[].tree.allocated",
@@ -4105,6 +4444,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "errors[]",
   "reports[].summary.allocated",
@@ -4125,6 +4467,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "errors[]",
   "reports[].metrics.rows[].allocated",
@@ -4149,6 +4494,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "errors[]",
   "reports[].metrics.total.allocated",
@@ -4165,6 +4513,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -4214,6 +4565,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -4246,6 +4600,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -4277,6 +4634,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -4357,6 +4717,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -4376,6 +4739,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -4430,6 +4796,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -4479,6 +4848,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -4494,6 +4866,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -4546,6 +4921,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -4561,6 +4939,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -4588,6 +4969,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -4634,6 +5018,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
@@ -4681,6 +5068,9 @@ keys = [
 
 [[violation]]
 class = "unverified-subtree"
+platforms = [
+  "darwin",
+]
 paths = [
   "analysis.analyze[]",
   "analysis.analyzers[]",
