@@ -551,7 +551,7 @@ workflow must pass `validateWorkflowSecurity` in `scripts/check-supply-chain.mjs
 | `content/content_model.rs` | `ContentProvenance::satisfies`, `AnalysisSet::contains` | Delete |
 | `content/content_index.rs` | `ContentIndex`, `profile`/`provenance`, `prepare`, `commit` | Hold `identity: Option<ContentTierIdentity>`; `prepare` clears on any inequality; `commit` refuses a record of another identity instead of calling `prepare` |
 | `index.rs` | `prepare_content_analysis`, `pending_analysis_candidates`, `apply_analysis` | Build the identity from the index’s scope and registry; pending compares fingerprint and identity; `apply_analysis` returns `Stale` when `commit` refuses; add `content_set()` |
-| `lib.rs` | `load_content`, cache-only check, `SaveTargets`, `cold_scan_save_targets_with`, `spawn_save` | Pass the content identity; keep the cache-only count, which now means complete; drop the joint completeness gate for per-tier rules; write the sidecar after a partial scan only when a snapshot of the same entry identity is already stored, so a partial run under another identity never evicts the sidecar that pairs with the stored snapshot |
+| `lib.rs` | `load_content`, cache-only check, `SaveTargets`, `cold_scan_save_targets_with`, `spawn_save` | Pass the content identity; keep the cache-only count, which now means complete; drop the joint completeness gate for per-tier rules; write no sidecar after a partial scan, held until P1.4.2 marks failed paths (see Item 4), because until then the records a partial pass can name as verified are only the files that changed |
 | `cache.rs` | `SnapshotInfo`, `CacheStatus`, `status_at` | `SnapshotInfo.identity`; `CacheStatus.content` from `identify_sidecar`; pairing, `clear_cache`, and the `OrphanedContent` rule stay magic-based |
 | `report_format.rs`, `crates/fdu-py/src/lib.rs`, `crates/fdu-py/python/fdu/_models.py` | `CACHE_SCHEMA`, `render_cache_status`; `cache_status_dict`; `CacheStatus` model | `fdu.cache/2` with identities, coordinated with the answer model |
 | Documentation | `fdu.cache/2` and formats 5 in `docs/project/guides/cache-design.md`, `docs/project/architecture/fdu-surface-architecture.md`, `docs/project/architecture/fdu-engine-architecture.md`, `docs/project/release-notes/0.1.0.md`, and `docs/project/guides/release-process.md` | Update |
@@ -579,7 +579,8 @@ at `lib.rs`, `crates/fdu-py/src/lib.rs`, `examples/perf_probe.rs`, and the
   `control_limits_that_disagree_with_the_scope_are_refused_at_save_and_load`; add
   `a_v4_snapshot_is_older_format` and
   `controls_on_and_off_snapshots_share_the_entry_identity`.
-- `lib.rs`: add `a_partial_scan_writes_verified_content_but_no_snapshot`; recheck
+- `lib.rs`: add `a_partial_scan_writes_neither_tier_until_failed_paths_are_marked`
+  and `a_warm_partial_pass_leaves_a_complete_sidecar_whole`; recheck
   `content_sidecar_skips_unchanged_reads_and_serves_cache_only` and
   `cache_only_analysis_fails_closed_without_its_sidecar`. `cache.rs`: add
   `a_stale_sidecar_beside_a_current_snapshot_is_labelled_and_cleared`.
@@ -717,6 +718,21 @@ it on completed passes.
 P1.4.4 also passes the execution instant down, so one pass-start instant exists, and
 pins the stamp to an instant taken before the walk.
 
+**P1.4.2 re-enables the partial-pass sidecar write.** Item 2 shipped the per-tier write
+rules with the content tier’s partial-pass arm held off, because a partial pass marks its
+root `Partial` rather than the paths it failed: `content_record_writable` then promotes no
+entry the pass elided as unchanged, so the only records it could write are the files that
+changed since the last complete snapshot, and writing those replaces a complete sidecar
+with that handful.
+Once P1.4.2 marks the failed paths, an elided entry under a listable parent is `Fresh`,
+`content_record_writable` needs no change, and `content_tier_writable` returns to its
+pairing rule by restoring its second operand.
+**Acceptance test:** after a warm partial pass over a tree with one unlistable directory
+and one changed file, the sidecar holds a record for every file the pass stat’d unchanged
+and none under the unlistable directory.
+`a_warm_partial_pass_leaves_a_complete_sidecar_whole` (`lib.rs`) pins today’s weaker
+claim — the complete sidecar is left whole — and is replaced by that test.
+
 | File | Function or type | Change |
 | --- | --- | --- |
 | `query/query_report.rs` | `Provenance`, `Report`, `report_in`, `report_summary` | Split into `status` and `provenance`; compute both; stop reading `index.freshness()` directly |
@@ -751,7 +767,8 @@ opened-root golden. Envelopes are unchanged, so machine goldens should not chang
 
 **Commits:**
 1. Split the `Report` fields; writers emit the same bytes.
-2. Record walk failures per path and add `TreeStatus::of`.
+2. Record walk failures per path and add `TreeStatus::of`; re-enable the partial-pass
+   sidecar write that item 2 held off.
 3. Producers maintain `IndexState.source`; add `ReportProvenance::of`; delete
    `live_provenance` and the Python fields.
 4. One `scan_started_at`, reading `writing_pass_started_at_ns` from the snapshot header

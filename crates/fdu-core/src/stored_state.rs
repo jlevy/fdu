@@ -315,14 +315,28 @@ pub(crate) fn content_record_writable(
 /// `stored_entries`, the entry tier of the snapshot already stored for its root, if any.
 ///
 /// After a complete pass, always: the snapshot is written with it. After a partial pass,
-/// only beside a snapshot of the same entry tier, which the sidecar pairs with. A partial
+/// nothing — held until P1.4.2 (`fdu-rjv3`), see below. The rule this returns to is: only
+/// beside a snapshot of the same entry tier, which the sidecar pairs with, because a partial
 /// pass under another identity writes no snapshot, so replacing the sidecar would evict the
 /// records that pair with the snapshot that stays.
+///
+/// **Held until P1.4.2.** A partial pass marks its root `Partial`, so
+/// [`content_record_writable`] promotes no entry the pass elided as unchanged: the records
+/// it would write are only the files that changed since the last complete snapshot, and
+/// writing them replaces a complete sidecar with that handful. Every later run then re-reads
+/// the whole tree, for as long as the tree holds one unlistable directory — which on macOS
+/// is any home directory. P1.4.2 marks the failed paths instead of the pass root, so an
+/// elided entry under a listable parent is `Fresh`, `content_record_writable` keeps every
+/// file the pass verified, and this gate returns to the pairing rule above by restoring the
+/// second operand. Until then the partial pass leaves the stored pair alone, which is what
+/// it did before per-tier rules existed.
 pub(crate) fn content_tier_writable(
     index: &crate::Index,
-    stored_entries: Option<EntryTierIdentity>,
+    stored_entries: impl FnOnce() -> Option<EntryTierIdentity>,
 ) -> bool {
-    entries_writable(index) || stored_entries == Some(index.snapshot_identity().entries)
+    // Not called while the rule is held, so a partial pass reads no stored header.
+    let _ = stored_entries;
+    entries_writable(index)
 }
 
 // ---- fixed-width codecs ----
@@ -672,15 +686,25 @@ mod tests {
         complete.set_initial_freshness(true);
         assert!(entries_writable(&complete));
         for stored in [None, Some(entries), Some(other)] {
-            assert!(content_tier_writable(&complete, stored), "a complete pass writes: {stored:?}");
+            assert!(
+                content_tier_writable(&complete, || stored),
+                "a complete pass writes: {stored:?}"
+            );
         }
 
         let mut partial = crate::Index::new_with_config("/root", &config);
         partial.set_initial_freshness(false);
         assert!(!entries_writable(&partial), "an absent entry would change totals");
-        assert!(content_tier_writable(&partial, Some(entries)), "it pairs with the stored tier");
-        assert!(!content_tier_writable(&partial, Some(other)), "it would evict another pair");
-        assert!(!content_tier_writable(&partial, None), "nothing stored pairs with it");
+        // Held until P1.4.2 (`fdu-rjv3`): a partial pass writes no sidecar at all, not even
+        // beside the snapshot it pairs with, because the records it could write today are
+        // only the files that changed. `Some(other)` and `None` are refused by the pairing
+        // rule too, and stay refused when the hold lifts.
+        for stored in [None, Some(entries), Some(other)] {
+            assert!(
+                !content_tier_writable(&partial, || stored),
+                "a partial pass writes nothing until P1.4.2: {stored:?}"
+            );
+        }
 
         let mut unverified = complete.clone();
         unverified.mark_unverified();

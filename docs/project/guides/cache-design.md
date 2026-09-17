@@ -315,12 +315,18 @@ What a policy reads and writes also depends on the path that answers:
 - **Content sidecar.** Written after a cold scan with analysis, and after a warm open
   whose analysis applied a record or found a stale one.
   Each tier has its own write rule.
-  After a partial pass the snapshot is not written, but the sidecar is, when a snapshot
-  of the same entry tier is already stored: it keeps a record only for a file the pass
-  scanned or revalidated and read without error, so a record for a file retained under a
-  directory the pass could not list is left out and read again later.
-  A partial pass under another entry tier writes no sidecar, so the one that pairs with
-  the stored snapshot survives.
+  After a partial pass neither tier is written, so the stored snapshot and the sidecar
+  that pairs with it both survive whole.
+  The rule the sidecar is heading for is narrower — written when a snapshot of the same
+  entry tier is already stored, keeping a record only for a file the pass scanned or
+  revalidated and read without error, so a record for a file retained under a directory
+  the pass could not list is left out and read again later — and it waits on a partial
+  pass marking the paths it failed rather than its root.
+  Until then a partial pass can name only the files that *changed* as verified, and
+  writing those would replace a complete sidecar with that handful, so every later run
+  would re-read the tree for as long as one directory stayed unlistable.
+  A partial pass under another entry tier will write no sidecar either way, so the one
+  that pairs with the stored snapshot survives.
   A run with another analyzer set misses the stored sidecar and replaces it, under
   `refresh` because no sidecar is read and under `auto` because the stored one is
   another identity.
