@@ -4,9 +4,10 @@
 
 **Author:** fdu project
 
-**Status:** Active — PR #1 merged; CLI stack hardening landed (`fdu-zsdy` and the CLI UX
-epic `fdu-6c8n` are closed); the snapshot fault-state suite (`fdu-471a`) and the epic
-`fdu-dxee` remain open
+**Status:** Completed — PR #1 merged; CLI stack hardening landed (`fdu-zsdy` and the CLI
+UX epic `fdu-6c8n` are closed); the index/delta reference model (`fdu-o8r8`) is closed;
+artifact-smoke acceptance landed through `fdu-3d8c` and passed release rehearsal run
+35156068769\. The one residual is the snapshot fault-state suite, `fdu-471a`.
 
 ## Overview
 
@@ -382,7 +383,7 @@ fix.
 
 ### Phase 2: Add Refactor Safety Nets
 
-- [ ] `fdu-o8r8`: add a deterministic index/delta reference model
+- [x] `fdu-o8r8`: add a deterministic index/delta reference model
 - [ ] `fdu-471a`: add snapshot parser and commit-state fault tests with stable
   fingerprint vectors
 
@@ -394,8 +395,9 @@ fix.
   bindings
 - [x] `fdu-c7z2`: raise the wheel and tooling minimum to Python 3.12 and align PyO3, uv,
   CI, and documentation
-- [ ] Complete package, compatibility, security, and artifact-smoke acceptance under the
-  existing publishing bead `fdu-9cf0`
+- [x] Complete package, compatibility, security, and artifact-smoke acceptance under the
+  existing publishing bead `fdu-9cf0` (done through `fdu-3d8c`; release rehearsal run
+  35156068769 passed)
 
 The bead IDs and dependency graph are recorded in the **Beads** section.
 

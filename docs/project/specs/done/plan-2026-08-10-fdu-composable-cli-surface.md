@@ -11,7 +11,7 @@ and folded its principles into the design doc that
 [PR #37](https://github.com/jlevy/fdu/pull/37) shipped this revision’s content axis and
 display contract (Phase 5). [PR #39](https://github.com/jlevy/fdu/pull/39) then reshaped
 the view vocabulary under
-[the view vocabulary plan](plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md).
+[the view vocabulary plan](../active/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md).
 Later work changed parts of the surface this plan specifies: `.gitignore` observation on
 by default with its scope and selection flags (PRs #63 and #65), report schemas
 `fdu.report/5` and `/6`, and cache states with stale-snapshot clearing (PR #67). Where a
@@ -81,11 +81,12 @@ because the test conflated capability with interface (see Views).
    provenance — where it came from, when it was observed, whether it is final — so a
    consumer rendering a thousand rows knows which ones to trust, not merely that the run
    was partial (Goal 7 of the research;
-   [the provenance model](plan-2026-08-11-fdu-progressive-results.md)). Provenance is a
-   property of the value in the library; every surface displays it rather than inventing
-   it. `auto` may choose the cheapest sound path per tree, and that choice is legible in
-   the report’s `source` — a hidden choice would violate this principle, a visible one
-   is how it is implemented.
+   [the provenance model](../active/plan-2026-08-11-fdu-progressive-results.md)).
+   Provenance is a property of the value in the library; every surface displays it
+   rather than inventing it.
+   `auto` may choose the cheapest sound path per tree, and that choice is legible in the
+   report’s `source` — a hidden choice would violate this principle, a visible one is
+   how it is implemented.
    The explicit policies (`refresh`, `read-only`, `only`, `off`) remain for callers who
    want a particular path rather than the cheapest one.
 
@@ -331,7 +332,7 @@ A composition the caller must already know how to build is not a default, and th
 showed up in `files` itself: asked to serve as enumeration and top-N at once, it paired
 name order with a ten-row cap and printed the ten alphabetically first entries of a
 192,871-entry tree.
-[The view vocabulary plan](plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md)
+[The view vocabulary plan](../active/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md)
 reinstated them as presets and made `files` complete.
 The same composability makes `tree --sort mtime` an activity map of a project with no
 extra machinery. When the reducer registry (Goal 6) and type rules (`fdu-v4lc`) land,
@@ -587,7 +588,7 @@ Large tree with a usable journal: load, replay, verify only what changed.
 Content-tier query at any size: load and sweep.
 The decision function, its self-calibrating cost model, and the derived replay budget
 are specified in the
-[FSEvents-scoped revalidation plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
+[FSEvents-scoped revalidation plan](../active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
 and are not implemented (bead `fdu-6ld9`, open); `refresh`, `read-only`, `only`, and
 `off` remain explicit overrides for anyone who wants a specific path rather than the
 cheapest one.
@@ -777,7 +778,8 @@ Supply-chain outcome: the serializers are small first-party writers over the clo
 ### Python API
 
 Mirror, not wrapper-of-CLI. As shipped, the package is `fdu` and the axes are typed
-values ([the release plan](plan-2026-08-14-fdu-release-packaging-python-api-polish.md)
+values
+([the release plan](../active/plan-2026-08-14-fdu-release-packaging-python-api-polish.md)
 owns the full API):
 
 ```python
@@ -833,7 +835,7 @@ shared process boundary, as today.
   preserved; `query` is additive, `ExtTally` gains a field (semver-minor while
   unpublished), and this plan makes no snapshot format changes — the v2 → v3 cursor
   section is owned by the
-  [FSEvents-scoped revalidation plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md).
+  [FSEvents-scoped revalidation plan](../active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md).
 - Benchmark identity: `cli-human` and `cli-json` job definitions are re-pointed at the
   new argument vectors in the same change, and `cli-summary`, `cli-files`, and
   `watch-stream` become named jobs when their surfaces land (Principle 12).
@@ -875,7 +877,7 @@ shared process boundary, as today.
   completing even on broken-pipe rendering; a failed save warns on stderr without
   changing the exit code; `read-only` policy suppresses the write entirely.
   The journal-resume fields (event ID, volume UUID, platform tag) are reserved by the
-  [FSEvents-scoped revalidation plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
+  [FSEvents-scoped revalidation plan](../active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
   as snapshot format v3 (bead `fdu-2cdv`), not duplicated here
 - [x] Document the two-layer cache design and the tier-derived verification contract in
   help, SKILL.md, and the schema docs (implementation of tiered verification lands with
@@ -1083,7 +1085,7 @@ the `largest` and `recent` presets, for the reason given under Views.
 
 ## References
 
-- [Phase 1 plan](plan-2026-08-08-fdu-phase-1.md)
+- [Phase 1 plan](../active/plan-2026-08-08-fdu-phase-1.md)
 - [CLI UX and agent skill plan](plan-2026-08-09-fdu-cli-ux-and-agent-skill.md)
 - [Rollup engine research](../../research/research-2026-08-06-file-rollup-engine.md)
   (Goals 1–7; delta contract; tag-don’t-prune)

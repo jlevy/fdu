@@ -278,8 +278,8 @@ one round of it.
 - [ ] `fdu-tk1b` — Linux cold thread policy (H76/H84). The adaptive unlock calibrated
   against APFS regimes never fires on Linux; guest-cold, sixteen workers beat four by
   32% at the floor itself and diskus’s 3×-cores default is the whole remaining
-  scalar-class cold gap (~22%). Gated on `fdu-tyjx`; bare metal confirms before the
-  constant ships as evidence.
+  scalar-class cold gap (~22%). Unblocked since its gate, `fdu-tyjx`, closed; bare metal
+  confirms before the constant ships as evidence.
 - [ ] `fdu-pdne` — PGO screen (H93), one afternoon, release builds only if it clears.
 - [ ] `fdu-6kyn` — hardware CRC32C behind runtime detection, the H88 follow-up.
 
@@ -308,6 +308,12 @@ one round of it.
   [The evidence-scope plan](plan-2026-08-23-experiment-evidence-scope.md) turns that
   requirement into a checked `verdict.scope`, and this is the experiment it is most
   likely to bind first.
+  **Result (2026-09-02, exp-103).** The Linux evidence stage passed the relative gates
+  (`default-tree` wall −31.7%, 95% interval −34.3% to −29.2%; `cold-scan-index` −18.2%;
+  paired peak RSS −35.1%) and failed the floor gates: `default-tree` wall was 2.60× the
+  parallel syscall floor against the 1.4× gate, and its peak RSS 6.59× `arena_spike`
+  against 3×. Both floor cells were stable, so the ratios reject rather than abstain,
+  and `fdu-xde5` stays open.
 
 #### H86 preregistration: one decision, two evidence stages
 
@@ -339,8 +345,8 @@ controls-enabled fallback.
 The arena result must also survive one exact public mutation after promotion and match
 an index built and mutated through the ordinary path.
 
-The first evidence stage is the current Darwin/arm64 stacked pull request.
-Its immutable control is `c6380f7646524b51dbfcfec7e2efac49bf89d34b`; the historical
+The first evidence stage was the Darwin/arm64 stacked pull request, which merged in PR
+#52. Its immutable control is `c6380f7646524b51dbfcfec7e2efac49bf89d34b`; the historical
 parity control is `b75bf85a33edd9fe65d97df9395072797e54426e`. The 113,794-entry
 MetaBrowser checkout is the required real subject, and the existing nominated first
 subject remains in the parity set.

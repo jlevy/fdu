@@ -13,8 +13,9 @@ Content-tier metrics are complete under the
 [file-content metrics plan](../done/plan-2026-08-12-fdu-file-content-metrics.md).
 
 The active [Phase 1 plan](../active/plan-2026-08-08-fdu-phase-1.md) owns the optimized
-stat-tier engine, product surfaces, performance proof, and first release.
-This document owns only work that begins after its stated activation gate.
+stat-tier engine, product surfaces, and performance proof.
+The first release is owned by [the release process](../../guides/release-process.md) and
+`fdu-gjc2`. This document owns only work that begins after its stated activation gate.
 
 ## Activation Policy
 
@@ -31,14 +32,15 @@ This document owns only work that begins after its stated activation gate.
 
 ### Durable Cross-Restart Delta Journal
 
-`fdu-3dtq` adds a sidecar journal after the block snapshot and optimized revalidation
+`fdu-3dtq` adds a sidecar journal after the snapshot format and scoped revalidation
 contracts are stable.
 It must settle compaction, recovery, durability, and whether `since(clock)` survives
 process restart without weakening the rule that reconciliation is the correctness
 backstop.
 
-Activation gate: block snapshot `fdu-xihx`, optimized revalidation `fdu-wbis`, and the
-first release gate `fdu-9cf0` are complete.
+Activation gate: the zero-copy snapshot format `fdu-pdra` and
+[the FSEvents scoped-revalidation plan](../active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
+are complete, and `0.1.0` is released.
 
 ### Completed Content-Tier Metrics
 
@@ -58,6 +60,10 @@ before replacing the existing path.
 
 Activation gate: first publication `fdu-9cf0` is complete.
 
+**Update (2026-09-16).** MetaBrowser work is already under way ahead of this gate, as
+the opened-root engine `fdu-snej` and the interactive-client contract `fdu-u7vo`, in
+[the opened-root inventory plan](../active/plan-2026-08-25-fdu-opened-root-inventory-engine.md).
+
 ### Optional io_uring Acceleration
 
 `fdu-ktka` remains an optional Linux accelerator.
@@ -68,13 +74,20 @@ scheduler are complete.
 Activation gate: final performance evidence `fdu-ywu0` contains the profile that
 justifies the work and the first release gate `fdu-9cf0` is complete.
 
+**Measured (2026-08-23).** Batching the metadata calls through io_uring cut syscalls 21×
+and ran 6–8× slower on warm Linux, because a warm `statx` is 9% syscall boundary and 91%
+kernel lookup; see
+[the metadata-walk floor report](../../reports/report-2026-08-23-metadata-walk-floor.md).
+[The campaign-2 plan](../active/plan-2026-08-23-fdu-performance-campaign-2.md) treats
+syscall batching as settled for warm Linux unless a new mechanism is proposed.
+
 ## Sequence
 
 These are independent tracks after their activation gates, not one forced serial chain:
 
 | Order | Bead | Work | Activation blockers |
 | --- | --- | --- | --- |
-| 1 | `fdu-3dtq` | Snapshot plus append-only delta journal | `fdu-xihx`, `fdu-wbis`, `fdu-9cf0` |
+| 1 | `fdu-3dtq` | Snapshot plus append-only delta journal | `fdu-pdra`, FSEvents scoped-revalidation plan, `0.1.0` |
 | 1 | `fdu-p02b` | Metabrowser integration | `fdu-9cf0` |
 | 2 | `fdu-ktka` | Evidence-gated io_uring accelerator | `fdu-ywu0`, `fdu-9cf0` |
 

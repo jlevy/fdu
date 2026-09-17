@@ -280,7 +280,7 @@ A change that violates one of these needs this document amended first, not a sil
 exception.
 
 Distilled from
-[the composable CLI and query surface plan](../specs/active/plan-2026-08-10-fdu-composable-cli-surface.md)
+[the composable CLI and query surface plan](../specs/done/plan-2026-08-10-fdu-composable-cli-surface.md)
 after building it. Where implementation forced an amendment, the amendment is recorded
 here rather than the original intent.
 

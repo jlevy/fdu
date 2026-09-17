@@ -6,6 +6,21 @@
 
 **Status:** Complete
 
+**As shipped in `0.1.0`.** The body below is the plan as written; where they differ, the
+release is:
+
+- `--analyze` takes `lines`, `code`, `words`, a comma-separated set, `none`, or `all`,
+  not the `basic`, `code`, `prose`, and `deep` profiles of the [CLI](#cli) section.
+- `--metric`, `--group-by`, `--content-family`, `--percent-of`, and `--view metrics` did
+  not ship, so there are no metric projection flags; the `types`, `families`,
+  `languages`, and `documents` views carry the metrics.
+- Persistence is one content sidecar keyed by the analyzer set, not per-analyzer
+  persistence; a stored wider set answers a narrower request.
+- The implementation lives in `crates/fdu-core/src/content/` (`content_analysis.rs`,
+  `content_basic_metrics.rs`, `content_code_metrics.rs`, `content_markdown_metrics.rs`,
+  `content_index.rs`, `content_cache.rs`, and `content_model.rs`), not the
+  `crates/fdu/src/content/` paths the file map names.
+
 ## Overview
 
 Add fast, incremental measurements for file types, source code, prose, and markup
@@ -999,7 +1014,7 @@ primary repository checkout.
 
 - [Fast file-content metrics research](../../research/research-2026-08-12-fast-file-content-metrics.md)
 - [fdu design principles](../../architecture/fdu-design-principles.md)
-- [Composable CLI and query surface plan](../active/plan-2026-08-10-fdu-composable-cli-surface.md)
+- [Composable CLI and query surface plan](plan-2026-08-10-fdu-composable-cli-surface.md)
 - [Progressive-results plan](../active/plan-2026-08-11-fdu-progressive-results.md)
 - [Performance testing plan](../active/plan-2026-08-09-fdu-end-to-end-performance-testing.md)
 - [Performance loop](../../guides/performance-loop.md)

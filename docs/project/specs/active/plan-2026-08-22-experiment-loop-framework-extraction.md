@@ -4,10 +4,11 @@
 
 **Author:** fdu project
 
-**Status:** Draft.
-Counts of fdu’s record below are as of 2026-08-22; the record held 105
-experiment artifacts on 2026-09-16, and the Phase 2 acceptance applies to every
-committed artifact.
+**Status:** Phase 1’s skill landed on 2026-08-22 (`fdu-csk7`) as a user-level skill with
+per-repository copyable assets.
+No shared package exists, and fdu has not been re-hosted on one.
+Counts of fdu’s record below are as of 2026-08-22; the record held 105 experiment
+artifacts on 2026-09-16, and the Phase 2 acceptance applies to every committed artifact.
 
 ## Overview
 
@@ -305,7 +306,7 @@ framework with fdu’s adapter and config.
 - [ ] Ledger and report views over an artifact directory, chart set and columns as
   config; identity check across the set
 - [ ] Registry artifact contract, generated status view, and the reference check
-- [ ] The skill: the invariant core, the ladder, the knobs and how to choose them, and
+- [x] The skill: the invariant core, the ladder, the knobs and how to choose them, and
   every named trap from both projects’ records
 
 ### Phase 2: Re-host fdu; prove nothing was lost
@@ -323,7 +324,8 @@ framework with fdu’s adapter and config.
   equivalently
 - [ ] Run one campaign in a search domain — a packing instance or a proof portfolio —
   using `record` and `determination` shapes, budgets, and `abandoned` verdicts; fold
-  back whatever the framework lacked
+  back whatever the framework lacked (under way, 2026-09-16: a search-domain campaign
+  runs in [squares](https://github.com/jlevy/squares) through the skill)
 
 ## Testing Strategy
 
@@ -343,8 +345,9 @@ has watched fail is not yet evidence.
   ugly compound, “ledger” overloaded by finance, and it names the output view rather
   than the contract and statistics an adopter cannot write themselves.
   `refute` stays the interesting alternative and still reads adversarial.
-- **Where the skill lives.** Beside softschema’s own skill in that repository, or as its
-  own package; softschema is the one hard dependency either way.
+- **Where the skill lives.** Answered: a user-level skill, with assets each repository
+  copies, rather than a skill beside softschema’s or its own package.
+  softschema remains the one hard dependency.
 - **One runtime or two.** softschema ships Python and TypeScript; the views and
   statistics doubling that surface is real cost for consumers that are mostly build
   tooling. Python first, and the contract itself stays runtime-neutral YAML.
