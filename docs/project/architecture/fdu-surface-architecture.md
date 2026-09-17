@@ -92,8 +92,8 @@ grows.
 The shim prints through `Report.render`, which calls the same Rust renderer the command
 line does. Parity therefore proves that the Python API builds the same request and takes
 the same path as the command line.
-It does not compare the native dict or the Python models with the rendered formats, and
-it does not compare a warm answer with a cold one.
+It does not compare the Python models with the rendered formats, and it does not compare
+a warm answer with a cold one.
 
 Parity checks agreement after the fact.
 [Model Every Key Concept Explicitly, in One Place](fdu-design-principles.md#model-every-key-concept-explicitly-in-one-place)
@@ -173,10 +173,12 @@ Python `Index` opened with analysis emits `fdu.report/6` even for a tree view.
 The three families version independently, so a report change never bumps the stream or
 cache-status schema, or the reverse.
 
-One `Report` reaches callers through six writers: text, JSON, and YAML in
+One `Report` reaches callers through five writers: text, JSON, and YAML in
 `report_format.rs`; JSON Lines, which collapses the JSON fragments onto one line by
-string replacement; the native dict in `fdu-py`; and the Python models, parsed from the
-JSON rendering. Change records and cache status have writers of their own.
+string replacement; and the Python models, which the public package builds by parsing
+the JSON rendering. The native binding also keeps a dict writer of its own that the
+public package never uses.
+Change records and cache status have writers of their own.
 No document yet states each envelope field by field (`fdu-c5v1`), so nothing holds the
 writers to one shape; until one does, the renderers in `report_format.rs` and the
 goldens under `tests/golden/` are the reference.
@@ -225,8 +227,8 @@ tracks them. Engine-side gaps are in
 [the engine architecture](fdu-engine-architecture.md#known-gaps).
 
 - **Writers disagree.** YAML flattens metric rows that JSON nests under `metrics`, and
-  omits `root_raw` and `path_raw`. The native dict follows YAML rather than JSON and
-  omits a tree node’s `kind`. JSON Lines’ `collapse` rewrites string content, so the
+  omits `root_raw` and `path_raw`. The unused native dict follows YAML rather than JSON
+  and omits a tree node’s `kind`. JSON Lines’ `collapse` rewrites string content, so the
   path `a [ b/f { g }.txt` is emitted as `a [b/f {g}.txt`. `--watch --format yaml` emits
   JSON change records, and text output carries no source or freshness label.
 - **Defaults differ by surface.** The Rust `Selection` answers in apparent bytes while
@@ -235,7 +237,7 @@ tracks them. Engine-side gaps are in
   Python’s `Index.watch` and `WatchOptions`.
 - **Validation is repeated rather than owned.** `Query::validate_controls` is called at
   seven sites: the command line, three in `fdu-py`, the one-shot executor, the watch
-  session, and `query::report` itself.
+  session, and `query::report_in`, which opened-root reads call directly.
   `Query::validate_analysis` runs only in the command line and `fdu-py`, so an engine
   caller or an opened-root read can request a `documents` view with no analysis.
 
@@ -250,8 +252,9 @@ tracks them. Engine-side gaps are in
 
 ### Potential Improvements
 
-- Hold every writer to one field-level schema, and compare the native dict and Python
-  models with the rendered formats, so writer agreement is tested rather than assumed.
+- Hold every writer to one field-level schema, delete the unused native dict, and
+  compare the Python models with the rendered formats, so writer agreement is tested
+  rather than assumed.
 - Add warm-history replays to parity, so a golden also checks that a cached answer
   equals the cold one.
 - Generalize the parity runner to register another public binding without copying the

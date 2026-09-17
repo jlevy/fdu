@@ -39,11 +39,13 @@ wrong.
 ### Model Every Key Concept Explicitly, in One Place
 
 The concepts every route through fdu depends on each have one explicit, typed model in
-the engine: **the request** (what determines an answer), **the execution plan** (how a
-request is carried out, and what it reads and writes), **stored state** (what each
-retained or cached tier is valid for), **provenance** (where a value came from and how
-current it is), and **the answer** (what a report, change record, or cache status
-contains). Surfaces and routes construct and consume these models.
+the engine: **the request** (what determines an answer), **delivery** (how the caller
+asks for it to be carried out: cache policy, workers, partial acceptance, watch), **the
+execution plan** (which route answers, and what it reads and writes), **stored state**
+(what each retained or cached tier is valid for), **measured values** (what each metric
+means, owned by the analyzer that produces it), **provenance** (where a value came from
+and how current it is), and **the answer** (what a report, change record, or cache
+status contains). Surfaces and routes construct and consume these models.
 They never re-derive a rule a model owns.
 
 A concept that is declared imperatively where it is used gets declared again at the next
@@ -55,17 +57,17 @@ in a system like this one, because it turns every new route into a new definitio
 
 The 0.1.0 release candidate showed each form of that failure:
 
-- The request was parsed separately by the command line and by Python, validated by
-  seven separate calls, and defaulted differently: size was apparent in Rust and
-  allocated elsewhere, and watch defaulted to different views.
+- The request was assembled separately by the command line and by Python, validated at
+  several call sites, and defaulted differently: size was apparent in Rust and allocated
+  elsewhere, and watch defaulted to different views.
 - The analyzer set was not part of the query, so the report reader could not see what
   was asked for and presented whatever the index held.
 - Each cached tier coded its own compatibility rule: exact scope equality for snapshots,
   containment without projection for content analysis.
-- Provenance was computed three ways, and watch repaints asserted `complete: true`
-  instead of computing it.
-- Six writers rendered one answer with no field schema; JSONL rewrote paths containing
-  brackets, and YAML flattened rows JSON nested.
+- Provenance was filled in differently on each route, and watch repaints asserted
+  `complete: true` instead of computing it.
+- Independent writers rendered one answer with no field schema; JSON Lines rewrote paths
+  containing brackets, and YAML flattened rows JSON nested.
 
 So when a behavior cannot be expressed as a property of an existing model, the model is
 missing an element: add it to the model, not a branch where it is used.
@@ -73,24 +75,32 @@ A rule stated in two places is a model that does not exist yet.
 
 Conformance is tracked in
 [the explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md),
-which lists the remaining gaps and the test that closes each.
+which maps each concept to its model and lists the work that closes each gap.
 
 ### Caching Improves Performance, Never Semantics
 
 A **request** determines what an answer says: the root, the scope, the content
-analyzers, the selection, and the views.
-Everything else is **delivery**: the cache policy, the execution route, worker counts,
-the surface, the format, and whether the answer is repeated as a watch.
-Delivery decides how fast an answer arrives, what its provenance fields report, and how
-it is serialized. It never decides what the answer says.
+analyzers, the selection, the views, and the instant relative time windows resolve
+against. **Delivery** is how the caller asks for it to be carried out: the cache policy,
+worker counts, whether a partial result is accepted, and whether it repeats as a watch.
+The route that answers, the surface that asks, and the format that serializes are
+choices within those, never inputs to the answer.
 
+An answer has content and **tree status** (`complete`, `errors`, and coverage), which
+describe the tree as the run found it; **provenance** (`source`, `freshness`, and
+timestamps) describes the delivery.
 For any request and any history of earlier requests, cache writes, evictions, and file
-changes, a run returns the answer a cold run of the same request returns, apart from
-provenance. The only alternatives are a failure that names why the delivery cannot
-answer, or, under `--cache only`, the answer from a recorded earlier state, labelled
-stale.
-Every surface returns the same answer, and every machine format parses back to the
-same value.
+changes, a run returns one of four outcomes, compared on content and tree status:
+
+- the cold answer to the same request;
+- a partial answer containing exactly the part of the tree the run verified, equal to a
+  cold answer over that part, with its tree status naming what is missing (retained
+  facts under an unverified subtree are never served);
+- a failure that names why the delivery cannot answer;
+- under `--cache only`, the cold answer at a recorded earlier state, labelled stale.
+
+For one request, delivery, and history, every route and surface returns the same kind of
+outcome, and every machine format parses back to the same value.
 
 That invariant follows from modeling the request and stored state explicitly, and it has
 concrete consequences:
@@ -114,11 +124,10 @@ modeling what a narrower request should see.
 `--analyze lines` after `--analyze all` then reported metrics nobody requested, changed
 the requested ones, and named the stored analyzers as the requested set.
 After one file changed, totals matched neither cold answer, and the state persisted.
-Meanwhile 38 metadata-only request variants gave identical answers across every warming
-history, cache policy, file change, and surface, because their stored state already had
-one identity and one compatibility rule.
+Metadata-only requests, whose stored state already had one identity and one
+compatibility rule, gave the cold answer on every route.
 
-A path-independence test replays requests across histories, cache policies, mutations,
+A path-independence test replays requests across histories, deliveries, mutations,
 surfaces, and formats against cold answers; until it passes with no registered
 violations,
 [the explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
@@ -512,8 +521,9 @@ anything is rendered.
 
 ### Fastest Answer the Data Allows, Never Silently Stale
 
-Cache behavior is one explicit policy axis, and every report labels its `source`,
-`freshness`, `complete`, and `errors` in every format.
+Cache behavior is one explicit policy axis, and every machine-format report carries its
+`source`, `freshness`, `complete`, and `errors`; human text reports errors and partial
+results on standard error.
 The cache policy is the user’s choice.
 Within it, the execution plan may pick the cheapest route that can answer, and routes
 differ only in cost and provenance, never in the answer.
@@ -619,8 +629,8 @@ changes arrive. There is no separate watch grammar to learn.
 A watch session serves only the tiers it keeps current: a tier it cannot maintain, such
 as content analysis without live re-analysis, is refused when the session starts rather
 than left to decay while repaints call it fresh.
-Each repaint computes its provenance from the index, exactly as a one-shot report does;
-a repaint over a partial index is never labelled complete.
+Each repaint computes its tree status and provenance from the index, as an opened-root
+read does; a repaint over a partial index is never labelled complete.
 
 Detection is event-driven — the OS notification backend, never polling — so an idle tree
 costs no filesystem work, a property asserted by test rather than described.

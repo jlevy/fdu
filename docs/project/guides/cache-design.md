@@ -10,10 +10,13 @@ Two design principles govern this layer.
 asks that each tier’s identity, its per-item validity rule, and the requests it may
 serve be stated once rather than coded into every path that reads or writes it.
 [Caching Improves Performance, Never Semantics](../architecture/fdu-design-principles.md#caching-improves-performance-never-semantics)
-follows from it: snapshots, content sidecars, the summary-reducer tier, and retained
-indexes exist to make answers cheaper, and a cache hit, miss, eviction, cache policy, or
-execution path may change only how fast an answer arrives and what its provenance fields
-report, never what the answer says.
+follows from it: stores (retained indexes, snapshots, and content sidecars) and the
+summary-reducer path exist to make answers cheaper, and a cache hit, miss, eviction,
+cache policy, or execution path may change only how fast an answer arrives and what its
+provenance fields report, never what the answer says.
+A store holds one or more tiers, the unit whose identity decides which requests it may
+answer: a snapshot holds the entry and `.gitignore` control tiers, and a content sidecar
+holds the content tier.
 The code does not meet that bar everywhere; [Known Gaps](#known-gaps) lists where, and
 [the explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
 tracks the work.
@@ -278,10 +281,12 @@ belongs.
 What a policy reads and writes also depends on the path that answers:
 
 - **One-shot report.** Under `auto` and `read-only` it reads the snapshot only when
-  content analysis is requested, so a metadata-only report is a cold scan, and under
-  `auto` it rewrites the snapshot after every complete scan.
-  The summary-reducer tier writes nothing, so `--view summary --no-gitignore` under
-  `auto` never leaves a snapshot.
+  content analysis is requested.
+  A metadata-only report is a cold scan, and under `auto` it rewrites the snapshot after
+  every complete cold scan; a report with analysis takes the warm path, which writes the
+  snapshot only when reconciliation changed something.
+  The summary-reducer path retains nothing and writes nothing, so
+  `--view summary --no-gitignore` under `auto` never leaves a snapshot.
 - **`open` and the first answer of `--watch`.** Both always read a usable snapshot and
   reconcile it. A warm open writes only when reconciliation changed something; a cold
   open writes after a complete scan.
@@ -328,35 +333,26 @@ tracks them.
   and the save drops those records, so each later run reads the files again.
 - **The sidecar’s identity is incomplete.** Analyzer versions and options are not
   compared. With no engine fingerprint, a sidecar survives the crate upgrade that
-  invalidates its snapshot; with no scope, one sidecar serves every scope for its root;
-  and with one analyzer set per root, `--cache refresh` with a narrower set discards a
-  wider one.
-- **Snapshots are keyed by root, not scope.** A request in another scope replaces the
-  default snapshot (`fdu-w3l5`).
+  invalidates its snapshot, and with no scope, one sidecar serves every scope for its
+  root.
 - **The one projection exists on one path.** A one-shot cache-only report may answer a
   `.gitignore`-off request from a controls-on snapshot; `open` refuses the same request.
 - **Policies mean different things per path.** `read-only` revalidates for `open` but
   behaves as `off` for a one-shot metadata report, and `auto` reads for `open` but not
   for that report. Write rules differ by path as listed above, so whether a later
   `--cache only` succeeds depends on which command ran last.
-- **Live provenance is asserted, not derived.** Watch repaints report
-  `source: warm_revalidate`, `complete: true`, and no errors whatever the index holds,
-  including a partial or cache-only one.
-  A Python `Index.watch()` over an analyzed index drops changed files’ content records
-  without re-analysis and still reports a complete answer.
+- **Live provenance and content decay** are session gaps, listed in
+  [the engine architecture’s Known Gaps](../architecture/fdu-engine-architecture.md#known-gaps).
 - **A type-rules mismatch is silent.** A snapshot taken under another type registry
   parses as absent, so a `--cache only` failure cannot name the registry as the cause.
 
-### Open Questions
-
-- Should a wider stored analyzer set answer a narrower request by projection, or should
-  content compatibility be equality until a path-independence test proves a projection?
-- Can one content sidecar soundly serve every scope for its root, given that its metrics
-  depend on file bytes and type rules, or should it carry the snapshot’s scope and
-  engine fingerprint?
-
 ### Potential Improvements
 
+- **Stores keyed by identity.** One snapshot and one sidecar per root means a request in
+  another scope or analyzer set misses and rescans, then replaces the stored one
+  (`fdu-w3l5`); `--cache refresh` with a narrower analyzer set likewise replaces a wider
+  sidecar. That costs time, never correctness, so keying stores by tier identity is a
+  performance improvement rather than a semantic fix.
 - **The block snapshot format.** Today’s flat image is read and rebuilt in full.
   Persisted aggregates and indexed blocks could make bounded summary queries avoid
   materializing every entry; that cost must be measured with validation and persistence

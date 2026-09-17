@@ -124,14 +124,18 @@ It writes no snapshot, so a later cache-only read finds none.
 
 #### Retained state changes cost, never answers
 
-Retained and cached state exists to make answers cheaper: the index a lifecycle keeps,
-the metadata snapshot, the content sidecar, and the summary-reducer tier that retains
-nothing at all. Under
+Retained and cached state exists to make answers cheaper.
+It lives in stores (the index a lifecycle keeps, the metadata snapshot, and the content
+sidecar), each holding one or more tiers: the unit whose identity decides which requests
+it may answer, namely entries and roll-ups, `.gitignore` control state, and content
+records. The summary-reducer path is neither: it retains nothing.
+Under
 [Caching Improves Performance, Never Semantics](fdu-design-principles.md#caching-improves-performance-never-semantics),
 a cache hit, miss, eviction, cache policy, or execution path may change how fast an
 answer arrives and what its provenance fields report, never what the answer says.
 Metadata-only requests meet that today; content analysis, live repaints, and several
-provenance fields do not ([Known Gaps](#known-gaps)).
+provenance fields do not ([Known Gaps](#known-gaps), and
+[the cache design’s Known Gaps](../guides/cache-design.md#known-gaps)).
 
 #### One opened root has one authority
 
@@ -235,11 +239,13 @@ The target models are in
 | Concept | Covers | Defined today | One explicit model? |
 | --- | --- | --- | --- |
 | Request | Scope, content axis, selection, views, defaults, validation | `ScanConfig` and `ScanScope`; `AnalysisRequest` and `CachePolicy` on `OpenConfig`, not on `Query`; `Query`, `Selection`, and `ViewSpec::resolve`; `OpenOptions` and `ReportRequest` for opened roots | No. `cli.rs` and `fdu-py` each assemble it; defaults differ by surface; `Query::validate_controls` is called at seven sites, and `Query::validate_analysis` only in the two surfaces |
+| Delivery | Cache policy, worker counts, partial acceptance, watch | `CachePolicy` on `OpenConfig`; `AnalysisRequest.workers`; `--allow-partial` as an exit-code mapping in `cli.rs`; watch interval as a command-line value | No. Each route reads the parts it uses, and no type enumerates them |
 | Execution plan | Which path answers, and what each cache policy reads and writes | `plan_report` (`execution.rs`); `open_for_report`, `SaveTargets`, and `cold_scan_save_targets` (`lib.rs`); the command line’s `save_live` for watch | No. Read and write rules are coded per path |
 | Stored-state identity | Metadata snapshot, control state, classification, content sidecar, and which requests each may serve | `engine_fingerprint` and snapshot parsing (`snapshot.rs`); `ScanScope`; `snapshot_scope_serves` (`lib.rs`); `ContentProvenance::satisfies` (`content_model.rs`) | No. Each tier codes its own identity and compatibility: exact scope with one report-only projection for snapshots, analyzer-set containment for content |
 | Per-item validity | When a stored entry or record is still current | `Attrs` equality in index upserts; `Fingerprint` checks in content loading, `pending_analysis_candidates`, and `apply_analysis` | Partly. Metadata compares six attributes and content five, each at its own call sites |
+| Measured value | What each metric means, and how coverage is decided | Analyzer identities and `MetricValues` in `content_model.rs`; per-file `CoverageReason` in `FileAnalysis`; `document_words` in `query_report.rs` | No. Coverage is one outcome per file for the whole analyzer set, and `document_words` changes meaning with the analyzers a record ran under |
 | Provenance | Source, freshness, observation time, completeness, errors | `query::Provenance`, built at six production sites; `Index::freshness`; per-entry `Provenance` in `engine_contract.rs` | No. Each site fills the fields its own way, and `scan_started_at` has three meanings |
-| Answer shape | Report, change-record, and cache-status documents | `Report`, `Change`, and `CacheStatus`; schema constants in `report_format.rs` | No. Six writers render a `Report` with no field-level schema (`fdu-c5v1`) |
+| Answer shape | Report, change-record, and cache-status documents | `Report`, `Change`, and `CacheStatus`; schema constants in `report_format.rs` | No. Independent writers render a `Report` with no field-level schema (`fdu-c5v1`) |
 
 ### Core Values and Ownership
 
@@ -296,10 +302,10 @@ together. There is no route that changes one without the others.
 A snapshot is a detached representation, not a dormant opened root.
 It contains the complete retained entry facts, the engine fingerprint, the validated
 scope and semantic identities, and the control table required to interpret them.
-It stores no roll-ups and no classification: loading rebuilds roll-ups from the entries
-and classifies names with the registry in use, and the reducer-set identity it records
-is a constant today.
-Like every cache tier it may change the cost of an answer, never the answer.
+It stores no roll-ups and no classification: loading rebuilds roll-ups from the entries,
+classification happens on read with the registry in use, and the reducer-set identity it
+records is a constant today.
+Like every store it may change the cost of an answer, never the answer.
 It never contains a live session identity, version sequence, journal history, waiter,
 continuation, worker, or discovery frontier.
 
@@ -407,11 +413,8 @@ retained state has no consumer.
 It observes control state as `ScanConfig::read_controls` says, on by default as for
 `open()`, so a default report and a default index share one snapshot scope.
 One-shot and retained paths must answer the same request identically.
-Metadata-only requests do: a matrix of 38 request variants across 10 warm histories,
-three cache policies, file mutations, and both the command line and Python found no
-difference from the cold answer.
-Content analysis does not: 89 warm cases differed, and totals over mixed records matched
-neither cold answer ([Known Gaps](#known-gaps)).
+Metadata-only requests do; content-analysis requests do not
+([the cache design’s Known Gaps](../guides/cache-design.md#known-gaps)).
 
 #### Opened and long-lived
 
@@ -941,13 +944,10 @@ Each item is a way the present engine falls short of
 or
 [Caching Improves Performance, Never Semantics](fdu-design-principles.md#caching-improves-performance-never-semantics).
 [The explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
-tracks them; cache-policy and write-rule gaps are listed once, in
+tracks them. This list holds the reader, session, classification, and provenance gaps;
+store identity, compatibility, policy, and write-rule gaps are listed once, in
 [the cache design’s Known Gaps](../guides/cache-design.md#known-gaps).
 
-- **Content answers depend on history.** A wider content tier serves a narrower request
-  without projection, and records analyzed under different sets aggregate together, so a
-  warm content report can differ from the cold answer to the same request, and totals
-  over mixed records can match no cold answer at all.
 - **Reports take their content axis from the index.** `query::report` receives an index,
   a query, and provenance but no analysis request, because `Query` carries none, so
   metric sections, the `analysis` metadata, and the schema version follow the content
@@ -961,17 +961,11 @@ tracks them; cache-policy and write-rule gaps are listed once, in
   classification, which analysis derives from the file’s leading bytes, over the
   name-based `Index::classify`, so one path can count under a different type or family
   depending on whether analysis ran.
-  A snapshot whose type-rules fingerprint differs from the registry in use parses as
-  absent, so no refusal names the registry.
 - **Provenance is filled per site.** `scan_started_at` is the run’s start in a one-shot
   report, even one answered from cache; the open or refresh start for a Python `Index`,
   except `None` when it was opened cache-only; and `None` for opened reads and watch
   repaints. Watch repaints hard-code `source: warm_revalidate`, `complete: true`, and no
   errors, including over a partial or cache-only index.
-- **Scope identity is not the storage key.** Snapshots are keyed by root (`fdu-w3l5`),
-  and the content sidecar records neither scope nor engine fingerprint.
-- **The one scope projection is path-specific.** A one-shot cache-only report may
-  project a controls-on snapshot to a controls-off request; `open` refuses it.
 
 ### Open Questions
 
