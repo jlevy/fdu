@@ -3,6 +3,25 @@
 Python bindings for [fdu](https://github.com/jlevy/fdu), a fast, incremental file
 roll-up engine.
 
+## Install
+
+```shell
+uv tool install fdu   # put the fdu command on your PATH
+uvx fdu .             # or run the command once without installing it
+uv add fdu            # use the library in a uv project
+pip install fdu       # or install the library with pip
+```
+
+`uvx fdu@<version> --help` runs one exact release.
+Prebuilt `abi3` wheels cover GIL-enabled CPython 3.12 and newer on Linux glibc (x86-64
+and arm64), macOS (x86-64 and arm64), and Windows x86-64, so installing needs no Rust
+toolchain. Free-threaded CPython, such as `3.14t`, cannot install them and is not
+supported; an installer there falls back to building the source distribution.
+If uv selects a free-threaded interpreter, pass `--python 3.14` (or `--python 3.12`), as
+in `uv tool install --python 3.14 fdu`.
+
+## Use
+
 The public package is `fdu`; `fdu._native` is private build machinery.
 The supported API includes typed query and scan options, immutable report sections,
 roll-ups, per-path provenance, cache management, refresh results, and change feeds.
@@ -104,18 +123,12 @@ The wheel also exposes the native Rust CLI as the `fdu` console script.
 Argument parsing, help, streams, color, errors, broken-pipe handling, and exit status
 all use the same Rust process boundary as the Cargo-installed binary; there is no Python
 CLI reimplementation.
-`make python-smoke` installs the built wheel into an isolated environment and runs both
-the module contract and a direct local-wheel `uvx` check.
-
-An exact reviewed release runs without a persistent install:
-
-```shell
-uvx fdu@<version> --help
-```
 
 **Status: 0.x.** A new minor release may change the Python API;
 [the release process](https://github.com/jlevy/fdu/blob/main/docs/project/guides/release-process.md)
 states the compatibility rules.
+Building and testing the package from a checkout is covered in
+[the repository README](https://github.com/jlevy/fdu#install).
 
 License: MIT.
 
