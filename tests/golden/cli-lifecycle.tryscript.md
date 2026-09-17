@@ -14,6 +14,8 @@ env:
   XDG_CACHE_HOME: .cache
 patterns:
   BYTES: '\d+'
+  # Fingerprints change with the engine version and the type rules, not with the tree.
+  FINGERPRINT: '\d+'
   CACHE_FILE: '[^\r\n]+\.fdu'
   # A YAML scalar is quoted only when it would otherwise be ambiguous, which a Windows
   # path with backslashes is and a POSIX path is not. The quoting is the platform's, so
@@ -127,7 +129,7 @@ $ fdu --cache-status --format json project
 {
   "schema": "fdu.cache/2",
   "caches": [
-    {"path": "[CACHE_FILE]", "bytes": [BYTES], "state": "current", "root": "[SCAN_PATH]", "entries": 11, "identity": {"entries": {"engine": 2764270474160771455, "max_depth": null, "follow_symlinks": false, "one_filesystem": false, "hidden_fingerprint": 0, "exclude_special": false, "type_rules_fingerprint": 12438660251313372799, "reducers_fingerprint": 1}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}}}, "content": null}
+    {"path": "[CACHE_FILE]", "bytes": [BYTES], "state": "current", "root": "[SCAN_PATH]", "entries": 11, "identity": {"entries": {"engine": [FINGERPRINT], "max_depth": null, "follow_symlinks": false, "one_filesystem": false, "hidden_fingerprint": 0, "exclude_special": false, "type_rules_fingerprint": [FINGERPRINT], "reducers_fingerprint": 1}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}}}, "content": null}
   ]
 }
 ? 0
@@ -147,13 +149,13 @@ caches:
     entries: 11
     identity:
       entries:
-        engine: 2764270474160771455
+        engine: [FINGERPRINT]
         max_depth: null
         follow_symlinks: false
         one_filesystem: false
         hidden_fingerprint: 0
         exclude_special: false
-        type_rules_fingerprint: 12438660251313372799
+        type_rules_fingerprint: [FINGERPRINT]
         reducers_fingerprint: 1
       ignore_rules:
         limits:
@@ -258,7 +260,7 @@ $ fdu --cache-status=all --format json project
     {"path": "[CACHE_FILE]", "bytes": [BYTES], "state": "stale", "stale_reason": "other_engine", "format_version": null, "content": null},
     {"path": "[CACHE_FILE]", "bytes": [BYTES], "state": "stale", "stale_reason": "unreadable", "format_version": null, "content": null},
     {"path": "[CACHE_FILE]", "bytes": 0, "state": "unrecognized", "content": null},
-    {"path": "[CACHE_FILE]", "bytes": [BYTES], "state": "current", "root": "[SCAN_PATH]", "entries": 11, "identity": {"entries": {"engine": 2764270474160771455, "max_depth": null, "follow_symlinks": false, "one_filesystem": false, "hidden_fingerprint": 0, "exclude_special": false, "type_rules_fingerprint": 12438660251313372799, "reducers_fingerprint": 1}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}}}, "content": null},
+    {"path": "[CACHE_FILE]", "bytes": [BYTES], "state": "current", "root": "[SCAN_PATH]", "entries": 11, "identity": {"entries": {"engine": [FINGERPRINT], "max_depth": null, "follow_symlinks": false, "one_filesystem": false, "hidden_fingerprint": 0, "exclude_special": false, "type_rules_fingerprint": [FINGERPRINT], "reducers_fingerprint": 1}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}}}, "content": null},
     {"path": "[CACHE_DIR]notes.txt", "bytes": 15, "state": "unrecognized", "content": null}
   ]
 }
