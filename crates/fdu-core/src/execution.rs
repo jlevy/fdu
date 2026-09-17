@@ -257,13 +257,11 @@ fn prepare_report_internal(
 ) -> Result<(Report, PendingSave, PerformanceSummary, Option<crate::scan::ScanDiagnostics>)> {
     // Before anything is scanned, loaded, or reduced: a request its own basis cannot answer
     // has no answer at any cost, and the compact summary tier below never reaches a reader,
-    // so a check made there would not cover this route at all.
+    // so a check made there would not cover this route at all. A scope this build cannot
+    // honour is part of that one check rather than a second one beside it, which is what
+    // keeps the refusal independent of the delivery: the cache-only tier never scans and
+    // the cold tier never loads, so a rule stated at either would hold for one of them.
     request.validate().map_err(Error::InvalidRequest)?;
-    // The scope a request names must be one this build can honour, whatever the delivery.
-    // It is checked here rather than only where a scan starts, because the compact summary
-    // tier and the cache-only tier each reach a different part of the engine and one of
-    // them never scans at all.
-    request.basis.scope.validate()?;
     let config = &open_config(request, delivery);
     let query = &request.query;
     let root = request.basis.root.as_path();
@@ -774,7 +772,8 @@ mod tests {
         }
     }
 
-    /// Which failure a run names must not depend on how it was delivered.
+    /// Which failure a run names, and what kind of failure it is, must not depend on how it
+    /// was delivered.
     ///
     /// A scope this build cannot honour is refused by every policy, including the one that
     /// never scans: under `--cache only` the scan that would have refused it never runs, so
@@ -782,6 +781,10 @@ mod tests {
     /// different failures depending on its delivery, which the path-independence registry
     /// records as `refusal-order` for `--one-filesystem` on Windows. `follow_symlinks` is
     /// the same rule on every platform, so this test runs where the Windows case cannot.
+    ///
+    /// The refusal is the request model's typed one, not an engine error the surfaces then
+    /// classify differently: reporting it as an engine error made the command line exit 1
+    /// where Python raised `ValueError`, one request with two kinds of outcome.
     #[test]
     fn a_scope_this_build_cannot_honour_is_refused_before_any_snapshot_is_read() {
         let root = tempfile::tempdir().expect("tempdir");
@@ -803,16 +806,29 @@ mod tests {
         pending.join().expect("no save");
 
         let unsupported = ScanConfig { follow_symlinks: true, ..ScanConfig::default() };
-        for policy in [CachePolicy::Only, CachePolicy::Off, CachePolicy::Auto] {
+        for policy in
+            [CachePolicy::Only, CachePolicy::Off, CachePolicy::Auto, CachePolicy::ReadOnly]
+        {
             let asked = OpenConfig {
                 scan: unsupported.clone(),
                 ..config(policy, Some(cache_path.clone()))
             };
+            let refused = prepared(root.path(), &asked, &summary_query())
+                .expect_err("a scope this build cannot honour has no answer at any policy");
             assert!(
                 matches!(
-                    prepared(root.path(), &asked, &summary_query()),
-                    Err(Error::UnsupportedScanConfig(_))
+                    refused,
+                    Error::InvalidRequest(crate::query::RequestError::ScopeUnsupported {
+                        axis: crate::query::ScopeAxis::FollowSymlinks,
+                        ..
+                    })
                 ),
+                "{policy:?} must refuse the request rather than fail the operation: {refused}"
+            );
+            assert_eq!(
+                refused.to_string(),
+                "unsupported scan configuration: follow_symlinks requires cycle, root-boundary, \
+                 and filesystem-boundary semantics",
                 "{policy:?} must name the scope it cannot honour"
             );
         }

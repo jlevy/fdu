@@ -329,6 +329,8 @@ pub struct AxisNames {
     pub scan_depth: &'static str,
     /// The switch that keeps a scan on the root's filesystem.
     pub one_filesystem: &'static str,
+    /// The switch that walks into what a symbolic link points at.
+    pub follow_symlinks: &'static str,
     /// The patterns an entry must match.
     pub include: &'static str,
     /// The inclusive lower bound on modification time.
@@ -360,6 +362,10 @@ impl AxisNames {
     ///
     /// `ignored` is the one axis the command line splits into two switches, so it names
     /// both; it only reaches a diagnostic through a value no flag can produce.
+    ///
+    /// `follow_symlinks` is the one axis this surface cannot set at all, so it keeps the
+    /// library's name: a request carrying it came from a library or `open` caller, and
+    /// naming a `--follow-symlinks` that does not exist would point them at the wrong door.
     pub const FLAGS: Self = Self {
         view: "--view",
         analyze: "--analyze",
@@ -370,6 +376,7 @@ impl AxisNames {
         read_controls: "--no-gitignore",
         scan_depth: "--scan-depth",
         one_filesystem: "--one-filesystem",
+        follow_symlinks: "follow_symlinks",
         include: "--include",
         modified_since: "--modified-since",
         modified_before: "--modified-before",
@@ -405,6 +412,7 @@ impl AxisNames {
         read_controls: "read_controls",
         scan_depth: "max_depth",
         one_filesystem: "one_filesystem",
+        follow_symlinks: "follow_symlinks",
         include: "include",
         modified_since: "modified_since",
         modified_before: "modified_before",

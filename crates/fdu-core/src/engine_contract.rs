@@ -1722,6 +1722,14 @@ pub enum Error {
     Snapshot(String),
 
     /// A scan or watch setting has no supported safe semantics.
+    ///
+    /// Raised only where no request was built: a bound root, a raw scan, a watch
+    /// configuration, a scanner batch. A scope axis a request names is refused by
+    /// [`Request::validate`](crate::query::Request::validate) as
+    /// [`RequestError::ScopeUnsupported`](crate::query::RequestError::ScopeUnsupported)
+    /// before any stored state is read, so a surface renders it in its own words and
+    /// classifies it as the refused request it is. Both print the same sentence, because
+    /// both ask [`ScopeAxis::reason`](crate::query::ScopeAxis::reason) for it.
     #[error("unsupported scan configuration: {0}")]
     UnsupportedScanConfig(&'static str),
 

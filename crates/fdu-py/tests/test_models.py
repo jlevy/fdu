@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import re
+import sys
 from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 from pathlib import Path
 
+import fdu
 import pytest
 from fdu import (
     Analysis,
@@ -364,3 +366,28 @@ def test_opened_failures_use_the_opened_exception_hierarchy(
 
     with pytest.raises(public_error):
         _opened_call(fail)
+
+
+def test_a_scope_this_build_cannot_honour_is_a_refused_request(tmp_path: Path) -> None:
+    """An unsupported scan scope is an argument error, not the engine failing.
+
+    The kind is what this pins. The same refusal exits 2 on the command line, and a caller
+    here catches it as ``InvalidArgumentError``, which is a ``ValueError``; reporting it as
+    an engine error on one surface and a refused request on the other made one request
+    have two kinds of outcome, which is what the path-independence matrix measured for
+    ``--one-filesystem`` on Windows.
+
+    ``follow_symlinks`` is refused on every platform and ``one_filesystem`` only where the
+    platform has no device identity, so the first case is how this is checked anywhere.
+    """
+    (tmp_path / "file.txt").write_text("contents", encoding="utf-8")
+
+    with pytest.raises(InvalidArgumentError, match="follow_symlinks"):
+        opened.OpenedIndex.open(tmp_path, opened.OpenedOptions(follow_symlinks=True))
+
+    if sys.platform != "win32":
+        return
+    scope = ScanOptions(one_filesystem=True)
+    for route in (fdu.report, fdu.open, fdu.scan):
+        with pytest.raises(InvalidArgumentError, match="one_filesystem"):
+            route(tmp_path, scan=scope)

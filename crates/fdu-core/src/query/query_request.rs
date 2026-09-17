@@ -403,6 +403,13 @@ impl Request {
     }
 
     fn validate_against(&self, basis: &Basis) -> Result<(), RequestError> {
+        // Capability first, and against the scope the request names rather than against
+        // whatever a holder retained: a scope this build cannot honour has no answer at any
+        // delivery, so the refusal must not wait for a scan that a cache-only read never
+        // runs, nor for a snapshot that a cold read never loads.
+        if let Some(axis) = self.basis.scope.unsupported_axis() {
+            return Err(RequestError::ScopeUnsupported { axis, reason: axis.reason() });
+        }
         let views = self.query.views.len().saturating_add(self.query.omitted_views.len());
         if views > crate::MAX_REPORT_VIEWS {
             return Err(RequestError::ViewLimit {
@@ -412,6 +419,47 @@ impl Request {
         }
         check_views(&self.query.views, basis.content)?;
         check_observation(self.query.selection.ignored, basis.scope.read_controls)
+    }
+}
+
+/// A scan-scope axis a build may be unable to honour at all.
+///
+/// Not every axis a scan config carries: only the two whose support is a property of the
+/// build rather than of the tree, so asking for one is a request no delivery can carry out
+/// and no stored state can rescue. Which of them this build refuses is stated once, by
+/// `ScanConfig::unsupported_axis`, and asked there by [`Request::validate`] for every route
+/// and by the scan config's own validation for the engine-internal callers that never build
+/// a request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScopeAxis {
+    /// Walking into what a symbolic link points at.
+    FollowSymlinks,
+    /// Keeping the walk on the root's own filesystem.
+    OneFilesystem,
+}
+
+impl ScopeAxis {
+    /// Why the axis has no supported semantics, in the library's field names.
+    ///
+    /// One sentence per axis, and the only one: the engine-internal callers that report
+    /// [`Error::UnsupportedScanConfig`](crate::Error::UnsupportedScanConfig) print it
+    /// verbatim, and [`RequestError::message`] prints it with the axis renamed, so no
+    /// surface can drift from the rule by rewording its own copy.
+    pub const fn reason(self) -> &'static str {
+        match self {
+            Self::FollowSymlinks => {
+                "follow_symlinks requires cycle, root-boundary, and filesystem-boundary semantics"
+            }
+            Self::OneFilesystem => "one_filesystem requires platform device identity",
+        }
+    }
+
+    /// How `axes` names the axis.
+    const fn named(self, axes: &AxisNames) -> &'static str {
+        match self {
+            Self::FollowSymlinks => axes.follow_symlinks,
+            Self::OneFilesystem => axes.one_filesystem,
+        }
     }
 }
 
@@ -434,6 +482,13 @@ pub enum RequestError {
     ViewNeedsContent(ViewSpec),
     /// A selection by ignored state over a scan that observes no `.gitignore`.
     IgnoredWithoutObservation(IgnoredEntries),
+    /// A scan scope this build cannot honour, whatever the delivery.
+    ScopeUnsupported {
+        /// Which axis, so each surface names it in its own words.
+        axis: ScopeAxis,
+        /// The rule, one sentence, in the library's field names.
+        reason: &'static str,
+    },
     /// A read asks for another analyzer set than the retained index holds.
     ContentMismatch {
         /// The analyzers the index was built with.
@@ -479,6 +534,14 @@ impl RequestError {
                     IgnoredEntries::Include => axes.ignored,
                 },
                 axes.read_controls
+            ),
+            // The sentence the engine has always printed, with only the axis renamed: a
+            // Python caller reads the words they wrote, and the command line names its
+            // flag. The kind stays in front of it, so this refusal is the same sentence
+            // whichever door raised it.
+            Self::ScopeUnsupported { axis, reason } => format!(
+                "unsupported scan configuration: {}",
+                reason.replacen(axis.named(&AxisNames::FIELDS), axis.named(axes), 1)
             ),
             Self::ContentMismatch { held, requested } => format!(
                 "{analyze} {requested} cannot be answered by an index built with {analyze} \
@@ -912,6 +975,25 @@ mod tests {
                  the root again with analyze lines,code",
             ),
             (
+                RequestError::ScopeUnsupported {
+                    axis: ScopeAxis::OneFilesystem,
+                    reason: ScopeAxis::OneFilesystem.reason(),
+                },
+                "unsupported scan configuration: --one-filesystem requires platform device \
+                 identity",
+                "unsupported scan configuration: one_filesystem requires platform device identity",
+            ),
+            (
+                RequestError::ScopeUnsupported {
+                    axis: ScopeAxis::FollowSymlinks,
+                    reason: ScopeAxis::FollowSymlinks.reason(),
+                },
+                "unsupported scan configuration: follow_symlinks requires cycle, root-boundary, \
+                 and filesystem-boundary semantics",
+                "unsupported scan configuration: follow_symlinks requires cycle, root-boundary, \
+                 and filesystem-boundary semantics",
+            ),
+            (
                 RequestError::WatchContent,
                 "--analyze is not yet supported with --watch; use a one-shot report",
                 "analyze is not yet supported with watch; use a one-shot report",
@@ -1265,6 +1347,44 @@ mod tests {
         )
         .validate()
         .expect("metadata grouping never requires content I/O");
+    }
+
+    /// A scope this build cannot honour is refused by request validation itself.
+    ///
+    /// Both entry points, because they cover different routes: `validate` is what a
+    /// one-shot report and both command lines ask, `validate_read` what a retained index,
+    /// an opened root, and a watch session ask. Both weigh the scope the *request* names,
+    /// not the one a holder retained, so the refusal cannot wait for a scan that a
+    /// cache-only read never runs -- which is how one request came to name a snapshot miss
+    /// under one delivery and a scope refusal under another.
+    ///
+    /// `follow_symlinks` is refused on every platform, which is how the `one_filesystem`
+    /// rule -- refused only where the platform has no device identity -- is tested here.
+    #[test]
+    fn a_scope_this_build_cannot_honour_is_refused_by_request_validation() {
+        let held = basis(AnalysisSet::NONE, true);
+        let mut asked = held.clone();
+        asked.scope.follow_symlinks = true;
+        let request = request_with(&[ViewSpec::Summary], Selection::default(), asked);
+        let refusal = RequestError::ScopeUnsupported {
+            axis: ScopeAxis::FollowSymlinks,
+            reason: ScopeAxis::FollowSymlinks.reason(),
+        };
+
+        assert_eq!(request.validate(), Err(refusal.clone()));
+        assert_eq!(request.validate_read(&held), Err(refusal));
+        // The sentence is the one the capability rule states, not a copy of it kept here:
+        // an engine-internal caller that never builds a request prints the same words.
+        assert_eq!(
+            ScanConfig { follow_symlinks: true, ..ScanConfig::default() }
+                .unsupported_axis()
+                .expect("no build follows symbolic links")
+                .reason(),
+            ScopeAxis::FollowSymlinks.reason()
+        );
+        request_with(&[ViewSpec::Summary], Selection::default(), held)
+            .validate()
+            .expect("a scope this build honours is not refused");
     }
 
     /// Moved from the report reader: the refusal half of

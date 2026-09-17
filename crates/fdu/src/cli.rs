@@ -1763,7 +1763,7 @@ fn compose_skill_from(template: &str) -> String {
 mod tests {
     use super::*;
     use fdu_core::EntryKind;
-    use fdu_core::query::{Bound, SizeMetric, SortKey};
+    use fdu_core::query::{Bound, ScopeAxis, SizeMetric, SortKey};
     #[cfg(feature = "watch")]
     use std::time::UNIX_EPOCH;
 
@@ -2076,6 +2076,39 @@ mod tests {
             bare_help.lines().all(|line| line.trim_end() == line),
             "help should not pad blank lines with invisible whitespace"
         );
+    }
+
+    /// A scope this build cannot honour is a usage error here, not a failed operation.
+    ///
+    /// The kind, not only the sentence: the same request raises `ValueError` in Python, so
+    /// reporting it as an engine error exited 1 where the other surface refused -- one
+    /// request with two kinds of outcome, which the path-independence matrix reported as
+    /// 35 cross-surface differences for `--one-filesystem` on Windows.
+    ///
+    /// Driven through the refusal rather than through argv because the axes this build
+    /// cannot honour are unreachable from a flag: `--one-filesystem` is honoured wherever
+    /// the goldens run, and `follow_symlinks` is an `open` and library axis with no flag at
+    /// all. What the command line owns is this mapping, and this is it.
+    #[test]
+    fn a_scope_this_build_cannot_honour_exits_as_a_usage_error() {
+        for (axis, printed) in [
+            (ScopeAxis::OneFilesystem, "--one-filesystem requires platform device identity"),
+            (
+                ScopeAxis::FollowSymlinks,
+                "follow_symlinks requires cycle, root-boundary, and filesystem-boundary semantics",
+            ),
+        ] {
+            let refusal = RequestError::ScopeUnsupported { axis, reason: axis.reason() };
+            let error = usage(&refused(&refusal));
+            assert!(is_usage_error(&error), "{axis:?} must exit like the bad argument it is");
+
+            let mut diagnostic = Vec::new();
+            assert_eq!(finish(Err(error), false, &mut diagnostic, false), 2);
+            assert_eq!(
+                String::from_utf8(diagnostic).expect("diagnostics are UTF-8"),
+                format!("fdu: unsupported scan configuration: {printed}\n")
+            );
+        }
     }
 
     #[test]

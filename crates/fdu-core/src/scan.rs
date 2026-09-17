@@ -28,6 +28,7 @@ use crate::engine_contract::{
     Result, ScanScope,
 };
 use crate::index::{DetachedIndexBuilder, Index, IndexHandle, collect_child_expectations};
+use crate::query::ScopeAxis;
 use crate::stored_state::{ControlTierIdentity, EntryScope, EntryTierIdentity, SnapshotIdentity};
 
 // Keep the FFI exception at the platform boundary. The rest of the engine, including
@@ -356,22 +357,33 @@ impl ScanConfig {
         }
     }
 
+    /// The scope axis this build cannot honour, if any.
+    ///
+    /// The one statement of the capability rule, so it is asked rather than restated.
+    /// [`Request::validate`](crate::query::Request::validate) asks it before any stored
+    /// state is read, which is what makes a scope this build cannot honour refuse the same
+    /// way on every route, every cache policy, and both surfaces; [`Self::validate`] asks
+    /// it for the engine-internal callers -- a bound root, a raw scan, an observation --
+    /// that never carry a request.
+    pub(crate) const fn unsupported_axis(&self) -> Option<ScopeAxis> {
+        if self.follow_symlinks {
+            return Some(ScopeAxis::FollowSymlinks);
+        }
+        #[cfg(not(unix))]
+        if self.one_filesystem {
+            return Some(ScopeAxis::OneFilesystem);
+        }
+        None
+    }
+
     pub(crate) fn validate(&self) -> Result<()> {
         if self.batch_size == 0 || self.batch_size > MAX_SCAN_BATCH_SIZE {
             return Err(Error::UnsupportedScanConfig(
                 "batch_size must be nonzero and no greater than MAX_SCAN_BATCH_SIZE",
             ));
         }
-        if self.follow_symlinks {
-            return Err(Error::UnsupportedScanConfig(
-                "follow_symlinks requires cycle, root-boundary, and filesystem-boundary semantics",
-            ));
-        }
-        #[cfg(not(unix))]
-        if self.one_filesystem {
-            return Err(Error::UnsupportedScanConfig(
-                "one_filesystem requires platform device identity",
-            ));
+        if let Some(axis) = self.unsupported_axis() {
+            return Err(Error::UnsupportedScanConfig(axis.reason()));
         }
         Ok(())
     }
