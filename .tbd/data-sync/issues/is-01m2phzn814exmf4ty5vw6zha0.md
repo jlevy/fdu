@@ -5,7 +5,7 @@ title: "Content tier under the stored-state model: per-analyzer records, one def
 kind: epic
 status: open
 priority: 0
-version: 8
+version: 9
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - content
@@ -22,7 +22,7 @@ child_order_hints:
   - is-01m2pj0eknqard0k8za13xygp8
   - is-01m2phvqccpjdrbbsr5y3kcydr
 created_at: 2026-09-17T02:08:59.648Z
-updated_at: 2026-09-17T02:57:35.954Z
+updated_at: 2026-09-17T03:39:00.621Z
 ---
 The design problem behind fdu-gija. The analysis request is index state, set when a tree is opened,
 while every other report dimension (views, selection, size, ignored) is a Query parameter projected
@@ -36,3 +36,7 @@ Goal: carry the requested analyzer set on the report request; record coverage an
 (fdu-ky5m, fdu-7dj6); project metrics, derived words and analysis metadata to the request; restore
 containment reuse only on that basis; prove warm-equals-cold for every analyzer-set pair on every surface.
 The spec needs a design revision before implementation (the content-metrics plan is in done/).
+
+## Notes
+
+2026-09-17 (PR #78 review): Decisions: the analyzer registry owns metric definitions and coverage semantics; per-analyzer results and coverage; unrequested metrics absent (no key in JSON/YAML, None in Python); classification groups by name and registry only, content probes reported under detection and used only to pick the analyzer; document_words exists only with the words analyzer, and pages names raw_words otherwise.

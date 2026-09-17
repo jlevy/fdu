@@ -4,16 +4,16 @@ id: is-01m2esgptzqkfqja3qfatsve2q
 title: Key snapshots by scan scope so report, open, and --watch snapshots stop evicting each other
 kind: feature
 status: open
-priority: 0
-version: 6
+priority: 2
+version: 8
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - stack-followup
-  - release
+  - deferrable
 dependencies: []
 parent_id: is-01m2pmram44dgp78vm6xq4w7k7
 created_at: 2026-09-14T01:46:42.910Z
-updated_at: 2026-09-17T02:57:25.986Z
+updated_at: 2026-09-17T03:38:52.422Z
 ---
 One cause behind two stack follow-ups: PR #51 review COMMIT-3's cache split (fdu-etfj) and PR #52 review BUILD-3 (fdu-ughl, closed as documented). The fixer's recommended fix is to key snapshots by scan scope.
 
@@ -43,3 +43,5 @@ What remains: open / fdu.open versus report still keep different scopes at one c
 2026-09-14 DECISION (user, supersedes the default-off decision recorded earlier the same day): .gitignore information is built into the tool and the library, and is rolled up by default on every surface: CLI reports, --watch, library open, fdu.open/fdu.scan/fdu.report, and opened roots. Each request can turn it off (--no-gitignore on the CLI, read_controls=False in the library and Python). The typed 'not observed' answer from #57 stays, for requests that opt out. The CLI shows split totals, for example '1.2 GB (340 MB ignored)', plus --exclude-ignored and --only-ignored filters. Prerequisites before the default flips: fdu-1onj (the control budget degrades to partial instead of aborting), fdu-okne (a liftable bound named in the error), fdu-szkg (charges deduplicated by fingerprint), and a speed check against main with controls on. Consequence for this bead: with every surface observing by default, report, open and watch share one snapshot scope again, so the cache split disappears for defaults. Only an explicit opt-out produces a second scope.
 
 2026-09-15 (PR #65, dcdec5a and 3ddec4c): the default half is done. One-shot reports, `fdu PATH`, `fdu --watch`, `open`, and Python `fdu.open`, `fdu.scan`, and `fdu.report` all observe `.gitignore` by default, so default requests share one snapshot scope and warm-start from each other's snapshots, pinned by crates/fdu-core/src/execution.rs `a_default_reports_snapshot_serves_either_cache_only_report_but_not_the_reverse` and `a_cache_only_open_answers_from_a_default_reports_snapshot`, crates/fdu/tests/watch_controls.rs `a_watch_and_a_one_shot_report_start_warm_from_each_others_snapshot`, and the Python public smoke. The README and `CachePolicy::Auto` wording are revised. What remains is the opt-out half: `--no-gitignore` / `read_controls=False` is a second scope at the same cache path, so alternating it with a default request scans cold each time (pinned by the cli-cache golden 'Reading No .gitignore Is a Separate Scope'). Keying snapshots by scope would cure that; the CLI-and-Python report parity case in both orders is still owed.
+
+2026-09-17 (PR #78 review): Deferred by the plan: one store per root is path-independent once headers carry tier identities, so keying is a performance improvement; when un-deferred, cap identities per root and list them in cache status.
