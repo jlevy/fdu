@@ -5,7 +5,7 @@ title: "P1.1.5: Run the subset in CI and add the full-matrix workflow"
 kind: task
 status: in_progress
 priority: 0
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 delegate: claude-code@spud10
 labels:
@@ -15,7 +15,7 @@ parent_id: is-01m2pmr9n3mq4nb2r1pc328qpz
 hold: null
 hold_until: null
 created_at: 2026-09-17T05:46:33.437Z
-updated_at: 2026-09-17T06:17:19.141Z
+updated_at: 2026-09-17T06:44:19.755Z
 started_at: 2026-09-17T06:17:19.138Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 1: The Path-Independence Harness", commit 5. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
@@ -33,3 +33,7 @@ Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, s
 - Every golden diff is read and attributed to this commit; none is regenerated blind.
 
 Risks: the Python routes use a release wheel while the command line uses a debug build, so a stale `.venv-parity` goes undetected, as parity already accepts; `samesize_keepmtime` may differ on Windows, where ctime is creation time.
+
+## Notes
+
+Layer 1 of the core-models stack: branch claude/core-models-1-harness, PR https://github.com/jlevy/fdu/pull/79 (stack #80 on #78). Committed in 6c1c9f67 (harness, registry, targets) and 3106c945 (CI). Close when the layer merges.
