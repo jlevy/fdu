@@ -1819,6 +1819,25 @@ mod tests {
             .expect("nothing left to refuse");
     }
 
+    /// The other half of the watch-scope rule, which the command-line golden cannot
+    /// assert: where a build cannot honor `one_filesystem` at all, the request is refused
+    /// for that reason first, so the message differs by platform.
+    #[cfg(unix)]
+    #[test]
+    fn a_watch_refuses_one_filesystem_where_the_build_honors_it() {
+        let watch = Delivery {
+            cache: CachePolicy::Auto,
+            cache_path: None,
+            accept_partial: false,
+            watch: Some(WatchDelivery { interval: Duration::from_secs(2) }),
+            analysis_workers: 0,
+        };
+        let spec = RequestSpec { one_filesystem: true, ..RequestSpec::new(root()) };
+        let request = built(&spec);
+        request.validate().expect("one filesystem is honored on this build");
+        assert_eq!(request.validate_delivery(&watch), Err(RequestError::WatchScope));
+    }
+
     #[test]
     fn a_request_is_refused_past_the_views_one_report_carries() {
         let mut request = built(&RequestSpec::new(root()));

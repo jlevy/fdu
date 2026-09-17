@@ -613,14 +613,13 @@ Both scope flags are refused under `--watch`, because events can land outside a 
 scan and the index would silently diverge from the tree.
 Selection flags are not refused: they filter what a full index reports.
 
-```console
-$ fdu --watch --scan-depth 2 .
-! fdu: watching requires full scope and cannot be combined with --scan-depth or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --modified-since does work while watching, because it filters the retained index rather than narrowing the scan
-? 2
-```
+`--one-filesystem` is refused by the same rule, and is asserted in `query_request.rs`
+rather than here: where a build cannot honor it at all, such as a Windows host with no
+device identity, the request is refused for that reason first, so the message is not the
+same on every platform.
 
 ```console
-$ fdu --watch --one-filesystem .
+$ fdu --watch --scan-depth 2 .
 ! fdu: watching requires full scope and cannot be combined with --scan-depth or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --modified-since does work while watching, because it filters the retained index rather than narrowing the scan
 ? 2
 ```
