@@ -1,6 +1,6 @@
 //! Persisting an index to disk and reading it back.
 //!
-//! # Status: format v4 is a bounded bootstrap format
+//! # Status: format v5 is a bounded bootstrap format
 //!
 //! This module implements a flat, uncompressed writer and a bounded streaming reader.
 //! It exists so the cache *lifecycle* — semantic-scope invalidation, atomic replacement,
@@ -34,9 +34,10 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::engine_contract::{
-    Attrs, Coverage, EntryKind, Error, Freshness, Observation, Op, Result, ScanScope, Source,
+    Attrs, Coverage, EntryKind, Error, Freshness, Observation, Op, Result, Source,
 };
 use crate::index::{EntryId, Index, IndexHandle};
+use crate::stored_state::{ControlTierIdentity, SNAPSHOT_IDENTITY_BYTES, SnapshotIdentity};
 
 /// Leading magic. Distinguishes an fdu snapshot from any other file that lands here.
 const MAGIC: &[u8; 8] = b"FDUSNAP\x00";
@@ -61,7 +62,15 @@ const CRC32C_TABLES: [[u32; 256]; 8] = make_crc32c_tables();
 /// 4: the control section also carries both control limits, the budget and the line
 /// limit, and every refused control file, so a snapshot of an index that refused some
 /// reloads with the same coverage rather than claiming every rule applied.
-const FORMAT_VERSION: u32 = 4;
+///
+/// 5: the header records the identity of each tier the snapshot holds, in the
+/// stored-state model's fixed-width encodings: the entry tier's scope, type rules, and
+/// reducer set, and the control tier's observation and limits. Observation and limits are
+/// no longer mixed into the scope as one hash, and the limits moved out of the control
+/// section, so a section is re-admitted under the header's limits and one they would not
+/// admit is refused. The header also records `verified_started_at_ns`, the start of the
+/// pass that verified the facts the image encodes.
+const FORMAT_VERSION: u32 = 5;
 
 /// Version of the rules that decide which bucket an entry's bytes are tallied under.
 ///
@@ -89,23 +98,19 @@ const PATH_ENCODING_UTF8: u8 = 3;
 /// Marks the root's absent parent.
 const NO_PARENT: u32 = u32::MAX;
 
-/// Sentinel for an unlimited scan depth in the snapshot header.
-const UNLIMITED_DEPTH: u64 = u64::MAX;
+/// Byte offset of `verified_started_at_ns`: after the magic, the format version, the
+/// engine fingerprint, and the path encoding.
+///
+/// Fixed, so a save can read the stamp of the image already at its path without parsing
+/// the rest of it.
+const VERIFIED_STARTED_AT_OFFSET: usize = MAGIC.len() + 4 + 8 + 1;
 
-/// Scope flag for symlink-following traversal.
-const SCOPE_FOLLOW_SYMLINKS: u8 = 1 << 0;
+/// Byte offset of the tier identities, which follow the stamp.
+const IDENTITY_OFFSET: usize = VERIFIED_STARTED_AT_OFFSET + 8;
 
-/// Scope flag for staying on the root filesystem.
-const SCOPE_ONE_FILESYSTEM: u8 = 1 << 1;
-/// Scope flag for excluding native special objects.
-const SCOPE_EXCLUDE_SPECIAL: u8 = 1 << 2;
-
-/// All scope bits understood by this format version.
-const SCOPE_KNOWN_FLAGS: u8 = SCOPE_FOLLOW_SYMLINKS | SCOPE_ONE_FILESYSTEM | SCOPE_EXCLUDE_SPECIAL;
-
-/// Encoded byte width of the fixed scan-scope header.
+/// Byte offset of the root path, which follows the tier identities.
 #[cfg(test)]
-const SERIALIZED_SCOPE_BYTES: usize = 8 + 1 + 8 * 4;
+const ROOT_OFFSET: usize = IDENTITY_OFFSET + SNAPSHOT_IDENTITY_BYTES;
 
 /// Smallest possible on-disk record: parent slot, kind, name length, and six 8-byte
 /// attribute fields, with a zero-length name. Used to sanity-check a declared entry
@@ -181,10 +186,6 @@ const MEBIBYTE: usize = 1024 * 1024;
 /// it, so a snapshot the loader would reject is never written as if it were usable.
 const SNAPSHOT_CONTROL_TABLE_CEILING: usize = 256 * MEBIBYTE;
 
-/// Encoded tag before a control limit: no bound, or a bound whose bytes follow.
-const UNBOUNDED_CONTROL_LIMIT: u8 = 0;
-const BOUNDED_CONTROL_LIMIT: u8 = 1;
-
 /// Encoded refusal reasons.
 const REFUSED_FOR_BUDGET: u8 = 1;
 const REFUSED_FOR_LINE_LIMIT: u8 = 2;
@@ -227,7 +228,10 @@ pub fn save(index: &Index, path: &Path) -> Result<()> {
     buf.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
     buf.extend_from_slice(&engine_fingerprint().to_le_bytes());
     buf.push(path_encoding());
-    put_scope(&mut buf, index.scope())?;
+    debug_assert_eq!(buf.len(), VERIFIED_STARTED_AT_OFFSET);
+    buf.extend_from_slice(&index.verified_started_at_ns().to_le_bytes());
+    // Every tier identity shares the prologue's engine fingerprint, which is this build's.
+    buf.extend_from_slice(&index.snapshot_identity().encode()?);
 
     put_os_str(&mut buf, index.root_path().as_os_str())?;
 
@@ -272,11 +276,74 @@ pub fn save(index: &Index, path: &Path) -> Result<()> {
         buf.extend_from_slice(&attrs.dev.to_le_bytes());
     }
     put_controls(&mut buf, index.control_table())?;
-    let checksum = crc32c(&buf);
-    buf.extend_from_slice(&checksum.to_le_bytes());
-    buf.extend_from_slice(TRAILER);
+    publish(path, buf)
+}
 
-    write_atomically(path, &buf)
+/// Seal a snapshot payload and write it to `path`, keeping an image already there that
+/// encodes the same facts.
+///
+/// Two passes over an unchanged tree encode identical images except for the stamp of the
+/// pass that verified them, and rewriting for the stamp alone would give back the skip
+/// [`write_atomically`] exists for: on the default command that was a 14 MB write and
+/// `F_FULLFSYNC` on every run (exp-067). So an image at `path` that differs only in its
+/// stamp is kept, stamp included, and only its mtime moves. The kept stamp is the start of
+/// an earlier pass that verified exactly these facts, which can understate how recently
+/// they were verified and never overstates it.
+fn publish(path: &Path, mut payload: Vec<u8>) -> Result<()> {
+    if keep_equivalent_image(path, &payload) {
+        return Ok(());
+    }
+    seal(&mut payload);
+    // Nothing at `path` is this image under any stamp, this pass's included, so comparing
+    // again before replacing it could only repeat the answer.
+    replace_atomically(path, &payload)
+}
+
+/// Keep the file at `path` when it is `payload` sealed under any pass's stamp, moving only
+/// its mtime.
+///
+/// One read through one handle, comparing every payload byte before computing the
+/// checksum, so a changed tree stops at its first difference and costs no checksum here,
+/// and an unchanged one costs the one checksum sealing it would have. The checksum is
+/// still verified before the file is kept: a file whose own checksum is wrong reads as
+/// absent, and keeping it would keep every later run cold.
+fn keep_equivalent_image(path: &Path, payload: &[u8]) -> bool {
+    const FOOTER_BYTES: usize = CHECKSUM_BYTES + TRAILER.len();
+    let Ok(mut file) = fs::File::open(path) else { return false };
+    let Ok(metadata) = file.metadata() else { return false };
+    let image_len = payload.len().checked_add(FOOTER_BYTES).and_then(|len| u64::try_from(len).ok());
+    if image_len != Some(metadata.len()) {
+        return false;
+    }
+    let (before_stamp, after_stamp) =
+        (&payload[..VERIFIED_STARTED_AT_OFFSET], &payload[IDENTITY_OFFSET..]);
+    let mut stamp = [0u8; 8];
+    if !reads_as(&mut file, before_stamp)
+        || file.read_exact(&mut stamp).is_err()
+        || !reads_as(&mut file, after_stamp)
+    {
+        return false;
+    }
+    let checksum =
+        ![before_stamp, &stamp[..], after_stamp].into_iter().fold(u32::MAX, crc32c_update);
+    let mut footer = [0u8; FOOTER_BYTES];
+    if file.read_exact(&mut footer).is_err()
+        || footer[..CHECKSUM_BYTES] != checksum.to_le_bytes()
+        || footer[CHECKSUM_BYTES..] != *TRAILER
+        // A file that grew under the comparison is not this image.
+        || !matches!(file.read(&mut [0u8; 1]), Ok(0))
+    {
+        return false;
+    }
+    let _ = touch(path);
+    true
+}
+
+/// Append the checksum of every byte so far, then the trailer.
+fn seal(payload: &mut Vec<u8>) {
+    let checksum = crc32c(payload);
+    payload.extend_from_slice(&checksum.to_le_bytes());
+    payload.extend_from_slice(TRAILER);
 }
 
 /// Capture and persist a coherent shared-index image without holding its lock during
@@ -549,18 +616,22 @@ fn identify_prologue(reader: &mut impl Read, trailer_intact: bool) -> io::Result
         }
         std::cmp::Ordering::Equal => {}
     }
-    match invalid_as_none(read_u64(reader))? {
-        Some(fingerprint) if fingerprint == engine_fingerprint() => {}
+    let engine = match invalid_as_none(read_u64(reader))? {
+        Some(fingerprint) if fingerprint == engine_fingerprint() => fingerprint,
         Some(_) => return Ok(Identity::Stale(StaleReason::OtherEngine)),
         None => return Ok(Identity::Stale(StaleReason::Unreadable)),
-    }
+    };
     if !trailer_intact {
         // Truncation removes the tail and leaves the prologue readable, so a header-only
         // check would call a half-written file current.
         return Ok(Identity::Stale(StaleReason::Unreadable));
     }
-    Ok(match invalid_as_none(parse_header_fields(reader))? {
-        Some(info) => Identity::Current(info),
+    Ok(match invalid_as_none(parse_header_fields(reader, engine))? {
+        Some(header) => Identity::Current(crate::cache::SnapshotInfo {
+            root: header.root,
+            scope: header.identity.scan_scope(),
+            entries: header.entries,
+        }),
         None => Identity::Stale(StaleReason::Unreadable),
     })
 }
@@ -595,18 +666,33 @@ fn has_intact_trailer(file: &fs::File) -> io::Result<bool> {
     }
 }
 
-/// Parse the header fields after the magic, format version, and engine fingerprint.
-fn parse_header_fields(reader: &mut impl Read) -> ParseResult<crate::cache::SnapshotInfo> {
+/// The header fields after a snapshot's prologue.
+struct Header {
+    /// The start of the pass that verified the facts the image encodes.
+    verified_started_at_ns: i64,
+    /// The identity of every tier the snapshot holds.
+    identity: SnapshotIdentity,
+    /// The absolute root the snapshot describes.
+    root: PathBuf,
+    /// How many entry records follow.
+    entries: u64,
+}
+
+/// Parse the header fields after the magic, format version, and `engine` fingerprint.
+fn parse_header_fields(reader: &mut impl Read, engine: u64) -> ParseResult<Header> {
     if read_u8(reader)? != path_encoding() {
         return Err(ParseError::Invalid);
     }
-    let scope = read_scope(reader)?;
+    let verified_started_at_ns = read_i64(reader)?;
+    let identity =
+        SnapshotIdentity::decode(engine, &read_array::<_, SNAPSHOT_IDENTITY_BYTES>(reader)?)
+            .ok_or(ParseError::Invalid)?;
     let root = PathBuf::from(read_os_string(reader)?);
     let entries = read_u64(reader)?;
     if entries == 0 || entries > MAX_SNAPSHOT_ENTRIES {
         return Err(ParseError::Invalid);
     }
-    Ok(crate::cache::SnapshotInfo { root, scope, entries })
+    Ok(Header { verified_started_at_ns, identity, root, entries })
 }
 
 /// Parse a bounded payload. Records are applied one at a time so bootstrap paths are not
@@ -620,19 +706,14 @@ fn parse_stream(
     if read_array::<_, 8>(reader)? != *MAGIC {
         return Err(ParseError::Invalid);
     }
-    if read_u32(reader)? != FORMAT_VERSION || read_u64(reader)? != engine_fingerprint() {
+    let engine = engine_fingerprint();
+    if read_u32(reader)? != FORMAT_VERSION || read_u64(reader)? != engine {
         return Err(ParseError::Invalid);
     }
-    if read_u8(reader)? != path_encoding() {
-        return Err(ParseError::Invalid);
-    }
-    let scope = read_scope(reader)?;
+    let Header { verified_started_at_ns, identity, root: root_path, entries: count } =
+        parse_header_fields(reader, engine)?;
+    let scope = identity.scan_scope();
     if scope.type_rules_fingerprint != types.fingerprint() {
-        return Err(ParseError::Invalid);
-    }
-    let root_path = PathBuf::from(read_os_string(reader)?);
-    let count = read_u64(reader)?;
-    if count == 0 || count > MAX_SNAPSHOT_ENTRIES {
         return Err(ParseError::Invalid);
     }
     let minimum_body = count
@@ -643,6 +724,8 @@ fn parse_stream(
     }
 
     let mut index = Index::new_with_scope_and_types(&root_path, scope, types);
+    // The facts below were verified by the pass that wrote them, not by this load.
+    index.set_verified_started_at_ns(verified_started_at_ns);
     // Everything this loader inserts describes the tree as the snapshot found it, not
     // as this process has seen it. Stamping the entries `Cached` is what lets a
     // consumer paint them immediately and label them honestly; without it a loaded
@@ -695,7 +778,7 @@ fn parse_stream(
         ids.push(id);
     }
 
-    let controls = read_controls(reader)?;
+    let controls = read_controls(reader, identity.controls)?;
     index.install_controls(controls).map_err(|_| ParseError::Invalid)?;
 
     let mut extra = [0u8; 1];
@@ -757,15 +840,27 @@ fn read_bytes(reader: &mut impl Read) -> ParseResult<Vec<u8>> {
     }
 }
 
-/// Read the control section: retained sources, then the budget and the line limit, then
-/// refusals.
+/// Read the control section, retained sources then refusals, for the control tier the
+/// header records.
 ///
-/// Every source is admitted again under the recorded limits. The charge does not depend
-/// on admission order, so a table a scan retained always fits; one that does not, a
-/// repeated path, a refusal naming a retained or repeated path, or a refusal by a limit
-/// recorded as unbounded was not written by [`save`].
-fn read_controls(reader: &mut impl Read) -> ParseResult<crate::control::ControlTable> {
+/// Every source is admitted again under the header's limits. The charge does not depend on
+/// admission order, so a table a scan retained always fits; one that does not, a repeated
+/// path, a refusal naming a retained or repeated path, a refusal by a limit the header
+/// records as unbounded, or any source or refusal under a tier that observed nothing, was
+/// not written by [`save`].
+fn read_controls(
+    reader: &mut impl Read,
+    tier: ControlTierIdentity,
+) -> ParseResult<crate::control::ControlTable> {
+    let limits = match tier {
+        ControlTierIdentity::Observed { limits } => limits,
+        // Limits decide nothing when nothing was observed, and the section must be empty.
+        ControlTierIdentity::NotObserved => crate::control::ControlLimits::default(),
+    };
     let control_count = read_u32(reader)?;
+    if control_count != 0 && !tier.is_observed() {
+        return Err(ParseError::Invalid);
+    }
     if usize::try_from(control_count)
         .map_err(|_| ParseError::Invalid)?
         .saturating_mul(crate::control::CONTROL_SOURCE_OVERHEAD)
@@ -784,10 +879,6 @@ fn read_controls(reader: &mut impl Read) -> ParseResult<crate::control::ControlT
         }
         sources.push((path, source));
     }
-    let limits = crate::control::ControlLimits {
-        budget: read_control_limit(reader)?,
-        line_limit: read_control_limit(reader)?,
-    };
     let mut controls = crate::control::ControlTable::with_limits(limits);
     for (path, source) in sources {
         let admission = controls.upsert(&path, source).map_err(|_| ParseError::Invalid)?;
@@ -799,6 +890,9 @@ fn read_controls(reader: &mut impl Read) -> ParseResult<crate::control::ControlT
         return Err(ParseError::Invalid);
     }
     let refused = read_u32(reader)?;
+    if refused != 0 && !tier.is_observed() {
+        return Err(ParseError::Invalid);
+    }
     for _ in 0..refused {
         let path = PathBuf::from(read_os_string(reader)?);
         let reason = match read_u8(reader)? {
@@ -816,17 +910,6 @@ fn read_controls(reader: &mut impl Read) -> ParseResult<crate::control::ControlT
         controls.record_refusal(&path, reason).map_err(|_| ParseError::Invalid)?;
     }
     Ok(controls)
-}
-
-/// Read one control limit [`put_control_limit`] wrote.
-fn read_control_limit(reader: &mut impl Read) -> ParseResult<Option<usize>> {
-    match read_u8(reader)? {
-        UNBOUNDED_CONTROL_LIMIT => Ok(None),
-        BOUNDED_CONTROL_LIMIT => {
-            usize::try_from(read_u64(reader)?).map(Some).map_err(|_| ParseError::Invalid)
-        }
-        _ => Err(ParseError::Invalid),
-    }
 }
 
 fn read_control_bytes(reader: &mut impl Read) -> ParseResult<Vec<u8>> {
@@ -863,7 +946,8 @@ fn put_bytes(buf: &mut Vec<u8>, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Write the control section [`read_controls`] reads.
+/// Write the control section [`read_controls`] reads: sources, then refusals. The limits
+/// they were admitted under are the header's control tier identity.
 fn put_controls(buf: &mut Vec<u8>, controls: &crate::control::ControlTable) -> Result<()> {
     if controls.retained_cost() > SNAPSHOT_CONTROL_TABLE_CEILING
         || controls.source_bytes() > SNAPSHOT_CONTROL_TABLE_CEILING
@@ -886,8 +970,6 @@ fn put_controls(buf: &mut Vec<u8>, controls: &crate::control::ControlTable) -> R
         buf.extend_from_slice(&len.to_le_bytes());
         buf.extend_from_slice(source);
     }
-    put_control_limit(buf, controls.limits().budget)?;
-    put_control_limit(buf, controls.limits().line_limit)?;
     let refused = u32::try_from(controls.refused_len())
         .map_err(|_| Error::Snapshot("refused controls exceed u32 capacity".into()))?;
     buf.extend_from_slice(&refused.to_le_bytes());
@@ -901,70 +983,9 @@ fn put_controls(buf: &mut Vec<u8>, controls: &crate::control::ControlTable) -> R
     Ok(())
 }
 
-/// Write one control limit as a tag, then its bytes when bounded, so no bound can be
-/// mistaken for a sentinel value.
-fn put_control_limit(buf: &mut Vec<u8>, limit: Option<usize>) -> Result<()> {
-    match limit {
-        None => buf.push(UNBOUNDED_CONTROL_LIMIT),
-        Some(limit) => {
-            let limit = u64::try_from(limit)
-                .map_err(|_| Error::Snapshot("control limit overflow".into()))?;
-            buf.push(BOUNDED_CONTROL_LIMIT);
-            buf.extend_from_slice(&limit.to_le_bytes());
-        }
-    }
-    Ok(())
-}
-
 fn is_snapshot_name(name: &OsStr) -> bool {
     let mut components = Path::new(name).components();
     matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
-}
-
-fn put_scope(buf: &mut Vec<u8>, scope: ScanScope) -> Result<()> {
-    let max_depth = scope.max_depth.map_or(Ok(UNLIMITED_DEPTH), |depth| {
-        u64::try_from(depth).map_err(|_| Error::Snapshot("scan depth overflow".into()))
-    })?;
-    buf.extend_from_slice(&max_depth.to_le_bytes());
-    let mut flags = 0u8;
-    if scope.follow_symlinks {
-        flags |= SCOPE_FOLLOW_SYMLINKS;
-    }
-    if scope.one_filesystem {
-        flags |= SCOPE_ONE_FILESYSTEM;
-    }
-    if scope.exclude_special {
-        flags |= SCOPE_EXCLUDE_SPECIAL;
-    }
-    buf.push(flags);
-    buf.extend_from_slice(&scope.hidden_fingerprint.to_le_bytes());
-    buf.extend_from_slice(&scope.ignore_rules_fingerprint.to_le_bytes());
-    buf.extend_from_slice(&scope.type_rules_fingerprint.to_le_bytes());
-    buf.extend_from_slice(&scope.reducers_fingerprint.to_le_bytes());
-    Ok(())
-}
-
-fn read_scope(reader: &mut impl Read) -> ParseResult<ScanScope> {
-    let depth = read_u64(reader)?;
-    let max_depth = if depth == UNLIMITED_DEPTH {
-        None
-    } else {
-        Some(usize::try_from(depth).map_err(|_| ParseError::Invalid)?)
-    };
-    let flags = read_u8(reader)?;
-    if flags & !SCOPE_KNOWN_FLAGS != 0 {
-        return Err(ParseError::Invalid);
-    }
-    Ok(ScanScope {
-        max_depth,
-        follow_symlinks: flags & SCOPE_FOLLOW_SYMLINKS != 0,
-        one_filesystem: flags & SCOPE_ONE_FILESYSTEM != 0,
-        hidden_fingerprint: read_u64(reader)?,
-        exclude_special: flags & SCOPE_EXCLUDE_SPECIAL != 0,
-        ignore_rules_fingerprint: read_u64(reader)?,
-        type_rules_fingerprint: read_u64(reader)?,
-        reducers_fingerprint: read_u64(reader)?,
-    })
 }
 
 #[cfg(unix)]
@@ -1037,9 +1058,6 @@ fn os_string_from_bytes(bytes: &[u8]) -> Option<OsString> {
 /// or the whole new one. The temporary must be a sibling for that to hold — a rename
 /// across filesystems is a copy, and copies are not atomic.
 pub(crate) fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
-    let parent = parent_dir(path);
-    fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
-
     // Serialization is deterministic -- pre-order over name-sorted children, the same
     // fields in the same order -- so an unchanged tree encodes to the bytes already on
     // disk, and replacing them is a full write, an `F_FULLFSYNC`, and a rename that
@@ -1048,16 +1066,17 @@ pub(crate) fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
     // about 70 ms of a 375 ms run over 175k entries (exp-066). Comparing against the
     // page-cached file costs a few milliseconds and the cache cannot go stale, because
     // the bytes are the same bytes.
-    if same_bytes_on_disk(path, bytes) {
-        // The file's mtime is the snapshot's "as of": the loader reads it as the
-        // observation time of every cached entry. The tree was just verified to encode
-        // identically, so that time is now, and moving the mtime says so without
-        // writing the payload. Best effort: a stale "as of" understates freshness,
-        // which fails safe.
-        let _ = touch(path);
+    if keep_identical(path, bytes) {
         return Ok(());
     }
+    replace_atomically(path, bytes)
+}
 
+/// [`write_atomically`] without first comparing against the file at `path`, for a caller
+/// that has already compared.
+fn replace_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
+    let parent = parent_dir(path);
+    fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
     let (tmp, mut file) = create_temp_file(path, parent)?;
     let write_then_sync = file.write_all(bytes).and_then(|()| file.sync_all());
     if let Err(e) = write_then_sync {
@@ -1074,6 +1093,20 @@ pub(crate) fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// Leave `path` in place when it already holds exactly `bytes`, moving only its mtime.
+///
+/// The file's mtime is the snapshot's "as of": the loader reads it as the observation time
+/// of every cached entry. The tree was just verified to encode identically, so that time is
+/// now, and moving the mtime says so without writing the payload. Best effort: a stale "as
+/// of" understates freshness, which fails safe.
+fn keep_identical(path: &Path, bytes: &[u8]) -> bool {
+    if !same_bytes_on_disk(path, bytes) {
+        return false;
+    }
+    let _ = touch(path);
+    true
+}
+
 /// Whether `path` already holds exactly `bytes`.
 ///
 /// Streamed in 1 MiB pieces rather than read whole, so deciding not to write a 14 MB
@@ -1086,23 +1119,30 @@ fn same_bytes_on_disk(path: &Path, bytes: &[u8]) -> bool {
     if metadata.len() != u64::try_from(bytes.len()).unwrap_or(u64::MAX) {
         return false;
     }
-    let mut buffer = vec![0u8; 1 << 20];
+    // A file that holds every byte and then more is not the same file.
+    reads_as(&mut file, bytes) && matches!(file.read(&mut [0u8; 1]), Ok(0))
+}
+
+/// Whether the next bytes `file` yields are exactly `bytes`.
+///
+/// Streamed in 1 MiB pieces, and stopping at the first piece that differs; any read error
+/// or early end reads as "different".
+fn reads_as(file: &mut fs::File, bytes: &[u8]) -> bool {
+    let mut buffer = vec![0u8; bytes.len().min(1 << 20)];
     let mut offset = 0usize;
     while offset < bytes.len() {
-        let read = match file.read(&mut buffer) {
+        let want = buffer.len().min(bytes.len() - offset);
+        let read = match file.read(&mut buffer[..want]) {
             Ok(0) | Err(_) => return false,
             Ok(read) => read,
         };
-        let Some(end) = offset.checked_add(read).filter(|end| *end <= bytes.len()) else {
-            return false;
-        };
+        let end = offset + read;
         if buffer[..read] != bytes[offset..end] {
             return false;
         }
         offset = end;
     }
-    // A file that holds every byte and then more is not the same file.
-    matches!(file.read(&mut buffer[..1]), Ok(0))
+    true
 }
 
 /// Move `path`'s modification time to now without touching its contents.
@@ -1246,7 +1286,7 @@ mod tests {
     }
 
     fn entry_count_offset(bytes: &[u8]) -> usize {
-        let root_len_at = MAGIC.len() + 4 + 8 + 1 + SERIALIZED_SCOPE_BYTES;
+        let root_len_at = ROOT_OFFSET;
         let root_len = u32::from_le_bytes(
             bytes[root_len_at..root_len_at + 4]
                 .try_into()
@@ -1633,8 +1673,8 @@ mod tests {
 
     /// A control table must enforce the limits its scope was taken under. A hand-built index
     /// whose scope claims other limits is refused at save with a typed error, a snapshot
-    /// whose control section disagrees with its header's scope fails closed at load, and
-    /// `Index::new_with_config` builds an index whose table and scope agree.
+    /// whose control section its header's control tier would not admit fails closed at
+    /// load, and `Index::new_with_config` builds an index whose table and scope agree.
     #[test]
     fn control_limits_that_disagree_with_the_scope_are_refused_at_save_and_load() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -1659,25 +1699,36 @@ mod tests {
         );
         assert!(!path.exists(), "nothing is written");
 
-        let agreeing = Index::new_with_config("/some/root", &lifted);
+        let mut agreeing = Index::new_with_config("/some/root", &lifted);
+        agreeing.apply_ok(&Observation::new(vec![Op::ControlUpsert {
+            path: PathBuf::from(".gitignore"),
+            source: b"*.log\n".to_vec(),
+        }]));
         assert_eq!(agreeing.scope(), lifted.scope());
         save(&agreeing, &path).expect("save an index whose table enforces its scope's limits");
         let restored = load(&path).expect("load").expect("snapshot present");
         assert_eq!(restored.control_coverage(), agreeing.control_coverage());
+        assert_eq!(restored.snapshot_identity(), lifted.snapshot_identity());
 
-        // The section ends with the budget's tag, the line limit's tag and bytes, and the
-        // refusal count. Claiming a line limit one byte longer than the scope's is a
-        // CRC-valid snapshot no save wrote, so it fails closed like any other corruption.
-        let mut forged = fs::read(&path).expect("read snapshot");
-        let footer = CHECKSUM_BYTES + TRAILER.len();
-        let line_limit_at = forged.len() - footer - 4 - 8;
-        assert_eq!(forged[line_limit_at - 1], BOUNDED_CONTROL_LIMIT);
-        let recorded = u64::try_from(crate::control::DEFAULT_CONTROL_LINE_LIMIT).expect("limit");
-        assert_eq!(forged[line_limit_at..line_limit_at + 8], recorded.to_le_bytes());
-        forged[line_limit_at..line_limit_at + 8].copy_from_slice(&(recorded + 1).to_le_bytes());
-        rewrite_checksum(&mut forged);
-        fs::write(&path, &forged).expect("write forged limits");
-        assert!(load(&path).expect("forged equals absent").is_none());
+        // The limits live only in the header's control tier. A CRC-valid snapshot whose
+        // header claims a line limit the retained source exceeds, or claims no control
+        // state beside a retained source, was written by no save, so it fails closed like
+        // any other corruption.
+        let saved = fs::read(&path).expect("read snapshot");
+        let controls_at = IDENTITY_OFFSET + crate::stored_state::ENTRY_TIER_BYTES;
+        let controls = controls_at..controls_at + crate::stored_state::CONTROL_TIER_BYTES;
+        let forge = |tier: ControlTierIdentity| {
+            let mut forged = saved.clone();
+            forged[controls.clone()].copy_from_slice(&tier.encode().expect("encode"));
+            rewrite_checksum(&mut forged);
+            fs::write(&path, &forged).expect("write forged limits");
+            load(&path).expect("forged equals absent")
+        };
+        let tight = crate::control::ControlLimits { line_limit: Some(1), ..lifted.control_limits };
+        assert!(forge(ControlTierIdentity::Observed { limits: tight }).is_none());
+        assert!(forge(ControlTierIdentity::NotObserved).is_none());
+        // The same splice with the saved tier restores, so the splice is not what failed.
+        assert!(forge(lifted.control_identity()).is_some());
     }
 
     /// An index whose control table refused some sources, and its path-ordered tail.
@@ -1770,14 +1821,12 @@ mod tests {
         // with the platform's own path encoding, so the same bytes mean the same on every
         // target.
         let defaults = crate::control::ControlLimits::default();
-        let section = |limits: crate::control::ControlLimits, refusals: &[(&str, u8)]| {
+        let section = |refusals: &[(&str, u8)]| {
             let mut section = Vec::new();
             section.extend_from_slice(&1_u32.to_le_bytes());
             put_os_str(&mut section, OsStr::new(".gitignore")).expect("retained path");
             section.extend_from_slice(&6_u32.to_le_bytes());
             section.extend_from_slice(b"*.log\n");
-            put_control_limit(&mut section, limits.budget).expect("budget");
-            put_control_limit(&mut section, limits.line_limit).expect("line limit");
             let count = u32::try_from(refusals.len()).expect("few refusals");
             section.extend_from_slice(&count.to_le_bytes());
             for (refusal, reason) in refusals {
@@ -1793,7 +1842,8 @@ mod tests {
             (no_budget, &[("a/.gitignore", REFUSED_FOR_LINE_LIMIT)][..]),
             (no_line_limit, &[("a/.gitignore", REFUSED_FOR_BUDGET)][..]),
         ] {
-            let valid = read_controls(&mut section(limits, refusals).as_slice())
+            let tier = ControlTierIdentity::Observed { limits };
+            let valid = read_controls(&mut section(refusals).as_slice(), tier)
                 .expect("a well-formed control section");
             assert_eq!((valid.len(), valid.refused_len()), (1, 1));
         }
@@ -1806,13 +1856,21 @@ mod tests {
             (no_budget, &[("a/.gitignore", REFUSED_FOR_BUDGET)][..]),
             (no_line_limit, &[("a/.gitignore", REFUSED_FOR_LINE_LIMIT)][..]),
         ] {
+            let tier = ControlTierIdentity::Observed { limits };
             assert!(
                 matches!(
-                    read_controls(&mut section(limits, refusals).as_slice()),
+                    read_controls(&mut section(refusals).as_slice(), tier),
                     Err(ParseError::Invalid)
                 ),
                 "{limits:?} {refusals:?}"
             );
+        }
+        // A tier that observed nothing holds no source and no refusal.
+        for refusals in [&[][..], &[("a/.gitignore", REFUSED_FOR_BUDGET)][..]] {
+            assert!(matches!(
+                read_controls(&mut section(refusals).as_slice(), ControlTierIdentity::NotObserved),
+                Err(ParseError::Invalid)
+            ));
         }
     }
 
@@ -2043,7 +2101,7 @@ mod tests {
         save(&sample_index(), &path).expect("save");
 
         let mut bytes = fs::read(&path).expect("read");
-        let root_len_at = MAGIC.len() + 4 + 8 + 1 + SERIALIZED_SCOPE_BYTES;
+        let root_len_at = ROOT_OFFSET;
         bytes[root_len_at..root_len_at + 4].copy_from_slice(&(MAX_PATH_BYTES + 1).to_le_bytes());
         rewrite_checksum(&mut bytes);
         fs::write(&path, &bytes).expect("write");
@@ -2435,24 +2493,187 @@ mod tests {
     fn semantic_scan_scope_round_trips() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("snap.fdu");
-        let scope = ScanScope {
-            max_depth: Some(7),
-            follow_symlinks: false,
-            one_filesystem: true,
-            hidden_fingerprint: 5,
-            exclude_special: true,
-            // The identity of the default control limits, which the table of an index built
-            // with `new_with_scope` enforces; any other value is refused at save.
-            ignore_rules_fingerprint: crate::test_support::observing_controls()
-                .ignore_rules_fingerprint,
+        let entries = crate::EntryTierIdentity {
+            engine: engine_fingerprint(),
+            scope: crate::EntryScope {
+                max_depth: Some(7),
+                follow_symlinks: false,
+                one_filesystem: true,
+                hidden_fingerprint: 5,
+                exclude_special: true,
+            },
             type_rules_fingerprint: crate::classify::type_rule_fingerprint(),
             reducers_fingerprint: 33,
         };
-        let index = Index::new_with_scope("/some/root", scope);
+        // The default control limits, which the table of an index built with
+        // `new_with_scope` enforces; any other limits are refused at save.
+        for controls in [
+            ControlTierIdentity::Observed { limits: crate::control::ControlLimits::default() },
+            ControlTierIdentity::NotObserved,
+        ] {
+            let identity = SnapshotIdentity { entries, controls };
+            let index = Index::new_with_scope("/some/root", identity.scan_scope());
 
-        save(&index, &path).expect("save");
+            save(&index, &path).expect("save");
+            let restored = load(&path).expect("load").expect("present");
+            assert_eq!(restored.snapshot_identity(), identity);
+            assert_eq!(restored.scope(), identity.scan_scope());
+            let info = read_header(&path).expect("read header").expect("current");
+            assert_eq!(info.scope, identity.scan_scope());
+        }
+    }
+
+    /// Reading control files decides which entries are ignored, never which entries exist,
+    /// so the snapshots of one tree with observation on and off record one entry tier, byte
+    /// for byte, and differ only in the control tier.
+    #[test]
+    fn controls_on_and_off_snapshots_share_the_entry_identity() {
+        let tree = tempfile::tempdir().expect("tree");
+        fs::write(tree.path().join(".gitignore"), b"*.log\n").expect("write");
+        fs::write(tree.path().join("debug.log"), b"log").expect("write");
+        fs::create_dir(tree.path().join("src")).expect("mkdir");
+        fs::write(tree.path().join("src/main.rs"), b"fn main() {}\n").expect("write");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let observed = crate::ScanConfig::default();
+        let blind = crate::ScanConfig { read_controls: false, ..observed.clone() };
+
+        let saved = [(&observed, "on.fdu"), (&blind, "off.fdu")].map(|(config, name)| {
+            let (index, _) = crate::scan::scan_into_index(tree.path(), config).expect("scan");
+            let path = dir.path().join(name);
+            save(&index, &path).expect("save");
+            let restored = load(&path).expect("load").expect("present");
+            assert_eq!(restored.snapshot_identity(), config.snapshot_identity());
+            (restored.snapshot_identity(), fs::read(&path).expect("read"))
+        });
+        let [(on, on_bytes), (off, off_bytes)] = saved;
+
+        assert_eq!(on.entries, off.entries);
+        assert_ne!(on.controls, off.controls);
+        let entry_tier = IDENTITY_OFFSET..IDENTITY_OFFSET + crate::stored_state::ENTRY_TIER_BYTES;
+        let control_tier = entry_tier.end..ROOT_OFFSET;
+        assert_eq!(on_bytes[entry_tier.clone()], off_bytes[entry_tier]);
+        assert_ne!(on_bytes[control_tier.clone()], off_bytes[control_tier]);
+    }
+
+    /// A format-4 snapshot, laid out as that format wrote it, is fdu's and stale: the
+    /// prologue kept its offsets, so the cache lifecycle names its version rather than
+    /// calling it foreign, and loading it is a miss.
+    #[test]
+    fn a_v4_snapshot_is_older_format() {
+        const V4: u32 = 4;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("v4.fdu");
+
+        let mut image = MAGIC.to_vec();
+        image.extend_from_slice(&V4.to_le_bytes());
+        let mut engine = 0xcbf2_9ce4_8422_2325_u64;
+        for byte in env!("CARGO_PKG_VERSION")
+            .as_bytes()
+            .iter()
+            .chain(&V4.to_le_bytes())
+            .chain(&CLASSIFICATION_VERSION.to_le_bytes())
+        {
+            engine = (engine ^ u64::from(*byte)).wrapping_mul(0x1000_0000_01b3);
+        }
+        image.extend_from_slice(&engine.to_le_bytes());
+        image.push(path_encoding());
+        // The v4 scope: depth, flags, and the hidden, ignore-rules, type-rules, and reducer
+        // fingerprints.
+        image.extend_from_slice(&u64::MAX.to_le_bytes());
+        image.push(0);
+        let scope = crate::ScanConfig::default().scope();
+        for fingerprint in [
+            scope.hidden_fingerprint,
+            scope.ignore_rules_fingerprint,
+            scope.type_rules_fingerprint,
+            scope.reducers_fingerprint,
+        ] {
+            image.extend_from_slice(&fingerprint.to_le_bytes());
+        }
+        put_os_str(&mut image, OsStr::new("/some/root")).expect("root");
+        image.extend_from_slice(&1_u64.to_le_bytes());
+        image.extend_from_slice(&NO_PARENT.to_le_bytes());
+        image.push(EntryKind::Dir as u8);
+        put_os_str(&mut image, OsStr::new("")).expect("root name");
+        image.extend_from_slice(&[0; 6 * 8]);
+        // The v4 control section: no sources, both default limits, no refusals.
+        image.extend_from_slice(&0_u32.to_le_bytes());
+        for limit in [crate::DEFAULT_CONTROL_BUDGET, crate::DEFAULT_CONTROL_LINE_LIMIT] {
+            image.push(1);
+            image.extend_from_slice(&u64::try_from(limit).expect("limit").to_le_bytes());
+        }
+        image.extend_from_slice(&0_u32.to_le_bytes());
+        let checksum = crc32c(&image);
+        image.extend_from_slice(&checksum.to_le_bytes());
+        image.extend_from_slice(TRAILER);
+        fs::write(&path, &image).expect("write v4 image");
+
+        assert!(matches!(
+            identify(&path).expect("identify"),
+            Some(Identity::Stale(crate::cache::StaleReason::OlderFormat { version: V4 }))
+        ));
+        assert!(read_header(&path).expect("read header").is_none());
+        assert!(load(&path).expect("load").is_none());
+        assert_eq!(
+            crate::cache::cache_status(&path).expect("status").state,
+            crate::cache::CacheState::Stale(crate::cache::StaleReason::OlderFormat { version: V4 })
+        );
+    }
+
+    /// A later pass over an unchanged tree encodes the same facts under a newer pass start.
+    /// The image already on disk is kept, its stamp included, rather than rewritten for the
+    /// stamp alone; a changed tree is written with the new pass's stamp.
+    #[test]
+    fn a_later_pass_over_the_same_facts_keeps_the_snapshot_in_place() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snap.fdu");
+        let stamp_at = |bytes: &[u8]| {
+            i64::from_le_bytes(
+                bytes[VERIFIED_STARTED_AT_OFFSET..IDENTITY_OFFSET].try_into().expect("stamp"),
+            )
+        };
+
+        let mut first = sample_index();
+        first.set_verified_started_at_ns(1_000);
+        save(&first, &path).expect("first save");
+        let written = fs::metadata(&path).expect("metadata");
+        assert_eq!(stamp_at(&fs::read(&path).expect("read")), 1_000);
+        assert_eq!(load(&path).expect("load").expect("present").verified_started_at_ns(), 1_000);
+
+        let mut later = sample_index();
+        later.set_verified_started_at_ns(2_000);
+        let before = std::time::SystemTime::now();
+        save(&later, &path).expect("unchanged save");
+        let kept = fs::metadata(&path).expect("metadata");
+        assert_same_file(&written, &kept);
+        assert!(kept.modified().expect("mtime") >= before);
+        assert_eq!(stamp_at(&fs::read(&path).expect("read")), 1_000);
+        assert!(load(&path).expect("load").is_some(), "the kept image is still valid");
+
+        // A kept image must still verify: one whose own checksum is wrong reads as absent,
+        // so it is replaced rather than kept under an older stamp forever.
+        let mut corrupt = fs::read(&path).expect("read");
+        let checksum_at = corrupt.len() - TRAILER.len() - CHECKSUM_BYTES;
+        corrupt[checksum_at] ^= 0xff;
+        fs::write(&path, &corrupt).expect("corrupt the checksum");
+        assert!(load(&path).expect("load").is_none());
+        save(&later, &path).expect("save over a corrupt image");
+        assert_eq!(stamp_at(&fs::read(&path).expect("read")), 2_000);
+        assert!(load(&path).expect("load").is_some());
+
+        let mut changed = sample_index();
+        changed.set_verified_started_at_ns(3_000);
+        changed.apply_ok(&Observation::new(vec![Op::Upsert {
+            path: PathBuf::from("notes.md"),
+            kind: EntryKind::File,
+            attrs: attrs(8, 30),
+        }]));
+        save(&changed, &path).expect("changed save");
+        let rewritten = fs::read(&path).expect("read");
+        assert_eq!(stamp_at(&rewritten), 3_000);
         let restored = load(&path).expect("load").expect("present");
-        assert_eq!(restored.scope(), scope);
+        assert_eq!(restored.verified_started_at_ns(), 3_000);
+        assert_eq!(restored.total(), changed.total());
     }
 
     #[cfg(unix)]

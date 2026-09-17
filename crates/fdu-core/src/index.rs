@@ -850,6 +850,14 @@ pub struct Index {
     /// When the snapshot this index was loaded from captured the tree. Zero when the
     /// index was never loaded from one.
     captured_at_ns: i64,
+    /// The start of the pass that verified the facts this index holds, as a snapshot of it
+    /// records: construction for an index built by a walk, which starts it, and the stamp
+    /// a loaded snapshot carried for one loaded from a snapshot.
+    ///
+    /// Never later than the truth. A reconciliation that verifies a loaded index again
+    /// leaves it at the snapshot's stamp, which understates how recently the facts were
+    /// verified.
+    verified_started_at_ns: i64,
     /// Subtrees a completed reconciliation has verified, with when it finished.
     ///
     /// Kept as intervals rather than per-entry flags because a sweep verifies
@@ -1681,6 +1689,7 @@ impl Index {
             },
             true,
         );
+        let constructed_at_ns = Self::now_unix_nanos();
         Self {
             root_path: root_path.into(),
             scope,
@@ -1700,8 +1709,9 @@ impl Index {
             issue_epochs: Vec::new(),
             serving,
             applying_source: Source::Scanned,
-            scanned_at_ns: Self::now_unix_nanos(),
+            scanned_at_ns: constructed_at_ns,
             captured_at_ns: 0,
+            verified_started_at_ns: constructed_at_ns,
             verified: Vec::new(),
             ext_names: Vec::new(),
             ext_ids: BTreeMap::new(),
@@ -4344,6 +4354,16 @@ impl Index {
             Source::Cached | Source::JournalScoped => self.captured_at_ns,
             Source::Scanned | Source::Revalidated => self.scanned_at_ns,
         }
+    }
+
+    /// The start of the pass that verified the facts this index holds.
+    pub(crate) const fn verified_started_at_ns(&self) -> i64 {
+        self.verified_started_at_ns
+    }
+
+    /// Record the pass start a loaded snapshot carried for the facts it restored.
+    pub(crate) fn set_verified_started_at_ns(&mut self, verified_started_at_ns: i64) {
+        self.verified_started_at_ns = verified_started_at_ns;
     }
 
     /// Stamp deltas applied from here on with `source`, restoring the previous value
