@@ -5,7 +5,7 @@ title: "Explicit core models: request, execution plan, stored state, provenance,
 kind: epic
 status: open
 priority: 0
-version: 13
+version: 14
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - release
@@ -25,8 +25,9 @@ child_order_hints:
   - is-01m2pmrn6ka9kt7f4kcjcmvn8c
   - is-01m2pprgq5m8mvkr5z1abt5ezr
   - is-01m2pprs3ns0br59gv4xpaqfjt
+  - is-01m2psnq245vvkwkfs8zt3nfk0
 created_at: 2026-09-17T02:57:23.790Z
-updated_at: 2026-09-17T03:32:37.108Z
+updated_at: 2026-09-17T04:23:22.435Z
 ---
 Ships in 0.1.0 (maintainer decision 2026-09-17). Every key concept gets one explicit, typed model in
 fdu-core, consumed by every route and surface, so caching improves performance and never changes
