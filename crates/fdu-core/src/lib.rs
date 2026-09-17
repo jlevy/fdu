@@ -138,8 +138,8 @@ pub use crate::execution::{
 };
 pub use crate::scan::{ReconcileReport, ScanConfig, ScanOrder, ScanReport};
 pub use crate::stored_state::{
-    ContentTierIdentity, ControlTierIdentity, EntryScope, EntryTierIdentity, Serves,
-    SnapshotIdentity, serves_snapshot,
+    AnalyzerProvenance, ContentTierIdentity, ControlTierIdentity, EntryScope, EntryTierIdentity,
+    Serves, SnapshotIdentity, serves_snapshot,
 };
 #[cfg(feature = "watch")]
 pub use crate::watch_session::{Batch, Change, ChangeKind, Session};

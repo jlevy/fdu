@@ -231,7 +231,7 @@ pub fn save(index: &Index, path: &Path) -> Result<()> {
     debug_assert_eq!(buf.len(), VERIFIED_STARTED_AT_OFFSET);
     buf.extend_from_slice(&index.verified_started_at_ns().to_le_bytes());
     // Every tier identity shares the prologue's engine fingerprint, which is this build's.
-    buf.extend_from_slice(&index.snapshot_identity().encode()?);
+    buf.extend_from_slice(&index.snapshot_identity().encode());
 
     put_os_str(&mut buf, index.root_path().as_os_str())?;
 
@@ -1719,7 +1719,7 @@ mod tests {
         let controls = controls_at..controls_at + crate::stored_state::CONTROL_TIER_BYTES;
         let forge = |tier: ControlTierIdentity| {
             let mut forged = saved.clone();
-            forged[controls.clone()].copy_from_slice(&tier.encode().expect("encode"));
+            forged[controls.clone()].copy_from_slice(&tier.encode());
             rewrite_checksum(&mut forged);
             fs::write(&path, &forged).expect("write forged limits");
             load(&path).expect("forged equals absent")

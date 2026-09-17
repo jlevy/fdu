@@ -174,9 +174,10 @@ Content-derived metrics — line counts, word counts, hashes, and future plugin 
 — do **not** belong in the core snapshot.
 They live in a separately checksummed sidecar beside the snapshot, `<snapshot>.content`,
 recording the engine fingerprint, the entry tier identity the records were analyzed over
-(the snapshot’s scope without `.gitignore` observation, which no metric depends on), the
-root, the stored analyzer set, the type-rule fingerprint, an options fingerprint, and
-ordered analyzer IDs and versions.
+(the snapshot’s scope, type-rule fingerprint, and reducer set, without `.gitignore`
+observation, which no metric depends on), the stored analyzer set, an options
+fingerprint, ordered analyzer IDs and versions, and the root.
+The type-rule fingerprint is recorded once, in the entry tier.
 It holds one analyzer set per root.
 Each sparse file record carries its classification and a fingerprint of size, mtime,
 ctime, inode, and device, so a reconciled metadata change rejects only the stale record.
@@ -194,8 +195,8 @@ Keeping them separate from metadata remains load-bearing rather than tidy:
   An analyzer’s output can be far larger than the tree’s metadata, and paying for it on
   every open would penalize the common query.
 - Content-sidecar invalidation never touches tree truth.
-  A sidecar is usable when its format version, engine fingerprint, entry tier identity,
-  and root match, its type-rule fingerprint equals the registry in use, and its stored
+  A sidecar is usable when its format version, engine fingerprint, entry tier identity
+  (whose type-rule fingerprint is the registry in use), and root match, and its stored
   analyzer set contains the requested one (`ContentProvenance::satisfies`). The options
   fingerprint and analyzer versions are recorded but not compared; both are derived from
   the analyzer set today, so a change to an analyzer’s output invalidates stored records

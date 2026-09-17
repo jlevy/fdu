@@ -12,6 +12,9 @@
 //! never appear here, so they can never invalidate a store, and a request part that
 //! changes a tier's values always does.
 
+use crate::content::{
+    AnalysisSet, AnalyzerId, AnalyzerVersion, ContentProvenance, OptionsFingerprint,
+};
 use crate::control::ControlLimits;
 use crate::engine_contract::{ScanScope, ScopeIdentity};
 
@@ -153,14 +156,60 @@ impl SnapshotIdentity {
 /// `.gitignore` observation: every regular file in scope is an analysis candidate whether
 /// or not it is ignored. Then the analyzer set the records were produced for, and the
 /// analyzers' identities, versions, and options.
+///
+/// The type rules the records were classified under are the entry tier's, and stated only
+/// there: a record's [`ContentProvenance`] is this identity's entry-tier type rules and its
+/// [`AnalyzerProvenance`].
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ContentTierIdentity {
-    /// The entry tier the records were analyzed over.
+    /// The entry tier the records were analyzed over, including their type rules.
     pub entries: EntryTierIdentity,
     /// The analyzer set the tier holds records for.
-    pub analysis: crate::content::AnalysisSet,
-    /// The type rules, options, and analyzer versions the records were produced under.
-    pub provenance: crate::content::ContentProvenance,
+    pub analysis: AnalysisSet,
+    /// The options and analyzer versions the records were produced under.
+    pub provenance: AnalyzerProvenance,
+}
+
+/// The analyzers a content tier's records were produced by, and the options they ran with.
+///
+/// A record's [`ContentProvenance`] without its type-rules fingerprint, which the content
+/// tier's [`EntryTierIdentity`] holds.
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+pub struct AnalyzerProvenance {
+    /// Identity of the semantic analyzer options.
+    pub options_fingerprint: OptionsFingerprint,
+    /// Each analyzer the records ran, with its version, in the order the set enables them.
+    pub analyzers: Vec<(AnalyzerId, AnalyzerVersion)>,
+}
+
+impl ContentTierIdentity {
+    /// The identity of `analysis` records carrying `provenance`, analyzed over `entries`.
+    ///
+    /// `None` when the records were classified under type rules other than the entry
+    /// tier's, which no index of that entry tier produces.
+    pub(crate) fn of_records(
+        entries: EntryTierIdentity,
+        analysis: AnalysisSet,
+        provenance: &ContentProvenance,
+    ) -> Option<Self> {
+        (provenance.type_rules_fingerprint == entries.type_rules_fingerprint).then(|| Self {
+            entries,
+            analysis,
+            provenance: AnalyzerProvenance {
+                options_fingerprint: provenance.options_fingerprint,
+                analyzers: provenance.analyzers.clone(),
+            },
+        })
+    }
+
+    /// The provenance each record of this tier carries.
+    pub(crate) fn record_provenance(&self) -> ContentProvenance {
+        ContentProvenance {
+            type_rules_fingerprint: self.entries.type_rules_fingerprint,
+            options_fingerprint: self.provenance.options_fingerprint,
+            analyzers: self.provenance.analyzers.clone(),
+        }
+    }
 }
 
 /// How a stored tier answers a request.
@@ -191,19 +240,20 @@ pub fn serves_snapshot(stored: SnapshotIdentity, wanted: SnapshotIdentity) -> Se
 // prologue beside the magic and format version, and every tier identity it holds shares
 // it.
 
+/// Encoded width of an optional bound: a tag, then eight value bytes.
+pub(crate) const BOUND_BYTES: usize = 1 + 8;
+
 /// Encoded width of an [`EntryTierIdentity`] after its engine fingerprint: the maximum
-/// depth, the scope flags, and the hidden-entry, type-rules, and reducer-set fingerprints.
-pub(crate) const ENTRY_TIER_BYTES: usize = 8 + 1 + 8 + 8 + 8;
+/// depth as a bound, the scope flags, and the hidden-entry, type-rules, and reducer-set
+/// fingerprints.
+pub(crate) const ENTRY_TIER_BYTES: usize = BOUND_BYTES + 1 + 8 + 8 + 8;
 
 /// Encoded width of a [`ControlTierIdentity`]: the observation tag, then the budget and the
-/// line limit, each a tag and eight bytes.
-pub(crate) const CONTROL_TIER_BYTES: usize = 1 + 2 * (1 + 8);
+/// line limit, each a bound.
+pub(crate) const CONTROL_TIER_BYTES: usize = 1 + 2 * BOUND_BYTES;
 
 /// Encoded width of a [`SnapshotIdentity`] after its engine fingerprint.
 pub(crate) const SNAPSHOT_IDENTITY_BYTES: usize = ENTRY_TIER_BYTES + CONTROL_TIER_BYTES;
-
-/// The encoded maximum depth of a scope with no depth bound.
-const UNLIMITED_DEPTH: u64 = u64::MAX;
 
 /// Scope flag for symlink-following traversal.
 const SCOPE_FOLLOW_SYMLINKS: u8 = 1 << 0;
@@ -219,10 +269,14 @@ const CONTROLS_NOT_OBSERVED: u8 = 0;
 /// Control tier tag for an observed tier, whose limit fields follow.
 const CONTROLS_OBSERVED: u8 = 1;
 
-/// Limit tag for no bound, whose eight value bytes are zero.
-const UNBOUNDED_LIMIT: u8 = 0;
-/// Limit tag for a bound, whose value is the eight bytes that follow.
-const BOUNDED_LIMIT: u8 = 1;
+/// Bound tag for no bound, whose eight value bytes are zero.
+const UNBOUNDED: u8 = 0;
+/// Bound tag for a bound, whose value is the eight bytes that follow.
+const BOUNDED: u8 = 1;
+
+// Every bound is a `usize`, which fits the eight bytes that encode it on every target, so a
+// bound is never refused or aliased at encode.
+const _: () = assert!(usize::BITS <= u64::BITS, "a bound fits its eight encoded bytes");
 
 /// Fills a fixed-width encoding field by field.
 struct FixedWriter<const N: usize> {
@@ -241,11 +295,27 @@ impl<const N: usize> FixedWriter<N> {
         self.at = end;
     }
 
+    /// Write an optional bound as its tag and eight value bytes, zero when unbounded.
+    ///
+    /// A tag rather than a reserved value, so no bound can be mistaken for a sentinel.
+    fn put_bound(&mut self, bound: Option<usize>) {
+        let (tag, value) = match bound {
+            None => (UNBOUNDED, 0),
+            // Lossless: the width assertion above holds on every target this compiles for.
+            Some(bound) => (BOUNDED, u64::try_from(bound).unwrap_or(u64::MAX)),
+        };
+        self.put(&[tag]);
+        self.put(&value.to_le_bytes());
+    }
+
     fn finish(self) -> [u8; N] {
         debug_assert_eq!(self.at, N, "every field of a fixed-width encoding is written");
         self.bytes
     }
 }
+
+/// A field holds bytes no encoder writes.
+struct NotEncoded;
 
 /// Reads a fixed-width encoding field by field.
 struct FixedReader<'a> {
@@ -267,19 +337,21 @@ impl FixedReader<'_> {
     fn u64(&mut self) -> u64 {
         u64::from_le_bytes(self.take())
     }
+
+    /// Read [`FixedWriter::put_bound`], refusing a tag or value no encoder writes.
+    fn bound(&mut self) -> Result<Option<usize>, NotEncoded> {
+        match (self.u8(), self.u64()) {
+            (UNBOUNDED, 0) => Ok(None),
+            (BOUNDED, value) => usize::try_from(value).map(Some).map_err(|_| NotEncoded),
+            _ => Err(NotEncoded),
+        }
+    }
 }
 
 impl EntryTierIdentity {
     /// Encode every field but the engine fingerprint, which the store's prologue carries.
-    pub(crate) fn encode(self) -> crate::Result<[u8; ENTRY_TIER_BYTES]> {
+    pub(crate) fn encode(self) -> [u8; ENTRY_TIER_BYTES] {
         let scope = self.scope;
-        // A bound of `u64::MAX` would encode as no bound at all and read back as another
-        // identity, so it is refused rather than aliased. No tree is that deep.
-        let max_depth = match scope.max_depth.map(u64::try_from) {
-            None => UNLIMITED_DEPTH,
-            Some(Ok(depth)) if depth != UNLIMITED_DEPTH => depth,
-            Some(_) => return Err(crate::Error::Snapshot("scan depth overflow".into())),
-        };
         let mut flags = 0u8;
         if scope.follow_symlinks {
             flags |= SCOPE_FOLLOW_SYMLINKS;
@@ -291,22 +363,19 @@ impl EntryTierIdentity {
             flags |= SCOPE_EXCLUDE_SPECIAL;
         }
         let mut out = FixedWriter::new();
-        out.put(&max_depth.to_le_bytes());
+        out.put_bound(scope.max_depth);
         out.put(&[flags]);
         out.put(&scope.hidden_fingerprint.to_le_bytes());
         out.put(&self.type_rules_fingerprint.to_le_bytes());
         out.put(&self.reducers_fingerprint.to_le_bytes());
-        Ok(out.finish())
+        out.finish()
     }
 
     /// Decode [`Self::encode`] under the engine fingerprint of the store that holds it, or
     /// `None` for a field no encoder writes.
     pub(crate) fn decode(engine: u64, bytes: &[u8; ENTRY_TIER_BYTES]) -> Option<Self> {
         let mut fields = FixedReader { rest: bytes };
-        let max_depth = match fields.u64() {
-            UNLIMITED_DEPTH => None,
-            depth => Some(usize::try_from(depth).ok()?),
-        };
+        let max_depth = fields.bound().ok()?;
         let flags = fields.u8();
         if flags & !SCOPE_KNOWN_FLAGS != 0 {
             return None;
@@ -329,30 +398,17 @@ impl EntryTierIdentity {
 
 impl ControlTierIdentity {
     /// Encode the observation and, when observed, both limits.
-    pub(crate) fn encode(self) -> crate::Result<[u8; CONTROL_TIER_BYTES]> {
+    pub(crate) fn encode(self) -> [u8; CONTROL_TIER_BYTES] {
         let mut out = FixedWriter::new();
         match self {
             Self::NotObserved => out.put(&[CONTROLS_NOT_OBSERVED; CONTROL_TIER_BYTES]),
             Self::Observed { limits } => {
                 out.put(&[CONTROLS_OBSERVED]);
-                for limit in [limits.budget, limits.line_limit] {
-                    match limit {
-                        None => {
-                            out.put(&[UNBOUNDED_LIMIT]);
-                            out.put(&0u64.to_le_bytes());
-                        }
-                        Some(limit) => {
-                            let limit = u64::try_from(limit).map_err(|_| {
-                                crate::Error::Snapshot("control limit overflow".into())
-                            })?;
-                            out.put(&[BOUNDED_LIMIT]);
-                            out.put(&limit.to_le_bytes());
-                        }
-                    }
-                }
+                out.put_bound(limits.budget);
+                out.put_bound(limits.line_limit);
             }
         }
-        Ok(out.finish())
+        out.finish()
     }
 
     /// Decode [`Self::encode`], or `None` for a tag or value no encoder writes.
@@ -363,13 +419,8 @@ impl ControlTierIdentity {
                 bytes[1..].iter().all(|byte| *byte == 0).then_some(Self::NotObserved)
             }
             CONTROLS_OBSERVED => {
-                let mut limit = || match (fields.u8(), fields.u64()) {
-                    (UNBOUNDED_LIMIT, 0) => Some(None),
-                    (BOUNDED_LIMIT, value) => usize::try_from(value).ok().map(Some),
-                    _ => None,
-                };
-                let budget = limit()?;
-                let line_limit = limit()?;
+                let budget = fields.bound().ok()?;
+                let line_limit = fields.bound().ok()?;
                 Some(Self::Observed { limits: ControlLimits { budget, line_limit } })
             }
             _ => None,
@@ -379,11 +430,11 @@ impl ControlTierIdentity {
 
 impl SnapshotIdentity {
     /// Encode the entry tier's fields, then the control tier.
-    pub(crate) fn encode(self) -> crate::Result<[u8; SNAPSHOT_IDENTITY_BYTES]> {
+    pub(crate) fn encode(self) -> [u8; SNAPSHOT_IDENTITY_BYTES] {
         let mut out = FixedWriter::new();
-        out.put(&self.entries.encode()?);
-        out.put(&self.controls.encode()?);
-        Ok(out.finish())
+        out.put(&self.entries.encode());
+        out.put(&self.controls.encode());
+        out.finish()
     }
 
     /// Decode [`Self::encode`] under the engine fingerprint of the snapshot that holds it.
@@ -516,32 +567,38 @@ mod tests {
         }
     }
 
-    /// Identities that differ in every encoded field, including the edges of each range.
+    /// Identities that each differ from the default in one encoded field, including the
+    /// edges of each range, so a codec that dropped any one field would alias two of them.
     fn identities() -> Vec<SnapshotIdentity> {
         let base = ScanConfig::default().snapshot_identity();
         let entries = base.entries;
+        let defaults = ControlLimits::default();
+        assert_eq!(entries.scope.max_depth, None);
+        assert!(defaults.budget.is_some() && defaults.line_limit.is_some());
         let mut all = vec![base];
         for scope in [
             EntryScope { max_depth: Some(0), ..entries.scope },
-            EntryScope { max_depth: Some(7), follow_symlinks: true, ..entries.scope },
-            EntryScope { one_filesystem: true, exclude_special: true, ..entries.scope },
+            // The largest bound is a bound, never the unbounded depth.
+            EntryScope { max_depth: Some(usize::MAX), ..entries.scope },
+            EntryScope { follow_symlinks: true, ..entries.scope },
+            EntryScope { one_filesystem: true, ..entries.scope },
+            EntryScope { exclude_special: true, ..entries.scope },
             EntryScope { hidden_fingerprint: u64::MAX, ..entries.scope },
         ] {
             all.push(SnapshotIdentity { entries: EntryTierIdentity { scope, ..entries }, ..base });
         }
-        all.push(SnapshotIdentity {
-            entries: EntryTierIdentity {
-                type_rules_fingerprint: 0,
-                reducers_fingerprint: u64::MAX,
-                ..entries
-            },
-            ..base
-        });
+        for entries in [
+            EntryTierIdentity { type_rules_fingerprint: 0, ..entries },
+            EntryTierIdentity { reducers_fingerprint: u64::MAX, ..entries },
+        ] {
+            all.push(SnapshotIdentity { entries, ..base });
+        }
         for controls in [
             ControlTierIdentity::NotObserved,
-            ControlTierIdentity::Observed { limits: limits(None, None) },
-            ControlTierIdentity::Observed { limits: limits(Some(0), Some(usize::MAX)) },
-            ControlTierIdentity::Observed { limits: limits(Some(1), None) },
+            ControlTierIdentity::Observed { limits: limits(None, defaults.line_limit) },
+            ControlTierIdentity::Observed { limits: limits(Some(0), defaults.line_limit) },
+            ControlTierIdentity::Observed { limits: limits(defaults.budget, None) },
+            ControlTierIdentity::Observed { limits: limits(defaults.budget, Some(usize::MAX)) },
         ] {
             all.push(SnapshotIdentity { controls, ..base });
         }
@@ -551,10 +608,7 @@ mod tests {
     #[test]
     fn every_identity_round_trips_through_its_fixed_width_encoding() {
         let identities = identities();
-        let encoded = identities
-            .iter()
-            .map(|identity| identity.encode().expect("encode"))
-            .collect::<Vec<_>>();
+        let encoded = identities.iter().map(|identity| identity.encode()).collect::<Vec<_>>();
         for (identity, bytes) in identities.iter().zip(&encoded) {
             let engine = identity.entries.engine;
             assert_eq!(SnapshotIdentity::decode(engine, bytes), Some(*identity));
@@ -575,32 +629,35 @@ mod tests {
     }
 
     #[test]
-    fn a_depth_bound_that_would_read_back_as_unbounded_is_refused() {
-        let entries = ScanConfig::default().snapshot_identity().entries;
-        let aliased = EntryTierIdentity {
-            scope: EntryScope { max_depth: usize::try_from(UNLIMITED_DEPTH).ok(), ..entries.scope },
-            ..entries
-        };
-        if aliased.scope.max_depth.is_some() {
-            assert!(aliased.encode().is_err());
-        }
-    }
-
-    #[test]
     fn bytes_no_encoder_writes_are_refused() {
         let base = ScanConfig::default().snapshot_identity();
         let engine = base.entries.engine;
-        let entries = base.entries.encode().expect("encode");
-        let flags_at = 8;
-        let mut unknown_flag = entries;
+        let bounded = EntryTierIdentity {
+            scope: EntryScope { max_depth: Some(3), ..base.entries.scope },
+            ..base.entries
+        };
+        let (depth_tag_at, depth_at, flags_at) = (0, 1, BOUND_BYTES);
+        let mut forged_entries = Vec::new();
+        let mut unknown_flag = base.entries.encode();
         unknown_flag[flags_at] |= 1 << 7;
-        assert_eq!(EntryTierIdentity::decode(engine, &unknown_flag), None);
+        forged_entries.push(unknown_flag);
+        let mut unknown_depth_tag = bounded.encode();
+        assert_eq!(unknown_depth_tag[depth_tag_at], BOUNDED);
+        unknown_depth_tag[depth_tag_at] = 2;
+        forged_entries.push(unknown_depth_tag);
+        let mut unbounded_depth_with_a_value = base.entries.encode();
+        assert_eq!(unbounded_depth_with_a_value[depth_tag_at], UNBOUNDED);
+        unbounded_depth_with_a_value[depth_at] = 1;
+        forged_entries.push(unbounded_depth_with_a_value);
+        for bytes in forged_entries {
+            assert_eq!(EntryTierIdentity::decode(engine, &bytes), None, "{bytes:?}");
+        }
 
         let observed = ControlTierIdentity::Observed { limits: limits(None, Some(1)) };
-        let controls = observed.encode().expect("encode");
-        let (budget_tag_at, budget_at, line_tag_at) = (1, 2, 10);
-        assert_eq!(controls[budget_tag_at], UNBOUNDED_LIMIT);
-        assert_eq!(controls[line_tag_at], BOUNDED_LIMIT);
+        let controls = observed.encode();
+        let (budget_tag_at, budget_at, line_tag_at) = (1, 2, 1 + BOUND_BYTES);
+        assert_eq!(controls[budget_tag_at], UNBOUNDED);
+        assert_eq!(controls[line_tag_at], BOUNDED);
         let mut forged = Vec::new();
         let mut unknown_tag = controls;
         unknown_tag[0] = 2;
@@ -619,10 +676,27 @@ mod tests {
         }
     }
 
+    /// A content tier states its type rules once, in its entry tier, and every record it
+    /// holds carries exactly those rules.
+    #[test]
+    fn a_content_tier_holds_its_records_type_rules_in_its_entry_tier() {
+        use crate::content::AnalysisRequest;
+
+        let entries = ScanConfig::default().snapshot_identity().entries;
+        let request = AnalysisRequest { profile: AnalysisSet::ALL, ..AnalysisRequest::default() };
+        let records = ContentProvenance::for_request(request, entries.type_rules_fingerprint);
+        let identity = ContentTierIdentity::of_records(entries, request.profile, &records)
+            .expect("records under the entry tier's type rules");
+        assert_eq!(identity.record_provenance(), records);
+
+        let other_rules = ContentProvenance::for_request(request, !entries.type_rules_fingerprint);
+        assert_eq!(ContentTierIdentity::of_records(entries, request.profile, &other_rules), None);
+    }
+
     #[test]
     fn the_engine_fingerprint_comes_from_the_store_not_the_encoding() {
         let identity = ScanConfig::default().snapshot_identity();
-        let bytes = identity.encode().expect("encode");
+        let bytes = identity.encode();
         let other = SnapshotIdentity::decode(!identity.entries.engine, &bytes).expect("decode");
         assert_eq!(other.entries.engine, !identity.entries.engine);
         assert_eq!(serves_snapshot(other, identity), Serves::Refuse);
