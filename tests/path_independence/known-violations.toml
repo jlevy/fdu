@@ -54,6 +54,10 @@ keys = [
 
 [[violation]]
 class = "refusal-kind"
+platforms = [
+  "linux",
+  "win32",
+]
 paths = [
   "<error>",
 ]
