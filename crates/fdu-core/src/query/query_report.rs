@@ -26,6 +26,7 @@ use crate::content::{
 use crate::control::ControlCoverage;
 use crate::engine_contract::{EntryKind, Freshness, ScanScope};
 use crate::index::{EntryId, ExtTally, Index, RollUpScalars};
+use crate::query::query_request::{check_observation, check_views};
 use crate::query::query_selection::{
     Bound, Candidate, IgnoredEntries, NameIdentity, Selection, SizeMetric, SortKey,
 };
@@ -294,6 +295,11 @@ impl ViewSpec {
 /// because the note about refused `.gitignore` files names the limit that applies them.
 /// The ignored-state selections and the observation switch, because selecting by ignored
 /// state in a scan that reads no `.gitignore` is refused by naming both.
+///
+/// And every other axis a [`RequestError`](crate::query::RequestError) names: the value
+/// grammars of the request model reject a value by naming its axis, and the watch
+/// refusals name the knobs a watch cannot honor, so one type states each rule and each
+/// surface supplies only its words.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AxisNames {
     /// The view axis.
@@ -310,10 +316,41 @@ pub struct AxisNames {
     pub only_ignored: &'static str,
     /// The switch that turns `.gitignore` observation off.
     pub read_controls: &'static str,
+    /// The retention depth of a scan.
+    pub scan_depth: &'static str,
+    /// The switch that keeps a scan on the root's filesystem.
+    pub one_filesystem: &'static str,
+    /// The patterns an entry must match.
+    pub include: &'static str,
+    /// The inclusive lower bound on modification time.
+    pub modified_since: &'static str,
+    /// The exclusive upper bound on modification time.
+    pub modified_before: &'static str,
+    /// The entry kinds a selection admits.
+    pub kind: &'static str,
+    /// The selection by ignored state, as one axis.
+    pub ignored: &'static str,
+    /// How deep a rendered tree descends.
+    pub depth: &'static str,
+    /// How many rows a view keeps.
+    pub limit: &'static str,
+    /// The ordering key.
+    pub sort: &'static str,
+    /// The size metric.
+    pub size: &'static str,
+    /// The logical-word denominator of a document page.
+    pub words_per_page: &'static str,
+    /// The cache policy.
+    pub cache: &'static str,
+    /// The request to repeat the answer as a watch.
+    pub watch: &'static str,
 }
 
 impl AxisNames {
     /// How the command line spells them.
+    ///
+    /// `ignored` is the one axis the command line splits into two switches, so it names
+    /// both; it only reaches a diagnostic through a value no flag can produce.
     pub const FLAGS: Self = Self {
         view: "--view",
         analyze: "--analyze",
@@ -322,6 +359,20 @@ impl AxisNames {
         exclude_ignored: "--exclude-ignored",
         only_ignored: "--only-ignored",
         read_controls: "--no-gitignore",
+        scan_depth: "--scan-depth",
+        one_filesystem: "--one-filesystem",
+        include: "--include",
+        modified_since: "--modified-since",
+        modified_before: "--modified-before",
+        kind: "--kind",
+        ignored: "--exclude-ignored/--only-ignored",
+        depth: "--depth",
+        limit: "--limit",
+        sort: "--sort",
+        size: "--size",
+        words_per_page: "--words-per-page",
+        cache: "--cache",
+        watch: "--watch",
     };
 
     /// How the library and the Python API spell them, and the default: a `Query` built
@@ -331,6 +382,10 @@ impl AxisNames {
     /// `ViewSpec::resolve`, so every diagnostic about this axis names it one way. It also
     /// keeps the difference from the command line to the flag dashes alone, which is what
     /// the parity harness's `surface-label` class checks.
+    ///
+    /// `cache` is the one name that is not a field: the Python parameter is `cache`, but its
+    /// refusal has always said `invalid cache policy`, and this type moved the wording
+    /// without changing it.
     pub const FIELDS: Self = Self {
         view: "view",
         analyze: "analyze",
@@ -339,6 +394,20 @@ impl AxisNames {
         exclude_ignored: "ignored=exclude",
         only_ignored: "ignored=only",
         read_controls: "read_controls",
+        scan_depth: "max_depth",
+        one_filesystem: "one_filesystem",
+        include: "include",
+        modified_since: "modified_since",
+        modified_before: "modified_before",
+        kind: "kind",
+        ignored: "ignored",
+        depth: "depth",
+        limit: "limit",
+        sort: "sort",
+        size: "size",
+        words_per_page: "words_per_page",
+        cache: "cache policy",
+        watch: "watch",
     };
 }
 
@@ -365,7 +434,7 @@ pub struct Query {
     ///
     /// Carried on the request because that is what knows which door the caller came
     /// through; the rules themselves stay here and are each stated once.
-    pub axes: AxisNames,
+    pub axes: &'static AxisNames,
     /// Fixed logical-word denominator used to derive page equivalents after aggregation.
     pub words_per_page: u64,
 }
@@ -376,7 +445,7 @@ impl Default for Query {
             selection: Selection::default(),
             views: Vec::new(),
             omitted_views: Vec::new(),
-            axes: AxisNames::default(),
+            axes: &AxisNames::FIELDS,
             words_per_page: 250,
         }
     }
@@ -396,50 +465,22 @@ impl Query {
     /// Reject views that have no metadata-only projection and lack required analysis.
     ///
     /// Names both axes as the requesting surface spells them, so the advice is something
-    /// the caller can actually act on: a Python caller has no `--analyze` to add.
+    /// the caller can actually act on: a Python caller has no `--analyze` to add. The rule
+    /// and its wording are the request model's [`RequestError::ViewNeedsContent`](crate::query::RequestError::ViewNeedsContent), rendered
+    /// in this query's vocabulary.
     pub fn validate_analysis(&self, profile: AnalysisSet) -> Result<(), String> {
-        for view in &self.views {
-            match view {
-                ViewSpec::Documents if !profile.is_enabled() => {
-                    return Err(format!(
-                        "{} documents requires content analysis: add {} lines, code, words, or all; views never enable content analysis implicitly",
-                        self.axes.view, self.axes.analyze
-                    ));
-                }
-                ViewSpec::Tree
-                | ViewSpec::Types
-                | ViewSpec::Extensions
-                | ViewSpec::Families
-                | ViewSpec::Languages
-                | ViewSpec::Documents
-                | ViewSpec::Files
-                | ViewSpec::Largest
-                | ViewSpec::Recent
-                | ViewSpec::Summary => {}
-            }
-        }
-        Ok(())
+        check_views(&self.views, profile).map_err(|refusal| refusal.message(self.axes))
     }
 
     /// Reject a selection by ignored state over a scan that observes no control state.
     ///
     /// No entry of such an index can be shown to be ignored or not, so the request has no
     /// answer, and admitting every entry or none would each be a silent guess. Names both
-    /// knobs as the requesting surface spells them, as [`Self::validate_analysis`] does.
+    /// knobs as the requesting surface spells them, as [`Self::validate_analysis`] does,
+    /// through the request model's [`RequestError::IgnoredWithoutObservation`](crate::query::RequestError::IgnoredWithoutObservation).
     pub fn validate_controls(&self, observes_controls: bool) -> Result<(), String> {
-        if observes_controls {
-            return Ok(());
-        }
-        let selection = match self.selection.ignored {
-            IgnoredEntries::Include => return Ok(()),
-            IgnoredEntries::Exclude => self.axes.exclude_ignored,
-            IgnoredEntries::Only => self.axes.only_ignored,
-        };
-        Err(format!(
-            "{selection} needs .gitignore classification, and {} turned it off; drop one of \
-             them",
-            self.axes.read_controls
-        ))
+        check_observation(self.selection.ignored, observes_controls)
+            .map_err(|refusal| refusal.message(self.axes))
     }
 }
 
@@ -859,7 +900,7 @@ const REFUSED_DIRECTORIES_NAMED: usize = 5;
 /// listed; otherwise the note names every limit that could have refused an unlisted file.
 /// The remedy raises exactly the limits it named, each by the name the requesting surface
 /// uses, so lifting one never reads as lifting the other.
-fn refused_controls_note(ignore_rules: &ControlCoverage, axes: AxisNames) -> Option<String> {
+fn refused_controls_note(ignore_rules: &ControlCoverage, axes: &AxisNames) -> Option<String> {
     use crate::control::ControlRefusalReason::{Budget, LineLimit};
 
     let ControlCoverage::Observed(observed) = ignore_rules else {
@@ -2310,7 +2351,7 @@ mod tests {
                 refused: count,
                 refusals,
             });
-            refused_controls_note(&coverage, AxisNames::FLAGS).expect("a refusal is noted")
+            refused_controls_note(&coverage, &AxisNames::FLAGS).expect("a refusal is noted")
         };
         let defaults = ControlLimits::default();
         let (budget, line_limit) = (ControlRefusalReason::Budget, ControlRefusalReason::LineLimit);
@@ -2370,8 +2411,8 @@ mod tests {
             refused: 0,
             refusals: Vec::new(),
         });
-        assert_eq!(refused_controls_note(&complete, AxisNames::FLAGS), None);
-        assert_eq!(refused_controls_note(&ControlCoverage::NotObserved, AxisNames::FLAGS), None);
+        assert_eq!(refused_controls_note(&complete, &AxisNames::FLAGS), None);
+        assert_eq!(refused_controls_note(&ControlCoverage::NotObserved, &AxisNames::FLAGS), None);
     }
 
     #[test]
@@ -2380,8 +2421,8 @@ mod tests {
             .expect("full resolves without analyzers");
 
         for (axes, mine, theirs) in [
-            (AxisNames::FLAGS, "--analyze", "analyze"),
-            (AxisNames::FIELDS, "analyze", "--analyze"),
+            (&AxisNames::FLAGS, "--analyze", "analyze"),
+            (&AxisNames::FIELDS, "analyze", "--analyze"),
         ] {
             let query = Query {
                 views: selected.clone(),
@@ -2399,7 +2440,7 @@ mod tests {
 
         // The same for the hard error, which names the view axis as well.
         for (axes, view, analyze) in
-            [(AxisNames::FLAGS, "--view", "--analyze"), (AxisNames::FIELDS, "view", "analyze")]
+            [(&AxisNames::FLAGS, "--view", "--analyze"), (&AxisNames::FIELDS, "view", "analyze")]
         {
             let query = Query { views: vec![ViewSpec::Documents], axes, ..Query::default() };
             let error = query
@@ -2416,7 +2457,7 @@ mod tests {
     /// vocabulary is the one their surface uses.
     #[test]
     fn the_default_vocabulary_is_the_librarys_own() {
-        assert_eq!(Query::default().axes, AxisNames::FIELDS);
+        assert_eq!(*Query::default().axes, AxisNames::FIELDS);
     }
 
     #[test]
@@ -2681,7 +2722,7 @@ mod tests {
             ..Query::default()
         };
         assert_eq!(
-            Query { axes: AxisNames::FLAGS, ..exclude.clone() }.validate_controls(false),
+            Query { axes: &AxisNames::FLAGS, ..exclude.clone() }.validate_controls(false),
             Err("--exclude-ignored needs .gitignore classification, and --no-gitignore turned \
                  it off; drop one of them"
                 .to_string())

@@ -24,9 +24,10 @@ use pyo3::types::{PyDict, PyList};
 
 use fdu_core::content::{AnalysisRequest, AnalysisSet, CoverageReason};
 use fdu_core::query::{
-    AxisNames, Bound as Bound_, IgnoredEntries, IgnoredTally, MetricRow, MetricSummary, Pattern,
-    Provenance, Query, Report, ReportSource, Section, Selection, SizeMetric, SortKey, SummaryRow,
-    TreeNode, ViewSpec, document_words,
+    AxisNames, IgnoredEntries, IgnoredTally, MetricRow, MetricSummary, Pattern, Provenance, Query,
+    Report, ReportSource, RequestError, Section, Selection, SummaryRow, TreeNode, ViewSpec,
+    bound_nanos, document_words, parse_bound, parse_cache_policy, parse_kind, parse_size_metric,
+    parse_sort,
 };
 use fdu_core::watch::WatchConfig;
 use fdu_core::watch_session::{ChangeKind, Session};
@@ -603,21 +604,12 @@ impl PyIndex {
     }
 }
 
-/// Translate a cache-policy string into its library value.
+/// The request model's refusal, in the Python API's words.
 ///
-/// The same spellings the CLI accepts, so a capability reachable by flag is reachable by
-/// one typed call rather than by shelling out.
-fn parse_cache_policy(value: &str) -> PyResult<CachePolicy> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "auto" => Ok(CachePolicy::Auto),
-        "refresh" => Ok(CachePolicy::Refresh),
-        "read-only" => Ok(CachePolicy::ReadOnly),
-        "only" => Ok(CachePolicy::Only),
-        "off" => Ok(CachePolicy::Off),
-        other => Err(PyValueError::new_err(format!(
-            "invalid cache policy {other:?}: expected one of auto, refresh, read-only, only, off"
-        ))),
-    }
+/// A `ValueError`, like every other refusal of an argument: the caller asked for something
+/// the grammar does not allow.
+fn value_error(error: &RequestError) -> PyErr {
+    PyValueError::new_err(error.message(&AxisNames::FIELDS))
 }
 
 fn parse_analysis_request(profile: &str, workers: usize) -> PyResult<AnalysisRequest> {
@@ -704,19 +696,6 @@ fn source_label(source: fdu_core::query::ReportSource) -> &'static str {
         fdu_core::query::ReportSource::WarmRevalidate => "warm_revalidate",
         fdu_core::query::ReportSource::CacheOnly => "cache_only",
     }
-}
-
-/// Convert a parsed time bound to index nanoseconds, or raise.
-///
-/// Mirrors the CLI: an instant the index cannot represent must be rejected, never stored
-/// as an absent bound, or the query silently runs with no time filter at all.
-fn bound_nanos(input: &str, when: std::time::SystemTime, field: &str) -> PyResult<i64> {
-    fdu_core::query::system_time_to_nanos(when).ok_or_else(|| {
-        pyo3::exceptions::PyValueError::new_err(format!(
-            "invalid {field} {input:?}: that time is outside the range fdu can represent \
-             (about 1677 to 2262)"
-        ))
-    })
 }
 
 /// Convert a report into the dict shape Python callers get.
@@ -1012,32 +991,6 @@ fn resolve_views(
     ViewSpec::resolve(Some(&spec), analysis, "view").map_err(PyValueError::new_err)
 }
 
-/// Parse an entry-kind name.
-fn parse_kind(value: &str) -> PyResult<EntryKind> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "file" => Ok(EntryKind::File),
-        "dir" => Ok(EntryKind::Dir),
-        "symlink" => Ok(EntryKind::Symlink),
-        "other" => Ok(EntryKind::Other),
-        other => Err(PyValueError::new_err(format!(
-            "invalid kind {other:?}: expected one of file, dir, symlink, other"
-        ))),
-    }
-}
-
-/// Parse a sort key.
-fn parse_sort(value: &str) -> PyResult<SortKey> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "size" => Ok(SortKey::Size),
-        "count" => Ok(SortKey::Count),
-        "mtime" => Ok(SortKey::Mtime),
-        "name" => Ok(SortKey::Name),
-        other => Err(PyValueError::new_err(format!(
-            "invalid sort {other:?}: expected one of size, count, mtime, name"
-        ))),
-    }
-}
-
 /// Parse the `control_budget` and `control_line_limit` tokens with the engine's grammar,
 /// each on its own; an absent token keeps that limit's default.
 pub(crate) fn parse_control_limits(
@@ -1052,28 +1005,6 @@ pub(crate) fn parse_control_limits(
         line_limit: line_limit.map_or(Ok(defaults.line_limit), |value| {
             fdu_core::query::parse_control_line_limit(value).map_err(to_py_err)
         })?,
-    })
-}
-
-/// Parse a size metric.
-fn parse_size_metric(value: &str) -> PyResult<SizeMetric> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "allocated" => Ok(SizeMetric::Allocated),
-        "apparent" => Ok(SizeMetric::Apparent),
-        other => Err(PyValueError::new_err(format!(
-            "invalid size {other:?}: expected allocated or apparent"
-        ))),
-    }
-}
-
-/// Parse a bound that accepts `all`.
-fn parse_bound(value: &str, name: &str) -> PyResult<Bound_> {
-    let value = value.trim();
-    if value.eq_ignore_ascii_case("all") {
-        return Ok(Bound_::All);
-    }
-    value.parse::<usize>().map(Bound_::Limit).map_err(|_| {
-        PyValueError::new_err(format!("invalid {name} {value:?}: expected a whole number or `all`"))
     })
 }
 
@@ -1192,13 +1123,18 @@ fn build_query_at(
     size: &str,
     words_per_page: u64,
 ) -> PyResult<Query> {
-    let mut selection =
-        Selection { reverse, size: parse_size_metric(size)?, ..Selection::default() };
+    let axes = &AxisNames::FIELDS;
+    let refused = |error: RequestError| value_error(&error);
+    let mut selection = Selection {
+        reverse,
+        size: parse_size_metric(size, axes.size).map_err(refused)?,
+        ..Selection::default()
+    };
     if let Some(value) = depth {
-        selection.depth = Some(parse_bound(value, "depth")?);
+        selection.depth = Some(parse_bound(value, axes.depth).map_err(refused)?);
     }
     if let Some(value) = limit {
-        selection.limit = Some(parse_bound(value, "limit")?);
+        selection.limit = Some(parse_bound(value, axes.limit).map_err(refused)?);
     }
     for pattern in include.unwrap_or_default() {
         selection.include.push(Pattern::parse(&pattern).map_err(to_py_err)?);
@@ -1211,14 +1147,16 @@ fn build_query_at(
     }
     if let Some(value) = modified_since {
         let at = fdu_core::query::parse_when(value, now).map_err(to_py_err)?;
-        selection.modified.since = Some(bound_nanos(value, at, "modified_since")?);
+        selection.modified.since =
+            Some(bound_nanos(value, at, axes.modified_since).map_err(refused)?);
     }
     if let Some(value) = modified_before {
         let at = fdu_core::query::parse_when(value, now).map_err(to_py_err)?;
-        selection.modified.before = Some(bound_nanos(value, at, "modified_before")?);
+        selection.modified.before =
+            Some(bound_nanos(value, at, axes.modified_before).map_err(refused)?);
     }
     for value in kind.unwrap_or_default() {
-        selection.kinds.push(parse_kind(&value)?);
+        selection.kinds.push(parse_kind(&value, axes.kind).map_err(refused)?);
     }
     if let Some(value) = ignored {
         selection.ignored = IgnoredEntries::parse(value).map_err(|expected| {
@@ -1226,7 +1164,7 @@ fn build_query_at(
         })?;
     }
     if let Some(value) = sort {
-        selection.sort = Some(parse_sort(value)?);
+        selection.sort = Some(parse_sort(value, axes.sort).map_err(refused)?);
     }
     let (views, omitted_views) = match views {
         Some(values) => resolve_views(&values, profile)?,
@@ -1244,7 +1182,7 @@ fn build_query_at(
     }
     // The Python API names these axes with fields, so its diagnostics do too: there is no
     // `--analyze` for a caller here to add (fdu-4apt).
-    let query = Query { selection, views, omitted_views, axes: AxisNames::FIELDS, words_per_page };
+    let query = Query { selection, views, omitted_views, axes, words_per_page };
     query.validate_analysis(profile).map_err(PyValueError::new_err)?;
     Ok(query)
 }
@@ -1356,7 +1294,8 @@ fn report_once(
             ..ScanConfig::default()
         },
         cache_path: fdu_core::default_cache_path(&root),
-        policy: parse_cache_policy(cache)?,
+        policy: parse_cache_policy(cache, AxisNames::FIELDS.cache)
+            .map_err(|error| value_error(&error))?,
         analysis,
     };
     let query = build_query_at(
@@ -1442,7 +1381,10 @@ fn render_change(
                 )));
             }
         },
-        entry_kind: kind.map(parse_kind).transpose()?,
+        entry_kind: kind
+            .map(|value| parse_kind(value, AxisNames::FIELDS.kind))
+            .transpose()
+            .map_err(|error| value_error(&error))?,
         bytes,
         allocated,
         mtime_ns,
@@ -1624,7 +1566,8 @@ fn open(
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
     let operation_started_at = SystemTime::now();
-    let policy = parse_cache_policy(cache)?;
+    let policy =
+        parse_cache_policy(cache, AxisNames::FIELDS.cache).map_err(|error| value_error(&error))?;
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
         scan: ScanConfig {
@@ -1805,13 +1748,16 @@ mod tests {
 
     #[test]
     fn cache_policy_accepts_only_the_canonical_read_only_spelling() {
+        let axis = AxisNames::FIELDS.cache;
         assert_eq!(
-            parse_cache_policy("read-only").expect("the canonical policy name parses"),
+            parse_cache_policy("read-only", axis).expect("the canonical policy name parses"),
             CachePolicy::ReadOnly
         );
-        assert!(
-            parse_cache_policy("readonly").is_err(),
-            "an unreleased alias must not become a contract"
+        let refused = parse_cache_policy("readonly", axis)
+            .expect_err("an unreleased alias must not become a contract");
+        assert_eq!(
+            refused.message(&AxisNames::FIELDS),
+            "invalid cache policy \"readonly\": expected one of auto, refresh, read-only, only, off"
         );
     }
 

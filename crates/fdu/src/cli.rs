@@ -21,14 +21,13 @@ use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, Value
 use fdu_core::content::{AnalysisRequest, AnalysisSet};
 use fdu_core::control::ControlCoverage;
 use fdu_core::query::{
-    AxisNames, Bound, IgnoredEntries, Pattern, Query, ReportSource, Selection, SizeMetric, SortKey,
-    ViewSpec, parse_size, parse_when, system_time_to_nanos,
+    AxisNames, IgnoredEntries, Pattern, Query, ReportSource, RequestError, Selection, ViewSpec,
+    bound_nanos, parse_bound, parse_cache_policy, parse_kinds, parse_size, parse_size_metric,
+    parse_sort, parse_when,
 };
 use fdu_core::report_format;
 use fdu_core::report_format::human_count;
-use fdu_core::{
-    CachePolicy, CacheScope, CacheState, EntryKind, OpenConfig, ScanConfig, default_cache_path,
-};
+use fdu_core::{CachePolicy, CacheScope, CacheState, OpenConfig, ScanConfig, default_cache_path};
 use fdu_core::{PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics};
 
 const SKILL_TEMPLATE: &str = include_str!("skills/SKILL.md");
@@ -326,19 +325,9 @@ fn pending_after(outcome: SaveOutcome) -> bool {
     }
 }
 
-/// Convert a parsed time bound to index nanoseconds, or reject the flag.
-///
-/// `system_time_to_nanos` returns `None` for an instant outside the range the index can
-/// represent (roughly 1677-2262). Storing that `None` would leave the bound unset, so the
-/// query would run with no time filter at all while the user believed one was active --
-/// a silently wrong answer, which is worse than a rejected flag.
-fn bound_nanos(input: &str, when: SystemTime, flag: &str) -> anyhow::Result<i64> {
-    system_time_to_nanos(when).ok_or_else(|| {
-        usage(&anyhow::anyhow!(
-            "invalid {flag} \"{input}\": that time is outside the range fdu can represent \
-             (about 1677 to 2262)"
-        ))
-    })
+/// The request model's refusal, in the command line's words.
+fn refused(error: &RequestError) -> anyhow::Error {
+    anyhow::anyhow!(error.message(&AxisNames::FLAGS))
 }
 
 /// Re-tag an argument rejection so it exits like the usage error it is.
@@ -640,14 +629,12 @@ impl Cli {
             // events against that boundary yet. Selection flags stay legal with --watch
             // precisely because they filter the retained index instead, and the message
             // says so rather than only naming the conflict.
-            return Err(usage(&anyhow::anyhow!(watch_scope_guidance())));
+            return Err(usage(&refused(&RequestError::WatchScope)));
         }
 
         #[cfg(feature = "watch")]
         if self.watch && analysis.profile.is_enabled() {
-            return Err(usage(&anyhow::anyhow!(
-                "--analyze is not yet supported with --watch; use a one-shot report"
-            )));
+            return Err(usage(&refused(&RequestError::WatchContent)));
         }
 
         #[cfg(feature = "watch")]
@@ -1143,16 +1130,7 @@ impl Cli {
 
     /// Translate the cache-policy flag.
     fn parse_cache_policy(&self) -> anyhow::Result<CachePolicy> {
-        match self.cache.trim().to_ascii_lowercase().as_str() {
-            "auto" => Ok(CachePolicy::Auto),
-            "refresh" => Ok(CachePolicy::Refresh),
-            "read-only" => Ok(CachePolicy::ReadOnly),
-            "only" => Ok(CachePolicy::Only),
-            "off" => Ok(CachePolicy::Off),
-            other => anyhow::bail!(
-                "invalid --cache {other:?}: expected one of auto, refresh, read-only, only, off"
-            ),
-        }
+        parse_cache_policy(&self.cache, AxisNames::FLAGS.cache).map_err(|error| refused(&error))
     }
 
     /// Translate the format flag, naming every accepted value on a miss.
@@ -1186,11 +1164,13 @@ impl Cli {
     fn parse_query(&self, views: &ResolvedViews) -> anyhow::Result<Query> {
         let now = SystemTime::now();
 
+        let axes = &AxisNames::FLAGS;
+        let bound = |value: &str, axis| parse_bound(value, axis).map_err(|error| refused(&error));
         let mut selection = Selection {
-            depth: self.depth.as_deref().map(|value| parse_bound(value, "--depth")).transpose()?,
-            limit: self.limit.as_deref().map(|value| parse_bound(value, "--limit")).transpose()?,
+            depth: self.depth.as_deref().map(|value| bound(value, axes.depth)).transpose()?,
+            limit: self.limit.as_deref().map(|value| bound(value, axes.limit)).transpose()?,
             reverse: self.reverse,
-            size: parse_size_metric(&self.size)?,
+            size: parse_size_metric(&self.size, axes.size).map_err(|error| refused(&error))?,
             ..Selection::default()
         };
 
@@ -1204,18 +1184,22 @@ impl Cli {
             selection.min_size = Some(parse_size(min_size)?);
         }
         if let Some(since) = &self.modified_since {
-            selection.modified.since =
-                Some(bound_nanos(since, parse_when(since, now)?, "--modified-since")?);
+            let when = parse_when(since, now)?;
+            selection.modified.since = Some(
+                bound_nanos(since, when, axes.modified_since).map_err(|error| refused(&error))?,
+            );
         }
         if let Some(before) = &self.modified_before {
-            selection.modified.before =
-                Some(bound_nanos(before, parse_when(before, now)?, "--modified-before")?);
+            let when = parse_when(before, now)?;
+            selection.modified.before = Some(
+                bound_nanos(before, when, axes.modified_before).map_err(|error| refused(&error))?,
+            );
         }
         if let Some(kinds) = &self.kind {
-            selection.kinds = parse_list(kinds, "--kind", parse_kind)?;
+            selection.kinds = parse_kinds(kinds, axes.kind).map_err(|error| refused(&error))?;
         }
         if let Some(sort) = &self.sort {
-            selection.sort = Some(parse_sort(sort)?);
+            selection.sort = Some(parse_sort(sort, axes.sort).map_err(|error| refused(&error))?);
         }
         selection.ignored = match (self.exclude_ignored, self.only_ignored) {
             (false, false) => IgnoredEntries::Include,
@@ -1233,13 +1217,7 @@ impl Cli {
         }
         // The command line names these axes with flags; a library caller names them with
         // fields, and the report's own diagnostics follow whichever asked.
-        Ok(Query {
-            selection,
-            views,
-            omitted_views,
-            axes: AxisNames::FLAGS,
-            words_per_page: self.words_per_page,
-        })
+        Ok(Query { selection, views, omitted_views, axes, words_per_page: self.words_per_page })
     }
 
     fn parse_analysis(&self) -> anyhow::Result<AnalysisRequest> {
@@ -1247,48 +1225,6 @@ impl Cli {
             .map_err(|message| anyhow::anyhow!(message))?;
         Ok(AnalysisRequest { profile, workers: self.analysis_workers })
     }
-}
-
-/// What each knob is called on the command line, given its name in the API.
-#[cfg(feature = "watch")]
-const WATCH_SCOPE_VOCABULARY: [(&str, &str); 5] = [
-    ("max_depth", "--scan-depth"),
-    ("one_filesystem", "--one-filesystem"),
-    ("modified_since", "--modified-since"),
-    ("depth", "--depth"),
-    ("include", "--include"),
-];
-
-/// The library's watch-scope rule, in the command line's vocabulary.
-///
-/// One rule, stated once, with only the knob names differing. It used to be two separate
-/// messages -- the CLI's naming flags and the library's naming implementation -- which
-/// drifted apart and which the parity harness could not tell were the same rule.
-///
-/// The substitution is an explicit whole-word map rather than a blind replace, which is
-/// the bug fdu-7j6z was: `message.replace("analyze", "--analyze")` rewrote the user's own
-/// token. Here every replacement is a field name that cannot appear inside a value, which
-/// `the_watch_guidance_substitutes_whole_words_only` asserts, and the parity run verifies
-/// the two surfaces stay equivalent.
-#[cfg(feature = "watch")]
-fn watch_scope_guidance() -> String {
-    // One pass over whole words, never re-scanning what was already substituted. A
-    // sequential replace does re-scan: max_depth becomes --scan-depth, and then `depth`
-    // matches inside it, giving `--scan---depth`. That is fdu-7j6z again, and it appeared
-    // again here the moment the same shortcut was taken.
-    fdu_core::scan::WATCH_SCOPE_GUIDANCE
-        .split_inclusive(|character: char| !character.is_ascii_alphanumeric() && character != '_')
-        .map(|piece| {
-            let end = piece
-                .find(|character: char| !character.is_ascii_alphanumeric() && character != '_')
-                .unwrap_or(piece.len());
-            let (word, tail) = piece.split_at(end);
-            match WATCH_SCOPE_VOCABULARY.iter().find(|(field, _)| *field == word) {
-                Some((_, flag)) => format!("{flag}{tail}"),
-                None => piece.to_string(),
-            }
-        })
-        .collect()
 }
 
 /// Format transient one-shot work without adding it to the machine-report schema.
@@ -1438,32 +1374,6 @@ fn plural<'a>(count: usize, singular: &'a str, plural: &'a str) -> &'a str {
     if count == 1 { singular } else { plural }
 }
 
-/// Split a comma-delimited list of closed identifiers.
-///
-/// Closed vocabularies are comma lists and open pattern values are repeatable flags,
-/// because glob brace syntax (`*.{rs,toml}`) contains commas and would be shredded by a
-/// split. Duplicates are an error rather than a silent no-op: repeating a view is far
-/// more likely to be a typo than an intention.
-fn parse_list<T: PartialEq>(
-    value: &str,
-    flag: &str,
-    parse: impl Fn(&str, &str) -> anyhow::Result<T>,
-) -> anyhow::Result<Vec<T>> {
-    let mut parsed = Vec::new();
-    for token in value.split(',') {
-        let token = token.trim();
-        if token.is_empty() {
-            anyhow::bail!("invalid {flag} {value:?}: empty entry in the list");
-        }
-        let item = parse(token, flag)?;
-        if parsed.contains(&item) {
-            anyhow::bail!("invalid {flag} {value:?}: {token:?} appears more than once");
-        }
-        parsed.push(item);
-    }
-    Ok(parsed)
-}
-
 /// Whether a view renders anything the content analyzers produce.
 ///
 /// This is the check behind the "paid for nothing" note.  It is deliberately a match
@@ -1515,17 +1425,6 @@ fn display_notes(views: &ResolvedViews, profile: AnalysisSet, bytes_read: u64) -
     Vec::new()
 }
 
-/// Parse one `--kind` token.
-fn parse_kind(token: &str, flag: &str) -> anyhow::Result<EntryKind> {
-    match token.to_ascii_lowercase().as_str() {
-        "file" => Ok(EntryKind::File),
-        "dir" => Ok(EntryKind::Dir),
-        "symlink" => Ok(EntryKind::Symlink),
-        "other" => Ok(EntryKind::Other),
-        _ => anyhow::bail!("invalid {flag} {token:?}: expected one of file, dir, symlink, other"),
-    }
-}
-
 /// Parse one `.gitignore` limit flag with the engine's grammar, naming the flag in the
 /// rejection; an absent flag keeps `default`.
 fn parse_gitignore_limit(
@@ -1543,40 +1442,6 @@ fn parse_gitignore_limit(
         }
         other => other.into(),
     })
-}
-
-/// Parse a bound that accepts `all` for unbounded.
-fn parse_bound(value: &str, flag: &str) -> anyhow::Result<Bound> {
-    let value = value.trim();
-    if value.eq_ignore_ascii_case("all") {
-        return Ok(Bound::All);
-    }
-    value
-        .parse::<usize>()
-        .map(Bound::Limit)
-        .map_err(|_| anyhow::anyhow!("invalid {flag} {value:?}: expected a whole number or `all`"))
-}
-
-/// Parse the `--sort` key.
-fn parse_sort(value: &str) -> anyhow::Result<SortKey> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "size" => Ok(SortKey::Size),
-        "count" => Ok(SortKey::Count),
-        "mtime" => Ok(SortKey::Mtime),
-        "name" => Ok(SortKey::Name),
-        other => {
-            anyhow::bail!("invalid --sort {other:?}: expected one of size, count, mtime, name")
-        }
-    }
-}
-
-/// Parse the `--size` metric.
-fn parse_size_metric(value: &str) -> anyhow::Result<SizeMetric> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "allocated" => Ok(SizeMetric::Allocated),
-        "apparent" => Ok(SizeMetric::Apparent),
-        other => anyhow::bail!("invalid --size {other:?}: expected allocated or apparent"),
-    }
 }
 
 /// Run `fdu` through its real process boundary and return its stable numeric exit code.
@@ -1895,6 +1760,8 @@ fn compose_skill_from(template: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fdu_core::EntryKind;
+    use fdu_core::query::{Bound, SizeMetric, SortKey};
     #[cfg(feature = "watch")]
     use std::time::UNIX_EPOCH;
 
@@ -2283,50 +2150,6 @@ mod tests {
     /// The default the CLI used to declare itself now comes from the library, so every
     /// surface renders the same tree for the same request. While the CLI owned it, a
     /// Python caller leaving depth unset got an unbounded tree and no warning.
-    /// The CLI's wording and the library's must stay one rule with different knob names,
-    /// because that equivalence is what the parity harness verifies mechanically.
-    ///
-    /// Asserted against the constant and the vocabulary rather than by quoting prose. The
-    /// first three versions of this test quoted phrases and went stale the moment the rule
-    /// was reworded, which is a test measuring its own copy of the thing under test.
-    #[cfg(feature = "watch")]
-    #[test]
-    fn the_watch_guidance_substitutes_whole_words_only() {
-        let source = fdu_core::scan::WATCH_SCOPE_GUIDANCE;
-        let text = watch_scope_guidance();
-
-        // A sequential replace produced `--scan---depth`: max_depth became --scan-depth and
-        // then `depth` matched inside the replacement. That is fdu-7j6z, and it reappeared
-        // here the moment the same shortcut was taken.
-        assert!(!text.contains("---"), "{text} re-substituted a replacement");
-
-        // Whole words throughout, because `--scan-depth` contains `depth`. Checking with a
-        // plain `contains` fails here for the same reason a sequential replace corrupts the
-        // text -- which is the point, and is why this assertion is written the careful way.
-        let names_word = |haystack: &str, word: &str| {
-            // Hyphens stay inside the token, so `--scan-depth` is one word and not three.
-            // Splitting on them is what made this assertion see a bare `depth` that is not
-            // there -- the same tokenisation mistake, one layer up.
-            haystack
-                .split(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-')
-                .any(|w| w == word)
-        };
-        for (field, flag) in WATCH_SCOPE_VOCABULARY {
-            if names_word(source, field) {
-                assert!(text.contains(flag), "{text} must name {flag} where the rule says {field}");
-            }
-            assert!(!names_word(&text, field), "{text} still names {field} untranslated");
-        }
-
-        // Substitution only: everything that is not a knob name survives untouched, so the
-        // two surfaces state the same rule rather than two rules that happen to agree.
-        let mut rebuilt = text.clone();
-        for (field, flag) in WATCH_SCOPE_VOCABULARY {
-            rebuilt = rebuilt.replace(flag, field);
-        }
-        assert_eq!(rebuilt, source, "the CLI wording must be the library's, knob names aside");
-    }
-
     #[test]
     fn an_unnamed_depth_takes_the_view_default_rather_than_unbounded() {
         let parsed = cli().resolved_query().expect("parses");

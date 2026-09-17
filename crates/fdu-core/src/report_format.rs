@@ -2525,7 +2525,7 @@ mod tests {
         );
         assert!(yaml.contains(&expected), "{yaml}");
 
-        let flags = Query { axes: crate::query::AxisNames::FLAGS, ..query.clone() };
+        let flags = Query { axes: &crate::query::AxisNames::FLAGS, ..query.clone() };
         let note = "note: 1 .gitignore file not applied (1 with a line over the 16 KiB line \
                     limit), so ignored shares under vendor are not exact; sizes are. To apply \
                     them, raise --gitignore-line-limit above 16 KiB, or set it to all";

@@ -277,7 +277,7 @@ fn parse_report(dict: &Bound<'_, PyDict>) -> PyResult<fdu_core::ReportRequest> {
     if words_per_page == 0 {
         return Err(PyValueError::new_err("words_per_page must be positive"));
     }
-    let query = Query { selection, views, omitted_views, axes: AxisNames::FIELDS, words_per_page };
+    let query = Query { selection, views, omitted_views, axes: &AxisNames::FIELDS, words_per_page };
     Ok(fdu_core::ReportRequest {
         query,
         generated_at,

@@ -8,6 +8,7 @@
 
 mod query_glob;
 mod query_report;
+mod query_request;
 mod query_selection;
 mod query_values;
 
@@ -19,6 +20,10 @@ pub use query_report::{
 };
 pub(crate) use query_report::{
     display_notes, forget_ignore_classification, report_in, report_summary,
+};
+pub use query_request::{
+    RequestError, bound_nanos, parse_bound, parse_cache_policy, parse_kind, parse_kinds,
+    parse_size_metric, parse_sort,
 };
 pub(crate) use query_selection::NameIdentity;
 pub use query_selection::{
