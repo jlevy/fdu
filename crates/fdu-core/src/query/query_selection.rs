@@ -12,13 +12,37 @@ use crate::engine_contract::{EntryKind, Error, Result};
 use crate::query::query_glob::Pattern;
 
 /// Which size metric a report answers in.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SizeMetric {
     /// Bytes the file's contents occupy logically.
-    #[default]
     Apparent,
     /// Bytes the filesystem allocated, which sparse files and clones make differ.
     Allocated,
+}
+
+impl SizeMetric {
+    /// Stable label, the inverse of [`parse_size_metric`](crate::query::parse_size_metric).
+    ///
+    /// `const` so a surface can declare the default metric's spelling from the defaults
+    /// table rather than writing the word out again: the command line's `--size` help said
+    /// `allocated` in a literal of its own.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Apparent => "apparent",
+            Self::Allocated => "allocated",
+        }
+    }
+}
+
+/// Allocated, from the request model's defaults table.
+///
+/// Read from the table rather than declared here, because this was the one place the
+/// default was apparent: every surface answered in allocated bytes, and a Rust caller or
+/// an opened-root read that named no metric got a different answer to the same request.
+impl Default for SizeMetric {
+    fn default() -> Self {
+        crate::query::Request::DEFAULTS.size
+    }
 }
 
 /// Which key results are ordered by.
@@ -159,7 +183,7 @@ pub struct Selection {
     /// Entries to consider by `.gitignore` classification.
     ///
     /// Anything but [`IgnoredEntries::Include`] needs an index that observed control
-    /// state; [`crate::query::Query::validate_controls`] refuses it otherwise.
+    /// state; [`crate::query::Request::validate`] refuses it otherwise.
     pub ignored: IgnoredEntries,
     /// How deep a rendered tree descends, or `None` to let each view apply its own.
     ///
@@ -730,6 +754,8 @@ mod tests {
     #[test]
     fn portable_catalog_predicates_compose_without_client_side_filtering() {
         let selection = EntrySelection {
+            // Apparent, so the bound reads the sizes written below rather than their blocks.
+            query: Selection { size: SizeMetric::Apparent, ..Selection::default() },
             max_size: Some(10),
             exclude_ignored: true,
             terminal_extensions: vec![".rs".to_string(), ".md".to_string()],

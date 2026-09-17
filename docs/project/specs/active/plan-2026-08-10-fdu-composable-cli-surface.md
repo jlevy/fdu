@@ -396,6 +396,15 @@ Two consequences follow from modelling the set honestly rather than by rank:
   re-read for a later `code` query even though every metric it needs is already stored.
   The test becomes `stored ⊇ requested`, projecting the stored record down to the
   requested set. This is strictly faster and strictly more correct.
+
+  **Since reverted (noted 2026-09-17).** Containment shipped and was withdrawn: a
+  sidecar now serves a request only when its whole content identity is *equal* to the
+  requested one, because containment compared the analyzer set alone and served records
+  produced under other analyzer versions, options, type rules, entry scope, or engine.
+  Projecting a wider stored record down to a narrower request is still wanted and is
+  deferred, keyed stores with it (`fdu-w3l5`); see the equality rule in
+  [the cache design guide](../../guides/cache-design.md).
+
 - **Word metrics stop being silently discarded.** `LogicalWordStats` is computed for
   every admitted text file and then zeroed for anything outside `prose`/`markup`. Under
   `words` the metric is retained wherever it was measured, including the `code` family,
@@ -976,9 +985,9 @@ lands last.
   `--view full` and the analyzer-set rename must *not* bump either schema; a test pins
   that the `reports` array alone communicates which views were produced.
 - Content-axis tests: every analyzer set round-trips through the sidecar bitmask; an
-  `all` sidecar satisfies a `code` request with zero fresh reads (containment, not
-  equality); the default view derived from each set matches the table, and an explicit
-  `--view` overrides every one of them.
+  `all` sidecar is a clean miss for a `code` request (equality, not containment: see the
+  correction above); the default view derived from each set matches the table, and an
+  explicit `--view` overrides every one of them.
 - Display-contract tests, one per direction of Principle 13: a run whose selected views
   all ignore analysis emits the paid-for-nothing note and still exits 0; `--view full`
   without analysis renders the satisfiable views, names the omitted one, and exits 0;

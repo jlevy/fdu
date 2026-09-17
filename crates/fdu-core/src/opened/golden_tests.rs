@@ -244,7 +244,7 @@ fn coherent_projections_and_continuations() -> SessionTrace {
                 },
                 ReadProjection::Report(ReportRequest {
                     query: crate::query::Query::default(),
-                    generated_at: SystemTime::UNIX_EPOCH,
+                    now: SystemTime::UNIX_EPOCH,
                     max_work: 16,
                 }),
                 ReadProjection::Diagnostics,

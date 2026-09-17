@@ -349,6 +349,14 @@ def main() -> None:
         pass
     else:
         raise AssertionError("expected the unreleased docs view alias to be rejected")
+    # The page denominator is the request model's, so it is refused by the one grammar
+    # rather than by a check this package keeps of its own.
+    try:
+        analyzed.report(views=["documents"], words_per_page=0)
+    except ValueError as error:
+        assert "words_per_page" in str(error), error
+    else:
+        raise AssertionError("expected a zero page denominator to be rejected")
 
     tree = index.report(views=["tree"], depth="all")["reports"][0]["tree"]
     assert tree["name"] == ".", tree
@@ -456,6 +464,29 @@ def main() -> None:
     with watch_index.watch(interval=0.1) as scoped:
         assert next(scoped) is not None
 
+    # Analysis is one-shot on every surface. A watch over an analyzed index would keep
+    # serving the metrics it opened with as fresh, so it is refused here as `--watch
+    # --analyze` has always been refused.
+    analyzed_watch = fdu_py.scan(str(watch_root), analyze="lines")
+    try:
+        analyzed_watch.watch(interval=0.1)
+    except ValueError as error:
+        assert "one-shot report" in str(error), error
+    else:
+        raise AssertionError("watching an analyzed index must be refused")
+
+    # Nothing observes the window between a snapshot and the start of a watch, so an index
+    # opened from one alone cannot be watched either.
+    cache_only_index = fdu_py.open(str(watch_root), cache="auto")
+    del cache_only_index
+    cache_only_index = fdu_py.open(str(watch_root), cache="only")
+    try:
+        cache_only_index.watch(interval=0.1)
+    except ValueError as error:
+        assert "nothing verifies" in str(error), error
+    else:
+        raise AssertionError("watching a cache-only index must be refused")
+
     # The long-lived surface owns one native engine and returns complete immutable
     # values. Drive one lifecycle through the installed wheel rather than importing a
     # sibling checkout, because that is the artifact MetaBrowser and other clients use.
@@ -517,6 +548,26 @@ def main() -> None:
     opened_report = response.results[5].value
     assert json.loads(opened_report.render(Format.JSON)) == opened_report.as_dict()
     assert response.results[6].kind == "diagnostics", response.results[6]
+
+    # An opened root runs no analyzer, so a view that needs one has no answer here: it is
+    # refused, not reported with zero words. The whole read fails, because the request's
+    # own shape is what is wrong (fdu-cevv).
+    try:
+        opened.read(ReportProjection(query=Query(views=(View.DOCUMENTS,))))
+    except ValueError as error:
+        assert "documents requires content analysis" in str(error), error
+    else:
+        raise AssertionError("an opened documents read must be refused")
+
+    # The same grammar refuses the page denominator on this route as on every other, in
+    # the same words: an opened read had its own sentence for it until the whole read was
+    # built through the request model (fdu-ra64).
+    try:
+        opened.read(ReportProjection(query=Query(words_per_page=0)))
+    except ValueError as error:
+        assert 'invalid words_per_page "0"' in str(error), error
+    else:
+        raise AssertionError("an opened read must refuse a zero page denominator")
 
     # Version and cursor identities are scoped to one opened session. Crossing them
     # between roots must remain a typed recovery condition rather than a generic native

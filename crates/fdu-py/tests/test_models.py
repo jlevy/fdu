@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import re
+import sys
 from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 from pathlib import Path
 
+import fdu
 import pytest
 from fdu import (
     Analysis,
@@ -26,6 +28,8 @@ from fdu import (
     SummarySection,
     TreeSection,
     View,
+    WatchOptions,
+    _native,
     opened,
 )
 from fdu._api import FduError, FilesystemError, InvalidArgumentError, _call, _query_kwargs
@@ -62,6 +66,13 @@ def test_public_defaults_match_cli_semantics() -> None:
     # Empty means "let the analyzers choose", which is the CLI semantics this test is
     # named for: `--analyze code` with no `--view` reports languages, not tree.
     assert Query().views == ()
+    # A watch answers the same request a report of the same index answers, so it brings no
+    # view of its own: this named `files`, and `--watch` never has.
+    assert WatchOptions().query == Query()
+    # The page denominator and the size metric come from the request model's defaults
+    # table, so this package states neither on its own.
+    assert Query().words_per_page == _native.DEFAULT_WORDS_PER_PAGE
+    assert Selection().size.value == _native.DEFAULT_SIZE
 
 
 def test_invalid_option_values_fail_before_crossing_native_boundary() -> None:
@@ -77,8 +88,6 @@ def test_invalid_option_values_fail_before_crossing_native_boundary() -> None:
         opened.OpenedOptions(control_line_limit=-1)
     with pytest.raises(ValueError, match="workers"):
         AnalysisOptions(workers=-1)
-    with pytest.raises(ValueError, match="words_per_page"):
-        Query(words_per_page=0)
     with pytest.raises(ValueError, match="max_size"):
         opened.EntrySelection(max_size=-1)
 
@@ -357,3 +366,28 @@ def test_opened_failures_use_the_opened_exception_hierarchy(
 
     with pytest.raises(public_error):
         _opened_call(fail)
+
+
+def test_a_scope_this_build_cannot_honour_is_a_refused_request(tmp_path: Path) -> None:
+    """An unsupported scan scope is an argument error, not the engine failing.
+
+    The kind is what this pins. The same refusal exits 2 on the command line, and a caller
+    here catches it as ``InvalidArgumentError``, which is a ``ValueError``; reporting it as
+    an engine error on one surface and a refused request on the other made one request
+    have two kinds of outcome, which is what the path-independence matrix measured for
+    ``--one-filesystem`` on Windows.
+
+    ``follow_symlinks`` is refused on every platform and ``one_filesystem`` only where the
+    platform has no device identity, so the first case is how this is checked anywhere.
+    """
+    (tmp_path / "file.txt").write_text("contents", encoding="utf-8")
+
+    with pytest.raises(InvalidArgumentError, match="follow_symlinks"):
+        opened.OpenedIndex.open(tmp_path, opened.OpenedOptions(follow_symlinks=True))
+
+    if sys.platform != "win32":
+        return
+    scope = ScanOptions(one_filesystem=True)
+    for route in (fdu.report, fdu.open, fdu.scan):
+        with pytest.raises(InvalidArgumentError, match="one_filesystem"):
+            route(tmp_path, scan=scope)

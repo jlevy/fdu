@@ -34,7 +34,7 @@ pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadRes
         let version = EngineVersion {
             session: opened.state.session,
             sequence: index.clock(),
-            scope: scope.scope_identity(),
+            scope: scope.entry_scope(),
             semantics: scope.semantic_identity(),
         };
         if let Some(expected) = request.expected {
@@ -253,7 +253,7 @@ fn report_projection(
 
     let provenance = crate::query::Provenance {
         scan_started_at: None,
-        generated_at: request.generated_at,
+        generated_at: request.now,
         source: match state.source {
             crate::Source::Scanned => crate::query::ReportSource::ColdScan,
             crate::Source::Revalidated => crate::query::ReportSource::WarmRevalidate,
@@ -268,7 +268,7 @@ fn report_projection(
     // opened read matches portable names, where a one-shot report matches native ones.
     let report = crate::query::report_in(
         index,
-        &request.query,
+        &read_request(request),
         &provenance,
         crate::query::NameIdentity::Portable,
     )?;
@@ -276,6 +276,18 @@ fn report_projection(
     work.maintained_index_work = work.maintained_index_work.saturating_add(charge.maintained);
     work.rows_returned = work.rows_returned.saturating_add(report_rows(&report));
     Ok(ProjectionResult::Report(report))
+}
+
+/// The whole request one opened-root read makes: the root's own basis, plus the query and
+/// the instant this read supplies.
+///
+/// A caller names neither root, scope, nor analyzers, because an opened root owns them for
+/// its lifetime; composing them here is what lets one rule refuse a read that the root
+/// cannot answer. The basis is [`OpenedIndex::basis`](crate::OpenedIndex::basis), the one
+/// statement of what an opened root holds, rather than a second reading of the index this
+/// read already validated against.
+fn read_request(request: &crate::ReportRequest) -> crate::query::Request {
+    crate::query::Request::new(crate::OpenedIndex::basis(), request.query.clone(), request.now)
 }
 
 fn validate_report(request: &crate::ReportRequest) -> Result<()> {
@@ -289,7 +301,10 @@ fn validate_report(request: &crate::ReportRequest) -> Result<()> {
     if views > crate::MAX_REPORT_VIEWS {
         return Err(Error::ReportViewLimit { attempted: views, limit: crate::MAX_REPORT_VIEWS });
     }
-    Ok(())
+    // The same rules every other read is held to, applied to what an opened root holds: a
+    // `documents` view is refused here rather than answered with zero words, because
+    // nothing analyzed a file.
+    read_request(request).validate().map_err(Error::InvalidRequest)
 }
 
 #[derive(Clone, Copy, Default)]

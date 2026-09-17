@@ -78,6 +78,7 @@
         "files": [
           ".github/workflows/ci.yml",
           ".github/workflows/release.yml",
+          ".github/workflows/path-independence.yml",
           "Makefile"
         ],
         "assets": {
@@ -93,6 +94,7 @@
         "files": [
           "rust-toolchain.toml",
           ".github/workflows/ci.yml",
+          ".github/workflows/path-independence.yml",
           ".github/workflows/release.yml"
         ]
       },
@@ -112,6 +114,7 @@
         "sha256": "3927bab574a00ca0560c9583fe19655ba19603a1c5851414e4325d34ac50e469",
         "files": [
           ".github/workflows/ci.yml",
+          ".github/workflows/path-independence.yml",
           ".github/workflows/release.yml"
         ]
       }

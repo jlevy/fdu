@@ -7,11 +7,11 @@
 //! observes no `.gitignore` needs only five aggregate values, so that one plan reduces the
 //! scan's observations directly and never builds an index.
 
-use std::path::Path;
 use std::time::SystemTime;
 
 use crate::query::{
-    Provenance, Query, Report, ReportSource, SummaryRow, ViewSpec, report, report_summary,
+    Delivery, Provenance, Query, Report, ReportSource, Request, SummaryRow, ViewSpec, report,
+    report_summary,
 };
 use crate::{
     CachePolicy, EntryKind, Error, Freshness, OpenConfig, OpenPath, PendingSave, Result,
@@ -195,24 +195,24 @@ pub(crate) fn plan_report(config: &OpenConfig, query: &Query) -> ReportPlan {
 /// cache state on a tree that the same command would not have, which a later cache-only
 /// read could see (fdu-4msv).
 ///
-/// The report observes `.gitignore` control state as `config.scan.read_controls` says,
-/// on by default as for [`crate::open`], so the two share one snapshot scope. Observing,
+/// The report observes `.gitignore` control state as the request's
+/// [`ScanConfig::read_controls`](crate::ScanConfig) says, on by default as for
+/// [`crate::open`], so the two share one snapshot scope. Observing,
 /// every tree, summary, extension, and file row carries its ignored share, and
 /// [`Report::ignore_rules`](crate::query::Report::ignore_rules) names any file a control
 /// limit refused, by the budget or by the line limit. Turned off, no `.gitignore` is
 /// read, every share is `None`, and a selection by ignored state is refused with
-/// [`Error::ControlStateNotObserved`]. Such a report reads a default snapshot under
-/// [`CachePolicy::Only`], consuming its all-entry facts and describing none of its
-/// classification.
+/// [`Error::InvalidRequest`] before anything is scanned. Such a report reads a default
+/// snapshot under [`CachePolicy::Only`], consuming its all-entry facts and describing none
+/// of its classification.
 ///
 /// The caller owns the returned [`PendingSave`] and decides when to join it, exactly as
 /// the command line does, so a renderer can run while the snapshot is still being written.
 pub fn prepare_report(
-    root: &Path,
-    config: &OpenConfig,
-    query: &Query,
+    request: &Request,
+    delivery: &Delivery,
 ) -> Result<(Report, PendingSave, PerformanceSummary)> {
-    prepare_report_internal(root, config, query, false)
+    prepare_report_internal(request, delivery, false)
         .map(|(report, pending, performance, _diagnostics)| (report, pending, performance))
 }
 
@@ -225,23 +225,28 @@ pub fn prepare_report(
 /// cold scan; cache-only opens do not scan, and warm reconciliation has a different
 /// execution contract.
 pub fn prepare_report_with_scan_diagnostics(
-    root: &Path,
-    config: &OpenConfig,
-    query: &Query,
+    request: &Request,
+    delivery: &Delivery,
 ) -> Result<(Report, PendingSave, PerformanceSummary, Option<crate::scan::ScanDiagnostics>)> {
-    prepare_report_internal(root, config, query, true)
+    prepare_report_internal(request, delivery, true)
 }
 
 fn prepare_report_internal(
-    root: &Path,
-    config: &OpenConfig,
-    query: &Query,
+    request: &Request,
+    delivery: &Delivery,
     collect_scan_diagnostics: bool,
 ) -> Result<(Report, PendingSave, PerformanceSummary, Option<crate::scan::ScanDiagnostics>)> {
+    // Before anything is scanned, loaded, or reduced: a request its own basis cannot answer
+    // has no answer at any cost, and the compact summary tier below never reaches a reader,
+    // so a check made there would not cover this route at all. A scope this build cannot
+    // honour is part of that one check rather than a second one beside it, which is what
+    // keeps the refusal independent of the delivery: the cache-only tier never scans and
+    // the cold tier never loads, so a rule stated at either would hold for one of them.
+    request.validate().map_err(Error::InvalidRequest)?;
+    let config = &OpenConfig::of(&request.basis, delivery);
+    let query = &request.query;
+    let root = request.basis.root.as_path();
     let scan_started_at = SystemTime::now();
-    query
-        .validate_controls(config.scan.read_controls)
-        .map_err(|_refused| Error::ControlStateNotObserved)?;
     let plan = plan_report(config, query);
     match plan.retained_state {
         RetainedState::Summary => {
@@ -321,14 +326,14 @@ fn prepare_report_internal(
                 errors: open_report.error_messages(),
             };
             let performance = PerformanceSummary::from_open_report(&open_report);
-            let mut answer = report(&index, query, &provenance)?;
+            let mut answer = report(&index, request, &provenance)?;
             // A cache-only report may consume a controls-on snapshot for a controls-off
             // request because reporting reads only the all-entry facts. No Index escapes
             // this boundary, and the projected report must describe the requested scope
             // rather than the stronger internal snapshot it consumed, including what it
             // says about ignore rules and every row's ignored share.
             answer.scope = config.scan.scope();
-            if !answer.scope.observes_controls() {
+            if !config.scan.control_identity().is_observed() {
                 crate::query::forget_ignore_classification(&mut answer);
                 answer.notes = crate::query::display_notes(query, &answer.ignore_rules);
             }
@@ -340,7 +345,7 @@ fn prepare_report_internal(
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use super::*;
     use crate::ScanConfig;
@@ -348,6 +353,34 @@ mod tests {
 
     fn summary_query() -> Query {
         Query { views: vec![ViewSpec::Summary], ..Query::default() }
+    }
+
+    /// The request and the delivery a test's `OpenConfig` spells, split the way the two
+    /// models now divide it: what the answer says, and how it is carried out.
+    fn split(root: &Path, config: &OpenConfig, query: &Query) -> (Request, Delivery) {
+        let (basis, delivery) = config.split(root);
+        (Request::new(basis, query.clone(), SystemTime::now()), delivery)
+    }
+
+    /// [`prepare_report`] as these tests ask for it: one configuration, one query.
+    fn prepared(
+        root: &Path,
+        config: &OpenConfig,
+        query: &Query,
+    ) -> Result<(Report, PendingSave, PerformanceSummary)> {
+        let (request, delivery) = split(root, config, query);
+        prepare_report(&request, &delivery)
+    }
+
+    /// [`prepared`], keeping the scan diagnostics.
+    fn prepared_with_diagnostics(
+        root: &Path,
+        config: &OpenConfig,
+        query: &Query,
+    ) -> Result<(Report, PendingSave, PerformanceSummary, Option<crate::scan::ScanDiagnostics>)>
+    {
+        let (request, delivery) = split(root, config, query);
+        prepare_report_with_scan_diagnostics(&request, &delivery)
     }
 
     fn config(policy: CachePolicy, cache_path: Option<PathBuf>) -> OpenConfig {
@@ -530,14 +563,13 @@ mod tests {
         let mut tree_query = summary_query();
         tree_query.views = vec![ViewSpec::Tree];
 
-        let (first, pending, _) =
-            prepare_report(root.path(), &auto, &tree_query).expect("first report");
+        let (first, pending, _) = prepared(root.path(), &auto, &tree_query).expect("first report");
         pending.join().expect("first save");
         assert_eq!(first.source, ReportSource::ColdScan);
         assert!(auto.cache_path.as_deref().expect("path").exists(), "first run persists");
 
         let (second, pending, performance) =
-            prepare_report(root.path(), &auto, &tree_query).expect("second report");
+            prepared(root.path(), &auto, &tree_query).expect("second report");
         pending.join().expect("second save");
         assert_eq!(
             second.source,
@@ -567,13 +599,12 @@ mod tests {
         let mut tree_query = summary_query();
         tree_query.views = vec![ViewSpec::Tree];
 
-        let (_, pending, _) = prepare_report(root.path(), &auto, &tree_query).expect("report");
+        let (_, pending, _) = prepared(root.path(), &auto, &tree_query).expect("report");
         pending.join().expect("save");
 
         let only = config(CachePolicy::Only, Some(cache.path().join("cache.fdu")));
         let (from_cache, pending, performance, diagnostics) =
-            prepare_report_with_scan_diagnostics(root.path(), &only, &tree_query)
-                .expect("cache-only report");
+            prepared_with_diagnostics(root.path(), &only, &tree_query).expect("cache-only report");
         pending.join().expect("no save");
         assert_eq!(from_cache.source, ReportSource::CacheOnly);
         assert_eq!(performance.walked_files, 0, "cache-only never touches the tree");
@@ -605,12 +636,12 @@ mod tests {
             ..Query::default()
         };
         let (projected, pending, performance) =
-            prepare_report(root.path(), &controls_off, &query).expect("projected report");
+            prepared(root.path(), &controls_off, &query).expect("projected report");
         pending.join().expect("no cache-only save");
 
         let cold = OpenConfig { policy: CachePolicy::Off, cache_path: None, ..controls_off };
         let (mut expected, pending, _) =
-            prepare_report(root.path(), &cold, &query).expect("controls-off cold report");
+            prepared(root.path(), &cold, &query).expect("controls-off cold report");
         pending.join().expect("no cold save");
         expected.scan_started_at = projected.scan_started_at;
         expected.generated_at = projected.generated_at;
@@ -640,9 +671,8 @@ mod tests {
             },
             ..controls_config(CachePolicy::Auto, cache_path, false)
         };
-        let (report, pending, performance) =
-            prepare_report(root.path(), &controls_off, &summary_query())
-                .expect("controls-off cold fallback");
+        let (report, pending, performance) = prepared(root.path(), &controls_off, &summary_query())
+            .expect("controls-off cold fallback");
         pending.join().expect("save controls-off snapshot");
 
         assert_eq!(report.source, ReportSource::ColdScan);
@@ -683,7 +713,7 @@ mod tests {
             let cache_path = cache.path().join("cache.fdu");
             let caller = controls_config(CachePolicy::Auto, cache_path.clone(), read_controls);
             for query in [summary_query(), tree_query.clone()] {
-                let (report, pending, _) = prepare_report(root.path(), &caller, &query)
+                let (report, pending, _) = prepared(root.path(), &caller, &query)
                     .expect("a refused control file ends nothing");
                 pending.join().expect("save");
                 assert!(report.complete, "a refusal is not a partial: {:?}", report.errors);
@@ -709,6 +739,68 @@ mod tests {
         }
     }
 
+    /// Which failure a run names, and what kind of failure it is, must not depend on how it
+    /// was delivered.
+    ///
+    /// A scope this build cannot honour is refused by every policy, including the one that
+    /// never scans: under `--cache only` the scan that would have refused it never runs, so
+    /// the run used to report a snapshot miss instead -- the same request naming two
+    /// different failures depending on its delivery, which the path-independence registry
+    /// records as `refusal-order` for `--one-filesystem` on Windows. `follow_symlinks` is
+    /// the same rule on every platform, so this test runs where the Windows case cannot.
+    ///
+    /// The refusal is the request model's typed one, not an engine error the surfaces then
+    /// classify differently: reporting it as an engine error made the command line exit 1
+    /// where Python raised `ValueError`, one request with two kinds of outcome.
+    #[test]
+    fn a_scope_this_build_cannot_honour_is_refused_before_any_snapshot_is_read() {
+        let root = tempfile::tempdir().expect("tempdir");
+        fs::write(root.path().join("file.txt"), b"contents").expect("file");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let cache_path = cache.path().join("cache.fdu");
+
+        // A usable snapshot exists, so a cache-only read of a scope this build supports
+        // answers from it.
+        let warm = config(CachePolicy::Auto, Some(cache_path.clone()));
+        let (_, pending, _) = prepared(root.path(), &warm, &summary_query()).expect("warm");
+        pending.join().expect("save");
+        let (_, pending, _) = prepared(
+            root.path(),
+            &config(CachePolicy::Only, Some(cache_path.clone())),
+            &summary_query(),
+        )
+        .expect("the snapshot answers a supported scope");
+        pending.join().expect("no save");
+
+        let unsupported = ScanConfig { follow_symlinks: true, ..ScanConfig::default() };
+        for policy in
+            [CachePolicy::Only, CachePolicy::Off, CachePolicy::Auto, CachePolicy::ReadOnly]
+        {
+            let asked = OpenConfig {
+                scan: unsupported.clone(),
+                ..config(policy, Some(cache_path.clone()))
+            };
+            let refused = prepared(root.path(), &asked, &summary_query())
+                .expect_err("a scope this build cannot honour has no answer at any policy");
+            assert!(
+                matches!(
+                    refused,
+                    Error::InvalidRequest(crate::query::RequestError::ScopeUnsupported {
+                        axis: crate::query::ScopeAxis::FollowSymlinks,
+                        ..
+                    })
+                ),
+                "{policy:?} must refuse the request rather than fail the operation: {refused}"
+            );
+            assert_eq!(
+                refused.to_string(),
+                "unsupported scan configuration: follow_symlinks requires cycle, root-boundary, \
+                 and filesystem-boundary semantics",
+                "{policy:?} must name the scope it cannot honour"
+            );
+        }
+    }
+
     #[test]
     fn a_report_that_reads_no_gitignore_refuses_to_select_by_ignored_state() {
         // No entry of a scan that read no rule can be shown to be ignored or not, so the
@@ -719,13 +811,18 @@ mod tests {
         let mut only = summary_query();
         only.selection.ignored = IgnoredEntries::Only;
 
+        // Refused by the request model before anything is scanned: the compact summary
+        // tier this request would take reaches no reader, so a check made there would not
+        // cover this route at all.
         assert!(matches!(
-            prepare_report(root.path(), &blind(CachePolicy::Off, None), &only),
-            Err(Error::ControlStateNotObserved)
+            prepared(root.path(), &blind(CachePolicy::Off, None), &only),
+            Err(Error::InvalidRequest(crate::query::RequestError::IgnoredWithoutObservation(
+                IgnoredEntries::Only
+            )))
         ));
 
         let (report, pending, _) =
-            prepare_report(root.path(), &config(CachePolicy::Off, None), &only).expect("observed");
+            prepared(root.path(), &config(CachePolicy::Off, None), &only).expect("observed");
         pending.join().expect("no save");
         let Section::Summary(row) = report.sections[0] else { panic!("a summary") };
         assert_eq!((row.files, row.bytes), (1, 7), "only the ignored file is selected");
@@ -748,11 +845,11 @@ mod tests {
             let cache_path = cache.path().join("cache.fdu");
             let write = controls_config(CachePolicy::Auto, cache_path.clone(), writer);
             let (_, pending, _) =
-                prepare_report(root.path(), &write, &tree_query).expect("writing report");
+                prepared(root.path(), &write, &tree_query).expect("writing report");
             pending.join().expect("save");
 
             let read = controls_config(CachePolicy::Only, cache_path, reader);
-            match prepare_report(root.path(), &read, &tree_query) {
+            match prepared(root.path(), &read, &tree_query) {
                 Ok((report, pending, _)) => {
                     pending.join().expect("no save");
                     assert!(writer || !reader, "writer {writer} served reader {reader}");
@@ -787,7 +884,7 @@ mod tests {
         tree_query.views = vec![ViewSpec::Tree];
 
         let auto = config(CachePolicy::Auto, Some(cache_path.clone()));
-        let (_, pending, _) = prepare_report(root.path(), &auto, &tree_query).expect("report");
+        let (_, pending, _) = prepared(root.path(), &auto, &tree_query).expect("report");
         pending.join().expect("save");
 
         let only = config(CachePolicy::Only, Some(cache_path));
@@ -809,7 +906,7 @@ mod tests {
         tree_query.views = vec![ViewSpec::Tree];
 
         let auto = blind(CachePolicy::Auto, Some(cache_path.clone()));
-        let (_, pending, _) = prepare_report(root.path(), &auto, &tree_query).expect("report");
+        let (_, pending, _) = prepared(root.path(), &auto, &tree_query).expect("report");
         pending.join().expect("save");
         assert!(cache_path.exists(), "the report left a snapshot");
 
@@ -832,7 +929,7 @@ mod tests {
         let query = summary_query();
         let off = blind(CachePolicy::Off, None);
         let (compact, pending, performance) =
-            prepare_report(root.path(), &off, &query).expect("compact report");
+            prepared(root.path(), &off, &query).expect("compact report");
         pending.join().expect("no pending compact save");
         assert_eq!(performance.walked_files, 2);
         assert_eq!(performance.walked_bytes, 14);
@@ -842,7 +939,7 @@ mod tests {
         let (index, open_report) = crate::open(root.path(), &off).expect("indexed scan");
         let indexed = report(
             &index,
-            &query,
+            &crate::test_support::read_of(&index, query.clone()),
             &Provenance {
                 scan_started_at: compact.scan_started_at,
                 generated_at: compact.generated_at,
@@ -876,12 +973,9 @@ mod tests {
         fs::write(root.path().join("payload"), b"payload").expect("file");
         let cache = root.path().join("must-not-exist.fdu");
 
-        let (report, pending, _) = prepare_report(
-            root.path(),
-            &blind(CachePolicy::Off, Some(cache.clone())),
-            &summary_query(),
-        )
-        .expect("compact report");
+        let (report, pending, _) =
+            prepared(root.path(), &blind(CachePolicy::Off, Some(cache.clone())), &summary_query())
+                .expect("compact report");
         pending.join().expect("no pending compact save");
 
         assert!(report.complete);
@@ -895,12 +989,9 @@ mod tests {
         fs::write(root.path().join("nested/file.txt"), b"trace me").expect("file");
         let query = Query { views: vec![ViewSpec::Tree], ..Query::default() };
 
-        let (report, pending, performance, diagnostics) = prepare_report_with_scan_diagnostics(
-            root.path(),
-            &config(CachePolicy::Off, None),
-            &query,
-        )
-        .expect("full-index report");
+        let (report, pending, performance, diagnostics) =
+            prepared_with_diagnostics(root.path(), &config(CachePolicy::Off, None), &query)
+                .expect("full-index report");
         pending.join().expect("no pending save");
 
         assert!(report.complete);

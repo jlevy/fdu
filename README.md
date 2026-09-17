@@ -97,8 +97,9 @@ fdu . --analyze=code
 
 The performance footer distinguishes fresh from cached analysis; on an unchanged tree,
 the second command can report zero content bytes read while still checking current
-metadata. A wider stored analyzer set can answer a narrower request without discarding
-the wider cache.
+metadata.
+The sidecar answers only the analyzer set that wrote it: a different set, wider
+or narrower, reads the files again and replaces it.
 
 | Request | Cache effect under ordinary `auto` runs |
 | --- | --- |
@@ -263,7 +264,8 @@ It also reclaims what fdu itself left behind — a staging file a killed writer 
 renamed, a content sidecar whose snapshot is gone — which status lists as `leftover`.
 Clearing never removes a file that is not fdu’s;
 [the cache design](docs/project/guides/cache-design.md) covers how one is recognized.
-Cache status in a machine format is its own document, carrying the `fdu.cache/1` schema.
+Cache status in a machine format is its own document, carrying the `fdu.cache/2` schema
+and the identity of every tier each cached file holds.
 
 A snapshot is usable only under the scan scope that wrote it, and a root has one cache
 path. `fdu PATH`, `fdu --watch PATH`, the library’s `open` and `prepare_report`, and
@@ -578,14 +580,15 @@ files explicitly, and counts raw words for every text family it admits.
 Every eligible file is streamed through EOF. `--analysis-workers` bounds concurrent
 readers, and `--words-per-page` controls only the report-time page denominator.
 Content results use a separately versioned sidecar keyed by the analyzer set, so an
-unchanged warm run does not reopen files -- and a sidecar written by a wider set answers
-any narrower request without rereading, because it already holds those metrics.
-Widening the set can require reanalysis, but it never invalidates the separate metadata
-snapshot. The `code` analyzer adds the dependency-free `code-sloc-v1` state machine for
-Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP, Swift, Kotlin,
-shell, and SQL. It reports code, comment, and code-blank lines separately, counts mixed
-lines as code, treats multiline strings and docstrings as code, and uses code lines as
-the default language-percentage denominator.
+unchanged warm run does not reopen files.
+A sidecar answers only the set that wrote it, because a wider one holds metrics a
+narrower request did not ask for; changing the set means reanalysis, but it never
+invalidates the separate metadata snapshot.
+The `code` analyzer adds the dependency-free `code-sloc-v1` state machine for Rust,
+Python, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP, Swift, Kotlin, shell,
+and SQL. It reports code, comment, and code-blank lines separately, counts mixed lines
+as code, treats multiline strings and docstrings as code, and uses code lines as the
+default language-percentage denominator.
 Other code types remain visible as unsupported coverage rather than being mislabeled
 from nonblank lines.
 The `words` analyzer adds FlexDoc-style normalized word counts, paragraph runs, and

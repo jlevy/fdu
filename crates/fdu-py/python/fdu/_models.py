@@ -17,6 +17,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, cast
 
+from . import _native
+
 type JsonScalar = bool | int | float | str | None
 type JsonValue = JsonScalar | list[JsonValue] | dict[str, JsonValue]
 
@@ -102,6 +104,13 @@ class SizeMetric(StrEnum):
     APPARENT = "apparent"
 
 
+#: The metric a selection answers in when the caller names none, from the request model's
+#: defaults table. Read rather than written out, so one table decides what every surface
+#: answers: this default was the one place a Rust caller got another metric than everyone
+#: else.
+_DEFAULT_SIZE = SizeMetric(_native.DEFAULT_SIZE)
+
+
 class SortKey(StrEnum):
     """Report row ordering."""
 
@@ -156,6 +165,19 @@ class CacheState(StrEnum):
     LEFTOVER = "leftover"
     UNRECOGNIZED = "unrecognized"
     ABSENT = "absent"
+
+
+class ContentState(StrEnum):
+    """What the content sidecar beside a snapshot holds.
+
+    Narrower than `CacheState`, and the two values are spelled the same: a sidecar is
+    reported only where one was found beside a snapshot, so it is never `LEFTOVER`,
+    `UNRECOGNIZED`, or `ABSENT` here. A sidecar with no snapshot is a file of its own in
+    the cache listing, and that one is `CacheState.LEFTOVER`.
+    """
+
+    CURRENT = "current"
+    STALE = "stale"
 
 
 class StaleReason(StrEnum):
@@ -322,7 +344,7 @@ class ScanOptions:
     #: ignored share. Off, no control file is read, rows carry ``ignored=None`` rather than
     #: a zero share, a selection by ``IgnoredEntries`` is refused, and the snapshot is of a
     #: separate scope. The command line spells it ``--no-gitignore``.
-    read_controls: bool = True
+    read_controls: bool = _native.DEFAULT_READ_CONTROLS
     #: Bytes of retained ``.gitignore`` charge before further files are refused, as the
     #: engine's ``ControlLimits.budget``: an int, a size such as ``"16MiB"``, ``Bound.ALL``
     #: for no bound, which also reads every ``.gitignore`` whole however large, or ``None``
@@ -372,7 +394,7 @@ class Selection:
     limit: int | Bound | str | None = None
     sort: SortKey | None = None
     reverse: bool = False
-    size: SizeMetric = SizeMetric.ALLOCATED
+    size: SizeMetric = _DEFAULT_SIZE
     #: Entries to consider by ``.gitignore`` classification. Sizes, ordering, and
     #: ``min_size`` follow the entries selected.
     ignored: IgnoredEntries = IgnoredEntries.INCLUDE
@@ -408,7 +430,7 @@ class Query:
     #: different answer than the CLI for the same string.
     views: tuple[View, ...] | str = ()
     selection: Selection = field(default_factory=Selection)
-    words_per_page: int = 250
+    words_per_page: int = _native.DEFAULT_WORDS_PER_PAGE
 
     def __post_init__(self) -> None:
         # A lone `View` is a `StrEnum` and therefore an iterable string, so passing one
@@ -418,8 +440,6 @@ class Query:
         # grammar, which is why the check names the enum rather than the type it inherits.
         if isinstance(self.views, View):
             raise TypeError("views takes a tuple of View values; wrap the single view in a tuple")
-        if self.words_per_page <= 0:
-            raise ValueError("words_per_page must be positive")
 
 
 @dataclass(frozen=True, slots=True)
@@ -427,7 +447,10 @@ class WatchOptions:
     """Configuration for an event-driven change feed."""
 
     interval: float = 2.0
-    query: Query = field(default_factory=lambda: Query(views=(View.FILES,)))
+    #: What the watch answers. A default `Query` takes the request model's own defaults, so
+    #: a watch shows what a report of the same index shows; this named `files` of its own,
+    #: which made one request mean two things depending on which door it came through.
+    query: Query = field(default_factory=Query)
 
     def __post_init__(self) -> None:
         if self.interval <= 0:
@@ -814,26 +837,94 @@ class ChangeSet:
 
 
 @dataclass(frozen=True, slots=True)
+class EntryTierIdentity:
+    """Which entries a store holds: the engine that built it, the scope it retained, and
+    the type rules and reducer set its roll-ups were tallied under.
+
+    `.gitignore` observation is not part of it, because reading rules changes which entries
+    are ignored, never which exist or what they measure.
+    """
+
+    engine: int
+    max_depth: int | None
+    follow_symlinks: bool
+    one_filesystem: bool
+    hidden_fingerprint: int
+    exclude_special: bool
+    type_rules_fingerprint: int
+    reducers_fingerprint: int
+
+
+@dataclass(frozen=True, slots=True)
+class ControlTierIdentity:
+    """The ``.gitignore`` control tier of a store that observed rules, under its limits."""
+
+    limits: ControlLimits
+
+
+@dataclass(frozen=True, slots=True)
+class SnapshotIdentity:
+    """The identity of every tier a snapshot holds.
+
+    `ignore_rules` is ``None`` when the snapshot read no ``.gitignore`` file.
+    """
+
+    entries: EntryTierIdentity
+    ignore_rules: ControlTierIdentity | None
+
+
+@dataclass(frozen=True, slots=True)
+class ContentTierIdentity:
+    """The identity of a content sidecar's records: the entry tier they were analyzed
+    over, which alone holds their type rules, then the analyzer set, options, and analyzers
+    as a report's `AnalysisMetadata` names them.
+    """
+
+    entries: EntryTierIdentity
+    analyze: tuple[Analysis, ...]
+    options_fingerprint: int
+    analyzers: tuple[Analyzer, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ContentStatus:
+    """The content sidecar fdu wrote beside a snapshot.
+
+    `state` is one of the two values a sidecar takes, `ContentState.CURRENT` or
+    `ContentState.STALE`. `records` and `identity` come from the header of a `CURRENT`
+    sidecar and are `None` otherwise; `stale_reason` is set only for a `STALE` one, and
+    `format_version` only when the version is the reason.
+    """
+
+    bytes: int
+    state: ContentState
+    stale_reason: StaleReason | None
+    format_version: int | None
+    records: int | None
+    identity: ContentTierIdentity | None
+
+
+@dataclass(frozen=True, slots=True)
 class CacheStatus:
     """One file in the snapshot cache.
 
-    `root`, `entries`, `max_depth`, and `one_filesystem` come from the header of a `CURRENT`
-    snapshot and are `None` otherwise; `stale_reason` is set only for a `STALE` one,
-    `format_version` only when the version is the reason, and `leftover_kind` only for a
-    `LEFTOVER` one.
+    `root`, `entries`, and `identity` come from the header of a `CURRENT` snapshot and are
+    `None` otherwise; `stale_reason` is set only for a `STALE` one, `format_version` only
+    when the version is the reason, and `leftover_kind` only for a `LEFTOVER` one.
+    `content` describes the sidecar beside a snapshot, current or stale, and is `None`
+    when there is none.
     """
 
     path: Path
     bytes: int
-    content_bytes: int | None
     state: CacheState
     stale_reason: StaleReason | None
     format_version: int | None
     leftover_kind: LeftoverKind | None
     root: Path | None
     entries: int | None
-    max_depth: int | None
-    one_filesystem: bool | None
+    identity: SnapshotIdentity | None
+    content: ContentStatus | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -854,6 +945,80 @@ def _datetime(value: object) -> datetime | None:
     if not isinstance(value, str):
         raise TypeError(f"expected timestamp string, got {type(value).__name__}")
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _entry_tier_identity(value: Mapping[str, Any]) -> EntryTierIdentity:
+    return EntryTierIdentity(
+        engine=int(value["engine"]),
+        max_depth=_limit(value["max_depth"]),
+        follow_symlinks=bool(value["follow_symlinks"]),
+        one_filesystem=bool(value["one_filesystem"]),
+        hidden_fingerprint=int(value["hidden_fingerprint"]),
+        exclude_special=bool(value["exclude_special"]),
+        type_rules_fingerprint=int(value["type_rules_fingerprint"]),
+        reducers_fingerprint=int(value["reducers_fingerprint"]),
+    )
+
+
+def _snapshot_identity(value: Mapping[str, Any] | None) -> SnapshotIdentity | None:
+    if value is None:
+        return None
+    raw_controls = value["ignore_rules"]
+    controls = None
+    if raw_controls is not None:
+        raw_limits = raw_controls["limits"]
+        controls = ControlTierIdentity(
+            ControlLimits(
+                budget=_limit(raw_limits["budget"]), line_limit=_limit(raw_limits["line_limit"])
+            )
+        )
+    return SnapshotIdentity(entries=_entry_tier_identity(value["entries"]), ignore_rules=controls)
+
+
+def _content_status(value: Mapping[str, Any] | None) -> ContentStatus | None:
+    if value is None:
+        return None
+    raw_identity = value["identity"]
+    identity = None
+    if raw_identity is not None:
+        identity = ContentTierIdentity(
+            entries=_entry_tier_identity(raw_identity["entries"]),
+            analyze=tuple(Analysis(str(name)) for name in raw_identity["analyze"]),
+            options_fingerprint=int(raw_identity["options_fingerprint"]),
+            analyzers=tuple(
+                Analyzer(str(item["id"]), int(item["version"]))
+                for item in raw_identity["analyzers"]
+            ),
+        )
+    return ContentStatus(
+        bytes=int(value["bytes"]),
+        state=ContentState(value["state"]),
+        stale_reason=_stale_reason(value["stale_reason"]),
+        format_version=_limit(value["format_version"]),
+        records=_limit(value["records"]),
+        identity=identity,
+    )
+
+
+def _stale_reason(value: object) -> StaleReason | None:
+    return None if value is None else StaleReason(str(value))
+
+
+def cache_status_from_dict(value: Mapping[str, Any]) -> CacheStatus:
+    return CacheStatus(
+        path=Path(value["path"]),
+        bytes=int(value["bytes"]),
+        state=CacheState(value["state"]),
+        stale_reason=_stale_reason(value["stale_reason"]),
+        format_version=_limit(value["format_version"]),
+        leftover_kind=(
+            LeftoverKind(value["leftover_kind"]) if value["leftover_kind"] is not None else None
+        ),
+        root=Path(value["root"]) if value["root"] is not None else None,
+        entries=_limit(value["entries"]),
+        identity=_snapshot_identity(value["identity"]),
+        content=_content_status(value["content"]),
+    )
 
 
 def _int_map(value: dict[str, Any]) -> MappingProxyType[str, int]:

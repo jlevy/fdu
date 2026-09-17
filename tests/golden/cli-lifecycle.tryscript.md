@@ -14,6 +14,8 @@ env:
   XDG_CACHE_HOME: .cache
 patterns:
   BYTES: '\d+'
+  # Fingerprints change with the engine version and the type rules, not with the tree.
+  FINGERPRINT: '\d+'
   CACHE_FILE: '[^\r\n]+\.fdu'
   # A YAML scalar is quoted only when it would otherwise be ambiguous, which a Windows
   # path with backslashes is and a POSIX path is not. The quoting is the platform's, so
@@ -22,6 +24,8 @@ patterns:
   CACHE_DIR: '[^\r\n]+'
   SCAN_PATH: '[^\r\n]+'
   PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
+  FILE_RATE: '[\d.]+[kMG]? files/s'
+  BYTE_RATE: '[\d.]+ (B|KiB|MiB|GiB)/s'
 ---
 # Cache Lifecycle Flags
 
@@ -125,9 +129,9 @@ Agents get cache observability without a second schema style.
 ```console
 $ fdu --cache-status --format json project
 {
-  "schema": "fdu.cache/1",
+  "schema": "fdu.cache/2",
   "caches": [
-    {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "state": "current", "root": "[SCAN_PATH]", "entries": 11}
+    {"path": "[CACHE_FILE]", "bytes": [BYTES], "state": "current", "root": "[SCAN_PATH]", "entries": 11, "identity": {"entries": {"engine": [FINGERPRINT], "max_depth": null, "follow_symlinks": false, "one_filesystem": false, "hidden_fingerprint": 0, "exclude_special": false, "type_rules_fingerprint": [FINGERPRINT], "reducers_fingerprint": 1}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}}}, "content": null}
   ]
 }
 ? 0
@@ -138,14 +142,110 @@ every machine format.
 
 ```console
 $ fdu --cache-status --format yaml project
-schema: fdu.cache/1
+schema: fdu.cache/2
 caches:
   - path: [CACHE_FILE_SCALAR]
     bytes: [BYTES]
-    content_bytes: null
     state: current
     root: [SCAN_PATH]
     entries: 11
+    identity:
+      entries:
+        engine: [FINGERPRINT]
+        max_depth: null
+        follow_symlinks: false
+        one_filesystem: false
+        hidden_fingerprint: 0
+        exclude_special: false
+        type_rules_fingerprint: [FINGERPRINT]
+        reducers_fingerprint: 1
+      ignore_rules:
+        limits:
+          budget: 4194304
+          line_limit: 16384
+    content: null
+? 0
+```
+
+## A Content Sidecar Is Reported Beside Its Snapshot
+
+Analysis is stored in a sidecar of its own, invalidated separately from the snapshot, so
+status reports it as the snapshot’s `content` rather than as another file.
+It carries how many file records the sidecar holds and the identity that decides which
+requests they may serve: the entry tier the records were analyzed over, which alone
+carries the type rules, then the analyzer set, the options fingerprint, and each
+analyzer with its version.
+
+```console
+$ fdu --analyze lines --view families --size apparent project
+     128 B   47.6%  binary             1 file, 1 binary
+      71 B   26.4%  prose              2 files, 6 lines (4 nonblank, 2 blank), 13 words (0.0 pages), 2 documentation
+      64 B   23.8%  code               3 files, 4 lines (4 nonblank, 0 blank), 12 words (0.0 pages)
+       6 B    2.2%  unknown            1 file, 1 lines (1 nonblank, 0 blank), 1 words (0.0 pages)
+Performance: walked 7 files / 269 B; ignore rules 1 file; content read 141 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; warm revalidation; total [PERF_TIME]
+? 0
+```
+
+```console
+$ fdu --cache-status project
+[CACHE_FILE]  11 entries, [BYTES] metadata bytes, [BYTES] content bytes  [SCAN_PATH]
+? 0
+```
+
+```console
+$ fdu --cache-status --format json project
+{
+  "schema": "fdu.cache/2",
+  "caches": [
+    {"path": "[CACHE_FILE]", "bytes": [BYTES], "state": "current", "root": "[SCAN_PATH]", "entries": 11, "identity": {"entries": {"engine": [FINGERPRINT], "max_depth": null, "follow_symlinks": false, "one_filesystem": false, "hidden_fingerprint": 0, "exclude_special": false, "type_rules_fingerprint": [FINGERPRINT], "reducers_fingerprint": 1}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}}}, "content": {"bytes": [BYTES], "state": "current", "records": 7, "identity": {"entries": {"engine": [FINGERPRINT], "max_depth": null, "follow_symlinks": false, "one_filesystem": false, "hidden_fingerprint": 0, "exclude_special": false, "type_rules_fingerprint": [FINGERPRINT], "reducers_fingerprint": 1}, "analyze": ["lines"], "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}}
+  ]
+}
+? 0
+```
+
+```console
+$ fdu --cache-status --format yaml project
+schema: fdu.cache/2
+caches:
+  - path: [CACHE_FILE_SCALAR]
+    bytes: [BYTES]
+    state: current
+    root: [SCAN_PATH]
+    entries: 11
+    identity:
+      entries:
+        engine: [FINGERPRINT]
+        max_depth: null
+        follow_symlinks: false
+        one_filesystem: false
+        hidden_fingerprint: 0
+        exclude_special: false
+        type_rules_fingerprint: [FINGERPRINT]
+        reducers_fingerprint: 1
+      ignore_rules:
+        limits:
+          budget: 4194304
+          line_limit: 16384
+    content:
+      bytes: [BYTES]
+      state: current
+      records: 7
+      identity:
+        entries:
+          engine: [FINGERPRINT]
+          max_depth: null
+          follow_symlinks: false
+          one_filesystem: false
+          hidden_fingerprint: 0
+          exclude_special: false
+          type_rules_fingerprint: [FINGERPRINT]
+          reducers_fingerprint: 1
+        analyze:
+          - lines
+        options_fingerprint: 12638152016183539244
+        analyzers:
+          - id: content-basic-v1
+            version: 1
 ? 0
 ```
 
@@ -238,14 +338,14 @@ nothing to a figure that is meant to say how much a clear would leave behind.
 ```console
 $ fdu --cache-status=all --format json project
 {
-  "schema": "fdu.cache/1",
+  "schema": "fdu.cache/2",
   "caches": [
-    {"path": "[CACHE_FILE]", "bytes": 12, "content_bytes": null, "state": "stale", "stale_reason": "older_format", "format_version": 1},
-    {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "state": "stale", "stale_reason": "other_engine", "format_version": null},
-    {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "state": "stale", "stale_reason": "unreadable", "format_version": null},
-    {"path": "[CACHE_FILE]", "bytes": 0, "content_bytes": null, "state": "unrecognized"},
-    {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "state": "current", "root": "[SCAN_PATH]", "entries": 11},
-    {"path": "[CACHE_DIR]notes.txt", "bytes": 15, "content_bytes": null, "state": "unrecognized"}
+    {"path": "[CACHE_FILE]", "bytes": 12, "state": "stale", "stale_reason": "older_format", "format_version": 1, "content": null},
+    {"path": "[CACHE_FILE]", "bytes": [BYTES], "state": "stale", "stale_reason": "other_engine", "format_version": null, "content": null},
+    {"path": "[CACHE_FILE]", "bytes": [BYTES], "state": "stale", "stale_reason": "unreadable", "format_version": null, "content": null},
+    {"path": "[CACHE_FILE]", "bytes": 0, "state": "unrecognized", "content": null},
+    {"path": "[CACHE_FILE]", "bytes": [BYTES], "state": "current", "root": "[SCAN_PATH]", "entries": 11, "identity": {"entries": {"engine": [FINGERPRINT], "max_depth": null, "follow_symlinks": false, "one_filesystem": false, "hidden_fingerprint": 0, "exclude_special": false, "type_rules_fingerprint": [FINGERPRINT], "reducers_fingerprint": 1}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}}}, "content": null},
+    {"path": "[CACHE_DIR]notes.txt", "bytes": 15, "state": "unrecognized", "content": null}
   ]
 }
 ? 0

@@ -8,9 +8,16 @@
 
 use std::fs;
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
-use fdu_core::query::{Bound, Query, Selection, ViewSpec};
+use fdu_core::content::{AnalysisRequest, AnalysisSet};
+use fdu_core::query::{
+    AxisNames, Basis, Bound, Query, ReadSpec, Request, RequestSpec, Selection, ViewSpec,
+    WatchDelivery,
+};
+// The module's own `Delivery` is how a change reached this process; the request model's is
+// how an answer is carried out. Two different questions, so the import names the crate.
+use fdu_core::query::Delivery as RequestDelivery;
 use fdu_core::session::{ChangeKind, Session};
 use fdu_core::watch::WatchConfig;
 use fdu_core::{CachePolicy, IndexHandle, OpenConfig, ScanConfig, open};
@@ -23,11 +30,32 @@ fn session(root: &Path, selection: Selection, views: Vec<ViewSpec>) -> Session {
     let (index, _report) = open(root, &config).expect("open");
     Session::new(
         IndexHandle::new(index),
-        ScanConfig::default(),
-        Query { selection, views, ..Query::default() },
+        request(root, AnalysisSet::NONE, Query { selection, views, ..Query::default() }),
+        &watching(&config),
         WatchConfig::default(),
     )
     .expect("session")
+}
+
+/// The delivery a test watch runs under: the one its index was opened with, repeating.
+///
+/// Named rather than defaulted, because the cache policy is what a session validates the
+/// cache-only rule against and a fabricated one always read `auto` (fdu-i18y).
+fn watching(config: &OpenConfig) -> RequestDelivery {
+    let (_basis, delivery) = config.split(Path::new("/unused"));
+    RequestDelivery {
+        watch: Some(WatchDelivery { interval: Duration::from_millis(200) }),
+        ..delivery
+    }
+}
+
+/// The request a watch answers: the basis its index was opened under, and this query.
+fn request(root: &Path, content: AnalysisSet, query: Query) -> Request {
+    Request::new(
+        Basis { root: root.to_path_buf(), scope: ScanConfig::default(), content },
+        query,
+        std::time::SystemTime::now(),
+    )
 }
 
 /// Disturb `warm` until the session's watch is provably live, then return.
@@ -269,4 +297,159 @@ fn a_live_report_is_the_same_query_re_evaluated() {
     };
     assert_eq!(second.files, 2, "the live report reflects the applied change");
     assert_eq!(second.bytes, first.bytes + 3);
+}
+
+/// Analysis is one-shot on every surface. Nothing re-reads a file a watch sees change, so
+/// a session over an analyzed index would keep serving the metrics it opened with, marked
+/// fresh (fdu-snv3). The engine refuses the pairing rather than leaving only the command
+/// line to, and it refuses a request that claims no analyzers over such an index too --
+/// that one is a read the index cannot answer at all.
+#[test]
+fn a_session_refuses_an_analyzed_index() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("a.txt"), b"one two\n").expect("seed");
+    let lines = AnalysisSet::NONE.with_lines();
+    let config = OpenConfig {
+        policy: CachePolicy::Off,
+        analysis: AnalysisRequest { profile: lines, ..AnalysisRequest::default() },
+        ..OpenConfig::default()
+    };
+    let (index, _report) = open(dir.path(), &config).expect("open");
+    let handle = IndexHandle::new(index);
+
+    let refused = Session::new(
+        handle.clone(),
+        request(dir.path(), lines, Query::default()),
+        &watching(&config),
+        WatchConfig::default(),
+    );
+    assert!(
+        matches!(
+            refused,
+            Err(fdu_core::Error::InvalidRequest(fdu_core::query::RequestError::WatchContent))
+        ),
+        "expected a refusal, got {:?}",
+        refused.err().map(|error| error.to_string())
+    );
+
+    let mismatched = Session::new(
+        handle,
+        request(dir.path(), AnalysisSet::NONE, Query::default()),
+        &watching(&config),
+        WatchConfig::default(),
+    );
+    assert!(
+        matches!(
+            mismatched,
+            Err(fdu_core::Error::InvalidRequest(
+                fdu_core::query::RequestError::ContentMismatch { .. }
+            ))
+        ),
+        "expected a refusal, got {:?}",
+        mismatched.err().map(|error| error.to_string())
+    );
+}
+
+/// The three rules a watch cannot meet are the engine's, not the two front doors'.
+///
+/// `Session::new` used to fabricate the delivery it validated against, which read
+/// `cache: Auto` whatever its caller had opened with, so the cache-only rule could not
+/// fire here at all and a library caller reached a watch the command line refuses
+/// (fdu-i18y). It also asked the index's scope before the request's own rule, so the same
+/// narrowed request was a scope mismatch to a library caller and a watch-scope refusal on
+/// the command line.
+#[test]
+fn a_session_refuses_what_its_callers_delivery_cannot_carry() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("a.txt"), b"one\n").expect("seed");
+    let config = OpenConfig { policy: CachePolicy::Off, ..OpenConfig::default() };
+    let (index, _report) = open(dir.path(), &config).expect("open");
+    let handle = IndexHandle::new(index);
+
+    let cache_only = Session::new(
+        handle.clone(),
+        request(dir.path(), AnalysisSet::NONE, Query::default()),
+        &RequestDelivery { cache: CachePolicy::Only, ..watching(&config) },
+        WatchConfig::default(),
+    );
+    assert!(
+        matches!(
+            cache_only,
+            Err(fdu_core::Error::InvalidRequest(fdu_core::query::RequestError::WatchCacheOnly))
+        ),
+        "expected a refusal, got {:?}",
+        cache_only.err().map(|error| error.to_string())
+    );
+
+    // A narrowed scan scope is refused as the request-level rule it is, before the index
+    // is asked what scope it was taken under: both are true of this call, and the one the
+    // caller can act on is the one that speaks.
+    let narrowed = Request::new(
+        Basis {
+            root: dir.path().to_path_buf(),
+            scope: ScanConfig { max_depth: Some(2), ..ScanConfig::default() },
+            content: AnalysisSet::NONE,
+        },
+        Query::default(),
+        std::time::SystemTime::now(),
+    );
+    let refused = Session::new(handle, narrowed, &watching(&config), WatchConfig::default());
+    assert!(
+        matches!(
+            refused,
+            Err(fdu_core::Error::InvalidRequest(fdu_core::query::RequestError::WatchScope))
+        ),
+        "expected a watch-scope refusal, got {:?}",
+        refused.err().map(|error| error.to_string())
+    );
+}
+
+/// A watch answers one request, so a relative time window is resolved once and never
+/// slides underneath it.
+///
+/// The claim `Session::new`'s doc makes: `now` is fixed when the request is built, so two
+/// repaints of one session answer one question. A window re-resolved per repaint would
+/// quietly drop entries out of `--modified-since 2h` as the session aged, which reads as
+/// the tree changing rather than as the question changing.
+#[test]
+fn a_watchs_time_window_is_fixed_when_its_request_is_built() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("a.txt"), b"one\n").expect("seed");
+    let config = OpenConfig { policy: CachePolicy::Off, ..OpenConfig::default() };
+    let (index, _report) = open(dir.path(), &config).expect("open");
+
+    let started = SystemTime::now();
+    let spec = RequestSpec {
+        read: ReadSpec { modified_since: Some("2h"), ..ReadSpec::new() },
+        ..RequestSpec::new(dir.path())
+    };
+    let request = Request::build(&spec, started, &AxisNames::FIELDS).expect("the spec parses");
+    let session =
+        Session::new(IndexHandle::new(index), request, &watching(&config), WatchConfig::default())
+            .expect("session");
+
+    let window = session.query().selection.modified.since.expect("a resolved lower bound");
+    assert_eq!(session.request().now, started, "the session keeps the instant it was built at");
+
+    // Two repaints, separated by a change the session applies.
+    let first = session.report(&session.live_provenance(SystemTime::now())).expect("report");
+    fs::write(dir.path().join("b.txt"), b"two\n").expect("write");
+    let second = session.report(&session.live_provenance(SystemTime::now())).expect("report");
+    assert!(!first.sections.is_empty() && !second.sections.is_empty());
+
+    assert_eq!(session.request().now, started, "a repaint does not re-read the clock");
+    assert_eq!(
+        session.query().selection.modified.since,
+        Some(window),
+        "the window a watch selects by is absolute"
+    );
+
+    // And it is the instant the request was built at, not one re-resolved since: the same
+    // spec built later names a later window, which is what the session must not do.
+    let later = Request::build(&spec, started + Duration::from_secs(60), &AxisNames::FIELDS)
+        .expect("the spec parses");
+    assert!(
+        later.query.selection.modified.since > Some(window),
+        "a window rebuilt a minute later must have moved, or this test proves nothing"
+    );
 }

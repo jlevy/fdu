@@ -14,15 +14,14 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyDict, PyList, PyModule};
 
-use fdu_core::content::AnalysisSet;
-use fdu_core::query::{AxisNames, EntrySelection, Query, Selection};
+use fdu_core::query::{EntrySelection, Query, Selection};
 use fdu_core::{
     ChangeOutcome, ChangePoll, ChangeRequest, ContinuationId, CountResult, Coverage,
-    CoverageReason, EffectiveChange, EngineVersion, EntryKind, EntryValue, Freshness, Impact,
-    ImpactDomain, IndexState, Issue, IssueKind, Knowledge, LifecyclePhase, LimitedProjection,
-    OpenOptions, OpenedIndex, PageRequest, ProjectionRefusal, ProjectionResult, ReadDiagnostics,
-    ReadProjection, ReadRequest, ReadResponse, RefreshResult, RollUpSummary, RowShape,
-    ScopeIdentity, SemanticIdentity, Source, StateTransition, Work,
+    CoverageReason, EffectiveChange, EngineVersion, EntryKind, EntryScope, EntryValue, Freshness,
+    Impact, ImpactDomain, IndexState, Issue, IssueKind, Knowledge, LifecyclePhase,
+    LimitedProjection, OpenOptions, OpenedIndex, PageRequest, ProjectionRefusal, ProjectionResult,
+    ReadDiagnostics, ReadProjection, ReadRequest, ReadResponse, RefreshResult, RollUpSummary,
+    RowShape, SemanticIdentity, Source, StateTransition, Work,
 };
 
 create_exception!(fdu, OpenedIndexError, PyRuntimeError);
@@ -95,50 +94,108 @@ fn optional_strings(dict: &Bound<'_, PyDict>, key: &str) -> PyResult<Option<Vec<
     }
 }
 
+/// The selection axes one read names, still spelled as its caller wrote them.
+///
+/// Held as owned values because the mapping they came out of is Python's and the request
+/// model borrows what it parses; nothing here is read except by [`opened_read`].
+struct SelectionValues {
+    include: Option<Vec<String>>,
+    exclude: Option<Vec<String>>,
+    min_size: Option<String>,
+    modified_since: Option<String>,
+    modified_before: Option<String>,
+    kind: Option<Vec<String>>,
+    ignored: Option<String>,
+    depth: Option<String>,
+    limit: Option<String>,
+    sort: Option<String>,
+    reverse: bool,
+    size: Option<String>,
+}
+
+impl SelectionValues {
+    /// Every axis a selection mapping may carry, or none at all when it is absent.
+    fn read(dict: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+        let Some(dict) = dict else {
+            return Ok(Self {
+                include: None,
+                exclude: None,
+                min_size: None,
+                modified_since: None,
+                modified_before: None,
+                kind: None,
+                ignored: None,
+                depth: None,
+                limit: None,
+                sort: None,
+                reverse: false,
+                // Absent means the caller named no metric, so the request model's default
+                // applies, as it does on every other surface.
+                size: None,
+            });
+        };
+        Ok(Self {
+            include: optional_strings(dict, "include")?,
+            exclude: optional_strings(dict, "exclude")?,
+            min_size: optional_string(dict, "min_size")?,
+            modified_since: optional_string(dict, "modified_since")?,
+            modified_before: optional_string(dict, "modified_before")?,
+            kind: optional_strings(dict, "kind")?,
+            ignored: optional_string(dict, "ignored")?,
+            depth: optional_string(dict, "depth")?,
+            limit: optional_string(dict, "limit")?,
+            sort: optional_string(dict, "sort")?,
+            reverse: dict
+                .get_item("reverse")?
+                .map(|value| value.extract::<bool>())
+                .transpose()?
+                .unwrap_or(false),
+            size: dict.get_item("size")?.map(|value| value.extract::<String>()).transpose()?,
+        })
+    }
+}
+
+/// One opened-root read, built by the one request model.
+///
+/// Every route into an opened root comes through here -- a bare selection, a flat
+/// projection, a report -- so a rule is worded once for all of them. An opened root holds
+/// no analyzers and always observes control state, and
+/// [`OpenedIndex::basis`](fdu_core::OpenedIndex::basis) is where that is stated; a read it
+/// cannot answer is refused against that basis, not against a stronger one.
+fn opened_read(
+    selection: Option<&Bound<'_, PyDict>>,
+    views: Option<Vec<String>>,
+    words_per_page: u64,
+    now: SystemTime,
+) -> PyResult<Query> {
+    let values = SelectionValues::read(selection)?;
+    Ok(super::build_request(
+        now,
+        &fdu_core::OpenedIndex::basis(),
+        views,
+        values.include,
+        values.exclude,
+        values.min_size.as_deref(),
+        values.modified_since.as_deref(),
+        values.modified_before.as_deref(),
+        values.kind,
+        values.ignored.as_deref(),
+        values.depth.as_deref(),
+        values.limit.as_deref(),
+        values.sort.as_deref(),
+        values.reverse,
+        values.size.as_deref(),
+        words_per_page,
+    )?
+    .query)
+}
+
 fn parse_selection(dict: Option<&Bound<'_, PyDict>>, now: SystemTime) -> PyResult<Selection> {
     let Some(dict) = dict else {
         return Ok(Selection::default());
     };
-    let include = optional_strings(dict, "include")?;
-    let exclude = optional_strings(dict, "exclude")?;
-    let min_size = optional_string(dict, "min_size")?;
-    let modified_since = optional_string(dict, "modified_since")?;
-    let modified_before = optional_string(dict, "modified_before")?;
-    let kind = optional_strings(dict, "kind")?;
-    let ignored = optional_string(dict, "ignored")?;
-    let depth = optional_string(dict, "depth")?;
-    let limit = optional_string(dict, "limit")?;
-    let sort = optional_string(dict, "sort")?;
-    let reverse = dict
-        .get_item("reverse")?
-        .map(|value| value.extract::<bool>())
-        .transpose()?
-        .unwrap_or(false);
-    let size = dict
-        .get_item("size")?
-        .map(|value| value.extract::<String>())
-        .transpose()?
-        .unwrap_or_else(|| "apparent".to_owned());
-    Ok(super::build_query_at(
-        now,
-        AnalysisSet::NONE,
-        None,
-        None,
-        include,
-        exclude,
-        min_size.as_deref(),
-        modified_since.as_deref(),
-        modified_before.as_deref(),
-        kind,
-        ignored.as_deref(),
-        depth.as_deref(),
-        limit.as_deref(),
-        sort.as_deref(),
-        reverse,
-        &size,
-        250,
-    )?
-    .selection)
+    Ok(opened_read(Some(dict), None, fdu_core::query::Request::DEFAULTS.words_per_page, now)?
+        .selection)
 }
 
 fn parse_entry_selection(
@@ -175,12 +232,12 @@ fn parse_entry_selection(
     Ok(selection)
 }
 
-fn parse_scope(dict: &Bound<'_, PyDict>) -> PyResult<ScopeIdentity> {
+fn parse_scope(dict: &Bound<'_, PyDict>) -> PyResult<EntryScope> {
     let max_depth = match dict.get_item("max_depth")? {
         Some(value) if !value.is_none() => Some(value.extract()?),
         _ => None,
     };
-    Ok(ScopeIdentity {
+    Ok(EntryScope {
         max_depth,
         follow_symlinks: required(dict, "follow_symlinks")?.extract()?,
         one_filesystem: required(dict, "one_filesystem")?.extract()?,
@@ -261,26 +318,22 @@ fn parse_report(dict: &Bound<'_, PyDict>) -> PyResult<fdu_core::ReportRequest> {
     let generated_at = system_time_from_nanos(required(dict, "generated_at_ns")?.extract()?)?;
     let selection =
         dict.get_item("selection")?.map(|value| mapping(value, "selection")).transpose()?;
-    let selection = parse_selection(selection.as_ref(), generated_at)?;
     let views = optional_strings(dict, "views")?;
     let words_per_page = dict
         .get_item("words_per_page")?
         .map(|value| value.extract::<u64>())
         .transpose()?
-        .unwrap_or(250);
-    let (views, omitted_views) = fdu_core::query::ViewSpec::resolve(
-        views.as_ref().map(|values| values.join(",")).as_deref(),
-        AnalysisSet::NONE,
-        "view",
-    )
-    .map_err(PyValueError::new_err)?;
-    if words_per_page == 0 {
-        return Err(PyValueError::new_err("words_per_page must be positive"));
-    }
-    let query = Query { selection, views, omitted_views, axes: AxisNames::FIELDS, words_per_page };
+        .unwrap_or(fdu_core::query::Request::DEFAULTS.words_per_page);
+    // Views and the page denominator through the same model as the selection beside them,
+    // rather than resolved and refused here: a second copy of a rule agrees today and
+    // drifts tomorrow, and this one already said `words_per_page must be positive` where
+    // every other route said `invalid words_per_page "0"`.
+    let query = opened_read(selection.as_ref(), views, words_per_page, generated_at)?;
     Ok(fdu_core::ReportRequest {
         query,
-        generated_at,
+        // The instant this read resolves against, which is also what it reports as its
+        // `generated_at`; the wire field keeps its name.
+        now: generated_at,
         max_work: required(dict, "max_work")?.extract()?,
     })
 }
@@ -452,7 +505,7 @@ fn limited_projection_label(value: LimitedProjection) -> &'static str {
     }
 }
 
-fn scope_dict(py: Python<'_>, scope: ScopeIdentity) -> PyResult<Bound<'_, PyDict>> {
+fn scope_dict(py: Python<'_>, scope: EntryScope) -> PyResult<Bound<'_, PyDict>> {
     let out = PyDict::new(py);
     out.set_item("max_depth", scope.max_depth)?;
     out.set_item("follow_symlinks", scope.follow_symlinks)?;

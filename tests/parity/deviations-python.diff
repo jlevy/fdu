@@ -48,11 +48,6 @@
 #      Everything after the label is identical, and that is the part encoding behaviour:
 #      the rule the caller hits is the same rule, proven line by line rather than assumed.
 #
-#      One entry here also differs by an error-kind prefix. The library reports the watch
-#      scope rule as a runtime error and names its kind; the CLI catches it up front and
-#      reports a usage error, which exits 2 rather than 1. The rule text is one constant
-#      either way, with only the knob names substituted, and a unit test pins that.
-#
 #   4  The same rule, in each surface's own names for the same knobs  [surface-vocabulary]
 #      The command line calls it --scan-depth and the API calls it max_depth. They are
 #      different words, not different punctuation, so this is checked by eliding the knob
@@ -153,7 +148,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Refresh Ignores the Snapshot and Scans Cold Again
   ✓ An Unknown Policy Lists Every Valid One
   ✓ The Unreleased Cache Alias Is Rejected
-PASS [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
+FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✓ Scan Without a Cache
   ✓ Verify No Cache Was Created
   ✓ Create the Snapshot
@@ -162,6 +157,11 @@ PASS [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✓ Expand the Fixture
   ✓ Report the Changed Tree
   ✓ The Rewrite Kept the Snapshot Current for Cache-Only
+  ✗ Watching Rejects a Snapshot Nothing Verified
+    stderr:
+@@ -1,1 +1,1 @@
+-fdu: --watch cannot start from --cache only: nothing verifies what changed between the snapshot and the start of the watch; use --cache auto or read-only
++fdu: watch cannot start from cache policy only: nothing verifies what changed between the snapshot and the start of the watch; use cache policy auto or read-only
   ✓ A Different Semantic Scan Scope Misses the Snapshot
   ✓ Corrupt the Snapshot
   ✓ Recover with a Cold Scan
@@ -284,6 +284,10 @@ PASS [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
   ✓ Status Maps a Hash-Named File Back to Its Tree
   ✓ Status Renders Through the Format Axis
   ✓ Status Renders Through the Format Axis
+  ✓ A Content Sidecar Is Reported Beside Its Snapshot
+  ✓ A Content Sidecar Is Reported Beside Its Snapshot
+  ✓ A Content Sidecar Is Reported Beside Its Snapshot
+  ✓ A Content Sidecar Is Reported Beside Its Snapshot
   ✓ Clearing Echoes the Target Before Acting
   ✓ Clearing Is Idempotent
   ✓ Clear and Status Compose, With Clear First
@@ -392,8 +396,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  Analysis streams every eligible file through EOF; files are never size-truncated.
 -  --analysis-workers bounds concurrency.
 -  --words-per-page changes only report-time page derivation.
--  Unchanged results are restored from a separate sidecar; a stored set answers
--  any narrower request without re-reading.
+-  Unchanged results are restored from a separate sidecar written by the same
+-  analyzer set; any other set, wider or narrower, reads the files again.
 -  --cache=only never opens source files and fails if requested content is absent.
 -
 -CACHE BEHAVIOR
@@ -426,7 +430,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -
 -OUTPUT AND AUTOMATION
 -  Metadata-only machine output remains fdu.report/5; metric summaries use fdu.report/6.
--  Cache status is its own document in every machine format: fdu.cache/1.
+-  Cache status is its own document in every machine format: fdu.cache/2.
 -  Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
 -  Text language rows use canonical names; machine formats retain lowercase IDs.
 -  Metric rows include detection source, confidence, origin flags, and coverage.
@@ -455,12 +459,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
     stderr:
 @@ -1,1 +1,1 @@
 -fdu: watching requires full scope and cannot be combined with --scan-depth or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --modified-since does work while watching, because it filters the retained index rather than narrowing the scan
-+fdu: unsupported scan configuration: watching requires full scope and cannot be combined with max_depth or one_filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as depth, include, and modified_since does work while watching, because it filters the retained index rather than narrowing the scan
-  ✗ Watching Rejects a Narrowed Scan Scope
-    stderr:
-@@ -1,1 +1,1 @@
--fdu: watching requires full scope and cannot be combined with --scan-depth or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --modified-since does work while watching, because it filters the retained index rather than narrowing the scan
-+fdu: unsupported scan configuration: watching requires full scope and cannot be combined with max_depth or one_filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as depth, include, and modified_since does work while watching, because it filters the retained index rather than narrowing the scan
++fdu: watching requires full scope and cannot be combined with max_depth or one_filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as depth, include, and modified_since does work while watching, because it filters the retained index rather than narrowing the scan
   ✓ A Missing Root Is a Fatal Filesystem Error
   ✓ Create a Regular File
   ✓ Reject It as the Root

@@ -1,0 +1,215 @@
+# cold: 63 requests; auto-on-empty-cache differs from off: 0
+  requests whose auto run left no cache file: ['v_documents', 'v_summary_nogi']
+
+# selfwarm: 252 steps; differing: [('v_summary_nogi', 'only', 'error-mismatch')]
+
+# warm: 1890 (W,R,policy) cases
+  differing (excluding cache-only failures): 89
+  - 26 cases; paths=['analysis.analyze[]', 'analysis.analyzers[]', 'analysis.options_fingerprint']
+      ['W_all>a_lines_v_files:auto', 'W_all>a_lines_v_files:read-only', 'W_all>a_lines_v_files:only', 'W_all>a_code_v_summary:auto', 'W_all>a_code_v_summary:read-only', 'W_all>a_code_v_summary:only', 'W_all>a_code_scandepth1:auto', 'W_all>a_code_scandepth1:read-only', 'W_all>v_summary_a_lines:auto', 'W_all>v_summary_a_lines:read-only', 'W_all>v_summary_a_lines:only', 'W_code>a_lines_v_documents:auto', 'W_code>a_lines_v_documents:read-only', 'W_code>a_lines_v_documents:only', 'W_code>a_lines_v_files:auto', 'W_code>a_lines_v_files:read-only', 'W_code>a_lines_v_files:only', 'W_code>v_summary_a_lines:auto', 'W_code>v_summary_a_lines:read-only', 'W_code>v_summary_a_lines:only', 'W_words>a_lines_v_files:auto', 'W_words>a_lines_v_files:read-only', 'W_words>a_lines_v_files:only', 'W_words>v_summary_a_lines:auto', 'W_words>v_summary_a_lines:read-only', 'W_words>v_summary_a_lines:only']
+  - 15 cases; paths=['analysis.analyze[]', 'analysis.analyzers[]', 'analysis.options_fingerprint', 'reports[].metrics.rows[].metrics.logical_words', 'reports[].metrics.total.metrics.logical_words']
+      ['W_all>a_code:auto', 'W_all>a_code:read-only', 'W_all>a_code:only', 'W_all>a_code_exclign:read-only', 'W_all>a_code_exclign:auto', 'W_all>a_code_exclign:only', 'W_all>a_code_langs_name_lim1:auto', 'W_all>a_code_langs_name_lim1:read-only', 'W_all>a_code_langs_name_lim1:only', 'W_words>a_lines_v_languages:auto', 'W_words>a_lines_v_languages:read-only', 'W_words>a_lines_v_languages:only', 'W_words>a_lines_incl_rs:auto', 'W_words>a_lines_incl_rs:read-only', 'W_words>a_lines_incl_rs:only']
+  - 12 cases; paths=['analysis.analyze[]', 'analysis.analyzers[]', 'analysis.options_fingerprint', 'reports[].metrics.rows[].allocated', 'reports[].metrics.rows[].analyzed_files', 'reports[].metrics.rows[].bytes', 'reports[].metrics.rows[].coverage.analyzed', 'reports[].metrics.rows[].detection.confidence.certain', 'reports[].metrics.rows[].detection.sources.extension', 'reports[].metrics.rows[].files', 'reports[].metrics.rows[].id', 'reports[].metrics.rows[].metrics.blank_lines', 'reports[].metrics.rows[].metrics.document_words', 'reports[].metrics.rows[].metrics.logical_words', 'reports[].metrics.rows[].metrics.nonblank_lines', 'reports[].metrics.rows[].metrics.paragraphs', 'reports[].metrics.rows[].metrics.physical_lines', 'reports[].metrics.rows[].metrics.raw_words', 'reports[].metrics.rows[].metrics.visible_logical_words', 'reports[].metrics.rows[].metrics.visible_words', 'reports[].metrics.rows[].pages.words', 'reports[].metrics.rows[].share.denominator', 'reports[].metrics.rows[].share.numerator', 'reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.metrics.logical_words', 'reports[].metrics.total.metrics.paragraphs', 'reports[].metrics.total.metrics.visible_logical_words', 'reports[].metrics.total.metrics.visible_words', 'reports[].metrics.total.pages.words', 'reports[].metrics.total.share.denominator', 'reports[].metrics.total.share.numerator']
+      ['W_all>a_lines_v_documents:auto', 'W_all>a_lines_v_documents:read-only', 'W_all>a_lines_v_documents:only', 'W_all>a_code_v_documents:auto', 'W_all>a_code_v_documents:read-only', 'W_all>a_code_v_documents:only', 'W_all>a_code_v_full:auto', 'W_all>a_code_v_full:only', 'W_all>a_code_v_full:read-only', 'W_words>a_lines_v_documents:auto', 'W_words>a_lines_v_documents:only', 'W_words>a_lines_v_documents:read-only']
+  - 9 cases; paths=['analysis.analyze[]', 'analysis.analyzers[]', 'analysis.analyzers[].id', 'analysis.options_fingerprint']
+      ['W_all>a_words:auto', 'W_all>a_words:read-only', 'W_all>a_words:only', 'W_all>a_words_v_tree:read-only', 'W_all>a_words_v_tree:only', 'W_all>a_words_v_tree:auto', 'W_all>a_words_onlyign:auto', 'W_all>a_words_onlyign:read-only', 'W_all>a_words_onlyign:only']
+  - 5 cases; paths=['analysis.analyze[]', 'analysis.analyzers[]', 'analysis.options_fingerprint', 'reports[].metrics.rows[].analyzed_files', 'reports[].metrics.rows[].coverage.analyzed', 'reports[].metrics.rows[].coverage.unsupported', 'reports[].metrics.rows[].metrics.blank_lines', 'reports[].metrics.rows[].metrics.code_blank_lines', 'reports[].metrics.rows[].metrics.code_lines', 'reports[].metrics.rows[].metrics.comment_lines', 'reports[].metrics.rows[].metrics.document_words', 'reports[].metrics.rows[].metrics.logical_words', 'reports[].metrics.rows[].metrics.nonblank_lines', 'reports[].metrics.rows[].metrics.paragraphs', 'reports[].metrics.rows[].metrics.physical_lines', 'reports[].metrics.rows[].metrics.raw_words', 'reports[].metrics.rows[].metrics.visible_logical_words', 'reports[].metrics.rows[].metrics.visible_words', 'reports[].metrics.rows[].pages.words', 'reports[].metrics.total.analyzed_files', 'reports[].metrics.total.coverage.analyzed', 'reports[].metrics.total.coverage.unsupported', 'reports[].metrics.total.metrics.blank_lines', 'reports[].metrics.total.metrics.code_blank_lines', 'reports[].metrics.total.metrics.code_lines', 'reports[].metrics.total.metrics.comment_lines', 'reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.metrics.logical_words', 'reports[].metrics.total.metrics.nonblank_lines', 'reports[].metrics.total.metrics.paragraphs', 'reports[].metrics.total.metrics.physical_lines', 'reports[].metrics.total.metrics.raw_words', 'reports[].metrics.total.metrics.visible_logical_words', 'reports[].metrics.total.metrics.visible_words', 'reports[].metrics.total.pages.words']
+      ['W_all>a_lines:auto', 'W_all>a_lines:only', 'W_all>a_lines:read-only', 'W_all>a_lines_budget1k:read-only', 'W_all>a_lines_budget1k:auto']
+  - 5 cases; paths=['analysis.analyze[]', 'analysis.analyzers[]', 'analysis.options_fingerprint', 'reports[].metrics.rows[].analyzed_files', 'reports[].metrics.rows[].coverage.analyzed', 'reports[].metrics.rows[].coverage.unsupported', 'reports[].metrics.rows[].metrics.blank_lines', 'reports[].metrics.rows[].metrics.code_blank_lines', 'reports[].metrics.rows[].metrics.code_lines', 'reports[].metrics.rows[].metrics.comment_lines', 'reports[].metrics.rows[].metrics.document_words', 'reports[].metrics.rows[].metrics.nonblank_lines', 'reports[].metrics.rows[].metrics.physical_lines', 'reports[].metrics.rows[].metrics.raw_words', 'reports[].metrics.rows[].pages.words', 'reports[].metrics.total.analyzed_files', 'reports[].metrics.total.coverage.analyzed', 'reports[].metrics.total.coverage.unsupported', 'reports[].metrics.total.metrics.blank_lines', 'reports[].metrics.total.metrics.code_blank_lines', 'reports[].metrics.total.metrics.code_lines', 'reports[].metrics.total.metrics.comment_lines', 'reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.metrics.nonblank_lines', 'reports[].metrics.total.metrics.physical_lines', 'reports[].metrics.total.metrics.raw_words', 'reports[].metrics.total.pages.words']
+      ['W_code>a_lines:auto', 'W_code>a_lines:read-only', 'W_code>a_lines:only', 'W_code>a_lines_budget1k:auto', 'W_code>a_lines_budget1k:read-only']
+  - 5 cases; paths=['analysis.analyze[]', 'analysis.analyzers[]', 'analysis.options_fingerprint', 'reports[].metrics.rows[].metrics.document_words', 'reports[].metrics.rows[].metrics.logical_words', 'reports[].metrics.rows[].metrics.paragraphs', 'reports[].metrics.rows[].metrics.visible_logical_words', 'reports[].metrics.rows[].metrics.visible_words', 'reports[].metrics.rows[].pages.words', 'reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.metrics.logical_words', 'reports[].metrics.total.metrics.paragraphs', 'reports[].metrics.total.metrics.visible_logical_words', 'reports[].metrics.total.metrics.visible_words', 'reports[].metrics.total.pages.words']
+      ['W_words>a_lines:auto', 'W_words>a_lines:read-only', 'W_words>a_lines:only', 'W_words>a_lines_budget1k:auto', 'W_words>a_lines_budget1k:read-only']
+  - 3 cases; paths=['analysis.analyze[]', 'analysis.analyzers[]', 'analysis.options_fingerprint', 'reports[].metrics.rows[].analyzed_files', 'reports[].metrics.rows[].bytes', 'reports[].metrics.rows[].coverage.analyzed', 'reports[].metrics.rows[].coverage.unsupported', 'reports[].metrics.rows[].detection.flags.vendored', 'reports[].metrics.rows[].id', 'reports[].metrics.rows[].metrics.blank_lines', 'reports[].metrics.rows[].metrics.code_blank_lines', 'reports[].metrics.rows[].metrics.code_lines', 'reports[].metrics.rows[].metrics.comment_lines', 'reports[].metrics.rows[].metrics.document_words', 'reports[].metrics.rows[].metrics.logical_words', 'reports[].metrics.rows[].metrics.nonblank_lines', 'reports[].metrics.rows[].metrics.physical_lines', 'reports[].metrics.rows[].metrics.raw_words', 'reports[].metrics.rows[].pages.words', 'reports[].metrics.rows[].share.denominator', 'reports[].metrics.rows[].share.numerator', 'reports[].metrics.share_metric', 'reports[].metrics.total.analyzed_files', 'reports[].metrics.total.coverage.analyzed', 'reports[].metrics.total.coverage.unsupported', 'reports[].metrics.total.metrics.blank_lines', 'reports[].metrics.total.metrics.code_blank_lines', 'reports[].metrics.total.metrics.code_lines', 'reports[].metrics.total.metrics.comment_lines', 'reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.metrics.logical_words', 'reports[].metrics.total.metrics.nonblank_lines', 'reports[].metrics.total.metrics.physical_lines', 'reports[].metrics.total.metrics.raw_words', 'reports[].metrics.total.pages.words', 'reports[].metrics.total.share.denominator', 'reports[].metrics.total.share.numerator']
+      ['W_all>a_lines_v_languages:read-only', 'W_all>a_lines_v_languages:auto', 'W_all>a_lines_v_languages:only']
+  - 3 cases; paths=['analysis.analyze[]', 'analysis.analyzers[]', 'analysis.options_fingerprint', 'reports[].metrics.rows[].metrics.code_blank_lines', 'reports[].metrics.rows[].metrics.code_lines', 'reports[].metrics.rows[].metrics.comment_lines', 'reports[].metrics.rows[].metrics.logical_words', 'reports[].metrics.total.metrics.code_blank_lines', 'reports[].metrics.total.metrics.code_lines', 'reports[].metrics.total.metrics.comment_lines', 'reports[].metrics.total.metrics.logical_words']
+      ['W_all>a_lines_incl_rs:read-only', 'W_all>a_lines_incl_rs:auto', 'W_all>a_lines_incl_rs:only']
+  - 3 cases; paths=['analysis.analyze[]', 'analysis.analyzers[]', 'analysis.options_fingerprint', 'reports[].metrics.rows[].analyzed_files', 'reports[].metrics.rows[].bytes', 'reports[].metrics.rows[].coverage.analyzed', 'reports[].metrics.rows[].coverage.unsupported', 'reports[].metrics.rows[].detection.flags.vendored', 'reports[].metrics.rows[].id', 'reports[].metrics.rows[].metrics.blank_lines', 'reports[].metrics.rows[].metrics.code_blank_lines', 'reports[].metrics.rows[].metrics.code_lines', 'reports[].metrics.rows[].metrics.comment_lines', 'reports[].metrics.rows[].metrics.document_words', 'reports[].metrics.rows[].metrics.nonblank_lines', 'reports[].metrics.rows[].metrics.physical_lines', 'reports[].metrics.rows[].metrics.raw_words', 'reports[].metrics.rows[].pages.words', 'reports[].metrics.rows[].share.denominator', 'reports[].metrics.rows[].share.numerator', 'reports[].metrics.share_metric', 'reports[].metrics.total.analyzed_files', 'reports[].metrics.total.coverage.analyzed', 'reports[].metrics.total.coverage.unsupported', 'reports[].metrics.total.metrics.blank_lines', 'reports[].metrics.total.metrics.code_blank_lines', 'reports[].metrics.total.metrics.code_lines', 'reports[].metrics.total.metrics.comment_lines', 'reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.metrics.nonblank_lines', 'reports[].metrics.total.metrics.physical_lines', 'reports[].metrics.total.metrics.raw_words', 'reports[].metrics.total.pages.words', 'reports[].metrics.total.share.denominator', 'reports[].metrics.total.share.numerator']
+      ['W_code>a_lines_v_languages:auto', 'W_code>a_lines_v_languages:read-only', 'W_code>a_lines_v_languages:only']
+  - 3 cases; paths=['analysis.analyze[]', 'analysis.analyzers[]', 'analysis.options_fingerprint', 'reports[].metrics.rows[].metrics.code_blank_lines', 'reports[].metrics.rows[].metrics.code_lines', 'reports[].metrics.rows[].metrics.comment_lines', 'reports[].metrics.total.metrics.code_blank_lines', 'reports[].metrics.total.metrics.code_lines', 'reports[].metrics.total.metrics.comment_lines']
+      ['W_code>a_lines_incl_rs:auto', 'W_code>a_lines_incl_rs:read-only', 'W_code>a_lines_incl_rs:only']
+
+  cache-only matrix after W (= same as cold, ≠ differs, F fails, E error in cold too)
+                           defaul nogi   all    code   lines  words  budget summar scande refres
+  default                  =      F      =      =      =      =      F      =      F      =     
+  nogi                     =      =      =      =      =      =      =      =      F      =     
+  budget1k                 F      F      F      F      F      F      =      F      F      F     
+  budgetall                F      F      F      F      F      F      F      F      F      F     
+  linelim20                F      F      F      F      F      F      F      F      F      F     
+  scandepth1               F      F      F      F      F      F      F      F      =      F     
+  scandepth2               F      F      F      F      F      F      F      F      F      F     
+  onefs                    F      F      F      F      F      F      F      F      F      F     
+  exclign                  =      F      =      =      =      =      F      =      F      =     
+  onlyign                  =      F      =      =      =      =      F      =      F      =     
+  incl_rs                  =      F      =      =      =      =      F      =      F      =     
+  excl_src                 =      F      =      =      =      =      F      =      F      =     
+  minsize100               =      F      =      =      =      =      F      =      F      =     
+  modsince                 =      F      =      =      =      =      F      =      F      =     
+  kind_file                =      F      =      =      =      =      F      =      F      =     
+  kind_dirsym              =      F      =      =      =      =      F      =      F      =     
+  limit2                   =      F      =      =      =      =      F      =      F      =     
+  sort_name                =      F      =      =      =      =      F      =      F      =     
+  sort_mtime_rev           =      F      =      =      =      =      F      =      F      =     
+  depth1                   =      F      =      =      =      =      F      =      F      =     
+  depthall                 =      F      =      =      =      =      F      =      F      =     
+  sizeapp                  =      F      =      =      =      =      F      =      F      =     
+  v_summary                =      F      =      =      =      =      F      =      F      =     
+  v_tree                   =      F      =      =      =      =      F      =      F      =     
+  v_families               =      F      =      =      =      =      F      =      F      =     
+  v_types                  =      F      =      =      =      =      F      =      F      =     
+  v_extensions             =      F      =      =      =      =      F      =      F      =     
+  v_languages              =      F      =      =      =      =      F      =      F      =     
+  v_largest                =      F      =      =      =      =      F      =      F      =     
+  v_recent                 =      F      =      =      =      =      F      =      F      =     
+  v_files                  =      F      =      =      =      =      F      =      F      =     
+  v_full                   =      F      =      =      =      =      F      =      F      =     
+  v_documents              E      E      E      E      E      E      E      E      E      E     
+  v_summary_types          =      F      =      =      =      =      F      =      F      =     
+  a_none                   =      F      =      =      =      =      F      =      F      =     
+  a_lines                  F      F      ≠      ≠      =      ≠      F      F      F      F     
+  a_code                   F      F      ≠      =      F      F      F      F      F      F     
+  a_words                  F      F      ≠      F      F      =      F      F      F      F     
+  a_all                    F      F      =      F      F      F      F      F      F      F     
+  a_codewords              F      F      =      F      F      F      F      F      F      F     
+  a_lines_v_languages      F      F      ≠      ≠      =      ≠      F      F      F      F     
+  a_lines_v_documents      F      F      ≠      ≠      =      ≠      F      F      F      F     
+  a_lines_v_files          F      F      ≠      ≠      =      ≠      F      F      F      F     
+  a_code_v_documents       F      F      ≠      =      F      F      F      F      F      F     
+  a_code_v_summary         F      F      ≠      =      F      F      F      F      F      F     
+  a_code_v_full            F      F      ≠      =      F      F      F      F      F      F     
+  a_words_v_tree           F      F      ≠      F      F      =      F      F      F      F     
+  a_all_v_full             F      F      =      F      F      F      F      F      F      F     
+  a_all_v_files            F      F      =      F      F      F      F      F      F      F     
+  a_code_exclign           F      F      ≠      =      F      F      F      F      F      F     
+  a_all_nogi               F      F      =      F      F      F      F      F      F      F     
+  a_lines_budget1k         F      F      F      F      F      F      F      F      F      F     
+  a_words_onlyign          F      F      ≠      F      F      =      F      F      F      F     
+  a_code_scandepth1        F      F      F      F      F      F      F      F      F      F     
+  a_lines_incl_rs          F      F      ≠      ≠      =      ≠      F      F      F      F     
+  a_all_sizeapp            F      F      =      F      F      F      F      F      F      F     
+  a_code_langs_name_lim1   F      F      ≠      =      F      F      F      F      F      F     
+  v_summary_exclign        =      F      =      =      =      =      F      =      F      =     
+  v_summary_nogi           =      =      =      =      =      =      =      =      F      =     
+  v_summary_scandepth1     F      F      F      F      F      F      F      F      =      F     
+  v_summary_minsize        =      F      =      =      =      =      F      =      F      =     
+  v_summary_a_all          F      F      =      F      F      F      F      F      F      F     
+  v_summary_a_lines        F      F      ≠      ≠      =      ≠      F      F      F      F     
+
+  source under auto/read-only after W (c cold_scan, w warm_revalidate, ! differs)
+  default                  c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  nogi                     c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  budget1k                 c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  budgetall                c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  linelim20                c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  scandepth1               c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  scandepth2               c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  onefs                    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  exclign                  c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  onlyign                  c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  incl_rs                  c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  excl_src                 c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  minsize100               c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  modsince                 c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  kind_file                c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  kind_dirsym              c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  limit2                   c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  sort_name                c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  sort_mtime_rev           c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  depth1                   c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  depthall                 c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  sizeapp                  c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  v_summary                c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  v_tree                   c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  v_families               c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  v_types                  c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  v_extensions             c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  v_languages              c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  v_largest                c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  v_recent                 c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  v_files                  c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  v_full                   c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  v_documents              -/-    -/-    -/-    -/-    -/-    -/-    -/-    -/-    -/-    -/-   
+  v_summary_types          c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  a_none                   c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  a_lines                  w/w    c/c    w!/w!  w!/w!  w/w    w!/w!  c/c    w/w    c/c    w/w   
+  a_code                   w/w    c/c    w!/w!  w/w    w/w    w/w    c/c    w/w    c/c    w/w   
+  a_words                  w/w    c/c    w!/w!  w/w    w/w    w/w    c/c    w/w    c/c    w/w   
+  a_all                    w/w    c/c    w/w    w/w    w/w    w/w    c/c    w/w    c/c    w/w   
+  a_codewords              w/w    c/c    w/w    w/w    w/w    w/w    c/c    w/w    c/c    w/w   
+  a_lines_v_languages      w/w    c/c    w!/w!  w!/w!  w/w    w!/w!  c/c    w/w    c/c    w/w   
+  a_lines_v_documents      w/w    c/c    w!/w!  w!/w!  w/w    w!/w!  c/c    w/w    c/c    w/w   
+  a_lines_v_files          w/w    c/c    w!/w!  w!/w!  w/w    w!/w!  c/c    w/w    c/c    w/w   
+  a_code_v_documents       w/w    c/c    w!/w!  w/w    w/w    w/w    c/c    w/w    c/c    w/w   
+  a_code_v_summary         w/w    c/c    w!/w!  w/w    w/w    w/w    c/c    w/w    c/c    w/w   
+  a_code_v_full            w/w    c/c    w!/w!  w/w    w/w    w/w    c/c    w/w    c/c    w/w   
+  a_words_v_tree           w/w    c/c    w!/w!  w/w    w/w    w/w    c/c    w/w    c/c    w/w   
+  a_all_v_full             w/w    c/c    w/w    w/w    w/w    w/w    c/c    w/w    c/c    w/w   
+  a_all_v_files            w/w    c/c    w/w    w/w    w/w    w/w    c/c    w/w    c/c    w/w   
+  a_code_exclign           w/w    c/c    w!/w!  w/w    w/w    w/w    c/c    w/w    c/c    w/w   
+  a_all_nogi               c/c    w/w    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  a_lines_budget1k         c/c    c/c    c!/c!  c!/c!  c/c    c!/c!  w/w    c/c    c/c    c/c   
+  a_words_onlyign          w/w    c/c    w!/w!  w/w    w/w    w/w    c/c    w/w    c/c    w/w   
+  a_code_scandepth1        c/c    c/c    c!/c!  c/c    c/c    c/c    c/c    c/c    w/w    c/c   
+  a_lines_incl_rs          w/w    c/c    w!/w!  w!/w!  w/w    w!/w!  c/c    w/w    c/c    w/w   
+  a_all_sizeapp            w/w    c/c    w/w    w/w    w/w    w/w    c/c    w/w    c/c    w/w   
+  a_code_langs_name_lim1   w/w    c/c    w!/w!  w/w    w/w    w/w    c/c    w/w    c/c    w/w   
+  v_summary_exclign        c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  v_summary_nogi           c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  v_summary_scandepth1     c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  v_summary_minsize        c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c    c/c   
+  v_summary_a_all          w/w    c/c    w/w    w/w    w/w    w/w    c/c    w/w    c/c    w/w   
+  v_summary_a_lines        w/w    c/c    w!/w!  w!/w!  w/w    w!/w!  c/c    w/w    c/c    w/w   
+
+# mutation: 5670 cases; differing=432; differing where unmutated warm was identical=0
+  differing with paths beyond the unmutated widening diff (mixed-provenance):
+   ('add', 'W_all', 'a_code', 'auto', ('reports[].metrics.rows[].metrics.document_words', 'reports[].metrics.rows[].pages.words', 'reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('add', 'W_all', 'a_code', 'read-only', ('reports[].metrics.rows[].metrics.document_words', 'reports[].metrics.rows[].pages.words', 'reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('add', 'W_all', 'a_code_exclign', 'auto', ('reports[].metrics.rows[].metrics.document_words', 'reports[].metrics.rows[].pages.words', 'reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('add', 'W_all', 'a_code_exclign', 'read-only', ('reports[].metrics.rows[].metrics.document_words', 'reports[].metrics.rows[].pages.words', 'reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('add', 'W_all', 'a_code_langs_name_lim1', 'auto', ('reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('add', 'W_all', 'a_code_langs_name_lim1', 'read-only', ('reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('samesize', 'W_all', 'a_code', 'auto', ('reports[].metrics.rows[].metrics.document_words', 'reports[].metrics.rows[].pages.words', 'reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('samesize', 'W_all', 'a_code', 'read-only', ('reports[].metrics.rows[].metrics.document_words', 'reports[].metrics.rows[].pages.words', 'reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('samesize', 'W_all', 'a_code_exclign', 'auto', ('reports[].metrics.rows[].metrics.document_words', 'reports[].metrics.rows[].pages.words', 'reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('samesize', 'W_all', 'a_code_exclign', 'read-only', ('reports[].metrics.rows[].metrics.document_words', 'reports[].metrics.rows[].pages.words', 'reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('samesize', 'W_all', 'a_code_langs_name_lim1', 'auto', ('reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('samesize', 'W_all', 'a_code_langs_name_lim1', 'read-only', ('reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('samesize', 'W_all', 'a_lines_incl_rs', 'auto', ('reports[].metrics.rows[].metrics.document_words', 'reports[].metrics.rows[].pages.words', 'reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('samesize', 'W_all', 'a_lines_incl_rs', 'read-only', ('reports[].metrics.rows[].metrics.document_words', 'reports[].metrics.rows[].pages.words', 'reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('samesize', 'W_all', 'a_lines_v_languages', 'auto', ('reports[].metrics.rows[].allocated', 'reports[].metrics.rows[].detection.confidence.certain', 'reports[].metrics.rows[].detection.sources.extension', 'reports[].metrics.rows[].files'))
+   ('samesize', 'W_all', 'a_lines_v_languages', 'read-only', ('reports[].metrics.rows[].allocated', 'reports[].metrics.rows[].detection.confidence.certain', 'reports[].metrics.rows[].detection.sources.extension', 'reports[].metrics.rows[].files'))
+   ('samesize', 'W_code', 'a_lines_v_languages', 'auto', ('reports[].metrics.rows[].allocated', 'reports[].metrics.rows[].detection.confidence.certain', 'reports[].metrics.rows[].detection.sources.extension', 'reports[].metrics.rows[].files'))
+   ('samesize', 'W_code', 'a_lines_v_languages', 'read-only', ('reports[].metrics.rows[].allocated', 'reports[].metrics.rows[].detection.confidence.certain', 'reports[].metrics.rows[].detection.sources.extension', 'reports[].metrics.rows[].files'))
+   ('samesize_keepmtime', 'W_all', 'a_code', 'auto', ('reports[].metrics.rows[].metrics.document_words', 'reports[].metrics.rows[].pages.words', 'reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('samesize_keepmtime', 'W_all', 'a_code', 'read-only', ('reports[].metrics.rows[].metrics.document_words', 'reports[].metrics.rows[].pages.words', 'reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('samesize_keepmtime', 'W_all', 'a_code_exclign', 'auto', ('reports[].metrics.rows[].metrics.document_words', 'reports[].metrics.rows[].pages.words', 'reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('samesize_keepmtime', 'W_all', 'a_code_exclign', 'read-only', ('reports[].metrics.rows[].metrics.document_words', 'reports[].metrics.rows[].pages.words', 'reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('samesize_keepmtime', 'W_all', 'a_code_langs_name_lim1', 'auto', ('reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('samesize_keepmtime', 'W_all', 'a_code_langs_name_lim1', 'read-only', ('reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('samesize_keepmtime', 'W_all', 'a_lines_incl_rs', 'auto', ('reports[].metrics.rows[].metrics.document_words', 'reports[].metrics.rows[].pages.words', 'reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('samesize_keepmtime', 'W_all', 'a_lines_incl_rs', 'read-only', ('reports[].metrics.rows[].metrics.document_words', 'reports[].metrics.rows[].pages.words', 'reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('samesize_keepmtime', 'W_all', 'a_lines_v_languages', 'auto', ('reports[].metrics.rows[].allocated', 'reports[].metrics.rows[].detection.confidence.certain', 'reports[].metrics.rows[].detection.sources.extension', 'reports[].metrics.rows[].files'))
+   ('samesize_keepmtime', 'W_all', 'a_lines_v_languages', 'read-only', ('reports[].metrics.rows[].allocated', 'reports[].metrics.rows[].detection.confidence.certain', 'reports[].metrics.rows[].detection.sources.extension', 'reports[].metrics.rows[].files'))
+   ('samesize_keepmtime', 'W_code', 'a_lines_v_languages', 'auto', ('reports[].metrics.rows[].allocated', 'reports[].metrics.rows[].detection.confidence.certain', 'reports[].metrics.rows[].detection.sources.extension', 'reports[].metrics.rows[].files'))
+   ('samesize_keepmtime', 'W_code', 'a_lines_v_languages', 'read-only', ('reports[].metrics.rows[].allocated', 'reports[].metrics.rows[].detection.confidence.certain', 'reports[].metrics.rows[].detection.sources.extension', 'reports[].metrics.rows[].files'))
+   ('touch', 'W_all', 'a_code', 'auto', ('reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('touch', 'W_all', 'a_code', 'read-only', ('reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('touch', 'W_all', 'a_code_exclign', 'auto', ('reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('touch', 'W_all', 'a_code_exclign', 'read-only', ('reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('touch', 'W_all', 'a_code_langs_name_lim1', 'auto', ('reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+   ('touch', 'W_all', 'a_code_langs_name_lim1', 'read-only', ('reports[].metrics.total.metrics.document_words', 'reports[].metrics.total.pages.words'))
+
+# cross: 2583 cases
+  py-open-auto                 n=252 differing-from-cold=17
+  py-open-auto-empty           n= 63 differing-from-cold=0
+  py-open-off                  n= 63 differing-from-cold=0
+  py-open-only                 n=252 differing-from-cold=15 cache-only outcome != CLI(W)->CLI only: [('W_default', 'nogi', 'F'), ('W_all', 'nogi', 'F'), ('W_lines', 'nogi', 'F'), ('W_summary', 'nogi', 'F'), ('W_all', 'a_all_nogi', 'F'), ('W_default', 'v_summary_nogi', 'F'), ('W_all', 'v_summary_nogi', 'F'), ('W_lines', 'v_summary_nogi', 'F'), ('W_summary', 'v_summary_nogi', 'F')]
+  py-report-auto               n=252 differing-from-cold=17
+  py-report-auto-empty         n= 63 differing-from-cold=0
+  py-report-off                n= 63 differing-from-cold=0
+  py-report-only               n=252 differing-from-cold=15 cache-only outcome != CLI(W)->CLI only: []
+  py-report-readonly           n=252 differing-from-cold=17
+  py-scan                      n= 63 differing-from-cold=0
+  pyW-open__cli-auto           n=252 differing-from-cold=17
+  pyW-open__cli-only           n=252 differing-from-cold=15 cache-only outcome != CLI(W)->CLI only: []
+  pyW-report__cli-auto         n=252 differing-from-cold=17
+  pyW-report__cli-only         n=252 differing-from-cold=15 cache-only outcome != CLI(W)->CLI only: []

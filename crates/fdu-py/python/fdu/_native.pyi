@@ -6,6 +6,11 @@ from typing import Any
 
 __version__: str
 
+#: The request model's defaults, so this package states them once rather than twice.
+DEFAULT_WORDS_PER_PAGE: int
+DEFAULT_SIZE: str
+DEFAULT_READ_CONTROLS: bool
+
 class Index:
     @property
     def root(self) -> str: ...

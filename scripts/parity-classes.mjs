@@ -20,30 +20,19 @@ const sameSeparator = (line) => line.replace(/\[SEP\]/g, '/');
 /** Flags and parameters name the same thing: --modified-since is modified_since. */
 const sameName = (line) => sameSeparator(line).replace(/--(?=[a-z])/g, '').replace(/[-_]/g, '');
 
-// The library reports a rule as a runtime error and names its kind; the CLI catches the
-// same rule up front and reports it as a usage error, which carries no kind and exits 2
-// instead of 1. Listed explicitly rather than matched loosely, so adding one is a visible
-// decision -- a general "strip any prefix" rule would hide real differences.
-const ERROR_KINDS = ['unsupported scan configuration: '];
-
 // The two surfaces have different NAMES for the same knob, not merely different
 // punctuation: the flag is --scan-depth and the field is max_depth. Comparing with these
 // elided on both sides proves the rest of the sentence is identical without this file
-// having to restate the pairing -- the pairing lives in cli.rs, where a unit test pins it.
+// having to restate the pairing -- the pairing lives in `AxisNames`, where a unit test
+// renders every refusal in both vocabularies and pins the result.
 // Longest first, and one pass, so `depth` cannot match inside `--scan-depth`.
+//
+// `cache policy` is the one name that is not a field: the Python parameter is `cache`, and
+// its refusals have always said `invalid cache policy`, which `AxisNames::FIELDS` kept
+// rather than changing the wording when the rule moved into the request model.
 const KNOBS =
-  /--gitignore-budget|--gitignore-line-limit|--exclude-ignored|--only-ignored|--no-gitignore|--scan-depth|--one-filesystem|--modified-since|--include|--depth|ignored=exclude|ignored=only|control_budget|control_line_limit|read_controls|max_depth|one_filesystem|modified_since|include|depth/g;
-const withoutKnobs = (line) => sameSeparator(withoutKind(line)).replace(KNOBS, '<knob>');
-const withoutKind = (line) => {
-  // The kind sits after the program name, which both surfaces print: the shim says
-  // `fdu: unsupported scan configuration: ...` where the CLI says `fdu: ...`.
-  for (const kind of ERROR_KINDS) {
-    if (line.includes(kind)) {
-      return line.replace(kind, '');
-    }
-  }
-  return line;
-};
+  /--gitignore-budget|--gitignore-line-limit|--exclude-ignored|--only-ignored|--no-gitignore|--scan-depth|--one-filesystem|--modified-since|--include|--depth|--cache|--watch|cache policy|ignored=exclude|ignored=only|control_budget|control_line_limit|read_controls|max_depth|one_filesystem|modified_since|include|depth|watch/g;
+const withoutKnobs = (line) => sameSeparator(line).replace(KNOBS, '<knob>');
 
 // A class that no longer explains anything is removed, not kept "just in case". Its
 // matcher would still match, so it would quietly absorb a real regression: `execution-tier`
@@ -57,18 +46,13 @@ export const CLASSES = [
       'There is no --view or --analyze in Python, so its diagnostics name the parameter.',
       'Everything after the label is identical, and that is the part encoding behaviour:',
       'the rule the caller hits is the same rule, proven line by line rather than assumed.',
-      '',
-      'One entry here also differs by an error-kind prefix. The library reports the watch',
-      'scope rule as a runtime error and names its kind; the CLI catches it up front and',
-      'reports a usage error, which exits 2 rather than 1. The rule text is one constant',
-      'either way, with only the knob names substituted, and a unit test pins that.',
     ],
     // Strip the flag dashes and normalise -/_ ; if the lines then match exactly, the
     // label is the whole of the difference. Anything else and this class does not apply.
     matches: ({ removed, added }) =>
       removed.length > 0 &&
       removed.length === added.length &&
-      removed.every((line, i) => sameName(line) === sameName(withoutKind(added[i]))) &&
+      removed.every((line, i) => sameName(line) === sameName(added[i])) &&
       removed.some((line, i) => line !== added[i]),
   },
   {

@@ -850,6 +850,16 @@ pub struct Index {
     /// When the snapshot this index was loaded from captured the tree. Zero when the
     /// index was never loaded from one.
     captured_at_ns: i64,
+    /// The start of the pass a snapshot of this index records as the one that last wrote
+    /// its image: construction for an index built by a walk, which precedes the walk, and
+    /// the stamp a loaded snapshot carried for one loaded from a snapshot.
+    ///
+    /// A lower bound on when the facts were last verified, never later than the truth. A
+    /// later pass that verifies the same facts keeps the image on disk and its stamp, and a
+    /// reconciliation that verifies a loaded index again leaves this at the snapshot's
+    /// stamp, so the value can predate many verifying passes until P1.4.4 stamps completed
+    /// passes.
+    writing_pass_started_at_ns: i64,
     /// Subtrees a completed reconciliation has verified, with when it finished.
     ///
     /// Kept as intervals rather than per-entry flags because a sweep verifies
@@ -1681,6 +1691,7 @@ impl Index {
             },
             true,
         );
+        let constructed_at_ns = Self::now_unix_nanos();
         Self {
             root_path: root_path.into(),
             scope,
@@ -1700,8 +1711,9 @@ impl Index {
             issue_epochs: Vec::new(),
             serving,
             applying_source: Source::Scanned,
-            scanned_at_ns: Self::now_unix_nanos(),
+            scanned_at_ns: constructed_at_ns,
             captured_at_ns: 0,
+            writing_pass_started_at_ns: constructed_at_ns,
             verified: Vec::new(),
             ext_names: Vec::new(),
             ext_ids: BTreeMap::new(),
@@ -1735,6 +1747,23 @@ impl Index {
     /// [`Self::is_ignored`] and [`Self::controls`].
     pub const fn observes_controls(&self) -> bool {
         self.scope.observes_controls()
+    }
+
+    /// Whether this index observed `.gitignore` control state, and under which limits.
+    pub fn control_identity(&self) -> crate::ControlTierIdentity {
+        if self.observes_controls() {
+            crate::ControlTierIdentity::Observed { limits: self.controls.limits() }
+        } else {
+            crate::ControlTierIdentity::NotObserved
+        }
+    }
+
+    /// The identity of every tier a snapshot of this index holds.
+    pub fn snapshot_identity(&self) -> crate::SnapshotIdentity {
+        crate::SnapshotIdentity {
+            entries: crate::EntryTierIdentity::of_scope(self.scope),
+            controls: self.control_identity(),
+        }
     }
 
     fn require_observed_controls(&self) -> crate::Result<()> {
@@ -1792,12 +1821,17 @@ impl Index {
     /// and an index's scope and its table must never disagree: a table refusing under other
     /// limits would be served, and saved, as if it applied the scope's. A scope that
     /// observes nothing retains no table, so its limits decide nothing.
+    ///
+    /// The guard is for [`crate::snapshot::save`], whose index may have been built with a
+    /// scope and a table set apart (as [`Self::new_with_scope`] does), and for callers of
+    /// [`Self::install_controls`] other than the loader. On the load path it cannot fail,
+    /// because the loader builds the scope and the table from the same header limits.
     pub(crate) fn require_control_limits_in_scope(
         &self,
         limits: crate::control::ControlLimits,
     ) -> crate::Result<()> {
         if self.scope.observes_controls()
-            && crate::scan::observed_ignore_rules_fingerprint(limits)
+            && (crate::ControlTierIdentity::Observed { limits }).ignore_rules_fingerprint()
                 != self.scope.ignore_rules_fingerprint
         {
             return Err(crate::Error::ControlLimitsOutsideScope { limits });
@@ -3387,19 +3421,50 @@ impl Index {
         self.content()?.rollup(path)
     }
 
+    /// The analyzer set this index's content tier holds records for, or
+    /// [`AnalysisSet::NONE`] when it holds no content tier.
+    pub fn content_set(&self) -> AnalysisSet {
+        self.content().and_then(ContentIndex::profile).unwrap_or(AnalysisSet::NONE)
+    }
+
+    /// The content tier identity this index gives records of `analysis`: its own entry tier,
+    /// which holds its type rules, the analyzer set, and the analyzers' versions and options.
+    pub fn content_identity(&self, analysis: AnalysisSet) -> crate::ContentTierIdentity {
+        let records = crate::content::ContentProvenance::for_request(
+            crate::content::AnalysisRequest {
+                profile: analysis,
+                ..crate::content::AnalysisRequest::default()
+            },
+            self.types.fingerprint(),
+        );
+        crate::ContentTierIdentity::of_records(
+            crate::EntryTierIdentity::of_scope(self.scope),
+            analysis,
+            &records,
+        )
+        .expect("every constructor checks an index's registry against its scope's type rules")
+    }
+
+    /// Prepare the content tier to hold records of `request`'s identity, clearing it when
+    /// it holds any other.
     pub(crate) fn prepare_content_analysis(&mut self, request: crate::content::AnalysisRequest) {
         if !request.profile.is_enabled() {
             return;
         }
-        self.content.get_or_insert_with(|| Box::new(ContentIndex::default())).prepare(
-            request.profile,
-            crate::content::ContentProvenance::for_request(request, self.types.fingerprint()),
-        );
+        let identity = self.content_identity(request.profile);
+        self.content.get_or_insert_with(|| Box::new(ContentIndex::default())).prepare(identity);
     }
 
     /// Capture every regular-file analysis candidate without retaining a lock or entry
     /// borrow across filesystem I/O.
-    pub fn analysis_candidates(&self, profile: AnalysisSet) -> Vec<AnalysisCandidate> {
+    ///
+    /// Crate-private until the request model (P1.3) decides whether an out-of-crate
+    /// analyzer is a supported surface (`fdu-5upj`). A caller outside the crate cannot
+    /// prepare the content tier, so every result it produced would commit as
+    /// [`AnalysisApplyOutcome::Stale`]; [`analyze_index`] is the entry that works.
+    ///
+    /// [`analyze_index`]: crate::content::analyze_index
+    pub(crate) fn analysis_candidates(&self, profile: AnalysisSet) -> Vec<AnalysisCandidate> {
         if !profile.is_enabled() {
             return Vec::new();
         }
@@ -3424,37 +3489,45 @@ impl Index {
                     classification: self.classify(&relative_path),
                     relative_path,
                     attrs: entry.attrs,
-                    profile,
                 });
             }
         }
         candidates
     }
 
+    /// The candidates `request` still has to read: every one, unless the content tier
+    /// holds exactly `request`'s identity, and then those without a record whose
+    /// fingerprint matches.
     pub(crate) fn pending_analysis_candidates(
         &self,
         request: crate::content::AnalysisRequest,
     ) -> Vec<AnalysisCandidate> {
+        let wanted = self.content_identity(request.profile);
+        // The tier refuses a record of any identity but its own, so one comparison here
+        // decides for every record it holds.
+        let held = self.content().filter(|content| content.identity() == Some(&wanted));
         self.analysis_candidates(request.profile)
             .into_iter()
             .filter(|candidate| {
-                self.content()
-                    .and_then(|content| content.file(&candidate.relative_path))
-                    .is_none_or(|record| {
-                        record.fingerprint != candidate.attrs.fingerprint()
-                            || !record.provenance.satisfies(
-                                record.profile,
-                                request.profile,
-                                self.types.fingerprint(),
-                            )
-                    })
+                held.and_then(|content| content.file(&candidate.relative_path))
+                    .is_none_or(|record| record.fingerprint != candidate.attrs.fingerprint())
             })
             .collect()
     }
 
     /// Conditionally commit a worker result if its entry and metadata expectation still
-    /// match.
-    pub fn apply_analysis(&mut self, observation: AnalysisObservation) -> AnalysisApplyOutcome {
+    /// match, and the content tier was prepared for the identity the result was produced
+    /// under.
+    ///
+    /// A result of another identity is [`AnalysisApplyOutcome::Stale`]: it answers another
+    /// request than the one the tier holds, so committing it would mix records of two
+    /// identities in one tier.
+    ///
+    /// Crate-private with [`Index::analysis_candidates`], and for the same reason.
+    pub(crate) fn apply_analysis(
+        &mut self,
+        observation: AnalysisObservation,
+    ) -> AnalysisApplyOutcome {
         let candidate = &observation.candidate;
         let Some(entry) = self.try_entry(candidate.entry_id) else {
             return AnalysisApplyOutcome::Stale;
@@ -3466,10 +3539,14 @@ impl Index {
         {
             return AnalysisApplyOutcome::Stale;
         }
-        self.content
-            .get_or_insert_with(|| Box::new(ContentIndex::default()))
-            .commit(candidate.relative_path.clone(), observation.analysis);
-        AnalysisApplyOutcome::Applied
+        let Some(content) = self.content.as_mut() else {
+            return AnalysisApplyOutcome::Stale;
+        };
+        if content.commit(candidate.relative_path.clone(), observation.analysis) {
+            AnalysisApplyOutcome::Applied
+        } else {
+            AnalysisApplyOutcome::Stale
+        }
     }
 
     /// Drop all derived content while preserving metadata and snapshot compatibility.
@@ -4327,6 +4404,17 @@ impl Index {
             Source::Cached | Source::JournalScoped => self.captured_at_ns,
             Source::Scanned | Source::Revalidated => self.scanned_at_ns,
         }
+    }
+
+    /// The start of the pass a snapshot of this index records as the one that wrote its
+    /// image.
+    pub(crate) const fn writing_pass_started_at_ns(&self) -> i64 {
+        self.writing_pass_started_at_ns
+    }
+
+    /// Record the pass start a loaded snapshot carried for the facts it restored.
+    pub(crate) fn set_writing_pass_started_at_ns(&mut self, writing_pass_started_at_ns: i64) {
+        self.writing_pass_started_at_ns = writing_pass_started_at_ns;
     }
 
     /// Stamp deltas applied from here on with `source`, restoring the previous value
@@ -7942,18 +8030,16 @@ mod tests {
             upsert("src", EntryKind::Dir, file_attrs(0, 1)),
             upsert("src/lib.rs", EntryKind::File, file_attrs(10, 1)),
         ]));
-        let candidate = index
-            .analysis_candidates(AnalysisSet::NONE.with_lines())
-            .into_iter()
-            .next()
-            .expect("file candidate");
+        let profile = AnalysisSet::NONE.with_lines();
+        let candidate =
+            index.analysis_candidates(profile).into_iter().next().expect("file candidate");
         let analysis = FileAnalysis {
             classification: candidate.classification.clone(),
             fingerprint: candidate.attrs.fingerprint(),
             bytes: candidate.attrs.size,
-            profile: candidate.profile,
+            profile,
             provenance: ContentProvenance::for_request(
-                AnalysisRequest { profile: candidate.profile, ..AnalysisRequest::default() },
+                AnalysisRequest { profile, ..AnalysisRequest::default() },
                 crate::classify::type_rule_fingerprint(),
             ),
             metrics: MetricValues {
@@ -7964,13 +8050,18 @@ mod tests {
             coverage: CoverageReason::Analyzed,
             error: None,
         };
+        let observation =
+            AnalysisObservation { candidate: candidate.clone(), analysis: analysis.clone() };
         assert_eq!(
-            index.apply_analysis(AnalysisObservation {
-                candidate: candidate.clone(),
-                analysis: analysis.clone(),
-            }),
-            AnalysisApplyOutcome::Applied
+            index.apply_analysis(observation.clone()),
+            AnalysisApplyOutcome::Stale,
+            "an index prepared for no content identity holds no record"
         );
+        assert!(index.content().is_none());
+
+        index.prepare_content_analysis(AnalysisRequest { profile, ..AnalysisRequest::default() });
+        assert_eq!(index.content_set(), profile);
+        assert_eq!(index.apply_analysis(observation), AnalysisApplyOutcome::Applied);
         assert_eq!(
             index.content_rollup(Path::new("")).expect("content root").total.metrics.physical_lines,
             2

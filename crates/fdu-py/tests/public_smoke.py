@@ -584,8 +584,15 @@ def main() -> None:
     stub_path = package_dir / "_native.pyi"
     assert stub_path.is_file()
     stub_tree = ast.parse(stub_path.read_text(encoding="utf-8"))
+    # Classes, functions, and the module-level constants the stub declares: the native
+    # module publishes the request model's defaults, so a stub that listed only callables
+    # would go stale the moment one of them moved.
     stub_exports = {
         node.name for node in stub_tree.body if isinstance(node, (ast.ClassDef, ast.FunctionDef))
+    } | {
+        node.target.id
+        for node in stub_tree.body
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
     }
     stub_exports.add("__version__")
     runtime_exports = {name for name in dir(_native) if not name.startswith("__")}
@@ -603,6 +610,7 @@ def main() -> None:
     assert contract["sort_keys"] == [value.value for value in fdu.SortKey]
     assert contract["cache_scopes"] == [value.value for value in fdu.CacheScope]
     assert contract["cache_states"] == [value.value for value in fdu.CacheState]
+    assert contract["content_states"] == [value.value for value in fdu.ContentState]
     assert contract["stale_reasons"] == [value.value for value in fdu.StaleReason]
     assert contract["leftover_kinds"] == [value.value for value in fdu.LeftoverKind]
     assert contract["formats"] == [value.value for value in fdu.Format]
@@ -644,6 +652,12 @@ def main() -> None:
     status = fdu.cache_status(cache_root)
     assert status is not None and status.state is fdu.CacheState.CURRENT
     assert status.stale_reason is None and status.root is not None
+    # Cache status carries the identity of every tier the store holds: a default open
+    # observes .gitignore under the default limits, and wrote no content sidecar.
+    assert status.identity is not None, status
+    assert status.identity.ignore_rules is not None, status
+    assert status.identity.entries.max_depth is None, status
+    assert status.content is None, status
     # A snapshot an earlier format wrote is still fdu's: reported stale with its version,
     # and cleared, rather than stranded as a file nothing will delete. The version sits
     # after the eight-byte magic in every format.
@@ -655,6 +669,7 @@ def main() -> None:
     assert stale is not None and stale.state is fdu.CacheState.STALE, stale
     assert stale.stale_reason is fdu.StaleReason.OLDER_FORMAT, stale
     assert stale.format_version == written - 1 and stale.root is None, stale
+    assert stale.identity is None, stale
     assert fdu.render_cache_status([stale], scope=fdu.CacheScope.ROOT).endswith(
         "cannot be served by this build; fdu --cache-clear PATH removes it."
     )
@@ -672,6 +687,33 @@ def main() -> None:
         assert listed[orphan].leftover_kind is fdu.LeftoverKind.ORPHANED_CONTENT, listed
     finally:
         orphan.unlink()
+
+    # An analyzed open leaves a content sidecar, and status reports it as the snapshot's
+    # own `content`: its records and the identity that decides which requests they serve.
+    # The sidecar's entry tier is the snapshot's, because a record is only as valid as the
+    # entry it was analyzed over.
+    analyzed_root = Path(tempfile.mkdtemp(prefix="fdu-public-analyzed-"))
+    (analyzed_root / "notes.md").write_text("one two\nthree\n", encoding="utf-8")
+    fdu.open(
+        analyzed_root,
+        cache=fdu.CachePolicy.AUTO,
+        analysis=fdu.AnalysisOptions(analyze=fdu.Analysis.LINES),
+    )
+    analyzed = fdu.cache_status(analyzed_root)
+    assert analyzed is not None and analyzed.state is fdu.CacheState.CURRENT, analyzed
+    content = analyzed.content
+    assert content is not None, analyzed
+    assert content.state is fdu.ContentState.CURRENT, content
+    assert content.stale_reason is None and content.format_version is None, content
+    assert content.records == 1, content
+    assert content.identity is not None, content
+    assert content.identity.analyze == (fdu.Analysis.LINES,), content
+    assert content.identity.analyzers and all(
+        analyzer.version > 0 for analyzer in content.identity.analyzers
+    ), content
+    assert analyzed.identity is not None, analyzed
+    assert content.identity.entries == analyzed.identity.entries, analyzed
+    assert fdu.clear_cache(analyzed_root) is True
 
     entrypoint = Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu")
     version = subprocess.run(

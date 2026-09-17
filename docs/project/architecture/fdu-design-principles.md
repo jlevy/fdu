@@ -19,9 +19,11 @@ benchmark that measures the wrong job, or a number a consumer cannot calibrate.
 The reasoning matters more than the rule, so each one states what goes wrong without it.
 
 Start with [First Principles](#first-principles).
-Those four govern the rest, and they are the ones most easily broken by a choice that
+Those six govern the rest, and they are the ones most easily broken by a choice that
 looks ordinary — every example in them is a real defect that passed review because it
 resembled what other tools do.
+The first two are the deepest: model every key concept explicitly, in one place, and as
+a consequence, let caching improve performance without ever changing semantics.
 
 For what is built and what comes next, see the dated plans under
 [`docs/project/specs`](../specs/). For where the design comes from and which prior art
@@ -33,6 +35,103 @@ each piece draws on, see
 These govern everything below.
 Where a later section conflicts with one of them, the principle wins and the section is
 wrong.
+
+### Model Every Key Concept Explicitly, in One Place
+
+The concepts every route through fdu depends on each have one explicit, typed model in
+the engine: **the request** (what determines an answer), **delivery** (how the caller
+asks for it to be carried out: cache policy, workers, partial acceptance, watch), **the
+execution plan** (which route answers, and what it reads and writes), **stored state**
+(what each retained or cached tier is valid for), **measured values** (what each metric
+means, owned by the analyzer that produces it), **provenance** (where a value came from
+and how current it is), and **the answer** (what a report, change record, or cache
+status contains). Surfaces and routes construct and consume these models.
+They never re-derive a rule a model owns.
+
+A concept that is declared imperatively where it is used gets declared again at the next
+use, and the copies drift.
+Each copy passes its own tests, so the drift stays invisible until two routes answer the
+same question differently.
+Failing to model the key components explicitly is one of the largest sources of defects
+in a system like this one, because it turns every new route into a new definition.
+
+The 0.1.0 release candidate showed each form of that failure:
+
+- The request was assembled separately by the command line and by Python, validated at
+  several call sites, and defaulted differently: size was apparent in Rust and allocated
+  elsewhere, and watch defaulted to different views.
+- The analyzer set was not part of the query, so the report reader could not see what
+  was asked for and presented whatever the index held.
+- Each cached tier coded its own compatibility rule: exact scope equality for snapshots,
+  containment without projection for content analysis.
+- Provenance was filled in differently on each route, and watch repaints asserted
+  `complete: true` instead of computing it.
+- Independent writers rendered one answer with no field schema; JSON Lines rewrote paths
+  containing brackets, and YAML flattened rows JSON nested.
+
+So when a behavior cannot be expressed as a property of an existing model, the model is
+missing an element: add it to the model, not a branch where it is used.
+A rule stated in two places is a model that does not exist yet.
+
+Conformance is tracked in
+[the explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md),
+which maps each concept to its model and lists the work that closes each gap.
+
+### Caching Improves Performance, Never Semantics
+
+A **request** determines what an answer says: the root, the scope, the content
+analyzers, the selection, the views, and the instant relative time windows resolve
+against. **Delivery** is how the caller asks for it to be carried out: the cache policy,
+worker counts, whether a partial result is accepted, and whether it repeats as a watch.
+The route that answers, the surface that asks, and the format that serializes are
+choices within those, never inputs to the answer.
+
+An answer has content and **tree status** (`complete`, `errors`, and coverage), which
+describe the tree as the run found it; **provenance** (`source`, `freshness`, and
+timestamps) describes the delivery.
+For any request and any history of earlier requests, cache writes, evictions, and file
+changes, a run returns one of four outcomes, compared on content and tree status:
+
+- the cold answer to the same request;
+- a partial answer containing exactly the part of the tree the run verified, equal to a
+  cold answer over that part, with its tree status naming what is missing (retained
+  facts under an unverified subtree are never served);
+- a failure that names why the delivery cannot answer;
+- under `--cache only`, the cold answer at a recorded earlier state, labelled stale.
+
+For one request, delivery, and history, every route and surface returns the same kind of
+outcome, and every machine format parses back to the same value.
+
+That invariant follows from modeling the request and stored state explicitly, and it has
+concrete consequences:
+
+- Every retained or cached tier records its full identity (the engine fingerprint and
+  exactly the request parts that shaped it), validates each item with one shared
+  fingerprint, and answers a request only through one compatibility rule applied
+  identically on every route.
+  Equality is the default.
+  A tier may serve a different request only through a projection that yields exactly
+  what a cold run of that request would, and the path-independence test proves each
+  projection.
+- Every measured value has one definition that does not depend on what else the request
+  asked for. A value nobody requested is absent, not zero.
+- A cache miss, an eviction, or a different execution route costs time, never
+  correctness.
+
+The failure this prevents is real.
+Content-analysis reuse was widened from equality to containment for speed, without
+modeling what a narrower request should see.
+`--analyze lines` after `--analyze all` then reported metrics nobody requested, changed
+the requested ones, and named the stored analyzers as the requested set.
+After one file changed, totals matched neither cold answer, and the state persisted.
+Metadata-only requests, whose stored state already had one identity and one
+compatibility rule, gave the cold answer on every route.
+
+A path-independence test replays requests across histories, deliveries, mutations,
+surfaces, and formats against cold answers; until it passes with no registered
+violations,
+[the explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
+owns the remaining gaps.
 
 ### One Engine, and Surfaces That Cannot Disagree With It
 
@@ -236,6 +335,11 @@ mtime is user-settable and some applications roll it back after writing; ctime i
 kernel-controlled. All observed stat fields are still compared when updating stored
 state, so allocated-byte or device changes cannot leave query results stale.
 
+Every stored tier records its full identity (the engine fingerprint, its format, and
+exactly the request parts that shaped it), so no cache can answer a request it was not
+built for, and an upgrade, a rules change, or an analyzer change invalidates every tier
+it affects.
+
 A corrupt or unrecognized snapshot is treated as absent, never as data.
 Failing closed costs a rescan; failing open silently corrupts every answer built on it.
 The bootstrap format verifies its payload checksum before parsing records, and Unix
@@ -303,7 +407,7 @@ Every option belongs to exactly one axis:
 | Axis | Question | Options |
 | --- | --- | --- |
 | Scope | What is scanned and cached? | `PATH`, `--scan-depth`, `--one-filesystem`, `--no-gitignore`, `--gitignore-budget`, `--gitignore-line-limit` |
-| Content | Which file bodies are read? | `--analyze` |
+| Content | Which file bodies are read, and which metrics are measured? | `--analyze` |
 | Selection | Which retained entries does this query consider, and how are results shaped? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--exclude-ignored`, `--only-ignored`, `--depth`, `--limit`, `--sort`, `--reverse`, `--size` |
 | View | Which roll-up is reported? | `--view tree,extensions,types,families,languages,documents,largest,recent,files,summary` or `--view full`, `--words-per-page` |
 | Format | How is it serialized? | `--format`, `--color` |
@@ -312,11 +416,17 @@ Every option belongs to exactly one axis:
 A proposed flag that fits no axis is a design smell: either it generalizes into an axis
 value, or it does not ship.
 
+Scope, content, selection, and view make up the request, so they determine what an
+answer says.
+Format and mode are delivery: they decide only how an answer is produced and
+shown
+([Caching Improves Performance, Never Semantics](#caching-improves-performance-never-semantics)).
+
 **Scope versus selection is the load-bearing distinction.** Scope decides what is
-observed and cached, so one snapshot serves every query; selection filters the retained
-index at view time and is never part of the cache key.
-That is why narrowing a filter never costs a rescan, and it is the same reasoning as
-tagging ignored entries rather than pruning them.
+observed and cached, so stored state for one scope serves every selection and view over
+that scope; selection filters the retained index at view time and is never part of the
+cache key. That is why narrowing a filter never costs a rescan, and it is the same
+reasoning as tagging ignored entries rather than pruning them.
 
 ### Intuitive by Default, Everything by Composition
 
@@ -360,10 +470,14 @@ standard LOC. `documents` requires at least one enabled analyzer.
 `--analyze` is a set over the analyzer registry, never an ordered level.
 The analyzers are independent, the registry and the sidecar provenance already record
 which ones ran, and an enum of the combinations can only name the ones somebody thought
-to enumerate. Sidecar reuse is containment, not equality: a record produced by a wider
-set already holds every metric a narrower request would recompute, and only the
-type-rule fingerprint has to match exactly, because a classification change can move a
-file between families and invalidate the metrics themselves.
+to enumerate. Each metric therefore belongs to exactly one analyzer, and its value for a
+file depends only on the file and that analyzer, never on which other analyzers ran.
+Stored content answers a request the way every other stored tier does: its identity
+includes the scope, the type rules, and each analyzer’s identity, version, and options,
+and it serves a request with a different analyzer set only by projecting to exactly the
+requested analyzers’ results.
+That projection is sound only when results and coverage are stored per analyzer, so an
+unsupported analyzer can never erase another analyzer’s results.
 
 **Cost flows one way; display follows cost.** A view never enables an analyzer
 implicitly or presents an unmeasured value as zero: choosing how to display a result
@@ -398,11 +512,21 @@ filesystem.
 a third argument because `generated_at` cannot be sampled inside a pure function; making
 it an input is what keeps the goldens meaningful.
 
+Purity at this boundary is necessary but not sufficient.
+An index is shaped by the requests that built it, so a reader that sees only the index
+can present state nobody asked for.
+The reader therefore receives the whole request, content axis included, and state the
+index retains beyond that request is projected away by the stored-state model before
+anything is rendered.
+
 ### Fastest Answer the Data Allows, Never Silently Stale
 
-Cache behavior is one explicit policy axis, and every report labels its `source`,
-`freshness`, `complete`, and `errors` in every format.
-Warm, cold, and cache-only runs are user choices rather than heuristics.
+Cache behavior is one explicit policy axis, and every machine-format report carries its
+`source`, `freshness`, `complete`, and `errors`; human text reports errors and partial
+results on standard error.
+The cache policy is the user’s choice.
+Within it, the execution plan may pick the cheapest route that can answer, and routes
+differ only in cost and provenance, never in the answer.
 
 `--cache only` is the one tier that can be stale, and it says so: the loaded index is
 marked unverified rather than replaying the freshness it was saved with.
@@ -421,6 +545,9 @@ Python exposes the same types through the same value grammars.
 
 The parity rule is mechanical: a capability reachable by flag must be reachable as one
 typed call, with the same defaults.
+Defaults, value grammars, and validation belong to the request model, so no surface
+holds its own copy of them: a surface that parses a value, fills a default, or rejects a
+combination itself has defined a second request.
 A capability that exists in one surface and not the others is unfinished, and complexity
 that exists only at the CLI layer is misplaced.
 
@@ -451,8 +578,12 @@ the same `Query`/`Report` layer.
 ### Formats Are Serializations, Not Features
 
 Every view renders in every format.
-Machine formats are schema-versioned, never colourized, and a schema change without a
-version bump fails a golden test.
+Every format serializes one answer model: JSON, JSON Lines, and YAML parse back to the
+same value, Python values are constructed from it, and no writer alters a value, a path
+string included. Machine formats are schema-versioned, never colourized, and a schema
+change without a version bump fails a golden test.
+A schema version describes the shape of an answer, never the history of the cache that
+produced it.
 [The surface architecture](fdu-surface-architecture.md#machine-output-schemas) lists the
 schemas and the constant that defines each.
 
@@ -494,6 +625,12 @@ a listing of paths and nothing else.
 
 A watch run evaluates the same selection and views as a one-shot run, re-applied as
 changes arrive. There is no separate watch grammar to learn.
+
+A watch session serves only the tiers it keeps current: a tier it cannot maintain, such
+as content analysis without live re-analysis, is refused when the session starts rather
+than left to decay while repaints call it fresh.
+Each repaint computes its tree status and provenance from the index, as an opened-root
+read does; a repaint over a partial index is never labelled complete.
 
 Detection is event-driven — the OS notification backend, never polling — so an idle tree
 costs no filesystem work, a property asserted by test rather than described.

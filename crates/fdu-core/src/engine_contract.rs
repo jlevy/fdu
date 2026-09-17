@@ -18,6 +18,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::stored_state::EntryScope;
+
 /// A monotonic logical clock, in the spirit of Watchman's clockspec but process-local.
 ///
 /// Every [`Commit`] is stamped, so a consumer can ask "what changed since C?"
@@ -153,24 +155,6 @@ pub struct ScanScope {
     pub reducers_fingerprint: u64,
 }
 
-/// Filesystem-admission identity derived from a validated scan configuration.
-///
-/// Root binding and execution policy are deliberately absent. Two roots may share this
-/// configuration identity without claiming to be the same live session.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub struct ScopeIdentity {
-    /// Maximum retained relative depth, or unlimited when absent.
-    pub max_depth: Option<usize>,
-    /// Whether directory symlinks are followed.
-    pub follow_symlinks: bool,
-    /// Whether traversal stays on the root filesystem.
-    pub one_filesystem: bool,
-    /// Identity of leading-dot component admission and its exact-name allowlist.
-    pub hidden_fingerprint: u64,
-    /// Whether filesystem objects outside files, directories, and symlinks are excluded.
-    pub exclude_special: bool,
-}
-
 /// Answer-semantics identity derived from validated classification and reducer rules.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct SemanticIdentity {
@@ -215,7 +199,7 @@ pub struct EngineVersion {
     /// Exact committed index sequence observed by the read.
     pub sequence: Clock,
     /// Filesystem-fact identity bound when the root was opened.
-    pub scope: ScopeIdentity,
+    pub scope: EntryScope,
     /// Classification and reducer identity bound when the root was opened.
     pub semantics: SemanticIdentity,
 }
@@ -232,13 +216,17 @@ impl ScanScope {
     /// forms) refuse with [`Error::ControlStateNotObserved`] rather than answer "not
     /// ignored" for everything, and a shared
     /// [`ChildSnapshot`](crate::ChildSnapshot) carries no ignore bit or partitions.
+    ///
+    /// The ignore-rules fingerprint is derived from the scope's
+    /// [`ControlTierIdentity`](crate::ControlTierIdentity), which reserves zero for a tier
+    /// that observed nothing; a caller holding the identity asks it directly.
     pub const fn observes_controls(self) -> bool {
         self.ignore_rules_fingerprint != 0
     }
 
     /// The part of this validated scope that determines retained filesystem facts.
-    pub const fn scope_identity(self) -> ScopeIdentity {
-        ScopeIdentity {
+    pub const fn entry_scope(self) -> EntryScope {
+        EntryScope {
             max_depth: self.max_depth,
             follow_symlinks: self.follow_symlinks,
             one_filesystem: self.one_filesystem,
@@ -918,13 +906,19 @@ pub enum CountResult {
     AtLeast(u64),
 }
 
-/// Existing fdu query plus deterministic opened-read inputs and work bound.
+/// The read half of a request at an opened root, plus one read's work bound.
+///
+/// The basis is the opened root's own and is never supplied here: a caller names what each
+/// read asks -- the query and the instant it is asked at -- and [`crate::query::Request`]
+/// composes the two for validation.
 #[derive(Clone, Debug)]
 pub struct ReportRequest {
     /// Existing selection and view vocabulary shared by one-shot surfaces.
     pub query: crate::query::Query,
-    /// Caller-supplied render instant, keeping the projection deterministic.
-    pub generated_at: std::time::SystemTime,
+    /// The instant this read resolves against, which is also the report's `generated_at`.
+    ///
+    /// Caller-supplied, keeping the projection deterministic.
+    pub now: std::time::SystemTime,
     /// Maximum retained-index and maintained-index rows read by the report.
     pub max_work: u64,
 }
@@ -1728,6 +1722,14 @@ pub enum Error {
     Snapshot(String),
 
     /// A scan or watch setting has no supported safe semantics.
+    ///
+    /// Raised only where no request was built: a bound root, a raw scan, a watch
+    /// configuration, a scanner batch. A scope axis a request names is refused by
+    /// [`Request::validate`](crate::query::Request::validate) as
+    /// [`RequestError::ScopeUnsupported`](crate::query::RequestError::ScopeUnsupported)
+    /// before any stored state is read, so a surface renders it in its own words and
+    /// classifies it as the refused request it is. Both print the same sentence, because
+    /// both ask [`ScopeAxis::reason`](crate::query::ScopeAxis::reason) for it.
     #[error("unsupported scan configuration: {0}")]
     UnsupportedScanConfig(&'static str),
 
@@ -1892,6 +1894,15 @@ pub enum Error {
         /// Maximum accepted count cap.
         limit: u64,
     },
+
+    /// A request no holder of its own basis could answer, or that this holder cannot.
+    ///
+    /// The refusal is a value, rendered here in the library's field names; a surface that
+    /// built the request renders the same value in its own words through
+    /// [`RequestError::message`](crate::query::RequestError::message), which is why every
+    /// door refuses one request with one rule.
+    #[error(transparent)]
+    InvalidRequest(crate::query::RequestError),
 
     /// A report request exceeded the bounded section vocabulary for one read.
     #[error("report request contains {attempted} views or omissions; limit is {limit}")]
@@ -2074,9 +2085,9 @@ mod tests {
         let changed_semantics =
             ScanScope { reducers_fingerprint: base.reducers_fingerprint.wrapping_add(1), ..base };
 
-        assert_ne!(base.scope_identity(), changed_admission.scope_identity());
+        assert_ne!(base.entry_scope(), changed_admission.entry_scope());
         assert_eq!(base.semantic_identity(), changed_admission.semantic_identity());
-        assert_eq!(base.scope_identity(), changed_semantics.scope_identity());
+        assert_eq!(base.entry_scope(), changed_semantics.entry_scope());
         assert_ne!(base.semantic_identity(), changed_semantics.semantic_identity());
     }
 }

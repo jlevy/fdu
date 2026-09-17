@@ -3,24 +3,33 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs;
-use std::io::Read;
+use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
 
 use crate::classify::{
     Classification, ClassificationFlags, ContentFamily, DetectionConfidence, DetectionSource,
     FileTypeId,
 };
+use crate::stored_state::{
+    AnalyzerProvenance, ContentTierIdentity, ENTRY_TIER_BYTES, EntryTierIdentity,
+};
 use crate::{Error, Fingerprint, Index, Result};
 
 use super::{
     AnalysisApplyOutcome, AnalysisObservation, AnalysisRequest, AnalysisSet, AnalyzerId,
-    AnalyzerVersion, ContentProvenance, CoverageReason, FileAnalysis, LogicalWordStats,
-    MetricValues,
+    AnalyzerVersion, CoverageReason, FileAnalysis, LogicalWordStats, MetricValues,
 };
 
 const MAGIC: &[u8; 8] = b"FDUCTNT\0";
 const TRAILER: &[u8; 8] = b"FDUCTEND";
-const FORMAT_VERSION: u32 = 4;
+/// On-disk format version. Bump on any layout change or any change to what a record means;
+/// a sidecar of another version is a clean miss.
+///
+/// 5: the header records the engine fingerprint beside the version, at the offset a
+/// snapshot's prologue gives it, and the content tier identity after the path encoding:
+/// the entry tier the records were analyzed over, which holds their type rules, then the
+/// analyzer set, the options fingerprint, and the analyzers.
+const FORMAT_VERSION: u32 = 5;
 const CHECKSUM_BYTES: usize = 4;
 const MAX_CACHE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_RECORDS: u64 = 5_000_000;
@@ -52,32 +61,33 @@ pub fn content_cache_path(snapshot_path: &Path) -> PathBuf {
     PathBuf::from(name)
 }
 
-/// Persist the current profile's sparse records as a separately invalidated sidecar.
-pub fn save_content_cache(index: &Index, request: AnalysisRequest, path: &Path) -> Result<()> {
-    if !request.profile.is_enabled() {
-        return Ok(());
-    }
-    // Persist what the derived tier actually holds, not what this request asked for.
-    // A narrow request served from a wider cached set leaves the wider records in place,
-    // and relabelling them on the way out would throw away analyzers the records still
-    // carry — turning one narrow query into a permanent downgrade of the sidecar.
+/// Persist the content tier's sparse records as a separately invalidated sidecar, under the
+/// identity the tier holds.
+///
+/// The tier's own identity decides everything a request could have said: an index with no
+/// prepared tier writes nothing, and a prepared tier names an enabled analyzer set. A
+/// request argument could only disagree with it, and a sidecar labelled with the tier's set
+/// after a caller asked for another is worse than no argument at all.
+pub fn save_content_cache(index: &Index, path: &Path) -> Result<()> {
     let Some(content) = index.content() else {
         return Ok(());
     };
-    let (Some(stored), Some(provenance)) = (content.profile(), content.provenance().cloned())
-    else {
+    let Some(identity) = content.identity() else {
         return Ok(());
     };
+    // The tier states its records' type rules once, in its entry tier, and a save writes it
+    // only as the identity this index gives records of that set, so records produced under
+    // any other, such as other type rules, never reach a sidecar under its label.
+    if *identity != index.content_identity(identity.analysis) {
+        return Err(Error::Snapshot(
+            "content records were produced under another identity than their index".into(),
+        ));
+    }
+    // Every record the tier holds carries its identity, because the tier refuses any other,
+    // so which records are written is decided per record: those this pass verified.
     let records = content
         .records()
-        .filter(|(_, record)| {
-            record.provenance == provenance
-                && record.profile == stored
-                && !matches!(
-                    record.coverage,
-                    CoverageReason::IoError | CoverageReason::ChangedDuringRead
-                )
-        })
+        .filter(|(path, record)| crate::stored_state::content_record_writable(index, path, record))
         .collect::<Vec<_>>();
     let record_count = u64::try_from(records.len())
         .map_err(|_| Error::Snapshot("content sidecar record count overflow".into()))?;
@@ -88,11 +98,9 @@ pub fn save_content_cache(index: &Index, request: AnalysisRequest, path: &Path) 
     let mut buffer = Vec::new();
     buffer.extend_from_slice(MAGIC);
     buffer.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
+    buffer.extend_from_slice(&identity.entries.engine.to_le_bytes());
     buffer.push(crate::snapshot::path_encoding());
-    put_profile(&mut buffer, stored);
-    buffer.extend_from_slice(&provenance.type_rules_fingerprint.to_le_bytes());
-    buffer.extend_from_slice(&provenance.options_fingerprint.0.to_le_bytes());
-    put_analyzers(&mut buffer, &provenance.analyzers)?;
+    put_identity(&mut buffer, identity)?;
     crate::snapshot::put_os_str(&mut buffer, index.root_path().as_os_str())?;
     buffer.extend_from_slice(&record_count.to_le_bytes());
     for (relative_path, record) in records {
@@ -104,14 +112,19 @@ pub fn save_content_cache(index: &Index, request: AnalysisRequest, path: &Path) 
     crate::snapshot::write_atomically(path, &buffer)
 }
 
-/// Restore matching records, returning a miss for absent, corrupt, foreign, or stale
-/// sidecars.
+/// Restore the records of a sidecar whose identity equals `wanted`, returning a miss for an
+/// absent, corrupt, or foreign sidecar and for one of any other identity.
+///
+/// Equality, not containment: a sidecar of a wider analyzer set holds metrics a narrower
+/// request did not ask for, and one produced under other analyzer versions, options, type
+/// rules, entries, or engine counts differently. An identity this index cannot hold,
+/// because it names another entry tier or type rules, restores nothing into it.
 pub fn load_content_cache(
     index: &mut Index,
-    request: AnalysisRequest,
+    wanted: &ContentTierIdentity,
     path: &Path,
 ) -> Result<ContentCacheLoad> {
-    if !request.profile.is_enabled() {
+    if !wanted.analysis.is_enabled() || *wanted != index.content_identity(wanted.analysis) {
         return Ok(ContentCacheLoad::default());
     }
     let metadata = match fs::metadata(path) {
@@ -125,11 +138,13 @@ pub fn load_content_cache(
         return Ok(ContentCacheLoad::default());
     }
     let image = fs::read(path).map_err(|error| Error::io(path, error))?;
-    let Some(records) = parse(&image, index.root_path(), request, index.types().fingerprint())
-    else {
+    let Some(records) = parse(&image, index.root_path(), wanted) else {
         return Ok(ContentCacheLoad::default());
     };
-    index.prepare_content_analysis(request);
+    index.prepare_content_analysis(AnalysisRequest {
+        profile: wanted.analysis,
+        ..AnalysisRequest::default()
+    });
     // Keyed by hash rather than by order. This map is only ever drained by lookup —
     // nothing iterates it — so its ordering was never observable, and ordering a
     // `PathBuf` costs more than it looks: `Ord` walks components, so building a tree
@@ -144,7 +159,7 @@ pub fn load_content_cache(
     // the result in favour of the classification the sidecar already stored. That is
     // the real cost on this path and it is tracked separately (`fdu-926e`).
     let mut candidates = index
-        .analysis_candidates(request.profile)
+        .analysis_candidates(wanted.analysis)
         .into_iter()
         .map(|candidate| (candidate.relative_path.clone(), candidate))
         .collect::<HashMap<_, _>>();
@@ -182,7 +197,7 @@ pub fn load_content_cache(
 pub(crate) fn content_sidecar_bytes(path: &Path) -> Result<Option<u64>> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(Error::io(path, error)),
     };
     if !metadata.file_type().is_file() {
@@ -190,7 +205,7 @@ pub(crate) fn content_sidecar_bytes(path: &Path) -> Result<Option<u64>> {
     }
     let mut file = match fs::File::open(path) {
         Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(Error::io(path, error)),
     };
     let mut magic = [0u8; MAGIC.len()];
@@ -198,6 +213,147 @@ pub(crate) fn content_sidecar_bytes(path: &Path) -> Result<Option<u64>> {
         Ok(()) => Ok((&magic == MAGIC).then_some(metadata.len())),
         Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(None),
         Err(error) => Err(Error::io(path, error)),
+    }
+}
+
+/// Identify the content sidecar at `path` by its contents, or return `None` when no sidecar
+/// fdu wrote is there.
+///
+/// Mirrors [`crate::snapshot::identify`]. The magic alone decides whether the file is fdu's
+/// sidecar, as [`content_sidecar_bytes`] decides it for pairing and clearing; the rest of
+/// the header decides whether this build can serve it. Every sidecar format puts its
+/// version after the magic, and format 5 put the engine fingerprint after the version, so
+/// a sidecar from another release is recognized as stale rather than mistaken for a
+/// foreign file. Only the bounded header and the trailer are read, never the records, and
+/// only a regular file is opened, so a symbolic link is never followed out of the cache
+/// directory.
+pub(crate) fn identify_sidecar(path: &Path) -> Result<Option<crate::cache::ContentStatus>> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(Error::io(path, error)),
+    };
+    if !metadata.file_type().is_file() {
+        return Ok(None);
+    }
+    let mut file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(Error::io(path, error)),
+    };
+    let state = identify_sidecar_contents(&mut file).map_err(|error| Error::io(path, error))?;
+    Ok(state.map(|state| crate::cache::ContentStatus { bytes: metadata.len(), state }))
+}
+
+/// Classify a sidecar from its header and trailer, or `None` when it lacks the sidecar
+/// magic. Only an I/O failure is an error; every malformed byte is an answer.
+fn identify_sidecar_contents(
+    file: &mut fs::File,
+) -> io::Result<Option<crate::cache::ContentState>> {
+    use crate::cache::{ContentInfo, ContentState, StaleReason};
+
+    let stale = |reason| Ok(Some(ContentState::Stale(reason)));
+    let trailer_intact = sidecar_trailer_intact(file)?;
+    file.seek(SeekFrom::Start(0))?;
+    let mut header = Vec::new();
+    if !read_more(file, &mut header, MAGIC.len())? || header != MAGIC {
+        return Ok(None);
+    }
+    if !read_more(file, &mut header, 4)? {
+        return stale(StaleReason::Unreadable);
+    }
+    let version = u32::from_le_bytes(header[MAGIC.len()..].try_into().expect("four bytes"));
+    match version.cmp(&FORMAT_VERSION) {
+        std::cmp::Ordering::Less => return stale(StaleReason::OlderFormat { version }),
+        std::cmp::Ordering::Greater => return stale(StaleReason::NewerFormat { version }),
+        std::cmp::Ordering::Equal => {}
+    }
+    if !read_more(file, &mut header, 8)? {
+        return stale(StaleReason::Unreadable);
+    }
+    let engine = u64::from_le_bytes(header[MAGIC.len() + 4..].try_into().expect("eight bytes"));
+    if engine != crate::snapshot::engine_fingerprint() {
+        return stale(StaleReason::OtherEngine);
+    }
+    // Truncation removes the tail and leaves the header readable, so a header-only check
+    // would call a half-written sidecar current.
+    if !trailer_intact || !read_sidecar_header(file, &mut header)? {
+        return stale(StaleReason::Unreadable);
+    }
+    let parsed = (|| {
+        let mut reader = Reader::new(header.get(MAGIC.len() + 4 + 8..)?);
+        if reader.u8()? != crate::snapshot::path_encoding() {
+            return None;
+        }
+        let identity = read_identity(&mut reader, engine)?;
+        reader.os_string()?;
+        let records = reader.u64()?;
+        (records <= MAX_RECORDS && reader.is_empty()).then_some(ContentInfo { identity, records })
+    })();
+    Ok(Some(parsed.map_or(ContentState::Stale(StaleReason::Unreadable), ContentState::Current)))
+}
+
+/// Read the header fields after a format-5 prologue into `header`: each field's length is
+/// bounded before it is read. `false` when the file ends first or a bound is exceeded.
+fn read_sidecar_header(file: &mut fs::File, header: &mut Vec<u8>) -> io::Result<bool> {
+    // The path encoding, the entry tier (which holds the type rules), the analyzer set, the
+    // options fingerprint, and the analyzer count.
+    if !read_more(file, header, 1 + ENTRY_TIER_BYTES + 1 + 8 + 1)? {
+        return Ok(false);
+    }
+    let analyzers = usize::from(*header.last().expect("the analyzer count"));
+    if analyzers > MAX_ANALYZERS {
+        return Ok(false);
+    }
+    for _ in 0..analyzers {
+        let Some(length) = read_length(file, header, MAX_ANALYZER_ID_BYTES)? else {
+            return Ok(false);
+        };
+        if !read_more(file, header, length + 2)? {
+            return Ok(false);
+        }
+    }
+    let Some(root) = read_length(file, header, MAX_PATH_BYTES)? else { return Ok(false) };
+    Ok(read_more(file, header, root)? && read_more(file, header, 8)?)
+}
+
+/// Read a four-byte length into `header` and return it, when the file holds it and it is at
+/// most `max`.
+fn read_length(file: &mut fs::File, header: &mut Vec<u8>, max: usize) -> io::Result<Option<usize>> {
+    if !read_more(file, header, 4)? {
+        return Ok(None);
+    }
+    let bytes = header[header.len() - 4..].try_into().expect("four bytes");
+    Ok(usize::try_from(u32::from_le_bytes(bytes)).ok().filter(|length| *length <= max))
+}
+
+/// Append exactly `count` more bytes of `file` to `buffer`, or return `false` when it ends
+/// first.
+fn read_more(file: &mut fs::File, buffer: &mut Vec<u8>, count: usize) -> io::Result<bool> {
+    let start = buffer.len();
+    buffer.resize(start + count, 0);
+    match file.read_exact(&mut buffer[start..]) {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => {
+            buffer.truncate(start);
+            Ok(false)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// Whether a file ends with the sidecar trailer, which is what a truncated write destroys.
+fn sidecar_trailer_intact(file: &mut fs::File) -> io::Result<bool> {
+    let footer = u64::try_from(CHECKSUM_BYTES + TRAILER.len()).expect("a small footer");
+    if file.metadata()?.len() < footer {
+        return Ok(false);
+    }
+    file.seek(SeekFrom::End(-i64::try_from(TRAILER.len()).expect("a small trailer")))?;
+    let mut trailer = [0u8; TRAILER.len()];
+    match file.read_exact(&mut trailer) {
+        Ok(()) => Ok(&trailer == TRAILER),
+        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => Ok(false),
+        Err(error) => Err(error),
     }
 }
 
@@ -215,27 +371,54 @@ fn put_record(buffer: &mut Vec<u8>, path: &Path, record: &FileAnalysis) -> Resul
     put_bounded_bytes(buffer, record.error.as_deref().unwrap_or("").as_bytes(), MAX_ERROR_BYTES)
 }
 
+/// Write the content tier identity after the prologue and path encoding: the entry tier's
+/// fixed-width fields, which hold the type rules, then the analyzer set, the options
+/// fingerprint, and the analyzers.
+fn put_identity(buffer: &mut Vec<u8>, identity: &ContentTierIdentity) -> Result<()> {
+    buffer.extend_from_slice(&identity.entries.encode());
+    put_profile(buffer, identity.analysis);
+    buffer.extend_from_slice(&identity.provenance.options_fingerprint.0.to_le_bytes());
+    put_analyzers(buffer, &identity.provenance.analyzers)
+}
+
+/// Read what [`put_identity`] wrote, under the prologue's `engine` fingerprint.
+fn read_identity(reader: &mut Reader<'_>, engine: u64) -> Option<ContentTierIdentity> {
+    let entries =
+        EntryTierIdentity::decode(engine, reader.take(ENTRY_TIER_BYTES)?.try_into().ok()?)?;
+    Some(ContentTierIdentity {
+        entries,
+        analysis: read_profile(reader.u8()?)?,
+        provenance: AnalyzerProvenance {
+            options_fingerprint: super::OptionsFingerprint(reader.u64()?),
+            analyzers: read_analyzers(reader)?,
+        },
+    })
+}
+
+/// Parse a sidecar for `root` whose content tier identity equals `wanted`.
 fn parse(
     image: &[u8],
-    expected_root: &Path,
-    request: AnalysisRequest,
-    type_rules_fingerprint: u64,
+    root: &Path,
+    wanted: &ContentTierIdentity,
 ) -> Option<Vec<(PathBuf, FileAnalysis)>> {
     let payload = integrity_payload(image)?;
     let mut reader = Reader::new(payload.get(MAGIC.len()..)?);
-    if reader.u32()? != FORMAT_VERSION || reader.u8()? != crate::snapshot::path_encoding() {
+    if reader.u32()? != FORMAT_VERSION {
         return None;
     }
-    let profile = read_profile(reader.u8()?)?;
-    let provenance = ContentProvenance {
-        type_rules_fingerprint: reader.u64()?,
-        options_fingerprint: super::OptionsFingerprint(reader.u64()?),
-        analyzers: read_analyzers(&mut reader)?,
-    };
-    if !provenance.satisfies(profile, request.profile, type_rules_fingerprint) {
+    let engine = reader.u64()?;
+    if reader.u8()? != crate::snapshot::path_encoding() {
         return None;
     }
-    if reader.os_string()?.as_os_str() != expected_root.as_os_str() {
+    // Records of any other identity answer another request: a miss, whether they came
+    // from another engine or entry tier, which holds their type rules, or another analyzer
+    // set, version, or option.
+    let identity = read_identity(&mut reader, engine)?;
+    if identity != *wanted {
+        return None;
+    }
+    let (profile, provenance) = (identity.analysis, identity.record_provenance());
+    if reader.os_string()?.as_os_str() != root.as_os_str() {
         return None;
     }
     let count = reader.u64()?;
@@ -655,83 +838,277 @@ mod tests {
         AnalysisRequest { profile, ..AnalysisRequest::default() }
     }
 
-    /// The regression this replaces: reuse tested `record.profile == request.profile`, so
-    /// a sidecar holding every analyzer forced a complete re-read for a narrower request
-    /// whose every metric it already carried.
+    /// Load the sidecar at `cache` for `request`'s identity in `index`.
+    fn load(index: &mut Index, request: AnalysisRequest, cache: &Path) -> ContentCacheLoad {
+        let wanted = index.content_identity(request.profile);
+        load_content_cache(index, &wanted, cache).expect("load")
+    }
+
+    /// A sidecar serves exactly the analyzer set it was written for. A wider one holds
+    /// metrics the narrower request did not ask for and would report them, and the wider
+    /// set's label, as its answer; so it is a clean miss, and every file is read again
+    /// under the narrower set, as a cold run reads it.
     #[test]
-    fn a_wider_sidecar_answers_a_narrower_request_without_reading_anything() {
+    fn a_wider_sidecar_is_a_clean_miss_for_a_narrower_request() {
         let (root, cache_dir, index) = containment_fixture(AnalysisSet::ALL);
         let cache = cache_dir.path().join("content.cache");
-        save_content_cache(&index, request_for(AnalysisSet::ALL), &cache).expect("save");
+        save_content_cache(&index, &cache).expect("save");
 
         let narrower = request_for(AnalysisSet::NONE.with_code());
         let (mut restored, _) =
             crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
-        let loaded = load_content_cache(&mut restored, narrower, &cache).expect("load");
+        let loaded = load(&mut restored, narrower, &cache);
 
-        assert!(loaded.usable, "a superset sidecar must be usable: {loaded:?}");
-        assert_eq!(loaded.hits, 2, "both records restore: {loaded:?}");
-        assert!(
-            restored.pending_analysis_candidates(narrower).is_empty(),
-            "a satisfied request must open no file"
+        assert_eq!(loaded, ContentCacheLoad::default(), "a wider sidecar must miss");
+        assert_eq!(
+            restored.pending_analysis_candidates(narrower).len(),
+            2,
+            "a missed request reads every file"
         );
+        assert!(restored.content().is_none(), "a miss leaves no content tier behind");
     }
 
-    /// Containment has a direction. A narrower sidecar is missing metrics the wider
-    /// request needs, so it must miss rather than under-report them as absent.
+    /// Neither a narrower sidecar nor one of an incomparable set answers a request: each
+    /// lacks metrics the request needs or holds ones it did not ask for.
     #[test]
-    fn a_narrower_sidecar_does_not_answer_a_wider_request() {
-        let (root, cache_dir, index) = containment_fixture(AnalysisSet::NONE.with_code());
-        let cache = cache_dir.path().join("content.cache");
-        save_content_cache(&index, request_for(AnalysisSet::NONE.with_code()), &cache)
-            .expect("save");
+    fn another_analyzer_set_is_a_clean_miss() {
+        let code = AnalysisSet::NONE.with_code();
+        let words = AnalysisSet::NONE.with_words();
+        for (stored, wanted) in [(code, AnalysisSet::ALL), (code, words), (words, code)] {
+            let (root, cache_dir, index) = containment_fixture(stored);
+            let cache = cache_dir.path().join("content.cache");
+            save_content_cache(&index, &cache).expect("save");
 
+            let (mut restored, _) =
+                crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+            assert_eq!(
+                load(&mut restored, request_for(wanted), &cache),
+                ContentCacheLoad::default(),
+                "a {stored:?} sidecar must miss a {wanted:?} request"
+            );
+            let (mut same, _) =
+                crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+            let hit = load(&mut same, request_for(stored), &cache);
+            assert!(hit.usable && hit.hits == 2, "its own set still restores: {hit:?}");
+        }
+    }
+
+    /// One sidecar per root holds one analyzer set, so answering another set replaces it.
+    /// That costs the wider set's next run a re-read, never its correctness.
+    #[test]
+    fn a_different_analyzer_set_replaces_the_sidecar() {
+        let (root, cache_dir, index) = containment_fixture(AnalysisSet::ALL);
+        let cache = cache_dir.path().join("content.cache");
+        save_content_cache(&index, &cache).expect("save");
+
+        let narrower = request_for(AnalysisSet::NONE.with_code());
         let (mut restored, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        load(&mut restored, narrower, &cache);
+        let analysis = super::super::analyze_index(&mut restored, narrower);
+        assert_eq!(analysis.applied, 2, "the narrower run reads every file");
+        save_content_cache(&restored, &cache).expect("resave");
+
+        let (mut wide, _) =
             crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
         assert_eq!(
-            load_content_cache(&mut restored, request_for(AnalysisSet::ALL), &cache).expect("load"),
+            load(&mut wide, request_for(AnalysisSet::ALL), &cache),
             ContentCacheLoad::default(),
-            "a subset sidecar must be a clean miss"
+            "the wider set was replaced"
         );
+        let (mut narrow, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        let hit = load(&mut narrow, narrower, &cache);
+        assert!(hit.usable && hit.hits == 2, "by the narrower one: {hit:?}");
     }
 
-    /// Serving a narrow request from a wide tier must not relabel the tier on the way
-    /// out: one `--analyze code` run would otherwise permanently downgrade a sidecar that
-    /// still holds every analyzer.
-    #[test]
-    fn serving_a_narrow_request_preserves_the_wider_stored_set() {
-        let (root, cache_dir, index) = containment_fixture(AnalysisSet::ALL);
-        let cache = cache_dir.path().join("content.cache");
-        save_content_cache(&index, request_for(AnalysisSet::ALL), &cache).expect("save");
+    /// Byte offset of the engine fingerprint: after the magic and the format version, where
+    /// a snapshot's prologue puts it.
+    const ENGINE_OFFSET: usize = MAGIC.len() + 4;
 
-        let narrower = request_for(AnalysisSet::NONE.with_code());
-        let (mut restored, _) =
-            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
-        load_content_cache(&mut restored, narrower, &cache).expect("load");
-        save_content_cache(&restored, narrower, &cache).expect("resave");
+    /// Byte offset of the path encoding, which follows the engine fingerprint.
+    const PATH_ENCODING_OFFSET: usize = ENGINE_OFFSET + 8;
 
-        let (mut reloaded, _) =
-            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
-        let wide =
-            load_content_cache(&mut reloaded, request_for(AnalysisSet::ALL), &cache).expect("load");
-        assert!(wide.usable, "the wider set survived a narrow round trip: {wide:?}");
-        assert_eq!(wide.hits, 2, "and still carries every record: {wide:?}");
+    /// Recompute a rewritten image's checksum, so the rewrite is the only thing wrong with it.
+    fn reseal(image: &mut [u8]) {
+        let payload_len = image.len() - CHECKSUM_BYTES - TRAILER.len();
+        let checksum = crate::snapshot::crc32c(&image[..payload_len]);
+        image[payload_len..payload_len + CHECKSUM_BYTES].copy_from_slice(&checksum.to_le_bytes());
     }
 
     #[test]
     fn corruption_is_a_clean_miss() {
         let (root, index, request) = analyzed_index();
         let cache = root.path().join("content.cache");
-        save_content_cache(&index, request, &cache).expect("save");
+        save_content_cache(&index, &cache).expect("save");
         let mut bytes = fs::read(&cache).expect("read");
-        bytes[MAGIC.len() + 4] ^= 0xff;
+        assert_eq!(bytes[PATH_ENCODING_OFFSET], crate::snapshot::path_encoding());
+        // A header byte flipped without resealing: the checksum no longer matches.
+        bytes[PATH_ENCODING_OFFSET] ^= 0xff;
         fs::write(&cache, bytes).expect("corrupt");
         let (mut restored, _) =
             crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
-        assert_eq!(
-            load_content_cache(&mut restored, request, &cache).expect("load"),
-            ContentCacheLoad::default()
-        );
+        assert_eq!(load(&mut restored, request, &cache), ContentCacheLoad::default());
+    }
+
+    /// A sidecar's records answer only the engine and entry tier they were analyzed under.
+    /// Another engine's sidecar, one of another format, and one analyzed over another scope
+    /// are clean misses even though every record's path and fingerprint still match; one
+    /// analyzed with `.gitignore` observation off answers a request with it on, because no
+    /// metric depends on observation.
+    #[test]
+    fn a_sidecar_from_another_engine_or_scope_is_a_clean_miss() {
+        let (root, index, request) = analyzed_index();
+        let cache_dir = tempfile::tempdir().expect("cache dir");
+        let cache = cache_dir.path().join("content.cache");
+        save_content_cache(&index, &cache).expect("save");
+        let saved = fs::read(&cache).expect("read");
+        let load_into = |config: &ScanConfig| {
+            let (mut restored, _) =
+                crate::scan::scan_into_index(root.path(), config).expect("scan");
+            load(&mut restored, request, &cache)
+        };
+        let hit = load_into(&ScanConfig::default());
+        assert!(hit.usable && hit.hits == 1, "the saved sidecar restores: {hit:?}");
+
+        let mut other_engine = saved.clone();
+        for byte in &mut other_engine[ENGINE_OFFSET..ENGINE_OFFSET + 8] {
+            *byte = !*byte;
+        }
+        reseal(&mut other_engine);
+        let mut older_format = saved.clone();
+        older_format[MAGIC.len()..ENGINE_OFFSET].copy_from_slice(&4_u32.to_le_bytes());
+        reseal(&mut older_format);
+        for (name, image) in [("another engine", other_engine), ("format 4", older_format)] {
+            fs::write(&cache, image).expect("rewrite");
+            assert_eq!(load_into(&ScanConfig::default()), ContentCacheLoad::default(), "{name}");
+        }
+
+        fs::write(&cache, &saved).expect("restore");
+        for config in [
+            ScanConfig { max_depth: Some(4), ..ScanConfig::default() },
+            ScanConfig { exclude_special: true, ..ScanConfig::default() },
+        ] {
+            assert_eq!(load_into(&config), ContentCacheLoad::default(), "{:?}", config.scope());
+        }
+        let blind = ScanConfig { read_controls: false, ..ScanConfig::default() };
+        assert_eq!(load_into(&blind), hit, "observation is not part of the content identity");
+    }
+
+    /// The sidecar reads its entry tier through the shared codec, so a sealed image whose
+    /// entry tier holds a byte no encoder writes is a clean miss rather than an identity
+    /// that happens to compare unequal.
+    #[test]
+    fn a_sidecar_entry_tier_no_encoder_writes_is_a_clean_miss() {
+        let (root, index, request) = analyzed_index();
+        let cache_dir = tempfile::tempdir().expect("cache dir");
+        let cache = cache_dir.path().join("content.cache");
+        save_content_cache(&index, &cache).expect("save");
+        let saved = fs::read(&cache).expect("read");
+        let reload = || {
+            let (mut restored, _) =
+                crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+            load(&mut restored, request, &cache)
+        };
+        assert!(reload().usable, "the saved sidecar restores");
+
+        // The entry tier follows the path encoding; its scope flags follow the depth bound.
+        let flags_at = PATH_ENCODING_OFFSET + 1 + crate::stored_state::BOUND_BYTES;
+        let mut unknown_flag = saved;
+        assert_eq!(unknown_flag[flags_at], 0, "the default scope sets no flag");
+        unknown_flag[flags_at] |= 1 << 7;
+        reseal(&mut unknown_flag);
+        fs::write(&cache, unknown_flag).expect("rewrite");
+        assert_eq!(reload(), ContentCacheLoad::default());
+    }
+
+    /// Records answer only the analyzer versions and options they were counted under. A
+    /// sidecar whose analyzers are another version, or whose options differ, is a clean
+    /// miss even though its analyzer set, entries, and every record's fingerprint match.
+    #[test]
+    fn an_analyzer_version_change_invalidates_records() {
+        let (root, index, request) = analyzed_index();
+        let cache_dir = tempfile::tempdir().expect("cache dir");
+        let cache = cache_dir.path().join("content.cache");
+        save_content_cache(&index, &cache).expect("save");
+        let saved = fs::read(&cache).expect("read");
+        let reload = |cache: &Path| {
+            let (mut restored, _) =
+                crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+            load(&mut restored, request, cache)
+        };
+        let hit = reload(&cache);
+        assert!(hit.usable && hit.hits == 1, "the saved sidecar restores: {hit:?}");
+
+        // After the path encoding: the entry tier, which holds the type rules, the analyzer
+        // set, the options fingerprint, the analyzer count, then the one analyzer's
+        // length-prefixed id and its version.
+        let options_at = PATH_ENCODING_OFFSET + 1 + ENTRY_TIER_BYTES + 1;
+        let count_at = options_at + 8;
+        let version_at = count_at + 1 + 4 + super::super::CONTENT_BASIC.0.len();
+        assert_eq!(saved[count_at], 1, "a lines request runs one analyzer");
+        assert_eq!(&saved[count_at + 5..version_at], super::super::CONTENT_BASIC.0.as_bytes());
+        assert_eq!(saved[version_at..version_at + 2], 1_u16.to_le_bytes());
+
+        let mut other_version = saved.clone();
+        other_version[version_at..version_at + 2].copy_from_slice(&2_u16.to_le_bytes());
+        reseal(&mut other_version);
+        let mut other_options = saved.clone();
+        other_options[options_at] ^= 1;
+        reseal(&mut other_options);
+        for (name, image) in [("another version", other_version), ("other options", other_options)]
+        {
+            fs::write(&cache, image).expect("rewrite");
+            assert_eq!(reload(&cache), ContentCacheLoad::default(), "{name}");
+        }
+        fs::write(&cache, &saved).expect("restore");
+        assert_eq!(reload(&cache), hit, "the unchanged image still restores");
+    }
+
+    /// A save writes a record only for a file this pass verified. Records restored beside
+    /// a snapshot over a subtree whose verification was withdrawn, here by a pass that
+    /// began over `sub` and has not finished, describe retained facts nobody re-checked,
+    /// so they stay out of the sidecar while records for the verified rest of the tree
+    /// are written.
+    #[test]
+    fn records_under_an_unverified_subtree_are_not_written() {
+        let root = tempfile::tempdir().expect("root");
+        let store = tempfile::tempdir().expect("cache dir");
+        fs::write(root.path().join("top.md"), "one two\n").expect("write");
+        fs::create_dir(root.path().join("sub")).expect("mkdir");
+        fs::write(root.path().join("sub").join("inner.md"), "three\n").expect("write");
+        let config = ScanConfig::default();
+        let lines = request_for(AnalysisSet::NONE.with_lines());
+        let (snapshot_path, cache) = (store.path().join("tree.fdu"), store.path().join("first"));
+
+        let (mut scanned, _) = crate::scan::scan_into_index(root.path(), &config).expect("scan");
+        super::super::analyze_index(&mut scanned, lines);
+        crate::snapshot::save(&scanned, &snapshot_path).expect("save snapshot");
+        save_content_cache(&scanned, &cache).expect("save sidecar");
+
+        let mut restored = crate::snapshot::load_with_types(&snapshot_path, config.types_shared())
+            .expect("load")
+            .expect("a usable snapshot");
+        assert_eq!(load(&mut restored, lines, &cache).hits, 2);
+        crate::scan::reconcile(&mut restored, &config, &mut |_| {}).expect("reconcile");
+        restored.begin_reconcile(Path::new("sub")).expect("withdraw trust over sub");
+
+        let content = restored.content().expect("content");
+        let writable = |path: &str| {
+            let record = content.file(Path::new(path)).expect("a restored record");
+            crate::stored_state::content_record_writable(&restored, Path::new(path), record)
+        };
+        assert!(writable("top.md"), "a verified file's record is written");
+        assert!(!writable("sub/inner.md"), "a record under an unverified subtree is not");
+
+        let rewritten = store.path().join("second");
+        save_content_cache(&restored, &rewritten).expect("resave");
+        let (mut fresh, _) = crate::scan::scan_into_index(root.path(), &config).expect("scan");
+        let loaded = load(&mut fresh, lines, &rewritten);
+        assert!(loaded.usable && loaded.hits == 1, "only the verified record: {loaded:?}");
+        let fresh_content = fresh.content().expect("content");
+        assert!(fresh_content.file(Path::new("top.md")).is_some());
+        assert!(fresh_content.file(Path::new("sub/inner.md")).is_none());
     }
 
     /// Re-address the sidecar's one record, leaving the image otherwise valid.
@@ -790,14 +1167,14 @@ mod tests {
 
             let (root, index, request) = analyzed_index();
             let cache = root.path().join("content.cache");
-            save_content_cache(&index, request, &cache).expect("save");
+            save_content_cache(&index, &cache).expect("save");
             let image = fs::read(&cache).expect("read");
             let rewritten = readdress_record(&image, Path::new("notes.md"), Path::new(record_path));
             fs::write(&cache, rewritten).expect("re-address");
 
             let (mut restored, _) =
                 crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
-            let loaded = load_content_cache(&mut restored, request, &cache).expect("load");
+            let loaded = load(&mut restored, request, &cache);
             if restores {
                 assert!(loaded.usable, "{record_path:?} must restore: {loaded:?}");
                 assert_eq!(loaded.hits, 1, "{record_path:?} must restore: {loaded:?}");

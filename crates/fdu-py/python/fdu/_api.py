@@ -16,7 +16,6 @@ from ._models import (
     Bound,
     CachePolicy,
     CacheScope,
-    CacheState,
     CacheStatus,
     Change,
     ChangeKind,
@@ -25,16 +24,15 @@ from ._models import (
     ClearSummary,
     EntryKind,
     Format,
-    LeftoverKind,
     Provenance,
     Query,
     RefreshResult,
     Report,
     RollUp,
     ScanOptions,
-    StaleReason,
     Status,
     WatchOptions,
+    cache_status_from_dict,
     provenance_from_dict,
     report_from_dict,
     rollup_from_dict,
@@ -146,30 +144,6 @@ def _query_kwargs(query: Query) -> dict[str, object]:
         "ignored": selection.ignored.value,
         "words_per_page": query.words_per_page,
     }
-
-
-def _cache_status(value: dict[str, Any]) -> CacheStatus:
-    return CacheStatus(
-        path=Path(value["path"]),
-        bytes=int(value["bytes"]),
-        content_bytes=(int(value["content_bytes"]) if value["content_bytes"] is not None else None),
-        state=CacheState(value["state"]),
-        stale_reason=(
-            StaleReason(value["stale_reason"]) if value["stale_reason"] is not None else None
-        ),
-        format_version=(
-            int(value["format_version"]) if value["format_version"] is not None else None
-        ),
-        leftover_kind=(
-            LeftoverKind(value["leftover_kind"]) if value["leftover_kind"] is not None else None
-        ),
-        root=Path(value["root"]) if value["root"] is not None else None,
-        entries=int(value["entries"]) if value["entries"] is not None else None,
-        max_depth=int(value["max_depth"]) if value["max_depth"] is not None else None,
-        one_filesystem=(
-            bool(value["one_filesystem"]) if value["one_filesystem"] is not None else None
-        ),
-    )
 
 
 class Watch(Iterator[tuple[Change, ...]]):
@@ -550,11 +524,11 @@ def cache_path(root: str | Path) -> Path | None:
 
 def cache_status(root: str | Path) -> CacheStatus | None:
     value = _call(_native.cache_status, root)
-    return None if value is None else _cache_status(value)
+    return None if value is None else cache_status_from_dict(value)
 
 
 def list_caches(root: str | Path = Path()) -> tuple[CacheStatus, ...]:
-    return tuple(_cache_status(value) for value in _call(_native.list_caches, root))
+    return tuple(cache_status_from_dict(value) for value in _call(_native.list_caches, root))
 
 
 def clear_cache(root: str | Path) -> bool:

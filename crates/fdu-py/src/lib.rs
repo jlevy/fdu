@@ -24,13 +24,13 @@ use pyo3::types::{PyDict, PyList};
 
 use fdu_core::content::{AnalysisRequest, AnalysisSet, CoverageReason};
 use fdu_core::query::{
-    AxisNames, Bound as Bound_, IgnoredEntries, IgnoredTally, MetricRow, MetricSummary, Pattern,
-    Provenance, Query, Report, ReportSource, Section, Selection, SizeMetric, SortKey, SummaryRow,
-    TreeNode, ViewSpec, document_words,
+    AxisNames, Basis, Delivery, IgnoredTally, MetricRow, MetricSummary, Provenance, ReadSpec,
+    Report, ReportSource, Request, RequestError, RequestSpec, Section, SummaryRow, TreeNode,
+    ViewSpec, WatchDelivery, document_words, parse_cache_policy, parse_kind,
 };
 use fdu_core::watch::WatchConfig;
 use fdu_core::watch_session::{ChangeKind, Session};
-use fdu_core::{CachePolicy, EntryKind, Freshness, IndexHandle, OpenConfig, RollUp, ScanConfig};
+use fdu_core::{CachePolicy, EntryKind, Freshness, IndexHandle, OpenConfig, RollUp};
 use std::time::{Duration, SystemTime};
 
 mod opened_binding;
@@ -53,6 +53,10 @@ fn to_py_err(err: fdu_core::Error) -> PyErr {
         | fdu_core::Error::InvalidValue { .. }
         | fdu_core::Error::JournalCapacityTooSmall { .. }
         | fdu_core::Error::WatchRootMismatch { .. }) => PyValueError::new_err(error.to_string()),
+
+        // A request no holder of its basis can answer is an argument error too, and it
+        // already renders itself in this API's field names.
+        fdu_core::Error::InvalidRequest(refusal) => value_error(&refusal),
 
         // Everything else is the operation failing on its own terms: the cache had no
         // usable snapshot, a lock was poisoned, a watch worker stopped. The arguments were
@@ -133,8 +137,13 @@ fn freshness_label(freshness: Freshness) -> &'static str {
 #[pyclass(name = "Index", module = "fdu._native")]
 pub struct PyIndex {
     inner: fdu_core::Index,
-    config: ScanConfig,
-    analysis: AnalysisRequest,
+    /// Root, scope, and analyzers: what this index holds for its lifetime, and what every
+    /// read of it is validated against.
+    basis: Basis,
+    /// How this index was delivered: the cache policy it was opened under, which decides
+    /// whether it may be watched, and the worker count a later `refresh` re-runs its
+    /// analyzers with.
+    delivery: Delivery,
     errors: Vec<ErrorDetail>,
     operation_complete: bool,
     scan_started_at: Option<SystemTime>,
@@ -207,8 +216,8 @@ impl PyIndex {
         limit = None,
         sort = None,
         reverse = false,
-        size = "allocated",
-        words_per_page = 250
+        size = None,
+        words_per_page = fdu_core::query::Request::DEFAULTS.words_per_page
     ))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn report<'py>(
@@ -226,7 +235,7 @@ impl PyIndex {
         limit: Option<&str>,
         sort: Option<&str>,
         reverse: bool,
-        size: &str,
+        size: Option<&str>,
         words_per_page: u64,
     ) -> PyResult<Bound<'py, PyDict>> {
         let report = self.build_report(
@@ -270,8 +279,8 @@ impl PyIndex {
         limit = None,
         sort = None,
         reverse = false,
-        size = "allocated",
-        words_per_page = 250
+        size = None,
+        words_per_page = fdu_core::query::Request::DEFAULTS.words_per_page
     ))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn report_handle(
@@ -288,7 +297,7 @@ impl PyIndex {
         limit: Option<&str>,
         sort: Option<&str>,
         reverse: bool,
-        size: &str,
+        size: Option<&str>,
         words_per_page: u64,
     ) -> PyResult<PyOneShot> {
         let report = self.build_report(
@@ -329,8 +338,8 @@ impl PyIndex {
         limit = None,
         sort = None,
         reverse = false,
-        size = "allocated",
-        words_per_page = 250
+        size = None,
+        words_per_page = fdu_core::query::Request::DEFAULTS.words_per_page
     ))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn watch(
@@ -348,13 +357,15 @@ impl PyIndex {
         limit: Option<&str>,
         sort: Option<&str>,
         reverse: bool,
-        size: &str,
+        size: Option<&str>,
         words_per_page: u64,
     ) -> PyResult<PyWatch> {
-        let query = build_query_at(
+        // No default view of its own: a watch serves what a report of the same basis serves,
+        // which for an index with no analyzers is the tree. Passing `files` here was the
+        // last place a request meant one thing at this door and another at the next.
+        let request = build_request(
             SystemTime::now(),
-            self.analysis.profile,
-            Some(ViewSpec::Files),
+            &self.basis,
             views,
             include,
             exclude,
@@ -371,14 +382,20 @@ impl PyIndex {
             words_per_page,
         )?;
 
-        // Refused here, in the API's own names, rather than as the session's typed error.
-        query.validate_controls(self.inner.observes_controls()).map_err(PyValueError::new_err)?;
+        // Refused here, in this API's own names, rather than as the session's typed error:
+        // an index that holds analyzers, or one opened from a snapshot nothing verified,
+        // cannot be watched, exactly as `--watch` refuses both.
+        let delivery = Delivery {
+            watch: Some(WatchDelivery { interval: Duration::from_secs_f64(interval) }),
+            ..self.delivery.clone()
+        };
+        request.validate_delivery(&delivery).map_err(|error| value_error(&error))?;
 
         // The index is cloned into the session: a watcher owns its own handle, so closing
         // the feed cannot disturb the caller's index.
         let handle = IndexHandle::new(self.inner.clone());
-        let session = Session::new(handle, self.config.clone(), query, WatchConfig::default())
-            .map_err(to_py_err)?;
+        let session =
+            Session::new(handle, request, &delivery, WatchConfig::default()).map_err(to_py_err)?;
 
         Ok(PyWatch { session: Some(session), timeout: Duration::from_secs_f64(interval) })
     }
@@ -455,15 +472,15 @@ impl PyIndex {
     /// because an upsert whose complete observed state already matches is a no-op.
     fn refresh<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         self.scan_started_at = Some(SystemTime::now());
-        let config = self.config.clone();
+        let config = self.basis.scope.clone();
         let report = py
             .detach(|| fdu_core::scan::reconcile(&mut self.inner, &config, &mut |_| {}))
             .map_err(to_py_err)?;
         let mut complete = report.scan.is_complete();
         self.errors = report.scan.errors.iter().map(ErrorDetail::from_engine).collect();
-        if self.analysis.profile.is_enabled() {
-            let analysis =
-                py.detach(|| fdu_core::content::analyze_index(&mut self.inner, self.analysis));
+        if self.basis.content.is_enabled() {
+            let request = self.analysis_request();
+            let analysis = py.detach(|| fdu_core::content::analyze_index(&mut self.inner, request));
             let analysis_complete = analysis.is_complete();
             append_analysis_error(&mut self.errors, analysis);
             complete &= analysis_complete;
@@ -562,16 +579,15 @@ impl PyIndex {
         limit: Option<&str>,
         sort: Option<&str>,
         reverse: bool,
-        size: &str,
+        size: Option<&str>,
         words_per_page: u64,
     ) -> PyResult<Report> {
         // `now` is the report's own generated_at as well as the clock the time bounds are
         // resolved against, so both come from one reading rather than two.
         let now = SystemTime::now();
-        let query = build_query_at(
+        let request = build_request(
             now,
-            self.analysis.profile,
-            None,
+            &self.basis,
             views,
             include,
             exclude,
@@ -587,7 +603,6 @@ impl PyIndex {
             size,
             words_per_page,
         )?;
-        query.validate_controls(self.inner.observes_controls()).map_err(PyValueError::new_err)?;
         let provenance = Provenance {
             scan_started_at: self.scan_started_at,
             generated_at: now,
@@ -595,30 +610,50 @@ impl PyIndex {
             complete: self.operation_complete,
             errors: self.error_messages(),
         };
-        fdu_core::query::report(&self.inner, &query, &provenance).map_err(to_py_err)
+        fdu_core::query::report(&self.inner, &request, &provenance).map_err(to_py_err)
+    }
+
+    /// The analysis pass this index's basis asks for, with the worker count it was opened
+    /// under.
+    fn analysis_request(&self) -> AnalysisRequest {
+        AnalysisRequest { profile: self.basis.content, workers: self.delivery.analysis_workers }
     }
 }
 
-/// Translate a cache-policy string into its library value.
+/// The request model's refusal, in the Python API's words.
 ///
-/// The same spellings the CLI accepts, so a capability reachable by flag is reachable by
-/// one typed call rather than by shelling out.
-fn parse_cache_policy(value: &str) -> PyResult<CachePolicy> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "auto" => Ok(CachePolicy::Auto),
-        "refresh" => Ok(CachePolicy::Refresh),
-        "read-only" => Ok(CachePolicy::ReadOnly),
-        "only" => Ok(CachePolicy::Only),
-        "off" => Ok(CachePolicy::Off),
-        other => Err(PyValueError::new_err(format!(
-            "invalid cache policy {other:?}: expected one of auto, refresh, read-only, only, off"
-        ))),
-    }
+/// A `ValueError`, like every other refusal of an argument: the caller asked for something
+/// the grammar does not allow.
+fn value_error(error: &RequestError) -> PyErr {
+    PyValueError::new_err(error.message(&AxisNames::FIELDS))
 }
 
-fn parse_analysis_request(profile: &str, workers: usize) -> PyResult<AnalysisRequest> {
-    let profile = AnalysisSet::parse(profile).map_err(PyValueError::new_err)?;
-    Ok(AnalysisRequest { profile, workers })
+/// The basis an `open`, a `scan`, or a one-shot holds, built by the request model.
+///
+/// Root, scope, and analyzers are the axes a holder is fixed with, and the model parses
+/// them from the words the caller wrote: `max_depth` is typed by this API and reaches it
+/// through `Display`, as the command line's typed flags do.
+#[allow(clippy::too_many_arguments)]
+fn build_basis(
+    root: &Path,
+    max_depth: Option<usize>,
+    one_filesystem: bool,
+    read_controls: bool,
+    control_budget: Option<&str>,
+    control_line_limit: Option<&str>,
+    analyze: &str,
+) -> PyResult<Basis> {
+    let scan_depth = max_depth.map(|depth| depth.to_string());
+    let spec = RequestSpec {
+        scan_depth: scan_depth.as_deref(),
+        one_filesystem,
+        read_controls: Some(read_controls),
+        control_budget,
+        control_line_limit,
+        analyze: Some(analyze),
+        ..RequestSpec::new(root)
+    };
+    Basis::build(&spec, &AxisNames::FIELDS).map_err(|error| value_error(&error))
 }
 
 fn append_analysis_error(
@@ -700,19 +735,6 @@ fn source_label(source: fdu_core::query::ReportSource) -> &'static str {
         fdu_core::query::ReportSource::WarmRevalidate => "warm_revalidate",
         fdu_core::query::ReportSource::CacheOnly => "cache_only",
     }
-}
-
-/// Convert a parsed time bound to index nanoseconds, or raise.
-///
-/// Mirrors the CLI: an instant the index cannot represent must be rejected, never stored
-/// as an absent bound, or the query silently runs with no time filter at all.
-fn bound_nanos(input: &str, when: std::time::SystemTime, field: &str) -> PyResult<i64> {
-    fdu_core::query::system_time_to_nanos(when).ok_or_else(|| {
-        pyo3::exceptions::PyValueError::new_err(format!(
-            "invalid {field} {input:?}: that time is outside the range fdu can represent \
-             (about 1677 to 2262)"
-        ))
-    })
 }
 
 /// Convert a report into the dict shape Python callers get.
@@ -990,50 +1012,6 @@ fn parse_format(value: &str) -> PyResult<fdu_core::report_format::Format> {
     }
 }
 
-/// Resolve a caller's view list, expanding the `full` total.
-///
-/// `full` names the whole report rather than one projection, so it cannot be combined.
-/// The Python `View` enum offers it, so the binding must honour it — it previously listed
-/// `full` as valid in its error message while rejecting it.
-fn resolve_views(
-    values: &[String],
-    analysis: AnalysisSet,
-) -> PyResult<(Vec<ViewSpec>, Vec<ViewSpec>)> {
-    // The binding used to carry its own copy of this axis: the `full` expansion, the
-    // exclusivity rule, and the default. Each drifted -- the exclusivity message lost a
-    // clause (fdu-gw5b), the view order fell out of step (fdu-ggux), and the list grammar
-    // was never here at all, so ["tree", "tree"] was a silent no-op where the CLI calls it
-    // a typo (fdu-jozr). One resolver now, named as the Python API spells the axis.
-    let spec = values.join(",");
-    ViewSpec::resolve(Some(&spec), analysis, "view").map_err(PyValueError::new_err)
-}
-
-/// Parse an entry-kind name.
-fn parse_kind(value: &str) -> PyResult<EntryKind> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "file" => Ok(EntryKind::File),
-        "dir" => Ok(EntryKind::Dir),
-        "symlink" => Ok(EntryKind::Symlink),
-        "other" => Ok(EntryKind::Other),
-        other => Err(PyValueError::new_err(format!(
-            "invalid kind {other:?}: expected one of file, dir, symlink, other"
-        ))),
-    }
-}
-
-/// Parse a sort key.
-fn parse_sort(value: &str) -> PyResult<SortKey> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "size" => Ok(SortKey::Size),
-        "count" => Ok(SortKey::Count),
-        "mtime" => Ok(SortKey::Mtime),
-        "name" => Ok(SortKey::Name),
-        other => Err(PyValueError::new_err(format!(
-            "invalid sort {other:?}: expected one of size, count, mtime, name"
-        ))),
-    }
-}
-
 /// Parse the `control_budget` and `control_line_limit` tokens with the engine's grammar,
 /// each on its own; an absent token keeps that limit's default.
 pub(crate) fn parse_control_limits(
@@ -1048,28 +1026,6 @@ pub(crate) fn parse_control_limits(
         line_limit: line_limit.map_or(Ok(defaults.line_limit), |value| {
             fdu_core::query::parse_control_line_limit(value).map_err(to_py_err)
         })?,
-    })
-}
-
-/// Parse a size metric.
-fn parse_size_metric(value: &str) -> PyResult<SizeMetric> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "allocated" => Ok(SizeMetric::Allocated),
-        "apparent" => Ok(SizeMetric::Apparent),
-        other => Err(PyValueError::new_err(format!(
-            "invalid size {other:?}: expected allocated or apparent"
-        ))),
-    }
-}
-
-/// Parse a bound that accepts `all`.
-fn parse_bound(value: &str, name: &str) -> PyResult<Bound_> {
-    let value = value.trim();
-    if value.eq_ignore_ascii_case("all") {
-        return Ok(Bound_::All);
-    }
-    value.parse::<usize>().map(Bound_::Limit).map_err(|_| {
-        PyValueError::new_err(format!("invalid {name} {value:?}: expected a whole number or `all`"))
     })
 }
 
@@ -1164,15 +1120,17 @@ impl PyWatch {
     }
 }
 
-/// Build a query from the keyword arguments both report paths accept.
+/// Build one request from the keyword arguments every report path accepts.
 ///
-/// Extracted so the session path and the one-shot cannot disagree about what a request
-/// means. Every value grammar here belongs to the library and is called, not restated.
+/// `basis` is what the index or the one-shot holds -- root, scope, and analyzers -- and the
+/// arguments are what this read names; the model owns every grammar, every default, and
+/// every rule that relates one axis to another. Extracted so the session path, the index
+/// path, and the one-shot cannot disagree about what a request means, which they did when
+/// each parsed its own.
 #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
-fn build_query_at(
+fn build_request(
     now: SystemTime,
-    profile: AnalysisSet,
-    default_view: Option<ViewSpec>,
+    basis: &Basis,
     views: Option<Vec<String>>,
     include: Option<Vec<String>>,
     exclude: Option<Vec<String>>,
@@ -1185,64 +1143,45 @@ fn build_query_at(
     limit: Option<&str>,
     sort: Option<&str>,
     reverse: bool,
-    size: &str,
+    size: Option<&str>,
     words_per_page: u64,
-) -> PyResult<Query> {
-    let mut selection =
-        Selection { reverse, size: parse_size_metric(size)?, ..Selection::default() };
-    if let Some(value) = depth {
-        selection.depth = Some(parse_bound(value, "depth")?);
-    }
-    if let Some(value) = limit {
-        selection.limit = Some(parse_bound(value, "limit")?);
-    }
-    for pattern in include.unwrap_or_default() {
-        selection.include.push(Pattern::parse(&pattern).map_err(to_py_err)?);
-    }
-    for pattern in exclude.unwrap_or_default() {
-        selection.exclude.push(Pattern::parse(&pattern).map_err(to_py_err)?);
-    }
-    if let Some(value) = min_size {
-        selection.min_size = Some(fdu_core::query::parse_size(value).map_err(to_py_err)?);
-    }
-    if let Some(value) = modified_since {
-        let at = fdu_core::query::parse_when(value, now).map_err(to_py_err)?;
-        selection.modified.since = Some(bound_nanos(value, at, "modified_since")?);
-    }
-    if let Some(value) = modified_before {
-        let at = fdu_core::query::parse_when(value, now).map_err(to_py_err)?;
-        selection.modified.before = Some(bound_nanos(value, at, "modified_before")?);
-    }
-    for value in kind.unwrap_or_default() {
-        selection.kinds.push(parse_kind(&value)?);
-    }
-    if let Some(value) = ignored {
-        selection.ignored = IgnoredEntries::parse(value).map_err(|expected| {
-            PyValueError::new_err(format!("invalid ignored {value:?}: {expected}"))
-        })?;
-    }
-    if let Some(value) = sort {
-        selection.sort = Some(parse_sort(value)?);
-    }
-    let (views, omitted_views) = match views {
-        Some(values) => resolve_views(&values, profile)?,
-        // Derived, not fixed: a request that paid to read files must display what it read,
-        // which is what the CLI has done since the content axis landed. A fixed `tree` here
-        // reproduced the defect that axis removed.
-        //
-        // A watch stream is the one caller with a fixed answer: it emits per-entry records,
-        // so `files` is what it means regardless of analyzers. Passed in rather than
-        // derived, because sharing this builder silently turned that into a tree.
-        None => (vec![default_view.unwrap_or_else(|| ViewSpec::default_for(profile))], Vec::new()),
+) -> PyResult<Request> {
+    // A closed vocabulary is a comma list to the model, as it is on the command line; this
+    // API takes a sequence and joins it, so ["tree", "tree"] is the typo the one grammar
+    // calls it rather than a silent no-op. A raw spec arrives as a single element and
+    // survives the join intact.
+    let views = views.map(|values| values.join(","));
+    // An empty sequence names no kind at all, as it always has here; only a list with an
+    // entry in it is a list the grammar reads.
+    let kinds = kind.filter(|values| !values.is_empty()).map(|values| values.join(","));
+    let include = include.unwrap_or_default();
+    let exclude = exclude.unwrap_or_default();
+    // Typed by this API and read back through `Display`, exactly as the command line's
+    // typed flags are, so both doors hand the model the same words.
+    let words_per_page = words_per_page.to_string();
+    let spec = ReadSpec {
+        views: views.as_deref(),
+        words_per_page: Some(&words_per_page),
+        include: &include,
+        exclude: &exclude,
+        min_size,
+        modified_since,
+        modified_before,
+        kinds: kinds.as_deref(),
+        ignored,
+        depth,
+        limit,
+        sort,
+        reverse,
+        size,
     };
-    if words_per_page == 0 {
-        return Err(PyValueError::new_err("words_per_page must be positive"));
-    }
-    // The Python API names these axes with fields, so its diagnostics do too: there is no
-    // `--analyze` for a caller here to add (fdu-4apt).
-    let query = Query { selection, views, omitted_views, axes: AxisNames::FIELDS, words_per_page };
-    query.validate_analysis(profile).map_err(PyValueError::new_err)?;
-    Ok(query)
+    // The basis is the holder's, never the caller's: an index was opened with its root,
+    // scope, and analyzers, and a read of it names only what this read asks. Handing it to
+    // the model up front is what lets the view axis default from the analyzers the holder
+    // already holds -- a request that paid to read files displays what it read -- rather
+    // than spelling that typed set back into the grammar to ask.
+    Request::read(basis.clone(), &spec, now, &AxisNames::FIELDS)
+        .map_err(|error| value_error(&error))
 }
 
 /// One report, holding only what the request needed.
@@ -1291,7 +1230,7 @@ impl PyOneShot {
     cache = "auto",
     max_depth = None,
     one_filesystem = false,
-    read_controls = true,
+    read_controls = fdu_core::query::Request::DEFAULTS.read_controls,
     control_budget = None,
     control_line_limit = None,
     analyze = "none",
@@ -1308,8 +1247,8 @@ impl PyOneShot {
     limit = None,
     sort = None,
     reverse = false,
-    size = "allocated",
-    words_per_page = 250,
+    size = None,
+    words_per_page = fdu_core::query::Request::DEFAULTS.words_per_page,
 ))]
 #[allow(
     clippy::too_many_arguments,
@@ -1339,26 +1278,36 @@ fn report_once(
     limit: Option<&str>,
     sort: Option<&str>,
     reverse: bool,
-    size: &str,
+    size: Option<&str>,
     words_per_page: u64,
 ) -> PyResult<PyOneShot> {
-    let analysis = parse_analysis_request(analyze, analysis_workers)?;
-    let config = OpenConfig {
-        scan: ScanConfig {
-            max_depth,
-            one_filesystem,
-            read_controls,
-            control_limits: parse_control_limits(control_budget, control_line_limit)?,
-            ..ScanConfig::default()
-        },
+    // One instant for the whole request: the report's `generated_at` and the clock its time
+    // bounds resolve against come from one reading rather than two.
+    let now = SystemTime::now();
+    let basis = build_basis(
+        &root,
+        max_depth,
+        one_filesystem,
+        read_controls,
+        control_budget,
+        control_line_limit,
+        analyze,
+    )?;
+    let delivery = Delivery {
+        cache: parse_cache_policy(cache, AxisNames::FIELDS.cache)
+            .map_err(|error| value_error(&error))?,
         cache_path: fdu_core::default_cache_path(&root),
-        policy: parse_cache_policy(cache)?,
-        analysis,
+        analysis_workers,
+        // A one-shot report is neither partial-tolerant nor repeated: this function
+        // returns one complete answer or raises.
+        accept_partial: false,
+        watch: None,
     };
-    let query = build_query_at(
-        SystemTime::now(),
-        analysis.profile,
-        None,
+    // Refused before any scan, in the API's own names; the engine refuses the same request
+    // with the same typed value for a Rust caller.
+    let request = build_request(
+        now,
+        &basis,
         views,
         include,
         exclude,
@@ -1375,11 +1324,7 @@ fn report_once(
         words_per_page,
     )?;
 
-    // Refused before any scan, in the API's own names; the engine refuses the same request
-    // with a typed error for a Rust caller.
-    query.validate_controls(config.scan.read_controls).map_err(PyValueError::new_err)?;
-
-    let prepared = py.detach(|| fdu_core::prepare_report(&root, &config, &query));
+    let prepared = py.detach(|| fdu_core::prepare_report(&request, &delivery));
     let (report, pending_save, _performance) = prepared.map_err(to_py_err)?;
     // Joined before returning: the command line overlaps the write with rendering, but a
     // caller who gets a value back should not still owe the filesystem a write.
@@ -1438,7 +1383,10 @@ fn render_change(
                 )));
             }
         },
-        entry_kind: kind.map(parse_kind).transpose()?,
+        entry_kind: kind
+            .map(|value| parse_kind(value, AxisNames::FIELDS.kind))
+            .transpose()
+            .map_err(|error| value_error(&error))?,
         bytes,
         allocated,
         mtime_ns,
@@ -1488,37 +1436,128 @@ fn cache_status_dict<'py>(
     let dict = PyDict::new(py);
     dict.set_item("path", status.path.as_os_str())?;
     dict.set_item("bytes", status.bytes)?;
-    dict.set_item("content_bytes", status.content_bytes)?;
     dict.set_item("state", status.state.label())?;
-    dict.set_item("leftover_kind", py.None())?;
-    match &status.state {
-        fdu_core::CacheState::Stale(reason) => {
-            dict.set_item("stale_reason", reason.label())?;
-            dict.set_item("format_version", reason.format_version())?;
-        }
-        fdu_core::CacheState::Leftover(kind) => {
-            dict.set_item("leftover_kind", kind.label())?;
-            dict.set_item("stale_reason", py.None())?;
-            dict.set_item("format_version", py.None())?;
-        }
+    // Named arms, not a catch-all: a new `CacheState` variant should stop here and be
+    // decided, rather than compile into a row whose reason and kind are silently `None`.
+    let stale = match &status.state {
+        fdu_core::CacheState::Stale(reason) => Some(*reason),
         fdu_core::CacheState::Current(_)
+        | fdu_core::CacheState::Leftover(_)
         | fdu_core::CacheState::Unrecognized
-        | fdu_core::CacheState::Absent => {
-            dict.set_item("stale_reason", py.None())?;
-            dict.set_item("format_version", py.None())?;
-        }
+        | fdu_core::CacheState::Absent => None,
+    };
+    set_stale_items(&dict, stale)?;
+    match &status.state {
+        fdu_core::CacheState::Leftover(kind) => dict.set_item("leftover_kind", kind.label())?,
+        fdu_core::CacheState::Current(_)
+        | fdu_core::CacheState::Stale(_)
+        | fdu_core::CacheState::Unrecognized
+        | fdu_core::CacheState::Absent => dict.set_item("leftover_kind", py.None())?,
     }
     if let Some(info) = status.snapshot() {
         dict.set_item("root", info.root.as_os_str())?;
         dict.set_item("entries", info.entries)?;
-        dict.set_item("max_depth", info.scope.max_depth)?;
-        dict.set_item("one_filesystem", info.scope.one_filesystem)?;
+        dict.set_item("identity", snapshot_identity_dict(py, info.identity)?)?;
     } else {
         dict.set_item("root", py.None())?;
         dict.set_item("entries", py.None())?;
-        dict.set_item("max_depth", py.None())?;
-        dict.set_item("one_filesystem", py.None())?;
+        dict.set_item("identity", py.None())?;
     }
+    match &status.content {
+        Some(content) => dict.set_item("content", content_status_dict(py, content)?)?,
+        None => dict.set_item("content", py.None())?,
+    }
+    Ok(dict)
+}
+
+/// `stale_reason` and `format_version`, both `None` unless the store is stale.
+fn set_stale_items(
+    dict: &Bound<'_, PyDict>,
+    reason: Option<fdu_core::StaleReason>,
+) -> PyResult<()> {
+    dict.set_item("stale_reason", reason.map(fdu_core::StaleReason::label))?;
+    dict.set_item("format_version", reason.and_then(fdu_core::StaleReason::format_version))
+}
+
+/// The content sidecar beside a snapshot, keyed as `fdu.cache/2` spells it.
+fn content_status_dict<'py>(
+    py: Python<'py>,
+    content: &fdu_core::ContentStatus,
+) -> PyResult<Bound<'py, PyDict>> {
+    let dict = PyDict::new(py);
+    dict.set_item("bytes", content.bytes)?;
+    dict.set_item("state", content.state.label())?;
+    match &content.state {
+        fdu_core::ContentState::Current(info) => {
+            set_stale_items(&dict, None)?;
+            dict.set_item("records", info.records)?;
+            dict.set_item("identity", content_identity_dict(py, &info.identity)?)?;
+        }
+        fdu_core::ContentState::Stale(reason) => {
+            set_stale_items(&dict, Some(*reason))?;
+            dict.set_item("records", py.None())?;
+            dict.set_item("identity", py.None())?;
+        }
+    }
+    Ok(dict)
+}
+
+/// A snapshot's entry and `.gitignore` control tiers, as `fdu.cache/2` nests them.
+fn snapshot_identity_dict(
+    py: Python<'_>,
+    identity: fdu_core::SnapshotIdentity,
+) -> PyResult<Bound<'_, PyDict>> {
+    let dict = PyDict::new(py);
+    dict.set_item("entries", entry_identity_dict(py, identity.entries)?)?;
+    match identity.controls {
+        fdu_core::ControlTierIdentity::NotObserved => dict.set_item("ignore_rules", py.None())?,
+        fdu_core::ControlTierIdentity::Observed { limits } => {
+            let bounds = PyDict::new(py);
+            bounds.set_item("budget", limits.budget)?;
+            bounds.set_item("line_limit", limits.line_limit)?;
+            let controls = PyDict::new(py);
+            controls.set_item("limits", bounds)?;
+            dict.set_item("ignore_rules", controls)?;
+        }
+    }
+    Ok(dict)
+}
+
+/// An entry tier's engine, scope, type-rules, and reducer-set identity.
+fn entry_identity_dict(
+    py: Python<'_>,
+    identity: fdu_core::EntryTierIdentity,
+) -> PyResult<Bound<'_, PyDict>> {
+    let dict = PyDict::new(py);
+    dict.set_item("engine", identity.engine)?;
+    dict.set_item("max_depth", identity.scope.max_depth)?;
+    dict.set_item("follow_symlinks", identity.scope.follow_symlinks)?;
+    dict.set_item("one_filesystem", identity.scope.one_filesystem)?;
+    dict.set_item("hidden_fingerprint", identity.scope.hidden_fingerprint)?;
+    dict.set_item("exclude_special", identity.scope.exclude_special)?;
+    dict.set_item("type_rules_fingerprint", identity.type_rules_fingerprint)?;
+    dict.set_item("reducers_fingerprint", identity.reducers_fingerprint)?;
+    Ok(dict)
+}
+
+/// A content tier's entry tier, which holds its type rules, then its analyzer set, options,
+/// and analyzers.
+fn content_identity_dict<'py>(
+    py: Python<'py>,
+    identity: &fdu_core::ContentTierIdentity,
+) -> PyResult<Bound<'py, PyDict>> {
+    let dict = PyDict::new(py);
+    dict.set_item("entries", entry_identity_dict(py, identity.entries)?)?;
+    dict.set_item("analyze", analysis_set_labels(identity.analysis))?;
+    dict.set_item("options_fingerprint", identity.provenance.options_fingerprint.0)?;
+    let analyzers = PyList::empty(py);
+    for (id, version) in &identity.provenance.analyzers {
+        let analyzer = PyDict::new(py);
+        analyzer.set_item("id", id.0)?;
+        analyzer.set_item("version", version.0)?;
+        analyzers.append(analyzer)?;
+    }
+    dict.set_item("analyzers", analyzers)?;
     Ok(dict)
 }
 
@@ -1596,7 +1635,7 @@ fn clear_all_caches(py: Python<'_>, root: PathBuf) -> PyResult<Bound<'_, PyDict>
     cache = "auto",
     max_depth = None,
     one_filesystem = false,
-    read_controls = true,
+    read_controls = fdu_core::query::Request::DEFAULTS.read_controls,
     control_budget = None,
     control_line_limit = None,
     analyze = "none",
@@ -1620,20 +1659,26 @@ fn open(
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
     let operation_started_at = SystemTime::now();
-    let policy = parse_cache_policy(cache)?;
-    let analysis = parse_analysis_request(analyze, analysis_workers)?;
-    let config = OpenConfig {
-        scan: ScanConfig {
-            max_depth,
-            one_filesystem,
-            read_controls,
-            control_limits: parse_control_limits(control_budget, control_line_limit)?,
-            ..ScanConfig::default()
-        },
+    let basis = build_basis(
+        &root,
+        max_depth,
+        one_filesystem,
+        read_controls,
+        control_budget,
+        control_line_limit,
+        analyze,
+    )?;
+    let delivery = Delivery {
+        cache: parse_cache_policy(cache, AxisNames::FIELDS.cache)
+            .map_err(|error| value_error(&error))?,
         cache_path: fdu_core::default_cache_path(&root),
-        policy,
-        analysis,
+        analysis_workers,
+        accept_partial: false,
+        // An index is opened here and may be watched later; `Index.watch` states the
+        // watch delivery then, over this one.
+        watch: None,
     };
+    let config = OpenConfig::of(&basis, &delivery);
 
     let opened = py.detach(|| fdu_core::open(&root, &config));
     let (index, report) = opened.map_err(to_py_err)?;
@@ -1653,8 +1698,8 @@ fn open(
         (report.path_taken != fdu_core::OpenPath::CacheOnly).then_some(operation_started_at);
     Ok(PyIndex {
         inner: index,
-        config: config.scan,
-        analysis,
+        basis,
+        delivery,
         errors,
         operation_complete,
         scan_started_at,
@@ -1671,7 +1716,7 @@ fn open(
     *,
     max_depth = None,
     one_filesystem = false,
-    read_controls = true,
+    read_controls = fdu_core::query::Request::DEFAULTS.read_controls,
     control_budget = None,
     control_line_limit = None,
     analyze = "none",
@@ -1693,20 +1738,26 @@ fn scan(
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
-    let scan_started_at = Some(SystemTime::now());
-    let analysis = parse_analysis_request(analyze, analysis_workers)?;
-    let config = OpenConfig {
-        scan: ScanConfig {
-            max_depth,
-            one_filesystem,
-            read_controls,
-            control_limits: parse_control_limits(control_budget, control_line_limit)?,
-            ..ScanConfig::default()
-        },
+    let started_at = SystemTime::now();
+    let scan_started_at = Some(started_at);
+    let basis = build_basis(
+        &root,
+        max_depth,
+        one_filesystem,
+        read_controls,
+        control_budget,
+        control_line_limit,
+        analyze,
+    )?;
+    // A bare scan consults no cache at all, so its delivery names none.
+    let delivery = Delivery {
+        cache: CachePolicy::Off,
         cache_path: None,
-        policy: CachePolicy::Off,
-        analysis,
+        analysis_workers,
+        accept_partial: false,
+        watch: None,
     };
+    let config = OpenConfig::of(&basis, &delivery);
     let scanned = py.detach(|| fdu_core::open(&root, &config));
     let (index, report) = scanned.map_err(to_py_err)?;
     let operation_complete = report.is_complete();
@@ -1719,8 +1770,8 @@ fn scan(
     // A bare scan never consults the cache, so it is always cold.
     Ok(PyIndex {
         inner: index,
-        config: config.scan,
-        analysis,
+        basis,
+        delivery,
         errors,
         operation_complete,
         scan_started_at,
@@ -1761,6 +1812,7 @@ fn contract(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     contract.set_item("sort_keys", ["size", "count", "mtime", "name"])?;
     contract.set_item("cache_scopes", fdu_core::CacheScope::LABELS)?;
     contract.set_item("cache_states", fdu_core::CacheState::LABELS)?;
+    contract.set_item("content_states", fdu_core::ContentState::LABELS)?;
     contract.set_item("stale_reasons", fdu_core::StaleReason::LABELS)?;
     contract.set_item("leftover_kinds", fdu_core::LeftoverKind::LABELS)?;
     Ok(contract)
@@ -1769,6 +1821,11 @@ fn contract(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    // The defaults table, so the Python models state one default rather than a second copy
+    // of it: `Query.words_per_page` and `Selection.size` read these.
+    m.add("DEFAULT_WORDS_PER_PAGE", Request::DEFAULTS.words_per_page)?;
+    m.add("DEFAULT_SIZE", Request::DEFAULTS.size.label())?;
+    m.add("DEFAULT_READ_CONTROLS", Request::DEFAULTS.read_controls)?;
     m.add_class::<PyIndex>()?;
     m.add_class::<PyWatch>()?;
     m.add_function(wrap_pyfunction!(open, m)?)?;
@@ -1801,13 +1858,16 @@ mod tests {
 
     #[test]
     fn cache_policy_accepts_only_the_canonical_read_only_spelling() {
+        let axis = AxisNames::FIELDS.cache;
         assert_eq!(
-            parse_cache_policy("read-only").expect("the canonical policy name parses"),
+            parse_cache_policy("read-only", axis).expect("the canonical policy name parses"),
             CachePolicy::ReadOnly
         );
-        assert!(
-            parse_cache_policy("readonly").is_err(),
-            "an unreleased alias must not become a contract"
+        let refused = parse_cache_policy("readonly", axis)
+            .expect_err("an unreleased alias must not become a contract");
+        assert_eq!(
+            refused.message(&AxisNames::FIELDS),
+            "invalid cache policy \"readonly\": expected one of auto, refresh, read-only, only, off"
         );
     }
 
@@ -1819,8 +1879,18 @@ mod tests {
                 py,
                 PyIndex {
                     inner: fdu_core::Index::new("/unused"),
-                    config: ScanConfig::default(),
-                    analysis: AnalysisRequest::default(),
+                    basis: Basis {
+                        root: PathBuf::from("/unused"),
+                        scope: fdu_core::ScanConfig::default(),
+                        content: AnalysisSet::NONE,
+                    },
+                    delivery: Delivery {
+                        cache: CachePolicy::Off,
+                        cache_path: None,
+                        accept_partial: false,
+                        watch: None,
+                        analysis_workers: 0,
+                    },
                     errors: Vec::new(),
                     operation_complete: true,
                     scan_started_at: None,

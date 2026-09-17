@@ -359,7 +359,7 @@ cache’s.
 **Own format version.** The store has a checkpoint format version, independent of the
 snapshot `FORMAT_VERSION`, the crate version, and `CLASSIFICATION_VERSION`. Each
 checkpoint records its format version, id, root path and volume identity (defined
-below), `ScopeIdentity`, `SemanticIdentity`, classification version, accounting version
+below), `EntryScope`, `SemanticIdentity`, classification version, accounting version
 (which measures it recorded), capture interval, coverage, and free space.
 It also records the writing engine version, as information only.
 
@@ -420,7 +420,7 @@ Once a release writes checkpoints, they are user-owned data:
 **Scope and classification changes.** Whether a comparison is valid is decided per
 measure, from the recorded identities:
 
-- A different root, a different observed volume UUID, or a different `ScopeIdentity`
+- A different root, a different observed volume UUID, or a different `EntryScope`
   (depth, symlink policy, filesystem boundary, hidden-entry policy, special files),
   refuses the comparison with a typed error naming the differing field.
   The two checkpoints admitted different entries, so no byte delta between them means

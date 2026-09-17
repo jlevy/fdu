@@ -151,7 +151,8 @@ Content results are different.
 They live in a sidecar keyed by analyzer identities and semantic options.
 After the metadata check, fdu restores compatible results for unchanged files and opens
 only changed or newly eligible bodies.
-A stored wider analyzer set can serve a narrower request and remains wider on disk.
+The sidecar answers only the analyzer set that wrote it: a different set, wider or
+narrower, reads the files again and replaces it.
 
 Run the same analysis twice to see the distinction:
 
@@ -203,6 +204,9 @@ metric `coverage` before presenting analysis as complete.
 Exit status 0 is complete success.
 Status 1 is a fatal filesystem or cache failure.
 Status 2 is invalid usage or a partial result; useful partial output remains on stdout.
+Every request fdu refuses is invalid usage, whatever the reason: a value no grammar
+accepts, a rule between two flags, and a scan scope this build cannot honour, such as
+`--one-filesystem` where the platform has no device identity.
 `--allow-partial` accepts an operationally partial result and returns 0.
 
 `--watch` streams changes from a retained index.

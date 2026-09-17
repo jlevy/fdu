@@ -70,7 +70,8 @@ impl AnalysisReport {
 ///
 /// Workers own immutable candidates and never retain an index borrow during I/O. The
 /// caller thread applies observations afterward, so metadata changes remain serialized
-/// through [`Index::apply_analysis`].
+/// through the index's own apply step, which is crate-private until the request model
+/// decides the public analysis surface.
 pub fn analyze_index(index: &mut Index, request: AnalysisRequest) -> AnalysisReport {
     if !request.profile.is_enabled() {
         return AnalysisReport::default();
@@ -627,7 +628,7 @@ mod tests {
         };
         let report = crate::query::report(
             &index,
-            &query,
+            &crate::test_support::read_of(&index, query),
             &crate::query::Provenance {
                 scan_started_at: None,
                 generated_at: std::time::UNIX_EPOCH,
@@ -688,7 +689,7 @@ mod tests {
         };
         let rendered = crate::query::report(
             &index,
-            &query,
+            &crate::test_support::read_of(&index, query),
             &crate::query::Provenance {
                 scan_started_at: None,
                 generated_at: std::time::UNIX_EPOCH,
@@ -734,7 +735,7 @@ mod tests {
         };
         let rendered = crate::query::report(
             &index,
-            &query,
+            &crate::test_support::read_of(&index, query),
             &crate::query::Provenance {
                 scan_started_at: None,
                 generated_at: std::time::UNIX_EPOCH,
@@ -776,10 +777,7 @@ mod tests {
         assert_eq!(content.profile(), Some(request.profile));
         assert_eq!(
             content.provenance(),
-            Some(&ContentProvenance::for_request(
-                request,
-                crate::classify::type_rule_fingerprint()
-            ))
+            Some(ContentProvenance::for_request(request, crate::classify::type_rule_fingerprint()))
         );
     }
 
@@ -797,10 +795,13 @@ mod tests {
         );
         let summary = crate::query::report(
             &empty_index,
-            &crate::query::Query {
-                views: vec![crate::query::ViewSpec::Summary],
-                ..crate::query::Query::default()
-            },
+            &crate::test_support::read_of(
+                &empty_index,
+                crate::query::Query {
+                    views: vec![crate::query::ViewSpec::Summary],
+                    ..crate::query::Query::default()
+                },
+            ),
             &crate::query::Provenance {
                 scan_started_at: None,
                 generated_at: std::time::UNIX_EPOCH,
@@ -828,10 +829,13 @@ mod tests {
         );
         let languages = crate::query::report(
             &unsupported_index,
-            &crate::query::Query {
-                views: vec![crate::query::ViewSpec::Languages],
-                ..crate::query::Query::default()
-            },
+            &crate::test_support::read_of(
+                &unsupported_index,
+                crate::query::Query {
+                    views: vec![crate::query::ViewSpec::Languages],
+                    ..crate::query::Query::default()
+                },
+            ),
             &crate::query::Provenance {
                 scan_started_at: None,
                 generated_at: std::time::UNIX_EPOCH,

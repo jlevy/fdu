@@ -67,7 +67,11 @@ pub const CONTENT_REPORT_SCHEMA: &str = "fdu.report/6";
 /// directory rather than about a tree, which is why it is not a `Report` section. It
 /// carries the same promise as [`REPORT_SCHEMA`] and versions independently, so a change
 /// to the report shape never invalidates a cache-status consumer, or the reverse.
-pub const CACHE_SCHEMA: &str = "fdu.cache/1";
+///
+/// `fdu.cache/2` adds the identity of every tier a store holds: a current snapshot's
+/// `identity`, and a `content` object for the sidecar beside any snapshot, in place of
+/// `content_bytes`.
+pub const CACHE_SCHEMA: &str = "fdu.cache/2";
 
 /// How a report is serialized.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -1612,49 +1616,11 @@ pub fn render_cache_status(
     scope: crate::CacheScope,
     format: Format,
 ) -> String {
-    use crate::CacheState;
-
-    let row = |status: &crate::CacheStatus| {
-        let mut fields = format!(
-            "{{\"path\": {}, \"bytes\": {}",
-            quote(&status.path.to_string_lossy()),
-            status.bytes
-        );
-        // Every row carries it, whatever the state, so a consumer reads one shape rather
-        // than discovering which keys this row happens to have.
-        let _ = write!(fields, ", \"content_bytes\": {}", json_count(status.content_bytes));
-        let _ = write!(fields, ", \"state\": {}", quote(status.state.label()));
-        match &status.state {
-            CacheState::Current(info) => {
-                let _ = write!(
-                    fields,
-                    ", \"root\": {}, \"entries\": {}",
-                    quote(&info.root.to_string_lossy()),
-                    info.entries
-                );
-            }
-            CacheState::Stale(reason) => {
-                let _ = write!(
-                    fields,
-                    ", \"stale_reason\": {}, \"format_version\": {}",
-                    quote(reason.label()),
-                    json_count(reason.format_version().map(u64::from))
-                );
-            }
-            CacheState::Leftover(kind) => {
-                let _ = write!(fields, ", \"leftover_kind\": {}", quote(kind.label()));
-            }
-            CacheState::Unrecognized | CacheState::Absent => {}
-        }
-        fields.push('}');
-        fields
-    };
-
     match format {
         Format::Jsonl => {
             let mut out = format!("{{\"schema\": {}}}", quote(CACHE_SCHEMA));
             for status in statuses {
-                let _ = write!(out, "\n{}", row(status));
+                let _ = write!(out, "\n{}", cache_row(status).json());
             }
             out
         }
@@ -1667,32 +1633,7 @@ pub fn render_cache_status(
             }
             let mut out = format!("schema: {}\ncaches:", yaml_scalar(CACHE_SCHEMA));
             for status in statuses {
-                let _ = write!(out, "\n  - path: {}", yaml_scalar(&status.path.to_string_lossy()));
-                let _ = write!(out, "\n    bytes: {}", status.bytes);
-                let _ = write!(out, "\n    content_bytes: {}", json_count(status.content_bytes));
-                let _ = write!(out, "\n    state: {}", status.state.label());
-                match &status.state {
-                    CacheState::Current(info) => {
-                        let _ = write!(
-                            out,
-                            "\n    root: {}",
-                            yaml_scalar(&info.root.to_string_lossy())
-                        );
-                        let _ = write!(out, "\n    entries: {}", info.entries);
-                    }
-                    CacheState::Stale(reason) => {
-                        let _ = write!(out, "\n    stale_reason: {}", reason.label());
-                        let _ = write!(
-                            out,
-                            "\n    format_version: {}",
-                            json_count(reason.format_version().map(u64::from))
-                        );
-                    }
-                    CacheState::Leftover(kind) => {
-                        let _ = write!(out, "\n    leftover_kind: {}", kind.label());
-                    }
-                    CacheState::Unrecognized | CacheState::Absent => {}
-                }
+                cache_row(status).write_yaml_item(&mut out, 2);
             }
             out
         }
@@ -1703,7 +1644,8 @@ pub fn render_cache_status(
         Format::Text => render_cache_status_text(statuses, scope),
         Format::Json => {
             let schema = format!("{{\n  \"schema\": {},\n", quote(CACHE_SCHEMA));
-            let rows = statuses.iter().map(row).collect::<Vec<_>>().join(",\n    ");
+            let rows = statuses.iter().map(|status| cache_row(status).json());
+            let rows = rows.collect::<Vec<_>>().join(",\n    ");
             if statuses.is_empty() {
                 format!("{schema}  \"caches\": []\n}}")
             } else {
@@ -1713,9 +1655,230 @@ pub fn render_cache_status(
     }
 }
 
-/// A count as machine output carries it, `null` when there is none.
-fn json_count(value: Option<u64>) -> String {
-    value.map_or_else(|| "null".to_string(), |value| value.to_string())
+/// One value in a cache-status row.
+///
+/// The row is built once as fields and serialized by JSON and YAML alike, so the two
+/// formats cannot disagree about which keys a row has or how an identity nests.
+enum CacheField {
+    Null,
+    Bool(bool),
+    Count(u64),
+    Text(String),
+    List(Vec<CacheField>),
+    Map(Vec<(&'static str, CacheField)>),
+}
+
+impl CacheField {
+    fn count(value: Option<u64>) -> Self {
+        value.map_or(Self::Null, Self::Count)
+    }
+
+    /// The value as a one-line JSON fragment.
+    fn json(&self) -> String {
+        match self {
+            Self::List(items) => {
+                format!("[{}]", items.iter().map(Self::json).collect::<Vec<_>>().join(", "))
+            }
+            Self::Map(fields) => {
+                let fields = fields
+                    .iter()
+                    .map(|(key, value)| format!("{}: {}", quote(key), value.json()))
+                    .collect::<Vec<_>>();
+                format!("{{{}}}", fields.join(", "))
+            }
+            Self::Text(text) => quote(text),
+            scalar => scalar.plain(),
+        }
+    }
+
+    /// The value on one line, as both formats spell it.
+    ///
+    /// The invariant: every caller reaches this with a scalar or an empty collection,
+    /// because the YAML writers expand a non-empty list or map into an indented block and
+    /// `json` recurses into one itself. Only the shapes `fdu.cache/2` has today keep that
+    /// true — no list of lists, and no list whose items are not maps other than
+    /// `analyze`'s strings — so a field added later can reach here with something to say.
+    /// It is spelled as its one-line JSON form rather than as `[]` or `{}`, because that
+    /// is valid YAML flow style and holds everything the value holds: a walker that has
+    /// not learned to indent a shape must not answer by dropping it.
+    fn plain(&self) -> String {
+        match self {
+            Self::Null => "null".to_string(),
+            Self::Bool(value) => value.to_string(),
+            Self::Count(value) => value.to_string(),
+            Self::Text(text) => yaml_scalar(text),
+            Self::List(items) if items.is_empty() => "[]".to_string(),
+            Self::Map(fields) if fields.is_empty() => "{}".to_string(),
+            collection => collection.json(),
+        }
+    }
+
+    /// Write `key: value` as a YAML block at `pad` spaces.
+    fn write_yaml_field(&self, out: &mut String, pad: usize, key: &str) {
+        let spaces = " ".repeat(pad);
+        match self {
+            Self::Map(fields) if !fields.is_empty() => {
+                let _ = write!(out, "\n{spaces}{key}:");
+                for (key, value) in fields {
+                    value.write_yaml_field(out, pad + 2, key);
+                }
+            }
+            Self::List(items) if !items.is_empty() => {
+                let _ = write!(out, "\n{spaces}{key}:");
+                for item in items {
+                    item.write_yaml_item(out, pad + 2);
+                }
+            }
+            _ => {
+                let _ = write!(out, "\n{spaces}{key}: {}", self.plain());
+            }
+        }
+    }
+
+    /// Write the value as a YAML sequence item whose dash sits at `pad` spaces.
+    fn write_yaml_item(&self, out: &mut String, pad: usize) {
+        let Self::Map(fields) = self else {
+            let _ = write!(out, "\n{}- {}", " ".repeat(pad), self.plain());
+            return;
+        };
+        let mut block = String::new();
+        for (key, value) in fields {
+            value.write_yaml_field(&mut block, pad + 2, key);
+        }
+        // The first key shares the dash's line: its indent becomes the dash.
+        let first_key_at = 1 + pad + 2;
+        match block.get(first_key_at..) {
+            Some(rest) if !fields.is_empty() => {
+                let _ = write!(out, "\n{}- {rest}", " ".repeat(pad));
+            }
+            _ => {
+                let _ = write!(out, "\n{}- {{}}", " ".repeat(pad));
+            }
+        }
+    }
+}
+
+/// One cache-status row as fields: what every row carries, what its state adds, and the
+/// content sidecar beside it.
+fn cache_row(status: &crate::CacheStatus) -> CacheField {
+    use crate::CacheState;
+
+    let mut fields = vec![
+        ("path", CacheField::Text(status.path.to_string_lossy().into_owned())),
+        ("bytes", CacheField::Count(status.bytes)),
+        ("state", CacheField::Text(status.state.label().to_string())),
+    ];
+    match &status.state {
+        CacheState::Current(info) => {
+            fields.push(("root", CacheField::Text(info.root.to_string_lossy().into_owned())));
+            fields.push(("entries", CacheField::Count(info.entries)));
+            fields.push(("identity", snapshot_identity_field(info.identity)));
+        }
+        CacheState::Stale(reason) => fields.extend(stale_fields(*reason)),
+        CacheState::Leftover(kind) => {
+            fields.push(("leftover_kind", CacheField::Text(kind.label().to_string())));
+        }
+        CacheState::Unrecognized | CacheState::Absent => {}
+    }
+    // Every row carries it, whatever the state, so a consumer reads one shape rather than
+    // discovering which keys this row happens to have.
+    fields.push(("content", status.content.as_ref().map_or(CacheField::Null, content_field)));
+    CacheField::Map(fields)
+}
+
+/// Why a store is stale, and the format version when that is the reason.
+fn stale_fields(reason: crate::StaleReason) -> [(&'static str, CacheField); 2] {
+    [
+        ("stale_reason", CacheField::Text(reason.label().to_string())),
+        ("format_version", CacheField::count(reason.format_version().map(u64::from))),
+    ]
+}
+
+/// The content sidecar beside a snapshot: its size and state, and a current one's identity
+/// and record count.
+fn content_field(content: &crate::ContentStatus) -> CacheField {
+    use crate::ContentState;
+
+    let mut fields = vec![
+        ("bytes", CacheField::Count(content.bytes)),
+        ("state", CacheField::Text(content.state.label().to_string())),
+    ];
+    match &content.state {
+        ContentState::Current(info) => {
+            fields.push(("records", CacheField::Count(info.records)));
+            fields.push(("identity", content_identity_field(&info.identity)));
+        }
+        ContentState::Stale(reason) => fields.extend(stale_fields(*reason)),
+    }
+    CacheField::Map(fields)
+}
+
+/// A snapshot's tier identities: its entry tier, and its `.gitignore` control tier as the
+/// report's `ignore_rules` names it, `null` when no rule was read.
+fn snapshot_identity_field(identity: crate::SnapshotIdentity) -> CacheField {
+    let ignore_rules = match identity.controls {
+        crate::ControlTierIdentity::NotObserved => CacheField::Null,
+        crate::ControlTierIdentity::Observed { limits } => {
+            let limit = |limit: Option<usize>| {
+                CacheField::count(limit.map(|limit| u64::try_from(limit).unwrap_or(u64::MAX)))
+            };
+            CacheField::Map(vec![(
+                "limits",
+                CacheField::Map(vec![
+                    ("budget", limit(limits.budget)),
+                    ("line_limit", limit(limits.line_limit)),
+                ]),
+            )])
+        }
+    };
+    CacheField::Map(vec![
+        ("entries", entry_identity_field(identity.entries)),
+        ("ignore_rules", ignore_rules),
+    ])
+}
+
+/// An entry tier's identity: the engine that built it, the scope fields, and the type-rules
+/// and reducer-set fingerprints.
+fn entry_identity_field(identity: crate::EntryTierIdentity) -> CacheField {
+    let scope = identity.scope;
+    let depth = scope.max_depth.map(|depth| u64::try_from(depth).unwrap_or(u64::MAX));
+    CacheField::Map(vec![
+        ("engine", CacheField::Count(identity.engine)),
+        ("max_depth", CacheField::count(depth)),
+        ("follow_symlinks", CacheField::Bool(scope.follow_symlinks)),
+        ("one_filesystem", CacheField::Bool(scope.one_filesystem)),
+        ("hidden_fingerprint", CacheField::Count(scope.hidden_fingerprint)),
+        ("exclude_special", CacheField::Bool(scope.exclude_special)),
+        ("type_rules_fingerprint", CacheField::Count(identity.type_rules_fingerprint)),
+        ("reducers_fingerprint", CacheField::Count(identity.reducers_fingerprint)),
+    ])
+}
+
+/// A content tier's identity: the entry tier it was analyzed over, which holds its type
+/// rules, then the analyzer set, options, and analyzers under the names a report's
+/// `analysis` object gives them.
+fn content_identity_field(identity: &crate::ContentTierIdentity) -> CacheField {
+    let analyze = analysis_set_labels(identity.analysis)
+        .into_iter()
+        .map(|label| CacheField::Text(label.to_string()))
+        .collect();
+    let analyzers = identity
+        .provenance
+        .analyzers
+        .iter()
+        .map(|(id, version)| {
+            CacheField::Map(vec![
+                ("id", CacheField::Text(id.0.to_string())),
+                ("version", CacheField::Count(u64::from(version.0))),
+            ])
+        })
+        .collect();
+    CacheField::Map(vec![
+        ("entries", entry_identity_field(identity.entries)),
+        ("analyze", CacheField::List(analyze)),
+        ("options_fingerprint", CacheField::Count(identity.provenance.options_fingerprint.0)),
+        ("analyzers", CacheField::List(analyzers)),
+    ])
 }
 
 /// The human cache-status layout: one line per file, then what can be done about the
@@ -1729,15 +1892,22 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
     let (mut leftover, mut leftover_bytes, mut staging) = (0_usize, 0_u64, 0_usize);
     let (mut unrecognized, mut unrecognized_bytes) = (0_usize, 0_u64);
     for status in statuses {
-        let content_bytes = status.content_bytes.unwrap_or(0);
+        let content_bytes = status.content_bytes().unwrap_or(0);
         match &status.state {
             CacheState::Current(info) => {
                 current += 1;
+                // A sidecar this build cannot serve is named, so the bytes are not read as a
+                // usable content cache.
+                let stale_content = status
+                    .content
+                    .as_ref()
+                    .is_some_and(|content| matches!(content.state, crate::ContentState::Stale(_)));
                 lines.push(format!(
-                    "{}  {} entries, {} metadata bytes, {content_bytes} content bytes  {}",
+                    "{}  {} entries, {} metadata bytes, {content_bytes} {}content bytes  {}",
                     status.path.display(),
                     info.entries,
                     status.bytes,
+                    if stale_content { "stale " } else { "" },
                     info.root.display()
                 ));
             }
@@ -1871,8 +2041,34 @@ mod tests {
     }
 
     fn cache_file(name: &str, bytes: u64, state: crate::CacheState) -> crate::CacheStatus {
-        let content_bytes = matches!(state, crate::CacheState::Stale(_)).then_some(5);
-        crate::CacheStatus { path: PathBuf::from(name), bytes, content_bytes, state }
+        // A stale snapshot here keeps the sidecar an older format wrote beside it.
+        let content =
+            matches!(state, crate::CacheState::Stale(_)).then_some(crate::ContentStatus {
+                bytes: 5,
+                state: crate::ContentState::Stale(crate::StaleReason::OlderFormat { version: 4 }),
+            });
+        crate::CacheStatus { path: PathBuf::from(name), bytes, content, state }
+    }
+
+    /// A snapshot identity with a small value in every field, so a rendering is readable.
+    fn small_snapshot_identity() -> crate::SnapshotIdentity {
+        crate::SnapshotIdentity {
+            entries: crate::EntryTierIdentity {
+                engine: 1,
+                scope: crate::EntryScope {
+                    max_depth: None,
+                    follow_symlinks: false,
+                    one_filesystem: true,
+                    hidden_fingerprint: 2,
+                    exclude_special: false,
+                },
+                type_rules_fingerprint: 3,
+                reducers_fingerprint: 4,
+            },
+            controls: crate::ControlTierIdentity::Observed {
+                limits: crate::control::ControlLimits { budget: Some(10), line_limit: None },
+            },
+        }
     }
 
     /// Stale, leftover, and unrecognized files are shown, sized, and followed by what
@@ -1944,7 +2140,7 @@ mod tests {
             50,
             CacheState::Current(crate::SnapshotInfo {
                 root: PathBuf::from("/tree"),
-                scope: crate::test_support::not_observing_controls(),
+                identity: small_snapshot_identity(),
                 entries: 3,
             }),
         );
@@ -1971,42 +2167,147 @@ mod tests {
                 CacheScope::All,
                 Format::Jsonl
             ),
-            "{\"schema\": \"fdu.cache/1\"}\n\
-             {\"path\": \"a.fdu\", \"bytes\": 10, \"content_bytes\": 5, \"state\": \"stale\", \"stale_reason\": \"older_format\", \"format_version\": 2}\n\
-             {\"path\": \"f.fdu\", \"bytes\": 0, \"content_bytes\": null, \"state\": \"absent\"}\n\
-             {\"path\": \"notes.txt\", \"bytes\": 14, \"content_bytes\": null, \"state\": \"unrecognized\"}\n\
-             {\"path\": \".g.fdu.tmp.1.2.3\", \"bytes\": 60, \"content_bytes\": null, \"state\": \"leftover\", \"leftover_kind\": \"staging_temporary\"}"
+            "{\"schema\": \"fdu.cache/2\"}\n\
+             {\"path\": \"a.fdu\", \"bytes\": 10, \"state\": \"stale\", \"stale_reason\": \"older_format\", \"format_version\": 2, \"content\": {\"bytes\": 5, \"state\": \"stale\", \"stale_reason\": \"older_format\", \"format_version\": 4}}\n\
+             {\"path\": \"f.fdu\", \"bytes\": 0, \"state\": \"absent\", \"content\": null}\n\
+             {\"path\": \"notes.txt\", \"bytes\": 14, \"state\": \"unrecognized\", \"content\": null}\n\
+             {\"path\": \".g.fdu.tmp.1.2.3\", \"bytes\": 60, \"state\": \"leftover\", \"leftover_kind\": \"staging_temporary\", \"content\": null}"
         );
         assert_eq!(
             render_cache_status(&[], CacheScope::All, Format::Jsonl),
-            "{\"schema\": \"fdu.cache/1\"}"
+            "{\"schema\": \"fdu.cache/2\"}"
         );
         assert_eq!(
             render_cache_status(&[], CacheScope::All, Format::Json),
-            "{\n  \"schema\": \"fdu.cache/1\",\n  \"caches\": []\n}"
+            "{\n  \"schema\": \"fdu.cache/2\",\n  \"caches\": []\n}"
         );
         // An empty sequence in both formats: a bare `caches:` is YAML null, and a reader
         // of one schema should not have to tell null from a list it can iterate.
         assert_eq!(
             render_cache_status(&[], CacheScope::All, Format::Yaml),
-            "schema: fdu.cache/1\ncaches: []"
+            "schema: fdu.cache/2\ncaches: []"
         );
         assert!(
             render_cache_status(&stale[2..3], CacheScope::All, Format::Json)
-                .starts_with("{\n  \"schema\": \"fdu.cache/1\",\n  \"caches\": [\n    {")
+                .starts_with("{\n  \"schema\": \"fdu.cache/2\",\n  \"caches\": [\n    {")
         );
         assert!(
             render_cache_status(&stale[2..3], CacheScope::All, Format::Yaml)
-                .starts_with("schema: fdu.cache/1\ncaches:\n  - path: c.fdu")
+                .starts_with("schema: fdu.cache/2\ncaches:\n  - path: c.fdu")
         );
         assert!(
             render_cache_status(&stale[2..3], CacheScope::All, Format::Yaml).ends_with(
-                "state: stale\n    stale_reason: other_engine\n    format_version: null"
+                "state: stale\n    stale_reason: other_engine\n    format_version: null\n    \
+                 content:\n      bytes: 5\n      state: stale\n      stale_reason: older_format\n      \
+                 format_version: 4"
             )
         );
         assert!(
-            render_cache_status(&leftovers[1..], CacheScope::All, Format::Yaml)
-                .ends_with("state: leftover\n    leftover_kind: orphaned_content")
+            render_cache_status(&leftovers[1..], CacheScope::All, Format::Yaml).ends_with(
+                "state: leftover\n    leftover_kind: orphaned_content\n    content: null"
+            )
+        );
+    }
+
+    /// A field shape the YAML writers have no block form for is still rendered whole.
+    ///
+    /// No `fdu.cache/2` field is a list of collections, so nothing reaches `plain` with
+    /// anything to say today; this pins what happens when the answer model adds one, since
+    /// the alternative this replaces printed the item as `[]` and dropped what it held.
+    #[test]
+    fn a_collection_with_no_yaml_block_form_is_rendered_whole() {
+        let nested = CacheField::List(vec![CacheField::List(vec![
+            CacheField::Count(7),
+            CacheField::Text("lines".to_string()),
+        ])]);
+        assert_eq!(nested.json(), "[[7, \"lines\"]]");
+        let mut yaml = String::new();
+        nested.write_yaml_field(&mut yaml, 2, "nested");
+        assert_eq!(yaml, "\n  nested:\n    - [7, \"lines\"]");
+
+        let map = CacheField::Map(vec![("records", CacheField::Count(3))]);
+        assert_eq!(CacheField::List(vec![map]).json(), "[{\"records\": 3}]");
+        assert_eq!(CacheField::List(Vec::new()).plain(), "[]");
+        assert_eq!(CacheField::Map(Vec::new()).plain(), "{}");
+    }
+
+    /// A current snapshot carries the identity of every tier it holds, and the sidecar
+    /// beside it its own, nested the same way in JSON and YAML: the entry tier, then the
+    /// control tier as the report's `ignore_rules` names it, and for content its entry tier,
+    /// which alone holds the type rules, then the analyzer set, options, and analyzers under
+    /// the names a report's `analysis` object gives them.
+    #[test]
+    fn cache_status_carries_every_stored_tier_identity() {
+        use crate::{CacheScope, CacheState, ContentInfo, ContentState, ContentStatus};
+
+        let snapshot = small_snapshot_identity();
+        let content = crate::ContentTierIdentity {
+            entries: snapshot.entries,
+            analysis: crate::content::AnalysisSet::NONE.with_lines(),
+            provenance: crate::AnalyzerProvenance {
+                options_fingerprint: crate::content::OptionsFingerprint(5),
+                analyzers: vec![(
+                    crate::content::CONTENT_BASIC,
+                    crate::content::AnalyzerVersion(1),
+                )],
+            },
+        };
+        let status = crate::CacheStatus {
+            path: PathBuf::from("e.fdu"),
+            bytes: 50,
+            content: Some(ContentStatus {
+                bytes: 9,
+                state: ContentState::Current(ContentInfo { identity: content, records: 2 }),
+            }),
+            state: CacheState::Current(crate::SnapshotInfo {
+                root: PathBuf::from("/tree"),
+                identity: snapshot,
+                entries: 3,
+            }),
+        };
+        let entries = "{\"engine\": 1, \"max_depth\": null, \"follow_symlinks\": false, \
+                       \"one_filesystem\": true, \"hidden_fingerprint\": 2, \"exclude_special\": false, \
+                       \"type_rules_fingerprint\": 3, \"reducers_fingerprint\": 4}";
+        assert_eq!(
+            render_cache_status(std::slice::from_ref(&status), CacheScope::Root, Format::Jsonl),
+            format!(
+                "{{\"schema\": \"fdu.cache/2\"}}\n\
+                 {{\"path\": \"e.fdu\", \"bytes\": 50, \"state\": \"current\", \"root\": \"/tree\", \
+                 \"entries\": 3, \"identity\": {{\"entries\": {entries}, \"ignore_rules\": \
+                 {{\"limits\": {{\"budget\": 10, \"line_limit\": null}}}}}}, \"content\": {{\"bytes\": 9, \
+                 \"state\": \"current\", \"records\": 2, \"identity\": {{\"entries\": {entries}, \
+                 \"analyze\": [\"lines\"], \"options_fingerprint\": 5, \
+                 \"analyzers\": [{{\"id\": \"content-basic-v1\", \"version\": 1}}]}}}}}}"
+            )
+        );
+        let entries = "\n          engine: 1\n          max_depth: null\n          \
+                       follow_symlinks: false\n          one_filesystem: true\n          \
+                       hidden_fingerprint: 2\n          exclude_special: false\n          \
+                       type_rules_fingerprint: 3\n          reducers_fingerprint: 4";
+        assert_eq!(
+            render_cache_status(std::slice::from_ref(&status), CacheScope::Root, Format::Yaml),
+            format!(
+                "schema: fdu.cache/2\ncaches:\n  - path: e.fdu\n    bytes: 50\n    state: current\n    \
+                 root: /tree\n    entries: 3\n    identity:\n      entries:{}\n      \
+                 ignore_rules:\n        limits:\n          budget: 10\n          line_limit: null\n    \
+                 content:\n      bytes: 9\n      state: current\n      records: 2\n      identity:\n        \
+                 entries:{entries}\n        analyze:\n          - lines\n        \
+                 options_fingerprint: 5\n        analyzers:\n          - id: content-basic-v1\n            \
+                 version: 1",
+                entries.replace("\n  ", "\n")
+            )
+        );
+        // A sidecar this build cannot serve is named in text too.
+        let stale_content = crate::CacheStatus {
+            content: Some(ContentStatus {
+                bytes: 9,
+                state: ContentState::Stale(crate::StaleReason::OtherEngine),
+            }),
+            ..status
+        };
+        assert_eq!(
+            render_cache_status(&[stale_content], CacheScope::Root, Format::Text),
+            "e.fdu  3 entries, 50 metadata bytes, 9 stale content bytes  /tree"
         );
     }
 
@@ -2016,7 +2317,7 @@ mod tests {
     /// for — `recognized` to `state` — cannot happen again without a version to key on.
     #[test]
     fn the_cache_schema_constant_is_the_versioning_promise() {
-        assert_eq!(CACHE_SCHEMA, "fdu.cache/1");
+        assert_eq!(CACHE_SCHEMA, "fdu.cache/2");
         for format in [Format::Json, Format::Jsonl, Format::Yaml] {
             let rendered = render_cache_status(&[], crate::CacheScope::All, format);
             assert!(rendered.contains(CACHE_SCHEMA), "{format:?} carries no schema: {rendered}");
@@ -2144,6 +2445,16 @@ mod tests {
 
     fn fixture_for(query: &Query) -> Report {
         let mut index = Index::new_with_scope("/root", ScanScope::default());
+        // A documents view is an answer about analyzers, so the index it is rendered from
+        // holds one: the request model refuses that view over an index with no content tier,
+        // whichever door the request came through. `words` and not `all`, because the code
+        // analyzer would move the languages view's share off bytes.
+        if query.views.contains(&ViewSpec::Documents) {
+            index.prepare_content_analysis(crate::content::AnalysisRequest {
+                profile: crate::content::AnalysisSet::NONE.with_words(),
+                ..crate::content::AnalysisRequest::default()
+            });
+        }
         index
             .apply(&Observation::new(vec![
                 Op::Upsert {
@@ -2165,7 +2476,7 @@ mod tests {
             .expect("apply");
         report(
             &index,
-            query,
+            &crate::test_support::read_of(&index, query.clone()),
             &Provenance {
                 scan_started_at: Some(UNIX_EPOCH + Duration::from_secs(1_786_386_151)),
                 generated_at: UNIX_EPOCH + Duration::from_secs(1_786_386_152),
@@ -2239,7 +2550,17 @@ mod tests {
 
     #[test]
     fn text_tree_restores_compact_bars_and_keeps_structural_indent_in_the_name_column() {
-        let text = render(&fixture(&[ViewSpec::Tree]), Format::Text, false);
+        // Apparent, so both rows print sizes of one width and the alignment below is about
+        // the layout rather than about which sizes happen to round to the same block.
+        let apparent = Query {
+            views: vec![ViewSpec::Tree],
+            selection: crate::query::Selection {
+                size: crate::query::SizeMetric::Apparent,
+                ..crate::query::Selection::default()
+            },
+            ..Query::default()
+        };
+        let text = render(&fixture_for(&apparent), Format::Text, false);
         assert_eq!(
             text,
             concat!(
@@ -2272,7 +2593,10 @@ mod tests {
             .expect("apply");
         let report = report(
             &index,
-            &Query { views: vec![ViewSpec::Languages], ..Query::default() },
+            &crate::test_support::read_of(
+                &index,
+                Query { views: vec![ViewSpec::Languages], ..Query::default() },
+            ),
             &Provenance {
                 scan_started_at: None,
                 generated_at: UNIX_EPOCH,
@@ -2399,11 +2723,14 @@ mod tests {
             .expect("apply");
         let report = report(
             &index,
-            &Query {
-                selection: Selection { depth: Some(Bound::All), ..Selection::default() },
-                views: vec![ViewSpec::Tree],
-                ..Query::default()
-            },
+            &crate::test_support::read_of(
+                &index,
+                Query {
+                    selection: Selection { depth: Some(Bound::All), ..Selection::default() },
+                    views: vec![ViewSpec::Tree],
+                    ..Query::default()
+                },
+            ),
             &Provenance {
                 scan_started_at: None,
                 generated_at: UNIX_EPOCH,
@@ -2480,7 +2807,9 @@ mod tests {
             errors: Vec::new(),
         };
         let query = Query { views: vec![ViewSpec::Summary], ..Query::default() };
-        let blind_report = report(&blind, &query, &provenance).expect("report");
+        let blind_report =
+            report(&blind, &crate::test_support::read_of(&blind, query.clone()), &provenance)
+                .expect("report");
         assert!(render(&blind_report, Format::Json, false).contains("\"ignore_rules\": null"));
         assert!(render(&blind_report, Format::Yaml, false).contains("\nignore_rules: null\n"));
         assert!(blind_report.notes.is_empty());
@@ -2506,8 +2835,16 @@ mod tests {
         // The platform spells the refused path, so Windows writes a backslash.
         let refused = Path::new("vendor").join(".gitignore");
         let refused = refused.to_string_lossy();
-        let json =
-            render(&report(&observed, &query, &provenance).expect("report"), Format::Json, false);
+        let json = render(
+            &report(
+                &observed,
+                &crate::test_support::read_of(&observed, query.clone()),
+                &provenance,
+            )
+            .expect("report"),
+            Format::Json,
+            false,
+        );
         let expected = format!(
             "\"ignore_rules\": {{\"limits\": {{\"budget\": 4194304, \"line_limit\": 16384}}, \
              \"applied\": 1, \"refused\": 1, \"refusals\": [{{\"path\": {}, \"reason\": \
@@ -2516,8 +2853,16 @@ mod tests {
         );
         assert!(json.contains(&expected), "{json}");
         assert!(json.contains("\"complete\": true"), "a refusal is not an operational partial");
-        let yaml =
-            render(&report(&observed, &query, &provenance).expect("report"), Format::Yaml, false);
+        let yaml = render(
+            &report(
+                &observed,
+                &crate::test_support::read_of(&observed, query.clone()),
+                &provenance,
+            )
+            .expect("report"),
+            Format::Yaml,
+            false,
+        );
         let expected = format!(
             "ignore_rules:\n  limits:\n    budget: 4194304\n    line_limit: 16384\n  applied: 1\n  \
              refused: 1\n  refusals:\n    - path: {}\n      reason: line_limit\n",
@@ -2525,14 +2870,24 @@ mod tests {
         );
         assert!(yaml.contains(&expected), "{yaml}");
 
-        let flags = Query { axes: crate::query::AxisNames::FLAGS, ..query.clone() };
+        let flags = Query { axes: &crate::query::AxisNames::FLAGS, ..query.clone() };
         let note = "note: 1 .gitignore file not applied (1 with a line over the 16 KiB line \
                     limit), so ignored shares under vendor are not exact; sizes are. To apply \
                     them, raise --gitignore-line-limit above 16 KiB, or set it to all";
-        let text =
-            render(&report(&observed, &flags, &provenance).expect("report"), Format::Text, false);
+        let text = render(
+            &report(
+                &observed,
+                &crate::test_support::read_of(&observed, flags.clone()),
+                &provenance,
+            )
+            .expect("report"),
+            Format::Text,
+            false,
+        );
         assert!(text.ends_with(&format!("{note}\n")), "{text}");
-        let fields = report(&observed, &query, &provenance).expect("report");
+        let fields =
+            report(&observed, &crate::test_support::read_of(&observed, query.clone()), &provenance)
+                .expect("report");
         assert_eq!(fields.notes, [note.replace("--gitignore-line-limit", "control_line_limit")]);
     }
 
@@ -2598,7 +2953,12 @@ mod tests {
 
         let observed = build(crate::test_support::observing_controls());
         let text = render(
-            &report(&observed, &query(IgnoredEntries::Include), &provenance).expect("report"),
+            &report(
+                &observed,
+                &crate::test_support::read_of(&observed, query(IgnoredEntries::Include)),
+                &provenance,
+            )
+            .expect("report"),
             Format::Text,
             false,
         );
@@ -2632,7 +2992,12 @@ mod tests {
             ""
         );
         let only = render(
-            &report(&observed, &query(IgnoredEntries::Only), &provenance).expect("report"),
+            &report(
+                &observed,
+                &crate::test_support::read_of(&observed, query(IgnoredEntries::Only)),
+                &provenance,
+            )
+            .expect("report"),
             Format::Text,
             false,
         );
@@ -2640,7 +3005,12 @@ mod tests {
         assert!(!only.contains("ignored"), "every row is ignored, so none repeats it: {only}");
 
         let json = render(
-            &report(&observed, &query(IgnoredEntries::Include), &provenance).expect("report"),
+            &report(
+                &observed,
+                &crate::test_support::read_of(&observed, query(IgnoredEntries::Include)),
+                &provenance,
+            )
+            .expect("report"),
             Format::Json,
             false,
         );
@@ -2658,7 +3028,12 @@ mod tests {
             assert!(json.contains(expected), "missing {expected}\nin {json}");
         }
         let yaml = render(
-            &report(&observed, &query(IgnoredEntries::Include), &provenance).expect("report"),
+            &report(
+                &observed,
+                &crate::test_support::read_of(&observed, query(IgnoredEntries::Include)),
+                &provenance,
+            )
+            .expect("report"),
             Format::Yaml,
             false,
         );
@@ -2672,8 +3047,12 @@ mod tests {
         assert!(yaml.contains("        ignored: true\n"), "{yaml}");
 
         let blind = build(crate::test_support::not_observing_controls());
-        let blind_report =
-            report(&blind, &query(IgnoredEntries::Include), &provenance).expect("report");
+        let blind_report = report(
+            &blind,
+            &crate::test_support::read_of(&blind, query(IgnoredEntries::Include)),
+            &provenance,
+        )
+        .expect("report");
         assert!(!render(&blind_report, Format::Text, false).contains("ignored"));
         let json = render(&blind_report, Format::Json, false);
         assert!(!json.contains("\"ignored\": {"), "never a zero share for an unread rule: {json}");
@@ -3022,7 +3401,12 @@ mod tests {
                     complete: true,
                     errors: Vec::new(),
                 };
-                let report = crate::query::report(&index, &query, &provenance).expect("report");
+                let report = crate::query::report(
+                    &index,
+                    &crate::test_support::read_of(&index, query.clone()),
+                    &provenance,
+                )
+                .expect("report");
                 for format in [Format::Text, Format::Json, Format::Jsonl, Format::Yaml] {
                     let rendered = render(&report, format, false);
                     assert!(!rendered.is_empty(), "{format:?} rendered nothing for a deep tree");
@@ -3088,7 +3472,12 @@ mod tests {
             complete: true,
             errors: Vec::new(),
         };
-        let report = crate::query::report(&index, &query, &provenance).expect("report");
+        let report = crate::query::report(
+            &index,
+            &crate::test_support::read_of(&index, query.clone()),
+            &provenance,
+        )
+        .expect("report");
         let rendered = render(&report, Format::Json, false);
 
         let lossy = first.to_string_lossy();
@@ -3156,7 +3545,12 @@ mod tests {
             },
             ..crate::query::Query::default()
         };
-        let tree = crate::query::report(&dirs, &tree_query, &provenance).expect("report");
+        let tree = crate::query::report(
+            &dirs,
+            &crate::test_support::read_of(&dirs, tree_query.clone()),
+            &provenance,
+        )
+        .expect("report");
         let tree_rendered = render(&tree, Format::Json, false);
         assert!(
             tree_rendered.contains(&format!(

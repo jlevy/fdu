@@ -9,7 +9,7 @@ UV ?= uv
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names admission-sites fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test release-rehearse clean cli perf-help verify-beads
+.PHONY: help build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update test-path-independence path-independence path-independence-full path-independence-record content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names admission-sites fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test release-rehearse clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -23,6 +23,8 @@ help:
 	@echo "make golden-observability  Reject goldens that hide product output behind parsers"
 	@echo "make portability  Check committed test data names no machine"
 	@echo "make test-parity  Replay the corpus against the Python surface"
+	@echo "make path-independence  Check answers against cold runs across histories (subset)"
+	@echo "make path-independence-full  The full matrix; path-independence-record rewrites the registry"
 	@echo "make parity-update  Re-record the Python surface deviations"
 	@echo "make content-selfcheck  Analyze an archive of tracked repository files"
 	@echo "make test-performance  Test the performance harness and every fdu probe job"
@@ -110,7 +112,7 @@ $(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
 	$(NPM) ci
 
 # Everything CI enforces, in the order that fails fastest.
-check: uv-version wheel-python supply-chain rust-module-names admission-sites golden-invocations golden-observability opened-root-golden-lint portability fmt-check clippy test docs docs-format-check perf-test perf-schema-check perf-ledger-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check release-test
+check: uv-version wheel-python supply-chain rust-module-names admission-sites golden-invocations golden-observability opened-root-golden-lint portability fmt-check clippy test docs docs-format-check perf-test perf-schema-check perf-ledger-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check test-path-independence path-independence release-test
 
 # The uv.toml files express the supply-chain cool-off as a relative `exclude-newer`
 # ("14 days"). uv releases older than this cannot parse that form: they abort with
@@ -160,7 +162,7 @@ uv-version:
 
 # Standalone entry points must fail before any recipe asks uv to parse repository
 # configuration. Keep this list aligned with the recipe-coverage test.
-UV_BACKED_TARGETS := test-performance python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse docs-format docs-format-check \
+UV_BACKED_TARGETS := test-performance test-path-independence path-independence path-independence-full path-independence-record python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse docs-format docs-format-check \
 	perf-baseline perf-profile perf-content-profile perf-compare perf-content-compare \
 	perf-compare-tools perf-floor perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check
 
@@ -253,6 +255,36 @@ parity-check: build $(NODE_INSTALL_STAMP)
 parity-update: build parity-venv $(NODE_INSTALL_STAMP)
 	FDU_PARITY_PYTHON=$(PARITY_PYTHON) $(NODE) scripts/run-parity.mjs --update
 
+# The path-independence harness (tests/path_independence): an answer must not depend on
+# cache history, cache policy, file changes since warming, or which surface asked. The
+# unit tests need no build. The matrix runs the debug binary and, for the Python routes,
+# an installed wheel -- the gate's .venv-smoke, or .venv-parity from `make parity-venv`
+# when run on its own. Known differences live in known-violations.toml, reviewed like a
+# golden; `path-independence-record` rewrites it from a full run for classification.
+PATH_INDEPENDENCE_PYTHON ?= $(PARITY_PYTHON)
+check: PATH_INDEPENDENCE_PYTHON = $(SMOKE_PYTHON)
+PATH_INDEPENDENCE_ENV = FDU_BIN="$(CURDIR)/target/debug/fdu" \
+	FDU_PYTHON="$(abspath $(PATH_INDEPENDENCE_PYTHON))"
+PATH_INDEPENDENCE_PYTHON_REQUIRED = @test -x "$(PATH_INDEPENDENCE_PYTHON)" || \
+	{ echo "error: $(PATH_INDEPENDENCE_PYTHON) is missing; build it with 'make parity-venv' (or 'make python-smoke' for .venv-smoke)"; exit 1; }
+
+test-path-independence:
+	$(UV) run --no-project --python 3.12 python -m unittest discover -s tests/path_independence -p 'test_harness.py'
+
+path-independence: build
+	$(PATH_INDEPENDENCE_PYTHON_REQUIRED)
+	$(PATH_INDEPENDENCE_ENV) FDU_PI_TIER=subset \
+		$(UV) run --no-project --python 3.12 python -m unittest discover -s tests/path_independence -p 'test_path_independence.py'
+
+path-independence-full: build
+	$(PATH_INDEPENDENCE_PYTHON_REQUIRED)
+	$(PATH_INDEPENDENCE_ENV) FDU_PI_TIER=full \
+		$(UV) run --no-project --python 3.12 python -m unittest discover -s tests/path_independence -p 'test_path_independence.py'
+
+path-independence-record: build
+	$(PATH_INDEPENDENCE_PYTHON_REQUIRED)
+	$(PATH_INDEPENDENCE_ENV) $(UV) run --no-project --python 3.12 python tests/path_independence/runner.py --tier full --record
+
 fmt:
 	$(CARGO) fmt --all
 
@@ -342,7 +374,7 @@ python-concurrency:
 
 # The explicit --config keeps one lint standard for the package, its examples, and the
 # repository-level release scripts and tests, which have no pyproject of their own.
-PYTHON_LINT_PATHS := python tests examples ../../scripts/release ../../tests/release ../../tests/parity
+PYTHON_LINT_PATHS := python tests examples ../../scripts/release ../../tests/release ../../tests/parity ../../tests/path_independence
 
 python-check:
 	$(UV) run --directory crates/fdu-py --frozen --only-group dev \

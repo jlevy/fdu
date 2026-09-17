@@ -18,17 +18,21 @@ use std::borrow::Cow;
 use clap::builder::styling::{AnsiColor, Style as AnsiStyle, Styles};
 use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, ValueEnum};
 
-use fdu_core::content::{AnalysisRequest, AnalysisSet};
+use fdu_core::content::AnalysisSet;
+// The open configuration and the age grammar are the watch path's alone now: everything
+// else composes a request and a delivery and hands them to the engine.
+#[cfg(feature = "watch")]
+use fdu_core::OpenConfig;
 use fdu_core::control::ControlCoverage;
+#[cfg(feature = "watch")]
+use fdu_core::query::parse_when;
 use fdu_core::query::{
-    AxisNames, Bound, IgnoredEntries, Pattern, Query, ReportSource, Selection, SizeMetric, SortKey,
-    ViewSpec, parse_size, parse_when, system_time_to_nanos,
+    AxisNames, Delivery, IgnoredEntries, ReadSpec, ReportSource, Request, RequestError,
+    RequestSpec, ViewSpec, WatchDelivery, parse_cache_policy,
 };
 use fdu_core::report_format;
 use fdu_core::report_format::human_count;
-use fdu_core::{
-    CachePolicy, CacheScope, CacheState, EntryKind, OpenConfig, ScanConfig, default_cache_path,
-};
+use fdu_core::{CachePolicy, CacheScope, CacheState, default_cache_path};
 use fdu_core::{PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics};
 
 const SKILL_TEMPLATE: &str = include_str!("skills/SKILL.md");
@@ -187,8 +191,8 @@ CONTENT ANALYSIS
   Analysis streams every eligible file through EOF; files are never size-truncated.
   --analysis-workers bounds concurrency.
   --words-per-page changes only report-time page derivation.
-  Unchanged results are restored from a separate sidecar; a stored set answers
-  any narrower request without re-reading.
+  Unchanged results are restored from a separate sidecar written by the same
+  analyzer set; any other set, wider or narrower, reads the files again.
   --cache=only never opens source files and fails if requested content is absent.
 
 CACHE BEHAVIOR
@@ -221,7 +225,7 @@ IGNORE RULES
 
 OUTPUT AND AUTOMATION
   Metadata-only machine output remains fdu.report/5; metric summaries use fdu.report/6.
-  Cache status is its own document in every machine format: fdu.cache/1.
+  Cache status is its own document in every machine format: fdu.cache/2.
   Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
   Text language rows use canonical names; machine formats retain lowercase IDs.
   Metric rows include detection source, confidence, origin flags, and coverage.
@@ -326,19 +330,28 @@ fn pending_after(outcome: SaveOutcome) -> bool {
     }
 }
 
-/// Convert a parsed time bound to index nanoseconds, or reject the flag.
+/// The default size metric, as the defaults table spells it.
 ///
-/// `system_time_to_nanos` returns `None` for an instant outside the range the index can
-/// represent (roughly 1677-2262). Storing that `None` would leave the bound unset, so the
-/// query would run with no time filter at all while the user believed one was active --
-/// a silently wrong answer, which is worse than a rejected flag.
-fn bound_nanos(input: &str, when: SystemTime, flag: &str) -> anyhow::Result<i64> {
-    system_time_to_nanos(when).ok_or_else(|| {
-        usage(&anyhow::anyhow!(
-            "invalid {flag} \"{input}\": that time is outside the range fdu can represent \
-             (about 1677 to 2262)"
-        ))
-    })
+/// Read from the model rather than written out here, so `--help` cannot say one metric
+/// while the engine answers in another. The flag still has a clap default because the help
+/// text states it; what it must not have is a default of its own.
+const SIZE_DEFAULT: &str = Request::DEFAULTS.size.label();
+
+/// The default analyzer set, as the grammar spells it.
+///
+/// Read from the model the same way, and for the same reason: the flag keeps a clap
+/// default because `--help` prints it, and what it must not have is a default of its own.
+/// The empty set is the one analyzer set a `const` can spell, so the assertion is what
+/// makes this a reading of the table rather than a guess about it.
+const ANALYZE_DEFAULT: &str = AnalysisSet::NONE_LABEL;
+const _: () = assert!(
+    !Request::DEFAULTS.content.is_enabled(),
+    "--help prints the default analyzer set; a table that enables one needs a spelling here"
+);
+
+/// The request model's refusal, in the command line's words.
+fn refused(error: &RequestError) -> anyhow::Error {
+    anyhow::anyhow!(error.message(&AxisNames::FLAGS))
 }
 
 /// Re-tag an argument rejection so it exits like the usage error it is.
@@ -481,7 +494,7 @@ pub struct Cli {
     pub reverse: bool,
 
     /// Which size metric to report: allocated or apparent.
-    #[arg(long, value_name = "METRIC", default_value = "allocated", help_heading = "SELECTION")]
+    #[arg(long, value_name = "METRIC", default_value = SIZE_DEFAULT, help_heading = "SELECTION")]
     pub size: String,
 
     // ---- view: which roll-ups are reported ----
@@ -494,7 +507,12 @@ pub struct Cli {
     /// Analyzers to run: none, lines, code, words, or all.
     ///
     /// Anything but none reads each eligible file missing from a compatible content cache.
-    #[arg(long, value_name = "LIST", default_value = "none", help_heading = "CONTENT ANALYSIS")]
+    #[arg(
+        long,
+        value_name = "LIST",
+        default_value = ANALYZE_DEFAULT,
+        help_heading = "CONTENT ANALYSIS"
+    )]
     pub analyze: String,
 
     /// Content reader workers; zero selects available parallelism.
@@ -502,7 +520,12 @@ pub struct Cli {
     pub analysis_workers: usize,
 
     /// Logical words per derived document page.
-    #[arg(long, value_name = "N", default_value_t = 250, help_heading = "VIEWS")]
+    #[arg(
+        long,
+        value_name = "N",
+        default_value_t = fdu_core::query::Request::DEFAULTS.words_per_page,
+        help_heading = "VIEWS"
+    )]
     pub words_per_page: u64,
 
     // ---- format: how the report is serialized ----
@@ -610,45 +633,29 @@ impl Cli {
         // time costs nothing and reports its own spelling rather than a scan's worth of
         // waiting followed by an error.
         let format = self.parse_format().map_err(|error| usage(&error))?;
-        // The content axis is parsed first because the view axis defaults from it: a
-        // request that pays to read files should display what it read.
-        let analysis = self.parse_analysis().map_err(|error| usage(&error))?;
-        let views =
-            resolve_views(self.view.as_deref(), analysis.profile).map_err(|error| usage(&error))?;
-        let query = self.parse_query(&views).map_err(|error| usage(&error))?;
         let path = self.path.as_deref().ok_or_else(|| {
             usage(&anyhow::anyhow!(
                 "missing PATH: specify the directory to summarize, for example `fdu .`"
             ))
         })?;
-
-        let policy = self.parse_cache_policy().map_err(|error| usage(&error))?;
-        let scan = self.scan_config().map_err(|error| usage(&error))?;
-        query
-            .validate_analysis(analysis.profile)
-            .map_err(|message| usage(&anyhow::anyhow!(message)))?;
-        // A selection by ignored state over a scan that reads no rule has no answer, so
-        // the library's refusal is a usage error here, raised before anything is scanned.
-        query
-            .validate_controls(scan.read_controls)
-            .map_err(|message| usage(&anyhow::anyhow!(message)))?;
-        let config = OpenConfig { scan, cache_path: default_cache_path(path), policy, analysis };
-
-        #[cfg(feature = "watch")]
-        if self.watch && (self.scan_depth.is_some() || self.one_filesystem) {
-            // Scope narrows what is observed, and a watcher cannot filter raw backend
-            // events against that boundary yet. Selection flags stay legal with --watch
-            // precisely because they filter the retained index instead, and the message
-            // says so rather than only naming the conflict.
-            return Err(usage(&anyhow::anyhow!(watch_scope_guidance())));
-        }
-
-        #[cfg(feature = "watch")]
-        if self.watch && analysis.profile.is_enabled() {
-            return Err(usage(&anyhow::anyhow!(
-                "--analyze is not yet supported with --watch; use a one-shot report"
-            )));
-        }
+        // One grammar, one defaults table, one set of rules: this command line hands the
+        // model the words its caller typed and renders whatever comes back in flag names.
+        // It used to parse each axis itself, which is how a default could differ between
+        // the doors into the same engine.
+        let request = self.request(path, SystemTime::now())?;
+        let delivery = Delivery {
+            cache: self.parse_cache_policy().map_err(|error| usage(&error))?,
+            cache_path: default_cache_path(path),
+            analysis_workers: self.analysis_workers,
+            watch: self.watch_delivery().map_err(|error| usage(&error))?,
+            // What `--allow-partial` says: a partial answer is a success. Only this
+            // command's exit mapping reads it today, and the execution plan model will.
+            accept_partial: self.allow_partial,
+        };
+        // What a watch cannot carry -- a narrowed scan scope, content analysis nothing
+        // re-reads, a snapshot nothing verified -- is the model's rule now, so a library
+        // caller and a Python caller meet the same wall this command line has always been.
+        request.validate_delivery(&delivery).map_err(|error| usage(&refused(&error)))?;
 
         #[cfg(feature = "watch")]
         if self.watch {
@@ -659,16 +666,16 @@ impl Cli {
                 stdout_is_terminal,
             )
             .enabled();
-            return self.run_watch(out, diagnostic, format, query, &config, color);
+            return self.run_watch(out, diagnostic, format, &request, &delivery, color);
         }
 
         let report_started = Instant::now();
         let collect_scan_diagnostics =
             std::env::var_os(SCAN_DIAGNOSTICS_ENV).is_some_and(|value| value == OsStr::new("1"));
         let (report, pending_save, performance, scan_diagnostics) = if collect_scan_diagnostics {
-            prepare_report_with_scan_diagnostics(path, &config, &query)?
+            prepare_report_with_scan_diagnostics(&request, &delivery)?
         } else {
-            let (report, pending_save, performance) = prepare_report(path, &config, &query)?;
+            let (report, pending_save, performance) = prepare_report(&request, &delivery)?;
             (report, pending_save, performance, None)
         };
         if let Some(scan_diagnostics) = scan_diagnostics {
@@ -721,7 +728,9 @@ impl Cli {
                     color,
                 )
             )?;
-            for note in display_notes(&views, analysis.profile, performance.bytes_read) {
+            for note in
+                display_notes(&request.query.views, request.basis.content, performance.bytes_read)
+            {
                 writeln!(out, "{}", paint(&note, STYLE_PERFORMANCE, color))?;
             }
         }
@@ -762,8 +771,8 @@ impl Cli {
         out: &mut dyn Write,
         diagnostic: &mut dyn Write,
         format: report_format::Format,
-        query: Query,
-        config: &OpenConfig,
+        request: &Request,
+        delivery: &Delivery,
         color: bool,
     ) -> anyhow::Result<RunOutcome> {
         use fdu_core::open_with_pending_save;
@@ -772,9 +781,19 @@ impl Cli {
         use fdu_core::watch_session::{ChangeKind, Session};
 
         let path = self.path.as_deref().expect("run() validates the report path first");
-        let interval = parse_duration(&self.interval).map_err(|error| usage(&error))?;
+        // The repaint interval the delivery already carries, rather than a second reading
+        // of `--interval`: `run` refused an unparseable one before it opened anything, and
+        // a value parsed twice is a value that can mean two things.
+        let interval = delivery
+            .watch
+            .expect("run() builds a watch delivery before it takes the watch path")
+            .interval;
 
         let scan_started_at = SystemTime::now();
+        // The one splice of the two models back into today's open configuration, made
+        // here rather than by the caller: the watch path is its only remaining user on
+        // this surface.
+        let config = &OpenConfig::of(&request.basis, delivery);
         let (index, open_report, pending_save) = open_with_pending_save(path, config)?;
         if let Err(error) = pending_save.join() {
             let _ = writeln!(
@@ -787,15 +806,15 @@ impl Cli {
         // A streaming run keeps only the views it can render incrementally plus the
         // aggregates it repaints; both come from the same query, so nothing here is a
         // second grammar.
-        let streams_changes = query.views.contains(&ViewSpec::Files);
-        let has_aggregates = query.views.iter().any(|view| *view != ViewSpec::Files);
+        let streams_changes = request.query.views.contains(&ViewSpec::Files);
+        let has_aggregates = request.query.views.iter().any(|view| *view != ViewSpec::Files);
 
         // The save above was joined, so the writer has dropped its reference and this
         // is the only one left; the watch session needs the index by value.
         let index = std::sync::Arc::into_inner(index)
             .expect("the joined writer released the only other reference");
         let handle = fdu_core::IndexHandle::new(index);
-        let mut session = Session::new(handle, config.scan.clone(), query, WatchConfig::default())?;
+        let mut session = Session::new(handle, request.clone(), delivery, WatchConfig::default())?;
 
         // The initial answer, identical to a one-shot run's.
         let provenance = Provenance {
@@ -1105,54 +1124,106 @@ impl Cli {
         Ok(())
     }
 
-    /// Translate the scope flags into the scan configuration every run of this command uses.
-    fn scan_config(&self) -> anyhow::Result<ScanConfig> {
-        // Every run observes `.gitignore` unless told not to, one-shot and `--watch` alike,
-        // because every row shows the ignored share of its size (fdu-elnn). Sharing the
-        // engine default also gives the command line, the Python package, and a library
-        // `open` one snapshot scope (fdu-w3l5). The limits join the cache scope with it,
-        // so a run under other limits scans rather than reusing rules it would not apply.
-        Ok(ScanConfig {
-            max_depth: self.scan_depth,
+    /// The request this invocation asks for, built and validated by the one model.
+    ///
+    /// Every axis reaches the model as the caller wrote it, so the grammars, the defaults,
+    /// and the rules that relate one axis to another are stated once for every surface, and
+    /// the refusal that comes back is rendered here in flag names.
+    fn request(&self, root: &Path, now: SystemTime) -> anyhow::Result<Request> {
+        let typed = self.typed_values();
+        let request = Request::build(&self.spec(root, &typed)?, now, &AxisNames::FLAGS)
+            .map_err(|error| usage(&refused(&error)))?;
+        // A view nothing analyzed cannot answer, and a selection by ignored state over a
+        // scan that reads no rule, are both refused before anything is scanned.
+        request.validate().map_err(|error| usage(&refused(&error)))?;
+        Ok(request)
+    }
+
+    /// The flags clap already typed, rendered back into the words the model reads.
+    ///
+    /// A value the model parses is a value one grammar owns; handing it clap's `usize`
+    /// instead would be a second grammar that agrees today. Through `Display` a
+    /// disagreement shows up as a golden difference rather than as a silent one.
+    fn typed_values(&self) -> TypedValues {
+        TypedValues {
+            scan_depth: self.scan_depth.map(|depth| depth.to_string()),
+            words_per_page: self.words_per_page.to_string(),
+        }
+    }
+
+    /// This invocation as a surface-neutral request spec.
+    fn spec<'a>(
+        &'a self,
+        root: &'a Path,
+        typed: &'a TypedValues,
+    ) -> anyhow::Result<RequestSpec<'a>> {
+        Ok(RequestSpec {
+            root,
+            scan_depth: typed.scan_depth.as_deref(),
             one_filesystem: self.one_filesystem,
-            read_controls: !self.no_gitignore,
-            control_limits: self.parse_gitignore_limits()?,
-            ..ScanConfig::default()
+            // The flag says what it turns off, so only its presence is an instruction; the
+            // default belongs to the model.
+            read_controls: self.no_gitignore.then_some(false),
+            control_budget: self.gitignore_budget.as_deref(),
+            control_line_limit: self.gitignore_line_limit.as_deref(),
+            analyze: Some(&self.analyze),
+            read: ReadSpec {
+                views: self.view.as_deref(),
+                words_per_page: Some(&typed.words_per_page),
+                include: &self.include,
+                exclude: &self.exclude,
+                min_size: self.min_size.as_deref(),
+                modified_since: self.modified_since.as_deref(),
+                modified_before: self.modified_before.as_deref(),
+                kinds: self.kind.as_deref(),
+                ignored: self.ignored_selection()?,
+                depth: self.depth.as_deref(),
+                limit: self.limit.as_deref(),
+                sort: self.sort.as_deref(),
+                reverse: self.reverse,
+                size: Some(&self.size),
+            },
         })
     }
 
-    /// Translate the two `.gitignore` limit flags, each on its own: an absent flag keeps its
-    /// own default whatever the other says.
-    fn parse_gitignore_limits(&self) -> anyhow::Result<fdu_core::ControlLimits> {
-        let defaults = fdu_core::ControlLimits::default();
-        Ok(fdu_core::ControlLimits {
-            budget: parse_gitignore_limit(
-                self.gitignore_budget.as_deref(),
-                "--gitignore-budget",
-                fdu_core::query::parse_control_budget,
-                defaults.budget,
-            )?,
-            line_limit: parse_gitignore_limit(
-                self.gitignore_line_limit.as_deref(),
-                "--gitignore-line-limit",
-                fdu_core::query::parse_control_line_limit,
-                defaults.line_limit,
-            )?,
-        })
+    /// Whether this run is a watch, and how often it repaints.
+    ///
+    /// The interval is parsed here because a bad one is a usage error like any other, and
+    /// because the delivery a request is validated against has to say what it is before
+    /// anything is opened.
+    #[cfg(feature = "watch")]
+    fn watch_delivery(&self) -> anyhow::Result<Option<WatchDelivery>> {
+        if !self.watch {
+            return Ok(None);
+        }
+        Ok(Some(WatchDelivery { interval: parse_duration(&self.interval)? }))
+    }
+
+    /// A command line built without the watch feature delivers no watch.
+    #[cfg(not(feature = "watch"))]
+    #[allow(clippy::unnecessary_wraps, clippy::unused_self)]
+    fn watch_delivery(&self) -> anyhow::Result<Option<WatchDelivery>> {
+        Ok(None)
+    }
+
+    /// The ignored-state axis, which this surface spells as two switches.
+    ///
+    /// Naming both of them is a conflict between flags rather than an invalid value, so it
+    /// is refused here; every other axis is one flag and one value the model reads.
+    fn ignored_selection(&self) -> anyhow::Result<Option<&'static str>> {
+        match (self.exclude_ignored, self.only_ignored) {
+            (false, false) => Ok(None),
+            (true, false) => Ok(Some(IgnoredEntries::Exclude.label())),
+            (false, true) => Ok(Some(IgnoredEntries::Only.label())),
+            (true, true) => Err(usage(&anyhow::anyhow!(
+                "--exclude-ignored and --only-ignored select opposite entries; use one of them"
+            ))),
+        }
     }
 
     /// Translate the cache-policy flag.
     fn parse_cache_policy(&self) -> anyhow::Result<CachePolicy> {
-        match self.cache.trim().to_ascii_lowercase().as_str() {
-            "auto" => Ok(CachePolicy::Auto),
-            "refresh" => Ok(CachePolicy::Refresh),
-            "read-only" => Ok(CachePolicy::ReadOnly),
-            "only" => Ok(CachePolicy::Only),
-            "off" => Ok(CachePolicy::Off),
-            other => anyhow::bail!(
-                "invalid --cache {other:?}: expected one of auto, refresh, read-only, only, off"
-            ),
-        }
+        parse_cache_policy(&self.cache, AxisNames::FLAGS.cache).map_err(|error| refused(&error))
     }
 
     /// Translate the format flag, naming every accepted value on a miss.
@@ -1166,129 +1237,27 @@ impl Cli {
         })
     }
 
-    /// Translate every selection and view flag into the library's own types.
+    /// The query this invocation asks for, as the model builds it.
     ///
-    /// This is all the CLI does: parse flags into `Query`, hand it to the library, and
-    /// serialize what comes back. Any logic beyond that belongs in the library, where
-    /// Rust and Python callers get it too.
-    /// Resolve the content and view axes exactly as [`Cli::run`] does.
-    ///
-    /// Tests go through this rather than calling `parse_query` with a hand-written view
-    /// list, so a change to the resolution order cannot pass the suite while breaking the
-    /// command.
+    /// Tests go through this rather than assembling a `Query` of their own, so a change to
+    /// the grammars or the defaults cannot pass the suite while changing what the command
+    /// does.
     #[cfg(test)]
-    fn resolved_query(&self) -> anyhow::Result<Query> {
-        let analysis = self.parse_analysis()?;
-        let views = resolve_views(self.view.as_deref(), analysis.profile)?;
-        self.parse_query(&views)
+    fn resolved_query(&self) -> anyhow::Result<fdu_core::query::Query> {
+        Ok(self.resolved_request()?.query)
     }
 
-    fn parse_query(&self, views: &ResolvedViews) -> anyhow::Result<Query> {
-        let now = SystemTime::now();
-
-        let mut selection = Selection {
-            depth: self.depth.as_deref().map(|value| parse_bound(value, "--depth")).transpose()?,
-            limit: self.limit.as_deref().map(|value| parse_bound(value, "--limit")).transpose()?,
-            reverse: self.reverse,
-            size: parse_size_metric(&self.size)?,
-            ..Selection::default()
-        };
-
-        for pattern in &self.include {
-            selection.include.push(Pattern::parse(pattern)?);
-        }
-        for pattern in &self.exclude {
-            selection.exclude.push(Pattern::parse(pattern)?);
-        }
-        if let Some(min_size) = &self.min_size {
-            selection.min_size = Some(parse_size(min_size)?);
-        }
-        if let Some(since) = &self.modified_since {
-            selection.modified.since =
-                Some(bound_nanos(since, parse_when(since, now)?, "--modified-since")?);
-        }
-        if let Some(before) = &self.modified_before {
-            selection.modified.before =
-                Some(bound_nanos(before, parse_when(before, now)?, "--modified-before")?);
-        }
-        if let Some(kinds) = &self.kind {
-            selection.kinds = parse_list(kinds, "--kind", parse_kind)?;
-        }
-        if let Some(sort) = &self.sort {
-            selection.sort = Some(parse_sort(sort)?);
-        }
-        selection.ignored = match (self.exclude_ignored, self.only_ignored) {
-            (false, false) => IgnoredEntries::Include,
-            (true, false) => IgnoredEntries::Exclude,
-            (false, true) => IgnoredEntries::Only,
-            (true, true) => anyhow::bail!(
-                "--exclude-ignored and --only-ignored select opposite entries; use one of them"
-            ),
-        };
-
-        let omitted_views = views.omitted.clone();
-        let views = views.selected.clone();
-        if self.words_per_page == 0 {
-            anyhow::bail!("invalid --words-per-page 0: expected a positive integer");
-        }
-        // The command line names these axes with flags; a library caller names them with
-        // fields, and the report's own diagnostics follow whichever asked.
-        Ok(Query {
-            selection,
-            views,
-            omitted_views,
-            axes: AxisNames::FLAGS,
-            words_per_page: self.words_per_page,
-        })
-    }
-
-    fn parse_analysis(&self) -> anyhow::Result<AnalysisRequest> {
-        let profile = AnalysisSet::parse_labeled(&self.analyze, "--analyze")
-            .map_err(|message| anyhow::anyhow!(message))?;
-        Ok(AnalysisRequest { profile, workers: self.analysis_workers })
+    /// [`Cli::request`] for a test, over a root no test reads.
+    #[cfg(test)]
+    fn resolved_request(&self) -> anyhow::Result<Request> {
+        self.request(self.path.as_deref().unwrap_or(Path::new(".")), SystemTime::now())
     }
 }
 
-/// What each knob is called on the command line, given its name in the API.
-#[cfg(feature = "watch")]
-const WATCH_SCOPE_VOCABULARY: [(&str, &str); 5] = [
-    ("max_depth", "--scan-depth"),
-    ("one_filesystem", "--one-filesystem"),
-    ("modified_since", "--modified-since"),
-    ("depth", "--depth"),
-    ("include", "--include"),
-];
-
-/// The library's watch-scope rule, in the command line's vocabulary.
-///
-/// One rule, stated once, with only the knob names differing. It used to be two separate
-/// messages -- the CLI's naming flags and the library's naming implementation -- which
-/// drifted apart and which the parity harness could not tell were the same rule.
-///
-/// The substitution is an explicit whole-word map rather than a blind replace, which is
-/// the bug fdu-7j6z was: `message.replace("analyze", "--analyze")` rewrote the user's own
-/// token. Here every replacement is a field name that cannot appear inside a value, which
-/// `the_watch_guidance_substitutes_whole_words_only` asserts, and the parity run verifies
-/// the two surfaces stay equivalent.
-#[cfg(feature = "watch")]
-fn watch_scope_guidance() -> String {
-    // One pass over whole words, never re-scanning what was already substituted. A
-    // sequential replace does re-scan: max_depth becomes --scan-depth, and then `depth`
-    // matches inside it, giving `--scan---depth`. That is fdu-7j6z again, and it appeared
-    // again here the moment the same shortcut was taken.
-    fdu_core::scan::WATCH_SCOPE_GUIDANCE
-        .split_inclusive(|character: char| !character.is_ascii_alphanumeric() && character != '_')
-        .map(|piece| {
-            let end = piece
-                .find(|character: char| !character.is_ascii_alphanumeric() && character != '_')
-                .unwrap_or(piece.len());
-            let (word, tail) = piece.split_at(end);
-            match WATCH_SCOPE_VOCABULARY.iter().find(|(field, _)| *field == word) {
-                Some((_, flag)) => format!("{flag}{tail}"),
-                None => piece.to_string(),
-            }
-        })
-        .collect()
+/// Flags clap typed, rendered back into the words [`Request::build`] reads.
+struct TypedValues {
+    scan_depth: Option<String>,
+    words_per_page: String,
 }
 
 /// Format transient one-shot work without adding it to the machine-report schema.
@@ -1438,32 +1407,6 @@ fn plural<'a>(count: usize, singular: &'a str, plural: &'a str) -> &'a str {
     if count == 1 { singular } else { plural }
 }
 
-/// Split a comma-delimited list of closed identifiers.
-///
-/// Closed vocabularies are comma lists and open pattern values are repeatable flags,
-/// because glob brace syntax (`*.{rs,toml}`) contains commas and would be shredded by a
-/// split. Duplicates are an error rather than a silent no-op: repeating a view is far
-/// more likely to be a typo than an intention.
-fn parse_list<T: PartialEq>(
-    value: &str,
-    flag: &str,
-    parse: impl Fn(&str, &str) -> anyhow::Result<T>,
-) -> anyhow::Result<Vec<T>> {
-    let mut parsed = Vec::new();
-    for token in value.split(',') {
-        let token = token.trim();
-        if token.is_empty() {
-            anyhow::bail!("invalid {flag} {value:?}: empty entry in the list");
-        }
-        let item = parse(token, flag)?;
-        if parsed.contains(&item) {
-            anyhow::bail!("invalid {flag} {value:?}: {token:?} appears more than once");
-        }
-        parsed.push(item);
-    }
-    Ok(parsed)
-}
-
 /// Whether a view renders anything the content analyzers produce.
 ///
 /// This is the check behind the "paid for nothing" note.  It is deliberately a match
@@ -1474,6 +1417,7 @@ const fn view_displays_analysis(view: ViewSpec) -> bool {
 }
 
 /// Views to render, plus any `--view full` could not satisfy.
+#[cfg(test)]
 #[derive(Debug)]
 struct ResolvedViews {
     selected: Vec<ViewSpec>,
@@ -1484,7 +1428,9 @@ struct ResolvedViews {
 ///
 /// `full` expands to what the requested analyzers can answer rather than failing the
 /// whole run over one unsatisfiable view, and reports what it dropped so the omission is
-/// stated rather than hidden.
+/// stated rather than hidden. The command builds its views through the request model; this
+/// is what the tests of that axis call, one layer below it.
+#[cfg(test)]
 fn resolve_views(spec: Option<&str>, profile: AnalysisSet) -> anyhow::Result<ResolvedViews> {
     // The whole axis -- list grammar, `full` expansion, and the default -- lives in the
     // library, so the CLI and the Python API cannot disagree about what a spec means.
@@ -1499,13 +1445,13 @@ fn resolve_views(spec: Option<&str>, profile: AnalysisSet) -> anyhow::Result<Res
 /// and a view it could not render is named rather than quietly dropped.  Machine formats
 /// carry neither, because the `reports` array already enumerates exactly which views were
 /// produced — a consumer reads the omission from what is absent.
-fn display_notes(views: &ResolvedViews, profile: AnalysisSet, bytes_read: u64) -> Vec<String> {
+fn display_notes(views: &[ViewSpec], profile: AnalysisSet, bytes_read: u64) -> Vec<String> {
     // Only the note that needs telemetry. The omission note is a fact about the report and
     // travels on it, so every surface states it rather than just this one (fdu-x8u6).
     //
     // Never an error: warming the content sidecar so a later run is warm is a supported
     // use, and `--cache`-aware callers depend on it.  Silence would hide the cost instead.
-    if profile.is_enabled() && !views.selected.iter().any(|view| view_displays_analysis(*view)) {
+    if profile.is_enabled() && !views.iter().any(|view| view_displays_analysis(*view)) {
         return vec![format!(
             "note: --analyze {} read {}; no selected view displays content metrics — try --view families, languages, or full",
             profile.labels().join(","),
@@ -1513,70 +1459,6 @@ fn display_notes(views: &ResolvedViews, profile: AnalysisSet, bytes_read: u64) -
         )];
     }
     Vec::new()
-}
-
-/// Parse one `--kind` token.
-fn parse_kind(token: &str, flag: &str) -> anyhow::Result<EntryKind> {
-    match token.to_ascii_lowercase().as_str() {
-        "file" => Ok(EntryKind::File),
-        "dir" => Ok(EntryKind::Dir),
-        "symlink" => Ok(EntryKind::Symlink),
-        "other" => Ok(EntryKind::Other),
-        _ => anyhow::bail!("invalid {flag} {token:?}: expected one of file, dir, symlink, other"),
-    }
-}
-
-/// Parse one `.gitignore` limit flag with the engine's grammar, naming the flag in the
-/// rejection; an absent flag keeps `default`.
-fn parse_gitignore_limit(
-    value: Option<&str>,
-    flag: &str,
-    parse: fn(&str) -> fdu_core::Result<Option<usize>>,
-    default: Option<usize>,
-) -> anyhow::Result<Option<usize>> {
-    let Some(value) = value else {
-        return Ok(default);
-    };
-    parse(value).map_err(|error| match error {
-        fdu_core::Error::InvalidValue { value, hint, .. } => {
-            anyhow::anyhow!("invalid {flag} {value:?}: {hint}")
-        }
-        other => other.into(),
-    })
-}
-
-/// Parse a bound that accepts `all` for unbounded.
-fn parse_bound(value: &str, flag: &str) -> anyhow::Result<Bound> {
-    let value = value.trim();
-    if value.eq_ignore_ascii_case("all") {
-        return Ok(Bound::All);
-    }
-    value
-        .parse::<usize>()
-        .map(Bound::Limit)
-        .map_err(|_| anyhow::anyhow!("invalid {flag} {value:?}: expected a whole number or `all`"))
-}
-
-/// Parse the `--sort` key.
-fn parse_sort(value: &str) -> anyhow::Result<SortKey> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "size" => Ok(SortKey::Size),
-        "count" => Ok(SortKey::Count),
-        "mtime" => Ok(SortKey::Mtime),
-        "name" => Ok(SortKey::Name),
-        other => {
-            anyhow::bail!("invalid --sort {other:?}: expected one of size, count, mtime, name")
-        }
-    }
-}
-
-/// Parse the `--size` metric.
-fn parse_size_metric(value: &str) -> anyhow::Result<SizeMetric> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "allocated" => Ok(SizeMetric::Allocated),
-        "apparent" => Ok(SizeMetric::Apparent),
-        other => anyhow::bail!("invalid --size {other:?}: expected allocated or apparent"),
-    }
 }
 
 /// Run `fdu` through its real process boundary and return its stable numeric exit code.
@@ -1895,6 +1777,8 @@ fn compose_skill_from(template: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fdu_core::EntryKind;
+    use fdu_core::query::{Bound, ScopeAxis, SizeMetric, SortKey};
     #[cfg(feature = "watch")]
     use std::time::UNIX_EPOCH;
 
@@ -1979,11 +1863,15 @@ mod tests {
     fn each_gitignore_limit_flag_sets_only_its_own_limit_and_joins_the_observed_scope() {
         let scan_config = |flags: &[&str]| {
             let args = std::iter::once("fdu").chain(flags.iter().copied()).chain(["."]);
-            Cli::try_parse_from(args).expect("parses").scan_config()
+            Cli::try_parse_from(args)
+                .expect("parses")
+                .resolved_request()
+                .map(|request| request.basis.scope)
         };
         let defaults = fdu_core::ControlLimits::default();
-        let unobserved =
-            |config: &ScanConfig| ScanConfig { read_controls: false, ..config.clone() }.scope();
+        let unobserved = |config: &fdu_core::ScanConfig| {
+            fdu_core::ScanConfig { read_controls: false, ..config.clone() }.scope()
+        };
         let default = scan_config(&[]).expect("defaults");
         assert_eq!(default.control_limits, defaults);
         assert!(default.read_controls, "every run observes .gitignore unless told not to");
@@ -2154,11 +2042,11 @@ mod tests {
             limit: None,
             sort: None,
             reverse: false,
-            size: "allocated".to_string(),
+            size: SIZE_DEFAULT.to_string(),
             view: Some("tree".to_string()),
             analyze: "none".to_string(),
             analysis_workers: 0,
-            words_per_page: 250,
+            words_per_page: Request::DEFAULTS.words_per_page,
             format: "text".to_string(),
             color: ColorWhen::Auto,
             cache: "off".to_string(),
@@ -2203,6 +2091,39 @@ mod tests {
             bare_help.lines().all(|line| line.trim_end() == line),
             "help should not pad blank lines with invisible whitespace"
         );
+    }
+
+    /// A scope this build cannot honour is a usage error here, not a failed operation.
+    ///
+    /// The kind, not only the sentence: the same request raises `ValueError` in Python, so
+    /// reporting it as an engine error exited 1 where the other surface refused -- one
+    /// request with two kinds of outcome, which the path-independence matrix reported as
+    /// 35 cross-surface differences for `--one-filesystem` on Windows.
+    ///
+    /// Driven through the refusal rather than through argv because the axes this build
+    /// cannot honour are unreachable from a flag: `--one-filesystem` is honoured wherever
+    /// the goldens run, and `follow_symlinks` is an `open` and library axis with no flag at
+    /// all. What the command line owns is this mapping, and this is it.
+    #[test]
+    fn a_scope_this_build_cannot_honour_exits_as_a_usage_error() {
+        for (axis, printed) in [
+            (ScopeAxis::OneFilesystem, "--one-filesystem requires platform device identity"),
+            (
+                ScopeAxis::FollowSymlinks,
+                "follow_symlinks requires cycle, root-boundary, and filesystem-boundary semantics",
+            ),
+        ] {
+            let refusal = RequestError::ScopeUnsupported { axis, reason: axis.reason() };
+            let error = usage(&refused(&refusal));
+            assert!(is_usage_error(&error), "{axis:?} must exit like the bad argument it is");
+
+            let mut diagnostic = Vec::new();
+            assert_eq!(finish(Err(error), false, &mut diagnostic, false), 2);
+            assert_eq!(
+                String::from_utf8(diagnostic).expect("diagnostics are UTF-8"),
+                format!("fdu: unsupported scan configuration: {printed}\n")
+            );
+        }
     }
 
     #[test]
@@ -2283,50 +2204,6 @@ mod tests {
     /// The default the CLI used to declare itself now comes from the library, so every
     /// surface renders the same tree for the same request. While the CLI owned it, a
     /// Python caller leaving depth unset got an unbounded tree and no warning.
-    /// The CLI's wording and the library's must stay one rule with different knob names,
-    /// because that equivalence is what the parity harness verifies mechanically.
-    ///
-    /// Asserted against the constant and the vocabulary rather than by quoting prose. The
-    /// first three versions of this test quoted phrases and went stale the moment the rule
-    /// was reworded, which is a test measuring its own copy of the thing under test.
-    #[cfg(feature = "watch")]
-    #[test]
-    fn the_watch_guidance_substitutes_whole_words_only() {
-        let source = fdu_core::scan::WATCH_SCOPE_GUIDANCE;
-        let text = watch_scope_guidance();
-
-        // A sequential replace produced `--scan---depth`: max_depth became --scan-depth and
-        // then `depth` matched inside the replacement. That is fdu-7j6z, and it reappeared
-        // here the moment the same shortcut was taken.
-        assert!(!text.contains("---"), "{text} re-substituted a replacement");
-
-        // Whole words throughout, because `--scan-depth` contains `depth`. Checking with a
-        // plain `contains` fails here for the same reason a sequential replace corrupts the
-        // text -- which is the point, and is why this assertion is written the careful way.
-        let names_word = |haystack: &str, word: &str| {
-            // Hyphens stay inside the token, so `--scan-depth` is one word and not three.
-            // Splitting on them is what made this assertion see a bare `depth` that is not
-            // there -- the same tokenisation mistake, one layer up.
-            haystack
-                .split(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-')
-                .any(|w| w == word)
-        };
-        for (field, flag) in WATCH_SCOPE_VOCABULARY {
-            if names_word(source, field) {
-                assert!(text.contains(flag), "{text} must name {flag} where the rule says {field}");
-            }
-            assert!(!names_word(&text, field), "{text} still names {field} untranslated");
-        }
-
-        // Substitution only: everything that is not a knob name survives untouched, so the
-        // two surfaces state the same rule rather than two rules that happen to agree.
-        let mut rebuilt = text.clone();
-        for (field, flag) in WATCH_SCOPE_VOCABULARY {
-            rebuilt = rebuilt.replace(flag, field);
-        }
-        assert_eq!(rebuilt, source, "the CLI wording must be the library's, knob names aside");
-    }
-
     #[test]
     fn an_unnamed_depth_takes_the_view_default_rather_than_unbounded() {
         let parsed = cli().resolved_query().expect("parses");
@@ -2610,7 +2487,7 @@ mod tests {
     #[test]
     fn the_display_contract_reports_unspent_reads_from_the_cli() {
         let unspent = resolve_views(Some("tree"), AnalysisSet::ALL).expect("resolve");
-        let notes = display_notes(&unspent, AnalysisSet::ALL, 1_200);
+        let notes = display_notes(&unspent.selected, AnalysisSet::ALL, 1_200);
         assert_eq!(notes.len(), 1, "{notes:?}");
         assert!(notes[0].contains("no selected view displays content metrics"), "{notes:?}");
         assert!(notes[0].contains("1.1 KiB"), "the note quantifies what was read: {notes:?}");
@@ -2623,17 +2500,17 @@ mod tests {
 
         // A view that does display the metrics earns no note at all.
         let spent = resolve_views(Some("families"), AnalysisSet::ALL).expect("resolve");
-        assert!(display_notes(&spent, AnalysisSet::ALL, 1_200).is_empty());
+        assert!(display_notes(&spent.selected, AnalysisSet::ALL, 1_200).is_empty());
 
         // Neither does a metadata-only run, which bought nothing to display.
         let plain = resolve_views(None, AnalysisSet::NONE).expect("resolve");
-        assert!(display_notes(&plain, AnalysisSet::NONE, 0).is_empty());
+        assert!(display_notes(&plain.selected, AnalysisSet::NONE, 0).is_empty());
 
         // And the omission note is no longer the CLI's to make, in either direction.
         let omitted = resolve_views(Some("full"), AnalysisSet::NONE).expect("resolve");
         assert!(!omitted.omitted.is_empty(), "full without analyzers must drop documents");
         assert!(
-            display_notes(&omitted, AnalysisSet::NONE, 0).is_empty(),
+            display_notes(&omitted.selected, AnalysisSet::NONE, 0).is_empty(),
             "the omission travels on the report now"
         );
     }
@@ -2645,9 +2522,18 @@ mod tests {
         for view in ViewSpec::ALL {
             let spec = view.label();
             let cli = Cli { view: Some(spec.to_string()), ..cli() };
-            let profile = cli.parse_analysis().expect("analysis").profile;
+            // Built rather than validated, because a view that needs content is refused
+            // rather than answered: what this test pins is that naming it never turns an
+            // analyzer on behind the caller's back.
+            let typed = cli.typed_values();
+            let built = Request::build(
+                &cli.spec(Path::new("."), &typed).expect("the spec composes"),
+                SystemTime::now(),
+                &AxisNames::FLAGS,
+            )
+            .expect("every view parses");
             assert_eq!(
-                profile,
+                built.basis.content,
                 AnalysisSet::NONE,
                 "--view {spec} must leave the content axis empty"
             );
@@ -2656,18 +2542,20 @@ mod tests {
 
     #[test]
     fn analysis_profile_workers_and_page_denominator_parse_before_io() {
-        let parsed =
-            Cli { analyze: "lines".to_string(), analysis_workers: 3, words_per_page: 250, ..cli() };
-        assert_eq!(
-            parsed.parse_analysis().expect("analysis"),
-            AnalysisRequest { profile: AnalysisSet::NONE.with_lines(), workers: 3 }
-        );
-        assert_eq!(parsed.resolved_query().expect("query").words_per_page, 250);
+        let parsed = Cli {
+            analyze: "lines".to_string(),
+            analysis_workers: 3,
+            words_per_page: Request::DEFAULTS.words_per_page,
+            ..cli()
+        };
+        let request = parsed.resolved_request().expect("request");
+        assert_eq!(request.basis.content, AnalysisSet::NONE.with_lines());
+        // The one axis of a request that is delivery: it reaches the engine beside the
+        // request rather than inside it.
+        assert_eq!(parsed.analysis_workers, 3);
+        assert_eq!(request.query.words_per_page, Request::DEFAULTS.words_per_page);
 
-        let invalid = Cli { analyze: "deep".to_string(), ..cli() }
-            .parse_analysis()
-            .expect_err("invalid profile")
-            .to_string();
+        let invalid = query_error(&Cli { analyze: "deep".to_string(), ..cli() });
         assert!(invalid.contains("none, lines, code, words, all"), "{invalid}");
         assert!(invalid.contains("--analyze"), "the message names the flag: {invalid}");
         assert!(query_error(&Cli { words_per_page: 0, ..cli() }).contains("positive"));

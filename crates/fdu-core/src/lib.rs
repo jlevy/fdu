@@ -71,6 +71,7 @@ mod platform_tuning;
 pub mod query;
 pub mod scan;
 pub mod snapshot;
+mod stored_state;
 #[cfg(test)]
 mod test_support;
 
@@ -100,8 +101,9 @@ pub use crate::watch_session as session;
 
 pub use crate::admission::HiddenPolicy;
 pub use crate::cache::{
-    CacheScope, CacheState, CacheStatus, ClearSummary, LeftoverKind, SnapshotInfo, StaleReason,
-    cache_status, clear_all_caches, clear_cache, list_caches,
+    CacheScope, CacheState, CacheStatus, ClearSummary, ContentInfo, ContentState, ContentStatus,
+    LeftoverKind, SnapshotInfo, StaleReason, cache_status, clear_all_caches, clear_cache,
+    list_caches,
 };
 pub use crate::control::{
     CONTROL_FILE_NAME, ControlAdmission, ControlCoverage, ControlIdentity, ControlLimits,
@@ -119,8 +121,8 @@ pub use crate::engine_contract::{
     Observation, ObservationOp, Op, PageRequest, PathExpectation, PathState, PortablePath,
     ProjectionRefusal, ProjectionResult, Provenance, QueryLimit, ReadDiagnostics, ReadProjection,
     ReadRequest, ReadResponse, RefreshRejection, RefreshResult, RejectedRefreshPath, ReportRequest,
-    Result, RowShape, ScanScope, ScopeIdentity, SemanticIdentity, SessionId, Source,
-    StateTransition, Status, TreePage, Work,
+    Result, RowShape, ScanScope, SemanticIdentity, SessionId, Source, StateTransition, Status,
+    TreePage, Work,
 };
 pub use crate::index::{
     ApplyOutcome, ApplyStats, ChildSnapshot, DEFAULT_JOURNAL_CAPACITY_BYTES, EntryId, ExtTally,
@@ -136,6 +138,10 @@ pub use crate::execution::{
     PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics,
 };
 pub use crate::scan::{ReconcileReport, ScanConfig, ScanOrder, ScanReport};
+pub use crate::stored_state::{
+    AnalyzerProvenance, ContentTierIdentity, ControlTierIdentity, EntryScope, EntryTierIdentity,
+    Serves, SnapshotIdentity, serves_snapshot,
+};
 #[cfg(feature = "watch")]
 pub use crate::watch_session::{Batch, Change, ChangeKind, Session};
 
@@ -156,6 +162,53 @@ pub struct OpenConfig {
     pub policy: CachePolicy,
     /// Optional streaming content analysis. Disabled preserves metadata-only behavior.
     pub analysis: content::AnalysisRequest,
+}
+
+impl OpenConfig {
+    /// Today's open configuration, composed from the basis and the delivery that carry a
+    /// request.
+    ///
+    /// One direction of a temporary bridge, and the only place it is spliced: the
+    /// execution plan model replaces `OpenConfig` with `Basis` and `Delivery`, and one
+    /// splice is one thing to delete rather than four. A basis rather than a whole
+    /// request, because opening a root is what a basis is for and no query has been named
+    /// yet on two of the routes that open one. Scan workers ride in the basis's scope and
+    /// content workers in the delivery, because that is where each waits until one
+    /// `Workers` takes both.
+    pub fn of(basis: &query::Basis, delivery: &query::Delivery) -> Self {
+        Self {
+            scan: basis.scope.clone(),
+            cache_path: delivery.cache_path.clone(),
+            policy: delivery.cache,
+            analysis: content::AnalysisRequest {
+                profile: basis.content,
+                workers: delivery.analysis_workers,
+            },
+        }
+    }
+
+    /// The other direction, for a caller that still holds a configuration: the basis and
+    /// the delivery it spells, over `root`.
+    ///
+    /// The inverse of [`Self::of`] and deleted with it. Fixtures and probes that name one
+    /// configuration read it this way rather than each writing the division out, so the
+    /// two halves are divided in one place whichever way a caller crosses the bridge.
+    pub fn split(&self, root: impl Into<PathBuf>) -> (query::Basis, query::Delivery) {
+        (
+            query::Basis {
+                root: root.into(),
+                scope: self.scan.clone(),
+                content: self.analysis.profile,
+            },
+            query::Delivery {
+                cache: self.policy,
+                cache_path: self.cache_path.clone(),
+                accept_partial: false,
+                watch: None,
+                analysis_workers: self.analysis.workers,
+            },
+        )
+    }
 }
 
 /// How an [`open`] may use the snapshot cache.
@@ -373,20 +426,21 @@ pub(crate) enum SnapshotUse {
     ReportOnly,
 }
 
-/// Whether `stored` can answer `wanted` for this consumer and cache policy.
+/// Whether the loaded `stored` index can answer `wanted` for this consumer and cache policy.
 fn snapshot_scope_serves(
-    stored: ScanScope,
-    wanted: ScanScope,
+    stored: &Index,
+    wanted: &ScanConfig,
     policy: CachePolicy,
     snapshot_use: SnapshotUse,
 ) -> bool {
-    if stored == wanted {
+    if serves_snapshot(stored.snapshot_identity(), wanted.snapshot_identity()) == Serves::Exact {
         return true;
     }
     // A no-scan report consumes only the all-entry facts, never the control table or
     // ignored partition. It may therefore project controls-on to controls-off and retag
     // the report before return. Any path that exposes the index remains exact, and any
     // path that will reconcile treats the mismatch as a miss and scans cold.
+    let (stored, wanted) = (stored.scope(), wanted.scope());
     snapshot_use == SnapshotUse::ReportOnly
         && !policy.scans()
         && ScanScope { ignore_rules_fingerprint: wanted.ignore_rules_fingerprint, ..stored }
@@ -493,6 +547,11 @@ pub(crate) fn open_for_report(
     collect_scan_diagnostics: bool,
 ) -> Result<(std::sync::Arc<Index>, OpenReport, PendingSave, Option<scan::ScanDiagnostics>)> {
     let root = root.canonicalize().map_err(|e| Error::io(root, e))?;
+    // Before the snapshot, not at the scan that may never happen: a scope this build cannot
+    // honour has no answer at any delivery, and checking it where the scan runs made
+    // `--cache only` report a snapshot miss for a request every other policy refuses --
+    // which failure a run named then depended on how it was delivered (`refusal-order`).
+    config.scan.validate()?;
     let policy = config.policy;
 
     // A snapshot for this root that could not serve, kept so a policy that cannot scan says
@@ -512,12 +571,7 @@ pub(crate) fn open_for_report(
                     if index.root_path() != root {
                         return false;
                     }
-                    let serves = snapshot_scope_serves(
-                        index.scope(),
-                        config.scan.scope(),
-                        policy,
-                        snapshot_use,
-                    );
+                    let serves = snapshot_scope_serves(index, &config.scan, policy, snapshot_use);
                     if !serves {
                         refused_snapshot = Some(RefusedSnapshot {
                             scope: index.scope(),
@@ -539,6 +593,8 @@ pub(crate) fn open_for_report(
         // snapshot records the freshness it was written with, which was true then.
         index.mark_unverified();
         let content_cache = load_content(&mut index, config)?;
+        // A sidecar serves only its own identity, so restoring one record per candidate
+        // means the sidecar holds the complete answer to this request.
         if config.analysis.profile.is_enabled()
             && (!content_cache.usable
                 || content_cache.hits
@@ -585,7 +641,7 @@ pub(crate) fn open_for_report(
                 || content_cache.stale > 0,
         };
         let index = std::sync::Arc::new(index);
-        let pending = spawn_save(&index, config, scan_report.is_complete(), writes);
+        let pending = spawn_save(&index, config, writes);
         return Ok((
             index,
             OpenReport {
@@ -614,12 +670,7 @@ pub(crate) fn open_for_report(
         .is_enabled()
         .then(|| content::analyze_index(&mut index, config.analysis));
     let index = std::sync::Arc::new(index);
-    let pending = spawn_save(
-        &index,
-        config,
-        scan_report.is_complete(),
-        cold_scan_save_targets(&index, config),
-    );
+    let pending = spawn_save(&index, config, cold_scan_save_targets(&index, config));
     Ok((
         index,
         OpenReport { path_taken: OpenPath::ColdScan, scan: scan_report, analysis, content_cache },
@@ -720,24 +771,37 @@ fn load_content(index: &mut Index, config: &OpenConfig) -> Result<content::Conte
     let (true, Some(snapshot_path)) = (config.policy.reads(), config.cache_path.as_deref()) else {
         return Ok(content::ContentCacheLoad::default());
     };
-    content::load_content_cache(index, config.analysis, &content::content_cache_path(snapshot_path))
+    let wanted = index.content_identity(config.analysis.profile);
+    content::load_content_cache(index, &wanted, &content::content_cache_path(snapshot_path))
 }
 
-/// Start a snapshot write, when policy and completeness allow one.
+/// Start the cache writes a completed open still needs, each tier under its own rule.
 ///
-/// Only a complete scan is written: a snapshot recording a partial view would be served
-/// as fact on the next run, and the existing complete snapshot is better than that.
+/// The snapshot is written only after a complete pass
+/// ([`stored_state::entries_writable`]): a snapshot recording a partial view would be
+/// served as fact on the next run, and the existing complete snapshot is better than that.
+/// The content sidecar keeps the records the pass verified
+/// ([`stored_state::content_tier_writable`]), which today means after a complete pass only;
+/// that rule admits a partial pass beside a stored snapshot of the same entry tier once
+/// P1.4.2 (`fdu-rjv3`) makes a partial pass keep the records it verified.
 fn spawn_save(
     index: &std::sync::Arc<Index>,
     config: &OpenConfig,
-    complete: bool,
     writes: SaveTargets,
 ) -> PendingSave {
-    let (Some(cache_path), true, true, false) =
-        (config.cache_path.clone(), config.policy.writes(), complete, writes.none())
+    let (Some(cache_path), true, false) =
+        (config.cache_path.clone(), config.policy.writes(), writes.none())
     else {
         return PendingSave::none();
     };
+    let entries_writable = stored_state::entries_writable(index);
+    let writes = SaveTargets {
+        metadata: writes.metadata && entries_writable,
+        content: writes.content && config.analysis.profile.is_enabled(),
+    };
+    if writes.none() {
+        return PendingSave::none();
+    }
 
     // The index is read-only from here, so the writer and the caller's rendering are two
     // readers of one index rather than of two copies. This used to deep-clone — every
@@ -746,7 +810,6 @@ fn spawn_save(
     // Sharing is what buys the independence a clone was buying; a run with nothing to
     // write still returns above rather than reaching this point.
     let snapshot_source = std::sync::Arc::clone(index);
-    let analysis = config.analysis;
     let mut workers = Vec::with_capacity(2);
     if writes.metadata {
         let metadata_source = std::sync::Arc::clone(&snapshot_source);
@@ -760,12 +823,27 @@ fn spawn_save(
             workers.push(("metadata", worker));
         }
     }
-    if writes.content && analysis.profile.is_enabled() {
+    if writes.content {
         let content_path = content::content_cache_path(&cache_path);
         if let Ok(worker) =
             std::thread::Builder::new().name("fdu-content-cache".to_string()).spawn(move || {
                 let _counter_guard = counters::thread_flush_guard();
-                content::save_content_cache(&snapshot_source, analysis, &content_path)
+                // The pairing check reads the stored snapshot's header, and only when this
+                // pass wrote no snapshot: no metadata writer is running then, and a
+                // complete pass needs no answer. It is passed unevaluated because the rule
+                // is held until P1.4.2 (`fdu-rjv3`) and does not ask, so a partial pass
+                // opens nothing.
+                let stored_entries = || {
+                    snapshot::read_header(&cache_path)
+                        .ok()
+                        .flatten()
+                        .filter(|stored| stored.root == snapshot_source.root_path())
+                        .map(|stored| stored.identity.entries)
+                };
+                if !stored_state::content_tier_writable(&snapshot_source, stored_entries) {
+                    return Ok(());
+                }
+                content::save_content_cache(&snapshot_source, &content_path)
             })
         {
             workers.push(("content", worker));
@@ -1381,14 +1459,30 @@ mod tests {
         };
         assert!(matches!(open(dir.path(), &only), Err(Error::Snapshot(_))));
 
-        let analyzed = OpenConfig { policy: CachePolicy::Auto, ..only.clone() };
-        open(dir.path(), &analyzed).expect("write an explicit empty content sidecar");
-        let (cached, report) = open(dir.path(), &only).expect("restore empty analyzed state");
+        // A sidecar of another analyzer set is not this request's, whether it is wider or
+        // narrower: cache-only fails closed rather than answering with the stored set.
+        let with_set = |policy, profile| OpenConfig {
+            policy,
+            analysis: content::AnalysisRequest { profile, ..content::AnalysisRequest::default() },
+            ..only.clone()
+        };
+        let lines = content::AnalysisSet::NONE.with_lines();
+        for (stored, wanted) in
+            [(content::AnalysisSet::ALL, lines), (lines, content::AnalysisSet::ALL)]
+        {
+            open(dir.path(), &with_set(CachePolicy::Auto, stored)).expect("write a sidecar");
+            let refused = open(dir.path(), &with_set(CachePolicy::Only, wanted));
+            assert!(
+                matches!(refused, Err(Error::Snapshot(_))),
+                "a {stored:?} sidecar must not serve a cache-only {wanted:?} request"
+            );
+        }
+
+        open(dir.path(), &with_set(CachePolicy::Auto, lines)).expect("write the lines sidecar");
+        let (cached, report) = open(dir.path(), &only).expect("restore the analyzed state");
         assert!(report.content_cache.usable);
-        assert_eq!(
-            cached.content().and_then(content::ContentIndex::profile),
-            Some(content::AnalysisSet::NONE.with_lines())
-        );
+        assert_eq!(report.content_cache.hits, 1, "one record per candidate is complete");
+        assert_eq!(cached.content_set(), lines);
     }
 
     #[test]
@@ -1707,6 +1801,162 @@ mod save_tests {
             fs::metadata(&snapshot_path).expect("still there").len(),
             complete_len,
             "a partial scan must not overwrite a complete snapshot"
+        );
+    }
+
+    /// Each tier is written by its own rule, and a partial pass writes neither: no
+    /// snapshot, because an absent entry would change totals, and no sidecar, because a
+    /// partial pass marks its root `Partial` and so can name only the files that changed
+    /// as verified. Writing those would evict the complete sidecar that pairs with the
+    /// stored snapshot. P1.4.2 (`fdu-rjv3`) marks the failed paths instead, after which a
+    /// partial pass writes every record it verified beside a snapshot of the same entry
+    /// identity, and still writes nothing under any other identity.
+    #[test]
+    #[cfg(unix)]
+    fn a_partial_scan_writes_neither_tier_until_failed_paths_are_marked() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        let sidecar_path = content::content_cache_path(&snapshot_path);
+        write_file(&dir.path().join("notes.md"), b"one two\n");
+        write_file(&dir.path().join("locked/old.md"), b"three\n");
+        let analysis = content::AnalysisRequest {
+            profile: content::AnalysisSet::NONE.with_lines(),
+            ..content::AnalysisRequest::default()
+        };
+        let auto = OpenConfig {
+            cache_path: Some(snapshot_path.clone()),
+            policy: CachePolicy::Auto,
+            analysis,
+            ..OpenConfig::default()
+        };
+        let (_, seeded) = open(dir.path(), &auto).expect("seed both tiers");
+        assert!(seeded.is_complete());
+        let snapshot_before = fs::read(&snapshot_path).expect("a snapshot");
+
+        // Change a file the next pass can verify, and lock the directory holding another.
+        write_file(&dir.path().join("notes.md"), b"one two three\n");
+        let locked = dir.path().join("locked");
+        let run = |config: &OpenConfig| {
+            fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("deny");
+            let opened = open(dir.path(), config);
+            fs::set_permissions(&locked, fs::Permissions::from_mode(0o700)).expect("restore");
+            let (_, report) = opened.expect("a partial open still answers");
+            assert!(!report.is_complete(), "the pass should be partial");
+        };
+
+        // Under another entry identity: neither tier is written.
+        let sidecar_before = fs::read(&sidecar_path).expect("a sidecar");
+        let other_scope = OpenConfig {
+            scan: ScanConfig { max_depth: Some(8), ..ScanConfig::default() },
+            ..auto.clone()
+        };
+        run(&other_scope);
+        assert_eq!(fs::read(&snapshot_path).expect("snapshot"), snapshot_before);
+        assert_eq!(
+            fs::read(&sidecar_path).expect("sidecar"),
+            sidecar_before,
+            "a partial run under another entry identity must not evict the paired sidecar"
+        );
+
+        // Under the stored snapshot's identity: neither tier is written either, because the
+        // only records this pass can name as verified are the files that changed.
+        run(&auto);
+        assert_eq!(
+            fs::read(&snapshot_path).expect("snapshot"),
+            snapshot_before,
+            "a partial scan must not overwrite a complete snapshot"
+        );
+        assert_eq!(
+            fs::read(&sidecar_path).expect("sidecar"),
+            sidecar_before,
+            "held until P1.4.2 (`fdu-rjv3`): writing here would evict the complete sidecar \
+             and leave only the changed file"
+        );
+        // What the stored pair still holds: a record for each of the two seeded files,
+        // including the one under the directory this pass could not list, and the older
+        // metrics for the file that changed, which a later complete pass replaces.
+        let (mut fresh, _) =
+            scan::scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
+        let wanted = fresh.content_identity(analysis.profile);
+        let loaded = content::load_content_cache(&mut fresh, &wanted, &sidecar_path).expect("load");
+        assert_eq!((loaded.usable, loaded.hits, loaded.stale), (true, 1, 1), "{loaded:?}");
+        let content = fresh.content().expect("content");
+        assert_eq!(
+            content.file(Path::new("locked/old.md")).expect("the seeded record").metrics.raw_words,
+            1
+        );
+    }
+
+    /// The cost the hold above avoids: a warm partial pass must leave a complete sidecar
+    /// whole, not shrink it to the files that changed, or every later run re-reads the
+    /// whole tree for as long as the tree holds one unlistable directory.
+    ///
+    /// P1.4.2 (`fdu-rjv3`) replaces this with the stronger claim: after the same pass the
+    /// sidecar holds a record for every file the pass stat'd unchanged and none under the
+    /// unlistable directory.
+    #[test]
+    #[cfg(unix)]
+    fn a_warm_partial_pass_leaves_a_complete_sidecar_whole() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        let sidecar_path = content::content_cache_path(&snapshot_path);
+        for index in 0..7 {
+            write_file(&dir.path().join(format!("f{index}.md")), b"alpha\nbeta\n");
+        }
+        write_file(&dir.path().join("locked/old.md"), b"three\n");
+        let analysis = content::AnalysisRequest {
+            profile: content::AnalysisSet::NONE.with_lines(),
+            ..content::AnalysisRequest::default()
+        };
+        let auto = OpenConfig {
+            cache_path: Some(snapshot_path.clone()),
+            policy: CachePolicy::Auto,
+            analysis,
+            ..OpenConfig::default()
+        };
+
+        let records_in_sidecar = |path: &Path| {
+            let (mut fresh, _) = scan::scan_into_index(path, &ScanConfig::default()).expect("scan");
+            let wanted = fresh.content_identity(analysis.profile);
+            let loaded =
+                content::load_content_cache(&mut fresh, &wanted, &sidecar_path).expect("load");
+            assert!(loaded.usable, "the sidecar should still be readable");
+            loaded.hits + loaded.stale
+        };
+
+        let (_, seeded) = open(dir.path(), &auto).expect("seed both tiers");
+        assert!(seeded.is_complete());
+        assert_eq!(records_in_sidecar(dir.path()), 8, "one record per seeded file");
+
+        // One file changes, one directory becomes unlistable: the warm pass is partial.
+        write_file(&dir.path().join("f0.md"), b"alpha\nbeta\ngamma\n");
+        let locked = dir.path().join("locked");
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("deny");
+        let opened = open(dir.path(), &auto);
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o700)).expect("restore");
+        let (_, report) = opened.expect("a partial open still answers");
+        assert!(!report.is_complete(), "the pass should be partial");
+
+        assert_eq!(
+            records_in_sidecar(dir.path()),
+            8,
+            "a warm partial pass must not shrink the sidecar to the files that changed"
         );
     }
 
