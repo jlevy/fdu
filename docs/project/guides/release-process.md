@@ -109,6 +109,12 @@ identity for a short-lived Cargo credential.
 Neither credential belongs in repository files, logs, build artifacts, or reusable
 workflows.
 
+Trusted publishers come after `0.1.0`, and only once the `release` environment exists
+and is protected: a required reviewer, and a deployment policy that admits only `v*`
+tags. GitHub creates an unprotected environment the first time a workflow job names it,
+so a publisher registered before the protection would trust any run of `release.yml`
+that names `release`, from any ref.
+
 ## Publication Invariants
 
 Every upload consumes only the validated artifact set.
@@ -125,7 +131,7 @@ index to carry it, then publish `fdu`. After a partial failure, verify the succe
 registry’s version and hash, rerun only the missing channel, and stop on any
 same-version hash conflict.
 Never retag, replace an immutable artifact, or rebuild from a different commit.
-A conflict therefore ends that version on every channel;
+A hash conflict therefore ends that version on every channel;
 [Recover From a Partial Publication](#recover-from-a-partial-publication) gives the
 procedure.
 
@@ -139,7 +145,42 @@ the rehearsal’s manifest before the next write.
 The commands assume bash or zsh, with `gh`, `uv`, `rustup`, and `curl`: the token
 prompts use `read -s`, which a plain POSIX `sh` such as `dash` rejects.
 `RELEASE` is an empty scratch directory outside any checkout, and `<run-id>` and
-`<release-commit>` are recorded in the first step.
+`<release-commit>` are recorded in
+[Rehearse the Release Commit](#rehearse-the-release-commit).
+
+### Prerequisites
+
+1. **A tag-signing key.** The tag is signed with an SSH key.
+   Set it up once, with `<key>` your key’s file name and `<email>` your Git
+   `user.email`, which must be a verified address on your GitHub account for GitHub to
+   show the tag as verified:
+
+   ```shell
+   git config --global gpg.format ssh
+   git config --global user.signingkey ~/.ssh/<key>.pub
+   echo "<email> namespaces=\"git\" $(cat ~/.ssh/<key>.pub)" >> ~/.ssh/allowed_signers
+   git config --global gpg.ssh.allowedSignersFile ~/.ssh/allowed_signers
+   ```
+
+   `git tag -v` needs the allowed-signers file; without it, verification fails even for
+   a correctly signed tag.
+   Register the same public key on GitHub as a *signing* key, which is separate from an
+   authentication key; `gh` needs an extra scope to add one:
+
+   ```shell
+   gh auth refresh -h github.com -s write:ssh_signing_key
+   gh ssh-key add ~/.ssh/<key>.pub --type signing --title "fdu release signing"
+   ```
+
+2. **Private vulnerability reporting.** [SECURITY.md](../../../SECURITY.md) and the
+   release notes send reporters to GitHub’s private reporting form, so it must be
+   enabled before the release is announced.
+   The first command must print `true`; if it prints `false`, the second enables it:
+
+   ```shell
+   gh api repos/jlevy/fdu/private-vulnerability-reporting --jq .enabled
+   gh api -X PUT repos/jlevy/fdu/private-vulnerability-reporting
+   ```
 
 ### Rehearse the Release Commit
 
@@ -219,25 +260,8 @@ prompts use `read -s`, which a plain POSIX `sh` such as `dash` rejects.
      grep -c '<br>' "$RELEASE/notes.html"
    ```
 
-   Then create, verify, and push the signed tag on the release commit:
-
-   ```shell
-   git tag -s v0.1.0 -m "fdu 0.1.0"
-   git tag -v v0.1.0
-   git push origin v0.1.0
-   ```
-
-2. Clone the pushed tag into a clean directory, and confirm that it names the rehearsed
-   commit and the Cargo version:
-
-   ```shell
-   git clone --branch v0.1.0 https://github.com/jlevy/fdu "$RELEASE/fdu"
-   cd "$RELEASE/fdu"
-   uv run --no-project --python 3.12 python scripts/release/resolve_plan.py \
-     --mode release --ref refs/tags/v0.1.0 --commit <release-commit> --validate-checkout
-   ```
-
-3. Recheck that both crate names and the Python name are still free.
+2. Recheck that both crate names and the Python name are still free, before a pushed tag
+   commits the version.
    Each command must print `404`:
 
    ```shell
@@ -251,6 +275,24 @@ prompts use `read -s`, which a plain POSIX `sh` such as `dash` rejects.
    On the `0.1.1` path, a name `0.1.0` reached prints `200`; step 5 of
    [Recover From a Partial Publication](#recover-from-a-partial-publication) gives the
    check that replaces this one for that name.
+
+3. Create the signed tag on the release commit, and push it only if it verifies, with
+   the key from [Prerequisites](#prerequisites):
+
+   ```shell
+   git tag -s v0.1.0 -m "fdu 0.1.0"
+   git tag -v v0.1.0 && git push origin v0.1.0
+   ```
+
+4. Clone the pushed tag into a clean directory, and confirm that it names the rehearsed
+   commit and the Cargo version:
+
+   ```shell
+   git clone --branch v0.1.0 https://github.com/jlevy/fdu "$RELEASE/fdu"
+   cd "$RELEASE/fdu"
+   uv run --no-project --python 3.12 python scripts/release/resolve_plan.py \
+     --mode release --ref refs/tags/v0.1.0 --commit <release-commit> --validate-checkout
+   ```
 
 Every remaining command runs in `$RELEASE/fdu`, whose `rust-toolchain.toml` selects the
 pinned Rust.
@@ -271,10 +313,12 @@ pinned Rust.
 2. Reproduce both crates from the tag and compare them with the rehearsal’s digests.
    A mismatch means crates.io would receive bytes nothing tested: stop, and publish
    nothing until the difference is explained.
-   No run has yet compared a maintainer’s packaging with the Linux rehearsal’s, so on
-   the first release rule out a platform difference first.
-   If the extracted file trees are identical and only the archives differ, reproduce on
-   Linux x86-64 with the pinned toolchain rather than relaxing the comparison.
+   On 2026-09-16 a maintainer’s `cargo package --locked --no-verify -p fdu-core -p fdu`
+   on macOS arm64, with the pinned cargo 1.97.1, reproduced both `.crate` digests of
+   Linux rehearsal run 35156068769 byte for byte, so a macOS host is not expected to
+   differ. If a comparison still fails, and the extracted file trees are identical and
+   only the archives differ, reproduce on Linux x86-64 with the pinned toolchain rather
+   than relaxing the comparison.
 
    ```shell
    cargo package --locked -p fdu-core -p fdu
@@ -288,7 +332,7 @@ pinned Rust.
    If only a Linux reproduction matches, do all of Publish the Crates on that Linux
    host: download and check the rehearsal’s files there as in
    [Rehearse the Release Commit](#rehearse-the-release-commit) step 3, clone and
-   validate the tag as in [Tag the Release Commit](#tag-the-release-commit) step 2, then
+   validate the tag as in [Tag the Release Commit](#tag-the-release-commit) step 4, then
    run steps 1 to 6 of this section in that clone.
    Publishing from the host whose digests differed uploads the bytes that failed the
    comparison.
@@ -335,8 +379,9 @@ pinned Rust.
    ```
 
 6. Remove the token: `unset CARGO_REGISTRY_TOKEN`, then revoke it in the crates.io
-   account settings. Configure crates.io trusted publishing on both crates for later
-   releases, as the account table describes.
+   account settings. Do not configure trusted publishing yet; it waits for the protected
+   `release` environment, as
+   [Account and Authentication Model](#account-and-authentication-model) describes.
 
 ### Publish the Python Distribution
 
@@ -358,26 +403,32 @@ pinned Rust.
 3. The audit must report the PyPI release as `identical`, and the published wheel must
    run. `--no-config` sets aside any user-level `exclude-newer` cool-off, which would
    hide a release published minutes ago.
-   PyPI’s API and index can also trail an upload, so if the audit exits 3 for a
-   `missing` release, or the install cannot find `fdu==0.1.0`, rerun both as in step 3
-   of Publish the Crates:
+   `--no-build` and an explicit GIL-enabled `--python` make the check test a wheel:
+   without them, a free-threaded default interpreter, which cannot install the `abi3`
+   wheels, quietly builds the source distribution and the check passes having tested
+   none. Run it on 3.12, the `abi3` floor, and again on 3.14. PyPI’s API and index can
+   also trail an upload, so if the audit exits 3 for a `missing` release, or the install
+   cannot find `fdu==0.1.0`, rerun both as in step 3 of Publish the Crates:
 
    ```shell
    uv run --no-project --python 3.12 python scripts/release/registry_state.py \
      --manifest "$RELEASE/files/release-manifest.json" --version 0.1.0 --channel pypi \
      --require-identical &&
-     (cd "$RELEASE" && uv tool run --no-config --from fdu==0.1.0 fdu --version)
+     (cd "$RELEASE" &&
+       uv tool run --no-config --no-build --python 3.12 --from fdu==0.1.0 fdu --version &&
+       uv tool run --no-config --no-build --python 3.14 --from fdu==0.1.0 fdu --version)
    ```
 
-4. Delete the token in the PyPI account settings, and add the trusted publisher for
-   later releases to the now-existing `fdu` project.
+4. Delete the token in the PyPI account settings.
+   The trusted publisher waits for the protected `release` environment, as
+   [Account and Authentication Model](#account-and-authentication-model) describes.
 
 ### Announce the Release
 
 Once every channel verifies, record the final registry state and attach it with the
 evidence and artifacts to a GitHub release on the tag.
 The body is `$RELEASE/notes.md`, derived from the release commit’s notes and checked in
-step 1 of [Tag the Release Commit](#tag-the-release-commit); step 2 confirmed that the
+step 1 of [Tag the Release Commit](#tag-the-release-commit); step 4 confirmed that the
 tag names that commit, so the body is the tagged text.
 The release is created only if the audit exits 0, which with `--require-identical` means
 every channel holds exactly the rehearsal’s files:
@@ -393,6 +444,22 @@ uv run --no-project --python 3.12 python scripts/release/registry_state.py \
     "$RELEASE"/files/fdu-0.1.0.tar.gz
 ```
 
+### After Publishing
+
+Check what users see first:
+
+- [ ] docs.rs built both crates: [fdu-core](https://docs.rs/crate/fdu-core/0.1.0/builds)
+  and [fdu](https://docs.rs/crate/fdu/0.1.0/builds) each show a successful build.
+- [ ] The crates.io pages for [fdu-core](https://crates.io/crates/fdu-core) and
+  [fdu](https://crates.io/crates/fdu) render their READMEs, and their links resolve.
+- [ ] The [PyPI page](https://pypi.org/project/fdu/0.1.0/) renders the package README
+  and lists the source distribution and five wheels.
+- [ ] The [GitHub release](https://github.com/jlevy/fdu/releases/tag/v0.1.0) carries the
+  eight artifacts (two crates, the source distribution, and five wheels) and the
+  evidence: `registry-state.json`, `release-manifest.json`, and `SHA256SUMS`.
+  `gh release view v0.1.0 --repo jlevy/fdu --json assets --jq '.assets | length'` prints
+  `11`.
+
 ### Recover From a Partial Publication
 
 Neither crates.io nor PyPI lets a version’s files be replaced, even after a yank or a
@@ -406,11 +473,12 @@ That is no verdict: rerun the audit, and never read it as `missing`.
 | --- | --- | --- |
 | `missing`, after the lag retry in step 3 of Publish the Crates | Nothing reached the registry. | Fix the cause, then rerun the failed step from its start, so a crate is compared again before it is published. |
 | `identical` | The upload landed, though the command reported a failure. | Continue with the next step. |
-| `conflict` | The registry holds bytes nothing tested, under a version that cannot be reused. | Follow the procedure below. |
+| `conflict` whose detail lists only `missing:` files | PyPI holds part of the release, from an interrupted upload or a JSON API that has not caught up. Nothing it holds is wrong. | Wait a few minutes and rerun the audit. If files are still missing, rerun the `uv publish` command from step 2 of Publish the Python Distribution; `--check-url` uploads only what PyPI lacks. |
+| `conflict` listing a `hash mismatch:` or an `unexpected:` file | The registry holds bytes nothing tested, under a version that cannot be reused. | Follow the procedure below. |
 
-A `conflict` on any channel, or any failure whose fix needs a new commit, ends `0.1.0`:
-a published file cannot be replaced, the pushed tag cannot move, and every channel
-carries one version.
+A `conflict` with a hash mismatch or an unexpected file, on any channel, or any failure
+whose fix needs a new commit, ends `0.1.0`: a published file cannot be replaced, the
+pushed tag cannot move, and every channel carries one version.
 The first case can only arise from step 3 of Publish the Crates onward, once `fdu-core`
 is on crates.io.
 
@@ -447,7 +515,7 @@ is on crates.io.
    `0.1.0`. Both crates are published at `0.1.1`, `fdu-core` included, even if its
    source did not change.
 
-   On that pass, [Tag the Release Commit](#tag-the-release-commit) step 3 still requires
+   On that pass, [Tag the Release Commit](#tag-the-release-commit) step 2 still requires
    `404` for a name `0.1.0` never reached.
    A name it did reach now prints `200`, so check that name’s new version instead; for
    each such name, its command here must print `404`:
