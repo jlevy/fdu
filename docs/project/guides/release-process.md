@@ -167,8 +167,10 @@ trust an unprotected subject.
 
 1. Sign in at [crates.io](https://crates.io/) with the GitHub account that owns
    `jlevy/fdu`. crates.io has no other login.
-2. On [Account Settings](https://crates.io/settings), confirm the email is verified, and
-   enable two-factor authentication.
+2. On [Account Settings](https://crates.io/settings), confirm the email is verified.
+   crates.io has no native 2FA: login is GitHub OAuth.
+   Confirm two-factor authentication is enabled on the GitHub account that owns
+   `jlevy/fdu` (Settings → Password and authentication).
 3. Do not create a token yet, and do not add a trusted publisher: there is no crate to
    attach one to.
 
@@ -221,8 +223,12 @@ In the repository: Settings → Environments → New environment, name `release`
 - **Required reviewers:** the maintainer who publishes Flowmark.
   Leave Prevent self-review off: a single-maintainer repository cannot approve its own
   deployment if that is on.
-- **Deployment branches and tags:** Selected tags, pattern `v*`. No branch, including
-  `main`, should be able to deploy to `release`.
+- **Deployment branches and tags:** Selected branches and tags.
+  Add a deployment branch or tag rule with Ref type **Tag** and pattern `v*`. Add no
+  Branch rules: `v*` as a Branch rule matches names such as `validate-*`. No branch,
+  including `main`, should be able to deploy to `release`.
+- If **Allow administrators to bypass configured protection rules** is selected,
+  deselect it.
 
 Do not add `CARGO_REGISTRY_TOKEN` or `UV_PUBLISH_TOKEN` as environment secrets.
 Later publish jobs receive `id-token: write` and exchange OIDC; they hold no long-lived
@@ -273,9 +279,6 @@ Channel setup is the only block that can finish before the release commit exists
    Revoke the PyPI token.
 7. [Announce the Release](#announce-the-release).
 8. Add [trusted publishers](#after-010-trusted-publishers).
-
-A signing key and private vulnerability reporting are not registry setup, but both must
-be true before the tag is pushed and the release is announced.
 
 ## Publishing 0.1.0 by Hand
 
