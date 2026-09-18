@@ -14,9 +14,9 @@ The same engine ships three ways:
 - **Python package:** typed, immutable values plus the native `fdu` command
 
 On a 2026-09-16 macOS calibration, fdu built a reusable exact index and a ten-row tree
-over 1,000,001 generated entries in a **5.206-second median**, faster than the
-disk-usage tools compared in that run while returning more than a single total.
-That is one uncontrolled host, not a portable ranking; see [Speed](#speed).
+over 1,000,001 generated entries in a **5.206-second median**. The same paired run:
+dumac **+11.3%**, diskus **+34.7%**, dust **+60.6%**, dua **+63.1%**, BSD `du` **+898%**.
+The host was loaded; pairing is what makes those comparisons fair. See [Speed](#speed).
 
 **0.x:** A minor release may change the command line or either API;
 [the release process](docs/project/guides/release-process.md) states the rules.
@@ -207,36 +207,41 @@ There is no Python reimplementation of the CLI.
 
 ## Speed
 
-**Exploratory macOS calibration, 2026-09-16, 0.1.0 release candidate:** A fresh process
+**Exploratory macOS calibration, 2026-09-16, 0.1.0 release candidate.** A fresh process
 with its cache disabled built a reusable exact index and ten-row tree over a generated
 1,000,001-entry corpus in a **5.206-second median**. Twelve adjacent paired trials per
 tool on an M1 Pro with a local APFS SSD, warm filesystem cache, one independent
 full-tree fingerprint.
 The host was busy (load 7.7–9.9 on ten cores).
-Pairing makes the comparison hold; the absolute seconds are a loaded-host number.
+The absolute seconds are a loaded-host number; the paired percentages are the
+comparison.
 
-| Tool | Work returned | Median |
-| --- | --- | ---: |
-| **fdu** | reusable exact index and ten-row tree | **5.206 s** |
-| dumac | allocated-byte total only | 5.637 s |
-| diskus | scalar total only | 6.972 s |
-| dust | allocated-byte total only | 8.292 s |
-| dua | scalar total only | 8.744 s |
-| BSD `du` | one total, serial | 51.226 s |
-| GNU `du` | one total, serial | 65.775 s |
+| Tool | Work returned | Median | Versus paired fdu |
+| --- | --- | ---: | ---: |
+| **fdu** | reusable exact index and ten-row tree | **5.206 s** | baseline |
+| dumac | allocated-byte total only | 5.637 s | **+11.3%** |
+| diskus | scalar total only | 6.972 s | +34.7% |
+| dust | allocated-byte total only | 8.292 s | +60.6% |
+| dua | scalar total only | 8.744 s | +63.1% |
+| BSD `du` | one total, serial | 51.226 s | +898% |
+| GNU `du` | one total, serial | 65.775 s | +1177% |
 
 Each competitor was reduced to one number.
 fdu returned counts, apparent and allocated bytes, newest file time, per-directory and
 per-extension roll-ups, and kept the index that answers the next question without
 another walk.
+dumac’s 95% interval was +5.8% to +13.5%.
 
 fdu’s peak RSS here was 285.4 MiB against dumac’s 29.4 MiB, because fdu retained a
 million-entry index and dumac retained one integer.
 `fdu --no-gitignore --view summary` keeps the aggregate-only tier: the same tallies in
 4.876 s at **15.0 MiB**.
 
-This is not a portable absolute time or a claim that fdu is fastest on every host,
-platform, or tree. Linux evidence is real and improving, from virtualized hosts.
+Linux evidence is real and improving, from virtualized hosts.
+The most recent campaign on a 450k-entry tree, measured against its own starting point:
+warm snapshot load **−31.4%**, warm revalidate **−25.3%**, cold indexed scan **−9.1%**.
+A warm open now runs about 23% faster than a cold scan, where that campaign began with
+it 69% *slower*.
 Windows builds and passes tests; no performance claim is made there.
 
 A second run on an unchanged tree is a different job.
