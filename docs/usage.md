@@ -129,8 +129,6 @@ bodies. Content analysis is explicit:
 `none` and `all` name the whole axis and cannot be combined with another value.
 Files are analyzed through EOF, not truncated by size.
 `--analysis-workers` bounds concurrent reads.
-Under `code`, a code file in a language without a line-of-code counter is reported as
-`unsupported` coverage and contributes no line metrics to that request.
 
 Naming analysis without a view chooses one that displays it: `code` selects `languages`,
 `words` selects `documents`, and `lines`, `code,words`, or `all` select `families`. An
@@ -195,9 +193,6 @@ fdu . --watch --view=files --format=jsonl
 
 Text is for people. JSON, JSON Lines, and YAML carry versioned schemas and omit the
 text-only performance footer.
-Some JSON integers, such as `type_rules_fingerprint` and nanosecond timestamps like
-`newest_mtime_ns`, exceed 2^53, so JavaScript’s `JSON.parse` silently loses precision on
-them; use a parser that preserves big integers.
 Results go to stdout; diagnostics go to stderr.
 The command never prompts or pages.
 

@@ -206,14 +206,12 @@ faster than a cold scan, where that campaign began with it 69% *slower*.
 
 A relative loop cannot say, so the floor was measured directly: a hand-written parallel
 walker doing raw `getdents64` plus one `statx` per entry into four integer accumulators,
-retaining nothing. Measured 2026-08-23, fdu’s aggregate-only summary ran at **1.20×**
-that floor on a 420k generated tree and **1.59×** on `/usr`, so the remaining prize on
-that tier, in this regime, is 17–37% — how close depends on the tree, and the real one
-is furthest. That tier is now `fdu --no-gitignore --view summary`: since `.gitignore` is
-read by default, a plain `--view summary` retains the index and is not what these ratios
-measured. Two of the levers people reach for first are already closed: batching the
-metadata calls through io_uring cuts syscalls 21× and runs **6–8× slower**, because a
-warm `statx` is 9% syscall boundary and 91% kernel lookup.
+retaining nothing. fdu’s exact summary runs at **1.20×** that floor on a 420k generated
+tree and **1.59×** on `/usr`, so the remaining prize on that tier, in this regime, is
+17–37% — how close depends on the tree, and the real one is furthest.
+Two of the levers people reach for first are already closed: batching the metadata calls
+through io_uring cuts syscalls 21× and runs **6–8× slower**, because a warm `statx` is
+9% syscall boundary and 91% kernel lookup.
 
 **Against the ecosystem’s walker.** A Rust program that needs to walk a tree usually
 reaches for [`ignore`](https://docs.rs/ignore), which is ripgrep’s walker.
@@ -571,9 +569,9 @@ Every metric row also reports how its files were detected, the confidence of tho
 decisions, and generated, vendored, and documentation flags.
 Scan completeness and each tree node’s rendered truncation are separate fields.
 Invalid-Unicode paths retain their display string and add a lossless, platform-tagged
-raw identity. Exit status 0 means a complete result, 1 a fatal filesystem or cache
-failure, and 2 invalid usage or a partial result; `--allow-partial` accepts an
-operationally partial result as success.
+raw identity.
+Exit status 2 means partial results; pass `--allow-partial` to accept those
+as success. Exit status 1 means the command failed.
 
 Content analysis is opt-in through `--analyze none|lines|code|words|all`. The `lines`
 analyzer streams each eligible file once, recognizes LF, CRLF, lone CR, and mixed line
@@ -612,7 +610,7 @@ guessed.
 This surface — composable views, selection filters, time-window and watermark queries,
 cache policies, and a `tail -f`-style watch mode, all as orthogonal flags over one
 grammar — is designed in
-[the composable CLI and query surface plan](docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md).
+[the composable CLI and query surface plan](docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md).
 The principles it settled on, written as rules for extending it rather than as a record
 of what was built, are in
 [the design principles](docs/project/architecture/fdu-design-principles.md).
@@ -664,11 +662,6 @@ assert!(report.analysis.is_some());
 ```
 
 ## As a Python Module
-
-```shell
-uv add fdu        # add the library to a uv project
-pip install fdu   # or install it into the current environment
-```
 
 ```python
 from pathlib import Path
@@ -725,15 +718,10 @@ Content-reuse fingerprints are size, mtime, ctime, and inode, never mtime alone,
 mtime is user-settable and some applications roll it back after writing.
 A corrupt or unrecognized snapshot is treated as absent, never as data.
 
-Every indexed path also carries its provenance: where its value came from, when it was
-observed, and whether it is complete.
+Every value also carries its provenance: where it came from, when it was observed, and
+whether it is final.
 That is what lets a caller show a cached number immediately, label it honestly, and
 clear the label as verification converges.
-Provenance describes the entry itself, not its subtree: a revalidated directory can hold
-cached descendants, and Python’s `RollUp.provenance` is the directory’s own provenance
-beside its subtree totals.
-Whether a whole answer is complete and current comes from the scan’s status (`complete`
-and `freshness`), not from one directory’s provenance.
 
 The serving model, the concurrency guards, and the full set of rules any change must
 respect are in

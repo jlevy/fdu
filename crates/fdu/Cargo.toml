@@ -5,7 +5,7 @@ version = "0.1.0"
 # than this crate's role in the layout. The golden that pins the help text caught the
 # difference the moment the binary moved, which is the corpus doing its job.
 description = "A fast, incremental file roll-up engine: hierarchical tallies over large directory trees"
-readme = "README.md"
+readme = "../../README.md"
 documentation = "https://docs.rs/fdu"
 keywords = ["disk-usage", "filesystem", "du", "cli"]
 categories = ["command-line-utilities", "filesystem"]
