@@ -175,7 +175,16 @@ print(report.as_dict())  # same JSON the command line emits
 mark = index.clock
 index.refresh()
 print(index.since(mark).changes)
+```
 
+The watch feed is a live iterator; it does not return:
+
+```python
+from pathlib import Path
+
+import fdu
+
+index = fdu.open(Path("/path/to/tree"))
 with index.watch() as stream:
     for batch in stream:
         for change in batch:
