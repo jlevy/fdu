@@ -5,7 +5,7 @@ title: Linux performance validation and optimization
 kind: epic
 status: open
 priority: 1
-version: 19
+version: 20
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - performance
@@ -30,8 +30,9 @@ child_order_hints:
   - is-01kzwk20bb97hagzjeegkxpd77
   - is-01kzn04cqdaaknww7941cbp7aw
   - is-01kzqynv3k4rf6gb6cddsnz93e
+  - is-01m2s4rsf5xg4bq47j2fswjxcq
 created_at: 2026-08-13T18:11:37.668Z
-updated_at: 2026-08-13T18:41:26.521Z
+updated_at: 2026-09-18T02:15:46.405Z
 ---
 Own the post-PR-#8 Linux program on controlled Linux hosts. Establish claim-grade warm, pagecache-drop-only, and controlled-cold matrices on local SSD with exact binary/host/filesystem/corpus provenance, full semantic oracle, paired adjacency, resource counters, and pre/post fingerprints. Use the portable backend as the correctness baseline; reproduce the first scouting results before changing production. Then prioritize default-view retained-state/index work, warm snapshot load/save costs, allocator and Linux-only stat-elision hypotheses, worker calibration by cache regime/filesystem, and explicit closure of io_uring or inode-ordering ideas when bare-metal evidence rejects them. Keep macOS-only H69/H70 and controlled-macOS-cold work outside this epic.
 
