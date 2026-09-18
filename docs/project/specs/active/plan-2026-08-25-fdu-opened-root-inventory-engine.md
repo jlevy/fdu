@@ -52,10 +52,9 @@ see. The replacement uses one fresh fdu branch and one long-lived draft PR from 
 `main`. Work advances through vertical, reviewable commit groups, and every phase must
 meet its acceptance gate before the next begins.
 
-MetaBrowser is a separate repository, so its contract and adapter changes necessarily
-land on MetaBrowser `main`, where PR #74 merged.
-The two PRs form one coordinated integration effort and pin each other’s exact tested
-revisions.
+MetaBrowser is a separate repository, so its contract and adapter changes land on
+MetaBrowser `main`, where PR #74 merged.
+Follow-up continues on MetaBrowser `main`.
 
 [The engine architecture](../../architecture/fdu-engine-architecture.md) is the durable
 design authority for this work.

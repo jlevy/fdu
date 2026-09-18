@@ -148,7 +148,7 @@ revoked in those same sections.
 
 Recheck the three names immediately before the first write; availability is a race.
 Use the JSON and crates.io API curls in
-[Tag the Release Commit](#tag-the-release-commit) step 3, not the HTML project pages.
+[Tag the Release Commit](#tag-the-release-commit) step 2, not the HTML project pages.
 `https://pypi.org/project/fdu/` can return HTTP 200 with an anti-bot interstitial for a
 name that does not exist.
 

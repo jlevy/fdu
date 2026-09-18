@@ -4,8 +4,8 @@
 
 **Author:** fdu project
 
-**Status:** Completed — PR #1 merged; CLI stack hardening landed (`fdu-zsdy` and the CLI
-UX epic `fdu-6c8n` are closed); the index/delta reference model (`fdu-o8r8`) is closed;
+**Status:** Active — PR #1 merged; CLI stack hardening landed (`fdu-zsdy` and the CLI UX
+epic `fdu-6c8n` are closed); the index/delta reference model (`fdu-o8r8`) is closed;
 artifact-smoke acceptance landed through `fdu-3d8c` and passed release rehearsal run
 35156068769\. The one residual is the snapshot fault-state suite, `fdu-471a`.
 

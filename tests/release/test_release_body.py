@@ -12,6 +12,7 @@ from scripts.release.release_body import (
     html_comment_count,
     main,
     strip_html_comments,
+    unwrap_with_flowmark,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -92,6 +93,76 @@ class ReleaseBodyTests(unittest.TestCase):
             self.assertEqual(
                 body_path.read_text(encoding="utf-8"), source_path.read_text(encoding="utf-8")
             )
+
+    def test_a_second_comment_does_not_write_body_files(self) -> None:
+        notes = f"# Notes\n\n<!-- TODO: fill highlights -->\n\nBody.\n\n{GUIDELINE_FOOTER}\n"
+        with tempfile.TemporaryDirectory() as directory:
+            notes_path = Path(directory) / "notes.md"
+            source_path = Path(directory) / "notes-source.md"
+            body_path = Path(directory) / "body.md"
+            notes_path.write_text(notes, encoding="utf-8")
+            status = main(
+                [
+                    "--notes",
+                    str(notes_path),
+                    "--source",
+                    str(source_path),
+                    "--body",
+                    str(body_path),
+                    "--unwrap",
+                    "identity",
+                ]
+            )
+            self.assertEqual(status, 1)
+            self.assertFalse(source_path.exists())
+            self.assertFalse(body_path.exists())
+
+    def test_flowmark_unwrap_joins_a_wrapped_paragraph(self) -> None:
+        notes = (
+            "# Notes\n\n"
+            "This paragraph is wrapped across two lines so the unwrap must join\n"
+            "them into one line in the GitHub release body.\n\n"
+            f"{GUIDELINE_FOOTER}\n"
+        )
+        stripped = strip_html_comments(notes)
+        body = unwrap_with_flowmark(stripped, root=ROOT)
+        check_release_body(notes, stripped, body)
+        joined = next(
+            line for line in body.splitlines() if line.startswith("This paragraph is wrapped")
+        )
+        self.assertIn("join them into one line", joined)
+        self.assertNotIn("join\n", joined)
+
+    def test_cli_flowmark_unwrap_writes_after_check(self) -> None:
+        notes = (
+            "# Notes\n\n"
+            "This paragraph is wrapped across two lines so the unwrap must join\n"
+            "them into one line in the GitHub release body.\n\n"
+            f"{GUIDELINE_FOOTER}\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            notes_path = Path(directory) / "notes.md"
+            source_path = Path(directory) / "notes-source.md"
+            body_path = Path(directory) / "body.md"
+            notes_path.write_text(notes, encoding="utf-8")
+            status = main(
+                [
+                    "--notes",
+                    str(notes_path),
+                    "--source",
+                    str(source_path),
+                    "--body",
+                    str(body_path),
+                    "--root",
+                    str(ROOT),
+                ]
+            )
+            self.assertEqual(status, 0)
+            body = body_path.read_text(encoding="utf-8")
+            joined = next(
+                line for line in body.splitlines() if line.startswith("This paragraph is wrapped")
+            )
+            self.assertIn("join them into one line", joined)
 
 
 if __name__ == "__main__":

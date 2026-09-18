@@ -207,7 +207,7 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Write the stripped source and unwrapped body, then check both."""
+    """Check the stripped source and unwrapped body, then write both."""
     args = parser().parse_args(argv)
     notes = args.notes.read_text(encoding="utf-8")
     root = args.root.resolve()
@@ -218,11 +218,15 @@ def main(argv: list[str] | None = None) -> int:
         return unwrap_with_flowmark(text, root=root)
 
     source, body = derive_release_body(notes, unwrap=unwrap)
+    try:
+        check_release_body(notes, source, body)
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 1
     args.source.parent.mkdir(parents=True, exist_ok=True)
     args.body.parent.mkdir(parents=True, exist_ok=True)
     args.source.write_text(source, encoding="utf-8")
     args.body.write_text(body, encoding="utf-8")
-    check_release_body(notes, source, body)
     return 0
 
 
