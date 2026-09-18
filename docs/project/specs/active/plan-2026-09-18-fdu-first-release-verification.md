@@ -1,10 +1,81 @@
-# First-Release Verification
+# Feature: First-Release Verification
+
+**Date:** 2026-09-18
+
+**Author:** fdu project
+
+**Status:** Active. The pre-registry simulation is recorded on `fdu-bnp9`. Post-publish
+items wait until `0.1.0` is on the channels.
+
+## Overview
 
 Two checklists for the first public `0.1.0`. The first can be run before either registry
-exists; the second can run only after
-[Publishing 0.1.0 by Hand](release-process.md#publishing-010-by-hand) finishes.
+exists. The second can run only after
+[Publishing 0.1.0 by Hand](../../guides/release-process.md#publishing-010-by-hand)
+finishes.
 
-## Before the Registries Exist
+The subject is the stranger path: install and run the command, the Rust library, and the
+Python package the way a first-time user would, not the way a checkout of this
+repository would.
+
+## Goals
+
+- Exercise the packaged CLI, host wheel, and path-crate Rust consumer from local
+  artifacts before crates.io or PyPI exist.
+- Exercise the same surfaces from crates.io, PyPI, and the GitHub release after `0.1.0`
+  is on those channels, from a machine that did not just publish.
+- Keep the two phases distinct so a pre-registry step cannot be mistaken for a
+  post-publish one.
+
+## Non-Goals
+
+- Publishing `0.1.0`. That procedure is
+  [Publishing 0.1.0 by Hand](../../guides/release-process.md#publishing-010-by-hand),
+  tracked on `fdu-9cf0`.
+- Replacing `make release-rehearse`. Rehearsal already packages and inspects artifacts;
+  this plan is the stranger path on top of them.
+- Contacting crates.io or PyPI during the first checklist.
+- Fixing gaps the simulation already recorded (`fdu-18vk`, `fdu-i142` / pull request
+  #77). Those remain on their own beads.
+
+## Background
+
+`make release-rehearse` packages both crates, the host `abi3` wheel, and the source
+distribution, then inspects them.
+It does not install those artifacts the way a stranger would, and it cannot see registry
+pages, docs.rs, or GitHub release assets until they exist.
+
+A 2026-09-18 run against `origin/main` (`98379c76`) is recorded on `fdu-bnp9`. Watch,
+Python, Rust, and CLI succeeded from packaged artifacts.
+A wheel-installed `--watch` that ignores Ctrl-C is `fdu-18vk`. Relative README links
+that crates.io would resolve under `crates/fdu/` are `fdu-i142` / pull request #77.
+
+## Design
+
+### Approach
+
+Run the first checklist from packaged local artifacts only.
+Run the second from a clean machine or container that has no `CARGO_REGISTRY_TOKEN`, no
+`UV_PUBLISH_TOKEN`, and no checkout of this repository.
+Use a GIL-enabled CPython 3.12 (and again 3.14) and a Rust toolchain ≥ 1.85.
+
+### Components
+
+- Command line: `cargo install` / `uv tool` / `uvx` / `pip`, then `--help`, `--docs`,
+  default tree, summary, and `--watch`
+- Rust library: `cargo add fdu` (and `fdu-core --features watch`) against published
+  crates, or path crates before they exist
+- Python package: host wheel before publish; sdist, five wheels, `import fdu`, and
+  `index.watch()` after
+- GitHub release: tag, notes body, and the 11 named assets
+
+### API Changes
+
+None. This plan verifies existing surfaces.
+
+## Implementation Plan
+
+### Phase 1: Before the Registries Exist
 
 These steps use only packaged local artifacts: `cargo package` for both crates, the host
 `abi3` wheel, and the source distribution.
@@ -12,9 +83,7 @@ They do not contact crates.io or PyPI. `make release-rehearse` already packages 
 inspects those artifacts; [the new-user simulation](#new-user-simulation) is the
 stranger path on top of them.
 
-A 2026-09-18 run against `origin/main` (`98379c76`) is recorded on `fdu-bnp9`.
-
-### New-User Simulation
+#### New-User Simulation
 
 Work in a scratch directory that is not the checkout.
 
@@ -58,13 +127,13 @@ Work in a scratch directory that is not the checkout.
    a README that crates.io resolves under `crates/fdu/` will 404. That defect is
    `fdu-i142` / pull request #77.
 
-## After 0.1.0 Is on the Channels
+### Phase 2: After 0.1.0 Is on the Channels
 
 Run these from a machine and account that did **not** just publish, or from a clean
 container with no `CARGO_REGISTRY_TOKEN`, no `UV_PUBLISH_TOKEN`, and no checkout of this
 repository. Use a GIL-enabled CPython 3.12 (and again 3.14) and a Rust toolchain ≥ 1.85.
 
-### crates.io
+#### crates.io
 
 - [ ] `curl` the crate pages: [fdu](https://crates.io/crates/fdu) and
   [fdu-core](https://crates.io/crates/fdu-core) return 200.
@@ -96,7 +165,7 @@ repository. Use a GIL-enabled CPython 3.12 (and again 3.14) and a Rust toolchain
 - [ ] `cargo add fdu-core --features watch` builds a consumer that does not pull the
   command-line crate.
 
-### PyPI
+#### PyPI
 
 - [ ] https://pypi.org/project/fdu/0.1.0/ lists the source distribution and five wheels,
   and the README shows `uv tool install`, `uvx`, `uv add`, and `pip`.
@@ -118,7 +187,7 @@ repository. Use a GIL-enabled CPython 3.12 (and again 3.14) and a Rust toolchain
 - [ ] A free-threaded interpreter (`3.14t`) refuses the wheel with a clear error, not a
   hang.
 
-### GitHub Release
+#### GitHub Release
 
 - [ ] https://github.com/jlevy/fdu/releases/tag/v0.1.0 exists, the tag verifies, and
   `gh release view v0.1.0 --json assets --jq '.assets | length'` prints `11` (two
@@ -127,7 +196,7 @@ repository. Use a GIL-enabled CPython 3.12 (and again 3.14) and a Rust toolchain
 - [ ] The release body is the notes file, not the flowmark-wrapped source with a line
   break in every paragraph.
 
-### First-Hour Product Checks
+#### First-Hour Product Checks
 
 From the crates.io or PyPI install, not the checkout:
 
@@ -137,6 +206,39 @@ From the crates.io or PyPI install, not the checkout:
 - [ ] `fdu . --analyze=code` on this repository’s `crates/` tree completes and the
   second run reports cached analysis in the performance footer.
 - [ ] `fdu --skill` prints a skill that names `fdu`, not a placeholder.
+
+## Testing Strategy
+
+The two phases are the tests.
+Phase 1 uses packaged local artifacts and does not contact either registry.
+Phase 2 uses published channels from a machine that did not publish.
+`make check` does not run either phase: a timing or registry gate on a shared CI runner
+measures the runner and the publisher’s credentials.
+
+## Rollout Plan
+
+Publishing is
+[Publishing 0.1.0 by Hand](../../guides/release-process.md#publishing-010-by-hand).
+This plan does not publish.
+Run Phase 1 before that procedure, then Phase 2 from a separate machine after the
+channels exist.
+
+## Open Questions
+
+None that block running either phase.
+Known product gaps (`fdu-18vk`, `fdu-i142`) stay on their own beads; both checklists
+still record the result.
+
+## References
+
+- [Release process](../../guides/release-process.md)
+- [Documentation index](../../../README.md)
+- `fdu-yfej`: 0.1.0 first-user stability and usability
+- `fdu-bnp9`: pre-publish packaged-artifact simulation
+- `fdu-wpxu`: post-publish first-user verification checklist
+- `fdu-9cf0`: publish 0.1.0 by hand
+- `fdu-18vk`: wheel `--watch` ignores SIGINT
+- `fdu-i142`: crates.io README relative links
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

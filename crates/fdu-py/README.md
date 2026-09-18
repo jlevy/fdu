@@ -74,7 +74,7 @@ The original extension grouping remains available as the `extensions` view.
 The package supports Python 3.12 and newer and builds one `abi3-py312` extension rather
 than separate native payloads for every Python minor release.
 
-## Long-lived roots
+## Long-Lived Roots
 
 `fdu.opened` is the direct typed interface to the long-lived engine.
 It starts progressive discovery, returns several projections from one coherent version,

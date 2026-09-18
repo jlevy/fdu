@@ -14,7 +14,6 @@ live change feed, and the Rust and Python libraries.
 - [Rust library examples](../README.md#as-a-rust-library)
 - [Python package examples](../README.md#as-a-python-module)
 - [0.1.0 release notes](project/release-notes/0.1.0.md)
-- [First-release verification](project/guides/first-release-verification.md)
 
 ## Understand the Design
 
@@ -42,7 +41,7 @@ live change feed, and the Rust and Python libraries.
 - [Supply-chain policy](../SUPPLY-CHAIN-SECURITY.md)
 - [Integration runbook](project/guides/integration-runbook.md)
 - [Release process](project/guides/release-process.md)
-- [First-release verification](project/guides/first-release-verification.md)
+- [First-release verification](project/specs/active/plan-2026-09-18-fdu-first-release-verification.md)
 - [Changelog](../CHANGELOG.md)
 
 Plans, research notes, experiment records, and generated evidence live under

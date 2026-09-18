@@ -5,7 +5,7 @@ counts, recency, file types) over large directory trees, with a persistent cache
 optional OS-native watch layer.
 
 This crate is the library.
-**If you want the command-line tool, install `fdu`** — it carries the command line and
+**If you want the command-line tool, install `fdu`.** It carries the command line and
 re-exports this whole API, so `cargo add fdu` gives a library caller everything here
 under one name.
 

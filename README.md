@@ -1,6 +1,6 @@
 # fdu
 
-**Fast, incremental file roll-up engine** — `fd` and `du`, read as “fast du”.
+**Fast, incremental file roll-up engine:** `fd` and `du`, read as “fast du”.
 
 One walk over a directory tree answers, for every directory at once, how big it is, how
 many files it holds, what changed most recently, and what kinds of files it contains.
@@ -8,17 +8,17 @@ The index is cached between runs and can be kept live as the tree changes.
 
 The same engine ships three ways:
 
-- **Command line** — `fdu PATH` prints a size-sorted tree; `--watch` keeps it current
-- **Rust library** — `fdu` / `fdu-core`: a retained index, a change feed, and a
-  long-lived opened root
-- **Python package** — typed, immutable values plus the native `fdu` command
+- **Command line:** `fdu PATH` prints a size-sorted tree; `--watch` keeps it current
+- **Rust library:** `fdu` / `fdu-core` (a retained index, a change feed, and a
+  long-lived opened root)
+- **Python package:** typed, immutable values plus the native `fdu` command
 
 On a 2026-09-16 macOS calibration, fdu built a reusable exact index and a ten-row tree
 over 1,000,001 generated entries in a **5.206-second median**, faster than the
 disk-usage tools compared in that run while returning more than a single total.
 That is one uncontrolled host, not a portable ranking; see [Speed](#speed).
 
-**0.x.** A minor release may change the command line or either API;
+**0.x:** A minor release may change the command line or either API;
 [the release process](docs/project/guides/release-process.md) states the rules.
 
 ## Install
@@ -191,7 +191,7 @@ There is no Python reimplementation of the CLI.
 
 ## Speed
 
-**Exploratory macOS calibration, 2026-09-16, 0.1.0 release candidate.** A fresh process
+**Exploratory macOS calibration, 2026-09-16, 0.1.0 release candidate:** A fresh process
 with its cache disabled built a reusable exact index and ten-row tree over a generated
 1,000,001-entry corpus in a **5.206-second median**. Twelve adjacent paired trials per
 tool on an M1 Pro with a local APFS SSD, warm filesystem cache, one independent
@@ -251,9 +251,9 @@ The survey is in
 
 ## Documentation
 
-- [Usage guide](docs/usage.md) — views, analyzers, selection, cache, watch, machine
+- [Usage guide](docs/usage.md): views, analyzers, selection, cache, watch, machine
   output
-- [Documentation index](docs/README.md) — library, architecture, performance, release
+- [Documentation index](docs/README.md): library, architecture, performance, release
 - [Design principles](docs/project/architecture/fdu-design-principles.md)
 - [0.1.0 release notes](docs/project/release-notes/0.1.0.md)
 - [Changelog](CHANGELOG.md)
