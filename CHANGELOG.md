@@ -110,6 +110,8 @@ The GitHub release text is
   A watch is metadata-only on every surface: the command line refuses `--analyze` with
   `--watch`, and a Rust `Session` or Python `Index.watch()` refuses an index opened with
   content analysis, as `Error::UnsupportedScanConfig` or `InvalidArgumentError`.
+  The request model also refuses a narrowed scan scope and cache-only, so a library or
+  Python caller cannot ask for what the command line refuses.
 - **`.gitignore` roll-ups**, read by default on every surface.
   An index keeps ignored and unignored roll-ups for every directory beside the totals,
   and every report says how much of each size the tree’s own rules ignore.
