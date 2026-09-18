@@ -24,6 +24,15 @@ The GitHub release text is
 
 ### Added
 
+- **Request model.** The command line, the Python package, and the Rust library share
+  one typed `Request` (`Basis`, `Query`, `now`), one `Delivery`, the axis grammars, and
+  `Request::DEFAULTS`. Allocated size is the default everywhere: `SizeMetric::default`
+  and an opened selection that names no metric answer in allocated bytes, as `--size`
+  and Python `size` already did.
+  A refused request is a usage error: exit status 2 on the command line,
+  `InvalidArgumentError` (a `ValueError`) in Python.
+  `Query.axes` is `&'static AxisNames`, so a refusal names flags or fields in the
+  caller’s vocabulary.
 - **Command line.** `fdu PATH` prints a size-sorted tree two levels deep with ten rows
   per directory; bare `fdu` prints help and scans nothing.
   Sizes are allocated bytes unless `--size apparent` asks for file lengths.
@@ -106,7 +115,9 @@ The GitHub release text is
   reconcile of the affected subtree rather than a dropped event.
   An upsert carries `ignored`, and so does a removal a rule edit caused; an ordinary
   removal, an invalidation, and every record of a run that read no rules omit it.
-  A watch is metadata-only and refuses `--analyze`.
+  A watch is metadata-only.
+  The request model refuses a narrowed scan scope, analyzed content, and cache-only, so
+  a library or Python caller cannot ask for what the command line refuses.
 - **`.gitignore` roll-ups**, read by default on every surface.
   An index keeps ignored and unignored roll-ups for every directory beside the totals,
   and every report says how much of each size the tree’s own rules ignore.

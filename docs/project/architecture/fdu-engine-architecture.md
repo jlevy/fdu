@@ -411,7 +411,15 @@ It observes control state as `ScanConfig::read_controls` says, on by default as 
 `open()`, so a default report and a default index share one snapshot scope.
 One-shot and retained paths must answer the same request identically.
 Metadata-only requests do; content-analysis requests do not
-([the cache design’s Known Gaps](../guides/cache-design.md#known-gaps)).
+([the cache design’s Known Gaps](../guides/cache-design.md#known-gaps)). `query::report`
+and `report_in` take `&Request` and, after `validate_read`, use `request.basis.content`
+for metric sections, the `analysis` metadata, and the schema version: the report echoes
+the request, never the store.
+
+Live paths refuse what they cannot keep current.
+`watch_session::Session::new` refuses analyzed content rather than reporting the metrics
+it opened with as fresh, and an opened-root read refuses a `documents` view rather than
+answering zero words.
 
 #### Opened and long-lived
 
@@ -942,18 +950,10 @@ Each item is a way the present engine falls short of
 or
 [Caching Improves Performance, Never Semantics](fdu-design-principles.md#caching-improves-performance-never-semantics).
 [The explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
-tracks them. This list holds the reader, session, classification, and provenance gaps;
-store identity, compatibility, policy, and write-rule gaps are listed once, in
+tracks them. This list holds the classification and provenance gaps; store identity,
+compatibility, policy, and write-rule gaps are listed once, in
 [the cache design’s Known Gaps](../guides/cache-design.md#known-gaps).
 
-- **Reports take their content axis from the index.** `query::report` receives an index,
-  a query, and provenance but no analysis request, because `Query` carries none, so
-  metric sections, the `analysis` metadata, and the schema version follow the content
-  tier the index holds.
-  A Python `Index` opened with analysis emits `fdu.report/6` for a tree view.
-- **Live paths refuse what they cannot keep current.** `watch_session::Session::new`
-  refuses an analyzed index rather than reporting the metrics it opened with as fresh,
-  and an opened-root read refuses a `documents` view rather than answering zero words.
 - **Classification depends on history.** Metric views prefer a content record’s
   classification, which analysis derives from the file’s leading bytes, over the
   name-based `Index::classify`, so one path can count under a different type or family
