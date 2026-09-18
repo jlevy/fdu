@@ -5,14 +5,15 @@ title: Simulate a new-user install from packaged artifacts before publish
 kind: task
 status: closed
 priority: 0
-version: 6
+version: 7
+spec_path: docs/project/specs/active/plan-2026-09-18-fdu-first-release-verification.md
 labels:
   - release
   - testing
 dependencies: []
 parent_id: is-01m2s0tq4ppsygrs129nw1m86n
 created_at: 2026-09-18T01:07:01.818Z
-updated_at: 2026-09-18T01:10:25.868Z
+updated_at: 2026-09-18T04:56:44.807Z
 closed_at: 2026-09-18T01:10:25.867Z
 close_reason: Packaged-artifact stranger path exercised on 98379c76; results in bead notes. Watch/Python/Rust/CLI succeeded; wheel SIGINT and crates.io README remain known blockers.
 ---
