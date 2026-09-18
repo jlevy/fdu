@@ -103,6 +103,9 @@ No Flowmark token or publisher record is reused.
 | crates.io first release | The same crates.io owner publishes `0.1.0` with a narrowly scoped, short-lived token because a trusted publisher cannot be attached before the crate exists. Remove the token after verification. |
 | crates.io later releases | Trusted publisher owner `jlevy`, repository `fdu`, workflow `release.yml`, environment `release`; exchange GitHub OIDC through `rust-lang/crates-io-auth-action` only inside the publish job. |
 
+The first-time walkthrough for each row is
+[First-Time Channel Setup](#first-time-channel-setup).
+
 Crates.io publishing is authenticated in both cases.
 The bootstrap uses the registry token; steady state exchanges the workflow’s OIDC
 identity for a short-lived Cargo credential.
@@ -129,10 +132,157 @@ A conflict therefore ends that version on every channel;
 [Recover From a Partial Publication](#recover-from-a-partial-publication) gives the
 procedure.
 
+## First-Time Channel Setup
+
+`0.1.0` is the first time the names `fdu` and `fdu-core` appear on either registry.
+The accounts and the GitHub environment can be finished days before the tag.
+The API tokens cannot: they are created in [Publish the Crates](#publish-the-crates) and
+[Publish the Python Distribution](#publish-the-python-distribution), used once, and
+revoked in those same sections.
+
+Recheck the three names immediately before the first write; availability is a race.
+Use the JSON and crates.io API curls in
+[Tag the Release Commit](#tag-the-release-commit) step 3, not the HTML project pages.
+`https://pypi.org/project/fdu/` can return HTTP 200 with an anti-bot interstitial for a
+name that does not exist.
+
+### Why the First Publish Is by Hand
+
+crates.io will not accept a
+[trusted publisher](https://crates.io/docs/trusted-publishing) until the crate exists,
+so `fdu-core` and `fdu` must be created with an API token.
+
+PyPI
+[can create a project from a pending trusted publisher](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/).
+This repository does not use that path for `0.1.0`:
+[`release.yml`](../../../.github/workflows/release.yml) is a rehearsal and has no
+publish job, and the first release is uploaded by hand from the signed tag.
+
+Do not register a pending PyPI publisher for `fdu` before that upload.
+A pending publisher does not reserve the name, and if `release.yml` later grows a
+publish job before the `release` environment is protected, the pending record would
+trust an unprotected subject.
+
+### crates.io Account
+
+1. Sign in at [crates.io](https://crates.io/) with the GitHub account that owns
+   `jlevy/fdu`. crates.io has no other login.
+2. On [Account Settings](https://crates.io/settings), confirm the email is verified, and
+   enable two-factor authentication.
+3. Do not create a token yet, and do not add a trusted publisher: there is no crate to
+   attach one to.
+
+The token is created on publish day, at
+[New API Token](https://crates.io/settings/tokens/new):
+
+- **Scopes:** `publish-new`, `publish-update`, and `yank`. `yank` is so a conflict can
+  be contained without minting a second token.
+  Leave `change-owners` off.
+- **Crates:** restrict to `fdu-core` and `fdu`. A crate-name restriction applies to
+  future crates the account owns, so the names may be listed before they exist.
+- **Expiry:** the shortest preset crates.io offers, or a custom date that covers only
+  the publish window.
+
+Paste it into `CARGO_REGISTRY_TOKEN` as [Publish the Crates](#publish-the-crates) step 1
+describes. Do not run `cargo login`, and do not store the token in
+`~/.cargo/credentials.toml`, a GitHub secret, or the `release` environment.
+
+### PyPI Account
+
+1. Sign in with the same PyPI account that publishes Flowmark.
+   Do not create a second account for fdu.
+2. [Two-factor authentication](https://blog.pypi.org/posts/2024-01-01-2fa-enforced/) is
+   required for every management action and every upload.
+   Enable it under [Account settings](https://pypi.org/manage/account/) if it is not
+   already on.
+3. Confirm the account email is verified.
+
+The token is created on publish day, at
+[Add API token](https://pypi.org/manage/account/token/):
+
+- **Scope:** Entire account (all projects).
+  A project-scoped token cannot be created until `fdu` exists.
+- **Name:** something that names this one upload, for example `fdu-0.1.0-bootstrap`.
+
+Paste it into `UV_PUBLISH_TOKEN` as
+[Publish the Python Distribution](#publish-the-python-distribution) step 1 describes.
+`uv publish` sends it as the password with username `__token__`. Do not write a
+`.pypirc`, and do not store the token in a GitHub secret.
+
+### GitHub `release` Environment
+
+`0.1.0` does not use a GitHub environment.
+Create the protected `release` environment anyway, before anyone registers a trusted
+publisher, because GitHub creates an *unprotected* environment the first time a workflow
+job names one.
+
+In the repository: Settings → Environments → New environment, name `release`. Then:
+
+- **Required reviewers:** the maintainer who publishes Flowmark.
+  Leave Prevent self-review off: a single-maintainer repository cannot approve its own
+  deployment if that is on.
+- **Deployment branches and tags:** Selected tags, pattern `v*`. No branch, including
+  `main`, should be able to deploy to `release`.
+
+Do not add `CARGO_REGISTRY_TOKEN` or `UV_PUBLISH_TOKEN` as environment secrets.
+Later publish jobs receive `id-token: write` and exchange OIDC; they hold no long-lived
+registry credential.
+
+### After 0.1.0: Trusted Publishers
+
+Only after all three of these are true:
+
+1. `fdu-core` and `fdu` exist on crates.io, and `fdu` exists on PyPI.
+2. The `release` environment exists and is protected as above.
+3. Every bootstrap token has been revoked.
+
+Then add the publishers.
+Use these subjects on every record; they are specific to this repository, not copied
+from Flowmark:
+
+| Field | Value |
+| --- | --- |
+| Owner | `jlevy` |
+| Repository | `fdu` |
+| Workflow filename | `release.yml` (the top-level file; not a reusable workflow) |
+| Environment | `release` |
+
+On crates.io, open each crate’s settings and add a GitHub Actions trusted publisher with
+those fields. On PyPI, open
+[the `fdu` project’s publishing page](https://pypi.org/manage/project/fdu/settings/publishing/)
+and add the same GitHub publisher.
+Do not create a pending publisher: the project already exists.
+
+Registering the publishers does not publish anything.
+[`release.yml`](../../../.github/workflows/release.yml) still has no publish job; adding
+those jobs is later work.
+The records exist so that work has a protected subject to name.
+
+### Publication Sequence
+
+The first release is this order.
+Channel setup is the only block that can finish before the release commit exists.
+
+1. Finish this section: accounts, 2FA, and the protected `release` environment.
+2. Merge everything the release needs onto `main`.
+3. [Rehearse the Release Commit](#rehearse-the-release-commit).
+4. [Tag the Release Commit](#tag-the-release-commit), including the name recheck.
+5. [Publish the Crates](#publish-the-crates): `fdu-core`, then `fdu`. Revoke the
+   crates.io token.
+6. [Publish the Python Distribution](#publish-the-python-distribution).
+   Revoke the PyPI token.
+7. [Announce the Release](#announce-the-release).
+8. Add [trusted publishers](#after-010-trusted-publishers).
+
+A signing key and private vulnerability reporting are not registry setup, but both must
+be true before the tag is pushed and the release is announced.
+
 ## Publishing 0.1.0 by Hand
 
 A maintainer publishes `0.1.0` from the signed tag in this order: `fdu-core`, then
 `fdu`, then the Python distribution.
+[First-Time Channel Setup](#first-time-channel-setup) must already be done: the accounts
+exist, 2FA is on, and the `release` environment is protected.
 Every upload carries bytes the rehearsal validated, and each registry is checked against
 the rehearsal’s manifest before the next write.
 
@@ -257,10 +407,9 @@ pinned Rust.
 
 ### Publish the Crates
 
-1. Create a crates.io API token with the `publish-new`, `publish-update`, and `yank`
-   scopes, limited to the crates `fdu-core` and `fdu`, with the shortest expiry
-   crates.io offers. `yank` is there so that a conflict can be contained at once, without
-   creating a second token mid-incident.
+1. Create the crates.io API token as [crates.io Account](#cratesio-account) describes:
+   `publish-new`, `publish-update`, and `yank`, limited to `fdu-core` and `fdu`, with
+   the shortest expiry crates.io offers.
    Read the token without echoing it or writing it to shell history:
 
    ```shell
@@ -335,12 +484,14 @@ pinned Rust.
    ```
 
 6. Remove the token: `unset CARGO_REGISTRY_TOKEN`, then revoke it in the crates.io
-   account settings. Configure crates.io trusted publishing on both crates for later
-   releases, as the account table describes.
+   account settings. Trusted publishers wait until both crates exist, the token is gone,
+   and the `release` environment is protected, as
+   [After 0.1.0: Trusted Publishers](#after-010-trusted-publishers) describes.
 
 ### Publish the Python Distribution
 
-1. Create a PyPI API token scoped to the account, and read it the same way:
+1. Create the account-scoped PyPI API token as [PyPI Account](#pypi-account) describes,
+   and read it the same way:
 
    ```shell
    read -rs UV_PUBLISH_TOKEN && export UV_PUBLISH_TOKEN
@@ -369,8 +520,9 @@ pinned Rust.
      (cd "$RELEASE" && uv tool run --no-config --from fdu==0.1.0 fdu --version)
    ```
 
-4. Delete the token in the PyPI account settings, and add the trusted publisher for
-   later releases to the now-existing `fdu` project.
+4. Delete the token in the PyPI account settings.
+   The trusted publisher waits for the protected `release` environment, as
+   [After 0.1.0: Trusted Publishers](#after-010-trusted-publishers) describes.
 
 ### Announce the Release
 
