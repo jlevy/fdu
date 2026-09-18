@@ -5,7 +5,7 @@ title: "Publish fdu 0.1.0 by hand: crates.io, PyPI, GitHub Release"
 kind: epic
 status: open
 priority: 1
-version: 19
+version: 20
 spec_path: docs/project/specs/active/plan-2026-08-14-fdu-release-packaging-python-api-polish.md
 labels:
   - release
@@ -31,7 +31,7 @@ child_order_hints:
   - is-01m2phzmjh2sk8fzqya61v47rd
   - is-01m2phzmxbwajz8eqrcv6rzfks
 created_at: 2026-08-08T07:28:38.772Z
-updated_at: 2026-09-17T02:09:30.847Z
+updated_at: 2026-09-18T00:56:59.748Z
 ---
 Ship both artifacts from one workspace.
 - crates.io: fdu, with cli as a default feature so 'cargo install fdu' just works. Library consumers write default-features = false; that trade-off is accepted and must be one documented line in the README.
@@ -55,3 +55,5 @@ Packaging prerequisites are implemented on codex/python-packaging-release-engine
 block publication (2026-09-15 decision: publish 0.1.0 by hand; they stay open as post-release work).
 Blocked by the end-to-end verification, signing identity, and repository settings beads. Workflow
 publish jobs, the protected environment and trusted publishers are tracked in the release automation epic.
+
+2026-09-18: First-time channel setup is in docs/project/guides/release-process.md#first-time-channel-setup. Create the protected GitHub `release` environment before anyone registers a publisher (the environment is unused by the 0.1.0 hand upload). Do not register a pending PyPI publisher before the hand upload. Trusted-publisher records and workflow publish jobs stay post-0.1.0. Maintainer console work is fdu-o5st.
