@@ -387,28 +387,26 @@ prompts use `read -s`, which a plain POSIX `sh` such as `dash` rejects.
    flowmark-wrapped file would show every source line break.
    The body is the file with its HTML comments removed and each paragraph and list item
    joined onto one line by the Makefile’s pinned flowmark, which changes nothing but
-   whitespace:
+   whitespace. `scripts/release/release_body.py` does the strip, the unwrap, and the
+   first two checks: exactly one HTML comment in the notes (the guideline footer), and a
+   whitespace-only difference between the stripped source and the unwrapped body.
+   A comment inside a code span or fence is documentation, not a draft leftover.
 
    ```shell
    git switch --detach <release-commit>
-   uv run --no-project --python 3.12 python -c \
-     'import re, sys; sys.stdout.write(re.sub(r"<!--.*?-->\n*", "", sys.stdin.read(), flags=re.S))' \
-     < docs/project/release-notes/0.1.0.md > "$RELEASE/notes-source.md"
-   uv run --project explorations/benchmarks --frozen --only-group docs \
-     flowmark --width 0 --output "$RELEASE/notes.md" "$RELEASE/notes-source.md"
+   uv run --no-project --python 3.12 python scripts/release/release_body.py \
+     --notes docs/project/release-notes/0.1.0.md \
+     --source "$RELEASE/notes-source.md" \
+     --body "$RELEASE/notes.md"
    ```
 
-   Check the body before tagging, because a fix after the tag needs a new commit and so
-   a new version. The first command must print `1`, the notes’ standard footer, so no
-   unfilled draft comment was stripped silently; the second must print nothing, so the
-   body differs from the notes only in whitespace; and the third must print `0`, so
-   GitHub’s renderer finds no line break inside a paragraph.
-   Read `$RELEASE/notes.html` as well: it is the body as GitHub will render it.
+   Check the rendered body before tagging, because a fix after the tag needs a new
+   commit and so a new version.
+   The command must print `0`, so GitHub’s renderer finds no line break inside a
+   paragraph. Read `$RELEASE/notes.html` as well: it is the body as GitHub will render
+   it.
 
    ```shell
-   grep -c '<!--' docs/project/release-notes/0.1.0.md
-   cmp <(tr -s '[:space:]' ' ' < "$RELEASE/notes-source.md") \
-     <(tr -s '[:space:]' ' ' < "$RELEASE/notes.md")
    gh api markdown -f mode=gfm -F text=@"$RELEASE/notes.md" > "$RELEASE/notes.html" &&
      grep -c '<br>' "$RELEASE/notes.html"
    ```
