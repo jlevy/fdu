@@ -23,6 +23,12 @@ content analyzers are tested end to end.
 cargo add fdu-core
 ```
 
+Published requirements are caret ranges of the reviewed minimum (`libc`,
+`pulldown-cmark`). `Cargo.lock` still pins the exact versions this workspace builds;
+`cargo install --locked fdu` is what reproduces them.
+An exact pin in a published library would make any downstream that needs a newer
+compatible release unresolvable.
+
 The crate has no default features.
 The `watch` capability is strictly additive; without it, scan, index, and snapshot
 remain fully functional.

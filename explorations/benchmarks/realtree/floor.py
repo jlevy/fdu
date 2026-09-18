@@ -275,7 +275,7 @@ INSTRUMENTS: Dict[str, Instrument] = {
         id="aggregate",
         role="tier",
         description="fdu aggregate tier: five exact tallies, no retained index.",
-        argv=("{probe}", "summary", "--root", "{root}", "--threads", "{workers}"),
+        argv=("{probe}", "summary", "--no-controls", "--root", "{root}", "--threads", "{workers}"),
         tally_map={"dirs": "dirs", "files": "files", "apparent_bytes": "apparent_bytes",
                    "allocated_bytes": "allocated_bytes"},
         elapsed_key="component_ns",

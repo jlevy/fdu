@@ -397,7 +397,7 @@ python-smoke:
 		$(UV) run --frozen --only-group dev basedpyright --pythonpath .venv-smoke/bin/python \
 			--project "$$type_dir/pyrightconfig.json" && \
 		wheel_path="$$(find "$$wheel_dir" -maxdepth 1 -type f -name '*.whl' -print -quit)" && \
-		$(UV) tool run --isolated --no-index --from "$$wheel_path" fdu --version
+		$(UV) tool run --isolated --no-index --python $(WHEEL_PYTHON) --from "$$wheel_path" fdu --version
 
 python-sdist-smoke:
 	cd crates/fdu-py && sdist_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-sdist.XXXXXX")" && \

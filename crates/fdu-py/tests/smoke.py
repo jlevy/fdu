@@ -19,10 +19,12 @@ import json
 import os
 import pathlib
 import re
+import signal
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 from fdu import Bound, EntryKind, FilesSection, Format, InvalidArgumentError, Query, Selection, View
@@ -190,6 +192,37 @@ def main() -> None:
     assert usage.stdout == "", usage.stdout
     assert "unexpected argument" in usage.stderr, usage.stderr
     assert "Traceback" not in usage.stderr, usage.stderr
+
+    if os.name != "nt":
+        # The console script used to restore nothing: Python's SIGINT handler only sets a
+        # flag the native CLI never checks, so `fdu --watch` from a wheel ignored Ctrl-C
+        # (fdu-18vk). Default disposition makes the process die on SIGINT the way the
+        # cargo-installed binary does.
+        watch = subprocess.Popen(
+            [
+                entrypoint,
+                "--watch",
+                "--interval",
+                "200ms",
+                "--view",
+                "summary",
+                "--cache",
+                "off",
+                str(root),
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        try:
+            time.sleep(0.4)
+            watch.send_signal(signal.SIGINT)
+            watch.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            watch.kill()
+            watch.wait()
+            raise AssertionError("wheel console fdu --watch ignored SIGINT") from None
+        stderr = watch.stderr.read().decode("utf-8", errors="replace") if watch.stderr else ""
+        assert watch.returncode == -signal.SIGINT, (watch.returncode, stderr)
 
     if os.name != "nt":
         # Python stores undecodable argv bytes with surrogateescape. The wheel entry

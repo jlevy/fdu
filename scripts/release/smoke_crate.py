@@ -8,6 +8,9 @@ before then (fdu-y5zc). A `[patch.crates-io]` entry resolves it to the packaged 
 instead. That patch changes where `fdu-core` comes from, which `--locked` refuses, so the
 lock is refreshed once under the patch and must differ from the shipped lock in that
 source alone: every other pin is still the one a user of the published crate resolves.
+
+The install runs inside a throwaway git checkout, which is what makes the version this
+smoke asserts evidence of anything: see `init_checkout`.
 """
 
 from __future__ import annotations
@@ -25,6 +28,7 @@ from typing import Any
 CORE = "fdu-core"
 CLI = "fdu"
 CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
+GIT = "git"
 
 # `tarfile`'s "data" extraction filter, which refuses the escaping paths and links an
 # untrusted archive can carry, is standard from 3.12. The release workflow runs this on
@@ -55,6 +59,77 @@ def run(runner: Runner, command: list[str], **options: Any) -> subprocess.Comple
     result = runner(command, text=True, **options)
     require(result.returncode == 0, f"{' '.join(command)} exited with status {result.returncode}")
     return result
+
+
+def install_env() -> dict[str, str]:
+    """
+    The environment for the install and for every git call around it.
+
+    `FDU_RELEASE_TAG` stamps the version outright, which would mask the derivation this
+    smoke exercises. A `GIT_*` variable points git at some other repository than the
+    throwaway checkout, in the build script as well as here; git exports `GIT_DIR` into
+    hook environments, so a rehearsal run from a pre-push hook inherits one.
+    """
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if key != "FDU_RELEASE_TAG" and not key.startswith("GIT_")
+    }
+
+
+def git(arguments: list[str], environment: dict[str, str]) -> str:
+    """
+    Run one git command in the scrubbed environment and return its trimmed output.
+
+    Not through the injected runner: a stand-in git would leave the build script with no
+    revision to find, which is the whole point of the checkout below.
+    """
+    return run(
+        subprocess.run, [GIT, *arguments], env=environment, stdout=subprocess.PIPE
+    ).stdout.strip()
+
+
+def head_revision(directory: Path, environment: dict[str, str]) -> str:
+    """The revision the build script's git fallback derives from `directory`."""
+    return git(["-C", str(directory), "rev-parse", "--short=9", "HEAD"], environment)
+
+
+def init_checkout(root: Path, environment: dict[str, str]) -> str:
+    """
+    Make `root` a throwaway git repository holding one commit, and return its revision.
+
+    `crates/fdu/build.rs` stamps the revision of the checkout it builds in unless
+    `.cargo_vcs_info.json` beside the manifest tells it a registry unpacked the crate.
+    Installed outside any repository that derivation reports bare semver by its own
+    fallback, so the assertion below held with the skip deleted and pinned nothing
+    (fdu-tleo). Installed inside a repository, bare semver can only come from the skip,
+    which is also the shape of the case the skip protects: a consumer whose extracted
+    crate sits under a git repository of their own.
+    """
+    root.mkdir(parents=True)
+    git(["-c", "init.defaultBranch=main", "init", "--quiet", str(root)], environment)
+    # A runner leaves `user.email` unset, and an ambient config may carry a signing key
+    # or hooks, so the single commit supplies an identity and declines both.
+    git(
+        [
+            "-C",
+            str(root),
+            "-c",
+            "user.name=fdu release smoke",
+            "-c",
+            "user.email=smoke@fdu.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--allow-empty",
+            "--no-verify",
+            "--quiet",
+            "--message",
+            "packaged crate smoke",
+        ],
+        environment,
+    )
+    return head_revision(root, environment)
 
 
 def extract_crate(crate: Path, destination: Path) -> Path:
@@ -125,13 +200,23 @@ def smoke_crate(
     cargo: str = "cargo",
     runner: Runner = subprocess.run,
 ) -> None:
-    """Extract both crates, install `fdu` locked against `fdu-core`, and run it."""
+    """Extract both crates into a checkout, install `fdu` locked against `fdu-core`, run it."""
     work_dir.mkdir(parents=True, exist_ok=True)
     require(
         not any(work_dir.iterdir()), f"{work_dir} must be empty, so no earlier install stands in"
     )
-    core = extract_crate(crates / f"{CORE}-{version}.crate", work_dir).resolve()
-    cli = extract_crate(crates / f"{CLI}-{version}.crate", work_dir)
+    environment = install_env()
+    checkout = work_dir / "checkout"
+    revision = init_checkout(checkout, environment)
+    core = extract_crate(crates / f"{CORE}-{version}.crate", checkout).resolve()
+    cli = extract_crate(crates / f"{CLI}-{version}.crate", checkout)
+    # The build script runs with the crate root as its working directory, so this is the
+    # revision it would stamp. Resolving another one means the crate landed under some
+    # enclosing repository instead, and the version below would be about that repository.
+    require(
+        head_revision(cli, environment) == revision,
+        f"{cli} is not inside the throwaway checkout at {checkout}",
+    )
     lock = cli / "Cargo.lock"
     shipped = lock.read_text(encoding="utf-8")
     patch = f"patch.crates-io.{CORE}.path={json.dumps(str(core))}"
@@ -166,10 +251,18 @@ def smoke_crate(
             "--config",
             patch,
         ],
-        env={**os.environ, "FDU_RELEASE_TAG": f"v{version}"},
+        # No release tag and no ambient git redirection, so this install exercises the
+        # `.cargo_vcs_info.json` skip (fdu-nwud) rather than the release-tag stamp.
+        env=environment,
     )
     binary = str(install_root / "bin" / CLI)
     reported = run(runner, [binary, "--version"], stdout=subprocess.PIPE).stdout.strip()
+    require(
+        "-dev+g" not in reported,
+        f"installed {CLI} stamped a git revision: {reported!r}; the packaged crate took "
+        f"the revision of the checkout it built in ({revision}) rather than its own "
+        f".cargo_vcs_info.json",
+    )
     require(
         reported == f"{CLI} {version}",
         f"installed {CLI} reports {reported!r}, not '{CLI} {version}'",

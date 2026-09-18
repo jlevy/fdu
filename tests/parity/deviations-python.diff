@@ -316,7 +316,7 @@ PASS [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,127 +1,1 @@
+@@ -1,130 +1,1 @@
 -fdu — a fast, incremental file roll-up engine.
 -
 -START HERE
@@ -364,6 +364,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -
 -  --interval throttles rendering only; change detection is event-driven and
 -  unaffected by it, so an idle tree costs nothing between changes.
+-  The duration uses the age grammar: `[TIME]`, `[TIME]`, `1h30m`.
 -
 -  largest and recent are presets over files, not more views to learn:
 -    largest = files --sort size --limit 20, regular files only
@@ -435,6 +436,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  Text language rows use canonical names; machine formats retain lowercase IDs.
 -  Metric rows include detection source, confidence, origin flags, and coverage.
 -  One-shot text reports end with a gray performance line; machine formats omit it.
+-  JSON numbers above 2^53 (fingerprints, option hashes, nanosecond timestamps)
+-  lose precision in IEEE 754 binary64 parsers such as JavaScript JSON.parse.
 -  Results go to stdout; warnings and errors go to stderr.
 -  The command never prompts, pages, or animates progress.
 -  Reports require an explicit PATH; bare `fdu` prints help and scans nothing.

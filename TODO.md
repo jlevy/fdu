@@ -76,10 +76,6 @@ These are the ones a reader of this page should know about:
   **Blocks every positive peer-comparison claim**, including the current fdu-versus-dust
   and fdu-versus-dumac results, which are ties and decisive-loss respectively on an
   uncontrolled host.
-- `fdu-hkyh` — the transient summary is mislabelled in the harness.
-  Since `.gitignore` became the default, the `fdu-transient-summary` tool contract runs
-  the same indexed plan as `fdu-index-summary` while recording the transient work class;
-  the transient tier is reached only with `--no-gitignore`.
 - `fdu-f6n7` — narrow the `getattrlistbulk` attribute set to what the plan consumes.
   The registered path to the scalar class: fdu requests ctime, inode, and flags per
   entry for a cache fingerprint the transient summary provably never uses, and measures

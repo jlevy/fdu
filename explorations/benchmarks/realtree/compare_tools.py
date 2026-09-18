@@ -122,6 +122,7 @@ CONTRACTS: Dict[str, ToolContract] = {
             "{binary}",
             "--cache",
             "off",
+            "--no-gitignore",
             "--view",
             "summary",
             "--format",

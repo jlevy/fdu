@@ -200,8 +200,8 @@ re-read a listing after a rule edit if the bit matters.
 ## Value Grammars
 
 - Sizes: `512`, `10k`, `10M`, `1.5GiB`. Decimal and binary units, case-insensitive.
-- Times: `now`, a compound age (`45s`, `2h`, `1h30m`), an RFC 3339 timestamp with an
-  offset (`2026-08-10T18:22:31Z`), or `@` epoch seconds.
+- Times: `now`, a compound age (`200ms`, `45s`, `2h`, `1h30m`), an RFC 3339 timestamp
+  with an offset (`2026-08-10T18:22:31Z`), or `@` epoch seconds.
   Calendar units and fractional ages are rejected with the spelling to use instead; a
   bare local date-time is rejected because resolving it needs a time-zone database.
 - `--modified-since` is inclusive and `--modified-before` is exclusive.
@@ -228,6 +228,8 @@ Check the process exit status and these fields:
   and `documents` views), `fdu.report/5` otherwise, a `--watch` stream carries
   `fdu.stream/1`, and `--cache-status` carries `fdu.cache/2`. Treat an unrecognized
   value as a version you cannot parse rather than guessing at the fields.
+- Integer fields that exceed 2^53 (fingerprints, option hashes, nanosecond timestamps)
+  lose precision in IEEE 754 binary64 parsers such as JavaScript `JSON.parse`
 - `complete` and `errors` before trusting totals
 - `freshness` and `source` before presenting data as current
 - `truncated` on a tree node before treating it as exhaustive
