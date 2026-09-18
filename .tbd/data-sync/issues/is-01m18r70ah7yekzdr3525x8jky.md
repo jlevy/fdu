@@ -5,7 +5,7 @@ title: "~/Library scan is SIGKILLed (137): unbounded growth the control cap does
 kind: bug
 status: open
 priority: 1
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - scale
@@ -14,7 +14,7 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-30T07:12:47.952Z
-updated_at: 2026-09-14T02:30:49.063Z
+updated_at: 2026-09-18T20:38:34.391Z
 ---
 Field report: 'fdu ~/Library -d 2 -n 30 --sort size --min-size 300M' exited 137 (SIGKILL) on the branch binary. This is a different failure mode from the control-table aborts - the OS killed it rather than fdu refusing cleanly - which points at growth the control budget does not bound.
 
@@ -29,3 +29,5 @@ Acceptance: establish whether peak RSS grows unbounded with entry count on ~/Lib
 ## Notes
 
 2026-09-14 (triage at c0511e9): no code change to cite; the query retains a full index (`execution.rs:176-181@c0511e9`) on both main and the stack. Needs an RSS-slope measurement on a quiet host at three fixture sizes, both binaries, before it can be attributed to the stack or closed.
+
+2026-09-18 installed CLI QA (fdu 0.1.0-dev+gcb9666a2a): bounded ~/Library --view=summary --scan-depth=1 completed 0.08s / 23 MiB RSS exit 0; --scan-depth=2 completed 0.23s / 27 MiB RSS exit 2 (26 TCC warnings). Preferences and Logs at --scan-depth=2 --depth=1 --limit=10 also exit 0. Did not reproduce SIGKILL on these bounded commands. Unbounded full-Library scan still not retested.
