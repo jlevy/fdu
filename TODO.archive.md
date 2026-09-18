@@ -27,8 +27,8 @@ way or what the evidence actually supports.
 | [CLI golden tests](docs/project/specs/done/plan-2026-08-09-fdu-cli-golden-tests.md) | In `specs/done/`. |
 | [file content metrics](docs/project/specs/done/plan-2026-08-12-fdu-file-content-metrics.md) | In `specs/done/`. |
 | [rust module filenames](docs/project/specs/done/plan-2026-08-13-rust-module-filenames.md) | In `specs/done/`. |
-| [CLI UX and agent skill](docs/project/specs/active/plan-2026-08-09-fdu-cli-ux-and-agent-skill.md) | Complete, but still filed in `active/` because open follow-up epics cite it. |
-| [composable CLI surface](docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md) | Implementation complete and merged; follow-ups tracked under `fdu-pxeb` and `fdu-ktyl`. |
+| [CLI UX and agent skill](docs/project/specs/done/plan-2026-08-09-fdu-cli-ux-and-agent-skill.md) | In `specs/done/`. |
+| [composable CLI surface](docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md) | In `specs/done/`; implementation complete and merged; follow-ups tracked under `fdu-pxeb` and `fdu-ktyl`. |
 
 ## Landed campaigns worth remembering
 

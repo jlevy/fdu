@@ -82,7 +82,7 @@ numbers may drift.
   realtree baseline.
 - Content-tier metric *implementation*, and full design of the composable CLI surface
   (owned by
-  [plan-2026-08-10-fdu-composable-cli-surface.md](../specs/active/plan-2026-08-10-fdu-composable-cli-surface.md)).
+  [plan-2026-08-10-fdu-composable-cli-surface.md](../specs/done/plan-2026-08-10-fdu-composable-cli-surface.md)).
   Two interactions are covered because they shape the cache format: policy parameters
   must not multiply engine variants, and the content-tier derived-data cache’s economics
   (see the tier findings).

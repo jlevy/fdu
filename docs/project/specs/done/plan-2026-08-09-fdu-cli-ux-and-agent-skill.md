@@ -7,8 +7,7 @@
 **Status:** Completed.
 [PR #2](https://github.com/jlevy/fdu/pull/2) shipped it, and the epic `fdu-6c8n` and
 every bead under it are closed.
-It stays in `active/` only until its inbound links move with it, and it is listed in
-[the archive](../../../../TODO.archive.md).
+It is listed in [the archive](../../../../TODO.archive.md).
 
 **Superseded by
 [the composable CLI plan](plan-2026-08-10-fdu-composable-cli-surface.md).** The body
@@ -291,9 +290,9 @@ embedded-resource line endings, and Windows canonical path spelling.
 
 ## References
 
-- [Phase 1 plan](plan-2026-08-08-fdu-phase-1.md)
-- [Rust engineering quality plan](plan-2026-08-09-fdu-rust-engineering-quality.md)
-- [Completed CLI golden-test plan](../done/plan-2026-08-09-fdu-cli-golden-tests.md)
+- [Phase 1 plan](../active/plan-2026-08-08-fdu-phase-1.md)
+- [Rust engineering quality plan](../active/plan-2026-08-09-fdu-rust-engineering-quality.md)
+- [Completed CLI golden-test plan](plan-2026-08-09-fdu-cli-golden-tests.md)
 - [Rust CLI rules](https://github.com/jlevy/rust-porting-playbook/blob/main/guidelines/rust-cli-rules.md)
 - [Rust CLI PyPI research](https://github.com/jlevy/rust-porting-playbook/blob/main/docs/project/research/research-rust-cli-pypi-distribution.md)
 - [maturin bindings guidance](https://www.maturin.rs/bindings.html)

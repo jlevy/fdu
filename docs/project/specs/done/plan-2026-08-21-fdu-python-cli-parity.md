@@ -490,7 +490,7 @@ unrelated work.
 - [Design principles: First Principles](../../architecture/fdu-design-principles.md#first-principles)
 - [Composable CLI and query surface](plan-2026-08-10-fdu-composable-cli-surface.md),
   Principle 7
-- [View vocabulary and the output contract](plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md)
+- [View vocabulary and the output contract](../active/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md)
 - [tbd guidelines: golden testing](../../../../.tbd/docs/guidelines/golden-testing-guidelines.md)
   — the size budget and the “easy to diff” requirement are what argue for a deviation
   file rather than a second corpus

@@ -78,6 +78,13 @@ selection remain in the later watch-hardening bead.
 These pieces settle the contract, cache lifecycle, and CI matrix before the syscall and
 packed-layout work that is harder to change later.
 
+**Superseded (2026-09-16).** The walker is no longer serial `read_dir`: scans run a
+bounded parallel pool, and on macOS first try an audited `getattrlistbulk` backend that
+fails closed to the portable path (`crates/fdu-core/src/scan.rs`). The README now
+publishes a dated, exploratory macOS headline figure from
+[the 2026-09-16 tool comparison](../../reports/report-2026-09-16-fdu-live-tool-comparison.md),
+with its regime and limits stated beside it.
+
 Findings from implementation and the final branch-wide review, worth recording because
 they were not in the research:
 
@@ -240,6 +247,12 @@ depends on:
 - `fdu-r27g` measures the retained standard-library single-writer lock using the common
   probe before any synchronization redesign or dependency is considered.
 
+**Superseded (2026-09-16).** Performance ordering is owned by
+[the campaign-2 plan](plan-2026-08-23-fdu-performance-campaign-2.md), which ranks work
+by measured distance to the metadata-walk floor.
+Wave 3 above and its rows in the bead table below are kept as the record of the original
+queue.
+
 ### Wave 4: Finish Product Surfaces, Proof, and Release
 
 - `fdu-oqoy` and `fdu-jej9` finish human and agent-facing CLI behavior after stack-safe
@@ -285,6 +298,9 @@ such a request can reach the transient summary tier (`plan_report` in
   contention, and harness work is complete.
 - `fdu-9cf0` publishes crates and wheels only after the report and product surfaces pass
   their release gates; name availability is rechecked immediately before publication.
+  **Waived for `0.1.0` (2026-09-15).** By maintainer decision, `0.1.0` is published by
+  hand without waiting on `fdu-ywu0`, `fdu-oqoy`, `fdu-jej9`, or `fdu-lka2`;
+  [the release process](../../guides/release-process.md) owns the procedure.
 
 Content metrics, a durable delta journal, metabrowser integration, and io_uring are
 owned by the
@@ -311,6 +327,10 @@ Phase 1 is done when all of these hold, and not before:
 7. Every concurrent subsystem has bounded ownership, deterministic shutdown/error tests,
    and no filesystem I/O, blocking send, or user callback under an index lock; custom
    lock-free protocols have a documented memory model and model-checking evidence.
+
+**Note (2026-09-16).** `0.1.0` ships before these criteria all hold.
+The 2026-09-15 decision separated the first release from Phase 1 exit; the criteria
+still define when Phase 1 is done.
 
 ## Open Questions
 
@@ -380,7 +400,7 @@ the queued Phase 1 work.
 | --- | --- | --- | --- |
 | `fdu-qfz6` | Active | — | This Phase 1 plan |
 | `fdu-dxee` | Active; owns Wave 0 | — | [Rust engineering quality](plan-2026-08-09-fdu-rust-engineering-quality.md) |
-| `fdu-6c8n` | Closed | `fdu-sn43` | [CLI UX and zero-install skill](plan-2026-08-09-fdu-cli-ux-and-agent-skill.md) |
+| `fdu-6c8n` | Closed | `fdu-sn43` | [CLI UX and zero-install skill](../done/plan-2026-08-09-fdu-cli-ux-and-agent-skill.md) |
 | `fdu-d5e1` | Active | `fdu-sn43` (closed) | [End-to-end performance evidence](plan-2026-08-09-fdu-end-to-end-performance-testing.md) |
 | `fdu-x746` | Future | `fdu-9cf0` | [Post-Phase 1 roadmap](../future/plan-2026-08-09-fdu-post-phase-1-roadmap.md) |
 
@@ -410,6 +430,10 @@ blocker. The table below is the complete set owned directly by this plan.
 | 4 | `fdu-v4lc` | P2 | Define native-unit compiled type rules (complete) | `fdu-k8zw`, `fdu-p35d`, `fdu-odx6` |
 | 4 | `fdu-lka2` | P2 | Harden watcher platform backends | `fdu-s7wr`, `fdu-8jte` |
 | 4 | `fdu-9cf0` | P2 | Publish crates and wheels after all release gates | `fdu-ad45`, `fdu-zga3`, `fdu-s7wr`, `fdu-k8zw`, `fdu-ywu0`, `fdu-6c8n`, `fdu-oqoy`, `fdu-jej9`, `fdu-v4lc`, `fdu-lka2` |
+
+The Wave 3 rows are superseded by the campaign-2 plan, and `fdu-9cf0` no longer waits on
+`fdu-ywu0`, `fdu-oqoy`, `fdu-jej9`, or `fdu-lka2` for `0.1.0`, as the notes above
+record.
 
 The future epic owns `fdu-p02b`, `fdu-3dtq`, `fdu-3n8c`, and `fdu-ktka`; their explicit
 activation dependencies are recorded in the future roadmap rather than mixed into the

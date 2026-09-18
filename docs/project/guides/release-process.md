@@ -103,11 +103,20 @@ No Flowmark token or publisher record is reused.
 | crates.io first release | The same crates.io owner publishes `0.1.0` with a narrowly scoped, short-lived token because a trusted publisher cannot be attached before the crate exists. Remove the token after verification. |
 | crates.io later releases | Trusted publisher owner `jlevy`, repository `fdu`, workflow `release.yml`, environment `release`; exchange GitHub OIDC through `rust-lang/crates-io-auth-action` only inside the publish job. |
 
+The first-time walkthrough for each row is
+[First-Time Channel Setup](#first-time-channel-setup).
+
 Crates.io publishing is authenticated in both cases.
 The bootstrap uses the registry token; steady state exchanges the workflow’s OIDC
 identity for a short-lived Cargo credential.
 Neither credential belongs in repository files, logs, build artifacts, or reusable
 workflows.
+
+Trusted publishers come after `0.1.0`, and only once the `release` environment exists
+and is protected: a required reviewer, and a deployment policy that admits only `v*`
+tags. GitHub creates an unprotected environment the first time a workflow job names it,
+so a publisher registered before the protection would trust any run of `release.yml`
+that names `release`, from any ref.
 
 ## Publication Invariants
 
@@ -125,21 +134,206 @@ index to carry it, then publish `fdu`. After a partial failure, verify the succe
 registry’s version and hash, rerun only the missing channel, and stop on any
 same-version hash conflict.
 Never retag, replace an immutable artifact, or rebuild from a different commit.
-A conflict therefore ends that version on every channel;
+A hash conflict therefore ends that version on every channel;
 [Recover From a Partial Publication](#recover-from-a-partial-publication) gives the
 procedure.
+
+## First-Time Channel Setup
+
+`0.1.0` is the first time the names `fdu` and `fdu-core` appear on either registry.
+The accounts and the GitHub environment can be finished days before the tag.
+The API tokens cannot: they are created in [Publish the Crates](#publish-the-crates) and
+[Publish the Python Distribution](#publish-the-python-distribution), used once, and
+revoked in those same sections.
+
+Recheck the three names immediately before the first write; availability is a race.
+Use the JSON and crates.io API curls in
+[Tag the Release Commit](#tag-the-release-commit) step 2, not the HTML project pages.
+`https://pypi.org/project/fdu/` can return HTTP 200 with an anti-bot interstitial for a
+name that does not exist.
+
+### Why the First Publish Is by Hand
+
+crates.io will not accept a
+[trusted publisher](https://crates.io/docs/trusted-publishing) until the crate exists,
+so `fdu-core` and `fdu` must be created with an API token.
+
+PyPI
+[can create a project from a pending trusted publisher](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/).
+This repository does not use that path for `0.1.0`:
+[`release.yml`](../../../.github/workflows/release.yml) is a rehearsal and has no
+publish job, and the first release is uploaded by hand from the signed tag.
+
+Do not register a pending PyPI publisher for `fdu` before that upload.
+A pending publisher does not reserve the name, and if `release.yml` later grows a
+publish job before the `release` environment is protected, the pending record would
+trust an unprotected subject.
+
+### crates.io Account
+
+1. Sign in at [crates.io](https://crates.io/) with the GitHub account that owns
+   `jlevy/fdu`. crates.io has no other login.
+2. On [Account Settings](https://crates.io/settings), confirm the email is verified.
+   crates.io has no native 2FA: login is GitHub OAuth.
+   Confirm two-factor authentication is enabled on the GitHub account that owns
+   `jlevy/fdu` (Settings → Password and authentication).
+3. Do not create a token yet, and do not add a trusted publisher: there is no crate to
+   attach one to.
+
+The token is created on publish day, at
+[New API Token](https://crates.io/settings/tokens/new):
+
+- **Scopes:** `publish-new`, `publish-update`, and `yank`. `yank` is so a conflict can
+  be contained without minting a second token.
+  Leave `change-owners` off.
+- **Crates:** restrict to `fdu-core` and `fdu`. A crate-name restriction applies to
+  future crates the account owns, so the names may be listed before they exist.
+- **Expiry:** the shortest preset crates.io offers, or a custom date that covers only
+  the publish window.
+
+Paste it into `CARGO_REGISTRY_TOKEN` as [Publish the Crates](#publish-the-crates) step 1
+describes. Do not run `cargo login`, and do not store the token in
+`~/.cargo/credentials.toml`, a GitHub secret, or the `release` environment.
+
+### PyPI Account
+
+1. Sign in with the same PyPI account that publishes Flowmark.
+   Do not create a second account for fdu.
+2. [Two-factor authentication](https://blog.pypi.org/posts/2024-01-01-2fa-enforced/) is
+   required for every management action and every upload.
+   Enable it under [Account settings](https://pypi.org/manage/account/) if it is not
+   already on.
+3. Confirm the account email is verified.
+
+The token is created on publish day, at
+[Add API token](https://pypi.org/manage/account/token/):
+
+- **Scope:** Entire account (all projects).
+  A project-scoped token cannot be created until `fdu` exists.
+- **Name:** something that names this one upload, for example `fdu-0.1.0-bootstrap`.
+
+Paste it into `UV_PUBLISH_TOKEN` as
+[Publish the Python Distribution](#publish-the-python-distribution) step 1 describes.
+`uv publish` sends it as the password with username `__token__`. Do not write a
+`.pypirc`, and do not store the token in a GitHub secret.
+
+### GitHub `release` Environment
+
+`0.1.0` does not use a GitHub environment.
+Create the protected `release` environment anyway, before anyone registers a trusted
+publisher, because GitHub creates an *unprotected* environment the first time a workflow
+job names one.
+
+In the repository: Settings → Environments → New environment, name `release`. Then:
+
+- **Required reviewers:** the maintainer who publishes Flowmark.
+  Leave Prevent self-review off: a single-maintainer repository cannot approve its own
+  deployment if that is on.
+- **Deployment branches and tags:** Selected branches and tags.
+  Add a deployment branch or tag rule with Ref type **Tag** and pattern `v*`. Add no
+  Branch rules: `v*` as a Branch rule matches names such as `validate-*`. No branch,
+  including `main`, should be able to deploy to `release`.
+- If **Allow administrators to bypass configured protection rules** is selected,
+  deselect it.
+
+Do not add `CARGO_REGISTRY_TOKEN` or `UV_PUBLISH_TOKEN` as environment secrets.
+Later publish jobs receive `id-token: write` and exchange OIDC; they hold no long-lived
+registry credential.
+
+### After 0.1.0: Trusted Publishers
+
+Only after all three of these are true:
+
+1. `fdu-core` and `fdu` exist on crates.io, and `fdu` exists on PyPI.
+2. The `release` environment exists and is protected as above.
+3. Every bootstrap token has been revoked.
+
+Then add the publishers.
+Use these subjects on every record; they are specific to this repository, not copied
+from Flowmark:
+
+| Field | Value |
+| --- | --- |
+| Owner | `jlevy` |
+| Repository | `fdu` |
+| Workflow filename | `release.yml` (the top-level file; not a reusable workflow) |
+| Environment | `release` |
+
+On crates.io, open each crate’s settings and add a GitHub Actions trusted publisher with
+those fields. On PyPI, open
+[the `fdu` project’s publishing page](https://pypi.org/manage/project/fdu/settings/publishing/)
+and add the same GitHub publisher.
+Do not create a pending publisher: the project already exists.
+
+Registering the publishers does not publish anything.
+[`release.yml`](../../../.github/workflows/release.yml) still has no publish job; adding
+those jobs is later work.
+The records exist so that work has a protected subject to name.
+
+### Publication Sequence
+
+The first release is this order.
+Channel setup is the only block that can finish before the release commit exists.
+
+1. Finish this section: accounts, 2FA, and the protected `release` environment.
+2. Merge everything the release needs onto `main`.
+3. [Rehearse the Release Commit](#rehearse-the-release-commit).
+4. [Tag the Release Commit](#tag-the-release-commit), including the name recheck.
+5. [Publish the Crates](#publish-the-crates): `fdu-core`, then `fdu`. Revoke the
+   crates.io token.
+6. [Publish the Python Distribution](#publish-the-python-distribution).
+   Revoke the PyPI token.
+7. [Announce the Release](#announce-the-release).
+8. Add [trusted publishers](#after-010-trusted-publishers).
 
 ## Publishing 0.1.0 by Hand
 
 A maintainer publishes `0.1.0` from the signed tag in this order: `fdu-core`, then
 `fdu`, then the Python distribution.
+[First-Time Channel Setup](#first-time-channel-setup) must already be done: the accounts
+exist, 2FA is on, and the `release` environment is protected.
 Every upload carries bytes the rehearsal validated, and each registry is checked against
 the rehearsal’s manifest before the next write.
 
 The commands assume bash or zsh, with `gh`, `uv`, `rustup`, and `curl`: the token
 prompts use `read -s`, which a plain POSIX `sh` such as `dash` rejects.
 `RELEASE` is an empty scratch directory outside any checkout, and `<run-id>` and
-`<release-commit>` are recorded in the first step.
+`<release-commit>` are recorded in
+[Rehearse the Release Commit](#rehearse-the-release-commit).
+
+### Prerequisites
+
+1. **A tag-signing key.** The tag is signed with an SSH key.
+   Set it up once, with `<key>` your key’s file name and `<email>` your Git
+   `user.email`, which must be a verified address on your GitHub account for GitHub to
+   show the tag as verified:
+
+   ```shell
+   git config --global gpg.format ssh
+   git config --global user.signingkey ~/.ssh/<key>.pub
+   echo "<email> namespaces=\"git\" $(cat ~/.ssh/<key>.pub)" >> ~/.ssh/allowed_signers
+   git config --global gpg.ssh.allowedSignersFile ~/.ssh/allowed_signers
+   ```
+
+   `git tag -v` needs the allowed-signers file; without it, verification fails even for
+   a correctly signed tag.
+   Register the same public key on GitHub as a *signing* key, which is separate from an
+   authentication key; `gh` needs an extra scope to add one:
+
+   ```shell
+   gh auth refresh -h github.com -s write:ssh_signing_key
+   gh ssh-key add ~/.ssh/<key>.pub --type signing --title "fdu release signing"
+   ```
+
+2. **Private vulnerability reporting.** [SECURITY.md](../../../SECURITY.md) and the
+   release notes send reporters to GitHub’s private reporting form, so it must be
+   enabled before the release is announced.
+   The first command must print `true`; if it prints `false`, the second enables it:
+
+   ```shell
+   gh api repos/jlevy/fdu/private-vulnerability-reporting --jq .enabled
+   gh api -X PUT repos/jlevy/fdu/private-vulnerability-reporting
+   ```
 
 ### Rehearse the Release Commit
 
@@ -193,51 +387,32 @@ prompts use `read -s`, which a plain POSIX `sh` such as `dash` rejects.
    flowmark-wrapped file would show every source line break.
    The body is the file with its HTML comments removed and each paragraph and list item
    joined onto one line by the Makefile’s pinned flowmark, which changes nothing but
-   whitespace:
+   whitespace. `scripts/release/release_body.py` does the strip, the unwrap, and the
+   first two checks: exactly one HTML comment in the notes (the guideline footer), and a
+   whitespace-only difference between the stripped source and the unwrapped body.
+   A comment inside a code span or fence is documentation, not a draft leftover.
 
    ```shell
    git switch --detach <release-commit>
-   uv run --no-project --python 3.12 python -c \
-     'import re, sys; sys.stdout.write(re.sub(r"<!--.*?-->\n*", "", sys.stdin.read(), flags=re.S))' \
-     < docs/project/release-notes/0.1.0.md > "$RELEASE/notes-source.md"
-   uv run --project explorations/benchmarks --frozen --only-group docs \
-     flowmark --width 0 --output "$RELEASE/notes.md" "$RELEASE/notes-source.md"
+   uv run --no-project --python 3.12 python scripts/release/release_body.py \
+     --notes docs/project/release-notes/0.1.0.md \
+     --source "$RELEASE/notes-source.md" \
+     --body "$RELEASE/notes.md"
    ```
 
-   Check the body before tagging, because a fix after the tag needs a new commit and so
-   a new version. The first command must print `1`, the notes’ standard footer, so no
-   unfilled draft comment was stripped silently; the second must print nothing, so the
-   body differs from the notes only in whitespace; and the third must print `0`, so
-   GitHub’s renderer finds no line break inside a paragraph.
-   Read `$RELEASE/notes.html` as well: it is the body as GitHub will render it.
+   Check the rendered body before tagging, because a fix after the tag needs a new
+   commit and so a new version.
+   The command must print `0`, so GitHub’s renderer finds no line break inside a
+   paragraph. Read `$RELEASE/notes.html` as well: it is the body as GitHub will render
+   it.
 
    ```shell
-   grep -c '<!--' docs/project/release-notes/0.1.0.md
-   cmp <(tr -s '[:space:]' ' ' < "$RELEASE/notes-source.md") \
-     <(tr -s '[:space:]' ' ' < "$RELEASE/notes.md")
    gh api markdown -f mode=gfm -F text=@"$RELEASE/notes.md" > "$RELEASE/notes.html" &&
      grep -c '<br>' "$RELEASE/notes.html"
    ```
 
-   Then create, verify, and push the signed tag on the release commit:
-
-   ```shell
-   git tag -s v0.1.0 -m "fdu 0.1.0"
-   git tag -v v0.1.0
-   git push origin v0.1.0
-   ```
-
-2. Clone the pushed tag into a clean directory, and confirm that it names the rehearsed
-   commit and the Cargo version:
-
-   ```shell
-   git clone --branch v0.1.0 https://github.com/jlevy/fdu "$RELEASE/fdu"
-   cd "$RELEASE/fdu"
-   uv run --no-project --python 3.12 python scripts/release/resolve_plan.py \
-     --mode release --ref refs/tags/v0.1.0 --commit <release-commit> --validate-checkout
-   ```
-
-3. Recheck that both crate names and the Python name are still free.
+2. Recheck that both crate names and the Python name are still free, before a pushed tag
+   commits the version.
    Each command must print `404`:
 
    ```shell
@@ -252,15 +427,32 @@ prompts use `read -s`, which a plain POSIX `sh` such as `dash` rejects.
    [Recover From a Partial Publication](#recover-from-a-partial-publication) gives the
    check that replaces this one for that name.
 
+3. Create the signed tag on the release commit, and push it only if it verifies, with
+   the key from [Prerequisites](#prerequisites):
+
+   ```shell
+   git tag -s v0.1.0 -m "fdu 0.1.0"
+   git tag -v v0.1.0 && git push origin v0.1.0
+   ```
+
+4. Clone the pushed tag into a clean directory, and confirm that it names the rehearsed
+   commit and the Cargo version:
+
+   ```shell
+   git clone --branch v0.1.0 https://github.com/jlevy/fdu "$RELEASE/fdu"
+   cd "$RELEASE/fdu"
+   uv run --no-project --python 3.12 python scripts/release/resolve_plan.py \
+     --mode release --ref refs/tags/v0.1.0 --commit <release-commit> --validate-checkout
+   ```
+
 Every remaining command runs in `$RELEASE/fdu`, whose `rust-toolchain.toml` selects the
 pinned Rust.
 
 ### Publish the Crates
 
-1. Create a crates.io API token with the `publish-new`, `publish-update`, and `yank`
-   scopes, limited to the crates `fdu-core` and `fdu`, with the shortest expiry
-   crates.io offers. `yank` is there so that a conflict can be contained at once, without
-   creating a second token mid-incident.
+1. Create the crates.io API token as [crates.io Account](#cratesio-account) describes:
+   `publish-new`, `publish-update`, and `yank`, limited to `fdu-core` and `fdu`, with
+   the shortest expiry crates.io offers.
    Read the token without echoing it or writing it to shell history:
 
    ```shell
@@ -271,10 +463,12 @@ pinned Rust.
 2. Reproduce both crates from the tag and compare them with the rehearsal’s digests.
    A mismatch means crates.io would receive bytes nothing tested: stop, and publish
    nothing until the difference is explained.
-   No run has yet compared a maintainer’s packaging with the Linux rehearsal’s, so on
-   the first release rule out a platform difference first.
-   If the extracted file trees are identical and only the archives differ, reproduce on
-   Linux x86-64 with the pinned toolchain rather than relaxing the comparison.
+   On 2026-09-16 a maintainer’s `cargo package --locked --no-verify -p fdu-core -p fdu`
+   on macOS arm64, with the pinned cargo 1.97.1, reproduced both `.crate` digests of
+   Linux rehearsal run 35156068769 byte for byte, so a macOS host is not expected to
+   differ. If a comparison still fails, and the extracted file trees are identical and
+   only the archives differ, reproduce on Linux x86-64 with the pinned toolchain rather
+   than relaxing the comparison.
 
    ```shell
    cargo package --locked -p fdu-core -p fdu
@@ -288,7 +482,7 @@ pinned Rust.
    If only a Linux reproduction matches, do all of Publish the Crates on that Linux
    host: download and check the rehearsal’s files there as in
    [Rehearse the Release Commit](#rehearse-the-release-commit) step 3, clone and
-   validate the tag as in [Tag the Release Commit](#tag-the-release-commit) step 2, then
+   validate the tag as in [Tag the Release Commit](#tag-the-release-commit) step 4, then
    run steps 1 to 6 of this section in that clone.
    Publishing from the host whose digests differed uploads the bytes that failed the
    comparison.
@@ -335,12 +529,14 @@ pinned Rust.
    ```
 
 6. Remove the token: `unset CARGO_REGISTRY_TOKEN`, then revoke it in the crates.io
-   account settings. Configure crates.io trusted publishing on both crates for later
-   releases, as the account table describes.
+   account settings. Trusted publishers wait until both crates exist, the token is gone,
+   and the `release` environment is protected, as
+   [After 0.1.0: Trusted Publishers](#after-010-trusted-publishers) describes.
 
 ### Publish the Python Distribution
 
-1. Create a PyPI API token scoped to the account, and read it the same way:
+1. Create the account-scoped PyPI API token as [PyPI Account](#pypi-account) describes,
+   and read it the same way:
 
    ```shell
    read -rs UV_PUBLISH_TOKEN && export UV_PUBLISH_TOKEN
@@ -358,26 +554,32 @@ pinned Rust.
 3. The audit must report the PyPI release as `identical`, and the published wheel must
    run. `--no-config` sets aside any user-level `exclude-newer` cool-off, which would
    hide a release published minutes ago.
-   PyPI’s API and index can also trail an upload, so if the audit exits 3 for a
-   `missing` release, or the install cannot find `fdu==0.1.0`, rerun both as in step 3
-   of Publish the Crates:
+   `--no-build` and an explicit GIL-enabled `--python` make the check test a wheel:
+   without them, a free-threaded default interpreter, which cannot install the `abi3`
+   wheels, quietly builds the source distribution and the check passes having tested
+   none. Run it on 3.12, the `abi3` floor, and again on 3.14. PyPI’s API and index can
+   also trail an upload, so if the audit exits 3 for a `missing` release, or the install
+   cannot find `fdu==0.1.0`, rerun both as in step 3 of Publish the Crates:
 
    ```shell
    uv run --no-project --python 3.12 python scripts/release/registry_state.py \
      --manifest "$RELEASE/files/release-manifest.json" --version 0.1.0 --channel pypi \
      --require-identical &&
-     (cd "$RELEASE" && uv tool run --no-config --from fdu==0.1.0 fdu --version)
+     (cd "$RELEASE" &&
+       uv tool run --no-config --no-build --python 3.12 --from fdu==0.1.0 fdu --version &&
+       uv tool run --no-config --no-build --python 3.14 --from fdu==0.1.0 fdu --version)
    ```
 
-4. Delete the token in the PyPI account settings, and add the trusted publisher for
-   later releases to the now-existing `fdu` project.
+4. Delete the token in the PyPI account settings.
+   The trusted publisher waits for the protected `release` environment, as
+   [After 0.1.0: Trusted Publishers](#after-010-trusted-publishers) describes.
 
 ### Announce the Release
 
 Once every channel verifies, record the final registry state and attach it with the
 evidence and artifacts to a GitHub release on the tag.
 The body is `$RELEASE/notes.md`, derived from the release commit’s notes and checked in
-step 1 of [Tag the Release Commit](#tag-the-release-commit); step 2 confirmed that the
+step 1 of [Tag the Release Commit](#tag-the-release-commit); step 4 confirmed that the
 tag names that commit, so the body is the tagged text.
 The release is created only if the audit exits 0, which with `--require-identical` means
 every channel holds exactly the rehearsal’s files:
@@ -393,6 +595,22 @@ uv run --no-project --python 3.12 python scripts/release/registry_state.py \
     "$RELEASE"/files/fdu-0.1.0.tar.gz
 ```
 
+### After Publishing
+
+Check what users see first:
+
+- [ ] docs.rs built both crates: [fdu-core](https://docs.rs/crate/fdu-core/0.1.0/builds)
+  and [fdu](https://docs.rs/crate/fdu/0.1.0/builds) each show a successful build.
+- [ ] The crates.io pages for [fdu-core](https://crates.io/crates/fdu-core) and
+  [fdu](https://crates.io/crates/fdu) render their READMEs, and their links resolve.
+- [ ] The [PyPI page](https://pypi.org/project/fdu/0.1.0/) renders the package README
+  and lists the source distribution and five wheels.
+- [ ] The [GitHub release](https://github.com/jlevy/fdu/releases/tag/v0.1.0) carries the
+  eight artifacts (two crates, the source distribution, and five wheels) and the
+  evidence: `registry-state.json`, `release-manifest.json`, and `SHA256SUMS`.
+  `gh release view v0.1.0 --repo jlevy/fdu --json assets --jq '.assets | length'` prints
+  `11`.
+
 ### Recover From a Partial Publication
 
 Neither crates.io nor PyPI lets a version’s files be replaced, even after a yank or a
@@ -406,11 +624,12 @@ That is no verdict: rerun the audit, and never read it as `missing`.
 | --- | --- | --- |
 | `missing`, after the lag retry in step 3 of Publish the Crates | Nothing reached the registry. | Fix the cause, then rerun the failed step from its start, so a crate is compared again before it is published. |
 | `identical` | The upload landed, though the command reported a failure. | Continue with the next step. |
-| `conflict` | The registry holds bytes nothing tested, under a version that cannot be reused. | Follow the procedure below. |
+| `conflict` whose detail lists only `missing:` files | PyPI holds part of the release, from an interrupted upload or a JSON API that has not caught up. Nothing it holds is wrong. | Wait a few minutes and rerun the audit. If files are still missing, rerun the `uv publish` command from step 2 of Publish the Python Distribution; `--check-url` uploads only what PyPI lacks. |
+| `conflict` listing a `hash mismatch:` or an `unexpected:` file | The registry holds bytes nothing tested, under a version that cannot be reused. | Follow the procedure below. |
 
-A `conflict` on any channel, or any failure whose fix needs a new commit, ends `0.1.0`:
-a published file cannot be replaced, the pushed tag cannot move, and every channel
-carries one version.
+A `conflict` with a hash mismatch or an unexpected file, on any channel, or any failure
+whose fix needs a new commit, ends `0.1.0`: a published file cannot be replaced, the
+pushed tag cannot move, and every channel carries one version.
 The first case can only arise from step 3 of Publish the Crates onward, once `fdu-core`
 is on crates.io.
 
@@ -447,7 +666,7 @@ is on crates.io.
    `0.1.0`. Both crates are published at `0.1.1`, `fdu-core` included, even if its
    source did not change.
 
-   On that pass, [Tag the Release Commit](#tag-the-release-commit) step 3 still requires
+   On that pass, [Tag the Release Commit](#tag-the-release-commit) step 2 still requires
    `404` for a name `0.1.0` never reached.
    A name it did reach now prints `200`, so check that name’s new version instead; for
    each such name, its command here must print `404`:
