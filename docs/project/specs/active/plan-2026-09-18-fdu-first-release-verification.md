@@ -35,8 +35,10 @@ repository would.
 - Replacing `make release-rehearse`. Rehearsal already packages and inspects artifacts;
   this plan is the stranger path on top of them.
 - Contacting crates.io or PyPI during the first checklist.
-- Fixing gaps the simulation already recorded (`fdu-18vk`, `fdu-i142` / pull request
-  #77). Those remain on their own beads.
+- Fixing gaps the simulation already recorded on `origin/main` `98379c76` (`fdu-18vk`,
+  `fdu-i142`). Those remain on their own beads.
+  Pull request #87 is the leftovers that restore wheel SIGINT, accept whole-millisecond
+  `--interval`, and ship a crates.io README with absolute links.
 
 ## Background
 
@@ -47,8 +49,10 @@ pages, docs.rs, or GitHub release assets until they exist.
 
 A 2026-09-18 run against `origin/main` (`98379c76`) is recorded on `fdu-bnp9`. Watch,
 Python, Rust, and CLI succeeded from packaged artifacts.
-A wheel-installed `--watch` that ignores Ctrl-C is `fdu-18vk`. Relative README links
-that crates.io would resolve under `crates/fdu/` are `fdu-i142` / pull request #77.
+On that revision a wheel-installed `--watch` ignores Ctrl-C (`fdu-18vk`) and relative
+README links that crates.io would resolve under `crates/fdu/` 404 (`fdu-i142`). Pull
+request #87 is the change that restores SIGINT, accepts whole milliseconds, and ships
+`crates/fdu/README.md` with absolute links.
 
 ## Design
 
@@ -105,19 +109,22 @@ Work in a scratch directory that is not the checkout.
 3. **Watch.** Start
    `fdu --watch --view files --format jsonl --cache off --interval 1s TREE`, create a
    file in `TREE`, and confirm a `fdu.stream/1` upsert arrives.
-   `--interval` accepts whole `s`/`m`/`h` units (`1s`, `2s`); `200ms` and `0.2s` are
-   usage errors. Interrupt with Ctrl-C. A wheel-installed command that ignores Ctrl-C
-   during `--watch` is `fdu-18vk`.
+   This simulation used `--interval 1s`. On `98379c76`, `200ms` and `0.2s` are usage
+   errors. Pull request #87 accepts whole milliseconds (`200ms`; `0.2s` stays rejected,
+   `fdu-8o7g`). Interrupt with Ctrl-C. On that revision a wheel-installed command
+   ignores Ctrl-C during `--watch` (`fdu-18vk`); #87 restores SIGINT.
 
 4. **Python, from the host wheel, not a rebuild:**
 
    ```shell
    uv tool install --no-index --from ./fdu-0.1.0-*.whl --python 3.12 fdu
-   uv run --python 3.12 -c 'import fdu; print(fdu.open(".", cache=fdu.CachePolicy.OFF).total().files)'
+   uv run --python 3.12 --with ./fdu-0.1.0-*.whl python -c 'import fdu; print(fdu.open(".", cache=fdu.CachePolicy.OFF).total().files)'
    ```
 
-   Confirm `uv tool run --from that.whl fdu --version` is the same binary identity as
-   the crate install.
+   `uv tool install` puts the console script in an isolated tool env; `uv run` does not
+   use that env. Import from the wheel with `--with`. Confirm
+   `uv tool run --from that.whl fdu --version` is the same binary identity as the crate
+   install.
 
 5. **Rust consumer** against the path crates (`cargo add` cannot resolve `fdu` until
    crates.io has it): `open` a tree, print `index.total().files`.
@@ -125,7 +132,7 @@ Work in a scratch directory that is not the checkout.
 6. **Registry-page rehearsal.** `crates/fdu/Cargo.toml` `readme` and `crates/fdu-py`
    `[project.urls]` decide what a stranger sees on crates.io and PyPI. Relative links in
    a README that crates.io resolves under `crates/fdu/` will 404. That defect is
-   `fdu-i142` / pull request #77.
+   `fdu-i142` / pull request #87, which adds `crates/fdu/README.md` with absolute links.
 
 ### Phase 2: After 0.1.0 Is on the Channels
 
@@ -201,10 +208,11 @@ repository. Use a GIL-enabled CPython 3.12 (and again 3.14) and a Rust toolchain
 From the crates.io or PyPI install, not the checkout:
 
 - [ ] `fdu .` on a small tree matches `fdu . --format json` totals.
-- [ ] `fdu . --watch` repaints after creating a file; Ctrl-C returns to the shell
-  (`fdu-18vk` is the known wheel gap).
-- [ ] `fdu . --analyze=code` on this repository’s `crates/` tree completes and the
-  second run reports cached analysis in the performance footer.
+- [ ] `fdu . --watch` repaints after creating a file; Ctrl-C returns to the shell.
+  On `98379c76` the wheel ignored SIGINT (`fdu-18vk`); pull request #87 restores it.
+- [ ] Clone https://github.com/jlevy/fdu.git and run `fdu . --analyze=code` on its
+  `crates/` tree with the published binary, not a checkout build.
+  The second run reports cached analysis in the performance footer.
 - [ ] `fdu --skill` prints a skill that names `fdu`, not a placeholder.
 
 ## Testing Strategy
@@ -226,8 +234,9 @@ channels exist.
 ## Open Questions
 
 None that block running either phase.
-Known product gaps (`fdu-18vk`, `fdu-i142`) stay on their own beads; both checklists
-still record the result.
+Known product gaps recorded on `98379c76` (`fdu-18vk`, `fdu-i142`) stay on their own
+beads; pull request #87 is the engineering leftovers.
+Both checklists still record the result.
 
 ## References
 
@@ -237,8 +246,9 @@ still record the result.
 - `fdu-bnp9`: pre-publish packaged-artifact simulation
 - `fdu-wpxu`: post-publish first-user verification checklist
 - `fdu-9cf0`: publish 0.1.0 by hand
-- `fdu-18vk`: wheel `--watch` ignores SIGINT
-- `fdu-i142`: crates.io README relative links
+- `fdu-18vk`: wheel `--watch` ignores SIGINT (fixed in pull request #87)
+- `fdu-i142`: crates.io README relative links (fixed in pull request #87)
+- `fdu-8o7g`: whole-millisecond `--interval` (`200ms`)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

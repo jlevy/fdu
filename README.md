@@ -29,8 +29,9 @@ Once `0.1.0` is on the registries:
 cargo install --locked fdu          # command line; Rust 1.85 or newer
 uv tool install fdu                 # same command, prebuilt wheel
 uvx fdu@0.1.0 --help                # run that release without installing
-pip install fdu==0.1.0              # Python package: import fdu
-cargo add fdu                       # Rust library, command line included
+uv add fdu                          # Python library in a uv project
+pip install fdu==0.1.0              # Python library in the current environment
+cargo add fdu                       # Rust library (re-exports the engine)
 cargo add fdu-core --features watch # engine only, with the watch layer
 ```
 
@@ -182,9 +183,15 @@ with index.watch() as stream:
 ```
 
 Values are frozen dataclasses and enums.
-Every native call returns a whole structured result and releases the GIL while the
-engine works. `fdu.opened.OpenedIndex` is the typed long-lived root: coherent
-multi-projection reads, continuations, and a resumable change journal.
+Every method is bulk: it returns a whole structured result in one call.
+Open, scan, and the native reconciliation phase of refresh run with the GIL released;
+building the Python dicts and lists holds it.
+Provenance on a roll-up is the entry’s own source, not its subtree: a revalidated
+directory can hold cached descendants.
+Whether a whole answer is complete and current comes from the scan’s `complete` and
+`freshness`, which the example prints.
+`fdu.opened.OpenedIndex` is the typed long-lived root: coherent multi-projection reads,
+continuations, and a resumable change journal.
 
 The wheel also installs the native `fdu` command.
 There is no Python reimplementation of the CLI.
@@ -240,6 +247,8 @@ Of a dozen surveyed tools in this space ([du](https://www.gnu.org/software/coreu
 [ncdu](https://dev.yorhel.nl/ncdu), [dust](https://github.com/bootandy/dust),
 [dua](https://github.com/Byron/dua-cli), [gdu](https://github.com/dundee/gdu),
 [dut](https://codeberg.org/201984/dut), [duc](https://github.com/zevv/duc),
+[fsearch](https://github.com/cboxdoerfer/fsearch),
+[bfs](https://github.com/tavianator/bfs), [fd](https://github.com/sharkdp/fd),
 [scc](https://github.com/boyter/scc), [tokei](https://github.com/XAMPPRocky/tokei)),
 exactly one persists anything, exactly one carries multiple metrics per pass, **none**
 does per-directory type tallies, and **none** does mtime-based incremental revalidation.
