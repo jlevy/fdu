@@ -38,7 +38,7 @@ class MetadataTests(unittest.TestCase):
     def test_runbook_derives_the_release_body_from_the_checked_in_script(self) -> None:
         runbook = (ROOT / "docs/project/guides/release-process.md").read_text(encoding="utf-8")
         self.assertIn("scripts/release/release_body.py", runbook)
-        self.assertNotIn("re.sub(r\"<!--.*?-->", runbook)
+        self.assertNotIn('re.sub(r"<!--.*?-->', runbook)
 
     def test_rehearsal_workflow_has_no_publication_authority(self) -> None:
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")

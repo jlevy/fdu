@@ -43,13 +43,7 @@ class ReleaseBodyTests(unittest.TestCase):
         check_release_body(notes, stripped, stripped)
 
     def test_a_comment_inside_a_fenced_block_is_kept_and_not_counted(self) -> None:
-        notes = (
-            "# Notes\n\n"
-            "```\n"
-            "<!-- not the footer -->\n"
-            "```\n\n"
-            f"{GUIDELINE_FOOTER}\n"
-        )
+        notes = f"# Notes\n\n```\n<!-- not the footer -->\n```\n\n{GUIDELINE_FOOTER}\n"
         stripped = strip_html_comments(notes)
         self.assertIn("<!-- not the footer -->", stripped)
         self.assertEqual(html_comment_count(notes), EXPECTED_HTML_COMMENTS)
@@ -95,7 +89,9 @@ class ReleaseBodyTests(unittest.TestCase):
             )
             self.assertEqual(status, 0)
             self.assertEqual(source_path.read_text(encoding="utf-8"), strip_html_comments(notes))
-            self.assertEqual(body_path.read_text(encoding="utf-8"), source_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                body_path.read_text(encoding="utf-8"), source_path.read_text(encoding="utf-8")
+            )
 
 
 if __name__ == "__main__":
