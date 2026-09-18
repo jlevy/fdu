@@ -197,8 +197,8 @@ Text is for people. JSON, JSON Lines, and YAML carry versioned schemas and omit 
 text-only performance footer.
 Integer fields that exceed 2^53 — fingerprints, option hashes, and nanosecond timestamps
 — lose precision in JavaScript `JSON.parse` and any other IEEE 754 binary64 consumer.
-Read them as strings, or use a parser that preserves integers, if exact identity matters.
-Results go to stdout; diagnostics go to stderr.
+Read them as strings, or use a parser that preserves integers, if exact identity
+matters. Results go to stdout; diagnostics go to stderr.
 The command never prompts or pages.
 
 Check `complete` and `errors` before trusting totals, `freshness` and `source` before

@@ -262,9 +262,9 @@ This applies only to anyone who ran fdu built from a development checkout.
 0.1.x may add fields and variants to public Rust types such as `ReadProjection`,
 `ProjectionResult`, `ProjectionRefusal`, `LimitedProjection`, `IssueKind`,
 `ImpactDomain`, `Error`, `ReportRequest`, `TreePage`, `ReadResponse`, `RollUp`,
-`Provenance`, `StateTransition`, `ReportSource`, `Attrs`, and `Query`.
-Those additions are breaking under Cargo’s semver rules for exhaustive types; they
-land in 0.2 rather than behind `#[non_exhaustive]` on 0.1.0.
+`Provenance`, `StateTransition`, `ReportSource`, `Attrs`, and `Query`. Those additions
+are breaking under Cargo’s semver rules for exhaustive types; they land in 0.2 rather
+than behind `#[non_exhaustive]` on 0.1.0.
 
 ### Known limitations
 
@@ -335,9 +335,10 @@ land in 0.2 rather than behind `#[non_exhaustive]` on 0.1.0.
 - **Roll-up metrics** are a fixed set; there is no interface for custom per-directory
   reducers.
 - **JSON integers.** Fingerprints, option hashes, and nanosecond timestamps are JSON
-  numbers. Values above 2^53 lose precision in JavaScript `JSON.parse` and any other
-  IEEE 754 binary64 consumer. Read them as strings, or use a parser that preserves
-  integers, if exact identity matters.
+  numbers. Values above 2^53 lose precision in JavaScript `JSON.parse` and any other IEEE
+  754 binary64 consumer.
+  Read them as strings, or use a parser that preserves integers, if exact identity
+  matters.
 - **Performance evidence** comes mainly from an M1 Pro MacBook with a local APFS SSD.
   Linux measurements are from virtualized hosts, Windows has none, and CI checks
   behavior rather than timing.

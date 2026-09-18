@@ -929,8 +929,8 @@ not performance evidence.
 Which anchor contract to use is a real choice, because the contracts measure different
 questions. `fdu-index-summary` isolates engine work with `--cache off`, which is what a
 change to the walker or the index should be judged on.
-`fdu-transient-summary` adds `--no-gitignore` so the request stays on the transient
-plan and records the `transient-summary` work class.
+`fdu-transient-summary` adds `--no-gitignore` so the request stays on the transient plan
+and records the `transient-summary` work class.
 `PERF_TOOL_CONTRACT` defaults to that transient contract.
 `fdu-default-tree` is the bare `fdu PATH` invocation — cache `auto`, tree view, snapshot
 written on every run — and is the only contract that measures what a user gets by typing
