@@ -183,10 +183,8 @@ Partial, stale, cached, or error-bearing output is invalid.
 Reports label indexed-tree, rendered-tree, transient-summary, and total-only work
 classes because those jobs are not semantically identical.
 A work class is declared by the contract, not inferred from the run.
-`fdu-transient-summary` passes no `--no-gitignore`, so on a binary that reads
-`.gitignore` by default it takes the indexed plan while still recording
-`transient-summary` (`fdu-hkyh`); until it does, anchor on `fdu-index-summary`, as both
-commands above do, rather than on the `PERF_TOOL_CONTRACT` default.
+`fdu-transient-summary` passes `--no-gitignore` so the request stays on the transient
+plan; `fdu-index-summary` is the same summary with `.gitignore` observation on.
 
 The reviewed M1/APFS result and exact manifest are in the
 [live tool comparison](../../docs/project/reports/report-2026-08-13-fdu-live-tool-comparison.md).

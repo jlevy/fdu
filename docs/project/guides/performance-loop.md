@@ -871,8 +871,8 @@ reasoning.
 and no snapshot. By default that request observes `.gitignore`, so it retains the index
 to classify entries and is *not* the transient aggregate plan.
 The transient plan — no retained index, and the tier the floor report puts closest to
-the machine floor at 1.20× synthetic and 1.59× on `/usr` — is reached only with the
-probe’s `--no-controls`, its spelling of `--no-gitignore`, passed in the variant:
+the machine floor at 1.20× synthetic and 1.59× on `/usr` — is reached with the probe’s
+`--no-controls`, its spelling of `--no-gitignore`, passed in the variant:
 
 ```shell
 PYTHONPATH=explorations uv run --project explorations/benchmarks --frozen \
@@ -886,11 +886,8 @@ PYTHONPATH=explorations uv run --project explorations/benchmarks --frozen \
 `make perf-compare` cannot express that: `CONTROL` can carry the flag, but the candidate
 variant is fixed to the bare probe, so a Make-driven `aggregate-summary` round measures
 the indexed plan for the candidate.
-The `fdu-transient-summary` tool contract has the same gap and records transient work
-for a request that takes the indexed plan.
-`fdu-hkyh` tracks that harness defect, and
-[comparing against other tools](#comparing-against-other-tools) says which contract to
-use until it is fixed.
+The floor scoreboard’s `aggregate` instrument passes `--no-controls` itself, so a floor
+round measures the transient plan.
 An aggregate-tier experiment recorded before `.gitignore` became the default measured
 the transient plan with the bare job; compare it with `--no-controls` runs of later
 revisions.
@@ -932,12 +929,9 @@ not performance evidence.
 Which anchor contract to use is a real choice, because the contracts measure different
 questions. `fdu-index-summary` isolates engine work with `--cache off`, which is what a
 change to the walker or the index should be judged on.
-`fdu-transient-summary` passes the same arguments, so on a binary that reads
-`.gitignore` by default it takes the same indexed plan while recording the
-`transient-summary` work class.
-Until that contract passes `--no-gitignore` (`fdu-hkyh`), `fdu-index-summary` is the
-only summary contract that measures what its name says, and `PERF_TOOL_CONTRACT`, which
-defaults to `fdu-transient-summary`, has to be set explicitly.
+`fdu-transient-summary` adds `--no-gitignore` so the request stays on the transient
+plan and records the `transient-summary` work class.
+`PERF_TOOL_CONTRACT` defaults to that transient contract.
 `fdu-default-tree` is the bare `fdu PATH` invocation — cache `auto`, tree view, snapshot
 written on every run — and is the only contract that measures what a user gets by typing
 nothing else.

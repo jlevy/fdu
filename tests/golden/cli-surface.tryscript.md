@@ -319,7 +319,7 @@ re-read a listing after a rule edit if the bit matters.
 ## Value Grammars
 
 - Sizes: `512`, `10k`, `10M`, `1.5GiB`. Decimal and binary units, case-insensitive.
-- Times: `now`, a compound age (`45s`, `2h`, `1h30m`), an RFC 3339 timestamp with an
+- Times: `now`, a compound age (`200ms`, `45s`, `2h`, `1h30m`), an RFC 3339 timestamp with an
   offset (`2026-08-10T18:22:31Z`), or `@` epoch seconds.
   Calendar units and fractional ages are rejected with the spelling to use instead; a
   bare local date-time is rejected because resolving it needs a time-zone database.
@@ -347,6 +347,8 @@ Check the process exit status and these fields:
   and `documents` views), `fdu.report/5` otherwise, a `--watch` stream carries
   `fdu.stream/1`, and `--cache-status` carries `fdu.cache/2`. Treat an unrecognized
   value as a version you cannot parse rather than guessing at the fields.
+- Integer fields that exceed 2^53 (fingerprints, option hashes, nanosecond timestamps)
+  lose precision in IEEE 754 binary64 parsers such as JavaScript `JSON.parse`
 - `complete` and `errors` before trusting totals
 - `freshness` and `source` before presenting data as current
 - `truncated` on a tree node before treating it as exhaustive
@@ -475,6 +477,7 @@ MORE COMPOSITIONS
 
   --interval throttles rendering only; change detection is event-driven and
   unaffected by it, so an idle tree costs nothing between changes.
+  The duration uses the age grammar: `2s`, `200ms`, `1h30m`.
 
   largest and recent are presets over files, not more views to learn:
     largest = files --sort size --limit 20, regular files only
@@ -546,6 +549,8 @@ OUTPUT AND AUTOMATION
   Text language rows use canonical names; machine formats retain lowercase IDs.
   Metric rows include detection source, confidence, origin flags, and coverage.
   One-shot text reports end with a gray performance line; machine formats omit it.
+  JSON numbers above 2^53 (fingerprints, option hashes, nanosecond timestamps)
+  lose precision in IEEE 754 binary64 parsers such as JavaScript JSON.parse.
   Results go to stdout; warnings and errors go to stderr.
   The command never prompts, pages, or animates progress.
   Reports require an explicit PATH; bare `fdu` prints help and scans nothing.

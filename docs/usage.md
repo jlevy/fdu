@@ -193,6 +193,9 @@ fdu . --watch --view=files --format=jsonl
 
 Text is for people. JSON, JSON Lines, and YAML carry versioned schemas and omit the
 text-only performance footer.
+Integer fields that exceed 2^53 — fingerprints, option hashes, and nanosecond timestamps
+— lose precision in JavaScript `JSON.parse` and any other IEEE 754 binary64 consumer.
+Read them as strings, or use a parser that preserves integers, if exact identity matters.
 Results go to stdout; diagnostics go to stderr.
 The command never prompts or pages.
 
@@ -211,7 +214,9 @@ accepts, a rule between two flags, and a scan scope this build cannot honour, su
 
 `--watch` streams changes from a retained index.
 `--interval` throttles rendering, not change detection; an idle tree performs no polling
-scan. Content analysis is one-shot and cannot be combined with watch mode.
+scan. The duration uses the same age grammar as `--modified-since`: `2s`, `200ms`,
+`1h30m`. Fractional ages such as `0.2s` are still rejected.
+Content analysis is one-shot and cannot be combined with watch mode.
 
 Run `fdu --docs` for the offline guide, `fdu --help` for every flag, and `fdu --skill`
 for the portable agent-facing contract.

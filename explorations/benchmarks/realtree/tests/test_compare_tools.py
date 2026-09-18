@@ -450,8 +450,11 @@ class ToolComparisonTests(unittest.TestCase):
         self.assertEqual(contract.work_class, "transient-summary")
         self.assertIn("--cache", contract.argv)
         self.assertIn("off", contract.argv)
+        self.assertIn("--no-gitignore", contract.argv)
         self.assertIn("summary", contract.argv)
         self.assertIn("no path index", contract.description)
+        index_summary = compare_tools.CONTRACTS["fdu-index-summary"]
+        self.assertNotIn("--no-gitignore", index_summary.argv)
 
     def test_summary_semantic_digest_ignores_run_specific_envelope_fields(self) -> None:
         first = {

@@ -65,6 +65,14 @@ fn emit_version() {
         println!("cargo:rustc-env=FDU_BUILD_VERSION={semver}");
         return;
     }
+    // crates.io unpacks `.cargo_vcs_info.json` beside Cargo.toml. Any enclosing git
+    // repository is then the consumer's, not this crate's, and stamping its HEAD would
+    // make `--version` report a stranger's commit (fdu-nwud).
+    if std::path::Path::new(".cargo_vcs_info.json").is_file() {
+        println!("cargo:rerun-if-changed=.cargo_vcs_info.json");
+        println!("cargo:rustc-env=FDU_BUILD_VERSION={semver}");
+        return;
+    }
     let version = match git(&["rev-parse", "--short=9", "HEAD"]) {
         Some(revision) => {
             // This preserves Cargo's default whole-package dirty tracking after adding

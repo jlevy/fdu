@@ -230,6 +230,8 @@ OUTPUT AND AUTOMATION
   Text language rows use canonical names; machine formats retain lowercase IDs.
   Metric rows include detection source, confidence, origin flags, and coverage.
   One-shot text reports end with a gray performance line; machine formats omit it.
+  JSON numbers above 2^53 (fingerprints, option hashes, nanosecond timestamps)
+  lose precision in IEEE 754 binary64 parsers such as JavaScript JSON.parse.
   Results go to stdout; warnings and errors go to stderr.
   The command never prompts, pages, or animates progress.
   Reports require an explicit PATH; bare `fdu` prints help and scans nothing.
@@ -251,6 +253,7 @@ const DOCS: &str = docs_guide!(
 
   --interval throttles rendering only; change detection is event-driven and
   unaffected by it, so an idle tree costs nothing between changes.
+  The duration uses the age grammar: `2s`, `200ms`, `1h30m`.
 ",
     "--cache, --watch, --analysis-workers"
 );
@@ -1942,6 +1945,8 @@ mod tests {
         assert_eq!(parse_duration("2s").expect("seconds"), Duration::from_secs(2));
         assert_eq!(parse_duration("1h30m").expect("compound"), Duration::from_secs(5_400));
         assert_eq!(parse_duration("1w").expect("weeks"), Duration::from_secs(604_800));
+        assert_eq!(parse_duration("200ms").expect("milliseconds"), Duration::from_millis(200));
+        assert!(parse_duration("0.2s").is_err(), "a fractional age stays rejected");
         assert!(parse_duration("banana").is_err(), "a non-duration must be rejected, not parsed");
     }
 

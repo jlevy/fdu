@@ -100,8 +100,9 @@ The GitHub release text is
     an unfiltered `--view summary` retains it and saves a snapshot like any other
     report.
 - **Watch.** `fdu --watch` repeats the same query as the tree changes.
-  Aggregate views repaint at most every `--interval` (2 seconds by default), and
-  `--view files --format jsonl` emits one `fdu.stream/1` record per change.
+  Aggregate views repaint at most every `--interval` (2 seconds by default; the age
+  grammar, including `200ms`), and `--view files --format jsonl` emits one
+  `fdu.stream/1` record per change.
   Events are verified by stat, and a backend overflow or rescan request becomes a
   reconcile of the affected subtree rather than a dropped event.
   An upsert carries `ignored`, and so does a removal a rule edit caused; an ordinary
@@ -184,6 +185,8 @@ The GitHub release text is
     stops an operation raises an `FduError` subclass, and one that makes a scan partial
     is reported on `Status`.
   - The wheel installs an `fdu` console script that runs the native command line.
+    The script restores `SIGINT` to the default disposition before entering the native
+    CLI, so Ctrl-C interrupts `--watch` the way it does a `cargo install` binary.
 - **Opened roots for interactive clients.** `OpenedIndex::open` in Rust, and
   `fdu.opened.OpenedIndex.open` in Python, return while discovery continues.
   - `read()` answers several projections (`Lookup`, `RollUp`, `Tree`, `Flat`,
@@ -215,6 +218,9 @@ The GitHub release text is
   - `watch` is the only build feature: off by default in `fdu-core`, on by default in
     `fdu`. `.gitignore` handling is always compiled in.
   - The minimum supported Rust version is 1.85.
+  - Published `fdu-core` requirements are caret ranges of the reviewed minimum.
+    `Cargo.lock` still pins exact versions for this workspace and for
+    `cargo install --locked`.
 - **Packaging.** The `fdu-core` and `fdu` crates; the `fdu` Python source distribution;
   and one CPython 3.12+ `abi3` wheel for each of Linux x86-64 and arm64 (manylinux2014,
   glibc 2.17), macOS x86-64 and arm64 (macOS 11), and Windows x86-64. Wheels carry type
@@ -248,6 +254,15 @@ This applies only to anyone who ran fdu built from a development checkout.
   Python interfaces were renamed before this release, and `### Added` gives each under
   its released name. A consumer pinned to a development build’s `fdu.report` version
   moves to `fdu.report/5` or `fdu.report/6`.
+
+### Compatibility
+
+0.1.x may add fields and variants to public Rust types such as `ReadProjection`,
+`ProjectionResult`, `ProjectionRefusal`, `LimitedProjection`, `IssueKind`,
+`ImpactDomain`, `Error`, `ReportRequest`, `TreePage`, `ReadResponse`, `RollUp`,
+`Provenance`, `StateTransition`, `ReportSource`, `Attrs`, and `Query`.
+Those additions are breaking under Cargo’s semver rules for exhaustive types; they
+land in 0.2 rather than behind `#[non_exhaustive]` on 0.1.0.
 
 ### Known limitations
 
@@ -310,6 +325,10 @@ This applies only to anyone who ran fdu built from a development checkout.
   directory level.
 - **Roll-up metrics** are a fixed set; there is no interface for custom per-directory
   reducers.
+- **JSON integers.** Fingerprints, option hashes, and nanosecond timestamps are JSON
+  numbers. Values above 2^53 lose precision in JavaScript `JSON.parse` and any other
+  IEEE 754 binary64 consumer. Read them as strings, or use a parser that preserves
+  integers, if exact identity matters.
 - **Performance evidence** comes mainly from an M1 Pro MacBook with a local APFS SSD.
   Linux measurements are from virtualized hosts, Windows has none, and CI checks
   behavior rather than timing.
