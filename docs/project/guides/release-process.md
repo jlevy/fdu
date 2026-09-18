@@ -76,6 +76,14 @@ packaged `fdu` pins `fdu-core` from crates.io, where it does not exist before th
 publish, so the script resolves it to the packaged sibling and checks that nothing else
 in the lockfile moved.
 
+That install runs inside a throwaway git repository the script creates, which is what
+makes the version it then asserts mean anything.
+Installed outside any repository, `crates/fdu/build.rs` reports bare semver through its
+own fallback, so the assertion held with the `.cargo_vcs_info.json` skip deleted and
+pinned nothing (`fdu-tleo`). Installed inside one there is a revision available to
+stamp, so bare `fdu 0.1.0` can come only from that skip — which is also the case the
+skip exists for, a published crate unpacked under a checkout belonging to somebody else.
+
 The GitHub rehearsal performs one additional read-only registry audit against the
 validated manifest. A missing version is ready for a first upload, an identical version
 is safe to skip during recovery, and any filename or hash disagreement is a conflict

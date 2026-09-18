@@ -12,6 +12,7 @@ import unittest
 from pathlib import Path
 from textwrap import dedent
 from typing import Any
+from unittest import mock
 
 from scripts.release.smoke_crate import check_python, smoke_crate, verify_relock
 
@@ -48,6 +49,20 @@ SHIPPED_LOCK = dedent(f"""
 
 # What `cargo metadata` writes once `fdu-core` is patched to the packaged sibling.
 RELOCKED_LOCK = SHIPPED_LOCK.replace(f'source = "{REGISTRY}"\nchecksum = "{"b" * 64}"\n', "")
+
+
+def head_of(directory: Path) -> str:
+    """The revision git resolves from `directory`, the way the build script does."""
+    # Scrubbed independently of the script under test: a suite run from a git hook
+    # inherits GIT_DIR, and would otherwise resolve the hook's repository from anywhere.
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    return subprocess.run(
+        ["git", "-C", str(directory), "rev-parse", "--short=9", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=environment,
+    ).stdout.strip()
 
 
 def write_crate(directory: Path, package: str, files: dict[str, str]) -> None:
@@ -158,13 +173,41 @@ class SmokeCrateTests(unittest.TestCase):
         smoke_crate(self.crates, VERSION, self.work, runner=cargo)
         steps = [command[1] for command, _ in cargo.calls]
         self.assertEqual(steps, ["metadata", "install", "--version", "--cache"])
-        install, options = cargo.calls[1]
+        install, _ = cargo.calls[1]
         self.assertIn("--locked", install)
-        core = (self.work / f"fdu-core-{VERSION}").resolve()
+        checkout = self.work / "checkout"
+        core = (checkout / f"fdu-core-{VERSION}").resolve()
         self.assertEqual(
             install[install.index("--config") + 1], f'patch.crates-io.fdu-core.path="{core}"'
         )
-        self.assertEqual(install[install.index("--path") + 1], str(self.work / f"fdu-{VERSION}"))
+        self.assertEqual(install[install.index("--path") + 1], str(checkout / f"fdu-{VERSION}"))
+
+    def test_the_install_runs_where_a_revision_is_there_to_be_stamped(self) -> None:
+        # Outside a git repository the build script's fallback reports bare semver by
+        # itself, so the version assertion held with the `.cargo_vcs_info.json` skip
+        # deleted and pinned nothing (fdu-tleo). The revision must also not be this
+        # repository's: what the skip protects is a crate extracted under somebody
+        # else's checkout, and a stamp of the developer's HEAD is the bug, not the pass.
+        cargo = FakeCargo()
+        smoke_crate(self.crates, VERSION, self.work, runner=cargo)
+        install, _ = cargo.calls[1]
+        crate_root = Path(install[install.index("--path") + 1])
+        self.assertRegex(head_of(crate_root), r"^[0-9a-f]{9}$")
+        self.assertNotEqual(head_of(crate_root), head_of(ROOT))
+
+    def test_an_ambient_git_or_release_variable_does_not_reach_the_install(self) -> None:
+        # Git exports GIT_DIR into hook environments, so a rehearsal run from one inherits
+        # a variable that would point the checkout and the build script's fallback at
+        # another repository; FDU_RELEASE_TAG would stamp the version outright.
+        cargo = FakeCargo()
+        hostile = Path(self.temporary.name) / "hostile.git"
+        ambient = {"GIT_DIR": str(hostile), "FDU_RELEASE_TAG": "v9.9.9"}
+        with mock.patch.dict(os.environ, ambient):
+            smoke_crate(self.crates, VERSION, self.work, runner=cargo)
+        self.assertTrue((self.work / "checkout" / ".git").is_dir())
+        self.assertFalse(hostile.exists())
+        _, options = cargo.calls[1]
+        self.assertNotIn("GIT_DIR", options["env"])
         self.assertNotIn("FDU_RELEASE_TAG", options["env"])
 
     def test_a_failed_install_stops_the_smoke(self) -> None:
