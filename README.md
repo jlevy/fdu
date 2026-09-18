@@ -15,8 +15,9 @@ The same engine ships three ways:
 
 On a 2026-09-16 macOS calibration, fdu built a reusable exact index and a ten-row tree
 over 1,000,001 generated entries in a **5.206-second median**. The same paired run:
-dumac **+11.3%**, diskus **+34.7%**, dust **+60.6%**, dua **+63.1%**, BSD `du` **+898%**.
-The host was loaded; pairing is what makes those comparisons fair. See [Speed](#speed).
+dumac **+11.3%**, diskus **+34.7%**, dust **+60.6%**, dua **+63.1%**, BSD `du`
+**+898%**. The host was loaded; pairing is what makes those comparisons fair.
+See [Speed](#speed).
 
 **0.x:** A minor release may change the command line or either API;
 [the release process](docs/project/guides/release-process.md) states the rules.
@@ -229,8 +230,7 @@ comparison.
 Each competitor was reduced to one number.
 fdu returned counts, apparent and allocated bytes, newest file time, per-directory and
 per-extension roll-ups, and kept the index that answers the next question without
-another walk.
-dumac’s 95% interval was +5.8% to +13.5%.
+another walk. dumac’s 95% interval was +5.8% to +13.5%.
 
 fdu’s peak RSS here was 285.4 MiB against dumac’s 29.4 MiB, because fdu retained a
 million-entry index and dumac retained one integer.
@@ -241,8 +241,7 @@ Linux evidence is real and improving, from virtualized hosts.
 The most recent campaign on a 450k-entry tree, measured against its own starting point:
 warm snapshot load **−31.4%**, warm revalidate **−25.3%**, cold indexed scan **−9.1%**.
 A warm open now runs about 23% faster than a cold scan, where that campaign began with
-it 69% *slower*.
-Windows builds and passes tests; no performance claim is made there.
+it 69% *slower*. Windows builds and passes tests; no performance claim is made there.
 
 A second run on an unchanged tree is a different job.
 Metadata-only one-shots still revalidate; `--analyze` reuses unchanged file-body results
