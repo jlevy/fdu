@@ -2,34 +2,57 @@
 
 **Fast, incremental file roll-up engine** — `fd` and `du`, read as “fast du”.
 
-fdu answers, for *every* directory in a tree at once: how big is it, how many files does
-it hold, what changed most recently, and what kinds of files live in it.
-One walk, many metrics, with reusable metadata and content state.
+One walk over a directory tree answers, for every directory at once, how big it is, how
+many files it holds, what changed most recently, and what kinds of files it contains.
+The index is cached between runs and can be kept live as the tree changes.
 
-> **Exploratory macOS/APFS calibration:** fdu built a reusable exact index and ten-row
-> tree over a reproducible generated corpus of 1,000,001 entries in a **5.206-second
-> median**. Measured 2026-09-16 on an M1 Pro MacBook with a local SSD under uncontrolled
-> host load. This is not a portable absolute time or a cross-tool ranking; see
-> [the full comparison](#speed-and-the-cache).
+The same engine ships three ways:
 
-> **Status: 0.x.** A new minor release may change the Rust API, the Python API, or the
-> command line; [the release process](docs/project/guides/release-process.md) states the
-> compatibility rules.
-> The observation/commit contract, bounded in-process change feed, cache lifecycle,
-> applying reconciler, CLI, and Python wheel are tested end to end, and the
-> measured-improvement loop described below is running.
-> The portable walker has a bounded parallel pool; macOS additionally uses an audited
-> `getattrlistbulk` backend.
-> Local M1/APFS evidence is published below and is the bulk of what has been measured.
-> Linux evidence is early: real and improving, but virtualized rather than bare metal,
-> so claims whose mechanism is device latency remain untested there.
-> Windows builds and passes tests, with no performance evidence claimed at all.
-> See [the Phase 1 plan](docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md).
+- **Command line** — `fdu PATH` prints a size-sorted tree; `--watch` keeps it current
+- **Rust library** — `fdu` / `fdu-core`: a retained index, a change feed, and a
+  long-lived opened root
+- **Python package** — typed, immutable values plus the native `fdu` command
 
-## Start Here
+On a 2026-09-16 macOS calibration, fdu built a reusable exact index and a ten-row tree
+over 1,000,001 generated entries in a **5.206-second median**, faster than the
+disk-usage tools compared in that run while returning more than a single total.
+That is one uncontrolled host, not a portable ranking; see [Speed](#speed).
+
+**0.x.** A minor release may change the command line or either API;
+[the release process](docs/project/guides/release-process.md) states the rules.
+
+## Install
+
+Once `0.1.0` is on the registries:
+
+```shell
+cargo install --locked fdu          # command line; Rust 1.85 or newer
+uv tool install fdu                 # same command, prebuilt wheel
+uvx fdu@0.1.0 --help                # run that release without installing
+pip install fdu==0.1.0              # Python package: import fdu
+cargo add fdu                       # Rust library, command line included
+cargo add fdu-core --features watch # engine only, with the watch layer
+```
+
+`--locked` keeps the reviewed dependency set; see
+[SUPPLY-CHAIN-SECURITY.md](SUPPLY-CHAIN-SECURITY.md).
+
+Wheels are `abi3` for GIL-enabled CPython 3.12 and newer.
+Free-threaded CPython cannot load them; pass a standard interpreter (`--python 3.12` or
+`--python 3.14`).
+
+From a source checkout:
+
+```shell
+git clone https://github.com/jlevy/fdu.git
+cd fdu
+cargo install --locked --path crates/fdu
+```
+
+## Command Line
 
 fdu requires a path.
-Use `.` to inspect the current directory:
+Use `.` for the current directory:
 
 ```console
 $ fdu .
@@ -38,584 +61,50 @@ $ fdu .
      827 KiB  ███░░░░░░░    31%    tests (18 files)
 ```
 
-With no other options, this is the `tree` view: allocated sizes, largest first, two
-directory levels, and up to ten children per directory.
-It reads metadata and `.gitignore` files but does not open regular files for content.
+That is the `tree` view: allocated sizes, largest first, two directory levels, up to ten
+children per directory.
+It reads metadata and `.gitignore` files; it does not open regular files for content.
 Hidden and ignored entries are included; ignored byte shares are annotated when present.
 
-Use the command that matches the question:
-
-| Question | Command | Reads regular file contents? |
-| --- | --- | --- |
-| Which directories are large? | `fdu .` | No |
-| Which directories are large, excluding ignored entries? | `fdu . --exclude-ignored` | No |
-| What is the total usage? | `fdu . --view=summary` | No |
-| Which languages occupy space? | `fdu . --view=languages` | No |
-| Which families, types, and extensions occupy space? | `fdu . --view=families,types,extensions` | No |
-| Which ten files changed most recently? | `fdu . --view=recent --limit=10` | No |
-| How many physical lines and raw words are there? | `fdu . --analyze=lines` | Yes, when not cached |
-| How do those counts break down by language? | `fdu . --analyze=lines --view=languages` | Yes, when not cached |
-| How many standard lines of code are there? | `fdu . --analyze=code` | Yes, when not cached |
-| How much prose is there? | `fdu . --analyze=words` | Yes, when not cached |
-
-`--view` chooses what is reported.
-Several views share the same scan and requested analysis.
-`--analyze` opts into reading file bodies; naming an analyzer without a view selects a
-useful default (`languages` for `code`, `documents` for `words`, and `families` for
-`lines` or `all`). A view never enables analysis implicitly.
-If an explicit view cannot display requested analysis, fdu still performs that analysis
-and prints a note.
-
-The percentage column normally shows byte share.
-With `--analyze=code` in the language view it shows code-line share; in the `documents`
-view it shows document-word share.
-Text output labels those two cases explicitly while retaining bytes in the first column.
-
-`lines` means physical, blank, and nonblank lines plus raw words.
-`code` adds the versioned common-language SLOC analyzer.
-`words` adds normalized and reader-visible prose volume.
-These are different questions rather than progressively more accurate versions of the
-same number.
-
-### Where the cache helps
-
-No ordinary view needs a preexisting cache.
-Metadata-only one-shot reports must inspect current metadata, so under the default
-`--cache=auto` they do not load a snapshot that cannot make that work cheaper.
-A complete indexed scan may still write one that opened, watch, cache-only, or later
-content-analysis work can consume.
-
-Content analysis is the large repeated-run win.
-On a cold run, fdu reads every eligible file body.
-A compatible later run restores unchanged analysis records and reads only changed or
-newly eligible bodies:
-
-```shell
-fdu . --analyze=code
-fdu . --analyze=code
-```
-
-The performance footer distinguishes fresh from cached analysis; on an unchanged tree,
-the second command can report zero content bytes read while still checking current
-metadata.
-The sidecar answers only the analyzer set that wrote it: a different set, wider
-or narrower, reads the files again and replaces it.
-
-| Request | Cache effect under ordinary `auto` runs |
+| Question | Command |
 | --- | --- |
-| `tree`, `summary`, `largest`, `recent`, `files` | No snapshot-load advantage for a fresh one-shot metadata report |
-| `families`, `types`, `extensions`, `languages` without analysis | Path classification only; same metadata behavior |
-| `--analyze=lines`, `code`, or `words` | Reuses compatible results for unchanged file bodies |
-| `--view=documents` | Requires analysis and receives the same content-cache reuse |
-| `--cache=only` | Reads existing compatible cache without verification; explicitly stale and fails on a miss |
+| Which directories are large? | `fdu .` |
+| Totals, excluding ignored entries | `fdu . --exclude-ignored --view=summary` |
+| Languages by space | `fdu . --view=languages` |
+| Ten files that changed most recently | `fdu . --view=recent --limit=10` |
+| Standard lines of code | `fdu . --analyze=code` |
+| Keep the tree live | `fdu . --watch` |
+| Machine output | `fdu . --format=json` |
 
-### What `.gitignore` selection means
+`--view` chooses what is reported; several views share one walk.
+`--analyze` is the only switch that reads file bodies.
+A view never turns analysis on.
+Exit status 0 is a complete result, 1 a failure, and 2 a partial result or a usage
+error.
 
-`--exclude-ignored` and `--only-ignored` filter the answer after the tree is scanned.
-They change totals and ordering, but they do not prune metadata work or content
-analysis. Only per-directory `.gitignore` files apply; fdu does not read
-`.git/info/exclude`, a global ignore file, or Git trackedness.
-In particular, `.git` is included unless a rule or an explicit pattern excludes it.
+`fdu --docs` is the offline guide, `fdu --help` is every flag, and `fdu --skill` prints
+a portable skill for coding agents.
+The full grammar is in the [usage guide](docs/usage.md).
 
-For recent working files rather than recent repository internals, use both selections:
+## Live Updates
 
-```shell
-fdu . --view=recent --limit=10 --exclude-ignored --exclude='.git/**'
-```
-
-`--no-gitignore` means do not read or apply `.gitignore` rules at all; it is not a
-faster spelling of `--exclude-ignored`.
-
-See the [usage guide](docs/usage.md) for every view, analyzer, cache policy, selection,
-and automation contract.
-`fdu --docs` carries the same essentials offline, `fdu --help` is the flag reference,
-and [the documentation index](docs/README.md) routes library, architecture, performance,
-and contributor topics.
-
-## Why
-
-Of a dozen surveyed tools in this space ([du](https://www.gnu.org/software/coreutils/),
-[ncdu](https://dev.yorhel.nl/ncdu), [dust](https://github.com/bootandy/dust),
-[dua](https://github.com/Byron/dua-cli), [gdu](https://github.com/dundee/gdu),
-[dut](https://codeberg.org/201984/dut), [duc](https://github.com/zevv/duc),
-[fsearch](https://github.com/cboxdoerfer/fsearch),
-[bfs](https://github.com/tavianator/bfs), [fd](https://github.com/sharkdp/fd),
-[scc](https://github.com/boyter/scc), [tokei](https://github.com/XAMPPRocky/tokei)),
-exactly one persists anything, exactly one carries multiple metrics per pass, **none**
-does per-directory type tallies, and **none** does mtime-based incremental revalidation.
-The combination is unoccupied ground, and it is what a live file browser actually needs.
-
-The full survey, with the techniques worth adapting and their sources, is in
-[the file roll-up engine research](docs/project/research/research-2026-08-06-file-rollup-engine.md).
-
-## Speed and the Cache
-
-**Exploratory macOS calibration, measured 2026-09-16 on the 0.1.0 release candidate.**
-On a reproducible generated tree of 1,000,001 entries, a fresh fdu process with its own
-cache disabled built a reusable exact index and ten-row tree in a **5.206-second
-median**. Twelve adjacent paired trials per tool on an M1 Pro MacBook with a local APFS
-SSD, in a warm-steady filesystem-cache state, with one independent full-tree fingerprint
-verifying every tool agreed on the answer.
-The table records one uncontrolled, busy-host run; it does not establish portable
-absolute times or an ordering between tools.
-
-| Tool | Work returned | Median |
-| --- | --- | ---: |
-| **fdu** | reusable exact index and ten-row tree | **5.206 s** |
-| dumac | allocated-byte total only | 5.637 s |
-| diskus | scalar total only | 6.972 s |
-| dust | allocated-byte total only | 8.292 s |
-| dua | scalar total only | 8.744 s |
-| BSD `du` | one total, serial | 51.226 s |
-| GNU `du` | one total, serial | 65.775 s |
-
-Each competitor was invoked under a contract that reduced its output to one number.
-fdu returned file and directory counts, apparent and allocated bytes, newest file time,
-per-directory roll-ups for the whole tree and per-extension tallies, and kept the index
-that answers the next question without another walk.
-Within this run, dumac’s paired wall-time difference was +11.3% (95% interval +5.8% to
-+13.5%).
-
-Two caveats belong with the figure rather than in a footnote.
-The machine was **busy**: load average 7.7 to 9.9 against ten cores, with other work
-running. Pairing is what makes the comparison hold — each pair’s two runs meet the same
-machine milliseconds apart — but the absolute seconds are a loaded-host number and a
-quiet machine gives smaller ones.
-And the subject changed: the 901,963-entry tree behind the previous 3.324-second figure
-was this repository’s own generated corpus, which the performance loop says must never
-be compared across machines and which was cleaned up after that campaign.
-This one is built from a committed recipe and a fixed seed, so anyone can rebuild it.
-The two numbers are not comparable, and neither is a speed change.
-
-fdu’s peak RSS here was 285.4 MiB against dumac’s 29.4 MiB, because fdu retained an
-index of a million entries and dumac retained one integer.
-`fdu --no-gitignore --view summary` keeps the aggregate-only tier, which answered the
-same tallies in 4.876 s using **15.0 MiB**; without that flag the summary classifies
-entries and so retains the index too.
-
-[The full comparison report](docs/project/reports/report-2026-09-16-fdu-live-tool-comparison.md)
-has the method, the validity counters, and what moved since
-[the 2026-08-13 measurement](docs/project/reports/report-2026-08-13-fdu-live-tool-comparison.md).
-
-**Linux, recent and improving.** The most recent campaign measured, end to end against
-its own starting point on a 450k-entry tree: warm snapshot load **−31.4%**, warm
-revalidate **−25.3%**, cold indexed scan **−9.1%**. A warm open now runs about 23%
-faster than a cold scan, where that campaign began with it 69% *slower*.
-
-### How close is any of this to the machine?
-
-A relative loop cannot say, so the floor was measured directly: a hand-written parallel
-walker doing raw `getdents64` plus one `statx` per entry into four integer accumulators,
-retaining nothing. fdu’s exact summary runs at **1.20×** that floor on a 420k generated
-tree and **1.59×** on `/usr`, so the remaining prize on that tier, in this regime, is
-17–37% — how close depends on the tree, and the real one is furthest.
-Two of the levers people reach for first are already closed: batching the metadata calls
-through io_uring cuts syscalls 21× and runs **6–8× slower**, because a warm `statx` is
-9% syscall boundary and 91% kernel lookup.
-
-**Against the ecosystem’s walker.** A Rust program that needs to walk a tree usually
-reaches for [`ignore`](https://docs.rs/ignore), which is ripgrep’s walker.
-fdu does not use it — nor `walkdir` — and writing its own turns out to be worth
-something, but not unconditionally.
-Set to fdu’s job, statting every entry for its size, `ignore` is **12–26% slower than
-fdu on four generated trees of different shapes, level once the tree carries real
-filenames, and about 12% faster on `/usr`**.
-
-The lead and its disappearance share one mechanism.
-`ignore` and `walkdir` stat each entry by full absolute path, so the kernel re-resolves
-every component from the root; fdu stats relative to the directory descriptor, which is
-worth 37% — and a real tree’s names and directory widths cost fdu roughly that much
-back. On *ripgrep’s own* job fdu cannot compete at all, and should not be expected to: a
-search tool learns what it needs from `d_type` and never makes a metadata call, while a
-disk-usage tool must make one per entry.
-
-Both are one virtualized Linux host with a warm cache, and are scouting evidence rather
-than product claims — the standard the macOS table above meets and this does not.
-The floor, the peer measurements, and what they change are in
-[the metadata-walk floor report](docs/project/reports/report-2026-08-23-metadata-walk-floor.md).
-
-### Two paths to an answer, and fdu labels which one you got
-
-**Without a usable cache, it is a fast walk and roll-up.** Every entry is enumerated and
-statted once, and per-directory roll-ups accumulate as the walk proceeds — the job `du`
-does, plus the extra metrics, bounded by syscall count and storage latency.
-A summary-only request that reads no `.gitignore` derives an exact plan instead of
-retaining an index, which on one 978,339-entry run cut peak RSS by 95%.
-
-**With a usable cache, it can be much faster** — but only where the cache supplies
-something the filesystem will not.
-This is where naive du-caches go wrong: change information does not propagate up a
-directory tree. An in-place file edit changes no directory’s mtime, not even its
-parent’s, so a directory fingerprint proves only that no entry was *added, removed, or
-renamed*, and nothing about any child’s bytes.
-
-The trustworthy floor for a warm run is therefore one stat per entry, and the cache pays
-off decisively where something beats that floor: environments whose OS metadata cache
-cannot hold the tree (CI runners, cloud hosts, whole-drive scans), journal-assisted
-revalidation where the OS already recorded what changed, and expensive derived metrics
-like line counts that an unchanged fingerprint lets you skip entirely.
-
-Every release invalidates the snapshots earlier builds wrote, because the engine
-fingerprint includes the version.
-A root scanned again replaces its own snapshot.
-`fdu --cache-status=all` lists the rest as `stale`, and `fdu --cache-clear=all` removes
-them along with the current snapshots.
-It also reclaims what fdu itself left behind — a staging file a killed writer never
-renamed, a content sidecar whose snapshot is gone — which status lists as `leftover`.
-Clearing never removes a file that is not fdu’s;
-[the cache design](docs/project/guides/cache-design.md) covers how one is recognized.
-Cache status in a machine format is its own document, carrying the `fdu.cache/2` schema
-and the identity of every tier each cached file holds.
-
-A snapshot is usable only under the scan scope that wrote it, and a root has one cache
-path. `fdu PATH`, `fdu --watch PATH`, the library’s `open` and `prepare_report`, and
-Python’s `fdu.open` and `fdu.report` all observe `.gitignore` by default, so they share
-one scope and each starts warm from the others’ snapshots: a watch started after
-`fdu PATH`, and a one-shot run that reads the snapshot, such as `--analyze`, after a
-watch. A snapshot written before `.gitignore` was read by default holds no
-classification, so the first default run after upgrading scans cold once.
-`--no-gitignore`, `read_controls` off in the library and Python, is a second scope:
-alternating it with a default run scans cold each time, and a default `--cache only` run
-refuses its snapshot and says how to recover.
-The other direction is spared: `--no-gitignore --cache only` answers from a default
-snapshot, because it reads only the sizes a default scan also recorded.
-A summary-only `fdu --no-gitignore --view summary PATH` saves no snapshot and replaces
-none; a default summary keeps the index its ignored share needs, and saves it like any
-other report.
-
-Control state has two limits, and crossing either never costs the answer.
-An index that observes `.gitignore` files charges each distinct file’s rules once
-against a budget, 4 MiB by default, and refuses a file past it; separately, it refuses a
-file with a line longer than the line limit, 16 KiB by default.
-A refused file’s rules do not apply, every size stays exact, the result stays complete,
-and the report says which files it refused, and which limit refused each, in its
-`ignore_rules` field and a note naming their directories.
-`--gitignore-budget` and `--gitignore-line-limit` on the command line, and
-`control_budget` and `control_line_limit` in Python, each take a size or `all`, and
-raising one never moves the other.
-An unbounded budget also reads every `.gitignore` whole, however large.
-Both limits are part of the snapshot scope, so changing either scans cold once.
-
-### How performance work is done here
-
-fdu runs a disciplined optimization loop rather than a list of tweaks: instrument,
-profile, write the hypothesis down, change one thing, measure paired and interleaved
-against a control with an independent oracle checking that faster output is still
-*identical* output, keep it only if it clears a fixed bar, and record the verdict —
-**including the failures**. Of 66 recorded experiments, 28 were rejected against 33
-accepted, several rejected despite a real working mechanism that simply did not clear
-the bar.
-
-One caveat worth carrying into any number above: **57 of those 66 experiments were
-measured on macOS and 9 on Linux.** A constant measured on one platform is inherited,
-not proven, on the other.
-
-**→
-[The performance campaign status report](docs/project/reports/report-2026-08-14-performance-campaign-status.md)**
-is the place to start.
-It assumes no prior context and covers what has been achieved, in what order, how it was
-measured, what remains, and where the evidence is weak.
-
-Further detail:
-[the experiment ledger](docs/project/reports/report-2026-08-10-fdu-performance-experiments.md)
-records every experiment and verdict;
-[the performance architecture](docs/project/reports/report-2026-08-12-fdu-performance-architecture.md)
-holds the cost model and architectural conclusions;
-[the performance loop](docs/project/guides/performance-loop.md) is the protocol;
-[the instrumentation playbook](docs/project/guides/performance-instrumentation-playbook.md)
-is the reusable method, written to apply to any systems program rather than this one;
-the
-[adaptive-worker gap-closure report](docs/project/reports/report-2026-08-15-adaptive-worker-gap-closure.md)
-records why completion-order sensitivity did not justify changing the production
-controller; and
-[the full tool comparison](docs/project/reports/report-2026-08-13-fdu-live-tool-comparison.md)
-has the peer measurements with a
-[reproduction manifest](docs/project/reports/fdu-live-tool-comparison-manifest-v2.json).
-The ranked backlog and the source review behind it — bfs, dut,
-[pdu](https://github.com/KSXGitHub/parallel-disk-usage),
-[diskus](https://github.com/sharkdp/diskus),
-[jwalk](https://github.com/jessegrosjean/jwalk), and
-[dumac](https://healeycodes.com/maybe-the-fastest-disk-usage-program-on-macos)’s
-bulk-attribute design — are in
-[the performance frontier research](docs/project/research/research-2026-08-10-performance-frontier.md).
-
-## Install
-
-Install the command line from crates.io with Rust 1.85 or newer:
+`--watch` is the same query, re-evaluated as the tree changes.
+Detection uses the platform’s native event backend (`FSEvents`, inotify,
+`ReadDirectoryChangesW`); an idle tree is not polled.
+Each hint is verified with a fresh stat before it becomes a delta.
 
 ```shell
-cargo install --locked fdu
-fdu --help
+fdu . --watch
+fdu . --watch --view=files --format=jsonl
 ```
 
-`--locked` builds against the `Cargo.lock` published with the crate.
-Without it Cargo re-resolves every dependency to the newest compatible release, which
-bypasses the review and release cool-off this project applies to its dependency set —
-see [SUPPLY-CHAIN-SECURITY.md](SUPPLY-CHAIN-SECURITY.md).
+`--interval` throttles how often a text view repaints, not how changes are detected.
+Content analysis is one-shot and cannot be combined with `--watch`.
 
-The `fdu` Python package on PyPI carries the same command line as a console script, in
-prebuilt wheels for the platforms
-[the release process](docs/project/guides/release-process.md#supported-artifacts) lists,
-so running it needs no Rust toolchain:
-
-```shell
-uv tool install fdu                    # install the command line
-uvx --from fdu==<version> fdu --help   # or run an exact release without installing
-```
-
-To build from a checkout instead:
-
-```shell
-git clone https://github.com/jlevy/fdu.git
-cd fdu
-cargo install --locked --path crates/fdu
-```
-
-The Python package builds and tests from the same workspace:
-
-```shell
-make python-check        # lint, strict types, and unit tests
-make python-smoke        # installed wheel: public API, native boundary, CLI, and uvx
-make python-sdist-smoke  # build, install, and test the source distribution
-```
-
-Two crates, by role.
-`fdu-core` is the engine — every type and function the API offers.
-`fdu` is what you install: it carries the command line and re-exports the engine, so
-`cargo add fdu` gives a library caller the whole API and there is one name to know
-either way.
-
-The split is load-bearing rather than cosmetic.
-The command line depends on `fdu-core` the way any consumer does, so it cannot reach a
-private item: anything it needs is public API, and the compiler decides that on every
-build instead of a reviewer deciding it in review.
-
-## Three Cost Layers
-
-fdu separates **what it reads** from **how it reports the result**. `--analyze` is the
-content-I/O switch; `--view` is a projection over the state that was requested.
-A view never enables an analyzer implicitly — choosing a display must never authorize
-reading file bodies.
-The reverse direction is free, so requesting analysis selects a view that displays it
-unless `--view` names one, and a `--view` that displays no content metric says how much
-was read for nothing.
-
-| Layer | Representative command | Filesystem work | State retained |
-| --- | --- | --- | --- |
-| Exact summary | `fdu --no-gitignore --view summary PATH` | Enumerate and stat every entry; never read file contents | Five aggregate tallies; no index or cache |
-| Metadata index | `fdu PATH` | Enumerate and stat every entry; classify recognized paths without reading contents | Reusable parent-pointer index and, unless disabled, a metadata snapshot |
-| Content index | `fdu --analyze SET PATH` | Metadata work plus streaming reads through every eligible file missing from a compatible content sidecar | Metadata index plus sparse content roll-ups and a separate `.content` sidecar |
-
-The summary-only plan applies to one unfiltered `summary` view that reads no
-`.gitignore`, under any cache policy except `only` and `refresh`, whose contracts are
-about the snapshot itself rather than the cheapest exact answer.
-Filters, multiple views, watch mode, content analysis, or reading `.gitignore` fall
-closed to the full index because they need paths, hierarchy, reusable state, or the
-classification a default summary reports as its ignored share.
-Every tier reads `.gitignore` files unless `--no-gitignore` says otherwise; that is a
-read per rule file, never a read of file contents.
-The planner derives this internally; there is no separate “fast” flag whose semantics
-can drift from the ordinary query.
-
-With no `--analyze`, the default is strictly metadata-only:
-
-- no regular file is opened for content
-- no analyzer worker pool or sparse content index is created
-- `tree`, `files`, `summary`, and `extensions` retain their metadata behavior
-- `types`, `families`, and `languages` add path-only classification by exact filename
-  and extension
-- the content sidecar is not loaded, and analyzer settings do not alter the metadata
-  snapshot
-
-`--analyze` names a **set** of analyzers, not a level of one.
-`code` and `words` measure different things over different families, and either is
-useful without the other, so they compose instead of nesting:
-
-| `--analyze` | Adds | Views that show it | Default view |
-| --- | --- | --- | --- |
-| `none` | Nothing; the metadata-only path | — | `tree` |
-| `lines` | Physical, blank, and nonblank lines; raw word counts | `types`, `families`, `documents` | `families` |
-| `code` | Standard code, comment, and code-blank lines | `languages` | `languages` |
-| `words` | Logical words, paragraphs, and reader-visible Markdown | `documents` | `documents` |
-| `code,words` (or `all`) | Every shipped analyzer | all of the above | `families` |
-
-`lines` rides along with any analyzer, because a file being read for one metric is
-already being counted for the other, so `code` means `lines,code` and there is nothing
-to remember. `none` and `all` name the whole axis and cannot be combined with anything
-else.
-
-`languages` therefore works without analysis and uses byte shares; adding `code` gives
-it standard LOC and switches its shares to code lines.
-`documents` is the one view that requires content, and any analyzer will do.
-The metadata views remain legal with every analyzer set, so one command can compose
-byte, type, code, and prose summaries over the same observed tree.
-Content analysis is currently one-shot; `--watch` remains metadata-only and rejects an
-enabled analyzer set.
-Content analysis reads every eligible file through EOF; `--analysis-workers` bounds
-concurrency, not coverage.
-Known binary types are rejected before opening.
-Invalid UTF-8, binary data, and code types without a shipped SLOC analyzer remain
-explicit coverage outcomes: they still contribute file and byte totals and do not make
-the run partial.
-I/O failures, files that change during their read, and stale conditional
-commits are operational failures; those make the result partial and produce a warning.
-Selection flags such as `--include` shape the report, not the retained analysis scope.
-An enabled analyzer set analyzes eligible files in the chosen `PATH` and `--scan-depth`
-so the resulting sidecar can serve later selections without rereading them.
-Coverage records are scoped to the analyzer set today.
-If a deeper analyzer such as standard LOC does not support a file, its byte metadata
-remains visible but that analyzer does not retain a separate lower-level line result for
-the same file.
-
-## Reading the Performance Footer
-
-Every one-shot text report ends with one compact operational summary:
-
-```text
-Performance: walked 12,345 files / 8.2 GiB; ignore rules 214 files; content read 1.4 GiB at 920 MiB/s; analysis 2,104 fresh at 1.3k files/s, 10,241 cached / 6.8 GiB; warm revalidation; total 2.08 s
-```
-
-“Walked” counts regular files successfully stated during this run and sums their
-apparent lengths, independent of the report’s selected `--size` metric.
-“Ignore rules” counts the `.gitignore` files whose rules apply, and any the control
-budget refused; `no ignore rules` means `--no-gitignore` read none.
-It is what tells a report whose rules ignore nothing from one that read no rules, since
-neither shows a share.
-“Content read” counts bytes actually returned by fresh analyzer reads, so a known binary
-file can be walked without being opened and an observed binary probe can read less than
-the file’s full length.
-Fresh file and byte rates use the content-analysis phase’s wall time.
-Cached files and bytes are unchanged content records restored from the set-scoped
-sidecar. The final label distinguishes a cold metadata scan, warm revalidation, and a
-cache-only answer; cache-only therefore reports zero files walked.
-
-The line is gray when terminal color is active and contains no ANSI escapes when color
-is disabled or redirected.
-JSON, JSONL, YAML, skill output, lifecycle commands, and watch streams omit it.
-The timing line is human telemetry rather than part of the versioned machine schema.
-
-Because a watch run never reaches a final answer, it has no such line, and a text watch
-run instead draws a gray rule carrying the render instant above each repaint so one
-repaint is never read as a continuation of the last.
-The rule appears between repaints and never above the first, so the opening answer
-matches the same query run without `--watch`. Machine formats need no rule: every
-repaint is a fresh envelope with its own `generated_at`.
-
-## Compose Other Queries
-
-```shell
-fdu --depth 3 ~/src                        # render three levels deep
-fdu --view extensions ~/Downloads          # break down by raw file extension
-fdu --analyze lines --view families .      # lines, blanks, words, and exact byte shares
-fdu --analyze words .                      # picks the view that displays the words
-fdu --format json .                        # stable, versioned machine output
-fdu --view largest -n 50 ~/src             # the 50 largest files
-fdu --docs                                 # common commands, cache behavior, contracts
-fdu --skill                                # print the self-contained agent skill
-```
-
-A cache-oriented walkthrough on one tree is:
-
-```shell
-# Metadata only: compact one-shot totals, then reusable indexed views.
-fdu --cache off --view summary PATH
-fdu --cache refresh --view tree,extensions,types,families PATH
-fdu --cache only --view tree,types PATH
-
-# Opt into successively richer content bundles.
-fdu --cache off --analyze lines --view types,families,documents PATH
-fdu --cache off --analyze code --view languages PATH
-fdu --cache off --analyze words --view documents PATH
-fdu --cache refresh --analyze all --view languages,documents PATH
-
-# Reuse the exact same analyzer set without touching source-file contents.
-fdu --cache only --analyze all --view languages,documents PATH
-```
-
-```text
-   156 KiB  ██████████   100%  . (12 files)
-   140 KiB  █████████░    90%    fdu (10 files)
-   136 KiB  █████████░    87%      src (8 files)
-```
-
-Reports never infer `.`: bare `fdu` prints the same help as `fdu --help` and performs no
-scan, while `fdu .` opts into the current directory explicitly.
-`--help` is the complete source of truth.
-Human output uses restrained semantic color when its destination is a terminal;
-`--color auto|always|never`, `NO_COLOR`, and `FORCE_COLOR` make the policy explicit.
-Primary results go to stdout, while warnings and errors go to stderr.
-Machine and skill output never contain ANSI styling.
-A text report covering more than one view labels each block with an all-caps header
-naming the view, separated by a blank line, and colorizes that header on the same terms
-as the rest of human output; a single-view report is left bare, so `fdu --view files`
-stays a listing of paths and nothing else.
-Metadata-only machine reports use the versioned `fdu.report/5` schema.
-Summary, tree, and extension rows carry an `ignored` object with the ignored part of
-their counts and bytes, zero when nothing is ignored, and file rows carry
-`ignored: true` or `false`; under `--no-gitignore` every one is `null`, never a zero,
-and the envelope’s `ignore_rules` is `null` too.
-An `extension` value is either a derived extension, which always carries a leading dot,
-or the literal `(none)` for names that have none; a consumer matching on the dot should
-expect that one label without it.
-The schema is unchanged by this, because the field’s name and type are: `(none)` is a
-member of its value domain, not a new shape.
-A report that ran content analysis, or that includes the `types`, `families`,
-`languages`, or `documents` metric summaries, uses `fdu.report/6`, adding exact share
-numerators and denominators, analyzer coverage, and versioned rule, option, and analyzer
-identities.
-An unavailable metric share is represented as `0/0` in machine output and `—`
-in human output, never as a measured zero percent.
-Every metric row also reports how its files were detected, the confidence of those
-decisions, and generated, vendored, and documentation flags.
-Scan completeness and each tree node’s rendered truncation are separate fields.
-Invalid-Unicode paths retain their display string and add a lossless, platform-tagged
-raw identity.
-Exit status 2 means partial results; pass `--allow-partial` to accept those
-as success. Exit status 1 means the command failed.
-
-Content analysis is opt-in through `--analyze none|lines|code|words|all`. The `lines`
-analyzer streams each eligible file once, recognizes LF, CRLF, lone CR, and mixed line
-endings, separates blank and nonblank lines, rejects NUL-containing and invalid UTF-8
-files explicitly, and counts raw words for every text family it admits.
-Every eligible file is streamed through EOF. `--analysis-workers` bounds concurrent
-readers, and `--words-per-page` controls only the report-time page denominator.
-Content results use a separately versioned sidecar keyed by the analyzer set, so an
-unchanged warm run does not reopen files.
-A sidecar answers only the set that wrote it, because a wider one holds metrics a
-narrower request did not ask for; changing the set means reanalysis, but it never
-invalidates the separate metadata snapshot.
-The `code` analyzer adds the dependency-free `code-sloc-v1` state machine for Rust,
-Python, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP, Swift, Kotlin, shell,
-and SQL. It reports code, comment, and code-blank lines separately, counts mixed lines
-as code, treats multiline strings and docstrings as code, and uses code lines as the
-default language-percentage denominator.
-Other code types remain visible as unsupported coverage rather than being mislabeled
-from nonblank lines.
-The `words` analyzer adds FlexDoc-style normalized word counts, paragraph runs, and
-pages derived after aggregation.
-For Markdown it separately reports reader-visible words and excludes URLs, link
-destinations, code, metadata, footnote markers, and hidden markup; `all` runs the `code`
-and `words` analyzers together.
-
-When analysis is enabled, classification is also a cost ladder.
-Exact filenames and recognized extensions stay path-only.
-Only unresolved files and the ambiguous `.h` extension receive bounded probes for
-shebangs, modelines, C++ literals, XML and manpage markers, binary signatures, and
-generated-file markers.
-For unresolved paths, NUL and named binary signatures take precedence over shebang and
-modeline hints. A NUL found anywhere in any eligible read discards provisional text
-metrics, and every deeper decision is explainable in `fdu.report/6` rather than silently
-guessed.
-
-This surface — composable views, selection filters, time-window and watermark queries,
-cache policies, and a `tail -f`-style watch mode, all as orthogonal flags over one
-grammar — is designed in
-[the composable CLI and query surface plan](docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md).
-The principles it settled on, written as rules for extending it rather than as a record
-of what was built, are in
-[the design principles](docs/project/architecture/fdu-design-principles.md).
-Why the cache can be a speed-up or a cost depending on platform and view is in
-[the cache design](docs/project/guides/cache-design.md).
+Library callers get the same feed without parsing the command: Rust `Session` (behind
+the `watch` build feature) and Python `Index.watch()`. Long-lived interactive clients
+use `OpenedIndex` / `fdu.opened` for progressive discovery, paged reads, and a resumable
+journal.
 
 ## As a Rust Library
 
@@ -623,10 +112,11 @@ Why the cache can be a speed-up or a cost depending on platform and view is in
 cargo add fdu
 ```
 
-`fdu` re-exports the whole engine, and its default `watch` build feature adds the
-OS-native watch layer; `cargo add fdu --no-default-features` leaves that out.
-The command line’s own dependencies come with `fdu` either way, so an embedding that
-wants none of them depends on `fdu-core` instead.
+`fdu` re-exports the engine.
+The default `watch` build feature adds the OS-native watch layer;
+`cargo add fdu --no-default-features` leaves it out.
+An embedding that wants none of the command line’s dependencies depends on `fdu-core`
+instead.
 
 ```rust
 use fdu::{OpenConfig, open};
@@ -636,14 +126,19 @@ let (index, report) = open(Path::new("."), &OpenConfig::default())?;
 let total = index.total();
 println!("{} files, {} bytes", total.files, total.bytes);
 
-// Per-directory roll-ups are materialized from pre-computed state, with no tree walk.
+// Per-directory roll-ups are already computed; this is not another walk.
 if let Some(src) = index.rollup(Path::new("src")) {
     println!("src/: {} files, newest {}", src.files, src.newest_mtime_ns);
 }
 # Ok::<(), fdu::Error>(())
 ```
 
-Opt into every analyzer explicitly; metadata-only remains the default:
+`open` returns a retained index.
+Later questions reuse it; `refresh` reconciles against the tree; with `watch` enabled,
+`fdu::session::Session` answers the same request as events arrive.
+`OpenedIndex` is the long-lived owner for progressive discovery.
+
+Opt into content analysis explicitly; metadata-only is the default:
 
 ```rust
 use fdu::content::AnalysisSet;
@@ -668,106 +163,114 @@ from pathlib import Path
 
 import fdu
 
-index = fdu.open(
-    Path("/path/to/tree"),
-    analysis=fdu.AnalysisOptions(analyze=fdu.Analysis.ALL),
-)
-print(index.status.complete, index.status.freshness, index.status.errors)
+index = fdu.open(Path("/path/to/tree"))
+print(index.status.complete, index.status.freshness)
 print(index.total().files)
 print(index.children("src"))
-report = index.report(
-    fdu.Query(views=(fdu.View.LANGUAGES, fdu.View.DOCUMENTS))
-)
-print(report.sections)
+
+report = index.report(fdu.Query(views=(fdu.View.LANGUAGES,)))
+print(report.as_dict())  # same JSON the command line emits
 
 mark = index.clock
 index.refresh()
 print(index.since(mark).changes)
+
+with index.watch() as stream:
+    for batch in stream:
+        for change in batch:
+            print(change.kind, change.path)
 ```
 
-The public values are frozen, slotted dataclasses and enums, and `Report.as_dict()`
-returns the exact CLI JSON schema for serialization-oriented callers.
-Completeness and freshness stay independent: a cache-only index may cover its complete
-scope while remaining stale until it is revalidated.
-Every native method is bulk: it returns a whole structured result in one call.
-A million small zero-copy calls lose comfortably to one large call.
-The same wheel also installs an `fdu` console script backed by the native Rust CLI, and
-`make python-smoke` exercises it through the local wheel and `uvx`.
+Values are frozen dataclasses and enums.
+Every native call returns a whole structured result and releases the GIL while the
+engine works. `fdu.opened.OpenedIndex` is the typed long-lived root: coherent
+multi-projection reads, continuations, and a resumable change journal.
 
-## How It Works
+The wheel also installs the native `fdu` command.
+There is no Python reimplementation of the CLI.
 
-The metadata core and opt-in content layer retain separate state:
+## Speed
 
-| Artifact | What it is |
-| --- | --- |
-| **Metadata index** | In-memory parent-pointer tree; every directory carries pre-computed size, count, recency, and extension roll-ups |
-| **Metadata snapshot** | A complete metadata baseline, keyed by canonical root, semantic scan scope, format, and engine version |
-| **Content index** | Optional sparse per-file analysis records and derived roll-ups, allocated only after `--analyze` opts in |
-| **Content sidecar** | Separately versioned, analyzer-set-scoped persistence for unchanged content records; never loaded by metadata-only requests |
-| **Observation** | Verified producer input, optionally conditional on the indexed path state |
-| **Commit** | A clocked batch of exact effective changes and state transitions for the bounded change feed |
-| **Derived report** | Exact minimum state for a proven one-shot composition; otherwise the planner falls back to the index |
+**Exploratory macOS calibration, 2026-09-16, 0.1.0 release candidate.** A fresh process
+with its cache disabled built a reusable exact index and ten-row tree over a generated
+1,000,001-entry corpus in a **5.206-second median**. Twelve adjacent paired trials per
+tool on an M1 Pro with a local APFS SSD, warm filesystem cache, one independent
+full-tree fingerprint.
+The host was busy (load 7.7–9.9 on ten cores).
+Pairing makes the comparison hold; the absolute seconds are a loaded-host number.
 
-Metadata producers submit observations; the index alone removes no-ops, advances the
-metadata clock, and mints `Commit`. Content workers submit fingerprint-checked analysis
-observations to the optional derived tier without changing metadata truth or snapshot
-compatibility.
+| Tool | Work returned | Median |
+| --- | --- | ---: |
+| **fdu** | reusable exact index and ten-row tree | **5.206 s** |
+| dumac | allocated-byte total only | 5.637 s |
+| diskus | scalar total only | 6.972 s |
+| dust | allocated-byte total only | 8.292 s |
+| dua | scalar total only | 8.744 s |
+| BSD `du` | one total, serial | 51.226 s |
+| GNU `du` | one total, serial | 65.775 s |
 
-Two invariants are non-negotiable, because a cache that lies is worse than no cache.
-Content-reuse fingerprints are size, mtime, ctime, and inode, never mtime alone, because
-mtime is user-settable and some applications roll it back after writing.
-A corrupt or unrecognized snapshot is treated as absent, never as data.
+Each competitor was reduced to one number.
+fdu returned counts, apparent and allocated bytes, newest file time, per-directory and
+per-extension roll-ups, and kept the index that answers the next question without
+another walk.
 
-Every value also carries its provenance: where it came from, when it was observed, and
-whether it is final.
-That is what lets a caller show a cached number immediately, label it honestly, and
-clear the label as verification converges.
+fdu’s peak RSS here was 285.4 MiB against dumac’s 29.4 MiB, because fdu retained a
+million-entry index and dumac retained one integer.
+`fdu --no-gitignore --view summary` keeps the aggregate-only tier: the same tallies in
+4.876 s at **15.0 MiB**.
 
-The serving model, the concurrency guards, and the full set of rules any change must
-respect are in
-[the design and principles doc](docs/project/architecture/fdu-design-principles.md).
+This is not a portable absolute time or a claim that fdu is fastest on every host,
+platform, or tree. Linux evidence is real and improving, from virtualized hosts.
+Windows builds and passes tests; no performance claim is made there.
+
+A second run on an unchanged tree is a different job.
+Metadata-only one-shots still revalidate; `--analyze` reuses unchanged file-body results
+from a content sidecar.
+The trustworthy floor for a warm metadata run is still one stat per entry: directory
+mtimes do not record in-place edits.
+
+[The full comparison](docs/project/reports/report-2026-09-16-fdu-live-tool-comparison.md)
+has the method and the limits.
+[The performance campaign status](docs/project/reports/report-2026-08-14-performance-campaign-status.md)
+is the place to start on the evidence as a whole.
+
+## Why
+
+Of a dozen surveyed tools in this space ([du](https://www.gnu.org/software/coreutils/),
+[ncdu](https://dev.yorhel.nl/ncdu), [dust](https://github.com/bootandy/dust),
+[dua](https://github.com/Byron/dua-cli), [gdu](https://github.com/dundee/gdu),
+[dut](https://codeberg.org/201984/dut), [duc](https://github.com/zevv/duc),
+[scc](https://github.com/boyter/scc), [tokei](https://github.com/XAMPPRocky/tokei)),
+exactly one persists anything, exactly one carries multiple metrics per pass, **none**
+does per-directory type tallies, and **none** does mtime-based incremental revalidation.
+None of them is a native library with a live change feed that a Rust or Python program
+can hold. That combination is what a live file browser actually needs.
+
+The survey is in
+[the file roll-up engine research](docs/project/research/research-2026-08-06-file-rollup-engine.md).
+
+## Documentation
+
+- [Usage guide](docs/usage.md) — views, analyzers, selection, cache, watch, machine
+  output
+- [Documentation index](docs/README.md) — library, architecture, performance, release
+- [Design principles](docs/project/architecture/fdu-design-principles.md)
+- [0.1.0 release notes](docs/project/release-notes/0.1.0.md)
+- [Changelog](CHANGELOG.md)
 
 ## Development
 
 ```shell
-npm ci             # install the exact development-only golden-test toolchain
-make supply-chain  # verify release age, provenance, exact pins, and CI trust controls
-make build         # debug build, all features
-make test          # Rust tests plus the end-to-end CLI golden contract
-make test-golden   # build and compare only the CLI sessions
-make check         # tests, audits, docs, and installed-wheel smoke — the handoff gate
-make fix           # apply formatting
+make check    # handoff gate: fmt, clippy, tests, docs, lib-only build
+make test     # Rust tests plus the CLI golden contract
+make fix      # formatting and machine-applicable lint fixes
 ```
 
-The golden sessions are executable Markdown under `tests/golden/`, run by
-[tryscript](https://github.com/jlevy/tryscript).
-After an intentional CLI output change, run `make golden-update`; it regenerates
-affected blocks and immediately reruns comparison.
-Review the Markdown diff before committing, and check the named patterns first:
-regeneration records the *literal* output of one run, so a block that previously carried
-`[SCAN_PATH]`, `[RFC3339]`, `[ALLOCATED]`, or `[MTIME_NS]` comes back with that run’s
-temporary directory, timestamp, or allocation frozen into it.
-Such a block passes once and fails for everyone afterwards, so restore the patterns by
-hand before committing.
-The scenario design and the small set of permitted dynamic patterns are documented in
-[the completed CLI golden-test plan](docs/project/specs/done/plan-2026-08-09-fdu-cli-golden-tests.md).
-
-Performance work has its own targets (`make perf-baseline`, `perf-profile`,
-`perf-compare`, `perf-ledger`), deliberately outside `make check` — a timing gate on a
-shared CI runner measures the runner.
-Follow [the performance loop](docs/project/guides/performance-loop.md) before changing
-anything for speed.
-
-To set the project up from a fresh clone and prove the pieces work together by hand —
-including that issue tracking survives a sync round trip with its comments intact —
-follow [the integration runbook](docs/project/guides/integration-runbook.md).
-It covers what `make check` cannot: the workflow around the code.
-
-Read [the supply-chain policy](SUPPLY-CHAIN-SECURITY.md) before changing a dependency,
-toolchain, CI action, or bootstrap download.
-[The design and principles doc](docs/project/architecture/fdu-design-principles.md)
-carries the rules worth not rediscovering, and [AGENTS.md](AGENTS.md) covers how to
-operate on the repository.
+[AGENTS.md](AGENTS.md) is how to operate on the repository.
+[The supply-chain policy](SUPPLY-CHAIN-SECURITY.md) applies before any dependency
+change. Performance work follows
+[the performance loop](docs/project/guides/performance-loop.md) and is deliberately
+outside `make check`.
 
 ## License
 
