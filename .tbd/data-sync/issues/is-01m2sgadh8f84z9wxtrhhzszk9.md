@@ -5,7 +5,7 @@ title: Review and address all open 0.1.0 PRs
 kind: epic
 status: in_progress
 priority: 1
-version: 8
+version: 9
 labels:
   - review
 dependencies: []
@@ -17,8 +17,9 @@ child_order_hints:
   - is-01m2sgak5bbbfm5y4pp08w8ztx
   - is-01m2sgakjkfqnw5tt0ytshwgrj
   - is-01m2sgape5ss3nrhm5em7a2fqq
+  - is-01m2skja2vwwhj67kx985kac39
 created_at: 2026-09-18T05:37:38.343Z
-updated_at: 2026-09-18T05:37:52.058Z
+updated_at: 2026-09-18T06:34:22.670Z
 ---
 Review every open PR, publish a structured review if none exists, then address every finding as a child bead.
 
