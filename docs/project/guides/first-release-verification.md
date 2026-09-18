@@ -33,10 +33,12 @@ Work in a scratch directory that is not the checkout.
    fdu --view summary --cache off .
    ```
 
-3. **Watch.** Start `fdu --watch --view files --format jsonl --cache off TREE`, create a
-   file in `TREE`, and confirm a JSONL envelope arrives.
-   Interrupt with Ctrl-C. A wheel-installed command that ignores Ctrl-C during `--watch`
-   is `fdu-18vk`.
+3. **Watch.** Start
+   `fdu --watch --view files --format jsonl --cache off --interval 1s TREE`, create a
+   file in `TREE`, and confirm a `fdu.stream/1` upsert arrives.
+   `--interval` accepts whole `s`/`m`/`h` units (`1s`, `2s`); `200ms` and `0.2s` are
+   usage errors. Interrupt with Ctrl-C. A wheel-installed command that ignores Ctrl-C
+   during `--watch` is `fdu-18vk`.
 
 4. **Python, from the host wheel, not a rebuild:**
 
