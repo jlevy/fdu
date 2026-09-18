@@ -165,7 +165,7 @@ class SmokeCrateTests(unittest.TestCase):
             install[install.index("--config") + 1], f'patch.crates-io.fdu-core.path="{core}"'
         )
         self.assertEqual(install[install.index("--path") + 1], str(self.work / f"fdu-{VERSION}"))
-        self.assertEqual(options["env"]["FDU_RELEASE_TAG"], f"v{VERSION}")
+        self.assertNotIn("FDU_RELEASE_TAG", options["env"])
 
     def test_a_failed_install_stops_the_smoke(self) -> None:
         cargo = FakeCargo()
@@ -176,7 +176,7 @@ class SmokeCrateTests(unittest.TestCase):
 
     def test_a_binary_reporting_another_version_is_rejected(self) -> None:
         cargo = FakeCargo(reported=f"fdu {VERSION}-dev+g0123456789\n")
-        with self.assertRaisesRegex(ValueError, "reports 'fdu 0.1.0-dev"):
+        with self.assertRaisesRegex(ValueError, "stamped a git revision"):
             smoke_crate(self.crates, VERSION, self.work, runner=cargo)
 
     def test_a_used_work_directory_is_refused(self) -> None:

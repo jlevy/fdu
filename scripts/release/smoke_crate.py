@@ -166,10 +166,16 @@ def smoke_crate(
             "--config",
             patch,
         ],
-        env={**os.environ, "FDU_RELEASE_TAG": f"v{version}"},
+        # Leave FDU_RELEASE_TAG unset so this install exercises the
+        # `.cargo_vcs_info.json` skip (fdu-nwud), not the release-tag stamp.
+        env={key: value for key, value in os.environ.items() if key != "FDU_RELEASE_TAG"},
     )
     binary = str(install_root / "bin" / CLI)
     reported = run(runner, [binary, "--version"], stdout=subprocess.PIPE).stdout.strip()
+    require(
+        "-dev+g" not in reported,
+        f"installed {CLI} stamped a git revision: {reported!r}",
+    )
     require(
         reported == f"{CLI} {version}",
         f"installed {CLI} reports {reported!r}, not '{CLI} {version}'",
