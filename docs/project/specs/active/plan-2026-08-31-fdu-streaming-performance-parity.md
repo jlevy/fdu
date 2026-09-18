@@ -15,7 +15,8 @@ What remains:
   opened-discovery noninferiority gate on paired `component_ns` (`fdu-lj4h`, which also
   keeps `fdu-pro1` open);
 - quiet-host confirmation of exp-102’s public-mutation preflight change (`fdu-0q6w`);
-- the final validation and handoff record (`fdu-rx0d`), and with it the epic `fdu-748k`.
+- the epic `fdu-748k`. The final validation and handoff bead, `fdu-rx0d`, closed once PR
+  #52 merged; its residual parity proof is owned by `fdu-lj4h`.
 
 The Linux H86 floor claim is tracked separately on `fdu-xde5`.
 
@@ -1134,11 +1135,15 @@ unused consequence construction as the leading detached cost.
 - [ ] Run `make check`, `make cross-lint`, the exact-commit independent model,
   opened-root goldens, and the paired performance protocol.
   CI passed for PR #52 at merge (38 checks green); the paired final-binary performance
-  protocol has not run on the merged engine (`fdu-lj4h`).
+  protocol has not run on the merged engine (`fdu-lj4h`). A 2026-09-16 sanity check on
+  the `0.1.0` release candidate, recorded in `fdu-pro1`, measured a median pair ratio of
+  0.941 (95% interval 0.813 to 1.023) against `b75bf85` on one subject; with one
+  subject, wall time only, and a loaded host, it is not that protocol.
 - [ ] Record every accepted and rejected experiment, update the opened-root plan’s live
   status, and close the linked beads only after the stacked PR’s CI passes.
   CI passed and fifteen of the plan’s beads are closed; `fdu-lj4h` and `fdu-0q6w` are in
-  progress, and `fdu-rx0d` and the epic `fdu-748k` remain open.
+  progress, `fdu-rx0d` is closed with its residual owned by `fdu-lj4h`, and the epic
+  `fdu-748k` remains open.
   The P0 regression bead `fdu-pro1`, which records the 3.6–10× whole-scan slowdown found
   on the rewrite branch, is also in progress, and stays open until a quiet-host parity
   run against the pre-rewrite control (`b75bf85`) proves parity.
@@ -1168,7 +1173,7 @@ boundary at a time.
 | `fdu-ttpf` | P2 | Classify bulk syscalls and current engine symbols in profiles | — |
 | `fdu-0q6w` | P1 | Remove profile-confirmed ordered path-map work from public preflight | `fdu-ht5q` |
 | `fdu-lj4h` | P0 | Prove final-binary one-shot parity on both real subjects | `fdu-1jz6`, `fdu-9o4u`, `fdu-dtb6`, `fdu-b49n`, `fdu-qoro`, `fdu-jsbz`, `fdu-by5y`, `fdu-ht5q`, `fdu-0q6w` |
-| `fdu-rx0d` | P1 | Complete isolated gates, final review, push, and CI handoff | `fdu-lj4h` |
+| `fdu-rx0d` | P1 | Complete isolated gates, final review, push, and CI handoff (closed: PR #52 merged; residual owned by `fdu-lj4h`) | `fdu-lj4h` |
 
 Existing regression bead `fdu-pro1` now points to this spec and remains open until
 `fdu-lj4h` proves its acceptance criteria.

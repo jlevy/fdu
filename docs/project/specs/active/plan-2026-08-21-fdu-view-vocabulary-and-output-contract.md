@@ -16,6 +16,10 @@ narrows them but cannot widen them past regular files; `--sort` and `--limit` ov
 them as designed.
 One residual stays open on `fdu-c2ml`: JSON and YAML output are read by
 real parsers, but JSONL report lines are checked only for balanced braces.
+The YAML parser check was also more lenient than it looked: it accepted YAML whose
+content-metric rows did not nest `share`, `metrics`, and `pages` as JSON does, left
+U+007F–U+009F unescaped, and omitted `root_raw` and `path_raw`. All three were fixed
+before `0.1.0`.
 
 ## Overview
 
@@ -182,7 +186,9 @@ node ships no YAML support — so a pinned `yaml` devDependency goes through
   `yaml` dependency goes through the supply-chain policy first (`fdu-c2ml`). JSON is
   parsed by `scripts/content-selfcheck.mjs` and the Python tests, and YAML by
   `scripts/check-yaml.mjs` in `make test` using the already locked `yaml` package.
-  JSONL report lines are still checked only by the brace-balancing `is_valid_json` in
+  That YAML check parsed without comparing shape to JSON, so it missed the metric-row
+  nesting, C1-control escaping, and raw-path fields fixed before `0.1.0`. JSONL report
+  lines are still checked only by the brace-balancing `is_valid_json` in
   `crates/fdu-core/src/report_format.rs`, which accepts `{"a": }`
 - [x] Carry the vocabulary through `--docs`, README, SKILL.md, help, the `--view` error
   message, the composable CLI spec, and the goldens (`fdu-k4ad`)
@@ -241,7 +247,7 @@ every tree.
 ## References
 
 - [Design principles: First Principles](../../architecture/fdu-design-principles.md#first-principles)
-- [Composable CLI and query surface](plan-2026-08-10-fdu-composable-cli-surface.md)
+- [Composable CLI and query surface](../done/plan-2026-08-10-fdu-composable-cli-surface.md)
 - Beads: `fdu-qbwf`, `fdu-xc1v`, `fdu-j1dc`, `fdu-c1qh`, `fdu-5akc`, `fdu-k4ad`, and
   `fdu-1lj3` (the original silent-truncation report) are closed; `fdu-c2ml` stays open
   for the JSONL parser check, and the epic `fdu-yov0` with it

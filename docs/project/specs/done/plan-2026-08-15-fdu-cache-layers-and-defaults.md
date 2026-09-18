@@ -49,7 +49,10 @@ which requests should touch the snapshot at all.
 ## Non-Goals
 
 - The progressive session API, lazy open, and provenance composition, which are
-  [their own plan](../active/plan-2026-08-11-fdu-progressive-results.md)
+  [their own plan](../active/plan-2026-08-11-fdu-progressive-results.md) (the session
+  API has since moved to
+  [the opened-root inventory plan](../active/plan-2026-08-25-fdu-opened-root-inventory-engine.md),
+  and `OpenedIndex` ships in `0.1.0`)
 - The FSEvents journal, which is
   [its own plan](../active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
 - Changing what any policy *means* once selected; `--cache off`, `refresh`, `read-only`,
@@ -120,6 +123,8 @@ alone. Two independent decisions:
 
 None to the public library or `fdu.report/1`. The summary result is byte-identical; only
 the work done to produce it changes.
+(The report schema has since moved to `fdu.report/5`, or `fdu.report/6` for a report
+with content analysis or a metric summary.)
 `CachePolicy` keeps all five variants and their meanings.
 
 ## Implementation Plan
@@ -130,6 +135,8 @@ the work done to produce it changes.
   An unfiltered metadata summary with no analysis takes the transient tier under `off`,
   `auto`, and `read-only`; `only` and `refresh` still retain the index because their
   contracts are about the snapshot itself rather than the cheapest exact answer.
+  Since `.gitignore` became default-on (PR #65), only an unfiltered
+  `--no-gitignore --view summary` takes the transient tier.
 - [x] Make human and machine `--cache-status` agree: a request whose every candidate is
   unrecognized reports no snapshots in both renderings, rather than the text form saying
   “No cached snapshots.”
@@ -139,6 +146,8 @@ the work done to produce it changes.
 
 Measured effect: `fdu --view summary PATH` went from 161 ms to 71 ms on the subject
 above, and no longer leaves a snapshot behind.
+That command is now spelled `fdu --no-gitignore --view summary PATH`; a default summary
+reads `.gitignore`, retains the index, and saves a snapshot.
 
 ### Phase 2: Stop persisting where the snapshot will not be read — closed by measurement
 

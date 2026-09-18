@@ -4,9 +4,11 @@
 
 **Author:** fdu project, with Codex review assistance
 
-**Status:** Active — Phase 3B contract and Python oracle complete; Phase 3C bounded
-native projections in progress; Phase 4 control-state scale open after macOS field
-reports
+**Status:** Active (updated 2026-09-16) — Phases 1, 2, and 3B shipped in PR #48 and are
+in `0.1.0`. Phase 3C has been idle since 2026-08-28, when tree pages gained `depth`
+(`3924944`). Phase 4’s control-bound work is done except memory (`fdu-6o5o`, `fdu-syyl`)
+and the one-shot timing proof (`fdu-pro1`). The MetaBrowser phases follow `0.1.0`;
+MetaBrowser PR #74 merged on 2026-09-09 (`19e90b0`).
 
 ## Overview
 
@@ -50,10 +52,9 @@ see. The replacement uses one fresh fdu branch and one long-lived draft PR from 
 `main`. Work advances through vertical, reviewable commit groups, and every phase must
 meet its acceptance gate before the next begins.
 
-MetaBrowser is a separate repository, so its contract and adapter changes necessarily
-remain on the MetaBrowser PR #74 branch.
-The two PRs form one coordinated integration effort and pin each other’s exact tested
-revisions.
+MetaBrowser is a separate repository, so its contract and adapter changes land on
+MetaBrowser `main`, where PR #74 merged.
+Follow-up continues on MetaBrowser `main`.
 
 [The engine architecture](../../architecture/fdu-engine-architecture.md) is the durable
 design authority for this work.
@@ -65,7 +66,7 @@ tests, and beads.
 | Question | Decision |
 | --- | --- |
 | Merge PR #47 after more patching? | No. Preserve it as implementation evidence and extract selected pieces into one fresh rewrite branch from `main`. |
-| How is the rewrite delivered? | One long-lived fdu draft PR with phase-gated commit groups; MetaBrowser changes remain on its own PR #74 branch. |
+| How is the rewrite delivered? | One long-lived fdu draft PR with phase-gated commit groups; MetaBrowser changes land on MetaBrowser `main`, where its PR #74 merged. |
 | Keep MetaBrowser’s provider boundary? | Yes. The coordinator/provider split and five-operation handle are sound. |
 | Shape the Python API around MetaBrowser? | No. MetaBrowser is the reference client, not the public vocabulary. Rust and Python expose the same fdu-native lifecycle and values; the client adapter translates them. |
 | Put MetaBrowser’s eight query names in fdu? | No. Keep a small fdu-native read algebra and map to the client vocabulary in a thin adapter. |
@@ -116,7 +117,7 @@ coordinator assembly, route integration, and full application gate.
 | Architecture and implementation map | Complete | The durable architecture, PR #44 and #47 reconciliation, direct-API correction, file/function map, test design, and reuse ledger are committed and reviewed. |
 | Phase 1: exact engine kernel | Complete | Checkpoints 1A through 1D passed their local gates and the cumulative cross-platform PR gate. |
 | Phase 2: opened-root vertical slice | Complete | The native lifecycle and five transparent session goldens are green. The direct `PyO3` handle, exhaustive value conversion, immutable `fdu.opened` API, typed errors, GIL-detached operations, strict downstream typing fixture, installed-wheel lifecycle, source distribution, CLI parity, and cross-target lint all pass. |
-| Phase 3: MetaBrowser adoption | Checkpoint 3C in progress | MetaBrowser commit `2743064` measures the unchanged contract against the exact fdu wheel from `0583a1a`; `45266a8` completes the shared bounded contract and Python oracle. fdu `a286145` completes the approved optional serving-index set, and `27aeed0` completes the bounded continuation authority with green CI. The current native checkpoint parses the actual File Rollup registry (schema 3 or 4) without adding a dependency, projects classification on demand, and adds the selection predicates needed by catalog and filtered reads. The bounded projection readers, Python registry input, and thin production adapter remain open. |
+| Phase 3: MetaBrowser adoption | Checkpoint 3C in progress | MetaBrowser commit `2743064` measures the unchanged contract against the exact fdu wheel from `0583a1a`; `45266a8` completes the shared bounded contract and Python oracle. fdu `a286145` completes the approved optional serving-index set, and `27aeed0` completes the bounded continuation authority with green CI. The current native checkpoint parses the actual File Rollup registry (schema 3 or 4) without adding a dependency, projects classification on demand, and adds the selection predicates needed by catalog and filtered reads. Python registry input is done (`OpenedOptions.type_rules`); the bounded projection readers and thin production adapter remain open. |
 | Phase 4: control-state scale | In progress | The control limits degrade: a `.gitignore` past the budget or the line limit is refused and named, sizes stay exact, and nothing ends the scan (`fdu-1onj`). Identical sources are charged once (`fdu-szkg`), and each limit is liftable on its own on every surface (`fdu-okne`). Memory on `~/Library`-shaped trees, the peer-memory gap, and the macOS re-measurement remain. Epic `fdu-2lkf`. |
 | Phase 5: composed proof | Not started | Cross-provider conformance, route and lifecycle integration, installed-wheel proof, and final performance and size acceptance remain required. |
 
@@ -1145,7 +1146,7 @@ There is no reason to retain compatibility shims for the prototype spellings.
   Selecting `fdu` when the extension is unavailable produces a typed startup error; it
   never silently chooses Python.
 - In cross-repository CI, build the fdu wheel from the exact checked-out revision and
-  install that artifact.
+  install that artifact, or pin a published fdu `0.1.x` release.
   Do not depend on a moving Git branch or copy Rust artifacts into the MetaBrowser tree.
 - Keep the Python provider as the oracle and rollback choice until the dedicated
   integration phase passes.
@@ -1356,7 +1357,7 @@ Checkpoint 3A runs on the dedicated MetaBrowser branch
 `3183888808b366b5ba1c381dec1cbb18b49d969e`. It measures the current contract with an
 exact-revision fdu wheel and contains no shipping contract decision.
 After its evidence is published and its naive adapter is deleted, retained harness work
-and Phases 3B through 5 land on the MetaBrowser PR #74 branch.
+and Phases 3B through 5 land on MetaBrowser `main`, where PR #74 merged.
 Both PR descriptions pin the exact counterpart revision used by every cross-repository
 checkpoint.
 
@@ -1843,6 +1844,12 @@ working tree 11.49 s to 3.92 s (main 1.32 s). The medians predate one correction
 canonical-path copy lane they measured kept non-canonical spellings such as `a//b` and
 `a/b/`, and was replaced by a single canonicalizing pass into a pre-sized buffer, which
 has not been re-measured.
+A 2026-09-16 sanity check on the `0.1.0` release candidate, recorded in `fdu-pro1`,
+found no sign of the regression: on `~/.rustup/toolchains`, with the candidate given
+`--no-gitignore` so both arms do the same work, the median pair ratio against the
+pre-rewrite control was 0.941 (95% interval 0.813 to 1.023) over ten interleaved pairs.
+It is one subject on a loaded host, with wall time only, so it is not the parity verdict
+the streaming-parity plan requires.
 
 #### Control observation is scan policy, and the design as landed
 
@@ -2039,8 +2046,9 @@ browser uses, then produces the evidence required for a separate rollout decisio
 - [ ] Expand the File Rollup packet to include basename-to-logical-extension derivation,
   not only rows whose logical extension is already supplied.
 - [ ] Add cross-platform path fixtures for invalid Unix bytes, Windows separator
-  normalization and unpaired surrogates, non-ASCII Unicode, and portable-directory
-  completeness around children whose names need escaping.
+  normalization and unpaired surrogates, and non-ASCII Unicode.
+  (Portable-directory completeness around children whose names need escaping is
+  obsolete: under the total portable encoding every entry has a portable name.)
 - [ ] Assert the exact tree and flat ordering contracts, exact maintained totals,
   explicit capped totals, and exhaustive state-value mapping in both providers.
 - [ ] Replay one recorded, verified observation script through both providers and
@@ -2407,9 +2415,9 @@ arrow means the bead on the left depends on the bead or beads on the right.
 | 3B application | `fdu-kh2d` coordinator, assembly, runtime, routes | Closed | `fdu-m68r`, `fdu-yv1o` |
 | 3C native | `fdu-hgnj` measured indexes and continuations | In progress | `fdu-sewa`, `fdu-m68r` |
 | 3C adapter | `fdu-2xfp` fdu provider and async bridge | Open | `fdu-hgnj`, `fdu-bnsk`, `fdu-m68r` |
-| 4 semantics | `fdu-xu27` two-provider conformance and replay | Open | `fdu-yv1o`, `fdu-2xfp` |
-| 4 product | `fdu-bldb` routes, lifecycle, recovery, wheel | Open | `fdu-kh2d`, `fdu-xu27` |
-| 4 acceptance | `fdu-ekad` performance, size, rollout evidence | Open | `fdu-bldb` |
+| 5 semantics | `fdu-xu27` two-provider conformance and replay | Open | `fdu-yv1o`, `fdu-2xfp` |
+| 5 product | `fdu-bldb` routes, lifecycle, recovery, wheel | Open | `fdu-kh2d`, `fdu-xu27` |
+| 5 acceptance | `fdu-ekad` performance, size, rollout evidence | Open | `fdu-bldb` |
 
 This graph makes the intended parallelism explicit.
 After `fdu-mkga`, reads, journal, and refresh can proceed independently.
@@ -2439,6 +2447,10 @@ The parent closes only when all listed children and its checkpoint gate pass.
 | `fdu-ekad` final acceptance | `fdu-giss` paired protocol and thresholds → `fdu-umwm` composed measurements → `fdu-vmzf` dependency, size, rollback, and rollout disposition |
 
 ### Ordered path to a mergeable branch
+
+**Update (2026-09-16).** PR #48 merged on 2026-09-14, so this order now describes
+follow-up work on `main`. The `fdu-shkr` row’s divergence no longer holds: MetaBrowser
+`main` has no `PortablePathEncoding`, `PortablePathIssue`, or `portable_issue` field.
 
 The engine is sound; what remains is composition, and it has one ordering constraint
 that is easy to get backwards.
@@ -2758,10 +2770,11 @@ It contains:
   nondirectories whose names interleave, so a dirs-first partition is distinguishable
   from one lexicographic pass; several files sharing one modification time, so a recency
   tie-break is exercised rather than assumed; an ignored directory holding the newest
-  file in the corpus, so ranking cannot be reordered by ignored state and pruning is
+  file in the corpus, so the ignored-last demotion is exercised and pruning is
   distinguishable from row filtering; and one corpus whose match count exceeds the row
-  bound and one whose does not, read with the same query, so a rule that fires only on
-  overflow cannot pass unnoticed;
+  bound and one whose does not, read with the same query, so the demotion is exercised
+  on both overflow branches and a rule that fires only on overflow cannot pass
+  unnoticed;
 - a scripted operation sequence with expected state, change cursor, invalidation, and
   settled read after every step;
 - lifecycle, budget, reset, refresh, cancellation, and close failures.

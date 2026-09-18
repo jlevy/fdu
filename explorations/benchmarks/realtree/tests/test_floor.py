@@ -473,6 +473,11 @@ class EveryInstrumentRunsTheSamePool(unittest.TestCase):
                 argv = floor.INSTRUMENTS[name].command(binaries=BINARIES, root=Path("/r"), workers=7)
                 self.assertEqual(argv[argv.index("--threads") + 1], "7")
 
+    def test_the_aggregate_instrument_reaches_the_transient_plan(self):
+        argv = floor.INSTRUMENTS["aggregate"].command(binaries=BINARIES, root=Path("/r"), workers=7)
+        self.assertIn("--no-controls", argv)
+        self.assertNotIn("--no-controls", floor.INSTRUMENTS["index"].argv)
+
     def test_the_default_counts_the_cpus_this_process_may_run_on(self):
         with mock.patch.object(floor.os, "process_cpu_count", create=True, return_value=3), \
                 mock.patch.object(floor.os, "cpu_count", return_value=16):

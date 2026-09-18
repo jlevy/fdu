@@ -4,7 +4,7 @@
 
 **Status:** Proposed.
 Research and implementation plan; no new commands or persistence format ship with this
-document.
+document. This work follows `0.1.0`: nothing in it is part of that release.
 
 ## Objective
 

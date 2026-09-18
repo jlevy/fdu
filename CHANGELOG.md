@@ -24,6 +24,15 @@ The GitHub release text is
 
 ### Added
 
+- **Request model.** The command line, the Python package, and the Rust library share
+  one typed `Request` (`Basis`, `Query`, `now`), one `Delivery`, the axis grammars, and
+  `Request::DEFAULTS`. Allocated size is the default everywhere: `SizeMetric::default`
+  and an opened selection that names no metric answer in allocated bytes, as `--size`
+  and Python `size` already did.
+  A refused request is a usage error: exit status 2 on the command line,
+  `InvalidArgumentError` (a `ValueError`) in Python.
+  `Query.axes` is `&'static AxisNames`, so a refusal names flags or fields in the
+  caller’s vocabulary.
 - **Command line.** `fdu PATH` prints a size-sorted tree two levels deep with ten rows
   per directory; bare `fdu` prints help and scans nothing.
   Sizes are allocated bytes unless `--size apparent` asks for file lengths.
@@ -100,13 +109,18 @@ The GitHub release text is
     an unfiltered `--view summary` retains it and saves a snapshot like any other
     report.
 - **Watch.** `fdu --watch` repeats the same query as the tree changes.
-  Aggregate views repaint at most every `--interval` (2 seconds by default), and
-  `--view files --format jsonl` emits one `fdu.stream/1` record per change.
+  Aggregate views repaint at most every `--interval` (2 seconds by default; the age
+  grammar, including `200ms`), and `--view files --format jsonl` emits one
+  `fdu.stream/1` record per change.
   Events are verified by stat, and a backend overflow or rescan request becomes a
   reconcile of the affected subtree rather than a dropped event.
   An upsert carries `ignored`, and so does a removal a rule edit caused; an ordinary
   removal, an invalidation, and every record of a run that read no rules omit it.
-  A watch is metadata-only and refuses `--analyze`.
+  A watch is metadata-only on every surface: the command line refuses `--analyze` with
+  `--watch`, and a Rust `Session` or Python `Index.watch()` refuses an index opened with
+  content analysis, as `Error::UnsupportedScanConfig` or `InvalidArgumentError`. The
+  request model also refuses a narrowed scan scope and cache-only, so a library or
+  Python caller cannot ask for what the command line refuses.
 - **`.gitignore` roll-ups**, read by default on every surface.
   An index keeps ignored and unignored roll-ups for every directory beside the totals,
   and every report says how much of each size the tree’s own rules ignore.
@@ -184,6 +198,8 @@ The GitHub release text is
     stops an operation raises an `FduError` subclass, and one that makes a scan partial
     is reported on `Status`.
   - The wheel installs an `fdu` console script that runs the native command line.
+    The script restores `SIGINT` to the default disposition before entering the native
+    CLI, so Ctrl-C interrupts `--watch` the way it does a `cargo install` binary.
 - **Opened roots for interactive clients.** `OpenedIndex::open` in Rust, and
   `fdu.opened.OpenedIndex.open` in Python, return while discovery continues.
   - `read()` answers several projections (`Lookup`, `RollUp`, `Tree`, `Flat`,
@@ -215,6 +231,9 @@ The GitHub release text is
   - `watch` is the only build feature: off by default in `fdu-core`, on by default in
     `fdu`. `.gitignore` handling is always compiled in.
   - The minimum supported Rust version is 1.85.
+  - Published `fdu-core` requirements are caret ranges of the reviewed minimum.
+    `Cargo.lock` still pins exact versions for this workspace and for
+    `cargo install --locked`.
 - **Packaging.** The `fdu-core` and `fdu` crates; the `fdu` Python source distribution;
   and one CPython 3.12+ `abi3` wheel for each of Linux x86-64 and arm64 (manylinux2014,
   glibc 2.17), macOS x86-64 and arm64 (macOS 11), and Windows x86-64. Wheels carry type
@@ -249,6 +268,15 @@ This applies only to anyone who ran fdu built from a development checkout.
   its released name. A consumer pinned to a development build’s `fdu.report` version
   moves to `fdu.report/5` or `fdu.report/6`.
 
+### Compatibility
+
+0.1.x may add fields and variants to public Rust types such as `ReadProjection`,
+`ProjectionResult`, `ProjectionRefusal`, `LimitedProjection`, `IssueKind`,
+`ImpactDomain`, `Error`, `ReportRequest`, `TreePage`, `ReadResponse`, `RollUp`,
+`Provenance`, `StateTransition`, `ReportSource`, `Attrs`, and `Query`. Those additions
+are breaking under Cargo’s semver rules for exhaustive types; they land in 0.2 rather
+than behind `#[non_exhaustive]` on 0.1.0.
+
 ### Known limitations
 
 - **Memory.** fdu builds an exact index that later questions reuse, and every report but
@@ -282,10 +310,15 @@ This applies only to anyone who ran fdu built from a development checkout.
 - **Cache scope.** `fdu PATH` and `fdu --no-gitignore PATH` keep snapshots of different
   scope at one path, so alternating them scans cold each time.
   Changing either `.gitignore` limit does the same.
-- **Content analysis** is one-shot: `--watch` is metadata-only, and a refresh reanalyzes
-  after reconciling. SLOC covers 15 languages, with no embedded-language or syntax-tree
-  metrics. Sidecars and coverage are scoped to the analyzer set, so a request for
-  analyzers the stored set lacks reads the files again.
+- **Content analysis** is one-shot on every surface: the command line refuses
+  `--analyze` with `--watch`, a Rust `Session` and Python `Index.watch()` refuse an
+  index opened with analysis, and a refresh reanalyzes after reconciling.
+  SLOC covers 15 languages, with no embedded-language or syntax-tree metrics.
+  Sidecars and coverage are scoped to the analyzer set, so a request for analyzers the
+  stored set lacks reads the files again.
+- **Analysis memory.** `--analyze code` holds a whole file in memory while it analyzes a
+  file of unknown type, and `--analyze words` does the same for Markdown and unknown
+  types, so a very large such file raises peak memory by its size.
 - **`.gitignore` fidelity.** `.git/info/exclude`, `core.excludesFile`, and `.gitignore`
   files above the scanned root are not read, and a nested repository is not a boundary.
   Three unusual patterns match differently from git: `a/\/b`, `a//b`, and `***` between
@@ -307,15 +340,26 @@ This applies only to anyone who ran fdu built from a development checkout.
   Under the default selection it keeps membership live but does not restate a row’s
   `ignored` bit after a rule edit, so re-read a listing when the bit itself matters.
 - **Opened roots.** A `Tree` page can exceed its `max_work` by the width of one
-  directory level.
+  directory level. The opened-root types (`OpenedIndex` and its `ReadProjection`
+  projections, `TreePage`, `ReadResponse`, and the `fdu.opened` types that mirror them)
+  are expected to change in 0.2, as the `0.x` rule allows.
 - **Roll-up metrics** are a fixed set; there is no interface for custom per-directory
   reducers.
+- **JSON integers.** Fingerprints, option hashes, and nanosecond timestamps are JSON
+  numbers. Values above 2^53 lose precision in JavaScript `JSON.parse` and any other IEEE
+  754 binary64 consumer.
+  Read them as strings, or use a parser that preserves integers, if exact identity
+  matters.
 - **Performance evidence** comes mainly from an M1 Pro MacBook with a local APFS SSD.
   Linux measurements are from virtualized hosts, Windows has none, and CI checks
   behavior rather than timing.
 - **Platform coverage.** Linux arm64 wheels are cross-built and inspected, not executed,
-  before release. There is no wheel for free-threaded CPython, musl Linux, or Windows
-  arm64; those systems build from the source distribution with Rust 1.85 or newer.
+  before release. There is no wheel for musl Linux or Windows arm64; those systems build
+  from the source distribution with Rust 1.85 or newer.
+- **Free-threaded CPython** (such as `3.14t`) is not supported.
+  It cannot install the `abi3` wheels, and an installer there falls back to building the
+  source distribution; if uv selects a free-threaded interpreter, pass `--python 3.14`
+  or `--python 3.12`.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

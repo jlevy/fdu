@@ -56,14 +56,15 @@ thiserror = "2.0"
 anstyle = "1.0"
 
 notify = { version = "8.2", optional = true }
-pulldown-cmark = { version = "=0.13.4", default-features = false }
+# Caret ranges in the published manifest: an exact pin here makes any downstream
+# that needs a newer compatible release unresolvable. Cargo.lock still pins the
+# reviewed versions for this workspace and for `cargo install --locked` (fdu-p7vb).
+pulldown-cmark = { version = "0.13.4", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
 # Unix control-file reads use O_NONBLOCK so a raced FIFO cannot stall a scan. The
 # macOS scan accelerator also calls getattrlistbulk through these official bindings.
-# Keep the direct surface target-specific and pinned to the version already reviewed
-# and locked transitively in this workspace.
-libc = "=0.2.189"
+libc = "0.2.189"
 
 [dev-dependencies]
 tempfile = "3.26"

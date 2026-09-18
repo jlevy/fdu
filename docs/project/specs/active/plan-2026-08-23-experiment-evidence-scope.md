@@ -285,6 +285,8 @@ scope verdict.
   single-subject claim.
   Re-scoping it under this rule may change what the README says, and that is a
   user-facing edit worth deciding deliberately.
+  Settled: the README labels the Linux floor and `ignore` figures “scouting evidence
+  rather than product claims”, from one virtualized host with a warm cache.
 
 ## References
 

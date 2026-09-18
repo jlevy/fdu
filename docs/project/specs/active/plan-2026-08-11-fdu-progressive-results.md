@@ -4,7 +4,7 @@
 
 **Author:** fdu project
 
-**Status:** Active, narrowed to warm serving
+**Status:** Deferred past `0.1.0`; narrowed to warm serving
 
 ## Overview
 
@@ -166,8 +166,8 @@ The direct 1M-tree reproduction in exp-037 resolves the remaining traversal-orde
 performance doubt: depth-first regresses indexed wall 3.57% [2.42%, 5.23%] and component
 6.72%, while saving only 1.03% peak RSS. Breadth-first is therefore both the progressive
 contract and the faster measured default on the heterogeneous large tree.
-Persisted roll-ups with lazy open (`fdu-1vd0`) turn an 11-second warm load into a first
-paint. Tracked at low priority as `fdu-v71x` so the decision stays visible.
+Persisted roll-ups with lazy open would turn an 11-second warm load into a first paint.
+Lazy open is not built; it is tracked as `fdu-hd96` and `fdu-1vd0`.
 
 An earlier six-sample median comparison suggested ~8%, and that figure was quoted here
 before it had been through the accept rule.
@@ -257,6 +257,7 @@ harmless. For a browser that paints on load it is precisely backwards: nothing h
 checked since the file was read, and the one signal the UI needs is missing.
 `Freshness` also answers for the *run*, not for the value, so it cannot say that this
 directory is confirmed while that one is not.
+(Since fixed: a snapshot-loaded index reports `Cached`, `fdu-c817`.)
 
 #### Three orthogonal facts, not one enum
 
@@ -300,6 +301,12 @@ pub enum Source {
 }
 ```
 
+**As shipped in `0.1.0`.** `Provenance`, `Source`, and `Status` are public types with
+the variants above, and the timestamp is `observed_at_ns: i64`, nanoseconds since the
+Unix epoch, rather than a `SystemTime`. `Index::provenance` reports an entry’s own
+provenance, not its subtree’s: a revalidated directory can hold cached descendants until
+composition (`fdu-fka6`) lands.
+
 Splitting `complete` out of the source is what keeps two different UI affordances
 distinct. An incomplete value is monotone and reads as “≥ 3.2 GB, counting” — a bar that
 only fills. A complete `Cached` value is a point estimate that may move in either
@@ -334,6 +341,8 @@ So provenance is stored where it varies, and derived where it does not:
 `Provenance` is therefore a *view type*: constructed on demand by
 `Index::provenance(path)` and by the query layer, never a field.
 Consumers get the whole struct; the index stores a byte and two clocks.
+The per-entry source byte and `Index::provenance` landed (`fdu-ywa4`); the per-directory
+composed value did not.
 
 #### Provenance rolls up, and that is nearly free
 
@@ -357,6 +366,8 @@ value (clear the mark, no visual jump) and verification that **corrects** it (up
 clear, and the UI may want to draw attention).
 A consumer that only learns about corrections cannot tell “still checking” from “checked
 and fine”.
+Confirmations ship as `StateTransition::Verified`, recorded once per completed
+reconciliation of a subtree even when every entry was unchanged.
 
 #### Verification should follow the user’s attention
 
@@ -366,6 +377,10 @@ The opened-root control surface therefore takes a priority hint:
 ```rust
 opened.prioritize(&path);   // the user just opened this — verify it next
 ```
+
+The shipped `OpenedIndex::prioritize(paths)` is narrower: it reorders pending
+*discovery* toward the named paths, as a best-effort hint, and does not yet steer warm
+verification.
 
 Verification is otherwise breadth-first like the walk, but a prioritised subtree jumps
 the queue. This is what makes convergence feel immediate rather than merely fast: the
@@ -386,6 +401,7 @@ every row is `Scanned` or `Revalidated` and there is nothing to annotate.
 Provenance becomes visible exactly when it should — under `--cache only`, where every
 row is `Cached` and the header says as of when; under `--allow-partial`, where
 incomplete subtrees are marked; and in any future progress mode.
+(The `--cache only` “as of” header is not built; `fdu-lq0v` tracks it.)
 The same data that lets a browser draw a small “approximate” glyph lets the CLI print an
 honest “as of” line, and lets an agent consuming JSON decide whether a number is good
 enough for what it is about to do.
@@ -440,16 +456,18 @@ API design.
 - [x] macOS bulk metadata: replace directory enumeration plus one metadata syscall per
   entry with fail-closed `getattrlistbulk`, retaining the portable backend elsewhere and
   at mount/firmlink boundaries (exp-022)
-- [ ] Superseded here: opened-root session, cancellation, Python exposure, and
-  time-to-useful-ranking measurement are specified by the
+- [ ] Superseded here: opened-root session, cancellation, and Python exposure are
+  specified by the
   [opened-root inventory plan](plan-2026-08-25-fdu-opened-root-inventory-engine.md).
+  No plan owns the time-to-useful-ranking measurement; `fdu-rjql` tracks it.
 
 ### Phase 2: Provenance and convergence
 
 - [ ] `Provenance` per value, composed through the existing reducer path by weakest
   source / oldest observation / worst status - note these aggregates are **not
   invertible** under deletion or revalidation, so the design must specify the recompute
-  path (`fdu-fka6`); a snapshot-loaded index reports `Cached`, not `Fresh`
+  path (`fdu-fka6`)
+- [x] A snapshot-loaded index reports `Cached`, not `Fresh` (`fdu-c817`)
 - [ ] Publish warm-revalidation provenance changes through the opened-root inventory
   plan’s single change stream, reporting confirmations as well as corrections
 - [ ] Feed user-attention priority into warm verification through that opened-root
@@ -474,7 +492,7 @@ The opened-root inventory plan owns session start/cancel and partial-read tests.
 This plan adds warm-open fixtures for lazy loading and mixed provenance.
 The shared real-tree harness gains a time-to-useful-ranking job, since a plan about
 *when* answers arrive cannot be validated by a benchmark that only measures when they
-finish.
+finish. No plan owns that job yet (`fdu-rjql`).
 
 ## Open Questions
 
@@ -491,7 +509,7 @@ finish.
   — the four-consumer comparison and the measurements behind this plan
 - [Performance frontier research](../../research/research-2026-08-10-performance-frontier.md)
   — H16/H33/H34/H35, the verification tiers, and the cost model
-- [Composable CLI and query surface plan](plan-2026-08-10-fdu-composable-cli-surface.md)
+- [Composable CLI and query surface plan](../done/plan-2026-08-10-fdu-composable-cli-surface.md)
   — `Query`/`Report`, which the opened-root read surface returns
 - [FSEvents-scoped revalidation plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
   — the convergence half, deliberately separate

@@ -23,9 +23,9 @@ const MAX_FRACTION_DIGITS: usize = 9;
 
 /// Parse a `WHEN` value into an absolute instant.
 ///
-/// Accepts `now`, a compound age (`45s`, `2h`, `1h30m`), an RFC 3339 timestamp carrying
-/// an offset (`2026-08-10T18:22:31.482919114Z`), or `@` seconds since the Unix epoch
-/// (`@1786413716`, `@1786413716.482919114`).
+/// Accepts `now`, a compound age (`200ms`, `45s`, `2h`, `1h30m`), an RFC 3339 timestamp
+/// carrying an offset (`2026-08-10T18:22:31.482919114Z`), or `@` seconds since the Unix
+/// epoch (`@1786413716`, `@1786413716.482919114`).
 ///
 /// Ages subtract from `now`, so a caller that captures one instant per invocation gets a
 /// consistent window across several arguments.
@@ -232,7 +232,11 @@ fn size_factor(suffix: &str) -> Option<u64> {
     })
 }
 
-/// Parse a compound age such as `45s`, `2h`, or `1h30m` into a duration.
+/// Parse a compound age such as `200ms`, `45s`, `2h`, or `1h30m` into a duration.
+///
+/// Whole units only: `200ms` is a millisecond count, while `0.2s` remains a fractional
+/// age and is rejected. The accumulation is a [`Duration`] so a sub-second unit is not
+/// truncated to zero seconds (fdu-8o7g).
 fn parse_age(input: &str, value: &str) -> Result<Duration> {
     if value.contains(char::is_whitespace) {
         return Err(when_error(
@@ -244,7 +248,7 @@ fn parse_age(input: &str, value: &str) -> Result<Duration> {
         return Err(when_error(input, "expected `now`, an age like `2h`, or a timestamp"));
     }
 
-    let mut seconds: u64 = 0;
+    let mut total = Duration::ZERO;
     let mut rest = value;
     while !rest.is_empty() {
         let digits_end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
@@ -264,29 +268,42 @@ fn parse_age(input: &str, value: &str) -> Result<Duration> {
         if unit.is_empty() {
             return Err(when_error(
                 input,
-                "expected a unit after the number: s, m, h, d, or w, as in `45s` or `2h`",
+                "expected a unit after the number: ms, s, m, h, d, or w, as in `45s` or `2h`",
             ));
         }
 
         let count: u64 = digits
             .parse()
             .map_err(|_| when_error(input, "age is larger than this machine can represent"))?;
-        seconds = age_unit_seconds(input, unit)?
-            .checked_mul(count)
-            .and_then(|scaled| seconds.checked_add(scaled))
+        let piece = age_unit_duration(input, unit, count)?;
+        total = total
+            .checked_add(piece)
             .ok_or_else(|| when_error(input, "age is larger than this machine can represent"))?;
         rest = remainder;
     }
 
+    Ok(total)
+}
+
+/// Duration for `count` of one age unit, rejecting calendar units with the substitution
+/// to use.
+fn age_unit_duration(input: &str, unit: &str, count: u64) -> Result<Duration> {
+    let unit = unit.to_ascii_lowercase();
+    if matches!(unit.as_str(), "ms" | "msec" | "msecs" | "millisecond" | "milliseconds") {
+        return Ok(Duration::from_millis(count));
+    }
+    let seconds = age_unit_seconds(input, &unit)?
+        .checked_mul(count)
+        .ok_or_else(|| when_error(input, "age is larger than this machine can represent"))?;
     Ok(Duration::from_secs(seconds))
 }
 
-/// Seconds in one age unit, rejecting calendar units with the substitution to use.
+/// Seconds in one whole-second age unit.
 fn age_unit_seconds(input: &str, unit: &str) -> Result<u64> {
     const MINUTE: u64 = 60;
     const HOUR: u64 = 60 * MINUTE;
     const DAY: u64 = 24 * HOUR;
-    Ok(match unit.to_ascii_lowercase().as_str() {
+    Ok(match unit {
         "s" | "sec" | "secs" | "second" | "seconds" => 1,
         "m" | "min" | "mins" | "minute" | "minutes" => MINUTE,
         "h" | "hr" | "hrs" | "hour" | "hours" => HOUR,
@@ -304,7 +321,7 @@ fn age_unit_seconds(input: &str, unit: &str) -> Result<u64> {
         _ => {
             return Err(when_error(
                 input,
-                &format!("unknown age unit {unit:?}; use s, m, h, d, or w"),
+                &format!("unknown age unit {unit:?}; use ms, s, m, h, d, or w"),
             ));
         }
     })
@@ -549,8 +566,12 @@ mod tests {
     }
 
     fn seconds_before_now(value: &str) -> u64 {
+        duration_before_now(value).as_secs()
+    }
+
+    fn duration_before_now(value: &str) -> Duration {
         let parsed = parse_when(value, now()).expect("value parses");
-        now().duration_since(parsed).expect("not in the future").as_secs()
+        now().duration_since(parsed).expect("not in the future")
     }
 
     fn epoch_nanos(value: &str) -> i64 {
@@ -605,6 +626,16 @@ mod tests {
         assert_eq!(seconds_before_now("1d12h30m15s"), 131_415);
         // Order is not enforced, because the sum is what the value means.
         assert_eq!(seconds_before_now("30m1h"), 5_400);
+    }
+
+    #[test]
+    fn millisecond_ages_are_whole_units_not_fractions() {
+        assert_eq!(duration_before_now("200ms"), Duration::from_millis(200));
+        assert_eq!(duration_before_now("200msec"), Duration::from_millis(200));
+        assert_eq!(duration_before_now("1s200ms"), Duration::from_millis(1_200));
+        assert_eq!(duration_before_now("1000ms"), Duration::from_secs(1));
+        let hint = time_rejection("0.2s");
+        assert!(hint.contains("fractional"), "{hint}");
     }
 
     #[test]

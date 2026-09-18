@@ -271,11 +271,11 @@ release-evidence children, `fdu-849g` and `fdu-bmhr`; neither blocks local scale
 
 The repository-wide correctness, supply-chain, and concurrency implementation gates are
 closed; final approval bead `fdu-sn43` is closed and PR #1 has merged.
-The next measurement steps are the revalidation and snapshot cost-curve spikes under
-`fdu-p2i1` and `fdu-1vd0`. Comparator acquisition under `fdu-k5t5` cleared its
-executable-dependency policy blocker.
-The real-tree paired comparator now records work classes, exact binary hashes and
-versions, direct argv, resource use, redacted output hashes, an immediate v2
+The revalidation cost-curve spike under `fdu-p2i1` has run, and its findings became
+`fdu-pkyu` and `fdu-6wu0`; the snapshot-candidate spike under `fdu-1vd0` remains.
+Comparator acquisition under `fdu-k5t5` cleared its executable-dependency policy
+blocker. The real-tree paired comparator now records work classes, exact binary hashes
+and versions, direct argv, resource use, redacted output hashes, an immediate v2
 fingerprint, and hard-link prevalence.
 A publishable result still requires an immutable clean-revision binary and zero pre/post
 drift; the README claim is owned by that separate live comparison, not by exploratory
@@ -1069,16 +1069,17 @@ governed by `fdu-ywu0`.
 - [ ] `fdu-bmhr`: add opt-in dedicated-host profile and byte-I/O/syscall collectors
 - [ ] `fdu-849g`: pin strict claim-grade build and anonymous host manifests
 - [ ] `fdu-k5t5`: complete reviewed dut/gdu adapters and the job-capability matrix
-- [ ] `fdu-p2i1` and `fdu-1vd0`: execute the revalidation and snapshot-candidate spikes
-  before freezing their Phase 1 designs
+- [x] `fdu-p2i1`: execute the revalidation spike before freezing its Phase 1 design
+- [ ] `fdu-1vd0`: execute the snapshot-candidate spike before freezing its Phase 1
+  design
 - [ ] `fdu-6wu0`: establish repeated large trials from safely cloned, independently
   verified base corpora instead of regenerating 500k-1M entries for every invocation
-- [ ] `fdu-hh8g`: add a mutation-detecting, path-redacted real-tree evidence baseline
-- [ ] `fdu-16py`: profile and iteratively optimize snapshot-absent producer, full-index,
+- [x] `fdu-hh8g`: add a mutation-detecting, path-redacted real-tree evidence baseline
+- [x] `fdu-16py`: profile and iteratively optimize snapshot-absent producer, full-index,
   and CLI work, with one evidence-backed commit per accepted change
-- [ ] `fdu-xnyn`: profile and iteratively optimize compatible-snapshot revalidation and
+- [x] `fdu-xnyn`: profile and iteratively optimize compatible-snapshot revalidation and
   user-visible warm completion under the same acceptance policy
-- [ ] `fdu-e4nq`: publish the multi-scale real-tree optimization decision ledger
+- [x] `fdu-e4nq`: publish the multi-scale real-tree optimization decision ledger
 - [ ] `fdu-ywu0`: add memory, scale, thread-count, traversal-order, output, Python, and
   contention scenarios as their engine surfaces become available
 - [ ] `fdu-atqk`, `fdu-aky1`, `fdu-1gbl`, `fdu-a6dz`, `fdu-xihx`, and `fdu-wbis`:
@@ -1095,7 +1096,9 @@ governed by `fdu-ywu0`.
 - [ ] `fdu-ywu0`: update README claims only from that report and link its reproduction
   manifest
 - [ ] `fdu-9cf0`: require the reviewed report for publishing without treating shared CI
-  timing as a release oracle
+  timing as a release oracle (no longer required: by the 2026-09-15 decision, `0.1.0`
+  publishes by hand without the reviewed report, and the README’s figures carry their
+  own dated regime and limits)
 
 ## Testing Strategy
 

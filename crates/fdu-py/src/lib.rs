@@ -628,6 +628,17 @@ fn value_error(error: &RequestError) -> PyErr {
     PyValueError::new_err(error.message(&AxisNames::FIELDS))
 }
 
+/// The default analyzer set, as the grammar spells it.
+///
+/// Read from the model the same way the command line does. The empty set is the one
+/// analyzer set a `const` can spell, so the assertion is what makes this a reading of
+/// the table rather than a guess about it.
+const ANALYZE_DEFAULT: &str = AnalysisSet::NONE_LABEL;
+const _: () = assert!(
+    !Request::DEFAULTS.content.is_enabled(),
+    "Python signatures print the default analyzer set; a table that enables one needs a spelling here"
+);
+
 /// The basis an `open`, a `scan`, or a one-shot holds, built by the request model.
 ///
 /// Root, scope, and analyzers are the axes a holder is fixed with, and the model parses
@@ -1233,7 +1244,7 @@ impl PyOneShot {
     read_controls = fdu_core::query::Request::DEFAULTS.read_controls,
     control_budget = None,
     control_line_limit = None,
-    analyze = "none",
+    analyze = ANALYZE_DEFAULT,
     analysis_workers = 0,
     views = None,
     include = None,
@@ -1638,7 +1649,7 @@ fn clear_all_caches(py: Python<'_>, root: PathBuf) -> PyResult<Bound<'_, PyDict>
     read_controls = fdu_core::query::Request::DEFAULTS.read_controls,
     control_budget = None,
     control_line_limit = None,
-    analyze = "none",
+    analyze = ANALYZE_DEFAULT,
     analysis_workers = 0
 ))]
 #[allow(
@@ -1719,7 +1730,7 @@ fn open(
     read_controls = fdu_core::query::Request::DEFAULTS.read_controls,
     control_budget = None,
     control_line_limit = None,
-    analyze = "none",
+    analyze = ANALYZE_DEFAULT,
     analysis_workers = 0
 ))]
 #[allow(
