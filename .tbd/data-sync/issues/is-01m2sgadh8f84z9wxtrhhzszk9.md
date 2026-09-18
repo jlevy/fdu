@@ -3,9 +3,9 @@ type: is
 id: is-01m2sgadh8f84z9wxtrhhzszk9
 title: Review and address all open 0.1.0 PRs
 kind: epic
-status: in_progress
+status: closed
 priority: 1
-version: 9
+version: 10
 labels:
   - review
 dependencies: []
@@ -19,7 +19,11 @@ child_order_hints:
   - is-01m2sgape5ss3nrhm5em7a2fqq
   - is-01m2skja2vwwhj67kx985kac39
 created_at: 2026-09-18T05:37:38.343Z
-updated_at: 2026-09-18T06:34:22.670Z
+updated_at: 2026-09-18T06:43:46.139Z
+closed_at: 2026-09-18T06:43:46.138Z
+close_reason: "All listed 0.1.0 PRs reviewed and addressed. #77 closed as superseded. #84 #85 #86 #87 #88 CI green."
+resolution: null
+duplicate_of: null
 ---
 Review every open PR, publish a structured review if none exists, then address every finding as a child bead.
 
