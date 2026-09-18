@@ -129,6 +129,8 @@ bodies. Content analysis is explicit:
 `none` and `all` name the whole axis and cannot be combined with another value.
 Files are analyzed through EOF, not truncated by size.
 `--analysis-workers` bounds concurrent reads.
+Under `code`, a code file in a language without a line-of-code counter is reported as
+`unsupported` coverage and contributes no line metrics to that request.
 
 Naming analysis without a view chooses one that displays it: `code` selects `languages`,
 `words` selects `documents`, and `lines`, `code,words`, or `all` select `families`. An
