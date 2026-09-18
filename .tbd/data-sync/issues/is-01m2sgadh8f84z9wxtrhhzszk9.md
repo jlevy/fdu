@@ -5,7 +5,7 @@ title: Review and address all open 0.1.0 PRs
 kind: epic
 status: closed
 priority: 1
-version: 11
+version: 12
 labels:
   - review
 dependencies: []
@@ -19,8 +19,9 @@ child_order_hints:
   - is-01m2sgape5ss3nrhm5em7a2fqq
   - is-01m2skja2vwwhj67kx985kac39
   - is-01m2sm5dpddz0gsaxjf4hw9cen
+  - is-01m2sph0x0nb2rrwwdgjzpww9m
 created_at: 2026-09-18T05:37:38.343Z
-updated_at: 2026-09-18T06:44:48.966Z
+updated_at: 2026-09-18T07:26:06.238Z
 closed_at: 2026-09-18T06:43:46.138Z
 close_reason: "All listed 0.1.0 PRs reviewed and addressed. #77 closed as superseded. #84 #85 #86 #87 #88 CI green."
 resolution: null
