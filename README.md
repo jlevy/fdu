@@ -234,8 +234,10 @@ another walk. dumac’s 95% interval was +5.8% to +13.5%.
 
 fdu’s peak RSS here was 285.4 MiB against dumac’s 29.4 MiB, because fdu retained a
 million-entry index and dumac retained one integer.
-`fdu --no-gitignore --view summary` keeps the aggregate-only tier: the same tallies in
-4.876 s at **15.0 MiB**.
+`fdu --no-gitignore --view summary` keeps the aggregate-only tier, which returns the
+same tallies without retaining that index: **15.0 MiB** against 285.4 MiB for the tree
+view in a separate fdu-only round-robin.
+That tier buys memory, not time.
 
 Linux evidence is real and improving, from virtualized hosts.
 The most recent campaign on a 450k-entry tree, measured against its own starting point:
