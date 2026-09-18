@@ -24,6 +24,15 @@ The GitHub release text is
 
 ### Added
 
+- **Request model.** The command line, the Python package, and the Rust library share
+  one typed `Request` (`Basis`, `Query`, `now`), one `Delivery`, the axis grammars, and
+  `Request::DEFAULTS`. Allocated size is the default everywhere: `SizeMetric::default`
+  and an opened selection that names no metric answer in allocated bytes, as `--size`
+  and Python `size` already did.
+  A refused request is a usage error: exit status 2 on the command line,
+  `InvalidArgumentError` (a `ValueError`) in Python.
+  `Query.axes` is `&'static AxisNames`, so a refusal names flags or fields in the
+  caller’s vocabulary.
 - **Command line.** `fdu PATH` prints a size-sorted tree two levels deep with ten rows
   per directory; bare `fdu` prints help and scans nothing.
   Sizes are allocated bytes unless `--size apparent` asks for file lengths.
