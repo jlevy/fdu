@@ -5,12 +5,14 @@ title: Installed CLI end-to-end QA playbook and sequential harness
 kind: task
 status: open
 priority: 2
-version: 2
+version: 3
 spec_path: tests/qa/cli-installed-e2e.qa.md
 labels: []
 dependencies: []
+child_order_hints:
+  - is-01m2vm768w4095dgcw767yxfsx
 created_at: 2026-09-18T20:33:06.734Z
-updated_at: 2026-09-18T20:38:33.997Z
+updated_at: 2026-09-19T01:24:15.749Z
 ---
 Add tests/qa/cli-installed-e2e.qa.md plus scripts/run-installed-cli-qa.py. Sequential PATH-binary QA: view matrix, cache off vs on for --analyze=code and --analyze=lines, optional medium tree, bounded Library. Dated numbers in docs/project/reports/report-2026-09-18-cli-installed-qa.md. Not part of make check.
 
