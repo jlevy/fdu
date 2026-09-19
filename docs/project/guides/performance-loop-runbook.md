@@ -33,10 +33,10 @@ Never force-push.
 
 ### Standing Best and Regime
 
-**H115 / exp-112** is the standing wall-speed best on deciding-scale `content-cache-hit`
-(−9.69%). **H120 / exp-117** is the standing content-hit RSS best (peak RSS −10.13%;
-streaming restore kept).
-H115 is not beaten on wall.
+**H125 / exp-124** is the latest wall-speed increment on deciding-scale
+`content-cache-hit` (−8.03% on top of H115+H120). **H115 / exp-112** remains the
+restore-rebuild accept (−9.69%). **H120 / exp-117** is the standing content-hit RSS best
+(peak RSS −10.13%; streaming restore kept).
 
 **exp-105** is the current rustup *probe* self-comparison baseline, 12-pair,
 `os_cache: warm-steady`, **uncontrolled**.
@@ -290,8 +290,8 @@ Same-binary 12-pair `default-tree`. Quiet start gate refused (30.3% busy); pair 
 Self-comparison −1.95% [−16.09%, +7.63%]. **Accepted** as a determination, not a speed
 win. 77,509 enumeration calls / 55,256 opens = **1.403** per directory.
 20 s sample (165,807 stacks): `__open` 50.36%, `getattrlistbulk` 18.95%, `fdu::scan`
-3.02% (largest symbol 0.94%), allocator 3.00%. No userspace cut ≥3%. H125 not minted.
-Counter kept.
+3.02% (largest symbol 0.94%), allocator 3.00%. No userspace walk cut ≥3%. No walk-cut id
+minted. Counter kept.
 
 **exp-123 / H113** is the completeness leftover after H115+H120, on the frozen
 `metabrowser-clone` (digest unchanged).
@@ -308,7 +308,22 @@ not lowered.
 Self-comparison +3.26% [−1.37%, +13.31%]. **Accepted** as a determination.
 20 s sample: completeness walk (`open_for_report` lib.rs:601–602) **16.0%** of
 `content_open` (2,136 / 13,357). exp-109 was 12.6%. About 12% of H121 claim-grade wall.
-H113 stays open. exp-113 unused.
+H113 later superseded by H125. exp-113 unused.
+
+**exp-124 / H125** skips that second walk by comparing `hits` to the candidate count
+restore already stored, on the same frozen `metabrowser-clone`. Not the file-count
+heuristic. 12-pair `content-cache-hit`. Quiet start this tick refused H113 at 45.48%. An
+H125 quiet pair started (24.23%) but did not hold (13 invalid); not a verdict.
+Claim-grade pair **uncontrolled**. Initial busy 43.98%; final 26.55%. The 25% bar was
+not lowered.
+
+| Arm | Wall median | Component | Peak RSS |
+| --- | ---: | ---: | ---: |
+| control | 1,063.1 ms | 783.4 ms | 332.8 MiB |
+| candidate | 975.1 ms | 688.4 ms | 333.4 MiB |
+
+Wall −8.03% [−10.79%, −7.79%]. **Accepted.** Digest `3be19a3e…`. Engine kept
+(`be8d4d69`). H113 superseded.
 
 **exp-121 / H124** is the first-pass analyze I/O **profile** on the frozen
 `metabrowser-clone` (146,047 entries / 133,708 files; digest `dc0df263…`). Path-binary
@@ -342,11 +357,11 @@ Do not type a path into a commit.
 `system-private-frameworks` was the H108 / H117 subject (exp-107, exp-116); digest
 unchanged from the nomination.
 `metabrowser-clone` was the H109 / H112 / H113 / H114 / H115 / H116 / H118 / H120 / H121
-/ H124 subject (exp-108 through exp-112, exp-114, exp-115, exp-117, exp-120, exp-121);
-same shape as exp-106, engine digest unchanged (`3fbfed48…`). A 2026-09-19 re-observe
-drifted to 145,988 entries / 133,654 files (digest `cc517e78…`); commit a fresh subjects
-document with the next metabrowser cell (`make perf-subjects`). The CLI QA medium tree
-was skipped: deciding-scale but mutating.
+/ H124 / H125 subject (exp-108 through exp-112, exp-114, exp-115, exp-117, exp-120,
+exp-121, exp-123, exp-124); same shape as exp-106, engine digest unchanged
+(`3fbfed48…`). A 2026-09-19 re-observe drifted to 145,988 entries / 133,654 files
+(digest `cc517e78…`); commit a fresh subjects document with the next metabrowser cell
+(`make perf-subjects`). The CLI QA medium tree was skipped: deciding-scale but mutating.
 `system-private-frameworks` was also the H122 subject (exp-118); digest unchanged.
 
 ### Next Up
@@ -356,33 +371,29 @@ Source of truth:
 [the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
 The registry row in [the loop guide](performance-loop.md#current-engine-010) is the full
 statement. Overnight H116–H120 is done; do not retry those.
-Next free hypothesis id is **H125**. Do not mint it as a Darwin userspace walk cut
-(exp-122). Do not mint another meaning for H91–H106. Next free experiment id is
-**exp-113** (reserved for H113 quiet).
-After that, **exp-124**.
+Next free hypothesis id is **H126**. Do not mint another meaning for H91–H106. Next free
+experiment id is **exp-113** (reserved unused; H113 superseded).
+After that, **exp-125**.
 
-This stacked session skipped H113 (quiet gates 43.79% and 85.17%), hunted H107 (no
-ignore-is-the-walk subject), recorded exp-122 (H122 leftover), and recorded exp-123
-(H113 leftover still 16% of `content_open`). Earlier the same day: H113 69.4%, H122
-(exp-118), H123, H121, H124. Do not start H107 without an ignore-is-the-walk subject.
+This stacked session skipped H113 (quiet gates including 45.48%), accepted H125
+(exp-124, restore-count completeness), hunted H107 (no ignore-is-the-walk subject),
+recorded exp-122 (H122 leftover), and recorded exp-123 (H113 leftover then 16% of
+`content_open`). Earlier the same day: H113 69.4%, H122 (exp-118), H123, H121, H124. Do
+not start H107 without an ignore-is-the-walk subject.
 Do not retry metabrowser for H107 (exp-106). Do not start H111 (no Linux).
 Do not raise the README 200K files/s or 4M cached lines/s.
 
-1. **H113** (`fdu-rfr6`). **Needs quiet host.** Quiet confirmatory after H115. Official
-   start gate refused 2026-09-19 at 46.7% busy, then **69.4%**, **43.79%**, and
-   **85.17%** on the stacked branch.
-   Later incomplete quiet cells are not a verdict.
-   Leftover still 16.0% of `content_open` after H115+H120 (exp-123). Do not run
-   uncontrolled. If the gate fails, skip.
-   Accept: `content-cache-hit` wall ≥3% with the interval below zero on
-   `metabrowser-clone`; digest identical; incomplete sidecar refused.
-   Control is HEAD with H115 and H120 in.
-   Experiment id **exp-113**.
+1. **H125** (`fdu-wd4q`). **Accepted** (exp-124). Restore-count completeness.
+   Wall −8.03% [−10.79%, −7.79%] on frozen `metabrowser-clone`. Engine kept
+   (`be8d4d69`). H113 superseded.
+   Do not retry file-count.
+   Next leftover is not yet an id: post-H125 `content-cache-hit` mix (H121 is stale), or
+   first-pass analyze versus opened-root content I/O. Prefer a measured cell.
 
 2. **H122** (`fdu-ytg5`). **Confirmed** (exp-118, tighter leftover exp-122). Walk is
    96.3–97.5% of deciding-scale `default-tree` component on `system-private-frameworks`.
    Leftover is directory `__open` (55,256) plus `getattrlistbulk` at **1.403 calls/dir**
-   (77,509). No userspace symbol ≥3%. No Darwin cut.
+   (77,509). No userspace symbol ≥3%. No Darwin walk cut.
    Do not retry as a snapshot-load, finish trim, or consume cut.
 
 3. **H107** (`fdu-jcfn`). **Skipped.** Hunt recorded in exp-122: rustup and frameworks
@@ -434,13 +445,10 @@ Do not retry H104–H106.
 - Do not retry a sidecar parse-speed or instruction trim.
   H112 (exp-109) put parse at 8.5% of restore.
   H121 (exp-120) re-checked the mix: apply 43%, candidates 48%. No apply cut.
-- Do not retry the H113 file-count completeness shortcut on another uncontrolled cell
-  (exp-110). Median −7.59% but the interval included zero; the shortcut is reverted.
-  A 2026-09-19 quiet confirmatory after H115 (`fdu-rfr6`) was refused at the start gate
-  (CPU busy 46.7% > 25.0%), then later incomplete quiet cells failed to hold 12 pairs.
-  The stacked-PR retry the same morning refused at 69.4% busy.
-  The engine patch was not kept.
-  exp-113 is unused. **H113 still needs a quiet host.** Do not run uncontrolled.
+- Do not retry the H113 file-count completeness shortcut (exp-110; quiet never held).
+  Median −7.59% but the interval included zero; the shortcut is reverted.
+  H125 took the restore-count form of the same skip (exp-124). H113 is superseded.
+  exp-113 unused.
 - Do not retry the H114 type-id `String` alloc trim on `ContentRollUp::add` (exp-111).
   Wall −0.56% [−17.92%, +4.79%]; the trim is reverted.
 - Do not retry H115. exp-112 accepted the restore-only bottom-up rebuild (−9.69%
@@ -465,14 +473,14 @@ Do not retry H104–H106.
   Attempt `PERF_HOST_REGIME=quiet` first; if it fails or the final snapshot exceeds 25%
   busy, label **uncontrolled** and do not claim quiet.
   Do not lower the 25% busy bar so the cell passes.
-  H113 is the exception: a failed quiet gate is a stop, not an uncontrolled fallback.
+  H113’s quiet-only exception is closed: that hypothesis is superseded.
 
 ### Process Pack
 
 | Document | Role |
 | --- | --- |
-| This standing section | Pickup: standing best, H113 quiet gate, next-up order |
-| [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Remaining queue: H113 (quiet), H107 (no subject), H111 (not this host) |
+| This standing section | Pickup: standing best, next-up order |
+| [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Remaining queue: H107 (no subject), H111 (not this host) |
 | [The loop guide](performance-loop.md) | Protocol, accept rule, hypothesis registry |
 | [The campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) | Floor-anchored strategy; the 2026-08-23 Tier 1–3 list is history |
 | [The instrumentation playbook](performance-instrumentation-playbook.md) | Instrument before optimizing; `FDU_COUNTERS=1` |
@@ -753,7 +761,7 @@ producing a number that means nothing.
 - Land an H109 Path rewrite after exp-108.
 - Retry the H114 type-id `String` alloc trim after exp-111.
 - Retry H115 after exp-112, or restart the `fdu-jxhk` EntryId rewrite from that accept.
-- Retry H113 on an uncontrolled cell after the 2026-09-19 quiet-gate skip.
+- Retry H113 file-count after H125 accepted the restore-count skip.
 - Retry H116 on an uncontrolled cell after exp-114.
 - Retry H118 on an uncontrolled cell after exp-115.
 - Retry H119 walk-overlap after the deciding-scale `content-basic` profile.

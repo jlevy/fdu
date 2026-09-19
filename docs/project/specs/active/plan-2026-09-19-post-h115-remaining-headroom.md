@@ -5,11 +5,12 @@
 **Author:** fdu project
 
 **Status:** Active. Overnight H116–H120 is done.
-This file is the remaining unaddressed-hypothesis queue after that overnight: H113
-(quiet), H107 (ignore-is-the-walk only), and H111 (not this host).
+This file is the remaining unaddressed-hypothesis queue after that overnight: H107
+(ignore-is-the-walk only) and H111 (not this host).
 H122 is confirmed (exp-118, tighter leftover exp-122). H123 is confirmed (exp-119). H121
 is confirmed (exp-120): apply no longer dominates.
-H124 is rejected (exp-121). H125 is not minted: no Darwin userspace walk cut ≥3%.
+H124 is rejected (exp-121). H125 is accepted (exp-124): restore-count completeness.
+H113 is superseded by H125.
 [The runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
 keeps an abbreviated next-up in that order; this file is the source of truth for the
 full rows. The loop guide registry remains the full hypothesis text.
@@ -19,23 +20,23 @@ full rows. The loop guide registry remains the full hypothesis text.
 H115 accepted a restore-only bottom-up content roll-up (−9.69% `content-cache-hit` wall
 on deciding-scale metabrowser).
 H120 accepted streaming sidecar parse-into-apply (−10.13% peak RSS; wall non-inferior).
-Those are the standing content-hit bests.
+H125 accepted restore-count completeness (−8.03% wall on top of those).
+Those remain the standing content-hit bests, plus this increment.
 This block names the directions the overnight did **not** address, as first-class
 hypotheses, and keeps the overnight verdicts as history so they are not re-queued.
 
 It is a planning block, not a measurement cell.
 It does not start a pair.
-H113 still needs a quiet host.
-Do not run another uncontrolled H113.
+H113 is superseded. Do not retry the file-count shortcut.
 
 ## Goals
 
 - Name only hypotheses that are plausible at the 3% wall bar (or a structural ceiling)
   on a named job and subject, and that can be wrong
-- Keep H121–H124 registered in
-  [the loop guide](../../guides/performance-loop.md#current-engine-010); keep H113,
-  H107, and H111 open with honest status.
-  H124 is rejected (exp-121).
+- Keep H121–H125 registered in
+  [the loop guide](../../guides/performance-loop.md#current-engine-010); keep H107 and
+  H111 open with honest status.
+  H124 is rejected (exp-121). H125 is accepted (exp-124). H113 is superseded.
 - Own next-up after the overnight: order, metric, subject, accept-rule sketch, why next,
   what refutes, bead
 - Keep one source of truth for that queue (this file)
@@ -72,7 +73,7 @@ exp-108/109 split that path before those accepts:
 | Sidecar apply / ancestor merges | 63% of restore (sample 54% of `load_content`) | H115 took the named cut |
 | Candidate install (`analysis_candidates` + HashMap) | 25% of restore / 20% of `load_content` | H116 rejected on wall; still in the engine |
 | Snapshot parse | 26% of engine | H78/H92; not this increment |
-| Second completeness walk | 13% of `content_open` | H113; quiet confirmatory only |
+| Second completeness walk | 13% of `content_open` | H125 accepted (exp-124); H113 superseded |
 | Sidecar parse | 8.5% of restore | Dead for wall (H112) |
 | `install_controls` | 7.5% of engine | Dead for a Path rewrite (H109) |
 
@@ -96,7 +97,7 @@ Treat remaining time as four separate jobs, not one “make restore faster” le
 2. **Content-cache-hit.** H115 took the named ancestor-merge cut.
    H116 rejected dropping the candidate-install HashMap on wall.
    H120 took the decode-`Vec` RSS cut.
-   H113 is the quiet completeness confirmatory.
+   H113 was the quiet file-count confirmatory; H125 took the restore-count skip.
    H121 re-profiled the mix (apply no longer dominates).
    Snapshot parse remains H78/H92.
 3. **First-pass analyze.** H118 rejected insert-then-rebuild.
@@ -121,22 +122,20 @@ Overnight registry rows (settled; full text in the loop guide):
 | H123 | A product opened-root or refresh path that retains the index is ≥3% faster than repeating a one-shot | opened retained read vs `fdu PATH` | Confirmed (exp-119). Probe kept. Not a snapshot load. |
 | H121 | After H115 and H120, a cache-hit restore re-profile names whether apply still dominates | `content-cache-hit` | Confirmed (exp-120). Apply 43%; candidates 48%; no stage ≥50%. No cut. |
 | H124 | Fewer first-pass opens (type/size gate) or read-ahead cuts analyze wall ≥3% | `content-basic` / product `--analyze` | Rejected (exp-121). Do not retry type/size or a safe read-ahead. |
+| H125 | Cache-only completeness uses the candidate count restore already computed | `content-cache-hit` | Accepted (exp-124). H113 superseded. |
+| H113 | File-count completeness after H115 is a real quiet wall win | `content-cache-hit` | Superseded by H125. File-count not compiled. |
 
 Remaining registry rows (open; full text in the loop guide):
 
 | # | One-line claim | Job |
 | --- | --- | --- |
-| H113 | File-count completeness after H115 is a real quiet wall win | `content-cache-hit` |
 | H107 | Default gitignore observation differs by ≥3% wall only where the ignored share *is* the walk | `default-tree` (skipped: ignore does not skip descent; no ignore-is-the-walk subject) |
 | H111 | H86’s remaining gap is the Linux floor and RSS claim | Linux 450k floor |
-
-H113 still needs a quiet host.
-Do not run uncontrolled.
 
 H122 is confirmed (exp-118, leftover exp-122): walk 96.3–97.5% of deciding-scale
 `default-tree` component.
 Leftover is directory `__open` (55,256) plus `getattrlistbulk` at 1.403 calls per
-directory (77,509). No userspace symbol ≥3%. H125 not minted.
+directory (77,509). No userspace symbol ≥3%. No walk-cut id minted.
 `dir_enumeration_calls` kept.
 Not H86 and not H111. Do not retry as a snapshot load or consume trim.
 
@@ -161,6 +160,11 @@ Empty plus discovered-binary opens cannot reach 3% wall.
 Read calls are already one data chunk per file.
 Not H118. Not H119 walk-overlap.
 No engine change.
+
+H125 is accepted (exp-124): wall −8.03% [−10.79%, −7.79%] on frozen `metabrowser-clone`.
+Restore-count completeness kept (`be8d4d69`). H113 superseded.
+File-count shortcut not compiled.
+exp-113 unused.
 
 H111 is open and not in this host.
 
@@ -189,22 +193,16 @@ These were considered against the post-H115 path and not registered:
 
 ### Remaining Inclusion Rules
 
-- H113 quiet confirmatory (`fdu-rfr6`, exp-113) is first *if* a quiet host holds.
-  If the start gate fails, skip it.
-  Do not run another uncontrolled H113. Incomplete 2026-09-19 quiet cells are not a
-  verdict. Stacked-PR retries the same day refused at 69.4%, 43.79%, and 85.17% busy.
-  Leftover still 16.0% of `content_open` after H115+H120 (exp-123). exp-113 unused.
+- H113 is superseded (H125). Do not retry the file-count shortcut.
+  exp-113 unused.
 - Then take the remaining queue below, in order.
-  After an accept, re-screen the next row: H122 may name a cut that eats H107; H121 may
-  retire H83 or leave it.
-- Uncontrolled is allowed on H121–H124 and H107 when quiet fails.
+  After an accept, re-screen the next row: H122 may name a cut that eats H107; H121’s
+  mix is stale after H125.
+- Uncontrolled is allowed on leftover profiles and H107 when quiet fails.
   Label it. Do not lower the 25% busy bar.
-  H113 is the exception: a failed quiet gate is a stop.
 - H111 is not in this host (no Linux runner).
-- Items that need a quiet cell and nothing else are labeled **needs quiet host**. That
-  is only H113.
-- Do not re-queue H116, H118, H119 walk-overlap, H114, H109, snapshot-load without a
-  policy change, or the H86 / `fdu-jxhk` rewrite.
+- Do not re-queue H113 file-count, H116, H118, H119 walk-overlap, H114, H109,
+  snapshot-load without a policy change, or the H86 / `fdu-jxhk` rewrite.
 
 ## Implementation Plan
 
@@ -213,21 +211,18 @@ These were considered against the post-H115 path and not registered:
 Take these in order.
 Overnight H116–H120 is history, not a retry list.
 
-1. **H113** (`fdu-rfr6`). Open.
-   Needs quiet host. File-count completeness after H115. Metric: `content-cache-hit` wall
-   on `metabrowser-clone`, ≥3% with the interval below zero; digest identical;
-   incomplete sidecar refused.
-   Control = HEAD with H115 and H120 in.
-   New id **exp-113**. Do not run uncontrolled.
-   What refutes: quiet interval includes zero, or the start gate fails (skip, not a
-   reject). Why next: leftover still 16.0% of `content_open` after H115+H120 (exp-123).
+1. **H125** (`fdu-wd4q`). **Accepted** (exp-124). Restore-count completeness.
+   Wall −8.03% [−10.79%, −7.79%] on frozen `metabrowser-clone`. Engine kept
+   (`be8d4d69`). H113 superseded.
+   File-count not compiled.
+   exp-113 unused. Do not retry H113.
 
 2. **H122** (`fdu-ytg5`). **Confirmed** (exp-118, leftover exp-122). Highest
    user-visible leverage.
    Deciding-scale `default-tree` walk is 96.3–97.5% of instrumented component on
    `system-private-frameworks`. Leftover is directory `__open` plus `getattrlistbulk` at
-   1.403 calls/dir including EOF. No userspace cut ≥3%. H125 not minted.
-   Not H86. Do not retry as a snapshot load.
+   1.403 calls/dir including EOF. No userspace walk cut ≥3%. Not H86. Do not retry as a
+   snapshot load.
 
 3. **H107** (`fdu-jcfn`). **Skipped.** Hunt recorded in exp-122. No nominated
    ignore-is-the-walk subject.
@@ -270,20 +265,18 @@ Overnight H116–H120 is history, not a retry list.
 
 **Overnight history (do not re-queue):** H116 rejected, H118 rejected, H119 screened,
 H117 confirmed as a probe, H120 accepted.
-**Stacked session (do not re-queue):** H113 skipped (69.4%, 43.79%, 85.17%; leftover
-still 16% of `content_open`, exp-123), H107 skipped (ignore does not skip descent), H122
-confirmed (exp-118 + leftover exp-122), H123 confirmed, H121 confirmed (no apply cut),
-H124 rejected (exp-121). H125 not minted.
+**Stacked session (do not re-queue):** H113 superseded (quiet gates including 45.48%;
+leftover 16% of `content_open` in exp-123; restore-count accepted as H125 / exp-124),
+H107 skipped (ignore does not skip descent), H122 confirmed (exp-118 + leftover
+exp-122), H123 confirmed, H121 confirmed (no apply cut), H124 rejected (exp-121).
 
 ## Testing Strategy
 
-H113 remains 12-pair interleaved `make perf-compare` against HEAD with H115 and H120 in,
-`FDU_COUNTERS` unset for the claim-grade wall, no RAM disk.
+H125 is recorded (exp-124). Incomplete-sidecar fail-closed stays.
 H124 is recorded (exp-121). H122 (exp-118 + leftover exp-122), H123, and H121 are
 recorded determinations.
-Exact oracles and content digest stay as for exp-108–120. H113 must keep
-incomplete-sidecar fail-closed.
-H123 kept one-shot `cold scan`. Record every verdict, including skips at the quiet gate.
+Exact oracles and content digest stay as for exp-108–124. H123 kept one-shot
+`cold scan`. Record every verdict, including skips at the quiet gate.
 
 ## Rollout Plan
 
@@ -300,7 +293,7 @@ Engine changes land only as the experiment that tests the next row.
 - Whether a Darwin deciding-scale `fdu PATH` profile (H122) names a leftover that is not
   already H86/H111 on Linux.
   **Closed:** exp-118 named `__open` + `getattrlistbulk`; exp-122: 1.403 bulk calls/dir;
-  no Darwin userspace cut ≥3%. H125 not minted.
+  no Darwin userspace walk cut ≥3%. No walk-cut id minted.
 - Whether H117’s retained read can become a product path (H123) without loading a
   snapshot on one-shot `fdu PATH`. **Closed:** exp-119. Product `query::report` 1.7 ms
   versus one-shot 2,078.3 ms.
@@ -309,22 +302,27 @@ Engine changes land only as the experiment that tests the next row.
   H118/H119. **Closed:** exp-121. Every admitted open is required for lines; read calls
   are already one data chunk per file.
   No engine change.
+- Whether restore’s already-paid candidate count can skip the second completeness walk
+  without H113’s file-count heuristic (H125). **Closed:** exp-124. Wall −8.03%
+  [−10.79%, −7.79%]. Engine kept.
+  H113 superseded.
 
 ## References
 
 - [The loop guide registry](../../guides/performance-loop.md#current-engine-010) —
-  H107–H124
+  H107–H125
 - [The runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
 - [Campaign 2](plan-2026-08-23-fdu-performance-campaign-2.md) — floor-anchored strategy
 - [First Principles](../../architecture/fdu-design-principles.md#first-principles)
 - [Engine architecture](../../architecture/fdu-engine-architecture.md) — one-shot vs
   opened
 - [The instrumentation playbook](../../guides/performance-instrumentation-playbook.md)
-- exp-107 through exp-117; H115 engine at `7798fdc1`; H120 streaming restore
+- exp-107 through exp-124; H115 engine at `7798fdc1`; H120 streaming restore; H125
+  restore-count at `be8d4d69`
 - Beads: overnight epic `fdu-e9ow` (closed); remaining-queue epic `fdu-8ya1`; H121
-  `fdu-vf4b`; H122 `fdu-ytg5`; H123 `fdu-rum0`; H124 `fdu-i39y`; H113 quiet `fdu-rfr6`;
-  H107 `fdu-jcfn`; H111 `fdu-jekg`; sidecar parent `fdu-78q6`; EntryId composite
-  `fdu-jxhk` (do not restart)
+  `fdu-vf4b`; H122 `fdu-ytg5`; H123 `fdu-rum0`; H124 `fdu-i39y`; H125 `fdu-wd4q`; H113
+  quiet `fdu-rfr6` (superseded); H107 `fdu-jcfn`; H111 `fdu-jekg`; sidecar parent
+  `fdu-78q6`; EntryId composite `fdu-jxhk` (do not restart)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
