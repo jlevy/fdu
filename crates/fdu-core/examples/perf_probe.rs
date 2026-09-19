@@ -1135,7 +1135,9 @@ fn opened_second_report(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
             ChangeOutcome::Changes { .. } => {}
             ChangeOutcome::Idle => {
                 let _ = opened.close();
-                return Err(ProbeError("opened second report did not settle before timeout".into()));
+                return Err(ProbeError(
+                    "opened second report did not settle before timeout".into(),
+                ));
             }
             ChangeOutcome::Reset { .. } => {
                 let _ = opened.close();
