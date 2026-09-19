@@ -64,7 +64,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 58 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 59 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
@@ -204,6 +204,7 @@ dead end.
 | 124 | [Cache-only completeness from restore candidate count on metabrowser](#exp124--cacheonly-completeness-from-restore-candidate-count-on-metabrowser) | H125 | `content-cache-hit` | -8.0% | ✅ accepted |
 | 125 | [Post-H125 cache-hit leftover after restore-count completeness](#exp125--posth125-cachehit-leftover-after-restorecount-completeness) | H126 | `content-cache-hit` | -0.3% | ✅ accepted |
 | 126 | [First-pass walk versus opened-discovery I/O on metabrowser](#exp126--firstpass-walk-versus-openeddiscovery-io-on-metabrowser) | H127 | `opened-discovery` | -5.0% | ✅ accepted |
+| 127 | [Default-tree leftover on file-heavy metabrowser after H122](#exp127--defaulttree-leftover-on-fileheavy-metabrowser-after-h122) | H128 | `default-tree` | +1.1% | ✅ accepted |
 
 ## The experiments
 
@@ -4312,6 +4313,35 @@ getattrlistbulk; journal clones remain; no smallest cut.
 Full record:
 [`exp-126-first-pass-walk-versus-opened-discovery-i-o-on-metabrowser.md`](../experiments/exp-126-first-pass-walk-versus-opened-discovery-i-o-on-metabrowser.md)
 
+### exp-127 — Default-tree leftover on file-heavy metabrowser after H122
+
+✅ accepted · 2026-09-19 · H128 · commit `59fa413a`
+
+Control: H125 release probe at be8d4d69
+
+Candidate: same probe (leftover profile)
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 355.8 | 359.3 | +1.12% (n.s.) | [-2.91%, +7.83%] |
+| component (ms) | 343.4 | 351.3 | +1.89% (n.s.) | [-2.03%, +7.85%] |
+| cpu (ms) | 1719.1 | 1681.1 | -2.80% (n.s.) | [-8.39%, +5.12%] |
+| user (ms) | 171.1 | 171.2 | -0.07% (n.s.) | [-2.22%, +2.06%] |
+| system (ms) | 1550.0 | 1513.9 | -3.26% (n.s.) | [-9.00%, +5.79%] |
+| peak rss (MiB) | 54.1 | 54.2 | -0.01% (n.s.) | [-1.29%, +1.42%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** walk still the job on file-heavy metabrowser (93% of component); 1.952
+getattrlistbulk/dir; snapshot not loaded; no new cut.
+
+Full record:
+[`exp-127-default-tree-leftover-on-file-heavy-metabrowser-after-h122.md`](../experiments/exp-127-default-tree-leftover-on-file-heavy-metabrowser-after-h122.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4366,6 +4396,18 @@ Baselines show one value because they measure a state rather than a change.
 | 115 | First-pass analyze insert-then-rebuild on metabrowser | `content-basic` | 10,020.6 | 10,022.1 | -5.0% | ❌ rejected |
 | 117 | Stream sidecar parse-into-apply on metabrowser | `content-cache-hit` | 1,111.0 | 1,103.2 | -0.6% | ✅ accepted |
 
+### metabrowser-clone (146,047 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 120 | Cache-hit restore mix after H115 and H120 on metabrowser | `content-cache-hit` | 1,171.8 | 1,185.6 | +0.7% | ✅ accepted |
+| 121 | First-pass analyze I/O type/size gate or read-ahead on metabrowser | `content-basic` | 9,014.4 | 9,036.5 | -4.2% | ❌ rejected |
+| 123 | H113 completeness leftover after H115 and H120 | `content-cache-hit` | 1,116.5 | 1,221.3 | +3.3% | ✅ accepted |
+| 124 | Cache-only completeness from restore candidate count on metabrowser | `content-cache-hit` | 1,063.1 | 975.1 | -8.0% | ✅ accepted |
+| 125 | Post-H125 cache-hit leftover after restore-count completeness | `content-cache-hit` | 1,064.9 | 1,038.8 | -0.3% | ✅ accepted |
+| 126 | First-pass walk versus opened-discovery I/O on metabrowser | `opened-discovery` | 3,772.5 | 4,044.5 | -5.0% | ✅ accepted |
+| 127 | Default-tree leftover on file-heavy metabrowser after H122 | `default-tree` | 355.8 | 359.3 | +1.1% | ✅ accepted |
+
 ### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -4388,17 +4430,6 @@ Baselines show one value because they measure a state rather than a change.
 | 031 | Increase immutable-baseline reconciliation waves to 4096 directories | `warm-revalidate` | 477.6 | 482.5 | +1.6% | ❌ rejected |
 | 032 | Cumulative effect through bounded parallel reconciliation | `cold-scan-index` | 635.4 | 289.6 | -54.5% | ✅ accepted |
 | 033 | Post-composable-CLI integration validation | `warm-revalidate` | 844.7 | 481.9 | -42.3% | ✅ accepted |
-
-### metabrowser-clone (146,047 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 120 | Cache-hit restore mix after H115 and H120 on metabrowser | `content-cache-hit` | 1,171.8 | 1,185.6 | +0.7% | ✅ accepted |
-| 121 | First-pass analyze I/O type/size gate or read-ahead on metabrowser | `content-basic` | 9,014.4 | 9,036.5 | -4.2% | ❌ rejected |
-| 123 | H113 completeness leftover after H115 and H120 | `content-cache-hit` | 1,116.5 | 1,221.3 | +3.3% | ✅ accepted |
-| 124 | Cache-only completeness from restore candidate count on metabrowser | `content-cache-hit` | 1,063.1 | 975.1 | -8.0% | ✅ accepted |
-| 125 | Post-H125 cache-hit leftover after restore-count completeness | `content-cache-hit` | 1,064.9 | 1,038.8 | -0.3% | ✅ accepted |
-| 126 | First-pass walk versus opened-discovery I/O on metabrowser | `opened-discovery` | 3,772.5 | 4,044.5 | -5.0% | ✅ accepted |
 
 ### metabrowser (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
