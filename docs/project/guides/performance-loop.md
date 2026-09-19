@@ -7,10 +7,10 @@ Nothing here runs in `make check`, and nothing here blocks a merge.
 It exists so that any contributor — human or agent — can pick the loop up months later,
 re-run it, and get numbers comparable to the ones already recorded.
 
-New here? Start with
-[the campaign status report](../reports/report-2026-08-14-performance-campaign-status.md),
-which assumes no context and covers what has been achieved, what remains, and where the
-evidence is weak. This document is the protocol it describes.
+New here? To run the next iteration, start at
+[the runbook’s current standing](performance-loop-runbook.md#current-standing-2026-09-18).
+[The campaign status report](../reports/report-2026-08-14-performance-campaign-status.md)
+is the history through 2026-08-23. This document is the protocol.
 
 The companion documents are the
 [experiment ledger](../reports/report-2026-08-10-fdu-performance-experiments.md), which
@@ -283,6 +283,10 @@ Each host commits its own document, named by host class
 Drift is expected — a nominated tree is somebody’s live working directory — and
 `perf-subjects-check` exists to make it visible rather than to forbid it.
 What matters is that a reader is told before comparing last month’s number with today’s.
+The Darwin/arm64 set was re-nominated on 2026-09-18: rustup is 77k (was 175k), and the
+source-checkout is the live metabrowser clone (the 2026-08 corpus path is gone).
+Current sizes and the next-up list are in
+[the runbook standing](performance-loop-runbook.md#current-standing-2026-09-18).
 
 ### Say where the tree came from
 
@@ -779,6 +783,10 @@ engine. Revisit a prior result only when that difference touches its mechanism.
 | H110 | After the streaming-parity work, residual opened-discovery cost is the journal and control path, not the cold walk. exp-079/080 accepted parent resolution and journal-clone skips; exp-081/082/087–089 rejected the next scanner-shape guesses. | A further `opened-discovery` win of at least 3% requires a new named mechanism | **Needs a new mechanism.** Do not retry H104–H106. |
 | H111 | H86’s remaining gap is the Linux floor and RSS claim, not “start the structural rewrite.” Darwin has a landed composite (exp-091–102); the Linux floor stage failed (exp-103). | On the 450k Linux subject: index ≤1.4× floor, aggregate ≤1.25× on nominated real subjects, RSS ≤3× `arena_spike`, as pre-registered. Quiet Darwin `default-tree` vs the pre-H86 control is a validation, not that claim. | **Open as the Linux floor stage.** Do not restart piecemeal H19–H22/H60/H7 unless a profile names a leftover the composite left on the table. |
 
+The ordered pickup — metric, subject, what would falsify, what not to retry — is
+[the runbook standing](performance-loop-runbook.md#current-standing-2026-09-18). Do not
+take `macos-agenda` beads in 2026-08-23 plan order without reading that section.
+
 ### Traversal and syscalls
 
 | # | Hypothesis | Predicted effect | Status |
@@ -899,6 +907,8 @@ module any other way does not resolve the package.
 `NAME` the run, which becomes `run-<NAME>.json` under `PERF_RESULTS`.
 [The runbook](performance-loop-runbook.md) is one round of this on the nominated
 subjects, start to finish, including the record and the handoff.
+Its [current standing](performance-loop-runbook.md#current-standing-2026-09-18) is the
+pickup: standing best, regime, subjects, and the next-up list.
 Evidence qualification is explicit: `PERF_STAGE`, `PERF_HOST_REGIME`,
 `PERF_BACKGROUND_LOAD_WORKERS`, `PERF_PROVENANCE`, and `PERF_CORPUS_MANIFEST` map
 directly to the harness contracts.

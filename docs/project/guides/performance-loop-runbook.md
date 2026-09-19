@@ -11,30 +11,163 @@ everything needed to pick the loop up mid-stream lives in the registry (what to 
 next), the record (what has been tried), and here (how to run one round).
 Every command below was run once while writing it.
 
+Start at [Current Standing](#current-standing-2026-09-18). That section is the pickup:
+standing best, host regime, Darwin subjects, and the next-up list with enough context to
+start each item. Do not reconstruct the queue from chat, from `macos-agenda` priority
+order, or from the 2026-08-23 Tier 1 list alone.
+
+## Current Standing (2026-09-18)
+
+Post-0.1.0 Darwin revisit on this desktop (Apple M1 Pro, Darwin 25.5.0, bare metal,
+APFS). The engine that shipped in 0.1.0 has a unified request model, opened-root
+serving, watch, `.gitignore` default-on, and a content sidecar.
+Campaign 1 and campaign 2 remain the history; this standing is a registry and
+measurement layer on top of them, not a rewrite of H86.
+
+Branch `perf/campaign-quiet-2026-09-18`, in a linked worktree beside the primary
+checkout, PR [#91](https://github.com/jlevy/fdu/pull/91). Until that PR merges, continue
+on it. Do not open a second performance PR. Never merge.
+Never force-push.
+
+### Standing Best and Regime
+
+**exp-105** is the current rustup self-comparison baseline, 12-pair,
+`os_cache: warm-steady`, **uncontrolled**. A `PERF_HOST_REGIME=quiet` cell could not
+hold: desktop load (Cursor and other interactive apps) plus the walk itself exceeded 25%
+busy, and `cold-scan-index` invalidated every quiet sample.
+
+| Job | Wall median | Peak RSS | Subject |
+| --- | ---: | ---: | --- |
+| `default-tree` | 149.8 ms | 33.0 MiB | rustup-toolchains, 77,132 entries / 73,714 files |
+| `cold-scan-index` | 297.1 ms | 24.7 MiB | same |
+
+Probe `default-tree` is about 492k files/s on that tree.
+That sits above the README ballpark of 200K files/s, so the ballpark is not an
+overclaim, and it is **not a reason to raise it**: these are probe jobs, not the
+installed CLI, and the host was not quiet.
+
+The 2026-09-18 [installed-CLI QA](../reports/report-2026-09-18-cli-installed-qa.md) is a
+different table: 34,145 files in 0.43 s (~79k files/s) on a mutating fdu checkout with
+nested worktrees. Cached lines/s was not re-measured.
+Do not replace that QA log from probe data, and do not quote probe files/s as a product
+claim.
+
+**exp-106 / H107** (rejected): shipped `read_controls` vs `--no-controls` on the live
+metabrowser checkout (145,931 entries).
+Wall +1.64% [−4.00%, +4.37%]. User CPU +22% and RSS −6.9% cancelled on the critical
+path. No engine patch was kept.
+
+### Darwin Subjects
+
+The 2026-08 nominated metabrowser corpus path is gone from disk.
+The rustup store is 77k entries, not the 175k recorded in exp-066. Re-observed shapes
+live in
+[`nominated-subjects-darwin-arm64.json`](../reports/nominated-subjects-darwin-arm64.json).
+Absolute paths live only in the gitignored `explorations/benchmarks/subjects.local.json`
+(labels: `rustup-toolchains`, `metabrowser-clone`, `system-private-frameworks`,
+`cargo-registry-src`). Read them from there.
+Do not type a path into a commit.
+
+`cargo-registry-src` (~22k) screens; it cannot decide a 3% verdict.
+`system-private-frameworks` is reconstructible and read-only: a candidate for H108 when
+rustup is a poor quiet-cell subject.
+
+### Next Up
+
+Take these in order.
+The registry row in [the loop guide](performance-loop.md#current-engine-010) is the full
+statement.
+Next free hypothesis id is **H112**. Do not mint another meaning for H91–H106.
+
+1. **H108** (`fdu-1a4z`). Installed CLI `fdu PATH` twice after warmup on a quiet,
+   immutable deciding tree (`rustup-toolchains` or `system-private-frameworks`). Wall
+   within 3% of the first run; footer stays `cold scan`. Still open because the
+   2026-09-18 QA saw this only on mutating trees.
+   Falsified if the second run is `cached` / warm revalidation, or wall moves ≥3%. Do
+   not treat that footer as an H9 regression, and do not substitute
+   `perf_probe default-tree` for the CLI.
+
+2. **H107** (`fdu-jcfn`, closed).
+   Re-open only for a tree whose *ignored share is the walk* (a checkout sitting on
+   `node_modules` that `.gitignore` drops).
+   Job: `default-tree` wall, controls-on vs `--no-controls`; |median| ≥3% and the
+   interval off zero, either direction.
+   Refuted on wall on metabrowser (exp-106). Do not retry on a metabrowser-like tree
+   whose ignore set is not the critical path.
+
+3. **H109** (`fdu-8nwq` / `fdu-hzyb`). `content-cache-hit` wall ≥3% with the interval
+   below zero and control goldens identical, on a deciding controls-bearing subject,
+   **after** a profile at that scale.
+   The 3k cargo-registry profile overstated this tier about 2× (exp-104). Skip if the
+   profile share collapses at deciding scale.
+   Do not land an instruction-only trim.
+
+4. **H111** (`fdu-jekg`). Linux floor stage of H86: index ≤1.4× floor, aggregate ≤1.25×,
+   RSS ≤3× `arena_spike`, on the 450k Linux subject, quiet `make perf-floor`. Darwin
+   composite landed (exp-091–102); Linux floor failed (exp-103). A Darwin vs pre-H86
+   validation is not this claim.
+   Do not restart the rewrite.
+   A Darwin agent records that this is not tonight’s item.
+
+H110 needs a new named mechanism.
+Do not retry H104–H106.
+
+### Dead Ends
+
+- Do not restart the H86 structural rewrite (`fdu-xde5` remains for H111 only).
+- Do not pad the night with unmeasured engine refactors.
+- Do not invent a capability that exists only on the command line.
+- Do not raise the README 200K files/s or 4M cached lines/s from probe cells.
+- Do not treat campaign-1 no-controls walls as the current default speed; treat their
+  tallies as a different answer (exp-106).
+- A quiet cell may not hold on this desktop.
+  Attempt `PERF_HOST_REGIME=quiet` first; if it fails, label **uncontrolled** and do not
+  claim quiet. Do not lower the 25% busy bar so the cell passes.
+
+### Process Pack
+
+| Document | Role |
+| --- | --- |
+| This standing section | Pickup: what to run next, on which subject, under which regime |
+| [The loop guide](performance-loop.md) | Protocol, accept rule, hypothesis registry |
+| [The campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) | Floor-anchored strategy; the 2026-08-23 Tier 1–3 list is history |
+| [The instrumentation playbook](performance-instrumentation-playbook.md) | Instrument before optimizing; `FDU_COUNTERS=1` |
+| [First Principles](../architecture/fdu-design-principles.md#first-principles) | Caching never changes semantics; one model per concept; keep/reject rules |
+| [Engine architecture](../architecture/fdu-engine-architecture.md) | Index ownership, one-shot vs opened serving, journals, observers |
+| [The ledger](../reports/report-2026-08-10-fdu-performance-experiments.md) | Every verdict, including negatives |
+| [The evidence report](../reports/report-2026-08-20-fdu-performance-evidence.md) | Charted view; regenerate after every record |
+| [Platform tuning](platform-tuning.md) | Which shipped constant was measured in which regime |
+| [Installed-CLI QA](../reports/report-2026-09-18-cli-installed-qa.md) | Product-path table; not interchangeable with probe jobs |
+
 ## Before the First Round
 
 Do these once per session, in order.
 Each one has caught a real mistake.
 
-1. **Start from fresh `main`, on one branch for the night.**
+1. **Use a linked worktree, one branch, one PR.** Leave the primary checkout intact.
 
    ```shell
-   git fetch origin && git checkout -b claude/perf-loop-$(date +%Y-%m-%d) origin/main
+   git fetch origin
+   git worktree add -b perf/campaign-$(date +%Y-%m-%d) \
+     ../fdu-perf-$(date +%Y%m%d) origin/main
    ```
 
-   One branch, one pull request opened after the first experiment and updated after
-   every one, never merged unattended.
+   If PR #91 is still open, continue on `perf/campaign-quiet-2026-09-18` in its existing
+   worktree instead of creating a second branch.
+   One pull request, updated after every experiment, never merged unattended.
 
-2. **Find the queue.** The ordering is the macOS agenda in
-   [the campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md);
-   the beads carry it:
+2. **Find the queue.** Start from [Current Standing](#current-standing-2026-09-18), not
+   from the `macos-agenda` label in isolation.
+   That label still exists and still holds older campaign-2 items; several have landed,
+   and H86’s remaining gap is H111 on Linux.
 
    ```shell
+   tbd show fdu-1a4z fdu-8nwq fdu-jekg fdu-even
    tbd list --label macos-agenda
    ```
 
-   Take items in the plan’s order, not by priority column, and read the bead before
-   starting: its notes hold the recorded attempts and the blocker that may have moved.
+   Read the bead before starting: its notes hold the recorded attempts and the blocker
+   that may have moved.
 
 3. **Audit for leftovers.** An earlier agent may have left a RAM disk or a worktree; an
    unexplained one is cleanup, not a shared cache, and the loop guide’s
@@ -142,7 +275,11 @@ What the flags mean, and what happens when they bite:
   busy, and invalidates any sample whose boundary observations exceed it.
   An invalidated sample is kept and counted, never replaced: if too many are invalid the
   round is inconclusive and is run again later, not topped up.
-  Leave the default (`uncontrolled`) only for screening runs, and say so in the record.
+  Attempt quiet first.
+  On this desktop a quiet cell often cannot hold (see
+  [Current Standing](#current-standing-2026-09-18)): label `uncontrolled` and say so in
+  the record. Do not lower the 25% bar so the cell passes.
+  `uncontrolled` is exploration, not a held-out claim.
 - `TRIALS=12` is the minimum for a verdict.
   A change predicted under 5% wants 16 or 20.
 - The harness fingerprints the tree before and after.
@@ -243,6 +380,9 @@ Update the registry row’s status, close or update the bead with the verdict an
 experiment id, and check whether the change moved the next item’s headroom: two
 hypotheses aimed at the same cost divide one budget, and this record has seen it three
 times. If it did, say so in that bead before starting it.
+Rewrite [Current Standing](#current-standing-2026-09-18) so the next-up table and
+standing-best numbers match the ledger; a stale standing is how the next agent repeats a
+finished experiment.
 
 ```shell
 tbd close fdu-XXXX --reason "exp-067: accepted, default-tree -18.2% [-21.0%, -15.1%]"
@@ -257,10 +397,11 @@ producing a number that means nothing.
 - Merge to `main`, or rebase or force-push the night’s branch.
 - Change the accept rule, the bootstrap, the schema’s statistics, or a subject’s
   nomination. The set is re-observed (`make perf-subjects`) when it drifts, not edited.
-- Start a Tier 3 item from the agenda: H86 (`fdu-xde5`), the `searchfs` spike, the
-  FSEvents journal, hardware CRC-32C (`unsafe` or a dependency), or `fdu-n75m` parts 2
-  and 3 (durability policy).
-  These are listed there with the reason.
+- Start a person-gated item: the H86 rewrite (`fdu-xde5` is H111’s parent, not a license
+  to restart the composite), the `searchfs` spike, the FSEvents journal, hardware
+  CRC-32C (`unsafe` or a dependency), or `fdu-n75m` parts 2 and 3 (durability policy).
+- Raise the README 200K files/s or 4M cached lines/s from a probe cell.
+- Retry H107 on a tree whose ignored share is not the walk.
 - Add a dependency, an `unsafe` block, or a platform gate without `make cross-lint`.
 - Create a RAM disk, or write anything into a subject tree.
   Snapshots, results and scratch go under `/tmp/fdu-realtree/`.
@@ -285,6 +426,8 @@ After every experiment it carries a table — experiment id, hypothesis, subject
 job, change with interval, verdict — and a line for anything skipped and why.
 A reader should learn the night’s result from the ledger diff and the PR body without
 opening the transcript.
+[Current Standing](#current-standing-2026-09-18) is the in-repo pickup for the next
+agent; the PR body is not a substitute for updating it.
 
 Before stopping:
 

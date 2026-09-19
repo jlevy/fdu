@@ -4,7 +4,8 @@
 
 **Author:** fdu project, with Claude Code assistance
 
-**Status:** Current
+**Status:** Orientation through 2026-08-23. Live pickup is
+[the runbook standing](../guides/performance-loop-runbook.md#current-standing-2026-09-18).
 
 ## Who this is for
 
@@ -410,7 +411,8 @@ The full protocol, including the accept rule and the hypothesis registry, is in
 
 | Document | What it is |
 | --- | --- |
-| This report | Orientation: status, method, history, what remains |
+| This report | Orientation through 2026-08-23: method, history, what remained then |
+| [Performance-loop runbook](../guides/performance-loop-runbook.md) | One iteration, plus the 2026-09-18 standing and next-up list |
 | [Performance evidence](report-2026-08-20-fdu-performance-evidence.md) | Absolute timings and paired effects across every experiment, charted |
 | [Instrumentation playbook](../guides/performance-instrumentation-playbook.md) | The reusable method, domain-neutral |
 | [Performance loop](../guides/performance-loop.md) | Protocol and live hypothesis registry |
