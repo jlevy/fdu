@@ -208,6 +208,12 @@ There is no Python reimplementation of the CLI.
 
 ## Speed
 
+On an older MacBook, a metadata summary is tens of thousands of files per second (a
+million-file tree in about 20 seconds), and a first-time lines-of-code pass is around
+ten thousand files per second.
+[The 2026-09-18 installed-CLI QA](docs/project/reports/report-2026-09-18-cli-installed-qa.md)
+has the log.
+
 **Exploratory macOS calibration, 2026-09-16, 0.1.0 release candidate.** A fresh process
 with its cache disabled built a reusable exact index and ten-row tree over a generated
 1,000,001-entry corpus in a **5.206-second median**. Twelve adjacent paired trials per
