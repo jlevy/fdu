@@ -775,6 +775,15 @@
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "tool": "dust",
    "wall_ns": 2124797020.5
+  },
+  {
+   "entries": 158705,
+   "id": "exp-122",
+   "per_entry_ns": 13320.40604895876,
+   "platform": "macOS",
+   "subject": "b718281f3051:158705:0c863b0ab28d",
+   "tool": "dust",
+   "wall_ns": 2114015042
   }
  ],
  "experiments": [
@@ -33269,6 +33278,155 @@
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "First-pass analyze I/O type/size gate or read-ahead on metabrowser",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe plus dir_enumeration_calls counter",
+   "change_pct": -1.945,
+   "commit": "8dd95be8",
+   "complexity": {
+    "lines_changed": 40,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "dir_enumeration_calls kept, off by default; counted only on a successful bulk read"
+   },
+   "control": "same probe at 8dd95be8",
+   "date": "2026-09-19",
+   "decision": "accepted",
+   "entries": 158705,
+   "family": "macOS:b718281f3051",
+   "hypotheses": [
+    "H122"
+   ],
+   "id": "exp-122",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 2461132792,
+        "control": 2400987979
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -1.916,
+        "ci95_high_pct": 7.629,
+        "ci95_low_pct": -16.291,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 14835172500,
+        "control": 16126747500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -7.5,
+        "ci95_high_pct": 12.7,
+        "ci95_low_pct": -28.836,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 88842240,
+        "control": 88858624
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.027,
+        "ci95_high_pct": 0.794,
+        "ci95_low_pct": -1.268,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 14506987500,
+        "control": 15797956500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -7.759,
+        "ci95_high_pct": 13.115,
+        "ci95_low_pct": -29.305,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 328185000,
+        "control": 336388000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -2.092,
+        "ci95_high_pct": 0.426,
+        "ci95_low_pct": -5.889,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 2467714145.5,
+        "control": 2408155333.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -1.945,
+        "ci95_high_pct": 7.629,
+        "ci95_low_pct": -16.095,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 15549.063643237454,
+      "control": 15173.783645757852
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 122,
+   "path": "exp-122-tighter-metadata-walk-leftover-after-h122.md",
+   "platform": "macOS",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "tighter leftover is 1.40 getattrlistbulk calls per directory; no userspace cut at 3 percent; H125 not minted",
+   "reference_tools": [
+    {
+     "argv": [
+      "{binary}",
+      "-d",
+      "1",
+      "--no-progress",
+      "{root}"
+     ],
+     "name": "dust",
+     "wall_ns_median": 2114015042
+    }
+   ],
+   "subject": "b718281f3051:158705:0c863b0ab28d",
+   "title": "Tighter metadata walk leftover after H122",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-19",
@@ -33453,6 +33611,28 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 5752378316,
+   "directories": 55256,
+   "entries": 158705,
+   "experiments": [
+    "exp-107",
+    "exp-116",
+    "exp-118",
+    "exp-119",
+    "exp-122"
+   ],
+   "files": 96542,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "b718281f3051:158705:0c863b0ab28d",
+   "labels": [
+    "system-private-frameworks"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 35888409,
    "directories": 60314,
    "entries": 100001,
@@ -33533,27 +33713,6 @@
    "labels": [
     "metabrowser-h86-orchestration-cleanup",
     "metabrowser-113794"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "macOS",
-   "synthetic": false
-  },
-  {
-   "apparent_bytes": 5752378316,
-   "directories": 55256,
-   "entries": 158705,
-   "experiments": [
-    "exp-107",
-    "exp-116",
-    "exp-118",
-    "exp-119"
-   ],
-   "files": 96542,
-   "filesystem": "apfs",
-   "host_cpu": "Apple M1 Pro",
-   "key": "b718281f3051:158705:0c863b0ab28d",
-   "labels": [
-    "system-private-frameworks"
    ],
    "os_cache": "warm-steady",
    "platform": "macOS",
@@ -34069,22 +34228,22 @@
   }
  ],
  "totals": {
-  "accepted_lines_changed": 15698,
+  "accepted_lines_changed": 15738,
   "decisions": {
-   "accepted": 58,
+   "accepted": 59,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
    "rejected": 46,
    "superseded": 3
   },
-  "experiments": 121,
+  "experiments": 122,
   "first_date": "2026-08-10",
   "hypotheses": 79,
   "last_date": "2026-09-19",
   "platforms": {
    "Linux": 11,
-   "macOS": 110
+   "macOS": 111
   }
  },
  "version": "fdu.performance.timeline/1"

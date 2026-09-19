@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 53 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 54 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -199,6 +199,7 @@ dead end.
 | 119 | [Product Index.report versus one-shot on frameworks](#exp119--product-indexreport-versus-oneshot-on-frameworks) | H123 | `default-tree` | -99.9% | ✅ accepted |
 | 120 | [Cache-hit restore mix after H115 and H120 on metabrowser](#exp120--cachehit-restore-mix-after-h115-and-h120-on-metabrowser) | H121 | `content-cache-hit` | +0.7% | ✅ accepted |
 | 121 | [First-pass analyze I/O type/size gate or read-ahead on metabrowser](#exp121--firstpass-analyze-io-typesize-gate-or-readahead-on-metabrowser) | H124 | `content-basic` | -4.2% | ❌ rejected |
+| 122 | [Tighter metadata walk leftover after H122](#exp122--tighter-metadata-walk-leftover-after-h122) | H122 | `default-tree` | -1.9% | ✅ accepted |
 
 ## The experiments
 
@@ -4148,6 +4149,35 @@ read calls already one data chunk per file; no engine change.
 Full record:
 [`exp-121-first-pass-analyze-i-o-type-size-gate-or-read-ahead-on-metab.md`](../experiments/exp-121-first-pass-analyze-i-o-type-size-gate-or-read-ahead-on-metab.md)
 
+### exp-122 — Tighter metadata walk leftover after H122
+
+✅ accepted · 2026-09-19 · H122 · commit `8dd95be8`
+
+Control: same probe at 8dd95be8
+
+Candidate: same probe plus dir_enumeration_calls counter
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2408.2 | 2467.7 | -1.95% (n.s.) | [-16.09%, +7.63%] |
+| component (ms) | 2401.0 | 2461.1 | -1.92% (n.s.) | [-16.29%, +7.63%] |
+| cpu (ms) | 16126.7 | 14835.2 | -7.50% (n.s.) | [-28.84%, +12.70%] |
+| user (ms) | 336.4 | 328.2 | -2.09% (n.s.) | [-5.89%, +0.43%] |
+| system (ms) | 15798.0 | 14507.0 | -7.76% (n.s.) | [-29.30%, +13.12%] |
+| peak rss (MiB) | 84.7 | 84.7 | +0.03% (n.s.) | [-1.27%, +0.79%] |
+
+Cost to carry: 40 lines; no new dependencies.
+
+dir_enumeration_calls kept, off by default; counted only on a successful bulk read
+
+**Accepted:** tighter leftover is 1.40 getattrlistbulk calls per directory; no userspace
+cut at 3 percent; H125 not minted.
+
+Full record:
+[`exp-122-tighter-metadata-walk-leftover-after-h122.md`](../experiments/exp-122-tighter-metadata-walk-leftover-after-h122.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4245,6 +4275,16 @@ Baselines show one value because they measure a state rather than a change.
 | 094 | Borrow completed directory roll-ups | `cold-scan-index` | 581.0 | 579.1 | +0.2% | ✅ accepted |
 | 095 | Move incoming names and retire consumed paths | `cold-scan-index` | 574.0 | 572.1 | -0.3% | ✅ accepted |
 
+### system-private-frameworks (158,705 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 107 | Installed CLI metadata one-shot stays cold scan on frameworks | `cli-default-tree` | 2,100.0 | 2,060.0 | -0.6% | ✅ accepted |
+| 116 | Opened-root second report versus one-shot on frameworks | `default-tree` | 2,612.2 | 2,361.9 | -2.2% | ✅ accepted |
+| 118 | Deciding-scale metadata walk profile after current engine | `default-tree` | 1,807.7 | 1,873.4 | +0.2% | ✅ accepted |
+| 119 | Product Index.report versus one-shot on frameworks | `default-tree` | 2,078.3 | 2,140.4 | +1.5% | ✅ accepted |
+| 122 | Tighter metadata walk leftover after H122 | `default-tree` | 2,408.2 | 2,467.7 | -1.9% | ✅ accepted |
+
 ### cargo-registry-src (11,142 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -4262,15 +4302,6 @@ Baselines show one value because they measure a state rather than a change.
 | 080 | Skip oversized journal clones | `delta-apply-large` | 677.6 | 654.9 | -3.5% | ✅ accepted |
 | 081 | Borrow impact paths until the bounded result escapes | `opened-discovery` | 286.8 | 282.2 | -1.1% | ❌ rejected |
 | 082 | Move scanner commits directly into the journal | `opened-discovery` | 284.5 | 281.2 | -0.0% | ❌ rejected |
-
-### system-private-frameworks (158,705 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 107 | Installed CLI metadata one-shot stays cold scan on frameworks | `cli-default-tree` | 2,100.0 | 2,060.0 | -0.6% | ✅ accepted |
-| 116 | Opened-root second report versus one-shot on frameworks | `default-tree` | 2,612.2 | 2,361.9 | -2.2% | ✅ accepted |
-| 118 | Deciding-scale metadata walk profile after current engine | `default-tree` | 1,807.7 | 1,873.4 | +0.2% | ✅ accepted |
-| 119 | Product Index.report versus one-shot on frameworks | `default-tree` | 2,078.3 | 2,140.4 | +1.5% | ✅ accepted |
 
 ### vm450k (450,463 entries) — Linux 6.18.5-fc-v20, unrecorded, warm-steady
 

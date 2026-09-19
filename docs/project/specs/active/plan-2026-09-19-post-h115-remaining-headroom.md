@@ -7,9 +7,9 @@
 **Status:** Active. Overnight H116–H120 is done.
 This file is the remaining unaddressed-hypothesis queue after that overnight: H113
 (quiet), H107 (ignore-is-the-walk only), and H111 (not this host).
-H122 is confirmed (exp-118). H123 is confirmed (exp-119). H121 is confirmed (exp-120):
-apply no longer dominates.
-H124 is rejected (exp-121).
+H122 is confirmed (exp-118, tighter leftover exp-122). H123 is confirmed (exp-119). H121
+is confirmed (exp-120): apply no longer dominates.
+H124 is rejected (exp-121). H125 is not minted: no Darwin userspace walk cut ≥3%.
 [The runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
 keeps an abbreviated next-up in that order; this file is the source of truth for the
 full rows. The loop guide registry remains the full hypothesis text.
@@ -117,7 +117,7 @@ Overnight registry rows (settled; full text in the loop guide):
 | H118 | First-pass `analyze_index` can use H115’s insert-then-rebuild instead of per-file `merge_ancestors` | `content-basic` component | Rejected (exp-115). Do not retry uncontrolled. |
 | H119 | First-pass analyze can overlap file I/O with the metadata walk instead of opening every file after the scan | `content-basic` wall / product `--analyze` | Screened. Do not retry walk-overlap. |
 | H120 | Streaming sidecar parse-into-apply (no full decoded-records Vec beside the files map) cuts peak RSS at least 10% | `content-cache-hit` RSS | Accepted (exp-117). |
-| H122 | After the current engine, a deciding-scale metadata CLI/walk profile still shows the walk as the job | installed `fdu PATH` / `default-tree` | Confirmed (exp-118). Do not retry as a cut. |
+| H122 | After the current engine, a deciding-scale metadata CLI/walk profile still shows the walk as the job | installed `fdu PATH` / `default-tree` | Confirmed (exp-118, leftover exp-122). Do not retry as a cut. |
 | H123 | A product opened-root or refresh path that retains the index is ≥3% faster than repeating a one-shot | opened retained read vs `fdu PATH` | Confirmed (exp-119). Probe kept. Not a snapshot load. |
 | H121 | After H115 and H120, a cache-hit restore re-profile names whether apply still dominates | `content-cache-hit` | Confirmed (exp-120). Apply 43%; candidates 48%; no stage ≥50%. No cut. |
 | H124 | Fewer first-pass opens (type/size gate) or read-ahead cuts analyze wall ≥3% | `content-basic` / product `--analyze` | Rejected (exp-121). Do not retry type/size or a safe read-ahead. |
@@ -127,19 +127,24 @@ Remaining registry rows (open; full text in the loop guide):
 | # | One-line claim | Job |
 | --- | --- | --- |
 | H113 | File-count completeness after H115 is a real quiet wall win | `content-cache-hit` |
-| H107 | Default gitignore observation differs by ≥3% wall only where the ignored share *is* the walk | `default-tree` (skipped 2026-09-19: no ignore-is-the-walk nominated subject) |
+| H107 | Default gitignore observation differs by ≥3% wall only where the ignored share *is* the walk | `default-tree` (skipped: ignore does not skip descent; no ignore-is-the-walk subject) |
 | H111 | H86’s remaining gap is the Linux floor and RSS claim | Linux 450k floor |
 
 H113 still needs a quiet host.
 Do not run uncontrolled.
 
-H122 is confirmed (exp-118): walk 96.6–97.5% of deciding-scale `default-tree` component.
-Leftover is directory `__open` + `getattrlistbulk`. Not H86 and not H111. Do not retry
-as a snapshot load or consume trim.
+H122 is confirmed (exp-118, leftover exp-122): walk 96.3–97.5% of deciding-scale
+`default-tree` component.
+Leftover is directory `__open` (55,256) plus `getattrlistbulk` at 1.403 calls per
+directory (77,509). No userspace symbol ≥3%. H125 not minted.
+`dir_enumeration_calls` kept.
+Not H86 and not H111. Do not retry as a snapshot load or consume trim.
 
 H107 stays H107. Re-run only on a tree whose ignored share can be the walk.
-Do not retry metabrowser (exp-106). The 2026-09-19 stacked session skipped: rustup and
-frameworks have no `.gitignore`; cargo-registry screens only.
+Do not retry metabrowser (exp-106). The 2026-09-19 hunt (exp-122): rustup and frameworks
+have no `.gitignore`; cargo-registry screens only; tbd and urollup keep the same
+`dir_opens` with controls on and off.
+`should_descend` does not consult ignore, so a large ignored subtree cannot be the walk.
 
 H123 is confirmed (exp-119): product `Index.report()` / `query::report` second pass 1.7
 ms versus one-shot `default-tree` 2,078.3 ms on `system-private-frameworks` (~1,222×).
@@ -185,9 +190,9 @@ These were considered against the post-H115 path and not registered:
 ### Remaining Inclusion Rules
 
 - H113 quiet confirmatory (`fdu-rfr6`, exp-113) is first *if* a quiet host holds.
-  If the start gate fails, skip it and take H122. Do not run another uncontrolled H113.
-  Incomplete 2026-09-19 quiet cells are not a verdict.
-  A stacked-PR retry the same day refused at 69.4% busy.
+  If the start gate fails, skip it.
+  Do not run another uncontrolled H113. Incomplete 2026-09-19 quiet cells are not a
+  verdict. Stacked-PR retries the same day refused at 69.4% and 43.79% busy.
   exp-113 unused.
 - Then take the remaining queue below, in order.
   After an accept, re-screen the next row: H122 may name a cut that eats H107; H121 may
@@ -218,19 +223,22 @@ Overnight H116–H120 is history, not a retry list.
    reject). Why next: already instrumented; leftover 12.6% `content_open` walk from
    exp-109 may have changed after H115 and H120.
 
-2. **H122** (`fdu-ytg5`). **Confirmed** (exp-118). Highest user-visible leverage.
-   Deciding-scale `default-tree` walk is 96.6–97.5% of instrumented component on
-   `system-private-frameworks`. Leftover is directory `__open` + `getattrlistbulk`, not
-   consume or finish. No Darwin cut.
+2. **H122** (`fdu-ytg5`). **Confirmed** (exp-118, leftover exp-122). Highest
+   user-visible leverage.
+   Deciding-scale `default-tree` walk is 96.3–97.5% of instrumented component on
+   `system-private-frameworks`. Leftover is directory `__open` plus `getattrlistbulk` at
+   1.403 calls/dir including EOF. No userspace cut ≥3%. H125 not minted.
    Not H86. Do not retry as a snapshot load.
 
-3. **H107** (`fdu-jcfn`). **Skipped 2026-09-19 stacked session.** No nominated
+3. **H107** (`fdu-jcfn`). **Skipped.** Hunt recorded in exp-122. No nominated
    ignore-is-the-walk subject.
    `rustup-toolchains` and `system-private-frameworks` have zero `.gitignore` files
    (depth≤6; exp-118 already recorded 0 control reads on frameworks).
    `metabrowser-clone` is the exp-106 refute.
    `cargo-registry-src` has crate-internal gitignores but is screening-only (~22k) and
    not a checkout whose ignored share is the walk.
+   tbd and urollup keep the same `dir_opens` with controls on and off.
+   Ignore does not skip descent.
    Do not retry metabrowser.
    Do not invent a subject.
 
@@ -257,18 +265,22 @@ Overnight H116–H120 is history, not a retry list.
 7. **H111** (`fdu-jekg`). Open.
    Not in this host. Linux floor stage of H86. No Linux runner on this Darwin campaign
    machine. Do not treat a Darwin cell as this claim.
-   Do not restart the rewrite.
+   Darwin comparison from exp-122: 1 open/dir + 1.403 `getattrlistbulk`/dir including
+   EOF versus the playbook’s Linux 2.00 `getdents64`/dir plus per-entry `statx`. Do not
+   restart the rewrite.
 
 **Overnight history (do not re-queue):** H116 rejected, H118 rejected, H119 screened,
 H117 confirmed as a probe, H120 accepted.
-**Stacked session (do not re-queue):** H113 skipped, H107 skipped, H122 confirmed, H123
-confirmed, H121 confirmed (no apply cut), H124 rejected (exp-121).
+**Stacked session (do not re-queue):** H113 skipped (69.4%, 43.79%), H107 skipped
+(ignore does not skip descent), H122 confirmed (exp-118 + leftover exp-122), H123
+confirmed, H121 confirmed (no apply cut), H124 rejected (exp-121). H125 not minted.
 
 ## Testing Strategy
 
 H113 remains 12-pair interleaved `make perf-compare` against HEAD with H115 and H120 in,
 `FDU_COUNTERS` unset for the claim-grade wall, no RAM disk.
-H124 is recorded (exp-121). H122, H123, and H121 are recorded determinations.
+H124 is recorded (exp-121). H122 (exp-118 + leftover exp-122), H123, and H121 are
+recorded determinations.
 Exact oracles and content digest stay as for exp-108–120. H113 must keep
 incomplete-sidecar fail-closed.
 H123 kept one-shot `cold scan`. Record every verdict, including skips at the quiet gate.
@@ -287,7 +299,8 @@ Engine changes land only as the experiment that tests the next row.
   apply cut.
 - Whether a Darwin deciding-scale `fdu PATH` profile (H122) names a leftover that is not
   already H86/H111 on Linux.
-  **Closed:** exp-118 named `__open` + `getattrlistbulk`; no Darwin cut.
+  **Closed:** exp-118 named `__open` + `getattrlistbulk`; exp-122: 1.403 bulk calls/dir;
+  no Darwin userspace cut ≥3%. H125 not minted.
 - Whether H117’s retained read can become a product path (H123) without loading a
   snapshot on one-shot `fdu PATH`. **Closed:** exp-119. Product `query::report` 1.7 ms
   versus one-shot 2,078.3 ms.

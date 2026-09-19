@@ -179,6 +179,9 @@ A 2026-09-19 stacked-PR retry (`fdu-rfr6`, ~10:31 PT) refused again at the start
 CPU busy **69.4% > 25.0%**. No pair ran.
 The file-count shortcut was compiled only for that gate attempt and is not in the
 engine. exp-113 remains reserved.
+A later tick the same afternoon refused at **43.79%**. No pair.
+Shortcut not compiled.
+exp-113 remains reserved.
 Next is H122.
 
 **exp-114 / H116** tests restore without a full `analysis_candidates` Vec+HashMap on the
@@ -273,6 +276,23 @@ instrumented component (second run still a full walk; `snapshot_written` false).
 Sample leftover: `__open` 56.74%, `getattrlistbulk` 17.79%, finish 0.3–0.4%. No Darwin
 cut named. No engine patch.
 
+**exp-122 / H122** is the tighter leftover after that profile, same subject (digest
+unchanged). `dir_enumeration_calls` counts successful `getattrlistbulk` syscalls
+including the empty terminator (off by default).
+Same-binary 12-pair `default-tree`. Quiet start gate refused (30.3% busy); pair ran
+**uncontrolled**. Initial busy 49.15%; final 100.0%. The 25% bar was not lowered.
+
+| Arm | Wall median | Component | Peak RSS |
+| --- | ---: | ---: | ---: |
+| control | 2,408.2 ms | 2,401.0 ms | 84.7 MiB |
+| candidate | 2,467.7 ms | 2,461.1 ms | 84.7 MiB |
+
+Self-comparison −1.95% [−16.09%, +7.63%]. **Accepted** as a determination, not a speed
+win. 77,509 enumeration calls / 55,256 opens = **1.403** per directory.
+20 s sample (165,807 stacks): `__open` 50.36%, `getattrlistbulk` 18.95%, `fdu::scan`
+3.02% (largest symbol 0.94%), allocator 3.00%. No userspace cut ≥3%. H125 not minted.
+Counter kept.
+
 **exp-121 / H124** is the first-pass analyze I/O **profile** on the frozen
 `metabrowser-clone` (146,047 entries / 133,708 files; digest `dc0df263…`). Path-binary
 already skipped (8,022 files).
@@ -319,33 +339,41 @@ Source of truth:
 [the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
 The registry row in [the loop guide](performance-loop.md#current-engine-010) is the full
 statement. Overnight H116–H120 is done; do not retry those.
-Next free hypothesis id is **H125**. Do not mint another meaning for H91–H106. Next free
-experiment id is **exp-113** (reserved for H113 quiet).
-After that, **exp-122**.
+Next free hypothesis id is **H125**. Do not mint it as a Darwin userspace walk cut
+(exp-122). Do not mint another meaning for H91–H106. Next free experiment id is
+**exp-113** (reserved for H113 quiet).
+After that, **exp-123**.
 
-This stacked session (2026-09-19 ~10:27–13:14 PT) skipped H113 (quiet gate 69.4%),
-skipped H107 (no ignore-is-the-walk nominated subject), recorded H122 (exp-118),
-confirmed H123 (exp-119), confirmed H121 (exp-120), and rejected H124 (exp-121). Do not
-start H107 without an ignore-is-the-walk subject.
+This stacked session skipped H113 again (quiet gate 43.79%), hunted H107 (no
+ignore-is-the-walk subject; ignore does not skip descent), and recorded exp-122 (H122
+tighter leftover).
+Earlier the same day: H113 69.4%, H122 (exp-118), H123, H121, H124. Do
+not start H107 without an ignore-is-the-walk subject.
 Do not retry metabrowser for H107 (exp-106). Do not start H111 (no Linux).
 Do not raise the README 200K files/s or 4M cached lines/s.
 
 1. **H113** (`fdu-rfr6`). **Needs quiet host.** Quiet confirmatory after H115. Official
-   start gate refused 2026-09-19 at 46.7% busy, then again at **69.4%** on the stacked
-   branch. Later incomplete quiet cells are not a verdict.
+   start gate refused 2026-09-19 at 46.7% busy, then **69.4%**, then **43.79%** on the
+   stacked branch. Later incomplete quiet cells are not a verdict.
    Do not run uncontrolled.
-   If the gate fails, skip to H122. Accept: `content-cache-hit` wall ≥3% with the
-   interval below zero on `metabrowser-clone`; digest identical; incomplete sidecar
-   refused. Control is HEAD with H115 and H120 in.
+   If the gate fails, skip.
+   Accept: `content-cache-hit` wall ≥3% with the interval below zero on
+   `metabrowser-clone`; digest identical; incomplete sidecar refused.
+   Control is HEAD with H115 and H120 in.
    Experiment id **exp-113**.
 
-2. **H122** (`fdu-ytg5`). **Confirmed** (exp-118). Walk is 96.6–97.5% of deciding-scale
-   `default-tree` component on `system-private-frameworks`. Leftover is directory
-   `__open` + `getattrlistbulk`, not consume.
-   No Darwin cut. Do not retry as a snapshot-load or finish trim.
+2. **H122** (`fdu-ytg5`). **Confirmed** (exp-118, tighter leftover exp-122). Walk is
+   96.3–97.5% of deciding-scale `default-tree` component on `system-private-frameworks`.
+   Leftover is directory `__open` (55,256) plus `getattrlistbulk` at **1.403 calls/dir**
+   (77,509). No userspace symbol ≥3%. No Darwin cut.
+   Do not retry as a snapshot-load, finish trim, or consume cut.
 
-3. **H107** (`fdu-jcfn`). **Skipped this session.** No ignore-is-the-walk nominated
-   subject. Refuted on metabrowser (exp-106). Do not retry metabrowser.
+3. **H107** (`fdu-jcfn`). **Skipped.** Hunt recorded in exp-122: rustup and frameworks
+   have no `.gitignore`; metabrowser is exp-106; cargo-registry screens only; tbd and
+   urollup have the same `dir_opens` with controls on and off.
+   Ignore does not skip descent.
+   Do not retry metabrowser.
+   Do not invent a subject.
 
 4. **H123** (`fdu-rum0`). **Confirmed** (exp-119). Product `Index.report()` /
    `query::report` second pass 1.7 ms versus one-shot 2,078.3 ms (~1,222×). Probe kept.
@@ -427,7 +455,7 @@ Do not retry H104–H106.
 | Document | Role |
 | --- | --- |
 | This standing section | Pickup: standing best, H113 quiet gate, next-up order |
-| [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Remaining queue after overnight: H113, H122, H107, H123, H121, H124, H111 |
+| [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Remaining queue: H113 (quiet), H107 (no subject), H111 (not this host) |
 | [The loop guide](performance-loop.md) | Protocol, accept rule, hypothesis registry |
 | [The campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) | Floor-anchored strategy; the 2026-08-23 Tier 1–3 list is history |
 | [The instrumentation playbook](performance-instrumentation-playbook.md) | Instrument before optimizing; `FDU_COUNTERS=1` |
