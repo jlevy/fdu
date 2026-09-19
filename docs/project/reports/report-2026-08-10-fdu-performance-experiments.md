@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 41 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 42 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -187,6 +187,7 @@ dead end.
 | 106 | [Default gitignore observation versus no-controls on metabrowser](#exp106--default-gitignore-observation-versus-nocontrols-on-metabrowser) | H107 | `default-tree` | +1.6% | ❌ rejected |
 | 107 | [Installed CLI metadata one-shot stays cold scan on frameworks](#exp107--installed-cli-metadata-oneshot-stays-cold-scan-on-frameworks) | H108 | `cli-default-tree` | -0.6% | ✅ accepted |
 | 108 | [Deciding-scale content-cache-hit profile on metabrowser](#exp108--decidingscale-contentcachehit-profile-on-metabrowser) | H109 | `content-cache-hit` | -0.3% | 📏 baseline |
+| 109 | [Sidecar restore stage split on metabrowser](#exp109--sidecar-restore-stage-split-on-metabrowser) | H112 | `content-cache-hit` | +0.3% | 📏 baseline |
 
 ## The experiments
 
@@ -3771,6 +3772,28 @@ Full record:
 Full record:
 [`exp-108-deciding-scale-content-cache-hit-profile-on-metabrowser.md`](../experiments/exp-108-deciding-scale-content-cache-hit-profile-on-metabrowser.md)
 
+### exp-109 — Sidecar restore stage split on metabrowser
+
+📏 baseline · 2026-09-19 · H112 · commit `0ec489e7af94f2a647d1ed94ac55f214fac5e477`
+
+**`content-cache-hit`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 1195.5 |
+| component (ms) | 891.2 |
+| cpu (ms) | 1183.3 |
+| user (ms) | 1088.6 |
+| system (ms) | 95.3 |
+| blocked (ms) | 11.6 |
+| peak rss (MiB) | 387.6 |
+
+**Baseline:** apply dominates restore (timers 63 percent, sample 54 percent of
+load_content); parse is about 10 percent; wall non-inferior so timers stay.
+
+Full record:
+[`exp-109-sidecar-restore-stage-split-on-metabrowser.md`](../experiments/exp-109-sidecar-restore-stage-split-on-metabrowser.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -3905,6 +3928,14 @@ Baselines show one value because they measure a state rather than a change.
 | 052 | Per-layer counters cost less than the measurement can see | `cold-scan-index` | 1,891.3 | 1,870.1 | +0.0% | ✅ accepted |
 | 053 | Move instrumentation to a runtime toggle and measure all three of its costs | `cold-scan-index` | 1,858.8 | 1,847.0 | -1.3% | ✅ accepted |
 
+### metabrowser-clone (145,931 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 106 | Default gitignore observation versus no-controls on metabrowser | `default-tree` | 338.6 | 341.6 | +1.6% | ❌ rejected |
+| 108 | Deciding-scale content-cache-hit profile on metabrowser | `content-cache-hit` | 1,218.0 | — | — | 📏 baseline |
+| 109 | Sidecar restore stage split on metabrowser | `content-cache-hit` | 1,195.5 | — | — | 📏 baseline |
+
 ### rustup-toolchains (119,368 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -3941,13 +3972,6 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 100 | Move directory-only state out of line | `default-tree` | 355.9 | 350.6 | -0.8% | ❌ rejected |
 | 101 | Compact detached child topology with local promotion | `default-tree` | 392.0 | 361.4 | -7.7% | ✅ accepted |
-
-### metabrowser-clone (145,931 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 106 | Default gitignore observation versus no-controls on metabrowser | `default-tree` | 338.6 | 341.6 | +1.6% | ❌ rejected |
-| 108 | Deciding-scale content-cache-hit profile on metabrowser | `content-cache-hit` | 1,218.0 | — | — | 📏 baseline |
 
 ### metabrowser-clone (60,089 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 

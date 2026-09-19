@@ -31251,6 +31251,158 @@
    "subject": "a319238d9c29:145931:aaf1e17d6383",
    "title": "Deciding-scale content-cache-hit profile on metabrowser",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "off-by-default sidecar restore phase timers",
+   "change_pct": 0.309,
+   "commit": "0ec489e7af94f2a647d1ed94ac55f214fac5e477",
+   "complexity": {
+    "lines_changed": 89,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "off-by-default phase timers; no unsafe; kept after counters-off wall stayed non-inferior"
+   },
+   "control": "current best at 98da0c83",
+   "date": "2026-09-19",
+   "decision": "baseline",
+   "entries": 145931,
+   "family": "macOS:a319238d9c29",
+   "hypotheses": [
+    "H112"
+   ],
+   "id": "exp-109",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-cache-hit",
+     "metrics": {
+      "blocked_ns": {
+       "absolute": {
+        "candidate": 9787791.5,
+        "control": 11579042
+       },
+       "metric": "blocked_ns",
+       "paired": {
+        "change_pct": -3.358,
+        "ci95_high_pct": 66.915,
+        "ci95_low_pct": -30.283,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "component_ns": {
+       "absolute": {
+        "candidate": 903382667,
+        "control": 891200979.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.957,
+        "ci95_high_pct": 2.616,
+        "ci95_low_pct": -0.973,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1197105500,
+        "control": 1183323000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.182,
+        "ci95_high_pct": 1.536,
+        "ci95_low_pct": -0.76,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 405250048,
+        "control": 406421504
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.083,
+        "ci95_high_pct": 0.079,
+        "ci95_low_pct": -0.494,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 104014500,
+        "control": 95265000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.191,
+        "ci95_high_pct": 9.247,
+        "ci95_low_pct": -5.878,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 1094170500,
+        "control": 1088649500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.188,
+        "ci95_high_pct": 0.838,
+        "ci95_low_pct": -0.275,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1210132958.5,
+        "control": 1195452437.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.309,
+        "ci95_high_pct": 1.626,
+        "ci95_low_pct": -0.814,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 8292.500966210058,
+      "control": 8191.901909121434
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "control",
+   "number": 109,
+   "path": "exp-109-sidecar-restore-stage-split-on-metabrowser.md",
+   "platform": "macOS",
+   "primary_job": "content-cache-hit",
+   "primary_metric": "wall_ns",
+   "reason": "apply dominates restore (timers 63 percent, sample 54 percent of load_content); parse is about 10 percent; wall non-inferior so timers stay",
+   "reference_tools": [],
+   "subject": "a319238d9c29:145931:3fbfed48354e",
+   "title": "Sidecar restore stage split on metabrowser",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-19",
@@ -32002,25 +32154,43 @@
    "os_cache": "warm-steady",
    "platform": "macOS",
    "synthetic": false
+  },
+  {
+   "apparent_bytes": 1724995969,
+   "directories": 11512,
+   "entries": 145931,
+   "experiments": [
+    "exp-109"
+   ],
+   "files": 133597,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "a319238d9c29:145931:3fbfed48354e",
+   "labels": [
+    "metabrowser-clone"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
   }
  ],
  "totals": {
   "accepted_lines_changed": 15233,
   "decisions": {
    "accepted": 52,
-   "baseline": 9,
+   "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
    "rejected": 41,
    "superseded": 3
   },
-  "experiments": 109,
+  "experiments": 110,
   "first_date": "2026-08-10",
-  "hypotheses": 67,
+  "hypotheses": 68,
   "last_date": "2026-09-19",
   "platforms": {
    "Linux": 11,
-   "macOS": 98
+   "macOS": 99
   }
  },
  "version": "fdu.performance.timeline/1"

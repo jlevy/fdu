@@ -86,6 +86,23 @@ Self-comparison −0.29% [−1.09%, +1.05%]. **Baseline.** No engine patch.
 The hit path is `load_content` (60.5% of engine) and snapshot parse (25.6%). Path
 rewrite is not justified.
 
+**exp-109 / H112** splits that restore on the same `metabrowser-clone` tree (engine
+digest re-observed to `3fbfed48…`; same shape).
+12-pair current-best vs off-by-default phase timers.
+Quiet start gate failed (31.7% busy); pair ran **uncontrolled**. The 25% bar was not
+lowered.
+
+| Arm | Wall median | Component | Peak RSS |
+| --- | ---: | ---: | --- |
+| control | 1,195.5 ms | 891.2 ms | 387.6 MiB |
+| candidate | 1,210.1 ms | 903.4 ms | 386.5 MiB |
+
+Wall +0.31% [−0.81%, +1.63%], non-inferior.
+**Baseline.** Timers kept (89 lines, off by default, no unsafe).
+Apply dominates restore (timers 63.3%; counters-off sample 53.6% of `load_content`).
+Candidates 25%; parse 8.5%. Every sample 133,597 cache hits / 0 applied; content digest
+unchanged from exp-108.
+
 ### Darwin Subjects
 
 The 2026-08 nominated metabrowser corpus path is gone from disk.
@@ -99,26 +116,33 @@ Do not type a path into a commit.
 
 `cargo-registry-src` (~22k) screens; it cannot decide a 3% verdict.
 `system-private-frameworks` was the H108 subject (exp-107); digest unchanged from the
-nomination. `metabrowser-clone` was the H109 subject (exp-108); same shape as exp-106,
-engine digest re-observed (`aaf1e17d…`). The CLI QA medium tree was skipped:
-deciding-scale but mutating.
+nomination. `metabrowser-clone` was the H109 / H112 subject (exp-108, exp-109); same
+shape as exp-106, engine digest re-observed (`3fbfed48…`). The CLI QA medium tree was
+skipped: deciding-scale but mutating.
 
 ### Next Up
 
 Take these in order.
 The registry row in [the loop guide](performance-loop.md#current-engine-010) is the full
 statement.
-Next free hypothesis id is **H112**. Do not mint another meaning for H91–H106.
-Next free experiment id is **exp-109**.
+Next free hypothesis id is **H114**. Do not mint another meaning for H91–H106.
+Next free experiment id is **exp-110**.
 
-1. **H83** (`fdu-78q6` / `fdu-jxhk`). The exp-108 deciding-scale hit path is sidecar
-   restore: `load_content` is 60.5% of the engine; snapshot parse is 25.6%. The
-   remaining increment is a layout usable without rebuilding per-record state, the same
-   class as H78, not another instruction trim (exp-104) and not the H109 Path rewrite.
+1. **H113**. After cache-only restore, `open_for_report` walks `analysis_candidates`
+   again only to compare `hits` to `len()` (lib.rs ~598–602). exp-109 sampled that walk
+   at 12.6% of `content_open` (~9% of wall).
+   Completeness can use a count already known from restore and still refuse an
+   incomplete sidecar. Job: `content-cache-hit` wall ≥3% with the interval below zero;
+   digest identical; incomplete sidecar still refused.
+   Do this before `fdu-jxhk`.
+
+2. **H83** (`fdu-78q6` / `fdu-jxhk`). H112 scoped the remaining structural work to apply
+   / commit / `merge_ancestors`, not parse.
+   A layout usable without rebuilding per-record state is still the same class as H78.
    Screen any patch on `content-cache-hit` wall ≥3% with the interval below zero; digest
-   identical.
+   identical. Do not retry parse-speed or instruction trims.
 
-2. **H107** (`fdu-jcfn`, closed).
+3. **H107** (`fdu-jcfn`, closed).
    Re-open only for a tree whose *ignored share is the walk* (a checkout sitting on
    `node_modules` that `.gitignore` drops).
    Job: `default-tree` wall, controls-on vs `--no-controls`; |median| ≥3% and the
@@ -126,17 +150,17 @@ Next free experiment id is **exp-109**.
    Refuted on wall on metabrowser (exp-106). The H108 subject had 0 control files.
    Do not retry on a metabrowser-like tree whose ignore set is not the critical path.
 
-3. **H108** (`fdu-1a4z`, confirmed in exp-107). Do not open a cache/one-shot patch:
+4. **H108** (`fdu-1a4z`, confirmed in exp-107). Do not open a cache/one-shot patch:
    `ReportPlan::read_snapshot` is already false for metadata one-shot, the second CLI
    run repeats the walk, and loading a snapshot is the H9 loss.
    Do not treat a second `cold scan` as a regression.
 
-4. **H109** (`fdu-8nwq` / `fdu-hzyb`, screened in exp-108). Do not land a control
+5. **H109** (`fdu-8nwq` / `fdu-hzyb`, screened in exp-108). Do not land a control
    matcher Path rewrite.
    `install_controls` collapsed to 7.2% of the profile on a deciding tree;
    `compare_components` under `is_ignored` is about 1%.
 
-5. **H111** (`fdu-jekg`). Linux floor stage of H86: index ≤1.4× floor, aggregate ≤1.25×,
+6. **H111** (`fdu-jekg`). Linux floor stage of H86: index ≤1.4× floor, aggregate ≤1.25×,
    RSS ≤3× `arena_spike`, on the 450k Linux subject, quiet `make perf-floor`. Darwin
    composite landed (exp-091–102); Linux floor failed (exp-103). A Darwin vs pre-H86
    validation is not this claim.
@@ -158,6 +182,8 @@ Do not retry H104–H106.
 - Do not force a metadata one-shot to load its snapshot (H108 / H9).
 - Do not land an H109 control-matcher Path rewrite.
   The deciding-scale share collapsed (exp-108).
+- Do not retry a sidecar parse-speed or instruction trim.
+  H112 (exp-109) put parse at 8.5% of restore; apply dominates.
 - A quiet cell may not hold on this desktop.
   Attempt `PERF_HOST_REGIME=quiet` first; if it fails or the final snapshot exceeds 25%
   busy, label **uncontrolled** and do not claim quiet.
