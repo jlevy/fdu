@@ -15,6 +15,7 @@ H127 is confirmed (exp-126): opened-discovery ~8.8× first-pass; no smallest cut
 H128 is confirmed (exp-127): file-heavy `default-tree` walk still the job.
 H129 is accepted (exp-128): restore omits classify (−13.11% wall).
 H130 is confirmed (exp-129): restore classify gone; `path_of` 11.85%; no engine patch.
+H131 is accepted (exp-130): restore DFS parent-path join (−4.07% wall).
 H113 is superseded by H125.
 [The runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
 keeps an abbreviated next-up in that order; this file is the source of truth for the
@@ -26,8 +27,9 @@ H115 accepted a restore-only bottom-up content roll-up (−9.69% `content-cache-
 on deciding-scale metabrowser).
 H120 accepted streaming sidecar parse-into-apply (−10.13% peak RSS; wall non-inferior).
 H125 accepted restore-count completeness (−8.03% wall on top of those).
-H129 accepted restore-without-classify (−13.11% wall on top of H125). Those remain the
-standing content-hit bests, plus this increment.
+H129 accepted restore-without-classify (−13.11% wall on top of H125). H131 accepted the
+restore DFS parent-path join (−4.07% wall on top of H129). Those remain the standing
+content-hit bests, plus this increment.
 This block names the directions the overnight did **not** address, as first-class
 hypotheses, and keeps the overnight verdicts as history so they are not re-queued.
 
@@ -39,11 +41,12 @@ H113 is superseded. Do not retry the file-count shortcut.
 
 - Name only hypotheses that are plausible at the 3% wall bar (or a structural ceiling)
   on a named job and subject, and that can be wrong
-- Keep H121–H130 registered in
+- Keep H121–H131 registered in
   [the loop guide](../../guides/performance-loop.md#current-engine-010); keep H107 and
   H111 open with honest status.
   H124 is rejected (exp-121). H125 is accepted (exp-124). H126 is confirmed (exp-125).
-  H129 is accepted (exp-128). H130 is confirmed (exp-129). H113 is superseded.
+  H129 is accepted (exp-128). H130 is confirmed (exp-129). H131 is accepted (exp-130).
+  H113 is superseded.
 - Own next-up after the overnight: order, metric, subject, accept-rule sketch, why next,
   what refutes, bead
 - Keep one source of truth for that queue (this file)
@@ -136,6 +139,7 @@ Overnight registry rows (settled; full text in the loop guide):
 | H128 | File-heavy `default-tree` leftover after H122 still has the walk as the job | `default-tree` | Confirmed (exp-127). Walk 92.9%. No new cut. |
 | H129 | Cache-only restore omits classify (walk and apply self-check); HashMap stays | `content-cache-hit` | Accepted (exp-128). Wall −13.11%. Engine kept (`6887a864`). |
 | H130 | After H129, leftover names whether restore classify is gone and whether a new ≥3% userspace cut remains | `content-cache-hit` | Confirmed (exp-129). Classify 0. `path_of` 11.85%. No engine patch. |
+| H131 | Restore DFS joins the parent path instead of `path_of` per file; HashMap stays | `content-cache-hit` | Accepted (exp-130). Wall −4.07%. Engine kept (`7840ce9b`). |
 | H113 | File-count completeness after H115 is a real quiet wall win | `content-cache-hit` | Superseded by H125. File-count not compiled. |
 
 Remaining registry rows (open; full text in the loop guide):
@@ -191,7 +195,11 @@ stay. Quiet that tick 31.53%.
 
 H130 is confirmed (exp-129): restore classify 0 of `content_open`. Completeness still 0.
 Snapshot 43.3%. `path_of` 11.85%. No engine patch.
-Quiet this tick 34.97%.
+Quiet that tick 34.97%.
+
+H131 is accepted (exp-130): wall −4.07% [−4.54%, −3.28%] on frozen `metabrowser-clone`.
+Restore DFS parent-path join kept (`7840ce9b`). Public `path_of` stays.
+Quiet this tick 27.23%.
 
 H127 is confirmed (exp-126): opened-discovery component 2,761 ms versus first-pass 315
 ms (~8.8×) on frozen `metabrowser-clone`. Same 11,517 dir opens.
@@ -231,8 +239,8 @@ These were considered against the post-H115 path and not registered:
   exp-113 unused.
 - Then take the remaining queue below, in order.
   After an accept, re-screen the next row: H122 may name a cut that eats H107; H121’s
-  mix was re-checked after H125 as H126; H129’s leftover is the next profile if no new
-  ≥3% mechanism is named.
+  mix was re-checked after H125 as H126; H129’s leftover was H130; H131’s leftover is
+  the next profile if no new ≥3% mechanism is named.
 - Uncontrolled is allowed on leftover profiles and H107 when quiet fails.
   Label it. Do not lower the 25% busy bar.
 - H111 is not in this host (no Linux runner).
@@ -246,11 +254,15 @@ These were considered against the post-H115 path and not registered:
 Take these in order.
 Overnight H116–H120 is history, not a retry list.
 
-1. **H130** (`fdu-ajbw`). **Confirmed** (exp-129). Restore classify gone.
-   Completeness still 0. Snapshot 43.3%. `path_of` 11.85% of `content_open`. No engine
-   patch. Quiet this tick 34.97%. **H129** (`fdu-qjjh`). **Accepted** (exp-128). Restore
-   omits classify. Wall −13.11% [−20.22%, −12.67%] on frozen `metabrowser-clone`. Engine
-   kept (`6887a864`). HashMap and `path_of` stay.
+1. **H131** (`fdu-1dxc`). **Accepted** (exp-130). Restore DFS joins the parent path.
+   Wall −4.07% [−4.54%, −3.28%] on frozen `metabrowser-clone`. Engine kept (`7840ce9b`).
+   Public `path_of` stays.
+   Quiet this tick 27.23%. **H130** (`fdu-ajbw`). **Confirmed** (exp-129). Restore
+   classify gone. Completeness still 0. Snapshot 43.3%. `path_of` 11.85% of
+   `content_open`. No engine patch.
+   Quiet that tick 34.97%. **H129** (`fdu-qjjh`). **Accepted** (exp-128). Restore omits
+   classify. Wall −13.11% [−20.22%, −12.67%] on frozen `metabrowser-clone`. Engine kept
+   (`6887a864`). HashMap stays.
    Quiet that tick 31.53%. **H125** (`fdu-wd4q`). **Accepted** (exp-124). Restore-count
    completeness. Wall −8.03% [−10.79%, −7.79%]. Engine kept (`be8d4d69`). H113
    superseded. File-count not compiled.
@@ -319,9 +331,10 @@ leftover 16% of `content_open` in exp-123; restore-count accepted as H125 / exp-
 H126 confirmed (exp-125; completeness gone; no new cut), H127 confirmed (exp-126;
 opened-discovery ~8.8× first-pass; no smallest cut), H128 confirmed (exp-127; file-heavy
 `default-tree` walk still the job), H129 accepted (exp-128; restore-without-classify),
-H130 confirmed (exp-129; classify gone; `path_of` 11.85%; no engine patch), H107 skipped
-(ignore does not skip descent), H122 confirmed (exp-118 + leftover exp-122), H123
-confirmed, H121 confirmed (no apply cut), H124 rejected (exp-121).
+H130 confirmed (exp-129; classify gone; `path_of` 11.85%; no engine patch), H131
+accepted (exp-130; restore DFS parent-path join), H107 skipped (ignore does not skip
+descent), H122 confirmed (exp-118 + leftover exp-122), H123 confirmed, H121 confirmed
+(no apply cut), H124 rejected (exp-121).
 
 ## Testing Strategy
 
@@ -331,9 +344,10 @@ H127 is recorded (exp-126). Opened-discovery ~8.8× first-pass; no smallest cut.
 H128 is recorded (exp-127). File-heavy `default-tree` walk still the job.
 H129 is recorded (exp-128). Restore-without-classify kept.
 H130 is recorded (exp-129). Restore classify gone; no engine patch.
+H131 is recorded (exp-130). Restore DFS parent-path join kept.
 H124 is recorded (exp-121). H122 (exp-118 + leftover exp-122), H123, and H121 are
 recorded determinations.
-Exact oracles and content digest stay as for exp-108–128. H123 kept one-shot
+Exact oracles and content digest stay as for exp-108–130. H123 kept one-shot
 `cold scan`. Record every verdict, including skips at the quiet gate.
 
 ## Rollout Plan
@@ -382,24 +396,29 @@ Engine changes land only as the experiment that tests the next row.
 - Whether restore classify is gone after H129 and whether a new ≥3% userspace cut
   remains (H130). **Closed:** exp-129. Classify 0. Completeness 0. `path_of` 11.85%.
   Snapshot 43.3%. No engine patch.
+- Whether the restore DFS can join the parent path it already holds instead of `path_of`
+  per file (H131). **Closed:** exp-130. Wall −4.07% [−4.54%, −3.28%]. Engine kept
+  (`7840ce9b`). Digest identical.
+  Public `path_of` stays.
 
 ## References
 
 - [The loop guide registry](../../guides/performance-loop.md#current-engine-010) —
-  H107–H130
+  H107–H131
 - [The runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
 - [Campaign 2](plan-2026-08-23-fdu-performance-campaign-2.md) — floor-anchored strategy
 - [First Principles](../../architecture/fdu-design-principles.md#first-principles)
 - [Engine architecture](../../architecture/fdu-engine-architecture.md) — one-shot vs
   opened
 - [The instrumentation playbook](../../guides/performance-instrumentation-playbook.md)
-- exp-107 through exp-128; H115 engine at `7798fdc1`; H120 streaming restore; H125
-  restore-count at `be8d4d69`; H129 restore-without-classify at `6887a864`
+- exp-107 through exp-130; H115 engine at `7798fdc1`; H120 streaming restore; H125
+  restore-count at `be8d4d69`; H129 restore-without-classify at `6887a864`; H131
+  parent-path join at `7840ce9b`
 - Beads: overnight epic `fdu-e9ow` (closed); remaining-queue epic `fdu-8ya1`; H121
   `fdu-vf4b`; H122 `fdu-ytg5`; H123 `fdu-rum0`; H124 `fdu-i39y`; H125 `fdu-wd4q`; H126
-  `fdu-16jh`; H127 `fdu-v12n`; H128 `fdu-0wym`; H129 `fdu-qjjh`; H130 `fdu-ajbw`; H113
-  quiet `fdu-rfr6` (superseded); H107 `fdu-jcfn`; H111 `fdu-jekg`; sidecar parent
-  `fdu-78q6`; EntryId composite `fdu-jxhk` (do not restart)
+  `fdu-16jh`; H127 `fdu-v12n`; H128 `fdu-0wym`; H129 `fdu-qjjh`; H130 `fdu-ajbw`; H131
+  `fdu-1dxc`; H113 quiet `fdu-rfr6` (superseded); H107 `fdu-jcfn`; H111 `fdu-jekg`;
+  sidecar parent `fdu-78q6`; EntryId composite `fdu-jxhk` (do not restart)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
