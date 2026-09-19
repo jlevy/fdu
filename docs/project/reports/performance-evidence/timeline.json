@@ -31099,9 +31099,161 @@
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "title": "Installed CLI metadata one-shot stays cold scan on frameworks",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe self-comparison",
+   "change_pct": -0.294,
+   "commit": "a35a4cee",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "same probe at a35a4cee",
+   "date": "2026-09-19",
+   "decision": "baseline",
+   "entries": 145931,
+   "family": "macOS:a319238d9c29",
+   "hypotheses": [
+    "H109"
+   ],
+   "id": "exp-108",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-cache-hit",
+     "metrics": {
+      "blocked_ns": {
+       "absolute": {
+        "candidate": 16285124.5,
+        "control": 15086479.5
+       },
+       "metric": "blocked_ns",
+       "paired": {
+        "change_pct": 35.926,
+        "ci95_high_pct": 55.583,
+        "ci95_low_pct": -24.693,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "component_ns": {
+       "absolute": {
+        "candidate": 906409458.5,
+        "control": 916672521
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -0.864,
+        "ci95_high_pct": 0.136,
+        "ci95_low_pct": -1.942,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1201624500,
+        "control": 1205580000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.669,
+        "ci95_high_pct": 0.446,
+        "ci95_low_pct": -1.211,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 398073856,
+        "control": 396558336
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.259,
+        "ci95_high_pct": 2.157,
+        "ci95_low_pct": -1.145,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 101655000,
+        "control": 103702000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.248,
+        "ci95_high_pct": 14.454,
+        "ci95_low_pct": -12.565,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 1100834000,
+        "control": 1100596500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -0.239,
+        "ci95_high_pct": 0.191,
+        "ci95_low_pct": -0.774,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1219939812.5,
+        "control": 1218002208.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -0.294,
+        "ci95_high_pct": 1.054,
+        "ci95_low_pct": -1.091,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 8359.702958932647,
+      "control": 8346.425423659126
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "control",
+   "number": 108,
+   "path": "exp-108-deciding-scale-content-cache-hit-profile-on-metabrowser.md",
+   "platform": "macOS",
+   "primary_job": "content-cache-hit",
+   "primary_metric": "wall_ns",
+   "reason": "install_controls is 7.2 percent of the profile on 146k entries, down from 19 percent on 3k; Path rewrite is not justified",
+   "reference_tools": [],
+   "subject": "a319238d9c29:145931:aaf1e17d6383",
+   "title": "Deciding-scale content-cache-hit profile on metabrowser",
+   "trials": 12
   }
  ],
- "prepared": "2026-09-18",
+ "prepared": "2026-09-19",
  "subjects": [
   {
    "apparent_bytes": 1082046346,
@@ -31832,25 +31984,43 @@
    "os_cache": "warm-steady",
    "platform": "macOS",
    "synthetic": false
+  },
+  {
+   "apparent_bytes": 1724995969,
+   "directories": 11512,
+   "entries": 145931,
+   "experiments": [
+    "exp-108"
+   ],
+   "files": 133597,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "a319238d9c29:145931:aaf1e17d6383",
+   "labels": [
+    "metabrowser-clone"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
   }
  ],
  "totals": {
   "accepted_lines_changed": 15233,
   "decisions": {
    "accepted": 52,
-   "baseline": 8,
+   "baseline": 9,
    "blocked": 2,
    "in-progress": 2,
    "rejected": 41,
    "superseded": 3
   },
-  "experiments": 108,
+  "experiments": 109,
   "first_date": "2026-08-10",
-  "hypotheses": 66,
+  "hypotheses": 67,
   "last_date": "2026-09-19",
   "platforms": {
    "Linux": 11,
-   "macOS": 97
+   "macOS": 98
   }
  },
  "version": "fdu.performance.timeline/1"

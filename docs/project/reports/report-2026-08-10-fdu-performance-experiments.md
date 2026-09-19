@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 40 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 41 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -186,6 +186,7 @@ dead end.
 | 105 | [Post-0.1.0 uncontrolled baseline on the rustup store](#exp105--post010-uncontrolled-baseline-on-the-rustup-store) | — | `default-tree` | +2.5% | 📏 baseline |
 | 106 | [Default gitignore observation versus no-controls on metabrowser](#exp106--default-gitignore-observation-versus-nocontrols-on-metabrowser) | H107 | `default-tree` | +1.6% | ❌ rejected |
 | 107 | [Installed CLI metadata one-shot stays cold scan on frameworks](#exp107--installed-cli-metadata-oneshot-stays-cold-scan-on-frameworks) | H108 | `cli-default-tree` | -0.6% | ✅ accepted |
+| 108 | [Deciding-scale content-cache-hit profile on metabrowser](#exp108--decidingscale-contentcachehit-profile-on-metabrowser) | H109 | `content-cache-hit` | -0.3% | 📏 baseline |
 
 ## The experiments
 
@@ -3748,6 +3749,28 @@ Cost to carry: 0 lines; no new dependencies.
 Full record:
 [`exp-107-installed-cli-metadata-one-shot-stays-cold-scan-on-framework.md`](../experiments/exp-107-installed-cli-metadata-one-shot-stays-cold-scan-on-framework.md)
 
+### exp-108 — Deciding-scale content-cache-hit profile on metabrowser
+
+📏 baseline · 2026-09-19 · H109 · commit `a35a4cee`
+
+**`content-cache-hit`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 1218.0 |
+| component (ms) | 916.7 |
+| cpu (ms) | 1205.6 |
+| user (ms) | 1100.6 |
+| system (ms) | 103.7 |
+| blocked (ms) | 15.1 |
+| peak rss (MiB) | 378.2 |
+
+**Baseline:** install_controls is 7.2 percent of the profile on 146k entries, down from
+19 percent on 3k; Path rewrite is not justified.
+
+Full record:
+[`exp-108-deciding-scale-content-cache-hit-profile-on-metabrowser.md`](../experiments/exp-108-deciding-scale-content-cache-hit-profile-on-metabrowser.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -3919,6 +3942,13 @@ Baselines show one value because they measure a state rather than a change.
 | 100 | Move directory-only state out of line | `default-tree` | 355.9 | 350.6 | -0.8% | ❌ rejected |
 | 101 | Compact detached child topology with local promotion | `default-tree` | 392.0 | 361.4 | -7.7% | ✅ accepted |
 
+### metabrowser-clone (145,931 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 106 | Default gitignore observation versus no-controls on metabrowser | `default-tree` | 338.6 | 341.6 | +1.6% | ❌ rejected |
+| 108 | Deciding-scale content-cache-hit profile on metabrowser | `content-cache-hit` | 1,218.0 | — | — | 📏 baseline |
+
 ### metabrowser-clone (60,089 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -4011,12 +4041,6 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 040 | Derive an exact rich summary without building an index | `rich-summary-report` | 4,852.0 | 4,183.2 | -14.6% | ✅ accepted |
-
-### metabrowser-clone (145,931 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 106 | Default gitignore observation versus no-controls on metabrowser | `default-tree` | 338.6 | 341.6 | +1.6% | ❌ rejected |
 
 ### metabrowser-clone (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

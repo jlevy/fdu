@@ -70,6 +70,22 @@ metabrowser checkout (145,931 entries).
 Wall +1.64% [−4.00%, +4.37%]. User CPU +22% and RSS −6.9% cancelled on the critical
 path. No engine patch was kept.
 
+**exp-108 / H109** is the deciding-scale `content-cache-hit` **profile** on
+`metabrowser-clone` (145,931 entries / 133,597 files).
+Same-binary 12-pair, uncontrolled (quiet start gate failed; 25% bar not lowered).
+Every sample was a sidecar hit (133,597 cache hits, 0 applied).
+
+| Arm | Wall median | Component | Peak RSS |
+| --- | ---: | ---: | ---: |
+| control | 1,218.0 ms | 916.7 ms | 378.2 MiB |
+| candidate | 1,219.9 ms | 906.4 ms | 379.6 MiB |
+
+Self-comparison −0.29% [−1.09%, +1.05%]. **Baseline.** No engine patch.
+`install_controls` is 7.2% of the profile / 7.5% of the engine (was 19.43%/25.5% on the
+3k screening subject).
+The hit path is `load_content` (60.5% of engine) and snapshot parse (25.6%). Path
+rewrite is not justified.
+
 ### Darwin Subjects
 
 The 2026-08 nominated metabrowser corpus path is gone from disk.
@@ -83,7 +99,9 @@ Do not type a path into a commit.
 
 `cargo-registry-src` (~22k) screens; it cannot decide a 3% verdict.
 `system-private-frameworks` was the H108 subject (exp-107); digest unchanged from the
-nomination. The CLI QA medium tree was skipped: deciding-scale but mutating.
+nomination. `metabrowser-clone` was the H109 subject (exp-108); same shape as exp-106,
+engine digest re-observed (`aaf1e17d…`). The CLI QA medium tree was skipped:
+deciding-scale but mutating.
 
 ### Next Up
 
@@ -91,16 +109,14 @@ Take these in order.
 The registry row in [the loop guide](performance-loop.md#current-engine-010) is the full
 statement.
 Next free hypothesis id is **H112**. Do not mint another meaning for H91–H106.
-Next free experiment id is **exp-108**.
+Next free experiment id is **exp-109**.
 
-1. **H109** (`fdu-8nwq` / `fdu-hzyb`). First a deciding-scale `content-cache-hit`
-   **profile** on a controls-bearing tree (`metabrowser-clone`). The exp-107 metadata
-   CLI profile is not that instrument: 0 control reads, 0 same-parent path comparisons,
-   walk ~96% of wall. A 667-file content pair with no `.gitignore` also showed 0 path
-   comparisons. Skip the Path rewrite if the deciding content profile share collapses.
-   Predicted only after that profile: `content-cache-hit` wall ≥3% with the interval
-   below zero and control goldens identical.
-   Do not land an instruction-only trim (exp-104).
+1. **H83** (`fdu-78q6` / `fdu-jxhk`). The exp-108 deciding-scale hit path is sidecar
+   restore: `load_content` is 60.5% of the engine; snapshot parse is 25.6%. The
+   remaining increment is a layout usable without rebuilding per-record state, the same
+   class as H78, not another instruction trim (exp-104) and not the H109 Path rewrite.
+   Screen any patch on `content-cache-hit` wall ≥3% with the interval below zero; digest
+   identical.
 
 2. **H107** (`fdu-jcfn`, closed).
    Re-open only for a tree whose *ignored share is the walk* (a checkout sitting on
@@ -115,7 +131,12 @@ Next free experiment id is **exp-108**.
    run repeats the walk, and loading a snapshot is the H9 loss.
    Do not treat a second `cold scan` as a regression.
 
-4. **H111** (`fdu-jekg`). Linux floor stage of H86: index ≤1.4× floor, aggregate ≤1.25×,
+4. **H109** (`fdu-8nwq` / `fdu-hzyb`, screened in exp-108). Do not land a control
+   matcher Path rewrite.
+   `install_controls` collapsed to 7.2% of the profile on a deciding tree;
+   `compare_components` under `is_ignored` is about 1%.
+
+5. **H111** (`fdu-jekg`). Linux floor stage of H86: index ≤1.4× floor, aggregate ≤1.25×,
    RSS ≤3× `arena_spike`, on the 450k Linux subject, quiet `make perf-floor`. Darwin
    composite landed (exp-091–102); Linux floor failed (exp-103). A Darwin vs pre-H86
    validation is not this claim.
@@ -135,6 +156,8 @@ Do not retry H104–H106.
 - Do not treat campaign-1 no-controls walls as the current default speed; treat their
   tallies as a different answer (exp-106).
 - Do not force a metadata one-shot to load its snapshot (H108 / H9).
+- Do not land an H109 control-matcher Path rewrite.
+  The deciding-scale share collapsed (exp-108).
 - A quiet cell may not hold on this desktop.
   Attempt `PERF_HOST_REGIME=quiet` first; if it fails or the final snapshot exceeds 25%
   busy, label **uncontrolled** and do not claim quiet.
@@ -418,6 +441,7 @@ producing a number that means nothing.
   CRC-32C (`unsafe` or a dependency), or `fdu-n75m` parts 2 and 3 (durability policy).
 - Raise or lower the README 200K files/s or 4M cached lines/s from a probe cell.
 - Retry H107 on a tree whose ignored share is not the walk.
+- Land an H109 Path rewrite after exp-108.
 - Add a dependency, an `unsafe` block, or a platform gate without `make cross-lint`.
 - Create a RAM disk, or write anything into a subject tree.
   Snapshots, results and scratch go under `/tmp/fdu-realtree/`.
