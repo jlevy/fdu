@@ -75,16 +75,20 @@ impl Reader {
         if super::walk_hook_covers(path) {
             return None;
         }
-        let entries = self.read_bulk(path)?;
+        let (entries, enumeration_calls) = self.read_bulk(path)?;
         crate::counters::bump(|c| {
             c.dir_opens += 1;
             c.dir_entries += entries.len() as u64;
             c.stats += entries.len() as u64;
+            // Counted only on a complete successful read, matching `dir_opens`: a
+            // declined directory is retried by the portable backend, and counting on
+            // each syscall would double those retries.
+            c.dir_enumeration_calls += enumeration_calls;
         });
         Some(entries)
     }
 
-    fn read_bulk(&mut self, path: &Path) -> Option<Vec<Entry>> {
+    fn read_bulk(&mut self, path: &Path) -> Option<(Vec<Entry>, u64)> {
         let directory = File::open(path).ok()?;
         let mut request = libc::attrlist {
             bitmapcount: libc::ATTR_BIT_MAP_COUNT,
@@ -96,6 +100,7 @@ impl Reader {
             forkattr: 0,
         };
         let mut entries = Vec::new();
+        let mut enumeration_calls = 0u64;
 
         loop {
             // SAFETY: `directory` remains open for the call; `request` is a fully
@@ -115,8 +120,9 @@ impl Reader {
             if count < 0 {
                 return None;
             }
+            enumeration_calls = enumeration_calls.saturating_add(1);
             if count == 0 {
-                return Some(entries);
+                return Some((entries, enumeration_calls));
             }
 
             let count = usize::try_from(count).ok()?;

@@ -5501,6 +5501,20 @@ mod tests {
                 "every entry is stated at {threads:?}: {observed_stats} < {}",
                 report.entries
             );
+            #[cfg(target_os = "macos")]
+            {
+                let observed_enum = after.dir_enumeration_calls - before.dir_enumeration_calls;
+                // The serial walker is the portable `read_dir` path, which cannot see
+                // getdents multiplicity. Enumeration calls are a bulk-backend fact.
+                if threads != Some(1) {
+                    assert!(
+                        observed_enum >= report.dirs_read,
+                        "every successful bulk directory issues at least one enumeration \
+                         call at {threads:?}: {observed_enum} < {}",
+                        report.dirs_read
+                    );
+                }
+            }
 
             // Deliberately not asserted: `allocs` stays zero in a library test, because
             // allocation counting needs a binary to install `CountingAlloc` as its
