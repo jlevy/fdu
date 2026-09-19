@@ -208,6 +208,11 @@ There is no Python reimplementation of the CLI.
 
 ## Speed
 
+On an older MacBook, it can tally file sizes at roughly 200K files/sec and analyze lines
+of code at roughly 4M lines/sec after caching.
+[The 2026-09-18 installed-CLI QA](docs/project/reports/report-2026-09-18-cli-installed-qa.md)
+has the log.
+
 **Exploratory macOS calibration, 2026-09-16, 0.1.0 release candidate.** A fresh process
 with its cache disabled built a reusable exact index and ten-row tree over a generated
 1,000,001-entry corpus in a **5.206-second median**. Twelve adjacent paired trials per
