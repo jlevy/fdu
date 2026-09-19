@@ -119,7 +119,7 @@ Remaining registry rows (open; full text in the loop guide):
 | # | One-line claim | Job |
 | --- | --- | --- |
 | H113 | File-count completeness after H115 is a real quiet wall win | `content-cache-hit` |
-| H107 | Default gitignore observation differs by ≥3% wall only where the ignored share *is* the walk | `default-tree` |
+| H107 | Default gitignore observation differs by ≥3% wall only where the ignored share *is* the walk | `default-tree` (skipped 2026-09-19: no ignore-is-the-walk nominated subject) |
 | H123 | A product opened-root or refresh path that retains the index is ≥3% faster than repeating a one-shot | opened retained read vs `fdu PATH` |
 | H121 | After H115 and H120, a cache-hit restore re-profile names whether apply still dominates | `content-cache-hit` |
 | H124 | Fewer first-pass opens (type/size gate) or read-ahead cuts analyze wall ≥3% | `content-basic` / product `--analyze` |
@@ -134,6 +134,8 @@ as a snapshot load or consume trim.
 
 H107 stays H107. Re-run only on a tree whose ignored share can be the walk.
 Do not retry metabrowser (exp-106).
+The 2026-09-19 stacked session skipped: rustup and frameworks have no `.gitignore`;
+cargo-registry screens only.
 
 H123 is not a license to load a snapshot on `fdu PATH` (H108 / H9). H117 confirmed the
 engine already has the cheaper retained read (`opened-second-report`). This row is the
@@ -212,12 +214,12 @@ Overnight H116–H120 is history, not a retry list.
    consume or finish. No Darwin cut.
    Not H86. Do not retry as a snapshot load.
 
-3. **H107** (`fdu-jcfn`). **Open only where ignore *is* the walk.** Metric:
-   `default-tree` wall, |median| ≥3% and interval excludes zero, either direction, on a
-   tree whose ignored share can be the walk.
-   Do not retry metabrowser (exp-106: +1.64% [−4.00%, +4.37%]). What refutes: another
-   subject where exclusion and the control walk still cancel.
-   Why next: H122 may name a tree where this is the walk.
+3. **H107** (`fdu-jcfn`). **Skipped 2026-09-19 stacked session.** No nominated
+   ignore-is-the-walk subject. `rustup-toolchains` and `system-private-frameworks` have
+   zero `.gitignore` files (depth≤6; exp-118 already recorded 0 control reads on
+   frameworks). `metabrowser-clone` is the exp-106 refute. `cargo-registry-src` has
+   crate-internal gitignores but is screening-only (~22k) and not a checkout whose
+   ignored share is the walk. Do not retry metabrowser. Do not invent a subject.
 
 4. **H123** (`fdu-rum0`). **Open.** Follow-on to H117 (probe only).
    A product opened-root or refresh path that retains the index is ≥3% faster than

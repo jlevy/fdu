@@ -309,6 +309,9 @@ After that, **exp-119**.
 This stacked session (2026-09-19 ~10:27–13:14 PT) skipped H113 (quiet gate 69.4%) and
 recorded H122 (exp-118). The profile named no Darwin cut, so no third cell.
 Do not start H107 without an ignore-is-the-walk subject.
+The 2026-09-19 stacked session skipped H107: no nominated tree has ignore as the walk
+(`rustup-toolchains` and `system-private-frameworks` have no `.gitignore`; metabrowser
+is exp-106; `cargo-registry-src` screens only). Do not retry metabrowser.
 Do not start H111 (no Linux).
 Do not raise the README 200K files/s or 4M cached lines/s.
 
@@ -326,8 +329,8 @@ Do not raise the README 200K files/s or 4M cached lines/s.
    `__open` + `getattrlistbulk`, not consume.
    No Darwin cut. Do not retry as a snapshot-load or finish trim.
 
-3. **H107** (`fdu-jcfn`). Open only on a tree whose *ignored share is the walk*. Refuted
-   on metabrowser (exp-106). Do not retry metabrowser.
+3. **H107** (`fdu-jcfn`). **Skipped this session.** No ignore-is-the-walk nominated
+   subject. Refuted on metabrowser (exp-106). Do not retry metabrowser.
 
 4. **H123** (`fdu-rum0`). Opened-root / refresh **product** path.
    H117 (exp-116) was the probe.
