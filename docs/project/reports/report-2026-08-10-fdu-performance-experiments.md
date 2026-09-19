@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 37 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 39 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -183,6 +183,8 @@ dead end.
 | 102 | [Point lookup for public mutation preflight](#exp102--point-lookup-for-public-mutation-preflight) | — | `delta-apply-large` | -49.8% | ✅ accepted |
 | 103 | [H86 Linux evidence stage: relative gates pass, floor gates fail](#exp103--h86-linux-evidence-stage-relative-gates-pass-floor-gates-fail) | H86 | `default-tree` | -31.7% | ❌ rejected |
 | 104 | [Hash the content roll-up map by path bytes instead of components](#exp104--hash-the-content-rollup-map-by-path-bytes-instead-of-components) | H103 | `content-cache-hit` | +0.1% | ❌ rejected |
+| 105 | [Post-0.1.0 uncontrolled baseline on the rustup store](#exp105--post010-uncontrolled-baseline-on-the-rustup-store) | — | `default-tree` | +2.5% | 📏 baseline |
+| 106 | [Default gitignore observation versus no-controls on metabrowser](#exp106--default-gitignore-observation-versus-nocontrols-on-metabrowser) | H107 | `default-tree` | +1.6% | ❌ rejected |
 
 ## The experiments
 
@@ -3672,6 +3674,56 @@ On this virtualized Linux host the warm content open is not instruction-bound.
 Full record:
 [`exp-104-hash-the-content-roll-up-map-by-path-bytes-instead-of-compon.md`](../experiments/exp-104-hash-the-content-roll-up-map-by-path-bytes-instead-of-compon.md)
 
+### exp-105 — Post-0.1.0 uncontrolled baseline on the rustup store
+
+📏 baseline · 2026-09-19 · no hypothesis id · commit `285a41d2`
+
+**`default-tree`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 149.8 |
+| component (ms) | 143.9 |
+| cpu (ms) | 675.9 |
+| user (ms) | 61.3 |
+| system (ms) | 614.5 |
+| peak rss (MiB) | 33.0 |
+
+Other jobs, wall time: `cold-scan-index` 297 ms.
+
+**Baseline:** default-tree 149.8 ms and cold-scan-index 297.1 ms on 77132 entries; quiet
+cell could not hold.
+
+Full record:
+[`exp-105-post-0-1-0-uncontrolled-baseline-on-the-rustup-store.md`](../experiments/exp-105-post-0-1-0-uncontrolled-baseline-on-the-rustup-store.md)
+
+### exp-106 — Default gitignore observation versus no-controls on metabrowser
+
+❌ rejected · 2026-09-19 · H107 · commit `285a41d2`
+
+Control: same probe with --no-controls
+
+Candidate: same probe shipped default read_controls on
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 338.6 | 341.6 | +1.64% (n.s.) | [-4.00%, +4.37%] |
+| component (ms) | 332.6 | 335.3 | +1.61% (n.s.) | [-3.49%, +4.47%] |
+| cpu (ms) | 1923.6 | 1946.4 | +1.12% (n.s.) | [-1.69%, +6.04%] |
+| user (ms) | 128.3 | 156.9 | +22.33% (regression) | [+13.09%, +28.52%] |
+| system (ms) | 1786.4 | 1793.1 | -0.17% (n.s.) | [-3.98%, +5.16%] |
+| peak rss (MiB) | 56.4 | 52.4 | -6.85% | [-7.38%, -5.87%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Rejected:** wall +1.64% [-4.00%, +4.37%]; user CPU +22% and RSS -6.9% cancelled on the
+critical path.
+
+Full record:
+[`exp-106-default-gitignore-observation-versus-no-controls-on-metabrow.md`](../experiments/exp-106-default-gitignore-observation-versus-no-controls-on-metabrow.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -3936,6 +3988,12 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 040 | Derive an exact rich summary without building an index | `rich-summary-report` | 4,852.0 | 4,183.2 | -14.6% | ✅ accepted |
 
+### metabrowser-clone (145,931 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 106 | Default gitignore observation versus no-controls on metabrowser | `default-tree` | 338.6 | 341.6 | +1.6% | ❌ rejected |
+
 ### metabrowser-clone (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -3977,6 +4035,12 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 079 | Resolve scanner parents before mutation | `opened-discovery` | 309.0 | 280.8 | -9.5% | ✅ accepted |
+
+### rustup-toolchains (77,132 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 105 | Post-0.1.0 uncontrolled baseline on the rustup store | `default-tree` | 149.8 | — | — | 📏 baseline |
 
 ### selfhost-content (307 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
