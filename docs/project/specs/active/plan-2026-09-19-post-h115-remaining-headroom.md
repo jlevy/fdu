@@ -162,11 +162,10 @@ After whatever H113 quiet does:
    Wall +8.70% [−19.33%, +63.90%]. Quiet gate 85.6%. User CPU −15.65%; RSS −11.27%.
    Engine reverted. Do not retry uncontrolled.
 
-2. **H118** (`fdu-kyts`). Metric: `content-basic` component (analyze only).
-   Subject: `metabrowser-clone`. Accept: same 3% / interval-below-zero rule; content
-   digest identical. Why next: H115’s mechanism still runs on the first-pass receive
-   loop. Refute: I/O hides the ancestor walk (interval includes zero).
-   Quiet: not required.
+2. **H118** (`fdu-kyts`). **Done — rejected** (exp-115, uncontrolled).
+   Component −2.60% [−12.00%, +23.86%]. Quiet gate 39.7%. User CPU −4.53%. File I/O hid
+   the ancestor walk. Engine reverted.
+   Do not retry uncontrolled.
 
 3. **H119** (`fdu-9g54`). Metric: `content-basic` wall, or installed
    `fdu --analyze=lines` on the same tree if that is the product job.
@@ -216,7 +215,8 @@ experiment that tests the next row.
 - Whether H116’s index-by-path lookup is cheaper than today’s HashMap, or only cheaper
   than building `analysis_candidates` (the classify walk is the predicted win).
 - Whether a first-pass `content-basic` component can clear 3% (H118) on a job whose wall
-  is file I/O.
+  is file I/O. Answered no on this uncontrolled cell (exp-115): −2.60%
+  [−12.00%, +23.86%].
 - Whether an opened-retained probe already exists under another name; none of
   `opened-discovery`, `warm-revalidate`, or `warm-snapshot-load` is that job.
 

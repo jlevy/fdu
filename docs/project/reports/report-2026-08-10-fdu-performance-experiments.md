@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 46 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 47 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -192,6 +192,7 @@ dead end.
 | 111 | [Type-id get-mut on roll-up add on metabrowser](#exp111--typeid-getmut-on-rollup-add-on-metabrowser) | H114 | `content-cache-hit` | -0.6% | ❌ rejected |
 | 112 | [Bottom-up roll-up after sidecar restore](#exp112--bottomup-rollup-after-sidecar-restore) | H115 | `content-cache-hit` | -9.7% | ✅ accepted |
 | 114 | [Restore path lookup without analysis_candidates HashMap](#exp114--restore-path-lookup-without-analysiscandidates-hashmap) | H116 | `content-cache-hit` | +8.7% | ❌ rejected |
+| 115 | [First-pass analyze insert-then-rebuild on metabrowser](#exp115--firstpass-analyze-insertthenrebuild-on-metabrowser) | H118 | `content-basic` | -2.6% | ❌ rejected |
 
 ## The experiments
 
@@ -3925,6 +3926,40 @@ zero under host contention.
 Full record:
 [`exp-114-restore-path-lookup-without-analysis-candidates-hashmap.md`](../experiments/exp-114-restore-path-lookup-without-analysis-candidates-hashmap.md)
 
+### exp-115 — First-pass analyze insert-then-rebuild on metabrowser
+
+❌ rejected · 2026-09-19 · H118 · commit `55261e6c`
+
+Control: HEAD at 55261e6c with H115 in, H116 reverted
+
+Candidate: analyze_index apply_restored_analysis plus one rebuild
+
+**`content-basic`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 10020.6 | 10022.1 | -5.01% (n.s.) | [-13.28%, +23.39%] |
+| component (ms) | 9232.5 | 9151.2 | -2.60% (n.s.) | [-12.00%, +23.86%] |
+| cpu (ms) | 20755.2 | 20309.6 | -4.77% | [-8.03%, -1.59%] |
+| user (ms) | 5814.4 | 5545.7 | -4.53% | [-5.21%, -3.31%] |
+| system (ms) | 14887.3 | 14777.1 | -5.02% | [-9.77%, -0.64%] |
+| peak rss (MiB) | 253.1 | 254.2 | +1.39% (n.s.) | [-0.70%, +7.95%] |
+
+Wall-time tail: control p95 is 1.22x its median and candidate 1.55x. The verdict above
+is on the median; a reader deciding whether this is faster to *use* should read the tail
+beside it.
+
+Cost to carry: 15 lines; no new dependencies; new failure mode: file I/O hides per-file
+ancestor walk on first-pass analyze.
+
+first-pass insert-then-rebuild measured and reverted; incremental apply_analysis kept
+
+**Rejected:** component -2.60 percent [-12.00%, +23.86%]; file I/O hid ancestor walk;
+engine reverted.
+
+Full record:
+[`exp-115-first-pass-analyze-insert-then-rebuild-on-metabrowser.md`](../experiments/exp-115-first-pass-analyze-insert-then-rebuild-on-metabrowser.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -3976,6 +4011,7 @@ Baselines show one value because they measure a state rather than a change.
 | 111 | Type-id get-mut on roll-up add on metabrowser | `content-cache-hit` | 1,328.9 | 1,290.9 | -0.6% | ❌ rejected |
 | 112 | Bottom-up roll-up after sidecar restore | `content-cache-hit` | 1,287.6 | 1,174.1 | -9.7% | ✅ accepted |
 | 114 | Restore path lookup without analysis_candidates HashMap | `content-cache-hit` | 1,475.4 | 1,573.7 | +8.7% | ❌ rejected |
+| 115 | First-pass analyze insert-then-rebuild on metabrowser | `content-basic` | 10,020.6 | 10,022.1 | -5.0% | ❌ rejected |
 
 ### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
