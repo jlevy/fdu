@@ -34714,6 +34714,158 @@
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Restore DFS joins parent path on metabrowser",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same-source rebuild of HEAD",
+   "change_pct": -0.021,
+   "commit": "69704206",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "leftover profile only; no engine change"
+   },
+   "control": "H131 release probe at 7840ce9b",
+   "date": "2026-09-19",
+   "decision": "accepted",
+   "entries": 146047,
+   "family": "macOS:3b5427f76be0",
+   "hypotheses": [
+    "H132"
+   ],
+   "id": "exp-131",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-cache-hit",
+     "metrics": {
+      "blocked_ns": {
+       "absolute": {
+        "candidate": 7933646,
+        "control": 7170833
+       },
+       "metric": "blocked_ns",
+       "paired": {
+        "change_pct": 14.175,
+        "ci95_high_pct": 37.22,
+        "ci95_low_pct": -1.723,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "component_ns": {
+       "absolute": {
+        "candidate": 535572250,
+        "control": 535807062
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.047,
+        "ci95_high_pct": 1.458,
+        "ci95_low_pct": -0.751,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 815735500,
+        "control": 818329000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.003,
+        "ci95_high_pct": 0.784,
+        "ci95_low_pct": -0.772,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 311386112,
+        "control": 312049664
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.126,
+        "ci95_high_pct": 0.337,
+        "ci95_low_pct": -0.521,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 59572000,
+        "control": 59087500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -1.75,
+        "ci95_high_pct": 7.85,
+        "ci95_low_pct": -5.693,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 757818000,
+        "control": 757159500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -0.013,
+        "ci95_high_pct": 0.407,
+        "ci95_low_pct": -0.377,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 825255770.5,
+        "control": 825221667
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -0.021,
+        "ci95_high_pct": 0.7,
+        "ci95_low_pct": -0.668,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 5650.617749765486,
+      "control": 5650.3842393202185
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 131,
+   "path": "exp-131-post-h131-cache-hit-leftover-after-restore-parent-path-join.md",
+   "platform": "macOS",
+   "primary_job": "content-cache-hit",
+   "primary_metric": "wall_ns",
+   "reason": "restore-walk path_of gone after H131; leftover snapshot path_of 9.89 percent of content_open discarded on one-shot serving=None; no engine patch",
+   "reference_tools": [],
+   "subject": "3b5427f76be0:146047:dc0df2630acc",
+   "title": "Post-H131 cache-hit leftover after restore parent-path join",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-19",
@@ -34748,6 +34900,34 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 1726062376,
+   "directories": 11517,
+   "entries": 146047,
+   "experiments": [
+    "exp-120",
+    "exp-121",
+    "exp-123",
+    "exp-124",
+    "exp-125",
+    "exp-126",
+    "exp-127",
+    "exp-128",
+    "exp-129",
+    "exp-130",
+    "exp-131"
+   ],
+   "files": 133708,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "3b5427f76be0:146047:dc0df2630acc",
+   "labels": [
+    "metabrowser-clone"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 13021004064,
    "directories": 88201,
    "entries": 720805,
@@ -34770,33 +34950,6 @@
    "labels": [
     "cache-pressure-12x",
     "h65-cache-pressure-720k-confirm"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "macOS",
-   "synthetic": false
-  },
-  {
-   "apparent_bytes": 1726062376,
-   "directories": 11517,
-   "entries": 146047,
-   "experiments": [
-    "exp-120",
-    "exp-121",
-    "exp-123",
-    "exp-124",
-    "exp-125",
-    "exp-126",
-    "exp-127",
-    "exp-128",
-    "exp-129",
-    "exp-130"
-   ],
-   "files": 133708,
-   "filesystem": "apfs",
-   "host_cpu": "Apple M1 Pro",
-   "key": "3b5427f76be0:146047:dc0df2630acc",
-   "labels": [
-    "metabrowser-clone"
    ],
    "os_cache": "warm-steady",
    "platform": "macOS",
@@ -35525,20 +35678,20 @@
  "totals": {
   "accepted_lines_changed": 15889,
   "decisions": {
-   "accepted": 67,
+   "accepted": 68,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
    "rejected": 46,
    "superseded": 3
   },
-  "experiments": 130,
+  "experiments": 131,
   "first_date": "2026-08-10",
-  "hypotheses": 86,
+  "hypotheses": 87,
   "last_date": "2026-09-19",
   "platforms": {
    "Linux": 11,
-   "macOS": 119
+   "macOS": 120
   }
  },
  "version": "fdu.performance.timeline/1"

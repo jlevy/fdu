@@ -64,7 +64,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 62 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 63 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
@@ -208,6 +208,7 @@ dead end.
 | 128 | [Cache-only restore omits classify on metabrowser](#exp128--cacheonly-restore-omits-classify-on-metabrowser) | H129 | `content-cache-hit` | -13.1% | ✅ accepted |
 | 129 | [Post-H129 cache-hit leftover after restore-without-classify](#exp129--posth129-cachehit-leftover-after-restorewithoutclassify) | H130 | `content-cache-hit` | -0.2% | ✅ accepted |
 | 130 | [Restore DFS joins parent path on metabrowser](#exp130--restore-dfs-joins-parent-path-on-metabrowser) | H131 | `content-cache-hit` | -4.1% | ✅ accepted |
+| 131 | [Post-H131 cache-hit leftover after restore parent-path join](#exp131--posth131-cachehit-leftover-after-restore-parentpath-join) | H132 | `content-cache-hit` | -0.0% | ✅ accepted |
 
 ## The experiments
 
@@ -4436,6 +4437,36 @@ identical; parent-path join kept.
 Full record:
 [`exp-130-restore-dfs-joins-parent-path-on-metabrowser.md`](../experiments/exp-130-restore-dfs-joins-parent-path-on-metabrowser.md)
 
+### exp-131 — Post-H131 cache-hit leftover after restore parent-path join
+
+✅ accepted · 2026-09-19 · H132 · commit `69704206`
+
+Control: H131 release probe at 7840ce9b
+
+Candidate: same-source rebuild of HEAD
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 825.2 | 825.3 | -0.02% (n.s.) | [-0.67%, +0.70%] |
+| component (ms) | 535.8 | 535.6 | +0.05% (n.s.) | [-0.75%, +1.46%] |
+| cpu (ms) | 818.3 | 815.7 | -0.00% (n.s.) | [-0.77%, +0.78%] |
+| user (ms) | 757.2 | 757.8 | -0.01% (n.s.) | [-0.38%, +0.41%] |
+| system (ms) | 59.1 | 59.6 | -1.75% (n.s.) | [-5.69%, +7.85%] |
+| blocked (ms) | 7.2 | 7.9 | +14.18% (n.s.) | [-1.72%, +37.22%] |
+| peak rss (MiB) | 297.6 | 297.0 | -0.13% (n.s.) | [-0.52%, +0.34%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** restore-walk path_of gone after H131; leftover snapshot path_of 9.89
+percent of content_open discarded on one-shot serving=None; no engine patch.
+
+Full record:
+[`exp-131-post-h131-cache-hit-leftover-after-restore-parent-path-join.md`](../experiments/exp-131-post-h131-cache-hit-leftover-after-restore-parent-path-join.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4476,6 +4507,7 @@ Baselines show one value because they measure a state rather than a change.
 | 128 | Cache-only restore omits classify on metabrowser | `content-cache-hit` | 986.2 | 855.6 | -13.1% | ✅ accepted |
 | 129 | Post-H129 cache-hit leftover after restore-without-classify | `content-cache-hit` | 862.2 | 859.7 | -0.2% | ✅ accepted |
 | 130 | Restore DFS joins parent path on metabrowser | `content-cache-hit` | 857.8 | 824.3 | -4.1% | ✅ accepted |
+| 131 | Post-H131 cache-hit leftover after restore parent-path join | `content-cache-hit` | 825.2 | 825.3 | -0.0% | ✅ accepted |
 
 ### cache-pressure-12x (720,805 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
