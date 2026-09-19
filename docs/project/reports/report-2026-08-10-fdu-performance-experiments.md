@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 52 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 53 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -198,6 +198,7 @@ dead end.
 | 118 | [Deciding-scale metadata walk profile after current engine](#exp118--decidingscale-metadata-walk-profile-after-current-engine) | H122 | `default-tree` | +0.2% | ✅ accepted |
 | 119 | [Product Index.report versus one-shot on frameworks](#exp119--product-indexreport-versus-oneshot-on-frameworks) | H123 | `default-tree` | -99.9% | ✅ accepted |
 | 120 | [Cache-hit restore mix after H115 and H120 on metabrowser](#exp120--cachehit-restore-mix-after-h115-and-h120-on-metabrowser) | H121 | `content-cache-hit` | +0.7% | ✅ accepted |
+| 121 | [First-pass analyze I/O type/size gate or read-ahead on metabrowser](#exp121--firstpass-analyze-io-typesize-gate-or-readahead-on-metabrowser) | H124 | `content-basic` | -4.2% | ❌ rejected |
 
 ## The experiments
 
@@ -4114,6 +4115,39 @@ stage at 50 percent; no apply cut.
 Full record:
 [`exp-120-cache-hit-restore-mix-after-h115-and-h120-on-metabrowser.md`](../experiments/exp-120-cache-hit-restore-mix-after-h115-and-h120-on-metabrowser.md)
 
+### exp-121 — First-pass analyze I/O type/size gate or read-ahead on metabrowser
+
+❌ rejected · 2026-09-19 · H124 · commit `45727e1d`
+
+Control: HEAD at 45727e1d same probe
+
+Candidate: same probe self-comparison
+
+**`content-basic`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 9014.4 | 9036.5 | -4.22% (n.s.) | [-20.79%, +5.10%] |
+| component (ms) | 8312.1 | 8382.9 | -4.22% (n.s.) | [-20.47%, +5.71%] |
+| cpu (ms) | 22723.8 | 23450.9 | +3.42% (n.s.) | [-0.35%, +8.84%] |
+| user (ms) | 5848.0 | 5749.5 | -0.91% | [-2.32%, -0.05%] |
+| system (ms) | 16956.4 | 17682.0 | +4.40% (n.s.) | [-0.16%, +12.59%] |
+| peak rss (MiB) | 254.2 | 254.9 | +0.18% (n.s.) | [+0.00%, +0.84%] |
+
+Wall-time tail: control p95 is 1.69x its median and candidate 1.10x. The verdict above
+is on the median; a reader deciding whether this is faster to *use* should read the tail
+beside it.
+
+Cost to carry: 0 lines; no new dependencies.
+
+profile only; no engine change
+
+**Rejected:** every admitted open is required for lines; skippable share under 1% wall;
+read calls already one data chunk per file; no engine change.
+
+Full record:
+[`exp-121-first-pass-analyze-i-o-type-size-gate-or-read-ahead-on-metab.md`](../experiments/exp-121-first-pass-analyze-i-o-type-size-gate-or-read-ahead-on-metab.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4308,6 +4342,13 @@ Baselines show one value because they measure a state rather than a change.
 | 100 | Move directory-only state out of line | `default-tree` | 355.9 | 350.6 | -0.8% | ❌ rejected |
 | 101 | Compact detached child topology with local promotion | `default-tree` | 392.0 | 361.4 | -7.7% | ✅ accepted |
 
+### metabrowser-clone (146,047 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 120 | Cache-hit restore mix after H115 and H120 on metabrowser | `content-cache-hit` | 1,171.8 | 1,185.6 | +0.7% | ✅ accepted |
+| 121 | First-pass analyze I/O type/size gate or read-ahead on metabrowser | `content-basic` | 9,014.4 | 9,036.5 | -4.2% | ❌ rejected |
+
 ### metabrowser-clone (60,089 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -4400,12 +4441,6 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 040 | Derive an exact rich summary without building an index | `rich-summary-report` | 4,852.0 | 4,183.2 | -14.6% | ✅ accepted |
-
-### metabrowser-clone (146,047 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 120 | Cache-hit restore mix after H115 and H120 on metabrowser | `content-cache-hit` | 1,171.8 | 1,185.6 | +0.7% | ✅ accepted |
 
 ### metabrowser-clone (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

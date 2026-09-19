@@ -273,6 +273,23 @@ instrumented component (second run still a full walk; `snapshot_written` false).
 Sample leftover: `__open` 56.74%, `getattrlistbulk` 17.79%, finish 0.3–0.4%. No Darwin
 cut named. No engine patch.
 
+**exp-121 / H124** is the first-pass analyze I/O **profile** on the frozen
+`metabrowser-clone` (146,047 entries / 133,708 files; digest `dc0df263…`). Path-binary
+already skipped (8,022 files).
+Opens 125,686; empty 731; discovered-binary after open 6,137. Read calls 249,533 (~2 per
+open). Bytes read 951,822,681. Same-binary 12-pair `content-basic`. Quiet start gate
+refused (29.6% busy); pair ran **uncontrolled**. Initial busy 68.55%; final 63.33%. The
+25% bar was not lowered.
+
+| Arm | Wall median | Component | Peak RSS |
+| --- | ---: | ---: | ---: |
+| control | 9,014.4 ms | 8,312.1 ms | 254.2 MiB |
+| candidate | 9,036.5 ms | 8,382.9 ms | 254.9 MiB |
+
+Self-comparison −4.22% [−20.79%, +5.10%]. **Rejected.** Every admitted open is required
+for lines; skippable share under 1% of wall.
+A larger read chunk cannot clear 3%. No engine patch.
+
 ### Darwin Subjects
 
 The 2026-08 nominated metabrowser corpus path is gone from disk.
@@ -287,12 +304,12 @@ Do not type a path into a commit.
 `cargo-registry-src` (~22k) screens; it cannot decide a 3% verdict.
 `system-private-frameworks` was the H108 / H117 subject (exp-107, exp-116); digest
 unchanged from the nomination.
-`metabrowser-clone` was the H109 / H112 / H113 / H114 / H115 / H116 / H118 / H120
-subject (exp-108 through exp-112, exp-114, exp-115, exp-117); same shape as exp-106,
-engine digest unchanged (`3fbfed48…`). A 2026-09-19 re-observe drifted to 145,988
-entries / 133,654 files (digest `cc517e78…`); commit a fresh subjects document with the
-next metabrowser cell (`make perf-subjects`). The CLI QA medium tree was skipped:
-deciding-scale but mutating.
+`metabrowser-clone` was the H109 / H112 / H113 / H114 / H115 / H116 / H118 / H120 / H121
+/ H124 subject (exp-108 through exp-112, exp-114, exp-115, exp-117, exp-120, exp-121);
+same shape as exp-106, engine digest unchanged (`3fbfed48…`). A 2026-09-19 re-observe
+drifted to 145,988 entries / 133,654 files (digest `cc517e78…`); commit a fresh subjects
+document with the next metabrowser cell (`make perf-subjects`). The CLI QA medium tree
+was skipped: deciding-scale but mutating.
 `system-private-frameworks` was also the H122 subject (exp-118); digest unchanged.
 
 ### Next Up
@@ -304,12 +321,12 @@ The registry row in [the loop guide](performance-loop.md#current-engine-010) is 
 statement. Overnight H116–H120 is done; do not retry those.
 Next free hypothesis id is **H125**. Do not mint another meaning for H91–H106. Next free
 experiment id is **exp-113** (reserved for H113 quiet).
-After that, **exp-121**.
+After that, **exp-122**.
 
 This stacked session (2026-09-19 ~10:27–13:14 PT) skipped H113 (quiet gate 69.4%),
 skipped H107 (no ignore-is-the-walk nominated subject), recorded H122 (exp-118),
-confirmed H123 (exp-119), and confirmed H121 (exp-120). Do not start H107 without an
-ignore-is-the-walk subject.
+confirmed H123 (exp-119), confirmed H121 (exp-120), and rejected H124 (exp-121). Do not
+start H107 without an ignore-is-the-walk subject.
 Do not retry metabrowser for H107 (exp-106). Do not start H111 (no Linux).
 Do not raise the README 200K files/s or 4M cached lines/s.
 
@@ -339,9 +356,10 @@ Do not raise the README 200K files/s or 4M cached lines/s.
    candidates 48%. No stage ≥50%. No apply cut.
    Do not retry H116.
 
-6. **H124** (`fdu-i39y`). First-pass analyze I/O: type/size gate or read-ahead.
-   Metric is first-pass analyze wall.
-   Not H118. Not H119 walk-overlap.
+6. **H124** (`fdu-i39y`). **Rejected** (exp-121). Every admitted open is required for
+   lines; skippable share under 1% of wall; read calls already one data chunk per file.
+   Do not retry a type/size gate or a larger read chunk.
+   `F_RDADVISE` is person-gated `unsafe`.
 
 7. **H111** (`fdu-jekg`). Linux floor stage of H86. **Not in this host** (no Linux
    runner). Still open.
@@ -392,6 +410,10 @@ Do not retry H104–H106.
 - Do not retry H119 walk-overlap of analyze I/O with the metadata walk.
   `fdu::scan` is 0.13% of deciding-scale `content-basic`. `openat` is person-gated
   (`unsafe`).
+- Do not retry H124 type/size gate or a larger `READ_CHUNK_BYTES` after exp-121.
+  Path-binary is already skipped; remaining opens are required for lines.
+  Read calls are already one data chunk plus EOF. `F_RDADVISE` / `F_RDAHEAD` is
+  person-gated `unsafe`.
 - Do not register another restore alloc-trim, parse-speed cut, or H103-shaped
   instruction rewrite; those are on the remaining-headroom block’s rejected list.
 - A quiet cell may not hold on this desktop.
@@ -690,6 +712,7 @@ producing a number that means nothing.
 - Retry H116 on an uncontrolled cell after exp-114.
 - Retry H118 on an uncontrolled cell after exp-115.
 - Retry H119 walk-overlap after the deciding-scale `content-basic` profile.
+- Retry H124 type/size gate or a larger read chunk after exp-121.
 - Load a snapshot on `fdu PATH` because H117 confirmed opened retention.
 - Add a dependency, an `unsafe` block, or a platform gate without `make cross-lint`.
 - Create a RAM disk, or write anything into a subject tree.

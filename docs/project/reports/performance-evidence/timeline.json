@@ -33132,6 +33132,143 @@
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Cache-hit restore mix after H115 and H120 on metabrowser",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe self-comparison",
+   "change_pct": -4.221,
+   "commit": "45727e1d",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "profile only; no engine change"
+   },
+   "control": "HEAD at 45727e1d same probe",
+   "date": "2026-09-19",
+   "decision": "rejected",
+   "entries": 146047,
+   "family": "macOS:3b5427f76be0",
+   "hypotheses": [
+    "H124"
+   ],
+   "id": "exp-121",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-basic",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 8382941937,
+        "control": 8312081979
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -4.216,
+        "ci95_high_pct": 5.71,
+        "ci95_low_pct": -20.467,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 23450947000,
+        "control": 22723768000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 3.418,
+        "ci95_high_pct": 8.835,
+        "ci95_low_pct": -0.354,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 267255808,
+        "control": 266526720
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.176,
+        "ci95_high_pct": 0.836,
+        "ci95_low_pct": 0,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 17682038000,
+        "control": 16956420500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 4.4,
+        "ci95_high_pct": 12.59,
+        "ci95_low_pct": -0.157,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 5749475000,
+        "control": 5847982500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -0.913,
+        "ci95_high_pct": -0.049,
+        "ci95_low_pct": -2.319,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 9036454625,
+        "control": 9014396124.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -4.221,
+        "ci95_high_pct": 5.097,
+        "ci95_low_pct": -20.786,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 61873.60661293967,
+      "control": 61722.56961457613
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "control",
+   "number": 121,
+   "path": "exp-121-first-pass-analyze-i-o-type-size-gate-or-read-ahead-on-metab.md",
+   "platform": "macOS",
+   "primary_job": "content-basic",
+   "primary_metric": "wall_ns",
+   "reason": "every admitted open is required for lines; skippable share under 1% wall; read calls already one data chunk per file; no engine change",
+   "reference_tools": [],
+   "subject": "3b5427f76be0:146047:dc0df2630acc",
+   "title": "First-pass analyze I/O type/size gate or read-ahead on metabrowser",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-19",
@@ -33642,6 +33779,25 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 1726062376,
+   "directories": 11517,
+   "entries": 146047,
+   "experiments": [
+    "exp-120",
+    "exp-121"
+   ],
+   "files": 133708,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "3b5427f76be0:146047:dc0df2630acc",
+   "labels": [
+    "metabrowser-clone"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 2170167344,
    "directories": 14701,
    "entries": 120135,
@@ -33910,24 +34066,6 @@
    "os_cache": "warm-steady",
    "platform": "macOS",
    "synthetic": false
-  },
-  {
-   "apparent_bytes": 1726062376,
-   "directories": 11517,
-   "entries": 146047,
-   "experiments": [
-    "exp-120"
-   ],
-   "files": 133708,
-   "filesystem": "apfs",
-   "host_cpu": "Apple M1 Pro",
-   "key": "3b5427f76be0:146047:dc0df2630acc",
-   "labels": [
-    "metabrowser-clone"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "macOS",
-   "synthetic": false
   }
  ],
  "totals": {
@@ -33937,16 +34075,16 @@
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
-   "rejected": 45,
+   "rejected": 46,
    "superseded": 3
   },
-  "experiments": 120,
+  "experiments": 121,
   "first_date": "2026-08-10",
-  "hypotheses": 78,
+  "hypotheses": 79,
   "last_date": "2026-09-19",
   "platforms": {
    "Linux": 11,
-   "macOS": 109
+   "macOS": 110
   }
  },
  "version": "fdu.performance.timeline/1"

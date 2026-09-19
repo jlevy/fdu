@@ -6,9 +6,10 @@
 
 **Status:** Active. Overnight H116–H120 is done.
 This file is the remaining unaddressed-hypothesis queue after that overnight: H113
-(quiet), H107 (ignore-is-the-walk only), H124, and H111 (not this host).
+(quiet), H107 (ignore-is-the-walk only), and H111 (not this host).
 H122 is confirmed (exp-118). H123 is confirmed (exp-119). H121 is confirmed (exp-120):
 apply no longer dominates.
+H124 is rejected (exp-121).
 [The runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
 keeps an abbreviated next-up in that order; this file is the source of truth for the
 full rows. The loop guide registry remains the full hypothesis text.
@@ -33,7 +34,8 @@ Do not run another uncontrolled H113.
   on a named job and subject, and that can be wrong
 - Keep H121–H124 registered in
   [the loop guide](../../guides/performance-loop.md#current-engine-010); keep H113,
-  H107, and H111 open with honest status
+  H107, and H111 open with honest status.
+  H124 is rejected (exp-121).
 - Own next-up after the overnight: order, metric, subject, accept-rule sketch, why next,
   what refutes, bead
 - Keep one source of truth for that queue (this file)
@@ -98,8 +100,9 @@ Treat remaining time as four separate jobs, not one “make restore faster” le
    H121 re-profiled the mix (apply no longer dominates).
    Snapshot parse remains H78/H92.
 3. **First-pass analyze.** H118 rejected insert-then-rebuild.
-   H119 screened walk-overlap (`fdu::scan` 0.13%). Leftover I/O is H124: admit fewer
+   H119 screened walk-overlap (`fdu::scan` 0.13%). Leftover I/O was H124: admit fewer
    files, or read-ahead on the ones already admitted.
+   Rejected (exp-121).
 4. **RSS.** H120 landed streaming restore.
    That is not a landing-page files/s claim.
 
@@ -117,6 +120,7 @@ Overnight registry rows (settled; full text in the loop guide):
 | H122 | After the current engine, a deciding-scale metadata CLI/walk profile still shows the walk as the job | installed `fdu PATH` / `default-tree` | Confirmed (exp-118). Do not retry as a cut. |
 | H123 | A product opened-root or refresh path that retains the index is ≥3% faster than repeating a one-shot | opened retained read vs `fdu PATH` | Confirmed (exp-119). Probe kept. Not a snapshot load. |
 | H121 | After H115 and H120, a cache-hit restore re-profile names whether apply still dominates | `content-cache-hit` | Confirmed (exp-120). Apply 43%; candidates 48%; no stage ≥50%. No cut. |
+| H124 | Fewer first-pass opens (type/size gate) or read-ahead cuts analyze wall ≥3% | `content-basic` / product `--analyze` | Rejected (exp-121). Do not retry type/size or a safe read-ahead. |
 
 Remaining registry rows (open; full text in the loop guide):
 
@@ -124,7 +128,6 @@ Remaining registry rows (open; full text in the loop guide):
 | --- | --- | --- |
 | H113 | File-count completeness after H115 is a real quiet wall win | `content-cache-hit` |
 | H107 | Default gitignore observation differs by ≥3% wall only where the ignored share *is* the walk | `default-tree` (skipped 2026-09-19: no ignore-is-the-walk nominated subject) |
-| H124 | Fewer first-pass opens (type/size gate) or read-ahead cuts analyze wall ≥3% | `content-basic` / product `--analyze` |
 | H111 | H86’s remaining gap is the Linux floor and RSS claim | Linux 450k floor |
 
 H113 still needs a quiet host.
@@ -147,8 +150,12 @@ H121 is confirmed (exp-120): after H115+H120, apply is 42.7% of restore and cand
 47.6%. No stage is ≥50% of restore.
 No apply cut. Do not retry H116. H83 is scoped down on apply/install.
 
-H124 is not H118 (apply shape) and not H119 (walk overlap / `openat`). Named mechanism:
-admit fewer files, or read-ahead on the ones already admitted.
+H124 is rejected (exp-121): every admitted open is required for lines.
+Path-binary already skipped.
+Empty plus discovered-binary opens cannot reach 3% wall.
+Read calls are already one data chunk per file.
+Not H118. Not H119 walk-overlap.
+No engine change.
 
 H111 is open and not in this host.
 
@@ -239,16 +246,13 @@ Overnight H116–H120 is history, not a retry list.
    restore. No apply cut.
    Do not retry H116.
 
-6. **H124** (`fdu-i39y`). **Open.** First-pass analyze I/O. Metric: `content-basic` wall
-   or product `--analyze` wall, ≥3% with the interval below zero on deciding-scale
-   metabrowser; digest identical; worker parallelism retained.
-   Named mechanism: type/size gate (do not open files that cannot contribute) or
-   read-ahead on admitted files.
-   Not H118. Not H119 walk-overlap.
-   Not `openat` (`unsafe`). What refutes: interval includes zero, or every admitted open
-   is required for the requested metrics.
-   Why next: H118/H119 showed apply and walk-overlap cannot move this job; `read` 59% /
-   `__open` 17% is the leftover.
+6. **H124** (`fdu-i39y`). **Rejected** (exp-121). First-pass analyze I/O. Opens 125,686
+   of 133,708 files (path-binary already skipped).
+   Empty 0.58% of opens; discovered-binary 4.9%; combined skippable share under 1% of
+   wall. Read calls ~2 per open.
+   Same-binary wall −4.22% [−20.79%, +5.10%]. No engine change.
+   Do not retry a type/size gate or a larger read chunk.
+   `F_RDADVISE` is person-gated `unsafe`.
 
 7. **H111** (`fdu-jekg`). Open.
    Not in this host. Linux floor stage of H86. No Linux runner on this Darwin campaign
@@ -258,13 +262,13 @@ Overnight H116–H120 is history, not a retry list.
 **Overnight history (do not re-queue):** H116 rejected, H118 rejected, H119 screened,
 H117 confirmed as a probe, H120 accepted.
 **Stacked session (do not re-queue):** H113 skipped, H107 skipped, H122 confirmed, H123
-confirmed, H121 confirmed (no apply cut).
+confirmed, H121 confirmed (no apply cut), H124 rejected (exp-121).
 
 ## Testing Strategy
 
-H113 and H124 remain 12-pair interleaved `make perf-compare` against HEAD with H115 and
-H120 in, `FDU_COUNTERS` unset for the claim-grade wall, no RAM disk.
-H122, H123, and H121 are recorded determinations.
+H113 remains 12-pair interleaved `make perf-compare` against HEAD with H115 and H120 in,
+`FDU_COUNTERS` unset for the claim-grade wall, no RAM disk.
+H124 is recorded (exp-121). H122, H123, and H121 are recorded determinations.
 Exact oracles and content digest stay as for exp-108–120. H113 must keep
 incomplete-sidecar fail-closed.
 H123 kept one-shot `cold scan`. Record every verdict, including skips at the quiet gate.
@@ -289,7 +293,9 @@ Engine changes land only as the experiment that tests the next row.
   versus one-shot 2,078.3 ms.
   Probe kept. Not a snapshot load.
 - Whether a type/size gate or read-ahead (H124) can cut first-pass analyze wall after
-  H118/H119.
+  H118/H119. **Closed:** exp-121. Every admitted open is required for lines; read calls
+  are already one data chunk per file.
+  No engine change.
 
 ## References
 
