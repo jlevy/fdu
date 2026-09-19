@@ -5,7 +5,7 @@ title: "H127: first-pass vs opened-discovery I/O leftover"
 kind: task
 status: closed
 priority: 1
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-19-post-h115-remaining-headroom.md
 delegate: cursor-agent
 labels:
@@ -14,7 +14,7 @@ labels:
 dependencies: []
 parent_id: is-01m2x7xbt1c4we0wffeth7jrd6
 created_at: 2026-09-19T20:57:34.804Z
-updated_at: 2026-09-19T21:07:22.727Z
+updated_at: 2026-09-19T21:08:07.748Z
 closed_at: 2026-09-19T21:07:22.726Z
 close_reason: "H127 confirmed (exp-126): opened-discovery 8.8x first-pass component. read_dir+fstatat vs getattrlistbulk; 11524 journal clones; 1.12M live merges. No smallest cut."
 resolution: null
