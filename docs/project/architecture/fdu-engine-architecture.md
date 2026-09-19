@@ -386,10 +386,13 @@ It serves a request whose content tier identity equals its own: the same engine,
 tier (which alone holds the type rules), analyzer set, options, and analyzer versions.
 The in-memory tier holds records of that one identity: preparing it for another clears
 it, and `apply_analysis` refuses a record of another as stale.
-Under the caching commitment a wider stored set may answer a narrower request only
-through a projection that reproduces the cold answer, and none exists yet, so a
-different analyzer set reads its files again and replaces the sidecar.
-It is not embedded in the metadata snapshot and is never loaded by metadata-only work.
+Restore inserts sidecar records, then rebuilds roll-ups once; live analyze still applies
+incrementally through `apply_analysis`. Under the caching commitment a wider stored set
+may answer a narrower request only through a projection that reproduces the cold answer,
+and none exists yet, so a different analyzer set reads its files again and replaces the
+sidecar.
+It is not embedded in the metadata snapshot and is never loaded by metadata-only
+work.
 
 ### Serving Lifecycles
 

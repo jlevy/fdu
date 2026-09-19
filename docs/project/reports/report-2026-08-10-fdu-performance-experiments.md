@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 37 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 49 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -183,6 +183,18 @@ dead end.
 | 102 | [Point lookup for public mutation preflight](#exp102--point-lookup-for-public-mutation-preflight) | — | `delta-apply-large` | -49.8% | ✅ accepted |
 | 103 | [H86 Linux evidence stage: relative gates pass, floor gates fail](#exp103--h86-linux-evidence-stage-relative-gates-pass-floor-gates-fail) | H86 | `default-tree` | -31.7% | ❌ rejected |
 | 104 | [Hash the content roll-up map by path bytes instead of components](#exp104--hash-the-content-rollup-map-by-path-bytes-instead-of-components) | H103 | `content-cache-hit` | +0.1% | ❌ rejected |
+| 105 | [Post-0.1.0 uncontrolled baseline on the rustup store](#exp105--post010-uncontrolled-baseline-on-the-rustup-store) | — | `default-tree` | +2.5% | 📏 baseline |
+| 106 | [Default gitignore observation versus no-controls on metabrowser](#exp106--default-gitignore-observation-versus-nocontrols-on-metabrowser) | H107 | `default-tree` | +1.6% | ❌ rejected |
+| 107 | [Installed CLI metadata one-shot stays cold scan on frameworks](#exp107--installed-cli-metadata-oneshot-stays-cold-scan-on-frameworks) | H108 | `cli-default-tree` | -0.6% | ✅ accepted |
+| 108 | [Deciding-scale content-cache-hit profile on metabrowser](#exp108--decidingscale-contentcachehit-profile-on-metabrowser) | H109 | `content-cache-hit` | -0.3% | 📏 baseline |
+| 109 | [Sidecar restore stage split on metabrowser](#exp109--sidecar-restore-stage-split-on-metabrowser) | H112 | `content-cache-hit` | +0.3% | 📏 baseline |
+| 110 | [Cache-only completeness by file count on metabrowser](#exp110--cacheonly-completeness-by-file-count-on-metabrowser) | H113 | `content-cache-hit` | -7.6% | ❌ rejected |
+| 111 | [Type-id get-mut on roll-up add on metabrowser](#exp111--typeid-getmut-on-rollup-add-on-metabrowser) | H114 | `content-cache-hit` | -0.6% | ❌ rejected |
+| 112 | [Bottom-up roll-up after sidecar restore](#exp112--bottomup-rollup-after-sidecar-restore) | H115 | `content-cache-hit` | -9.7% | ✅ accepted |
+| 114 | [Restore path lookup without analysis_candidates HashMap](#exp114--restore-path-lookup-without-analysiscandidates-hashmap) | H116 | `content-cache-hit` | +8.7% | ❌ rejected |
+| 115 | [First-pass analyze insert-then-rebuild on metabrowser](#exp115--firstpass-analyze-insertthenrebuild-on-metabrowser) | H118 | `content-basic` | -2.6% | ❌ rejected |
+| 116 | [Opened-root second report versus one-shot on frameworks](#exp116--openedroot-second-report-versus-oneshot-on-frameworks) | H117 | `default-tree` | -99.9% | ✅ accepted |
+| 117 | [Stream sidecar parse-into-apply on metabrowser](#exp117--stream-sidecar-parseintoapply-on-metabrowser) | H120 | `content-cache-hit` | -10.1% | ✅ accepted |
 
 ## The experiments
 
@@ -3672,6 +3684,345 @@ On this virtualized Linux host the warm content open is not instruction-bound.
 Full record:
 [`exp-104-hash-the-content-roll-up-map-by-path-bytes-instead-of-compon.md`](../experiments/exp-104-hash-the-content-roll-up-map-by-path-bytes-instead-of-compon.md)
 
+### exp-105 — Post-0.1.0 uncontrolled baseline on the rustup store
+
+📏 baseline · 2026-09-19 · no hypothesis id · commit `285a41d2`
+
+**`default-tree`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 149.8 |
+| component (ms) | 143.9 |
+| cpu (ms) | 675.9 |
+| user (ms) | 61.3 |
+| system (ms) | 614.5 |
+| peak rss (MiB) | 33.0 |
+
+Other jobs, wall time: `cold-scan-index` 297 ms.
+
+**Baseline:** default-tree 149.8 ms and cold-scan-index 297.1 ms on 77132 entries; quiet
+cell could not hold.
+
+Full record:
+[`exp-105-post-0-1-0-uncontrolled-baseline-on-the-rustup-store.md`](../experiments/exp-105-post-0-1-0-uncontrolled-baseline-on-the-rustup-store.md)
+
+### exp-106 — Default gitignore observation versus no-controls on metabrowser
+
+❌ rejected · 2026-09-19 · H107 · commit `285a41d2`
+
+Control: same probe with --no-controls
+
+Candidate: same probe shipped default read_controls on
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 338.6 | 341.6 | +1.64% (n.s.) | [-4.00%, +4.37%] |
+| component (ms) | 332.6 | 335.3 | +1.61% (n.s.) | [-3.49%, +4.47%] |
+| cpu (ms) | 1923.6 | 1946.4 | +1.12% (n.s.) | [-1.69%, +6.04%] |
+| user (ms) | 128.3 | 156.9 | +22.33% (regression) | [+13.09%, +28.52%] |
+| system (ms) | 1786.4 | 1793.1 | -0.17% (n.s.) | [-3.98%, +5.16%] |
+| peak rss (MiB) | 56.4 | 52.4 | -6.85% | [-7.38%, -5.87%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Rejected:** wall +1.64% [-4.00%, +4.37%]; user CPU +22% and RSS -6.9% cancelled on the
+critical path.
+
+Full record:
+[`exp-106-default-gitignore-observation-versus-no-controls-on-metabrow.md`](../experiments/exp-106-default-gitignore-observation-versus-no-controls-on-metabrow.md)
+
+### exp-107 — Installed CLI metadata one-shot stays cold scan on frameworks
+
+✅ accepted · 2026-09-19 · H108 · commit `bd03cd6c`
+
+Control: first isolated-cache fdu PATH after OS warmup
+
+Candidate: second fdu PATH sharing that cache
+
+**`cli-default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2100.0 | 2060.0 | -0.62% (n.s.) | [-4.97%, +4.04%] |
+| peak rss (MiB) | 89.8 | 89.3 | -0.75% (n.s.) | [-1.46%, +1.46%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Accepted:** H108 confirmed: all 12 second runs stayed cold scan; wall -0.63%
+[-4.97%, +4.05%], median inside 3%. No engine change.
+
+Full record:
+[`exp-107-installed-cli-metadata-one-shot-stays-cold-scan-on-framework.md`](../experiments/exp-107-installed-cli-metadata-one-shot-stays-cold-scan-on-framework.md)
+
+### exp-108 — Deciding-scale content-cache-hit profile on metabrowser
+
+📏 baseline · 2026-09-19 · H109 · commit `a35a4cee`
+
+**`content-cache-hit`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 1218.0 |
+| component (ms) | 916.7 |
+| cpu (ms) | 1205.6 |
+| user (ms) | 1100.6 |
+| system (ms) | 103.7 |
+| blocked (ms) | 15.1 |
+| peak rss (MiB) | 378.2 |
+
+**Baseline:** install_controls is 7.2 percent of the profile on 146k entries, down from
+19 percent on 3k; Path rewrite is not justified.
+
+Full record:
+[`exp-108-deciding-scale-content-cache-hit-profile-on-metabrowser.md`](../experiments/exp-108-deciding-scale-content-cache-hit-profile-on-metabrowser.md)
+
+### exp-109 — Sidecar restore stage split on metabrowser
+
+📏 baseline · 2026-09-19 · H112 · commit `0ec489e7af94f2a647d1ed94ac55f214fac5e477`
+
+**`content-cache-hit`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 1195.5 |
+| component (ms) | 891.2 |
+| cpu (ms) | 1183.3 |
+| user (ms) | 1088.6 |
+| system (ms) | 95.3 |
+| blocked (ms) | 11.6 |
+| peak rss (MiB) | 387.6 |
+
+**Baseline:** apply dominates restore (timers 63 percent, sample 54 percent of
+load_content); parse is about 10 percent; wall non-inferior so timers stay.
+
+Full record:
+[`exp-109-sidecar-restore-stage-split-on-metabrowser.md`](../experiments/exp-109-sidecar-restore-stage-split-on-metabrowser.md)
+
+### exp-110 — Cache-only completeness by file count on metabrowser
+
+❌ rejected · 2026-09-19 · H113
+
+Control: current HEAD with H112 timers at 4998ee73
+
+Candidate: file-count completeness instead of walking analysis_candidates
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1246.3 | 1156.8 | -7.59% (n.s.) | [-10.76%, +2.24%] |
+| component (ms) | 937.6 | 836.9 | -13.07% | [-14.30%, -7.89%] |
+| cpu (ms) | 1222.1 | 1114.0 | -9.86% | [-11.25%, -6.75%] |
+| user (ms) | 1108.8 | 1002.3 | -9.79% | [-10.19%, -8.04%] |
+| system (ms) | 113.4 | 110.0 | -12.47% | [-16.89%, -0.64%] |
+| blocked (ms) | 24.0 | 46.1 | +77.81% (n.s.) | [-3.60%, +285.77%] |
+| peak rss (MiB) | 379.6 | 375.9 | -1.06% | [-2.81%, -0.57%] |
+
+Cost to carry: 20 lines; no new dependencies.
+
+file-count completeness shortcut measured and reverted; incomplete-sidecar fail-closed
+test kept
+
+**Rejected:** wall -7.59 percent but interval includes zero; shortcut reverted.
+
+Full record:
+[`exp-110-cache-only-completeness-by-file-count-on-metabrowser.md`](../experiments/exp-110-cache-only-completeness-by-file-count-on-metabrowser.md)
+
+### exp-111 — Type-id get-mut on roll-up add on metabrowser
+
+❌ rejected · 2026-09-19 · H114
+
+Control: current HEAD with H112 timers at c06d09e7
+
+Candidate: get_mut before entry for ContentRollUp type-id String
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1328.9 | 1290.9 | -0.56% (n.s.) | [-17.92%, +4.79%] |
+| component (ms) | 1003.4 | 952.0 | -1.34% (n.s.) | [-16.90%, +4.31%] |
+| cpu (ms) | 1264.7 | 1243.5 | -0.79% (n.s.) | [-5.50%, +1.48%] |
+| user (ms) | 1123.4 | 1107.6 | -0.96% (n.s.) | [-4.51%, +0.20%] |
+| system (ms) | 141.3 | 136.2 | -1.82% (n.s.) | [-14.23%, +12.60%] |
+| blocked (ms) | 59.7 | 40.2 | +15.90% (n.s.) | [-77.83%, +97.78%] |
+| peak rss (MiB) | 386.5 | 388.8 | +0.64% (regression) | [+0.29%, +0.80%] |
+
+Cost to carry: 16 lines; no new dependencies.
+
+get_mut before entry on by_type; no unsafe; reverted after reject
+
+**Rejected:** wall -0.56 percent but interval includes zero; type-id alloc trim
+reverted.
+
+Full record:
+[`exp-111-type-id-get-mut-on-roll-up-add-on-metabrowser.md`](../experiments/exp-111-type-id-get-mut-on-roll-up-add-on-metabrowser.md)
+
+### exp-112 — Bottom-up roll-up after sidecar restore
+
+✅ accepted · 2026-09-19 · H115 · commit `7798fdc1`
+
+Control: current HEAD with H112 timers at 2736ec16
+
+Candidate: one bottom-up ContentRollUp rebuild after restore inserts
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1287.6 | 1174.1 | -9.69% | [-26.02%, -7.13%] |
+| component (ms) | 959.1 | 855.6 | -10.54% | [-30.23%, -8.80%] |
+| cpu (ms) | 1243.6 | 1145.3 | -8.62% | [-10.99%, -7.00%] |
+| user (ms) | 1113.9 | 1022.6 | -8.23% | [-11.11%, -7.73%] |
+| system (ms) | 129.7 | 123.7 | -2.23% (n.s.) | [-22.52%, +0.13%] |
+| blocked (ms) | 42.4 | 23.8 | -48.54% | [-86.75%, -6.30%] |
+| peak rss (MiB) | 387.6 | 389.8 | +0.54% (regression) | [+0.17%, +0.82%] |
+
+Wall-time tail: control p95 is 1.51x its median and candidate 1.03x. The verdict above
+is on the median; a reader deciding whether this is faster to *use* should read the tail
+beside it.
+
+Cost to carry: 167 lines; no new dependencies.
+
+restore-only commit_without_rollup plus ContentRollUp::merge; incremental commit
+unchanged; no unsafe
+
+**Accepted:** wall -9.69 percent [-26.02%, -7.13%]; user CPU confirms the apply cut;
+restore-only rebuild kept.
+
+Full record:
+[`exp-112-bottom-up-roll-up-after-sidecar-restore.md`](../experiments/exp-112-bottom-up-roll-up-after-sidecar-restore.md)
+
+### exp-114 — Restore path lookup without analysis_candidates HashMap
+
+❌ rejected · 2026-09-19 · H116 · commit `7f289d5f`
+
+Control: HEAD at 7f289d5f with H115 in
+
+Candidate: Index lookup plus restore-only classify skip
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1475.4 | 1573.7 | +8.70% (n.s.) | [-19.33%, +63.90%] |
+| component (ms) | 1122.9 | 978.6 | -16.20% (n.s.) | [-25.30%, +43.91%] |
+| cpu (ms) | 1217.7 | 1029.3 | -15.05% | [-17.04%, -13.30%] |
+| user (ms) | 1073.4 | 904.3 | -15.65% | [-16.12%, -14.32%] |
+| system (ms) | 144.6 | 123.8 | -12.68% | [-25.19%, -5.79%] |
+| blocked (ms) | 246.7 | 541.2 | +71.22% (n.s.) | [-33.53%, +247.22%] |
+| peak rss (MiB) | 377.3 | 335.3 | -11.27% | [-11.65%, -10.98%] |
+
+Wall-time tail: control p95 is 4.25x its median and candidate 7.73x. The verdict above
+is on the median; a reader deciding whether this is faster to *use* should read the tail
+beside it.
+
+Cost to carry: 50 lines; no new dependencies; new failure mode: wall interval includes
+zero under host contention.
+
+**Rejected:** wall +8.70 percent [-19.33%, +63.90%]; user CPU moved; engine reverted.
+
+Full record:
+[`exp-114-restore-path-lookup-without-analysis-candidates-hashmap.md`](../experiments/exp-114-restore-path-lookup-without-analysis-candidates-hashmap.md)
+
+### exp-115 — First-pass analyze insert-then-rebuild on metabrowser
+
+❌ rejected · 2026-09-19 · H118 · commit `55261e6c`
+
+Control: HEAD at 55261e6c with H115 in, H116 reverted
+
+Candidate: analyze_index apply_restored_analysis plus one rebuild
+
+**`content-basic`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 10020.6 | 10022.1 | -5.01% (n.s.) | [-13.28%, +23.39%] |
+| component (ms) | 9232.5 | 9151.2 | -2.60% (n.s.) | [-12.00%, +23.86%] |
+| cpu (ms) | 20755.2 | 20309.6 | -4.77% | [-8.03%, -1.59%] |
+| user (ms) | 5814.4 | 5545.7 | -4.53% | [-5.21%, -3.31%] |
+| system (ms) | 14887.3 | 14777.1 | -5.02% | [-9.77%, -0.64%] |
+| peak rss (MiB) | 253.1 | 254.2 | +1.39% (n.s.) | [-0.70%, +7.95%] |
+
+Wall-time tail: control p95 is 1.22x its median and candidate 1.55x. The verdict above
+is on the median; a reader deciding whether this is faster to *use* should read the tail
+beside it.
+
+Cost to carry: 15 lines; no new dependencies; new failure mode: file I/O hides per-file
+ancestor walk on first-pass analyze.
+
+first-pass insert-then-rebuild measured and reverted; incremental apply_analysis kept
+
+**Rejected:** component -2.60 percent [-12.00%, +23.86%]; file I/O hid ancestor walk;
+engine reverted.
+
+Full record:
+[`exp-115-first-pass-analyze-insert-then-rebuild-on-metabrowser.md`](../experiments/exp-115-first-pass-analyze-insert-then-rebuild-on-metabrowser.md)
+
+### exp-116 — Opened-root second report versus one-shot on frameworks
+
+✅ accepted · 2026-09-19 · H117 · commit `2c6535c8`
+
+Control: same probe default-tree one-shot
+
+Candidate: opened-second-report second retained tree read
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2612.2 | 2361.9 | -2.16% (n.s.) | [-3.88%, +2.75%] |
+| component (ms) | 2604.6 | 2350.1 | -2.32% (n.s.) | [-4.22%, +2.89%] |
+| cpu (ms) | 21664.8 | 17047.9 | -3.81% (n.s.) | [-13.11%, +1.26%] |
+| user (ms) | 362.7 | 351.0 | -0.90% (n.s.) | [-3.92%, +4.18%] |
+| system (ms) | 21290.1 | 16688.5 | -3.89% (n.s.) | [-13.31%, +1.36%] |
+| peak rss (MiB) | 85.1 | 85.3 | +0.04% (n.s.) | [-0.41%, +0.83%] |
+
+Other jobs, wall time: `opened-second-report` -0.1% (n.s.).
+
+Cost to carry: 120 lines; no new dependencies.
+
+probe mode opened-second-report plus harness job; no engine serving change; no CLI flag
+
+**Accepted:** opened second report 1.6ms versus default-tree 2612ms (1630x);
+determination kept; not a snapshot load.
+
+Full record:
+[`exp-116-opened-root-second-report-versus-one-shot-on-frameworks.md`](../experiments/exp-116-opened-root-second-report-versus-one-shot-on-frameworks.md)
+
+### exp-117 — Stream sidecar parse-into-apply on metabrowser
+
+✅ accepted · 2026-09-19 · H120 · commit `984e4618`
+
+Control: HEAD at 984e4618 with H115 in
+
+Candidate: stream sidecar records into apply without a decoded Vec
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1111.0 | 1103.2 | -0.59% (n.s.) | [-1.63%, +0.51%] |
+| component (ms) | 822.5 | 812.5 | -0.90% (n.s.) | [-2.34%, +0.49%] |
+| cpu (ms) | 1102.3 | 1094.3 | -0.66% (n.s.) | [-1.27%, +0.42%] |
+| user (ms) | 1008.6 | 1007.1 | +0.06% (n.s.) | [-0.52%, +0.50%] |
+| system (ms) | 94.0 | 87.9 | -8.13% | [-16.77%, -1.72%] |
+| blocked (ms) | 10.8 | 9.4 | +2.01% (n.s.) | [-27.63%, +54.98%] |
+| peak rss (MiB) | 377.5 | 339.4 | -10.13% | [-10.49%, -10.03%] |
+
+Cost to carry: 80 lines; no new dependencies.
+
+parse-into-apply; fail-closed clear_content on a bad record; no unsafe
+
+**Accepted:** peak RSS -10.13 percent [-10.49%, -10.03%]; wall non-inferior; streaming
+restore kept.
+
+Full record:
+[`exp-117-stream-sidecar-parse-into-apply-on-metabrowser.md`](../experiments/exp-117-stream-sidecar-parse-into-apply-on-metabrowser.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -3711,6 +4062,20 @@ Baselines show one value because they measure a state rather than a change.
 | 025 | Revisit worker depth after macOS bulk metadata | `cold-scan-index` | 3,700.5 | 4,374.3 | +19.2% | ❌ rejected |
 | 026 | Reuse macOS bulk metadata during full reconciliation | `warm-revalidate` | 21,161.5 | 14,014.3 | -34.4% | ✅ accepted |
 | 030 | Elide unchanged entries in bounded parallel reconciliation waves | `warm-revalidate` | 14,463.4 | 5,708.1 | -59.5% | ✅ accepted |
+
+### metabrowser-clone (145,931 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 106 | Default gitignore observation versus no-controls on metabrowser | `default-tree` | 338.6 | 341.6 | +1.6% | ❌ rejected |
+| 108 | Deciding-scale content-cache-hit profile on metabrowser | `content-cache-hit` | 1,218.0 | — | — | 📏 baseline |
+| 109 | Sidecar restore stage split on metabrowser | `content-cache-hit` | 1,195.5 | — | — | 📏 baseline |
+| 110 | Cache-only completeness by file count on metabrowser | `content-cache-hit` | 1,246.3 | 1,156.8 | -7.6% | ❌ rejected |
+| 111 | Type-id get-mut on roll-up add on metabrowser | `content-cache-hit` | 1,328.9 | 1,290.9 | -0.6% | ❌ rejected |
+| 112 | Bottom-up roll-up after sidecar restore | `content-cache-hit` | 1,287.6 | 1,174.1 | -9.7% | ✅ accepted |
+| 114 | Restore path lookup without analysis_candidates HashMap | `content-cache-hit` | 1,475.4 | 1,573.7 | +8.7% | ❌ rejected |
+| 115 | First-pass analyze insert-then-rebuild on metabrowser | `content-basic` | 10,020.6 | 10,022.1 | -5.0% | ❌ rejected |
+| 117 | Stream sidecar parse-into-apply on metabrowser | `content-cache-hit` | 1,111.0 | 1,103.2 | -0.6% | ✅ accepted |
 
 ### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
@@ -3864,6 +4229,13 @@ Baselines show one value because they measure a state rather than a change.
 | 054 | Validate the Linux campaign’s cumulative effect on macOS | `warm-revalidate` | 393.0 | 335.7 | -15.7% | ✅ accepted |
 | 055 | Validate review fixes on macOS | `cold-scan-index` | 304.9 | 297.5 | -0.9% | ✅ accepted |
 
+### system-private-frameworks (158,705 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 107 | Installed CLI metadata one-shot stays cold scan on frameworks | `cli-default-tree` | 2,100.0 | 2,060.0 | -0.6% | ✅ accepted |
+| 116 | Opened-root second report versus one-shot on frameworks | `default-tree` | 2,612.2 | 2,361.9 | -2.2% | ✅ accepted |
+
 ### cargo-registry-src (13,020 entries) — Linux 6.18.44-fc-v21, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -3977,6 +4349,12 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 079 | Resolve scanner parents before mutation | `opened-discovery` | 309.0 | 280.8 | -9.5% | ✅ accepted |
+
+### rustup-toolchains (77,132 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 105 | Post-0.1.0 uncontrolled baseline on the rustup store | `default-tree` | 149.8 | — | — | 📏 baseline |
 
 ### selfhost-content (307 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

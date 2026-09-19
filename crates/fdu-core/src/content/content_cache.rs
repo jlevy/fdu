@@ -17,7 +17,8 @@ use crate::{Error, Fingerprint, Index, Result};
 
 use super::{
     AnalysisApplyOutcome, AnalysisObservation, AnalysisRequest, AnalysisSet, AnalyzerId,
-    AnalyzerVersion, CoverageReason, FileAnalysis, LogicalWordStats, MetricValues,
+    AnalyzerVersion, ContentProvenance, CoverageReason, FileAnalysis, LogicalWordStats,
+    MetricValues,
 };
 
 const MAGIC: &[u8; 8] = b"FDUCTNT\0";
@@ -137,10 +138,22 @@ pub fn load_content_cache(
     if metadata.len() > MAX_CACHE_BYTES {
         return Ok(ContentCacheLoad::default());
     }
+    let read_started = crate::counters::enabled().then(std::time::Instant::now);
     let image = fs::read(path).map_err(|error| Error::io(path, error))?;
-    let Some(records) = parse(&image, index.root_path(), wanted) else {
+    crate::counters::add_elapsed(read_started, |counts, elapsed| {
+        counts.content_sidecar_read_us = counts.content_sidecar_read_us.saturating_add(elapsed);
+    });
+    let parse_started = crate::counters::enabled().then(std::time::Instant::now);
+    let Some(mut stream) = parse_header(&image, index.root_path(), wanted) else {
+        crate::counters::add_elapsed(parse_started, |counts, elapsed| {
+            counts.content_sidecar_parse_us =
+                counts.content_sidecar_parse_us.saturating_add(elapsed);
+        });
         return Ok(ContentCacheLoad::default());
     };
+    crate::counters::add_elapsed(parse_started, |counts, elapsed| {
+        counts.content_sidecar_parse_us = counts.content_sidecar_parse_us.saturating_add(elapsed);
+    });
     index.prepare_content_analysis(AnalysisRequest {
         profile: wanted.analysis,
         ..AnalysisRequest::default()
@@ -158,13 +171,31 @@ pub fn load_content_cache(
     // over every file on every open — including a cache-only one, which then discards
     // the result in favour of the classification the sidecar already stored. That is
     // the real cost on this path and it is tracked separately (`fdu-926e`).
+    let candidates_started = crate::counters::enabled().then(std::time::Instant::now);
     let mut candidates = index
         .analysis_candidates(wanted.analysis)
         .into_iter()
         .map(|candidate| (candidate.relative_path.clone(), candidate))
         .collect::<HashMap<_, _>>();
+    crate::counters::add_elapsed(candidates_started, |counts, elapsed| {
+        counts.content_sidecar_candidates_us =
+            counts.content_sidecar_candidates_us.saturating_add(elapsed);
+    });
     let mut loaded = ContentCacheLoad { usable: true, ..ContentCacheLoad::default() };
-    for (relative_path, analysis) in records {
+    for _ in 0..stream.remaining {
+        let decode_started = crate::counters::enabled().then(std::time::Instant::now);
+        let Some((relative_path, analysis)) = read_record(&mut stream) else {
+            crate::counters::add_elapsed(decode_started, |counts, elapsed| {
+                counts.content_sidecar_parse_us =
+                    counts.content_sidecar_parse_us.saturating_add(elapsed);
+            });
+            index.clear_content();
+            return Ok(ContentCacheLoad::default());
+        };
+        crate::counters::add_elapsed(decode_started, |counts, elapsed| {
+            counts.content_sidecar_parse_us =
+                counts.content_sidecar_parse_us.saturating_add(elapsed);
+        });
         let Some(candidate) = candidates.remove(&relative_path) else {
             loaded.stale = loaded.stale.saturating_add(1);
             continue;
@@ -176,7 +207,13 @@ pub fn load_content_cache(
         let coverage_exclusion =
             !matches!(analysis.coverage, CoverageReason::Analyzed | CoverageReason::Binary);
         let bytes = analysis.bytes;
-        match index.apply_analysis(AnalysisObservation { candidate, analysis }) {
+        let apply_started = crate::counters::enabled().then(std::time::Instant::now);
+        let outcome = index.apply_restored_analysis(AnalysisObservation { candidate, analysis });
+        crate::counters::add_elapsed(apply_started, |counts, elapsed| {
+            counts.content_sidecar_apply_us =
+                counts.content_sidecar_apply_us.saturating_add(elapsed);
+        });
+        match outcome {
             AnalysisApplyOutcome::Applied => {
                 loaded.hits = loaded.hits.saturating_add(1);
                 loaded.bytes = loaded.bytes.saturating_add(bytes);
@@ -186,6 +223,15 @@ pub fn load_content_cache(
             AnalysisApplyOutcome::Stale => loaded.stale = loaded.stale.saturating_add(1),
         }
     }
+    if !stream.reader.is_empty() {
+        index.clear_content();
+        return Ok(ContentCacheLoad::default());
+    }
+    let rebuild_started = crate::counters::enabled().then(std::time::Instant::now);
+    index.rebuild_content_rollups();
+    crate::counters::add_elapsed(rebuild_started, |counts, elapsed| {
+        counts.content_sidecar_apply_us = counts.content_sidecar_apply_us.saturating_add(elapsed);
+    });
     Ok(loaded)
 }
 
@@ -395,12 +441,20 @@ fn read_identity(reader: &mut Reader<'_>, engine: u64) -> Option<ContentTierIden
     })
 }
 
+/// Header-only sidecar parse. Records are decoded one at a time by [`read_record`].
+struct RecordStream<'a> {
+    reader: Reader<'a>,
+    remaining: u64,
+    profile: AnalysisSet,
+    provenance: ContentProvenance,
+}
+
 /// Parse a sidecar for `root` whose content tier identity equals `wanted`.
-fn parse(
-    image: &[u8],
+fn parse_header<'a>(
+    image: &'a [u8],
     root: &Path,
     wanted: &ContentTierIdentity,
-) -> Option<Vec<(PathBuf, FileAnalysis)>> {
+) -> Option<RecordStream<'a>> {
     let payload = integrity_payload(image)?;
     let mut reader = Reader::new(payload.get(MAGIC.len()..)?);
     if reader.u32()? != FORMAT_VERSION {
@@ -425,43 +479,44 @@ fn parse(
     if count > MAX_RECORDS {
         return None;
     }
-    let mut records = Vec::with_capacity(usize::try_from(count).ok()?);
-    for _ in 0..count {
-        let relative_path = PathBuf::from(reader.os_string()?);
-        if !record_path_stays_inside_root(&relative_path) {
-            return None;
-        }
-        let fingerprint = read_fingerprint(&mut reader)?;
-        let bytes = reader.u64()?;
-        let file_type = String::from_utf8(reader.bytes(MAX_TYPE_BYTES)?).ok()?;
-        if file_type.is_empty() {
-            return None;
-        }
-        let classification = Classification {
-            file_type: FileTypeId::from_cache(file_type),
-            family: read_family(reader.u8()?)?,
-            source: read_source(reader.u8()?)?,
-            confidence: read_confidence(reader.u8()?)?,
-            flags: read_flags(reader.u8()?)?,
-        };
-        let metrics = read_metrics(&mut reader)?;
-        let coverage = read_coverage(reader.u8()?)?;
-        let error = String::from_utf8(reader.bytes(MAX_ERROR_BYTES)?).ok()?;
-        records.push((
-            relative_path,
-            FileAnalysis {
-                classification,
-                fingerprint,
-                bytes,
-                profile,
-                provenance: provenance.clone(),
-                metrics,
-                coverage,
-                error: (!error.is_empty()).then_some(error),
-            },
-        ));
+    Some(RecordStream { reader, remaining: count, profile, provenance })
+}
+
+fn read_record(stream: &mut RecordStream<'_>) -> Option<(PathBuf, FileAnalysis)> {
+    let relative_path = PathBuf::from(stream.reader.os_string()?);
+    if !record_path_stays_inside_root(&relative_path) {
+        return None;
     }
-    reader.is_empty().then_some(records)
+    let fingerprint = read_fingerprint(&mut stream.reader)?;
+    let bytes = stream.reader.u64()?;
+    let file_type = String::from_utf8(stream.reader.bytes(MAX_TYPE_BYTES)?).ok()?;
+    if file_type.is_empty() {
+        return None;
+    }
+    let classification = Classification {
+        file_type: FileTypeId::from_cache(file_type),
+        family: read_family(stream.reader.u8()?)?,
+        source: read_source(stream.reader.u8()?)?,
+        confidence: read_confidence(stream.reader.u8()?)?,
+        flags: read_flags(stream.reader.u8()?)?,
+    };
+    let metrics = read_metrics(&mut stream.reader)?;
+    let coverage = read_coverage(stream.reader.u8()?)?;
+    let error = String::from_utf8(stream.reader.bytes(MAX_ERROR_BYTES)?).ok()?;
+    stream.remaining = stream.remaining.saturating_sub(1);
+    Some((
+        relative_path,
+        FileAnalysis {
+            classification,
+            fingerprint,
+            bytes,
+            profile: stream.profile,
+            provenance: stream.provenance.clone(),
+            metrics,
+            coverage,
+            error: (!error.is_empty()).then_some(error),
+        },
+    ))
 }
 
 /// Whether a sidecar record's path is relative and never ascends, so it names an entry
@@ -842,6 +897,38 @@ mod tests {
     fn load(index: &mut Index, request: AnalysisRequest, cache: &Path) -> ContentCacheLoad {
         let wanted = index.content_identity(request.profile);
         load_content_cache(index, &wanted, cache).expect("load")
+    }
+
+    /// Restore rebuilds nested directory roll-ups, not only the root.
+    ///
+    /// The probe content digest hashes the root roll-up; the `ContentIndex` unit test is
+    /// the in-memory H115 check. This is the sidecar-boundary half of that claim.
+    #[test]
+    fn sidecar_restore_rebuilds_nested_directory_rollups() {
+        let root = tempfile::tempdir().expect("root");
+        let cache_dir = tempfile::tempdir().expect("cache dir");
+        fs::create_dir_all(root.path().join("a/b")).expect("dirs");
+        fs::write(root.path().join("notes.md"), "one two\n").expect("write");
+        fs::write(root.path().join("a/keep.rs"), "fn keep() {}\n").expect("write");
+        fs::write(root.path().join("a/b/nested.rs"), "fn nested() {}\n").expect("write");
+        let request = request_for(AnalysisSet::NONE.with_lines());
+        let (mut analyzed, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        super::super::analyze_index(&mut analyzed, request);
+        let cache = cache_dir.path().join("content.cache");
+        save_content_cache(&analyzed, &cache).expect("save");
+
+        let (mut restored, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        let loaded = load(&mut restored, request, &cache);
+        assert!(loaded.usable && loaded.hits == 3, "{loaded:?}");
+        for dir in ["", "a", "a/b"] {
+            assert_eq!(
+                restored.content_rollup(Path::new(dir)),
+                analyzed.content_rollup(Path::new(dir)),
+                "{dir:?} roll-up"
+            );
+        }
     }
 
     /// A sidecar serves exactly the analyzer set it was written for. A wider one holds

@@ -43,6 +43,13 @@ impl MetricTally {
             self.metrics.sub_assign(&analysis.metrics);
         }
     }
+
+    fn merge(&mut self, other: &Self) {
+        self.files = self.files.saturating_add(other.files);
+        self.bytes = self.bytes.saturating_add(other.bytes);
+        self.analyzed_files = self.analyzed_files.saturating_add(other.analyzed_files);
+        self.metrics.add_assign(&other.metrics);
+    }
 }
 
 /// Content totals for one directory subtree.
@@ -90,6 +97,28 @@ impl ContentRollUp {
             if *count == 0 {
                 self.coverage.remove(&analysis.coverage);
             }
+        }
+    }
+
+    fn merge(&mut self, other: &Self) {
+        self.total.merge(&other.total);
+        for (type_id, tally) in &other.by_type {
+            if let Some(existing) = self.by_type.get_mut(type_id) {
+                existing.merge(tally);
+            } else {
+                self.by_type.insert(type_id.clone(), tally.clone());
+            }
+        }
+        for (family, tally) in &other.by_family {
+            if let Some(existing) = self.by_family.get_mut(family) {
+                existing.merge(tally);
+            } else {
+                self.by_family.insert(*family, tally.clone());
+            }
+        }
+        for (reason, count) in &other.coverage {
+            let slot = self.coverage.entry(*reason).or_default();
+            *slot = slot.saturating_add(*count);
         }
     }
 }
@@ -224,6 +253,25 @@ impl ContentIndex {
     /// match neither request.
     #[must_use = "a refused record was not committed"]
     pub(crate) fn commit(&mut self, path: PathBuf, analysis: FileAnalysis) -> bool {
+        self.commit_record(path, analysis, true)
+    }
+
+    /// Insert or replace a record without touching roll-ups.
+    ///
+    /// Sidecar restore inserts every cached file first, then rebuilds directory
+    /// totals once. Incremental [`commit`] still walks ancestors per file.
+    #[must_use = "a refused record was not committed"]
+    pub(crate) fn commit_without_rollup(&mut self, path: PathBuf, analysis: FileAnalysis) -> bool {
+        self.commit_record(path, analysis, false)
+    }
+
+    #[must_use = "a refused record was not committed"]
+    fn commit_record(
+        &mut self,
+        path: PathBuf,
+        analysis: FileAnalysis,
+        update_rollups: bool,
+    ) -> bool {
         let Some(identity) = &self.identity else {
             return false;
         };
@@ -232,9 +280,13 @@ impl ContentIndex {
         }
         let key = PathKey::new(path);
         if let Some(previous) = self.files.remove(key.bytes()) {
-            self.merge_ancestors(&key.0, &previous, false);
+            if update_rollups {
+                self.merge_ancestors(&key.0, &previous, false);
+            }
         }
-        self.merge_ancestors(&key.0, &analysis, true);
+        if update_rollups {
+            self.merge_ancestors(&key.0, &analysis, true);
+        }
         self.files.insert(key, analysis);
         true
     }
@@ -305,6 +357,59 @@ impl ContentIndex {
                 }
             }
             directory = path.parent();
+        }
+    }
+
+    /// Rebuild every directory roll-up from the files now held.
+    ///
+    /// Each file is added only to its parent, then each directory merges into its
+    /// parent from the deepest path first. That is O(files + dirs); walking every
+    /// ancestor of every file is O(files × depth).
+    pub(crate) fn rebuild_rollups(&mut self) {
+        self.rollups.clear();
+        for (key, analysis) in &self.files {
+            let Some(parent) = key.0.parent() else {
+                continue;
+            };
+            if let Some(rollup) = self.rollups.get_mut(parent) {
+                rollup.add(analysis);
+            } else {
+                self.rollups.entry(parent.to_path_buf()).or_default().add(analysis);
+            }
+        }
+
+        let parents: Vec<PathBuf> = self.rollups.keys().cloned().collect();
+        for dir in &parents {
+            let mut ancestor = dir.parent();
+            while let Some(path) = ancestor {
+                if !self.rollups.contains_key(path) {
+                    self.rollups.insert(path.to_path_buf(), ContentRollUp::default());
+                }
+                ancestor = path.parent();
+            }
+        }
+
+        let mut dirs: Vec<PathBuf> = self.rollups.keys().cloned().collect();
+        dirs.sort_unstable_by(|left, right| {
+            right
+                .components()
+                .count()
+                .cmp(&left.components().count())
+                .then_with(|| left.as_os_str().cmp(right.as_os_str()))
+        });
+        for dir in dirs {
+            let Some(parent) = dir.parent() else {
+                continue;
+            };
+            let Some(child) = self.rollups.remove(&dir) else {
+                continue;
+            };
+            if let Some(parent_rollup) = self.rollups.get_mut(parent) {
+                parent_rollup.merge(&child);
+            } else {
+                self.rollups.entry(parent.to_path_buf()).or_default().merge(&child);
+            }
+            self.rollups.insert(dir, child);
         }
     }
 }
@@ -527,5 +632,33 @@ mod tests {
                 Path::new("b/x.rs")
             ]
         );
+    }
+
+    #[test]
+    fn bottom_up_rebuild_matches_incremental_nested_rollups() {
+        let paths = ["README.md", "a/keep.rs", "a/b/nested.rs", "a/b/c/deep.rs", "a/b/c/other.py"];
+        let mut incremental = prepared();
+        for path in paths {
+            commit(&mut incremental, path, analysis(path, 3));
+        }
+
+        let mut rebuilt = prepared();
+        for path in paths {
+            assert!(
+                rebuilt.commit_without_rollup(PathBuf::from(path), analysis(path, 3)),
+                "{path} must commit"
+            );
+        }
+        assert!(rebuilt.rollup(Path::new("")).is_none(), "deferred inserts leave roll-ups empty");
+        rebuilt.rebuild_rollups();
+
+        for dir in ["", "a", "a/b", "a/b/c"] {
+            assert_eq!(
+                rebuilt.rollup(Path::new(dir)),
+                incremental.rollup(Path::new(dir)),
+                "{dir:?} roll-up"
+            );
+        }
+        assert_eq!(rebuilt, incremental);
     }
 }
