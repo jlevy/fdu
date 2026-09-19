@@ -214,7 +214,7 @@ Do not retry H118 uncontrolled.
 `BasicAccumulator::push_text` 5.47%; `fdu::scan` 0.13%; `getattrlistbulk` 0.48%. Walk
 overlap cannot clear 3% wall.
 `openat` from a retained parent dirfd is the leftover named cut and needs a new `unsafe`
-block; the overnight complexity bar forbids that.
+block (person-gated).
 No pair. No engine change.
 Do not retry walk-overlap.
 
@@ -280,8 +280,8 @@ Next free hypothesis id is **H125**. Do not mint another meaning for H91–H106.
 experiment id is **exp-113** (reserved for H113 quiet).
 After that, **exp-118**.
 
-1. **H113** (`fdu-rfr6`). **Needs quiet host.** Morning is the intended cell.
-   Quiet confirmatory after H115. Official start gate refused 2026-09-19 at 46.7% busy.
+1. **H113** (`fdu-rfr6`). **Needs quiet host.** Quiet confirmatory after H115. Official
+   start gate refused 2026-09-19 at 46.7% busy.
    Later incomplete quiet cells are not a verdict.
    Do not run uncontrolled.
    If the gate fails, skip to H122. Accept: `content-cache-hit` wall ≥3% with the
@@ -345,8 +345,7 @@ Do not retry H104–H106.
   A 2026-09-19 quiet confirmatory after H115 (`fdu-rfr6`) was refused at the start gate
   (CPU busy 46.7% > 25.0%), then later incomplete quiet cells failed to hold 12 pairs.
   The engine patch was not kept.
-  exp-113 is unused. **H113 still needs a quiet host.** Morning is the intended cell.
-  Do not run uncontrolled.
+  exp-113 is unused. **H113 still needs a quiet host.** Do not run uncontrolled.
 - Do not retry the H114 type-id `String` alloc trim on `ContentRollUp::add` (exp-111).
   Wall −0.56% [−17.92%, +4.79%]; the trim is reverted.
 - Do not retry H115. exp-112 accepted the restore-only bottom-up rebuild (−9.69%
@@ -374,7 +373,7 @@ Do not retry H104–H106.
 | Document | Role |
 | --- | --- |
 | This standing section | Pickup: standing best, H113 quiet gate, next-up order |
-| [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Remaining queue after overnight: H113, H121–H124, H107, H111 |
+| [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Remaining queue after overnight: H113, H122, H107, H123, H121, H124, H111 |
 | [The loop guide](performance-loop.md) | Protocol, accept rule, hypothesis registry |
 | [The campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) | Floor-anchored strategy; the 2026-08-23 Tier 1–3 list is history |
 | [The instrumentation playbook](performance-instrumentation-playbook.md) | Instrument before optimizing; `FDU_COUNTERS=1` |

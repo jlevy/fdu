@@ -295,12 +295,19 @@ untested on macOS.
 
 ## 6. What remains
 
-The current strategy — priorities, phases, targets, and how the campaign ends — is owned
-by [the campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md),
+Live next-up after the 2026-09-18 Darwin revisit is
+[the runbook standing](../guides/performance-loop-runbook.md#current-standing-2026-09-18)
+and
+[the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
+H86’s remaining gap is the Linux floor (H111), not a restart of the Darwin composite.
+
+The 2026-08-23 strategy — priorities, phases, targets, and how that campaign ends — is
+owned by
+[the campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md),
 which consolidated three earlier queue orderings (this section’s original table, the
 structural review’s S1–S7 sequence, and the headroom review’s re-ordering) after
 [the floor report](report-2026-08-23-metadata-walk-floor.md) gave every tier a measured
-denominator. The queue below is that plan’s summary; the plan is normative.
+denominator. The queue below is that plan’s 2026-08-23 summary, not the live pickup.
 
 | Phase | Work | Why it is where it is |
 | --- | --- | --- |

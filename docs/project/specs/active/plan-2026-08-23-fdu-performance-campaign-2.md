@@ -264,10 +264,12 @@ one round of it.
 
 The 0.1.0 engine shipped (request model, opened root, watch, `.gitignore` default-on,
 content sidecar). A 2026-09-18 revisit recorded exp-105 (uncontrolled rustup baseline),
-exp-106 (H107 rejected on wall), and exp-107 (H108 confirmed on the installed CLI). The
-live next-up list, host-regime note, and subject sizes are in
+exp-106 (H107 rejected on metabrowser), exp-107 (H108 confirmed: second `fdu PATH` stays
+`cold scan`), then H112 timers kept, H115 accepted (−9.69% cache-hit wall), H120
+accepted (−10.13% cache-hit RSS), H117 confirmed as a probe, and H116/H118/H119 rejected
+or screened. The live next-up list, host-regime note, and subject sizes are in
 [the runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18).
-The remaining unaddressed queue after the H116–H120 overnight is
+The remaining unaddressed queue after that overnight is
 [the remaining-headroom block](plan-2026-09-19-post-h115-remaining-headroom.md), not
 this file’s 2026-08-23 Tier 1–3 list.
 H86’s remaining gap is the Linux floor (H111 / `fdu-jekg`), not a rewrite, and not this
@@ -517,7 +519,8 @@ strategy and the record is visible in review.
 - [The performance-loop runbook](../../guides/performance-loop-runbook.md) — one
   unattended round and the 2026-09-18 standing
 - [Post-H115 remaining headroom](plan-2026-09-19-post-h115-remaining-headroom.md) —
-  remaining queue after the H116–H120 overnight (H113, H121–H124, H107, H111)
+  remaining queue after the H116–H120 overnight (H113, H122, H107, H123, H121, H124,
+  H111)
 - [The cache layers plan](../done/plan-2026-08-15-fdu-cache-layers-and-defaults.md) —
   the cost model this plan’s warm posture rests on
 - [The fsevents plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md) — the journal

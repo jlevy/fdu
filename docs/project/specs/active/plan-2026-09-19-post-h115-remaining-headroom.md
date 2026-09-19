@@ -5,11 +5,12 @@
 **Author:** fdu project
 
 **Status:** Active. Overnight H116–H120 is done.
-This file is now the remaining unaddressed-hypothesis queue after that overnight: H113
-(quiet), H121–H124, H107 (ignore-is-the-walk only), and H111 (not this host).
+This file is the remaining unaddressed-hypothesis queue after that overnight: H113
+(quiet), H122, H107 (ignore-is-the-walk only), H123, H121, H124, and H111 (not this
+host).
 [The runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
-points here for next-up and does not keep a second copy of the rows.
-The loop guide registry remains the full hypothesis text.
+keeps an abbreviated next-up in that order; this file is the source of truth for the
+full rows. The loop guide registry remains the full hypothesis text.
 
 ## Overview
 
@@ -22,14 +23,14 @@ hypotheses, and keeps the overnight verdicts as history so they are not re-queue
 
 It is a planning block, not a measurement cell.
 It does not start a pair.
-H113 still needs a quiet host; morning is the intended cell.
+H113 still needs a quiet host.
 Do not run another uncontrolled H113.
 
 ## Goals
 
 - Name only hypotheses that are plausible at the 3% wall bar (or a structural ceiling)
   on a named job and subject, and that can be wrong
-- Register remaining work as H121–H124 in
+- Keep H121–H124 registered in
   [the loop guide](../../guides/performance-loop.md#current-engine-010); keep H113,
   H107, and H111 open with honest status
 - Own next-up after the overnight: order, metric, subject, accept-rule sketch, why next,
@@ -38,7 +39,8 @@ Do not run another uncontrolled H113.
 
 ## Non-Goals
 
-- Starting a measurement cell, keeping an engine experiment patch, or reverting H115
+- Starting a measurement cell, keeping an engine experiment patch, or reverting H115 or
+  H120
 - Loading a metadata snapshot on `fdu PATH` as a “free win” (H108 / H9)
 - Restarting the H86 structural rewrite, the `fdu-jxhk` EntryId composite, or H83 as a
   format rewrite
@@ -55,14 +57,17 @@ second content identity rule.
 
 ## Background
 
-After exp-112 the deciding-scale `content-cache-hit` standing best is 1,174.1 ms wall /
-855.6 ms component / 389.8 MiB on `metabrowser-clone` (145,931 entries / 133,597 files).
-exp-108/109 split that path before the accept:
+H115 (exp-112) is the standing wall-speed best on deciding-scale `content-cache-hit`:
+−9.69% [−26.02%, −7.13%] (accept cell 1,174.1 ms / 855.6 ms / 389.8 MiB). H120 (exp-117)
+is the standing content-hit RSS best: peak RSS −10.13% [−10.49%, −10.03%] (accept cell
+1,103.2 ms / 812.5 ms / 339.4 MiB). Absolute walls are not comparable across
+uncontrolled cells. Subject: `metabrowser-clone` (145,931 entries / 133,597 files).
+exp-108/109 split that path before those accepts:
 
-| Stage | Share | Status |
+| Stage | Share (exp-109) | Status |
 | --- | --- | --- |
 | Sidecar apply / ancestor merges | 63% of restore (sample 54% of `load_content`) | H115 took the named cut |
-| Candidate install (`analysis_candidates` + HashMap) | 25% of restore / 20% of `load_content` | Still in the engine |
+| Candidate install (`analysis_candidates` + HashMap) | 25% of restore / 20% of `load_content` | H116 rejected on wall; still in the engine |
 | Snapshot parse | 26% of engine | H78/H92; not this increment |
 | Second completeness walk | 13% of `content_open` | H113; quiet confirmatory only |
 | Sidecar parse | 8.5% of restore | Dead for wall (H112) |
@@ -70,8 +75,9 @@ exp-108/109 split that path before the accept:
 
 Metadata one-shot (`fdu PATH`) is still a cold walk (H108). First-pass `content-basic`
 still scans, then opens every admitted file, then `apply_analysis` → `merge_ancestors`
-per file. Cache-hit RSS is about 380 MiB on that tree, against about 90 MiB for a
-metadata-only CLI run of similar size.
+per file (H118 rejected insert-then-rebuild on that job).
+Cache-hit RSS was about 380 MiB on that tree before H120; the H120 accept cell is 339.4
+MiB, against about 90 MiB for a metadata-only CLI run of similar size.
 
 ## Design
 
@@ -79,18 +85,21 @@ metadata-only CLI run of similar size.
 
 Treat remaining time as four separate jobs, not one “make restore faster” leftover.
 
-1. **Metadata one-shot.** The walk is the job.
-   A snapshot cannot cheapen it.
-   The product lever that respects serving policy is opened-root retention, not a CLI
-   cache load.
-2. **Content-cache-hit.** Apply’s named ancestor-merge cut landed.
-   The next named restore stage is candidate install, then snapshot parse (already owned
-   by H78/H92).
-3. **First-pass analyze.** Incremental `commit` still walks ancestors per file.
-   File I/O is a second pass after the walk.
-   Those are different mechanisms.
-4. **RSS.** The content-hit peak is large enough to be a product constraint on
-   `--analyze` trees. Transient decode-plus-map copies are the increment that is not H86.
+1. **Metadata one-shot.** The walk is still the job (H108; instrumented ~96% of
+   `fdu PATH` wall). A snapshot cannot cheapen it.
+   Next is a deciding-scale profile (H122), then a product opened-root or refresh path
+   (H123). Not a CLI cache load.
+2. **Content-cache-hit.** H115 took the named ancestor-merge cut.
+   H116 rejected dropping the candidate-install HashMap on wall.
+   H120 took the decode-`Vec` RSS cut.
+   H113 is the quiet completeness confirmatory.
+   H121 re-profiles the mix (H83 only if apply still dominates).
+   Snapshot parse remains H78/H92.
+3. **First-pass analyze.** H118 rejected insert-then-rebuild.
+   H119 screened walk-overlap (`fdu::scan` 0.13%). Leftover I/O is H124: admit fewer
+   files, or read-ahead on the ones already admitted.
+4. **RSS.** H120 landed streaming restore.
+   That is not a landing-page files/s claim.
 
 ### Components
 
@@ -117,7 +126,6 @@ Remaining registry rows (open; full text in the loop guide):
 | H111 | H86’s remaining gap is the Linux floor and RSS claim | Linux 450k floor |
 
 H113 still needs a quiet host.
-Morning is the intended cell.
 Do not run uncontrolled.
 
 H122 is not H86 and not H111. H108’s instrumented pair put the detached walk at ~96% of
@@ -164,9 +172,9 @@ These were considered against the post-H115 path and not registered:
 
 ### Remaining Inclusion Rules
 
-- H113 quiet confirmatory (`fdu-rfr6`, exp-113) is first *if* a quiet host holds this
-  morning. If the start gate fails, skip it and take H122. Do not run another
-  uncontrolled H113. Incomplete 2026-09-19 quiet cells are not a verdict.
+- H113 quiet confirmatory (`fdu-rfr6`, exp-113) is first *if* a quiet host holds.
+  If the start gate fails, skip it and take H122. Do not run another uncontrolled H113.
+  Incomplete 2026-09-19 quiet cells are not a verdict.
   exp-113 unused.
 - Then take the remaining queue below, in order.
   After an accept, re-screen the next row: H122 may name a cut that eats H107; H121 may
@@ -187,15 +195,15 @@ These were considered against the post-H115 path and not registered:
 Take these in order.
 Overnight H116–H120 is history, not a retry list.
 
-1. **H113** (`fdu-rfr6`). **Open.
-   Needs quiet host.** Morning is the intended cell.
-   File-count completeness after H115. Metric: `content-cache-hit` wall on
-   `metabrowser-clone`, ≥3% with the interval below zero; digest identical; incomplete
-   sidecar refused. Control = HEAD with H115 and H120 in.
+1. **H113** (`fdu-rfr6`). Open.
+   Needs quiet host. File-count completeness after H115. Metric: `content-cache-hit` wall
+   on `metabrowser-clone`, ≥3% with the interval below zero; digest identical;
+   incomplete sidecar refused.
+   Control = HEAD with H115 and H120 in.
    New id **exp-113**. Do not run uncontrolled.
    What refutes: quiet interval includes zero, or the start gate fails (skip, not a
    reject). Why next: already instrumented; leftover 12.6% `content_open` walk from
-   exp-109 may have changed after H115.
+   exp-109 may have changed after H115 and H120.
 
 2. **H122** (`fdu-ytg5`). **Open.** Highest user-visible leverage.
    Deciding-scale installed-CLI / `default-tree` **profile** after the current engine
@@ -244,8 +252,8 @@ Overnight H116–H120 is history, not a retry list.
    Why next: H118/H119 showed apply and walk-overlap cannot move this job; `read` 59% /
    `__open` 17% is the leftover.
 
-7. **H111** (`fdu-jekg`). **Open.
-   Not in this host.** Linux floor stage of H86. No Linux runner on this Darwin campaign
+7. **H111** (`fdu-jekg`). Open.
+   Not in this host. Linux floor stage of H86. No Linux runner on this Darwin campaign
    machine. Do not treat a Darwin cell as this claim.
    Do not restart the rewrite.
 
