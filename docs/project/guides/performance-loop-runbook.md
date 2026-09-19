@@ -165,7 +165,13 @@ on the same `metabrowser-clone` tree, control = this HEAD with H115 in.
 `PERF_HOST_REGIME=quiet` refused at the start gate: CPU busy **46.7% > 25.0%**. No pair
 ran. The file-count shortcut was not re-measured and is not in the engine.
 exp-113 was not consumed.
-**H113 still needs a quiet host.** Do not run another uncontrolled H113.
+**H113 still needs a quiet host.** Do not run another uncontrolled H113. Later the same
+night a quiet CPU start passed, then the cell failed to hold: first thermal `fair` (0
+paired samples), then 3 pairs / 16 invalid, then 9 pairs / 4 invalid.
+Those incomplete cells are not a verdict.
+The file-count shortcut is not in the engine.
+exp-113 remains reserved.
+The 02:44 PT overnight tick skipped further H113 tonight.
 
 **exp-114 / H116** tests restore without a full `analysis_candidates` Vec+HashMap on the
 same `metabrowser-clone` tree (engine digest unchanged).
@@ -274,6 +280,8 @@ After that, **exp-118**.
 
 1. **H113** (`fdu-wrdl` / `fdu-rfr6`). Quiet confirmatory after H115. Official
    `PERF_HOST_REGIME=quiet` start gate refused 2026-09-19 at 46.7% CPU busy.
+   Later incomplete quiet cells (thermal `fair`; then 3 and 9 pairs) are not a verdict.
+   **Skipped for the rest of this overnight** (02:44 PT tick).
    **H113 still needs a quiet host.** Do not run uncontrolled.
    Same accept rule: `content-cache-hit` wall ≥3% with the interval below zero on
    `metabrowser-clone`; digest identical; incomplete sidecar refused.
@@ -324,8 +332,9 @@ Do not retry H104–H106.
 - Do not retry the H113 file-count completeness shortcut on another uncontrolled cell
   (exp-110). Median −7.59% but the interval included zero; the shortcut is reverted.
   A 2026-09-19 quiet confirmatory after H115 (`fdu-rfr6`) was refused at the start gate
-  (CPU busy 46.7% > 25.0%). The engine patch was not kept.
-  exp-113 is unused. **H113 still needs a quiet host.**
+  (CPU busy 46.7% > 25.0%), then later incomplete quiet cells failed to hold 12 pairs.
+  The engine patch was not kept.
+  exp-113 is unused. **H113 still needs a quiet host.** Not tonight (02:44 PT skip).
 - Do not retry the H114 type-id `String` alloc trim on `ContentRollUp::add` (exp-111).
   Wall −0.56% [−17.92%, +4.79%]; the trim is reverted.
 - Do not retry H115. exp-112 accepted the restore-only bottom-up rebuild (−9.69%

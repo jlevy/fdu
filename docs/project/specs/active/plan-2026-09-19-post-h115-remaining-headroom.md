@@ -140,7 +140,9 @@ These were considered against the post-H115 path and not registered:
 
 - H113 quiet confirmatory (`fdu-rfr6`, exp-113) runs first *if* a quiet host holds.
   If the start gate fails, skip it.
-  Do not run another uncontrolled H113.
+  Do not run another uncontrolled H113. 2026-09-19 02:44 PT tick: skip further H113
+  tonight. Incomplete quiet cells are not a verdict.
+  exp-113 unused.
 - Then take the queue below, in order.
   After an accept, re-screen the next row: H116 may eat H113 and part of H120; H118 may
   vanish into H119’s I/O.
