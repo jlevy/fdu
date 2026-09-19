@@ -155,6 +155,13 @@ Component −10.54% [−30.23%, −8.80%]. User CPU −8.23% [−11.11%, −7.73
 (`7798fdc1`). Every sample 133,597 cache hits / 0 applied; content digest unchanged from
 exp-108 / exp-109 / exp-110 / exp-111.
 
+**H113 quiet confirmatory** after that accept (`fdu-rfr6`) was pre-registered as exp-113
+on the same `metabrowser-clone` tree, control = this HEAD with H115 in.
+`PERF_HOST_REGIME=quiet` refused at the start gate: CPU busy **46.7% > 25.0%**. No pair
+ran. The file-count shortcut was not re-measured and is not in the engine.
+exp-113 was not consumed.
+**H113 still needs a quiet host.** Do not run another uncontrolled H113.
+
 ### Darwin Subjects
 
 The 2026-08 nominated metabrowser corpus path is gone from disk.
@@ -181,10 +188,13 @@ statement.
 Next free hypothesis id is **H116**. Do not mint another meaning for H91–H106.
 Next free experiment id is **exp-113**.
 
-1. **H113** (`fdu-wrdl`, rejected in exp-110). Do not land the file-count completeness
-   shortcut from an uncontrolled cell.
-   Median −7.59% but the interval included zero.
-   A quiet confirmatory cell would be a new experiment, not a top-up.
+1. **H113** (`fdu-wrdl` / `fdu-rfr6`). Quiet confirmatory after H115. Official
+   `PERF_HOST_REGIME=quiet` start gate refused 2026-09-19 at 46.7% CPU busy.
+   **H113 still needs a quiet host.** Do not run uncontrolled.
+   Same accept rule: `content-cache-hit` wall ≥3% with the interval below zero on
+   `metabrowser-clone`; digest identical; incomplete sidecar refused.
+   Control is HEAD with H115 in.
+   New experiment id (still **exp-113**), not a top-up of exp-110.
 
 2. **H107** (`fdu-jcfn`, closed).
    Re-open only for a tree whose *ignored share is the walk* (a checkout sitting on
@@ -233,7 +243,9 @@ Do not retry H104–H106.
   H112 (exp-109) put parse at 8.5% of restore; apply dominates.
 - Do not retry the H113 file-count completeness shortcut on another uncontrolled cell
   (exp-110). Median −7.59% but the interval included zero; the shortcut is reverted.
-  A quiet confirmatory cell would be a new experiment, not a top-up.
+  A 2026-09-19 quiet confirmatory after H115 (`fdu-rfr6`) was refused at the start gate
+  (CPU busy 46.7% > 25.0%). The engine patch was not kept.
+  exp-113 is unused. **H113 still needs a quiet host.**
 - Do not retry the H114 type-id `String` alloc trim on `ContentRollUp::add` (exp-111).
   Wall −0.56% [−17.92%, +4.79%]; the trim is reverted.
 - Do not retry H115. exp-112 accepted the restore-only bottom-up rebuild (−9.69%
@@ -242,6 +254,7 @@ Do not retry H104–H106.
   Attempt `PERF_HOST_REGIME=quiet` first; if it fails or the final snapshot exceeds 25%
   busy, label **uncontrolled** and do not claim quiet.
   Do not lower the 25% busy bar so the cell passes.
+  H113 is the exception: a failed quiet gate is a stop, not an uncontrolled fallback.
 
 ### Process Pack
 
@@ -524,6 +537,7 @@ producing a number that means nothing.
 - Land an H109 Path rewrite after exp-108.
 - Retry the H114 type-id `String` alloc trim after exp-111.
 - Retry H115 after exp-112, or restart the `fdu-jxhk` EntryId rewrite from that accept.
+- Retry H113 on an uncontrolled cell after the 2026-09-19 quiet-gate skip.
 - Add a dependency, an `unsafe` block, or a platform gate without `make cross-lint`.
 - Create a RAM disk, or write anything into a subject tree.
   Snapshots, results and scratch go under `/tmp/fdu-realtree/`.
