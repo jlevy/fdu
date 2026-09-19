@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 48 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 49 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -194,6 +194,7 @@ dead end.
 | 114 | [Restore path lookup without analysis_candidates HashMap](#exp114--restore-path-lookup-without-analysiscandidates-hashmap) | H116 | `content-cache-hit` | +8.7% | ❌ rejected |
 | 115 | [First-pass analyze insert-then-rebuild on metabrowser](#exp115--firstpass-analyze-insertthenrebuild-on-metabrowser) | H118 | `content-basic` | -2.6% | ❌ rejected |
 | 116 | [Opened-root second report versus one-shot on frameworks](#exp116--openedroot-second-report-versus-oneshot-on-frameworks) | H117 | `default-tree` | -99.9% | ✅ accepted |
+| 117 | [Stream sidecar parse-into-apply on metabrowser](#exp117--stream-sidecar-parseintoapply-on-metabrowser) | H120 | `content-cache-hit` | -10.1% | ✅ accepted |
 
 ## The experiments
 
@@ -3992,6 +3993,36 @@ determination kept; not a snapshot load.
 Full record:
 [`exp-116-opened-root-second-report-versus-one-shot-on-frameworks.md`](../experiments/exp-116-opened-root-second-report-versus-one-shot-on-frameworks.md)
 
+### exp-117 — Stream sidecar parse-into-apply on metabrowser
+
+✅ accepted · 2026-09-19 · H120 · commit `984e4618`
+
+Control: HEAD at 984e4618 with H115 in
+
+Candidate: stream sidecar records into apply without a decoded Vec
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1111.0 | 1103.2 | -0.59% (n.s.) | [-1.63%, +0.51%] |
+| component (ms) | 822.5 | 812.5 | -0.90% (n.s.) | [-2.34%, +0.49%] |
+| cpu (ms) | 1102.3 | 1094.3 | -0.66% (n.s.) | [-1.27%, +0.42%] |
+| user (ms) | 1008.6 | 1007.1 | +0.06% (n.s.) | [-0.52%, +0.50%] |
+| system (ms) | 94.0 | 87.9 | -8.13% | [-16.77%, -1.72%] |
+| blocked (ms) | 10.8 | 9.4 | +2.01% (n.s.) | [-27.63%, +54.98%] |
+| peak rss (MiB) | 377.5 | 339.4 | -10.13% | [-10.49%, -10.03%] |
+
+Cost to carry: 80 lines; no new dependencies.
+
+parse-into-apply; fail-closed clear_content on a bad record; no unsafe
+
+**Accepted:** peak RSS -10.13 percent [-10.49%, -10.03%]; wall non-inferior; streaming
+restore kept.
+
+Full record:
+[`exp-117-stream-sidecar-parse-into-apply-on-metabrowser.md`](../experiments/exp-117-stream-sidecar-parse-into-apply-on-metabrowser.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4044,6 +4075,7 @@ Baselines show one value because they measure a state rather than a change.
 | 112 | Bottom-up roll-up after sidecar restore | `content-cache-hit` | 1,287.6 | 1,174.1 | -9.7% | ✅ accepted |
 | 114 | Restore path lookup without analysis_candidates HashMap | `content-cache-hit` | 1,475.4 | 1,573.7 | +8.7% | ❌ rejected |
 | 115 | First-pass analyze insert-then-rebuild on metabrowser | `content-basic` | 10,020.6 | 10,022.1 | -5.0% | ❌ rejected |
+| 117 | Stream sidecar parse-into-apply on metabrowser | `content-cache-hit` | 1,111.0 | 1,103.2 | -0.6% | ✅ accepted |
 
 ### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 

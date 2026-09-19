@@ -32411,6 +32411,158 @@
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "title": "Opened-root second report versus one-shot on frameworks",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "stream sidecar records into apply without a decoded Vec",
+   "change_pct": -10.127,
+   "commit": "984e4618",
+   "complexity": {
+    "lines_changed": 80,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "parse-into-apply; fail-closed clear_content on a bad record; no unsafe"
+   },
+   "control": "HEAD at 984e4618 with H115 in",
+   "date": "2026-09-19",
+   "decision": "accepted",
+   "entries": 145931,
+   "family": "macOS:a319238d9c29",
+   "hypotheses": [
+    "H120"
+   ],
+   "id": "exp-117",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-cache-hit",
+     "metrics": {
+      "blocked_ns": {
+       "absolute": {
+        "candidate": 9355229,
+        "control": 10792292
+       },
+       "metric": "blocked_ns",
+       "paired": {
+        "change_pct": 2.007,
+        "ci95_high_pct": 54.975,
+        "ci95_low_pct": -27.631,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "component_ns": {
+       "absolute": {
+        "candidate": 812471083,
+        "control": 822507375
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -0.896,
+        "ci95_high_pct": 0.494,
+        "ci95_low_pct": -2.343,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1094277500,
+        "control": 1102302000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.656,
+        "ci95_high_pct": 0.425,
+        "ci95_low_pct": -1.271,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 355868672,
+        "control": 395886592
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -10.127,
+        "ci95_high_pct": -10.025,
+        "ci95_low_pct": -10.492,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 87856000,
+        "control": 94008500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -8.132,
+        "ci95_high_pct": -1.72,
+        "ci95_low_pct": -16.774,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 1007051500,
+        "control": 1008576500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.056,
+        "ci95_high_pct": 0.501,
+        "ci95_low_pct": -0.518,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1103236583,
+        "control": 1111019834
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -0.594,
+        "ci95_high_pct": 0.511,
+        "ci95_low_pct": -1.628,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 7559.987823012246,
+      "control": 7613.322967703915
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 117,
+   "path": "exp-117-stream-sidecar-parse-into-apply-on-metabrowser.md",
+   "platform": "macOS",
+   "primary_job": "content-cache-hit",
+   "primary_metric": "peak_rss_bytes",
+   "reason": "peak RSS -10.13 percent [-10.49%, -10.03%]; wall non-inferior; streaming restore kept",
+   "reference_tools": [],
+   "subject": "a319238d9c29:145931:3fbfed48354e",
+   "title": "Stream sidecar parse-into-apply on metabrowser",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-19",
@@ -32535,7 +32687,8 @@
     "exp-111",
     "exp-112",
     "exp-114",
-    "exp-115"
+    "exp-115",
+    "exp-117"
    ],
    "files": 133597,
    "filesystem": "apfs",
@@ -33189,22 +33342,22 @@
   }
  ],
  "totals": {
-  "accepted_lines_changed": 15520,
+  "accepted_lines_changed": 15600,
   "decisions": {
-   "accepted": 54,
+   "accepted": 55,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
    "rejected": 45,
    "superseded": 3
   },
-  "experiments": 116,
+  "experiments": 117,
   "first_date": "2026-08-10",
-  "hypotheses": 74,
+  "hypotheses": 75,
   "last_date": "2026-09-19",
   "platforms": {
    "Linux": 11,
-   "macOS": 105
+   "macOS": 106
   }
  },
  "version": "fdu.performance.timeline/1"

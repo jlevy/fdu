@@ -177,13 +177,10 @@ After whatever H113 quiet does:
    Probe mode `opened-second-report` kept.
    Not a snapshot load on `fdu PATH`.
 
-5. **H120** (`fdu-y9n9`). Metric: `content-cache-hit` peak RSS (guard: wall
-   non-inferior, interval not entirely above +3%). Subject: `metabrowser-clone`. Accept:
-   peak RSS down at least 10%; digest identical.
-   Why next: content-hit RSS is the product constraint on `--analyze` trees; H116 may
-   already have taken the HashMap half.
-   Refute: peak is the retained index plus content records, not the transient decode.
-   Quiet: not required.
+5. **H120** (`fdu-y9n9`). **Done — accepted** (exp-117, uncontrolled).
+   Peak RSS −10.13% [−10.49%, −10.03%]. Wall −0.59% [−1.63%, +0.51%] non-inferior.
+   Streaming restore kept.
+   Quiet gate 28.1%.
 
 **Not tonight:** H111 (no Linux runner), H77 `searchfs` (person-gated), H86 / `fdu-jxhk`
 rewrites, H107 unless the ignored share *is* the walk.

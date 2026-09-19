@@ -31,6 +31,11 @@ Never force-push.
 
 ### Standing Best and Regime
 
+**H115 / exp-112** is the standing wall-speed best on deciding-scale `content-cache-hit`
+(−9.69%). **H120 / exp-117** is the standing content-hit RSS best (peak RSS −10.13%;
+streaming restore kept).
+H115 is not beaten on wall.
+
 **exp-105** is the current rustup *probe* self-comparison baseline, 12-pair,
 `os_cache: warm-steady`, **uncontrolled**.
 
@@ -224,6 +229,21 @@ Second retained report 1.6 ms versus one-shot 2,612.2 ms (~1,630×). **Confirmed
 `default-tree` stays a cold scan.
 Probe mode kept. Not a snapshot load on `fdu PATH`.
 
+**exp-117 / H120** streams sidecar records into apply on `metabrowser-clone` (engine
+digest unchanged). 12-pair current-best at `984e4618` versus parse-into-apply with no
+decoded-records `Vec`. Quiet start gate refused (28.1% busy); pair ran **uncontrolled**.
+Initial busy 19.82%; final 90.64%. The 25% bar was not lowered.
+
+| Arm | Wall median | Component | Peak RSS |
+| --- | ---: | ---: | ---: |
+| control | 1,111.0 ms | 822.5 ms | 377.5 MiB |
+| candidate | 1,103.2 ms | 812.5 ms | 339.4 MiB |
+
+Peak RSS −10.13% [−10.49%, −10.03%]. **Accepted.** Wall −0.59% [−1.63%, +0.51%]
+non-inferior. Digest identical.
+Streaming restore kept.
+H115 remains the standing wall-speed best.
+
 ### Darwin Subjects
 
 The 2026-08 nominated metabrowser corpus path is gone from disk.
@@ -238,8 +258,8 @@ Do not type a path into a commit.
 `cargo-registry-src` (~22k) screens; it cannot decide a 3% verdict.
 `system-private-frameworks` was the H108 / H117 subject (exp-107, exp-116); digest
 unchanged from the nomination.
-`metabrowser-clone` was the H109 / H112 / H113 / H114 / H115 / H116 / H118 subject
-(exp-108, exp-109, exp-110, exp-111, exp-112, exp-114, exp-115); same shape as exp-106,
+`metabrowser-clone` was the H109 / H112 / H113 / H114 / H115 / H116 / H118 / H120
+subject (exp-108 through exp-112, exp-114, exp-115, exp-117); same shape as exp-106,
 engine digest unchanged (`3fbfed48…`). The CLI QA medium tree was skipped:
 deciding-scale but mutating.
 
@@ -250,7 +270,7 @@ The registry row in [the loop guide](performance-loop.md#current-engine-010) is 
 statement.
 Next free hypothesis id is **H121**. Do not mint another meaning for H91–H106.
 Next free experiment id is **exp-113** (reserved for H113 quiet).
-After that, **exp-117**.
+After that, **exp-118**.
 
 1. **H113** (`fdu-wrdl` / `fdu-rfr6`). Quiet confirmatory after H115. Official
    `PERF_HOST_REGIME=quiet` start gate refused 2026-09-19 at 46.7% CPU busy.
@@ -263,11 +283,8 @@ After that, **exp-117**.
 2. **Overnight queue after H113.** Source of truth:
    [the post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md)
    (epic `fdu-e9ow`). Do not copy the rows here.
-   Order: **H120** (`fdu-y9n9`). H116 (exp-114) rejected on wall; H118 (exp-115)
-   rejected on component; H119 walk-overlap screened; H117 (exp-116) confirmed (~1,630×
-   retained second report).
-   Do not retry H116/H118 uncontrolled, or H119 walk-overlap.
-   Uncontrolled is allowed on H120 if quiet fails.
+   Overnight queue is done: H116 rejected, H118 rejected, H119 screened, H117 confirmed,
+   H120 accepted. Do not retry H116/H118 uncontrolled, or H119 walk-overlap.
    H111 is not in this overnight setup (no Linux runner).
 
 3. **H107** (`fdu-jcfn`, closed).
