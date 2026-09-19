@@ -185,8 +185,9 @@ mutating.
 Take these in order.
 The registry row in [the loop guide](performance-loop.md#current-engine-010) is the full
 statement.
-Next free hypothesis id is **H116**. Do not mint another meaning for H91–H106.
-Next free experiment id is **exp-113**.
+Next free hypothesis id is **H121**. Do not mint another meaning for H91–H106.
+Next free experiment id is **exp-113** (reserved for H113 quiet).
+After that, **exp-114**.
 
 1. **H113** (`fdu-wrdl` / `fdu-rfr6`). Quiet confirmatory after H115. Official
    `PERF_HOST_REGIME=quiet` start gate refused 2026-09-19 at 46.7% CPU busy.
@@ -196,30 +197,25 @@ Next free experiment id is **exp-113**.
    Control is HEAD with H115 in.
    New experiment id (still **exp-113**), not a top-up of exp-110.
 
-2. **H107** (`fdu-jcfn`, closed).
-   Re-open only for a tree whose *ignored share is the walk* (a checkout sitting on
-   `node_modules` that `.gitignore` drops).
-   Job: `default-tree` wall, controls-on vs `--no-controls`; |median| ≥3% and the
-   interval off zero, either direction.
-   Refuted on wall on metabrowser (exp-106). The H108 subject had 0 control files.
-   Do not retry on a metabrowser-like tree whose ignore set is not the critical path.
+2. **Overnight queue after H113.** Source of truth:
+   [the post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md)
+   (epic `fdu-e9ow`). Do not copy the rows here.
+   Order: **H116** (`fdu-kro6`) → **H118** (`fdu-kyts`) → **H119** (`fdu-9g54`) →
+   **H117** (`fdu-7wiq`) → **H120** (`fdu-y9n9`). Uncontrolled is allowed on those five
+   if quiet fails. H111 is not in this overnight setup (no Linux runner).
 
-3. **H108** (`fdu-1a4z`, confirmed in exp-107). Do not open a cache/one-shot patch:
-   `ReportPlan::read_snapshot` is already false for metadata one-shot, the second CLI
-   run repeats the walk, and loading a snapshot is the H9 loss.
-   Do not treat a second `cold scan` as a regression.
+3. **H107** (`fdu-jcfn`, closed).
+   Re-open only for a tree whose *ignored share is the walk*. Refuted on wall on
+   metabrowser (exp-106). Not tonight unless that subject appears.
 
-4. **H109** (`fdu-8nwq` / `fdu-hzyb`, screened in exp-108). Do not land a control
+4. **H108** (`fdu-1a4z`, confirmed in exp-107). Do not open a cache/one-shot patch.
+   H117 is the remaining metadata lever (opened retention), not a snapshot load.
+
+5. **H109** (`fdu-8nwq` / `fdu-hzyb`, screened in exp-108). Do not land a control
    matcher Path rewrite.
-   `install_controls` collapsed to 7.2% of the profile on a deciding tree;
-   `compare_components` under `is_ignored` is about 1%.
 
-5. **H111** (`fdu-jekg`). Linux floor stage of H86: index ≤1.4× floor, aggregate ≤1.25×,
-   RSS ≤3× `arena_spike`, on the 450k Linux subject, quiet `make perf-floor`. Darwin
-   composite landed (exp-091–102); Linux floor failed (exp-103). A Darwin vs pre-H86
-   validation is not this claim.
-   Do not restart the rewrite.
-   A Darwin agent records that this is not tonight’s item.
+6. **H111** (`fdu-jekg`). Linux floor stage of H86. Not tonight: no Linux runner in this
+   overnight setup. Do not restart the rewrite.
 
 **H115** (`fdu-wx15`) landed in exp-112. Do not retry it.
 `fdu-jxhk` remains the EntryId composite; do not restart that rewrite from this result.
@@ -250,6 +246,8 @@ Do not retry H104–H106.
   Wall −0.56% [−17.92%, +4.79%]; the trim is reverted.
 - Do not retry H115. exp-112 accepted the restore-only bottom-up rebuild (−9.69%
   [−26.02%, −7.13%]). Do not restart the `fdu-jxhk` EntryId rewrite from that result.
+- Do not register another restore alloc-trim, parse-speed cut, or H103-shaped
+  instruction rewrite; those are on the remaining-headroom block’s rejected list.
 - A quiet cell may not hold on this desktop.
   Attempt `PERF_HOST_REGIME=quiet` first; if it fails or the final snapshot exceeds 25%
   busy, label **uncontrolled** and do not claim quiet.
@@ -260,7 +258,8 @@ Do not retry H104–H106.
 
 | Document | Role |
 | --- | --- |
-| This standing section | Pickup: what to run next, on which subject, under which regime |
+| This standing section | Pickup: standing best, H113 quiet gate, pointer to the overnight queue |
+| [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Overnight queue after H113: H116–H120, rejected list, inclusion rules |
 | [The loop guide](performance-loop.md) | Protocol, accept rule, hypothesis registry |
 | [The campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) | Floor-anchored strategy; the 2026-08-23 Tier 1–3 list is history |
 | [The instrumentation playbook](performance-instrumentation-playbook.md) | Instrument before optimizing; `FDU_COUNTERS=1` |
@@ -290,11 +289,13 @@ Each one has caught a real mistake.
 
 2. **Find the queue.** Start from [Current Standing](#current-standing-2026-09-18), not
    from the `macos-agenda` label in isolation.
-   That label still exists and still holds older campaign-2 items; several have landed,
-   and H86’s remaining gap is H111 on Linux.
+   After H113 quiet, the overnight order is
+   [the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md)
+   (`fdu-e9ow`). That label still holds older campaign-2 items; several have landed, and
+   H86’s remaining gap is H111 on Linux (not tonight).
 
    ```shell
-   tbd show fdu-1a4z fdu-8nwq fdu-jekg fdu-even
+   tbd show fdu-e9ow fdu-rfr6 fdu-kro6 fdu-kyts fdu-9g54 fdu-7wiq fdu-y9n9
    tbd list --label macos-agenda
    ```
 
