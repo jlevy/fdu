@@ -5,7 +5,7 @@ title: "H122: deciding-scale metadata CLI/walk profile after current engine"
 kind: task
 status: closed
 priority: 1
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-19-post-h115-remaining-headroom.md
 labels:
   - performance
@@ -14,7 +14,7 @@ labels:
 dependencies: []
 parent_id: is-01m2x7xbt1c4we0wffeth7jrd6
 created_at: 2026-09-19T16:27:49.877Z
-updated_at: 2026-09-19T17:48:10.485Z
+updated_at: 2026-09-19T19:59:54.747Z
 closed_at: 2026-09-19T17:48:10.482Z
 close_reason: "exp-118: confirmed, walk 96.6-97.5% of default-tree component on system-private-frameworks; leftover is __open plus getattrlistbulk; no Darwin cut; no engine change"
 resolution: null
@@ -29,3 +29,7 @@ What refutes: walk share below 90%, or the leftover is a stage already owned by 
 Why significant: this is the job users wait for. Overnight did not address it.
 
 Protocol: docs/project/guides/performance-loop.md. Pickup: runbook Current Standing. Parent epic: fdu-8ya1.
+
+## Notes
+
+Confirmed exp-118; tighter leftover recorded as exp-122 (accepted determination). 77509 getattrlistbulk / 55256 dir_opens = 1.403 calls/dir including EOF. 20s sample: __open 50.36%, getattrlistbulk 18.95%, fdu::scan 3.02% (largest symbol 0.94%). No userspace cut >=3%. H125 not minted. dir_enumeration_calls kept (8dd95be8). Quiet gate 30.3%; pair uncontrolled. Do not retry as a snapshot load or consume trim.
