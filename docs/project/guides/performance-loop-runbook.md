@@ -162,6 +162,22 @@ ran. The file-count shortcut was not re-measured and is not in the engine.
 exp-113 was not consumed.
 **H113 still needs a quiet host.** Do not run another uncontrolled H113.
 
+**exp-114 / H116** tests restore without a full `analysis_candidates` Vec+HashMap on the
+same `metabrowser-clone` tree (engine digest unchanged).
+12-pair current-best at `7f289d5f` versus `Index::lookup` plus restore-only classify
+skip. Quiet start gate refused (85.6% busy); pair ran **uncontrolled**. Initial busy
+76.31%; final 72.15%. The 25% bar was not lowered.
+
+| Arm | Wall median | Component | Peak RSS |
+| --- | ---: | ---: | ---: |
+| control | 1,475.4 ms | 1,122.9 ms | 377.3 MiB |
+| candidate | 1,573.7 ms | 978.6 ms | 335.3 MiB |
+
+Wall +8.70% [−19.33%, +63.90%]. **Rejected.** Median the wrong way; interval includes
+zero. User CPU −15.65% [−16.12%, −14.32%]; peak RSS −11.27% [−11.65%, −10.98%]. Engine
+reverted. Every sample 133,597 cache hits / 0 applied; content digest unchanged.
+Do not retry H116 uncontrolled.
+
 ### Darwin Subjects
 
 The 2026-08 nominated metabrowser corpus path is gone from disk.
@@ -175,9 +191,9 @@ Do not type a path into a commit.
 
 `cargo-registry-src` (~22k) screens; it cannot decide a 3% verdict.
 `system-private-frameworks` was the H108 subject (exp-107); digest unchanged from the
-nomination. `metabrowser-clone` was the H109 / H112 / H113 / H114 / H115 subject
-(exp-108, exp-109, exp-110, exp-111, exp-112); same shape as exp-106, engine digest
-unchanged (`3fbfed48…`). The CLI QA medium tree was skipped: deciding-scale but
+nomination. `metabrowser-clone` was the H109 / H112 / H113 / H114 / H115 / H116 subject
+(exp-108, exp-109, exp-110, exp-111, exp-112, exp-114); same shape as exp-106, engine
+digest unchanged (`3fbfed48…`). The CLI QA medium tree was skipped: deciding-scale but
 mutating.
 
 ### Next Up
@@ -187,7 +203,7 @@ The registry row in [the loop guide](performance-loop.md#current-engine-010) is 
 statement.
 Next free hypothesis id is **H121**. Do not mint another meaning for H91–H106.
 Next free experiment id is **exp-113** (reserved for H113 quiet).
-After that, **exp-114**.
+After that, **exp-115**.
 
 1. **H113** (`fdu-wrdl` / `fdu-rfr6`). Quiet confirmatory after H115. Official
    `PERF_HOST_REGIME=quiet` start gate refused 2026-09-19 at 46.7% CPU busy.
@@ -200,9 +216,10 @@ After that, **exp-114**.
 2. **Overnight queue after H113.** Source of truth:
    [the post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md)
    (epic `fdu-e9ow`). Do not copy the rows here.
-   Order: **H116** (`fdu-kro6`) → **H118** (`fdu-kyts`) → **H119** (`fdu-9g54`) →
-   **H117** (`fdu-7wiq`) → **H120** (`fdu-y9n9`). Uncontrolled is allowed on those five
-   if quiet fails. H111 is not in this overnight setup (no Linux runner).
+   Order: **H118** (`fdu-kyts`) → **H119** (`fdu-9g54`) → **H117** (`fdu-7wiq`) →
+   **H120** (`fdu-y9n9`). H116 (exp-114) rejected on wall; do not retry uncontrolled.
+   Uncontrolled is allowed on the remaining four if quiet fails.
+   H111 is not in this overnight setup (no Linux runner).
 
 3. **H107** (`fdu-jcfn`, closed).
    Re-open only for a tree whose *ignored share is the walk*. Refuted on wall on
@@ -246,6 +263,9 @@ Do not retry H104–H106.
   Wall −0.56% [−17.92%, +4.79%]; the trim is reverted.
 - Do not retry H115. exp-112 accepted the restore-only bottom-up rebuild (−9.69%
   [−26.02%, −7.13%]). Do not restart the `fdu-jxhk` EntryId rewrite from that result.
+- Do not retry H116 on another uncontrolled cell (exp-114). Wall +8.70%
+  [−19.33%, +63.90%]; the path-lookup patch is reverted.
+  User CPU and RSS moved and are not an accept.
 - Do not register another restore alloc-trim, parse-speed cut, or H103-shaped
   instruction rewrite; those are on the remaining-headroom block’s rejected list.
 - A quiet cell may not hold on this desktop.
@@ -539,6 +559,7 @@ producing a number that means nothing.
 - Retry the H114 type-id `String` alloc trim after exp-111.
 - Retry H115 after exp-112, or restart the `fdu-jxhk` EntryId rewrite from that accept.
 - Retry H113 on an uncontrolled cell after the 2026-09-19 quiet-gate skip.
+- Retry H116 on an uncontrolled cell after exp-114.
 - Add a dependency, an `unsafe` block, or a platform gate without `make cross-lint`.
 - Create a RAM disk, or write anything into a subject tree.
   Snapshots, results and scratch go under `/tmp/fdu-realtree/`.

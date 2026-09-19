@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 45 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 46 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -191,6 +191,7 @@ dead end.
 | 110 | [Cache-only completeness by file count on metabrowser](#exp110--cacheonly-completeness-by-file-count-on-metabrowser) | H113 | `content-cache-hit` | -7.6% | ❌ rejected |
 | 111 | [Type-id get-mut on roll-up add on metabrowser](#exp111--typeid-getmut-on-rollup-add-on-metabrowser) | H114 | `content-cache-hit` | -0.6% | ❌ rejected |
 | 112 | [Bottom-up roll-up after sidecar restore](#exp112--bottomup-rollup-after-sidecar-restore) | H115 | `content-cache-hit` | -9.7% | ✅ accepted |
+| 114 | [Restore path lookup without analysis_candidates HashMap](#exp114--restore-path-lookup-without-analysiscandidates-hashmap) | H116 | `content-cache-hit` | +8.7% | ❌ rejected |
 
 ## The experiments
 
@@ -3892,6 +3893,38 @@ restore-only rebuild kept.
 Full record:
 [`exp-112-bottom-up-roll-up-after-sidecar-restore.md`](../experiments/exp-112-bottom-up-roll-up-after-sidecar-restore.md)
 
+### exp-114 — Restore path lookup without analysis_candidates HashMap
+
+❌ rejected · 2026-09-19 · H116 · commit `7f289d5f`
+
+Control: HEAD at 7f289d5f with H115 in
+
+Candidate: Index lookup plus restore-only classify skip
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1475.4 | 1573.7 | +8.70% (n.s.) | [-19.33%, +63.90%] |
+| component (ms) | 1122.9 | 978.6 | -16.20% (n.s.) | [-25.30%, +43.91%] |
+| cpu (ms) | 1217.7 | 1029.3 | -15.05% | [-17.04%, -13.30%] |
+| user (ms) | 1073.4 | 904.3 | -15.65% | [-16.12%, -14.32%] |
+| system (ms) | 144.6 | 123.8 | -12.68% | [-25.19%, -5.79%] |
+| blocked (ms) | 246.7 | 541.2 | +71.22% (n.s.) | [-33.53%, +247.22%] |
+| peak rss (MiB) | 377.3 | 335.3 | -11.27% | [-11.65%, -10.98%] |
+
+Wall-time tail: control p95 is 4.25x its median and candidate 7.73x. The verdict above
+is on the median; a reader deciding whether this is faster to *use* should read the tail
+beside it.
+
+Cost to carry: 50 lines; no new dependencies; new failure mode: wall interval includes
+zero under host contention.
+
+**Rejected:** wall +8.70 percent [-19.33%, +63.90%]; user CPU moved; engine reverted.
+
+Full record:
+[`exp-114-restore-path-lookup-without-analysis-candidates-hashmap.md`](../experiments/exp-114-restore-path-lookup-without-analysis-candidates-hashmap.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -3932,6 +3965,18 @@ Baselines show one value because they measure a state rather than a change.
 | 026 | Reuse macOS bulk metadata during full reconciliation | `warm-revalidate` | 21,161.5 | 14,014.3 | -34.4% | ✅ accepted |
 | 030 | Elide unchanged entries in bounded parallel reconciliation waves | `warm-revalidate` | 14,463.4 | 5,708.1 | -59.5% | ✅ accepted |
 
+### metabrowser-clone (145,931 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 106 | Default gitignore observation versus no-controls on metabrowser | `default-tree` | 338.6 | 341.6 | +1.6% | ❌ rejected |
+| 108 | Deciding-scale content-cache-hit profile on metabrowser | `content-cache-hit` | 1,218.0 | — | — | 📏 baseline |
+| 109 | Sidecar restore stage split on metabrowser | `content-cache-hit` | 1,195.5 | — | — | 📏 baseline |
+| 110 | Cache-only completeness by file count on metabrowser | `content-cache-hit` | 1,246.3 | 1,156.8 | -7.6% | ❌ rejected |
+| 111 | Type-id get-mut on roll-up add on metabrowser | `content-cache-hit` | 1,328.9 | 1,290.9 | -0.6% | ❌ rejected |
+| 112 | Bottom-up roll-up after sidecar restore | `content-cache-hit` | 1,287.6 | 1,174.1 | -9.7% | ✅ accepted |
+| 114 | Restore path lookup without analysis_candidates HashMap | `content-cache-hit` | 1,475.4 | 1,573.7 | +8.7% | ❌ rejected |
+
 ### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -3954,17 +3999,6 @@ Baselines show one value because they measure a state rather than a change.
 | 031 | Increase immutable-baseline reconciliation waves to 4096 directories | `warm-revalidate` | 477.6 | 482.5 | +1.6% | ❌ rejected |
 | 032 | Cumulative effect through bounded parallel reconciliation | `cold-scan-index` | 635.4 | 289.6 | -54.5% | ✅ accepted |
 | 033 | Post-composable-CLI integration validation | `warm-revalidate` | 844.7 | 481.9 | -42.3% | ✅ accepted |
-
-### metabrowser-clone (145,931 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 106 | Default gitignore observation versus no-controls on metabrowser | `default-tree` | 338.6 | 341.6 | +1.6% | ❌ rejected |
-| 108 | Deciding-scale content-cache-hit profile on metabrowser | `content-cache-hit` | 1,218.0 | — | — | 📏 baseline |
-| 109 | Sidecar restore stage split on metabrowser | `content-cache-hit` | 1,195.5 | — | — | 📏 baseline |
-| 110 | Cache-only completeness by file count on metabrowser | `content-cache-hit` | 1,246.3 | 1,156.8 | -7.6% | ❌ rejected |
-| 111 | Type-id get-mut on roll-up add on metabrowser | `content-cache-hit` | 1,328.9 | 1,290.9 | -0.6% | ❌ rejected |
-| 112 | Bottom-up roll-up after sidecar restore | `content-cache-hit` | 1,287.6 | 1,174.1 | -9.7% | ✅ accepted |
 
 ### metabrowser (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

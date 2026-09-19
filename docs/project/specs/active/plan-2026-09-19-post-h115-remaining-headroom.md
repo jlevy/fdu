@@ -158,12 +158,9 @@ These were considered against the post-H115 path and not registered:
 
 After whatever H113 quiet does:
 
-1. **H116** (`fdu-kro6`). Metric: `content-cache-hit` wall.
-   Subject: `metabrowser-clone`. Accept: median at least 3% faster and the 95% interval
-   below zero; content digest identical; incomplete sidecar still refused.
-   Why next: largest remaining named restore stage after H115, on the standing-best job.
-   Refute: interval includes zero, or completeness/staleness goldens fail.
-   Quiet: not required.
+1. **H116** (`fdu-kro6`). **Done — rejected** (exp-114, uncontrolled).
+   Wall +8.70% [−19.33%, +63.90%]. Quiet gate 85.6%. User CPU −15.65%; RSS −11.27%.
+   Engine reverted. Do not retry uncontrolled.
 
 2. **H118** (`fdu-kyts`). Metric: `content-basic` component (analyze only).
    Subject: `metabrowser-clone`. Accept: same 3% / interval-below-zero rule; content
