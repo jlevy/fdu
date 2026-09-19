@@ -4932,8 +4932,12 @@ impl Index {
         // in which the index is structurally complete but numerically wrong.
         let contribution = self.contribution(id);
         self.merge_upward(Some(parent), &contribution);
-        let path = self.path_of(id).expect("a newly loaded entry has a path");
-        self.insert_serving_entry(&path, kind, attrs, id);
+        // One-shot snapshot load constructs the index with serving off.
+        // `insert_serving_entry` would discard a reconstructed path.
+        if self.serving.is_some() {
+            let path = self.path_of(id).expect("a newly loaded entry has a path");
+            self.insert_serving_entry(&path, kind, attrs, id);
+        }
         Some(id)
     }
 
@@ -5991,6 +5995,45 @@ mod tests {
 
         assert!(index.serving.is_none());
         assert!(index.portable_children(Path::new("dir")).is_none());
+    }
+
+    #[test]
+    fn insert_loaded_child_skips_serving_path_when_serving_is_off() {
+        let mut index = Index::new("/root");
+        let id = index
+            .insert_loaded_child(
+                EntryId::ROOT,
+                OsString::from("a.rs"),
+                EntryKind::File,
+                file_attrs(4, 1),
+            )
+            .expect("parent is a live directory");
+        assert!(!index.serving_indexes_enabled());
+        assert_eq!(index.path_of(id), Some(PathBuf::from("a.rs")));
+        assert_eq!(index.lookup(Path::new("a.rs")), Some(id));
+        assert_eq!(index.total().files, 1);
+    }
+
+    #[test]
+    fn insert_loaded_child_fills_serving_when_enabled() {
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
+            "/root",
+            ScanScope::default(),
+            crate::classify::TypeRegistry::compiled_shared(),
+            DEFAULT_JOURNAL_CAPACITY_BYTES,
+        );
+        let id = index
+            .insert_loaded_child(
+                EntryId::ROOT,
+                OsString::from("a.rs"),
+                EntryKind::File,
+                file_attrs(4, 1),
+            )
+            .expect("parent is a live directory");
+        assert!(index.serving_indexes_enabled());
+        assert_eq!(index.path_of(id), Some(PathBuf::from("a.rs")));
+        let serving = index.serving.as_ref().expect("opened test index");
+        assert!(serving.portable_entries.keys().any(|path| path.as_str() == "a.rs"));
     }
 
     #[test]
