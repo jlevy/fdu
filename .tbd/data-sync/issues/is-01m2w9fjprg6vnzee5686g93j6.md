@@ -5,7 +5,7 @@ title: "H113 quiet confirmatory: skip second analysis_candidates walk after H115
 kind: task
 status: in_progress
 priority: 1
-version: 13
+version: 14
 spec_path: docs/project/specs/active/plan-2026-09-19-post-h115-remaining-headroom.md
 delegate: unknown@spud10
 labels:
@@ -17,7 +17,7 @@ parent_id: is-01kzysa79temyc45zjn2v98kpw
 hold: null
 hold_until: null
 created_at: 2026-09-19T07:35:50.742Z
-updated_at: 2026-09-19T19:59:55.070Z
+updated_at: 2026-09-19T20:33:49.076Z
 started_at: 2026-09-19T07:35:59.554Z
 ---
 Quiet confirmatory of H113 after H115 landed. New experiment id (not a top-up of exp-110). Do not retry the file-count shortcut on an uncontrolled cell.
@@ -37,4 +37,4 @@ Quiet confirmatory of H113 after H115 landed. New experiment id (not a top-up of
 
 ## Notes
 
-2026-09-19 stacked PR #92: quiet start gates refused at 69.4% then 43.79% CPU busy. No pair either time. File-count shortcut not compiled on the 43.79% attempt. exp-113 unused. Do not run uncontrolled. Next free experiment after leftover exp-122 is still exp-113 reserved, then exp-123.
+2026-09-19 stacked PR #92: quiet start gates refused at 69.4%, 43.79%, and 85.17% CPU busy. No shortcut pair. File-count shortcut not compiled on the later attempts. Leftover still 16.0% of content_open after H115+H120 (exp-123, 2136/13357 samples). About 12% of H121 claim-grade wall. H113 stays open. exp-113 unused. Do not run uncontrolled.
