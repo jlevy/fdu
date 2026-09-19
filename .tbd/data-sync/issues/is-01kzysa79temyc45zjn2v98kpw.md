@@ -3,15 +3,19 @@ type: is
 id: is-01kzysa79temyc45zjn2v98kpw
 title: Content sidecar load is the layer-3 warm cost on Linux
 kind: task
-status: open
+status: in_progress
 priority: 1
-version: 10
+version: 13
+delegate: unknown@spud10
 labels:
   - campaign-2
   - macos-agenda
 dependencies: []
+hold: null
+hold_until: null
 created_at: 2026-08-14T00:03:55.833Z
-updated_at: 2026-09-14T23:20:10.140Z
+updated_at: 2026-09-19T06:23:19.333Z
+started_at: 2026-09-19T06:07:37.642Z
 ---
 The content sidecar load costs about 370 ms for 14,542 files, roughly 25 microseconds per file, against about 3 microseconds per record for the metadata snapshot. It dominates every warm content run: with a sidecar hit, all three analysis profiles converge on the same warm floor regardless of how much analysis they avoided. Same class of problem as H78 for the metadata snapshot and probably wants the same answer, a layout usable without rebuilding per-record state. Measured in a virtualized-warm Linux regime; see research-2026-08-13-linux-three-tier-baseline.md.
 
@@ -75,3 +79,34 @@ overreach the exp-104 evidence. The record now says:
 
 fdu-cfpa is closed as not a defect: the shipped HashMap<PathBuf, _> finds a roll-up under
 either separator spelling, because Path's Hash and Eq are component-wise.
+
+2026-09-19 (H112 pre-registration, exp-109): H83 is not refuted for this architecture.
+The cheap increments are dead (H102 file-map order landed; H103 Path::hash/SipHash
+refuted on wall; H109 Path rewrite not justified). A format rewrite (H78 class) and
+fdu-jxhk (EntryId roll-ups, one bottom-up pass) are not the smallest next step.
+
+H112: on deciding-scale content-cache-hit, sidecar restore is not one cost. One named
+stage among read, parse (integrity + decode), candidate install
+(analysis_candidates + HashMap), and apply (apply_analysis / commit / merge_ancestors)
+accounts for a majority of restore time and a wall ceiling of at least 3%.
+
+Metric / accept: determination. A stage dominates if it is >=50% of restore phase time
+and >=3% of claim-grade wall. Attachment is a 12-pair content-cache-hit of current best
+(98da0c83) vs phase timers, FDU_COUNTERS unset. Quiet if the cell holds; else
+uncontrolled. No RAM disk. Timers are not a speed claim; keep if counters-off wall is
+non-inferior, revert if they regress wall or fail tests.
+
+If one stage dominates, H83 stays open scoped to that stage. If none does, H83 as
+"sidecar restore is the win" is too coarse for one increment.
+
+2026-09-19 (exp-109 / H112): sidecar restore is not one cost. On deciding-scale
+metabrowser-clone content-cache-hit (145,931 entries, 133,597 hits, digest
+3b8cfa71… unchanged), apply dominates restore. Off-by-default phase timers
+(median of 3 counters-on hits): read 0.8%, parse 8.5%, candidates 25.4%, apply
+63.3%. Counters-off sample of load_content: apply_analysis 53.6%,
+analysis_candidates 20.2%, candidate-map hash 8.6%. Claim-grade wall +0.31%
+[-0.81%, +1.63%] vs current best at 98da0c83; non-inferior; timers kept (89
+lines, no unsafe). Parse-speed is a dead end. Do not retry H103-class instruction
+trims. Next smallest cut is H113 (duplicate analysis_candidates completeness
+walk at lib.rs:598-602, 12.6% of content_open). Then this bead's structural
+form / fdu-jxhk. Bead stays open.
