@@ -95,7 +95,7 @@ pub struct Counts {
     pub content_sidecar_parse_us: u64,
     /// Wall microseconds spent building the live candidate map for a sidecar restore.
     pub content_sidecar_candidates_us: u64,
-    /// Wall microseconds spent applying decoded sidecar records into the content tier.
+    /// Wall microseconds spent applying restored records and rebuilding content roll-ups.
     pub content_sidecar_apply_us: u64,
     /// Detached cold scans that selected the directory-group builder.
     pub detached_builds: u64,

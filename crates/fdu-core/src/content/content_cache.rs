@@ -182,7 +182,6 @@ pub fn load_content_cache(
             counts.content_sidecar_candidates_us.saturating_add(elapsed);
     });
     let mut loaded = ContentCacheLoad { usable: true, ..ContentCacheLoad::default() };
-    let apply_started = crate::counters::enabled().then(std::time::Instant::now);
     for _ in 0..stream.remaining {
         let decode_started = crate::counters::enabled().then(std::time::Instant::now);
         let Some((relative_path, analysis)) = read_record(&mut stream) else {
@@ -208,7 +207,13 @@ pub fn load_content_cache(
         let coverage_exclusion =
             !matches!(analysis.coverage, CoverageReason::Analyzed | CoverageReason::Binary);
         let bytes = analysis.bytes;
-        match index.apply_restored_analysis(AnalysisObservation { candidate, analysis }) {
+        let apply_started = crate::counters::enabled().then(std::time::Instant::now);
+        let outcome = index.apply_restored_analysis(AnalysisObservation { candidate, analysis });
+        crate::counters::add_elapsed(apply_started, |counts, elapsed| {
+            counts.content_sidecar_apply_us =
+                counts.content_sidecar_apply_us.saturating_add(elapsed);
+        });
+        match outcome {
             AnalysisApplyOutcome::Applied => {
                 loaded.hits = loaded.hits.saturating_add(1);
                 loaded.bytes = loaded.bytes.saturating_add(bytes);
@@ -222,8 +227,9 @@ pub fn load_content_cache(
         index.clear_content();
         return Ok(ContentCacheLoad::default());
     }
+    let rebuild_started = crate::counters::enabled().then(std::time::Instant::now);
     index.rebuild_content_rollups();
-    crate::counters::add_elapsed(apply_started, |counts, elapsed| {
+    crate::counters::add_elapsed(rebuild_started, |counts, elapsed| {
         counts.content_sidecar_apply_us = counts.content_sidecar_apply_us.saturating_add(elapsed);
     });
     Ok(loaded)
@@ -891,6 +897,38 @@ mod tests {
     fn load(index: &mut Index, request: AnalysisRequest, cache: &Path) -> ContentCacheLoad {
         let wanted = index.content_identity(request.profile);
         load_content_cache(index, &wanted, cache).expect("load")
+    }
+
+    /// Restore rebuilds nested directory roll-ups, not only the root.
+    ///
+    /// The probe content digest hashes the root roll-up; the `ContentIndex` unit test is
+    /// the in-memory H115 check. This is the sidecar-boundary half of that claim.
+    #[test]
+    fn sidecar_restore_rebuilds_nested_directory_rollups() {
+        let root = tempfile::tempdir().expect("root");
+        let cache_dir = tempfile::tempdir().expect("cache dir");
+        fs::create_dir_all(root.path().join("a/b")).expect("dirs");
+        fs::write(root.path().join("notes.md"), "one two\n").expect("write");
+        fs::write(root.path().join("a/keep.rs"), "fn keep() {}\n").expect("write");
+        fs::write(root.path().join("a/b/nested.rs"), "fn nested() {}\n").expect("write");
+        let request = request_for(AnalysisSet::NONE.with_lines());
+        let (mut analyzed, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        super::super::analyze_index(&mut analyzed, request);
+        let cache = cache_dir.path().join("content.cache");
+        save_content_cache(&analyzed, &cache).expect("save");
+
+        let (mut restored, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        let loaded = load(&mut restored, request, &cache);
+        assert!(loaded.usable && loaded.hits == 3, "{loaded:?}");
+        for dir in ["", "a", "a/b"] {
+            assert_eq!(
+                restored.content_rollup(Path::new(dir)),
+                analyzed.content_rollup(Path::new(dir)),
+                "{dir:?} roll-up"
+            );
+        }
     }
 
     /// A sidecar serves exactly the analyzer set it was written for. A wider one holds

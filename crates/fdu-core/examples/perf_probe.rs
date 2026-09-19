@@ -20,8 +20,8 @@ use fdu_core::content::{AnalysisRequest, AnalysisSet, CoverageReason};
 use fdu_core::query::{Basis, Delivery, Provenance, Query, ReportSource, Request, ViewSpec};
 use fdu_core::{
     Attrs, CachePolicy, ChangeOutcome, ChangeRequest, Clock, Commit, Coverage, EffectiveChange,
-    EngineVersion, EntryId, EntryKind, Index, Knowledge, LifecyclePhase, Observation, Op,
-    OpenConfig, OpenOptions, OpenedIndex, PageRequest, ProjectionResult, ReadProjection,
+    EngineVersion, EntryId, EntryKind, Index, IndexState, Knowledge, LifecyclePhase, Observation,
+    Op, OpenConfig, OpenOptions, OpenedIndex, PageRequest, ProjectionResult, ReadProjection,
     ReadRequest, ReportRequest, RowShape, ScanConfig, ScanOrder,
 };
 
@@ -1006,6 +1006,53 @@ fn synthetic_operations(operations: usize) -> Vec<Op> {
     generated
 }
 
+/// Shutdown after a probe path that already failed. The first error is the one the
+/// caller sees; a later close failure must not replace it.
+fn close_after_error(opened: &OpenedIndex) {
+    let _ = opened.close();
+}
+
+fn settle_opened(
+    opened: &OpenedIndex,
+    mut cursor: EngineVersion,
+    idle: &str,
+    reset: &str,
+) -> ProbeResult<(IndexState, EngineVersion, Vec<Commit>)> {
+    let mut commits = Vec::new();
+    loop {
+        let poll = match opened
+            .changes(ChangeRequest { after: cursor, timeout: Duration::from_secs(30) })
+        {
+            Ok(poll) => poll,
+            Err(error) => {
+                close_after_error(opened);
+                return Err(error.into());
+            }
+        };
+        cursor = poll.cursor;
+        match poll.outcome {
+            ChangeOutcome::Changes { commits: next, .. } => commits.extend(next),
+            ChangeOutcome::Idle => {
+                close_after_error(opened);
+                return Err(ProbeError(idle.into()));
+            }
+            ChangeOutcome::Reset { .. } => {
+                close_after_error(opened);
+                return Err(ProbeError(reset.into()));
+            }
+        }
+        if matches!(
+            poll.state.phase,
+            LifecyclePhase::Ready
+                | LifecyclePhase::Watching
+                | LifecyclePhase::Stopped
+                | LifecyclePhase::Failed
+        ) {
+            return Ok((poll.state, cursor, commits));
+        }
+    }
+}
+
 fn opened_discovery(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let options = OpenOptions {
         batch_size: arguments.scan.batch_size,
@@ -1028,33 +1075,13 @@ fn opened_discovery_with_options(
     let started = Instant::now();
     let opened = OpenedIndex::open(&arguments.root, options)?;
     let initial = opened.read(ReadRequest::default())?;
-    let mut cursor = fdu_core::EngineVersion { sequence: Clock::ZERO, ..initial.version };
-    let mut commits = Vec::new();
-    let terminal = loop {
-        let poll =
-            opened.changes(ChangeRequest { after: cursor, timeout: Duration::from_secs(30) })?;
-        cursor = poll.cursor;
-        match poll.outcome {
-            ChangeOutcome::Changes { commits: next, .. } => commits.extend(next),
-            ChangeOutcome::Idle => {
-                return Err(ProbeError("opened discovery did not settle before timeout".into()));
-            }
-            ChangeOutcome::Reset { .. } => {
-                return Err(ProbeError(
-                    "opened discovery outran the probe's exact journal capacity".into(),
-                ));
-            }
-        }
-        if matches!(
-            poll.state.phase,
-            LifecyclePhase::Ready
-                | LifecyclePhase::Watching
-                | LifecyclePhase::Stopped
-                | LifecyclePhase::Failed
-        ) {
-            break poll.state;
-        }
-    };
+    let cursor = fdu_core::EngineVersion { sequence: Clock::ZERO, ..initial.version };
+    let (terminal, cursor, commits) = settle_opened(
+        &opened,
+        cursor,
+        "opened discovery did not settle before timeout",
+        "opened discovery outran the probe's exact journal capacity",
+    )?;
     // Read the measured index before closing it. A separate scan can be correct while
     // this backend silently drops facts, so only these rows reach the parent harness's
     // independent tree oracle. The commit digest below is diagnostic, not that oracle.
@@ -1125,36 +1152,25 @@ fn opened_second_report(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         ..OpenOptions::default()
     };
     let opened = OpenedIndex::open(&arguments.root, options)?;
-    let initial = opened.read(ReadRequest::default())?;
-    let mut cursor = fdu_core::EngineVersion { sequence: Clock::ZERO, ..initial.version };
-    loop {
-        let poll =
-            opened.changes(ChangeRequest { after: cursor, timeout: Duration::from_secs(30) })?;
-        cursor = poll.cursor;
-        match poll.outcome {
-            ChangeOutcome::Changes { .. } => {}
-            ChangeOutcome::Idle => {
-                let _ = opened.close();
-                return Err(ProbeError(
-                    "opened second report did not settle before timeout".into(),
-                ));
-            }
-            ChangeOutcome::Reset { .. } => {
-                let _ = opened.close();
-                return Err(ProbeError(
-                    "opened second report outran the probe's exact journal capacity".into(),
-                ));
-            }
+    let initial = match opened.read(ReadRequest::default()) {
+        Ok(initial) => initial,
+        Err(error) => {
+            close_after_error(&opened);
+            return Err(error.into());
         }
-        if matches!(
-            poll.state.phase,
-            LifecyclePhase::Ready
-                | LifecyclePhase::Watching
-                | LifecyclePhase::Stopped
-                | LifecyclePhase::Failed
-        ) {
-            break;
-        }
+    };
+    let cursor = fdu_core::EngineVersion { sequence: Clock::ZERO, ..initial.version };
+    let (terminal, cursor, _commits) = settle_opened(
+        &opened,
+        cursor,
+        "opened second report did not settle before timeout",
+        "opened second report outran the probe's exact journal capacity",
+    )?;
+    if matches!(terminal.phase, LifecyclePhase::Failed | LifecyclePhase::Stopped) {
+        close_after_error(&opened);
+        return Err(ProbeError(
+            "opened second report settled Failed or Stopped; not a valid retained-read cell".into(),
+        ));
     }
 
     let request = ReadRequest {
@@ -1165,18 +1181,35 @@ fn opened_second_report(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         })],
         expected: None,
     };
-    let first = opened.read(request.clone())?;
+    let first = match opened.read(request.clone()) {
+        Ok(first) => first,
+        Err(error) => {
+            close_after_error(&opened);
+            return Err(error.into());
+        }
+    };
     black_box(&first);
 
     let started = Instant::now();
-    let second = opened.read(request)?;
-    let ProjectionResult::Report(report) = second
-        .results
-        .first()
-        .ok_or_else(|| ProbeError("opened second report returned no projection".into()))?
-    else {
-        let _ = opened.close();
-        return Err(ProbeError("opened second report did not return a report projection".into()));
+    let second = match opened.read(request) {
+        Ok(second) => second,
+        Err(error) => {
+            close_after_error(&opened);
+            return Err(error.into());
+        }
+    };
+    let report = match second.results.first() {
+        Some(ProjectionResult::Report(report)) => report,
+        Some(_) => {
+            close_after_error(&opened);
+            return Err(ProbeError(
+                "opened second report did not return a report projection".into(),
+            ));
+        }
+        None => {
+            close_after_error(&opened);
+            return Err(ProbeError("opened second report returned no projection".into()));
+        }
     };
     let rendered =
         fdu_core::report_format::render(report, fdu_core::report_format::Format::Text, false);
@@ -1190,7 +1223,9 @@ fn opened_second_report(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     };
     opened.close()?;
     let mut summary = summary?;
-    summary.complete = true;
+    summary.dirs_read = terminal.progress.directories_complete;
+    summary.errors = terminal.issues.retained.saturating_add(terminal.issues.omitted);
+    summary.complete = terminal.coverage == Coverage::Complete;
     Ok(ProbeOutput::new(arguments.mode, "opened-retained", component, summary))
 }
 
