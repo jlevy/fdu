@@ -5,7 +5,7 @@ title: "H113 quiet confirmatory: skip second analysis_candidates walk after H115
 kind: task
 status: open
 priority: 1
-version: 3
+version: 8
 delegate: unknown@spud10
 labels:
   - campaign-2
@@ -16,7 +16,7 @@ parent_id: is-01kzysa79temyc45zjn2v98kpw
 hold: null
 hold_until: null
 created_at: 2026-09-19T07:35:50.742Z
-updated_at: 2026-09-19T07:41:31.254Z
+updated_at: 2026-09-19T09:45:32.494Z
 started_at: 2026-09-19T07:35:59.554Z
 ---
 Quiet confirmatory of H113 after H115 landed. New experiment id (not a top-up of exp-110). Do not retry the file-count shortcut on an uncontrolled cell.
@@ -36,16 +36,4 @@ Quiet confirmatory of H113 after H115 landed. New experiment id (not a top-up of
 
 ## Notes
 
-Pre-registered 2026-09-19 before any engine change.
-
-Metric: content-cache-hit wall_ns on nominated metabrowser-clone.
-Direction: down.
-Accept: median at least 3% faster and 95% paired interval entirely below zero;
-content digest identical; incomplete sidecar still refused.
-Control: branch HEAD with H115 in (4370c6c0 / engine 7798fdc1). FDU_COUNTERS unset.
-Regime: PERF_HOST_REGIME=quiet only. 12 interleaved pairs. No RAM disk.
-Change: same class as exp-110 — analysis_candidate_count vs walking analysis_candidates.
-
-2026-09-19 official quiet start gate refused: CPU busy 46.7% > 25.0%.
-No pair ran. Engine patch reverted unmeasured. exp-113 not consumed.
-H113 still needs a quiet host. Do not retry uncontrolled.
+2026-09-19 02:44 PT tick: skip further H113 tonight. Incomplete quiet cells (thermal fair = 0 pairs; then 3 pairs / 16 invalid; then 9 pairs / 4 invalid) are not a verdict. File-count shortcut reverted again; not in the engine. exp-113 reserved. Do not run uncontrolled.
