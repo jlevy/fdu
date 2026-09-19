@@ -175,6 +175,12 @@ The file-count shortcut is not in the engine.
 exp-113 remains reserved.
 The 02:44 PT overnight tick skipped further H113 for the rest of that night.
 
+A 2026-09-19 stacked-PR retry (`fdu-rfr6`, ~10:31 PT) refused again at the start gate:
+CPU busy **69.4% > 25.0%**. No pair ran.
+The file-count shortcut was compiled only for that gate attempt and is not in the
+engine. exp-113 remains reserved.
+Next is H122.
+
 **exp-114 / H116** tests restore without a full `analysis_candidates` Vec+HashMap on the
 same `metabrowser-clone` tree (engine digest unchanged).
 12-pair current-best at `7f289d5f` versus `Index::lookup` plus restore-only classify
@@ -290,8 +296,8 @@ H121 only if walk work finishes early.
 Do not raise the README 200K files/s or 4M cached lines/s.
 
 1. **H113** (`fdu-rfr6`). **Needs quiet host.** Quiet confirmatory after H115. Official
-   start gate refused 2026-09-19 at 46.7% busy.
-   Later incomplete quiet cells are not a verdict.
+   start gate refused 2026-09-19 at 46.7% busy, then again at **69.4%** on the stacked
+   branch. Later incomplete quiet cells are not a verdict.
    Do not run uncontrolled.
    If the gate fails, skip to H122. Accept: `content-cache-hit` wall ≥3% with the
    interval below zero on `metabrowser-clone`; digest identical; incomplete sidecar
@@ -353,6 +359,7 @@ Do not retry H104–H106.
   (exp-110). Median −7.59% but the interval included zero; the shortcut is reverted.
   A 2026-09-19 quiet confirmatory after H115 (`fdu-rfr6`) was refused at the start gate
   (CPU busy 46.7% > 25.0%), then later incomplete quiet cells failed to hold 12 pairs.
+  The stacked-PR retry the same morning refused at 69.4% busy.
   The engine patch was not kept.
   exp-113 is unused. **H113 still needs a quiet host.** Do not run uncontrolled.
 - Do not retry the H114 type-id `String` alloc trim on `ContentRollUp::add` (exp-111).

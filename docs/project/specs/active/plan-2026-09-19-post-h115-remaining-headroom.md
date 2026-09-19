@@ -175,6 +175,7 @@ These were considered against the post-H115 path and not registered:
 - H113 quiet confirmatory (`fdu-rfr6`, exp-113) is first *if* a quiet host holds.
   If the start gate fails, skip it and take H122. Do not run another uncontrolled H113.
   Incomplete 2026-09-19 quiet cells are not a verdict.
+  A stacked-PR retry the same day refused at 69.4% busy.
   exp-113 unused.
 - Then take the remaining queue below, in order.
   After an accept, re-screen the next row: H122 may name a cut that eats H107; H121 may
