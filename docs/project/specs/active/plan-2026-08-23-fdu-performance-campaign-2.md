@@ -263,9 +263,9 @@ item; the beads carry it under the `macos-agenda` label, and
 one round of it.
 
 The 0.1.0 engine shipped (request model, opened root, watch, `.gitignore` default-on,
-content sidecar). A 2026-09-18 revisit recorded exp-105 (uncontrolled rustup baseline)
-and exp-106 (H107 rejected on wall).
-The live next-up list, host-regime note, and subject sizes are in
+content sidecar). A 2026-09-18 revisit recorded exp-105 (uncontrolled rustup baseline),
+exp-106 (H107 rejected on wall), and exp-107 (H108 confirmed on the installed CLI). The
+live next-up list, host-regime note, and subject sizes are in
 [the runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18).
 The Tier 1–3 list below is the 2026-08-23 derivation; several items have landed, and
 H86’s remaining gap is the Linux floor (H111 / `fdu-jekg`), not a rewrite.

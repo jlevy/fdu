@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 39 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 40 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -185,6 +185,7 @@ dead end.
 | 104 | [Hash the content roll-up map by path bytes instead of components](#exp104--hash-the-content-rollup-map-by-path-bytes-instead-of-components) | H103 | `content-cache-hit` | +0.1% | ❌ rejected |
 | 105 | [Post-0.1.0 uncontrolled baseline on the rustup store](#exp105--post010-uncontrolled-baseline-on-the-rustup-store) | — | `default-tree` | +2.5% | 📏 baseline |
 | 106 | [Default gitignore observation versus no-controls on metabrowser](#exp106--default-gitignore-observation-versus-nocontrols-on-metabrowser) | H107 | `default-tree` | +1.6% | ❌ rejected |
+| 107 | [Installed CLI metadata one-shot stays cold scan on frameworks](#exp107--installed-cli-metadata-oneshot-stays-cold-scan-on-frameworks) | H108 | `cli-default-tree` | -0.6% | ✅ accepted |
 
 ## The experiments
 
@@ -3724,6 +3725,29 @@ critical path.
 Full record:
 [`exp-106-default-gitignore-observation-versus-no-controls-on-metabrow.md`](../experiments/exp-106-default-gitignore-observation-versus-no-controls-on-metabrow.md)
 
+### exp-107 — Installed CLI metadata one-shot stays cold scan on frameworks
+
+✅ accepted · 2026-09-19 · H108 · commit `bd03cd6c`
+
+Control: first isolated-cache fdu PATH after OS warmup
+
+Candidate: second fdu PATH sharing that cache
+
+**`cli-default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2100.0 | 2060.0 | -0.62% (n.s.) | [-4.97%, +4.04%] |
+| peak rss (MiB) | 89.8 | 89.3 | -0.75% (n.s.) | [-1.46%, +1.46%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Accepted:** H108 confirmed: all 12 second runs stayed cold scan; wall -0.63%
+[-4.97%, +4.05%], median inside 3%. No engine change.
+
+Full record:
+[`exp-107-installed-cli-metadata-one-shot-stays-cold-scan-on-framework.md`](../experiments/exp-107-installed-cli-metadata-one-shot-stays-cold-scan-on-framework.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4053,6 +4077,12 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 064 | Content roll-up lookup and indexed type-rule tiers | `content-cache-hit` | 450.4 | 314.7 | -30.3% | ✅ accepted |
+
+### system-private-frameworks (158,705 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 107 | Installed CLI metadata one-shot stays cold scan on frameworks | `cli-default-tree` | 2,100.0 | 2,060.0 | -0.6% | ✅ accepted |
 
 ### threshold-boundary-2x (120,135 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

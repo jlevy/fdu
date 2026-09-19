@@ -31,10 +31,8 @@ Never force-push.
 
 ### Standing Best and Regime
 
-**exp-105** is the current rustup self-comparison baseline, 12-pair,
-`os_cache: warm-steady`, **uncontrolled**. A `PERF_HOST_REGIME=quiet` cell could not
-hold: desktop load (Cursor and other interactive apps) plus the walk itself exceeded 25%
-busy, and `cold-scan-index` invalidated every quiet sample.
+**exp-105** is the current rustup *probe* self-comparison baseline, 12-pair,
+`os_cache: warm-steady`, **uncontrolled**.
 
 | Job | Wall median | Peak RSS | Subject |
 | --- | ---: | ---: | --- |
@@ -42,15 +40,30 @@ busy, and `cold-scan-index` invalidated every quiet sample.
 | `cold-scan-index` | 297.1 ms | 24.7 MiB | same |
 
 Probe `default-tree` is about 492k files/s on that tree.
-That sits above the README ballpark of 200K files/s, so the ballpark is not an
-overclaim, and it is **not a reason to raise it**: these are probe jobs, not the
-installed CLI, and the host was not quiet.
+That sits above the README ballpark of 200K files/s, so the ballpark is not an overclaim
+of engine capability, and it is **not a reason to raise it**.
 
-The 2026-09-18 [installed-CLI QA](../reports/report-2026-09-18-cli-installed-qa.md) is a
-different table: 34,145 files in 0.43 s (~79k files/s) on a mutating fdu checkout with
-nested worktrees. Cached lines/s was not re-measured.
-Do not replace that QA log from probe data, and do not quote probe files/s as a product
-claim.
+**exp-107 / H108** is the installed-CLI determination on an immutable deciding tree:
+`system-private-frameworks`, 158,705 entries / 96,542 files (35% directories), this
+branch’s release CLI (`fdu 0.1.0-dev+gbd03cd6cc`). One OS warmup, then 12 isolated-cache
+first/second `fdu PATH` pairs.
+Quiet start gate passed (CPU busy 20.44%); final 26.08% broke the cell.
+Labeled **uncontrolled**. The 25% bar was not lowered.
+
+| Arm | Wall median | Peak RSS | files/s |
+| --- | ---: | ---: | ---: |
+| first `fdu PATH` | 2.100 s | 89.7 MiB | 46.0k |
+| second `fdu PATH` | 2.060 s | 89.3 MiB | 46.9k |
+
+Every second run stayed `cold scan`. Wall −0.63% [−4.97%, +4.05%]. **Confirmed.** No
+engine patch.
+This CLI cell is a directory-heavy system prefix, not a reason to lower the
+README 200K capability ballpark (the rustup probe still sits above it).
+Do not quote probe files/s as a product claim.
+
+The 2026-09-18 [installed-CLI QA](../reports/report-2026-09-18-cli-installed-qa.md) is
+still a different table: 34,145 files in 0.43 s (~79k files/s) on a mutating fdu
+checkout. Cached lines/s was not re-measured.
 
 **exp-106 / H107** (rejected): shipped `read_controls` vs `--no-controls` on the live
 metabrowser checkout (145,931 entries).
@@ -69,8 +82,8 @@ Absolute paths live only in the gitignored `explorations/benchmarks/subjects.loc
 Do not type a path into a commit.
 
 `cargo-registry-src` (~22k) screens; it cannot decide a 3% verdict.
-`system-private-frameworks` is reconstructible and read-only: a candidate for H108 when
-rustup is a poor quiet-cell subject.
+`system-private-frameworks` was the H108 subject (exp-107); digest unchanged from the
+nomination. The CLI QA medium tree was skipped: deciding-scale but mutating.
 
 ### Next Up
 
@@ -78,29 +91,29 @@ Take these in order.
 The registry row in [the loop guide](performance-loop.md#current-engine-010) is the full
 statement.
 Next free hypothesis id is **H112**. Do not mint another meaning for H91–H106.
+Next free experiment id is **exp-108**.
 
-1. **H108** (`fdu-1a4z`). Installed CLI `fdu PATH` twice after warmup on a quiet,
-   immutable deciding tree (`rustup-toolchains` or `system-private-frameworks`). Wall
-   within 3% of the first run; footer stays `cold scan`. Still open because the
-   2026-09-18 QA saw this only on mutating trees.
-   Falsified if the second run is `cached` / warm revalidation, or wall moves ≥3%. Do
-   not treat that footer as an H9 regression, and do not substitute
-   `perf_probe default-tree` for the CLI.
+1. **H109** (`fdu-8nwq` / `fdu-hzyb`). First a deciding-scale `content-cache-hit`
+   **profile** on a controls-bearing tree (`metabrowser-clone`). The exp-107 metadata
+   CLI profile is not that instrument: 0 control reads, 0 same-parent path comparisons,
+   walk ~96% of wall. A 667-file content pair with no `.gitignore` also showed 0 path
+   comparisons. Skip the Path rewrite if the deciding content profile share collapses.
+   Predicted only after that profile: `content-cache-hit` wall ≥3% with the interval
+   below zero and control goldens identical.
+   Do not land an instruction-only trim (exp-104).
 
 2. **H107** (`fdu-jcfn`, closed).
    Re-open only for a tree whose *ignored share is the walk* (a checkout sitting on
    `node_modules` that `.gitignore` drops).
    Job: `default-tree` wall, controls-on vs `--no-controls`; |median| ≥3% and the
    interval off zero, either direction.
-   Refuted on wall on metabrowser (exp-106). Do not retry on a metabrowser-like tree
-   whose ignore set is not the critical path.
+   Refuted on wall on metabrowser (exp-106). The H108 subject had 0 control files.
+   Do not retry on a metabrowser-like tree whose ignore set is not the critical path.
 
-3. **H109** (`fdu-8nwq` / `fdu-hzyb`). `content-cache-hit` wall ≥3% with the interval
-   below zero and control goldens identical, on a deciding controls-bearing subject,
-   **after** a profile at that scale.
-   The 3k cargo-registry profile overstated this tier about 2× (exp-104). Skip if the
-   profile share collapses at deciding scale.
-   Do not land an instruction-only trim.
+3. **H108** (`fdu-1a4z`, confirmed in exp-107). Do not open a cache/one-shot patch:
+   `ReportPlan::read_snapshot` is already false for metadata one-shot, the second CLI
+   run repeats the walk, and loading a snapshot is the H9 loss.
+   Do not treat a second `cold scan` as a regression.
 
 4. **H111** (`fdu-jekg`). Linux floor stage of H86: index ≤1.4× floor, aggregate ≤1.25×,
    RSS ≤3× `arena_spike`, on the 450k Linux subject, quiet `make perf-floor`. Darwin
@@ -117,12 +130,15 @@ Do not retry H104–H106.
 - Do not restart the H86 structural rewrite (`fdu-xde5` remains for H111 only).
 - Do not pad the night with unmeasured engine refactors.
 - Do not invent a capability that exists only on the command line.
-- Do not raise the README 200K files/s or 4M cached lines/s from probe cells.
+- Do not raise or lower the README 200K files/s or 4M cached lines/s from a probe cell
+  or from one directory-heavy CLI tree.
 - Do not treat campaign-1 no-controls walls as the current default speed; treat their
   tallies as a different answer (exp-106).
+- Do not force a metadata one-shot to load its snapshot (H108 / H9).
 - A quiet cell may not hold on this desktop.
-  Attempt `PERF_HOST_REGIME=quiet` first; if it fails, label **uncontrolled** and do not
-  claim quiet. Do not lower the 25% busy bar so the cell passes.
+  Attempt `PERF_HOST_REGIME=quiet` first; if it fails or the final snapshot exceeds 25%
+  busy, label **uncontrolled** and do not claim quiet.
+  Do not lower the 25% busy bar so the cell passes.
 
 ### Process Pack
 
@@ -400,7 +416,7 @@ producing a number that means nothing.
 - Start a person-gated item: the H86 rewrite (`fdu-xde5` is H111’s parent, not a license
   to restart the composite), the `searchfs` spike, the FSEvents journal, hardware
   CRC-32C (`unsafe` or a dependency), or `fdu-n75m` parts 2 and 3 (durability policy).
-- Raise the README 200K files/s or 4M cached lines/s from a probe cell.
+- Raise or lower the README 200K files/s or 4M cached lines/s from a probe cell.
 - Retry H107 on a tree whose ignored share is not the walk.
 - Add a dependency, an `unsafe` block, or a platform gate without `make cross-lint`.
 - Create a RAM disk, or write anything into a subject tree.

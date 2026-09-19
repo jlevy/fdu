@@ -31022,6 +31022,83 @@
    "subject": "a319238d9c29:145931:41a1e8457142",
    "title": "Default gitignore observation versus no-controls on metabrowser",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "second fdu PATH sharing that cache",
+   "change_pct": -0.625,
+   "commit": "bd03cd6c",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "first isolated-cache fdu PATH after OS warmup",
+   "date": "2026-09-19",
+   "decision": "accepted",
+   "entries": 158705,
+   "family": "macOS:b718281f3051",
+   "hypotheses": [
+    "H108"
+   ],
+   "id": "exp-107",
+   "interleaved": false,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "cli-default-tree",
+     "metrics": {
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 93609984,
+        "control": 94117888
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.751,
+        "ci95_high_pct": 1.461,
+        "ci95_low_pct": -1.463,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 2060000000,
+        "control": 2100000000
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -0.625,
+        "ci95_high_pct": 4.045,
+        "ci95_low_pct": -4.968,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 12980.057339088245,
+      "control": 13232.097287420056
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 107,
+   "path": "exp-107-installed-cli-metadata-one-shot-stays-cold-scan-on-framework.md",
+   "platform": "macOS",
+   "primary_job": "cli-default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "H108 confirmed: all 12 second runs stayed cold scan; wall -0.63% [-4.97%, +4.05%], median inside 3%. No engine change.",
+   "reference_tools": [],
+   "subject": "b718281f3051:158705:0c863b0ab28d",
+   "title": "Installed CLI metadata one-shot stays cold scan on frameworks",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-18",
@@ -31737,25 +31814,43 @@
    "os_cache": "warm-steady",
    "platform": "macOS",
    "synthetic": false
+  },
+  {
+   "apparent_bytes": 5752378316,
+   "directories": 55256,
+   "entries": 158705,
+   "experiments": [
+    "exp-107"
+   ],
+   "files": 96542,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "b718281f3051:158705:0c863b0ab28d",
+   "labels": [
+    "system-private-frameworks"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
   }
  ],
  "totals": {
   "accepted_lines_changed": 15233,
   "decisions": {
-   "accepted": 51,
+   "accepted": 52,
    "baseline": 8,
    "blocked": 2,
    "in-progress": 2,
    "rejected": 41,
    "superseded": 3
   },
-  "experiments": 107,
+  "experiments": 108,
   "first_date": "2026-08-10",
-  "hypotheses": 65,
+  "hypotheses": 66,
   "last_date": "2026-09-19",
   "platforms": {
    "Linux": 11,
-   "macOS": 96
+   "macOS": 97
   }
  },
  "version": "fdu.performance.timeline/1"
