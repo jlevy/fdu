@@ -3482,7 +3482,7 @@ impl Index {
 
     /// File identities restore matches against sidecar records, without classifying.
     ///
-    /// The HashMap is keyed by relative path because load looks up each decoded record
+    /// The `HashMap` is keyed by relative path because load looks up each decoded record
     /// that way. Classification is omitted: cache-only restore commits the sidecar's
     /// stored classification, and the apply-path self-check cannot change that answer.
     pub(crate) fn restore_analysis_candidates(
