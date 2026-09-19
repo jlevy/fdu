@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 43 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 44 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -189,6 +189,7 @@ dead end.
 | 108 | [Deciding-scale content-cache-hit profile on metabrowser](#exp108--decidingscale-contentcachehit-profile-on-metabrowser) | H109 | `content-cache-hit` | -0.3% | 📏 baseline |
 | 109 | [Sidecar restore stage split on metabrowser](#exp109--sidecar-restore-stage-split-on-metabrowser) | H112 | `content-cache-hit` | +0.3% | 📏 baseline |
 | 110 | [Cache-only completeness by file count on metabrowser](#exp110--cacheonly-completeness-by-file-count-on-metabrowser) | H113 | `content-cache-hit` | -7.6% | ❌ rejected |
+| 111 | [Type-id get-mut on roll-up add on metabrowser](#exp111--typeid-getmut-on-rollup-add-on-metabrowser) | H114 | `content-cache-hit` | -0.6% | ❌ rejected |
 
 ## The experiments
 
@@ -3825,6 +3826,36 @@ test kept
 Full record:
 [`exp-110-cache-only-completeness-by-file-count-on-metabrowser.md`](../experiments/exp-110-cache-only-completeness-by-file-count-on-metabrowser.md)
 
+### exp-111 — Type-id get-mut on roll-up add on metabrowser
+
+❌ rejected · 2026-09-19 · H114
+
+Control: current HEAD with H112 timers at c06d09e7
+
+Candidate: get_mut before entry for ContentRollUp type-id String
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1328.9 | 1290.9 | -0.56% (n.s.) | [-17.92%, +4.79%] |
+| component (ms) | 1003.4 | 952.0 | -1.34% (n.s.) | [-16.90%, +4.31%] |
+| cpu (ms) | 1264.7 | 1243.5 | -0.79% (n.s.) | [-5.50%, +1.48%] |
+| user (ms) | 1123.4 | 1107.6 | -0.96% (n.s.) | [-4.51%, +0.20%] |
+| system (ms) | 141.3 | 136.2 | -1.82% (n.s.) | [-14.23%, +12.60%] |
+| blocked (ms) | 59.7 | 40.2 | +15.90% (n.s.) | [-77.83%, +97.78%] |
+| peak rss (MiB) | 386.5 | 388.8 | +0.64% (regression) | [+0.29%, +0.80%] |
+
+Cost to carry: 16 lines; no new dependencies.
+
+get_mut before entry on by_type; no unsafe; reverted after reject
+
+**Rejected:** wall -0.56 percent but interval includes zero; type-id alloc trim
+reverted.
+
+Full record:
+[`exp-111-type-id-get-mut-on-roll-up-add-on-metabrowser.md`](../experiments/exp-111-type-id-get-mut-on-roll-up-add-on-metabrowser.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -3898,6 +3929,16 @@ Baselines show one value because they measure a state rather than a change.
 | 017 | Pre-create dormant workers for adaptive scan depth | `cold-scan-producer` | 494.2 | 500.7 | +2.0% | ❌ rejected |
 | 023 | Cumulative effect through adaptive scanning and macOS bulk metadata | `cold-scan-index` | 625.2 | 295.5 | -53.5% | ✅ accepted |
 
+### metabrowser-clone (145,931 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 106 | Default gitignore observation versus no-controls on metabrowser | `default-tree` | 338.6 | 341.6 | +1.6% | ❌ rejected |
+| 108 | Deciding-scale content-cache-hit profile on metabrowser | `content-cache-hit` | 1,218.0 | — | — | 📏 baseline |
+| 109 | Sidecar restore stage split on metabrowser | `content-cache-hit` | 1,195.5 | — | — | 📏 baseline |
+| 110 | Cache-only completeness by file count on metabrowser | `content-cache-hit` | 1,246.3 | 1,156.8 | -7.6% | ❌ rejected |
+| 111 | Type-id get-mut on roll-up add on metabrowser | `content-cache-hit` | 1,328.9 | 1,290.9 | -0.6% | ❌ rejected |
+
 ### metabrowser-current-h86 (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -3925,15 +3966,6 @@ Baselines show one value because they measure a state rather than a change.
 | 080 | Skip oversized journal clones | `delta-apply-large` | 677.6 | 654.9 | -3.5% | ✅ accepted |
 | 081 | Borrow impact paths until the bounded result escapes | `opened-discovery` | 286.8 | 282.2 | -1.1% | ❌ rejected |
 | 082 | Move scanner commits directly into the journal | `opened-discovery` | 284.5 | 281.2 | -0.0% | ❌ rejected |
-
-### metabrowser-clone (145,931 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 106 | Default gitignore observation versus no-controls on metabrowser | `default-tree` | 338.6 | 341.6 | +1.6% | ❌ rejected |
-| 108 | Deciding-scale content-cache-hit profile on metabrowser | `content-cache-hit` | 1,218.0 | — | — | 📏 baseline |
-| 109 | Sidecar restore stage split on metabrowser | `content-cache-hit` | 1,195.5 | — | — | 📏 baseline |
-| 110 | Cache-only completeness by file count on metabrowser | `content-cache-hit` | 1,246.3 | 1,156.8 | -7.6% | ❌ rejected |
 
 ### vm450k (450,463 entries) — Linux 6.18.5-fc-v20, unrecorded, warm-steady
 

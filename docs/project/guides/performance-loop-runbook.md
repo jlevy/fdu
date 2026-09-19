@@ -121,6 +121,22 @@ Incomplete-sidecar fail-closed test kept.
 Every sample 133,597 cache hits / 0 applied; content digest unchanged from exp-108 /
 exp-109.
 
+**exp-111 / H114** tests the leftover apply-path type-id `String` alloc on the same
+`metabrowser-clone` tree (engine digest unchanged).
+12-pair current-best at `c06d09e7` (timers in the binary, off) versus `get_mut` before
+`entry` in `ContentRollUp::add`. Quiet start gate failed (49.5% busy); pair ran
+**uncontrolled**. Initial busy 49.25%; final 25.78%. The 25% bar was not lowered.
+
+| Arm | Wall median | Component | Peak RSS |
+| --- | ---: | ---: | ---: |
+| control | 1,328.9 ms | 1,003.4 ms | 386.5 MiB |
+| candidate | 1,290.9 ms | 952.0 ms | 388.8 MiB |
+
+Wall −0.56% [−17.92%, +4.79%]. **Rejected.** Median below 3%; interval includes zero.
+Component −1.34% [−16.90%, +4.31%]. Type-id alloc trim reverted.
+Every sample 133,597 cache hits / 0 applied; content digest unchanged from exp-108 /
+exp-109 / exp-110.
+
 ### Darwin Subjects
 
 The 2026-08 nominated metabrowser corpus path is gone from disk.
@@ -134,24 +150,24 @@ Do not type a path into a commit.
 
 `cargo-registry-src` (~22k) screens; it cannot decide a 3% verdict.
 `system-private-frameworks` was the H108 subject (exp-107); digest unchanged from the
-nomination. `metabrowser-clone` was the H109 / H112 / H113 subject (exp-108, exp-109,
-exp-110); same shape as exp-106, engine digest unchanged (`3fbfed48…`). The CLI QA
-medium tree was skipped: deciding-scale but mutating.
+nomination. `metabrowser-clone` was the H109 / H112 / H113 / H114 subject (exp-108,
+exp-109, exp-110, exp-111); same shape as exp-106, engine digest unchanged
+(`3fbfed48…`). The CLI QA medium tree was skipped: deciding-scale but mutating.
 
 ### Next Up
 
 Take these in order.
 The registry row in [the loop guide](performance-loop.md#current-engine-010) is the full
 statement.
-Next free hypothesis id is **H114**. Do not mint another meaning for H91–H106.
-Next free experiment id is **exp-111**.
+Next free hypothesis id is **H116**. Do not mint another meaning for H91–H106.
+Next free experiment id is **exp-112**.
 
-1. **H83** (`fdu-78q6` / `fdu-jxhk`). H112 scoped the remaining structural work to apply
-   / commit / `merge_ancestors`, not parse.
-   A layout usable without rebuilding per-record state is still the same class as H78.
-   Screen any patch on `content-cache-hit` wall ≥3% with the interval below zero; digest
-   identical. Do not retry parse-speed, instruction trims, or the H113 file-count
-   completeness shortcut.
+1. **H115** (`fdu-jxhk`, child of H83). Sidecar restore still rebuilds roll-ups per file
+   times depth. One bottom-up pass after restore inserts is the remaining named
+   apply/install cut. Screen on `content-cache-hit` wall ≥3% with the interval below
+   zero; digest identical.
+   Do not retry parse-speed, instruction trims, the H113 file-count completeness
+   shortcut, or the H114 type-id `String` alloc.
 
 2. **H113** (`fdu-wrdl`, rejected in exp-110). Do not land the file-count completeness
    shortcut from an uncontrolled cell.
@@ -203,6 +219,8 @@ Do not retry H104–H106.
 - Do not retry the H113 file-count completeness shortcut on another uncontrolled cell
   (exp-110). Median −7.59% but the interval included zero; the shortcut is reverted.
   A quiet confirmatory cell would be a new experiment, not a top-up.
+- Do not retry the H114 type-id `String` alloc trim on `ContentRollUp::add` (exp-111).
+  Wall −0.56% [−17.92%, +4.79%]; the trim is reverted.
 - A quiet cell may not hold on this desktop.
   Attempt `PERF_HOST_REGIME=quiet` first; if it fails or the final snapshot exceeds 25%
   busy, label **uncontrolled** and do not claim quiet.
@@ -487,6 +505,7 @@ producing a number that means nothing.
 - Raise or lower the README 200K files/s or 4M cached lines/s from a probe cell.
 - Retry H107 on a tree whose ignored share is not the walk.
 - Land an H109 Path rewrite after exp-108.
+- Retry the H114 type-id `String` alloc trim after exp-111.
 - Add a dependency, an `unsafe` block, or a platform gate without `make cross-lint`.
 - Create a RAM disk, or write anything into a subject tree.
   Snapshots, results and scratch go under `/tmp/fdu-realtree/`.

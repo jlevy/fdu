@@ -31555,9 +31555,161 @@
    "subject": "a319238d9c29:145931:3fbfed48354e",
    "title": "Cache-only completeness by file count on metabrowser",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "get_mut before entry for ContentRollUp type-id String",
+   "change_pct": -0.558,
+   "commit": null,
+   "complexity": {
+    "lines_changed": 16,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "get_mut before entry on by_type; no unsafe; reverted after reject"
+   },
+   "control": "current HEAD with H112 timers at c06d09e7",
+   "date": "2026-09-19",
+   "decision": "rejected",
+   "entries": 145931,
+   "family": "macOS:a319238d9c29",
+   "hypotheses": [
+    "H114"
+   ],
+   "id": "exp-111",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-cache-hit",
+     "metrics": {
+      "blocked_ns": {
+       "absolute": {
+        "candidate": 40177187.5,
+        "control": 59694271
+       },
+       "metric": "blocked_ns",
+       "paired": {
+        "change_pct": 15.901,
+        "ci95_high_pct": 97.778,
+        "ci95_low_pct": -77.829,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "component_ns": {
+       "absolute": {
+        "candidate": 952039854.5,
+        "control": 1003423375
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -1.342,
+        "ci95_high_pct": 4.309,
+        "ci95_low_pct": -16.896,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1243477000,
+        "control": 1264705000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.786,
+        "ci95_high_pct": 1.483,
+        "ci95_low_pct": -5.501,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 407683072,
+        "control": 405258240
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.642,
+        "ci95_high_pct": 0.795,
+        "ci95_low_pct": 0.295,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 136200000,
+        "control": 141292000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -1.816,
+        "ci95_high_pct": 12.599,
+        "ci95_low_pct": -14.232,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 1107636500,
+        "control": 1123413000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -0.963,
+        "ci95_high_pct": 0.2,
+        "ci95_low_pct": -4.509,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1290897000,
+        "control": 1328853271
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -0.558,
+        "ci95_high_pct": 4.79,
+        "ci95_low_pct": -17.916,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 8845.94088987261,
+      "control": 9106.03827151188
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "control",
+   "number": 111,
+   "path": "exp-111-type-id-get-mut-on-roll-up-add-on-metabrowser.md",
+   "platform": "macOS",
+   "primary_job": "content-cache-hit",
+   "primary_metric": "wall_ns",
+   "reason": "wall -0.56 percent but interval includes zero; type-id alloc trim reverted",
+   "reference_tools": [],
+   "subject": "a319238d9c29:145931:3fbfed48354e",
+   "title": "Type-id get-mut on roll-up add on metabrowser",
+   "trials": 12
   }
  ],
- "prepared": "2026-09-18",
+ "prepared": "2026-09-19",
  "subjects": [
   {
    "apparent_bytes": 1082046346,
@@ -31924,6 +32076,26 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 1724995969,
+   "directories": 11512,
+   "entries": 145931,
+   "experiments": [
+    "exp-109",
+    "exp-110",
+    "exp-111"
+   ],
+   "files": 133597,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "a319238d9c29:145931:3fbfed48354e",
+   "labels": [
+    "metabrowser-clone"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 16537501222,
    "directories": 110369,
    "entries": 901963,
@@ -32012,25 +32184,6 @@
    "filesystem": "apfs",
    "host_cpu": "Apple M1 Pro",
    "key": "dbd79ed9c898:60089:f7150a975da1",
-   "labels": [
-    "metabrowser-clone"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "macOS",
-   "synthetic": false
-  },
-  {
-   "apparent_bytes": 1724995969,
-   "directories": 11512,
-   "entries": 145931,
-   "experiments": [
-    "exp-109",
-    "exp-110"
-   ],
-   "files": 133597,
-   "filesystem": "apfs",
-   "host_cpu": "Apple M1 Pro",
-   "key": "a319238d9c29:145931:3fbfed48354e",
    "labels": [
     "metabrowser-clone"
    ],
@@ -32334,16 +32487,16 @@
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
-   "rejected": 42,
+   "rejected": 43,
    "superseded": 3
   },
-  "experiments": 111,
+  "experiments": 112,
   "first_date": "2026-08-10",
-  "hypotheses": 69,
+  "hypotheses": 70,
   "last_date": "2026-09-19",
   "platforms": {
    "Linux": 11,
-   "macOS": 100
+   "macOS": 101
   }
  },
  "version": "fdu.performance.timeline/1"
