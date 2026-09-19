@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 49 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 50 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -195,6 +195,7 @@ dead end.
 | 115 | [First-pass analyze insert-then-rebuild on metabrowser](#exp115--firstpass-analyze-insertthenrebuild-on-metabrowser) | H118 | `content-basic` | -2.6% | ❌ rejected |
 | 116 | [Opened-root second report versus one-shot on frameworks](#exp116--openedroot-second-report-versus-oneshot-on-frameworks) | H117 | `default-tree` | -99.9% | ✅ accepted |
 | 117 | [Stream sidecar parse-into-apply on metabrowser](#exp117--stream-sidecar-parseintoapply-on-metabrowser) | H120 | `content-cache-hit` | -10.1% | ✅ accepted |
+| 118 | [Deciding-scale metadata walk profile after current engine](#exp118--decidingscale-metadata-walk-profile-after-current-engine) | H122 | `default-tree` | +0.2% | ✅ accepted |
 
 ## The experiments
 
@@ -4023,6 +4024,33 @@ restore kept.
 Full record:
 [`exp-117-stream-sidecar-parse-into-apply-on-metabrowser.md`](../experiments/exp-117-stream-sidecar-parse-into-apply-on-metabrowser.md)
 
+### exp-118 — Deciding-scale metadata walk profile after current engine
+
+✅ accepted · 2026-09-19 · H122 · commit `018b4c86`
+
+Control: same probe at 018b4c86
+
+Candidate: same probe self-comparison
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1807.7 | 1873.4 | +0.18% (n.s.) | [-2.91%, +13.43%] |
+| component (ms) | 1798.7 | 1866.5 | +0.19% (n.s.) | [-3.00%, +13.42%] |
+| cpu (ms) | 8957.6 | 9117.4 | +1.87% (n.s.) | [-13.17%, +20.73%] |
+| user (ms) | 338.0 | 333.3 | -0.82% (n.s.) | [-2.23%, +1.30%] |
+| system (ms) | 8623.5 | 8779.3 | +1.98% (n.s.) | [-13.53%, +21.77%] |
+| peak rss (MiB) | 84.9 | 85.6 | +0.73% (n.s.) | [-0.54%, +1.43%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Accepted:** walk is 97 percent of default-tree component; leftover is __open plus
+getattrlistbulk; no Darwin cut named.
+
+Full record:
+[`exp-118-deciding-scale-metadata-walk-profile-after-current-engine.md`](../experiments/exp-118-deciding-scale-metadata-walk-profile-after-current-engine.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4187,6 +4215,14 @@ Baselines show one value because they measure a state rather than a change.
 | 067 | Skip the identical snapshot rewrite on the cold-scan path | `default-tree` | 397.7 | 358.7 | -10.6% | ✅ accepted |
 | 068 | Flush the rendered report before joining the snapshot writer | `default-tree` | 353.3 | 361.3 | +1.2% | ✅ accepted |
 
+### system-private-frameworks (158,705 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 107 | Installed CLI metadata one-shot stays cold scan on frameworks | `cli-default-tree` | 2,100.0 | 2,060.0 | -0.6% | ✅ accepted |
+| 116 | Opened-root second report versus one-shot on frameworks | `default-tree` | 2,612.2 | 2,361.9 | -2.2% | ✅ accepted |
+| 118 | Deciding-scale metadata walk profile after current engine | `default-tree` | 1,807.7 | 1,873.4 | +0.2% | ✅ accepted |
+
 ### generated-markdown-2000 (2,001 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -4228,13 +4264,6 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 054 | Validate the Linux campaign’s cumulative effect on macOS | `warm-revalidate` | 393.0 | 335.7 | -15.7% | ✅ accepted |
 | 055 | Validate review fixes on macOS | `cold-scan-index` | 304.9 | 297.5 | -0.9% | ✅ accepted |
-
-### system-private-frameworks (158,705 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 107 | Installed CLI metadata one-shot stays cold scan on frameworks | `cli-default-tree` | 2,100.0 | 2,060.0 | -0.6% | ✅ accepted |
-| 116 | Opened-root second report versus one-shot on frameworks | `default-tree` | 2,612.2 | 2,361.9 | -2.2% | ✅ accepted |
 
 ### cargo-registry-src (13,020 entries) — Linux 6.18.44-fc-v21, unrecorded, warm-steady
 

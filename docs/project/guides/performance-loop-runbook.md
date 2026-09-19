@@ -258,6 +258,21 @@ non-inferior. Digest identical.
 Streaming restore kept.
 H115 remains the standing wall-speed best.
 
+**exp-118 / H122** is the deciding-scale metadata CLI/walk **profile** after the current
+engine, on `system-private-frameworks` (digest unchanged).
+Same-binary 12-pair `default-tree`. Quiet start gate refused (40.3% busy); pair ran
+**uncontrolled**. Initial busy 49.45%; final 56.17%. The 25% bar was not lowered.
+
+| Arm | Wall median | Component | Peak RSS |
+| --- | ---: | ---: | ---: |
+| control | 1,807.7 ms | 1,798.7 ms | 84.9 MiB |
+| candidate | 1,873.4 ms | 1,866.5 ms | 85.6 MiB |
+
+Self-comparison +0.18% [−2.91%, +13.43%]. **Confirmed.** Walk is 96.6–97.5% of
+instrumented component (second run still a full walk; `snapshot_written` false).
+Sample leftover: `__open` 56.74%, `getattrlistbulk` 17.79%, finish 0.3–0.4%. No Darwin
+cut named. No engine patch.
+
 ### Darwin Subjects
 
 The 2026-08 nominated metabrowser corpus path is gone from disk.
@@ -274,8 +289,11 @@ Do not type a path into a commit.
 unchanged from the nomination.
 `metabrowser-clone` was the H109 / H112 / H113 / H114 / H115 / H116 / H118 / H120
 subject (exp-108 through exp-112, exp-114, exp-115, exp-117); same shape as exp-106,
-engine digest unchanged (`3fbfed48…`). The CLI QA medium tree was skipped:
+engine digest unchanged (`3fbfed48…`). A 2026-09-19 re-observe drifted to 145,988
+entries / 133,654 files (digest `cc517e78…`); commit a fresh subjects document with the
+next metabrowser cell (`make perf-subjects`). The CLI QA medium tree was skipped:
 deciding-scale but mutating.
+`system-private-frameworks` was also the H122 subject (exp-118); digest unchanged.
 
 ### Next Up
 
@@ -286,13 +304,12 @@ The registry row in [the loop guide](performance-loop.md#current-engine-010) is 
 statement. Overnight H116–H120 is done; do not retry those.
 Next free hypothesis id is **H125**. Do not mint another meaning for H91–H106. Next free
 experiment id is **exp-113** (reserved for H113 quiet).
-After that, **exp-118**.
+After that, **exp-119**.
 
-This stacked session’s 3-hour queue (2026-09-19 ~10:27–13:14 PT): H113 quiet-or-skip,
-then H122 walk profile, then at most one named patch the profile names.
+This stacked session (2026-09-19 ~10:27–13:14 PT) skipped H113 (quiet gate 69.4%) and
+recorded H122 (exp-118). The profile named no Darwin cut, so no third cell.
 Do not start H107 without an ignore-is-the-walk subject.
 Do not start H111 (no Linux).
-H121 only if walk work finishes early.
 Do not raise the README 200K files/s or 4M cached lines/s.
 
 1. **H113** (`fdu-rfr6`). **Needs quiet host.** Quiet confirmatory after H115. Official
@@ -304,11 +321,10 @@ Do not raise the README 200K files/s or 4M cached lines/s.
    refused. Control is HEAD with H115 and H120 in.
    Experiment id **exp-113**.
 
-2. **H122** (`fdu-ytg5`). Deciding-scale metadata CLI/walk **profile** after the current
-   engine. Highest user-visible leverage.
-   H108: second `fdu PATH` stays `cold scan`; detached walk ~96% of that wall.
-   Overnight did not optimize this job.
-   Profile first. Not H86. Not a snapshot load.
+2. **H122** (`fdu-ytg5`). **Confirmed** (exp-118). Walk is 96.6–97.5% of deciding-scale
+   `default-tree` component on `system-private-frameworks`. Leftover is directory
+   `__open` + `getattrlistbulk`, not consume.
+   No Darwin cut. Do not retry as a snapshot-load or finish trim.
 
 3. **H107** (`fdu-jcfn`). Open only on a tree whose *ignored share is the walk*. Refuted
    on metabrowser (exp-106). Do not retry metabrowser.

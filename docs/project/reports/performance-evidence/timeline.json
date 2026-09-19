@@ -757,6 +757,15 @@
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "tool": "dust",
    "wall_ns": 2660713562.5
+  },
+  {
+   "entries": 158705,
+   "id": "exp-118",
+   "per_entry_ns": 11326.015771399767,
+   "platform": "macOS",
+   "subject": "b718281f3051:158705:0c863b0ab28d",
+   "tool": "dust",
+   "wall_ns": 1797495333
   }
  ],
  "experiments": [
@@ -32563,6 +32572,155 @@
    "subject": "a319238d9c29:145931:3fbfed48354e",
    "title": "Stream sidecar parse-into-apply on metabrowser",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe self-comparison",
+   "change_pct": 0.181,
+   "commit": "018b4c86",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "same probe at 018b4c86",
+   "date": "2026-09-19",
+   "decision": "accepted",
+   "entries": 158705,
+   "family": "macOS:b718281f3051",
+   "hypotheses": [
+    "H122"
+   ],
+   "id": "exp-118",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 1866467375,
+        "control": 1798744958.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.192,
+        "ci95_high_pct": 13.419,
+        "ci95_low_pct": -2.996,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 9117425500,
+        "control": 8957558500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 1.869,
+        "ci95_high_pct": 20.732,
+        "ci95_low_pct": -13.168,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 89751552,
+        "control": 89038848
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.73,
+        "ci95_high_pct": 1.434,
+        "ci95_low_pct": -0.542,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 8779329500,
+        "control": 8623460000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 1.976,
+        "ci95_high_pct": 21.769,
+        "ci95_low_pct": -13.525,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 333342000,
+        "control": 338019500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -0.824,
+        "ci95_high_pct": 1.297,
+        "ci95_low_pct": -2.235,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1873391771,
+        "control": 1807680666.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.181,
+        "ci95_high_pct": 13.425,
+        "ci95_low_pct": -2.909,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 11804.239129201978,
+      "control": 11390.193544626823
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 118,
+   "path": "exp-118-deciding-scale-metadata-walk-profile-after-current-engine.md",
+   "platform": "macOS",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "walk is 97 percent of default-tree component; leftover is __open plus getattrlistbulk; no Darwin cut named",
+   "reference_tools": [
+    {
+     "argv": [
+      "{binary}",
+      "-d",
+      "1",
+      "--no-progress",
+      "{root}"
+     ],
+     "name": "dust",
+     "wall_ns_median": 1797495333
+    }
+   ],
+   "subject": "b718281f3051:158705:0c863b0ab28d",
+   "title": "Deciding-scale metadata walk profile after current engine",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-19",
@@ -32956,6 +33114,26 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 5752378316,
+   "directories": 55256,
+   "entries": 158705,
+   "experiments": [
+    "exp-107",
+    "exp-116",
+    "exp-118"
+   ],
+   "files": 96542,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "b718281f3051:158705:0c863b0ab28d",
+   "labels": [
+    "system-private-frameworks"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 16537501222,
    "directories": 110369,
    "entries": 901963,
@@ -33046,25 +33224,6 @@
    "key": "dbd79ed9c898:60089:f7150a975da1",
    "labels": [
     "metabrowser-clone"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "macOS",
-   "synthetic": false
-  },
-  {
-   "apparent_bytes": 5752378316,
-   "directories": 55256,
-   "entries": 158705,
-   "experiments": [
-    "exp-107",
-    "exp-116"
-   ],
-   "files": 96542,
-   "filesystem": "apfs",
-   "host_cpu": "Apple M1 Pro",
-   "key": "b718281f3051:158705:0c863b0ab28d",
-   "labels": [
-    "system-private-frameworks"
    ],
    "os_cache": "warm-steady",
    "platform": "macOS",
@@ -33344,20 +33503,20 @@
  "totals": {
   "accepted_lines_changed": 15600,
   "decisions": {
-   "accepted": 55,
+   "accepted": 56,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
    "rejected": 45,
    "superseded": 3
   },
-  "experiments": 117,
+  "experiments": 118,
   "first_date": "2026-08-10",
-  "hypotheses": 75,
+  "hypotheses": 76,
   "last_date": "2026-09-19",
   "platforms": {
    "Linux": 11,
-   "macOS": 106
+   "macOS": 107
   }
  },
  "version": "fdu.performance.timeline/1"

@@ -6,8 +6,8 @@
 
 **Status:** Active. Overnight H116–H120 is done.
 This file is the remaining unaddressed-hypothesis queue after that overnight: H113
-(quiet), H122, H107 (ignore-is-the-walk only), H123, H121, H124, and H111 (not this
-host).
+(quiet), H107 (ignore-is-the-walk only), H123, H121, H124, and H111 (not this host).
+H122 is confirmed (exp-118).
 [The runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
 keeps an abbreviated next-up in that order; this file is the source of truth for the
 full rows. The loop guide registry remains the full hypothesis text.
@@ -112,13 +112,13 @@ Overnight registry rows (settled; full text in the loop guide):
 | H118 | First-pass `analyze_index` can use H115’s insert-then-rebuild instead of per-file `merge_ancestors` | `content-basic` component | Rejected (exp-115). Do not retry uncontrolled. |
 | H119 | First-pass analyze can overlap file I/O with the metadata walk instead of opening every file after the scan | `content-basic` wall / product `--analyze` | Screened. Do not retry walk-overlap. |
 | H120 | Streaming sidecar parse-into-apply (no full decoded-records Vec beside the files map) cuts peak RSS at least 10% | `content-cache-hit` RSS | Accepted (exp-117). |
+| H122 | After the current engine, a deciding-scale metadata CLI/walk profile still shows the walk as the job | installed `fdu PATH` / `default-tree` | Confirmed (exp-118). Do not retry as a cut. |
 
 Remaining registry rows (open; full text in the loop guide):
 
 | # | One-line claim | Job |
 | --- | --- | --- |
 | H113 | File-count completeness after H115 is a real quiet wall win | `content-cache-hit` |
-| H122 | After the current engine, a deciding-scale metadata CLI/walk profile still shows the walk as the job | installed `fdu PATH` / `default-tree` |
 | H107 | Default gitignore observation differs by ≥3% wall only where the ignored share *is* the walk | `default-tree` |
 | H123 | A product opened-root or refresh path that retains the index is ≥3% faster than repeating a one-shot | opened retained read vs `fdu PATH` |
 | H121 | After H115 and H120, a cache-hit restore re-profile names whether apply still dominates | `content-cache-hit` |
@@ -128,9 +128,9 @@ Remaining registry rows (open; full text in the loop guide):
 H113 still needs a quiet host.
 Do not run uncontrolled.
 
-H122 is not H86 and not H111. H108’s instrumented pair put the detached walk at ~96% of
-`fdu PATH` wall; overnight did not optimize that job.
-Profile first.
+H122 is confirmed (exp-118): walk 96.6–97.5% of deciding-scale `default-tree` component.
+Leftover is directory `__open` + `getattrlistbulk`. Not H86 and not H111. Do not retry
+as a snapshot load or consume trim.
 
 H107 stays H107. Re-run only on a tree whose ignored share can be the walk.
 Do not retry metabrowser (exp-106).
@@ -206,15 +206,11 @@ Overnight H116–H120 is history, not a retry list.
    reject). Why next: already instrumented; leftover 12.6% `content_open` walk from
    exp-109 may have changed after H115 and H120.
 
-2. **H122** (`fdu-ytg5`). **Open.** Highest user-visible leverage.
-   Deciding-scale installed-CLI / `default-tree` **profile** after the current engine
-   (H115 + H120 in). Subject: `system-private-frameworks` or another immutable deciding
-   tree. Determination: the metadata walk is still ≥90% of `fdu PATH` wall (H108
-   instrumented: detached walk 1.292 s of 1.34 s, ~96%), and names the stage that owns
-   the leftover (enumerate, stat, consume).
-   Not a cut. Not H86. What refutes: walk share below 90%, or the leftover is a stage
-   already owned by a rejected hypothesis.
-   Why next: overnight optimized restore and RSS, not the default command.
+2. **H122** (`fdu-ytg5`). **Confirmed** (exp-118). Highest user-visible leverage.
+   Deciding-scale `default-tree` walk is 96.6–97.5% of instrumented component on
+   `system-private-frameworks`. Leftover is directory `__open` + `getattrlistbulk`, not
+   consume or finish. No Darwin cut.
+   Not H86. Do not retry as a snapshot load.
 
 3. **H107** (`fdu-jcfn`). **Open only where ignore *is* the walk.** Metric:
    `default-tree` wall, |median| ≥3% and interval excludes zero, either direction, on a
@@ -285,6 +281,7 @@ Engine changes land only as the experiment that tests the next row.
   cut.
 - Whether a Darwin deciding-scale `fdu PATH` profile (H122) names a leftover that is not
   already H86/H111 on Linux.
+  **Closed:** exp-118 named `__open` + `getattrlistbulk`; no Darwin cut.
 - Whether H117’s retained read can become a product path (H123) without loading a
   snapshot on one-shot `fdu PATH`.
 - Whether a type/size gate or read-ahead (H124) can cut first-pass analyze wall after
