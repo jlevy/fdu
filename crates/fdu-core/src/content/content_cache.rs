@@ -53,6 +53,9 @@ pub struct ContentCacheLoad {
     pub coverage_exclusions: u64,
     /// Records that no longer matched a live candidate.
     pub stale: u64,
+    /// Candidates this restore walked. Cache-only completeness compares `hits` to this
+    /// instead of walking `analysis_candidates` again.
+    pub(crate) candidates: u64,
 }
 
 /// Derive the content-sidecar path without changing the metadata snapshot name.
@@ -181,7 +184,12 @@ pub fn load_content_cache(
         counts.content_sidecar_candidates_us =
             counts.content_sidecar_candidates_us.saturating_add(elapsed);
     });
-    let mut loaded = ContentCacheLoad { usable: true, ..ContentCacheLoad::default() };
+    let candidate_count = u64::try_from(candidates.len()).unwrap_or(u64::MAX);
+    let mut loaded = ContentCacheLoad {
+        usable: true,
+        candidates: candidate_count,
+        ..ContentCacheLoad::default()
+    };
     for _ in 0..stream.remaining {
         let decode_started = crate::counters::enabled().then(std::time::Instant::now);
         let Some((relative_path, analysis)) = read_record(&mut stream) else {

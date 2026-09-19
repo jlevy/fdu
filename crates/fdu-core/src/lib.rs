@@ -594,12 +594,10 @@ pub(crate) fn open_for_report(
         index.mark_unverified();
         let content_cache = load_content(&mut index, config)?;
         // A sidecar serves only its own identity, so restoring one record per candidate
-        // means the sidecar holds the complete answer to this request.
+        // means the sidecar holds the complete answer to this request. Restore already
+        // walked that set; compare `hits` to the count it stored, not a second walk.
         if config.analysis.profile.is_enabled()
-            && (!content_cache.usable
-                || content_cache.hits
-                    != u64::try_from(index.analysis_candidates(config.analysis.profile).len())
-                        .unwrap_or(u64::MAX))
+            && (!content_cache.usable || content_cache.hits != content_cache.candidates)
         {
             return Err(Error::Snapshot(
                 "no complete usable content sidecar for this root and analysis profile".into(),
@@ -1482,6 +1480,10 @@ mod tests {
         let (cached, report) = open(dir.path(), &only).expect("restore the analyzed state");
         assert!(report.content_cache.usable);
         assert_eq!(report.content_cache.hits, 1, "one record per candidate is complete");
+        assert_eq!(
+            report.content_cache.candidates, report.content_cache.hits,
+            "completeness uses the count restore already walked"
+        );
         assert_eq!(cached.content_set(), lines);
     }
 
