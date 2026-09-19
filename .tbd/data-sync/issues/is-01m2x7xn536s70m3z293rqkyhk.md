@@ -3,9 +3,9 @@ type: is
 id: is-01m2x7xn536s70m3z293rqkyhk
 title: "H121: post-H115+H120 cache-hit restore re-profile"
 kind: task
-status: open
+status: closed
 priority: 1
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-09-19-post-h115-remaining-headroom.md
 labels:
   - performance
@@ -14,7 +14,11 @@ labels:
 dependencies: []
 parent_id: is-01m2x7xbt1c4we0wffeth7jrd6
 created_at: 2026-09-19T16:27:49.282Z
-updated_at: 2026-09-19T16:27:49.282Z
+updated_at: 2026-09-19T18:33:03.831Z
+closed_at: 2026-09-19T18:33:03.830Z
+close_reason: "Confirmed exp-120: after H115+H120, apply is 43% of restore and candidates 48%. No stage >=50% of restore. No apply cut. Do not retry H116. H83 apply/install scoped down."
+resolution: null
+duplicate_of: null
 ---
 After H115 (restore rebuild) and H120 (streaming parse-into-apply), the exp-109 restore mix is stale. Profile first. A named apply/install cut follows only if apply still dominates (that leftover is H83). Not another alloc trim. Not a retry of H116.
 

@@ -1,16 +1,16 @@
 ---
 type: is
 id: is-01m2xbag4cjyqqvq776rnfxcyt
-title: Keep volume capacity out of the tree engine; do not subsume duf
-kind: task
+title: Add a volumes view over devices in the scan, not a duf clone
+kind: feature
 status: open
 priority: 3
-version: 1
+version: 2
 labels:
   - design
 dependencies: []
 created_at: 2026-09-19T17:27:15.851Z
-updated_at: 2026-09-19T17:27:15.851Z
+updated_at: 2026-09-19T18:01:15.651Z
 ---
 Design review (2026-09-19): fdu should not grow a duf/df clone.
 
@@ -23,3 +23,9 @@ What would be coherent later, if evidence shows agents miss it: a path-scoped ca
 Agent holism belongs in the skill (compose df/duf for capacity, fdu for attribution), not in one binary absorbing a second fact model. fdu already refuses deletion; it is not a storage-management toolkit.
 
 Do not implement unless a later decision promotes the thin annotation to a spec.
+
+## Notes
+
+Refinement (2026-09-19): the coherent shape is --view volumes over capacity pools that intersect the scan.
+
+Index already retains attrs.dev. Tree bytes by pool are a real roll-up. Free space is planner-observed statvfs in provenance (report() stays pure). Re-observe at query time; do not persist avail. Group by shared pool, not st_dev (APFS container / bind mounts). Not --analyze. Not the default. Compose as --view tree,volumes.
