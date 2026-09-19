@@ -1,6 +1,5 @@
 //! Versioned content sidecar, independent of the metadata snapshot format.
 
-use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs;
 use std::io::{self, Read, Seek, SeekFrom};
@@ -16,9 +15,8 @@ use crate::stored_state::{
 use crate::{Error, Fingerprint, Index, Result};
 
 use super::{
-    AnalysisApplyOutcome, AnalysisObservation, AnalysisRequest, AnalysisSet, AnalyzerId,
-    AnalyzerVersion, ContentProvenance, CoverageReason, FileAnalysis, LogicalWordStats,
-    MetricValues,
+    AnalysisApplyOutcome, AnalysisRequest, AnalysisSet, AnalyzerId, AnalyzerVersion,
+    ContentProvenance, CoverageReason, FileAnalysis, LogicalWordStats, MetricValues,
 };
 
 const MAGIC: &[u8; 8] = b"FDUCTNT\0";
@@ -169,17 +167,12 @@ pub fn load_content_cache(
     // Worth about 3%, not more. A flat callgrind profile of a warm 14,542-file open
     // shows `compare_components` at 34% of instructions and it is tempting to read that
     // as this map; the caller tree says this map's sort is about 0.9%, and the measured
-    // change was −3.03% [−4.62%, −1.62%]. The 34% is mostly
-    // `classify::classify_path_with_prefix`, which `Index::analysis_candidates` runs
-    // over every file on every open — including a cache-only one, which then discards
-    // the result in favour of the classification the sidecar already stored. That is
-    // the real cost on this path and it is tracked separately (`fdu-926e`).
+    // change was −3.03% [−4.62%, −1.62%]. The 34% was mostly
+    // `classify::classify_path_with_prefix`. Cache-only restore now walks file
+    // identities without classifying (`restore_analysis_candidates`); the sidecar
+    // already stores the classification that would have replaced the live result.
     let candidates_started = crate::counters::enabled().then(std::time::Instant::now);
-    let mut candidates = index
-        .analysis_candidates(wanted.analysis)
-        .into_iter()
-        .map(|candidate| (candidate.relative_path.clone(), candidate))
-        .collect::<HashMap<_, _>>();
+    let mut candidates = index.restore_analysis_candidates(wanted.analysis);
     crate::counters::add_elapsed(candidates_started, |counts, elapsed| {
         counts.content_sidecar_candidates_us =
             counts.content_sidecar_candidates_us.saturating_add(elapsed);
@@ -216,7 +209,7 @@ pub fn load_content_cache(
             !matches!(analysis.coverage, CoverageReason::Analyzed | CoverageReason::Binary);
         let bytes = analysis.bytes;
         let apply_started = crate::counters::enabled().then(std::time::Instant::now);
-        let outcome = index.apply_restored_analysis(AnalysisObservation { candidate, analysis });
+        let outcome = index.apply_restored_analysis(candidate, analysis);
         crate::counters::add_elapsed(apply_started, |counts, elapsed| {
             counts.content_sidecar_apply_us =
                 counts.content_sidecar_apply_us.saturating_add(elapsed);

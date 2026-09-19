@@ -36,7 +36,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::content::{
     AnalysisApplyOutcome, AnalysisCandidate, AnalysisObservation, AnalysisSet, ContentIndex,
-    ContentRollUp,
+    ContentRollUp, RestoreCandidate,
 };
 use crate::engine_contract::{
     Attrs, Clock, Commit, Coverage, CoverageReason, DiscoveryProgress, EffectiveChange,
@@ -3465,11 +3465,49 @@ impl Index {
     ///
     /// [`analyze_index`]: crate::content::analyze_index
     pub(crate) fn analysis_candidates(&self, profile: AnalysisSet) -> Vec<AnalysisCandidate> {
-        if !profile.is_enabled() {
-            return Vec::new();
-        }
         let root_files = self.entry(EntryId::ROOT).rollup().files;
         let mut candidates = Vec::with_capacity(usize::try_from(root_files).unwrap_or(0));
+        self.for_each_analysis_file(profile, |id, revision, attrs, relative_path| {
+            candidates.push(AnalysisCandidate {
+                entry_id: id,
+                revision,
+                absolute_path: self.root_path.join(&relative_path),
+                classification: self.classify(&relative_path),
+                relative_path,
+                attrs,
+            });
+        });
+        candidates
+    }
+
+    /// File identities restore matches against sidecar records, without classifying.
+    ///
+    /// The HashMap is keyed by relative path because load looks up each decoded record
+    /// that way. Classification is omitted: cache-only restore commits the sidecar's
+    /// stored classification, and the apply-path self-check cannot change that answer.
+    pub(crate) fn restore_analysis_candidates(
+        &self,
+        profile: AnalysisSet,
+    ) -> HashMap<PathBuf, RestoreCandidate> {
+        let root_files = self.entry(EntryId::ROOT).rollup().files;
+        let mut candidates = HashMap::with_capacity(usize::try_from(root_files).unwrap_or(0));
+        self.for_each_analysis_file(profile, |id, revision, attrs, relative_path| {
+            candidates.insert(
+                relative_path.clone(),
+                RestoreCandidate { entry_id: id, revision, relative_path, attrs },
+            );
+        });
+        candidates
+    }
+
+    fn for_each_analysis_file(
+        &self,
+        profile: AnalysisSet,
+        mut visit: impl FnMut(EntryId, u64, Attrs, PathBuf),
+    ) {
+        if !profile.is_enabled() {
+            return;
+        }
         let mut stack = vec![EntryId::ROOT];
         while let Some(parent) = stack.pop() {
             for (_, id) in self.children_of(parent).into_iter().flatten() {
@@ -3481,18 +3519,12 @@ impl Index {
                 if entry.kind != EntryKind::File {
                     continue;
                 }
+                let revision = entry.revision;
+                let attrs = entry.attrs;
                 let relative_path = self.path_of(id).expect("live entry has a path");
-                candidates.push(AnalysisCandidate {
-                    entry_id: id,
-                    revision: entry.revision,
-                    absolute_path: self.root_path.join(&relative_path),
-                    classification: self.classify(&relative_path),
-                    relative_path,
-                    attrs: entry.attrs,
-                });
+                visit(id, revision, attrs, relative_path);
             }
         }
-        candidates
     }
 
     /// The candidates `request` still has to read: every one, unless the content tier
@@ -3537,9 +3569,26 @@ impl Index {
     /// directory total; sidecar load does that after the apply loop.
     pub(crate) fn apply_restored_analysis(
         &mut self,
-        observation: AnalysisObservation,
+        candidate: RestoreCandidate,
+        analysis: crate::content::FileAnalysis,
     ) -> AnalysisApplyOutcome {
-        self.apply_analysis_record(observation, false)
+        let Some(entry) = self.try_entry(candidate.entry_id) else {
+            return AnalysisApplyOutcome::Stale;
+        };
+        if entry.kind != EntryKind::File
+            || entry.revision != candidate.revision
+            || entry.attrs.fingerprint() != candidate.attrs.fingerprint()
+        {
+            return AnalysisApplyOutcome::Stale;
+        }
+        let Some(content) = self.content.as_mut() else {
+            return AnalysisApplyOutcome::Stale;
+        };
+        if content.commit_without_rollup(candidate.relative_path, analysis) {
+            AnalysisApplyOutcome::Applied
+        } else {
+            AnalysisApplyOutcome::Stale
+        }
     }
 
     pub(crate) fn rebuild_content_rollups(&mut self) {
@@ -8042,6 +8091,29 @@ mod tests {
             tallies.get(".rs"),
             Some(&ExtTally { files: 1, bytes: 10, allocated: file_attrs(10, 1).allocated })
         );
+    }
+
+    #[test]
+    fn restore_candidates_match_analysis_file_identities() {
+        use crate::content::AnalysisSet;
+
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("src", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("src/lib.rs", EntryKind::File, file_attrs(10, 1)),
+            upsert("README.md", EntryKind::File, file_attrs(20, 2)),
+        ]));
+        let profile = AnalysisSet::NONE.with_lines();
+        let live = index.analysis_candidates(profile);
+        let restore = index.restore_analysis_candidates(profile);
+        assert_eq!(restore.len(), live.len());
+        assert_eq!(restore.len(), 2);
+        for candidate in &live {
+            let restored = restore.get(&candidate.relative_path).expect("same relative path");
+            assert_eq!(restored.entry_id, candidate.entry_id);
+            assert_eq!(restored.revision, candidate.revision);
+            assert_eq!(restored.attrs.fingerprint(), candidate.attrs.fingerprint());
+        }
     }
 
     #[test]
