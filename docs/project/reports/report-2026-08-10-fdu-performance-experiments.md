@@ -64,7 +64,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 65 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 66 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
@@ -211,6 +211,7 @@ dead end.
 | 131 | [Post-H131 cache-hit leftover after restore parent-path join](#exp131--posth131-cachehit-leftover-after-restore-parentpath-join) | H132 | `content-cache-hit` | -0.0% | ✅ accepted |
 | 132 | [Skip unused snapshot path reconstruction on metabrowser](#exp132--skip-unused-snapshot-path-reconstruction-on-metabrowser) | H133 | `content-cache-hit` | -6.4% | ✅ accepted |
 | 133 | [Post-H133 cache-hit leftover after unused snapshot path skip](#exp133--posth133-cachehit-leftover-after-unused-snapshot-path-skip) | H134 | `content-cache-hit` | -0.4% | ✅ accepted |
+| 134 | [Post-H124 first-pass content-basic leftover](#exp134--posth124-firstpass-contentbasic-leftover) | H135 | `content-basic` | -3.7% | ✅ accepted |
 
 ## The experiments
 
@@ -4527,6 +4528,36 @@ or already-landed restore and control stages; no engine patch.
 Full record:
 [`exp-133-post-h133-cache-hit-leftover-after-unused-snapshot-path-skip.md`](../experiments/exp-133-post-h133-cache-hit-leftover-after-unused-snapshot-path-skip.md)
 
+### exp-134 — Post-H124 first-pass content-basic leftover
+
+✅ accepted · 2026-09-19 · H135 · commit `6a93fc12`
+
+Control: HEAD release probe at 6a93fc12
+
+Candidate: same probe (leftover profile)
+
+**`content-basic`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 10365.9 | 10058.8 | -3.70% (n.s.) | [-8.25%, +6.96%] |
+| component (ms) | 9363.8 | 9071.9 | -2.67% (n.s.) | [-8.94%, +7.09%] |
+| cpu (ms) | 24181.8 | 23226.2 | -2.65% (n.s.) | [-11.87%, +6.34%] |
+| user (ms) | 5701.4 | 5681.5 | +0.03% (n.s.) | [-1.69%, +0.41%] |
+| system (ms) | 18437.7 | 17615.9 | -2.94% (n.s.) | [-15.88%, +8.98%] |
+| peak rss (MiB) | 217.6 | 255.5 | +3.52% (n.s.) | [-0.51%, +18.04%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** first-pass leftover after H124 is still I/O (read 58.87%, open 16.09%);
+classify_with 2.02% of process; commit_record 0.59%; no new skippable 3% wall cut; no
+engine patch.
+
+Full record:
+[`exp-134-post-h124-first-pass-content-basic-leftover.md`](../experiments/exp-134-post-h124-first-pass-content-basic-leftover.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4553,6 +4584,7 @@ Baselines show one value because they measure a state rather than a change.
 | 131 | Post-H131 cache-hit leftover after restore parent-path join | `content-cache-hit` | 825.2 | 825.3 | -0.0% | ✅ accepted |
 | 132 | Skip unused snapshot path reconstruction on metabrowser | `content-cache-hit` | 829.5 | 778.0 | -6.4% | ✅ accepted |
 | 133 | Post-H133 cache-hit leftover after unused snapshot path skip | `content-cache-hit` | 775.3 | 774.7 | -0.4% | ✅ accepted |
+| 134 | Post-H124 first-pass content-basic leftover | `content-basic` | 10,365.9 | 10,058.8 | -3.7% | ✅ accepted |
 
 ### metabrowser-clone (59,654 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
