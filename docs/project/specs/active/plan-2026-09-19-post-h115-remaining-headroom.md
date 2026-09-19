@@ -6,8 +6,9 @@
 
 **Status:** Active. Overnight H116–H120 is done.
 This file is the remaining unaddressed-hypothesis queue after that overnight: H113
-(quiet), H107 (ignore-is-the-walk only), H123, H121, H124, and H111 (not this host).
-H122 is confirmed (exp-118).
+(quiet), H107 (ignore-is-the-walk only), H124, and H111 (not this host).
+H122 is confirmed (exp-118). H123 is confirmed (exp-119). H121 is confirmed (exp-120):
+apply no longer dominates.
 [The runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
 keeps an abbreviated next-up in that order; this file is the source of truth for the
 full rows. The loop guide registry remains the full hypothesis text.
@@ -87,13 +88,14 @@ Treat remaining time as four separate jobs, not one “make restore faster” le
 
 1. **Metadata one-shot.** The walk is still the job (H108; instrumented ~96% of
    `fdu PATH` wall). A snapshot cannot cheapen it.
-   Next is a deciding-scale profile (H122), then a product opened-root or refresh path
-   (H123). Not a CLI cache load.
+   H122 confirmed the walk is still the job.
+   H123 confirmed the product retained report.
+   Not a CLI cache load.
 2. **Content-cache-hit.** H115 took the named ancestor-merge cut.
    H116 rejected dropping the candidate-install HashMap on wall.
    H120 took the decode-`Vec` RSS cut.
    H113 is the quiet completeness confirmatory.
-   H121 re-profiles the mix (H83 only if apply still dominates).
+   H121 re-profiled the mix (apply no longer dominates).
    Snapshot parse remains H78/H92.
 3. **First-pass analyze.** H118 rejected insert-then-rebuild.
    H119 screened walk-overlap (`fdu::scan` 0.13%). Leftover I/O is H124: admit fewer
@@ -113,6 +115,8 @@ Overnight registry rows (settled; full text in the loop guide):
 | H119 | First-pass analyze can overlap file I/O with the metadata walk instead of opening every file after the scan | `content-basic` wall / product `--analyze` | Screened. Do not retry walk-overlap. |
 | H120 | Streaming sidecar parse-into-apply (no full decoded-records Vec beside the files map) cuts peak RSS at least 10% | `content-cache-hit` RSS | Accepted (exp-117). |
 | H122 | After the current engine, a deciding-scale metadata CLI/walk profile still shows the walk as the job | installed `fdu PATH` / `default-tree` | Confirmed (exp-118). Do not retry as a cut. |
+| H123 | A product opened-root or refresh path that retains the index is ≥3% faster than repeating a one-shot | opened retained read vs `fdu PATH` | Confirmed (exp-119). Probe kept. Not a snapshot load. |
+| H121 | After H115 and H120, a cache-hit restore re-profile names whether apply still dominates | `content-cache-hit` | Confirmed (exp-120). Apply 43%; candidates 48%; no stage ≥50%. No cut. |
 
 Remaining registry rows (open; full text in the loop guide):
 
@@ -120,8 +124,6 @@ Remaining registry rows (open; full text in the loop guide):
 | --- | --- | --- |
 | H113 | File-count completeness after H115 is a real quiet wall win | `content-cache-hit` |
 | H107 | Default gitignore observation differs by ≥3% wall only where the ignored share *is* the walk | `default-tree` (skipped 2026-09-19: no ignore-is-the-walk nominated subject) |
-| H123 | A product opened-root or refresh path that retains the index is ≥3% faster than repeating a one-shot | opened retained read vs `fdu PATH` |
-| H121 | After H115 and H120, a cache-hit restore re-profile names whether apply still dominates | `content-cache-hit` |
 | H124 | Fewer first-pass opens (type/size gate) or read-ahead cuts analyze wall ≥3% | `content-basic` / product `--analyze` |
 | H111 | H86’s remaining gap is the Linux floor and RSS claim | Linux 450k floor |
 
@@ -133,16 +135,17 @@ Leftover is directory `__open` + `getattrlistbulk`. Not H86 and not H111. Do not
 as a snapshot load or consume trim.
 
 H107 stays H107. Re-run only on a tree whose ignored share can be the walk.
-Do not retry metabrowser (exp-106).
-The 2026-09-19 stacked session skipped: rustup and frameworks have no `.gitignore`;
-cargo-registry screens only.
+Do not retry metabrowser (exp-106). The 2026-09-19 stacked session skipped: rustup and
+frameworks have no `.gitignore`; cargo-registry screens only.
 
-H123 is not a license to load a snapshot on `fdu PATH` (H108 / H9). H117 confirmed the
-engine already has the cheaper retained read (`opened-second-report`). This row is the
-product path that uses it.
+H123 is confirmed (exp-119): product `Index.report()` / `query::report` second pass 1.7
+ms versus one-shot `default-tree` 2,078.3 ms on `system-private-frameworks` (~1,222×).
+Probe mode `index-second-report` kept.
+Not a snapshot load on `fdu PATH` (H108 / H9). H117 remains the opened-root probe.
 
-H121 is a profile, not another alloc trim and not a retry of H116. H83 remains only if
-apply still dominates after the mix is re-measured.
+H121 is confirmed (exp-120): after H115+H120, apply is 42.7% of restore and candidates
+47.6%. No stage is ≥50% of restore.
+No apply cut. Do not retry H116. H83 is scoped down on apply/install.
 
 H124 is not H118 (apply shape) and not H119 (walk overlap / `openat`). Named mechanism:
 admit fewer files, or read-ahead on the ones already admitted.
@@ -215,30 +218,26 @@ Overnight H116–H120 is history, not a retry list.
    Not H86. Do not retry as a snapshot load.
 
 3. **H107** (`fdu-jcfn`). **Skipped 2026-09-19 stacked session.** No nominated
-   ignore-is-the-walk subject. `rustup-toolchains` and `system-private-frameworks` have
-   zero `.gitignore` files (depth≤6; exp-118 already recorded 0 control reads on
-   frameworks). `metabrowser-clone` is the exp-106 refute. `cargo-registry-src` has
-   crate-internal gitignores but is screening-only (~22k) and not a checkout whose
-   ignored share is the walk. Do not retry metabrowser. Do not invent a subject.
+   ignore-is-the-walk subject.
+   `rustup-toolchains` and `system-private-frameworks` have zero `.gitignore` files
+   (depth≤6; exp-118 already recorded 0 control reads on frameworks).
+   `metabrowser-clone` is the exp-106 refute.
+   `cargo-registry-src` has crate-internal gitignores but is screening-only (~22k) and
+   not a checkout whose ignored share is the walk.
+   Do not retry metabrowser.
+   Do not invent a subject.
 
-4. **H123** (`fdu-rum0`). **Open.** Follow-on to H117 (probe only).
-   A product opened-root or refresh path that retains the index is ≥3% faster than
-   repeating one-shot `fdu PATH` for the same request.
-   Subject: `system-private-frameworks` or `metabrowser-clone`. One-shot footer stays
-   `cold scan`. Not a snapshot load on `fdu PATH`. What refutes: no product surface can
-   retain and re-report without changing one-shot cache policy, or the product path
-   misses 3%. Why next: H108 left the default CLI as a cold walk; H117 showed the engine
-   already has the cheaper job.
+4. **H123** (`fdu-rum0`). **Confirmed** (exp-119). Follow-on to H117 (probe only).
+   Product `query::report` on a retained `Index` is 1.7 ms versus one-shot 2,078.3 ms
+   (~1,222×) on `system-private-frameworks`. Probe kept.
+   No serving-policy change and no CLI flag.
+   One-shot footer stays `cold scan`. Not a snapshot load on `fdu PATH`.
 
-5. **H121** (`fdu-vf4b`). **Open.** Post-H115+H120 cache-hit **re-profile**. Metric:
-   same-subject `content-cache-hit` stage split (timers already in) on
-   `metabrowser-clone`. Determination: a named restore stage is still ≥50% of restore
-   and ≥3% of wall. Profile first.
-   Then a named apply/install cut only if apply still dominates (that leftover is H83).
-   Not another alloc trim.
-   Not a retry of H116. What refutes: apply no longer dominates (H83 scoped down), or no
-   stage clears the bar.
-   Why next: two accepted restore changes landed after exp-109’s mix.
+5. **H121** (`fdu-vf4b`). **Confirmed** (exp-120). Post-H115+H120 cache-hit re-profile
+   on a frozen APFS clone of `metabrowser-clone` (live path had concurrent writers).
+   Apply 42.7% of restore / ~12.8% of wall; candidates 47.6% / ~14.2%. No stage ≥50% of
+   restore. No apply cut.
+   Do not retry H116.
 
 6. **H124** (`fdu-i39y`). **Open.** First-pass analyze I/O. Metric: `content-basic` wall
    or product `--analyze` wall, ≥3% with the interval below zero on deciding-scale
@@ -258,16 +257,17 @@ Overnight H116–H120 is history, not a retry list.
 
 **Overnight history (do not re-queue):** H116 rejected, H118 rejected, H119 screened,
 H117 confirmed as a probe, H120 accepted.
+**Stacked session (do not re-queue):** H113 skipped, H107 skipped, H122 confirmed, H123
+confirmed, H121 confirmed (no apply cut).
 
 ## Testing Strategy
 
-H113, H121, H123, and H124 are 12-pair interleaved `make perf-compare` against HEAD with
-H115 and H120 in, `FDU_COUNTERS` unset for the claim-grade wall, no RAM disk.
-H122 and the H121 mix are profiles / determinations first; do not start a cut from a
-guess. Exact oracles and content digest stay as for exp-108–117. H113 must keep
+H113 and H124 remain 12-pair interleaved `make perf-compare` against HEAD with H115 and
+H120 in, `FDU_COUNTERS` unset for the claim-grade wall, no RAM disk.
+H122, H123, and H121 are recorded determinations.
+Exact oracles and content digest stay as for exp-108–120. H113 must keep
 incomplete-sidecar fail-closed.
-H123 must keep one-shot `cold scan`. Record every verdict, including skips at the quiet
-gate.
+H123 kept one-shot `cold scan`. Record every verdict, including skips at the quiet gate.
 
 ## Rollout Plan
 
@@ -279,13 +279,15 @@ Engine changes land only as the experiment that tests the next row.
 ## Open Questions
 
 - Whether H115 + H120 changed the exp-109 restore mix enough that apply no longer
-  dominates (H121). If it still does, H83 remains; if it does not, do not start an apply
-  cut.
+  dominates (H121). **Closed:** exp-120. Apply 43%; candidates 48%; no stage ≥50%. No
+  apply cut.
 - Whether a Darwin deciding-scale `fdu PATH` profile (H122) names a leftover that is not
   already H86/H111 on Linux.
   **Closed:** exp-118 named `__open` + `getattrlistbulk`; no Darwin cut.
 - Whether H117’s retained read can become a product path (H123) without loading a
-  snapshot on one-shot `fdu PATH`.
+  snapshot on one-shot `fdu PATH`. **Closed:** exp-119. Product `query::report` 1.7 ms
+  versus one-shot 2,078.3 ms.
+  Probe kept. Not a snapshot load.
 - Whether a type/size gate or read-ahead (H124) can cut first-pass analyze wall after
   H118/H119.
 

@@ -304,15 +304,13 @@ The registry row in [the loop guide](performance-loop.md#current-engine-010) is 
 statement. Overnight H116–H120 is done; do not retry those.
 Next free hypothesis id is **H125**. Do not mint another meaning for H91–H106. Next free
 experiment id is **exp-113** (reserved for H113 quiet).
-After that, **exp-119**.
+After that, **exp-121**.
 
-This stacked session (2026-09-19 ~10:27–13:14 PT) skipped H113 (quiet gate 69.4%) and
-recorded H122 (exp-118). The profile named no Darwin cut, so no third cell.
-Do not start H107 without an ignore-is-the-walk subject.
-The 2026-09-19 stacked session skipped H107: no nominated tree has ignore as the walk
-(`rustup-toolchains` and `system-private-frameworks` have no `.gitignore`; metabrowser
-is exp-106; `cargo-registry-src` screens only). Do not retry metabrowser.
-Do not start H111 (no Linux).
+This stacked session (2026-09-19 ~10:27–13:14 PT) skipped H113 (quiet gate 69.4%),
+skipped H107 (no ignore-is-the-walk nominated subject), recorded H122 (exp-118),
+confirmed H123 (exp-119), and confirmed H121 (exp-120). Do not start H107 without an
+ignore-is-the-walk subject.
+Do not retry metabrowser for H107 (exp-106). Do not start H111 (no Linux).
 Do not raise the README 200K files/s or 4M cached lines/s.
 
 1. **H113** (`fdu-rfr6`). **Needs quiet host.** Quiet confirmatory after H115. Official
@@ -332,15 +330,14 @@ Do not raise the README 200K files/s or 4M cached lines/s.
 3. **H107** (`fdu-jcfn`). **Skipped this session.** No ignore-is-the-walk nominated
    subject. Refuted on metabrowser (exp-106). Do not retry metabrowser.
 
-4. **H123** (`fdu-rum0`). Opened-root / refresh **product** path.
-   H117 (exp-116) was the probe.
-   Retained-index vs one-shot.
+4. **H123** (`fdu-rum0`). **Confirmed** (exp-119). Product `Index.report()` /
+   `query::report` second pass 1.7 ms versus one-shot 2,078.3 ms (~1,222×). Probe kept.
+   H117 remains the opened-root probe.
    Do not load a snapshot on `fdu PATH`.
 
-5. **H121** (`fdu-vf4b`). Post-H115+H120 `content-cache-hit` **re-profile**. Restore mix
-   may have changed. Profile first.
-   Then a named apply/install cut only if apply still dominates (H83). Not another alloc
-   trim. Not a retry of H116.
+5. **H121** (`fdu-vf4b`). **Confirmed** (exp-120). Apply 43% of restore after H115+H120;
+   candidates 48%. No stage ≥50%. No apply cut.
+   Do not retry H116.
 
 6. **H124** (`fdu-i39y`). First-pass analyze I/O: type/size gate or read-ahead.
    Metric is first-pass analyze wall.
@@ -373,7 +370,7 @@ Do not retry H104–H106.
   The deciding-scale share collapsed (exp-108).
 - Do not retry a sidecar parse-speed or instruction trim.
   H112 (exp-109) put parse at 8.5% of restore.
-  Re-check the mix with H121 before another apply cut.
+  H121 (exp-120) re-checked the mix: apply 43%, candidates 48%. No apply cut.
 - Do not retry the H113 file-count completeness shortcut on another uncontrolled cell
   (exp-110). Median −7.59% but the interval included zero; the shortcut is reverted.
   A 2026-09-19 quiet confirmatory after H115 (`fdu-rfr6`) was refused at the start gate

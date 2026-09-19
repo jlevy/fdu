@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 50 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 52 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -196,6 +196,8 @@ dead end.
 | 116 | [Opened-root second report versus one-shot on frameworks](#exp116--openedroot-second-report-versus-oneshot-on-frameworks) | H117 | `default-tree` | -99.9% | ✅ accepted |
 | 117 | [Stream sidecar parse-into-apply on metabrowser](#exp117--stream-sidecar-parseintoapply-on-metabrowser) | H120 | `content-cache-hit` | -10.1% | ✅ accepted |
 | 118 | [Deciding-scale metadata walk profile after current engine](#exp118--decidingscale-metadata-walk-profile-after-current-engine) | H122 | `default-tree` | +0.2% | ✅ accepted |
+| 119 | [Product Index.report versus one-shot on frameworks](#exp119--product-indexreport-versus-oneshot-on-frameworks) | H123 | `default-tree` | -99.9% | ✅ accepted |
+| 120 | [Cache-hit restore mix after H115 and H120 on metabrowser](#exp120--cachehit-restore-mix-after-h115-and-h120-on-metabrowser) | H121 | `content-cache-hit` | +0.7% | ✅ accepted |
 
 ## The experiments
 
@@ -4051,6 +4053,67 @@ getattrlistbulk; no Darwin cut named.
 Full record:
 [`exp-118-deciding-scale-metadata-walk-profile-after-current-engine.md`](../experiments/exp-118-deciding-scale-metadata-walk-profile-after-current-engine.md)
 
+### exp-119 — Product Index.report versus one-shot on frameworks
+
+✅ accepted · 2026-09-19 · H123 · commit `ee014340`
+
+Control: same probe default-tree one-shot
+
+Candidate: index-second-report second query::report
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2078.3 | 2140.4 | +1.50% (n.s.) | [-0.20%, +6.20%] |
+| component (ms) | 2064.9 | 2124.1 | +1.55% (n.s.) | [-0.29%, +6.52%] |
+| cpu (ms) | 8258.3 | 8788.7 | +9.03% (n.s.) | [-5.05%, +16.58%] |
+| user (ms) | 319.1 | 315.8 | -0.22% (n.s.) | [-1.65%, +2.02%] |
+| system (ms) | 7947.2 | 8474.8 | +9.32% (n.s.) | [-5.25%, +17.21%] |
+| peak rss (MiB) | 85.4 | 85.0 | -0.15% (n.s.) | [-1.42%, +1.25%] |
+
+Other jobs, wall time: `index-second-report` +0.9% (n.s.).
+
+Cost to carry: 98 lines; no new dependencies.
+
+probe mode index-second-report plus harness job; no engine serving change; no CLI flag
+
+**Accepted:** product second report 1.7ms versus default-tree 2078ms (1222x);
+determination kept; not a snapshot load.
+
+Full record:
+[`exp-119-product-index-report-versus-one-shot-on-frameworks.md`](../experiments/exp-119-product-index-report-versus-one-shot-on-frameworks.md)
+
+### exp-120 — Cache-hit restore mix after H115 and H120 on metabrowser
+
+✅ accepted · 2026-09-19 · H121 · commit `ee014340`
+
+Control: same probe at ee014340
+
+Candidate: same probe self-comparison
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1171.8 | 1185.6 | +0.74% (n.s.) | [-1.24%, +4.79%] |
+| component (ms) | 866.4 | 859.9 | -0.90% (n.s.) | [-2.48%, +0.75%] |
+| cpu (ms) | 1119.8 | 1121.4 | +0.45% (n.s.) | [-0.59%, +1.58%] |
+| user (ms) | 1025.3 | 1025.4 | -0.12% (n.s.) | [-0.50%, +0.55%] |
+| system (ms) | 95.4 | 92.5 | +6.27% (n.s.) | [-6.19%, +10.85%] |
+| blocked (ms) | 55.9 | 60.1 | +12.79% (n.s.) | [-19.35%, +80.73%] |
+| peak rss (MiB) | 333.3 | 333.3 | +0.09% (n.s.) | [-0.41%, +0.48%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+profile only; timers already in; no engine change
+
+**Accepted:** apply 43 percent of restore after H115+H120, candidates 48 percent; no
+stage at 50 percent; no apply cut.
+
+Full record:
+[`exp-120-cache-hit-restore-mix-after-h115-and-h120-on-metabrowser.md`](../experiments/exp-120-cache-hit-restore-mix-after-h115-and-h120-on-metabrowser.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4166,6 +4229,15 @@ Baselines show one value because they measure a state rather than a change.
 | 081 | Borrow impact paths until the bounded result escapes | `opened-discovery` | 286.8 | 282.2 | -1.1% | ❌ rejected |
 | 082 | Move scanner commits directly into the journal | `opened-discovery` | 284.5 | 281.2 | -0.0% | ❌ rejected |
 
+### system-private-frameworks (158,705 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 107 | Installed CLI metadata one-shot stays cold scan on frameworks | `cli-default-tree` | 2,100.0 | 2,060.0 | -0.6% | ✅ accepted |
+| 116 | Opened-root second report versus one-shot on frameworks | `default-tree` | 2,612.2 | 2,361.9 | -2.2% | ✅ accepted |
+| 118 | Deciding-scale metadata walk profile after current engine | `default-tree` | 1,807.7 | 1,873.4 | +0.2% | ✅ accepted |
+| 119 | Product Index.report versus one-shot on frameworks | `default-tree` | 2,078.3 | 2,140.4 | +1.5% | ✅ accepted |
+
 ### vm450k (450,463 entries) — Linux 6.18.5-fc-v20, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -4214,14 +4286,6 @@ Baselines show one value because they measure a state rather than a change.
 | 066 | Baseline for the default command on a real package cache | `default-tree` | 386.9 | — | — | 📏 baseline |
 | 067 | Skip the identical snapshot rewrite on the cold-scan path | `default-tree` | 397.7 | 358.7 | -10.6% | ✅ accepted |
 | 068 | Flush the rendered report before joining the snapshot writer | `default-tree` | 353.3 | 361.3 | +1.2% | ✅ accepted |
-
-### system-private-frameworks (158,705 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 107 | Installed CLI metadata one-shot stays cold scan on frameworks | `cli-default-tree` | 2,100.0 | 2,060.0 | -0.6% | ✅ accepted |
-| 116 | Opened-root second report versus one-shot on frameworks | `default-tree` | 2,612.2 | 2,361.9 | -2.2% | ✅ accepted |
-| 118 | Deciding-scale metadata walk profile after current engine | `default-tree` | 1,807.7 | 1,873.4 | +0.2% | ✅ accepted |
 
 ### generated-markdown-2000 (2,001 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
@@ -4336,6 +4400,12 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 040 | Derive an exact rich summary without building an index | `rich-summary-report` | 4,852.0 | 4,183.2 | -14.6% | ✅ accepted |
+
+### metabrowser-clone (146,047 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 120 | Cache-hit restore mix after H115 and H120 on metabrowser | `content-cache-hit` | 1,171.8 | 1,185.6 | +0.7% | ✅ accepted |
 
 ### metabrowser-clone (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
