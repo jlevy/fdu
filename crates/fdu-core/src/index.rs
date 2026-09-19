@@ -3508,12 +3508,14 @@ impl Index {
         if !profile.is_enabled() {
             return;
         }
-        let mut stack = vec![EntryId::ROOT];
-        while let Some(parent) = stack.pop() {
-            for (_, id) in self.children_of(parent).into_iter().flatten() {
+        // Join the parent path this walk already holds. `path_of` would walk
+        // ancestors per file for the same bytes.
+        let mut stack = vec![(EntryId::ROOT, PathBuf::new())];
+        while let Some((parent, parent_path)) = stack.pop() {
+            for (name, id) in self.children_of(parent).into_iter().flatten() {
                 let entry = self.entry(id);
                 if entry.kind == EntryKind::Dir {
-                    stack.push(id);
+                    stack.push((id, parent_path.join(name)));
                     continue;
                 }
                 if entry.kind != EntryKind::File {
@@ -3521,8 +3523,7 @@ impl Index {
                 }
                 let revision = entry.revision;
                 let attrs = entry.attrs;
-                let relative_path = self.path_of(id).expect("live entry has a path");
-                visit(id, revision, attrs, relative_path);
+                visit(id, revision, attrs, parent_path.join(name));
             }
         }
     }
@@ -8100,7 +8101,8 @@ mod tests {
         let mut index = Index::new("/root");
         index.apply_ok(&Observation::new(vec![
             upsert("src", EntryKind::Dir, file_attrs(0, 1)),
-            upsert("src/lib.rs", EntryKind::File, file_attrs(10, 1)),
+            upsert("src/nested", EntryKind::Dir, file_attrs(0, 2)),
+            upsert("src/nested/lib.rs", EntryKind::File, file_attrs(10, 1)),
             upsert("README.md", EntryKind::File, file_attrs(20, 2)),
         ]));
         let profile = AnalysisSet::NONE.with_lines();
@@ -8109,6 +8111,10 @@ mod tests {
         assert_eq!(restore.len(), live.len());
         assert_eq!(restore.len(), 2);
         for candidate in &live {
+            assert_eq!(
+                index.path_of(candidate.entry_id).as_deref(),
+                Some(candidate.relative_path.as_path())
+            );
             let restored = restore.get(&candidate.relative_path).expect("same relative path");
             assert_eq!(restored.entry_id, candidate.entry_id);
             assert_eq!(restored.revision, candidate.revision);
