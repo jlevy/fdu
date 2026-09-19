@@ -24,9 +24,11 @@ serving, watch, `.gitignore` default-on, and a content sidecar.
 Campaign 1 and campaign 2 remain the history; this standing is a registry and
 measurement layer on top of them, not a rewrite of H86.
 
-Branch `perf/campaign-quiet-2026-09-18`, in a linked worktree beside the primary
-checkout, PR [#91](https://github.com/jlevy/fdu/pull/91). Until that PR merges, continue
-on it. Do not open a second performance PR. Never merge.
+Branch `perf/campaign-next-2026-09-19`, stacked on
+[#91](https://github.com/jlevy/fdu/pull/91) (`perf/campaign-quiet-2026-09-18` at
+`e667b739`, which holds H115, H120, and the R1–R2 / S1–S3 review fixes).
+Continue on the stacked branch.
+Do not push to #91. Never merge.
 Never force-push.
 
 ### Standing Best and Regime
@@ -280,6 +282,13 @@ Next free hypothesis id is **H125**. Do not mint another meaning for H91–H106.
 experiment id is **exp-113** (reserved for H113 quiet).
 After that, **exp-118**.
 
+This stacked session’s 3-hour queue (2026-09-19 ~10:27–13:14 PT): H113 quiet-or-skip,
+then H122 walk profile, then at most one named patch the profile names.
+Do not start H107 without an ignore-is-the-walk subject.
+Do not start H111 (no Linux).
+H121 only if walk work finishes early.
+Do not raise the README 200K files/s or 4M cached lines/s.
+
 1. **H113** (`fdu-rfr6`). **Needs quiet host.** Quiet confirmatory after H115. Official
    start gate refused 2026-09-19 at 46.7% busy.
    Later incomplete quiet cells are not a verdict.
@@ -397,9 +406,10 @@ Each one has caught a real mistake.
      ../fdu-perf-$(date +%Y%m%d) origin/main
    ```
 
-   If PR #91 is still open, continue on `perf/campaign-quiet-2026-09-18` in its existing
-   worktree instead of creating a second branch.
-   One pull request, updated after every experiment, never merged unattended.
+   If the next increment is stacked on an open performance PR, create that stacked
+   branch from the current #91 head and keep one PR whose base is
+   `perf/campaign-quiet-2026-09-18`, not `main`. Do not push further commits onto #91.
+   One stacked pull request, updated after every experiment, never merged unattended.
 
 2. **Find the queue.** Start from [Current Standing](#current-standing-2026-09-18), not
    from the `macos-agenda` label in isolation.

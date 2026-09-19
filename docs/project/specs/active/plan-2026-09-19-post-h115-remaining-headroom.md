@@ -272,10 +272,10 @@ gate.
 
 ## Rollout Plan
 
-Docs and beads on PR [#91](https://github.com/jlevy/fdu/pull/91) only.
-No merge, no force-push, no second performance PR. Engine changes land only as the
-experiment that tests the next row.
-Do not start a measurement cell from this registry pass.
+#91 review fixes landed at `e667b739`. Further measurement is on stacked
+`perf/campaign-next-2026-09-19`, base `perf/campaign-quiet-2026-09-18`, not `main`. Do
+not push to #91. No merge, no force-push.
+Engine changes land only as the experiment that tests the next row.
 
 ## Open Questions
 
