@@ -137,6 +137,24 @@ Component −1.34% [−16.90%, +4.31%]. Type-id alloc trim reverted.
 Every sample 133,597 cache hits / 0 applied; content digest unchanged from exp-108 /
 exp-109 / exp-110.
 
+**exp-112 / H115** tests one bottom-up content roll-up after sidecar restore inserts on
+the same `metabrowser-clone` tree (engine digest unchanged).
+12-pair current-best at `2736ec16` (timers in the binary, off) versus
+`commit_without_rollup` plus `ContentIndex::rebuild_rollups` after the apply loop.
+Quiet start gate failed (28.9% busy); pair ran **uncontrolled**. Initial busy 28.71%;
+final 59.14%. The 25% bar was not lowered.
+
+| Arm | Wall median | Component | Peak RSS |
+| --- | ---: | ---: | ---: |
+| control | 1,287.6 ms | 959.1 ms | 387.6 MiB |
+| candidate | 1,174.1 ms | 855.6 ms | 389.8 MiB |
+
+Wall −9.69% [−26.02%, −7.13%]. **Accepted.** Median past 3%; interval entirely below
+zero.
+Component −10.54% [−30.23%, −8.80%]. User CPU −8.23% [−11.11%, −7.73%]. Engine kept
+(`7798fdc1`). Every sample 133,597 cache hits / 0 applied; content digest unchanged from
+exp-108 / exp-109 / exp-110 / exp-111.
+
 ### Darwin Subjects
 
 The 2026-08 nominated metabrowser corpus path is gone from disk.
@@ -150,9 +168,10 @@ Do not type a path into a commit.
 
 `cargo-registry-src` (~22k) screens; it cannot decide a 3% verdict.
 `system-private-frameworks` was the H108 subject (exp-107); digest unchanged from the
-nomination. `metabrowser-clone` was the H109 / H112 / H113 / H114 subject (exp-108,
-exp-109, exp-110, exp-111); same shape as exp-106, engine digest unchanged
-(`3fbfed48…`). The CLI QA medium tree was skipped: deciding-scale but mutating.
+nomination. `metabrowser-clone` was the H109 / H112 / H113 / H114 / H115 subject
+(exp-108, exp-109, exp-110, exp-111, exp-112); same shape as exp-106, engine digest
+unchanged (`3fbfed48…`). The CLI QA medium tree was skipped: deciding-scale but
+mutating.
 
 ### Next Up
 
@@ -160,21 +179,14 @@ Take these in order.
 The registry row in [the loop guide](performance-loop.md#current-engine-010) is the full
 statement.
 Next free hypothesis id is **H116**. Do not mint another meaning for H91–H106.
-Next free experiment id is **exp-112**.
+Next free experiment id is **exp-113**.
 
-1. **H115** (`fdu-wx15` / `fdu-jxhk`, child of H83). Sidecar restore still rebuilds
-   roll-ups per file times depth.
-   One bottom-up pass after restore inserts is the remaining named apply/install cut.
-   Screen on `content-cache-hit` wall ≥3% with the interval below zero; digest
-   identical. Do not retry parse-speed, instruction trims, the H113 file-count
-   completeness shortcut, or the H114 type-id `String` alloc.
-
-2. **H113** (`fdu-wrdl`, rejected in exp-110). Do not land the file-count completeness
+1. **H113** (`fdu-wrdl`, rejected in exp-110). Do not land the file-count completeness
    shortcut from an uncontrolled cell.
    Median −7.59% but the interval included zero.
    A quiet confirmatory cell would be a new experiment, not a top-up.
 
-3. **H107** (`fdu-jcfn`, closed).
+2. **H107** (`fdu-jcfn`, closed).
    Re-open only for a tree whose *ignored share is the walk* (a checkout sitting on
    `node_modules` that `.gitignore` drops).
    Job: `default-tree` wall, controls-on vs `--no-controls`; |median| ≥3% and the
@@ -182,22 +194,25 @@ Next free experiment id is **exp-112**.
    Refuted on wall on metabrowser (exp-106). The H108 subject had 0 control files.
    Do not retry on a metabrowser-like tree whose ignore set is not the critical path.
 
-4. **H108** (`fdu-1a4z`, confirmed in exp-107). Do not open a cache/one-shot patch:
+3. **H108** (`fdu-1a4z`, confirmed in exp-107). Do not open a cache/one-shot patch:
    `ReportPlan::read_snapshot` is already false for metadata one-shot, the second CLI
    run repeats the walk, and loading a snapshot is the H9 loss.
    Do not treat a second `cold scan` as a regression.
 
-5. **H109** (`fdu-8nwq` / `fdu-hzyb`, screened in exp-108). Do not land a control
+4. **H109** (`fdu-8nwq` / `fdu-hzyb`, screened in exp-108). Do not land a control
    matcher Path rewrite.
    `install_controls` collapsed to 7.2% of the profile on a deciding tree;
    `compare_components` under `is_ignored` is about 1%.
 
-6. **H111** (`fdu-jekg`). Linux floor stage of H86: index ≤1.4× floor, aggregate ≤1.25×,
+5. **H111** (`fdu-jekg`). Linux floor stage of H86: index ≤1.4× floor, aggregate ≤1.25×,
    RSS ≤3× `arena_spike`, on the 450k Linux subject, quiet `make perf-floor`. Darwin
    composite landed (exp-091–102); Linux floor failed (exp-103). A Darwin vs pre-H86
    validation is not this claim.
    Do not restart the rewrite.
    A Darwin agent records that this is not tonight’s item.
+
+**H115** (`fdu-wx15`) landed in exp-112. Do not retry it.
+`fdu-jxhk` remains the EntryId composite; do not restart that rewrite from this result.
 
 H110 needs a new named mechanism.
 Do not retry H104–H106.
@@ -221,6 +236,8 @@ Do not retry H104–H106.
   A quiet confirmatory cell would be a new experiment, not a top-up.
 - Do not retry the H114 type-id `String` alloc trim on `ContentRollUp::add` (exp-111).
   Wall −0.56% [−17.92%, +4.79%]; the trim is reverted.
+- Do not retry H115. exp-112 accepted the restore-only bottom-up rebuild (−9.69%
+  [−26.02%, −7.13%]). Do not restart the `fdu-jxhk` EntryId rewrite from that result.
 - A quiet cell may not hold on this desktop.
   Attempt `PERF_HOST_REGIME=quiet` first; if it fails or the final snapshot exceeds 25%
   busy, label **uncontrolled** and do not claim quiet.
@@ -506,6 +523,7 @@ producing a number that means nothing.
 - Retry H107 on a tree whose ignored share is not the walk.
 - Land an H109 Path rewrite after exp-108.
 - Retry the H114 type-id `String` alloc trim after exp-111.
+- Retry H115 after exp-112, or restart the `fdu-jxhk` EntryId rewrite from that accept.
 - Add a dependency, an `unsafe` block, or a platform gate without `make cross-lint`.
 - Create a RAM disk, or write anything into a subject tree.
   Snapshots, results and scratch go under `/tmp/fdu-realtree/`.

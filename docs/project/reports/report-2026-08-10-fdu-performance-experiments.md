@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 44 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 45 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -190,6 +190,7 @@ dead end.
 | 109 | [Sidecar restore stage split on metabrowser](#exp109--sidecar-restore-stage-split-on-metabrowser) | H112 | `content-cache-hit` | +0.3% | 📏 baseline |
 | 110 | [Cache-only completeness by file count on metabrowser](#exp110--cacheonly-completeness-by-file-count-on-metabrowser) | H113 | `content-cache-hit` | -7.6% | ❌ rejected |
 | 111 | [Type-id get-mut on roll-up add on metabrowser](#exp111--typeid-getmut-on-rollup-add-on-metabrowser) | H114 | `content-cache-hit` | -0.6% | ❌ rejected |
+| 112 | [Bottom-up roll-up after sidecar restore](#exp112--bottomup-rollup-after-sidecar-restore) | H115 | `content-cache-hit` | -9.7% | ✅ accepted |
 
 ## The experiments
 
@@ -3856,6 +3857,41 @@ reverted.
 Full record:
 [`exp-111-type-id-get-mut-on-roll-up-add-on-metabrowser.md`](../experiments/exp-111-type-id-get-mut-on-roll-up-add-on-metabrowser.md)
 
+### exp-112 — Bottom-up roll-up after sidecar restore
+
+✅ accepted · 2026-09-19 · H115 · commit `7798fdc1`
+
+Control: current HEAD with H112 timers at 2736ec16
+
+Candidate: one bottom-up ContentRollUp rebuild after restore inserts
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1287.6 | 1174.1 | -9.69% | [-26.02%, -7.13%] |
+| component (ms) | 959.1 | 855.6 | -10.54% | [-30.23%, -8.80%] |
+| cpu (ms) | 1243.6 | 1145.3 | -8.62% | [-10.99%, -7.00%] |
+| user (ms) | 1113.9 | 1022.6 | -8.23% | [-11.11%, -7.73%] |
+| system (ms) | 129.7 | 123.7 | -2.23% (n.s.) | [-22.52%, +0.13%] |
+| blocked (ms) | 42.4 | 23.8 | -48.54% | [-86.75%, -6.30%] |
+| peak rss (MiB) | 387.6 | 389.8 | +0.54% (regression) | [+0.17%, +0.82%] |
+
+Wall-time tail: control p95 is 1.51x its median and candidate 1.03x. The verdict above
+is on the median; a reader deciding whether this is faster to *use* should read the tail
+beside it.
+
+Cost to carry: 167 lines; no new dependencies.
+
+restore-only commit_without_rollup plus ContentRollUp::merge; incremental commit
+unchanged; no unsafe
+
+**Accepted:** wall -9.69 percent [-26.02%, -7.13%]; user CPU confirms the apply cut;
+restore-only rebuild kept.
+
+Full record:
+[`exp-112-bottom-up-roll-up-after-sidecar-restore.md`](../experiments/exp-112-bottom-up-roll-up-after-sidecar-restore.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -3919,16 +3955,6 @@ Baselines show one value because they measure a state rather than a change.
 | 032 | Cumulative effect through bounded parallel reconciliation | `cold-scan-index` | 635.4 | 289.6 | -54.5% | ✅ accepted |
 | 033 | Post-composable-CLI integration validation | `warm-revalidate` | 844.7 | 481.9 | -42.3% | ✅ accepted |
 
-### metabrowser (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 013 | Region-scheduled breadth-first traversal | `cold-scan-index` | 308.7 | 297.0 | -4.8% | ✅ accepted |
-| 014 | What the breadth-first default costs, on the shipped scheduler | `cold-scan-producer` | 489.4 | — | — | 📏 baseline |
-| 016 | Move cold-scan producer paths instead of cloning | `cold-scan-index` | 336.0 | 339.9 | -0.4% | ❌ rejected |
-| 017 | Pre-create dormant workers for adaptive scan depth | `cold-scan-producer` | 494.2 | 500.7 | +2.0% | ❌ rejected |
-| 023 | Cumulative effect through adaptive scanning and macOS bulk metadata | `cold-scan-index` | 625.2 | 295.5 | -53.5% | ✅ accepted |
-
 ### metabrowser-clone (145,931 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -3938,6 +3964,17 @@ Baselines show one value because they measure a state rather than a change.
 | 109 | Sidecar restore stage split on metabrowser | `content-cache-hit` | 1,195.5 | — | — | 📏 baseline |
 | 110 | Cache-only completeness by file count on metabrowser | `content-cache-hit` | 1,246.3 | 1,156.8 | -7.6% | ❌ rejected |
 | 111 | Type-id get-mut on roll-up add on metabrowser | `content-cache-hit` | 1,328.9 | 1,290.9 | -0.6% | ❌ rejected |
+| 112 | Bottom-up roll-up after sidecar restore | `content-cache-hit` | 1,287.6 | 1,174.1 | -9.7% | ✅ accepted |
+
+### metabrowser (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 013 | Region-scheduled breadth-first traversal | `cold-scan-index` | 308.7 | 297.0 | -4.8% | ✅ accepted |
+| 014 | What the breadth-first default costs, on the shipped scheduler | `cold-scan-producer` | 489.4 | — | — | 📏 baseline |
+| 016 | Move cold-scan producer paths instead of cloning | `cold-scan-index` | 336.0 | 339.9 | -0.4% | ❌ rejected |
+| 017 | Pre-create dormant workers for adaptive scan depth | `cold-scan-producer` | 494.2 | 500.7 | +2.0% | ❌ rejected |
+| 023 | Cumulative effect through adaptive scanning and macOS bulk metadata | `cold-scan-index` | 625.2 | 295.5 | -53.5% | ✅ accepted |
 
 ### metabrowser-current-h86 (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
