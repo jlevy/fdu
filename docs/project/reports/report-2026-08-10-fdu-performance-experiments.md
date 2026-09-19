@@ -64,8 +64,8 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 57 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 56 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -202,6 +202,7 @@ dead end.
 | 122 | [Tighter metadata walk leftover after H122](#exp122--tighter-metadata-walk-leftover-after-h122) | H122 | `default-tree` | -1.9% | ✅ accepted |
 | 123 | [H113 completeness leftover after H115 and H120](#exp123--h113-completeness-leftover-after-h115-and-h120) | H113 | `content-cache-hit` | +3.3% | ✅ accepted |
 | 124 | [Cache-only completeness from restore candidate count on metabrowser](#exp124--cacheonly-completeness-from-restore-candidate-count-on-metabrowser) | H125 | `content-cache-hit` | -8.0% | ✅ accepted |
+| 125 | [Post-H125 cache-hit leftover after restore-count completeness](#exp125--posth125-cachehit-leftover-after-restorecount-completeness) | H126 | `content-cache-hit` | -0.3% | ✅ accepted |
 
 ## The experiments
 
@@ -4245,6 +4246,36 @@ H113 superseded.
 Full record:
 [`exp-124-cache-only-completeness-from-restore-candidate-count-on-meta.md`](../experiments/exp-124-cache-only-completeness-from-restore-candidate-count-on-meta.md)
 
+### exp-125 — Post-H125 cache-hit leftover after restore-count completeness
+
+✅ accepted · 2026-09-19 · H126 · commit `25f423fd`
+
+Control: H125 release probe at be8d4d69
+
+Candidate: same-source rebuild of HEAD
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1064.9 | 1038.8 | -0.31% (n.s.) | [-6.15%, +0.38%] |
+| component (ms) | 748.0 | 739.0 | -0.26% (n.s.) | [-3.94%, +0.94%] |
+| cpu (ms) | 1006.2 | 999.1 | -0.15% (n.s.) | [-3.37%, +0.63%] |
+| user (ms) | 917.7 | 911.9 | -0.41% | [-1.67%, -0.09%] |
+| system (ms) | 85.7 | 87.9 | +0.64% (n.s.) | [-14.24%, +8.56%] |
+| blocked (ms) | 52.0 | 40.4 | -18.90% (n.s.) | [-45.96%, +2.96%] |
+| peak rss (MiB) | 332.5 | 341.5 | +2.67% (n.s.) | [-0.04%, +2.81%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+no engine change; leftover profile only
+
+**Accepted:** completeness walk gone after H125; first candidates walk remains; no new
+cut.
+
+Full record:
+[`exp-125-post-h125-cache-hit-leftover-after-restore-count-completenes.md`](../experiments/exp-125-post-h125-cache-hit-leftover-after-restore-count-completenes.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4332,6 +4363,16 @@ Baselines show one value because they measure a state rather than a change.
 | 017 | Pre-create dormant workers for adaptive scan depth | `cold-scan-producer` | 494.2 | 500.7 | +2.0% | ❌ rejected |
 | 023 | Cumulative effect through adaptive scanning and macOS bulk metadata | `cold-scan-index` | 625.2 | 295.5 | -53.5% | ✅ accepted |
 
+### metabrowser-clone (146,047 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 120 | Cache-hit restore mix after H115 and H120 on metabrowser | `content-cache-hit` | 1,171.8 | 1,185.6 | +0.7% | ✅ accepted |
+| 121 | First-pass analyze I/O type/size gate or read-ahead on metabrowser | `content-basic` | 9,014.4 | 9,036.5 | -4.2% | ❌ rejected |
+| 123 | H113 completeness leftover after H115 and H120 | `content-cache-hit` | 1,116.5 | 1,221.3 | +3.3% | ✅ accepted |
+| 124 | Cache-only completeness from restore candidate count on metabrowser | `content-cache-hit` | 1,063.1 | 975.1 | -8.0% | ✅ accepted |
+| 125 | Post-H125 cache-hit leftover after restore-count completeness | `content-cache-hit` | 1,064.9 | 1,038.8 | -0.3% | ✅ accepted |
+
 ### metabrowser-current-h86 (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -4369,15 +4410,6 @@ Baselines show one value because they measure a state rather than a change.
 | 080 | Skip oversized journal clones | `delta-apply-large` | 677.6 | 654.9 | -3.5% | ✅ accepted |
 | 081 | Borrow impact paths until the bounded result escapes | `opened-discovery` | 286.8 | 282.2 | -1.1% | ❌ rejected |
 | 082 | Move scanner commits directly into the journal | `opened-discovery` | 284.5 | 281.2 | -0.0% | ❌ rejected |
-
-### metabrowser-clone (146,047 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 120 | Cache-hit restore mix after H115 and H120 on metabrowser | `content-cache-hit` | 1,171.8 | 1,185.6 | +0.7% | ✅ accepted |
-| 121 | First-pass analyze I/O type/size gate or read-ahead on metabrowser | `content-basic` | 9,014.4 | 9,036.5 | -4.2% | ❌ rejected |
-| 123 | H113 completeness leftover after H115 and H120 | `content-cache-hit` | 1,116.5 | 1,221.3 | +3.3% | ✅ accepted |
-| 124 | Cache-only completeness from restore candidate count on metabrowser | `content-cache-hit` | 1,063.1 | 975.1 | -8.0% | ✅ accepted |
 
 ### vm450k (450,463 entries) — Linux 6.18.5-fc-v20, unrecorded, warm-steady
 

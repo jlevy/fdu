@@ -325,6 +325,13 @@ not lowered.
 Wall −8.03% [−10.79%, −7.79%]. **Accepted.** Digest `3be19a3e…`. Engine kept
 (`be8d4d69`). H113 superseded.
 
+**exp-125 / H126** is the post-H125 leftover **profile** on the same frozen
+`metabrowser-clone`. Same-source 12-pair `content-cache-hit`. Quiet not retried this
+cell. Pair **uncontrolled**. Completeness walk is gone (1 sample / 15,296). First
+`analysis_candidates` walk remains (15.7% of `content_open`). Restore mix unchanged
+(candidates ~48%, apply ~43%). No new userspace cut.
+Do not retry H116.
+
 **exp-121 / H124** is the first-pass analyze I/O **profile** on the frozen
 `metabrowser-clone` (146,047 entries / 133,708 files; digest `dc0df263…`). Path-binary
 already skipped (8,022 files).
@@ -357,12 +364,13 @@ Do not type a path into a commit.
 `system-private-frameworks` was the H108 / H117 subject (exp-107, exp-116); digest
 unchanged from the nomination.
 `metabrowser-clone` was the H109 / H112 / H113 / H114 / H115 / H116 / H118 / H120 / H121
-/ H124 / H125 subject (exp-108 through exp-112, exp-114, exp-115, exp-117, exp-120,
-exp-121, exp-123, exp-124); same shape as exp-106, engine digest unchanged
-(`3fbfed48…`). A 2026-09-19 re-observe drifted to 145,988 entries / 133,654 files
-(digest `cc517e78…`); commit a fresh subjects document with the next metabrowser cell
-(`make perf-subjects`). The CLI QA medium tree was skipped: deciding-scale but mutating.
-`system-private-frameworks` was also the H122 subject (exp-118); digest unchanged.
+/ H124 / H125 / H126 subject (exp-108 through exp-112, exp-114, exp-115, exp-117,
+exp-120, exp-121, exp-123, exp-124, exp-125); same shape as exp-106, engine digest
+unchanged (`3fbfed48…`). A 2026-09-19 re-observe drifted to 145,988 entries / 133,654
+files (digest `cc517e78…`); commit a fresh subjects document with the next metabrowser
+cell (`make perf-subjects`). The CLI QA medium tree was skipped: deciding-scale but
+mutating. `system-private-frameworks` was also the H122 subject (exp-118); digest
+unchanged.
 
 ### Next Up
 
@@ -371,15 +379,16 @@ Source of truth:
 [the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
 The registry row in [the loop guide](performance-loop.md#current-engine-010) is the full
 statement. Overnight H116–H120 is done; do not retry those.
-Next free hypothesis id is **H126**. Do not mint another meaning for H91–H106. Next free
+Next free hypothesis id is **H127**. Do not mint another meaning for H91–H106. Next free
 experiment id is **exp-113** (reserved unused; H113 superseded).
-After that, **exp-125**.
+After that, **exp-126**.
 
 This stacked session skipped H113 (quiet gates including 45.48%), accepted H125
-(exp-124, restore-count completeness), hunted H107 (no ignore-is-the-walk subject),
-recorded exp-122 (H122 leftover), and recorded exp-123 (H113 leftover then 16% of
-`content_open`). Earlier the same day: H113 69.4%, H122 (exp-118), H123, H121, H124. Do
-not start H107 without an ignore-is-the-walk subject.
+(exp-124, restore-count completeness), confirmed H126 (exp-125 leftover; completeness
+gone), hunted H107 (no ignore-is-the-walk subject), recorded exp-122 (H122 leftover),
+and recorded exp-123 (H113 leftover then 16% of `content_open`). Earlier the same day:
+H113 69.4%, H122 (exp-118), H123, H121, H124. Do not start H107 without an
+ignore-is-the-walk subject.
 Do not retry metabrowser for H107 (exp-106). Do not start H111 (no Linux).
 Do not raise the README 200K files/s or 4M cached lines/s.
 
@@ -387,8 +396,12 @@ Do not raise the README 200K files/s or 4M cached lines/s.
    Wall −8.03% [−10.79%, −7.79%] on frozen `metabrowser-clone`. Engine kept
    (`be8d4d69`). H113 superseded.
    Do not retry file-count.
-   Next leftover is not yet an id: post-H125 `content-cache-hit` mix (H121 is stale), or
-   first-pass analyze versus opened-root content I/O. Prefer a measured cell.
+   **H126** (`fdu-16jh`). **Confirmed** (exp-125). Completeness walk gone (0.007% of
+   `content_open`). First candidates walk remains (15.7%). No new cut.
+   Next leftover is not yet an id: first-pass analyze versus opened-root content I/O, if
+   that cell can change standing.
+   Prefer a measured cell.
+   Do not invent a skip.
 
 2. **H122** (`fdu-ytg5`). **Confirmed** (exp-118, tighter leftover exp-122). Walk is
    96.3–97.5% of deciding-scale `default-tree` component on `system-private-frameworks`.

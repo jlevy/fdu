@@ -10,6 +10,7 @@ This file is the remaining unaddressed-hypothesis queue after that overnight: H1
 H122 is confirmed (exp-118, tighter leftover exp-122). H123 is confirmed (exp-119). H121
 is confirmed (exp-120): apply no longer dominates.
 H124 is rejected (exp-121). H125 is accepted (exp-124): restore-count completeness.
+H126 is confirmed (exp-125): completeness walk gone; no new userspace cut.
 H113 is superseded by H125.
 [The runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
 keeps an abbreviated next-up in that order; this file is the source of truth for the
@@ -33,10 +34,11 @@ H113 is superseded. Do not retry the file-count shortcut.
 
 - Name only hypotheses that are plausible at the 3% wall bar (or a structural ceiling)
   on a named job and subject, and that can be wrong
-- Keep H121–H125 registered in
+- Keep H121–H126 registered in
   [the loop guide](../../guides/performance-loop.md#current-engine-010); keep H107 and
   H111 open with honest status.
-  H124 is rejected (exp-121). H125 is accepted (exp-124). H113 is superseded.
+  H124 is rejected (exp-121). H125 is accepted (exp-124). H126 is confirmed (exp-125).
+  H113 is superseded.
 - Own next-up after the overnight: order, metric, subject, accept-rule sketch, why next,
   what refutes, bead
 - Keep one source of truth for that queue (this file)
@@ -73,7 +75,7 @@ exp-108/109 split that path before those accepts:
 | Sidecar apply / ancestor merges | 63% of restore (sample 54% of `load_content`) | H115 took the named cut |
 | Candidate install (`analysis_candidates` + HashMap) | 25% of restore / 20% of `load_content` | H116 rejected on wall; still in the engine |
 | Snapshot parse | 26% of engine | H78/H92; not this increment |
-| Second completeness walk | 13% of `content_open` | H125 accepted (exp-124); H113 superseded |
+| Second completeness walk | 13% of `content_open` | H125 accepted (exp-124); H126 confirmed gone (exp-125) |
 | Sidecar parse | 8.5% of restore | Dead for wall (H112) |
 | `install_controls` | 7.5% of engine | Dead for a Path rewrite (H109) |
 
@@ -99,6 +101,7 @@ Treat remaining time as four separate jobs, not one “make restore faster” le
    H120 took the decode-`Vec` RSS cut.
    H113 was the quiet file-count confirmatory; H125 took the restore-count skip.
    H121 re-profiled the mix (apply no longer dominates).
+   H126 re-profiled after H125: completeness gone; mix unchanged; no new cut.
    Snapshot parse remains H78/H92.
 3. **First-pass analyze.** H118 rejected insert-then-rebuild.
    H119 screened walk-overlap (`fdu::scan` 0.13%). Leftover I/O was H124: admit fewer
@@ -123,6 +126,7 @@ Overnight registry rows (settled; full text in the loop guide):
 | H121 | After H115 and H120, a cache-hit restore re-profile names whether apply still dominates | `content-cache-hit` | Confirmed (exp-120). Apply 43%; candidates 48%; no stage ≥50%. No cut. |
 | H124 | Fewer first-pass opens (type/size gate) or read-ahead cuts analyze wall ≥3% | `content-basic` / product `--analyze` | Rejected (exp-121). Do not retry type/size or a safe read-ahead. |
 | H125 | Cache-only completeness uses the candidate count restore already computed | `content-cache-hit` | Accepted (exp-124). H113 superseded. |
+| H126 | After H125, leftover profile names whether completeness is gone and whether a new ≥3% userspace cut remains | `content-cache-hit` | Confirmed (exp-125). Completeness gone. No new cut. |
 | H113 | File-count completeness after H115 is a real quiet wall win | `content-cache-hit` | Superseded by H125. File-count not compiled. |
 
 Remaining registry rows (open; full text in the loop guide):
@@ -166,6 +170,11 @@ Restore-count completeness kept (`be8d4d69`). H113 superseded.
 File-count shortcut not compiled.
 exp-113 unused.
 
+H126 is confirmed (exp-125): completeness 1 sample / 15,296 (0.007% of `content_open`).
+`load_content` 63.5%; snapshot 36.4%; first `analysis_candidates` walk 15.7%. Restore
+mix unchanged (candidates ~48%, apply ~43%). No new userspace cut.
+Do not retry H116.
+
 H111 is open and not in this host.
 
 ### API Changes
@@ -197,7 +206,7 @@ These were considered against the post-H115 path and not registered:
   exp-113 unused.
 - Then take the remaining queue below, in order.
   After an accept, re-screen the next row: H122 may name a cut that eats H107; H121’s
-  mix is stale after H125.
+  mix was re-checked after H125 as H126 (unchanged; no new cut).
 - Uncontrolled is allowed on leftover profiles and H107 when quiet fails.
   Label it. Do not lower the 25% busy bar.
 - H111 is not in this host (no Linux runner).
@@ -215,7 +224,12 @@ Overnight H116–H120 is history, not a retry list.
    Wall −8.03% [−10.79%, −7.79%] on frozen `metabrowser-clone`. Engine kept
    (`be8d4d69`). H113 superseded.
    File-count not compiled.
-   exp-113 unused. Do not retry H113.
+   exp-113 unused. Do not retry H113. **H126** (`fdu-16jh`). **Confirmed** (exp-125).
+   Completeness walk gone.
+   First candidates walk remains (15.7%). No new cut.
+   Do not retry H116. Next leftover is first-pass analyze versus opened-root content I/O
+   if that cell can change standing.
+   Do not invent a skip.
 
 2. **H122** (`fdu-ytg5`). **Confirmed** (exp-118, leftover exp-122). Highest
    user-visible leverage.
@@ -267,15 +281,17 @@ Overnight H116–H120 is history, not a retry list.
 H117 confirmed as a probe, H120 accepted.
 **Stacked session (do not re-queue):** H113 superseded (quiet gates including 45.48%;
 leftover 16% of `content_open` in exp-123; restore-count accepted as H125 / exp-124),
-H107 skipped (ignore does not skip descent), H122 confirmed (exp-118 + leftover
-exp-122), H123 confirmed, H121 confirmed (no apply cut), H124 rejected (exp-121).
+H126 confirmed (exp-125; completeness gone; no new cut), H107 skipped (ignore does not
+skip descent), H122 confirmed (exp-118 + leftover exp-122), H123 confirmed, H121
+confirmed (no apply cut), H124 rejected (exp-121).
 
 ## Testing Strategy
 
 H125 is recorded (exp-124). Incomplete-sidecar fail-closed stays.
+H126 is recorded (exp-125). Completeness walk gone; no new cut.
 H124 is recorded (exp-121). H122 (exp-118 + leftover exp-122), H123, and H121 are
 recorded determinations.
-Exact oracles and content digest stay as for exp-108–124. H123 kept one-shot
+Exact oracles and content digest stay as for exp-108–125. H123 kept one-shot
 `cold scan`. Record every verdict, including skips at the quiet gate.
 
 ## Rollout Plan
@@ -306,23 +322,26 @@ Engine changes land only as the experiment that tests the next row.
   without H113’s file-count heuristic (H125). **Closed:** exp-124. Wall −8.03%
   [−10.79%, −7.79%]. Engine kept.
   H113 superseded.
+- Whether the completeness walk is gone after H125 and whether a new ≥3% userspace cut
+  remains (H126). **Closed:** exp-125. Completeness 0.007% of `content_open`. No new
+  cut. Do not retry H116.
 
 ## References
 
 - [The loop guide registry](../../guides/performance-loop.md#current-engine-010) —
-  H107–H125
+  H107–H126
 - [The runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
 - [Campaign 2](plan-2026-08-23-fdu-performance-campaign-2.md) — floor-anchored strategy
 - [First Principles](../../architecture/fdu-design-principles.md#first-principles)
 - [Engine architecture](../../architecture/fdu-engine-architecture.md) — one-shot vs
   opened
 - [The instrumentation playbook](../../guides/performance-instrumentation-playbook.md)
-- exp-107 through exp-124; H115 engine at `7798fdc1`; H120 streaming restore; H125
+- exp-107 through exp-125; H115 engine at `7798fdc1`; H120 streaming restore; H125
   restore-count at `be8d4d69`
 - Beads: overnight epic `fdu-e9ow` (closed); remaining-queue epic `fdu-8ya1`; H121
-  `fdu-vf4b`; H122 `fdu-ytg5`; H123 `fdu-rum0`; H124 `fdu-i39y`; H125 `fdu-wd4q`; H113
-  quiet `fdu-rfr6` (superseded); H107 `fdu-jcfn`; H111 `fdu-jekg`; sidecar parent
-  `fdu-78q6`; EntryId composite `fdu-jxhk` (do not restart)
+  `fdu-vf4b`; H122 `fdu-ytg5`; H123 `fdu-rum0`; H124 `fdu-i39y`; H125 `fdu-wd4q`; H126
+  `fdu-16jh`; H113 quiet `fdu-rfr6` (superseded); H107 `fdu-jcfn`; H111 `fdu-jekg`;
+  sidecar parent `fdu-78q6`; EntryId composite `fdu-jxhk` (do not restart)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
