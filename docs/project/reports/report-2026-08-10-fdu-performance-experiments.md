@@ -64,7 +64,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 66 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 67 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
@@ -212,6 +212,7 @@ dead end.
 | 132 | [Skip unused snapshot path reconstruction on metabrowser](#exp132--skip-unused-snapshot-path-reconstruction-on-metabrowser) | H133 | `content-cache-hit` | -6.4% | ✅ accepted |
 | 133 | [Post-H133 cache-hit leftover after unused snapshot path skip](#exp133--posth133-cachehit-leftover-after-unused-snapshot-path-skip) | H134 | `content-cache-hit` | -0.4% | ✅ accepted |
 | 134 | [Post-H124 first-pass content-basic leftover](#exp134--posth124-firstpass-contentbasic-leftover) | H135 | `content-basic` | -3.7% | ✅ accepted |
+| 135 | [Post-H128 first-run default-tree leftover](#exp135--posth128-firstrun-defaulttree-leftover) | H136 | `default-tree-first` | +0.2% | ✅ accepted |
 
 ## The experiments
 
@@ -4558,6 +4559,40 @@ engine patch.
 Full record:
 [`exp-134-post-h124-first-pass-content-basic-leftover.md`](../experiments/exp-134-post-h124-first-pass-content-basic-leftover.md)
 
+### exp-135 — Post-H128 first-run default-tree leftover
+
+✅ accepted · 2026-09-19 · H136 · commit `2aa3b7ee`
+
+Control: HEAD release probe at 2aa3b7ee
+
+Candidate: same probe (leftover profile)
+
+**`default-tree-first`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 481.0 | 453.6 | +0.18% (n.s.) | [-15.02%, +38.62%] |
+| component (ms) | 472.4 | 444.9 | -3.05% (n.s.) | [-15.01%, +36.10%] |
+| cpu (ms) | 1655.6 | 1606.6 | -1.85% (n.s.) | [-9.22%, +1.41%] |
+| user (ms) | 162.3 | 166.5 | +1.77% (n.s.) | [-1.05%, +4.13%] |
+| system (ms) | 1489.3 | 1435.5 | -2.51% (n.s.) | [-10.11%, +1.66%] |
+| peak rss (MiB) | 54.2 | 54.4 | +0.35% (n.s.) | [-1.88%, +2.55%] |
+
+Wall-time tail: control p95 is 1.48x its median and candidate 2.50x. The verdict above
+is on the median; a reader deciding whether this is faster to *use* should read the tail
+beside it.
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** first-run leftover after H128 is still the walk (83-88%); isolated
+snapshot save 45ms (~11-16% of first-run) is >=3% but not skippable
+(H100/H78/H92/fsync); no engine patch.
+
+Full record:
+[`exp-135-post-h128-first-run-default-tree-leftover.md`](../experiments/exp-135-post-h128-first-run-default-tree-leftover.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4585,6 +4620,7 @@ Baselines show one value because they measure a state rather than a change.
 | 132 | Skip unused snapshot path reconstruction on metabrowser | `content-cache-hit` | 829.5 | 778.0 | -6.4% | ✅ accepted |
 | 133 | Post-H133 cache-hit leftover after unused snapshot path skip | `content-cache-hit` | 775.3 | 774.7 | -0.4% | ✅ accepted |
 | 134 | Post-H124 first-pass content-basic leftover | `content-basic` | 10,365.9 | 10,058.8 | -3.7% | ✅ accepted |
+| 135 | Post-H128 first-run default-tree leftover | `default-tree-first` | 481.0 | 453.6 | +0.2% | ✅ accepted |
 
 ### metabrowser-clone (59,654 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

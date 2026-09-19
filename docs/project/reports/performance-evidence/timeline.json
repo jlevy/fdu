@@ -35307,6 +35307,143 @@
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Post-H124 first-pass content-basic leftover",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe (leftover profile)",
+   "change_pct": 0.182,
+   "commit": "2aa3b7ee",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "leftover profile only; no engine change"
+   },
+   "control": "HEAD release probe at 2aa3b7ee",
+   "date": "2026-09-19",
+   "decision": "accepted",
+   "entries": 146047,
+   "family": "macOS:3b5427f76be0",
+   "hypotheses": [
+    "H136"
+   ],
+   "id": "exp-135",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "default-tree-first",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 444906042,
+        "control": 472441708
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -3.047,
+        "ci95_high_pct": 36.101,
+        "ci95_low_pct": -15.014,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1606621000,
+        "control": 1655608000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -1.851,
+        "ci95_high_pct": 1.414,
+        "ci95_low_pct": -9.225,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 57049088,
+        "control": 56852480
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.346,
+        "ci95_high_pct": 2.55,
+        "ci95_low_pct": -1.884,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 1435536000,
+        "control": 1489263500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -2.507,
+        "ci95_high_pct": 1.663,
+        "ci95_low_pct": -10.113,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 166549000,
+        "control": 162282000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 1.771,
+        "ci95_high_pct": 4.134,
+        "ci95_low_pct": -1.046,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 453571916.5,
+        "control": 480951833.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.182,
+        "ci95_high_pct": 38.621,
+        "ci95_low_pct": -15.018,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 3105.65719597116,
+      "control": 3293.1305230507987
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 135,
+   "path": "exp-135-post-h128-first-run-default-tree-leftover.md",
+   "platform": "macOS",
+   "primary_job": "default-tree-first",
+   "primary_metric": "wall_ns",
+   "reason": "first-run leftover after H128 is still the walk (83-88%); isolated snapshot save 45ms (~11-16% of first-run) is >=3% but not skippable (H100/H78/H92/fsync); no engine patch",
+   "reference_tools": [],
+   "subject": "3b5427f76be0:146047:dc0df2630acc",
+   "title": "Post-H128 first-run default-tree leftover",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-19",
@@ -35329,7 +35466,8 @@
     "exp-131",
     "exp-132",
     "exp-133",
-    "exp-134"
+    "exp-134",
+    "exp-135"
    ],
    "files": 133708,
    "filesystem": "apfs",
@@ -36122,20 +36260,20 @@
  "totals": {
   "accepted_lines_changed": 15936,
   "decisions": {
-   "accepted": 71,
+   "accepted": 72,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
    "rejected": 46,
    "superseded": 3
   },
-  "experiments": 134,
+  "experiments": 135,
   "first_date": "2026-08-10",
-  "hypotheses": 90,
+  "hypotheses": 91,
   "last_date": "2026-09-19",
   "platforms": {
    "Linux": 11,
-   "macOS": 123
+   "macOS": 124
   }
  },
  "version": "fdu.performance.timeline/1"

@@ -420,6 +420,13 @@ Attachment only. Interval includes zero.
 First-pass leftover is still file I/O (`read` 58.87%, `__open` 16.09%). `classify_with`
 2.02% of process. `commit_record` 0.59%. `merge_ancestors` 0.43%. No engine patch.
 
+**exp-135 / H136** is leftover after H128 on the same frozen clone.
+Same-source 12-pair `default-tree-first`. Quiet this tick refused at 75.4%. Pair
+**uncontrolled**. Initial busy 46.59%; final 88.11%. Wall +0.18% [−15.02%, +38.62%].
+Attachment only. Every timed sample wrote the snapshot (10.5 MiB). Walk 83–88% of
+first-run component.
+Isolated `snapshot-save` 45.3 ms (~11–16%). No engine patch.
+
 **exp-121 / H124** is the first-pass analyze I/O **profile** on the frozen
 `metabrowser-clone` (146,047 entries / 133,708 files; digest `dc0df263…`). Path-binary
 already skipped (8,022 files).
@@ -452,13 +459,13 @@ Do not type a path into a commit.
 `system-private-frameworks` was the H108 / H117 subject (exp-107, exp-116); digest
 unchanged from the nomination.
 `metabrowser-clone` was the H109 / H112 / H113 / H114 / H115 / H116 / H118 / H120 / H121
-/ H124 / H125 / H126 / H127 / H128 / H129 / H130 / H131 / H132 / H133 / H134 / H135
-subject (exp-108 through exp-112, exp-114, exp-115, exp-117, exp-120, exp-121, exp-123,
-exp-124, exp-125, exp-126, exp-128, exp-129, exp-130, exp-131, exp-132, exp-133,
-exp-134); same shape as exp-106, engine digest unchanged (`3fbfed48…`). A 2026-09-19
-re-observe drifted to 145,988 entries / 133,654 files (digest `cc517e78…`); commit a
-fresh subjects document with the next metabrowser cell (`make perf-subjects`). The CLI
-QA medium tree was skipped: deciding-scale but mutating.
+/ H124 / H125 / H126 / H127 / H128 / H129 / H130 / H131 / H132 / H133 / H134 / H135 /
+H136 subject (exp-108 through exp-112, exp-114, exp-115, exp-117, exp-120, exp-121,
+exp-123, exp-124, exp-125, exp-126, exp-128, exp-129, exp-130, exp-131, exp-132,
+exp-133, exp-134, exp-135); same shape as exp-106, engine digest unchanged
+(`3fbfed48…`). A 2026-09-19 re-observe drifted to 145,988 entries / 133,654 files
+(digest `cc517e78…`); commit a fresh subjects document with the next metabrowser cell
+(`make perf-subjects`). The CLI QA medium tree was skipped: deciding-scale but mutating.
 `system-private-frameworks` was also the H122 subject (exp-118); digest unchanged.
 
 ### Next Up
@@ -468,9 +475,9 @@ Source of truth:
 [the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
 The registry row in [the loop guide](performance-loop.md#current-engine-010) is the full
 statement. Overnight H116–H120 is done; do not retry those.
-Next free hypothesis id is **H136**. Do not mint another meaning for H91–H106. Next free
+Next free hypothesis id is **H137**. Do not mint another meaning for H91–H106. Next free
 experiment id is **exp-113** (reserved unused; H113 superseded).
-After that, **exp-135**.
+After that, **exp-136**.
 
 This stacked session skipped H113 (quiet gates including 45.48%, 53.86%, 31.53%, 34.97%,
 27.23%, a 24.38% pre-check that did not hold, and 28.07%), accepted H125 (exp-124,
@@ -482,18 +489,25 @@ restore-without-classify), confirmed H130 (exp-129 leftover; classify gone; `pat
 leftover; restore-walk `path_of` gone; snapshot `path_of` 9.89% discarded on one-shot
 `serving=None`), accepted H133 (exp-132, skip unused snapshot path reconstruction),
 confirmed H134 (exp-133 leftover; snapshot `path_of` gone; no new cut), confirmed H135
-(exp-134 leftover; first-pass `content-basic` still file I/O; no new cut), hunted H107
-(no ignore-is-the-walk subject), recorded exp-122 (H122 leftover), and recorded exp-123
-(H113 leftover then 16% of `content_open`). Earlier the same day: H113 69.4%, H122
-(exp-118), H123, H121, H124. Do not start H107 without an ignore-is-the-walk subject.
+(exp-134 leftover; first-pass `content-basic` still file I/O; no new cut), confirmed
+H136 (exp-135 leftover; first-run walk still the job; snapshot write ~45 ms and not
+skippable), hunted H107 (no ignore-is-the-walk subject), recorded exp-122 (H122
+leftover), and recorded exp-123 (H113 leftover then 16% of `content_open`). Earlier the
+same day: H113 69.4%, H122 (exp-118), H123, H121, H124. Do not start H107 without an
+ignore-is-the-walk subject.
 Do not retry metabrowser for H107 (exp-106). Do not start H111 (no Linux).
 Do not raise the README 200K files/s or 4M cached lines/s.
 
-1. **H135** (`fdu-hh0t`). **Confirmed** (exp-134). First-pass leftover after H124 is
-   still file I/O (`read` 58.87%, `__open` 16.09% of process).
+1. **H136** (`fdu-w9jb`). **Confirmed** (exp-135). First-run leftover after H128 is
+   still the walk (83–88% of `default-tree-first` component).
+   Isolated `snapshot-save` 45.3 ms (~11–16% of first-run).
+   Write is ≥3% and not skippable.
+   No engine patch. Quiet this tick 75.4%; pair initial 46.59% final 88.11%. **H135**
+   (`fdu-hh0t`). **Confirmed** (exp-134). First-pass leftover after H124 is still file
+   I/O (`read` 58.87%, `__open` 16.09% of process).
    `classify_with` 2.02%. `commit_record` 0.59%. `merge_ancestors` 0.43%. No skippable
    ≥3% userspace cut. No engine patch.
-   Quiet this tick 56.4%; pair initial 35.75% final 82.48%. **H134** (`fdu-03pr`).
+   Quiet that tick 56.4%; pair initial 35.75% final 82.48%. **H134** (`fdu-03pr`).
    **Confirmed** (exp-133). Snapshot `path_of` gone (0 of `content_open`). Completeness
    still 0. Restore-walk `path_of` still 0. Classify still 0. Snapshot 37.94%. Remaining
    leftover is already-landed restore work and already-rejected stages
@@ -575,7 +589,9 @@ Do not retry that join.
 H132 confirmed restore-walk `path_of` is gone (exp-131). H133 took the unused snapshot
 `path_of` skip (exp-132). H134 confirmed snapshot `path_of` is gone (exp-133). Remaining
 cache-hit leftover is already-landed restore work and already-rejected stages.
-H135 confirmed first-pass leftover is still file I/O (exp-134). Do not invent a skip.
+H135 confirmed first-pass leftover is still file I/O (exp-134). H136 confirmed first-run
+leftover is still the walk (exp-135); snapshot write ~45 ms is not skippable.
+Do not invent a skip.
 Do not join a parent path on snapshot insert.
 Do not defer snapshot `merge_upward`. Do not retry H109.
 
@@ -631,6 +647,9 @@ Do not defer snapshot `merge_upward`. Do not retry H109.
   Remaining leftover is already-rejected or already-landed.
 - Do not compile a leftover H135 cut after exp-134. First-pass leftover is still file
   I/O. Do not invent a first-pass classify skip.
+- Do not compile a leftover H136 cut after exp-135. First-run leftover is still the
+  walk. Snapshot write is not skippable.
+  Do not retry H100. Do not mint H78/H92.
 - Do not register another restore alloc-trim, parse-speed cut, or H103-shaped
   instruction rewrite; those are on the remaining-headroom block’s rejected list.
 - A quiet cell may not hold on this desktop.
@@ -933,6 +952,7 @@ producing a number that means nothing.
 - Retry H133 after exp-132.
 - Compile a leftover H134 cut after exp-133.
 - Compile a leftover H135 cut after exp-134.
+- Compile a leftover H136 cut after exp-135.
 - Retry H116 on an uncontrolled cell after exp-114.
 - Retry H118 on an uncontrolled cell after exp-115.
 - Retry H119 walk-overlap after the deciding-scale `content-basic` profile.
