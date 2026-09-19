@@ -89,6 +89,14 @@ pub struct Counts {
     pub scanner_control_projection_us: u64,
     /// Wall microseconds spent reducing prepared scanner batches into the index.
     pub scanner_reduce_us: u64,
+    /// Wall microseconds spent reading the content sidecar image.
+    pub content_sidecar_read_us: u64,
+    /// Wall microseconds spent on sidecar integrity and record decode.
+    pub content_sidecar_parse_us: u64,
+    /// Wall microseconds spent building the live candidate map for a sidecar restore.
+    pub content_sidecar_candidates_us: u64,
+    /// Wall microseconds spent applying decoded sidecar records into the content tier.
+    pub content_sidecar_apply_us: u64,
     /// Detached cold scans that selected the directory-group builder.
     pub detached_builds: u64,
     /// Entries consumed by that builder.
@@ -170,6 +178,10 @@ impl Counts {
         scanner_prepare_us: 0,
         scanner_control_projection_us: 0,
         scanner_reduce_us: 0,
+        content_sidecar_read_us: 0,
+        content_sidecar_parse_us: 0,
+        content_sidecar_candidates_us: 0,
+        content_sidecar_apply_us: 0,
         detached_builds: 0,
         detached_entries: 0,
         detached_walk_us: 0,
@@ -229,6 +241,18 @@ impl Counts {
                 self.scanner_control_projection_us,
             ),
             ("mutation timing", "scanner reduction microseconds", self.scanner_reduce_us),
+            (
+                "content sidecar timing",
+                "sidecar image read microseconds",
+                self.content_sidecar_read_us,
+            ),
+            ("content sidecar timing", "sidecar parse microseconds", self.content_sidecar_parse_us),
+            (
+                "content sidecar timing",
+                "sidecar candidate-map microseconds",
+                self.content_sidecar_candidates_us,
+            ),
+            ("content sidecar timing", "sidecar apply microseconds", self.content_sidecar_apply_us),
             ("detached builder", "builds", self.detached_builds),
             ("detached builder", "entries", self.detached_entries),
             ("detached builder", "walk microseconds", self.detached_walk_us),
@@ -305,6 +329,14 @@ impl Counts {
         self.scanner_control_projection_us =
             self.scanner_control_projection_us.saturating_add(other.scanner_control_projection_us);
         self.scanner_reduce_us = self.scanner_reduce_us.saturating_add(other.scanner_reduce_us);
+        self.content_sidecar_read_us =
+            self.content_sidecar_read_us.saturating_add(other.content_sidecar_read_us);
+        self.content_sidecar_parse_us =
+            self.content_sidecar_parse_us.saturating_add(other.content_sidecar_parse_us);
+        self.content_sidecar_candidates_us =
+            self.content_sidecar_candidates_us.saturating_add(other.content_sidecar_candidates_us);
+        self.content_sidecar_apply_us =
+            self.content_sidecar_apply_us.saturating_add(other.content_sidecar_apply_us);
         self.detached_builds = self.detached_builds.saturating_add(other.detached_builds);
         self.detached_entries = self.detached_entries.saturating_add(other.detached_entries);
         self.detached_walk_us = self.detached_walk_us.saturating_add(other.detached_walk_us);
@@ -377,6 +409,10 @@ struct GlobalCounts {
     scanner_prepare_us: AtomicU64,
     scanner_control_projection_us: AtomicU64,
     scanner_reduce_us: AtomicU64,
+    content_sidecar_read_us: AtomicU64,
+    content_sidecar_parse_us: AtomicU64,
+    content_sidecar_candidates_us: AtomicU64,
+    content_sidecar_apply_us: AtomicU64,
     detached_builds: AtomicU64,
     detached_entries: AtomicU64,
     detached_walk_us: AtomicU64,
@@ -431,6 +467,10 @@ impl GlobalCounts {
             scanner_prepare_us: AtomicU64::new(0),
             scanner_control_projection_us: AtomicU64::new(0),
             scanner_reduce_us: AtomicU64::new(0),
+            content_sidecar_read_us: AtomicU64::new(0),
+            content_sidecar_parse_us: AtomicU64::new(0),
+            content_sidecar_candidates_us: AtomicU64::new(0),
+            content_sidecar_apply_us: AtomicU64::new(0),
             detached_builds: AtomicU64::new(0),
             detached_entries: AtomicU64::new(0),
             detached_walk_us: AtomicU64::new(0),
@@ -487,6 +527,13 @@ impl GlobalCounts {
             counts.scanner_control_projection_us,
         );
         atomic_saturating_add(&self.scanner_reduce_us, counts.scanner_reduce_us);
+        atomic_saturating_add(&self.content_sidecar_read_us, counts.content_sidecar_read_us);
+        atomic_saturating_add(&self.content_sidecar_parse_us, counts.content_sidecar_parse_us);
+        atomic_saturating_add(
+            &self.content_sidecar_candidates_us,
+            counts.content_sidecar_candidates_us,
+        );
+        atomic_saturating_add(&self.content_sidecar_apply_us, counts.content_sidecar_apply_us);
         atomic_saturating_add(&self.detached_builds, counts.detached_builds);
         atomic_saturating_add(&self.detached_entries, counts.detached_entries);
         atomic_saturating_add(&self.detached_walk_us, counts.detached_walk_us);
@@ -554,6 +601,12 @@ impl GlobalCounts {
                 .scanner_control_projection_us
                 .load(Ordering::Relaxed),
             scanner_reduce_us: self.scanner_reduce_us.load(Ordering::Relaxed),
+            content_sidecar_read_us: self.content_sidecar_read_us.load(Ordering::Relaxed),
+            content_sidecar_parse_us: self.content_sidecar_parse_us.load(Ordering::Relaxed),
+            content_sidecar_candidates_us: self
+                .content_sidecar_candidates_us
+                .load(Ordering::Relaxed),
+            content_sidecar_apply_us: self.content_sidecar_apply_us.load(Ordering::Relaxed),
             detached_builds: self.detached_builds.load(Ordering::Relaxed),
             detached_entries: self.detached_entries.load(Ordering::Relaxed),
             detached_walk_us: self.detached_walk_us.load(Ordering::Relaxed),
@@ -607,6 +660,10 @@ impl GlobalCounts {
         self.scanner_prepare_us.store(0, Ordering::Relaxed);
         self.scanner_control_projection_us.store(0, Ordering::Relaxed);
         self.scanner_reduce_us.store(0, Ordering::Relaxed);
+        self.content_sidecar_read_us.store(0, Ordering::Relaxed);
+        self.content_sidecar_parse_us.store(0, Ordering::Relaxed);
+        self.content_sidecar_candidates_us.store(0, Ordering::Relaxed);
+        self.content_sidecar_apply_us.store(0, Ordering::Relaxed);
         self.detached_builds.store(0, Ordering::Relaxed);
         self.detached_entries.store(0, Ordering::Relaxed);
         self.detached_walk_us.store(0, Ordering::Relaxed);
@@ -761,6 +818,19 @@ fn enable_from_value(value: Option<&OsStr>) -> bool {
 #[must_use]
 pub fn enabled() -> bool {
     ENABLED.load(Ordering::Relaxed)
+}
+
+/// Elapsed microseconds since `started`, saturating at `u64::MAX`.
+#[must_use]
+pub(crate) fn elapsed_micros(started: std::time::Instant) -> u64 {
+    u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX)
+}
+
+/// Record a whole-phase duration when recording is on.
+pub(crate) fn add_elapsed(started: Option<std::time::Instant>, add: impl FnOnce(&mut Counts, u64)) {
+    if let Some(started) = started {
+        bump(|counts| add(counts, elapsed_micros(started)));
+    }
 }
 
 /// Add to one or more counters on the calling thread.

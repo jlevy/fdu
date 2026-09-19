@@ -137,8 +137,17 @@ pub fn load_content_cache(
     if metadata.len() > MAX_CACHE_BYTES {
         return Ok(ContentCacheLoad::default());
     }
+    let read_started = crate::counters::enabled().then(std::time::Instant::now);
     let image = fs::read(path).map_err(|error| Error::io(path, error))?;
-    let Some(records) = parse(&image, index.root_path(), wanted) else {
+    crate::counters::add_elapsed(read_started, |counts, elapsed| {
+        counts.content_sidecar_read_us = counts.content_sidecar_read_us.saturating_add(elapsed);
+    });
+    let parse_started = crate::counters::enabled().then(std::time::Instant::now);
+    let parsed = parse(&image, index.root_path(), wanted);
+    crate::counters::add_elapsed(parse_started, |counts, elapsed| {
+        counts.content_sidecar_parse_us = counts.content_sidecar_parse_us.saturating_add(elapsed);
+    });
+    let Some(records) = parsed else {
         return Ok(ContentCacheLoad::default());
     };
     index.prepare_content_analysis(AnalysisRequest {
@@ -158,12 +167,18 @@ pub fn load_content_cache(
     // over every file on every open — including a cache-only one, which then discards
     // the result in favour of the classification the sidecar already stored. That is
     // the real cost on this path and it is tracked separately (`fdu-926e`).
+    let candidates_started = crate::counters::enabled().then(std::time::Instant::now);
     let mut candidates = index
         .analysis_candidates(wanted.analysis)
         .into_iter()
         .map(|candidate| (candidate.relative_path.clone(), candidate))
         .collect::<HashMap<_, _>>();
+    crate::counters::add_elapsed(candidates_started, |counts, elapsed| {
+        counts.content_sidecar_candidates_us =
+            counts.content_sidecar_candidates_us.saturating_add(elapsed);
+    });
     let mut loaded = ContentCacheLoad { usable: true, ..ContentCacheLoad::default() };
+    let apply_started = crate::counters::enabled().then(std::time::Instant::now);
     for (relative_path, analysis) in records {
         let Some(candidate) = candidates.remove(&relative_path) else {
             loaded.stale = loaded.stale.saturating_add(1);
@@ -186,6 +201,9 @@ pub fn load_content_cache(
             AnalysisApplyOutcome::Stale => loaded.stale = loaded.stale.saturating_add(1),
         }
     }
+    crate::counters::add_elapsed(apply_started, |counts, elapsed| {
+        counts.content_sidecar_apply_us = counts.content_sidecar_apply_us.saturating_add(elapsed);
+    });
     Ok(loaded)
 }
 
