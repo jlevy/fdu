@@ -48,7 +48,7 @@ Library steps are time-boxed and must stay bounded.
 
 **Next Steps:**
 
-1. Run `scripts/run-installed-cli-qa.py` with the fixture env vars for this machine.
+1. Run `scripts/run_installed_cli_qa.py` with the fixture env vars for this machine.
 2. Replace the dated report table when revising numbers.
 3. File beads for product failures; do not treat a Library TCC partial (exit 2) as a
    crash.
@@ -107,9 +107,9 @@ export FDU_QA_SMALL=/path/to/small-tree
 # export FDU_QA_LARGE=/path/to/large-tree
 export FDU_QA_OUT=/tmp/fdu-qa-out
 
-python3 scripts/run-installed-cli-qa.py
+python3 scripts/run_installed_cli_qa.py
 # or a subset:
-python3 scripts/run-installed-cli-qa.py --phases sanity,views,cache-analyze,watch
+python3 scripts/run_installed_cli_qa.py --phases sanity,views,cache-analyze,watch
 ```
 
 **Expected output**:
@@ -378,7 +378,7 @@ the table in the current report).
 Keep the playbook’s procedure stable; revise numbers in the report.
 
 ```bash
-python3 scripts/run-installed-cli-qa.py   # writes FDU_QA_OUT/results.md
+python3 scripts/run_installed_cli_qa.py   # writes FDU_QA_OUT/results.md
 make docs-format
 ```
 

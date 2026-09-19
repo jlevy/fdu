@@ -2,7 +2,7 @@
 
 Numbers from one sequential run of
 [cli-installed-e2e.qa.md](../../../tests/qa/cli-installed-e2e.qa.md) via
-`scripts/run-installed-cli-qa.py`. Replace this table when revising later; keep the
+`scripts/run_installed_cli_qa.py`. Replace this table when revising later; keep the
 playbook’s procedure.
 
 ## Run Identity
