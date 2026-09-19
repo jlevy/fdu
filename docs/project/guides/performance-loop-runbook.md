@@ -179,10 +179,10 @@ A 2026-09-19 stacked-PR retry (`fdu-rfr6`, ~10:31 PT) refused again at the start
 CPU busy **69.4% > 25.0%**. No pair ran.
 The file-count shortcut was compiled only for that gate attempt and is not in the
 engine. exp-113 remains reserved.
-A later tick the same afternoon refused at **43.79%**. No pair.
+A later tick the same afternoon refused at **43.79%**, then **85.17%**. No pair.
 Shortcut not compiled.
 exp-113 remains reserved.
-Next is H122.
+The leftover is still 16.0% of `content_open` after H115+H120 (exp-123). Next is H122.
 
 **exp-114 / H116** tests restore without a full `analysis_candidates` Vec+HashMap on the
 same `metabrowser-clone` tree (engine digest unchanged).
@@ -293,6 +293,23 @@ win. 77,509 enumeration calls / 55,256 opens = **1.403** per directory.
 3.02% (largest symbol 0.94%), allocator 3.00%. No userspace cut ≥3%. H125 not minted.
 Counter kept.
 
+**exp-123 / H113** is the completeness leftover after H115+H120, on the frozen
+`metabrowser-clone` (digest unchanged).
+No shortcut compiled.
+Same-binary 12-pair `content-cache-hit`. Labeled uncontrolled after a 43.64% pre-pair
+busy check. Official initial busy 18.37% / thermal `fair`; final 45.72%. The 25% bar was
+not lowered.
+
+| Arm | Wall median | Component | Peak RSS |
+| --- | ---: | ---: | ---: |
+| control | 1,116.5 ms | 832.2 ms | 331.9 MiB |
+| candidate | 1,221.3 ms | 930.1 ms | 331.3 MiB |
+
+Self-comparison +3.26% [−1.37%, +13.31%]. **Accepted** as a determination.
+20 s sample: completeness walk (`open_for_report` lib.rs:601–602) **16.0%** of
+`content_open` (2,136 / 13,357). exp-109 was 12.6%. About 12% of H121 claim-grade wall.
+H113 stays open. exp-113 unused.
+
 **exp-121 / H124** is the first-pass analyze I/O **profile** on the frozen
 `metabrowser-clone` (146,047 entries / 133,708 files; digest `dc0df263…`). Path-binary
 already skipped (8,022 files).
@@ -342,21 +359,21 @@ statement. Overnight H116–H120 is done; do not retry those.
 Next free hypothesis id is **H125**. Do not mint it as a Darwin userspace walk cut
 (exp-122). Do not mint another meaning for H91–H106. Next free experiment id is
 **exp-113** (reserved for H113 quiet).
-After that, **exp-123**.
+After that, **exp-124**.
 
-This stacked session skipped H113 again (quiet gate 43.79%), hunted H107 (no
-ignore-is-the-walk subject; ignore does not skip descent), and recorded exp-122 (H122
-tighter leftover).
-Earlier the same day: H113 69.4%, H122 (exp-118), H123, H121, H124. Do
-not start H107 without an ignore-is-the-walk subject.
+This stacked session skipped H113 (quiet gates 43.79% and 85.17%), hunted H107 (no
+ignore-is-the-walk subject), recorded exp-122 (H122 leftover), and recorded exp-123
+(H113 leftover still 16% of `content_open`). Earlier the same day: H113 69.4%, H122
+(exp-118), H123, H121, H124. Do not start H107 without an ignore-is-the-walk subject.
 Do not retry metabrowser for H107 (exp-106). Do not start H111 (no Linux).
 Do not raise the README 200K files/s or 4M cached lines/s.
 
 1. **H113** (`fdu-rfr6`). **Needs quiet host.** Quiet confirmatory after H115. Official
-   start gate refused 2026-09-19 at 46.7% busy, then **69.4%**, then **43.79%** on the
-   stacked branch. Later incomplete quiet cells are not a verdict.
-   Do not run uncontrolled.
-   If the gate fails, skip.
+   start gate refused 2026-09-19 at 46.7% busy, then **69.4%**, **43.79%**, and
+   **85.17%** on the stacked branch.
+   Later incomplete quiet cells are not a verdict.
+   Leftover still 16.0% of `content_open` after H115+H120 (exp-123). Do not run
+   uncontrolled. If the gate fails, skip.
    Accept: `content-cache-hit` wall ≥3% with the interval below zero on
    `metabrowser-clone`; digest identical; incomplete sidecar refused.
    Control is HEAD with H115 and H120 in.

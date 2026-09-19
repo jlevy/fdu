@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 54 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 55 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -200,6 +200,7 @@ dead end.
 | 120 | [Cache-hit restore mix after H115 and H120 on metabrowser](#exp120--cachehit-restore-mix-after-h115-and-h120-on-metabrowser) | H121 | `content-cache-hit` | +0.7% | ✅ accepted |
 | 121 | [First-pass analyze I/O type/size gate or read-ahead on metabrowser](#exp121--firstpass-analyze-io-typesize-gate-or-readahead-on-metabrowser) | H124 | `content-basic` | -4.2% | ❌ rejected |
 | 122 | [Tighter metadata walk leftover after H122](#exp122--tighter-metadata-walk-leftover-after-h122) | H122 | `default-tree` | -1.9% | ✅ accepted |
+| 123 | [H113 completeness leftover after H115 and H120](#exp123--h113-completeness-leftover-after-h115-and-h120) | H113 | `content-cache-hit` | +3.3% | ✅ accepted |
 
 ## The experiments
 
@@ -4178,6 +4179,40 @@ cut at 3 percent; H125 not minted.
 Full record:
 [`exp-122-tighter-metadata-walk-leftover-after-h122.md`](../experiments/exp-122-tighter-metadata-walk-leftover-after-h122.md)
 
+### exp-123 — H113 completeness leftover after H115 and H120
+
+✅ accepted · 2026-09-19 · H113 · commit `01ccc4b8`
+
+Control: same probe at 01ccc4b8
+
+Candidate: same probe self-comparison
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1116.5 | 1221.3 | +3.26% (n.s.) | [-1.37%, +13.31%] |
+| component (ms) | 832.2 | 930.1 | +3.85% (n.s.) | [-1.79%, +17.70%] |
+| cpu (ms) | 1096.1 | 1125.8 | +1.22% (n.s.) | [-1.14%, +5.86%] |
+| user (ms) | 1005.2 | 1022.0 | +1.11% (n.s.) | [-0.07%, +5.92%] |
+| system (ms) | 95.9 | 88.8 | -3.85% (n.s.) | [-16.26%, +16.23%] |
+| blocked (ms) | 20.4 | 28.0 | +69.73% (n.s.) | [-52.31%, +713.94%] |
+| peak rss (MiB) | 331.9 | 331.3 | -0.21% (n.s.) | [-0.62%, +0.30%] |
+
+Wall-time tail: control p95 is 2.98x its median and candidate 3.92x. The verdict above
+is on the median; a reader deciding whether this is faster to *use* should read the tail
+beside it.
+
+Cost to carry: 0 lines; no new dependencies.
+
+no engine change; leftover profile only; file-count shortcut not compiled
+
+**Accepted:** completeness walk still 16 percent of content_open after H115+H120; H113
+stays open; shortcut not compiled.
+
+Full record:
+[`exp-123-h113-completeness-leftover-after-h115-and-h120.md`](../experiments/exp-123-h113-completeness-leftover-after-h115-and-h120.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4336,6 +4371,14 @@ Baselines show one value because they measure a state rather than a change.
 | 052 | Per-layer counters cost less than the measurement can see | `cold-scan-index` | 1,891.3 | 1,870.1 | +0.0% | ✅ accepted |
 | 053 | Move instrumentation to a runtime toggle and measure all three of its costs | `cold-scan-index` | 1,858.8 | 1,847.0 | -1.3% | ✅ accepted |
 
+### metabrowser-clone (146,047 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 120 | Cache-hit restore mix after H115 and H120 on metabrowser | `content-cache-hit` | 1,171.8 | 1,185.6 | +0.7% | ✅ accepted |
+| 121 | First-pass analyze I/O type/size gate or read-ahead on metabrowser | `content-basic` | 9,014.4 | 9,036.5 | -4.2% | ❌ rejected |
+| 123 | H113 completeness leftover after H115 and H120 | `content-cache-hit` | 1,116.5 | 1,221.3 | +3.3% | ✅ accepted |
+
 ### rustup-toolchains (119,368 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -4372,13 +4415,6 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 100 | Move directory-only state out of line | `default-tree` | 355.9 | 350.6 | -0.8% | ❌ rejected |
 | 101 | Compact detached child topology with local promotion | `default-tree` | 392.0 | 361.4 | -7.7% | ✅ accepted |
-
-### metabrowser-clone (146,047 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 120 | Cache-hit restore mix after H115 and H120 on metabrowser | `content-cache-hit` | 1,171.8 | 1,185.6 | +0.7% | ✅ accepted |
-| 121 | First-pass analyze I/O type/size gate or read-ahead on metabrowser | `content-basic` | 9,014.4 | 9,036.5 | -4.2% | ❌ rejected |
 
 ### metabrowser-clone (60,089 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 

@@ -192,8 +192,8 @@ These were considered against the post-H115 path and not registered:
 - H113 quiet confirmatory (`fdu-rfr6`, exp-113) is first *if* a quiet host holds.
   If the start gate fails, skip it.
   Do not run another uncontrolled H113. Incomplete 2026-09-19 quiet cells are not a
-  verdict. Stacked-PR retries the same day refused at 69.4% and 43.79% busy.
-  exp-113 unused.
+  verdict. Stacked-PR retries the same day refused at 69.4%, 43.79%, and 85.17% busy.
+  Leftover still 16.0% of `content_open` after H115+H120 (exp-123). exp-113 unused.
 - Then take the remaining queue below, in order.
   After an accept, re-screen the next row: H122 may name a cut that eats H107; H121 may
   retire H83 or leave it.
@@ -220,8 +220,7 @@ Overnight H116–H120 is history, not a retry list.
    Control = HEAD with H115 and H120 in.
    New id **exp-113**. Do not run uncontrolled.
    What refutes: quiet interval includes zero, or the start gate fails (skip, not a
-   reject). Why next: already instrumented; leftover 12.6% `content_open` walk from
-   exp-109 may have changed after H115 and H120.
+   reject). Why next: leftover still 16.0% of `content_open` after H115+H120 (exp-123).
 
 2. **H122** (`fdu-ytg5`). **Confirmed** (exp-118, leftover exp-122). Highest
    user-visible leverage.
@@ -271,9 +270,10 @@ Overnight H116–H120 is history, not a retry list.
 
 **Overnight history (do not re-queue):** H116 rejected, H118 rejected, H119 screened,
 H117 confirmed as a probe, H120 accepted.
-**Stacked session (do not re-queue):** H113 skipped (69.4%, 43.79%), H107 skipped
-(ignore does not skip descent), H122 confirmed (exp-118 + leftover exp-122), H123
-confirmed, H121 confirmed (no apply cut), H124 rejected (exp-121). H125 not minted.
+**Stacked session (do not re-queue):** H113 skipped (69.4%, 43.79%, 85.17%; leftover
+still 16% of `content_open`, exp-123), H107 skipped (ignore does not skip descent), H122
+confirmed (exp-118 + leftover exp-122), H123 confirmed, H121 confirmed (no apply cut),
+H124 rejected (exp-121). H125 not minted.
 
 ## Testing Strategy
 
