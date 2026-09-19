@@ -97,7 +97,7 @@ Prefer the doc comment: it is what the next person editing the value will read.
 | `RECONCILE_WAVE_DIRECTORIES` | 1,024 | M1 Pro; 4,096 refuted at 60k (exp-031) | **None** |
 | `DEFAULT_BATCH_SIZE` | 1,024 | M1 Pro | **None** |
 | `macos_bulk::BUFFER_BYTES` | 64 KiB | M1 Pro; 256 KiB refuted (exp-029/039) | Not applicable — macOS only |
-| `content_analysis::READ_CHUNK_BYTES` | 64 KiB | M1 Pro, 307–2,001-entry trees | **None** |
+| `content_analysis::READ_CHUNK_BYTES` | 64 KiB | M1 Pro, 307–2,001-entry trees; deciding-scale metabrowser read-call mix ~2/file (exp-121) | **None.** A larger chunk cannot clear 3% wall: almost every admitted file is already one data read plus EOF |
 | Global allocator | system | Never chosen by measurement | Measured, not adopted. mimalloc wins **only the aggregate tier** (−23.0% [−28.4%, −16.7%]); the index tier and snapshot load both span zero. Costs +139% peak RSS on that tier and is unmeasured on macOS, where the system allocator differs. See H74/H85 |
 
 ### The adaptive threshold is the clearest suspected mismatch

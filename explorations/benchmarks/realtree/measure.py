@@ -416,6 +416,17 @@ PROBE_JOBS: Dict[str, Job] = {
         ),
         parallel_cpu=True,
     ),
+    "index-second-report": Job(
+        id="index-second-report",
+        argv=("{binary}", "index-second-report", "--root", "{root}"),
+        start_state="cold",
+        description=(
+            "Scan into a retained Index, run the default tree report twice, and time "
+            "only the second query::report. The Python Index.report() and CLI watch "
+            "Session.report() product path."
+        ),
+        parallel_cpu=True,
+    ),
     "delta-apply-large": Job(
         id="delta-apply-large",
         argv=(
