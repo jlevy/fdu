@@ -5,7 +5,7 @@ title: Remaining hypotheses after H115+H120 overnight
 kind: epic
 status: open
 priority: 1
-version: 17
+version: 19
 spec_path: docs/project/specs/active/plan-2026-09-19-post-h115-remaining-headroom.md
 labels:
   - performance
@@ -25,8 +25,10 @@ child_order_hints:
   - is-01m2xrgf9vg6pexb6cjvf92v3f
   - is-01m2xs3szwzwsyk5s25myn18hp
   - is-01m2xt60nz02xa4wnkbxspfg75
+  - is-01m2xtkpsdv305jn0fmgw9hh1c
+  - is-01m2xvc4e8rqqfzepze97j7fnc
 created_at: 2026-09-19T16:27:39.712Z
-updated_at: 2026-09-19T21:46:57.597Z
+updated_at: 2026-09-19T22:07:46.631Z
 ---
 Morning registry pass after the H116-H120 overnight. Owns the remaining unaddressed queue: H113 (quiet, existing fdu-rfr6), H121-H124 (new), H107 ignore-is-the-walk only (fdu-jcfn), H111 not-in-this-host (fdu-jekg). Spec is the one source of truth; runbook standing points here. Docs and beads only; do not start a measurement cell. Do not retry H116/H118/H119, H114, H109, snapshot-load, or the H86/EntryId rewrite.
 
