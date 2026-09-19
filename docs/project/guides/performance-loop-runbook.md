@@ -128,9 +128,9 @@ statement.
 Next free hypothesis id is **H114**. Do not mint another meaning for H91–H106.
 Next free experiment id is **exp-110**.
 
-1. **H113**. After cache-only restore, `open_for_report` walks `analysis_candidates`
-   again only to compare `hits` to `len()` (lib.rs ~598–602). exp-109 sampled that walk
-   at 12.6% of `content_open` (~9% of wall).
+1. **H113** (`fdu-wrdl`). After cache-only restore, `open_for_report` walks
+   `analysis_candidates` again only to compare `hits` to `len()` (lib.rs ~598–602).
+   exp-109 sampled that walk at 12.6% of `content_open` (~9% of wall).
    Completeness can use a count already known from restore and still refuse an
    incomplete sidecar. Job: `content-cache-hit` wall ≥3% with the interval below zero;
    digest identical; incomplete sidecar still refused.
