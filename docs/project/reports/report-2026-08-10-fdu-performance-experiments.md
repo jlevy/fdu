@@ -64,7 +64,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 67 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 68 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
@@ -213,6 +213,7 @@ dead end.
 | 133 | [Post-H133 cache-hit leftover after unused snapshot path skip](#exp133--posth133-cachehit-leftover-after-unused-snapshot-path-skip) | H134 | `content-cache-hit` | -0.4% | ✅ accepted |
 | 134 | [Post-H124 first-pass content-basic leftover](#exp134--posth124-firstpass-contentbasic-leftover) | H135 | `content-basic` | -3.7% | ✅ accepted |
 | 135 | [Post-H128 first-run default-tree leftover](#exp135--posth128-firstrun-defaulttree-leftover) | H136 | `default-tree-first` | +0.2% | ✅ accepted |
+| 136 | [Post-H123 content-query leftover](#exp136--posth123-contentquery-leftover) | H137 | `content-query` | -3.3% | ✅ accepted |
 
 ## The experiments
 
@@ -4593,6 +4594,36 @@ snapshot save 45ms (~11-16% of first-run) is >=3% but not skippable
 Full record:
 [`exp-135-post-h128-first-run-default-tree-leftover.md`](../experiments/exp-135-post-h128-first-run-default-tree-leftover.md)
 
+### exp-136 — Post-H123 content-query leftover
+
+✅ accepted · 2026-09-19 · H137 · commit `afd0c919`
+
+Control: HEAD release probe at afd0c919
+
+Candidate: same probe (leftover profile)
+
+**`content-query`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 40340.5 | 38623.5 | -3.27% (n.s.) | [-14.42%, +4.41%] |
+| component (ms) | 26781.2 | 27325.8 | +2.27% (n.s.) | [-10.65%, +6.81%] |
+| cpu (ms) | 49301.0 | 48949.8 | -0.77% (n.s.) | [-2.08%, +0.76%] |
+| user (ms) | 28030.2 | 28021.9 | +0.33% (n.s.) | [-1.11%, +1.32%] |
+| system (ms) | 21222.2 | 20906.4 | -1.64% (n.s.) | [-4.67%, +4.41%] |
+| peak rss (MiB) | 673.2 | 691.1 | +2.13% (n.s.) | [-2.52%, +7.47%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** content-query leftover is every_entry path-join FileRow walks (~278ms per
+four-view report); unfiltered Types/Families/Languages/Documents each walk
+independently; no engine patch.
+
+Full record:
+[`exp-136-post-h123-content-query-leftover.md`](../experiments/exp-136-post-h123-content-query-leftover.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4621,6 +4652,7 @@ Baselines show one value because they measure a state rather than a change.
 | 133 | Post-H133 cache-hit leftover after unused snapshot path skip | `content-cache-hit` | 775.3 | 774.7 | -0.4% | ✅ accepted |
 | 134 | Post-H124 first-pass content-basic leftover | `content-basic` | 10,365.9 | 10,058.8 | -3.7% | ✅ accepted |
 | 135 | Post-H128 first-run default-tree leftover | `default-tree-first` | 481.0 | 453.6 | +0.2% | ✅ accepted |
+| 136 | Post-H123 content-query leftover | `content-query` | 40,340.5 | 38,623.5 | -3.3% | ✅ accepted |
 
 ### metabrowser-clone (59,654 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
