@@ -3,9 +3,9 @@ type: is
 id: is-01m2w9fjprg6vnzee5686g93j6
 title: "H113 quiet confirmatory: skip second analysis_candidates walk after H115"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 14
+version: 15
 spec_path: docs/project/specs/active/plan-2026-09-19-post-h115-remaining-headroom.md
 delegate: unknown@spud10
 labels:
@@ -17,8 +17,12 @@ parent_id: is-01kzysa79temyc45zjn2v98kpw
 hold: null
 hold_until: null
 created_at: 2026-09-19T07:35:50.742Z
-updated_at: 2026-09-19T20:33:49.076Z
+updated_at: 2026-09-19T20:45:08.157Z
 started_at: 2026-09-19T07:35:59.554Z
+closed_at: 2026-09-19T20:45:08.157Z
+close_reason: "exp-124 accepted H125 restore-count completeness: wall -8.03% [-10.79%, -7.79%]; H113 file-count superseded; exp-113 unused"
+resolution: null
+duplicate_of: null
 ---
 Quiet confirmatory of H113 after H115 landed. New experiment id (not a top-up of exp-110). Do not retry the file-count shortcut on an uncontrolled cell.
 
