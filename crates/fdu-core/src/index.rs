@@ -3528,6 +3528,31 @@ impl Index {
         &mut self,
         observation: AnalysisObservation,
     ) -> AnalysisApplyOutcome {
+        self.apply_analysis_record(observation, true)
+    }
+
+    /// Restore-path apply: insert the record and leave roll-ups for one rebuild.
+    ///
+    /// The caller must [`Self::rebuild_content_rollups`] before any query reads a
+    /// directory total; sidecar load does that after the apply loop.
+    pub(crate) fn apply_restored_analysis(
+        &mut self,
+        observation: AnalysisObservation,
+    ) -> AnalysisApplyOutcome {
+        self.apply_analysis_record(observation, false)
+    }
+
+    pub(crate) fn rebuild_content_rollups(&mut self) {
+        if let Some(content) = self.content.as_mut() {
+            content.rebuild_rollups();
+        }
+    }
+
+    fn apply_analysis_record(
+        &mut self,
+        observation: AnalysisObservation,
+        update_rollups: bool,
+    ) -> AnalysisApplyOutcome {
         let candidate = &observation.candidate;
         let Some(entry) = self.try_entry(candidate.entry_id) else {
             return AnalysisApplyOutcome::Stale;
@@ -3542,11 +3567,12 @@ impl Index {
         let Some(content) = self.content.as_mut() else {
             return AnalysisApplyOutcome::Stale;
         };
-        if content.commit(candidate.relative_path.clone(), observation.analysis) {
-            AnalysisApplyOutcome::Applied
+        let committed = if update_rollups {
+            content.commit(candidate.relative_path.clone(), observation.analysis)
         } else {
-            AnalysisApplyOutcome::Stale
-        }
+            content.commit_without_rollup(candidate.relative_path.clone(), observation.analysis)
+        };
+        if committed { AnalysisApplyOutcome::Applied } else { AnalysisApplyOutcome::Stale }
     }
 
     /// Drop all derived content while preserving metadata and snapshot compatibility.

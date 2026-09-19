@@ -191,7 +191,7 @@ pub fn load_content_cache(
         let coverage_exclusion =
             !matches!(analysis.coverage, CoverageReason::Analyzed | CoverageReason::Binary);
         let bytes = analysis.bytes;
-        match index.apply_analysis(AnalysisObservation { candidate, analysis }) {
+        match index.apply_restored_analysis(AnalysisObservation { candidate, analysis }) {
             AnalysisApplyOutcome::Applied => {
                 loaded.hits = loaded.hits.saturating_add(1);
                 loaded.bytes = loaded.bytes.saturating_add(bytes);
@@ -201,6 +201,7 @@ pub fn load_content_cache(
             AnalysisApplyOutcome::Stale => loaded.stale = loaded.stale.saturating_add(1),
         }
     }
+    index.rebuild_content_rollups();
     crate::counters::add_elapsed(apply_started, |counts, elapsed| {
         counts.content_sidecar_apply_us = counts.content_sidecar_apply_us.saturating_add(elapsed);
     });
