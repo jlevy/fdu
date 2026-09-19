@@ -64,7 +64,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 63 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 64 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
@@ -209,6 +209,7 @@ dead end.
 | 129 | [Post-H129 cache-hit leftover after restore-without-classify](#exp129--posth129-cachehit-leftover-after-restorewithoutclassify) | H130 | `content-cache-hit` | -0.2% | ✅ accepted |
 | 130 | [Restore DFS joins parent path on metabrowser](#exp130--restore-dfs-joins-parent-path-on-metabrowser) | H131 | `content-cache-hit` | -4.1% | ✅ accepted |
 | 131 | [Post-H131 cache-hit leftover after restore parent-path join](#exp131--posth131-cachehit-leftover-after-restore-parentpath-join) | H132 | `content-cache-hit` | -0.0% | ✅ accepted |
+| 132 | [Skip unused snapshot path reconstruction on metabrowser](#exp132--skip-unused-snapshot-path-reconstruction-on-metabrowser) | H133 | `content-cache-hit` | -6.4% | ✅ accepted |
 
 ## The experiments
 
@@ -4467,6 +4468,34 @@ percent of content_open discarded on one-shot serving=None; no engine patch.
 Full record:
 [`exp-131-post-h131-cache-hit-leftover-after-restore-parent-path-join.md`](../experiments/exp-131-post-h131-cache-hit-leftover-after-restore-parent-path-join.md)
 
+### exp-132 — Skip unused snapshot path reconstruction on metabrowser
+
+✅ accepted · 2026-09-19 · H133 · commit `143a1c73`
+
+Control: H131 release probe at 7840ce9b
+
+Candidate: insert_loaded_child skips path_of when serving is None
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 829.5 | 778.0 | -6.37% | [-18.23%, -5.66%] |
+| component (ms) | 541.2 | 487.4 | -10.14% | [-24.22%, -9.57%] |
+| cpu (ms) | 823.9 | 770.7 | -6.50% | [-7.71%, -5.87%] |
+| user (ms) | 762.6 | 711.5 | -6.75% | [-7.70%, -6.24%] |
+| system (ms) | 61.7 | 59.8 | -3.56% (n.s.) | [-8.35%, +0.72%] |
+| blocked (ms) | 7.6 | 7.3 | -2.94% (n.s.) | [-86.72%, +29.03%] |
+| peak rss (MiB) | 297.3 | 297.4 | -0.06% (n.s.) | [-0.44%, +0.19%] |
+
+Cost to carry: 47 lines; no new dependencies.
+
+**Accepted:** wall -6.37% [-18.23%, -5.66%] on frozen metabrowser-clone; digest
+identical; unused snapshot path skip kept.
+
+Full record:
+[`exp-132-skip-unused-snapshot-path-reconstruction-on-metabrowser.md`](../experiments/exp-132-skip-unused-snapshot-path-reconstruction-on-metabrowser.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4475,6 +4504,23 @@ machine in one cache state, so the same change reads differently against a diffe
 corpus.
 
 Baselines show one value because they measure a state rather than a change.
+
+### metabrowser-clone (146,047 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 120 | Cache-hit restore mix after H115 and H120 on metabrowser | `content-cache-hit` | 1,171.8 | 1,185.6 | +0.7% | ✅ accepted |
+| 121 | First-pass analyze I/O type/size gate or read-ahead on metabrowser | `content-basic` | 9,014.4 | 9,036.5 | -4.2% | ❌ rejected |
+| 123 | H113 completeness leftover after H115 and H120 | `content-cache-hit` | 1,116.5 | 1,221.3 | +3.3% | ✅ accepted |
+| 124 | Cache-only completeness from restore candidate count on metabrowser | `content-cache-hit` | 1,063.1 | 975.1 | -8.0% | ✅ accepted |
+| 125 | Post-H125 cache-hit leftover after restore-count completeness | `content-cache-hit` | 1,064.9 | 1,038.8 | -0.3% | ✅ accepted |
+| 126 | First-pass walk versus opened-discovery I/O on metabrowser | `opened-discovery` | 3,772.5 | 4,044.5 | -5.0% | ✅ accepted |
+| 127 | Default-tree leftover on file-heavy metabrowser after H122 | `default-tree` | 355.8 | 359.3 | +1.1% | ✅ accepted |
+| 128 | Cache-only restore omits classify on metabrowser | `content-cache-hit` | 986.2 | 855.6 | -13.1% | ✅ accepted |
+| 129 | Post-H129 cache-hit leftover after restore-without-classify | `content-cache-hit` | 862.2 | 859.7 | -0.2% | ✅ accepted |
+| 130 | Restore DFS joins parent path on metabrowser | `content-cache-hit` | 857.8 | 824.3 | -4.1% | ✅ accepted |
+| 131 | Post-H131 cache-hit leftover after restore parent-path join | `content-cache-hit` | 825.2 | 825.3 | -0.0% | ✅ accepted |
+| 132 | Skip unused snapshot path reconstruction on metabrowser | `content-cache-hit` | 829.5 | 778.0 | -6.4% | ✅ accepted |
 
 ### metabrowser-clone (59,654 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
@@ -4492,22 +4538,6 @@ Baselines show one value because they measure a state rather than a change.
 | 009 | Single-pass checksum and parse on snapshot load | `warm-snapshot-load` | 351.6 | 318.3 | -8.0% | ✅ accepted |
 | 010 | Claim-list join and deferred path joins in reconcile | `warm-revalidate` | 698.5 | 695.6 | -0.0% | ❌ rejected |
 | 011 | One ancestor merge per same-parent insert run | `cold-scan-index` | 483.1 | 447.7 | -2.5% | ❌ rejected |
-
-### metabrowser-clone (146,047 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 120 | Cache-hit restore mix after H115 and H120 on metabrowser | `content-cache-hit` | 1,171.8 | 1,185.6 | +0.7% | ✅ accepted |
-| 121 | First-pass analyze I/O type/size gate or read-ahead on metabrowser | `content-basic` | 9,014.4 | 9,036.5 | -4.2% | ❌ rejected |
-| 123 | H113 completeness leftover after H115 and H120 | `content-cache-hit` | 1,116.5 | 1,221.3 | +3.3% | ✅ accepted |
-| 124 | Cache-only completeness from restore candidate count on metabrowser | `content-cache-hit` | 1,063.1 | 975.1 | -8.0% | ✅ accepted |
-| 125 | Post-H125 cache-hit leftover after restore-count completeness | `content-cache-hit` | 1,064.9 | 1,038.8 | -0.3% | ✅ accepted |
-| 126 | First-pass walk versus opened-discovery I/O on metabrowser | `opened-discovery` | 3,772.5 | 4,044.5 | -5.0% | ✅ accepted |
-| 127 | Default-tree leftover on file-heavy metabrowser after H122 | `default-tree` | 355.8 | 359.3 | +1.1% | ✅ accepted |
-| 128 | Cache-only restore omits classify on metabrowser | `content-cache-hit` | 986.2 | 855.6 | -13.1% | ✅ accepted |
-| 129 | Post-H129 cache-hit leftover after restore-without-classify | `content-cache-hit` | 862.2 | 859.7 | -0.2% | ✅ accepted |
-| 130 | Restore DFS joins parent path on metabrowser | `content-cache-hit` | 857.8 | 824.3 | -4.1% | ✅ accepted |
-| 131 | Post-H131 cache-hit leftover after restore parent-path join | `content-cache-hit` | 825.2 | 825.3 | -0.0% | ✅ accepted |
 
 ### cache-pressure-12x (720,805 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
