@@ -197,6 +197,16 @@ File I/O hid the ancestor walk.
 Engine reverted. Every sample 133,597 applied; content digest unchanged.
 Do not retry H118 uncontrolled.
 
+**H119** was profiled before any engine change on the same `metabrowser-clone`
+`content-basic` path (12 s `sample`, 6 repeats, 76,605 stacks, counters off).
+`read` 59.06%; `__open` 17.44%; `semaphore_wait_trap` 7.93%;
+`BasicAccumulator::push_text` 5.47%; `fdu::scan` 0.13%; `getattrlistbulk` 0.48%. Walk
+overlap cannot clear 3% wall.
+`openat` from a retained parent dirfd is the leftover named cut and needs a new `unsafe`
+block; the overnight complexity bar forbids that.
+No pair. No engine change.
+Do not retry walk-overlap.
+
 ### Darwin Subjects
 
 The 2026-08 nominated metabrowser corpus path is gone from disk.
@@ -235,10 +245,10 @@ After that, **exp-116**.
 2. **Overnight queue after H113.** Source of truth:
    [the post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md)
    (epic `fdu-e9ow`). Do not copy the rows here.
-   Order: **H119** (`fdu-9g54`) → **H117** (`fdu-7wiq`) → **H120** (`fdu-y9n9`). H116
-   (exp-114) rejected on wall; H118 (exp-115) rejected on component.
-   Do not retry either uncontrolled.
-   Uncontrolled is allowed on the remaining three if quiet fails.
+   Order: **H117** (`fdu-7wiq`) → **H120** (`fdu-y9n9`). H116 (exp-114) rejected on
+   wall; H118 (exp-115) rejected on component; H119 walk-overlap screened (`fdu::scan`
+   0.13% of `content-basic`). Do not retry H116/H118 uncontrolled, or H119 walk-overlap.
+   Uncontrolled is allowed on the remaining two if quiet fails.
    H111 is not in this overnight setup (no Linux runner).
 
 3. **H107** (`fdu-jcfn`, closed).
@@ -290,6 +300,9 @@ Do not retry H104–H106.
   [−12.00%, +23.86%]; file I/O hid the ancestor walk.
   The insert-then-rebuild first-pass patch is reverted.
   User CPU is not an accept.
+- Do not retry H119 walk-overlap of analyze I/O with the metadata walk.
+  `fdu::scan` is 0.13% of deciding-scale `content-basic`. `openat` is person-gated
+  (`unsafe`).
 - Do not register another restore alloc-trim, parse-speed cut, or H103-shaped
   instruction rewrite; those are on the remaining-headroom block’s rejected list.
 - A quiet cell may not hold on this desktop.
@@ -585,6 +598,8 @@ producing a number that means nothing.
 - Retry H113 on an uncontrolled cell after the 2026-09-19 quiet-gate skip.
 - Retry H116 on an uncontrolled cell after exp-114.
 - Retry H118 on an uncontrolled cell after exp-115.
+- Retry H119 walk-overlap after the deciding-scale `content-basic` profile.
+- Retry H119 walk-overlap after the deciding-scale `content-basic` profile.
 - Add a dependency, an `unsafe` block, or a platform gate without `make cross-lint`.
 - Create a RAM disk, or write anything into a subject tree.
   Snapshots, results and scratch go under `/tmp/fdu-realtree/`.

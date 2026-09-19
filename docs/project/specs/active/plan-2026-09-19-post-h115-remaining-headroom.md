@@ -167,14 +167,10 @@ After whatever H113 quiet does:
    the ancestor walk. Engine reverted.
    Do not retry uncontrolled.
 
-3. **H119** (`fdu-9g54`). Metric: `content-basic` wall, or installed
-   `fdu --analyze=lines` on the same tree if that is the product job.
-   Accept: wall at least 3% with the interval below zero; digest identical; worker
-   parallelism retained.
-   Why next: first-pass I/O is the remaining product cost once apply is honest.
-   Refute: overlap does not move wall; or a serial-read form repeats H79. Quiet: not
-   required for a screen.
-   Profile before changing.
+3. **H119** (`fdu-9g54`). **Done — screened.** Walk overlap cannot clear 3%. Profile:
+   `read` 59.06%, `__open` 17.44%, `fdu::scan` 0.13%. `openat` is the leftover and needs
+   a new `unsafe` block; not tonight.
+   No engine change. Do not retry walk-overlap.
 
 4. **H117** (`fdu-7wiq`). Metric: opened-root second report wall vs one-shot
    `default-tree` / `fdu PATH` on the same unchanged Darwin tree
