@@ -35018,10 +35018,192 @@
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Skip unused snapshot path reconstruction on metabrowser",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same-source rebuild of HEAD",
+   "change_pct": -0.372,
+   "commit": "f1e9ef9c",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "leftover profile only; no engine change"
+   },
+   "control": "H133 release probe at 143a1c73",
+   "date": "2026-09-19",
+   "decision": "accepted",
+   "entries": 146047,
+   "family": "macOS:3b5427f76be0",
+   "hypotheses": [
+    "H134"
+   ],
+   "id": "exp-133",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-cache-hit",
+     "metrics": {
+      "blocked_ns": {
+       "absolute": {
+        "candidate": 7238667,
+        "control": 8031209
+       },
+       "metric": "blocked_ns",
+       "paired": {
+        "change_pct": -10.747,
+        "ci95_high_pct": 5.809,
+        "ci95_low_pct": -28.753,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "component_ns": {
+       "absolute": {
+        "candidate": 484428437.5,
+        "control": 483275625
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -0.094,
+        "ci95_high_pct": 0.945,
+        "ci95_low_pct": -0.939,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 766258500,
+        "control": 764835500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.452,
+        "ci95_high_pct": 0.839,
+        "ci95_low_pct": -0.79,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 312377344,
+        "control": 311205888
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.185,
+        "ci95_high_pct": 0.718,
+        "ci95_low_pct": 0.034,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 60839000,
+        "control": 63008000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -2.842,
+        "ci95_high_pct": 3.851,
+        "ci95_low_pct": -8.236,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 704211500,
+        "control": 703703500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.023,
+        "ci95_high_pct": 0.367,
+        "ci95_low_pct": -0.423,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 774694292,
+        "control": 775253187.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -0.372,
+        "ci95_high_pct": 0.378,
+        "ci95_low_pct": -0.818,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 5304.417701150999,
+      "control": 5308.244520599533
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 133,
+   "path": "exp-133-post-h133-cache-hit-leftover-after-unused-snapshot-path-skip.md",
+   "platform": "macOS",
+   "primary_job": "content-cache-hit",
+   "primary_metric": "wall_ns",
+   "reason": "snapshot path_of gone after H133; remaining leftover is already-rejected or already-landed restore and control stages; no engine patch",
+   "reference_tools": [],
+   "subject": "3b5427f76be0:146047:dc0df2630acc",
+   "title": "Post-H133 cache-hit leftover after unused snapshot path skip",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-19",
  "subjects": [
+  {
+   "apparent_bytes": 1726062376,
+   "directories": 11517,
+   "entries": 146047,
+   "experiments": [
+    "exp-120",
+    "exp-121",
+    "exp-123",
+    "exp-124",
+    "exp-125",
+    "exp-126",
+    "exp-127",
+    "exp-128",
+    "exp-129",
+    "exp-130",
+    "exp-131",
+    "exp-132",
+    "exp-133"
+   ],
+   "files": 133708,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "3b5427f76be0:146047:dc0df2630acc",
+   "labels": [
+    "metabrowser-clone"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
+  },
   {
    "apparent_bytes": 1082046346,
    "directories": 7341,
@@ -35044,35 +35226,6 @@
    "filesystem": "apfs",
    "host_cpu": "Apple M1 Pro",
    "key": "dbd79ed9c898:59654:bf574331eca6",
-   "labels": [
-    "metabrowser-clone"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "macOS",
-   "synthetic": false
-  },
-  {
-   "apparent_bytes": 1726062376,
-   "directories": 11517,
-   "entries": 146047,
-   "experiments": [
-    "exp-120",
-    "exp-121",
-    "exp-123",
-    "exp-124",
-    "exp-125",
-    "exp-126",
-    "exp-127",
-    "exp-128",
-    "exp-129",
-    "exp-130",
-    "exp-131",
-    "exp-132"
-   ],
-   "files": 133708,
-   "filesystem": "apfs",
-   "host_cpu": "Apple M1 Pro",
-   "key": "3b5427f76be0:146047:dc0df2630acc",
    "labels": [
     "metabrowser-clone"
    ],
@@ -35831,20 +35984,20 @@
  "totals": {
   "accepted_lines_changed": 15936,
   "decisions": {
-   "accepted": 69,
+   "accepted": 70,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
    "rejected": 46,
    "superseded": 3
   },
-  "experiments": 132,
+  "experiments": 133,
   "first_date": "2026-08-10",
-  "hypotheses": 88,
+  "hypotheses": 89,
   "last_date": "2026-09-19",
   "platforms": {
    "Linux": 11,
-   "macOS": 121
+   "macOS": 122
   }
  },
  "version": "fdu.performance.timeline/1"

@@ -64,7 +64,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 64 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 65 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
@@ -210,6 +210,7 @@ dead end.
 | 130 | [Restore DFS joins parent path on metabrowser](#exp130--restore-dfs-joins-parent-path-on-metabrowser) | H131 | `content-cache-hit` | -4.1% | ✅ accepted |
 | 131 | [Post-H131 cache-hit leftover after restore parent-path join](#exp131--posth131-cachehit-leftover-after-restore-parentpath-join) | H132 | `content-cache-hit` | -0.0% | ✅ accepted |
 | 132 | [Skip unused snapshot path reconstruction on metabrowser](#exp132--skip-unused-snapshot-path-reconstruction-on-metabrowser) | H133 | `content-cache-hit` | -6.4% | ✅ accepted |
+| 133 | [Post-H133 cache-hit leftover after unused snapshot path skip](#exp133--posth133-cachehit-leftover-after-unused-snapshot-path-skip) | H134 | `content-cache-hit` | -0.4% | ✅ accepted |
 
 ## The experiments
 
@@ -4496,6 +4497,36 @@ identical; unused snapshot path skip kept.
 Full record:
 [`exp-132-skip-unused-snapshot-path-reconstruction-on-metabrowser.md`](../experiments/exp-132-skip-unused-snapshot-path-reconstruction-on-metabrowser.md)
 
+### exp-133 — Post-H133 cache-hit leftover after unused snapshot path skip
+
+✅ accepted · 2026-09-19 · H134 · commit `f1e9ef9c`
+
+Control: H133 release probe at 143a1c73
+
+Candidate: same-source rebuild of HEAD
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 775.3 | 774.7 | -0.37% (n.s.) | [-0.82%, +0.38%] |
+| component (ms) | 483.3 | 484.4 | -0.09% (n.s.) | [-0.94%, +0.94%] |
+| cpu (ms) | 764.8 | 766.3 | -0.45% (n.s.) | [-0.79%, +0.84%] |
+| user (ms) | 703.7 | 704.2 | +0.02% (n.s.) | [-0.42%, +0.37%] |
+| system (ms) | 63.0 | 60.8 | -2.84% (n.s.) | [-8.24%, +3.85%] |
+| blocked (ms) | 8.0 | 7.2 | -10.75% (n.s.) | [-28.75%, +5.81%] |
+| peak rss (MiB) | 296.8 | 297.9 | +0.18% (regression) | [+0.03%, +0.72%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** snapshot path_of gone after H133; remaining leftover is already-rejected
+or already-landed restore and control stages; no engine patch.
+
+Full record:
+[`exp-133-post-h133-cache-hit-leftover-after-unused-snapshot-path-skip.md`](../experiments/exp-133-post-h133-cache-hit-leftover-after-unused-snapshot-path-skip.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4521,6 +4552,7 @@ Baselines show one value because they measure a state rather than a change.
 | 130 | Restore DFS joins parent path on metabrowser | `content-cache-hit` | 857.8 | 824.3 | -4.1% | ✅ accepted |
 | 131 | Post-H131 cache-hit leftover after restore parent-path join | `content-cache-hit` | 825.2 | 825.3 | -0.0% | ✅ accepted |
 | 132 | Skip unused snapshot path reconstruction on metabrowser | `content-cache-hit` | 829.5 | 778.0 | -6.4% | ✅ accepted |
+| 133 | Post-H133 cache-hit leftover after unused snapshot path skip | `content-cache-hit` | 775.3 | 774.7 | -0.4% | ✅ accepted |
 
 ### metabrowser-clone (59,654 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
