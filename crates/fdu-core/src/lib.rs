@@ -1486,6 +1486,38 @@ mod tests {
     }
 
     #[test]
+    fn cache_only_analysis_fails_closed_when_the_sidecar_is_incomplete() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        write_file(&dir.path().join("notes.md"), b"one two\n");
+        let analysis = content::AnalysisRequest {
+            profile: content::AnalysisSet::NONE.with_lines(),
+            ..content::AnalysisRequest::default()
+        };
+        let auto = OpenConfig {
+            cache_path: Some(snapshot_path),
+            policy: CachePolicy::Auto,
+            analysis,
+            ..OpenConfig::default()
+        };
+        open(dir.path(), &auto).expect("seed one analyzed file");
+
+        // A later metadata-only pass widens the snapshot without rewriting the sidecar,
+        // so cache-only analysis must refuse rather than report a partial content answer.
+        write_file(&dir.path().join("extra.txt"), b"three\n");
+        let metadata_only =
+            OpenConfig { analysis: content::AnalysisRequest::default(), ..auto.clone() };
+        open(dir.path(), &metadata_only).expect("widen the snapshot");
+
+        let only = OpenConfig { policy: CachePolicy::Only, ..auto };
+        assert!(
+            matches!(open(dir.path(), &only), Err(Error::Snapshot(_))),
+            "a one-record sidecar must not serve a two-file cache-only analysis request"
+        );
+    }
+
+    #[test]
     fn cache_only_empty_analysis_still_requires_a_usable_sidecar() {
         let dir = tempfile::tempdir().expect("tempdir");
         let cache = tempfile::tempdir().expect("cache dir");

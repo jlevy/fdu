@@ -103,6 +103,24 @@ Apply dominates restore (timers 63.3%; counters-off sample 53.6% of `load_conten
 Candidates 25%; parse 8.5%. Every sample 133,597 cache hits / 0 applied; content digest
 unchanged from exp-108.
 
+**exp-110 / H113** tests the leftover completeness walk on the same `metabrowser-clone`
+tree (engine digest unchanged).
+12-pair current-best (timers in the binary, off) versus a file-count completeness check
+instead of walking `analysis_candidates` for `len()`. Quiet start gate failed (27.8%
+busy); pair ran **uncontrolled**. Initial busy 40.0%; final 63.65%. The 25% bar was not
+lowered.
+
+| Arm | Wall median | Component | Peak RSS |
+| --- | ---: | ---: | ---: |
+| control | 1,246.3 ms | 937.6 ms | 379.6 MiB |
+| candidate | 1,156.8 ms | 836.9 ms | 375.9 MiB |
+
+Wall −7.59% [−10.76%, +2.24%]. **Rejected.** Median past 3%; interval includes zero.
+Component −13.07% [−14.30%, −7.89%]. Shortcut reverted.
+Incomplete-sidecar fail-closed test kept.
+Every sample 133,597 cache hits / 0 applied; content digest unchanged from exp-108 /
+exp-109.
+
 ### Darwin Subjects
 
 The 2026-08 nominated metabrowser corpus path is gone from disk.
@@ -116,9 +134,9 @@ Do not type a path into a commit.
 
 `cargo-registry-src` (~22k) screens; it cannot decide a 3% verdict.
 `system-private-frameworks` was the H108 subject (exp-107); digest unchanged from the
-nomination. `metabrowser-clone` was the H109 / H112 subject (exp-108, exp-109); same
-shape as exp-106, engine digest re-observed (`3fbfed48…`). The CLI QA medium tree was
-skipped: deciding-scale but mutating.
+nomination. `metabrowser-clone` was the H109 / H112 / H113 subject (exp-108, exp-109,
+exp-110); same shape as exp-106, engine digest unchanged (`3fbfed48…`). The CLI QA
+medium tree was skipped: deciding-scale but mutating.
 
 ### Next Up
 
@@ -126,21 +144,19 @@ Take these in order.
 The registry row in [the loop guide](performance-loop.md#current-engine-010) is the full
 statement.
 Next free hypothesis id is **H114**. Do not mint another meaning for H91–H106.
-Next free experiment id is **exp-110**.
+Next free experiment id is **exp-111**.
 
-1. **H113** (`fdu-wrdl`). After cache-only restore, `open_for_report` walks
-   `analysis_candidates` again only to compare `hits` to `len()` (lib.rs ~598–602).
-   exp-109 sampled that walk at 12.6% of `content_open` (~9% of wall).
-   Completeness can use a count already known from restore and still refuse an
-   incomplete sidecar. Job: `content-cache-hit` wall ≥3% with the interval below zero;
-   digest identical; incomplete sidecar still refused.
-   Do this before `fdu-jxhk`.
-
-2. **H83** (`fdu-78q6` / `fdu-jxhk`). H112 scoped the remaining structural work to apply
+1. **H83** (`fdu-78q6` / `fdu-jxhk`). H112 scoped the remaining structural work to apply
    / commit / `merge_ancestors`, not parse.
    A layout usable without rebuilding per-record state is still the same class as H78.
    Screen any patch on `content-cache-hit` wall ≥3% with the interval below zero; digest
-   identical. Do not retry parse-speed or instruction trims.
+   identical. Do not retry parse-speed, instruction trims, or the H113 file-count
+   completeness shortcut.
+
+2. **H113** (`fdu-wrdl`, rejected in exp-110). Do not land the file-count completeness
+   shortcut from an uncontrolled cell.
+   Median −7.59% but the interval included zero.
+   A quiet confirmatory cell would be a new experiment, not a top-up.
 
 3. **H107** (`fdu-jcfn`, closed).
    Re-open only for a tree whose *ignored share is the walk* (a checkout sitting on
@@ -184,6 +200,9 @@ Do not retry H104–H106.
   The deciding-scale share collapsed (exp-108).
 - Do not retry a sidecar parse-speed or instruction trim.
   H112 (exp-109) put parse at 8.5% of restore; apply dominates.
+- Do not retry the H113 file-count completeness shortcut on another uncontrolled cell
+  (exp-110). Median −7.59% but the interval included zero; the shortcut is reverted.
+  A quiet confirmatory cell would be a new experiment, not a top-up.
 - A quiet cell may not hold on this desktop.
   Attempt `PERF_HOST_REGIME=quiet` first; if it fails or the final snapshot exceeds 25%
   busy, label **uncontrolled** and do not claim quiet.

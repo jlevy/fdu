@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 42 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 43 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -188,6 +188,7 @@ dead end.
 | 107 | [Installed CLI metadata one-shot stays cold scan on frameworks](#exp107--installed-cli-metadata-oneshot-stays-cold-scan-on-frameworks) | H108 | `cli-default-tree` | -0.6% | ✅ accepted |
 | 108 | [Deciding-scale content-cache-hit profile on metabrowser](#exp108--decidingscale-contentcachehit-profile-on-metabrowser) | H109 | `content-cache-hit` | -0.3% | 📏 baseline |
 | 109 | [Sidecar restore stage split on metabrowser](#exp109--sidecar-restore-stage-split-on-metabrowser) | H112 | `content-cache-hit` | +0.3% | 📏 baseline |
+| 110 | [Cache-only completeness by file count on metabrowser](#exp110--cacheonly-completeness-by-file-count-on-metabrowser) | H113 | `content-cache-hit` | -7.6% | ❌ rejected |
 
 ## The experiments
 
@@ -3794,6 +3795,36 @@ load_content); parse is about 10 percent; wall non-inferior so timers stay.
 Full record:
 [`exp-109-sidecar-restore-stage-split-on-metabrowser.md`](../experiments/exp-109-sidecar-restore-stage-split-on-metabrowser.md)
 
+### exp-110 — Cache-only completeness by file count on metabrowser
+
+❌ rejected · 2026-09-19 · H113
+
+Control: current HEAD with H112 timers at 4998ee73
+
+Candidate: file-count completeness instead of walking analysis_candidates
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1246.3 | 1156.8 | -7.59% (n.s.) | [-10.76%, +2.24%] |
+| component (ms) | 937.6 | 836.9 | -13.07% | [-14.30%, -7.89%] |
+| cpu (ms) | 1222.1 | 1114.0 | -9.86% | [-11.25%, -6.75%] |
+| user (ms) | 1108.8 | 1002.3 | -9.79% | [-10.19%, -8.04%] |
+| system (ms) | 113.4 | 110.0 | -12.47% | [-16.89%, -0.64%] |
+| blocked (ms) | 24.0 | 46.1 | +77.81% (n.s.) | [-3.60%, +285.77%] |
+| peak rss (MiB) | 379.6 | 375.9 | -1.06% | [-2.81%, -0.57%] |
+
+Cost to carry: 20 lines; no new dependencies.
+
+file-count completeness shortcut measured and reverted; incomplete-sidecar fail-closed
+test kept
+
+**Rejected:** wall -7.59 percent but interval includes zero; shortcut reverted.
+
+Full record:
+[`exp-110-cache-only-completeness-by-file-count-on-metabrowser.md`](../experiments/exp-110-cache-only-completeness-by-file-count-on-metabrowser.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -3895,6 +3926,15 @@ Baselines show one value because they measure a state rather than a change.
 | 081 | Borrow impact paths until the bounded result escapes | `opened-discovery` | 286.8 | 282.2 | -1.1% | ❌ rejected |
 | 082 | Move scanner commits directly into the journal | `opened-discovery` | 284.5 | 281.2 | -0.0% | ❌ rejected |
 
+### metabrowser-clone (145,931 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 106 | Default gitignore observation versus no-controls on metabrowser | `default-tree` | 338.6 | 341.6 | +1.6% | ❌ rejected |
+| 108 | Deciding-scale content-cache-hit profile on metabrowser | `content-cache-hit` | 1,218.0 | — | — | 📏 baseline |
+| 109 | Sidecar restore stage split on metabrowser | `content-cache-hit` | 1,195.5 | — | — | 📏 baseline |
+| 110 | Cache-only completeness by file count on metabrowser | `content-cache-hit` | 1,246.3 | 1,156.8 | -7.6% | ❌ rejected |
+
 ### vm450k (450,463 entries) — Linux 6.18.5-fc-v20, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -3927,14 +3967,6 @@ Baselines show one value because they measure a state rather than a change.
 | 051 | Memoize the parent resolved for the previous upsert | `cold-scan-index` | 2,022.1 | 1,852.9 | -7.3% | ✅ accepted |
 | 052 | Per-layer counters cost less than the measurement can see | `cold-scan-index` | 1,891.3 | 1,870.1 | +0.0% | ✅ accepted |
 | 053 | Move instrumentation to a runtime toggle and measure all three of its costs | `cold-scan-index` | 1,858.8 | 1,847.0 | -1.3% | ✅ accepted |
-
-### metabrowser-clone (145,931 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 106 | Default gitignore observation versus no-controls on metabrowser | `default-tree` | 338.6 | 341.6 | +1.6% | ❌ rejected |
-| 108 | Deciding-scale content-cache-hit profile on metabrowser | `content-cache-hit` | 1,218.0 | — | — | 📏 baseline |
-| 109 | Sidecar restore stage split on metabrowser | `content-cache-hit` | 1,195.5 | — | — | 📏 baseline |
 
 ### rustup-toolchains (119,368 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
