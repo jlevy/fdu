@@ -34258,6 +34258,158 @@
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Default-tree leftover on file-heavy metabrowser after H122",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "restore-only candidates without classify; restore apply skips the classify self-check",
+   "change_pct": -13.111,
+   "commit": "6887a864",
+   "complexity": {
+    "lines_changed": 115,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "restore-only candidate walk and apply path; no dependency; no unsafe"
+   },
+   "control": "H125 release probe at be8d4d69",
+   "date": "2026-09-19",
+   "decision": "accepted",
+   "entries": 146047,
+   "family": "macOS:3b5427f76be0",
+   "hypotheses": [
+    "H129"
+   ],
+   "id": "exp-128",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-cache-hit",
+     "metrics": {
+      "blocked_ns": {
+       "absolute": {
+        "candidate": 7800313,
+        "control": 8049521
+       },
+       "metric": "blocked_ns",
+       "paired": {
+        "change_pct": -9.646,
+        "ci95_high_pct": 33.386,
+        "ci95_low_pct": -72.301,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "component_ns": {
+       "absolute": {
+        "candidate": 567068916.5,
+        "control": 701913500
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -19.192,
+        "ci95_high_pct": -18.461,
+        "ci95_low_pct": -28.137,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 847860500,
+        "control": 978183000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -13.627,
+        "ci95_high_pct": -13.066,
+        "ci95_low_pct": -15.008,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 308494336,
+        "control": 351133696
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -11.832,
+        "ci95_high_pct": -11.582,
+        "ci95_low_pct": -13.745,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 53726000,
+        "control": 65663000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -15.844,
+        "ci95_high_pct": -13.39,
+        "ci95_low_pct": -23.883,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 792595000,
+        "control": 913623500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -13.465,
+        "ci95_high_pct": -12.866,
+        "ci95_low_pct": -14.335,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 855587646,
+        "control": 986214770.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -13.111,
+        "ci95_high_pct": -12.666,
+        "ci95_low_pct": -20.221,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 5858.303463953385,
+      "control": 6752.721866933248
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 128,
+   "path": "exp-128-cache-only-restore-omits-classify-on-metabrowser.md",
+   "platform": "macOS",
+   "primary_job": "content-cache-hit",
+   "primary_metric": "wall_ns",
+   "reason": "wall -13.11% [-20.22%, -12.67%] on frozen metabrowser-clone; digest identical; classify skip kept",
+   "reference_tools": [],
+   "subject": "3b5427f76be0:146047:dc0df2630acc",
+   "title": "Cache-only restore omits classify on metabrowser",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-19",
@@ -34373,6 +34525,31 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 1726062376,
+   "directories": 11517,
+   "entries": 146047,
+   "experiments": [
+    "exp-120",
+    "exp-121",
+    "exp-123",
+    "exp-124",
+    "exp-125",
+    "exp-126",
+    "exp-127",
+    "exp-128"
+   ],
+   "files": 133708,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "3b5427f76be0:146047:dc0df2630acc",
+   "labels": [
+    "metabrowser-clone"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 1724995969,
    "directories": 11512,
    "entries": 145931,
@@ -34389,30 +34566,6 @@
    "filesystem": "apfs",
    "host_cpu": "Apple M1 Pro",
    "key": "a319238d9c29:145931:3fbfed48354e",
-   "labels": [
-    "metabrowser-clone"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "macOS",
-   "synthetic": false
-  },
-  {
-   "apparent_bytes": 1726062376,
-   "directories": 11517,
-   "entries": 146047,
-   "experiments": [
-    "exp-120",
-    "exp-121",
-    "exp-123",
-    "exp-124",
-    "exp-125",
-    "exp-126",
-    "exp-127"
-   ],
-   "files": 133708,
-   "filesystem": "apfs",
-   "host_cpu": "Apple M1 Pro",
-   "key": "3b5427f76be0:146047:dc0df2630acc",
    "labels": [
     "metabrowser-clone"
    ],
@@ -35064,22 +35217,22 @@
   }
  ],
  "totals": {
-  "accepted_lines_changed": 15754,
+  "accepted_lines_changed": 15869,
   "decisions": {
-   "accepted": 64,
+   "accepted": 65,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
    "rejected": 46,
    "superseded": 3
   },
-  "experiments": 127,
+  "experiments": 128,
   "first_date": "2026-08-10",
-  "hypotheses": 83,
+  "hypotheses": 84,
   "last_date": "2026-09-19",
   "platforms": {
    "Linux": 11,
-   "macOS": 116
+   "macOS": 117
   }
  },
  "version": "fdu.performance.timeline/1"

@@ -64,7 +64,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 59 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 60 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
@@ -205,6 +205,7 @@ dead end.
 | 125 | [Post-H125 cache-hit leftover after restore-count completeness](#exp125--posth125-cachehit-leftover-after-restorecount-completeness) | H126 | `content-cache-hit` | -0.3% | ✅ accepted |
 | 126 | [First-pass walk versus opened-discovery I/O on metabrowser](#exp126--firstpass-walk-versus-openeddiscovery-io-on-metabrowser) | H127 | `opened-discovery` | -5.0% | ✅ accepted |
 | 127 | [Default-tree leftover on file-heavy metabrowser after H122](#exp127--defaulttree-leftover-on-fileheavy-metabrowser-after-h122) | H128 | `default-tree` | +1.1% | ✅ accepted |
+| 128 | [Cache-only restore omits classify on metabrowser](#exp128--cacheonly-restore-omits-classify-on-metabrowser) | H129 | `content-cache-hit` | -13.1% | ✅ accepted |
 
 ## The experiments
 
@@ -4342,6 +4343,37 @@ getattrlistbulk/dir; snapshot not loaded; no new cut.
 Full record:
 [`exp-127-default-tree-leftover-on-file-heavy-metabrowser-after-h122.md`](../experiments/exp-127-default-tree-leftover-on-file-heavy-metabrowser-after-h122.md)
 
+### exp-128 — Cache-only restore omits classify on metabrowser
+
+✅ accepted · 2026-09-19 · H129 · commit `6887a864`
+
+Control: H125 release probe at be8d4d69
+
+Candidate: restore-only candidates without classify; restore apply skips the classify
+self-check
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 986.2 | 855.6 | -13.11% | [-20.22%, -12.67%] |
+| component (ms) | 701.9 | 567.1 | -19.19% | [-28.14%, -18.46%] |
+| cpu (ms) | 978.2 | 847.9 | -13.63% | [-15.01%, -13.07%] |
+| user (ms) | 913.6 | 792.6 | -13.46% | [-14.34%, -12.87%] |
+| system (ms) | 65.7 | 53.7 | -15.84% | [-23.88%, -13.39%] |
+| blocked (ms) | 8.0 | 7.8 | -9.65% (n.s.) | [-72.30%, +33.39%] |
+| peak rss (MiB) | 334.9 | 294.2 | -11.83% | [-13.74%, -11.58%] |
+
+Cost to carry: 115 lines; no new dependencies.
+
+restore-only candidate walk and apply path; no dependency; no unsafe
+
+**Accepted:** wall -13.11% [-20.22%, -12.67%] on frozen metabrowser-clone; digest
+identical; classify skip kept.
+
+Full record:
+[`exp-128-cache-only-restore-omits-classify-on-metabrowser.md`](../experiments/exp-128-cache-only-restore-omits-classify-on-metabrowser.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4407,6 +4439,7 @@ Baselines show one value because they measure a state rather than a change.
 | 125 | Post-H125 cache-hit leftover after restore-count completeness | `content-cache-hit` | 1,064.9 | 1,038.8 | -0.3% | ✅ accepted |
 | 126 | First-pass walk versus opened-discovery I/O on metabrowser | `opened-discovery` | 3,772.5 | 4,044.5 | -5.0% | ✅ accepted |
 | 127 | Default-tree leftover on file-heavy metabrowser after H122 | `default-tree` | 355.8 | 359.3 | +1.1% | ✅ accepted |
+| 128 | Cache-only restore omits classify on metabrowser | `content-cache-hit` | 986.2 | 855.6 | -13.1% | ✅ accepted |
 
 ### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
