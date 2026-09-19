@@ -63,7 +63,7 @@ exp-108/109 split that path before the accept:
 | --- | --- | --- |
 | Sidecar apply / ancestor merges | 63% of restore (sample 54% of `load_content`) | H115 took the named cut |
 | Candidate install (`analysis_candidates` + HashMap) | 25% of restore / 20% of `load_content` | Still in the engine |
-| Snapshot parse | 26% of engine | H78/H92; not a tonight increment |
+| Snapshot parse | 26% of engine | H78/H92; not this increment |
 | Second completeness walk | 13% of `content_open` | H113; quiet confirmatory only |
 | Sidecar parse | 8.5% of restore | Dead for wall (H112) |
 | `install_controls` | 7.5% of engine | Dead for a Path rewrite (H109) |
@@ -156,7 +156,7 @@ These were considered against the post-H115 path and not registered:
   own the format; not an overnight cut)
 - Double-classify in `apply_analysis` as its own hypothesis (`fdu-926e` already exists;
   H116 was the attempt to drop that classify on the hit path and failed on wall)
-- Hardware CRC32C (`fdu-6kyn`) or PGO (`fdu-pdne`) as tonight’s wall hunt
+- Hardware CRC32C (`fdu-6kyn`) or PGO (`fdu-pdne`) as this increment’s wall hunt
 - `searchfs` (H77): person-gated
 - Linux H111 on this Darwin host (still open; not in this host)
 - Bounding the observation channel (H91) without a current-engine occupancy trace

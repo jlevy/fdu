@@ -171,7 +171,7 @@ paired samples), then 3 pairs / 16 invalid, then 9 pairs / 4 invalid.
 Those incomplete cells are not a verdict.
 The file-count shortcut is not in the engine.
 exp-113 remains reserved.
-The 02:44 PT overnight tick skipped further H113 tonight.
+The 02:44 PT overnight tick skipped further H113 for the rest of that night.
 
 **exp-114 / H116** tests restore without a full `analysis_candidates` Vec+HashMap on the
 same `metabrowser-clone` tree (engine digest unchanged).
