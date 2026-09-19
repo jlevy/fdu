@@ -267,10 +267,11 @@ content sidecar). A 2026-09-18 revisit recorded exp-105 (uncontrolled rustup bas
 exp-106 (H107 rejected on wall), and exp-107 (H108 confirmed on the installed CLI). The
 live next-up list, host-regime note, and subject sizes are in
 [the runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18).
-The 2026-09-19 overnight queue after H113 quiet is
-[the remaining-headroom block](plan-2026-09-19-post-h115-remaining-headroom.md)
-(`fdu-e9ow`), not this file’s 2026-08-23 Tier 1–3 list.
-H86’s remaining gap is the Linux floor (H111 / `fdu-jekg`), not a rewrite.
+The remaining unaddressed queue after the H116–H120 overnight is
+[the remaining-headroom block](plan-2026-09-19-post-h115-remaining-headroom.md), not
+this file’s 2026-08-23 Tier 1–3 list.
+H86’s remaining gap is the Linux floor (H111 / `fdu-jekg`), not a rewrite, and not this
+Darwin host.
 
 - **Tier 1, unattended, in order:** `fdu-mx1w` (landed), `fdu-2um8` (skip the identical
   snapshot rewrite; landed and closed), `fdu-n75m` part 1 (flush the render before the
@@ -516,7 +517,7 @@ strategy and the record is visible in review.
 - [The performance-loop runbook](../../guides/performance-loop-runbook.md) — one
   unattended round and the 2026-09-18 standing
 - [Post-H115 remaining headroom](plan-2026-09-19-post-h115-remaining-headroom.md) —
-  2026-09-19 overnight queue after H113 quiet (`fdu-e9ow`)
+  remaining queue after the H116–H120 overnight (H113, H121–H124, H107, H111)
 - [The cache layers plan](../done/plan-2026-08-15-fdu-cache-layers-and-defaults.md) —
   the cost model this plan’s warm posture rests on
 - [The fsevents plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md) — the journal

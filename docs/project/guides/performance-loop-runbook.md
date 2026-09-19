@@ -272,45 +272,55 @@ deciding-scale but mutating.
 ### Next Up
 
 Take these in order.
+Source of truth:
+[the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
 The registry row in [the loop guide](performance-loop.md#current-engine-010) is the full
-statement.
-Next free hypothesis id is **H121**. Do not mint another meaning for H91–H106.
-Next free experiment id is **exp-113** (reserved for H113 quiet).
+statement. Overnight H116–H120 is done; do not retry those.
+Next free hypothesis id is **H125**. Do not mint another meaning for H91–H106. Next free
+experiment id is **exp-113** (reserved for H113 quiet).
 After that, **exp-118**.
 
-1. **H113** (`fdu-wrdl` / `fdu-rfr6`). Quiet confirmatory after H115. Official
-   `PERF_HOST_REGIME=quiet` start gate refused 2026-09-19 at 46.7% CPU busy.
-   Later incomplete quiet cells (thermal `fair`; then 3 and 9 pairs) are not a verdict.
-   **Skipped for the rest of this overnight** (02:44 PT tick).
-   **H113 still needs a quiet host.** Do not run uncontrolled.
-   Same accept rule: `content-cache-hit` wall ≥3% with the interval below zero on
-   `metabrowser-clone`; digest identical; incomplete sidecar refused.
-   Control is HEAD with H115 in.
-   New experiment id (still **exp-113**), not a top-up of exp-110.
+1. **H113** (`fdu-rfr6`). **Needs quiet host.** Morning is the intended cell.
+   Quiet confirmatory after H115. Official start gate refused 2026-09-19 at 46.7% busy.
+   Later incomplete quiet cells are not a verdict.
+   Do not run uncontrolled.
+   If the gate fails, skip to H122. Accept: `content-cache-hit` wall ≥3% with the
+   interval below zero on `metabrowser-clone`; digest identical; incomplete sidecar
+   refused. Control is HEAD with H115 and H120 in.
+   Experiment id **exp-113**.
 
-2. **Overnight queue after H113.** Source of truth:
-   [the post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md)
-   (epic `fdu-e9ow`). Do not copy the rows here.
-   Overnight queue is done: H116 rejected, H118 rejected, H119 screened, H117 confirmed,
-   H120 accepted. Do not retry H116/H118 uncontrolled, or H119 walk-overlap.
-   H111 is not in this overnight setup (no Linux runner).
+2. **H122** (`fdu-ytg5`). Deciding-scale metadata CLI/walk **profile** after the current
+   engine. Highest user-visible leverage.
+   H108: second `fdu PATH` stays `cold scan`; detached walk ~96% of that wall.
+   Overnight did not optimize this job.
+   Profile first. Not H86. Not a snapshot load.
 
-3. **H107** (`fdu-jcfn`, closed).
-   Re-open only for a tree whose *ignored share is the walk*. Refuted on wall on
-   metabrowser (exp-106). Not tonight unless that subject appears.
+3. **H107** (`fdu-jcfn`). Open only on a tree whose *ignored share is the walk*. Refuted
+   on metabrowser (exp-106). Do not retry metabrowser.
 
-4. **H108** (`fdu-1a4z`, confirmed in exp-107). Do not open a cache/one-shot patch.
-   H117 (exp-116) confirmed opened retention.
+4. **H123** (`fdu-rum0`). Opened-root / refresh **product** path.
+   H117 (exp-116) was the probe.
+   Retained-index vs one-shot.
    Do not load a snapshot on `fdu PATH`.
 
-5. **H109** (`fdu-8nwq` / `fdu-hzyb`, screened in exp-108). Do not land a control
-   matcher Path rewrite.
+5. **H121** (`fdu-vf4b`). Post-H115+H120 `content-cache-hit` **re-profile**. Restore mix
+   may have changed. Profile first.
+   Then a named apply/install cut only if apply still dominates (H83). Not another alloc
+   trim. Not a retry of H116.
 
-6. **H111** (`fdu-jekg`). Linux floor stage of H86. Not tonight: no Linux runner in this
-   overnight setup. Do not restart the rewrite.
+6. **H124** (`fdu-i39y`). First-pass analyze I/O: type/size gate or read-ahead.
+   Metric is first-pass analyze wall.
+   Not H118. Not H119 walk-overlap.
 
-**H115** (`fdu-wx15`) landed in exp-112. Do not retry it.
-`fdu-jxhk` remains the EntryId composite; do not restart that rewrite from this result.
+7. **H111** (`fdu-jekg`). Linux floor stage of H86. **Not in this host** (no Linux
+   runner). Still open.
+   Do not restart the rewrite.
+   Do not treat a Darwin cell as this claim.
+
+**H108** (`fdu-1a4z`, confirmed in exp-107). Do not open a cache/one-shot patch.
+**H109** (`fdu-8nwq` / `fdu-hzyb`, screened in exp-108). Do not land a Path rewrite.
+**H115** (`fdu-wx15`) landed in exp-112. **H120** landed in exp-117. Do not retry them.
+`fdu-jxhk` remains the EntryId composite; do not restart that rewrite.
 
 H110 needs a new named mechanism.
 Do not retry H104–H106.
@@ -328,13 +338,15 @@ Do not retry H104–H106.
 - Do not land an H109 control-matcher Path rewrite.
   The deciding-scale share collapsed (exp-108).
 - Do not retry a sidecar parse-speed or instruction trim.
-  H112 (exp-109) put parse at 8.5% of restore; apply dominates.
+  H112 (exp-109) put parse at 8.5% of restore.
+  Re-check the mix with H121 before another apply cut.
 - Do not retry the H113 file-count completeness shortcut on another uncontrolled cell
   (exp-110). Median −7.59% but the interval included zero; the shortcut is reverted.
   A 2026-09-19 quiet confirmatory after H115 (`fdu-rfr6`) was refused at the start gate
   (CPU busy 46.7% > 25.0%), then later incomplete quiet cells failed to hold 12 pairs.
   The engine patch was not kept.
-  exp-113 is unused. **H113 still needs a quiet host.** Not tonight (02:44 PT skip).
+  exp-113 is unused. **H113 still needs a quiet host.** Morning is the intended cell.
+  Do not run uncontrolled.
 - Do not retry the H114 type-id `String` alloc trim on `ContentRollUp::add` (exp-111).
   Wall −0.56% [−17.92%, +4.79%]; the trim is reverted.
 - Do not retry H115. exp-112 accepted the restore-only bottom-up rebuild (−9.69%
@@ -361,8 +373,8 @@ Do not retry H104–H106.
 
 | Document | Role |
 | --- | --- |
-| This standing section | Pickup: standing best, H113 quiet gate, pointer to the overnight queue |
-| [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Overnight queue after H113: H116–H120, rejected list, inclusion rules |
+| This standing section | Pickup: standing best, H113 quiet gate, next-up order |
+| [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Remaining queue after overnight: H113, H121–H124, H107, H111 |
 | [The loop guide](performance-loop.md) | Protocol, accept rule, hypothesis registry |
 | [The campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) | Floor-anchored strategy; the 2026-08-23 Tier 1–3 list is history |
 | [The instrumentation playbook](performance-instrumentation-playbook.md) | Instrument before optimizing; `FDU_COUNTERS=1` |
@@ -392,13 +404,14 @@ Each one has caught a real mistake.
 
 2. **Find the queue.** Start from [Current Standing](#current-standing-2026-09-18), not
    from the `macos-agenda` label in isolation.
-   After H113 quiet, the overnight order is
-   [the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md)
-   (`fdu-e9ow`). That label still holds older campaign-2 items; several have landed, and
-   H86’s remaining gap is H111 on Linux (not tonight).
+   Remaining order after the overnight is
+   [the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
+   That label still holds older campaign-2 items; several have landed, and H86’s
+   remaining gap is H111 on Linux (not this host).
 
    ```shell
-   tbd show fdu-e9ow fdu-rfr6 fdu-kro6 fdu-kyts fdu-9g54 fdu-7wiq fdu-y9n9
+   tbd show fdu-8ya1 fdu-rfr6 fdu-ytg5 fdu-jcfn fdu-rum0 fdu-vf4b fdu-i39y fdu-jekg
+   tbd list --spec plan-2026-09-19-post-h115-remaining-headroom.md
    tbd list --label macos-agenda
    ```
 
