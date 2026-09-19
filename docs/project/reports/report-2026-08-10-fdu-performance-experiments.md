@@ -64,7 +64,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 57 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 58 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
@@ -203,6 +203,7 @@ dead end.
 | 123 | [H113 completeness leftover after H115 and H120](#exp123--h113-completeness-leftover-after-h115-and-h120) | H113 | `content-cache-hit` | +3.3% | ✅ accepted |
 | 124 | [Cache-only completeness from restore candidate count on metabrowser](#exp124--cacheonly-completeness-from-restore-candidate-count-on-metabrowser) | H125 | `content-cache-hit` | -8.0% | ✅ accepted |
 | 125 | [Post-H125 cache-hit leftover after restore-count completeness](#exp125--posth125-cachehit-leftover-after-restorecount-completeness) | H126 | `content-cache-hit` | -0.3% | ✅ accepted |
+| 126 | [First-pass walk versus opened-discovery I/O on metabrowser](#exp126--firstpass-walk-versus-openeddiscovery-io-on-metabrowser) | H127 | `opened-discovery` | -5.0% | ✅ accepted |
 
 ## The experiments
 
@@ -4276,6 +4277,41 @@ cut.
 Full record:
 [`exp-125-post-h125-cache-hit-leftover-after-restore-count-completenes.md`](../experiments/exp-125-post-h125-cache-hit-leftover-after-restore-count-completenes.md)
 
+### exp-126 — First-pass walk versus opened-discovery I/O on metabrowser
+
+✅ accepted · 2026-09-19 · H127 · commit `81f9e447`
+
+Control: H125 release probe at be8d4d69
+
+Candidate: same probe (leftover profile)
+
+**`opened-discovery`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 3772.5 | 4044.5 | -4.97% (n.s.) | [-10.24%, +6.39%] |
+| component (ms) | 2761.2 | 3021.9 | -4.63% (n.s.) | [-15.68%, +9.97%] |
+| cpu (ms) | 3860.2 | 3909.1 | -1.21% (n.s.) | [-3.37%, +1.45%] |
+| user (ms) | 2324.0 | 2317.3 | -0.42% (n.s.) | [-1.87%, +0.58%] |
+| system (ms) | 1554.1 | 1588.8 | -0.89% (n.s.) | [-6.72%, +3.05%] |
+| peak rss (MiB) | 212.3 | 212.9 | +0.45% (n.s.) | [-0.16%, +3.91%] |
+
+Wall-time tail: control p95 is 1.63x its median and candidate 1.39x. The verdict above
+is on the median; a reader deciding whether this is faster to *use* should read the tail
+beside it.
+
+Other jobs, wall time: `cold-scan-index` -1.9%.
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** opened-discovery 8.8x first-pass component; read_dir+fstatat vs
+getattrlistbulk; journal clones remain; no smallest cut.
+
+Full record:
+[`exp-126-first-pass-walk-versus-opened-discovery-i-o-on-metabrowser.md`](../experiments/exp-126-first-pass-walk-versus-opened-discovery-i-o-on-metabrowser.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4353,16 +4389,6 @@ Baselines show one value because they measure a state rather than a change.
 | 032 | Cumulative effect through bounded parallel reconciliation | `cold-scan-index` | 635.4 | 289.6 | -54.5% | ✅ accepted |
 | 033 | Post-composable-CLI integration validation | `warm-revalidate` | 844.7 | 481.9 | -42.3% | ✅ accepted |
 
-### metabrowser (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 013 | Region-scheduled breadth-first traversal | `cold-scan-index` | 308.7 | 297.0 | -4.8% | ✅ accepted |
-| 014 | What the breadth-first default costs, on the shipped scheduler | `cold-scan-producer` | 489.4 | — | — | 📏 baseline |
-| 016 | Move cold-scan producer paths instead of cloning | `cold-scan-index` | 336.0 | 339.9 | -0.4% | ❌ rejected |
-| 017 | Pre-create dormant workers for adaptive scan depth | `cold-scan-producer` | 494.2 | 500.7 | +2.0% | ❌ rejected |
-| 023 | Cumulative effect through adaptive scanning and macOS bulk metadata | `cold-scan-index` | 625.2 | 295.5 | -53.5% | ✅ accepted |
-
 ### metabrowser-clone (146,047 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -4372,6 +4398,17 @@ Baselines show one value because they measure a state rather than a change.
 | 123 | H113 completeness leftover after H115 and H120 | `content-cache-hit` | 1,116.5 | 1,221.3 | +3.3% | ✅ accepted |
 | 124 | Cache-only completeness from restore candidate count on metabrowser | `content-cache-hit` | 1,063.1 | 975.1 | -8.0% | ✅ accepted |
 | 125 | Post-H125 cache-hit leftover after restore-count completeness | `content-cache-hit` | 1,064.9 | 1,038.8 | -0.3% | ✅ accepted |
+| 126 | First-pass walk versus opened-discovery I/O on metabrowser | `opened-discovery` | 3,772.5 | 4,044.5 | -5.0% | ✅ accepted |
+
+### metabrowser (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 013 | Region-scheduled breadth-first traversal | `cold-scan-index` | 308.7 | 297.0 | -4.8% | ✅ accepted |
+| 014 | What the breadth-first default costs, on the shipped scheduler | `cold-scan-producer` | 489.4 | — | — | 📏 baseline |
+| 016 | Move cold-scan producer paths instead of cloning | `cold-scan-index` | 336.0 | 339.9 | -0.4% | ❌ rejected |
+| 017 | Pre-create dormant workers for adaptive scan depth | `cold-scan-producer` | 494.2 | 500.7 | +2.0% | ❌ rejected |
+| 023 | Cumulative effect through adaptive scanning and macOS bulk metadata | `cold-scan-index` | 625.2 | 295.5 | -53.5% | ✅ accepted |
 
 ### metabrowser-current-h86 (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 

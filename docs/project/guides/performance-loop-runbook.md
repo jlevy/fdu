@@ -332,6 +332,14 @@ cell. Pair **uncontrolled**. Completeness walk is gone (1 sample / 15,296). Firs
 (candidates ~48%, apply ~43%). No new userspace cut.
 Do not retry H116.
 
+**exp-126 / H127** is first-pass walk versus opened-discovery I/O on the same frozen
+`metabrowser-clone`. Same-binary 12-pair of `cold-scan-index` and `opened-discovery`.
+Official quiet check 53.86% busy; pair **uncontrolled**. Initial busy 35.11%; final
+55.87%. Opened component 2,761 ms versus first-pass 315 ms (~8.8×). Same 11,517 dir
+opens. First-pass 1.952 `getattrlistbulk`/dir.
+Opened uses `read_dir`+`fstatat`; 11,524 journal clones; 1.12M live roll-up merges.
+No smallest cut.
+
 **exp-121 / H124** is the first-pass analyze I/O **profile** on the frozen
 `metabrowser-clone` (146,047 entries / 133,708 files; digest `dc0df263…`). Path-binary
 already skipped (8,022 files).
@@ -364,13 +372,13 @@ Do not type a path into a commit.
 `system-private-frameworks` was the H108 / H117 subject (exp-107, exp-116); digest
 unchanged from the nomination.
 `metabrowser-clone` was the H109 / H112 / H113 / H114 / H115 / H116 / H118 / H120 / H121
-/ H124 / H125 / H126 subject (exp-108 through exp-112, exp-114, exp-115, exp-117,
-exp-120, exp-121, exp-123, exp-124, exp-125); same shape as exp-106, engine digest
-unchanged (`3fbfed48…`). A 2026-09-19 re-observe drifted to 145,988 entries / 133,654
-files (digest `cc517e78…`); commit a fresh subjects document with the next metabrowser
-cell (`make perf-subjects`). The CLI QA medium tree was skipped: deciding-scale but
-mutating. `system-private-frameworks` was also the H122 subject (exp-118); digest
-unchanged.
+/ H124 / H125 / H126 / H127 subject (exp-108 through exp-112, exp-114, exp-115, exp-117,
+exp-120, exp-121, exp-123, exp-124, exp-125, exp-126); same shape as exp-106, engine
+digest unchanged (`3fbfed48…`). A 2026-09-19 re-observe drifted to 145,988 entries /
+133,654 files (digest `cc517e78…`); commit a fresh subjects document with the next
+metabrowser cell (`make perf-subjects`). The CLI QA medium tree was skipped:
+deciding-scale but mutating.
+`system-private-frameworks` was also the H122 subject (exp-118); digest unchanged.
 
 ### Next Up
 
@@ -379,17 +387,17 @@ Source of truth:
 [the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
 The registry row in [the loop guide](performance-loop.md#current-engine-010) is the full
 statement. Overnight H116–H120 is done; do not retry those.
-Next free hypothesis id is **H127**. Do not mint another meaning for H91–H106. Next free
+Next free hypothesis id is **H128**. Do not mint another meaning for H91–H106. Next free
 experiment id is **exp-113** (reserved unused; H113 superseded).
-After that, **exp-126**.
+After that, **exp-127**.
 
-This stacked session skipped H113 (quiet gates including 45.48%), accepted H125
-(exp-124, restore-count completeness), confirmed H126 (exp-125 leftover; completeness
-gone), hunted H107 (no ignore-is-the-walk subject), recorded exp-122 (H122 leftover),
-and recorded exp-123 (H113 leftover then 16% of `content_open`). Earlier the same day:
-H113 69.4%, H122 (exp-118), H123, H121, H124. Do not start H107 without an
-ignore-is-the-walk subject.
-Do not retry metabrowser for H107 (exp-106). Do not start H111 (no Linux).
+This stacked session skipped H113 (quiet gates including 45.48% and 53.86%), accepted
+H125 (exp-124, restore-count completeness), confirmed H126 (exp-125 leftover;
+completeness gone), confirmed H127 (exp-126; opened-discovery ~8.8× first-pass), hunted
+H107 (no ignore-is-the-walk subject), recorded exp-122 (H122 leftover), and recorded
+exp-123 (H113 leftover then 16% of `content_open`). Earlier the same day: H113 69.4%,
+H122 (exp-118), H123, H121, H124. Do not start H107 without an ignore-is-the-walk
+subject. Do not retry metabrowser for H107 (exp-106). Do not start H111 (no Linux).
 Do not raise the README 200K files/s or 4M cached lines/s.
 
 1. **H125** (`fdu-wd4q`). **Accepted** (exp-124). Restore-count completeness.
@@ -398,10 +406,10 @@ Do not raise the README 200K files/s or 4M cached lines/s.
    Do not retry file-count.
    **H126** (`fdu-16jh`). **Confirmed** (exp-125). Completeness walk gone (0.007% of
    `content_open`). First candidates walk remains (15.7%). No new cut.
-   Next leftover is not yet an id: first-pass analyze versus opened-root content I/O, if
-   that cell can change standing.
-   Prefer a measured cell.
-   Do not invent a skip.
+   **H127** (`fdu-v12n`). **Confirmed** (exp-126). Opened-discovery 2,761 ms versus
+   first-pass 315 ms (~8.8×). `read_dir`+`fstatat` versus `getattrlistbulk`; journal
+   clones remain. Opened roots run no analyzers.
+   No smallest cut.
 
 2. **H122** (`fdu-ytg5`). **Confirmed** (exp-118, tighter leftover exp-122). Walk is
    96.3–97.5% of deciding-scale `default-tree` component on `system-private-frameworks`.
@@ -441,6 +449,8 @@ Do not raise the README 200K files/s or 4M cached lines/s.
 `fdu-jxhk` remains the EntryId composite; do not restart that rewrite.
 
 H110 needs a new named mechanism.
+exp-126 names the leftovers (journal clone per directory, `read_dir`+`fstatat`, 1.12M
+live merges) and does not compile a cut.
 Do not retry H104–H106.
 
 ### Dead Ends

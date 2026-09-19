@@ -11,6 +11,7 @@ H122 is confirmed (exp-118, tighter leftover exp-122). H123 is confirmed (exp-11
 is confirmed (exp-120): apply no longer dominates.
 H124 is rejected (exp-121). H125 is accepted (exp-124): restore-count completeness.
 H126 is confirmed (exp-125): completeness walk gone; no new userspace cut.
+H127 is confirmed (exp-126): opened-discovery ~8.8× first-pass; no smallest cut.
 H113 is superseded by H125.
 [The runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
 keeps an abbreviated next-up in that order; this file is the source of truth for the
@@ -34,7 +35,7 @@ H113 is superseded. Do not retry the file-count shortcut.
 
 - Name only hypotheses that are plausible at the 3% wall bar (or a structural ceiling)
   on a named job and subject, and that can be wrong
-- Keep H121–H126 registered in
+- Keep H121–H127 registered in
   [the loop guide](../../guides/performance-loop.md#current-engine-010); keep H107 and
   H111 open with honest status.
   H124 is rejected (exp-121). H125 is accepted (exp-124). H126 is confirmed (exp-125).
@@ -127,6 +128,7 @@ Overnight registry rows (settled; full text in the loop guide):
 | H124 | Fewer first-pass opens (type/size gate) or read-ahead cuts analyze wall ≥3% | `content-basic` / product `--analyze` | Rejected (exp-121). Do not retry type/size or a safe read-ahead. |
 | H125 | Cache-only completeness uses the candidate count restore already computed | `content-cache-hit` | Accepted (exp-124). H113 superseded. |
 | H126 | After H125, leftover profile names whether completeness is gone and whether a new ≥3% userspace cut remains | `content-cache-hit` | Confirmed (exp-125). Completeness gone. No new cut. |
+| H127 | First-pass walk I/O versus opened-discovery I/O on file-heavy metabrowser | `cold-scan-index` vs `opened-discovery` | Confirmed (exp-126). Opened ~8.8× first-pass. No smallest cut. |
 | H113 | File-count completeness after H115 is a real quiet wall win | `content-cache-hit` | Superseded by H125. File-count not compiled. |
 
 Remaining registry rows (open; full text in the loop guide):
@@ -174,6 +176,12 @@ H126 is confirmed (exp-125): completeness 1 sample / 15,296 (0.007% of `content_
 `load_content` 63.5%; snapshot 36.4%; first `analysis_candidates` walk 15.7%. Restore
 mix unchanged (candidates ~48%, apply ~43%). No new userspace cut.
 Do not retry H116.
+
+H127 is confirmed (exp-126): opened-discovery component 2,761 ms versus first-pass 315
+ms (~8.8×) on frozen `metabrowser-clone`. Same 11,517 dir opens.
+First-pass 1.952 `getattrlistbulk`/dir.
+Opened uses `read_dir`+`fstatat`; 11,524 journal clones; 1.12M live roll-up merges.
+No smallest cut. Opened roots run no analyzers.
 
 H111 is open and not in this host.
 
@@ -227,9 +235,10 @@ Overnight H116–H120 is history, not a retry list.
    exp-113 unused. Do not retry H113. **H126** (`fdu-16jh`). **Confirmed** (exp-125).
    Completeness walk gone.
    First candidates walk remains (15.7%). No new cut.
-   Do not retry H116. Next leftover is first-pass analyze versus opened-root content I/O
-   if that cell can change standing.
-   Do not invent a skip.
+   Do not retry H116. **H127** (`fdu-v12n`). **Confirmed** (exp-126). Opened-discovery
+   ~8.8× first-pass. `read_dir`+`fstatat` versus `getattrlistbulk`; journal clones
+   remain. Opened roots run no analyzers.
+   No smallest cut.
 
 2. **H122** (`fdu-ytg5`). **Confirmed** (exp-118, leftover exp-122). Highest
    user-visible leverage.
@@ -281,17 +290,19 @@ Overnight H116–H120 is history, not a retry list.
 H117 confirmed as a probe, H120 accepted.
 **Stacked session (do not re-queue):** H113 superseded (quiet gates including 45.48%;
 leftover 16% of `content_open` in exp-123; restore-count accepted as H125 / exp-124),
-H126 confirmed (exp-125; completeness gone; no new cut), H107 skipped (ignore does not
-skip descent), H122 confirmed (exp-118 + leftover exp-122), H123 confirmed, H121
-confirmed (no apply cut), H124 rejected (exp-121).
+H126 confirmed (exp-125; completeness gone; no new cut), H127 confirmed (exp-126;
+opened-discovery ~8.8× first-pass; no smallest cut), H107 skipped (ignore does not skip
+descent), H122 confirmed (exp-118 + leftover exp-122), H123 confirmed, H121 confirmed
+(no apply cut), H124 rejected (exp-121).
 
 ## Testing Strategy
 
 H125 is recorded (exp-124). Incomplete-sidecar fail-closed stays.
 H126 is recorded (exp-125). Completeness walk gone; no new cut.
+H127 is recorded (exp-126). Opened-discovery ~8.8× first-pass; no smallest cut.
 H124 is recorded (exp-121). H122 (exp-118 + leftover exp-122), H123, and H121 are
 recorded determinations.
-Exact oracles and content digest stay as for exp-108–125. H123 kept one-shot
+Exact oracles and content digest stay as for exp-108–126. H123 kept one-shot
 `cold scan`. Record every verdict, including skips at the quiet gate.
 
 ## Rollout Plan
@@ -325,23 +336,27 @@ Engine changes land only as the experiment that tests the next row.
 - Whether the completeness walk is gone after H125 and whether a new ≥3% userspace cut
   remains (H126). **Closed:** exp-125. Completeness 0.007% of `content_open`. No new
   cut. Do not retry H116.
+- Whether first-pass walk I/O and opened-discovery I/O differ by a named leftover on
+  file-heavy metabrowser (H127). **Closed:** exp-126. Opened ~8.8× first-pass.
+  `read_dir`+`fstatat` versus `getattrlistbulk`; journal clones remain.
+  No smallest cut.
 
 ## References
 
 - [The loop guide registry](../../guides/performance-loop.md#current-engine-010) —
-  H107–H126
+  H107–H127
 - [The runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
 - [Campaign 2](plan-2026-08-23-fdu-performance-campaign-2.md) — floor-anchored strategy
 - [First Principles](../../architecture/fdu-design-principles.md#first-principles)
 - [Engine architecture](../../architecture/fdu-engine-architecture.md) — one-shot vs
   opened
 - [The instrumentation playbook](../../guides/performance-instrumentation-playbook.md)
-- exp-107 through exp-125; H115 engine at `7798fdc1`; H120 streaming restore; H125
+- exp-107 through exp-126; H115 engine at `7798fdc1`; H120 streaming restore; H125
   restore-count at `be8d4d69`
 - Beads: overnight epic `fdu-e9ow` (closed); remaining-queue epic `fdu-8ya1`; H121
   `fdu-vf4b`; H122 `fdu-ytg5`; H123 `fdu-rum0`; H124 `fdu-i39y`; H125 `fdu-wd4q`; H126
-  `fdu-16jh`; H113 quiet `fdu-rfr6` (superseded); H107 `fdu-jcfn`; H111 `fdu-jekg`;
-  sidecar parent `fdu-78q6`; EntryId composite `fdu-jxhk` (do not restart)
+  `fdu-16jh`; H127 `fdu-v12n`; H113 quiet `fdu-rfr6` (superseded); H107 `fdu-jcfn`; H111
+  `fdu-jekg`; sidecar parent `fdu-78q6`; EntryId composite `fdu-jxhk` (do not restart)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
