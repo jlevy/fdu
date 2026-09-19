@@ -162,12 +162,12 @@ statement.
 Next free hypothesis id is **H116**. Do not mint another meaning for H91–H106.
 Next free experiment id is **exp-112**.
 
-1. **H115** (`fdu-jxhk`, child of H83). Sidecar restore still rebuilds roll-ups per file
-   times depth. One bottom-up pass after restore inserts is the remaining named
-   apply/install cut. Screen on `content-cache-hit` wall ≥3% with the interval below
-   zero; digest identical.
-   Do not retry parse-speed, instruction trims, the H113 file-count completeness
-   shortcut, or the H114 type-id `String` alloc.
+1. **H115** (`fdu-wx15` / `fdu-jxhk`, child of H83). Sidecar restore still rebuilds
+   roll-ups per file times depth.
+   One bottom-up pass after restore inserts is the remaining named apply/install cut.
+   Screen on `content-cache-hit` wall ≥3% with the interval below zero; digest
+   identical. Do not retry parse-speed, instruction trims, the H113 file-count
+   completeness shortcut, or the H114 type-id `String` alloc.
 
 2. **H113** (`fdu-wrdl`, rejected in exp-110). Do not land the file-count completeness
    shortcut from an uncontrolled cell.
