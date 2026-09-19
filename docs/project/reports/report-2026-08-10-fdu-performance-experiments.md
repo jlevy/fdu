@@ -65,7 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 47 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 48 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -193,6 +193,7 @@ dead end.
 | 112 | [Bottom-up roll-up after sidecar restore](#exp112--bottomup-rollup-after-sidecar-restore) | H115 | `content-cache-hit` | -9.7% | ✅ accepted |
 | 114 | [Restore path lookup without analysis_candidates HashMap](#exp114--restore-path-lookup-without-analysiscandidates-hashmap) | H116 | `content-cache-hit` | +8.7% | ❌ rejected |
 | 115 | [First-pass analyze insert-then-rebuild on metabrowser](#exp115--firstpass-analyze-insertthenrebuild-on-metabrowser) | H118 | `content-basic` | -2.6% | ❌ rejected |
+| 116 | [Opened-root second report versus one-shot on frameworks](#exp116--openedroot-second-report-versus-oneshot-on-frameworks) | H117 | `default-tree` | -99.9% | ✅ accepted |
 
 ## The experiments
 
@@ -3960,6 +3961,37 @@ engine reverted.
 Full record:
 [`exp-115-first-pass-analyze-insert-then-rebuild-on-metabrowser.md`](../experiments/exp-115-first-pass-analyze-insert-then-rebuild-on-metabrowser.md)
 
+### exp-116 — Opened-root second report versus one-shot on frameworks
+
+✅ accepted · 2026-09-19 · H117 · commit `2c6535c8`
+
+Control: same probe default-tree one-shot
+
+Candidate: opened-second-report second retained tree read
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2612.2 | 2361.9 | -2.16% (n.s.) | [-3.88%, +2.75%] |
+| component (ms) | 2604.6 | 2350.1 | -2.32% (n.s.) | [-4.22%, +2.89%] |
+| cpu (ms) | 21664.8 | 17047.9 | -3.81% (n.s.) | [-13.11%, +1.26%] |
+| user (ms) | 362.7 | 351.0 | -0.90% (n.s.) | [-3.92%, +4.18%] |
+| system (ms) | 21290.1 | 16688.5 | -3.89% (n.s.) | [-13.31%, +1.36%] |
+| peak rss (MiB) | 85.1 | 85.3 | +0.04% (n.s.) | [-0.41%, +0.83%] |
+
+Other jobs, wall time: `opened-second-report` -0.1% (n.s.).
+
+Cost to carry: 120 lines; no new dependencies.
+
+probe mode opened-second-report plus harness job; no engine serving change; no CLI flag
+
+**Accepted:** opened second report 1.6ms versus default-tree 2612ms (1630x);
+determination kept; not a snapshot load.
+
+Full record:
+[`exp-116-opened-root-second-report-versus-one-shot-on-frameworks.md`](../experiments/exp-116-opened-root-second-report-versus-one-shot-on-frameworks.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4165,6 +4197,13 @@ Baselines show one value because they measure a state rather than a change.
 | 054 | Validate the Linux campaign’s cumulative effect on macOS | `warm-revalidate` | 393.0 | 335.7 | -15.7% | ✅ accepted |
 | 055 | Validate review fixes on macOS | `cold-scan-index` | 304.9 | 297.5 | -0.9% | ✅ accepted |
 
+### system-private-frameworks (158,705 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 107 | Installed CLI metadata one-shot stays cold scan on frameworks | `cli-default-tree` | 2,100.0 | 2,060.0 | -0.6% | ✅ accepted |
+| 116 | Opened-root second report versus one-shot on frameworks | `default-tree` | 2,612.2 | 2,361.9 | -2.2% | ✅ accepted |
+
 ### cargo-registry-src (13,020 entries) — Linux 6.18.44-fc-v21, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -4296,12 +4335,6 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 064 | Content roll-up lookup and indexed type-rule tiers | `content-cache-hit` | 450.4 | 314.7 | -30.3% | ✅ accepted |
-
-### system-private-frameworks (158,705 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 107 | Installed CLI metadata one-shot stays cold scan on frameworks | `cli-default-tree` | 2,100.0 | 2,060.0 | -0.6% | ✅ accepted |
 
 ### threshold-boundary-2x (120,135 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

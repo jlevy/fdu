@@ -207,6 +207,23 @@ block; the overnight complexity bar forbids that.
 No pair. No engine change.
 Do not retry walk-overlap.
 
+**exp-116 / H117** is the opened-retention determination on `system-private-frameworks`
+(158,705 entries / 96,542 files).
+Same probe both variants.
+New mode `opened-second-report` opens, waits until Ready, runs the default tree report
+twice, and times only the second read.
+Quiet start gate refused (25.5% busy); pair ran **uncontrolled**. Initial busy 36.44%;
+final 15.0%. The 25% bar was not lowered.
+
+| Job | Wall median | Component | Peak RSS |
+| --- | ---: | ---: | ---: |
+| `default-tree` | 2,612.2 ms | 2,604.6 ms | 85.1 MiB |
+| `opened-second-report` | 4,003.4 ms | 1.6 ms | 196.2 MiB |
+
+Second retained report 1.6 ms versus one-shot 2,612.2 ms (~1,630×). **Confirmed.**
+`default-tree` stays a cold scan.
+Probe mode kept. Not a snapshot load on `fdu PATH`.
+
 ### Darwin Subjects
 
 The 2026-08 nominated metabrowser corpus path is gone from disk.
@@ -219,10 +236,11 @@ Absolute paths live only in the gitignored `explorations/benchmarks/subjects.loc
 Do not type a path into a commit.
 
 `cargo-registry-src` (~22k) screens; it cannot decide a 3% verdict.
-`system-private-frameworks` was the H108 subject (exp-107); digest unchanged from the
-nomination. `metabrowser-clone` was the H109 / H112 / H113 / H114 / H115 / H116 / H118
-subject (exp-108, exp-109, exp-110, exp-111, exp-112, exp-114, exp-115); same shape as
-exp-106, engine digest unchanged (`3fbfed48…`). The CLI QA medium tree was skipped:
+`system-private-frameworks` was the H108 / H117 subject (exp-107, exp-116); digest
+unchanged from the nomination.
+`metabrowser-clone` was the H109 / H112 / H113 / H114 / H115 / H116 / H118 subject
+(exp-108, exp-109, exp-110, exp-111, exp-112, exp-114, exp-115); same shape as exp-106,
+engine digest unchanged (`3fbfed48…`). The CLI QA medium tree was skipped:
 deciding-scale but mutating.
 
 ### Next Up
@@ -232,7 +250,7 @@ The registry row in [the loop guide](performance-loop.md#current-engine-010) is 
 statement.
 Next free hypothesis id is **H121**. Do not mint another meaning for H91–H106.
 Next free experiment id is **exp-113** (reserved for H113 quiet).
-After that, **exp-116**.
+After that, **exp-117**.
 
 1. **H113** (`fdu-wrdl` / `fdu-rfr6`). Quiet confirmatory after H115. Official
    `PERF_HOST_REGIME=quiet` start gate refused 2026-09-19 at 46.7% CPU busy.
@@ -245,10 +263,11 @@ After that, **exp-116**.
 2. **Overnight queue after H113.** Source of truth:
    [the post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md)
    (epic `fdu-e9ow`). Do not copy the rows here.
-   Order: **H117** (`fdu-7wiq`) → **H120** (`fdu-y9n9`). H116 (exp-114) rejected on
-   wall; H118 (exp-115) rejected on component; H119 walk-overlap screened (`fdu::scan`
-   0.13% of `content-basic`). Do not retry H116/H118 uncontrolled, or H119 walk-overlap.
-   Uncontrolled is allowed on the remaining two if quiet fails.
+   Order: **H120** (`fdu-y9n9`). H116 (exp-114) rejected on wall; H118 (exp-115)
+   rejected on component; H119 walk-overlap screened; H117 (exp-116) confirmed (~1,630×
+   retained second report).
+   Do not retry H116/H118 uncontrolled, or H119 walk-overlap.
+   Uncontrolled is allowed on H120 if quiet fails.
    H111 is not in this overnight setup (no Linux runner).
 
 3. **H107** (`fdu-jcfn`, closed).
@@ -256,7 +275,8 @@ After that, **exp-116**.
    metabrowser (exp-106). Not tonight unless that subject appears.
 
 4. **H108** (`fdu-1a4z`, confirmed in exp-107). Do not open a cache/one-shot patch.
-   H117 is the remaining metadata lever (opened retention), not a snapshot load.
+   H117 (exp-116) confirmed opened retention.
+   Do not load a snapshot on `fdu PATH`.
 
 5. **H109** (`fdu-8nwq` / `fdu-hzyb`, screened in exp-108). Do not land a control
    matcher Path rewrite.
@@ -599,7 +619,7 @@ producing a number that means nothing.
 - Retry H116 on an uncontrolled cell after exp-114.
 - Retry H118 on an uncontrolled cell after exp-115.
 - Retry H119 walk-overlap after the deciding-scale `content-basic` profile.
-- Retry H119 walk-overlap after the deciding-scale `content-basic` profile.
+- Load a snapshot on `fdu PATH` because H117 confirmed opened retention.
 - Add a dependency, an `unsafe` block, or a platform gate without `make cross-lint`.
 - Create a RAM disk, or write anything into a subject tree.
   Snapshots, results and scratch go under `/tmp/fdu-realtree/`.

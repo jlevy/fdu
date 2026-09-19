@@ -172,14 +172,10 @@ After whatever H113 quiet does:
    a new `unsafe` block; not tonight.
    No engine change. Do not retry walk-overlap.
 
-4. **H117** (`fdu-7wiq`). Metric: opened-root second report wall vs one-shot
-   `default-tree` / `fdu PATH` on the same unchanged Darwin tree
-   (`system-private-frameworks` or `metabrowser-clone`). Accept: opened second read at
-   least 3% faster (expected several-fold); one-shot footer stays `cold scan`. Why next:
-   names the remaining metadata lever without violating H108. Refute: retained read
-   within 3% of one-shot after warmup (retention is not the cost).
-   First step if missing: a `fdu-core` probe mode, not a CLI flag.
-   Quiet: not required if the gap is large.
+4. **H117** (`fdu-7wiq`). **Done — confirmed** (exp-116). Second retained tree report
+   1.6 ms versus `default-tree` 2,612.2 ms on `system-private-frameworks` (~1,630×).
+   Probe mode `opened-second-report` kept.
+   Not a snapshot load on `fdu PATH`.
 
 5. **H120** (`fdu-y9n9`). Metric: `content-cache-hit` peak RSS (guard: wall
    non-inferior, interval not entirely above +3%). Subject: `metabrowser-clone`. Accept:

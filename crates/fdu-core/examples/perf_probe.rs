@@ -22,7 +22,7 @@ use fdu_core::{
     Attrs, CachePolicy, ChangeOutcome, ChangeRequest, Clock, Commit, Coverage, EffectiveChange,
     EngineVersion, EntryId, EntryKind, Index, Knowledge, LifecyclePhase, Observation, Op,
     OpenConfig, OpenOptions, OpenedIndex, PageRequest, ProjectionResult, ReadProjection,
-    ReadRequest, RowShape, ScanConfig, ScanOrder,
+    ReadRequest, ReportRequest, RowShape, ScanConfig, ScanOrder,
 };
 
 const PROBE_SCHEMA: &str = "fdu-perf-probe-v1";
@@ -93,6 +93,7 @@ enum Mode {
     DeltaApplyLarge,
     MarkdownProse,
     OpenedDiscovery,
+    OpenedSecondReport,
     Query,
     ColdOpenSave,
     DefaultTree,
@@ -128,6 +129,7 @@ impl Mode {
             "delta-apply-large" => Ok(Self::DeltaApplyLarge),
             "markdown-prose" => Ok(Self::MarkdownProse),
             "opened-discovery" => Ok(Self::OpenedDiscovery),
+            "opened-second-report" => Ok(Self::OpenedSecondReport),
             "query" => Ok(Self::Query),
             "revalidate" => Ok(Self::Revalidate),
             "cold-open-save" => Ok(Self::ColdOpenSave),
@@ -164,6 +166,7 @@ impl Mode {
             Self::DeltaApplyLarge => "delta-apply-large",
             Self::MarkdownProse => "markdown-prose",
             Self::OpenedDiscovery => "opened-discovery",
+            Self::OpenedSecondReport => "opened-second-report",
             Self::Query => "query",
             Self::Revalidate => "revalidate",
             Self::ColdOpenSave => "cold-open-save",
@@ -298,13 +301,16 @@ impl Arguments {
             return Err(ProbeError("--repeat must be nonzero".into()));
         }
         let mode = Mode::parse(&mode)?;
-        if let (Mode::OpenedDiscovery, Some(flag)) = (mode, walk_only_flag) {
+        if let (Mode::OpenedDiscovery | Mode::OpenedSecondReport, Some(flag)) =
+            (mode, walk_only_flag)
+        {
             // OpenOptions has no such setting: an opened root discovers its whole scope
             // with one breadth-first producer, always observes control state, and has no
             // worker-policy experiment or scan diagnostics to select or record.
             return Err(ProbeError(format!(
-                "{flag} does not apply to opened-discovery, whose walk is fixed by the opened \
-                 root and records no scan diagnostics"
+                "{flag} does not apply to {}, whose walk is fixed by the opened \
+                 root and records no scan diagnostics",
+                mode.name()
             )));
         }
         if saw_diagnostics_flag
@@ -430,6 +436,7 @@ fn execute(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         Mode::DeltaApply | Mode::DeltaApplyLarge => delta_apply(arguments),
         Mode::DeltaApplyBatched => delta_apply_batched(arguments),
         Mode::OpenedDiscovery => opened_discovery(arguments),
+        Mode::OpenedSecondReport => opened_second_report(arguments),
         Mode::MarkdownProse | Mode::TextProse => content_analysis(arguments, document_request()),
         Mode::Query => query(arguments),
     }
@@ -1100,6 +1107,89 @@ fn opened_discovery_with_options(
     }
     summary.commit = Some(summarize_commits(&commits));
     Ok(ProbeOutput::new(arguments.mode, "opened", component, summary))
+}
+
+/// Second retained tree report after the opened root is Ready.
+///
+/// Discovery and the first complete report are setup. The timed component is only the
+/// second `ReadProjection::Report` of the same tree query `default-tree` uses.
+fn opened_second_report(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
+    let options = OpenOptions {
+        batch_size: arguments.scan.batch_size,
+        follow_symlinks: arguments.scan.follow_symlinks,
+        one_filesystem: arguments.scan.one_filesystem,
+        hidden: arguments.scan.hidden.clone(),
+        exclude_special: arguments.scan.exclude_special,
+        types: arguments.scan.types.clone(),
+        journal_capacity_bytes: OPENED_PROBE_JOURNAL_CAPACITY_BYTES,
+        ..OpenOptions::default()
+    };
+    let opened = OpenedIndex::open(&arguments.root, options)?;
+    let initial = opened.read(ReadRequest::default())?;
+    let mut cursor = fdu_core::EngineVersion { sequence: Clock::ZERO, ..initial.version };
+    loop {
+        let poll =
+            opened.changes(ChangeRequest { after: cursor, timeout: Duration::from_secs(30) })?;
+        cursor = poll.cursor;
+        match poll.outcome {
+            ChangeOutcome::Changes { .. } => {}
+            ChangeOutcome::Idle => {
+                let _ = opened.close();
+                return Err(ProbeError("opened second report did not settle before timeout".into()));
+            }
+            ChangeOutcome::Reset { .. } => {
+                let _ = opened.close();
+                return Err(ProbeError(
+                    "opened second report outran the probe's exact journal capacity".into(),
+                ));
+            }
+        }
+        if matches!(
+            poll.state.phase,
+            LifecyclePhase::Ready
+                | LifecyclePhase::Watching
+                | LifecyclePhase::Stopped
+                | LifecyclePhase::Failed
+        ) {
+            break;
+        }
+    }
+
+    let request = ReadRequest {
+        projections: vec![ReadProjection::Report(ReportRequest {
+            query: Query { views: vec![ViewSpec::Tree], ..Query::default() },
+            now: std::time::SystemTime::now(),
+            max_work: fdu_core::MAX_PAGE_WORK,
+        })],
+        expected: None,
+    };
+    let first = opened.read(request.clone())?;
+    black_box(&first);
+
+    let started = Instant::now();
+    let second = opened.read(request)?;
+    let ProjectionResult::Report(report) = second
+        .results
+        .first()
+        .ok_or_else(|| ProbeError("opened second report returned no projection".into()))?
+    else {
+        let _ = opened.close();
+        return Err(ProbeError("opened second report did not return a report projection".into()));
+    };
+    let rendered =
+        fdu_core::report_format::render(report, fdu_core::report_format::Format::Text, false);
+    black_box(rendered.len());
+    let component = started.elapsed();
+
+    let summary = if arguments.oracle_enabled {
+        summarize_opened(&opened, cursor)
+    } else {
+        Ok(Summary::default())
+    };
+    opened.close()?;
+    let mut summary = summary?;
+    summary.complete = true;
+    Ok(ProbeOutput::new(arguments.mode, "opened-retained", component, summary))
 }
 
 fn summarize_opened(opened: &OpenedIndex, version: EngineVersion) -> ProbeResult<Summary> {
@@ -2222,6 +2312,16 @@ mod tests {
                 .map(OsString::from),
         )
         .expect("opened discovery applies its batch size");
+        for flag in walk_only {
+            let error = Arguments::parse(
+                ["opened-second-report", "--root", "/root"]
+                    .into_iter()
+                    .chain(flag.iter().copied())
+                    .map(OsString::from),
+            )
+            .expect_err("opened second report has no option for this walk setting");
+            assert!(error.0.contains(flag[0]), "{}", error.0);
+        }
     }
 
     #[test]
@@ -2292,6 +2392,7 @@ mod tests {
             "summary",
             "text-prose",
             "validate-index",
+            "opened-second-report",
             // opened-discovery is covered by opened_discovery_refuses_walk_flags_it_cannot_apply.
         ];
 
