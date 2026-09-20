@@ -53,6 +53,29 @@ use crate::engine_contract::{
 /// `Cached`, so the bound costs precision, never correctness.
 const MAX_VERIFIED_INTERVALS: usize = 256;
 
+fn same_issue_cause(left: &Issue, right: &Issue) -> bool {
+    left.kind == right.kind && left.path == right.path && (right.path.is_some() || left == right)
+}
+
+fn compare_issues(left: &Issue, right: &Issue) -> std::cmp::Ordering {
+    left.path
+        .cmp(&right.path)
+        .then_with(|| issue_kind_rank(left.kind).cmp(&issue_kind_rank(right.kind)))
+        .then_with(|| left.message.cmp(&right.message))
+        .then_with(|| left.os_error.cmp(&right.os_error))
+}
+
+const fn issue_kind_rank(kind: crate::IssueKind) -> u8 {
+    match kind {
+        crate::IssueKind::Permission => 0,
+        crate::IssueKind::Disappeared => 1,
+        crate::IssueKind::InvalidMetadata => 2,
+        crate::IssueKind::ResourceBudget => 3,
+        crate::IssueKind::ObservationGap => 4,
+        crate::IssueKind::ProviderFailure => 5,
+    }
+}
+
 #[cfg(test)]
 std::thread_local! {
     /// Entries the control reclassification walk has visited on this thread.
@@ -1356,8 +1379,15 @@ impl IndexHandle {
         started_at: u64,
         complete: bool,
         listed_incomplete: &[PathBuf],
+        failed_paths: &[PathBuf],
     ) -> crate::Result<Option<Commit>> {
-        self.write_index()?.finish_reconcile(path, started_at, complete, listed_incomplete)
+        self.write_index()?.finish_reconcile(
+            path,
+            started_at,
+            complete,
+            listed_incomplete,
+            failed_paths,
+        )
     }
 
     #[cfg(feature = "watch")]
@@ -2513,19 +2543,26 @@ impl Index {
     /// ways. An issue without a path has nothing to key on, so only an identical one counts
     /// as a repeat.
     fn retain_issue(&mut self, issue: Issue) {
-        let repeat = self.issues.iter().position(|retained| {
-            retained.kind == issue.kind
-                && retained.path == issue.path
-                && (issue.path.is_some() || *retained == issue)
-        });
+        let repeat = self.issues.iter().position(|retained| same_issue_cause(retained, &issue));
         if let Some(position) = repeat {
             self.issue_epochs[position] = self.freshness_epoch;
-        } else if self.issues.len() < MAX_RETAINED_ISSUES {
-            self.issues.push(issue);
-            self.issue_epochs.push(self.freshness_epoch);
-            self.state.issues.retained = u64::try_from(self.issues.len()).unwrap_or(u64::MAX);
         } else {
-            self.state.issues.omitted = self.state.issues.omitted.saturating_add(1);
+            let position = self
+                .issues
+                .binary_search_by(|retained| compare_issues(retained, &issue))
+                .unwrap_or_else(|position| position);
+            if position < MAX_RETAINED_ISSUES {
+                self.issues.insert(position, issue);
+                self.issue_epochs.insert(position, self.freshness_epoch);
+                if self.issues.len() > MAX_RETAINED_ISSUES {
+                    self.issues.pop();
+                    self.issue_epochs.pop();
+                    self.state.issues.omitted = self.state.issues.omitted.saturating_add(1);
+                }
+            } else {
+                self.state.issues.omitted = self.state.issues.omitted.saturating_add(1);
+            }
+            self.state.issues.retained = u64::try_from(self.issues.len()).unwrap_or(u64::MAX);
         }
     }
 
@@ -2733,8 +2770,15 @@ impl Index {
         self.issue_epochs.clear();
         self.state.issues = crate::IssueSummary::default();
         let root = self.root_path.clone();
-        for error in errors {
-            self.retain_issue(Issue::from_error_under(&root, error));
+        for (position, error) in errors.iter().enumerate() {
+            let issue = Issue::from_error_under(&root, error);
+            let repeated = errors[..position]
+                .iter()
+                .map(|earlier| Issue::from_error_under(&root, earlier))
+                .any(|earlier| same_issue_cause(&earlier, &issue));
+            if !repeated {
+                self.retain_issue(issue);
+            }
         }
     }
 
@@ -2783,6 +2827,7 @@ impl Index {
         started_at: u64,
         complete: bool,
         listed_incomplete: &[PathBuf],
+        failed_paths: &[PathBuf],
     ) -> crate::Result<Option<Commit>> {
         let path = canonical_relative_path(path)?;
         let next_clock = self.clock.checked_next().ok_or(crate::Error::ClockExhausted)?;
@@ -2805,11 +2850,13 @@ impl Index {
                     })
             })
             .collect();
+        let scoped_failures: Vec<&PathBuf> =
+            failed_paths.iter().filter(|failed| failed.starts_with(&path)).collect();
         let mut state = Vec::new();
-        if complete {
-            // A completed sweep stat'd every entry beneath `path`, including the ones
-            // the producer elided as no-ops. Record that interval as one exact state
-            // transition rather than manufacturing millions of entry updates.
+        if complete || !scoped_failures.is_empty() {
+            // A sweep stat'd every entry beneath `path` except the precise failure paths,
+            // which carry stronger `Partial` marks below. Record the successful interval
+            // once rather than manufacturing millions of unchanged entry updates.
             let now = Self::now_unix_nanos();
             self.verified.retain(|(verified_path, _)| !verified_path.starts_with(&path));
             self.verified.push((path.clone(), now));
@@ -2819,6 +2866,8 @@ impl Index {
                 self.verified.drain(..excess);
             }
             state.push(StateTransition::Verified { path: path.clone() });
+        }
+        if complete {
             // A failed root's issues explain the state it is in; a clean walk below one of
             // their paths cannot un-fail the root, so it disproves none of them.
             if self.state.phase != LifecyclePhase::Failed {
@@ -2832,7 +2881,14 @@ impl Index {
                 self.state.issues.omitted = 0;
             }
         } else {
-            self.mark_unfresh(&path, Freshness::Partial);
+            if scoped_failures.is_empty() {
+                self.mark_unfresh(&path, Freshness::Partial);
+            } else {
+                for failed in scoped_failures {
+                    self.mark_unfresh(failed, Freshness::Partial);
+                }
+            }
+            self.state.coverage = Coverage::Partial(CoverageReason::Inaccessible);
             if path.as_os_str().is_empty() {
                 if let Some(started) = self.active_root_reconciles.remove(&started_at) {
                     self.writing_pass_started_at_ns = started;
@@ -2855,9 +2911,8 @@ impl Index {
         }
 
         if complete
-            && path.as_os_str().is_empty()
             && self.state.coverage == Coverage::Partial(CoverageReason::Inaccessible)
-            && self.issues.is_empty()
+            && !self.issues.iter().any(|issue| issue.kind != crate::IssueKind::ObservationGap)
             && self.state.issues.omitted == 0
             && self.arena.iter().all(|slot| {
                 let Slot::Occupied { entry, .. } = slot else {
@@ -7517,7 +7572,7 @@ mod tests {
         );
 
         let finish = index
-            .finish_reconcile(Path::new("src"), started, true, &[])
+            .finish_reconcile(Path::new("src"), started, true, &[], &[])
             .expect("finish")
             .expect("finish commit");
         assert!(finish.changes.is_empty());
@@ -8986,7 +9041,7 @@ mod tests {
                 attrs: file_attrs(9, 2),
             },
         ]));
-        index.finish_reconcile(Path::new(""), 0, true, &[]).expect("finish reconciliation");
+        index.finish_reconcile(Path::new(""), 0, true, &[], &[]).expect("finish reconciliation");
 
         let kept = index.provenance(Path::new("a/kept.txt")).expect("present");
         let changed = index.provenance(Path::new("a/changed.txt")).expect("present");
@@ -9020,7 +9075,7 @@ mod tests {
             "nothing has checked it yet"
         );
         // A completed sweep then covers the whole tree.
-        index.finish_reconcile(Path::new(""), 0, true, &[]).expect("finish reconciliation");
+        index.finish_reconcile(Path::new(""), 0, true, &[], &[]).expect("finish reconciliation");
         let path = Path::new("a/file.txt");
         assert_eq!(
             index.provenance(path).expect("present").source,
@@ -9052,7 +9107,7 @@ mod tests {
         let mut index = Index::new("/root");
         for which in 0..(MAX_VERIFIED_INTERVALS * 2) {
             index
-                .finish_reconcile(&PathBuf::from(format!("dir-{which}")), 0, true, &[])
+                .finish_reconcile(&PathBuf::from(format!("dir-{which}")), 0, true, &[], &[])
                 .expect("finish reconciliation");
         }
         assert!(
@@ -9060,5 +9115,43 @@ mod tests {
             "interval list grew to {}",
             index.verified.len()
         );
+    }
+
+    #[test]
+    fn retained_walk_issues_are_the_same_first_paths_for_every_arrival_order() {
+        let make = |order: Vec<usize>| {
+            order
+                .into_iter()
+                .map(|number| {
+                    crate::Error::io(
+                        PathBuf::from(format!("/root/file-{number:02}")),
+                        std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut reverse_order: Vec<_> = (0..66).rev().collect();
+        reverse_order.push(65);
+        let mut shuffled_order: Vec<_> = (0..66).step_by(2).collect();
+        shuffled_order.extend((0..66).skip(1).step_by(2));
+        shuffled_order.push(65);
+
+        let mut reverse = Index::new("/root");
+        reverse.record_walk_errors(&make(reverse_order));
+        let mut shuffled = Index::new("/root");
+        shuffled.record_walk_errors(&make(shuffled_order));
+
+        let reverse_paths: Vec<_> =
+            reverse.issues().iter().map(|issue| issue.path.clone().expect("path")).collect();
+        let shuffled_paths: Vec<_> =
+            shuffled.issues().iter().map(|issue| issue.path.clone().expect("path")).collect();
+        assert_eq!(reverse_paths, shuffled_paths);
+        assert_eq!(reverse_paths.len(), MAX_RETAINED_ISSUES);
+        assert_eq!(reverse_paths.first().map(PathBuf::as_path), Some(Path::new("file-00")));
+        assert_eq!(reverse_paths.last().map(PathBuf::as_path), Some(Path::new("file-63")));
+        assert_eq!(reverse.state().issues.omitted, 2);
+        assert_eq!(shuffled.state().issues.omitted, 2);
+        assert_eq!(reverse.issue_epochs.len(), reverse.issues.len());
+        assert_eq!(shuffled.issue_epochs.len(), shuffled.issues.len());
     }
 }

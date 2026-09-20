@@ -173,20 +173,13 @@ impl Session {
         request.validate_read(&held).map_err(Error::InvalidRequest)?;
         // Bind observation before closing the gap from the scan that produced `index`.
         // The full reconciliation catches a mutation that completed before registration;
-        // the barrier and bounded drain then apply every hint captured while that pass ran.
+        // the capture drain applies every hint observed while that pass ran.
         let watcher = Watcher::new(&root, watch)?;
-        crate::scan::reconcile_handle(&index, &scan, &mut |_| {})?;
-        watcher.flush_capture()?;
-        let mut handoff_complete = false;
-        for _ in 0..=watcher.capture_backlog_bound() {
-            if watcher.apply_next(&index, &scan, Duration::ZERO, &mut |_| {})?.is_none() {
-                handoff_complete = true;
-                break;
-            }
-        }
-        if !handoff_complete {
+        let reconciliation = crate::scan::reconcile_handle(&index, &scan, &mut |_| {})?;
+        if !reconciliation.scan.is_complete() && !delivery.accept_partial {
             return Err(Error::ObservationHandoffIncomplete);
         }
+        drain_initial_capture(&watcher, &index, &scan)?;
         Ok(Self { index, watcher, scan, request })
     }
 
@@ -475,6 +468,23 @@ impl Session {
     }
 }
 
+fn drain_initial_capture(watcher: &Watcher, index: &IndexHandle, scan: &ScanConfig) -> Result<()> {
+    for _ in 0..2 {
+        watcher.flush_capture()?;
+        let mut drained = false;
+        for _ in 0..=watcher.capture_backlog_bound() {
+            if watcher.apply_next(index, scan, Duration::ZERO, &mut |_| {})?.is_none() {
+                drained = true;
+                break;
+            }
+        }
+        if !drained {
+            return Err(Error::ObservationHandoffIncomplete);
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -525,6 +535,101 @@ mod tests {
             )
             .expect("membership transition");
         assert_eq!(change.kind, ChangeKind::Remove);
+    }
+
+    #[test]
+    fn initial_handoff_drains_a_sticky_overflow_after_a_full_intent_queue() {
+        let root = tempfile::tempdir().expect("root");
+        let script = tempfile::NamedTempFile::new().expect("script");
+        let scan = ScanConfig::default();
+        let (index, report) = crate::scan::scan_into_index(root.path(), &scan).expect("scan");
+        assert!(report.is_complete());
+        let handle = IndexHandle::new(index);
+        let config = WatchConfig {
+            settle: Duration::from_millis(1),
+            max_hold: Duration::from_millis(2),
+            event_capacity: 8,
+            batch_path_capacity: 1,
+            intent_capacity: 1,
+            ..WatchConfig::default()
+        };
+        let (watcher, sender) =
+            Watcher::scripted(root.path(), config, script.path()).expect("scripted watcher");
+        std::fs::write(root.path().join("a.txt"), b"a").expect("a");
+        sender.send("create\ta.txt\n").expect("first event");
+        watcher.flush_capture().expect("first barrier fills the intent queue");
+        std::fs::write(root.path().join("b.txt"), b"b").expect("b");
+        sender.send("create\tb.txt\n").expect("second event");
+        watcher.flush_capture().expect("second barrier retains sticky overflow");
+
+        drain_initial_capture(&watcher, &handle, &scan).expect("bounded handoff");
+
+        assert!(
+            handle.snapshot().expect("snapshot").lookup(std::path::Path::new("a.txt")).is_some()
+        );
+        assert!(
+            handle.snapshot().expect("snapshot").lookup(std::path::Path::new("b.txt")).is_some()
+        );
+        assert!(
+            watcher
+                .apply_next(&handle, &scan, Duration::ZERO, &mut |_| {})
+                .expect("proof poll")
+                .is_none(),
+            "no queued or sticky pre-handoff work remains"
+        );
+    }
+
+    #[test]
+    fn initial_handoff_enforces_partial_acceptance_after_its_reconciliation() {
+        let root = tempfile::tempdir().expect("root");
+        std::fs::write(root.path().join("kept.txt"), b"kept").expect("fixture");
+        let scan = ScanConfig::default();
+        let (index, report) = crate::scan::scan_into_index(root.path(), &scan).expect("scan");
+        assert!(report.is_complete());
+        let request = Request::new(
+            Basis {
+                root: root.path().to_path_buf(),
+                scope: scan.clone(),
+                content: crate::content::AnalysisSet::NONE,
+            },
+            Query::default(),
+            std::time::SystemTime::now(),
+        );
+        let _fault = crate::scan::install_walk_hook(root.path(), |_| {
+            Some(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "deterministic handoff refusal",
+            ))
+        });
+        let delivery = Delivery {
+            cache: crate::CachePolicy::Off,
+            cache_path: None,
+            accept_partial: false,
+            watch: Some(WatchDelivery { interval: Duration::from_millis(50) }),
+            analysis_workers: 0,
+        };
+
+        let error = match Session::new(
+            IndexHandle::new(index.clone()),
+            request.clone(),
+            &delivery,
+            WatchConfig::default(),
+        ) {
+            Ok(_) => panic!("a partial handoff is refused"),
+            Err(error) => error,
+        };
+        assert!(matches!(error, Error::ObservationHandoffIncomplete));
+
+        let accepted = Session::new(
+            IndexHandle::new(index),
+            request,
+            &Delivery { accept_partial: true, ..delivery },
+            WatchConfig::default(),
+        )
+        .expect("the caller explicitly accepts a partial handoff");
+        assert!(
+            !accepted.report(std::time::SystemTime::now()).expect("partial report").status.complete
+        );
     }
 
     /// A record says what the index can be asked, and nothing more.

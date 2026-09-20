@@ -147,7 +147,7 @@ impl PyIndex {
     /// Error details from the most recent scan or refresh.
     #[getter]
     fn errors(&self) -> Vec<String> {
-        self.tree_status().errors
+        self.tree_status().errors.into_iter().map(|issue| issue.message).collect()
     }
 
     /// Coverage, currency, origin, and structured non-fatal errors.
@@ -443,20 +443,14 @@ impl PyIndex {
         }
         let stats = report.apply;
         let status = self.tree_status();
-        let provenance = fdu_core::query::ReportProvenance::of(&self.inner, SystemTime::now());
-
         let out = PyDict::new(py);
         out.set_item("inserted", stats.inserted)?;
         out.set_item("updated", stats.updated)?;
         out.set_item("removed", stats.removed)?;
         out.set_item("unchanged", stats.unchanged)?;
         out.set_item("stale", stats.stale)?;
-        out.set_item("error_count", status.errors.len() as u64 + status.errors_omitted)?;
-        out.set_item("errors", status.errors)?;
-        out.set_item("source", source_label(provenance.source))?;
-        out.set_item("complete", status.complete)?;
+        set_tree_status(py, &out, &status)?;
         out.set_item("ignore_rules", ignore_rules_value(py, &self.inner.control_coverage())?)?;
-        out.set_item("freshness", self.freshness())?;
         out.set_item("clock", self.inner.clock().0)?;
         Ok(out)
     }
@@ -639,14 +633,64 @@ fn build_basis(
 
 fn status_dict<'py>(py: Python<'py>, index: &PyIndex) -> PyResult<Bound<'py, PyDict>> {
     let tree = index.tree_status();
-    let provenance = fdu_core::query::ReportProvenance::of(&index.inner, SystemTime::now());
     let status = PyDict::new(py);
-    status.set_item("complete", tree.complete)?;
-    status.set_item("freshness", freshness_label(provenance.freshness))?;
-    status.set_item("source", source_label(provenance.source))?;
-    status.set_item("errors", tree.errors)?;
+    set_tree_status(py, &status, &tree)?;
     status.set_item("ignore_rules", ignore_rules_value(py, &index.inner.control_coverage())?)?;
     Ok(status)
+}
+
+fn set_tree_status(
+    py: Python<'_>,
+    target: &Bound<'_, PyDict>,
+    status: &TreeStatus,
+) -> PyResult<()> {
+    target.set_item("complete", status.complete)?;
+    let coverage = PyDict::new(py);
+    match status.coverage {
+        fdu_core::Coverage::Complete => coverage.set_item("kind", "complete")?,
+        fdu_core::Coverage::Partial(reason) => {
+            coverage.set_item("kind", "partial")?;
+            coverage.set_item("reason", structural_coverage_reason_label(reason))?;
+        }
+    }
+    target.set_item("coverage", coverage)?;
+    let errors = PyList::empty(py);
+    for issue in &status.errors {
+        let item = PyDict::new(py);
+        if let Some(path) = &issue.path {
+            item.set_item("path", path.as_os_str())?;
+        }
+        item.set_item("kind", issue_kind_label(issue.kind))?;
+        item.set_item("message", &issue.message)?;
+        if let Some(os_error) = issue.os_error {
+            item.set_item("os_error", os_error)?;
+        }
+        errors.append(item)?;
+    }
+    target.set_item("errors", errors)?;
+    target.set_item("errors_omitted", status.errors_omitted)?;
+    Ok(())
+}
+
+fn structural_coverage_reason_label(reason: fdu_core::CoverageReason) -> &'static str {
+    match reason {
+        fdu_core::CoverageReason::Building => "building",
+        fdu_core::CoverageReason::Budget => "budget",
+        fdu_core::CoverageReason::Cancelled => "cancelled",
+        fdu_core::CoverageReason::Inaccessible => "inaccessible",
+        fdu_core::CoverageReason::Failed => "failed",
+    }
+}
+
+fn issue_kind_label(kind: fdu_core::IssueKind) -> &'static str {
+    match kind {
+        fdu_core::IssueKind::Permission => "permission",
+        fdu_core::IssueKind::Disappeared => "disappeared",
+        fdu_core::IssueKind::InvalidMetadata => "invalid_metadata",
+        fdu_core::IssueKind::ResourceBudget => "resource_budget",
+        fdu_core::IssueKind::ObservationGap => "observation_gap",
+        fdu_core::IssueKind::ProviderFailure => "provider_failure",
+    }
 }
 
 /// `None` when no control file was read, else the shape a report's `ignore_rules` carries.
@@ -704,7 +748,22 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
     dict.set_item("root", report.root.as_os_str())?;
     dict.set_item("complete", report.status.complete)?;
     dict.set_item("ignore_rules", ignore_rules_value(py, &report.ignore_rules)?)?;
-    dict.set_item("errors", report.status.errors.clone())?;
+    dict.set_item("errors", {
+        let errors = PyList::empty(py);
+        for issue in &report.status.errors {
+            let item = PyDict::new(py);
+            if let Some(path) = &issue.path {
+                item.set_item("path", path.as_os_str())?;
+            }
+            item.set_item("kind", issue_kind_label(issue.kind))?;
+            item.set_item("message", &issue.message)?;
+            if let Some(os_error) = issue.os_error {
+                item.set_item("os_error", os_error)?;
+            }
+            errors.append(item)?;
+        }
+        errors
+    })?;
     dict.set_item("source", source_label(report.provenance.source))?;
     dict.set_item("freshness", freshness_label(report.provenance.freshness))?;
     dict.set_item("generated_at", fdu_core::query::format_rfc3339(report.provenance.generated_at))?;

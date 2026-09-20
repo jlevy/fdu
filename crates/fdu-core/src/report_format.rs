@@ -197,8 +197,8 @@ fn emit_report(sink: &mut impl Sink, report: &Report, with_sections: bool) {
     });
     emit_field(sink, Field::always("errors"), true, |sink| {
         sink.event(Event::BeginSeq(Shape::Block));
-        for error in &report.errors {
-            emit_scalar(sink, Scalar::Str(error));
+        for error in &report.status.errors {
+            emit_scalar(sink, Scalar::Str(&error.message));
         }
         sink.event(Event::EndSeq);
     });
@@ -1716,11 +1716,33 @@ mod tests {
     use super::*;
     use crate::Index;
     use crate::engine_contract::{Attrs, Observation, Op, ScanScope};
-    use crate::query::{Bound, Provenance, Query, Selection, report};
+    use crate::query::{Bound, Query, Request, Selection};
     use std::ffi::OsStr;
     use std::path::PathBuf;
     use std::process::Command;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    struct Provenance {
+        scan_started_at: Option<SystemTime>,
+        generated_at: SystemTime,
+        source: ReportSource,
+        complete: bool,
+        errors: Vec<String>,
+    }
+
+    fn report(index: &Index, request: &Request, provenance: &Provenance) -> crate::Result<Report> {
+        let mut report = crate::query::report(index, request, provenance.generated_at)?;
+        report.provenance.scan_started_at = provenance.scan_started_at;
+        report.provenance.source = provenance.source;
+        report.status.complete = provenance.complete;
+        report.status.errors = provenance
+            .errors
+            .iter()
+            .cloned()
+            .map(|message| crate::Issue::provider_failure(None, message))
+            .collect();
+        Ok(report)
+    }
 
     fn attrs(size: u64, mtime_ns: i64) -> Attrs {
         Attrs {
@@ -3134,7 +3156,7 @@ mod tests {
                     complete: true,
                     errors: Vec::new(),
                 };
-                let report = crate::query::report(
+                let report = report(
                     &index,
                     &crate::test_support::read_of(&index, query.clone()),
                     &provenance,
@@ -3205,13 +3227,10 @@ mod tests {
             complete: true,
             errors: Vec::new(),
         };
-        let report = crate::query::report(
-            &index,
-            &crate::test_support::read_of(&index, query.clone()),
-            &provenance,
-        )
-        .expect("report");
-        let rendered = render(&report, Format::Json, false);
+        let files_report =
+            report(&index, &crate::test_support::read_of(&index, query.clone()), &provenance)
+                .expect("report");
+        let rendered = render(&files_report, Format::Json, false);
 
         let lossy = first.to_string_lossy();
         assert_eq!(
@@ -3278,12 +3297,9 @@ mod tests {
             },
             ..crate::query::Query::default()
         };
-        let tree = crate::query::report(
-            &dirs,
-            &crate::test_support::read_of(&dirs, tree_query.clone()),
-            &provenance,
-        )
-        .expect("report");
+        let tree =
+            report(&dirs, &crate::test_support::read_of(&dirs, tree_query.clone()), &provenance)
+                .expect("report");
         let tree_rendered = render(&tree, Format::Json, false);
         assert!(
             compact_json(&tree_rendered).contains(&compact_json(&format!(

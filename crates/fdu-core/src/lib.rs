@@ -781,9 +781,8 @@ fn load_content(index: &mut Index, config: &OpenConfig) -> Result<content::Conte
 /// ([`stored_state::entries_writable`]): a snapshot recording a partial view would be
 /// served as fact on the next run, and the existing complete snapshot is better than that.
 /// The content sidecar keeps the records the pass verified
-/// ([`stored_state::content_tier_writable`]), which today means after a complete pass only;
-/// that rule admits a partial pass beside a stored snapshot of the same entry tier once
-/// P1.4.2 (`fdu-rjv3`) makes a partial pass keep the records it verified.
+/// ([`stored_state::content_tier_writable`]); a partial pass may replace it only beside a
+/// stored snapshot of the same entry tier.
 fn spawn_save(
     index: &std::sync::Arc<Index>,
     config: &OpenConfig,
@@ -830,9 +829,7 @@ fn spawn_save(
                 let _counter_guard = counters::thread_flush_guard();
                 // The pairing check reads the stored snapshot's header, and only when this
                 // pass wrote no snapshot: no metadata writer is running then, and a
-                // complete pass needs no answer. It is passed unevaluated because the rule
-                // is held until P1.4.2 (`fdu-rjv3`) and does not ask, so a partial pass
-                // opens nothing.
+                // complete pass needs no answer.
                 let stored_entries = || {
                     snapshot::read_header(&cache_path)
                         .ok()
@@ -1895,16 +1892,13 @@ mod save_tests {
         );
     }
 
-    /// Each tier is written by its own rule, and a partial pass writes neither: no
-    /// snapshot, because an absent entry would change totals, and no sidecar, because a
-    /// partial pass marks its root `Partial` and so can name only the files that changed
-    /// as verified. Writing those would evict the complete sidecar that pairs with the
-    /// stored snapshot. P1.4.2 (`fdu-rjv3`) marks the failed paths instead, after which a
-    /// partial pass writes every record it verified beside a snapshot of the same entry
-    /// identity, and still writes nothing under any other identity.
+    /// Each tier is written by its own rule: a partial pass writes no snapshot, because an
+    /// absent entry would change totals, but may write every verified content record beside
+    /// a stored snapshot of the same entry identity. It still writes nothing under another
+    /// identity, where replacing the sidecar would separate it from the snapshot it names.
     #[test]
     #[cfg(unix)]
-    fn a_partial_scan_writes_neither_tier_until_failed_paths_are_marked() {
+    fn a_partial_scan_writes_only_verified_content_for_the_stored_entry_tier() {
         use std::os::unix::fs::PermissionsExt;
 
         if !crate::test_support::require_permission_bits() {
@@ -1956,51 +1950,41 @@ mod save_tests {
             "a partial run under another entry identity must not evict the paired sidecar"
         );
 
-        // Under the stored snapshot's identity: neither tier is written either, because the
-        // only records this pass can name as verified are the files that changed.
+        // Under the stored snapshot's identity, the snapshot stays whole while the sidecar
+        // keeps only content whose entry facts this pass verified.
         run(&auto);
         assert_eq!(
             fs::read(&snapshot_path).expect("snapshot"),
             snapshot_before,
             "a partial scan must not overwrite a complete snapshot"
         );
-        assert_eq!(
-            fs::read(&sidecar_path).expect("sidecar"),
-            sidecar_before,
-            "held until P1.4.2 (`fdu-rjv3`): writing here would evict the complete sidecar \
-             and leave only the changed file"
-        );
-        // What the stored pair still holds: a record for each of the two seeded files,
-        // including the one under the directory this pass could not list, and the older
-        // metrics for the file that changed, which a later complete pass replaces.
+        assert_ne!(fs::read(&sidecar_path).expect("sidecar"), sidecar_before);
+        // The verified changed file is reusable; no record survives under the directory
+        // this pass could not list.
         let (mut fresh, _) =
             scan::scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
         let wanted = fresh.content_identity(analysis.profile);
         let loaded = content::load_content_cache(&mut fresh, &wanted, &sidecar_path).expect("load");
-        assert_eq!((loaded.usable, loaded.hits, loaded.stale), (true, 1, 1), "{loaded:?}");
+        assert_eq!((loaded.usable, loaded.hits, loaded.stale), (true, 1, 0), "{loaded:?}");
         let content = fresh.content().expect("content");
+        assert!(content.file(Path::new("locked/old.md")).is_none());
         assert_eq!(
             content
-                .file(Path::new("locked/old.md"))
-                .expect("the seeded record")
+                .file(Path::new("notes.md"))
+                .expect("verified record")
                 .lines
                 .value()
                 .expect("line metrics")
                 .raw_words,
-            1
+            3
         );
     }
 
-    /// The cost the hold above avoids: a warm partial pass must leave a complete sidecar
-    /// whole, not shrink it to the files that changed, or every later run re-reads the
-    /// whole tree for as long as the tree holds one unlistable directory.
-    ///
-    /// P1.4.2 (`fdu-rjv3`) replaces this with the stronger claim: after the same pass the
-    /// sidecar holds a record for every file the pass stat'd unchanged and none under the
-    /// unlistable directory.
+    /// A warm partial pass keeps every record whose entry the pass verified, including
+    /// unchanged files, and removes records below an unlistable directory.
     #[test]
     #[cfg(unix)]
-    fn a_warm_partial_pass_leaves_a_complete_sidecar_whole() {
+    fn a_warm_partial_pass_keeps_all_and_only_verified_content_records() {
         use std::os::unix::fs::PermissionsExt;
 
         if !crate::test_support::require_permission_bits() {
@@ -2050,8 +2034,8 @@ mod save_tests {
 
         assert_eq!(
             records_in_sidecar(dir.path()),
-            8,
-            "a warm partial pass must not shrink the sidecar to the files that changed"
+            7,
+            "all seven verified files survive and the inaccessible record does not"
         );
     }
 

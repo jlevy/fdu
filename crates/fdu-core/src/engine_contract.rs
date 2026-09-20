@@ -560,6 +560,16 @@ impl Issue {
             os_error: None,
         }
     }
+
+    /// Describe an operational provider failure when no structured OS error is available.
+    pub(crate) fn provider_failure(path: Option<&Path>, message: String) -> Self {
+        Self {
+            kind: IssueKind::ProviderFailure,
+            path: path.and_then(bounded_issue_path),
+            message: bounded_issue_message(message),
+            os_error: None,
+        }
+    }
 }
 
 fn bounded_issue_path(path: &Path) -> Option<PathBuf> {

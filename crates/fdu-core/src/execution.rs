@@ -287,7 +287,7 @@ fn prepare_report_internal(
                 config.scan.scope(),
                 query.selection.size,
                 summary,
-                TreeStatus::of_walk(&scan),
+                TreeStatus::of_walk(&root, &scan),
                 ReportProvenance::of_walk(scan_started_at, generated_at, complete),
             );
             let performance = PerformanceSummary {
@@ -546,14 +546,14 @@ mod tests {
 
         let (first, pending, _) = prepared(root.path(), &auto, &tree_query).expect("first report");
         pending.join().expect("first save");
-        assert_eq!(first.source, ReportSource::ColdScan);
+        assert_eq!(first.provenance.source, ReportSource::ColdScan);
         assert!(auto.cache_path.as_deref().expect("path").exists(), "first run persists");
 
         let (second, pending, performance) =
             prepared(root.path(), &auto, &tree_query).expect("second report");
         pending.join().expect("second save");
         assert_eq!(
-            second.source,
+            second.provenance.source,
             ReportSource::ColdScan,
             "a repeated one-shot must not pay for a read that saves no work"
         );
@@ -587,7 +587,7 @@ mod tests {
         let (from_cache, pending, performance, diagnostics) =
             prepared_with_diagnostics(root.path(), &only, &tree_query).expect("cache-only report");
         pending.join().expect("no save");
-        assert_eq!(from_cache.source, ReportSource::CacheOnly);
+        assert_eq!(from_cache.provenance.source, ReportSource::CacheOnly);
         assert_eq!(performance.walked_files, 0, "cache-only never touches the tree");
         assert!(diagnostics.is_none(), "a cache-only open has no scan trace");
     }
@@ -624,10 +624,7 @@ mod tests {
         let (mut expected, pending, _) =
             prepared(root.path(), &cold, &query).expect("controls-off cold report");
         pending.join().expect("no cold save");
-        expected.scan_started_at = projected.scan_started_at;
-        expected.generated_at = projected.generated_at;
-        expected.source = projected.source;
-        expected.freshness = projected.freshness;
+        expected.provenance = projected.provenance.clone();
 
         assert_eq!(performance.source, ReportSource::CacheOnly);
         assert_eq!(projected.scope, cold.scan.scope());
@@ -656,7 +653,7 @@ mod tests {
             .expect("controls-off cold fallback");
         pending.join().expect("save controls-off snapshot");
 
-        assert_eq!(report.source, ReportSource::ColdScan);
+        assert_eq!(report.provenance.source, ReportSource::ColdScan);
         assert_eq!(report.scope, controls_off.scan.scope());
         assert_eq!(performance.source, ReportSource::ColdScan);
     }
@@ -697,7 +694,11 @@ mod tests {
                 let (report, pending, _) = prepared(root.path(), &caller, &query)
                     .expect("a refused control file ends nothing");
                 pending.join().expect("save");
-                assert!(report.complete, "a refusal is not a partial: {:?}", report.errors);
+                assert!(
+                    report.status.complete,
+                    "a refusal is not a partial: {:?}",
+                    report.status.errors
+                );
                 assert_eq!(report.scope, caller.scan.scope());
                 match &report.ignore_rules {
                     crate::control::ControlCoverage::Observed(coverage) => {
@@ -834,7 +835,7 @@ mod tests {
                 Ok((report, pending, _)) => {
                     pending.join().expect("no save");
                     assert!(writer || !reader, "writer {writer} served reader {reader}");
-                    assert_eq!(report.source, ReportSource::CacheOnly);
+                    assert_eq!(report.provenance.source, ReportSource::CacheOnly);
                     assert_eq!(
                         matches!(report.ignore_rules, crate::control::ControlCoverage::Observed(_)),
                         reader,
@@ -917,17 +918,11 @@ mod tests {
 
         // Only a report that turns control observation off takes the compact tier, so the
         // index it must match exactly is opened under that scope too.
-        let (index, open_report) = crate::open(root.path(), &off).expect("indexed scan");
+        let (index, _open_report) = crate::open(root.path(), &off).expect("indexed scan");
         let indexed = report(
             &index,
             &crate::test_support::read_of(&index, query.clone()),
-            &Provenance {
-                scan_started_at: compact.scan_started_at,
-                generated_at: compact.generated_at,
-                source: ReportSource::ColdScan,
-                complete: open_report.is_complete(),
-                errors: Vec::new(),
-            },
+            compact.provenance.generated_at,
         )
         .expect("report");
 
@@ -944,8 +939,8 @@ mod tests {
         assert_eq!(compact_row.newest_mtime_ns, indexed_row.newest_mtime_ns);
         assert_eq!(compact.root, indexed.root);
         assert_eq!(compact.scope, indexed.scope);
-        assert_eq!(compact.complete, indexed.complete);
-        assert_eq!(compact.freshness, indexed.freshness);
+        assert_eq!(compact.status.complete, indexed.status.complete);
+        assert_eq!(compact.provenance.freshness, indexed.provenance.freshness);
     }
 
     #[test]
@@ -959,7 +954,7 @@ mod tests {
                 .expect("compact report");
         pending.join().expect("no pending compact save");
 
-        assert!(report.complete);
+        assert!(report.status.complete);
         assert!(!cache.exists());
     }
 
@@ -975,7 +970,7 @@ mod tests {
                 .expect("full-index report");
         pending.join().expect("no pending save");
 
-        assert!(report.complete);
+        assert!(report.status.complete);
         assert_eq!(performance.walked_files, 1);
         let diagnostics = diagnostics.expect("full-index scan diagnostics");
         assert_eq!(diagnostics.schema, crate::scan::SCAN_DIAGNOSTICS_SCHEMA);

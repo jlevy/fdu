@@ -746,7 +746,7 @@ impl Cli {
                 let _ = writeln!(
                     diagnostic,
                     "{}",
-                    paint(&format!("warning: {error}"), STYLE_WARNING, color)
+                    paint(&format!("warning: {}", error.message), STYLE_WARNING, color)
                 );
             }
         }

@@ -12,8 +12,8 @@ use std::time::{Duration, Instant, SystemTime};
 
 use fdu_core::content::{AnalysisRequest, AnalysisSet};
 use fdu_core::query::{
-    AxisNames, Basis, Bound, Query, ReadSpec, Request, RequestSpec, Selection, ViewSpec,
-    WatchDelivery,
+    AxisNames, Basis, Bound, Query, ReadSpec, Request, RequestSpec, Selection, SizeMetric,
+    ViewSpec, WatchDelivery,
 };
 // The module's own `Delivery` is how a change reached this process; the request model's is
 // how an answer is carried out. Two different questions, so the import names the crate.
@@ -244,17 +244,20 @@ fn a_deleted_file_arrives_as_a_remove() {
 fn a_file_that_leaves_attribute_selection_arrives_as_a_remove() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("shrinking.txt");
+    let warm = dir.path().join("warm.txt");
     fs::write(&path, b"12345678").expect("seed");
-    let selection = Selection { min_size: Some(4), ..Selection::default() };
+    fs::write(&warm, b"ready").expect("warm-up seed");
+    let selection =
+        Selection { min_size: Some(4), size: SizeMetric::Apparent, ..Selection::default() };
     let mut session = session(dir.path(), selection, vec![ViewSpec::Files]);
-    establish_watch(&mut session, &path, b"abcdefgh");
+    establish_watch(&mut session, &warm, b"ready");
 
     fs::write(&path, b"x").expect("shrink below selection");
 
     let Some(change) = wait_for(
         &mut session,
         "a_file_that_leaves_attribute_selection_arrives_as_a_remove",
-        |change| change.path.ends_with("shrinking.txt"),
+        |change| change.path.ends_with("shrinking.txt") && change.kind == ChangeKind::Remove,
     ) else {
         return;
     };

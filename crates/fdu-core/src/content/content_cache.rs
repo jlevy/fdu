@@ -1046,6 +1046,24 @@ mod tests {
         assert_eq!(duration_micros(Duration::from_nanos(900)), 0);
     }
 
+    #[test]
+    fn restored_sidecar_does_not_claim_its_container_mtime_as_observation_time() {
+        let (root, analyzed, request) = analyzed_index();
+        let cache_dir = tempfile::tempdir().expect("cache dir");
+        let cache = cache_dir.path().join("content.cache");
+        save_content_cache(&analyzed, &cache).expect("save");
+        let (mut restored, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+
+        let loaded = load(&mut restored, request, &cache);
+
+        assert!(loaded.usable && loaded.hits == 1, "{loaded:?}");
+        let state =
+            restored.content().and_then(super::super::ContentIndex::state).expect("tier state");
+        assert_eq!(state.source, crate::Source::Cached);
+        assert_eq!(state.observed_at_ns, None, "the sidecar stores no observation instant");
+    }
+
     /// Restore rebuilds nested directory roll-ups, not only the root.
     ///
     /// The probe content digest hashes the root roll-up; the `ContentIndex` unit test is

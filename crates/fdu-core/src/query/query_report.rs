@@ -1123,7 +1123,7 @@ pub(crate) fn report_in(
     Ok(Report {
         notes: display_notes(query, &ignore_rules),
         status: TreeStatus::of(index, request),
-        provenance: ReportProvenance::of(index, generated_at),
+        provenance: ReportProvenance::of(index, content, generated_at),
         scope: index.scope(),
         root: index.root_path().to_path_buf(),
         size: query.selection.size,
@@ -3023,7 +3023,7 @@ mod tests {
                     super::report(
                         &index,
                         &crate::test_support::read_of(&index, refused),
-                        &provenance()
+                        generated_at()
                     ),
                     Err(crate::Error::InvalidRequest(
                         crate::query::RequestError::IgnoredWithoutObservation(_)

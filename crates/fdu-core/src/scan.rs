@@ -1066,13 +1066,18 @@ impl ReconcileTarget<'_> {
         started_at: u64,
         complete: bool,
         listed_incomplete: &[PathBuf],
+        failed_paths: &[PathBuf],
     ) -> Result<Option<Commit>> {
         match self {
-            Self::Direct(index) => index.finish_reconcile(path, started_at, complete, &[]),
-            Self::Shared(handle) => handle.finish_reconcile(path, started_at, complete, &[]),
+            Self::Direct(index) => {
+                index.finish_reconcile(path, started_at, complete, &[], failed_paths)
+            }
+            Self::Shared(handle) => {
+                handle.finish_reconcile(path, started_at, complete, &[], failed_paths)
+            }
             Self::Controlled { handle, control } => {
                 control.check_active()?;
-                handle.finish_reconcile(path, started_at, complete, listed_incomplete)
+                handle.finish_reconcile(path, started_at, complete, listed_incomplete, failed_paths)
             }
         }
     }
@@ -4208,8 +4213,15 @@ fn reconcile_paths_target(
     }
 
     let listed_incomplete = std::mem::take(&mut report.reconciliation.listed_incomplete);
+    let failed_paths = failure_paths(target, &report.reconciliation.scan.errors)?;
     for ((subtree, started_at), complete) in opened.into_iter().zip(completed) {
-        let commit = target.finish_reconcile(&subtree, started_at, complete, &listed_incomplete)?;
+        let commit = target.finish_reconcile(
+            &subtree,
+            started_at,
+            complete,
+            &listed_incomplete,
+            &failed_paths,
+        )?;
         if let Some(commit) = commit.as_ref() {
             sink(commit);
         }
@@ -4219,6 +4231,30 @@ fn reconcile_paths_target(
         Some(error) => Err(error),
         None => Ok(report),
     }
+}
+
+/// Root-relative paths whose filesystem facts a failed reconciliation could not verify.
+///
+/// An unscoped error returns an empty set, which makes the closer conservatively mark the
+/// whole requested subtree partial. Precise I/O paths let verified siblings remain fresh.
+fn failure_paths(target: &ReconcileTarget<'_>, errors: &[Error]) -> Result<Vec<PathBuf>> {
+    if errors.is_empty() {
+        return Ok(Vec::new());
+    }
+    let root = target.root_path()?;
+    let mut paths = Vec::with_capacity(errors.len());
+    for error in errors {
+        let Some(path) = crate::Issue::from_error_under(&root, error).path else {
+            return Ok(Vec::new());
+        };
+        if path.is_absolute() {
+            return Ok(Vec::new());
+        }
+        paths.push(path);
+    }
+    paths.sort();
+    paths.dedup();
+    Ok(paths)
 }
 
 /// Whether verification could increase the retained-file set.
@@ -4292,11 +4328,13 @@ fn reconcile_target(
     match reconcile_target_inner(target, &subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
         Ok(mut report) => {
             let listed_incomplete = report.take_recordable_completeness();
+            let failed_paths = failure_paths(target, &report.scan.errors)?;
             let finished = target.finish_reconcile(
                 &subtree,
                 started_at,
                 report.is_complete(),
                 &listed_incomplete,
+                &failed_paths,
             )?;
             if let Some(commit) = finished.as_ref() {
                 sink(commit);
@@ -4304,7 +4342,7 @@ fn reconcile_target(
             Ok(report)
         }
         Err(error) => {
-            let finished = target.finish_reconcile(&subtree, started_at, false, &[])?;
+            let finished = target.finish_reconcile(&subtree, started_at, false, &[], &[])?;
             if let Some(commit) = finished.as_ref() {
                 sink(commit);
             }
@@ -8796,6 +8834,37 @@ mod tests {
 
         assert!(reconcile(&mut index, &ScanConfig::default(), &mut |_| {}).is_err());
         assert_eq!(index.freshness(), crate::Freshness::Partial);
+    }
+
+    #[test]
+    fn successful_subtree_retry_restores_complete_root_coverage() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join("blocked/known.txt"), b"known");
+        let config = ScanConfig::default();
+        let (mut index, report) = scan_into_index(dir.path(), &config).expect("scan");
+        assert!(report.is_complete());
+        let blocked = dir.path().join("blocked");
+        let fault = install_walk_hook(&blocked, |_| {
+            Some(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "deterministic subtree refusal",
+            ))
+        });
+
+        let failed = reconcile_subtree(&mut index, Path::new("blocked"), &config, &mut |_| {})
+            .expect("partial");
+        assert!(!failed.scan.is_complete());
+        assert_eq!(
+            index.state().coverage,
+            crate::Coverage::Partial(crate::CoverageReason::Inaccessible)
+        );
+        drop(fault);
+
+        let recovered = reconcile_subtree(&mut index, Path::new("blocked"), &config, &mut |_| {})
+            .expect("retry");
+
+        assert!(recovered.scan.is_complete());
+        assert_eq!(index.state().coverage, crate::Coverage::Complete);
     }
 
     #[test]
