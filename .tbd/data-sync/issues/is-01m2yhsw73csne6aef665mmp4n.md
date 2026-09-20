@@ -3,9 +3,9 @@ type: is
 id: is-01m2yhsw73csne6aef665mmp4n
 title: Expose list defaults, format aliases, and compatibility through the shared request model
 kind: feature
-status: in_progress
+status: closed
 priority: 1
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
 delegate: claude-code@spud10
 labels: []
@@ -18,8 +18,12 @@ parent_id: is-01m2y7b2f9f1cv1dssrtref7zd
 hold: null
 hold_until: null
 created_at: 2026-09-20T04:39:45.634Z
-updated_at: 2026-09-20T06:07:21.008Z
+updated_at: 2026-09-20T07:12:32.226Z
 started_at: 2026-09-20T06:07:21.006Z
+closed_at: 2026-09-20T07:12:32.226Z
+close_reason: "Implemented the tracked file/function plan above PR #96. Core/workspace tests, 168 CLI goldens, 48 Python tests, typing, docs formatting, and cross-platform lint passed. Final aggregate gate and stacked PR CI are tracked separately in fdu-arv8."
+resolution: null
+duplicate_of: null
 ---
 Expose the accepted selection/view/format model through shared engine defaults and
 validation. Metadata-only default view is list and its default format is tree.

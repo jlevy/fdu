@@ -3,9 +3,9 @@ type: is
 id: is-01m2y7c1v3etw9wkzz87vgm6ke
 title: Add tree, paths, and long list formats across core and Python
 kind: feature
-status: in_progress
+status: closed
 priority: 1
-version: 8
+version: 9
 spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
 delegate: claude-code@spud10
 labels: []
@@ -20,8 +20,12 @@ parent_id: is-01m2y7b2f9f1cv1dssrtref7zd
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:37:26.880Z
-updated_at: 2026-09-20T05:16:02.731Z
+updated_at: 2026-09-20T07:12:32.216Z
 started_at: 2026-09-20T01:39:25.996Z
+closed_at: 2026-09-20T07:12:32.216Z
+close_reason: "Implemented the tracked file/function plan above PR #96. Core/workspace tests, 168 CLI goldens, 48 Python tests, typing, docs formatting, and cross-platform lint passed. Final aggregate gate and stacked PR CI are tracked separately in fdu-arv8."
+resolution: null
+duplicate_of: null
 ---
 Implement core-owned `tree`, `paths`, and `long` presentations of the shared list
 report, alongside JSON, JSONL, and YAML. Tree preserves the existing directory roll-up
