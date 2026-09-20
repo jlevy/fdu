@@ -65,7 +65,8 @@ It does not raise the README 200K files/s or 4M cached lines/s.
   `fdu-2003` (closed); H111 `fdu-jekg` (closed); leftover H143 `fdu-kfl3` (closed);
   merge-ready `fdu-jh1i`
 - **First experiment id:** exp-138 (exp-113 remains reserved unused)
-- **Next free ids after this PR:** H144 / exp-144
+- **Next free ids after this PR:** reserved as H144–H146 / exp-144 on
+  [Linux performance iteration](plan-2026-09-20-linux-performance-iteration.md)
 - **Quiet:** `PERF_HOST_REGIME=quiet` first.
   Do not lower the 25% busy bar.
   Label **uncontrolled** if the gate fails or the final snapshot exceeds 25%.
@@ -159,9 +160,10 @@ Minted ids stay reserved; do not reuse them on Darwin.
    Leftover is `getdents64`+`statx` plus retained-index RSS / detached finish.
    No new cut. Do not restart H86. Do not retry H71. Bead: `fdu-kfl3` (close).
 
-After this PR: **H144** if minted — a new named mechanism that can close the 1.4× index
-or 3× RSS gate, or a bare-metal H111 remeasure.
-Do not start that on this branch.
+After this PR: leftover iteration is
+[Linux performance iteration](plan-2026-09-20-linux-performance-iteration.md) (H144–H146
+plus H84). A new mechanism that can close the 1.4× index or 3× RSS gate, or a bare-metal
+H111 remeasure, is still not this branch.
 Do not restart H86. Do not retry H71.
 
 ## Subjects
