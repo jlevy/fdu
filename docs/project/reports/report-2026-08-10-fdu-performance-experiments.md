@@ -66,7 +66,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | bare-metal | warm-steady | 69 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Linux 6.12.94+, ext4 | virtualized | warm-steady | 12 |
+| Linux 6.12.94+, ext4 | virtualized | warm-steady | 14 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -228,6 +228,8 @@ dead end.
 | 147 | [Linux first-run leftover is still the walk; snapshot write not skippable](#exp147--linux-firstrun-leftover-is-still-the-walk-snapshot-write-not-skippable) | H146 | `default-tree-first` | +1.5% | ✅ accepted |
 | 148 | [Linux H84 --no-controls --threads 8 sign transfers to nominated /usr](#exp148--linux-h84-nocontrols-threads-8-sign-transfers-to-nominated-usr) | H84 | `aggregate-summary` | -10.1% | ✅ accepted |
 | 149 | [Linux default /usr aggregate --threads 8 regresses; do not lower unlock](#exp149--linux-default-usr-aggregate-threads-8-regresses-do-not-lower-unlock) | H84 | `aggregate-summary` | +7.1% | ✅ accepted |
+| 150 | [Linux H85 recycle misses the 20% mimalloc bar](#exp150--linux-h85-recycle-misses-the-20-mimalloc-bar) | H85 | `aggregate-summary` | -5.0% | ❌ rejected |
+| 151 | [Linux transient batch recycle clears 3% after H85 misses 20%](#exp151--linux-transient-batch-recycle-clears-3-after-h85-misses-20) | H147 | `aggregate-summary` | -5.0% | ✅ accepted |
 
 ## The experiments
 
@@ -5017,6 +5019,67 @@ screen only; no engine change
 Full record:
 [`exp-149-linux-default-usr-aggregate-threads-8-regresses-do-not-lower.md`](../experiments/exp-149-linux-default-usr-aggregate-threads-8-regresses-do-not-lower.md)
 
+### exp-150 — Linux H85 recycle misses the 20% mimalloc bar
+
+❌ rejected · 2026-09-20 · H85 · commit `5c6e6394`
+
+Control: HEAD --no-controls aggregate, consumer drops Observation batches
+
+Candidate: same probe --no-controls, drained batches returned to producing worker
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 36.0 | 34.5 | -4.98% | [-5.92%, -4.33%] |
+| component (ms) | 35.2 | 33.6 | -5.12% | [-5.95%, -4.51%] |
+| cpu (ms) | 133.0 | 129.0 | -3.27% | [-4.50%, -1.94%] |
+| user (ms) | 40.9 | 45.6 | +18.10% (n.s.) | [-27.39%, +49.43%] |
+| system (ms) | 91.4 | 85.1 | -8.76% (n.s.) | [-21.71%, +11.44%] |
+| peak rss (MiB) | 24.4 | 24.4 | +0.00% (n.s.) | [+0.00%, +0.00%] |
+
+Cost to carry: 186 lines; no new dependencies; new failure mode: one-tier win below the
+pre-registered 20% bar.
+
+private recycle on RetainedState::Summary only; no dependency; no unsafe; H85 bar is 20%
+
+**Rejected:** recycle does not capture mimalloc 20%: quiet linux-v6.12 -4.98%
+[-5.92%, -4.33%]; 450k screening -11.31% n=7; RSS flat; do not lower H85; 3% keep is
+H147.
+
+Full record:
+[`exp-150-linux-h85-recycle-misses-the-20-mimalloc-bar.md`](../experiments/exp-150-linux-h85-recycle-misses-the-20-mimalloc-bar.md)
+
+### exp-151 — Linux transient batch recycle clears 3% after H85 misses 20%
+
+✅ accepted · 2026-09-20 · H147 · commit `5c6e6394`
+
+Control: HEAD --no-controls aggregate, consumer drops Observation batches
+
+Candidate: same probe --no-controls, drained batches returned to producing worker
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 36.0 | 34.5 | -4.98% | [-5.92%, -4.33%] |
+| component (ms) | 35.2 | 33.6 | -5.12% | [-5.95%, -4.51%] |
+| cpu (ms) | 133.0 | 129.0 | -3.27% | [-4.50%, -1.94%] |
+| user (ms) | 40.9 | 45.6 | +18.10% (n.s.) | [-27.39%, +49.43%] |
+| system (ms) | 91.4 | 85.1 | -8.76% (n.s.) | [-21.71%, +11.44%] |
+| peak rss (MiB) | 24.4 | 24.4 | +0.00% (n.s.) | [+0.00%, +0.00%] |
+
+Cost to carry: 186 lines; no new dependencies.
+
+same patch as exp-150; private recycle; no dependency; no unsafe; unmeasured on macOS
+
+**Accepted:** quiet linux-v6.12 --no-controls aggregate -4.98% [-5.92%, -4.33%]; RSS
+flat; default gitignore-on placebo +0.91% includes zero; H85 20% missed so this is the
+3% keep.
+
+Full record:
+[`exp-151-linux-transient-batch-recycle-clears-3-after-h85-misses-20.md`](../experiments/exp-151-linux-transient-batch-recycle-clears-3-after-h85-misses-20.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -5065,6 +5128,21 @@ Baselines show one value because they measure a state rather than a change.
 | 010 | Claim-list join and deferred path joins in reconcile | `warm-revalidate` | 698.5 | 695.6 | -0.0% | ❌ rejected |
 | 011 | One ancestor merge per same-parent insert run | `cold-scan-index` | 483.1 | 447.7 | -2.5% | ❌ rejected |
 
+### linux-v6.12 (92,474 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 138 | Linux cache-hit stack same versus #91 control | `content-cache-hit` | 760.9 | 588.9 | -22.5% | ✅ accepted |
+| 139 | Linux walk leftover is still the getdents64 plus statx floor | `default-tree` | 433.6 | 439.4 | +0.6% | ✅ accepted |
+| 140 | Linux content-query stack same versus #91 control | `content-query` | 12,616.0 | 10,409.3 | -17.6% | ✅ accepted |
+| 143 | Linux first-pass content-basic leftover is still file I/O | `content-basic` | 2,165.7 | 2,169.4 | +0.4% | ✅ accepted |
+| 144 | Linux cache-hit leftover after landed stack is already-landed restore work | `content-cache-hit` | 605.3 | 607.3 | -0.1% | ✅ accepted |
+| 145 | Linux opened-discovery leftover is still journal clones plus live roll-ups | `opened-discovery` | 1,497.0 | 1,508.0 | -0.2% | ✅ accepted |
+| 146 | Linux adaptive unlock is silent; named-job --threads 8 is not a 3% win | `aggregate-summary` | 427.3 | 438.0 | +1.8% | ✅ accepted |
+| 147 | Linux first-run leftover is still the walk; snapshot write not skippable | `default-tree-first` | 448.6 | 456.6 | +1.5% | ✅ accepted |
+| 150 | Linux H85 recycle misses the 20% mimalloc bar | `aggregate-summary` | 36.0 | 34.5 | -5.0% | ❌ rejected |
+| 151 | Linux transient batch recycle clears 3% after H85 misses 20% | `aggregate-summary` | 36.0 | 34.5 | -5.0% | ✅ accepted |
+
 ### cache-pressure-12x (720,805 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -5092,19 +5170,6 @@ Baselines show one value because they measure a state rather than a change.
 | 114 | Restore path lookup without analysis_candidates HashMap | `content-cache-hit` | 1,475.4 | 1,573.7 | +8.7% | ❌ rejected |
 | 115 | First-pass analyze insert-then-rebuild on metabrowser | `content-basic` | 10,020.6 | 10,022.1 | -5.0% | ❌ rejected |
 | 117 | Stream sidecar parse-into-apply on metabrowser | `content-cache-hit` | 1,111.0 | 1,103.2 | -0.6% | ✅ accepted |
-
-### linux-v6.12 (92,474 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 138 | Linux cache-hit stack same versus #91 control | `content-cache-hit` | 760.9 | 588.9 | -22.5% | ✅ accepted |
-| 139 | Linux walk leftover is still the getdents64 plus statx floor | `default-tree` | 433.6 | 439.4 | +0.6% | ✅ accepted |
-| 140 | Linux content-query stack same versus #91 control | `content-query` | 12,616.0 | 10,409.3 | -17.6% | ✅ accepted |
-| 143 | Linux first-pass content-basic leftover is still file I/O | `content-basic` | 2,165.7 | 2,169.4 | +0.4% | ✅ accepted |
-| 144 | Linux cache-hit leftover after landed stack is already-landed restore work | `content-cache-hit` | 605.3 | 607.3 | -0.1% | ✅ accepted |
-| 145 | Linux opened-discovery leftover is still journal clones plus live roll-ups | `opened-discovery` | 1,497.0 | 1,508.0 | -0.2% | ✅ accepted |
-| 146 | Linux adaptive unlock is silent; named-job --threads 8 is not a 3% win | `aggregate-summary` | 427.3 | 438.0 | +1.8% | ✅ accepted |
-| 147 | Linux first-run leftover is still the walk; snapshot write not skippable | `default-tree-first` | 448.6 | 456.6 | +1.5% | ✅ accepted |
 
 ### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 

@@ -37535,6 +37535,282 @@
    "subject": "894d731f69bb:208411:44de521b2e23",
    "title": "Linux default /usr aggregate --threads 8 regresses; do not lower unlock",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe --no-controls, drained batches returned to producing worker",
+   "change_pct": -4.981,
+   "commit": "5c6e6394",
+   "complexity": {
+    "lines_changed": 186,
+    "new_dependencies": [],
+    "new_failure_modes": [
+     "one-tier win below the pre-registered 20% bar"
+    ],
+    "new_unsafe_blocks": 0,
+    "notes": "private recycle on RetainedState::Summary only; no dependency; no unsafe; H85 bar is 20%"
+   },
+   "control": "HEAD --no-controls aggregate, consumer drops Observation batches",
+   "date": "2026-09-20",
+   "decision": "rejected",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H85"
+   ],
+   "id": "exp-150",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 33633741,
+        "control": 35246676
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -5.125,
+        "ci95_high_pct": -4.514,
+        "ci95_low_pct": -5.954,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 129044000,
+        "control": 133010500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -3.269,
+        "ci95_high_pct": -1.942,
+        "ci95_low_pct": -4.504,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 25632768,
+        "control": 25632768
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0,
+        "ci95_high_pct": 0,
+        "ci95_low_pct": 0,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 85063500,
+        "control": 91421500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -8.762,
+        "ci95_high_pct": 11.437,
+        "ci95_low_pct": -21.71,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 45572000,
+        "control": 40903500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 18.104,
+        "ci95_high_pct": 49.433,
+        "ci95_low_pct": -27.395,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 34475126.5,
+        "control": 36025695
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -4.981,
+        "ci95_high_pct": -4.33,
+        "ci95_low_pct": -5.92,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 372.808859787616,
+      "control": 389.57647554988426
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "control",
+   "number": 150,
+   "path": "exp-150-linux-h85-recycle-misses-the-20-mimalloc-bar.md",
+   "platform": "Linux",
+   "primary_job": "aggregate-summary",
+   "primary_metric": "wall_ns",
+   "reason": "recycle does not capture mimalloc 20%: quiet linux-v6.12 -4.98% [-5.92%, -4.33%]; 450k screening -11.31% n=7; RSS flat; do not lower H85; 3% keep is H147",
+   "reference_tools": [],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux H85 recycle misses the 20% mimalloc bar",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe --no-controls, drained batches returned to producing worker",
+   "change_pct": -4.981,
+   "commit": "5c6e6394",
+   "complexity": {
+    "lines_changed": 186,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "same patch as exp-150; private recycle; no dependency; no unsafe; unmeasured on macOS"
+   },
+   "control": "HEAD --no-controls aggregate, consumer drops Observation batches",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H147"
+   ],
+   "id": "exp-151",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 33633741,
+        "control": 35246676
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -5.125,
+        "ci95_high_pct": -4.514,
+        "ci95_low_pct": -5.954,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 129044000,
+        "control": 133010500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -3.269,
+        "ci95_high_pct": -1.942,
+        "ci95_low_pct": -4.504,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 25632768,
+        "control": 25632768
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0,
+        "ci95_high_pct": 0,
+        "ci95_low_pct": 0,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 85063500,
+        "control": 91421500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -8.762,
+        "ci95_high_pct": 11.437,
+        "ci95_low_pct": -21.71,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 45572000,
+        "control": 40903500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 18.104,
+        "ci95_high_pct": 49.433,
+        "ci95_low_pct": -27.395,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 34475126.5,
+        "control": 36025695
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -4.981,
+        "ci95_high_pct": -4.33,
+        "ci95_low_pct": -5.92,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 372.808859787616,
+      "control": 389.57647554988426
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 151,
+   "path": "exp-151-linux-transient-batch-recycle-clears-3-after-h85-misses-20.md",
+   "platform": "Linux",
+   "primary_job": "aggregate-summary",
+   "primary_metric": "wall_ns",
+   "reason": "quiet linux-v6.12 --no-controls aggregate -4.98% [-5.92%, -4.33%]; RSS flat; default gitignore-on placebo +0.91% includes zero; H85 20% missed so this is the 3% keep",
+   "reference_tools": [],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux transient batch recycle clears 3% after H85 misses 20%",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-20",
@@ -37631,6 +37907,33 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 1759293224,
+   "directories": 5769,
+   "entries": 92474,
+   "experiments": [
+    "exp-138",
+    "exp-139",
+    "exp-140",
+    "exp-143",
+    "exp-144",
+    "exp-145",
+    "exp-146",
+    "exp-147",
+    "exp-150",
+    "exp-151"
+   ],
+   "files": 86643,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor",
+   "key": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "labels": [
+    "linux-v6.12"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 1085083672,
    "directories": 7350,
    "entries": 60067,
@@ -37681,31 +37984,6 @@
    ],
    "os_cache": "warm-steady",
    "platform": "macOS",
-   "synthetic": false
-  },
-  {
-   "apparent_bytes": 1759293224,
-   "directories": 5769,
-   "entries": 92474,
-   "experiments": [
-    "exp-138",
-    "exp-139",
-    "exp-140",
-    "exp-143",
-    "exp-144",
-    "exp-145",
-    "exp-146",
-    "exp-147"
-   ],
-   "files": 86643,
-   "filesystem": "ext4",
-   "host_cpu": "Intel(R) Xeon(R) Processor",
-   "key": "d7c0dad8d82c:92474:a298a9c2c8f8",
-   "labels": [
-    "linux-v6.12"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "Linux",
    "synthetic": false
   },
   {
@@ -38414,21 +38692,21 @@
   }
  ],
  "totals": {
-  "accepted_lines_changed": 16004,
+  "accepted_lines_changed": 16190,
   "decisions": {
-   "accepted": 85,
+   "accepted": 86,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
-   "rejected": 47,
+   "rejected": 48,
    "superseded": 3
   },
-  "experiments": 149,
+  "experiments": 151,
   "first_date": "2026-08-10",
-  "hypotheses": 103,
+  "hypotheses": 105,
   "last_date": "2026-09-20",
   "platforms": {
-   "Linux": 23,
+   "Linux": 25,
    "macOS": 126
   }
  },
