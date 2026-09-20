@@ -9,8 +9,9 @@
 at `26480612` (H138 recorded).
 H139 is recorded (exp-138, same, quiet).
 H140 is recorded (exp-139, same leftover identity).
-H141–H142 remain reserved here.
-Do not mint them on the Darwin branch.
+H141 is recorded (exp-140, same, uncontrolled).
+H142 remains reserved here.
+Do not mint it on the Darwin branch.
 
 ## Overview
 
@@ -128,11 +129,10 @@ Mint the reserved id when the cell starts, not before.
    Do not compile a walk trim.
    Do not retry H71. Bead: `fdu-6hjg` (close).
 
-3. **H141 — content-query stack, same or different.** Pair #91-equivalent control
-   against this branch on `content-query` (H138’s job).
-   Same means share-one-walk still clears 3% on Linux.
-   Different means the four-view leftover was Darwin-specific or already small.
-   Bead: `fdu-rmo2`.
+3. **H141 — content-query stack, same or different.** **Same** (exp-140, uncontrolled).
+   `content-query` wall −17.60% [−18.07%, −17.17%] on `linux-v6.12`. Digest identical.
+   Quiet start did not hold.
+   Do not retry H138. Bead: `fdu-rmo2` (close).
 
 4. **H111 — Linux floor (`fdu-jekg`).** On the 450k Linux subject: index ≤1.4× floor,
    aggregate ≤1.25× on nominated real subjects, RSS ≤3× `arena_spike`, p95/median ≤1.5×,
@@ -194,7 +194,7 @@ If #92 moves, rebase this branch onto it and keep H139–H142 meanings.
 
 - H139 closed: cache-hit stack is **same** on Linux (exp-138, quiet, −22.48%)
 - H140 closed: walk leftover is **same** identity (exp-139; getdents64+statx floor)
-- Whether H138’s shared `every_entry` walk still clears 3% on Linux (H141)
+- H141 closed: content-query stack is **same** on Linux (exp-140, uncontrolled, −17.60%)
 - Whether H111’s floor/RSS gates pass on the current engine (H111 / `fdu-jekg`)
 
 <!-- This document follows common-doc-guidelines.md.

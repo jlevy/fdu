@@ -36007,6 +36007,143 @@
    "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
    "title": "Linux walk leftover is still the getdents64 plus statx floor",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "HEAD probe with H138 share-one-every-entry walk",
+   "change_pct": -17.598,
+   "commit": "a5c98d59",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "e667b739 #91 probe with H115 and H120 only",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H141"
+   ],
+   "id": "exp-140",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-query",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 8129485855.5,
+        "control": 10314680644
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -21.325,
+        "ci95_high_pct": -20.762,
+        "ci95_low_pct": -21.611,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 15444420000,
+        "control": 17660812000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -12.669,
+        "ci95_high_pct": -12.271,
+        "ci95_low_pct": -13.177,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 145758208,
+        "control": 145512448
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.236,
+        "ci95_high_pct": 1.037,
+        "ci95_low_pct": -0.505,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 824961000,
+        "control": 787351000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 3.946,
+        "ci95_high_pct": 11.852,
+        "ci95_low_pct": -1.421,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 14628234500,
+        "control": 16867874500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -13.709,
+        "ci95_high_pct": -13.074,
+        "ci95_low_pct": -14.24,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 10409312500.5,
+        "control": 12615994315.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -17.598,
+        "ci95_high_pct": -17.174,
+        "ci95_low_pct": -18.072,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 112564.74793455457,
+      "control": 136427.47491727406
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 140,
+   "path": "exp-140-linux-content-query-stack-same-versus-91-control.md",
+   "platform": "Linux",
+   "primary_job": "content-query",
+   "primary_metric": "wall_ns",
+   "reason": "same on Linux: content-query wall -17.60% [-18.07%, -17.17%] uncontrolled on reconstructible linux-v6.12; digest identical; no engine patch",
+   "reference_tools": [],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux content-query stack same versus #91 control",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-20",
@@ -36456,6 +36593,26 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 1759293224,
+   "directories": 5769,
+   "entries": 92474,
+   "experiments": [
+    "exp-138",
+    "exp-139",
+    "exp-140"
+   ],
+   "files": 86643,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor",
+   "key": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "labels": [
+    "linux-v6.12"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 16537501222,
    "directories": 110369,
    "entries": 901963,
@@ -36549,25 +36706,6 @@
    ],
    "os_cache": "warm-steady",
    "platform": "macOS",
-   "synthetic": false
-  },
-  {
-   "apparent_bytes": 1759293224,
-   "directories": 5769,
-   "entries": 92474,
-   "experiments": [
-    "exp-138",
-    "exp-139"
-   ],
-   "files": 86643,
-   "filesystem": "ext4",
-   "host_cpu": "Intel(R) Xeon(R) Processor",
-   "key": "d7c0dad8d82c:92474:a298a9c2c8f8",
-   "labels": [
-    "linux-v6.12"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "Linux",
    "synthetic": false
   },
   {
@@ -36844,19 +36982,19 @@
  "totals": {
   "accepted_lines_changed": 16004,
   "decisions": {
-   "accepted": 76,
+   "accepted": 77,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
    "rejected": 46,
    "superseded": 3
   },
-  "experiments": 139,
+  "experiments": 140,
   "first_date": "2026-08-10",
-  "hypotheses": 95,
+  "hypotheses": 96,
   "last_date": "2026-09-20",
   "platforms": {
-   "Linux": 13,
+   "Linux": 14,
    "macOS": 126
   }
  },
