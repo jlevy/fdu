@@ -46,6 +46,23 @@ def cli(result: dict[str, Any] | None, *, exit: int = 0, stderr: str = "") -> In
     return Invocation("cli-report", "fdu", exit, stderr, result)
 
 
+class WatchEligibilityTests(unittest.TestCase):
+    def test_watch_compares_supported_metadata_requests(self) -> None:
+        import matrix
+        from runner import watch_can_serve
+
+        for policy in ("off", "auto", "read-only"):
+            self.assertTrue(watch_can_serve(matrix.spec(no_gitignore=True), policy))
+            self.assertTrue(watch_can_serve(matrix.spec(analyze="none"), policy))
+        for request, policy in (
+            (matrix.spec(), "only"),
+            (matrix.spec(analyze="lines"), "auto"),
+            (matrix.spec(scan_depth=1), "auto"),
+            (matrix.spec(one_fs=True), "auto"),
+        ):
+            self.assertFalse(watch_can_serve(request, policy))
+
+
 class CompareTests(unittest.TestCase):
     """What counts as the same answer, and which differences are allowed outcomes."""
 

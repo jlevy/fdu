@@ -309,6 +309,21 @@ def run_cli(
     return Invocation(matrix.CLI_ROUTE, command, done.returncode, done.stderr.strip(), answer)
 
 
+def watch_can_serve(request: matrix.Spec, policy: str) -> bool:
+    """Compare watch answers only where Request::validate_delivery permits a watch.
+
+    Unsupported deliveries have explicit refusal tests in the core and CLI corpus;
+    they are not history-dependent differences from a one-shot answer.
+    """
+    scope = request.get("scope", {})
+    return (
+        policy != "only"
+        and request.get("analyze", "none") == "none"
+        and "scan_depth" not in scope
+        and not scope.get("one_fs", False)
+    )
+
+
 def run_cli_watch_initial(
     surfaces: Surfaces, root: Path, request: matrix.Spec, policy: str, xdg: Path
 ) -> Invocation:
@@ -364,7 +379,7 @@ def run_cli_watch_initial(
         exit_code = process.returncode
     stderr_reader.join(timeout=5)
     stderr = "".join(stderr_chunks).strip()
-    if parse_error:
+    if parse_error and (timed_out or exit_code == 0 or not stderr):
         stderr = f"{stderr}\n{parse_error}".strip()
     if timed_out:
         exit_code = PY_UNEXPECTED
@@ -684,6 +699,8 @@ class MatrixRun:
             policies: tuple[str, ...] = ("off",) if warmer is None else ("auto", "only")
             for policy in policies:
                 for route in readers + (["py-scan"] if warmer is None else []):
+                    if route == matrix.CLI_WATCH_ROUTE and not watch_can_serve(request, policy):
+                        continue
                     xdg = self.ws.fresh(f"cross-{history_id}-{request_id}-{route}-{policy}")
                     history: tuple[str, ...] = ()
                     if warmer is not None and warm_route is not None:

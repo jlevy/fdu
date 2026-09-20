@@ -9,12 +9,12 @@ against the built command line and the installed Python wheel.
 ## What It Checks
 
 Each case asks a request after some history and compares the parsed answer with a cold
-run of the same request on the same tree (`--cache off`). Content and tree status
-(`complete`, `errors`, coverage) must match; provenance (`source`, `freshness`,
-`scan_started_at`, `generated_at`) is excluded.
+run of the same request on the same tree (`--cache off`). The effective `request`,
+`status` (completeness, errors, and coverage), and all answer content must match.
+Only the nested `provenance` object is excluded.
 Three outcomes other than equality are allowed: a named failure under `--cache only`, a
 stale answer under `--cache only` that equals a cold run before the tree changed and
-says `freshness: stale`, and a refusal where the cold run refuses too.
+says `provenance.freshness: stale`, and a refusal where the cold run refuses too.
 Every route that reads after the same history under the same policy must return the same
 kind of outcome.
 
@@ -24,10 +24,13 @@ kind of outcome.
 | `warm` | One warming request, then each policy |
 | `selfwarm` | The request itself, then `auto`, `read-only`, and `only` in turn |
 | `mutation` | A warming request, then a file change: rewrite, touch, add, delete, `.gitignore` edits, a symlink retarget, or an unreadable directory |
-| `cross` | Cold and warm, read through `fdu.report`, `fdu.open`, and `fdu.scan` as well as the command line |
+| `cross` | Cold and warm, read through `fdu.report`, `fdu.open`, and `fdu.scan`, one-shot CLI reports, and the complete initial CLI watch report |
 
 [`matrix.py`](matrix.py) defines the requests, warmers, mutations, and the two tiers.
-The subset runs in `make check` and in CI on every pull request, in about 15 seconds.
+The watch route participates only where its delivery is supported: metadata analysis, a
+full scan scope, and a cache policy other than `only`. Core request tests and the CLI
+golden corpus separately pin the named refusals for unsupported watch deliveries.
+The subset runs in `make check` and in CI on every pull request.
 The full matrix runs in
 [its own workflow](../../.github/workflows/path-independence.yml) weekly, on demand, and
 on a pull request labelled `path-independence-full`.
