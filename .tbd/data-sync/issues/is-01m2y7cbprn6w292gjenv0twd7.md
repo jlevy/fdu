@@ -3,17 +3,21 @@ type: is
 id: is-01m2y7cbprn6w292gjenv0twd7
 title: Enhance help examples with README workflows and age/size directory searches
 kind: task
-status: open
+status: in_progress
 priority: 2
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
+delegate: claude-code@spud10
 labels: []
 dependencies:
   - type: blocks
     target: is-01m2y7cf9fsawdtq8p5grnr3nq
 parent_id: is-01m2y7b2f9f1cv1dssrtref7zd
+hold: null
+hold_until: null
 created_at: 2026-09-20T01:37:36.982Z
-updated_at: 2026-09-20T05:16:04.073Z
+updated_at: 2026-09-20T06:16:18.867Z
+started_at: 2026-09-20T06:16:18.862Z
 ---
 Enhance short and long help with README workflows and stale-directory inventory
 examples. Teach selection (kind/name/path/age/size), view (list and aggregate reports),
