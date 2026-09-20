@@ -783,6 +783,9 @@ Further Linux cells are on
 (`cursor/linux-perf-iterate-de1b`).
 
 1. **H144** — Linux cache-hit leftover after the landed stack.
+   **Same leftover identity** (exp-144, quiet).
+   Already-landed restore work.
+   Do not retry H125–H133.
 2. **H145** — Linux opened-discovery leftover (H127 analog).
 3. **H84** — adaptive unlock / thread-policy screen (`fdu-tk1b`). Screening only on this
    4-core VM. Do not ship a `PORTABLE` constant.
