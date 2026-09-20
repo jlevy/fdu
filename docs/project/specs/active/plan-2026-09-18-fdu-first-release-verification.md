@@ -4,8 +4,12 @@
 
 **Author:** fdu project
 
-**Status:** Active. The pre-registry simulation is recorded on `fdu-bnp9`. Post-publish
-items wait until `0.1.0` is on the channels.
+**Status:** Active. The pre-registry simulation at `98379c76` is recorded on `fdu-bnp9`.
+Green checks on the current performance changes do not close the remaining JSONL, YAML,
+and provenance conformance work (`fdu-bqb7`, `fdu-c2ml`) in the
+[explicit core models plan](plan-2026-09-17-fdu-explicit-core-models.md), or final
+candidate verification (`fdu-tyvq`). Post-publish items wait until `0.1.0` is on the
+channels.
 
 ## Overview
 
@@ -245,6 +249,8 @@ Both checklists still record the result.
 - `fdu-yfej`: 0.1.0 first-user stability and usability
 - `fdu-bnp9`: pre-publish packaged-artifact simulation
 - `fdu-wpxu`: post-publish first-user verification checklist
+- `fdu-bqb7`, `fdu-c2ml`: machine-output conformance blockers
+- `fdu-tyvq`: final-candidate verification
 - `fdu-9cf0`: publish 0.1.0 by hand
 - `fdu-18vk`: wheel `--watch` ignores SIGINT (fixed in pull request #87)
 - `fdu-i142`: crates.io README relative links (fixed in pull request #87)

@@ -3488,16 +3488,18 @@ impl Index {
     pub(crate) fn restore_analysis_candidates(
         &self,
         profile: AnalysisSet,
-    ) -> HashMap<PathBuf, RestoreCandidate> {
+    ) -> (HashMap<PathBuf, RestoreCandidate>, u64) {
         let root_files = self.entry(EntryId::ROOT).rollup().files;
         let mut candidates = HashMap::with_capacity(usize::try_from(root_files).unwrap_or(0));
+        let mut visited = 0_u64;
         self.for_each_analysis_file(profile, |id, revision, attrs, relative_path| {
+            visited = visited.saturating_add(1);
             candidates.insert(
                 relative_path.clone(),
                 RestoreCandidate { entry_id: id, revision, relative_path, attrs },
             );
         });
-        candidates
+        (candidates, visited)
     }
 
     fn for_each_analysis_file(
@@ -8138,6 +8140,28 @@ mod tests {
     }
 
     #[test]
+    fn restore_candidates_count_visited_files_not_pathbuf_aliases() {
+        use crate::content::AnalysisSet;
+
+        let mut index = Index::new("/root");
+        let attrs = file_attrs(10, 1);
+        assert!(
+            index
+                .insert_loaded_child(EntryId::ROOT, OsString::from("a"), EntryKind::File, attrs)
+                .is_some()
+        );
+        assert!(
+            index
+                .insert_loaded_child(EntryId::ROOT, OsString::from("a/"), EntryKind::File, attrs)
+                .is_some()
+        );
+        let (candidates, visited) =
+            index.restore_analysis_candidates(AnalysisSet::NONE.with_lines());
+        assert_eq!(visited, 2, "each visited regular file is a completeness slot");
+        assert_eq!(candidates.len(), 1, "PathBuf keys merge trailing-separator aliases");
+    }
+
+    #[test]
     fn restore_candidates_match_analysis_file_identities() {
         use crate::content::AnalysisSet;
 
@@ -8150,8 +8174,9 @@ mod tests {
         ]));
         let profile = AnalysisSet::NONE.with_lines();
         let live = index.analysis_candidates(profile);
-        let restore = index.restore_analysis_candidates(profile);
+        let (restore, visited) = index.restore_analysis_candidates(profile);
         assert_eq!(restore.len(), live.len());
+        assert_eq!(visited, u64::try_from(live.len()).expect("candidate count fits u64"));
         assert_eq!(restore.len(), 2);
         for candidate in &live {
             assert_eq!(
