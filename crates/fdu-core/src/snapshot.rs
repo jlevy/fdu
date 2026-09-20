@@ -81,6 +81,14 @@ const FORMAT_VERSION: u32 = 5;
 /// being left out of the extension roll-up entirely.
 const CLASSIFICATION_VERSION: u32 = 2;
 
+/// Version of the per-entry facts used to decide whether retained state is still valid.
+///
+/// Version 2 adds Windows change time, volume identity, and file index. A pre-v2 Windows
+/// snapshot stores zeroes in those fields and cannot safely serve cache-only as if those
+/// facts had been observed. This is mixed into the engine fingerprint on every platform
+/// so one build has one store identity.
+const VALIDITY_VERSION: u32 = 2;
+
 /// Snapshot path encoding used by Unix targets.
 #[cfg(unix)]
 const PATH_ENCODING_UNIX_BYTES: u8 = 1;
@@ -208,6 +216,7 @@ pub fn engine_fingerprint() -> u64 {
     mix(env!("CARGO_PKG_VERSION").as_bytes());
     mix(&FORMAT_VERSION.to_le_bytes());
     mix(&CLASSIFICATION_VERSION.to_le_bytes());
+    mix(&VALIDITY_VERSION.to_le_bytes());
     hash
 }
 

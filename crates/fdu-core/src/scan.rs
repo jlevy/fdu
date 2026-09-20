@@ -38,6 +38,10 @@ use crate::stored_state::{ControlTierIdentity, EntryScope, EntryTierIdentity, Sn
 #[allow(unsafe_code)]
 mod macos_bulk;
 
+#[cfg(windows)]
+#[allow(unsafe_code)]
+mod windows_metadata;
+
 /// How many ops accumulate before an observation is handed to the sink.
 ///
 /// Batching matters for more than syscall economy: consumers coalesce per path within a
@@ -1348,7 +1352,7 @@ fn scan_internal(
             std::io::Error::new(std::io::ErrorKind::NotADirectory, "scan root is not a directory"),
         ));
     }
-    let root_dev = attrs_from(&root_meta).dev;
+    let root_dev = attrs_from(root, &root_meta).map_err(|error| Error::io(root, error))?.dev;
     let available_parallelism =
         std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let pool = config.worker_pool_for(available_parallelism);
@@ -1414,8 +1418,13 @@ fn scan_internal(
                 }
             };
 
-            let attrs = attrs_from(&meta);
-            let kind = kind_from(&meta);
+            let (kind, attrs) = match observe(&item.path(), &meta) {
+                Ok(observed) => observed,
+                Err(error) => {
+                    report.errors.push(Error::io(item.path(), error));
+                    continue;
+                }
+            };
             let disposition =
                 crate::admission::decide(&name, kind, config.hidden(), config.exclude_special);
             if disposition == crate::admission::Disposition::Reject {
@@ -2791,8 +2800,13 @@ fn walk_worker_with<E: WalkEmission>(
                     }
                 };
 
-                let attrs = attrs_from(&meta);
-                let kind = kind_from(&meta);
+                let (kind, attrs) = match observe(&item.path(), &meta) {
+                    Ok(observed) => observed,
+                    Err(error) => {
+                        report.errors.push(Error::io(item.path(), error));
+                        continue;
+                    }
+                };
                 if !emission.record_entry(
                     root,
                     &rel_dir,
@@ -3713,7 +3727,7 @@ fn scan_detached_directories(
             std::io::Error::new(std::io::ErrorKind::NotADirectory, "scan root is not a directory"),
         ));
     }
-    let root_dev = attrs_from(&root_metadata).dev;
+    let root_dev = attrs_from(root, &root_metadata).map_err(|error| Error::io(root, error))?.dev;
     let available_parallelism =
         std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let pool = config.worker_pool_for(available_parallelism);
@@ -3859,7 +3873,7 @@ pub fn revalidate(
             ),
         ));
     }
-    let root_dev = attrs_from(&root_meta).dev;
+    let root_dev = attrs_from(&root, &root_meta).map_err(|error| Error::io(&root, error))?.dev;
     let mut report = ScanReport::default();
     let batch_limit = config.batch_size.max(1);
     let mut batch: Vec<ObservationOp> = Vec::with_capacity(batch_limit);
@@ -3943,8 +3957,13 @@ pub fn revalidate(
             };
             control_seen |= name == crate::control::CONTROL_FILE_NAME;
 
-            let kind = kind_from(&meta);
-            let attrs = attrs_from(&meta);
+            let (kind, attrs) = match observe(&item.path(), &meta) {
+                Ok(observed) => observed,
+                Err(error) => {
+                    report.errors.push(Error::io(item.path(), error));
+                    continue;
+                }
+            };
             let disposition =
                 crate::admission::decide(&name, kind, config.hidden(), config.exclude_special);
             let control = match read_control_op(config, &root, &rel_path, kind) {
@@ -4229,8 +4248,10 @@ fn refresh_may_expand(
     let absolute = target.root_path()?.join(path);
     let observed = match fs::symlink_metadata(&absolute) {
         Ok(metadata) => {
-            let kind = kind_from(&metadata);
-            work.observe(kind, attrs_from(&metadata));
+            let Ok((kind, attrs)) = observe(&absolute, &metadata) else {
+                return Ok(true);
+            };
+            work.observe(kind, attrs);
             Some(kind)
         }
         Err(error)
@@ -4328,7 +4349,7 @@ fn reconcile_target_inner(
             ),
         ));
     }
-    let root_dev = attrs_from(&root_meta).dev;
+    let root_dev = attrs_from(&root, &root_meta).map_err(|error| Error::io(&root, error))?.dev;
     let start_depth = subtree.components().count();
     let mut report = ReconcileReport::default();
     let mut retry_frontier = None;
@@ -4363,8 +4384,13 @@ fn reconcile_target_inner(
                 return Ok(report);
             }
         };
-        let kind = kind_from(&meta);
-        let attrs = attrs_from(&meta);
+        let (kind, attrs) = match observe(&absolute, &meta) {
+            Ok(observed) => observed,
+            Err(error) => {
+                report.scan.errors.push(Error::io(absolute, error));
+                return Ok(report);
+            }
+        };
         let disposition =
             crate::admission::decide_path(subtree, kind, config.hidden(), config.exclude_special);
         if disposition != crate::admission::Disposition::Retain {
@@ -4574,10 +4600,18 @@ fn reconcile_target_inner(
                         continue;
                     }
                 };
+                let (kind, attrs) = match observe(&item.path(), &meta) {
+                    Ok(observed) => observed,
+                    Err(error) => {
+                        control_seen |= name == crate::control::CONTROL_FILE_NAME;
+                        report.scan.errors.push(Error::io(item.path(), error));
+                        continue;
+                    }
+                };
                 process_entry(
                     name,
-                    kind_from(&meta),
-                    attrs_from(&meta),
+                    kind,
+                    attrs,
                     baseline,
                     &mut control_seen,
                     target,
@@ -4988,13 +5022,15 @@ fn reconcile_wave_worker(
                                 continue;
                             }
                         };
-                        process_entry(
-                            name,
-                            kind_from(&meta),
-                            attrs_from(&meta),
-                            baseline,
-                            &mut control_seen,
-                        );
+                        let (kind, attrs) = match observe(&item.path(), &meta) {
+                            Ok(observed) => observed,
+                            Err(error) => {
+                                control_seen |= name == crate::control::CONTROL_FILE_NAME;
+                                result.scan.errors.push(Error::io(item.path(), error));
+                                continue;
+                            }
+                        };
+                        process_entry(name, kind, attrs, baseline, &mut control_seen);
                     }
                 }
             }
@@ -5316,7 +5352,10 @@ fn resolve_subtree_root(
     if !root_metadata.is_dir() {
         return Ok(subtree.to_path_buf());
     }
-    let root_dev = attrs_from(&root_metadata).dev;
+    let Ok(root_attrs) = attrs_from(&root, &root_metadata) else {
+        return Ok(subtree.to_path_buf());
+    };
+    let root_dev = root_attrs.dev;
     let mut prefix = PathBuf::new();
     let mut components = subtree.components().peekable();
     while let Some(component) = components.next() {
@@ -5345,7 +5384,9 @@ fn resolve_subtree_root(
         if !metadata.is_dir() {
             return Ok(prefix);
         }
-        let attrs = attrs_from(&metadata);
+        let Ok(attrs) = attrs_from(&root.join(&prefix), &metadata) else {
+            break;
+        };
         if config.one_filesystem && attrs.dev != root_dev && attrs.dev != 0 {
             return Err(Error::SubtreeOutsideScanScope {
                 path: subtree.to_path_buf(),
@@ -5361,10 +5402,19 @@ fn resolve_subtree_root(
 /// Exposed so the watch layer verifies entries exactly the way the walker records them —
 /// two stat interpretations that could drift would show up as an index that disagrees
 /// with itself depending on which producer last touched a path.
-pub fn observe(meta: &fs::Metadata) -> (EntryKind, Attrs) {
-    (kind_from(meta), attrs_from(meta))
+pub fn observe(path: &Path, meta: &fs::Metadata) -> std::io::Result<(EntryKind, Attrs)> {
+    #[cfg(windows)]
+    {
+        let _ = meta;
+        windows_metadata::observe(path)
+    }
+    #[cfg(not(windows))]
+    {
+        Ok((kind_from(meta), attrs_from(path, meta)?))
+    }
 }
 
+#[cfg(not(windows))]
 fn kind_from(meta: &fs::Metadata) -> EntryKind {
     let file_type = meta.file_type();
     if file_type.is_symlink() {
@@ -5379,9 +5429,10 @@ fn kind_from(meta: &fs::Metadata) -> EntryKind {
 }
 
 #[cfg(unix)]
-pub(crate) fn attrs_from(meta: &fs::Metadata) -> Attrs {
+#[allow(clippy::unnecessary_wraps)] // Windows observation is fallible; keep one call contract.
+pub(crate) fn attrs_from(_path: &Path, meta: &fs::Metadata) -> std::io::Result<Attrs> {
     use std::os::unix::fs::MetadataExt;
-    Attrs {
+    Ok(Attrs {
         size: meta.size(),
         // st_blocks is in 512-byte units by POSIX convention regardless of the
         // filesystem's own block size.
@@ -5390,7 +5441,7 @@ pub(crate) fn attrs_from(meta: &fs::Metadata) -> Attrs {
         ctime_ns: compose_ns(meta.ctime(), meta.ctime_nsec()),
         inode: meta.ino(),
         dev: meta.dev(),
-    }
+    })
 }
 
 #[cfg(unix)]
@@ -5398,10 +5449,16 @@ fn compose_ns(secs: i64, nanos: i64) -> i64 {
     secs.saturating_mul(1_000_000_000).saturating_add(nanos)
 }
 
-#[cfg(not(unix))]
-pub(crate) fn attrs_from(meta: &fs::Metadata) -> Attrs {
+#[cfg(windows)]
+pub(crate) fn attrs_from(path: &Path, _meta: &fs::Metadata) -> std::io::Result<Attrs> {
+    windows_metadata::observe(path).map(|(_, attrs)| attrs)
+}
+
+#[cfg(not(any(unix, windows)))]
+#[allow(clippy::unnecessary_wraps)] // Windows observation is fallible; keep one call contract.
+pub(crate) fn attrs_from(_path: &Path, meta: &fs::Metadata) -> std::io::Result<Attrs> {
     let mtime_ns = meta.modified().map_or(0, system_time_ns);
-    Attrs {
+    Ok(Attrs {
         size: meta.len(),
         // No allocated size without platform-specific calls; apparent size is the
         // honest fallback rather than a guess at block rounding.
@@ -5412,10 +5469,23 @@ pub(crate) fn attrs_from(meta: &fs::Metadata) -> Attrs {
         ctime_ns: 0,
         inode: 0,
         dev: 0,
+    })
+}
+
+pub(crate) fn attrs_from_file(file: &fs::File, meta: &fs::Metadata) -> std::io::Result<Attrs> {
+    #[cfg(windows)]
+    {
+        let _ = meta;
+        windows_metadata::attrs_from_file(file)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = file;
+        attrs_from(Path::new(""), meta)
     }
 }
 
-#[cfg(any(not(unix), test))]
+#[cfg(any(not(any(unix, windows)), test))]
 fn system_time_ns(time: std::time::SystemTime) -> i64 {
     match time.duration_since(std::time::UNIX_EPOCH) {
         Ok(duration) => i64::try_from(duration.as_nanos()).unwrap_or(i64::MAX),
@@ -5805,7 +5875,9 @@ mod tests {
         let (mut detached, mut streaming) = detached_and_streaming_indexes(dir.path(), &config);
         let created = dir.path().join("t3/m2/after-bootstrap.rs");
         write_file(&created, b"new fact");
-        let attrs = attrs_from(&fs::symlink_metadata(&created).expect("new file metadata"));
+        let attrs =
+            attrs_from(&created, &fs::symlink_metadata(&created).expect("new file metadata"))
+                .expect("observe new file");
         let observation = Observation::new(vec![Op::Upsert {
             path: PathBuf::from("t3/m2/after-bootstrap.rs"),
             kind: EntryKind::File,
@@ -7796,6 +7868,65 @@ mod tests {
         assert_eq!(index.total(), before);
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn windows_reconcile_detects_same_size_rewrite_with_preserved_mtime() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let path = root.path().join("same.txt");
+        write_file(&path, b"first");
+        let modified = fs::metadata(&path).expect("metadata").modified().expect("mtime");
+        let (mut index, _) =
+            scan_into_index(root.path(), &ScanConfig::default()).expect("initial scan");
+        let before = *index.attrs(Path::new("same.txt")).expect("initial attrs");
+
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        write_file(&path, b"other");
+        File::options()
+            .write(true)
+            .open(&path)
+            .expect("open rewritten file")
+            .set_times(std::fs::FileTimes::new().set_modified(modified))
+            .expect("restore mtime");
+        reconcile(&mut index, &ScanConfig::default(), &mut |_| {}).expect("reconcile");
+
+        let after = *index.attrs(Path::new("same.txt")).expect("rewritten attrs");
+        assert_eq!((after.size, after.mtime_ns), (before.size, before.mtime_ns));
+        assert_ne!(after.ctime_ns, before.ctime_ns, "change time detects the rewrite");
+        assert_ne!(after.fingerprint(), before.fingerprint());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_reconcile_detects_path_identity_replacement() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let path = root.path().join("replace.txt");
+        let displaced = root.path().join("displaced.txt");
+        write_file(&path, b"first");
+        let modified = fs::metadata(&path).expect("metadata").modified().expect("mtime");
+        let (mut index, _) =
+            scan_into_index(root.path(), &ScanConfig::default()).expect("initial scan");
+        let before = *index.attrs(Path::new("replace.txt")).expect("initial attrs");
+
+        fs::rename(&path, &displaced).expect("retain old file identity");
+        write_file(&path, b"other");
+        File::options()
+            .write(true)
+            .open(&path)
+            .expect("open replacement")
+            .set_times(std::fs::FileTimes::new().set_modified(modified))
+            .expect("restore mtime");
+        reconcile(&mut index, &ScanConfig::default(), &mut |_| {}).expect("reconcile");
+
+        let after = *index.attrs(Path::new("replace.txt")).expect("replacement attrs");
+        assert_eq!((after.size, after.mtime_ns), (before.size, before.mtime_ns));
+        assert_ne!(
+            (after.dev, after.inode),
+            (before.dev, before.inode),
+            "volume serial and file index identify the replacement"
+        );
+        assert_ne!(after.fingerprint(), before.fingerprint());
+    }
+
     #[test]
     fn direct_reconciliation_counts_unchanged_entries_and_publishes_state_commits() {
         let dir = sample_tree();
@@ -8061,7 +8192,7 @@ mod tests {
         let outcome = reconcile_direct_parallel(
             &mut index,
             &root,
-            attrs_from(&root_meta).dev,
+            attrs_from(&root, &root_meta).expect("root attrs").dev,
             &config,
             1,
             &mut |commit| commits.push(commit.clone()),
@@ -8809,7 +8940,7 @@ mod tests {
             Op::Upsert {
                 path: relative.to_path_buf(),
                 kind: EntryKind::Dir,
-                attrs: attrs_from(&mount_meta),
+                attrs: attrs_from(mount, &mount_meta).expect("mount attrs"),
             },
             Op::Upsert {
                 path: stale_child.clone(),

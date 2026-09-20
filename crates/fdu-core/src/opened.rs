@@ -1077,7 +1077,9 @@ fn run_discovery(
 ) -> Result<()> {
     let root_metadata =
         std::fs::symlink_metadata(root).map_err(|source| Error::io(root, source))?;
-    let root_dev = crate::scan::attrs_from(&root_metadata).dev;
+    let root_dev = crate::scan::attrs_from(root, &root_metadata)
+        .map_err(|source| Error::io(root, source))?
+        .dev;
 
     while let Some(directory) = frontier.pop() {
         if cancellation.is_cancelled() {
@@ -1264,7 +1266,17 @@ fn discover_directory(
             }
         };
         let name = item.file_name();
-        let (kind, attrs) = crate::scan::observe(&metadata);
+        let (kind, attrs) = match crate::scan::observe(&item.path(), &metadata) {
+            Ok(observed) => observed,
+            Err(source) => {
+                retain_local_issue(
+                    &mut issues,
+                    &mut omitted_issues,
+                    crate::Issue::from_io_under(root, &item.path(), &source),
+                );
+                continue;
+            }
+        };
         let Some(prepared) = crate::scan::prepare_walk_entry(
             root,
             &directory.path,

@@ -619,7 +619,8 @@ fn reverify_observation(
                 let absolute = root.join(&relative);
                 match std::fs::symlink_metadata(&absolute) {
                     Ok(metadata) => {
-                        let (kind, attrs) = scan::observe(&metadata);
+                        let (kind, attrs) = scan::observe(&absolute, &metadata)
+                            .map_err(|source| Error::io(&absolute, source))?;
                         match crate::admission::decide_path(
                             &relative,
                             kind,
@@ -921,7 +922,13 @@ fn verify_intent(
                 let absolute = root.join(rel);
                 match std::fs::symlink_metadata(&absolute) {
                     Ok(meta) => {
-                        let (kind, attrs) = scan::observe(&meta);
+                        let Ok((kind, attrs)) = scan::observe(&absolute, &meta) else {
+                            ops.push(Op::InvalidateSubtree {
+                                path: rel.parent().map_or_else(PathBuf::new, Path::to_path_buf),
+                                reason: InvalidateReason::VerificationFailed,
+                            });
+                            continue;
+                        };
                         let disposition = crate::admission::decide_path(
                             rel,
                             kind,

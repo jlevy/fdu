@@ -66,6 +66,12 @@ pulldown-cmark = { version = "0.13.4", default-features = false }
 # macOS scan accelerator also calls getattrlistbulk through these official bindings.
 libc = "0.2.189"
 
+[target.'cfg(windows)'.dependencies]
+# Rust 1.85 does not yet expose change time or stable file identity from Windows
+# metadata. Keep the audited boundary on the already locked bindings and enable only
+# the handle and filesystem APIs it calls.
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+
 [dev-dependencies]
 tempfile = "3.26"
 
