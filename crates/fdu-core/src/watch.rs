@@ -1096,12 +1096,9 @@ mod tests {
     /// caller asserted on it and announced a violated product contract when nothing had
     /// arrived at all, sending the next reader after a defect that was not there.
     ///
-    /// `None` — *nothing whatsoever* arrived before the deadline. That is not evidence
-    /// about fdu: the host's event service delivered no events to this stream, so the
-    /// precondition the test needs was never established and asserting would be a
-    /// fabrication. Callers skip, visibly and by name, the way
-    /// `test_support::permission_bits_are_enforced` already lets fixtures decline a host
-    /// that cannot provide what they depend on.
+    /// `None` — *nothing whatsoever* arrived before the deadline on a host explicitly
+    /// opted out of native event delivery. Without that declaration, silence is an
+    /// actionable precondition failure rather than a passing test.
     ///
     /// The distinction is observable rather than assumed: a working backend delivers the
     /// test's own writes within milliseconds, so an empty list after a full minute means
@@ -1110,6 +1107,7 @@ mod tests {
     fn wait_for(
         watcher: &Watcher,
         deadline: Duration,
+        allow_host_opt_out: bool,
         mut want: impl FnMut(&[Op]) -> bool,
     ) -> Option<Vec<Op>> {
         let start = Instant::now();
@@ -1127,7 +1125,21 @@ mod tests {
             }
         }
         if seen.is_empty() {
-            return None;
+            if allow_host_opt_out
+                && std::env::var_os("FDU_TEST_ALLOW_NO_NATIVE_WATCH").as_deref()
+                    == Some(std::ffi::OsStr::new("1"))
+            {
+                eprintln!(
+                    "skipped by FDU_TEST_ALLOW_NO_NATIVE_WATCH=1: the host event service \
+                     delivered no events to this stream"
+                );
+                return None;
+            }
+            panic!(
+                "native watch precondition failed: the host delivered no events in \
+                 {deadline:?}; run on a host with event delivery, or explicitly opt out \
+                 with FDU_TEST_ALLOW_NO_NATIVE_WATCH=1"
+            );
         }
         panic!(
             "the backend delivered {} op(s) in {deadline:?} but never the one awaited, so \
@@ -1154,22 +1166,13 @@ mod tests {
     /// Writing a warm-up file and waiting for *any* event settles it: whichever arrives,
     /// the stream is delivering and registration is complete, so a write afterwards
     /// cannot fall into the setup window. Everything the test then asserts is about fdu.
-    fn establish_watch(watcher: &Watcher, dir: &Path) {
+    fn establish_watch(watcher: &Watcher, dir: &Path) -> bool {
         let warmup = dir.join(".fdu-watch-warmup");
         fs::write(&warmup, b"warmup").expect("warmup write");
-        let _ = wait_for(watcher, REAL_BACKEND_DELIVERY, |ops| !ops.is_empty());
+        let established =
+            wait_for(watcher, REAL_BACKEND_DELIVERY, true, |ops| !ops.is_empty()).is_some();
         let _ = fs::remove_file(&warmup);
-    }
-
-    /// Decline a test whose stream never received anything.
-    ///
-    /// Reported the way this crate already reports a host that cannot supply a fixture's
-    /// precondition, so it reads as a skip in the output rather than as a silent pass.
-    fn skip_without_delivery(test: &str) {
-        eprintln!(
-            "skipped: {test}: the host event service delivered no events to this stream, so \
-             the precondition could not be established"
-        );
+        established
     }
 
     #[test]
@@ -1177,14 +1180,15 @@ mod tests {
         let _serialized = real_watcher_guard();
         let dir = tempfile::tempdir().expect("tempdir");
         let watcher = Watcher::new(dir.path(), WatchConfig::default()).expect("watcher");
-        establish_watch(&watcher, dir.path());
+        if !establish_watch(&watcher, dir.path()) {
+            return;
+        }
 
         fs::write(dir.path().join("hello.txt"), b"hello world").expect("write");
 
-        let Some(ops) = wait_for(&watcher, REAL_BACKEND_DELIVERY, |ops| {
+        let Some(ops) = wait_for(&watcher, REAL_BACKEND_DELIVERY, false, |ops| {
             ops.iter().any(|op| op.path() == Path::new("hello.txt"))
         }) else {
-            skip_without_delivery("created_files_arrive_as_verified_upserts");
             return;
         };
 
@@ -1212,14 +1216,15 @@ mod tests {
         fs::write(&path, b"x").expect("write");
 
         let watcher = Watcher::new(dir.path(), WatchConfig::default()).expect("watcher");
-        establish_watch(&watcher, dir.path());
+        if !establish_watch(&watcher, dir.path()) {
+            return;
+        }
         fs::remove_file(&path).expect("remove");
 
-        let Some(ops) = wait_for(&watcher, REAL_BACKEND_DELIVERY, |ops| {
+        let Some(ops) = wait_for(&watcher, REAL_BACKEND_DELIVERY, false, |ops| {
             ops.iter()
                 .any(|op| matches!(op, Op::Remove { path } if path == Path::new("doomed.txt")))
         }) else {
-            skip_without_delivery("deleted_files_arrive_as_removes");
             return;
         };
 
@@ -2038,8 +2043,7 @@ mod tests {
                 .count()
         }
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
         let dir = tempfile::tempdir().expect("tempdir");

@@ -295,6 +295,12 @@ make test     # Rust tests plus the CLI golden contract
 make fix      # formatting and machine-applicable lint fixes
 ```
 
+Permission and native watch tests fail when the host cannot establish their operating
+system preconditions.
+A deliberately unsupported local host may set `FDU_TEST_ALLOW_NO_PERMISSION_BITS=1` or
+`FDU_TEST_ALLOW_NO_NATIVE_WATCH=1` for the affected test selection.
+CI must leave both variables unset so a passing test proves its assertions ran.
+
 [AGENTS.md](AGENTS.md) is how to operate on the repository.
 [The supply-chain policy](SUPPLY-CHAIN-SECURITY.md) applies before any dependency
 change. Performance work follows

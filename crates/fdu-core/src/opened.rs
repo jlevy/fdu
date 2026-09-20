@@ -6014,8 +6014,7 @@ mod tests {
     fn multi_path_refresh_closes_each_subtree_on_its_own_walk() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
 
@@ -6259,8 +6258,7 @@ mod tests {
     fn inaccessible_baseline_enters_watching_with_partial_coverage() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
 
@@ -6308,8 +6306,7 @@ mod tests {
     fn watching_after_a_clean_handoff_rederives_complete_coverage() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
         let root = tempfile::tempdir().expect("temp root");
@@ -6780,8 +6777,7 @@ mod tests {
     fn an_unreadable_gap_is_walked_once_and_explains_itself() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
         let root = tempfile::tempdir().expect("temp root");
@@ -6852,8 +6848,7 @@ mod tests {
     fn repeated_unreadable_reconciles_retain_one_issue_per_boundary() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
         let root = tempfile::tempdir().expect("temp root");
