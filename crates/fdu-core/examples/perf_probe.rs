@@ -17,7 +17,7 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use fdu_core::content::{AnalysisRequest, AnalysisSet, CoverageReason};
-use fdu_core::query::{Basis, Delivery, Provenance, Query, ReportSource, Request, ViewSpec};
+use fdu_core::query::{Basis, Bound, Delivery, Query, Request, Selection, ViewSpec};
 use fdu_core::{
     Attrs, CachePolicy, ChangeOutcome, ChangeRequest, Clock, Commit, Coverage, EffectiveChange,
     EngineVersion, EntryId, EntryKind, Index, IndexState, Knowledge, LifecyclePhase, Observation,
@@ -96,6 +96,12 @@ enum Mode {
     OpenedSecondReport,
     IndexSecondReport,
     Query,
+    RenderJson,
+    RenderJsonString,
+    RenderJsonl,
+    RenderJsonlString,
+    RenderYaml,
+    RenderYamlString,
     ColdOpenSave,
     DefaultTree,
     Revalidate,
@@ -133,6 +139,12 @@ impl Mode {
             "opened-second-report" => Ok(Self::OpenedSecondReport),
             "index-second-report" => Ok(Self::IndexSecondReport),
             "query" => Ok(Self::Query),
+            "render-json" => Ok(Self::RenderJson),
+            "render-json-string" => Ok(Self::RenderJsonString),
+            "render-jsonl" => Ok(Self::RenderJsonl),
+            "render-jsonl-string" => Ok(Self::RenderJsonlString),
+            "render-yaml" => Ok(Self::RenderYaml),
+            "render-yaml-string" => Ok(Self::RenderYamlString),
             "revalidate" => Ok(Self::Revalidate),
             "cold-open-save" => Ok(Self::ColdOpenSave),
             "default-tree" => Ok(Self::DefaultTree),
@@ -171,6 +183,12 @@ impl Mode {
             Self::OpenedSecondReport => "opened-second-report",
             Self::IndexSecondReport => "index-second-report",
             Self::Query => "query",
+            Self::RenderJson => "render-json",
+            Self::RenderJsonString => "render-json-string",
+            Self::RenderJsonl => "render-jsonl",
+            Self::RenderJsonlString => "render-jsonl-string",
+            Self::RenderYaml => "render-yaml",
+            Self::RenderYamlString => "render-yaml-string",
             Self::Revalidate => "revalidate",
             Self::ColdOpenSave => "cold-open-save",
             Self::DefaultTree => "default-tree",
@@ -443,6 +461,104 @@ fn execute(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         Mode::IndexSecondReport => index_second_report(arguments),
         Mode::MarkdownProse | Mode::TextProse => content_analysis(arguments, document_request()),
         Mode::Query => query(arguments),
+        Mode::RenderJson => render_report(arguments, fdu_core::report_format::Format::Json, false),
+        Mode::RenderJsonString => {
+            render_report(arguments, fdu_core::report_format::Format::Json, true)
+        }
+        Mode::RenderJsonl => {
+            render_report(arguments, fdu_core::report_format::Format::Jsonl, false)
+        }
+        Mode::RenderJsonlString => {
+            render_report(arguments, fdu_core::report_format::Format::Jsonl, true)
+        }
+        Mode::RenderYaml => render_report(arguments, fdu_core::report_format::Format::Yaml, false),
+        Mode::RenderYamlString => {
+            render_report(arguments, fdu_core::report_format::Format::Yaml, true)
+        }
+    }
+}
+
+/// Serialize one unbounded tree and file listing after an untimed retained-index setup.
+///
+/// The plain mode calls the product's streaming `write` path through a byte-counting
+/// discard writer. The `-string` control calls `render`, retaining the complete document
+/// until the timed component ends. Both construct the same report before the timer starts,
+/// so their component wall time and allocation deltas isolate serialization. Process RSS
+/// still includes the common scan, index, and report; compare paired modes on one subject
+/// and treat a flat result as "the shared baseline dominated", not as zero writer memory.
+/// A one-off run is diagnostic only: CPU or speed conclusions require the harness's
+/// interleaved paired protocol under one declared host-pressure regime.
+fn render_report(
+    arguments: &Arguments,
+    format: fdu_core::report_format::Format,
+    materialize: bool,
+) -> ProbeResult<ProbeOutput> {
+    let (index, report) = report_for_render(arguments)?;
+
+    let counters = begin_component_counters();
+    let started = Instant::now();
+    let bytes = if materialize {
+        let rendered = fdu_core::report_format::render(&report, format, false);
+        let bytes = rendered.len();
+        black_box(rendered);
+        bytes
+    } else {
+        let mut writer = CountingWriter::default();
+        fdu_core::report_format::write(&report, format, false, &mut writer)?;
+        writer.bytes
+    };
+    black_box(bytes);
+    let component = started.elapsed();
+    let counters = finish_component_counters(counters.as_ref());
+
+    let mut summary = summarize_index(arguments, &index)?;
+    summary.counters = counters;
+    summary.errors = u64::try_from(report.status.errors.len()).unwrap_or(u64::MAX);
+    summary.complete = report.status.complete;
+    Ok(ProbeOutput::new(arguments.mode, "report-retained", component, summary))
+}
+
+fn report_for_render(arguments: &Arguments) -> ProbeResult<(Index, fdu_core::query::Report)> {
+    let (index, scan) = fdu_core::scan::scan_into_index(&arguments.root, &arguments.scan)?;
+    if !scan.is_complete() {
+        return Err(ProbeError("report render setup scan was partial".into()));
+    }
+    let query = Query {
+        selection: Selection {
+            depth: Some(Bound::All),
+            limit: Some(Bound::All),
+            ..Selection::default()
+        },
+        views: vec![ViewSpec::Tree, ViewSpec::Files],
+        ..Query::default()
+    };
+    let now = std::time::SystemTime::now();
+    let request = Request::new(
+        Basis {
+            root: index.root_path().to_path_buf(),
+            scope: arguments.scan.clone(),
+            content: index.content_set(),
+        },
+        query,
+        now,
+    );
+    let report = fdu_core::query::report(&index, &request, now)?;
+    Ok((index, report))
+}
+
+#[derive(Default)]
+struct CountingWriter {
+    bytes: usize,
+}
+
+impl std::io::Write for CountingWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.bytes = self.bytes.saturating_add(bytes.len());
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
     }
 }
 
@@ -570,13 +686,6 @@ fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         views: vec![ViewSpec::Types, ViewSpec::Families, ViewSpec::Languages, ViewSpec::Documents],
         ..Query::default()
     };
-    let provenance = Provenance {
-        scan_started_at: None,
-        generated_at: std::time::UNIX_EPOCH,
-        source: ReportSource::ColdScan,
-        complete: analysis.is_complete(),
-        errors: Vec::new(),
-    };
     let read = Request::new(
         Basis {
             root: index.root_path().to_path_buf(),
@@ -588,7 +697,7 @@ fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     );
     let started = Instant::now();
     for _ in 0..arguments.queries {
-        black_box(fdu_core::query::report(&index, &read, &provenance).expect("report"));
+        black_box(fdu_core::query::report(&index, &read, std::time::UNIX_EPOCH).expect("report"));
     }
     let component = started.elapsed();
     // The historical benchmark digest hashes retained index/content facts after the
@@ -757,8 +866,8 @@ fn summary_tier(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         index_len: None,
         ..Summary::default()
     };
-    summary.errors = u64::try_from(report.errors.len()).unwrap_or(u64::MAX);
-    summary.complete = report.complete;
+    summary.errors = u64::try_from(report.status.errors.len()).unwrap_or(u64::MAX);
+    summary.complete = report.status.complete;
     // The walk counted more than the summary reports -- symlinks and other kinds are
     // observed and then deliberately not tallied -- so entries is the honest total of
     // what this tier can speak for, not of what it touched.
@@ -839,10 +948,10 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         index_len: None,
         ..Summary::default()
     };
-    summary.errors = u64::try_from(report.errors.len()).unwrap_or(u64::MAX);
+    summary.errors = u64::try_from(report.status.errors.len()).unwrap_or(u64::MAX);
     summary.counters = counters;
     summary.scan_diagnostics = scan_diagnostics;
-    summary.complete = report.complete;
+    summary.complete = report.status.complete;
     summary.entries = root.files + root.dirs;
     summary.snapshot_bytes = snapshot.metadata().ok().map(|metadata| metadata.len());
     // A rewrite lands a fresh temporary and renames it over the path, so the file's
@@ -1258,29 +1367,21 @@ fn index_second_report(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         query,
         now,
     );
-    let provenance = Provenance {
-        scan_started_at: None,
-        generated_at: now,
-        source: ReportSource::ColdScan,
-        complete: true,
-        errors: Vec::new(),
-    };
-
-    let first = fdu_core::query::report(&index, &request, &provenance)?;
+    let first = fdu_core::query::report(&index, &request, now)?;
     let first_rendered =
         fdu_core::report_format::render(&first, fdu_core::report_format::Format::Text, false);
     black_box(first_rendered.len());
 
     let started = Instant::now();
-    let second = fdu_core::query::report(&index, &request, &provenance)?;
+    let second = fdu_core::query::report(&index, &request, now)?;
     let rendered =
         fdu_core::report_format::render(&second, fdu_core::report_format::Format::Text, false);
     black_box(rendered.len());
     let component = started.elapsed();
 
     let mut summary = summarize_index(arguments, &index)?;
-    summary.errors = u64::try_from(second.errors.len()).unwrap_or(u64::MAX);
-    summary.complete = second.complete;
+    summary.errors = u64::try_from(second.status.errors.len()).unwrap_or(u64::MAX);
+    summary.complete = second.status.complete;
     Ok(ProbeOutput::new(arguments.mode, "index-retained", component, summary))
 }
 
@@ -2477,6 +2578,12 @@ mod tests {
             "delta-apply-large",
             "markdown-prose",
             "query",
+            "render-json",
+            "render-json-string",
+            "render-jsonl",
+            "render-jsonl-string",
+            "render-yaml",
+            "render-yaml-string",
             "revalidate",
             "cold-open-save",
             "default-tree",
@@ -2624,6 +2731,33 @@ mod tests {
         assert_eq!(output.summary.files, 1);
         assert!(output.summary.complete);
         assert_eq!(output.source, "index-retained");
+    }
+
+    #[test]
+    fn report_render_modes_stream_the_exact_string_document() {
+        let root = tempfile::tempdir().expect("root tempdir");
+        std::fs::create_dir(root.path().join("nested")).expect("directory");
+        std::fs::write(root.path().join("nested/one.txt"), b"one").expect("file");
+        std::fs::write(root.path().join("two.json"), br#"{"two":2}"#).expect("file");
+        let arguments = Arguments::parse(
+            ["render-json", "--root", root.path().to_str().expect("utf8")]
+                .into_iter()
+                .map(OsString::from),
+        )
+        .expect("probe arguments");
+        let (_index, report) = report_for_render(&arguments).expect("render report");
+
+        for format in [
+            fdu_core::report_format::Format::Json,
+            fdu_core::report_format::Format::Jsonl,
+            fdu_core::report_format::Format::Yaml,
+        ] {
+            let materialized = fdu_core::report_format::render(&report, format, false);
+            let mut streamed = Vec::new();
+            fdu_core::report_format::write(&report, format, false, &mut streamed)
+                .expect("stream report");
+            assert_eq!(streamed, materialized.as_bytes(), "{format:?}");
+        }
     }
 
     #[test]

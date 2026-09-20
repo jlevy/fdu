@@ -427,6 +427,70 @@ PROBE_JOBS: Dict[str, Job] = {
         ),
         parallel_cpu=True,
     ),
+    "render-json": Job(
+        id="render-json",
+        argv=("{binary}", "render-json", "--root", "{root}"),
+        start_state="cold",
+        description=(
+            "Stream an unbounded tree plus file-list report as pretty JSON into a "
+            "byte-counting discard writer after untimed report construction. Pair with "
+            "render-json-string to isolate component time, allocations, and retained "
+            "output memory."
+        ),
+        parallel_cpu=True,
+    ),
+    "render-json-string": Job(
+        id="render-json-string",
+        argv=("{binary}", "render-json-string", "--root", "{root}"),
+        start_state="cold",
+        description=(
+            "Materialize the same pretty-JSON report as render-json into one String; the "
+            "same-head control for the streaming writer."
+        ),
+        parallel_cpu=True,
+    ),
+    "render-jsonl": Job(
+        id="render-jsonl",
+        argv=("{binary}", "render-jsonl", "--root", "{root}"),
+        start_state="cold",
+        description=(
+            "Stream an unbounded tree plus file-list report as JSON Lines into a "
+            "byte-counting discard writer after untimed report construction. Pair with "
+            "render-jsonl-string."
+        ),
+        parallel_cpu=True,
+    ),
+    "render-jsonl-string": Job(
+        id="render-jsonl-string",
+        argv=("{binary}", "render-jsonl-string", "--root", "{root}"),
+        start_state="cold",
+        description=(
+            "Materialize the same JSON-Lines report as render-jsonl into one String; the "
+            "same-head control for the streaming writer."
+        ),
+        parallel_cpu=True,
+    ),
+    "render-yaml": Job(
+        id="render-yaml",
+        argv=("{binary}", "render-yaml", "--root", "{root}"),
+        start_state="cold",
+        description=(
+            "Stream an unbounded tree plus file-list report as YAML into a byte-counting "
+            "discard writer after untimed report construction. Pair with "
+            "render-yaml-string."
+        ),
+        parallel_cpu=True,
+    ),
+    "render-yaml-string": Job(
+        id="render-yaml-string",
+        argv=("{binary}", "render-yaml-string", "--root", "{root}"),
+        start_state="cold",
+        description=(
+            "Materialize the same YAML report as render-yaml into one String; the "
+            "same-head control for the streaming writer."
+        ),
+        parallel_cpu=True,
+    ),
     "delta-apply-large": Job(
         id="delta-apply-large",
         argv=(
