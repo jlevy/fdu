@@ -4,16 +4,17 @@
 
 **Author:** fdu project
 
-**Status:** Active. Pickup for a Linux host stacked on
-[#92](https://github.com/jlevy/fdu/pull/92). Darwin measurement on that branch stopped
-at `26480612` (H138 recorded).
+**Status:** Recorded.
+Ready to merge onto [#92](https://github.com/jlevy/fdu/pull/92) at `937f9445`. This is
+not a Linux floor pass: H111 failed on this virtualized host (exp-141). Darwin
+measurement on #92 had stopped at `26480612` when this block started; the stack later
+landed R1–R3 and `c441edf6` at that tip.
 H139 is recorded (exp-138, same, quiet).
 H140 is recorded (exp-139, same leftover identity).
 H141 is recorded (exp-140, same, uncontrolled).
-H111 is recorded (exp-141, floor/RSS gates failed on this VM). H143 is recorded
-(exp-142, same leftover identity).
+H143 is recorded (exp-142, same leftover identity).
 H142 is recorded (exp-143, same leftover identity).
-Do not mint these on the Darwin branch.
+Do not mint those ids on the Darwin branch.
 
 ## Overview
 
@@ -38,7 +39,8 @@ It does not raise the README 200K files/s or 4M cached lines/s.
 ## Non-Goals
 
 - Pushing to #91 or to `perf/campaign-next-2026-09-19`
-- Merging, force-pushing, or restarting the H86 structural rewrite (`fdu-xde5`)
+- Merging this branch to `main` ahead of #91 and #92
+- Force-pushing, or restarting the H86 structural rewrite (`fdu-xde5`)
 - Retrying H113 file-count, H109 Path rewrite, H116, H118, H119, H124, H71 raw
   `getdents64` / io_uring, or a `macos_bulk` port
 - Loading a snapshot on one-shot `fdu PATH` (H108)
@@ -46,20 +48,24 @@ It does not raise the README 200K files/s or 4M cached lines/s.
 - A capability that exists only on the command line
 - Treating a Darwin `default-tree` cell as H111
 
-## Pickup
+## Standing
 
 - **Branch:** `perf/campaign-linux-2026-09-19`
+  ([#94](https://github.com/jlevy/fdu/pull/94))
 - **Base:** `perf/campaign-next-2026-09-19` ([#92](https://github.com/jlevy/fdu/pull/92)
-  at `937f9445`, including `c441edf6` single-view Cow borrow).
-  Rebase onto later #92 commits if Darwin adds more; do not mint H139+ there.
+  at `937f9445`, including `c441edf6` single-view Cow borrow)
 - **Protocol:** [performance-loop.md](../../guides/performance-loop.md)
 - **Darwin standing:**
   [Current Standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
+- **Linux standing:**
+  [Linux Standing](../../guides/performance-loop-runbook.md#linux-standing-2026-09-20)
 - **Registry:**
   [Current engine (0.1.0)](../../guides/performance-loop.md#current-engine-010)
 - **Beads:** epic `fdu-v62p`; H139 `fdu-bt6x`; H140 `fdu-6hjg`; H141 `fdu-rmo2`; H142
-  `fdu-2003` (closed); H111 `fdu-jekg` (closed); leftover H143 `fdu-kfl3` (closed)
+  `fdu-2003` (closed); H111 `fdu-jekg` (closed); leftover H143 `fdu-kfl3` (closed);
+  merge-ready `fdu-jh1i`
 - **First experiment id:** exp-138 (exp-113 remains reserved unused)
+- **Next free ids after this PR:** H144 / exp-144
 - **Quiet:** `PERF_HOST_REGIME=quiet` first.
   Do not lower the 25% busy bar.
   Label **uncontrolled** if the gate fails or the final snapshot exceeds 25%.
@@ -111,10 +117,10 @@ trim), H116 (HashMap drop), H118 (first-pass insert-rebuild), H119 (walk overlap
 (no apply-stage ≥50%), H123 (retained report is the product path), H124 (type/size /
 read-ahead), H107 (no ignore-is-the-walk subject on the Darwin hunt; do not invent one).
 
-## Next Up (Linux Only)
+## Recorded (Linux Only)
 
-Take these in order.
-Mint the reserved id when the cell starts, not before.
+Taken in this order.
+Minted ids stay reserved; do not reuse them on Darwin.
 
 1. **H139 — cache-hit stack, same or different.** **Same** (exp-138, quiet).
    `content-cache-hit` wall −22.48% [−23.46%, −21.39%] on reconstructible `linux-v6.12`
@@ -153,6 +159,11 @@ Mint the reserved id when the cell starts, not before.
    Leftover is `getdents64`+`statx` plus retained-index RSS / detached finish.
    No new cut. Do not restart H86. Do not retry H71. Bead: `fdu-kfl3` (close).
 
+After this PR: **H144** if minted — a new named mechanism that can close the 1.4× index
+or 3× RSS gate, or a bare-metal H111 remeasure.
+Do not start that on this branch.
+Do not restart H86. Do not retry H71.
+
 ## Subjects
 
 - **Do not** use `system-private-frameworks`. That tree is Darwin-only.
@@ -188,12 +199,12 @@ H108 still requires one-shot `fdu PATH` to stay `cold scan`.
 
 ## Rollout Plan
 
-Work only on `perf/campaign-linux-2026-09-19`, base `#92`. Do not push to #91 or to the
-Darwin stacked branch.
-No merge unless asked.
+Ready to merge onto [#92](https://github.com/jlevy/fdu/pull/92)
+(`perf/campaign-next-2026-09-19` at `937f9445`). Do not merge this branch to `main`
+ahead of #91 and #92. Do not push to #91 or to the Darwin stacked branch.
 No force-push.
 
-If #92 moves, rebase this branch onto it and keep H139–H142 meanings.
+If #92 moves before merge, rebase this branch onto it and keep H139–H143 meanings.
 
 ## Open Questions
 
