@@ -5,7 +5,7 @@ title: "P2.1.2: Per-analyzer records and sidecar layout, read back into today's 
 kind: task
 status: in_progress
 priority: 0
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 delegate: codex@spud10
 labels:
@@ -15,11 +15,13 @@ dependencies:
     target: is-01m2pye8b6mrzcdsq27ffct9d4
   - type: blocks
     target: is-01kzyp8vpx1852y9sjnb7k6w2g
+  - type: blocks
+    target: is-01m2yh8kc79nw7bn6k6xw8g3bp
 parent_id: is-01m2phzn814exmf4ty5vw6zha0
 hold: null
 hold_until: null
 created_at: 2026-09-17T05:46:40.531Z
-updated_at: 2026-09-20T04:39:46.865Z
+updated_at: 2026-09-20T05:30:29.061Z
 started_at: 2026-09-20T04:39:46.865Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 1: Measured Values", commit 2. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.

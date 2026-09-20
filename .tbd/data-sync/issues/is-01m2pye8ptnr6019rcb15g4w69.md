@@ -5,7 +5,7 @@ title: "P2.1.4: Metric presence follows the request under fdu.report/7"
 kind: task
 status: in_progress
 priority: 0
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 delegate: codex@spud10
 labels:
@@ -17,11 +17,13 @@ dependencies:
     target: is-01m2pyebe93530evdeaw8tcxh6
   - type: blocks
     target: is-01kzyqkgbvy3cmmc3qx9zwfnzp
+  - type: blocks
+    target: is-01m2yh8kc79nw7bn6k6xw8g3bp
 parent_id: is-01m2phzn814exmf4ty5vw6zha0
 hold: null
 hold_until: null
 created_at: 2026-09-17T05:46:41.242Z
-updated_at: 2026-09-20T04:39:46.882Z
+updated_at: 2026-09-20T05:30:29.074Z
 started_at: 2026-09-20T04:39:46.882Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 1: Measured Values", commit 4. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.

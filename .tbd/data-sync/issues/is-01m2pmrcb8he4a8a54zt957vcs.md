@@ -5,7 +5,7 @@ title: "Phase 2 item 4: .gitignore observation projection on every route"
 kind: epic
 status: open
 priority: 0
-version: 12
+version: 13
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - design
@@ -13,6 +13,8 @@ labels:
 dependencies:
   - type: blocks
     target: is-01m2pmrn6ka9kt7f4kcjcmvn8c
+  - type: blocks
+    target: is-01m2yh8kc79nw7bn6k6xw8g3bp
 parent_id: is-01m2pmr9aftb3vzfyjyanndny3
 child_order_hints:
   - is-01m2pyeeppbcbq3hfepwjcthyw
@@ -21,7 +23,7 @@ child_order_hints:
   - is-01m2pyefnttqs5rzqcwbgf2qb5
   - is-01m2pyeg0zegnzm857bvxrbpa6
 created_at: 2026-09-17T02:57:26.887Z
-updated_at: 2026-09-17T05:47:43.277Z
+updated_at: 2026-09-20T05:30:29.038Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 4: The `.gitignore` Observation Projection on Every Route", moved here when the item became beads (PR #78 at `e52383d4`; locators verified at `5f2d36d`). The commits are this bead's children, P2.4.1 to P2.4.5; their blockers carry the ordering, so this bead only groups them and closes when they do.
 

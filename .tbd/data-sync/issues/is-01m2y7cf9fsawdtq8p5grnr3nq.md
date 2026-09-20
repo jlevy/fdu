@@ -3,14 +3,19 @@ type: is
 id: is-01m2y7cf9fsawdtq8p5grnr3nq
 title: Verify unchanged defaults, directory formats, surface parity, and stacked PR CI
 kind: task
-status: open
+status: in_progress
 priority: 1
-version: 2
+version: 6
+spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
+delegate: claude-code@spud10
 labels: []
 dependencies: []
 parent_id: is-01m2y7b2f9f1cv1dssrtref7zd
+hold: null
+hold_until: null
 created_at: 2026-09-20T01:37:40.650Z
-updated_at: 2026-09-20T04:42:43.141Z
+updated_at: 2026-09-20T06:16:21.023Z
+started_at: 2026-09-20T06:16:21.022Z
 ---
 Validate the epic end to end with portable product goldens, engine tests, and Python
 parity. Cover metadata default list/tree equivalence, explicit formats and aliases,
@@ -30,8 +35,8 @@ Validate JSON/JSONL/YAML schema changes and age reference consistency.
 Review expected golden diffs and preserve named portability patterns.
 Record parity artifacts on Linux per repository policy.
 Run make docs-format and make check; run cross-lint if platform-gated code changes.
-Review, commit/push codex/directory-rollup-query, create/update the PR against
-perf/campaign-next-2026-09-19 (#92), and watch CI pass.
+Review and commit the implementation separately, stack its PR above the reviewed plan
+layer, and watch CI pass.
 Close finished beads and tbd sync after successful delivery.
 
 <!-- This document follows common-doc-guidelines.md.

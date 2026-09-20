@@ -5,7 +5,8 @@ title: Add tree, paths, and long list formats across core and Python
 kind: feature
 status: in_progress
 priority: 1
-version: 6
+version: 8
+spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
 delegate: claude-code@spud10
 labels: []
 dependencies:
@@ -19,7 +20,7 @@ parent_id: is-01m2y7b2f9f1cv1dssrtref7zd
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:37:26.880Z
-updated_at: 2026-09-20T04:42:31.306Z
+updated_at: 2026-09-20T05:16:02.731Z
 started_at: 2026-09-20T01:39:25.996Z
 ---
 Implement core-owned `tree`, `paths`, and `long` presentations of the shared list

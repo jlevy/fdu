@@ -5,7 +5,7 @@ title: "P1.4.2: Record walk failures per path; TreeStatus::of with bounded, path
 kind: task
 status: in_progress
 priority: 0
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 delegate: codex@spud10
 labels:
@@ -19,7 +19,7 @@ parent_id: is-01m2pmra8yqrcxg27kc6ezg9vd
 hold: null
 hold_until: null
 created_at: 2026-09-17T05:46:38.515Z
-updated_at: 2026-09-20T04:40:17.244Z
+updated_at: 2026-09-20T06:22:41.547Z
 started_at: 2026-09-20T04:40:17.244Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 4: Provenance and Tree Status", commit 2. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
@@ -47,3 +47,5 @@ Risk: issues are capped at 64 while scan errors are not, so `errors` becomes bou
 ## Notes
 
 Acceptance for the sidecar (PR #82 review F1, fdu-iiy5): layer 3 holds the partial-pass sidecar write behind this bead, because a partial pass marks the pass root Partial, so provenance_of promotes nothing and content_record_writable answers false for every unchanged file. When failed paths are marked per path, re-enable the write in content_tier_writable and pin it: after a warm partial pass with one changed file over a tree with an unlistable directory, the sidecar holds a record for every file the pass stat'd unchanged and none under the unlistable directory (the reviewer measured 7 records, not 1).
+
+2026-09-20 independent integration review at9e96e850: reconcile_target does not transfer scan.errors into Index.issues while new TreeStatus reads retained issues. Astra is establishing runtime proof; must retain bounded path-ordered warm error details before this bead closes.

@@ -5,7 +5,8 @@ title: Directory filtering and list presentation formats for stale build invento
 kind: epic
 status: in_progress
 priority: 1
-version: 14
+version: 18
+spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
 delegate: claude-code@spud10
 labels: []
 dependencies: []
@@ -17,16 +18,14 @@ child_order_hints:
   - is-01m2y7c6yzccahx1ntvy2wf1s1
   - is-01m2y7cbprn6w292gjenv0twd7
   - is-01m2y7cf9fsawdtq8p5grnr3nq
+  - is-01m2yp2y2dvhqfynz0h5xahegm
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:36:54.755Z
-updated_at: 2026-09-20T05:15:32.829Z
+updated_at: 2026-09-20T05:54:36.744Z
 started_at: 2026-09-20T01:38:30.390Z
 ---
-Implement [issue #93](https://github.com/jlevy/fdu/issues/93) on
-`codex/directory-rollup-query`, stacked on PR #92’s `perf/campaign-next-2026-09-19`
-branch. Ship the engine, CLI, Python API, documentation, help examples, tests, and a PR
-with passing CI.
+Plan: `docs/project/specs/active/plan-2026-09-20-directory-query-formats.md`. Publish the plan separately on `codex/directory-query-plan`, stacked on the latest branch, PR #94 (`perf/campaign-linux-2026-09-19`) above #92. Implementation follows in a separate PR above the reviewed plan. The tracked spec owns the complete design and implementation breakdown.
 
 ## Problem and Goal
 
@@ -225,7 +224,7 @@ goldens. Preserve named patterns; record platform-dependent parity artifacts on 
 
 Run `make docs-format` and required `make check`; use `make cross-lint` if
 platform-gated code changes.
-Review, commit, push, open/update a PR based on #92’s branch, and watch CI to
+Review, commit, push, open/update an implementation PR above the reviewed plan layer, and watch CI to
 completion. Close finished beads and sync after passing CI. No dependency changes or
 performance claims are planned.
 
@@ -235,4 +234,4 @@ See github.com/jlevy/practical-prose and review guidelines before editing.
 
 ## Notes
 
-Accepted design: list is the metadata default view; tree is its default format and --format tree is exactly equivalent. Latest user constraint: preserve existing default output, including directory-only roll-ups, columns, ordering, depth, limits, and omission notices. Paths and long are additional explicit formats. Implementation remains in progress on codex/directory-rollup-query, based on PR #92 at 937f9445; follow this revised contract.
+The full design and all six implementation steps are tracked in docs/project/specs/active/plan-2026-09-20-directory-query-formats.md and published as plan-only PR https://github.com/jlevy/fdu/pull/96, stacked on #94 above #92/#91. Publication task is fdu-79n0. Preserve default output. Implementation remains separate in the original worktree and should form a subsequent layer above the reviewed plan; do not close implementation beads or issue #93 upon plan publication.

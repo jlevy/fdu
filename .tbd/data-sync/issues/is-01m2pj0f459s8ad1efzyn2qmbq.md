@@ -5,7 +5,7 @@ title: "Phase 2 item 2: answer model: one typed value per document, serialized b
 kind: epic
 status: open
 priority: 0
-version: 21
+version: 22
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - output
@@ -14,6 +14,8 @@ labels:
 dependencies:
   - type: blocks
     target: is-01m2pmrn6ka9kt7f4kcjcmvn8c
+  - type: blocks
+    target: is-01m2yh8kc79nw7bn6k6xw8g3bp
 parent_id: is-01m2pmr9aftb3vzfyjyanndny3
 child_order_hints:
   - is-01m2pye9bnamf5vezd6tg2bwz2
@@ -25,7 +27,7 @@ child_order_hints:
   - is-01m2pyebe93530evdeaw8tcxh6
   - is-01m2pyebrt6j2ghh4c4vcdvyxg
 created_at: 2026-09-17T02:09:26.148Z
-updated_at: 2026-09-17T05:47:40.131Z
+updated_at: 2026-09-20T05:30:29.029Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 2: The Answer Model and Writers", moved here when the item became beads (PR #78 at `e52383d4`; locators verified at `5f2d36d`). The commits are this bead's children, P2.2.1 to P2.2.8; their blockers carry the ordering, so this bead only groups them and closes when they do.
 
