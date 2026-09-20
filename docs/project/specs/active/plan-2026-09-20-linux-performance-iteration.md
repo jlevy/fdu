@@ -103,11 +103,11 @@ Mint the reserved id when the cell starts, not before.
 3. **H84 — adaptive unlock / thread-policy screen (`fdu-tk1b`).** **Confirmed silent**
    (exp-146, uncontrolled named jobs).
    ~2 µs/entry vs 30 µs; expansions 0; start 4 / reserve 8. Named-job `--threads 8` is
-   not a 3% win (aggregate +1.75% regression; index +0.25%). `--no-controls` aggregate
-   is a warm sign (−5.42% quiet on `linux-v6.12`; **−10.06% quiet on nominated `/usr`**,
-   exp-148) and is not a shipped constant.
-   Do not change `PORTABLE` to `measured`. Do not lower the unlock threshold.
-   Bead: `fdu-4cni` (close).
+   not a 3% win (aggregate +1.75% on `linux-v6.12`; **+7.12% quiet regression on
+   `/usr`**, exp-149; index +0.25%). `--no-controls` aggregate is a warm sign (−5.42%
+   quiet on `linux-v6.12`; **−10.06% quiet on nominated `/usr`**, exp-148) and is not a
+   shipped constant. Do not change `PORTABLE` to `measured`. Do not lower the unlock
+   threshold. Bead: `fdu-4cni` (close).
    `fdu-zk2r` (close). `fdu-tk1b` stays open for bare metal.
 
 4. **H146 — first-run leftover after H140.** **Same leftover identity** (exp-147,

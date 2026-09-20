@@ -778,9 +778,10 @@ Do not port `macos_bulk`.
 
 **H84 / exp-146** is the standing Linux thread-policy screen: **unlock silent**. ~2
 µs/entry vs 30 µs; expansions 0; start 4 / reserve 8. Named-job `--threads 8` is not a
-3% win (default aggregate +1.75% regression).
-`--no-controls` aggregate is a warm sign (−5.42% quiet on `linux-v6.12`; −10.06% quiet
-on nominated `/usr`, exp-148). Do not ship `PORTABLE`. `fdu-tk1b` stays open.
+3% win (default aggregate +1.75% on `linux-v6.12`; **+7.12% quiet regression on
+`/usr`**, exp-149). `--no-controls` aggregate is a warm sign (−5.42% quiet on
+`linux-v6.12`; −10.06% quiet on nominated `/usr`, exp-148). Do not ship `PORTABLE`.
+`fdu-tk1b` stays open.
 
 **H146 / exp-147** is the standing Linux first-run leftover: **same** identity.
 Quiet 12-pair `default-tree-first` on `linux-v6.12`. Walk 93% of component.
@@ -818,7 +819,7 @@ Further Linux cells are on
 5. A named cut only if a leftover above names one.
    None did. **H147 was not minted.** Do not restart H86. Do not retry H71.
 
-Next free Linux experiment id is **exp-149**. Next free unused hypothesis id after this
+Next free Linux experiment id is **exp-150**. Next free unused hypothesis id after this
 reservation is **H147**.
 
 ## Before the First Round

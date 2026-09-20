@@ -66,7 +66,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | bare-metal | warm-steady | 69 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Linux 6.12.94+, ext4 | virtualized | warm-steady | 11 |
+| Linux 6.12.94+, ext4 | virtualized | warm-steady | 12 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -227,6 +227,7 @@ dead end.
 | 146 | [Linux adaptive unlock is silent; named-job --threads 8 is not a 3% win](#exp146--linux-adaptive-unlock-is-silent-namedjob-threads-8-is-not-a-3-win) | H84 | `aggregate-summary` | +1.8% | ✅ accepted |
 | 147 | [Linux first-run leftover is still the walk; snapshot write not skippable](#exp147--linux-firstrun-leftover-is-still-the-walk-snapshot-write-not-skippable) | H146 | `default-tree-first` | +1.5% | ✅ accepted |
 | 148 | [Linux H84 --no-controls --threads 8 sign transfers to nominated /usr](#exp148--linux-h84-nocontrols-threads-8-sign-transfers-to-nominated-usr) | H84 | `aggregate-summary` | -10.1% | ✅ accepted |
+| 149 | [Linux default /usr aggregate --threads 8 regresses; do not lower unlock](#exp149--linux-default-usr-aggregate-threads-8-regresses-do-not-lower-unlock) | H84 | `aggregate-summary` | +7.1% | ✅ accepted |
 
 ## The experiments
 
@@ -4987,6 +4988,35 @@ not a shipped PORTABLE constant; minor_faults inferior.
 Full record:
 [`exp-148-linux-h84-no-controls-threads-8-sign-transfers-to-usr.md`](../experiments/exp-148-linux-h84-no-controls-threads-8-sign-transfers-to-usr.md)
 
+### exp-149 — Linux default /usr aggregate --threads 8 regresses; do not lower unlock
+
+✅ accepted · 2026-09-20 · H84 · commit `06b12212`
+
+Control: HEAD automatic workers
+
+Candidate: same probe --threads 8
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 464.5 | 484.3 | +7.12% (regression) | [+3.72%, +11.30%] |
+| component (ms) | 462.0 | 481.7 | +7.14% (regression) | [+3.71%, +11.31%] |
+| cpu (ms) | 740.6 | 733.5 | +1.34% (n.s.) | [-2.07%, +3.18%] |
+| user (ms) | 489.0 | 480.3 | +0.02% (n.s.) | [-1.79%, +6.27%] |
+| system (ms) | 253.6 | 251.4 | -0.54% (n.s.) | [-3.77%, +2.22%] |
+| peak rss (MiB) | 68.2 | 68.8 | +0.39% (n.s.) | [-0.02%, +0.95%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+screen only; no engine change
+
+**Accepted:** default gitignore-on /usr aggregate --threads 8 is +7.12%
+[+3.72%, +11.30%] quiet regression; do not lower unlock or ship PORTABLE from this host.
+
+Full record:
+[`exp-149-linux-default-usr-aggregate-threads-8-regresses-do-not-lower.md`](../experiments/exp-149-linux-default-usr-aggregate-threads-8-regresses-do-not-lower.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -5245,6 +5275,13 @@ Baselines show one value because they measure a state rather than a change.
 | 054 | Validate the Linux campaign’s cumulative effect on macOS | `warm-revalidate` | 393.0 | 335.7 | -15.7% | ✅ accepted |
 | 055 | Validate review fixes on macOS | `cold-scan-index` | 304.9 | 297.5 | -0.9% | ✅ accepted |
 
+### usr-prefix (208,411 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 148 | Linux H84 --no-controls --threads 8 sign transfers to nominated /usr | `aggregate-summary` | 93.5 | 82.6 | -10.1% | ✅ accepted |
+| 149 | Linux default /usr aggregate --threads 8 regresses; do not lower unlock | `aggregate-summary` | 464.5 | 484.3 | +7.1% | ✅ accepted |
+
 ### cargo-registry-src (13,020 entries) — Linux 6.18.44-fc-v21, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -5382,12 +5419,6 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 019 | Adaptive worker threshold at the first crossing scale | `cold-scan-index` | 634.2 | 637.5 | +1.2% | ❌ rejected |
-
-### usr-prefix (208,411 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 148 | Linux H84 --no-controls --threads 8 sign transfers to nominated /usr | `aggregate-summary` | 93.5 | 82.6 | -10.1% | ✅ accepted |
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
