@@ -252,33 +252,34 @@ fn prepare_report_internal(
         RetainedState::Summary => {
             let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
             let mut summary = SummaryRow::default();
-            let mut reduce = |observation: crate::Observation| {
-                for observed in observation.ops {
-                    let crate::Op::Upsert { kind, attrs, .. } = observed.op else {
-                        continue;
-                    };
-                    match kind {
-                        EntryKind::File => {
-                            summary.files += 1;
-                            summary.bytes += attrs.size;
-                            summary.allocated += attrs.allocated;
-                            summary.newest_mtime_ns = Some(
-                                summary
-                                    .newest_mtime_ns
-                                    .map_or(attrs.mtime_ns, |current| current.max(attrs.mtime_ns)),
-                            );
-                        }
-                        EntryKind::Dir => summary.dirs += 1,
-                        EntryKind::Symlink | EntryKind::Other => {}
+            let mut reduce = |observed: &crate::ObservationOp| {
+                let crate::Op::Upsert { kind, attrs, .. } = &observed.op else {
+                    return;
+                };
+                match kind {
+                    EntryKind::File => {
+                        summary.files += 1;
+                        summary.bytes += attrs.size;
+                        summary.allocated += attrs.allocated;
+                        summary.newest_mtime_ns = Some(
+                            summary
+                                .newest_mtime_ns
+                                .map_or(attrs.mtime_ns, |current| current.max(attrs.mtime_ns)),
+                        );
                     }
+                    EntryKind::Dir => summary.dirs += 1,
+                    EntryKind::Symlink | EntryKind::Other => {}
                 }
             };
             let (scan, scan_diagnostics) = if collect_scan_diagnostics {
-                let (scan, diagnostics) =
-                    crate::scan::scan_with_diagnostics(&root, &config.scan, &mut reduce)?;
+                let (scan, diagnostics) = crate::scan::scan_summary_fold_with_diagnostics(
+                    &root,
+                    &config.scan,
+                    &mut reduce,
+                )?;
                 (scan, Some(diagnostics))
             } else {
-                (crate::scan::scan(&root, &config.scan, &mut reduce)?, None)
+                (crate::scan::scan_summary_fold(&root, &config.scan, &mut reduce)?, None)
             };
             let complete = scan.is_complete();
             let provenance = Provenance {
