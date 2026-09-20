@@ -5,7 +5,7 @@ title: "Linux parallel validation of Darwin #92"
 kind: epic
 status: in_progress
 priority: 1
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-09-19-linux-parallel-validation.md
 labels:
   - linux
@@ -18,6 +18,10 @@ child_order_hints:
   - is-01m2y4f6c3ea0q3ngn99nz7eek
   - is-01m2y762f58jb3kx6nhn0hr31g
 created_at: 2026-09-20T00:46:42.178Z
-updated_at: 2026-09-20T01:34:10.917Z
+updated_at: 2026-09-20T01:50:08.606Z
 ---
 Linux host stacked on #92 (26480612). Replicate accepted Darwin engine (H125/H129/H131/H133/H138), profile walk leftover, and run H111 floor gates. Spec: docs/project/specs/active/plan-2026-09-19-linux-parallel-validation.md. Do not push to #91 or the Darwin branch. Do not restart H86. H139-H142 reserved.
+
+## Notes
+
+Rebased onto #92 937f9445 (c441edf6 Cow borrow + restore-evidence). H139-H141 meanings hold: four-view still shares; well-formed cache-hit unchanged. H111 fail / H143 leftover unchanged. Do not remasure unless leftover identity changes.
