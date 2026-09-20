@@ -27,7 +27,9 @@ use crate::engine_contract::{
     Attrs, Commit, EntryKind, Error, Observation, ObservationOp, Op, PathExpectation, PathState,
     Result, ScanScope,
 };
-use crate::index::{DetachedIndexBuilder, Index, IndexHandle, collect_child_expectations};
+use crate::index::{
+    DetachedIndexBuilder, Index, IndexHandle, ReconcileErrors, collect_child_expectations,
+};
 use crate::query::ScopeAxis;
 use crate::stored_state::{ControlTierIdentity, EntryScope, EntryTierIdentity, SnapshotIdentity};
 
@@ -1117,7 +1119,7 @@ impl ReconcileTarget<'_> {
         complete: bool,
         listed_incomplete: &[PathBuf],
         failed_paths: &[PathBuf],
-        issues: &[crate::Issue],
+        errors: ReconcileErrors<'_>,
     ) -> Result<Option<Commit>> {
         match self {
             Self::Direct(index) => index.finish_reconcile(
@@ -1126,7 +1128,7 @@ impl ReconcileTarget<'_> {
                 complete,
                 listed_incomplete,
                 failed_paths,
-                issues,
+                errors,
             ),
             Self::Shared(handle) => handle.finish_reconcile(
                 path,
@@ -1134,7 +1136,7 @@ impl ReconcileTarget<'_> {
                 complete,
                 listed_incomplete,
                 failed_paths,
-                issues,
+                errors,
             ),
             Self::Controlled { handle, control } => {
                 control.check_active()?;
@@ -1144,7 +1146,7 @@ impl ReconcileTarget<'_> {
                     complete,
                     listed_incomplete,
                     failed_paths,
-                    issues,
+                    errors,
                 )
             }
         }
@@ -4292,16 +4294,6 @@ fn reconcile_paths_target(
     let root = target.root_path()?;
     normalize_walk_errors(&root, &mut report.reconciliation.scan.errors);
     let failed_paths = failure_paths(target, &report.reconciliation.scan.errors)?;
-    let mut issues: Vec<crate::Issue> = report
-        .reconciliation
-        .scan
-        .errors
-        .iter()
-        .map(|error| crate::Issue::from_error_under(&root, error))
-        .collect();
-    if let Some(error) = failure.as_ref() {
-        issues.push(crate::Issue::from_error_under(&root, error));
-    }
     for ((subtree, started_at), complete) in opened.into_iter().zip(completed) {
         let commit = target.finish_reconcile(
             &subtree,
@@ -4309,7 +4301,10 @@ fn reconcile_paths_target(
             complete,
             &listed_incomplete,
             &failed_paths,
-            &issues,
+            ReconcileErrors {
+                errors: &report.reconciliation.scan.errors,
+                terminal: failure.as_ref(),
+            },
         )?;
         if let Some(commit) = commit.as_ref() {
             sink(commit);
@@ -4420,19 +4415,13 @@ fn reconcile_target(
             normalize_walk_errors(&root, &mut report.scan.errors);
             let listed_incomplete = report.take_recordable_completeness();
             let failed_paths = failure_paths(target, &report.scan.errors)?;
-            let issues: Vec<crate::Issue> = report
-                .scan
-                .errors
-                .iter()
-                .map(|error| crate::Issue::from_error_under(&root, error))
-                .collect();
             let finished = target.finish_reconcile(
                 &subtree,
                 started_at,
                 report.is_complete(),
                 &listed_incomplete,
                 &failed_paths,
-                &issues,
+                ReconcileErrors { errors: &report.scan.errors, terminal: None },
             )?;
             if let Some(commit) = finished.as_ref() {
                 sink(commit);
@@ -4440,9 +4429,14 @@ fn reconcile_target(
             Ok(report)
         }
         Err(error) => {
-            let issue = crate::Issue::from_error_under(&target.root_path()?, &error);
-            let finished =
-                target.finish_reconcile(&subtree, started_at, false, &[], &[], &[issue])?;
+            let finished = target.finish_reconcile(
+                &subtree,
+                started_at,
+                false,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: Some(&error) },
+            )?;
             if let Some(commit) = finished.as_ref() {
                 sink(commit);
             }
@@ -4688,31 +4682,30 @@ fn reconcile_target_inner(
         };
 
         #[cfg(target_os = "macos")]
-        let used_bulk = if !walk_hook_covers(&abs_dir) {
-            if let Some(entries) = bulk_reader.as_mut().and_then(|reader| reader.read(&abs_dir)) {
-                report.scan.dirs_read += 1;
-                for entry in entries {
-                    let baseline = match known.remove(&entry.name) {
-                        Some(baseline) => baseline,
-                        None => target.expectation(&rel_dir.join(&entry.name))?,
-                    };
-                    process_entry(
-                        entry.name,
-                        entry.kind,
-                        entry.attrs,
-                        baseline,
-                        &mut control_seen,
-                        target,
-                        &mut queue,
-                        &mut batch,
-                        sink,
-                        &mut report,
-                    )?;
-                }
-                true
-            } else {
-                false
+        let used_bulk = if walk_hook_covers(&abs_dir) {
+            false
+        } else if let Some(entries) = bulk_reader.as_mut().and_then(|reader| reader.read(&abs_dir))
+        {
+            report.scan.dirs_read += 1;
+            for entry in entries {
+                let baseline = match known.remove(&entry.name) {
+                    Some(baseline) => baseline,
+                    None => target.expectation(&rel_dir.join(&entry.name))?,
+                };
+                process_entry(
+                    entry.name,
+                    entry.kind,
+                    entry.attrs,
+                    baseline,
+                    &mut control_seen,
+                    target,
+                    &mut queue,
+                    &mut batch,
+                    sink,
+                    &mut report,
+                )?;
             }
+            true
         } else {
             false
         };
@@ -8369,7 +8362,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn reconciliation_metadata_errors_do_not_delete_enumerated_entries() {
+    fn reconciliation_metadata_errors_drop_unverified_entries_like_a_cold_scan() {
         use std::os::unix::fs::PermissionsExt;
 
         if !crate::test_support::require_permission_bits() {
@@ -8398,13 +8391,20 @@ mod tests {
             fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o400))
                 .expect("remove search permission");
             let outcome = reconcile(&mut index, &config, &mut |_| {});
+            let cold = scan_into_index(dir.path(), &config);
             fs::set_permissions(dir.path(), original_permissions).expect("restore permissions");
 
             let report = outcome.expect("operational metadata errors are a partial report");
+            let (cold, cold_report) = cold.expect("cold partial scan");
             assert!(!report.scan.errors.is_empty(), "the fixture did not induce metadata errors");
             assert!(!report.is_complete());
-            assert_eq!(index_fingerprint(&index), before);
-            assert!(index.attrs(Path::new("a.txt")).is_some(), "existing entry was removed");
+            assert!(!cold_report.is_complete());
+            assert_eq!(index_fingerprint(&index), index_fingerprint(&cold));
+            assert!(
+                index_fingerprint(&index).is_empty(),
+                "neither warm nor cold may retain attributes it could not verify"
+            );
+            assert!(!before.is_empty(), "the fixture began with retained facts");
         }
     }
 
