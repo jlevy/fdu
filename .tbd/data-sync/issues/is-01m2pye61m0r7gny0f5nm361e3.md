@@ -3,10 +3,11 @@ type: is
 id: is-01m2pye61m0r7gny0f5nm361e3
 title: "P1.4.2: Record walk failures per path; TreeStatus::of with bounded, path-ordered errors"
 kind: task
-status: open
+status: in_progress
 priority: 0
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
+delegate: codex@spud10
 labels:
   - core-models
 dependencies:
@@ -15,8 +16,11 @@ dependencies:
   - type: blocks
     target: is-01m2pye70x3nc8p6t827sywb23
 parent_id: is-01m2pmra8yqrcxg27kc6ezg9vd
+hold: null
+hold_until: null
 created_at: 2026-09-17T05:46:38.515Z
-updated_at: 2026-09-17T20:20:00.014Z
+updated_at: 2026-09-20T04:40:17.244Z
+started_at: 2026-09-20T04:40:17.244Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 4: Provenance and Tree Status", commit 2. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 

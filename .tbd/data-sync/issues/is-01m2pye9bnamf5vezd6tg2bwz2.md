@@ -3,18 +3,22 @@ type: is
 id: is-01m2pye9bnamf5vezd6tg2bwz2
 title: "P2.2.1: The emit module (Sink, JsonSink, YamlSink) and the YAML scalar policy"
 kind: task
-status: open
+status: in_progress
 priority: 0
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
+delegate: codex@spud10
 labels:
   - core-models
 dependencies:
   - type: blocks
     target: is-01m2pye9p8df0h0rzch4fq37wy
 parent_id: is-01m2pj0f459s8ad1efzyn2qmbq
+hold: null
+hold_until: null
 created_at: 2026-09-17T05:46:41.908Z
-updated_at: 2026-09-17T05:46:56.543Z
+updated_at: 2026-09-20T04:35:01.882Z
+started_at: 2026-09-20T04:35:01.881Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 2: The Answer Model and Writers", commit 1. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 

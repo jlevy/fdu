@@ -3,18 +3,26 @@ type: is
 id: is-01m2pyeb3yz78d3d94dv78dv4g
 title: "P2.2.6: Change records and cache status through walks (fdu.stream/2, fdu.cache/2)"
 kind: task
-status: open
+status: in_progress
 priority: 0
-version: 2
+version: 5
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
+delegate: codex@spud10
 labels:
   - core-models
 dependencies:
   - type: blocks
     target: is-01m2pyebe93530evdeaw8tcxh6
+  - type: blocks
+    target: is-01m2pmrmvr6x2kz662jksackef
+  - type: blocks
+    target: is-01m2pj0g6c5fswmdcbbzjhx0rx
 parent_id: is-01m2pj0f459s8ad1efzyn2qmbq
+hold: null
+hold_until: null
 created_at: 2026-09-17T05:46:43.709Z
-updated_at: 2026-09-17T05:46:57.981Z
+updated_at: 2026-09-20T04:35:02.806Z
+started_at: 2026-09-20T04:35:01.964Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 2: The Answer Model and Writers", commit 6. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 

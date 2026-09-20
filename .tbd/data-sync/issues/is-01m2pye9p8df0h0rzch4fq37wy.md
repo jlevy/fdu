@@ -3,10 +3,11 @@ type: is
 id: is-01m2pye9p8df0h0rzch4fq37wy
 title: "P2.2.2: Use the scalar policy in the existing writers; strict YAML parsing in check-yaml.mjs"
 kind: task
-status: open
+status: in_progress
 priority: 0
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
+delegate: codex@spud10
 labels:
   - core-models
 dependencies:
@@ -17,8 +18,11 @@ dependencies:
   - type: blocks
     target: is-01m2pj0gs0cyxp178kz5kktpbb
 parent_id: is-01m2pj0f459s8ad1efzyn2qmbq
+hold: null
+hold_until: null
 created_at: 2026-09-17T05:46:42.247Z
-updated_at: 2026-09-17T05:47:45.872Z
+updated_at: 2026-09-20T04:35:01.902Z
+started_at: 2026-09-20T04:35:01.902Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 2: The Answer Model and Writers", commit 2. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 

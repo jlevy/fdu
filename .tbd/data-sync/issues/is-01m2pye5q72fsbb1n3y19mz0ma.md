@@ -3,18 +3,22 @@ type: is
 id: is-01m2pye5q72fsbb1n3y19mz0ma
 title: "P1.4.1: Split Report into TreeStatus and ReportProvenance; writers emit the same bytes"
 kind: task
-status: open
+status: in_progress
 priority: 0
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
+delegate: codex@spud10
 labels:
   - core-models
 dependencies:
   - type: blocks
     target: is-01m2pye61m0r7gny0f5nm361e3
 parent_id: is-01m2pmra8yqrcxg27kc6ezg9vd
+hold: null
+hold_until: null
 created_at: 2026-09-17T05:46:38.183Z
-updated_at: 2026-09-17T05:46:53.913Z
+updated_at: 2026-09-20T04:40:17.232Z
+started_at: 2026-09-20T04:40:17.230Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 4: Provenance and Tree Status", commit 1. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 
