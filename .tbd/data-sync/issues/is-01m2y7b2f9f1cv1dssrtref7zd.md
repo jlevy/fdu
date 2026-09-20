@@ -5,7 +5,7 @@ title: Directory filtering and list presentation formats for stale build invento
 kind: epic
 status: in_progress
 priority: 1
-version: 18
+version: 19
 spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
 delegate: claude-code@spud10
 labels: []
@@ -22,7 +22,7 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:36:54.755Z
-updated_at: 2026-09-20T05:54:36.744Z
+updated_at: 2026-09-20T06:48:50.853Z
 started_at: 2026-09-20T01:38:30.390Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-20-directory-query-formats.md`. Publish the plan separately on `codex/directory-query-plan`, stacked on the latest branch, PR #94 (`perf/campaign-linux-2026-09-19`) above #92. Implementation follows in a separate PR above the reviewed plan. The tracked spec owns the complete design and implementation breakdown.
@@ -234,4 +234,4 @@ See github.com/jlevy/practical-prose and review guidelines before editing.
 
 ## Notes
 
-The full design and all six implementation steps are tracked in docs/project/specs/active/plan-2026-09-20-directory-query-formats.md and published as plan-only PR https://github.com/jlevy/fdu/pull/96, stacked on #94 above #92/#91. Publication task is fdu-79n0. Preserve default output. Implementation remains separate in the original worktree and should form a subsequent layer above the reviewed plan; do not close implementation beads or issue #93 upon plan publication.
+Implementation is complete on codex/directory-rollup-query above plan PR #96 (258e6fb0). All five implementation/docs/help sub-beads are implemented; final validation and PR/CI work remains in fdu-arv8. Existing 165 golden sessions and the full Rust workspace passed. The spec contains the file/function map, final format compatibility decisions, architecture review, and validation plan. Full make check runs in an isolated worktree to avoid unrelated nested agent hooks in the checkout inventory.
