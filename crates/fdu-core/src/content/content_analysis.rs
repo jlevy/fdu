@@ -50,6 +50,8 @@ pub struct AnalyzerCoverage {
     pub binary: u64,
     /// Files whose byte stream was not valid UTF-8.
     pub invalid_utf8: u64,
+    /// Files with a recognized but unsupported text encoding.
+    pub unsupported_encoding: u64,
     /// Files that changed during their read.
     pub changed_during_read: u64,
     /// File-open, metadata, or read failures.
@@ -99,6 +101,7 @@ impl AnalyzerCoverage {
             CoverageReason::Analyzed => &mut self.analyzed,
             CoverageReason::Binary => &mut self.binary,
             CoverageReason::InvalidUtf8 => &mut self.invalid_utf8,
+            CoverageReason::UnsupportedEncoding => &mut self.unsupported_encoding,
             CoverageReason::IoError => &mut self.io_errors,
             CoverageReason::ChangedDuringRead => &mut self.changed_during_read,
             CoverageReason::Unsupported => &mut self.unsupported,
@@ -251,6 +254,10 @@ fn analyze_open_file(
     let mut chunk = vec![0_u8; READ_CHUNK_BYTES];
     let mut read_failure = None;
     let mut early_binary = None;
+    let mut encoding_prefix = [0_u8; 4];
+    let mut encoding_prefix_len = 0_usize;
+    let mut encoding_decided = false;
+    let mut unsupported_encoding = false;
     let mut bytes_read = 0_u64;
     loop {
         crate::counters::bump(|c| c.file_reads += 1);
@@ -262,6 +269,22 @@ fn analyze_open_file(
                 if prefix.len() < CLASSIFICATION_PREFIX_BYTES {
                     let take = count.min(CLASSIFICATION_PREFIX_BYTES - prefix.len());
                     prefix.extend_from_slice(&chunk[..take]);
+                }
+                let mut body = &chunk[..count];
+                if !encoding_decided {
+                    let take = body.len().min(encoding_prefix.len() - encoding_prefix_len);
+                    encoding_prefix[encoding_prefix_len..encoding_prefix_len + take]
+                        .copy_from_slice(&body[..take]);
+                    encoding_prefix_len += take;
+                    body = &body[take..];
+                    if has_unsupported_encoding_bom(&encoding_prefix[..encoding_prefix_len]) {
+                        unsupported_encoding = true;
+                        break;
+                    }
+                    if encoding_prefix_len < encoding_prefix.len() {
+                        continue;
+                    }
+                    encoding_decided = true;
                 }
                 if prefix.len() >= 8 && candidate.classification.family == ContentFamily::Unknown {
                     let classification =
@@ -286,16 +309,23 @@ fn analyze_open_file(
                         }
                     }
                 }
-                accumulator.push(&chunk[..count]);
-                if let Some(code) = &mut code_accumulator {
-                    code.push(&chunk[..count]);
+                if encoding_decided && encoding_prefix_len != 0 {
+                    push_analysis_bytes(
+                        &mut accumulator,
+                        &mut code_accumulator,
+                        &mut deferred_code,
+                        &mut markdown_source,
+                        &encoding_prefix[..encoding_prefix_len],
+                    );
+                    encoding_prefix_len = 0;
                 }
-                if let Some(deferred) = &mut deferred_code {
-                    deferred.extend_from_slice(&chunk[..count]);
-                }
-                if let Some(source) = &mut markdown_source {
-                    source.extend_from_slice(&chunk[..count]);
-                }
+                push_analysis_bytes(
+                    &mut accumulator,
+                    &mut code_accumulator,
+                    &mut deferred_code,
+                    &mut markdown_source,
+                    body,
+                );
             }
             Err(error) => {
                 read_failure = Some(error);
@@ -326,6 +356,28 @@ fn analyze_open_file(
     }
     if let Some(error) = read_failure {
         return (io_record(types, candidate, request, &error), bytes_read);
+    }
+    if unsupported_encoding {
+        return (
+            record(
+                types,
+                candidate,
+                request,
+                candidate.classification.clone(),
+                CoverageReason::UnsupportedEncoding,
+                None,
+            ),
+            bytes_read,
+        );
+    }
+    if encoding_prefix_len != 0 {
+        push_analysis_bytes(
+            &mut accumulator,
+            &mut code_accumulator,
+            &mut deferred_code,
+            &mut markdown_source,
+            &encoding_prefix[..encoding_prefix_len],
+        );
     }
     if let Some(classification) = early_binary {
         return (
@@ -414,6 +466,31 @@ fn analyze_open_file(
         }
     };
     (analysis, bytes_read)
+}
+
+fn has_unsupported_encoding_bom(prefix: &[u8]) -> bool {
+    prefix.starts_with(&[0xff, 0xfe])
+        || prefix.starts_with(&[0xfe, 0xff])
+        || prefix.starts_with(&[0x00, 0x00, 0xfe, 0xff])
+}
+
+fn push_analysis_bytes(
+    accumulator: &mut BasicAccumulator,
+    code_accumulator: &mut Option<CodeAccumulator>,
+    deferred_code: &mut Option<Vec<u8>>,
+    markdown_source: &mut Option<Vec<u8>>,
+    bytes: &[u8],
+) {
+    accumulator.push(bytes);
+    if let Some(code) = code_accumulator {
+        code.push(bytes);
+    }
+    if let Some(deferred) = deferred_code {
+        deferred.extend_from_slice(bytes);
+    }
+    if let Some(source) = markdown_source {
+        source.extend_from_slice(bytes);
+    }
 }
 
 fn analyzed_record(
@@ -935,6 +1012,74 @@ mod tests {
         assert_eq!(summary.share_metric, crate::query::ShareMetric::CodeLines);
         assert_eq!((summary.total.share.numerator, summary.total.share.denominator), (1, 1));
         assert_eq!(summary.total.coverage.get(&CoverageReason::Unsupported), Some(&1));
+    }
+
+    #[test]
+    fn unicode_boms_are_nonoperational_unsupported_encoding_outcomes_per_unit() {
+        let root = tempfile::tempdir().expect("tempdir");
+        fs::write(root.path().join("little.rs"), [0xff, 0xfe, b'f', 0, b'n', 0])
+            .expect("UTF-16 LE");
+        fs::write(root.path().join("big.txt"), [0xfe, 0xff, 0, b'w']).expect("UTF-16 BE");
+        fs::write(root.path().join("wide"), [0, 0, 0xfe, 0xff, 0, 0, 0, b'w']).expect("UTF-32 BE");
+        fs::write(root.path().join("notes.md"), b"ordinary words\n").expect("UTF-8");
+        let (mut index, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+
+        let report = analyze_index(
+            &mut index,
+            AnalysisRequest { profile: AnalysisSet::ALL, ..AnalysisRequest::default() },
+        );
+
+        assert!(report.is_complete(), "unsupported encodings are not operational failures");
+        assert_eq!(report.lines.unsupported_encoding, 3);
+        assert_eq!(report.code.expect("code coverage").unsupported_encoding, 3);
+        assert_eq!(report.words.expect("word coverage").unsupported_encoding, 3);
+        assert_eq!(report.lines.binary, 0);
+        assert_eq!(report.lines.invalid_utf8, 0);
+        let content = index.content().expect("content");
+        for path in ["little.rs", "big.txt", "wide"] {
+            let record = content.file(Path::new(path)).expect("encoding record");
+            assert_eq!(record.lines.coverage(), CoverageReason::UnsupportedEncoding);
+            assert_eq!(
+                record.code.expect("code outcome").coverage(),
+                CoverageReason::UnsupportedEncoding
+            );
+            assert_eq!(
+                record.words.expect("word outcome").coverage(),
+                CoverageReason::UnsupportedEncoding
+            );
+            assert!(record.error.is_none());
+        }
+        assert_eq!(
+            content
+                .file(Path::new("notes.md"))
+                .expect("markdown record")
+                .code
+                .expect("code outcome")
+                .coverage(),
+            CoverageReason::Unsupported,
+            "an unsupported analyzer remains distinct from an unsupported encoding"
+        );
+    }
+
+    #[test]
+    fn unsupported_encoding_boms_are_recognized_from_progressive_prefixes() {
+        for (bom, recognized_at) in [
+            (&[0xff, 0xfe][..], 2_usize),
+            (&[0xfe, 0xff][..], 2_usize),
+            (&[0xff, 0xfe, 0, 0][..], 2_usize),
+            (&[0, 0, 0xfe, 0xff][..], 4_usize),
+        ] {
+            for length in 0..=bom.len() {
+                assert_eq!(
+                    has_unsupported_encoding_bom(&bom[..length]),
+                    length >= recognized_at,
+                    "{} byte prefix of {bom:?}",
+                    length
+                );
+            }
+        }
+        assert!(!has_unsupported_encoding_bom(&[0xef, 0xbb, 0xbf, b'x']));
     }
 
     #[test]

@@ -557,6 +557,8 @@ pub enum CoverageReason {
     Binary,
     /// Input was not valid UTF-8.
     InvalidUtf8,
+    /// A recognized Unicode byte-order mark names an encoding no analyzer decodes.
+    UnsupportedEncoding,
     /// No shipped analyzer accepts this type.
     Unsupported,
     /// File I/O failed; the human error is retained separately.
@@ -599,6 +601,7 @@ impl FileAnalysis {
             CoverageReason::Analyzed
             | CoverageReason::Binary
             | CoverageReason::InvalidUtf8
+            | CoverageReason::UnsupportedEncoding
             | CoverageReason::Unsupported => None,
         }
     }

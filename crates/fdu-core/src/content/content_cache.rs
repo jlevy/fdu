@@ -25,6 +25,8 @@ const TRAILER: &[u8; 8] = b"FDUCTEND";
 /// On-disk format version. Bump on any layout change or any change to what a record means;
 /// a sidecar of another version is a clean miss.
 ///
+/// 7: coverage distinguishes recognized unsupported encodings from binary data.
+///
 /// 6: records store detection separately from name classification and one outcome block
 /// per requested analyzer unit.
 ///
@@ -32,7 +34,7 @@ const TRAILER: &[u8; 8] = b"FDUCTEND";
 /// snapshot's prologue gives it, and the content tier identity after the path encoding:
 /// the entry tier the records were analyzed over, which holds their type rules, then the
 /// analyzer set, the options fingerprint, and the analyzers.
-const FORMAT_VERSION: u32 = 6;
+const FORMAT_VERSION: u32 = 7;
 const CHECKSUM_BYTES: usize = 4;
 const MAX_CACHE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_RECORDS: u64 = 5_000_000;
@@ -880,6 +882,7 @@ fn coverage_code(value: CoverageReason) -> u8 {
         CoverageReason::Analyzed => 0,
         CoverageReason::Binary => 1,
         CoverageReason::InvalidUtf8 => 2,
+        CoverageReason::UnsupportedEncoding => 3,
         CoverageReason::Unsupported => 4,
         CoverageReason::IoError => 5,
         CoverageReason::ChangedDuringRead => 6,
@@ -891,6 +894,7 @@ fn read_coverage(code: u8) -> Option<CoverageReason> {
         0 => Some(CoverageReason::Analyzed),
         1 => Some(CoverageReason::Binary),
         2 => Some(CoverageReason::InvalidUtf8),
+        3 => Some(CoverageReason::UnsupportedEncoding),
         4 => Some(CoverageReason::Unsupported),
         5 => Some(CoverageReason::IoError),
         6 => Some(CoverageReason::ChangedDuringRead),
@@ -1115,6 +1119,44 @@ mod tests {
                 .is_none()
         );
         assert_eq!(restored.pending_analysis_candidates(request).len(), 1);
+    }
+
+    #[test]
+    fn unsupported_encoding_outcomes_round_trip_through_the_sidecar() {
+        let root = tempfile::tempdir().expect("root");
+        let store = tempfile::tempdir().expect("cache dir");
+        fs::write(root.path().join("wide.rs"), [0xff, 0xfe, b'f', 0, b'n', 0])
+            .expect("UTF-16 fixture");
+        let request = request_for(AnalysisSet::ALL);
+        let (mut analyzed, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        super::super::analyze_index(&mut analyzed, request);
+        let expected = analyzed
+            .content()
+            .and_then(|content| content.file(Path::new("wide.rs")))
+            .cloned()
+            .expect("analyzed record");
+        let cache = store.path().join("content.cache");
+        save_content_cache(&analyzed, &cache).expect("save");
+
+        let (mut restored, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        let loaded = load(&mut restored, request, &cache);
+        assert!(loaded.usable && loaded.hits == 1, "{loaded:?}");
+        let actual = restored
+            .content()
+            .and_then(|content| content.file(Path::new("wide.rs")))
+            .expect("restored record");
+        assert_eq!(actual, &expected);
+        assert_eq!(actual.lines.coverage(), CoverageReason::UnsupportedEncoding);
+        assert_eq!(
+            actual.code.expect("code outcome").coverage(),
+            CoverageReason::UnsupportedEncoding
+        );
+        assert_eq!(
+            actual.words.expect("word outcome").coverage(),
+            CoverageReason::UnsupportedEncoding
+        );
     }
 
     /// A sidecar serves exactly the analyzer set it was written for. A wider one holds
