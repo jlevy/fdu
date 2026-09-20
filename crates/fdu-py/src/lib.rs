@@ -639,6 +639,13 @@ fn watch_duration(interval: f64) -> PyResult<Duration> {
     Ok(duration)
 }
 
+/// Largest finite binary64 interval that `Duration` can represent.
+///
+/// `Duration::MAX.as_secs_f64()` rounds upward to exactly 2^64 seconds, which the
+/// fallible constructor correctly refuses. The preceding binary64 value is the public
+/// upper bound so Python and the native boundary accept exactly the same domain.
+const MAX_WATCH_INTERVAL_SECONDS: f64 = f64::from_bits(0x43ef_ffff_ffff_ffff);
+
 /// The default analyzer set, as the grammar spells it.
 ///
 /// Read from the model the same way the command line does. The empty set is the one
@@ -1848,7 +1855,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("DEFAULT_WORDS_PER_PAGE", Request::DEFAULTS.words_per_page)?;
     m.add("DEFAULT_SIZE", Request::DEFAULTS.size.label())?;
     m.add("DEFAULT_READ_CONTROLS", Request::DEFAULTS.read_controls)?;
-    m.add("MAX_WATCH_INTERVAL_SECONDS", Duration::MAX.as_secs_f64())?;
+    m.add("MAX_WATCH_INTERVAL_SECONDS", MAX_WATCH_INTERVAL_SECONDS)?;
     m.add("MIN_WATCH_INTERVAL_SECONDS", 1e-9_f64)?;
     m.add_class::<PyIndex>()?;
     m.add_class::<PyWatch>()?;
@@ -1903,6 +1910,8 @@ mod tests {
             assert!(watch_duration(interval).is_err(), "{interval:?}");
         }
         assert_eq!(watch_duration(0.25).expect("valid interval"), Duration::from_millis(250));
+        assert!(watch_duration(MAX_WATCH_INTERVAL_SECONDS).is_ok());
+        assert!(watch_duration(f64::from_bits(MAX_WATCH_INTERVAL_SECONDS.to_bits() + 1)).is_err());
     }
 
     #[test]

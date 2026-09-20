@@ -2830,12 +2830,6 @@ impl Index {
                 }
                 self.state.source = self.applying_source;
                 self.state.issues.omitted = 0;
-                if self.state.coverage == Coverage::Partial(CoverageReason::Inaccessible)
-                    && self.issues.is_empty()
-                    && self.state.issues.omitted == 0
-                {
-                    self.state.coverage = Coverage::Complete;
-                }
             }
         } else {
             self.mark_unfresh(&path, Freshness::Partial);
@@ -2858,6 +2852,21 @@ impl Index {
             self.state.progress.directories_complete =
                 self.state.progress.directories_complete.saturating_add(1);
             state.push(StateTransition::DirectoryComplete { path: directory.clone() });
+        }
+
+        if complete
+            && path.as_os_str().is_empty()
+            && self.state.coverage == Coverage::Partial(CoverageReason::Inaccessible)
+            && self.issues.is_empty()
+            && self.state.issues.omitted == 0
+            && self.arena.iter().all(|slot| {
+                let Slot::Occupied { entry, .. } = slot else {
+                    return true;
+                };
+                entry.kind != EntryKind::Dir || entry.directory().children_complete
+            })
+        {
+            self.state.coverage = Coverage::Complete;
         }
 
         let current = self.freshness_at(&path);
