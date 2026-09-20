@@ -75,7 +75,7 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
     max_depth = 0
     unreadable: List[str] = []
 
-    for relative, depth, metadata in _walk(absolute, unreadable):
+    for path, relative, depth, metadata in _walk(absolute, unreadable):
         mode = metadata.st_mode
         if stat.S_ISDIR(mode):
             kind = "directory"
@@ -114,7 +114,7 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
         bucket = min(depth, _MAX_DEPTH_BUCKET)
         depths[bucket] = depths.get(bucket, 0) + 1
         max_depth = max(max_depth, depth)
-        engine.add_bytes(_engine_record_bytes(relative, kind, metadata))
+        engine.add_bytes(_engine_record_bytes(relative, kind, metadata, path=path))
 
     if unreadable:
         raise ReferenceTreeError(
@@ -354,7 +354,7 @@ def synthetic_delta_probe_agrees(
 
 
 def _walk(root: Path, unreadable: List[str]):
-    """Yield ``(relative, depth, metadata)`` for every descendant, name-sorted."""
+    """Yield ``(path, relative, depth, metadata)`` for every descendant, name-sorted."""
     pending: List[Tuple[Path, str, int]] = [(root, "", 0)]
     while pending:
         directory, prefix, depth = pending.pop()
@@ -377,7 +377,7 @@ def _walk(root: Path, unreadable: List[str]):
             except OSError:
                 unreadable.append(relative)
                 continue
-            yield relative, depth + 1, metadata
+            yield Path(entry.path), relative, depth + 1, metadata
             if stat.S_ISDIR(metadata.st_mode):
                 children.append((Path(entry.path), relative, depth + 1))
         pending.extend(reversed(children))
