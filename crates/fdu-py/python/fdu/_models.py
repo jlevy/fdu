@@ -8,12 +8,12 @@ typed values; callers never need to know the private extension's wire shape.
 
 from __future__ import annotations
 
+import math
 import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-import math
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, cast
@@ -32,6 +32,7 @@ def _wire_path(value: Mapping[str, Any], name: str = "path") -> Path:
         return Path(str(value[name]))
     if not isinstance(raw, Mapping):
         raise TypeError(f"{name}_raw must be an object")
+    raw = cast(Mapping[str, Any], raw)
     encoding = str(raw.get("encoding"))
     try:
         payload = bytes.fromhex(str(raw["hex"]))
@@ -524,16 +525,43 @@ class OperationError:
 
 @dataclass(frozen=True, slots=True)
 class Status:
-    """Independent coverage, currency, origin, and error facts."""
+    """Completeness and bounded operational failure detail."""
 
     complete: bool
-    freshness: Freshness
-    source: ReportSource
+    coverage: Coverage
+    coverage_reason: str | None
     errors: tuple[OperationError, ...] = ()
+    errors_omitted: int = 0
     #: Which ``.gitignore`` files apply, or ``None`` when none was read. A refused file
     #: leaves ``complete`` true and every size exact; only the ignored and unignored split
     #: below it is not.
     ignore_rules: ControlObservation | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TierState:
+    """Source, currency, and observation time for one retained tier."""
+
+    source: ValueSource
+    freshness: Freshness
+    observed_at_ns: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class TierProvenance:
+    entries: TierState
+    content: TierState | None
+
+
+@dataclass(frozen=True, slots=True)
+class ReportProvenance:
+    """Delivery facts for one coherent report answer."""
+
+    source: ReportSource
+    freshness: Freshness
+    scan_started_at: datetime | None
+    generated_at: datetime
+    tiers: TierProvenance
 
 
 @dataclass(frozen=True, slots=True)
@@ -649,18 +677,18 @@ class TreeNode:
 
 @dataclass(frozen=True, slots=True)
 class MetricValues:
-    physical_lines: int
-    blank_lines: int
-    nonblank_lines: int
-    code_lines: int
-    comment_lines: int
-    code_blank_lines: int
-    raw_words: int
-    logical_words: int
-    paragraphs: int
-    visible_words: int
-    visible_logical_words: int
-    document_words: int
+    physical_lines: int | None = None
+    blank_lines: int | None = None
+    nonblank_lines: int | None = None
+    raw_words: int | None = None
+    code_lines: int | None = None
+    comment_lines: int | None = None
+    code_blank_lines: int | None = None
+    logical_words: int | None = None
+    paragraphs: int | None = None
+    visible_words: int | None = None
+    visible_logical_words: int | None = None
+    document_words: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -679,19 +707,25 @@ class Detection:
 
 
 @dataclass(frozen=True, slots=True)
+class Pages:
+    words: int
+    words_per_page: int
+
+
+@dataclass(frozen=True, slots=True)
 class MetricRow:
     id: str
     family: str
     files: int
     bytes: int
     allocated: int
-    analyzed_files: int
     share: MetricShare
     metrics: MetricValues
-    coverage: MappingProxyType[str, int]
+    lines_coverage: MappingProxyType[str, int] | None
+    code_coverage: MappingProxyType[str, int] | None
+    words_coverage: MappingProxyType[str, int] | None
     detection: Detection
-    page_words: int
-    words_per_page: int
+    pages: Pages | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -707,6 +741,24 @@ class AnalysisMetadata:
     type_rules_fingerprint: int
     options_fingerprint: int
     analyzers: tuple[Analyzer, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ReportScope:
+    max_depth: int | None
+    follow_symlinks: bool
+    one_filesystem: bool
+    exclude_special: bool
+    read_controls: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ReportRequest:
+    scope: ReportScope
+    analyze: tuple[Analysis, ...]
+    size: SizeMetric
+    views: tuple[View, ...]
+    omitted_views: tuple[View, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -761,7 +813,6 @@ class MetricsSection:
     view: View
     group: str
     share_metric: str
-    words_per_page: int
     total: MetricRow
     rows: tuple[MetricRow, ...]
     bound: SectionBound | None = None
@@ -779,9 +830,9 @@ class Report:
     schema: str
     generator: str
     root: Path
-    scan_started_at: datetime | None
-    generated_at: datetime
+    request: ReportRequest
     status: Status
+    provenance: ReportProvenance
     analysis: AnalysisMetadata | None
     sections: tuple[ReportSection, ...]
     #: Remarks the report makes about itself, in the order a renderer prints them --
@@ -1088,7 +1139,7 @@ def _operation_error(value: object) -> OperationError:
     error = cast(dict[str, Any], value)
     path = error.get("path")
     return OperationError(
-        Path(str(path)) if path is not None else None,
+        _wire_path(error) if path is not None else None,
         str(error.get("kind", "operation")),
         str(error.get("message", "")),
         int(error["os_error"]) if error.get("os_error") is not None else None,
@@ -1104,12 +1155,52 @@ def _ignore_rules(value: object) -> ControlObservation | None:
 
 
 def status_from_dict(value: dict[str, Any]) -> Status:
+    raw_coverage = value["coverage"]
+    if not isinstance(raw_coverage, dict):
+        raise TypeError("status coverage must be an object")
+    raw_coverage = cast(dict[str, Any], raw_coverage)
     return Status(
         complete=bool(value["complete"]),
-        freshness=Freshness(str(value["freshness"])),
-        source=ReportSource(str(value["source"])),
+        coverage=Coverage(str(raw_coverage["kind"])),
+        coverage_reason=(
+            str(raw_coverage["reason"]) if raw_coverage.get("reason") is not None else None
+        ),
         errors=tuple(_operation_error(item) for item in value.get("errors", [])),
-        ignore_rules=_ignore_rules(value["ignore_rules"]),
+        errors_omitted=int(value.get("errors_omitted", 0)),
+        ignore_rules=_ignore_rules(value.get("ignore_rules")),
+    )
+
+
+def _tier_state(value: dict[str, Any]) -> TierState:
+    return TierState(
+        source=ValueSource(str(value["source"])),
+        freshness=Freshness(str(value["freshness"])),
+        observed_at_ns=(
+            int(value["observed_at_ns"]) if value.get("observed_at_ns") is not None else None
+        ),
+    )
+
+
+def _report_provenance(value: dict[str, Any]) -> ReportProvenance:
+    tiers = value["tiers"]
+    if not isinstance(tiers, dict):
+        raise TypeError("report provenance tiers must contain entries")
+    tiers = cast(dict[str, Any], tiers)
+    if not isinstance(tiers.get("entries"), dict):
+        raise TypeError("report provenance tiers must contain entries")
+    generated_at = _datetime(value["generated_at"])
+    if generated_at is None:
+        raise TypeError("report generated_at must be present")
+    raw_content = tiers.get("content")
+    return ReportProvenance(
+        source=ReportSource(str(value["source"])),
+        freshness=Freshness(str(value["freshness"])),
+        scan_started_at=_datetime(value.get("scan_started_at")),
+        generated_at=generated_at,
+        tiers=TierProvenance(
+            entries=_tier_state(tiers["entries"]),
+            content=_tier_state(raw_content) if isinstance(raw_content, dict) else None,
+        ),
     )
 
 
@@ -1143,19 +1234,37 @@ def rollup_from_dict(value: dict[str, Any], provenance: Provenance | None = None
 
 def _metric_row(value: dict[str, Any]) -> MetricRow:
     metrics = value["metrics"]
+    coverage = value["coverage"]
     detection = value["detection"]
     flags = detection["flags"]
-    pages = value["pages"]
+    raw_pages = value.get("pages")
+    names = (
+        "physical_lines",
+        "blank_lines",
+        "nonblank_lines",
+        "raw_words",
+        "code_lines",
+        "comment_lines",
+        "code_blank_lines",
+        "logical_words",
+        "paragraphs",
+        "visible_words",
+        "visible_logical_words",
+        "document_words",
+    )
     return MetricRow(
         id=str(value["id"]),
         family=str(value["family"]),
         files=int(value["files"]),
         bytes=int(value["bytes"]),
         allocated=int(value["allocated"]),
-        analyzed_files=int(value["analyzed_files"]),
         share=MetricShare(int(value["share"]["numerator"]), int(value["share"]["denominator"])),
-        metrics=MetricValues(**{name: int(item) for name, item in metrics.items()}),
-        coverage=_int_map(value["coverage"]),
+        metrics=MetricValues(
+            **{name: int(metrics[name]) if name in metrics else None for name in names}
+        ),
+        lines_coverage=_int_map(coverage["lines"]) if "lines" in coverage else None,
+        code_coverage=_int_map(coverage["code"]) if "code" in coverage else None,
+        words_coverage=_int_map(coverage["words"]) if "words" in coverage else None,
         detection=Detection(
             sources=_int_map(detection["sources"]),
             confidence=_int_map(detection["confidence"]),
@@ -1163,8 +1272,11 @@ def _metric_row(value: dict[str, Any]) -> MetricRow:
             vendored=int(flags["vendored"]),
             documentation=int(flags["documentation"]),
         ),
-        page_words=int(pages["words"]),
-        words_per_page=int(pages["words_per_page"]),
+        pages=(
+            Pages(words=int(raw_pages["words"]), words_per_page=int(raw_pages["words_per_page"]))
+            if raw_pages is not None
+            else None
+        ),
     )
 
 
@@ -1344,22 +1456,41 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                     view=view,
                     group=str(metrics["group"]),
                     share_metric=str(metrics["share_metric"]),
-                    words_per_page=int(metrics["words_per_page"]),
                     total=_metric_row(total),
                     rows=tuple(_metric_row(row) for row in rows),
                     bound=_bound(metrics),
                 )
             )
 
-    raw_errors = wire.get("errors", [])
-    if not isinstance(raw_errors, list):
-        raise TypeError("report errors must be a list")
-    status = Status(
-        complete=bool(wire["complete"]),
-        freshness=Freshness(str(wire["freshness"])),
-        source=ReportSource(str(wire["source"])),
-        errors=tuple(_operation_error(item) for item in raw_errors),
-        ignore_rules=_ignore_rules(wire["ignore_rules"]),
+    raw_status = wire["status"]
+    raw_provenance = wire["provenance"]
+    raw_request = wire["request"]
+    if not isinstance(raw_status, dict) or not isinstance(raw_provenance, dict):
+        raise TypeError("report status and provenance must be objects")
+    if not isinstance(raw_request, dict):
+        raise TypeError("report request and scope must be objects")
+    raw_request = cast(dict[str, Any], raw_request)
+    if not isinstance(raw_request.get("scope"), dict):
+        raise TypeError("report request and scope must be objects")
+    raw_status = cast(dict[str, Any], raw_status)
+    raw_provenance = cast(dict[str, Any], raw_provenance)
+    status = status_from_dict({**raw_status, "ignore_rules": wire["ignore_rules"]})
+    provenance = _report_provenance(raw_provenance)
+    raw_scope = cast(dict[str, Any], raw_request["scope"])
+    request = ReportRequest(
+        scope=ReportScope(
+            max_depth=(
+                int(raw_scope["max_depth"]) if raw_scope.get("max_depth") is not None else None
+            ),
+            follow_symlinks=bool(raw_scope["follow_symlinks"]),
+            one_filesystem=bool(raw_scope["one_filesystem"]),
+            exclude_special=bool(raw_scope["exclude_special"]),
+            read_controls=bool(raw_scope["read_controls"]),
+        ),
+        analyze=tuple(Analysis(str(name)) for name in raw_request["analyze"]),
+        size=SizeMetric(str(raw_request["size"])),
+        views=tuple(View(str(name)) for name in raw_request["views"]),
+        omitted_views=tuple(View(str(name)) for name in raw_request["omitted_views"]),
     )
     raw_analysis = wire.get("analysis")
     analysis = None
@@ -1375,17 +1506,14 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                 Analyzer(str(item["id"]), int(item["version"])) for item in raw_analyzers
             ),
         )
-    generated_at = _datetime(wire["generated_at"])
-    if generated_at is None:
-        raise TypeError("report generated_at must be present")
     return Report(
         notes=notes,
         schema=str(wire["schema"]),
         generator=str(wire["generator"]),
         root=_wire_path(wire, "root"),
-        scan_started_at=_datetime(wire.get("scan_started_at")),
-        generated_at=generated_at,
+        request=request,
         status=status,
+        provenance=provenance,
         analysis=analysis,
         sections=tuple(sections),
         _wire=cast(dict[str, JsonValue], wire),

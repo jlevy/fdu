@@ -165,25 +165,19 @@ surface emits the same string.
 
 | Schema | Document | Constant |
 | --- | --- | --- |
-| `fdu.report/5` | A report, one-shot or each one a watch run prints, over an index with no content tier and with no metric section | `REPORT_SCHEMA` |
-| `fdu.report/6` | A report over an index that holds a content tier, or with a `types`, `families`, `languages`, or `documents` section | `CONTENT_REPORT_SCHEMA` |
-| `fdu.stream/1` | A watch run’s `change` record, with `op` of `upsert`, `remove`, or `invalidate`: one per applied change under the `files` view, and every invalidation | `STREAM_SCHEMA` |
+| `fdu.report/7` | A report, including its request, status, per-tier provenance, and any requested metric units | `REPORT_SCHEMA` |
+| `fdu.stream/2` | A watch run’s `change` record, with `op` of `upsert`, `remove`, or `invalidate`: one per applied change under the `files` view, and every invalidation | `STREAM_SCHEMA` |
 | `fdu.cache/2` | Cache status, a fact about the cache directory rather than about a tree, with the identity of every tier each store holds | `CACHE_SCHEMA` |
 
-The report version follows the content tier the index holds, not the request, so a
-Python `Index` opened with analysis emits `fdu.report/6` even for a tree view.
 The three families version independently, so a report change never bumps the stream or
 cache-status schema, or the reverse.
 
-One `Report` reaches callers through five writers: text, JSON, and YAML in
-`report_format.rs`; JSON Lines, which collapses the JSON fragments onto one line by
-string replacement; and the Python models, which the public package builds by parsing
-the JSON rendering. The native binding also keeps a dict writer of its own that the
-public package never uses.
+One iterative field walk in `report_format.rs` feeds JSON, JSON Lines, and YAML sinks;
+the command line writes those sinks directly to its output stream.
+Python builds its public models by parsing the same JSON rendering.
 Change records and cache status have writers of their own.
-No document yet states each envelope field by field (`fdu-c5v1`), so nothing holds the
-writers to one shape; until one does, the renderers in `report_format.rs` and the
-goldens under `tests/golden/` are the reference.
+The declared field presence rules, renderers, and goldens under `tests/golden/` hold the
+wire shape together.
 
 ## Interactive Client Boundary
 

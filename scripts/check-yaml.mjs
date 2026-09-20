@@ -68,7 +68,7 @@ for (const view of views) {
   assert.ok(parsed, `${view}: parsed to nothing`);
   assert.ok(typeof parsed.schema === 'string' && parsed.schema.startsWith('fdu.report/'),
     `${view}: no schema in parsed YAML`);
-  assert.equal(parsed.complete, true, `${view}: complete did not survive the round trip`);
+  assert.equal(parsed.status.complete, true, `${view}: complete did not survive the round trip`);
   assert.ok(Array.isArray(parsed.reports) && parsed.reports.length === 1,
     `${view}: expected exactly one report section`);
   assert.equal(parsed.reports[0].view, view, `${view}: section names a different view`);
@@ -105,7 +105,7 @@ const stripVolatile = (value) => {
   if (Array.isArray(value)) return value.map(stripVolatile);
   if (value && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value)
-      .filter(([key]) => key !== 'scan_started_at' && key !== 'generated_at')
+      .filter(([key]) => !['scan_started_at', 'generated_at', 'observed_at_ns'].includes(key))
       .map(([key, inner]) => [key, stripVolatile(inner)]));
   }
   return value;
@@ -132,8 +132,8 @@ for (const version of ['1.1', '1.2']) {
 
 let compared = 0;
 for (const view of [...views, 'full']) {
-  for (const analyze of ['none', 'all']) {
-    if (view === 'documents' && analyze === 'none') continue;
+  for (const analyze of ['none', 'lines', 'code', 'words', 'all']) {
+    if (view === 'documents' && !['words', 'all'].includes(analyze)) continue;
     const args = [
       '--cache', 'off', '--view', view, '--analyze', analyze,
       '-n', 'all', '--depth', 'all', tree,
@@ -144,6 +144,28 @@ for (const view of [...views, 'full']) {
     const json = execFileSync(fdu, [...args, '--format', 'json'], { encoding: 'utf8' });
     const jsonl = execFileSync(fdu, [...args, '--format', 'jsonl'], { encoding: 'utf8' });
     const expected = stripVolatile(exactJson(json));
+    const requested = new Set(expected.request.analyze);
+    const metricOwners = {
+      lines: ['physical_lines', 'blank_lines', 'nonblank_lines', 'raw_words'],
+      code: ['code_lines', 'comment_lines', 'code_blank_lines'],
+      words: ['logical_words', 'paragraphs', 'visible_words', 'visible_logical_words',
+        'document_words'],
+    };
+    for (const section of expected.reports.filter((item) => item.metrics)) {
+      for (const row of [section.metrics.total, ...section.metrics.rows]) {
+        assert.deepStrictEqual(Object.keys(row.coverage),
+          ['lines', 'code', 'words'].filter((unit) => requested.has(unit)),
+          `${view} --analyze ${analyze}: coverage unit presence drifted`);
+        for (const [unit, names] of Object.entries(metricOwners)) {
+          for (const name of names) {
+            assert.equal(name in row.metrics, requested.has(unit),
+              `${view} --analyze ${analyze}: ${name} presence drifted`);
+          }
+        }
+        assert.equal('pages' in row, requested.has('words'),
+          `${view} --analyze ${analyze}: pages presence drifted`);
+      }
+    }
     for (const version of ['1.1', '1.2']) {
       const actual = stripVolatile(parse(yaml, {
         strict: true, uniqueKeys: true, intAsBigInt: true, version,

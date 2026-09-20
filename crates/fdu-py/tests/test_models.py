@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
@@ -33,8 +34,16 @@ from fdu import (
     _native,
     opened,
 )
-from fdu._api import FduError, FilesystemError, InvalidArgumentError, _call, _query_kwargs
-from fdu._models import _wire_path, cache_status_from_dict, report_from_dict
+from fdu._api import (
+    FduError,
+    FilesystemError,
+    InvalidArgumentError,
+    _call,
+    _loads_json,
+    _loads_object,
+    _query_kwargs,
+)
+from fdu._models import _wire_path, cache_status_from_dict, report_from_dict, status_from_dict
 from fdu.opened import _opened_call, _projection_wire
 
 
@@ -262,6 +271,48 @@ def test_wire_paths_prefer_lossless_raw_identity() -> None:
     assert isinstance(section, FilesSection)
     assert os.fsencode(section.files[0].path) == b"n\x80"
 
+    class NativeIndex:
+        def since(self, _clock: int) -> dict[str, object]:
+            return {
+                "truncated": False,
+                "clock": 1,
+                "ops": [
+                    {
+                        "op": "upsert",
+                        "clock": 1,
+                        "path": "n�",
+                        "path_raw": {"encoding": "unix-bytes", "hex": "6e80"},
+                        "kind": "file",
+                        "bytes": 1,
+                        "allocated": 1,
+                        "mtime_ns": 0,
+                        "ignored": False,
+                    }
+                ],
+            }
+
+    changed = fdu.Index(NativeIndex()).since(0)  # type: ignore[arg-type]
+    assert os.fsencode(changed.changes[0].path) == b"n\x80"
+
+    status = status_from_dict(
+        {
+            "complete": False,
+            "coverage": {"kind": "partial", "reason": "inaccessible"},
+            "errors": [
+                {
+                    "path": "n�",
+                    "path_raw": {"encoding": "unix-bytes", "hex": "6e80"},
+                    "kind": "permission",
+                    "message": "denied",
+                }
+            ],
+            "errors_omitted": 0,
+            "ignore_rules": None,
+        }
+    )
+    assert status.errors[0].path is not None
+    assert os.fsencode(status.errors[0].path) == b"n\x80"
+
     cache = cache_status_from_dict(
         {
             **raw,
@@ -312,18 +363,116 @@ def test_tree_parser_is_iterative_at_filesystem_depth() -> None:
     assert copied["reports"] is not wire["reports"]
 
 
+def test_native_json_fallback_parses_a_deep_rendered_report_end_to_end() -> None:
+    depth = 4_000
+    leaf = {
+        "name": "leaf",
+        "path": "leaf",
+        "kind": "dir",
+        "bytes": 0,
+        "allocated": 0,
+        "files": 0,
+        "dirs": 0,
+        "ignored": None,
+        "newest_mtime_ns": None,
+        "truncated": False,
+        "children": [],
+    }
+    node = json.dumps(leaf, separators=(",", ":"))
+    for level in range(depth):
+        parent = {key: value for key, value in leaf.items() if key != "children"}
+        parent.update(name=str(level), path=str(level))
+        fields = json.dumps(parent, separators=(",", ":"))
+        node = f'{fields[:-1]},"children":[{node}]}}'
+    marker = "__DEEP_TREE__"
+    rendered = json.dumps(_envelope([{"view": "tree", "tree": marker}])).replace(
+        f'"{marker}"', node
+    )
+
+    report = report_from_dict(_loads_object(rendered))
+    copied = report.as_dict()
+    parsed: object = copied["reports"]
+    assert isinstance(parsed, list)
+    tree = parsed[0]["tree"]
+    visited = 0
+    while tree["children"]:
+        tree = tree["children"][0]
+        visited += 1
+    assert visited == depth
+
+
+@pytest.mark.parametrize(
+    "document",
+    ["[1,]", '{"a":1,}', '{"a" 1}', "{} trailing", "[", '{"a":}'],
+)
+def test_iterative_json_fallback_rejects_malformed_framing(
+    monkeypatch: pytest.MonkeyPatch, document: str
+) -> None:
+    def recurse(_document: str) -> object:
+        raise RecursionError
+
+    monkeypatch.setattr(json, "loads", recurse)
+    with pytest.raises(json.JSONDecodeError):
+        _loads_json(document)
+
+
+def test_iterative_json_fallback_preserves_exact_integers(monkeypatch: pytest.MonkeyPatch) -> None:
+    def recurse(_document: str) -> object:
+        raise RecursionError
+
+    monkeypatch.setattr(json, "loads", recurse)
+    value = _loads_json('{"n":18446744073709551615,"nested":[true,null,"x"]}')
+    assert value == {"n": 18_446_744_073_709_551_615, "nested": [True, None, "x"]}
+
+
+def test_deep_malformed_map_key_reports_json_error_without_recursing() -> None:
+    depth = 4_000
+    nested_key = "[" * depth + "0" + "]" * depth
+    document = "[" * depth + "{" + nested_key + ":1}" + "]" * depth
+    with pytest.raises(json.JSONDecodeError):
+        _loads_json(document)
+
+
 def _envelope(sections: list[dict[str, object]]) -> dict[str, object]:
     return {
-        "schema": "fdu.report/5",
+        "schema": "fdu.report/7",
         "generator": "fdu 0.1.0",
         "root": "/root",
-        "scan_started_at": None,
-        "generated_at": "2026-09-15T00:00:00.000000000Z",
-        "source": "cold_scan",
-        "freshness": "fresh",
-        "complete": True,
-        "errors": [],
+        "request": {
+            "scope": {
+                "max_depth": None,
+                "follow_symlinks": False,
+                "one_filesystem": False,
+                "exclude_special": False,
+                "read_controls": True,
+            },
+            "analyze": [],
+            "size": "allocated",
+            "views": [str(section["view"]) for section in sections],
+            "omitted_views": [],
+        },
+        "status": {
+            "complete": True,
+            "coverage": {"kind": "complete"},
+            "errors": [],
+            "errors_omitted": 0,
+        },
+        "provenance": {
+            "source": "cold_scan",
+            "freshness": "fresh",
+            "scan_started_at": None,
+            "generated_at": "2026-09-15T00:00:00.000000000Z",
+            "tiers": {
+                "entries": {
+                    "source": "scanned",
+                    "freshness": "fresh",
+                    "observed_at_ns": 0,
+                },
+                "content": None,
+            },
+        },
         "ignore_rules": None,
+        "analysis": None,
         "reports": sections,
     }
 
@@ -411,6 +560,47 @@ def test_every_row_parses_its_ignored_share_and_keeps_null_distinct_from_zero() 
     malformed = {**summary, "newest_mtime_ns": 2, "ignored": 1}
     with pytest.raises(TypeError, match="ignored"):
         report_from_dict(_envelope([{"view": "summary", "summary": malformed}]))
+
+
+def test_metadata_only_metric_rows_keep_unrequested_units_absent() -> None:
+    row = {
+        "id": "total",
+        "family": "unknown",
+        "files": 1,
+        "bytes": 1,
+        "allocated": 1,
+        "share": {"numerator": 1, "denominator": 1},
+        "metrics": {},
+        "coverage": {},
+        "detection": {
+            "sources": {"unknown": 1},
+            "confidence": {"unknown": 1},
+            "flags": {"generated": 0, "vendored": 0, "documentation": 0},
+        },
+    }
+    report = report_from_dict(
+        _envelope(
+            [
+                {
+                    "view": "types",
+                    "metrics": {
+                        "group": "type",
+                        "share_metric": "allocated_bytes",
+                        "bound": None,
+                        "total": row,
+                        "rows": [],
+                    },
+                }
+            ]
+        )
+    )
+    section = report.sections[0]
+    assert isinstance(section, fdu.MetricsSection)
+    assert section.total.metrics == fdu.MetricValues()
+    assert section.total.lines_coverage is None
+    assert section.total.code_coverage is None
+    assert section.total.words_coverage is None
+    assert section.total.pages is None
 
 
 @pytest.mark.parametrize(

@@ -1,10 +1,12 @@
-//! Allocation-bounded common-language source-line classification.
+//! Streaming common-language source-line classification.
 
 use super::MetricValues;
 
 /// Streaming `code-sloc-v1` counter for a supported language.
 ///
-/// The counter retains only the current logical line and parser state. Mixed
+/// The counter retains the current logical line, its allocated capacity, and parser
+/// state. A one-line minified or generated source can therefore require file-sized
+/// memory per active worker. Mixed
 /// code/comment lines are code, blank lines inside block comments are comments, and
 /// multiline string lines are code. Line endings follow the same LF, CRLF, lone-CR,
 /// and unterminated-final-line contract as the basic analyzer.

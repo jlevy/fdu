@@ -10,6 +10,8 @@ __version__: str
 DEFAULT_WORDS_PER_PAGE: int
 DEFAULT_SIZE: str
 DEFAULT_READ_CONTROLS: bool
+MIN_WATCH_INTERVAL_SECONDS: float
+MAX_WATCH_INTERVAL_SECONDS: float
 
 class Index:
     @property

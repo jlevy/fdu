@@ -699,8 +699,14 @@ impl Cli {
         // that buffer, and the user would see nothing until the snapshot's fsync and the
         // index teardown had finished (fdu-n75m). Same bytes in the same order; only
         // when they arrive changes.
-        let rendered = report_format::render(&report, format, color);
-        let render_result = write!(out, "{rendered}").and_then(|()| out.flush());
+        let rendered_text = (format == report_format::Format::Text)
+            .then(|| report_format::render(&report, format, color));
+        let render_result = if let Some(rendered) = &rendered_text {
+            write!(out, "{rendered}")
+        } else {
+            report_format::write(&report, format, color, out)
+        }
+        .and_then(|()| out.flush());
 
         // Joined before returning, and before the render error is raised: a broken pipe
         // must not abandon a finished scan's snapshot, because the next run would then
@@ -715,6 +721,7 @@ impl Cli {
         render_result?;
 
         if format == report_format::Format::Text {
+            let rendered = rendered_text.as_deref().unwrap_or_default();
             if !rendered.is_empty() && !rendered.ends_with('\n') {
                 writeln!(out)?;
             }
@@ -822,11 +829,7 @@ impl Cli {
         if format == report_format::Format::Yaml {
             write!(out, "{}", report_format::document_start(format))?;
         }
-        write!(
-            out,
-            "{}",
-            report_format::render(&session.report(SystemTime::now())?, format, color)
-        )?;
+        report_format::write(&session.report(SystemTime::now())?, format, color, out)?;
         out.flush()?;
 
         let mut dirty_since_render = false;
@@ -991,7 +994,7 @@ impl Cli {
         } else if format == report_format::Format::Yaml {
             write!(out, "{}", report_format::document_start(format))?;
         }
-        write!(out, "{}", report_format::render(&report, format, color))?;
+        report_format::write(&report, format, color, out)?;
         out.flush()?;
         Ok(())
     }

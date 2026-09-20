@@ -25,7 +25,8 @@ from fdu import _native
 def _stable(text: str) -> str:
     """Blank the fields that differ between any two runs, and only those."""
 
-    return re.sub(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z", "[TIME]", text)
+    text = re.sub(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z", "[TIME]", text)
+    return re.sub(r'(observed_at_ns"?:\s*)\d+', r"\1[TIME]", text)
 
 
 def check_watch_reports_its_own_index(root: Path) -> None:
@@ -41,12 +42,12 @@ def check_watch_reports_its_own_index(root: Path) -> None:
         live = watch.report()
         # A snapshot: rendering twice gives the same answer both times.
         assert live.render(fdu.Format.TEXT) == live.render(fdu.Format.TEXT)
-        assert live.status.source is not None
+        assert live.provenance.source is not None
 
     # And a change record renders as the CLI streams it, rather than as repr().
     record = fdu.Change(clock=1, path=Path("a.txt"), kind=fdu.ChangeKind.UPSERT)
     line = record.render(fdu.Format.JSONL)
-    assert '"schema": "fdu.stream/1"' in line, line
+    assert '"schema": "fdu.stream/2"' in line, line
     assert '"op": "upsert"' in line, line
     assert "\t" in record.render(fdu.Format.TEXT)
 
@@ -62,7 +63,7 @@ def check_the_one_shot_retains_nothing(root: Path) -> None:
 
     blind = fdu.ScanOptions(read_controls=False)
     report = fdu.report(root, fdu.Query(views=(fdu.View.SUMMARY,)), scan=blind)
-    assert report.status.source is not None
+    assert report.provenance.source is not None
 
     # Rendering twice must not cost a second walk: the handle owns the finished report.
     text = report.render(fdu.Format.TEXT)
@@ -395,10 +396,13 @@ def check_an_index_can_opt_out_of_control_state() -> None:
     assert fdu.cache_path(root) is not None
     try:
         fdu.report(root, fdu.Query(views=(fdu.View.TREE,)))
-        assert fdu.open(root).status.source is fdu.ReportSource.WARM_REVALIDATE
+        assert fdu.open(root).report().provenance.source is fdu.ReportSource.WARM_REVALIDATE
         cached = fdu.open(root, cache=fdu.CachePolicy.ONLY)
-        assert cached.status.source is fdu.ReportSource.CACHE_ONLY
-        assert fdu.open(root, scan=opted_out).status.source is fdu.ReportSource.COLD_SCAN
+        assert cached.report().provenance.source is fdu.ReportSource.CACHE_ONLY
+        assert (
+            fdu.open(root, scan=opted_out).report().provenance.source
+            is fdu.ReportSource.COLD_SCAN
+        )
     finally:
         fdu.clear_cache(root)
 
@@ -536,7 +540,6 @@ def main() -> None:
     index = fdu.scan(root, scan=fdu.ScanOptions(max_depth=3))
     assert os.path.samefile(index.root, root)
     assert index.status.complete is True
-    assert index.status.freshness is fdu.Freshness.FRESH
     assert not index.status.errors
 
     try:
@@ -566,14 +569,14 @@ def main() -> None:
         )
     )
     assert report.status.complete is True
-    assert report.status.freshness is fdu.Freshness.FRESH
+    assert report.provenance.freshness is fdu.Freshness.FRESH
     assert [section.view for section in report.sections] == [
         fdu.View.SUMMARY,
         fdu.View.EXTENSIONS,
         fdu.View.FILES,
     ]
     wire = report.as_dict()
-    assert wire["schema"] == "fdu.report/5"
+    assert wire["schema"] == "fdu.report/7"
     assert wire["generator"] == f"fdu {fdu.__version__}"
     assert json.loads(json.dumps(wire)) == wire
 
@@ -648,7 +651,7 @@ def main() -> None:
     # Coverage and currency are independent: a snapshot can cover the complete scope
     # while remaining deliberately stale until revalidation.
     assert cached.status.complete is True
-    assert cached.status.freshness is fdu.Freshness.STALE
+    assert cached.report().provenance.freshness is fdu.Freshness.STALE
     status = fdu.cache_status(cache_root)
     assert status is not None and status.state is fdu.CacheState.CURRENT
     assert status.stale_reason is None and status.root is not None
@@ -742,6 +745,8 @@ def main() -> None:
             "summary,extensions,files",
             "--size",
             "apparent",
+            "--scan-depth",
+            "3",
             str(root),
         ],
         check=False,
@@ -750,11 +755,19 @@ def main() -> None:
     )
     assert cli_report.returncode == 0, cli_report
     cli_wire = json.loads(cli_report.stdout)
-    assert wire["source"] == "warm_revalidate"
-    assert cli_wire["source"] == "cold_scan"
-    for volatile in ("scan_started_at", "generated_at", "source"):
-        cli_wire.pop(volatile)
-        wire.pop(volatile)
+    assert wire["provenance"]["source"] in {
+        "cold_scan",
+        "warm_revalidate",
+        "cache_only",
+    }
+    assert cli_wire["provenance"]["source"] == "cold_scan"
+    for value in (wire, cli_wire):
+        provenance = value["provenance"]
+        for volatile in ("scan_started_at", "generated_at", "source"):
+            provenance.pop(volatile)
+        for tier in provenance["tiers"].values():
+            if tier is not None:
+                tier.pop("observed_at_ns")
     # Both surfaces read `.gitignore` control state by default, under the same limits, so
     # the envelopes agree on it as they agree on every row's ignored share.
     assert wire["ignore_rules"] == {

@@ -152,8 +152,8 @@ config.analysis.profile = AnalysisSet::ALL;
 let (index, report) = open(Path::new("."), &config)?;
 let analyzed = index
     .content_rollup(Path::new(""))
-    .map_or(0, |content| content.total.analyzed_files);
-println!("{} analyzed files", analyzed);
+    .map_or(0, |content| content.total.lines.analyzed_files);
+println!("{} files analyzed for line metrics", analyzed);
 assert!(report.analysis.is_some());
 # Ok::<(), fdu::Error>(())
 ```
@@ -166,11 +166,12 @@ from pathlib import Path
 import fdu
 
 index = fdu.open(Path("/path/to/tree"))
-print(index.status.complete, index.status.freshness)
+print(index.status.complete)
 print(index.total().files)
 print(index.children("src"))
 
 report = index.report(fdu.Query(views=(fdu.View.LANGUAGES,)))
+print(report.provenance.freshness)
 print(report.as_dict())  # same JSON the command line emits
 
 mark = index.clock

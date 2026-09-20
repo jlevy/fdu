@@ -4,6 +4,9 @@ mod emit_json;
 mod emit_scalar;
 mod emit_yaml;
 
+use std::fmt;
+use std::io;
+
 pub(crate) use emit_json::JsonSink;
 pub(crate) use emit_scalar::{write_json_string, write_yaml_scalar};
 pub(crate) use emit_yaml::YamlSink;
@@ -38,17 +41,50 @@ pub(crate) enum Event<'a> {
 
 /// A serializer for the closed machine-output value vocabulary.
 pub(crate) trait Sink {
+    type Output;
+
     fn event(&mut self, event: Event<'_>);
-    fn finish(self) -> String
+    fn finish(self) -> Self::Output
     where
         Self: Sized;
+}
+
+/// Adapt an [`io::Write`] to the infallible event walk while retaining its first error.
+///
+/// `fmt::Write` gives the string and stream-backed sinks one implementation. An I/O
+/// failure is remembered and surfaced at the document boundary, after which writes are
+/// no-ops; the report walk itself stays generic and branch-free.
+pub(crate) struct IoFmt<'a> {
+    writer: &'a mut dyn io::Write,
+    error: Option<io::Error>,
+}
+
+impl<'a> IoFmt<'a> {
+    pub(crate) fn new(writer: &'a mut dyn io::Write) -> Self {
+        Self { writer, error: None }
+    }
+
+    pub(crate) fn finish(self) -> io::Result<()> {
+        self.error.map_or(Ok(()), Err)
+    }
+}
+
+impl fmt::Write for IoFmt<'_> {
+    fn write_str(&mut self, text: &str) -> fmt::Result {
+        if self.error.is_none() {
+            if let Err(error) = self.writer.write_all(text.as_bytes()) {
+                self.error = Some(error);
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn sample(mut sink: impl Sink) -> String {
+    fn sample(mut sink: impl Sink<Output = String>) -> String {
         for event in [
             Event::BeginMap(Shape::Block),
             Event::Key("items"),

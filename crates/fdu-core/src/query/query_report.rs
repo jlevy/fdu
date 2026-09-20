@@ -912,6 +912,12 @@ pub struct Report {
     /// A report-only cache projection may consume stronger internal control state that
     /// no report view exposes; this field still names the weaker requested scope.
     pub scope: ScanScope,
+    /// Analyzer units requested for this answer.
+    pub requested_analysis: AnalysisSet,
+    /// Resolved views requested and answerable by this analyzer set.
+    pub requested_views: Vec<ViewSpec>,
+    /// Resolved views requested but unavailable from this analyzer set.
+    pub omitted_views: Vec<ViewSpec>,
     /// Absolute path of the indexed root.
     pub root: PathBuf,
     /// Remarks about the report itself, in the order a renderer should print them.
@@ -1125,6 +1131,9 @@ pub(crate) fn report_in(
         status: TreeStatus::of(index, request),
         provenance: ReportProvenance::of(index, content, generated_at),
         scope: index.scope(),
+        requested_analysis: content,
+        requested_views: query.views.clone(),
+        omitted_views: query.omitted_views.clone(),
         root: index.root_path().to_path_buf(),
         size: query.selection.size,
         analysis: index.content().and_then(|held| {
@@ -1193,6 +1202,9 @@ pub(crate) fn report_summary(
         status,
         provenance,
         scope,
+        requested_analysis: AnalysisSet::NONE,
+        requested_views: vec![ViewSpec::Summary],
+        omitted_views: Vec::new(),
         root: root.to_path_buf(),
         size,
         // The planner only selects this tier when no analysis was requested, so there is

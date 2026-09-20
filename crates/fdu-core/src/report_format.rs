@@ -13,19 +13,20 @@
 //! Key order is fixed by the code, which is what makes the goldens byte-stable.
 
 use std::fmt::Write as _;
+use std::io;
 use std::path::Path;
 
 use anstyle::{AnsiColor, Style as AnsiStyle};
 
 use crate::classify::human_language_name;
-use crate::content::{CoverageReason, MetricValues};
+use crate::content::{CoverageReason, METRICS};
 use crate::control::ControlCoverage;
-use crate::emit::{Event, JsonSink, Scalar, Shape, Sink, YamlSink};
-use crate::engine_contract::{EntryKind, Freshness};
+use crate::emit::{Event, IoFmt, JsonSink, Scalar, Shape, Sink, YamlSink};
+use crate::engine_contract::{Coverage, EntryKind, Freshness, IssueKind, Source};
 use crate::query::{
     FileRow, IgnoredEntries, IgnoredTally, MetricGroup, MetricRow, MetricSummary, Report,
-    ReportSource, Section, ShareMetric, SizeMetric, SummaryRow, TreeNode, TypeRow, ViewSpec,
-    document_words, format_rfc3339, format_rfc3339_nanos,
+    ReportSource, Section, ShareMetric, SizeMetric, SummaryRow, TierState, TreeNode, TypeRow,
+    ViewSpec, format_rfc3339, format_rfc3339_nanos, pages,
 };
 
 /// The all-caps label naming which view a block of text output belongs to.
@@ -59,9 +60,9 @@ const TEXT_TYPE_LABEL_WIDTH: usize = 12;
 ///
 /// Any change to a field's name, type, or meaning bumps this, and a golden test fails if
 /// the schema moves without it — the versioning is the promise, not the intention.
-pub const REPORT_SCHEMA: &str = "fdu.report/5";
-/// Machine schema used when a generic metric-summary section is present.
-pub const CONTENT_REPORT_SCHEMA: &str = "fdu.report/6";
+pub const REPORT_SCHEMA: &str = "fdu.report/7";
+/// All reports now use one shape-versioned schema regardless of requested analyzers.
+pub const CONTENT_REPORT_SCHEMA: &str = REPORT_SCHEMA;
 /// Machine-output schema identity for cache status.
 ///
 /// Its own identity because cache status is its own document: a fact about the cache
@@ -125,9 +126,40 @@ pub fn render(report: &Report, format: Format, color: bool) -> String {
     }
 }
 
-fn render_report_machine(report: &Report, with_sections: bool, mut sink: impl Sink) -> String {
+/// Write a report directly to an output stream.
+///
+/// Machine formats retain only serializer depth while walking the report. Text remains a
+/// presentation renderer and is written after it is formatted.
+pub fn write(
+    report: &Report,
+    format: Format,
+    color: bool,
+    out: &mut dyn io::Write,
+) -> io::Result<()> {
+    match format {
+        Format::Text => out.write_all(render_text(report, color).as_bytes()),
+        Format::Json => write_report_machine(report, true, JsonSink::pretty_to(out)),
+        Format::Jsonl => write_report_jsonl(report, out),
+        Format::Yaml => write_report_machine(report, true, YamlSink::to(out)),
+    }
+}
+
+fn render_report_machine(
+    report: &Report,
+    with_sections: bool,
+    mut sink: impl Sink<Output = String>,
+) -> String {
     emit_report(&mut sink, report, with_sections);
     sink.finish()
+}
+
+fn write_report_machine<'a>(
+    report: &Report,
+    with_sections: bool,
+    mut sink: impl Sink<Output = IoFmt<'a>>,
+) -> io::Result<()> {
+    emit_report(&mut sink, report, with_sections);
+    sink.finish().finish()
 }
 
 fn render_report_jsonl(report: &Report) -> String {
@@ -144,13 +176,44 @@ fn render_report_jsonl(report: &Report) -> String {
     out
 }
 
+fn write_report_jsonl(report: &Report, out: &mut dyn io::Write) -> io::Result<()> {
+    let mut sink = JsonSink::line_to(out);
+    emit_report(&mut sink, report, false);
+    sink.finish().finish()?;
+    out.write_all(b"\n")?;
+    for section in &report.sections {
+        let mut sink = JsonSink::line_to(out);
+        emit_section(&mut sink, section);
+        sink.finish().finish()?;
+        out.write_all(b"\n")?;
+    }
+    Ok(())
+}
+
 fn emit_field<S: Sink>(sink: &mut S, field: Field, condition: bool, emit: impl FnOnce(&mut S)) {
     let present = match field.presence {
         Presence::Always | Presence::Nullable => true,
-        Presence::WhenAnalyzer(analysis) => condition && analysis.is_enabled(),
+        Presence::WhenAnalyzer(_) => {
+            panic!("an analyzer-owned field must use emit_analyzer_field")
+        }
         Presence::WhenLossy | Presence::WhenSet => condition,
     };
     if present {
+        sink.event(Event::Key(field.name));
+        emit(sink);
+    }
+}
+
+fn emit_analyzer_field<S: Sink>(
+    sink: &mut S,
+    requested: crate::content::AnalysisSet,
+    field: Field,
+    emit: impl FnOnce(&mut S),
+) {
+    let Presence::WhenAnalyzer(owner) = field.presence else {
+        panic!("an analyzer field must declare its owning unit");
+    };
+    if requested.contains(owner) {
         sink.event(Event::Key(field.name));
         emit(sink);
     }
@@ -163,7 +226,7 @@ fn emit_scalar(sink: &mut impl Sink, value: Scalar<'_>) {
 fn emit_report(sink: &mut impl Sink, report: &Report, with_sections: bool) {
     sink.event(Event::BeginMap(Shape::Block));
     emit_field(sink, Field::always("schema"), true, |sink| {
-        emit_scalar(sink, Scalar::Str(report_schema(report)));
+        emit_scalar(sink, Scalar::Str(REPORT_SCHEMA));
     });
     let generator = generator();
     emit_field(sink, Field::always("generator"), true, |sink| {
@@ -174,49 +237,140 @@ fn emit_report(sink: &mut impl Sink, report: &Report, with_sections: bool) {
         emit_scalar(sink, Scalar::Str(&root));
     });
     emit_raw_identity(sink, "root_raw", &report.root);
-    emit_field(sink, Field::nullable("scan_started_at"), true, |sink| {
-        if let Some(at) = report.scan_started_at {
-            let value = format_rfc3339(at);
-            emit_scalar(sink, Scalar::Str(&value));
-        } else {
-            emit_scalar(sink, Scalar::Null);
-        }
-    });
-    let generated_at = format_rfc3339(report.generated_at);
-    emit_field(sink, Field::always("generated_at"), true, |sink| {
-        emit_scalar(sink, Scalar::Str(&generated_at));
-    });
-    emit_field(sink, Field::always("source"), true, |sink| {
-        emit_scalar(sink, Scalar::Str(source_label(report.source)));
-    });
-    emit_field(sink, Field::always("freshness"), true, |sink| {
-        emit_scalar(sink, Scalar::Str(freshness_label(report.freshness)));
-    });
-    emit_field(sink, Field::always("complete"), true, |sink| {
-        emit_scalar(sink, Scalar::Bool(report.complete));
-    });
-    emit_field(sink, Field::always("errors"), true, |sink| {
-        sink.event(Event::BeginSeq(Shape::Block));
-        for error in &report.status.errors {
-            emit_scalar(sink, Scalar::Str(&error.message));
-        }
-        sink.event(Event::EndSeq);
-    });
+    emit_field(sink, Field::always("request"), true, |sink| emit_request(sink, report));
+    emit_field(sink, Field::always("status"), true, |sink| emit_status(sink, report));
+    emit_field(sink, Field::always("provenance"), true, |sink| emit_provenance(sink, report));
     emit_field(sink, Field::always("ignore_rules"), true, |sink| {
         emit_ignore_rules(sink, &report.ignore_rules);
     });
-    emit_field(
-        sink,
-        Field::when_analyzer("analysis", crate::content::AnalysisSet::ALL),
-        report_schema(report) == CONTENT_REPORT_SCHEMA,
-        |sink| emit_analysis(sink, report.analysis.as_ref()),
-    );
+    emit_field(sink, Field::nullable("analysis"), true, |sink| {
+        emit_analysis(sink, report.analysis.as_ref());
+    });
     emit_field(sink, Field::when_set("reports"), with_sections, |sink| {
         sink.event(Event::BeginSeq(Shape::Block));
         for section in &report.sections {
             emit_section(sink, section);
         }
         sink.event(Event::EndSeq);
+    });
+    sink.event(Event::EndMap);
+}
+
+fn emit_request(sink: &mut impl Sink, report: &Report) {
+    sink.event(Event::BeginMap(Shape::Block));
+    emit_field(sink, Field::always("scope"), true, |sink| {
+        sink.event(Event::BeginMap(Shape::Block));
+        emit_field(sink, Field::nullable("max_depth"), true, |sink| {
+            emit_optional_usize(sink, report.scope.max_depth);
+        });
+        emit_bool_field(sink, "follow_symlinks", report.scope.follow_symlinks);
+        emit_bool_field(sink, "one_filesystem", report.scope.one_filesystem);
+        emit_bool_field(sink, "exclude_special", report.scope.exclude_special);
+        emit_bool_field(sink, "read_controls", report.scope.observes_controls());
+        sink.event(Event::EndMap);
+    });
+    emit_field(sink, Field::always("analyze"), true, |sink| {
+        sink.event(Event::BeginSeq(Shape::Inline));
+        for label in analysis_set_labels(report.requested_analysis) {
+            emit_scalar(sink, Scalar::Str(label));
+        }
+        sink.event(Event::EndSeq);
+    });
+    emit_str_field(sink, "size", report.size.label());
+    emit_field(sink, Field::always("views"), true, |sink| {
+        sink.event(Event::BeginSeq(Shape::Inline));
+        for view in &report.requested_views {
+            emit_scalar(sink, Scalar::Str(view.label()));
+        }
+        sink.event(Event::EndSeq);
+    });
+    emit_field(sink, Field::always("omitted_views"), true, |sink| {
+        sink.event(Event::BeginSeq(Shape::Inline));
+        for view in &report.omitted_views {
+            emit_scalar(sink, Scalar::Str(view.label()));
+        }
+        sink.event(Event::EndSeq);
+    });
+    sink.event(Event::EndMap);
+}
+
+fn emit_status(sink: &mut impl Sink, report: &Report) {
+    sink.event(Event::BeginMap(Shape::Block));
+    emit_bool_field(sink, "complete", report.status.complete);
+    emit_field(sink, Field::always("coverage"), true, |sink| {
+        sink.event(Event::BeginMap(Shape::Inline));
+        match report.status.coverage {
+            Coverage::Complete => emit_str_field(sink, "kind", "complete"),
+            Coverage::Partial(reason) => {
+                emit_str_field(sink, "kind", "partial");
+                emit_str_field(sink, "reason", structural_coverage_label(reason));
+            }
+        }
+        sink.event(Event::EndMap);
+    });
+    emit_field(sink, Field::always("errors"), true, |sink| {
+        sink.event(Event::BeginSeq(Shape::Block));
+        for error in &report.status.errors {
+            sink.event(Event::BeginMap(Shape::Block));
+            emit_field(sink, Field::when_set("path"), error.path.is_some(), |sink| {
+                let path = error.path.as_ref().expect("present error path");
+                let display = path.to_string_lossy();
+                emit_scalar(sink, Scalar::Str(&display));
+            });
+            if let Some(path) = &error.path {
+                emit_raw_identity(sink, "path_raw", path);
+            }
+            emit_str_field(sink, "kind", issue_kind_label(error.kind));
+            emit_str_field(sink, "message", &error.message);
+            emit_field(sink, Field::when_set("os_error"), error.os_error.is_some(), |sink| {
+                emit_scalar(sink, Scalar::I64(i64::from(error.os_error.expect("present errno"))));
+            });
+            sink.event(Event::EndMap);
+        }
+        sink.event(Event::EndSeq);
+    });
+    emit_u64_field(sink, "errors_omitted", report.status.errors_omitted);
+    sink.event(Event::EndMap);
+}
+
+fn emit_provenance(sink: &mut impl Sink, report: &Report) {
+    sink.event(Event::BeginMap(Shape::Block));
+    emit_str_field(sink, "source", source_label(report.provenance.source));
+    emit_str_field(sink, "freshness", freshness_label(report.provenance.freshness));
+    emit_field(sink, Field::nullable("scan_started_at"), true, |sink| {
+        if let Some(at) = report.provenance.scan_started_at {
+            let value = format_rfc3339(at);
+            emit_scalar(sink, Scalar::Str(&value));
+        } else {
+            emit_scalar(sink, Scalar::Null);
+        }
+    });
+    let generated_at = format_rfc3339(report.provenance.generated_at);
+    emit_str_field(sink, "generated_at", &generated_at);
+    emit_field(sink, Field::always("tiers"), true, |sink| {
+        sink.event(Event::BeginMap(Shape::Block));
+        emit_field(sink, Field::always("entries"), true, |sink| {
+            emit_tier_state(sink, report.provenance.tiers.entries);
+        });
+        emit_field(sink, Field::nullable("content"), true, |sink| {
+            if let Some(content) = report.provenance.tiers.content {
+                emit_tier_state(sink, content);
+            } else {
+                emit_scalar(sink, Scalar::Null);
+            }
+        });
+        sink.event(Event::EndMap);
+    });
+    sink.event(Event::EndMap);
+}
+
+fn emit_tier_state(sink: &mut impl Sink, tier: TierState) {
+    sink.event(Event::BeginMap(Shape::Inline));
+    emit_str_field(sink, "source", tier_source_label(tier.source));
+    emit_str_field(sink, "freshness", freshness_label(tier.freshness));
+    emit_field(sink, Field::nullable("observed_at_ns"), true, |sink| match tier.observed_at_ns {
+        Some(value) => emit_scalar(sink, Scalar::I64(value)),
+        None => emit_scalar(sink, Scalar::Null),
     });
     sink.event(Event::EndMap);
 }
@@ -296,6 +450,12 @@ fn emit_str_field(sink: &mut impl Sink, name: &'static str, value: &str) {
 fn emit_u64_field(sink: &mut impl Sink, name: &'static str, value: u64) {
     emit_field(sink, Field::always(name), true, |sink| {
         emit_scalar(sink, Scalar::U64(value));
+    });
+}
+
+fn emit_bool_field(sink: &mut impl Sink, name: &'static str, value: bool) {
+    emit_field(sink, Field::always(name), true, |sink| {
+        emit_scalar(sink, Scalar::Bool(value));
     });
 }
 
@@ -433,7 +593,6 @@ fn emit_metric_summary(sink: &mut impl Sink, summary: &MetricSummary) {
     sink.event(Event::BeginMap(Shape::Block));
     emit_str_field(sink, "group", metric_group_label(summary.group));
     emit_str_field(sink, "share_metric", summary.share_metric.as_str());
-    emit_u64_field(sink, "words_per_page", summary.words_per_page);
     emit_bound_field(sink, summary.rows.len(), summary.total_rows);
     emit_field(sink, Field::always("total"), true, |sink| {
         emit_metric_row(sink, &summary.total, summary.words_per_page);
@@ -455,7 +614,6 @@ fn emit_metric_row(sink: &mut impl Sink, row: &MetricRow, words_per_page: u64) {
     emit_u64_field(sink, "files", row.files);
     emit_u64_field(sink, "bytes", row.bytes);
     emit_u64_field(sink, "allocated", row.allocated);
-    emit_u64_field(sink, "analyzed_files", row.analyzed_files);
     emit_field(sink, Field::always("share"), true, |sink| {
         sink.event(Event::BeginMap(Shape::Inline));
         emit_u64_field(sink, "numerator", row.share.numerator);
@@ -463,44 +621,73 @@ fn emit_metric_row(sink: &mut impl Sink, row: &MetricRow, words_per_page: u64) {
         sink.event(Event::EndMap);
     });
     emit_field(sink, Field::always("metrics"), true, |sink| {
-        emit_metric_values(sink, row.metrics, document_words(row));
+        emit_metric_values(sink, row);
     });
     emit_field(sink, Field::always("coverage"), true, |sink| {
-        sink.event(Event::BeginMap(Shape::Inline));
-        for (reason, count) in &row.coverage {
-            emit_u64_field(sink, coverage_label(*reason), *count);
-        }
+        sink.event(Event::BeginMap(Shape::Block));
+        emit_analyzer_field(
+            sink,
+            row.analysis,
+            Field::when_analyzer("lines", crate::content::AnalysisSet::LINES_ONLY),
+            |sink| emit_coverage_map(sink, &row.lines_coverage),
+        );
+        emit_analyzer_field(
+            sink,
+            row.analysis,
+            Field::when_analyzer("code", crate::content::AnalysisSet::CODE_ONLY),
+            |sink| emit_coverage_map(sink, row.code_coverage.as_ref().expect("code requested")),
+        );
+        emit_analyzer_field(
+            sink,
+            row.analysis,
+            Field::when_analyzer("words", crate::content::AnalysisSet::WORDS_ONLY),
+            |sink| emit_coverage_map(sink, row.words_coverage.as_ref().expect("words requested")),
+        );
         sink.event(Event::EndMap);
     });
     emit_field(sink, Field::always("detection"), true, |sink| {
         emit_detection(sink, row);
     });
-    emit_field(sink, Field::always("pages"), true, |sink| {
-        sink.event(Event::BeginMap(Shape::Inline));
-        emit_u64_field(sink, "words", document_words(row));
-        emit_u64_field(sink, "words_per_page", words_per_page);
-        sink.event(Event::EndMap);
-    });
+    emit_analyzer_field(
+        sink,
+        row.analysis,
+        Field::when_analyzer("pages", crate::content::AnalysisSet::WORDS_ONLY),
+        |sink| {
+            let page = pages(row, words_per_page).expect("words request has page inputs");
+            sink.event(Event::BeginMap(Shape::Inline));
+            emit_u64_field(sink, "words", page.words);
+            emit_u64_field(sink, "words_per_page", page.words_per_page);
+            sink.event(Event::EndMap);
+        },
+    );
     sink.event(Event::EndMap);
 }
 
-fn emit_metric_values(sink: &mut impl Sink, metrics: MetricValues, selected_words: u64) {
+fn emit_metric_values(sink: &mut impl Sink, row: &MetricRow) {
     sink.event(Event::BeginMap(Shape::Inline));
-    for (name, value) in [
-        ("physical_lines", metrics.physical_lines),
-        ("blank_lines", metrics.blank_lines),
-        ("nonblank_lines", metrics.nonblank_lines),
-        ("code_lines", metrics.code_lines),
-        ("comment_lines", metrics.comment_lines),
-        ("code_blank_lines", metrics.code_blank_lines),
-        ("raw_words", metrics.raw_words),
-        ("logical_words", metrics.logical_word_stats.logical_words()),
-        ("paragraphs", metrics.paragraphs),
-        ("visible_words", metrics.visible_words),
-        ("visible_logical_words", metrics.visible_logical_word_stats.logical_words()),
-        ("document_words", selected_words),
-    ] {
-        emit_u64_field(sink, name, value);
+    for metric in METRICS {
+        emit_analyzer_field(
+            sink,
+            row.analysis,
+            Field::when_analyzer(metric.name, metric.owner),
+            |sink| {
+                emit_scalar(
+                    sink,
+                    Scalar::U64(row.metric_value(metric).expect("metric owner requested")),
+                );
+            },
+        );
+    }
+    sink.event(Event::EndMap);
+}
+
+fn emit_coverage_map(
+    sink: &mut impl Sink,
+    coverage: &std::collections::BTreeMap<CoverageReason, u64>,
+) {
+    sink.event(Event::BeginMap(Shape::Inline));
+    for (reason, count) in coverage {
+        emit_u64_field(sink, coverage_label(*reason), *count);
     }
     sink.event(Event::EndMap);
 }
@@ -534,6 +721,7 @@ fn emit_detection(sink: &mut impl Sink, row: &MetricRow) {
 fn emit_tree(sink: &mut impl Sink, root: &TreeNode) {
     enum Step<'a> {
         Node(&'a TreeNode),
+        Children(std::slice::Iter<'a, TreeNode>),
         EndMap,
         EndSeq,
     }
@@ -565,7 +753,11 @@ fn emit_tree(sink: &mut impl Sink, root: &TreeNode) {
                 sink.event(Event::BeginSeq(Shape::Block));
                 stack.push(Step::EndMap);
                 stack.push(Step::EndSeq);
-                for child in node.children.iter().rev() {
+                stack.push(Step::Children(node.children.iter()));
+            }
+            Step::Children(mut children) => {
+                if let Some(child) = children.next() {
+                    stack.push(Step::Children(children));
                     stack.push(Step::Node(child));
                 }
             }
@@ -759,31 +951,31 @@ fn render_text_metrics(
             format!("{:.1}%", ratio(row.share.numerator, row.share.denominator) * 100.0)
         };
         let mut suffix = format!("{} {}", row.files, plural(row.files, "file", "files"));
-        if row.metrics.physical_lines > 0 {
-            if row.metrics.code_lines > 0 || row.metrics.comment_lines > 0 {
+        if let Some(physical_lines) = row.metrics.physical_lines.filter(|lines| *lines > 0) {
+            if let (Some(code_lines), Some(comment_lines), Some(code_blank_lines)) =
+                (row.metrics.code_lines, row.metrics.comment_lines, row.metrics.code_blank_lines)
+            {
                 let _ = write!(
                     suffix,
                     ", {} lines ({} code, {} comment, {} blank)",
-                    row.metrics.physical_lines,
-                    row.metrics.code_lines,
-                    row.metrics.comment_lines,
-                    row.metrics.code_blank_lines
+                    physical_lines, code_lines, comment_lines, code_blank_lines
                 );
             } else {
                 let _ = write!(
                     suffix,
                     ", {} lines ({} nonblank, {} blank)",
-                    row.metrics.physical_lines, row.metrics.nonblank_lines, row.metrics.blank_lines
+                    physical_lines,
+                    row.metrics.nonblank_lines.expect("lines requested"),
+                    row.metrics.blank_lines.expect("lines requested")
                 );
             }
         }
-        let words = document_words(row);
-        if words > 0 {
-            let page_tenths = words.saturating_mul(10) / summary.words_per_page;
+        if let Some(page) = pages(row, summary.words_per_page).filter(|page| page.words > 0) {
+            let page_tenths = page.words.saturating_mul(10) / page.words_per_page;
             let _ = write!(
                 suffix,
                 ", {} words ({}.{:01} pages)",
-                words,
+                page.words,
                 page_tenths / 10,
                 page_tenths % 10
             );
@@ -797,7 +989,12 @@ fn render_text_metrics(
         if row.documentation_files > 0 {
             let _ = write!(suffix, ", {} documentation", row.documentation_files);
         }
-        for (reason, count) in &row.coverage {
+        let coverage = match view {
+            ViewSpec::Languages => row.code_coverage.as_ref().unwrap_or(&row.lines_coverage),
+            ViewSpec::Documents => row.words_coverage.as_ref().unwrap_or(&row.lines_coverage),
+            _ => &row.lines_coverage,
+        };
+        for (reason, count) in coverage {
             if *reason != CoverageReason::Analyzed {
                 let _ = write!(suffix, ", {count} {}", human_coverage_label(*reason));
             }
@@ -822,6 +1019,7 @@ fn share_metric_note(metric: ShareMetric) -> Option<&'static str> {
     match metric {
         ShareMetric::CodeLines => Some("Percentage column: code lines"),
         ShareMetric::DocumentWords => Some("Percentage column: document words"),
+        ShareMetric::RawWords => Some("Percentage column: raw words"),
         ShareMetric::ApparentBytes | ShareMetric::AllocatedBytes => None,
     }
 }
@@ -1053,16 +1251,6 @@ fn view_header(view: ViewSpec) -> &'static str {
     }
 }
 
-fn report_schema(report: &Report) -> &'static str {
-    if report.analysis.is_some()
-        || report.sections.iter().any(|section| matches!(section, Section::Metrics { .. }))
-    {
-        CONTENT_REPORT_SCHEMA
-    } else {
-        REPORT_SCHEMA
-    }
-}
-
 fn metric_group_label(group: MetricGroup) -> &'static str {
     match group {
         MetricGroup::Type => "type",
@@ -1096,6 +1284,36 @@ fn source_label(source: ReportSource) -> &'static str {
         ReportSource::ColdScan => "cold_scan",
         ReportSource::WarmRevalidate => "warm_revalidate",
         ReportSource::CacheOnly => "cache_only",
+    }
+}
+
+fn tier_source_label(source: Source) -> &'static str {
+    match source {
+        Source::Scanned => "scanned",
+        Source::Revalidated => "revalidated",
+        Source::JournalScoped => "journal_scoped",
+        Source::Cached => "cached",
+    }
+}
+
+fn structural_coverage_label(reason: crate::engine_contract::CoverageReason) -> &'static str {
+    match reason {
+        crate::engine_contract::CoverageReason::Building => "building",
+        crate::engine_contract::CoverageReason::Budget => "budget",
+        crate::engine_contract::CoverageReason::Cancelled => "cancelled",
+        crate::engine_contract::CoverageReason::Inaccessible => "inaccessible",
+        crate::engine_contract::CoverageReason::Failed => "failed",
+    }
+}
+
+fn issue_kind_label(kind: IssueKind) -> &'static str {
+    match kind {
+        IssueKind::Permission => "permission",
+        IssueKind::Disappeared => "disappeared",
+        IssueKind::InvalidMetadata => "invalid_metadata",
+        IssueKind::ResourceBudget => "resource_budget",
+        IssueKind::ObservationGap => "observation_gap",
+        IssueKind::ProviderFailure => "provider_failure",
     }
 }
 
@@ -1265,7 +1483,11 @@ pub fn render_change(change: &crate::Change, format: Format) -> String {
 }
 
 #[cfg(feature = "watch")]
-fn render_change_machine(change: &crate::Change, kind: &str, mut sink: impl Sink) -> String {
+fn render_change_machine(
+    change: &crate::Change,
+    kind: &str,
+    mut sink: impl Sink<Output = String>,
+) -> String {
     sink.event(Event::BeginMap(Shape::Block));
     emit_str_field(&mut sink, "schema", STREAM_SCHEMA);
     emit_str_field(&mut sink, "record", "change");
@@ -1375,7 +1597,10 @@ pub fn render_cache_status(
     }
 }
 
-fn render_cache_machine(statuses: &[crate::CacheStatus], mut sink: impl Sink) -> String {
+fn render_cache_machine(
+    statuses: &[crate::CacheStatus],
+    mut sink: impl Sink<Output = String>,
+) -> String {
     sink.event(Event::BeginMap(Shape::Block));
     emit_str_field(&mut sink, "schema", CACHE_SCHEMA);
     emit_field(&mut sink, Field::always("caches"), true, |sink| {
@@ -2441,6 +2666,69 @@ mod tests {
     }
 
     #[test]
+    fn streaming_machine_writers_match_string_rendering() {
+        let report = fixture(&[
+            ViewSpec::Tree,
+            ViewSpec::Extensions,
+            ViewSpec::Types,
+            ViewSpec::Files,
+            ViewSpec::Summary,
+        ]);
+        for format in [Format::Json, Format::Jsonl, Format::Yaml] {
+            let expected = render(&report, format, false);
+            let mut streamed = Vec::new();
+            write(&report, format, false, &mut streamed).expect("stream report");
+            assert_eq!(streamed, expected.as_bytes(), "{format:?} bytes differ");
+        }
+
+        struct Fails;
+        impl std::io::Write for Fails {
+            fn write(&mut self, _buffer: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("closed"))
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let error = write(&report, Format::Json, false, &mut Fails).expect_err("writer fails");
+        assert_eq!(error.kind(), std::io::ErrorKind::Other);
+    }
+
+    #[test]
+    fn streaming_tree_walk_handles_many_siblings_without_collecting_output() {
+        let mut report = fixture(&[ViewSpec::Tree]);
+        let Section::Tree(root) = &mut report.sections[0] else {
+            panic!("tree fixture must contain a tree");
+        };
+        let template = root.children[0].clone();
+        root.children = (0..10_000)
+            .map(|index| {
+                let mut child = template.clone();
+                child.name = format!("child-{index}");
+                child.path = PathBuf::from(&child.name);
+                child
+            })
+            .collect();
+
+        #[derive(Default)]
+        struct Count(u64);
+        impl std::io::Write for Count {
+            fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+                self.0 = self.0.saturating_add(buffer.len() as u64);
+                Ok(buffer.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let mut output = Count::default();
+        write(&report, Format::Json, false, &mut output).expect("stream wide report");
+        assert!(output.0 > 1_000_000, "wide fixture must exercise substantial output");
+    }
+
+    #[test]
     fn nested_json_separates_siblings_without_a_trailing_comma() {
         // The original fixture had no directory with two children, so a balanced-but-
         // invalid `[{a}{b},]` passed the structural check. Sibling separators need a
@@ -2521,7 +2809,10 @@ mod tests {
     #[test]
     fn machine_output_carries_the_schema_and_provenance() {
         let json = render(&fixture(&[ViewSpec::Summary]), Format::Json, false);
-        assert!(json.contains("\"schema\": \"fdu.report/5\""));
+        assert!(json.contains("\"schema\": \"fdu.report/7\""));
+        assert!(json.contains("\"request\": {"));
+        assert!(json.contains("\"status\": {"));
+        assert!(json.contains("\"provenance\": {"));
         assert!(json.contains("\"source\": \"cold_scan\""));
         assert!(json.contains("\"complete\": true"));
         // Timestamps render in the same grammar the CLI accepts back as a watermark.
@@ -2533,11 +2824,8 @@ mod tests {
     fn the_schema_constant_is_the_versioning_promise() {
         // Fails loudly when the schema string moves, so a field rename cannot ship
         // without a deliberate version bump and a golden update.
-        assert_eq!(REPORT_SCHEMA, "fdu.report/5");
-        // /5 and /6 add the envelope's `ignore_rules`, which says whether ignore
-        // classification applied every `.gitignore`. Both lines move because every report
-        // carries the envelope.
-        assert_eq!(CONTENT_REPORT_SCHEMA, "fdu.report/6");
+        assert_eq!(REPORT_SCHEMA, "fdu.report/7");
+        assert_eq!(CONTENT_REPORT_SCHEMA, REPORT_SCHEMA);
     }
 
     /// Every format says whether ignore rules were read and which files were refused, and
@@ -2816,13 +3104,13 @@ mod tests {
     }
 
     #[test]
-    fn metric_sections_upgrade_schema_while_metadata_sections_stay_on_v1() {
+    fn every_report_uses_one_schema_and_states_nullable_analysis() {
         let metadata = render(&fixture(&[ViewSpec::Tree]), Format::Json, false);
-        assert!(metadata.contains("\"schema\": \"fdu.report/5\""));
-        assert!(!metadata.contains("\"analysis\""));
+        assert!(metadata.contains("\"schema\": \"fdu.report/7\""));
+        assert!(metadata.contains("\"analysis\": null"));
 
         let metrics = render(&fixture(&[ViewSpec::Types]), Format::Json, false);
-        assert!(metrics.contains("\"schema\": \"fdu.report/6\""));
+        assert!(metrics.contains("\"schema\": \"fdu.report/7\""));
         assert!(metrics.contains("\"analysis\": null"));
         assert!(metrics.contains("\"share\": {\"numerator\":"));
     }
@@ -2834,9 +3122,8 @@ mod tests {
     /// exists to prevent. This pins the whole record, so adding, renaming, or reordering
     /// a field fails here and forces a deliberate version bump.
     ///
-    /// `ignored` was added to `fdu.stream/2` in place rather than by a bump, for the same
-    /// reason `fdu.report/6` took the ignored share in place: 0.1.0 is the first release,
-    /// so no consumer has ever read the shape it extends.
+    /// `ignored` was added to `fdu.stream/2` before the first release, so no consumer has
+    /// ever read the earlier draft shape it extends.
     #[cfg(feature = "watch")]
     #[test]
     fn a_stream_record_is_pinned_field_by_field() {
@@ -3165,6 +3452,11 @@ mod tests {
                 for format in [Format::Text, Format::Json, Format::Jsonl, Format::Yaml] {
                     let rendered = render(&report, format, false);
                     assert!(!rendered.is_empty(), "{format:?} rendered nothing for a deep tree");
+                    if format != Format::Text {
+                        let mut streamed = Vec::new();
+                        write(&report, format, false, &mut streamed).expect("stream deep report");
+                        assert_eq!(streamed, rendered.as_bytes(), "{format:?} bytes differ");
+                    }
                 }
             })
             .expect("spawn deep-render thread")

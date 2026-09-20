@@ -1,6 +1,6 @@
 //! String policies shared by the JSON and YAML sinks.
 
-use std::fmt::Write as _;
+use std::fmt;
 
 /// Whether YAML 1.1 and 1.2 both resolve `value` as the same string.
 pub(crate) fn is_plain_safe(value: &str) -> bool {
@@ -32,33 +32,49 @@ pub(crate) fn is_plain_safe(value: &str) -> bool {
 }
 
 /// Append one JSON string, escaping the YAML-forbidden characters too.
-pub(crate) fn write_json_string(out: &mut String, text: &str) {
-    out.push('"');
+pub(crate) fn write_json_string(out: &mut impl fmt::Write, text: &str) {
+    let _ = out.write_char('"');
     for ch in text.chars() {
         match ch {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\u{8}' => out.push_str("\\b"),
-            '\u{c}' => out.push_str("\\f"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
+            '"' => {
+                let _ = out.write_str("\\\"");
+            }
+            '\\' => {
+                let _ = out.write_str("\\\\");
+            }
+            '\u{8}' => {
+                let _ = out.write_str("\\b");
+            }
+            '\u{c}' => {
+                let _ = out.write_str("\\f");
+            }
+            '\n' => {
+                let _ = out.write_str("\\n");
+            }
+            '\r' => {
+                let _ = out.write_str("\\r");
+            }
+            '\t' => {
+                let _ = out.write_str("\\t");
+            }
             ch if (ch as u32) < 0x20
                 || ('\u{7f}'..='\u{9f}').contains(&ch)
                 || matches!(ch, '\u{2028}' | '\u{2029}' | '\u{feff}' | '\u{fffe}' | '\u{ffff}') =>
             {
                 let _ = write!(out, "\\u{:04x}", ch as u32);
             }
-            ch => out.push(ch),
+            ch => {
+                let _ = out.write_char(ch);
+            }
         }
     }
-    out.push('"');
+    let _ = out.write_char('"');
 }
 
 /// Append one scalar that round-trips as a string in strict YAML 1.1 and 1.2.
-pub(crate) fn write_yaml_scalar(out: &mut String, text: &str) {
+pub(crate) fn write_yaml_scalar(out: &mut impl fmt::Write, text: &str) {
     if is_plain_safe(text) {
-        out.push_str(text);
+        let _ = out.write_str(text);
     } else {
         write_json_string(out, text);
     }

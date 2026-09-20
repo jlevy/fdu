@@ -223,11 +223,9 @@ before the modification, so only the start bound is conservative.
 
 Check the process exit status and these fields:
 
-- `schema` before parsing anything else: a report carries `fdu.report/6` when it ran
-  content analysis or includes a metric summary (the `types`, `families`, `languages`,
-  and `documents` views), `fdu.report/5` otherwise, a `--watch` stream carries
-  `fdu.stream/1`, and `--cache-status` carries `fdu.cache/2`. Treat an unrecognized
-  value as a version you cannot parse rather than guessing at the fields.
+- `schema` before parsing anything else: a report carries `fdu.report/7`, a `--watch`
+  stream carries `fdu.stream/2`, and `--cache-status` carries `fdu.cache/2`. Treat an
+  unrecognized value as a version you cannot parse rather than guessing at the fields.
 - Integer fields that exceed 2^53 (fingerprints, option hashes, nanosecond timestamps)
   lose precision in IEEE 754 binary64 parsers such as JavaScript `JSON.parse`
 - `complete` and `errors` before trusting totals
