@@ -520,8 +520,9 @@ strategy and the record is visible in review.
 - [The performance-loop runbook](../../guides/performance-loop-runbook.md) — one
   unattended round and the 2026-09-18 standing
 - [Post-H115 remaining headroom](plan-2026-09-19-post-h115-remaining-headroom.md) —
-  remaining queue after the H116–H120 overnight (H113, H122, H107, H123, H121, H124,
-  H111)
+  remaining Darwin queue after the H116–H120 overnight
+- [Linux parallel validation](plan-2026-09-19-linux-parallel-validation.md) — H139–H142
+  plus H111 on a host that can run Linux cells
 - [The cache layers plan](../done/plan-2026-08-15-fdu-cache-layers-and-defaults.md) —
   the cost model this plan’s warm posture rests on
 - [The fsevents plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md) — the journal
