@@ -4,10 +4,11 @@
 
 **Author:** fdu project
 
-**Status:** Active.
-Stacked on [#94](https://github.com/jlevy/fdu/pull/94) at `c234da2b`.
-This block looks for a named Linux cut that still clears 3% wall after H139–H143. It is
-not a restart of H86 and not a Linux floor pass.
+**Status:** Recorded.
+Stacked on [#94](https://github.com/jlevy/fdu/pull/94) at `c234da2b`. Leftover queue and
+the two named Linux cuts (H147 recycle, H72 `d_type` skip) are in the ledger through
+exp-153. Further PGO screening is
+[the Linux PGO screen](plan-2026-09-20-linux-pgo-screen.md), not this file.
 
 ## Overview
 
@@ -59,7 +60,7 @@ Record every cell, including negatives.
   [Current engine (0.1.0)](../../guides/performance-loop.md#current-engine-010)
 - **Beads:** epic `fdu-hi1f`; H144 `fdu-5wzu`; H145 `fdu-40pl`; H84 screen `fdu-4cni`
   (`fdu-tk1b` remains the standing thread-policy bead); H146 `fdu-jkzd`; H85 screen
-  `fdu-h967`; H147 keep `fdu-2wyr`
+  `fdu-h967`; H147 keep `fdu-2wyr`; H72 screen `fdu-ueab`
 - **First experiment id:** exp-144
 - **Quiet:** `PERF_HOST_REGIME=quiet` first.
   Do not lower the 25% busy bar.
@@ -169,6 +170,9 @@ Work only on `cursor/linux-perf-iterate-de1b`, base `#94`. Do not push to #91, #
 No force-push.
 
 If #94 moves, rebase this branch onto it and keep H144–H146 meanings.
+The leftover compileable queue on this 4-core VM is recorded; do not retry H71, H85’s
+20% bar, or H72 on another 6% directory source tree.
+PGO is a follow-on stack, not a commit on this branch.
 
 ## Open Questions
 
