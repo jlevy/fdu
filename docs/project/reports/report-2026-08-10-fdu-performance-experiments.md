@@ -66,7 +66,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | bare-metal | warm-steady | 69 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Linux 6.12.94+, ext4 | virtualized | warm-steady | 7 |
+| Linux 6.12.94+, ext4 | virtualized | warm-steady | 8 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -223,6 +223,7 @@ dead end.
 | 142 | [Linux H111 leftover is still walk floor plus retained-index RSS](#exp142--linux-h111-leftover-is-still-walk-floor-plus-retainedindex-rss) | H143 | `cold-scan-index` | +0.1% | ✅ accepted |
 | 143 | [Linux first-pass content-basic leftover is still file I/O](#exp143--linux-firstpass-contentbasic-leftover-is-still-file-io) | H142 | `content-basic` | +0.4% | ✅ accepted |
 | 144 | [Linux cache-hit leftover after landed stack is already-landed restore work](#exp144--linux-cachehit-leftover-after-landed-stack-is-alreadylanded-restore-work) | H144 | `content-cache-hit` | -0.1% | ✅ accepted |
+| 145 | [Linux opened-discovery leftover is still journal clones plus live roll-ups](#exp145--linux-openeddiscovery-leftover-is-still-journal-clones-plus-live-rollups) | H145 | `opened-discovery` | -0.2% | ✅ accepted |
 
 ## The experiments
 
@@ -4864,6 +4865,35 @@ leftover profile only; no engine change
 Full record:
 [`exp-144-linux-cache-hit-leftover-after-landed-stack.md`](../experiments/exp-144-linux-cache-hit-leftover-after-landed-stack.md)
 
+### exp-145 — Linux opened-discovery leftover is still journal clones plus live roll-ups
+
+✅ accepted · 2026-09-20 · H145 · commit `eec14927`
+
+Control: HEAD release probe both arms
+
+Candidate: same probe leftover profile
+
+**`opened-discovery`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1497.0 | 1508.0 | -0.23% (n.s.) | [-0.58%, +1.10%] |
+| component (ms) | 1174.0 | 1184.4 | +0.37% (n.s.) | [-0.52%, +1.10%] |
+| cpu (ms) | 1553.8 | 1562.3 | -0.19% (n.s.) | [-0.48%, +0.89%] |
+| user (ms) | 1392.6 | 1401.0 | +0.35% (n.s.) | [-1.25%, +1.65%] |
+| system (ms) | 172.2 | 170.3 | -2.76% (n.s.) | [-9.37%, +12.52%] |
+| peak rss (MiB) | 106.9 | 107.0 | +0.04% (n.s.) | [-0.06%, +0.18%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** same leftover identity as Darwin H127: 5772 journal clones, 438k live
+roll-up merges, 2.75x first-pass; no smallest cut; do not port macos_bulk.
+
+Full record:
+[`exp-145-linux-opened-discovery-leftover-is-still-journal-clones-plus.md`](../experiments/exp-145-linux-opened-discovery-leftover-is-still-journal-clones-plus.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4952,6 +4982,17 @@ Baselines show one value because they measure a state rather than a change.
 | 088 | Coalesce causal scanner fragments in the one-shot builder | `default-tree` | 362.5 | 360.4 | +0.1% | ❌ rejected |
 | 089 | Suppress causal publication in a producer-only scan | `cold-scan-producer` | 770.3 | 771.9 | +0.4% | ❌ rejected |
 
+### linux-v6.12 (92,474 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 138 | Linux cache-hit stack same versus #91 control | `content-cache-hit` | 760.9 | 588.9 | -22.5% | ✅ accepted |
+| 139 | Linux walk leftover is still the getdents64 plus statx floor | `default-tree` | 433.6 | 439.4 | +0.6% | ✅ accepted |
+| 140 | Linux content-query stack same versus #91 control | `content-query` | 12,616.0 | 10,409.3 | -17.6% | ✅ accepted |
+| 143 | Linux first-pass content-basic leftover is still file I/O | `content-basic` | 2,165.7 | 2,169.4 | +0.4% | ✅ accepted |
+| 144 | Linux cache-hit leftover after landed stack is already-landed restore work | `content-cache-hit` | 605.3 | 607.3 | -0.1% | ✅ accepted |
+| 145 | Linux opened-discovery leftover is still journal clones plus live roll-ups | `opened-discovery` | 1,497.0 | 1,508.0 | -0.2% | ✅ accepted |
+
 ### metabrowser-20260812 (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -4962,16 +5003,6 @@ Baselines show one value because they measure a state rather than a change.
 | 031 | Increase immutable-baseline reconciliation waves to 4096 directories | `warm-revalidate` | 477.6 | 482.5 | +1.6% | ❌ rejected |
 | 032 | Cumulative effect through bounded parallel reconciliation | `cold-scan-index` | 635.4 | 289.6 | -54.5% | ✅ accepted |
 | 033 | Post-composable-CLI integration validation | `warm-revalidate` | 844.7 | 481.9 | -42.3% | ✅ accepted |
-
-### linux-v6.12 (92,474 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 138 | Linux cache-hit stack same versus #91 control | `content-cache-hit` | 760.9 | 588.9 | -22.5% | ✅ accepted |
-| 139 | Linux walk leftover is still the getdents64 plus statx floor | `default-tree` | 433.6 | 439.4 | +0.6% | ✅ accepted |
-| 140 | Linux content-query stack same versus #91 control | `content-query` | 12,616.0 | 10,409.3 | -17.6% | ✅ accepted |
-| 143 | Linux first-pass content-basic leftover is still file I/O | `content-basic` | 2,165.7 | 2,169.4 | +0.4% | ✅ accepted |
-| 144 | Linux cache-hit leftover after landed stack is already-landed restore work | `content-cache-hit` | 605.3 | 607.3 | -0.1% | ✅ accepted |
 
 ### metabrowser (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
