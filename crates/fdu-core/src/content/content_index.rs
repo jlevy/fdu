@@ -73,14 +73,14 @@ impl MetricTally {
     }
 }
 
-fn add_coverage<T>(tally: &mut AnalyzerTally<T>, outcome: AnalyzerOutcome<T>) {
+fn add_coverage<T>(tally: &mut AnalyzerTally<T>, outcome: &AnalyzerOutcome<T>) {
     *tally.coverage.entry(outcome.coverage()).or_default() += 1;
     if outcome.coverage() == CoverageReason::Analyzed {
         tally.analyzed_files = tally.analyzed_files.saturating_add(1);
     }
 }
 
-fn sub_coverage<T>(tally: &mut AnalyzerTally<T>, outcome: AnalyzerOutcome<T>) {
+fn sub_coverage<T>(tally: &mut AnalyzerTally<T>, outcome: &AnalyzerOutcome<T>) {
     if let Some(count) = tally.coverage.get_mut(&outcome.coverage()) {
         *count = count.saturating_sub(1);
         if *count == 0 {
@@ -101,7 +101,7 @@ fn merge_coverage<T>(tally: &mut AnalyzerTally<T>, other: &AnalyzerTally<T>) {
 }
 
 fn add_basic(tally: &mut AnalyzerTally<BasicMetrics>, outcome: AnalyzerOutcome<BasicMetrics>) {
-    add_coverage(tally, outcome);
+    add_coverage(tally, &outcome);
     let Some(value) = outcome.value() else { return };
     tally.metrics.physical_lines =
         tally.metrics.physical_lines.saturating_add(value.physical_lines);
@@ -112,7 +112,7 @@ fn add_basic(tally: &mut AnalyzerTally<BasicMetrics>, outcome: AnalyzerOutcome<B
 }
 
 fn sub_basic(tally: &mut AnalyzerTally<BasicMetrics>, outcome: AnalyzerOutcome<BasicMetrics>) {
-    sub_coverage(tally, outcome);
+    sub_coverage(tally, &outcome);
     let Some(value) = outcome.value() else { return };
     tally.metrics.physical_lines =
         tally.metrics.physical_lines.saturating_sub(value.physical_lines);
@@ -133,7 +133,7 @@ fn merge_basic(tally: &mut AnalyzerTally<BasicMetrics>, other: &AnalyzerTally<Ba
 }
 
 fn add_code(tally: &mut AnalyzerTally<CodeMetrics>, outcome: AnalyzerOutcome<CodeMetrics>) {
-    add_coverage(tally, outcome);
+    add_coverage(tally, &outcome);
     let Some(value) = outcome.value() else { return };
     tally.metrics.code_lines = tally.metrics.code_lines.saturating_add(value.code_lines);
     tally.metrics.comment_lines = tally.metrics.comment_lines.saturating_add(value.comment_lines);
@@ -142,7 +142,7 @@ fn add_code(tally: &mut AnalyzerTally<CodeMetrics>, outcome: AnalyzerOutcome<Cod
 }
 
 fn sub_code(tally: &mut AnalyzerTally<CodeMetrics>, outcome: AnalyzerOutcome<CodeMetrics>) {
-    sub_coverage(tally, outcome);
+    sub_coverage(tally, &outcome);
     let Some(value) = outcome.value() else { return };
     tally.metrics.code_lines = tally.metrics.code_lines.saturating_sub(value.code_lines);
     tally.metrics.comment_lines = tally.metrics.comment_lines.saturating_sub(value.comment_lines);
@@ -160,7 +160,7 @@ fn merge_code(tally: &mut AnalyzerTally<CodeMetrics>, other: &AnalyzerTally<Code
 }
 
 fn add_words(tally: &mut AnalyzerTally<WordMetrics>, outcome: AnalyzerOutcome<WordMetrics>) {
-    add_coverage(tally, outcome);
+    add_coverage(tally, &outcome);
     let Some(value) = outcome.value() else { return };
     tally.metrics.paragraphs = tally.metrics.paragraphs.saturating_add(value.paragraphs);
     tally.metrics.visible_words = tally.metrics.visible_words.saturating_add(value.visible_words);
@@ -169,7 +169,7 @@ fn add_words(tally: &mut AnalyzerTally<WordMetrics>, outcome: AnalyzerOutcome<Wo
 }
 
 fn sub_words(tally: &mut AnalyzerTally<WordMetrics>, outcome: AnalyzerOutcome<WordMetrics>) {
-    sub_coverage(tally, outcome);
+    sub_coverage(tally, &outcome);
     let Some(value) = outcome.value() else { return };
     tally.metrics.paragraphs = tally.metrics.paragraphs.saturating_sub(value.paragraphs);
     tally.metrics.visible_words = tally.metrics.visible_words.saturating_sub(value.visible_words);

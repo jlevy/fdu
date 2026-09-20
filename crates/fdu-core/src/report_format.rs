@@ -990,8 +990,8 @@ fn render_text_metrics(
             ) {
                 let _ = write!(
                     suffix,
-                    ", {} lines ({} code, {} comment, {} blank)",
-                    physical_lines, code_lines, comment_lines, code_blank_lines
+                    ", {physical_lines} lines ({code_lines} code, {comment_lines} comment, \
+                     {code_blank_lines} blank)"
                 );
             } else {
                 let _ = write!(
@@ -1534,7 +1534,7 @@ fn render_change_machine(
         emit_scalar(sink, Scalar::U64(change.bytes.expect("presence checked")));
     });
     emit_field(&mut sink, Field::when_set("allocated"), change.allocated.is_some(), |sink| {
-        emit_scalar(sink, Scalar::U64(change.allocated.expect("presence checked")))
+        emit_scalar(sink, Scalar::U64(change.allocated.expect("presence checked")));
     });
     emit_field(&mut sink, Field::when_set("mtime_ns"), change.mtime_ns.is_some(), |sink| {
         emit_scalar(sink, Scalar::I64(change.mtime_ns.expect("presence checked")));
@@ -2793,6 +2793,17 @@ mod tests {
 
     #[test]
     fn streaming_machine_writers_match_string_rendering() {
+        struct Fails;
+        impl std::io::Write for Fails {
+            fn write(&mut self, _buffer: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("closed"))
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
         let report = fixture(&[
             ViewSpec::Tree,
             ViewSpec::Extensions,
@@ -2807,22 +2818,25 @@ mod tests {
             assert_eq!(streamed, expected.as_bytes(), "{format:?} bytes differ");
         }
 
-        struct Fails;
-        impl std::io::Write for Fails {
-            fn write(&mut self, _buffer: &[u8]) -> std::io::Result<usize> {
-                Err(std::io::Error::other("closed"))
-            }
-
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
-        }
         let error = write(&report, Format::Json, false, &mut Fails).expect_err("writer fails");
         assert_eq!(error.kind(), std::io::ErrorKind::Other);
     }
 
     #[test]
     fn streaming_tree_walk_handles_many_siblings_without_collecting_output() {
+        #[derive(Default)]
+        struct Count(u64);
+        impl std::io::Write for Count {
+            fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+                self.0 = self.0.saturating_add(buffer.len() as u64);
+                Ok(buffer.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
         let mut report = fixture(&[ViewSpec::Tree]);
         let Section::Tree(root) = &mut report.sections[0] else {
             panic!("tree fixture must contain a tree");
@@ -2837,18 +2851,6 @@ mod tests {
             })
             .collect();
 
-        #[derive(Default)]
-        struct Count(u64);
-        impl std::io::Write for Count {
-            fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
-                self.0 = self.0.saturating_add(buffer.len() as u64);
-                Ok(buffer.len())
-            }
-
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
-        }
         let mut output = Count::default();
         write(&report, Format::Json, false, &mut output).expect("stream wide report");
         assert!(output.0 > 1_000_000, "wide fixture must exercise substantial output");

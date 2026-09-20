@@ -257,6 +257,7 @@ fn a_file_that_leaves_attribute_selection_arrives_as_a_remove() {
     let Some(change) = wait_for(
         &mut session,
         "a_file_that_leaves_attribute_selection_arrives_as_a_remove",
+        false,
         |change| change.path.ends_with("shrinking.txt") && change.kind == ChangeKind::Remove,
     ) else {
         return;
