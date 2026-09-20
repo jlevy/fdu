@@ -1015,7 +1015,8 @@ fn put_controls(buf: &mut Vec<u8>, controls: &crate::control::ControlTable) -> R
 
 fn is_snapshot_name(name: &OsStr) -> bool {
     let mut components = Path::new(name).components();
-    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
+    let Some(Component::Normal(component)) = components.next() else { return false };
+    components.next().is_none() && component == name
 }
 
 #[cfg(unix)]
@@ -1329,6 +1330,39 @@ mod tests {
         bytes[payload_len..payload_len + CHECKSUM_BYTES].copy_from_slice(&checksum.to_le_bytes());
     }
 
+    /// The encoded name field and following attributes for every entry record.
+    fn entry_record_fields(bytes: &[u8]) -> Vec<(std::ops::Range<usize>, std::ops::Range<usize>)> {
+        let count_at = entry_count_offset(bytes);
+        let count = u64::from_le_bytes(
+            bytes[count_at..count_at + 8].try_into().expect("saved snapshot has an entry count"),
+        );
+        let mut at = count_at + 8;
+        let mut fields = Vec::new();
+        for _ in 0..count {
+            let name_len_at = at + 5;
+            let name_len = usize::try_from(u32::from_le_bytes(
+                bytes[name_len_at..name_len_at + 4]
+                    .try_into()
+                    .expect("saved entry has a name length"),
+            ))
+            .expect("name length fits usize");
+            let name_end = name_len_at + 4 + name_len;
+            fields.push((name_len_at..name_end, name_end..name_end + 6 * 8));
+            at = name_end + 6 * 8;
+        }
+        fields
+    }
+
+    fn replace_entry_name(image: &[u8], record: usize, name: &OsStr) -> Vec<u8> {
+        let mut encoded = Vec::new();
+        put_os_str(&mut encoded, name).expect("encode replacement name");
+        let field = entry_record_fields(image)[record].0.clone();
+        let mut rewritten = image.to_vec();
+        rewritten.splice(field, encoded);
+        rewrite_checksum(&mut rewritten);
+        rewritten
+    }
+
     #[test]
     fn crc32c_matches_the_standard_check_value() {
         assert_eq!(crc32c(b"123456789"), 0xe306_9283);
@@ -1357,6 +1391,63 @@ mod tests {
             }
             assert_eq!(crc32c(&data), reference(&data), "length {length}");
         }
+    }
+
+    #[test]
+    fn noncanonical_entry_names_are_rejected_after_integrity_checks() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snapshot.fdu");
+        let mut index = Index::new("/some/root");
+        index.apply_ok(&Observation::new(vec![Op::Upsert {
+            path: PathBuf::from("valid"),
+            kind: EntryKind::File,
+            attrs: attrs(1, 1),
+        }]));
+        save(&index, &path).expect("save");
+        let saved = fs::read(&path).expect("read");
+
+        let mut names = vec!["a/", "a//", "a/.", "./a"];
+        #[cfg(windows)]
+        names.extend([r"a\", r"a\\", r"a\."]);
+        for name in names {
+            let forged = replace_entry_name(&saved, 1, OsStr::new(name));
+            fs::write(&path, forged).expect("write forged snapshot");
+            assert!(load(&path).expect("malformed snapshot is a miss").is_none(), "{name:?}");
+        }
+    }
+
+    #[test]
+    fn a_checksummed_name_alias_cannot_serve_cache_only_content() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("root");
+        fs::create_dir(&root).expect("create root");
+        fs::write(root.join("a"), b"one two\n").expect("write first");
+        fs::write(root.join("bb"), b"one two\n").expect("write second");
+        let snapshot_path = dir.path().join("snapshot.fdu");
+        let config = crate::OpenConfig {
+            cache_path: Some(snapshot_path.clone()),
+            policy: crate::CachePolicy::Auto,
+            analysis: crate::content::AnalysisRequest {
+                profile: crate::content::AnalysisSet::NONE.with_lines(),
+                ..crate::content::AnalysisRequest::default()
+            },
+            ..crate::OpenConfig::default()
+        };
+        crate::open(&root, &config).expect("seed snapshot and sidecar");
+
+        let mut image = fs::read(&snapshot_path).expect("read snapshot");
+        let fields = entry_record_fields(&image);
+        assert_eq!(fields.len(), 3, "root and two files");
+        let first_attrs = image[fields[1].1.clone()].to_vec();
+        image[fields[2].1.clone()].copy_from_slice(&first_attrs);
+        let forged = replace_entry_name(&image, 2, OsStr::new("a/"));
+        fs::write(&snapshot_path, forged).expect("write checksummed alias");
+
+        let only = crate::OpenConfig { policy: crate::CachePolicy::Only, ..config };
+        assert!(
+            matches!(crate::open(&root, &only), Err(Error::Snapshot(_))),
+            "a malformed snapshot cannot shrink the cache-only completeness denominator"
+        );
     }
 
     #[test]
