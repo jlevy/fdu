@@ -198,7 +198,7 @@ experiment:
     primary_metric: peak_rss_bytes
     change_pct: -10.127
     reason: "peak RSS -10.13 percent [-10.49%, -10.03%]; wall non-inferior; streaming restore kept"
-    commit: "984e4618"
+    commit: "bbfd7d1c"
 ---
 ## What was predicted
 
@@ -209,7 +209,7 @@ H116 already failed to remove the candidate HashMap; this is the Vec only.
 Named before measuring:
 
 - Metric: `content-cache-hit` peak RSS on deciding-scale `metabrowser-clone`.
-- Accept: peak RSS down at least 10%; wall non-inferior (interval not entirely above
+- Accept: peak RSS down at least 10%; wall non-inferior (upper interval bound at most
   +3%); content digest identical.
 - Control: this branch HEAD at `984e4618` with H115 in, H116/H118 reverted.
   Claim-grade pair with `FDU_COUNTERS` unset.
@@ -250,7 +250,7 @@ same digest exp-108 through exp-115 recorded.
 Peak RSS −10.13% [−10.49%, −10.03%]. ACCEPT. The median meets the 10% bar and the
 interval is entirely below −10%.
 
-Wall −0.59% [−1.63%, +0.51%] is non-inferior (not entirely above +3%).
+Wall −0.59% [−1.63%, +0.51%] is non-inferior (upper interval bound at most +3%).
 
 ## Judgment
 

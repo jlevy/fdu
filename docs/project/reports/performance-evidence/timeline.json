@@ -32443,7 +32443,7 @@
    "anchored": false,
    "candidate": "stream sidecar records into apply without a decoded Vec",
    "change_pct": -10.127,
-   "commit": "984e4618",
+   "commit": "bbfd7d1c",
    "complexity": {
     "lines_changed": 80,
     "new_dependencies": [],
