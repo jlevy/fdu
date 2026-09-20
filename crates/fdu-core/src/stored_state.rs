@@ -224,6 +224,22 @@ impl ContentTierIdentity {
             analyzers: self.provenance.analyzers.clone(),
         }
     }
+
+    /// Whether a record of `analysis` carrying `provenance` is one of this tier's: the same
+    /// analyzer set, and the provenance [`Self::record_provenance`] gives, compared field by
+    /// field so a commit never builds it.
+    pub(crate) fn holds_record(
+        &self,
+        analysis: AnalysisSet,
+        provenance: &ContentProvenance,
+    ) -> bool {
+        let ContentProvenance { type_rules_fingerprint, options_fingerprint, analyzers } =
+            provenance;
+        analysis == self.analysis
+            && *type_rules_fingerprint == self.entries.type_rules_fingerprint
+            && *options_fingerprint == self.provenance.options_fingerprint
+            && *analyzers == self.provenance.analyzers
+    }
 }
 
 /// How a stored tier answers a request.
@@ -814,8 +830,13 @@ mod tests {
         let identity = ContentTierIdentity::of_records(entries, request.profile, &records)
             .expect("records under the entry tier's type rules");
         assert_eq!(identity.record_provenance(), records);
+        assert!(identity.holds_record(request.profile, &records));
+
         let other_rules = ContentProvenance::for_request(request, !entries.type_rules_fingerprint);
         assert_eq!(ContentTierIdentity::of_records(entries, request.profile, &other_rules), None);
+        assert!(!identity.holds_record(request.profile, &other_rules), "other type rules");
+        let lines = AnalysisSet::NONE.with_lines();
+        assert!(!identity.holds_record(lines, &records), "another analyzer set's label");
     }
 
     #[test]

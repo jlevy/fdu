@@ -248,9 +248,13 @@ pub fn load_content_cache(
         // arrived with e667b739, which left the remove and fingerprint compare between
         // decode and apply. "post-H112" named the wrong change: H112 is exp-109, the
         // measurement with the wide bucket.
+        // Failed analysis is never a reusable cache hit; leave it pending for retry.
         let apply_started = timings.as_ref().map(|_| Instant::now());
         match candidates.remove(&relative_path) {
-            Some(candidate) if candidate.attrs.fingerprint() == analysis.fingerprint => {
+            Some(candidate)
+                if candidate.attrs.fingerprint() == analysis.fingerprint
+                    && analysis.is_reusable() =>
+            {
                 let coverage_exclusion = analysis_outcomes(&analysis).any(|outcome| {
                     !matches!(outcome, CoverageReason::Analyzed | CoverageReason::Binary)
                 });
@@ -1065,6 +1069,52 @@ mod tests {
                 "{dir:?} roll-up"
             );
         }
+    }
+
+    #[test]
+    fn operational_failure_in_a_valid_sidecar_is_not_reused() {
+        let (root, analyzed, request) = analyzed_index();
+        let store = tempfile::tempdir().expect("cache dir");
+        let cache = store.path().join("content.cache");
+        let identity = analyzed.content().and_then(|content| content.identity()).expect("identity");
+        let mut record = analyzed
+            .content()
+            .and_then(|content| content.file(Path::new("notes.md")))
+            .cloned()
+            .expect("record");
+        record.lines = AnalyzerOutcome::unavailable(CoverageReason::IoError);
+        record.error = Some("injected failure".into());
+
+        // Build a checksummed sidecar directly: the ordinary writer correctly excludes
+        // this record, while the reader must still distrust an image another process can
+        // create or modify.
+        let mut image = Vec::new();
+        image.extend_from_slice(MAGIC);
+        image.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
+        image.extend_from_slice(&identity.entries.engine.to_le_bytes());
+        image.push(crate::snapshot::path_encoding());
+        put_identity(&mut image, identity).expect("identity");
+        crate::snapshot::put_os_str(&mut image, analyzed.root_path().as_os_str()).expect("root");
+        image.extend_from_slice(&1_u64.to_le_bytes());
+        put_record(&mut image, Path::new("notes.md"), &record).expect("record");
+        let checksum = crate::snapshot::crc32c(&image);
+        image.extend_from_slice(&checksum.to_le_bytes());
+        image.extend_from_slice(TRAILER);
+        fs::write(&cache, image).expect("write sidecar");
+
+        let (mut restored, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        let loaded = load(&mut restored, request, &cache);
+        assert!(loaded.usable, "the sidecar identity itself remains usable");
+        assert_eq!((loaded.hits, loaded.stale), (0, 1));
+        assert!(
+            restored
+                .content()
+                .expect("prepared content tier")
+                .file(Path::new("notes.md"))
+                .is_none()
+        );
+        assert_eq!(restored.pending_analysis_candidates(request).len(), 1);
     }
 
     /// A sidecar serves exactly the analyzer set it was written for. A wider one holds

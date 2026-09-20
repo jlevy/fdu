@@ -3615,13 +3615,12 @@ impl Index {
         {
             return AnalysisApplyOutcome::Stale;
         }
-        let wanted = self.content_identity(observation.profile);
         let Some(content) = self.content.as_mut() else {
             return AnalysisApplyOutcome::Stale;
         };
-        if content.identity() != Some(&wanted)
-            || observation.provenance != wanted.record_provenance()
-        {
+        if !content.identity().is_some_and(|identity| {
+            identity.holds_record(observation.profile, &observation.provenance)
+        }) {
             return AnalysisApplyOutcome::Stale;
         }
         if content.commit(candidate.relative_path.clone(), observation.analysis) {

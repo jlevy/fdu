@@ -493,6 +493,7 @@ fn count_coverage(report: &mut AnalysisReport, analysis: &FileAnalysis) {
 mod tests {
     use std::collections::BTreeMap;
     use std::fs;
+    use std::path::Path;
 
     use crate::content::AnalysisSet;
     use crate::scan::ScanConfig;
@@ -642,6 +643,61 @@ mod tests {
                         "{} leaked into an unrequested {profile:?} report",
                         metric.name
                     );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn prefix_classification_handoff_neither_drops_nor_double_counts_large_files() {
+        let root = tempfile::tempdir().expect("tempdir");
+        for size in [20 * 1024, 80 * 1024] {
+            let mut python = b"#!/usr/bin/env python3\n".to_vec();
+            while python.len() < size {
+                python.extend_from_slice(b"value = 1  # one comment\n");
+            }
+            fs::write(root.path().join(format!("script-{size}")), &python).expect("shebang");
+            fs::write(root.path().join(format!("script-{size}.py")), &python).expect("python");
+
+            let mut plain = Vec::new();
+            while plain.len() < size {
+                plain.extend_from_slice(b"ordinary words in a plain text line\n");
+            }
+            fs::write(root.path().join(format!("plain-{size}.unknown")), &plain)
+                .expect("unknown text");
+            fs::write(root.path().join(format!("plain-{size}.txt")), &plain).expect("text");
+        }
+        let (baseline, scan) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        assert!(scan.is_complete());
+
+        for profile in [AnalysisSet::CODE_ONLY, AnalysisSet::WORDS_ONLY, AnalysisSet::ALL] {
+            let mut index = baseline.clone();
+            let report = analyze_index(&mut index, AnalysisRequest { profile, workers: 1 });
+            assert!(report.is_complete(), "{profile:?}: {report:?}");
+            let content = index.content().expect("content");
+            for size in [20 * 1024, 80 * 1024] {
+                let script = content
+                    .file(Path::new(&format!("script-{size}")))
+                    .expect("extensionless script");
+                let python =
+                    content.file(Path::new(&format!("script-{size}.py"))).expect("named Python");
+                assert_eq!(script.lines.value(), python.lines.value(), "{profile:?}, {size} bytes");
+                if profile.includes_code() {
+                    assert_eq!(script.code, python.code, "code handoff at {size} bytes");
+                }
+                if profile.includes_words() {
+                    assert_eq!(script.words, python.words, "word handoff at {size} bytes");
+                }
+
+                let unknown = content
+                    .file(Path::new(&format!("plain-{size}.unknown")))
+                    .expect("unknown text");
+                let text =
+                    content.file(Path::new(&format!("plain-{size}.txt"))).expect("named text");
+                assert_eq!(unknown.lines.value(), text.lines.value(), "plain lines at {size}");
+                if profile.includes_words() {
+                    assert_eq!(unknown.words, text.words, "plain words at {size}");
                 }
             }
         }
