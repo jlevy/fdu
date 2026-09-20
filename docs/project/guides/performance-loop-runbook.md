@@ -489,8 +489,8 @@ Source of truth:
 [the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
 The registry row in [the loop guide](performance-loop.md#current-engine-010) is the full
 statement. Overnight H116–H120 is done; do not retry those.
-H139 is recorded on stacked [#94](https://github.com/jlevy/fdu/pull/94) as exp-138.
-H140–H142 remain reserved there.
+H139 is recorded on stacked [#94](https://github.com/jlevy/fdu/pull/94) as exp-138. H140
+is recorded there as exp-139. H141–H142 remain reserved there.
 Do not mint them on this Darwin branch.
 Next free Darwin hypothesis id is **H143**. Do not mint another meaning for H91–H106.
 Next free Darwin experiment id after the Linux reservation is assigned on #94; do not
@@ -702,7 +702,7 @@ Do not defer snapshot `merge_upward`. Do not retry H109.
 | --- | --- |
 | This standing section | Pickup: standing best, next-up order |
 | [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Remaining Darwin queue: H107 (no subject) |
-| [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md) | Linux pickup: H140–H142 plus H111 (`fdu-jekg`); H139 is exp-138 |
+| [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md) | Linux pickup: H141–H142 plus H111 (`fdu-jekg`); H139/H140 are exp-138/139 |
 | [The loop guide](performance-loop.md) | Protocol, accept rule, hypothesis registry |
 | [The campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) | Floor-anchored strategy; the 2026-08-23 Tier 1–3 list is history |
 | [The instrumentation playbook](performance-instrumentation-playbook.md) | Instrument before optimizing; `FDU_COUNTERS=1` |
@@ -727,21 +727,25 @@ Darwin-only).
 Load/core 0.115–0.153 held.
 A clean metabrowser clone here is 916 entries and was not the subject.
 
+**H140 / exp-139** is the standing Linux walk leftover: **same** identity.
+Walk 95.7–96.1% of `default-tree` component.
+Leftover is `getdents64`+`statx` (one open/dir, one stat/entry).
+Quiet attempt invalidated 23/24 timed samples.
+Do not compile a walk trim.
+Do not retry H71.
+
 `linux-450k` is generated and ready (semantic digest `0c523088…`, same as exp-103) for
 H111. Do not treat it as a nominated real subject.
 
 ### Next Up (Linux)
 
-1. **H140** (`fdu-6hjg`). Walk leftover.
-   Do not compile a walk trim.
-   Do not retry H71.
-2. **H141** (`fdu-rmo2`). Content-query stack versus the same #91 control.
-3. **H111** (`fdu-jekg`). 450k floor/RSS gates.
+1. **H141** (`fdu-rmo2`). Content-query stack versus the same #91 control.
+2. **H111** (`fdu-jekg`). 450k floor/RSS gates.
    Record `host_virtualization`.
-4. **H142** (`fdu-2003`) only if time remains.
+3. **H142** (`fdu-2003`) only if time remains.
    Do not retry H124.
 
-Next free Linux experiment id is **exp-139**.
+Next free Linux experiment id is **exp-140**.
 
 ## Before the First Round
 

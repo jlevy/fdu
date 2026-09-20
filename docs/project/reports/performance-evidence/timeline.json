@@ -35870,6 +35870,143 @@
    "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
    "title": "Linux cache-hit stack same versus #91 control",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe leftover profile",
+   "change_pct": 0.636,
+   "commit": "a5c98d59",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "HEAD release probe both arms",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H140"
+   ],
+   "id": "exp-139",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 437553750,
+        "control": 431655573.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.655,
+        "ci95_high_pct": 3.547,
+        "ci95_low_pct": -0.425,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 555488500,
+        "control": 548078500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 1.056,
+        "ci95_high_pct": 2.296,
+        "ci95_low_pct": 0.208,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 45991936,
+        "control": 45813760
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.34,
+        "ci95_high_pct": 0.871,
+        "ci95_low_pct": -0.218,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 101907000,
+        "control": 106205000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -9.14,
+        "ci95_high_pct": 6.608,
+        "ci95_low_pct": -14.164,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 449948000,
+        "control": 444203000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 3.859,
+        "ci95_high_pct": 5.687,
+        "ci95_low_pct": -0.905,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 439365936,
+        "control": 433645679.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.636,
+        "ci95_high_pct": 3.575,
+        "ci95_low_pct": -0.45,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 4751.237493782036,
+      "control": 4689.379495858296
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 139,
+   "path": "exp-139-linux-walk-leftover-is-still-the-getdents64-plus-statx-floor.md",
+   "platform": "Linux",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "walk still 95.7-96.1% of default-tree component; leftover is getdents64+statx floor; no userspace cut; do not retry H71",
+   "reference_tools": [],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux walk leftover is still the getdents64 plus statx floor",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-20",
@@ -36415,6 +36552,25 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 1759293224,
+   "directories": 5769,
+   "entries": 92474,
+   "experiments": [
+    "exp-138",
+    "exp-139"
+   ],
+   "files": 86643,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor",
+   "key": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "labels": [
+    "linux-v6.12"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 2170167344,
    "directories": 14701,
    "entries": 120135,
@@ -36683,42 +36839,24 @@
    "os_cache": "warm-steady",
    "platform": "macOS",
    "synthetic": false
-  },
-  {
-   "apparent_bytes": 1759293224,
-   "directories": 5769,
-   "entries": 92474,
-   "experiments": [
-    "exp-138"
-   ],
-   "files": 86643,
-   "filesystem": "ext4",
-   "host_cpu": "Intel(R) Xeon(R) Processor",
-   "key": "d7c0dad8d82c:92474:a298a9c2c8f8",
-   "labels": [
-    "linux-v6.12"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "Linux",
-   "synthetic": false
   }
  ],
  "totals": {
   "accepted_lines_changed": 16004,
   "decisions": {
-   "accepted": 75,
+   "accepted": 76,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
    "rejected": 46,
    "superseded": 3
   },
-  "experiments": 138,
+  "experiments": 139,
   "first_date": "2026-08-10",
-  "hypotheses": 94,
+  "hypotheses": 95,
   "last_date": "2026-09-20",
   "platforms": {
-   "Linux": 12,
+   "Linux": 13,
    "macOS": 126
   }
  },
