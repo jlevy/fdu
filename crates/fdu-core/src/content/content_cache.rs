@@ -182,20 +182,32 @@ pub fn load_content_cache(
             counts.content_sidecar_candidates_us.saturating_add(elapsed);
     });
     let mut loaded = ContentCacheLoad { usable: true, ..ContentCacheLoad::default() };
-    for _ in 0..stream.remaining {
-        let decode_started = crate::counters::enabled().then(std::time::Instant::now);
-        let Some((relative_path, analysis)) = read_record(&mut stream) else {
-            crate::counters::add_elapsed(decode_started, |counts, elapsed| {
-                counts.content_sidecar_parse_us =
-                    counts.content_sidecar_parse_us.saturating_add(elapsed);
-            });
-            index.clear_content();
-            return Ok(ContentCacheLoad::default());
-        };
-        crate::counters::add_elapsed(decode_started, |counts, elapsed| {
+    let mut parse_ns = 0u128;
+    let mut apply_ns = 0u128;
+    let accumulate = |started: Option<std::time::Instant>, into: &mut u128| {
+        if let Some(started) = started {
+            *into = into.saturating_add(started.elapsed().as_nanos());
+        }
+    };
+    let publish_restore_timers = |parse_ns: u128, apply_ns: u128| {
+        crate::counters::add_nanos(parse_ns, |counts, elapsed| {
             counts.content_sidecar_parse_us =
                 counts.content_sidecar_parse_us.saturating_add(elapsed);
         });
+        crate::counters::add_nanos(apply_ns, |counts, elapsed| {
+            counts.content_sidecar_apply_us =
+                counts.content_sidecar_apply_us.saturating_add(elapsed);
+        });
+    };
+    for _ in 0..stream.remaining {
+        let decode_started = crate::counters::enabled().then(std::time::Instant::now);
+        let Some((relative_path, analysis)) = read_record(&mut stream) else {
+            accumulate(decode_started, &mut parse_ns);
+            publish_restore_timers(parse_ns, apply_ns);
+            index.clear_content();
+            return Ok(ContentCacheLoad::default());
+        };
+        accumulate(decode_started, &mut parse_ns);
         let Some(candidate) = candidates.remove(&relative_path) else {
             loaded.stale = loaded.stale.saturating_add(1);
             continue;
@@ -209,10 +221,7 @@ pub fn load_content_cache(
         let bytes = analysis.bytes;
         let apply_started = crate::counters::enabled().then(std::time::Instant::now);
         let outcome = index.apply_restored_analysis(AnalysisObservation { candidate, analysis });
-        crate::counters::add_elapsed(apply_started, |counts, elapsed| {
-            counts.content_sidecar_apply_us =
-                counts.content_sidecar_apply_us.saturating_add(elapsed);
-        });
+        accumulate(apply_started, &mut apply_ns);
         match outcome {
             AnalysisApplyOutcome::Applied => {
                 loaded.hits = loaded.hits.saturating_add(1);
@@ -224,9 +233,11 @@ pub fn load_content_cache(
         }
     }
     if !stream.reader.is_empty() {
+        publish_restore_timers(parse_ns, apply_ns);
         index.clear_content();
         return Ok(ContentCacheLoad::default());
     }
+    publish_restore_timers(parse_ns, apply_ns);
     let rebuild_started = crate::counters::enabled().then(std::time::Instant::now);
     index.rebuild_content_rollups();
     crate::counters::add_elapsed(rebuild_started, |counts, elapsed| {
@@ -1221,6 +1232,59 @@ mod tests {
         rewritten.extend_from_slice(&checksum.to_le_bytes());
         rewritten.extend_from_slice(TRAILER);
         rewritten
+    }
+
+    /// Append unread trailing bytes to a sealed payload and reseal the checksum.
+    ///
+    /// `remaining` still names the original record count, so the reader is nonempty after
+    /// those records and the load must miss.
+    fn reseal_with_trailing_bytes(image: &[u8]) -> Vec<u8> {
+        let payload = integrity_payload(image).expect("a valid sidecar");
+        let mut rewritten = payload.to_vec();
+        rewritten.extend_from_slice(&[0u8; 8]);
+        let checksum = crate::snapshot::crc32c(&rewritten);
+        rewritten.extend_from_slice(&checksum.to_le_bytes());
+        rewritten.extend_from_slice(TRAILER);
+        rewritten
+    }
+
+    fn assert_clean_content_miss(index: &Index, loaded: ContentCacheLoad) {
+        assert_eq!(loaded, ContentCacheLoad::default());
+        assert!(index.content().is_none(), "a miss must expose neither files nor roll-ups");
+    }
+
+    /// H120 streams parse-into-apply. A later malformed record must not leave the prefix
+    /// that already applied.
+    #[test]
+    fn a_malformed_later_record_rolls_back_a_valid_prefix() {
+        let (root, cache_dir, index) = containment_fixture(AnalysisSet::ALL);
+        let cache = cache_dir.path().join("content.cache");
+        save_content_cache(&index, &cache).expect("save");
+        let rewritten = readdress_record(
+            &fs::read(&cache).expect("read"),
+            Path::new("main.rs"),
+            Path::new("../escape.rs"),
+        );
+        fs::write(&cache, rewritten).expect("re-address");
+
+        let (mut restored, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        let loaded = load(&mut restored, request_for(AnalysisSet::ALL), &cache);
+        assert_clean_content_miss(&restored, loaded);
+    }
+
+    #[test]
+    fn checksummed_trailing_bytes_after_valid_records_are_a_clean_miss() {
+        let (root, cache_dir, index) = containment_fixture(AnalysisSet::ALL);
+        let cache = cache_dir.path().join("content.cache");
+        save_content_cache(&index, &cache).expect("save");
+        fs::write(&cache, reseal_with_trailing_bytes(&fs::read(&cache).expect("read")))
+            .expect("reseal");
+
+        let (mut restored, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        let loaded = load(&mut restored, request_for(AnalysisSet::ALL), &cache);
+        assert_clean_content_miss(&restored, loaded);
     }
 
     /// A sidecar is untrusted, and each record names a path under the root it claims.

@@ -823,7 +823,16 @@ pub fn enabled() -> bool {
 /// Elapsed microseconds since `started`, saturating at `u64::MAX`.
 #[must_use]
 pub(crate) fn elapsed_micros(started: std::time::Instant) -> u64 {
-    u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX)
+    micros_from_nanos(started.elapsed().as_nanos())
+}
+
+/// Convert a nanosecond sum to microseconds once, saturating at `u64::MAX`.
+///
+/// Per-record `as_micros()` truncation would drop every duration under 1 µs. Summing
+/// nanoseconds and converting here keeps that work.
+#[must_use]
+pub(crate) fn micros_from_nanos(nanos: u128) -> u64 {
+    u64::try_from(nanos / 1_000).unwrap_or(u64::MAX)
 }
 
 /// Record a whole-phase duration when recording is on.
@@ -831,6 +840,14 @@ pub(crate) fn add_elapsed(started: Option<std::time::Instant>, add: impl FnOnce(
     if let Some(started) = started {
         bump(|counts| add(counts, elapsed_micros(started)));
     }
+}
+
+/// Publish a locally summed nanosecond total as one counter increment.
+pub(crate) fn add_nanos(nanos: u128, add: impl FnOnce(&mut Counts, u64)) {
+    if nanos == 0 {
+        return;
+    }
+    bump(|counts| add(counts, micros_from_nanos(nanos)));
 }
 
 /// Add to one or more counters on the calling thread.
@@ -1041,5 +1058,12 @@ mod tests {
             .find(|(_, label, _)| *label == "allocations")
             .expect("allocation row");
         assert!((allocations.2 - 10.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn micros_from_nanos_keeps_sub_microsecond_work() {
+        assert_eq!(micros_from_nanos(900), 0);
+        assert_eq!(micros_from_nanos(1_000 * 900), 900);
+        assert_eq!(micros_from_nanos(0), 0);
     }
 }

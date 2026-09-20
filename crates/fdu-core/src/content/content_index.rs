@@ -362,9 +362,10 @@ impl ContentIndex {
 
     /// Rebuild every directory roll-up from the files now held.
     ///
-    /// Each file is added only to its parent, then each directory merges into its
-    /// parent from the deepest path first. That is O(files + dirs); walking every
-    /// ancestor of every file is O(files × depth).
+    /// Each file is added only to its parent, then directories merge upward from the
+    /// deepest path first. That removes repeated per-file ancestor propagation
+    /// (`O(files × depth)`). The pass still sorts the directory set and walks each
+    /// directory's ancestors once to insert empty parents.
     pub(crate) fn rebuild_rollups(&mut self) {
         self.rollups.clear();
         for (key, analysis) in &self.files {

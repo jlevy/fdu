@@ -257,8 +257,7 @@ same digest exp-108, exp-109, exp-110, and exp-111 recorded.
 A unit test compares incremental `commit` roll-ups to deferred inserts plus rebuild at
 `""`, `a`, `a/b`, and `a/b/c`, including a directory that holds only nested files.
 
-Control wall p95/median is 2.42× from host spikes (pairs at 1.94 s and 2.69 s).
-Candidate wall p95/median is 1.05×. User CPU does not follow those spikes: −8.23%
+Control wall p95/median is 1.509×. Candidate wall p95/median is 1.032×. User CPU −8.23%
 [−11.11%, −7.73%].
 
 ## What the accept rule said
