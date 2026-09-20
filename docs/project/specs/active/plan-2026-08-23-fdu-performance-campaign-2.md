@@ -273,8 +273,9 @@ subject sizes are in
 The remaining unaddressed queue after that overnight is
 [the remaining-headroom block](plan-2026-09-19-post-h115-remaining-headroom.md), not
 this file’s 2026-08-23 Tier 1–3 list.
-H86’s remaining gap is the Linux floor (H111 / `fdu-jekg`), not a rewrite, and not this
-Darwin host.
+H86’s remaining gap is still the Linux floor after H111 failed on
+[#94](https://github.com/jlevy/fdu/pull/94) (exp-141, virtualized); leftover is H143.
+That is not a rewrite, and not this Darwin host.
 
 - **Tier 1, unattended, in order:** `fdu-mx1w` (landed), `fdu-2um8` (skip the identical
   snapshot rewrite; landed and closed), `fdu-n75m` part 1 (flush the render before the
@@ -521,8 +522,9 @@ strategy and the record is visible in review.
   unattended round and the 2026-09-18 standing
 - [Post-H115 remaining headroom](plan-2026-09-19-post-h115-remaining-headroom.md) —
   remaining Darwin queue after the H116–H120 overnight
-- [Linux parallel validation](plan-2026-09-19-linux-parallel-validation.md) — H139–H142
-  plus H111 on a host that can run Linux cells
+- [Linux parallel validation](plan-2026-09-19-linux-parallel-validation.md) — H139–H143
+  recorded on [#94](https://github.com/jlevy/fdu/pull/94); H111 failed on that
+  virtualized host; ready to merge onto #92
 - [The cache layers plan](../done/plan-2026-08-15-fdu-cache-layers-and-defaults.md) —
   the cost model this plan’s warm posture rests on
 - [The fsevents plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md) — the journal

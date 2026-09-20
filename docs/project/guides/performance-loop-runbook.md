@@ -518,8 +518,8 @@ recorded exp-122 (H122 leftover), and recorded exp-123 (H113 leftover then 16% o
 `content_open`). Earlier the same day: H113 69.4%, H122 (exp-118), H123, H121, H124. Do
 not start H107 without an ignore-is-the-walk subject.
 Do not retry metabrowser for H107 (exp-106). Do not start H111 on Darwin (no Linux).
-H111 pickup is [#94](https://github.com/jlevy/fdu/pull/94). Do not pad cache-hit,
-first-pass I/O, or walk leftovers already recorded.
+H111 is recorded fail on [#94](https://github.com/jlevy/fdu/pull/94) (exp-141). Do not
+pad cache-hit, first-pass I/O, or walk leftovers already recorded.
 Do not raise the README 200K files/s or 4M cached lines/s.
 
 1. **H138** (`fdu-sce1`). **Accepted** (exp-137). Share one `every_entry` walk across
@@ -604,10 +604,11 @@ Do not raise the README 200K files/s or 4M cached lines/s.
    Do not retry a type/size gate or a larger read chunk.
    `F_RDADVISE` is person-gated `unsafe`.
 
-7. **H111** (`fdu-jekg`). Linux floor stage of H86. **Not in this host.** Still open.
-   Pickup:
+7. **H111** (`fdu-jekg`). Linux floor stage of H86. **Failed** on
+   [#94](https://github.com/jlevy/fdu/pull/94) (exp-141, virtualized).
+   Recorded:
    [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md).
-   Do not restart the rewrite.
+   Leftover is H143. Do not restart the rewrite.
    Do not treat a Darwin cell as this claim.
 
 **H108** (`fdu-1a4z`, confirmed in exp-107). Do not open a cache/one-shot patch.
@@ -703,9 +704,9 @@ Do not defer snapshot `merge_upward`. Do not retry H109.
 
 | Document | Role |
 | --- | --- |
-| This standing section | Pickup: standing best, next-up order |
+| This standing section | Standing best, next-up order |
 | [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Remaining Darwin queue: H107 (no subject) |
-| [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md) | Linux pickup done: H139–H142 same; H111 fail; H143 leftover confirmed |
+| [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md) | Linux recorded on #94: H139–H142 same; H111 fail; H143 leftover confirmed. Ready to merge onto #92 |
 | [The loop guide](performance-loop.md) | Protocol, accept rule, hypothesis registry |
 | [The campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) | Floor-anchored strategy; the 2026-08-23 Tier 1–3 list is history |
 | [The instrumentation playbook](performance-instrumentation-playbook.md) | Instrument before optimizing; `FDU_COUNTERS=1` |
@@ -721,6 +722,7 @@ Do not defer snapshot `merge_upward`. Do not retry H109.
 Stacked [#94](https://github.com/jlevy/fdu/pull/94) on `perf/campaign-linux-2026-09-19`,
 rebased onto [#92](https://github.com/jlevy/fdu/pull/92) `937f9445` (R1–R3 plus
 `c441edf6` single-view Cow borrow and the #91 restore-evidence repair).
+Ready to merge onto #92. This is not a Linux floor pass.
 H141’s four-view `content-query` still shares one walk (`row_consumers > 1`). A
 single-view report now borrows instead of cloning; that does not change the four-view
 cell. H139 was a well-formed cache-hit tree; snapshot alias reject and restore-timing
@@ -772,7 +774,9 @@ This host’s nominated set is
 `linux-v6.12` and `usr-prefix` decide; rustup screens (46,632 entries).
 Two deciding characters, so the set cannot yet carry a ranking or transfer claim.
 
-### Next Up (Linux)
+### After #94 (Linux)
+
+This PR is recorded and ready to merge onto #92. The next Linux cell is not this branch.
 
 1. A new named mechanism that can close the 1.4× index or 3× RSS gate, or a bare-metal
    H111 remeasure. That is **H144** if minted.
@@ -803,7 +807,7 @@ Each one has caught a real mistake.
    Remaining order after the overnight is
    [the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
    That label still holds older campaign-2 items; several have landed, and H86’s
-   remaining gap is H111 on Linux (not this host).
+   remaining gap is still the Linux floor after H111 failed on #94 (not this host).
 
    ```shell
    tbd show fdu-8ya1 fdu-rfr6 fdu-ytg5 fdu-jcfn fdu-rum0 fdu-vf4b fdu-i39y fdu-jekg

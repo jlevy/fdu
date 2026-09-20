@@ -299,7 +299,9 @@ Live next-up after the 2026-09-18 Darwin revisit is
 [the runbook standing](../guides/performance-loop-runbook.md#current-standing-2026-09-18)
 and
 [the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
-H86’s remaining gap is the Linux floor (H111), not a restart of the Darwin composite.
+H86’s remaining gap is still the Linux floor after H111 failed on
+[#94](https://github.com/jlevy/fdu/pull/94) (exp-141, virtualized); leftover is H143.
+That is not a restart of the Darwin composite.
 
 The 2026-08-23 strategy — priorities, phases, targets, and how that campaign ends — is
 owned by

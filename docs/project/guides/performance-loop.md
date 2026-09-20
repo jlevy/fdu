@@ -825,7 +825,7 @@ The ordered pickup — metric, subject, what would falsify, what not to retry �
 [the runbook standing](performance-loop-runbook.md#current-standing-2026-09-18). The
 remaining unaddressed queue after the H116–H120 overnight lives in
 [the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
-Linux replication and H111 live in
+Linux replication and H111 are recorded in
 [the Linux parallel-validation block](../specs/active/plan-2026-09-19-linux-parallel-validation.md).
 Do not take `macos-agenda` beads in 2026-08-23 plan order without reading those.
 
