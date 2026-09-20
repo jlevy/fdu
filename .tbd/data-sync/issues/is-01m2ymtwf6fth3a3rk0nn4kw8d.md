@@ -5,7 +5,7 @@ title: "Linux performance iteration after #94"
 kind: epic
 status: open
 priority: 1
-version: 14
+version: 15
 spec_path: docs/project/specs/active/plan-2026-09-20-linux-performance-iteration.md
 labels:
   - linux
@@ -20,8 +20,9 @@ child_order_hints:
   - is-01m2yrt6de9vp553ce85zz3zy8
   - is-01m2ys9y5ep69vq65z0xs0ax19
   - is-01m2yssjtfcrct87cd9bc8czy8
+  - is-01m2yxpttkwtmzseh6xe3r73kw
 created_at: 2026-09-20T05:32:44.390Z
-updated_at: 2026-09-20T07:26:20.198Z
+updated_at: 2026-09-20T08:07:48.818Z
 ---
 Stacked on #94. Recorded leftover queue exp-144–153: H144/H145/H146 same leftovers; H84 silent (named-job --threads 8 not a 3% win; default /usr +7.12% regression); H85 rejected 20% (exp-150); H147 recycle keep (exp-151, -4.98%); H72 rejected on v6.12 (exp-152, -1.63%) and accepted on /usr (exp-153, -9.01%). Engine kept f841662c. Do not ship PORTABLE. Next free exp-154 / H148. fdu-tk1b stays open.
 
