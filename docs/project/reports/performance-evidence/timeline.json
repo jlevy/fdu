@@ -784,6 +784,15 @@
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "tool": "dust",
    "wall_ns": 2114015042
+  },
+  {
+   "entries": 450001,
+   "id": "exp-142",
+   "per_entry_ns": 1254.027387716916,
+   "platform": "Linux",
+   "subject": "b3459e945151:450001:b77ebb296d34",
+   "tool": "dust",
+   "wall_ns": 564313578.5
   }
  ],
  "experiments": [
@@ -36283,6 +36292,291 @@
    "subject": "b3459e945151:450001:b77ebb296d34",
    "title": "H111 Linux floor and RSS gates fail on current engine",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe leftover profile",
+   "change_pct": 0.131,
+   "commit": "937f9445",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "leftover profile only; no engine change"
+   },
+   "control": "HEAD release probe both arms",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 450001,
+   "family": "Linux:b3459e945151",
+   "hypotheses": [
+    "H143"
+   ],
+   "id": "exp-142",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "cold-scan-index",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 318734663.5,
+        "control": 319381209
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -0.277,
+        "ci95_high_pct": 0.513,
+        "ci95_low_pct": -0.89,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1576612500,
+        "control": 1574917500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.171,
+        "ci95_high_pct": 0.813,
+        "ci95_low_pct": -0.741,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 158410752,
+        "control": 157194240
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 1.247,
+        "ci95_high_pct": 2.189,
+        "ci95_low_pct": -0.185,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 721049000,
+        "control": 696087500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 2.45,
+        "ci95_high_pct": 6.322,
+        "ci95_low_pct": 0.126,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 866492000,
+        "control": 881806500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -3.515,
+        "ci95_high_pct": 0.372,
+        "ci95_low_pct": -5.672,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 856732192.5,
+        "control": 857578764
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.131,
+        "ci95_high_pct": 0.756,
+        "ci95_low_pct": -0.957,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1903.8450858998092,
+      "control": 1905.7263517192184
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 142,
+   "path": "exp-142-linux-h111-leftover-is-still-walk-floor-plus-rss.md",
+   "platform": "Linux",
+   "primary_job": "cold-scan-index",
+   "primary_metric": "wall_ns",
+   "reason": "walk 94.7-94.8% of 450k cold-scan-index component; leftover is getdents64+statx plus detached finish/retained-index RSS; no new cut; do not restart H86",
+   "reference_tools": [
+    {
+     "argv": [
+      "{binary}",
+      "-s",
+      "-k",
+      "{root}"
+     ],
+     "name": "dust",
+     "wall_ns_median": 564313578.5
+    }
+   ],
+   "subject": "b3459e945151:450001:b77ebb296d34",
+   "title": "Linux H111 leftover is still walk floor plus retained-index RSS",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe leftover profile",
+   "change_pct": 0.447,
+   "commit": "937f9445",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "leftover profile only; no engine change"
+   },
+   "control": "HEAD release probe both arms",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H142"
+   ],
+   "id": "exp-143",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-basic",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 1632526783.5,
+        "control": 1633343787
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.089,
+        "ci95_high_pct": 0.654,
+        "ci95_low_pct": -0.324,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 6802674000,
+        "control": 6803740000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.172,
+        "ci95_high_pct": 0.439,
+        "ci95_low_pct": -0.121,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 144740352,
+        "control": 144881664
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.034,
+        "ci95_high_pct": 0.027,
+        "ci95_low_pct": -0.165,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 835643500,
+        "control": 841467000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -5.285,
+        "ci95_high_pct": 2.031,
+        "ci95_low_pct": -10.163,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 5974865000,
+        "control": 5967280000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.689,
+        "ci95_high_pct": 1.803,
+        "ci95_low_pct": -0.446,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 2169362545.5,
+        "control": 2165735522.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.447,
+        "ci95_high_pct": 0.575,
+        "ci95_low_pct": -0.168,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 23459.161986071762,
+      "control": 23419.939902026515
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 143,
+   "path": "exp-143-linux-first-pass-content-basic-leftover-is-still-file-i-o.md",
+   "platform": "Linux",
+   "primary_job": "content-basic",
+   "primary_metric": "wall_ns",
+   "reason": "first-pass leftover is still file I/O (86634 opens, 184057 reads, ~2.12/file); no skippable 3% userspace cut; do not retry H124",
+   "reference_tools": [],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux first-pass content-basic leftover is still file I/O",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-20",
@@ -36609,6 +36903,27 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 1759293224,
+   "directories": 5769,
+   "entries": 92474,
+   "experiments": [
+    "exp-138",
+    "exp-139",
+    "exp-140",
+    "exp-143"
+   ],
+   "files": 86643,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor",
+   "key": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "labels": [
+    "linux-v6.12"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 1085083672,
    "directories": 7350,
    "entries": 60067,
@@ -36732,26 +37047,6 @@
    "synthetic": false
   },
   {
-   "apparent_bytes": 1759293224,
-   "directories": 5769,
-   "entries": 92474,
-   "experiments": [
-    "exp-138",
-    "exp-139",
-    "exp-140"
-   ],
-   "files": 86643,
-   "filesystem": "ext4",
-   "host_cpu": "Intel(R) Xeon(R) Processor",
-   "key": "d7c0dad8d82c:92474:a298a9c2c8f8",
-   "labels": [
-    "linux-v6.12"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "Linux",
-   "synthetic": false
-  },
-  {
    "apparent_bytes": 16537501222,
    "directories": 110369,
    "entries": 901963,
@@ -36846,6 +37141,25 @@
    "os_cache": "warm-steady",
    "platform": "macOS",
    "synthetic": false
+  },
+  {
+   "apparent_bytes": 358665192,
+   "directories": 56251,
+   "entries": 450001,
+   "experiments": [
+    "exp-141",
+    "exp-142"
+   ],
+   "files": 393750,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor",
+   "key": "b3459e945151:450001:b77ebb296d34",
+   "labels": [
+    "linux-450k"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": true
   },
   {
    "apparent_bytes": 2170167344,
@@ -37116,42 +37430,24 @@
    "os_cache": "warm-steady",
    "platform": "macOS",
    "synthetic": false
-  },
-  {
-   "apparent_bytes": 358665192,
-   "directories": 56251,
-   "entries": 450001,
-   "experiments": [
-    "exp-141"
-   ],
-   "files": 393750,
-   "filesystem": "ext4",
-   "host_cpu": "Intel(R) Xeon(R) Processor",
-   "key": "b3459e945151:450001:b77ebb296d34",
-   "labels": [
-    "linux-450k"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "Linux",
-   "synthetic": true
   }
  ],
  "totals": {
   "accepted_lines_changed": 16004,
   "decisions": {
-   "accepted": 77,
+   "accepted": 79,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
    "rejected": 47,
    "superseded": 3
   },
-  "experiments": 141,
+  "experiments": 143,
   "first_date": "2026-08-10",
-  "hypotheses": 97,
+  "hypotheses": 99,
   "last_date": "2026-09-20",
   "platforms": {
-   "Linux": 15,
+   "Linux": 17,
    "macOS": 126
   }
  },
