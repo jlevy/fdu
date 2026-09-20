@@ -11,20 +11,36 @@ use std::process::Command;
 /// produce a partial scan and the exit-code contract it pins is untestable. Probing the
 /// capability asks the question the fixture depends on, rather than inferring it from a
 /// user id.
-fn permission_bits_are_enforced() -> bool {
+fn require_permission_bits() -> bool {
     let Ok(directory) = tempfile::tempdir() else {
-        return false;
+        panic!("permission fixture precondition failed: could not create its probe directory");
     };
     let path = directory.path().join("unreadable");
-    fs::write(&path, b"probe").is_ok()
+    let enforced = fs::write(&path, b"probe").is_ok()
         && fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).is_ok()
-        && fs::read(&path).is_err()
+        && fs::read(&path).is_err();
+    if enforced {
+        return true;
+    }
+    if std::env::var_os("FDU_TEST_ALLOW_NO_PERMISSION_BITS").as_deref()
+        == Some(std::ffi::OsStr::new("1"))
+    {
+        eprintln!(
+            "skipped by FDU_TEST_ALLOW_NO_PERMISSION_BITS=1: this host does not enforce Unix \
+             permission bits for the test process"
+        );
+        return false;
+    }
+    panic!(
+        "permission fixture precondition failed: this process can read a mode-000 file; \
+         run on a host that enforces Unix permission bits, or explicitly opt out with \
+         FDU_TEST_ALLOW_NO_PERMISSION_BITS=1"
+    );
 }
 
 #[test]
 fn partial_results_use_exit_two_unless_explicitly_allowed() {
-    if !permission_bits_are_enforced() {
-        eprintln!("skipped: this process is not subject to Unix permission bits");
+    if !require_permission_bits() {
         return;
     }
 
@@ -94,8 +110,7 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
 /// `--no-gitignore`, which reads no rule, is the escape (fdu-elnn).
 #[test]
 fn an_unreadable_gitignore_is_a_partial_result_that_no_gitignore_avoids() {
-    if !permission_bits_are_enforced() {
-        eprintln!("skipped: this process is not subject to Unix permission bits");
+    if !require_permission_bits() {
         return;
     }
 
