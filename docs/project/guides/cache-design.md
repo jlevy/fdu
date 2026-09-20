@@ -56,17 +56,21 @@ special-object settings, type-rules fingerprint, and a reducer-set fingerprint t
 constant today, and the control tier’s record of whether `.gitignore` was observed and,
 if it was, the budget and line limit.
 Snapshots taken with observation on and off hold equal entry tiers and differ only in
-the control tier. A request that returns the index or reconciles it against the tree is
-served only by a snapshot taken under exactly its scope.
+the control tier. Exact identity serves directly.
+A controls-on snapshot may also serve a controls-off request with the same entry
+identity: the loader validates and discards the stored control section while it builds
+the index in the requested blind scope.
 The file name is keyed by root alone, so alternating a default run with
 `--no-gitignore`, another `.gitignore` limit, `--scan-depth`, or `--one-filesystem`
 finds no usable snapshot and, under a write-permitting policy, replaces the root’s one
 snapshot each time the run retains an index (`fdu-w3l5` tracks keying snapshots by
 scope). A `--no-gitignore` summary answered by the transient tier, described below,
 retains none, so it replaces nothing.
-The one exception is a one-shot `--cache only` report that turns observation off, which
-answers from a default snapshot’s all-entry facts and retags the report to its own
-scope. `open` with the same options refuses that snapshot.
+That projection applies to one-shot reports, Rust and Python `open`, cache-only reads,
+warm revalidation, and watch startup.
+A projected index never replaces the stronger controls-on snapshot, even after a watch
+observes changes. A controls-off snapshot cannot serve a controls-on request: a scanning
+policy walks the tree cold, while cache-only reports a miss.
 
 The pass start is a lower bound on when the snapshot’s facts were last verified.
 A later pass that encodes the same facts keeps the file, stamp included, rather than
@@ -341,12 +345,14 @@ What a policy reads and writes also depends on the path that answers:
 `source: cache_only` and `freshness: stale`. It fails outright when no usable snapshot
 exists rather than quietly scanning, because a fast path that is sometimes a full walk —
 with nothing in the output to say which happened — is worse than no fast path.
-`--watch --cache only` is accepted: its first answer comes from the snapshot, and it
-then verifies and applies live filesystem events.
+`--watch --cache only` is accepted: it starts from the snapshot, establishes
+observation, and drains the capture gap before publishing its first report.
+It then applies live filesystem events.
 
-Every machine-format report carries `source`, `freshness`, `complete`, and `errors`.
-Text output names none of them; a partial text run prints its errors as warnings on
-standard error.
+Every machine-format report carries `status` with `complete`, `coverage`, `errors`, and
+`errors_omitted`, plus `provenance` with source, freshness, timestamps, and per-tier
+truth. Text output names none of them; a partial text run prints its errors as warnings
+on standard error.
 
 [`plan_report`](../../../crates/fdu-core/src/execution.rs) and
 [`open_for_report`](../../../crates/fdu-core/src/lib.rs) implement these policies.
@@ -364,8 +370,6 @@ Each item is a way the present code falls short of
 [The explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
 tracks them.
 
-- **The one projection exists on one path.** A one-shot cache-only report may answer a
-  `.gitignore`-off request from a controls-on snapshot; `open` refuses the same request.
 - **Policies mean different things per path.** `read-only` revalidates for `open` but
   behaves as `off` for a one-shot metadata report, and `auto` reads for `open` but not
   for that report. Write rules differ by path as listed above, so whether a later

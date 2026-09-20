@@ -410,8 +410,8 @@ def check_an_index_can_opt_out_of_control_state() -> None:
     )
     assert lifted.report().notes == ()
 
-    # A default report and a default open share one snapshot scope, so that open starts
-    # warm; an opted-out open wants a scope the report's snapshot is not, and scans cold.
+    # A default report and a default open share one snapshot scope. An opted-out open
+    # projects that snapshot's equal entry tier into a blind index on every cache route.
     (root / ".gitignore").write_text("*.log\n", encoding="utf-8")
     assert fdu.cache_path(root) is not None
     try:
@@ -419,10 +419,12 @@ def check_an_index_can_opt_out_of_control_state() -> None:
         assert fdu.open(root).report().provenance.source is fdu.ReportSource.WARM_REVALIDATE
         cached = fdu.open(root, cache=fdu.CachePolicy.ONLY)
         assert cached.report().provenance.source is fdu.ReportSource.CACHE_ONLY
-        assert (
-            fdu.open(root, scan=opted_out).report().provenance.source
-            is fdu.ReportSource.COLD_SCAN
-        )
+        projected = fdu.open(root, scan=opted_out)
+        assert projected.report().provenance.source is fdu.ReportSource.WARM_REVALIDATE
+        assert projected.status.ignore_rules is None
+        projected_only = fdu.open(root, cache=fdu.CachePolicy.ONLY, scan=opted_out)
+        assert projected_only.report().provenance.source is fdu.ReportSource.CACHE_ONLY
+        assert projected_only.status.ignore_rules is None
     finally:
         fdu.clear_cache(root)
 

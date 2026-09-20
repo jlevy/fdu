@@ -909,9 +909,12 @@ Portable diagnostics escape and bound path examples.
 
 Snapshots fail closed on checksum, format, fingerprint, scope, semantic, or root
 mismatch and use owner-only permissions where supported.
-The one scope exception is a one-shot cache-only report, which may read a snapshot that
-observed `.gitignore` for a request that turned observation off; it consumes only the
-all-entry facts and retags the report to the requested scope.
+A controls-on snapshot may serve a controls-off request with the same entry identity on
+every route. The loader validates the stored control payload but discards it and
+constructs the index directly in the requested blind scope.
+That projected index cannot overwrite the stronger snapshot.
+A controls-off snapshot cannot serve a controls-on request; that direction scans cold or
+misses under cache-only policy.
 
 ## Operational Concerns
 

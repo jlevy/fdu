@@ -1974,7 +1974,12 @@ mod tests {
         // The same splice with the saved tier restores, so the splice is not what failed.
         let (exact, projected) = forge(lifted.control_identity());
         assert!(exact.is_some());
-        assert!(matches!(projected, LoadOutcome::Served(_, Serves::ProjectControlsOff)));
+        let LoadOutcome::Served(projected, Serves::ProjectControlsOff) = projected else {
+            panic!("the valid control payload projects");
+        };
+        assert_eq!(projected.snapshot_identity(), blind.snapshot_identity());
+        assert_eq!(projected.scope(), blind.scope());
+        assert!(matches!(projected.controls(), Err(Error::ControlStateNotObserved)));
     }
 
     /// An index whose control table refused some sources, and its path-ordered tail.
