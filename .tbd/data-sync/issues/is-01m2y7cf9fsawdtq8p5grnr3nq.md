@@ -1,15 +1,39 @@
 ---
 type: is
 id: is-01m2y7cf9fsawdtq8p5grnr3nq
-title: Verify directory queries, surface/cache parity and stacked PR CI
+title: Verify unchanged defaults, directory formats, surface parity, and stacked PR CI
 kind: task
 status: open
 priority: 1
-version: 1
+version: 2
 labels: []
 dependencies: []
 parent_id: is-01m2y7b2f9f1cv1dssrtref7zd
 created_at: 2026-09-20T01:37:40.650Z
-updated_at: 2026-09-20T01:37:40.650Z
+updated_at: 2026-09-20T04:42:43.141Z
 ---
-Add portable product goldens and Python/one-shot cold,warm,cache-only coverage for directory queries, one scan with changing names, mixed views, selection and bounds. Review expected output rather than blindly updating goldens. Run make docs-format and make check; investigate failures. Commit/push codex/directory-rollup-query, create PR against perf/campaign-next-2026-09-19 (#92), watch CI green, close finished beads and tbd sync.
+Validate the epic end to end with portable product goldens, engine tests, and Python
+parity. Cover metadata default list/tree equivalence, explicit formats and aliases,
+incompatible combinations, grouped/mixed views, legacy names, existing directory
+hierarchy, ancestor context, sorting, folding, per-group limits, and unchanged bounded
+full reports. Retain pre-change default-output goldens: no new file leaves, columns,
+ordering, depth, limits, or omission markers under ordinary defaults.
+
+Cover directory subtree size/age, nested overlap and union totals, descendant
+exclusions, ignored policies, cold/warm/cache-only sessions, repeated names over one
+index, no extra filesystem/content work, partial coverage/freshness, portable paths,
+deep trees, and opened read budgets.
+Compare matching paths and exact metrics across flat/machine formats and surfaces;
+verify tree roll-ups agree with selected contents without requiring flat file leaves.
+Validate JSON/JSONL/YAML schema changes and age reference consistency.
+
+Review expected golden diffs and preserve named portability patterns.
+Record parity artifacts on Linux per repository policy.
+Run make docs-format and make check; run cross-lint if platform-gated code changes.
+Review, commit/push codex/directory-rollup-query, create/update the PR against
+perf/campaign-next-2026-09-19 (#92), and watch CI pass.
+Close finished beads and tbd sync after successful delivery.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

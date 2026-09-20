@@ -5,21 +5,21 @@ title: Directory filtering and list presentation formats for stale build invento
 kind: epic
 status: in_progress
 priority: 1
-version: 10
+version: 12
 delegate: claude-code@spud10
 labels: []
 dependencies: []
 child_order_hints:
   - is-01m2y7by0xkr9zre4es53fwjm0
   - is-01m2y7c1v3etw9wkzz87vgm6ke
+  - is-01m2yhsw73csne6aef665mmp4n
   - is-01m2y7c6yzccahx1ntvy2wf1s1
   - is-01m2y7cbprn6w292gjenv0twd7
   - is-01m2y7cf9fsawdtq8p5grnr3nq
-  - is-01m2yhsw73csne6aef665mmp4n
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:36:54.755Z
-updated_at: 2026-09-20T04:39:45.634Z
+updated_at: 2026-09-20T04:42:57.238Z
 started_at: 2026-09-20T01:38:30.390Z
 ---
 Implement [issue #93](https://github.com/jlevy/fdu/issues/93) on
@@ -54,11 +54,20 @@ the explicit form of that default, not a different query.
 Analyzer-driven default views remain available so requested content analysis is shown.
 An explicit view always wins and does not enable an analyzer.
 
+**Default output must remain unchanged.** Compare against the pre-change behavior on the
+same fixture: the directory hierarchy, allocated sizes, ordering, columns, bars, ignored
+annotations, two-level depth, ten children per directory, omission notices, and
+diagnostics remain the same.
+This is an interface clarification and an additional set of formats, not a redesign of
+the default report. Directory-filter corrections requested by issue #93 are tested
+separately from unchanged ordinary default output.
+
 The formats for `list` are:
 
-- `tree`: hierarchical text with sizes, matched entries, and ancestors needed to locate
-  them. Matching regular files and other admitted kinds can appear, as well as
-  directories. Structural ancestors are context, not additional matches.
+- `tree`: the existing directory hierarchy and roll-up text presentation.
+  Regular files contribute to directory totals rather than gaining individual leaf rows.
+  Ancestors provide context for selected subtrees.
+  Preserve this behavior for omitted format and explicit `--format tree` alike.
 - `paths`: flat matching paths only, one per line, with the project’s existing safe
   path-escaping rules.
   No size/age columns or report headings on stdout.
@@ -117,27 +126,29 @@ a promise of uniquely reclaimable disk space.
 
 ## Ordering, Bounds, and Honesty
 
-Use size-descending order with a deterministic path tie-break for the canonical list
-default, answering which matching entries are largest.
-Explicit sort/reverse options apply consistently across formats.
+Keep the existing tree’s size-descending order and tie-breaking behavior unchanged.
+The new flat presentations use size-descending order with deterministic path ties;
+legacy files presets retain their documented name ordering where needed.
+Explicit sort/reverse options use the same metrics across formats.
 `--sort name` gives a stable complete inventory.
 Largest/recent remain named regular-file list presets, with their documented ranking and
 bounds. Selection and directory metrics must not depend on the chosen format.
 
 Flat list output is complete by default.
-Tree rendering can retain a compact default of two levels and ten children per parent by
-folding the presentation, with explicit omission counts and instructions for expanding
-it. Folding must not silently remove entries from the underlying report or machine
-formats. Explicit list `--limit N` selects the same ranked N matches in every format
-before adding structural context; `--limit all` also removes the tree’s implicit sibling
-cap. `--depth all` removes tree folding by depth.
-Distinguish query truncation, display folding, and scan incompleteness in the public
-request/report model and tests.
-Never claim a folded tree is exhaustive.
+Preserve the existing tree’s two-level and ten-children-per-directory display bounds and
+current omission markers verbatim.
+Preserve the documented per-group meaning of `--limit`: per directory in tree output,
+and over the flat result list in flat output.
+`--limit all` removes row caps and `--depth all` removes tree depth folding.
+Do not introduce a new global top-N selection step into existing tree behavior.
+Bounds are presentation constraints, not changes to which entries satisfy filters or
+contribute to subtree metrics.
+Machine list output must not inherit an implicit text-tree display cap.
+Distinguish reported truncation, display folding, and scan incompleteness in the model
+and tests.
 
-`full` remains a bounded digest.
-It must not acquire an unbounded list through the rename; define an explicitly bounded
-list preview with total/omission metadata.
+`full` retains its existing bounded digest output, including its directory-tree section.
+It must not acquire an unbounded flat listing or a different preview through the rename.
 Retain source, freshness, partial results, scan-depth coverage, and cache-only labels.
 Path-only output keeps its stdout contract; any necessary truncation/completeness notice
 goes to the documented diagnostic channel with the normal exit status.
@@ -153,18 +164,20 @@ Use native path identity for one-shot queries and portable identity where requir
 opened reports. Keep raw native entry metadata explicitly distinct from report subtree
 metrics; do not silently alter the native entry projection contract.
 
-Replace the public Files/Tree conceptual split with the shared list report and format
-model. Implement validation/default resolution in core, with thin CLI and Python
-adapters. Expose typed list rows with kind, both byte metrics, subtree counts where
-applicable, modification time, age/reference time, and ignored classification.
+Expose the shared list view and format model while retaining the existing directory
+roll-up renderer. Tree is an aggregate presentation of selected contents; flat output is
+a row per match, so rendered path sets need not be identical.
+Implement validation/default resolution in core, with thin CLI and Python adapters.
+Expose typed list rows with kind, both byte metrics, subtree counts where applicable,
+modification time, age/reference time, and ignored classification.
 Use versioned machine-schema changes for altered meanings or shapes.
 Rendering the same report in different formats preserves its reference clock.
 
 Audit released CLI and library contracts before choosing aliases.
 Support the existing `files` spelling as a compatibility name/preset where needed and
 translate legacy tree requests at the boundary, without creating duplicate engine
-machinery. Document intentional changes to default output, ordering, and directory
-metrics. An explicit new format wins over a legacy spelling’s presentation default.
+machinery. Preserve default output and document the directory metric correction and new
+spellings. An explicit new format wins over a legacy spelling’s presentation default.
 
 ## Documentation and Examples
 
@@ -201,8 +214,11 @@ aggregation. Verify repeated queries perform no filesystem work, portable names,
 deep-tree stack safety, opened budgets, and mixed views.
 
 Add a view/format compatibility and defaults matrix, explicit default equivalence,
-aliases/conflicts, all-kind trees, exact matching-path equivalence across expanded
-tree/paths/long/machine output, folding versus limits, and structured schema tests.
+aliases/conflicts, exact matching-path equivalence across paths/long/machine list
+output, agreement of tree roll-ups with selected contents, folding versus limits, and
+structured schema tests.
+Keep pre-change default-output goldens as regression requirements; do not regenerate
+them to accept new file leaves, columns, ranking, depth, or row counts.
 Exercise real cold/warm/cache-only sessions and Python parity using reviewed portable
 goldens. Preserve named patterns; record platform-dependent parity artifacts on Linux.
 
@@ -218,4 +234,4 @@ See github.com/jlevy/practical-prose and review guidelines before editing.
 
 ## Notes
 
-Accepted design: list is the metadata default view; tree is its default format and --format tree is exactly equivalent. See the revised description for the complete contract. Implementation work is in progress on codex/directory-rollup-query, based on PR #92 at 937f9445; remaining code must follow this revised plan.
+Accepted design: list is the metadata default view; tree is its default format and --format tree is exactly equivalent. Latest user constraint: preserve existing default output, including directory-only roll-ups, columns, ordering, depth, limits, and omission notices. Paths and long are additional explicit formats. Implementation remains in progress on codex/directory-rollup-query, based on PR #92 at 937f9445; follow this revised contract.
