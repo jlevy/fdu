@@ -124,12 +124,12 @@ Mint the reserved id when the cell starts, not before.
    (`5c6e6394`). Do not retry H85’s 20% bar.
    Do not restart H86.
 
-6. **H72 — `d_type` skip on transient summary (`fdu-ueab`).** Previous measure was −1.4%
-   on a 6.4%-directory tree.
-   Nominated `/usr` is 22% directories plus symlinks.
-   Both arms `--no-controls`. Do not skip directory `statx` when `one_filesystem` is on.
-   Accept only if reconstructible `linux-v6.12` clears 3%. `/usr` screens transfer.
-   Do not compile a walk trim (H71). Experiment **exp-152**.
+6. **H72 — `d_type` skip on transient summary (`fdu-ueab`).** **Rejected** on
+   reconstructible `linux-v6.12` (exp-152, quiet −1.63% [−3.33%, −0.72%]; 6.2%
+   directories). **Accepted** on nominated `/usr` (exp-153, quiet −9.01%
+   [−12.52%, −6.30%]; 22% dirs+symlinks; RSS flat).
+   Engine kept (`f841662c`). `one_filesystem` still stats directories.
+   Do not retry H71.
 
 ## Subjects
 
@@ -181,6 +181,8 @@ If #94 moves, rebase this branch onto it and keep H144–H146 meanings.
   skippable (H146 / exp-147)
 - H85 recycle missed its 20% mimalloc bar (exp-150); the same patch cleared 3% as H147
   (exp-151) on reconstructible `linux-v6.12`
+- H72 `d_type` skip missed 3% on reconstructible `linux-v6.12` (exp-152, −1.63%) and
+  cleared it on nominated `/usr` (exp-153, −9.01%). Engine kept (`f841662c`)
 
 ## References
 
