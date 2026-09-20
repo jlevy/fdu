@@ -3,16 +3,16 @@ type: is
 id: is-01m2w0yms0d21by2wdwf0cqhz0
 title: "H111: H86 Linux floor stage"
 kind: task
-status: open
+status: in_progress
 priority: 1
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-19-linux-parallel-validation.md
 labels:
   - campaign-2
 dependencies: []
 parent_id: is-01m01mqq3cqs8ae87qd2d3rydm
 created_at: 2026-09-19T05:06:47.199Z
-updated_at: 2026-09-20T00:46:44.742Z
+updated_at: 2026-09-20T01:26:35.305Z
 ---
 H111: H86 remaining gap is the Linux floor and RSS claim, not a restart of the structural rewrite. Darwin has a landed composite (exp-091-102); the Linux floor stage failed (exp-103).
 
