@@ -495,8 +495,9 @@ as exp-141 (floor/RSS fail).
 H142 is recorded there as exp-143 (file I/O leftover).
 H143 is recorded there as exp-142 (walk floor + retained-index RSS). Do not mint those
 ids on this Darwin branch.
-Next free unused hypothesis id is **H148** (H144–H146 reserved on the Linux iteration
-stack; H147 used for the Linux transient recycle keep; H72 used existing id).
+Next free unused hypothesis id is **H149** (H144–H146 reserved on the Linux iteration
+stack; H147 used for the Linux transient recycle keep; H148 reserved on the Linux PGO
+screen; H72 used existing id).
 Next free Linux experiment id is **exp-154**. Do not mint another meaning for H91–H106.
 Next free Darwin experiment id after the Linux reservation is assigned on #94; do not
 take exp-138 here. exp-113 remains reserved unused (H113 superseded).
@@ -850,7 +851,9 @@ Further Linux cells are on
    not retry H71. Do not skip directory `statx` when `one_filesystem` is on.
 
 Next free Linux experiment id is **exp-154**. Next free unused hypothesis id is
-**H148**.
+**H149**. H148 is reserved for the PGO screen on
+[Linux PGO after #97](../specs/active/plan-2026-09-20-linux-pgo-screen.md)
+(`cursor/linux-pgo-screen-de1b`).
 
 ## Before the First Round
 
