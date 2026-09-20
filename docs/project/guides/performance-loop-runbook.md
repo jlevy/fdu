@@ -718,7 +718,10 @@ Do not defer snapshot `merge_upward`. Do not retry H109.
 
 ## Linux Standing (2026-09-20)
 
-Stacked [#94](https://github.com/jlevy/fdu/pull/94) on `perf/campaign-linux-2026-09-19`.
+Stacked [#94](https://github.com/jlevy/fdu/pull/94) on `perf/campaign-linux-2026-09-19`,
+rebased onto [#92](https://github.com/jlevy/fdu/pull/92) `f8a2ed94` (R1–R3). H141’s
+four-view `content-query` still shares one walk (`unfiltered_row_views >= 2`). H139 was
+a well-formed cache-hit tree; R3’s alias reject does not change that cell.
 4-core KVM Intel Xeon, 16 GiB, Linux 6.12.94+, ext4, virtualized.
 Same host class as exp-103. Linux quiet uses load/core ≤ 0.25 (instantaneous busy% is
 Darwin-only).
@@ -752,8 +755,8 @@ Do not restart H86. Leftover named as H143.
 
 This host’s nominated set is
 [nominated-subjects-linux-x86_64.json](../reports/nominated-subjects-linux-x86_64.json):
-`linux-v6.12` and `usr-prefix` decide; rustup screens (46,632 entries). Two deciding
-characters, so the set cannot yet carry a ranking or transfer claim.
+`linux-v6.12` and `usr-prefix` decide; rustup screens (46,632 entries).
+Two deciding characters, so the set cannot yet carry a ranking or transfer claim.
 
 ### Next Up (Linux)
 

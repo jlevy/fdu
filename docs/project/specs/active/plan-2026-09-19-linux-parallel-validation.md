@@ -49,8 +49,8 @@ It does not raise the README 200K files/s or 4M cached lines/s.
 
 - **Branch:** `perf/campaign-linux-2026-09-19`
 - **Base:** `perf/campaign-next-2026-09-19` ([#92](https://github.com/jlevy/fdu/pull/92)
-  at `26480612`). Rebase onto later #92 commits if Darwin adds more; do not mint H139+
-  there.
+  at `f8a2ed94`, R1–R3 review repair).
+  Rebase onto later #92 commits if Darwin adds more; do not mint H139+ there.
 - **Protocol:** [performance-loop.md](../../guides/performance-loop.md)
 - **Darwin standing:**
   [Current Standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
