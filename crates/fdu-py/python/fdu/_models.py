@@ -8,8 +8,8 @@ typed values; callers never need to know the private extension's wire shape.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Mapping
-from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
@@ -21,6 +21,56 @@ from . import _native
 
 type JsonScalar = bool | int | float | str | None
 type JsonValue = JsonScalar | list[JsonValue] | dict[str, JsonValue]
+
+
+def _wire_path(value: Mapping[str, Any], name: str = "path") -> Path:
+    """Decode a display path, preferring its lossless machine companion when present."""
+
+    raw = value.get(f"{name}_raw")
+    if raw is None:
+        return Path(str(value[name]))
+    if not isinstance(raw, Mapping):
+        raise TypeError(f"{name}_raw must be an object")
+    encoding = str(raw.get("encoding"))
+    try:
+        payload = bytes.fromhex(str(raw["hex"]))
+    except (KeyError, ValueError) as error:
+        raise ValueError(f"{name}_raw must contain hexadecimal bytes") from error
+    if encoding == "unix-bytes":
+        return Path(os.fsdecode(payload))
+    if encoding == "windows-wtf16le":
+        if len(payload) % 2:
+            raise ValueError(f"{name}_raw has an odd-length UTF-16 payload")
+        return Path(payload.decode("utf-16-le", errors="surrogatepass"))
+    raise ValueError(f"unsupported {name}_raw encoding: {encoding}")
+
+
+def _copy_json(value: JsonValue) -> JsonValue:
+    """Copy a JSON value without consuming Python's call stack."""
+
+    if not isinstance(value, (dict, list)):
+        return value
+    root: dict[str, JsonValue] | list[JsonValue] = {} if isinstance(value, dict) else []
+    stack: list[
+        tuple[dict[str, JsonValue] | list[JsonValue], dict[str, JsonValue] | list[JsonValue]]
+    ] = [(value, root)]
+    while stack:
+        source, target = stack.pop()
+        items = source.items() if isinstance(source, dict) else enumerate(source)
+        for key, item in items:
+            if isinstance(item, dict):
+                copied: JsonValue = {}
+            elif isinstance(item, list):
+                copied = []
+            else:
+                copied = item
+            if isinstance(target, dict):
+                target[str(key)] = copied
+            else:
+                target.append(copied)
+            if isinstance(item, (dict, list)):
+                stack.append((item, cast(dict[str, JsonValue] | list[JsonValue], copied)))
+    return root
 
 
 class CachePolicy(StrEnum):
@@ -326,7 +376,7 @@ def control_observation_from_dict(value: Mapping[str, Any]) -> ControlObservatio
         applied=int(value["applied"]),
         refused=int(value["refused"]),
         refusals=tuple(
-            RefusedControl(path=Path(item["path"]), reason=ControlRefusalReason(item["reason"]))
+            RefusedControl(path=_wire_path(item), reason=ControlRefusalReason(item["reason"]))
             for item in value["refusals"]
         ),
     )
@@ -744,7 +794,7 @@ class Report:
     def as_dict(self) -> dict[str, JsonValue]:
         """Return an independent copy of the exact CLI JSON schema."""
 
-        return deepcopy(self._wire)
+        return cast(dict[str, JsonValue], _copy_json(self._wire))
 
     def render(self, format: Format = Format.TEXT, *, color: bool = False) -> str:
         """Serialize this report the way the command line does.
@@ -1006,7 +1056,7 @@ def _stale_reason(value: object) -> StaleReason | None:
 
 def cache_status_from_dict(value: Mapping[str, Any]) -> CacheStatus:
     return CacheStatus(
-        path=Path(value["path"]),
+        path=_wire_path(value),
         bytes=int(value["bytes"]),
         state=CacheState(value["state"]),
         stale_reason=_stale_reason(value["stale_reason"]),
@@ -1014,7 +1064,7 @@ def cache_status_from_dict(value: Mapping[str, Any]) -> CacheStatus:
         leftover_kind=(
             LeftoverKind(value["leftover_kind"]) if value["leftover_kind"] is not None else None
         ),
-        root=Path(value["root"]) if value["root"] is not None else None,
+        root=_wire_path(value, "root") if value["root"] is not None else None,
         entries=_limit(value["entries"]),
         identity=_snapshot_identity(value["identity"]),
         content=_content_status(value["content"]),
@@ -1147,21 +1197,38 @@ def _ignored_flag(value: object) -> bool | None:
 
 
 def _tree(value: dict[str, Any]) -> TreeNode:
-    return TreeNode(
-        name=str(value["name"]),
-        path=Path(str(value["path"])),
-        kind=EntryKind(str(value["kind"])),
-        bytes=int(value["bytes"]),
-        allocated=int(value["allocated"]),
-        files=int(value["files"]),
-        dirs=int(value["dirs"]),
-        newest_mtime_ns=(
-            int(value["newest_mtime_ns"]) if value.get("newest_mtime_ns") is not None else None
-        ),
-        truncated=bool(value["truncated"]),
-        children=tuple(_tree(child) for child in value["children"]),
-        ignored=_ignored_tally(value["ignored"]),
-    )
+    stack: list[tuple[dict[str, Any], bool]] = [(value, False)]
+    built: dict[int, TreeNode] = {}
+    while stack:
+        raw, visited = stack.pop()
+        children = raw["children"]
+        if not isinstance(children, list):
+            raise TypeError("tree children must be a list")
+        if not visited:
+            stack.append((raw, True))
+            for child in reversed(children):
+                if not isinstance(child, dict):
+                    raise TypeError("tree child must be an object")
+                stack.append((child, False))
+            continue
+        built[id(raw)] = TreeNode(
+            name=str(raw["name"]),
+            path=_wire_path(raw),
+            kind=EntryKind(str(raw["kind"])),
+            bytes=int(raw["bytes"]),
+            allocated=int(raw["allocated"]),
+            files=int(raw["files"]),
+            dirs=int(raw["dirs"]),
+            newest_mtime_ns=(
+                int(raw["newest_mtime_ns"])
+                if raw.get("newest_mtime_ns") is not None
+                else None
+            ),
+            truncated=bool(raw["truncated"]),
+            children=tuple(built[id(child)] for child in children),
+            ignored=_ignored_tally(raw["ignored"]),
+        )
+    return built[id(value)]
 
 
 def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Report:
@@ -1242,7 +1309,7 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                     view,
                     tuple(
                         FileRow(
-                            path=Path(str(row["path"])),
+                            path=_wire_path(row),
                             kind=EntryKind(str(row["kind"])),
                             bytes=int(row["bytes"]),
                             allocated=int(row["allocated"]),
@@ -1310,7 +1377,7 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
         notes=notes,
         schema=str(wire["schema"]),
         generator=str(wire["generator"]),
-        root=Path(str(wire["root"])),
+        root=_wire_path(wire, "root"),
         scan_started_at=_datetime(wire.get("scan_started_at")),
         generated_at=generated_at,
         status=status,

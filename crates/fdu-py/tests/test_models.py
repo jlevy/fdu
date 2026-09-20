@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from dataclasses import FrozenInstanceError
@@ -33,7 +34,7 @@ from fdu import (
     opened,
 )
 from fdu._api import FduError, FilesystemError, InvalidArgumentError, _call, _query_kwargs
-from fdu._models import report_from_dict
+from fdu._models import _wire_path, cache_status_from_dict, report_from_dict
 from fdu.opened import _opened_call, _projection_wire
 
 
@@ -224,6 +225,88 @@ def test_malformed_wire_reports_fail_loudly() -> None:
     # Wire validation must be real raises, not asserts, so it survives python -O.
     with pytest.raises(TypeError, match="sections"):
         report_from_dict({"reports": "nope"})
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Unix byte paths require a POSIX filesystem")
+def test_wire_paths_prefer_lossless_raw_identity() -> None:
+    raw = {"path": "n�", "path_raw": {"encoding": "unix-bytes", "hex": "6e80"}}
+    assert os.fsencode(_wire_path(raw)) == b"n\x80"
+
+    wire = _envelope(
+        [
+            {
+                "view": "files",
+                "bound": None,
+                "files": [
+                    {
+                        **raw,
+                        "kind": "file",
+                        "bytes": 1,
+                        "allocated": 1,
+                        "mtime_ns": 0,
+                        "ignored": None,
+                    }
+                ],
+            }
+        ]
+    )
+    wire.update(
+        {"root": "/�", "root_raw": {"encoding": "unix-bytes", "hex": "2f80"}}
+    )
+    report = report_from_dict(wire)
+    assert os.fsencode(report.root) == b"/\x80"
+    section = report.sections[0]
+    assert isinstance(section, FilesSection)
+    assert os.fsencode(section.files[0].path) == b"n\x80"
+
+    cache = cache_status_from_dict(
+        {
+            **raw,
+            "bytes": 1,
+            "state": "unrecognized",
+            "stale_reason": None,
+            "format_version": None,
+            "leftover_kind": None,
+            "root": None,
+            "entries": None,
+            "identity": None,
+            "content": None,
+        }
+    )
+    assert os.fsencode(cache.path) == b"n\x80"
+
+
+def test_tree_parser_is_iterative_at_filesystem_depth() -> None:
+    depth = 4_000
+    node: dict[str, object] = {
+        "name": "leaf",
+        "path": "leaf",
+        "kind": "dir",
+        "bytes": 0,
+        "allocated": 0,
+        "files": 0,
+        "dirs": 0,
+        "ignored": None,
+        "newest_mtime_ns": None,
+        "truncated": False,
+        "children": [],
+    }
+    for level in range(depth):
+        node = {**node, "name": str(level), "path": str(level), "children": [node]}
+
+    wire = _envelope([{"view": "tree", "tree": node}])
+    report = report_from_dict(wire)
+    section = report.sections[0]
+    assert isinstance(section, TreeSection)
+    parsed = section.tree
+    visited = 0
+    while parsed.children:
+        parsed = parsed.children[0]
+        visited += 1
+    assert visited == depth
+    copied = report.as_dict()
+    assert copied is not wire
+    assert copied["reports"] is not wire["reports"]
 
 
 def _envelope(sections: list[dict[str, object]]) -> dict[str, object]:
