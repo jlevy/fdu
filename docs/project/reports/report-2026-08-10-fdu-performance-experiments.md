@@ -64,8 +64,8 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 69 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 49 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -195,6 +195,26 @@ dead end.
 | 115 | [First-pass analyze insert-then-rebuild on metabrowser](#exp115--firstpass-analyze-insertthenrebuild-on-metabrowser) | H118 | `content-basic` | -2.6% | ❌ rejected |
 | 116 | [Opened-root second report versus one-shot on frameworks](#exp116--openedroot-second-report-versus-oneshot-on-frameworks) | H117 | `default-tree` | -99.9% | ✅ accepted |
 | 117 | [Stream sidecar parse-into-apply on metabrowser](#exp117--stream-sidecar-parseintoapply-on-metabrowser) | H120 | `content-cache-hit` | -10.1% | ✅ accepted |
+| 118 | [Deciding-scale metadata walk profile after current engine](#exp118--decidingscale-metadata-walk-profile-after-current-engine) | H122 | `default-tree` | +0.2% | ✅ accepted |
+| 119 | [Product Index.report versus one-shot on frameworks](#exp119--product-indexreport-versus-oneshot-on-frameworks) | H123 | `default-tree` | -99.9% | ✅ accepted |
+| 120 | [Cache-hit restore mix after H115 and H120 on metabrowser](#exp120--cachehit-restore-mix-after-h115-and-h120-on-metabrowser) | H121 | `content-cache-hit` | +0.7% | ✅ accepted |
+| 121 | [First-pass analyze I/O type/size gate or read-ahead on metabrowser](#exp121--firstpass-analyze-io-typesize-gate-or-readahead-on-metabrowser) | H124 | `content-basic` | -4.2% | ❌ rejected |
+| 122 | [Tighter metadata walk leftover after H122](#exp122--tighter-metadata-walk-leftover-after-h122) | H122 | `default-tree` | -1.9% | ✅ accepted |
+| 123 | [H113 completeness leftover after H115 and H120](#exp123--h113-completeness-leftover-after-h115-and-h120) | H113 | `content-cache-hit` | +3.3% | ✅ accepted |
+| 124 | [Cache-only completeness from restore candidate count on metabrowser](#exp124--cacheonly-completeness-from-restore-candidate-count-on-metabrowser) | H125 | `content-cache-hit` | -8.0% | ✅ accepted |
+| 125 | [Post-H125 cache-hit leftover after restore-count completeness](#exp125--posth125-cachehit-leftover-after-restorecount-completeness) | H126 | `content-cache-hit` | -0.3% | ✅ accepted |
+| 126 | [First-pass walk versus opened-discovery I/O on metabrowser](#exp126--firstpass-walk-versus-openeddiscovery-io-on-metabrowser) | H127 | `opened-discovery` | -5.0% | ✅ accepted |
+| 127 | [Default-tree leftover on file-heavy metabrowser after H122](#exp127--defaulttree-leftover-on-fileheavy-metabrowser-after-h122) | H128 | `default-tree` | +1.1% | ✅ accepted |
+| 128 | [Cache-only restore omits classify on metabrowser](#exp128--cacheonly-restore-omits-classify-on-metabrowser) | H129 | `content-cache-hit` | -13.1% | ✅ accepted |
+| 129 | [Post-H129 cache-hit leftover after restore-without-classify](#exp129--posth129-cachehit-leftover-after-restorewithoutclassify) | H130 | `content-cache-hit` | -0.2% | ✅ accepted |
+| 130 | [Restore DFS joins parent path on metabrowser](#exp130--restore-dfs-joins-parent-path-on-metabrowser) | H131 | `content-cache-hit` | -4.1% | ✅ accepted |
+| 131 | [Post-H131 cache-hit leftover after restore parent-path join](#exp131--posth131-cachehit-leftover-after-restore-parentpath-join) | H132 | `content-cache-hit` | -0.0% | ✅ accepted |
+| 132 | [Skip unused snapshot path reconstruction on metabrowser](#exp132--skip-unused-snapshot-path-reconstruction-on-metabrowser) | H133 | `content-cache-hit` | -6.4% | ✅ accepted |
+| 133 | [Post-H133 cache-hit leftover after unused snapshot path skip](#exp133--posth133-cachehit-leftover-after-unused-snapshot-path-skip) | H134 | `content-cache-hit` | -0.4% | ✅ accepted |
+| 134 | [Post-H124 first-pass content-basic leftover](#exp134--posth124-firstpass-contentbasic-leftover) | H135 | `content-basic` | -3.7% | ✅ accepted |
+| 135 | [Post-H128 first-run default-tree leftover](#exp135--posth128-firstrun-defaulttree-leftover) | H136 | `default-tree-first` | +0.2% | ✅ accepted |
+| 136 | [Post-H123 content-query leftover](#exp136--posth123-contentquery-leftover) | H137 | `content-query` | -3.3% | ✅ accepted |
+| 137 | [Share one every_entry across unfiltered metric views](#exp137--share-one-everyentry-across-unfiltered-metric-views) | H138 | `content-query` | -18.8% | ✅ accepted |
 
 ## The experiments
 
@@ -4023,6 +4043,617 @@ restore kept.
 Full record:
 [`exp-117-stream-sidecar-parse-into-apply-on-metabrowser.md`](../experiments/exp-117-stream-sidecar-parse-into-apply-on-metabrowser.md)
 
+### exp-118 — Deciding-scale metadata walk profile after current engine
+
+✅ accepted · 2026-09-19 · H122 · commit `018b4c86`
+
+Control: same probe at 018b4c86
+
+Candidate: same probe self-comparison
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1807.7 | 1873.4 | +0.18% (n.s.) | [-2.91%, +13.43%] |
+| component (ms) | 1798.7 | 1866.5 | +0.19% (n.s.) | [-3.00%, +13.42%] |
+| cpu (ms) | 8957.6 | 9117.4 | +1.87% (n.s.) | [-13.17%, +20.73%] |
+| user (ms) | 338.0 | 333.3 | -0.82% (n.s.) | [-2.23%, +1.30%] |
+| system (ms) | 8623.5 | 8779.3 | +1.98% (n.s.) | [-13.53%, +21.77%] |
+| peak rss (MiB) | 84.9 | 85.6 | +0.73% (n.s.) | [-0.54%, +1.43%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Accepted:** walk is 97 percent of default-tree component; leftover is __open plus
+getattrlistbulk; no Darwin cut named.
+
+Full record:
+[`exp-118-deciding-scale-metadata-walk-profile-after-current-engine.md`](../experiments/exp-118-deciding-scale-metadata-walk-profile-after-current-engine.md)
+
+### exp-119 — Product Index.report versus one-shot on frameworks
+
+✅ accepted · 2026-09-19 · H123 · commit `ee014340`
+
+Control: same probe default-tree one-shot
+
+Candidate: index-second-report second query::report
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2078.3 | 2140.4 | +1.50% (n.s.) | [-0.20%, +6.20%] |
+| component (ms) | 2064.9 | 2124.1 | +1.55% (n.s.) | [-0.29%, +6.52%] |
+| cpu (ms) | 8258.3 | 8788.7 | +9.03% (n.s.) | [-5.05%, +16.58%] |
+| user (ms) | 319.1 | 315.8 | -0.22% (n.s.) | [-1.65%, +2.02%] |
+| system (ms) | 7947.2 | 8474.8 | +9.32% (n.s.) | [-5.25%, +17.21%] |
+| peak rss (MiB) | 85.4 | 85.0 | -0.15% (n.s.) | [-1.42%, +1.25%] |
+
+Other jobs, wall time: `index-second-report` +0.9% (n.s.).
+
+Cost to carry: 98 lines; no new dependencies.
+
+probe mode index-second-report plus harness job; no engine serving change; no CLI flag
+
+**Accepted:** product second report 1.7ms versus default-tree 2078ms (1222x);
+determination kept; not a snapshot load.
+
+Full record:
+[`exp-119-product-index-report-versus-one-shot-on-frameworks.md`](../experiments/exp-119-product-index-report-versus-one-shot-on-frameworks.md)
+
+### exp-120 — Cache-hit restore mix after H115 and H120 on metabrowser
+
+✅ accepted · 2026-09-19 · H121 · commit `ee014340`
+
+Control: same probe at ee014340
+
+Candidate: same probe self-comparison
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1171.8 | 1185.6 | +0.74% (n.s.) | [-1.24%, +4.79%] |
+| component (ms) | 866.4 | 859.9 | -0.90% (n.s.) | [-2.48%, +0.75%] |
+| cpu (ms) | 1119.8 | 1121.4 | +0.45% (n.s.) | [-0.59%, +1.58%] |
+| user (ms) | 1025.3 | 1025.4 | -0.12% (n.s.) | [-0.50%, +0.55%] |
+| system (ms) | 95.4 | 92.5 | +6.27% (n.s.) | [-6.19%, +10.85%] |
+| blocked (ms) | 55.9 | 60.1 | +12.79% (n.s.) | [-19.35%, +80.73%] |
+| peak rss (MiB) | 333.3 | 333.3 | +0.09% (n.s.) | [-0.41%, +0.48%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+profile only; timers already in; no engine change
+
+**Accepted:** apply 43 percent of restore after H115+H120, candidates 48 percent; no
+stage at 50 percent; no apply cut.
+
+Full record:
+[`exp-120-cache-hit-restore-mix-after-h115-and-h120-on-metabrowser.md`](../experiments/exp-120-cache-hit-restore-mix-after-h115-and-h120-on-metabrowser.md)
+
+### exp-121 — First-pass analyze I/O type/size gate or read-ahead on metabrowser
+
+❌ rejected · 2026-09-19 · H124 · commit `45727e1d`
+
+Control: HEAD at 45727e1d same probe
+
+Candidate: same probe self-comparison
+
+**`content-basic`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 9014.4 | 9036.5 | -4.22% (n.s.) | [-20.79%, +5.10%] |
+| component (ms) | 8312.1 | 8382.9 | -4.22% (n.s.) | [-20.47%, +5.71%] |
+| cpu (ms) | 22723.8 | 23450.9 | +3.42% (n.s.) | [-0.35%, +8.84%] |
+| user (ms) | 5848.0 | 5749.5 | -0.91% | [-2.32%, -0.05%] |
+| system (ms) | 16956.4 | 17682.0 | +4.40% (n.s.) | [-0.16%, +12.59%] |
+| peak rss (MiB) | 254.2 | 254.9 | +0.18% (n.s.) | [+0.00%, +0.84%] |
+
+Wall-time tail: control p95 is 1.69x its median and candidate 1.10x. The verdict above
+is on the median; a reader deciding whether this is faster to *use* should read the tail
+beside it.
+
+Cost to carry: 0 lines; no new dependencies.
+
+profile only; no engine change
+
+**Rejected:** every admitted open is required for lines; skippable share under 1% wall;
+read calls already one data chunk per file; no engine change.
+
+Full record:
+[`exp-121-first-pass-analyze-i-o-type-size-gate-or-read-ahead-on-metab.md`](../experiments/exp-121-first-pass-analyze-i-o-type-size-gate-or-read-ahead-on-metab.md)
+
+### exp-122 — Tighter metadata walk leftover after H122
+
+✅ accepted · 2026-09-19 · H122 · commit `8dd95be8`
+
+Control: same probe at 8dd95be8
+
+Candidate: same probe plus dir_enumeration_calls counter
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2408.2 | 2467.7 | -1.95% (n.s.) | [-16.09%, +7.63%] |
+| component (ms) | 2401.0 | 2461.1 | -1.92% (n.s.) | [-16.29%, +7.63%] |
+| cpu (ms) | 16126.7 | 14835.2 | -7.50% (n.s.) | [-28.84%, +12.70%] |
+| user (ms) | 336.4 | 328.2 | -2.09% (n.s.) | [-5.89%, +0.43%] |
+| system (ms) | 15798.0 | 14507.0 | -7.76% (n.s.) | [-29.30%, +13.12%] |
+| peak rss (MiB) | 84.7 | 84.7 | +0.03% (n.s.) | [-1.27%, +0.79%] |
+
+Cost to carry: 40 lines; no new dependencies.
+
+dir_enumeration_calls kept, off by default; counted only on a successful bulk read
+
+**Accepted:** tighter leftover is 1.40 getattrlistbulk calls per directory; no userspace
+cut at 3 percent; H125 not minted.
+
+Full record:
+[`exp-122-tighter-metadata-walk-leftover-after-h122.md`](../experiments/exp-122-tighter-metadata-walk-leftover-after-h122.md)
+
+### exp-123 — H113 completeness leftover after H115 and H120
+
+✅ accepted · 2026-09-19 · H113 · commit `01ccc4b8`
+
+Control: same probe at 01ccc4b8
+
+Candidate: same probe self-comparison
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1116.5 | 1221.3 | +3.26% (n.s.) | [-1.37%, +13.31%] |
+| component (ms) | 832.2 | 930.1 | +3.85% (n.s.) | [-1.79%, +17.70%] |
+| cpu (ms) | 1096.1 | 1125.8 | +1.22% (n.s.) | [-1.14%, +5.86%] |
+| user (ms) | 1005.2 | 1022.0 | +1.11% (n.s.) | [-0.07%, +5.92%] |
+| system (ms) | 95.9 | 88.8 | -3.85% (n.s.) | [-16.26%, +16.23%] |
+| blocked (ms) | 20.4 | 28.0 | +69.73% (n.s.) | [-52.31%, +713.94%] |
+| peak rss (MiB) | 331.9 | 331.3 | -0.21% (n.s.) | [-0.62%, +0.30%] |
+
+Wall-time tail: control p95 is 2.98x its median and candidate 3.92x. The verdict above
+is on the median; a reader deciding whether this is faster to *use* should read the tail
+beside it.
+
+Cost to carry: 0 lines; no new dependencies.
+
+no engine change; leftover profile only; file-count shortcut not compiled
+
+**Accepted:** completeness walk still 16 percent of content_open after H115+H120; H113
+stays open; shortcut not compiled.
+
+Full record:
+[`exp-123-h113-completeness-leftover-after-h115-and-h120.md`](../experiments/exp-123-h113-completeness-leftover-after-h115-and-h120.md)
+
+### exp-124 — Cache-only completeness from restore candidate count on metabrowser
+
+✅ accepted · 2026-09-19 · H125 · commit `be8d4d69`
+
+Control: HEAD at af306146 with H115 and H120
+
+Candidate: restore candidate count instead of a second analysis_candidates walk
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1063.1 | 975.1 | -8.03% | [-10.79%, -7.79%] |
+| component (ms) | 783.4 | 688.4 | -11.48% | [-14.77%, -11.04%] |
+| cpu (ms) | 1057.0 | 967.1 | -8.41% | [-10.74%, -7.84%] |
+| user (ms) | 993.5 | 897.5 | -9.18% | [-10.81%, -9.01%] |
+| system (ms) | 64.7 | 66.7 | +3.28% (n.s.) | [-7.25%, +12.58%] |
+| blocked (ms) | 7.3 | 7.0 | -9.97% (n.s.) | [-44.24%, +68.64%] |
+| peak rss (MiB) | 332.8 | 333.4 | +0.13% (n.s.) | [-0.62%, +0.60%] |
+
+Cost to carry: 16 lines; no new dependencies.
+
+crate-private candidates count on ContentCacheLoad; incomplete-sidecar fail-closed kept;
+not the file-count heuristic
+
+**Accepted:** wall -8.03 percent [-10.79%, -7.79%]; restore-count completeness kept;
+H113 superseded.
+
+Full record:
+[`exp-124-cache-only-completeness-from-restore-candidate-count-on-meta.md`](../experiments/exp-124-cache-only-completeness-from-restore-candidate-count-on-meta.md)
+
+### exp-125 — Post-H125 cache-hit leftover after restore-count completeness
+
+✅ accepted · 2026-09-19 · H126 · commit `25f423fd`
+
+Control: H125 release probe at be8d4d69
+
+Candidate: same-source rebuild of HEAD
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1064.9 | 1038.8 | -0.31% (n.s.) | [-6.15%, +0.38%] |
+| component (ms) | 748.0 | 739.0 | -0.26% (n.s.) | [-3.94%, +0.94%] |
+| cpu (ms) | 1006.2 | 999.1 | -0.15% (n.s.) | [-3.37%, +0.63%] |
+| user (ms) | 917.7 | 911.9 | -0.41% | [-1.67%, -0.09%] |
+| system (ms) | 85.7 | 87.9 | +0.64% (n.s.) | [-14.24%, +8.56%] |
+| blocked (ms) | 52.0 | 40.4 | -18.90% (n.s.) | [-45.96%, +2.96%] |
+| peak rss (MiB) | 332.5 | 341.5 | +2.67% (n.s.) | [-0.04%, +2.81%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+no engine change; leftover profile only
+
+**Accepted:** completeness walk gone after H125; first candidates walk remains; no new
+cut.
+
+Full record:
+[`exp-125-post-h125-cache-hit-leftover-after-restore-count-completenes.md`](../experiments/exp-125-post-h125-cache-hit-leftover-after-restore-count-completenes.md)
+
+### exp-126 — First-pass walk versus opened-discovery I/O on metabrowser
+
+✅ accepted · 2026-09-19 · H127 · commit `81f9e447`
+
+Control: H125 release probe at be8d4d69
+
+Candidate: same probe (leftover profile)
+
+**`opened-discovery`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 3772.5 | 4044.5 | -4.97% (n.s.) | [-10.24%, +6.39%] |
+| component (ms) | 2761.2 | 3021.9 | -4.63% (n.s.) | [-15.68%, +9.97%] |
+| cpu (ms) | 3860.2 | 3909.1 | -1.21% (n.s.) | [-3.37%, +1.45%] |
+| user (ms) | 2324.0 | 2317.3 | -0.42% (n.s.) | [-1.87%, +0.58%] |
+| system (ms) | 1554.1 | 1588.8 | -0.89% (n.s.) | [-6.72%, +3.05%] |
+| peak rss (MiB) | 212.3 | 212.9 | +0.45% (n.s.) | [-0.16%, +3.91%] |
+
+Wall-time tail: control p95 is 1.63x its median and candidate 1.39x. The verdict above
+is on the median; a reader deciding whether this is faster to *use* should read the tail
+beside it.
+
+Other jobs, wall time: `cold-scan-index` -1.9%.
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** opened-discovery 8.8x first-pass component; read_dir+fstatat vs
+getattrlistbulk; journal clones remain; no smallest cut.
+
+Full record:
+[`exp-126-first-pass-walk-versus-opened-discovery-i-o-on-metabrowser.md`](../experiments/exp-126-first-pass-walk-versus-opened-discovery-i-o-on-metabrowser.md)
+
+### exp-127 — Default-tree leftover on file-heavy metabrowser after H122
+
+✅ accepted · 2026-09-19 · H128 · commit `59fa413a`
+
+Control: H125 release probe at be8d4d69
+
+Candidate: same probe (leftover profile)
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 355.8 | 359.3 | +1.12% (n.s.) | [-2.91%, +7.83%] |
+| component (ms) | 343.4 | 351.3 | +1.89% (n.s.) | [-2.03%, +7.85%] |
+| cpu (ms) | 1719.1 | 1681.1 | -2.80% (n.s.) | [-8.39%, +5.12%] |
+| user (ms) | 171.1 | 171.2 | -0.07% (n.s.) | [-2.22%, +2.06%] |
+| system (ms) | 1550.0 | 1513.9 | -3.26% (n.s.) | [-9.00%, +5.79%] |
+| peak rss (MiB) | 54.1 | 54.2 | -0.01% (n.s.) | [-1.29%, +1.42%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** walk still the job on file-heavy metabrowser (93% of component); 1.952
+getattrlistbulk/dir; snapshot not loaded; no new cut.
+
+Full record:
+[`exp-127-default-tree-leftover-on-file-heavy-metabrowser-after-h122.md`](../experiments/exp-127-default-tree-leftover-on-file-heavy-metabrowser-after-h122.md)
+
+### exp-128 — Cache-only restore omits classify on metabrowser
+
+✅ accepted · 2026-09-19 · H129 · commit `6887a864`
+
+Control: H125 release probe at be8d4d69
+
+Candidate: restore-only candidates without classify; restore apply skips the classify
+self-check
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 986.2 | 855.6 | -13.11% | [-20.22%, -12.67%] |
+| component (ms) | 701.9 | 567.1 | -19.19% | [-28.14%, -18.46%] |
+| cpu (ms) | 978.2 | 847.9 | -13.63% | [-15.01%, -13.07%] |
+| user (ms) | 913.6 | 792.6 | -13.46% | [-14.34%, -12.87%] |
+| system (ms) | 65.7 | 53.7 | -15.84% | [-23.88%, -13.39%] |
+| blocked (ms) | 8.0 | 7.8 | -9.65% (n.s.) | [-72.30%, +33.39%] |
+| peak rss (MiB) | 334.9 | 294.2 | -11.83% | [-13.74%, -11.58%] |
+
+Cost to carry: 115 lines; no new dependencies.
+
+restore-only candidate walk and apply path; no dependency; no unsafe
+
+**Accepted:** wall -13.11% [-20.22%, -12.67%] on frozen metabrowser-clone; digest
+identical; classify skip kept.
+
+Full record:
+[`exp-128-cache-only-restore-omits-classify-on-metabrowser.md`](../experiments/exp-128-cache-only-restore-omits-classify-on-metabrowser.md)
+
+### exp-129 — Post-H129 cache-hit leftover after restore-without-classify
+
+✅ accepted · 2026-09-19 · H130 · commit `6e101ace`
+
+Control: H129 release probe at 6887a864
+
+Candidate: same-source rebuild of HEAD
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 862.2 | 859.7 | -0.21% (n.s.) | [-1.77%, +21.32%] |
+| component (ms) | 571.5 | 570.6 | -0.19% (n.s.) | [-1.40%, +13.99%] |
+| cpu (ms) | 853.4 | 850.1 | -0.18% (n.s.) | [-1.77%, +1.51%] |
+| user (ms) | 792.8 | 789.8 | -0.40% (n.s.) | [-0.95%, +1.02%] |
+| system (ms) | 62.0 | 61.8 | -1.94% (n.s.) | [-11.50%, +7.80%] |
+| blocked (ms) | 10.8 | 10.6 | +29.04% (n.s.) | [-31.61%, +1917.93%] |
+| peak rss (MiB) | 296.3 | 298.6 | +0.72% (regression) | [+0.16%, +1.14%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** restore classify gone after H129; path_of 11.85 percent of content_open;
+no engine patch.
+
+Full record:
+[`exp-129-post-h129-cache-hit-leftover-after-restore-without-classify.md`](../experiments/exp-129-post-h129-cache-hit-leftover-after-restore-without-classify.md)
+
+### exp-130 — Restore DFS joins parent path on metabrowser
+
+✅ accepted · 2026-09-19 · H131 · commit `7840ce9b`
+
+Control: H129 release probe at 6887a864
+
+Candidate: analysis-file DFS joins parent path instead of path_of
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 857.8 | 824.3 | -4.07% | [-4.54%, -3.28%] |
+| component (ms) | 568.8 | 535.1 | -6.05% | [-6.47%, -4.65%] |
+| cpu (ms) | 851.3 | 816.6 | -4.07% | [-4.48%, -3.85%] |
+| user (ms) | 791.0 | 756.4 | -4.30% | [-4.69%, -4.08%] |
+| system (ms) | 59.5 | 58.9 | -1.00% (n.s.) | [-2.35%, +2.87%] |
+| blocked (ms) | 6.9 | 8.4 | -0.43% (n.s.) | [-12.11%, +62.08%] |
+| peak rss (MiB) | 295.8 | 296.8 | +0.38% (n.s.) | [-0.43%, +1.00%] |
+
+Cost to carry: 20 lines; no new dependencies.
+
+private DFS join; public path_of unchanged; no dependency; no unsafe
+
+**Accepted:** wall -4.07% [-4.54%, -3.28%] on frozen metabrowser-clone; digest
+identical; parent-path join kept.
+
+Full record:
+[`exp-130-restore-dfs-joins-parent-path-on-metabrowser.md`](../experiments/exp-130-restore-dfs-joins-parent-path-on-metabrowser.md)
+
+### exp-131 — Post-H131 cache-hit leftover after restore parent-path join
+
+✅ accepted · 2026-09-19 · H132 · commit `69704206`
+
+Control: H131 release probe at 7840ce9b
+
+Candidate: same-source rebuild of HEAD
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 825.2 | 825.3 | -0.02% (n.s.) | [-0.67%, +0.70%] |
+| component (ms) | 535.8 | 535.6 | +0.05% (n.s.) | [-0.75%, +1.46%] |
+| cpu (ms) | 818.3 | 815.7 | -0.00% (n.s.) | [-0.77%, +0.78%] |
+| user (ms) | 757.2 | 757.8 | -0.01% (n.s.) | [-0.38%, +0.41%] |
+| system (ms) | 59.1 | 59.6 | -1.75% (n.s.) | [-5.69%, +7.85%] |
+| blocked (ms) | 7.2 | 7.9 | +14.18% (n.s.) | [-1.72%, +37.22%] |
+| peak rss (MiB) | 297.6 | 297.0 | -0.13% (n.s.) | [-0.52%, +0.34%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** restore-walk path_of gone after H131; leftover snapshot path_of 9.89
+percent of content_open discarded on one-shot serving=None; no engine patch.
+
+Full record:
+[`exp-131-post-h131-cache-hit-leftover-after-restore-parent-path-join.md`](../experiments/exp-131-post-h131-cache-hit-leftover-after-restore-parent-path-join.md)
+
+### exp-132 — Skip unused snapshot path reconstruction on metabrowser
+
+✅ accepted · 2026-09-19 · H133 · commit `143a1c73`
+
+Control: H131 release probe at 7840ce9b
+
+Candidate: insert_loaded_child skips path_of when serving is None
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 829.5 | 778.0 | -6.37% | [-18.23%, -5.66%] |
+| component (ms) | 541.2 | 487.4 | -10.14% | [-24.22%, -9.57%] |
+| cpu (ms) | 823.9 | 770.7 | -6.50% | [-7.71%, -5.87%] |
+| user (ms) | 762.6 | 711.5 | -6.75% | [-7.70%, -6.24%] |
+| system (ms) | 61.7 | 59.8 | -3.56% (n.s.) | [-8.35%, +0.72%] |
+| blocked (ms) | 7.6 | 7.3 | -2.94% (n.s.) | [-86.72%, +29.03%] |
+| peak rss (MiB) | 297.3 | 297.4 | -0.06% (n.s.) | [-0.44%, +0.19%] |
+
+Cost to carry: 47 lines; no new dependencies.
+
+**Accepted:** wall -6.37% [-18.23%, -5.66%] on frozen metabrowser-clone; digest
+identical; unused snapshot path skip kept.
+
+Full record:
+[`exp-132-skip-unused-snapshot-path-reconstruction-on-metabrowser.md`](../experiments/exp-132-skip-unused-snapshot-path-reconstruction-on-metabrowser.md)
+
+### exp-133 — Post-H133 cache-hit leftover after unused snapshot path skip
+
+✅ accepted · 2026-09-19 · H134 · commit `f1e9ef9c`
+
+Control: H133 release probe at 143a1c73
+
+Candidate: same-source rebuild of HEAD
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 775.3 | 774.7 | -0.37% (n.s.) | [-0.82%, +0.38%] |
+| component (ms) | 483.3 | 484.4 | -0.09% (n.s.) | [-0.94%, +0.94%] |
+| cpu (ms) | 764.8 | 766.3 | -0.45% (n.s.) | [-0.79%, +0.84%] |
+| user (ms) | 703.7 | 704.2 | +0.02% (n.s.) | [-0.42%, +0.37%] |
+| system (ms) | 63.0 | 60.8 | -2.84% (n.s.) | [-8.24%, +3.85%] |
+| blocked (ms) | 8.0 | 7.2 | -10.75% (n.s.) | [-28.75%, +5.81%] |
+| peak rss (MiB) | 296.8 | 297.9 | +0.18% (regression) | [+0.03%, +0.72%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** snapshot path_of gone after H133; remaining leftover is already-rejected
+or already-landed restore and control stages; no engine patch.
+
+Full record:
+[`exp-133-post-h133-cache-hit-leftover-after-unused-snapshot-path-skip.md`](../experiments/exp-133-post-h133-cache-hit-leftover-after-unused-snapshot-path-skip.md)
+
+### exp-134 — Post-H124 first-pass content-basic leftover
+
+✅ accepted · 2026-09-19 · H135 · commit `6a93fc12`
+
+Control: HEAD release probe at 6a93fc12
+
+Candidate: same probe (leftover profile)
+
+**`content-basic`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 10365.9 | 10058.8 | -3.70% (n.s.) | [-8.25%, +6.96%] |
+| component (ms) | 9363.8 | 9071.9 | -2.67% (n.s.) | [-8.94%, +7.09%] |
+| cpu (ms) | 24181.8 | 23226.2 | -2.65% (n.s.) | [-11.87%, +6.34%] |
+| user (ms) | 5701.4 | 5681.5 | +0.03% (n.s.) | [-1.69%, +0.41%] |
+| system (ms) | 18437.7 | 17615.9 | -2.94% (n.s.) | [-15.88%, +8.98%] |
+| peak rss (MiB) | 217.6 | 255.5 | +3.52% (n.s.) | [-0.51%, +18.04%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** first-pass leftover after H124 is still I/O (read 58.87%, open 16.09%);
+classify_with 2.02% of process; commit_record 0.59%; no new skippable 3% wall cut; no
+engine patch.
+
+Full record:
+[`exp-134-post-h124-first-pass-content-basic-leftover.md`](../experiments/exp-134-post-h124-first-pass-content-basic-leftover.md)
+
+### exp-135 — Post-H128 first-run default-tree leftover
+
+✅ accepted · 2026-09-19 · H136 · commit `2aa3b7ee`
+
+Control: HEAD release probe at 2aa3b7ee
+
+Candidate: same probe (leftover profile)
+
+**`default-tree-first`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 481.0 | 453.6 | +0.18% (n.s.) | [-15.02%, +38.62%] |
+| component (ms) | 472.4 | 444.9 | -3.05% (n.s.) | [-15.01%, +36.10%] |
+| cpu (ms) | 1655.6 | 1606.6 | -1.85% (n.s.) | [-9.22%, +1.41%] |
+| user (ms) | 162.3 | 166.5 | +1.77% (n.s.) | [-1.05%, +4.13%] |
+| system (ms) | 1489.3 | 1435.5 | -2.51% (n.s.) | [-10.11%, +1.66%] |
+| peak rss (MiB) | 54.2 | 54.4 | +0.35% (n.s.) | [-1.88%, +2.55%] |
+
+Wall-time tail: control p95 is 1.48x its median and candidate 2.50x. The verdict above
+is on the median; a reader deciding whether this is faster to *use* should read the tail
+beside it.
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** first-run leftover after H128 is still the walk (83-88%); isolated
+snapshot save 45ms (~11-16% of first-run) is >=3% but not skippable
+(H100/H78/H92/fsync); no engine patch.
+
+Full record:
+[`exp-135-post-h128-first-run-default-tree-leftover.md`](../experiments/exp-135-post-h128-first-run-default-tree-leftover.md)
+
+### exp-136 — Post-H123 content-query leftover
+
+✅ accepted · 2026-09-19 · H137 · commit `afd0c919`
+
+Control: HEAD release probe at afd0c919
+
+Candidate: same probe (leftover profile)
+
+**`content-query`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 40340.5 | 38623.5 | -3.27% (n.s.) | [-14.42%, +4.41%] |
+| component (ms) | 26781.2 | 27325.8 | +2.27% (n.s.) | [-10.65%, +6.81%] |
+| cpu (ms) | 49301.0 | 48949.8 | -0.77% (n.s.) | [-2.08%, +0.76%] |
+| user (ms) | 28030.2 | 28021.9 | +0.33% (n.s.) | [-1.11%, +1.32%] |
+| system (ms) | 21222.2 | 20906.4 | -1.64% (n.s.) | [-4.67%, +4.41%] |
+| peak rss (MiB) | 673.2 | 691.1 | +2.13% (n.s.) | [-2.52%, +7.47%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** content-query leftover is every_entry path-join FileRow walks (~278ms per
+four-view report); unfiltered Types/Families/Languages/Documents each walk
+independently; no engine patch.
+
+Full record:
+[`exp-136-post-h123-content-query-leftover.md`](../experiments/exp-136-post-h123-content-query-leftover.md)
+
+### exp-137 — Share one every_entry across unfiltered metric views
+
+✅ accepted · 2026-09-19 · H138 · commit `a5c98d59`
+
+Control: HEAD release probe at c382568c
+
+Candidate: share one every_entry for unfiltered entry-row views
+
+**`content-query`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 38234.2 | 31475.2 | -18.76% | [-22.86%, -13.69%] |
+| component (ms) | 28291.1 | 20420.6 | -24.61% | [-29.82%, -20.56%] |
+| cpu (ms) | 44137.5 | 39095.0 | -10.79% | [-15.91%, -7.04%] |
+| user (ms) | 27929.1 | 23077.9 | -17.17% | [-19.10%, -16.58%] |
+| system (ms) | 14761.6 | 16227.9 | -2.00% (n.s.) | [-9.37%, +16.49%] |
+| peak rss (MiB) | 750.5 | 759.0 | +1.03% (regression) | [+0.42%, +1.61%] |
+
+Cost to carry: 68 lines; no new dependencies.
+
+share one every_entry walk; Summary/Tree/Extensions keep unfiltered roll-ups
+
+**Accepted:** content-query wall -18.76% [-22.86%, -13.69%] on frozen metabrowser-clone;
+component -24.61%; report identity unchanged; engine kept.
+
+Full record:
+[`exp-137-share-one-every-entry-across-unfiltered-metric-views.md`](../experiments/exp-137-share-one-every-entry-across-unfiltered-metric-views.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4031,6 +4662,28 @@ machine in one cache state, so the same change reads differently against a diffe
 corpus.
 
 Baselines show one value because they measure a state rather than a change.
+
+### metabrowser-clone (146,047 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 120 | Cache-hit restore mix after H115 and H120 on metabrowser | `content-cache-hit` | 1,171.8 | 1,185.6 | +0.7% | ✅ accepted |
+| 121 | First-pass analyze I/O type/size gate or read-ahead on metabrowser | `content-basic` | 9,014.4 | 9,036.5 | -4.2% | ❌ rejected |
+| 123 | H113 completeness leftover after H115 and H120 | `content-cache-hit` | 1,116.5 | 1,221.3 | +3.3% | ✅ accepted |
+| 124 | Cache-only completeness from restore candidate count on metabrowser | `content-cache-hit` | 1,063.1 | 975.1 | -8.0% | ✅ accepted |
+| 125 | Post-H125 cache-hit leftover after restore-count completeness | `content-cache-hit` | 1,064.9 | 1,038.8 | -0.3% | ✅ accepted |
+| 126 | First-pass walk versus opened-discovery I/O on metabrowser | `opened-discovery` | 3,772.5 | 4,044.5 | -5.0% | ✅ accepted |
+| 127 | Default-tree leftover on file-heavy metabrowser after H122 | `default-tree` | 355.8 | 359.3 | +1.1% | ✅ accepted |
+| 128 | Cache-only restore omits classify on metabrowser | `content-cache-hit` | 986.2 | 855.6 | -13.1% | ✅ accepted |
+| 129 | Post-H129 cache-hit leftover after restore-without-classify | `content-cache-hit` | 862.2 | 859.7 | -0.2% | ✅ accepted |
+| 130 | Restore DFS joins parent path on metabrowser | `content-cache-hit` | 857.8 | 824.3 | -4.1% | ✅ accepted |
+| 131 | Post-H131 cache-hit leftover after restore parent-path join | `content-cache-hit` | 825.2 | 825.3 | -0.0% | ✅ accepted |
+| 132 | Skip unused snapshot path reconstruction on metabrowser | `content-cache-hit` | 829.5 | 778.0 | -6.4% | ✅ accepted |
+| 133 | Post-H133 cache-hit leftover after unused snapshot path skip | `content-cache-hit` | 775.3 | 774.7 | -0.4% | ✅ accepted |
+| 134 | Post-H124 first-pass content-basic leftover | `content-basic` | 10,365.9 | 10,058.8 | -3.7% | ✅ accepted |
+| 135 | Post-H128 first-run default-tree leftover | `default-tree-first` | 481.0 | 453.6 | +0.2% | ✅ accepted |
+| 136 | Post-H123 content-query leftover | `content-query` | 40,340.5 | 38,623.5 | -3.3% | ✅ accepted |
+| 137 | Share one every_entry across unfiltered metric views | `content-query` | 38,234.2 | 31,475.2 | -18.8% | ✅ accepted |
 
 ### metabrowser-clone (59,654 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
@@ -4119,6 +4772,16 @@ Baselines show one value because they measure a state rather than a change.
 | 093 | Use transient hashed parents and unique child insertion | `cold-scan-index` | 573.3 | 578.7 | +0.8% | ✅ accepted |
 | 094 | Borrow completed directory roll-ups | `cold-scan-index` | 581.0 | 579.1 | +0.2% | ✅ accepted |
 | 095 | Move incoming names and retire consumed paths | `cold-scan-index` | 574.0 | 572.1 | -0.3% | ✅ accepted |
+
+### system-private-frameworks (158,705 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 107 | Installed CLI metadata one-shot stays cold scan on frameworks | `cli-default-tree` | 2,100.0 | 2,060.0 | -0.6% | ✅ accepted |
+| 116 | Opened-root second report versus one-shot on frameworks | `default-tree` | 2,612.2 | 2,361.9 | -2.2% | ✅ accepted |
+| 118 | Deciding-scale metadata walk profile after current engine | `default-tree` | 1,807.7 | 1,873.4 | +0.2% | ✅ accepted |
+| 119 | Product Index.report versus one-shot on frameworks | `default-tree` | 2,078.3 | 2,140.4 | +1.5% | ✅ accepted |
+| 122 | Tighter metadata walk leftover after H122 | `default-tree` | 2,408.2 | 2,467.7 | -1.9% | ✅ accepted |
 
 ### cargo-registry-src (11,142 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
@@ -4228,13 +4891,6 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 054 | Validate the Linux campaign’s cumulative effect on macOS | `warm-revalidate` | 393.0 | 335.7 | -15.7% | ✅ accepted |
 | 055 | Validate review fixes on macOS | `cold-scan-index` | 304.9 | 297.5 | -0.9% | ✅ accepted |
-
-### system-private-frameworks (158,705 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 107 | Installed CLI metadata one-shot stays cold scan on frameworks | `cli-default-tree` | 2,100.0 | 2,060.0 | -0.6% | ✅ accepted |
-| 116 | Opened-root second report versus one-shot on frameworks | `default-tree` | 2,612.2 | 2,361.9 | -2.2% | ✅ accepted |
 
 ### cargo-registry-src (13,020 entries) — Linux 6.18.44-fc-v21, unrecorded, warm-steady
 

@@ -108,6 +108,17 @@ The GitHub release text is
     Reading `.gitignore`, which is the default, needs the index to classify entries, so
     an unfiltered `--view summary` retains it and saves a snapshot like any other
     report.
+  - Cache-only content restore avoids repeated roll-up, candidate, classification, and
+    path work, streams records into the retained index, and repeated unfiltered metric
+    views share one entry traversal.
+    Individual development comparisons on exploratory, uncontrolled, warm-steady M1
+    Pro/APFS runs measured roughly 4% to 13% lower wall time for cache-only restore
+    changes and 10% lower peak RSS from streamed restore.
+    A separate workload that included setup plus 100 four-view reports measured 19%
+    lower wall time. These results are not additive and do not measure an ordinary
+    one-shot command or Linux; the
+    [performance evidence](docs/project/reports/report-2026-08-20-fdu-performance-evidence.md)
+    preserves each workload and interval.
 - **Watch.** `fdu --watch` repeats the same query as the tree changes.
   Aggregate views repaint at most every `--interval` (2 seconds by default; the age
   grammar, including `200ms`), and `--view files --format jsonl` emits one

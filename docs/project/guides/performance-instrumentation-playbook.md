@@ -77,6 +77,13 @@ kernel did, which is precisely the failure the cross-check exists to catch — a
 cost it found scales with directory count, so it lands hardest on the wide shallow trees
 that are most common.
 
+Darwin now has the matching application counter: `dir_enumeration_calls` (exp-122). It
+counts successful `getattrlistbulk` syscalls including the empty terminator, only on a
+complete directory read, the same rule as `dir_opens`. On deciding-scale
+`system-private-frameworks` that is **1.403 calls per directory** (77,509 / 55,256), not
+Linux’s 2.00. A later Linux/H111 or `openat` cell compares those two numbers plus
+per-entry `statx`; it does not guess from a Darwin userspace sample.
+
 ### Know what each tier can actually tell you
 
 Assuming coverage is uniform produces confident nonsense.

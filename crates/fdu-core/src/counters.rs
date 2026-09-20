@@ -26,6 +26,15 @@ static ENABLED: AtomicBool = AtomicBool::new(false);
 pub struct Counts {
     /// Logical directory-open operations.
     pub dir_opens: u64,
+    /// Enumeration syscalls in complete successful macOS bulk listings, including the
+    /// empty terminator.
+    ///
+    /// One successful directory is typically two calls (one data, one EOF), the same
+    /// multiplicity the Linux portable path pays in `getdents64`. The portable `read_dir`
+    /// path leaves this at 0 because the standard library hides that split. Abandoned
+    /// bulk attempts before portable fallback are not counted. A later Linux or `openat`
+    /// campaign can compare this to `dir_opens` without another sample.
+    pub dir_enumeration_calls: u64,
     /// Directory entries yielded by enumeration.
     pub dir_entries: u64,
     /// Logical metadata-stat operations.
@@ -149,6 +158,7 @@ pub struct Counts {
 impl Counts {
     const ZERO: Self = Self {
         dir_opens: 0,
+        dir_enumeration_calls: 0,
         dir_entries: 0,
         stats: 0,
         file_opens: 0,
@@ -208,6 +218,7 @@ impl Counts {
     pub fn rows(&self) -> Vec<(&'static str, &'static str, u64)> {
         vec![
             ("filesystem operations", "directory opens", self.dir_opens),
+            ("filesystem operations", "directory enumeration calls", self.dir_enumeration_calls),
             ("filesystem operations", "directory entries enumerated", self.dir_entries),
             ("filesystem operations", "metadata stats", self.stats),
             ("filesystem operations", "file opens", self.file_opens),
@@ -292,6 +303,8 @@ impl Counts {
     /// Fold another set into this one without panicking on overflow.
     fn add(&mut self, other: &Self) {
         self.dir_opens = self.dir_opens.saturating_add(other.dir_opens);
+        self.dir_enumeration_calls =
+            self.dir_enumeration_calls.saturating_add(other.dir_enumeration_calls);
         self.dir_entries = self.dir_entries.saturating_add(other.dir_entries);
         self.stats = self.stats.saturating_add(other.stats);
         self.file_opens = self.file_opens.saturating_add(other.file_opens);
@@ -380,6 +393,7 @@ impl Counts {
 
 struct GlobalCounts {
     dir_opens: AtomicU64,
+    dir_enumeration_calls: AtomicU64,
     dir_entries: AtomicU64,
     stats: AtomicU64,
     file_opens: AtomicU64,
@@ -438,6 +452,7 @@ impl GlobalCounts {
     const fn new() -> Self {
         Self {
             dir_opens: AtomicU64::new(0),
+            dir_enumeration_calls: AtomicU64::new(0),
             dir_entries: AtomicU64::new(0),
             stats: AtomicU64::new(0),
             file_opens: AtomicU64::new(0),
@@ -495,6 +510,7 @@ impl GlobalCounts {
 
     fn add(&self, counts: &Counts) {
         atomic_saturating_add(&self.dir_opens, counts.dir_opens);
+        atomic_saturating_add(&self.dir_enumeration_calls, counts.dir_enumeration_calls);
         atomic_saturating_add(&self.dir_entries, counts.dir_entries);
         atomic_saturating_add(&self.stats, counts.stats);
         atomic_saturating_add(&self.file_opens, counts.file_opens);
@@ -570,6 +586,7 @@ impl GlobalCounts {
     fn snapshot(&self) -> Counts {
         Counts {
             dir_opens: self.dir_opens.load(Ordering::Relaxed),
+            dir_enumeration_calls: self.dir_enumeration_calls.load(Ordering::Relaxed),
             dir_entries: self.dir_entries.load(Ordering::Relaxed),
             stats: self.stats.load(Ordering::Relaxed),
             file_opens: self.file_opens.load(Ordering::Relaxed),
@@ -631,6 +648,7 @@ impl GlobalCounts {
 
     fn reset(&self) {
         self.dir_opens.store(0, Ordering::Relaxed);
+        self.dir_enumeration_calls.store(0, Ordering::Relaxed);
         self.dir_entries.store(0, Ordering::Relaxed);
         self.stats.store(0, Ordering::Relaxed);
         self.file_opens.store(0, Ordering::Relaxed);

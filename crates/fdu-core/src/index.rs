@@ -36,7 +36,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::content::{
     AnalysisApplyOutcome, AnalysisCandidate, AnalysisObservation, AnalysisSet, ContentIndex,
-    ContentRollUp,
+    ContentRollUp, RestoreCandidate,
 };
 use crate::engine_contract::{
     Attrs, Clock, Commit, Coverage, CoverageReason, DiscoveryProgress, EffectiveChange,
@@ -3465,34 +3465,69 @@ impl Index {
     ///
     /// [`analyze_index`]: crate::content::analyze_index
     pub(crate) fn analysis_candidates(&self, profile: AnalysisSet) -> Vec<AnalysisCandidate> {
-        if !profile.is_enabled() {
-            return Vec::new();
-        }
         let root_files = self.entry(EntryId::ROOT).rollup().files;
         let mut candidates = Vec::with_capacity(usize::try_from(root_files).unwrap_or(0));
-        let mut stack = vec![EntryId::ROOT];
-        while let Some(parent) = stack.pop() {
-            for (_, id) in self.children_of(parent).into_iter().flatten() {
+        self.for_each_analysis_file(profile, |id, revision, attrs, relative_path| {
+            candidates.push(AnalysisCandidate {
+                entry_id: id,
+                revision,
+                absolute_path: self.root_path.join(&relative_path),
+                classification: self.classify(&relative_path),
+                relative_path,
+                attrs,
+            });
+        });
+        candidates
+    }
+
+    /// File identities restore matches against sidecar records, without classifying.
+    ///
+    /// The `HashMap` is keyed by relative path because load looks up each decoded record
+    /// that way. Classification is omitted: cache-only restore commits the sidecar's
+    /// stored classification, and the apply-path self-check cannot change that answer.
+    pub(crate) fn restore_analysis_candidates(
+        &self,
+        profile: AnalysisSet,
+    ) -> (HashMap<PathBuf, RestoreCandidate>, u64) {
+        let root_files = self.entry(EntryId::ROOT).rollup().files;
+        let mut candidates = HashMap::with_capacity(usize::try_from(root_files).unwrap_or(0));
+        let mut visited = 0_u64;
+        self.for_each_analysis_file(profile, |id, revision, attrs, relative_path| {
+            visited = visited.saturating_add(1);
+            candidates.insert(
+                relative_path.clone(),
+                RestoreCandidate { entry_id: id, revision, relative_path, attrs },
+            );
+        });
+        (candidates, visited)
+    }
+
+    fn for_each_analysis_file(
+        &self,
+        profile: AnalysisSet,
+        mut visit: impl FnMut(EntryId, u64, Attrs, PathBuf),
+    ) {
+        if !profile.is_enabled() {
+            return;
+        }
+        // Join the parent path this walk already holds. `path_of` would walk
+        // ancestors per file for the same bytes.
+        let mut stack = vec![(EntryId::ROOT, PathBuf::new())];
+        while let Some((parent, parent_path)) = stack.pop() {
+            for (name, id) in self.children_of(parent).into_iter().flatten() {
                 let entry = self.entry(id);
                 if entry.kind == EntryKind::Dir {
-                    stack.push(id);
+                    stack.push((id, parent_path.join(name)));
                     continue;
                 }
                 if entry.kind != EntryKind::File {
                     continue;
                 }
-                let relative_path = self.path_of(id).expect("live entry has a path");
-                candidates.push(AnalysisCandidate {
-                    entry_id: id,
-                    revision: entry.revision,
-                    absolute_path: self.root_path.join(&relative_path),
-                    classification: self.classify(&relative_path),
-                    relative_path,
-                    attrs: entry.attrs,
-                });
+                let revision = entry.revision;
+                let attrs = entry.attrs;
+                visit(id, revision, attrs, parent_path.join(name));
             }
         }
-        candidates
     }
 
     /// The candidates `request` still has to read: every one, unless the content tier
@@ -3537,9 +3572,26 @@ impl Index {
     /// directory total; sidecar load does that after the apply loop.
     pub(crate) fn apply_restored_analysis(
         &mut self,
-        observation: AnalysisObservation,
+        candidate: RestoreCandidate,
+        analysis: crate::content::FileAnalysis,
     ) -> AnalysisApplyOutcome {
-        self.apply_analysis_record(observation, false)
+        let Some(entry) = self.try_entry(candidate.entry_id) else {
+            return AnalysisApplyOutcome::Stale;
+        };
+        if entry.kind != EntryKind::File
+            || entry.revision != candidate.revision
+            || entry.attrs.fingerprint() != candidate.attrs.fingerprint()
+        {
+            return AnalysisApplyOutcome::Stale;
+        }
+        let Some(content) = self.content.as_mut() else {
+            return AnalysisApplyOutcome::Stale;
+        };
+        if content.commit_without_rollup(candidate.relative_path, analysis) {
+            AnalysisApplyOutcome::Applied
+        } else {
+            AnalysisApplyOutcome::Stale
+        }
     }
 
     pub(crate) fn rebuild_content_rollups(&mut self) {
@@ -4882,8 +4934,12 @@ impl Index {
         // in which the index is structurally complete but numerically wrong.
         let contribution = self.contribution(id);
         self.merge_upward(Some(parent), &contribution);
-        let path = self.path_of(id).expect("a newly loaded entry has a path");
-        self.insert_serving_entry(&path, kind, attrs, id);
+        // One-shot snapshot load constructs the index with serving off.
+        // `insert_serving_entry` would discard a reconstructed path.
+        if self.serving.is_some() {
+            let path = self.path_of(id).expect("a newly loaded entry has a path");
+            self.insert_serving_entry(&path, kind, attrs, id);
+        }
         Some(id)
     }
 
@@ -5941,6 +5997,45 @@ mod tests {
 
         assert!(index.serving.is_none());
         assert!(index.portable_children(Path::new("dir")).is_none());
+    }
+
+    #[test]
+    fn insert_loaded_child_skips_serving_path_when_serving_is_off() {
+        let mut index = Index::new("/root");
+        let id = index
+            .insert_loaded_child(
+                EntryId::ROOT,
+                OsString::from("a.rs"),
+                EntryKind::File,
+                file_attrs(4, 1),
+            )
+            .expect("parent is a live directory");
+        assert!(!index.serving_indexes_enabled());
+        assert_eq!(index.path_of(id), Some(PathBuf::from("a.rs")));
+        assert_eq!(index.lookup(Path::new("a.rs")), Some(id));
+        assert_eq!(index.total().files, 1);
+    }
+
+    #[test]
+    fn insert_loaded_child_fills_serving_when_enabled() {
+        let mut index = Index::new_opened_with_scope_types_and_journal_capacity_bytes(
+            "/root",
+            ScanScope::default(),
+            crate::classify::TypeRegistry::compiled_shared(),
+            DEFAULT_JOURNAL_CAPACITY_BYTES,
+        );
+        let id = index
+            .insert_loaded_child(
+                EntryId::ROOT,
+                OsString::from("a.rs"),
+                EntryKind::File,
+                file_attrs(4, 1),
+            )
+            .expect("parent is a live directory");
+        assert!(index.serving_indexes_enabled());
+        assert_eq!(index.path_of(id), Some(PathBuf::from("a.rs")));
+        let serving = index.serving.as_ref().expect("opened test index");
+        assert!(serving.portable_entries.keys().any(|path| path.as_str() == "a.rs"));
     }
 
     #[test]
@@ -8042,6 +8137,57 @@ mod tests {
             tallies.get(".rs"),
             Some(&ExtTally { files: 1, bytes: 10, allocated: file_attrs(10, 1).allocated })
         );
+    }
+
+    #[test]
+    fn restore_candidates_count_visited_files_not_pathbuf_aliases() {
+        use crate::content::AnalysisSet;
+
+        let mut index = Index::new("/root");
+        let attrs = file_attrs(10, 1);
+        assert!(
+            index
+                .insert_loaded_child(EntryId::ROOT, OsString::from("a"), EntryKind::File, attrs)
+                .is_some()
+        );
+        assert!(
+            index
+                .insert_loaded_child(EntryId::ROOT, OsString::from("a/"), EntryKind::File, attrs)
+                .is_some()
+        );
+        let (candidates, visited) =
+            index.restore_analysis_candidates(AnalysisSet::NONE.with_lines());
+        assert_eq!(visited, 2, "each visited regular file is a completeness slot");
+        assert_eq!(candidates.len(), 1, "PathBuf keys merge trailing-separator aliases");
+    }
+
+    #[test]
+    fn restore_candidates_match_analysis_file_identities() {
+        use crate::content::AnalysisSet;
+
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("src", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("src/nested", EntryKind::Dir, file_attrs(0, 2)),
+            upsert("src/nested/lib.rs", EntryKind::File, file_attrs(10, 1)),
+            upsert("README.md", EntryKind::File, file_attrs(20, 2)),
+        ]));
+        let profile = AnalysisSet::NONE.with_lines();
+        let live = index.analysis_candidates(profile);
+        let (restore, visited) = index.restore_analysis_candidates(profile);
+        assert_eq!(restore.len(), live.len());
+        assert_eq!(visited, u64::try_from(live.len()).expect("candidate count fits u64"));
+        assert_eq!(restore.len(), 2);
+        for candidate in &live {
+            assert_eq!(
+                index.path_of(candidate.entry_id).as_deref(),
+                Some(candidate.relative_path.as_path())
+            );
+            let restored = restore.get(&candidate.relative_path).expect("same relative path");
+            assert_eq!(restored.entry_id, candidate.entry_id);
+            assert_eq!(restored.revision, candidate.revision);
+            assert_eq!(restored.attrs.fingerprint(), candidate.attrs.fingerprint());
+        }
     }
 
     #[test]

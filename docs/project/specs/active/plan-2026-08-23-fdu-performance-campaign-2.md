@@ -266,8 +266,9 @@ The 0.1.0 engine shipped (request model, opened root, watch, `.gitignore` defaul
 content sidecar). A 2026-09-18 revisit recorded exp-105 (uncontrolled rustup baseline),
 exp-106 (H107 rejected on metabrowser), exp-107 (H108 confirmed: second `fdu PATH` stays
 `cold scan`), then H112 timers kept, H115 accepted (−9.69% cache-hit wall), H120
-accepted (−10.13% cache-hit RSS), H117 confirmed as a probe, and H116/H118/H119 rejected
-or screened. The live next-up list, host-regime note, and subject sizes are in
+accepted (−10.13% cache-hit RSS), H117 confirmed as a probe, H116/H118/H119 rejected or
+screened, and H124 rejected (exp-121). The live next-up list, host-regime note, and
+subject sizes are in
 [the runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18).
 The remaining unaddressed queue after that overnight is
 [the remaining-headroom block](plan-2026-09-19-post-h115-remaining-headroom.md), not

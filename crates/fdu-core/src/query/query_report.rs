@@ -15,6 +15,7 @@
 //! Optional content I/O happens before this pure reader boundary and is retained in the
 //! index's separate derived tier.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -1018,11 +1019,20 @@ pub(crate) fn report_in(
     // costs one pass rather than three.
     let walked =
         (!query.selection.is_unfiltered()).then(|| walk(index, &query.selection, identity));
+    // Unfiltered metric and file views share one `FileRow` walk only when more than one
+    // section consumes it. A single section keeps ownership of its one traversal, so a
+    // bounded file view does not clone every path before sorting and truncating it.
+    // Summary, Tree, and Extensions keep roll-ups when unfiltered and do not consume rows.
+    let row_consumers =
+        query.views.iter().copied().filter(|view| needs_unfiltered_entry_rows(*view)).count();
+    let unfiltered_rows = (walked.is_none() && row_consumers > 1).then(|| every_entry(index));
 
     let sections = query
         .views
         .iter()
-        .map(|view| build_section(*view, index, query, content, walked.as_ref()))
+        .map(|view| {
+            build_section(*view, index, query, content, walked.as_ref(), unfiltered_rows.as_deref())
+        })
         .collect();
 
     let ignore_rules = index.control_coverage();
@@ -1311,6 +1321,34 @@ fn merge_summary(into: &mut SummaryRow, from: &SummaryRow) {
     }
 }
 
+/// Views that reconstruct every path into a [`FileRow`] when the selection is unfiltered.
+fn needs_unfiltered_entry_rows(view: ViewSpec) -> bool {
+    matches!(
+        view,
+        ViewSpec::Types
+            | ViewSpec::Families
+            | ViewSpec::Languages
+            | ViewSpec::Documents
+            | ViewSpec::Files
+            | ViewSpec::Largest
+            | ViewSpec::Recent
+    )
+}
+
+/// The entry rows a view aggregates: the filtered walk, a shared unfiltered walk, or a
+/// fresh [`every_entry`] when this is the only consumer.
+fn entry_rows<'a>(
+    index: &Index,
+    walked: Option<&'a Walked>,
+    unfiltered_rows: Option<&'a [FileRow]>,
+) -> Cow<'a, [FileRow]> {
+    match (walked, unfiltered_rows) {
+        (Some(walked), _) => Cow::Borrowed(&walked.rows),
+        (None, Some(rows)) => Cow::Borrowed(rows),
+        (None, None) => Cow::Owned(every_entry(index)),
+    }
+}
+
 /// Build one view's section, using the pre-computed tier when the selection allows.
 fn build_section(
     view: ViewSpec,
@@ -1318,6 +1356,7 @@ fn build_section(
     query: &Query,
     content: AnalysisSet,
     walked: Option<&Walked>,
+    unfiltered_rows: Option<&[FileRow]>,
 ) -> Section {
     match view {
         ViewSpec::Summary => Section::Summary(match walked {
@@ -1331,11 +1370,18 @@ fn build_section(
         ViewSpec::Types | ViewSpec::Families | ViewSpec::Languages | ViewSpec::Documents => {
             Section::Metrics {
                 view,
-                summary: Box::new(metric_summary(view, index, query, content, walked)),
+                summary: Box::new(metric_summary(
+                    view,
+                    index,
+                    query,
+                    content,
+                    walked,
+                    unfiltered_rows,
+                )),
             }
         }
         ViewSpec::Files | ViewSpec::Largest | ViewSpec::Recent => {
-            let (rows, total) = file_rows(view, index, query, walked);
+            let (rows, total) = file_rows(view, index, query, walked, unfiltered_rows);
             Section::Files { view, rows, total }
         }
         ViewSpec::Tree => Section::Tree(tree_node(index, query, walked)),
@@ -1431,11 +1477,12 @@ fn metric_summary(
     query: &Query,
     content: AnalysisSet,
     walked: Option<&Walked>,
+    unfiltered_rows: Option<&[FileRow]>,
 ) -> MetricSummary {
     let group = if view == ViewSpec::Families { MetricGroup::Family } else { MetricGroup::Type };
-    let files = walked.map_or_else(|| every_entry(index), |walked| walked.rows.clone());
+    let files = entry_rows(index, walked, unfiltered_rows);
     let mut grouped = BTreeMap::<String, MetricRow>::new();
-    for file in files.into_iter().filter(|row| row.kind == EntryKind::File) {
+    for file in files.iter().filter(|row| row.kind == EntryKind::File) {
         let cached = index.content().and_then(|content| content.file(&file.path));
         let classification = cached
             .map_or_else(|| index.classify(&file.path), |record| record.classification.clone());
@@ -1632,11 +1679,9 @@ fn file_rows(
     index: &Index,
     query: &Query,
     walked: Option<&Walked>,
+    unfiltered_rows: Option<&[FileRow]>,
 ) -> (Vec<FileRow>, usize) {
-    let mut rows = match walked {
-        Some(walked) => walked.rows.clone(),
-        None => every_entry(index),
-    };
+    let mut rows = entry_rows(index, walked, unfiltered_rows).into_owned();
     if view.files_only() {
         rows.retain(|row| row.kind == EntryKind::File);
     }
@@ -1926,6 +1971,7 @@ mod tests {
     use crate::engine_contract::{Attrs, Observation, Op};
     use crate::query::query_glob::Pattern;
     use crate::query::query_selection::ModifiedWindow;
+    use std::fs;
     use std::time::{Duration, UNIX_EPOCH};
 
     fn attrs(size: u64, mtime_ns: i64) -> Attrs {
@@ -2486,6 +2532,124 @@ mod tests {
         assert_eq!(together.sections.len(), 3, "one section per view, in request order");
         assert_eq!(together.sections[1].view(), ViewSpec::Tree);
         assert_eq!(together.sections[2].view(), ViewSpec::Summary);
+    }
+
+    #[test]
+    fn analyzed_unfiltered_views_together_match_independent_answers_and_each_view_alone() {
+        const RUST: &str = "fn main() {\n    println!(\"hi\");\n}\n";
+        const MARKDOWN: &str = "# Guide\n\nA small useful guide.\n";
+        const TEXT: &str = "plain notes here\n";
+        let root = tempfile::tempdir().expect("root");
+        fs::create_dir_all(root.path().join("src")).expect("src");
+        fs::create_dir_all(root.path().join("docs")).expect("docs");
+        fs::write(root.path().join("src/main.rs"), RUST).expect("rust");
+        fs::write(root.path().join("docs/guide.md"), MARKDOWN).expect("markdown");
+        fs::write(root.path().join("notes.txt"), TEXT).expect("text");
+        for (path, seconds) in [("src/main.rs", 10), ("notes.txt", 20), ("docs/guide.md", 30)] {
+            fs::File::options()
+                .write(true)
+                .open(root.path().join(path))
+                .expect("open for timestamp")
+                .set_times(
+                    fs::FileTimes::new().set_modified(UNIX_EPOCH + Duration::from_secs(seconds)),
+                )
+                .expect("set timestamp");
+        }
+        let (mut index, _) = crate::scan::scan_into_index(
+            root.path(),
+            &crate::ScanConfig { read_controls: false, ..crate::ScanConfig::default() },
+        )
+        .expect("scan");
+        crate::content::analyze_index(
+            &mut index,
+            crate::content::AnalysisRequest {
+                profile: AnalysisSet::ALL,
+                ..crate::content::AnalysisRequest::default()
+            },
+        );
+
+        let views = [
+            ViewSpec::Types,
+            ViewSpec::Families,
+            ViewSpec::Languages,
+            ViewSpec::Documents,
+            ViewSpec::Files,
+            ViewSpec::Largest,
+            ViewSpec::Recent,
+            ViewSpec::Summary,
+            ViewSpec::Tree,
+            ViewSpec::Extensions,
+        ];
+        let selection = Selection { size: SizeMetric::Apparent, ..Selection::default() };
+        let together = run(&index, &query(&views, selection.clone()));
+        for (i, view) in views.iter().enumerate() {
+            let alone = run(&index, &query(&[*view], selection.clone()));
+            assert_eq!(
+                format!("{:?}", together.sections[i]),
+                format!("{:?}", alone.sections[0]),
+                "{view:?} changed when requested with the other views"
+            );
+        }
+
+        for (at, view, files) in [(0, ViewSpec::Types, 3), (1, ViewSpec::Families, 3)] {
+            let Section::Metrics { view: actual, summary } = &together.sections[at] else {
+                panic!("expected {view:?} metrics")
+            };
+            assert_eq!(*actual, view);
+            assert_eq!(summary.total.files, files);
+            assert_eq!(summary.total.analyzed_files, files);
+        }
+        let Section::Metrics { summary: languages, .. } = &together.sections[2] else {
+            panic!("languages")
+        };
+        assert_eq!(languages.total.files, 1);
+        assert_eq!(languages.total.metrics.code_lines, 3);
+        let Section::Metrics { summary: documents, .. } = &together.sections[3] else {
+            panic!("documents")
+        };
+        assert_eq!(documents.total.files, 2);
+        assert_eq!(documents.total.analyzed_files, 2);
+        assert_eq!(documents.total.document_metric_files, 2);
+        assert_eq!(documents.total.document_raw_words, 8);
+        assert_eq!(documents.total.document_word_stats.logical_words(), 8);
+        assert_eq!(documents.total.share, MetricShare { numerator: 8, denominator: 8 });
+
+        let Section::Files { rows: files, total, .. } = &together.sections[4] else {
+            panic!("files")
+        };
+        assert_eq!(*total, 5);
+        assert_eq!(
+            files.iter().map(|row| row.path.as_path()).collect::<Vec<_>>(),
+            ["docs", "docs/guide.md", "notes.txt", "src", "src/main.rs"].map(Path::new).to_vec()
+        );
+        let Section::Files { rows: largest, total, .. } = &together.sections[5] else {
+            panic!("largest")
+        };
+        assert_eq!(*total, 3);
+        assert_eq!(
+            largest.iter().map(|row| row.path.as_path()).collect::<Vec<_>>(),
+            ["src/main.rs", "docs/guide.md", "notes.txt"].map(Path::new).to_vec()
+        );
+        let Section::Files { rows: recent, total, .. } = &together.sections[6] else {
+            panic!("recent")
+        };
+        assert_eq!(*total, 3);
+        assert_eq!(
+            recent.iter().map(|row| row.path.as_path()).collect::<Vec<_>>(),
+            ["docs/guide.md", "notes.txt", "src/main.rs"].map(Path::new).to_vec()
+        );
+        let Section::Summary(summary) = &together.sections[7] else { panic!("summary") };
+        assert_eq!((summary.files, summary.dirs), (3, 2));
+        assert_eq!(
+            summary.bytes,
+            u64::try_from(RUST.len() + MARKDOWN.len() + TEXT.len()).expect("fixture bytes")
+        );
+        let Section::Tree(tree) = &together.sections[8] else { panic!("tree") };
+        assert_eq!((tree.files, tree.dirs), (3, 2));
+        let Section::Extensions { rows, total } = &together.sections[9] else {
+            panic!("extensions")
+        };
+        assert_eq!((*total, rows.len()), (3, 3));
     }
 
     #[test]

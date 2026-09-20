@@ -94,6 +94,7 @@ enum Mode {
     MarkdownProse,
     OpenedDiscovery,
     OpenedSecondReport,
+    IndexSecondReport,
     Query,
     ColdOpenSave,
     DefaultTree,
@@ -130,6 +131,7 @@ impl Mode {
             "markdown-prose" => Ok(Self::MarkdownProse),
             "opened-discovery" => Ok(Self::OpenedDiscovery),
             "opened-second-report" => Ok(Self::OpenedSecondReport),
+            "index-second-report" => Ok(Self::IndexSecondReport),
             "query" => Ok(Self::Query),
             "revalidate" => Ok(Self::Revalidate),
             "cold-open-save" => Ok(Self::ColdOpenSave),
@@ -167,6 +169,7 @@ impl Mode {
             Self::MarkdownProse => "markdown-prose",
             Self::OpenedDiscovery => "opened-discovery",
             Self::OpenedSecondReport => "opened-second-report",
+            Self::IndexSecondReport => "index-second-report",
             Self::Query => "query",
             Self::Revalidate => "revalidate",
             Self::ColdOpenSave => "cold-open-save",
@@ -437,6 +440,7 @@ fn execute(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         Mode::DeltaApplyBatched => delta_apply_batched(arguments),
         Mode::OpenedDiscovery => opened_discovery(arguments),
         Mode::OpenedSecondReport => opened_second_report(arguments),
+        Mode::IndexSecondReport => index_second_report(arguments),
         Mode::MarkdownProse | Mode::TextProse => content_analysis(arguments, document_request()),
         Mode::Query => query(arguments),
     }
@@ -587,6 +591,8 @@ fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         black_box(fdu_core::query::report(&index, &read, &provenance).expect("report"));
     }
     let component = started.elapsed();
+    // The historical benchmark digest hashes retained index/content facts after the
+    // reports are discarded. Zero invalid samples do not prove report construction.
     let mut summary = summarize_index(arguments, &index)?;
     attach_content_summary(&mut summary, &index);
     summary.content_candidates = analysis.candidates;
@@ -1227,6 +1233,55 @@ fn opened_second_report(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     summary.errors = terminal.issues.retained.saturating_add(terminal.issues.omitted);
     summary.complete = terminal.coverage == Coverage::Complete;
     Ok(ProbeOutput::new(arguments.mode, "opened-retained", component, summary))
+}
+
+/// Second `query::report` on a retained detached `Index`.
+///
+/// Setup is the product `fdu.scan()` / `Index` construction and the first
+/// `Index.report()`. The timed component is only the second report — the same
+/// `query::report` path Python `Index.report()` and CLI `--watch` `Session.report()`
+/// use. Discovery stays untimed. Not a snapshot load on one-shot `fdu PATH`.
+fn index_second_report(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
+    let (index, scan) = fdu_core::scan::scan_into_index(&arguments.root, &arguments.scan)?;
+    if !scan.is_complete() {
+        return Err(ProbeError("index second report setup scan was partial".into()));
+    }
+
+    let query = Query { views: vec![ViewSpec::Tree], ..Query::default() };
+    let now = std::time::SystemTime::now();
+    let request = Request::new(
+        Basis {
+            root: index.root_path().to_path_buf(),
+            scope: arguments.scan.clone(),
+            content: index.content_set(),
+        },
+        query,
+        now,
+    );
+    let provenance = Provenance {
+        scan_started_at: None,
+        generated_at: now,
+        source: ReportSource::ColdScan,
+        complete: true,
+        errors: Vec::new(),
+    };
+
+    let first = fdu_core::query::report(&index, &request, &provenance)?;
+    let first_rendered =
+        fdu_core::report_format::render(&first, fdu_core::report_format::Format::Text, false);
+    black_box(first_rendered.len());
+
+    let started = Instant::now();
+    let second = fdu_core::query::report(&index, &request, &provenance)?;
+    let rendered =
+        fdu_core::report_format::render(&second, fdu_core::report_format::Format::Text, false);
+    black_box(rendered.len());
+    let component = started.elapsed();
+
+    let mut summary = summarize_index(arguments, &index)?;
+    summary.errors = u64::try_from(second.errors.len()).unwrap_or(u64::MAX);
+    summary.complete = second.complete;
+    Ok(ProbeOutput::new(arguments.mode, "index-retained", component, summary))
 }
 
 fn summarize_opened(opened: &OpenedIndex, version: EngineVersion) -> ProbeResult<Summary> {
@@ -2430,6 +2485,7 @@ mod tests {
             "text-prose",
             "validate-index",
             "opened-second-report",
+            "index-second-report",
             // opened-discovery is covered by opened_discovery_refuses_walk_flags_it_cannot_apply.
         ];
 
@@ -2547,6 +2603,24 @@ mod tests {
         assert_eq!(diagnostics.schema, fdu_core::scan::SCAN_DIAGNOSTICS_SCHEMA);
         assert_eq!(diagnostics.worker_policy.ready_directories_at_finish, 0);
         assert_eq!(diagnostics.worker_policy.in_flight_directories_at_finish, 0);
+    }
+
+    #[test]
+    fn index_second_report_times_the_product_query_report_path() {
+        let root = tempfile::tempdir().expect("root tempdir");
+        std::fs::write(root.path().join("keep.rs"), b"fn main() {}").expect("file");
+        let arguments = Arguments::parse(
+            ["index-second-report", "--root", root.path().to_str().expect("utf8")]
+                .into_iter()
+                .map(OsString::from),
+        )
+        .expect("probe arguments");
+
+        let output = index_second_report(&arguments).expect("index-second-report");
+
+        assert_eq!(output.summary.files, 1);
+        assert!(output.summary.complete);
+        assert_eq!(output.source, "index-retained");
     }
 
     #[test]

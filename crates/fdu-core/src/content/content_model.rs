@@ -460,6 +460,23 @@ pub(crate) struct AnalysisCandidate {
     pub classification: Classification,
 }
 
+/// Live file identity used to match a sidecar record on cache-only restore.
+///
+/// Restore does not classify and does not open the file. The sidecar already stores the
+/// classification that `apply_analysis` would have committed, and the apply-path
+/// classify self-check is a crate-private consistency guard, not part of the answer.
+#[derive(Clone, Debug)]
+pub(crate) struct RestoreCandidate {
+    /// Generation-safe index identity.
+    pub entry_id: EntryId,
+    /// Entry revision at capture time.
+    pub revision: u64,
+    /// Path relative to the index root.
+    pub relative_path: PathBuf,
+    /// Last observed attributes.
+    pub attrs: Attrs,
+}
+
 /// Worker result submitted to the index's derived-data mutation boundary.
 #[derive(Clone, Debug)]
 pub(crate) struct AnalysisObservation {
