@@ -885,6 +885,8 @@ pub struct Index {
     writing_pass_started_at_ns: i64,
     /// Wall-clock starts of in-flight full-root passes, keyed by their freshness epoch.
     active_root_reconciles: BTreeMap<u64, i64>,
+    /// Omitted issue count when each reconciliation began.
+    active_reconcile_omitted: BTreeMap<u64, u64>,
     /// Subtrees a completed reconciliation has verified, with when it finished.
     ///
     /// Kept as intervals rather than per-entry flags because a sweep verifies
@@ -933,6 +935,12 @@ pub struct Index {
     /// Detached indexes deliberately carry `None`, including the standalone CLI's
     /// one-shot scan. Only [`crate::OpenedIndex`] enables this allocation.
     serving: Option<Box<ServingIndexes>>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct ReconcileErrors<'a> {
+    pub(crate) errors: &'a [crate::Error],
+    pub(crate) terminal: Option<&'a crate::Error>,
 }
 
 enum ChildIds<'a> {
@@ -1380,7 +1388,7 @@ impl IndexHandle {
         complete: bool,
         listed_incomplete: &[PathBuf],
         failed_paths: &[PathBuf],
-        issues: &[Issue],
+        errors: ReconcileErrors<'_>,
     ) -> crate::Result<Option<Commit>> {
         self.write_index()?.finish_reconcile(
             path,
@@ -1388,7 +1396,7 @@ impl IndexHandle {
             complete,
             listed_incomplete,
             failed_paths,
-            issues,
+            errors,
         )
     }
 
@@ -1749,6 +1757,7 @@ impl Index {
             captured_at_ns: 0,
             writing_pass_started_at_ns: constructed_at_ns,
             active_root_reconciles: BTreeMap::new(),
+            active_reconcile_omitted: BTreeMap::new(),
             verified: Vec::new(),
             ext_names: Vec::new(),
             ext_ids: BTreeMap::new(),
@@ -2790,6 +2799,7 @@ impl Index {
         let previous_index_state = self.state;
         let previous = self.freshness_at(&path);
         let epoch = self.mark_unfresh(&path, Freshness::Reconciling);
+        self.active_reconcile_omitted.insert(epoch, self.state.issues.omitted);
         if path.as_os_str().is_empty() {
             self.active_root_reconciles.insert(epoch, Self::now_unix_nanos());
         }
@@ -2829,7 +2839,7 @@ impl Index {
         complete: bool,
         listed_incomplete: &[PathBuf],
         failed_paths: &[PathBuf],
-        issues: &[Issue],
+        errors: ReconcileErrors<'_>,
     ) -> crate::Result<Option<Commit>> {
         let path = canonical_relative_path(path)?;
         let next_clock = self.clock.checked_next().ok_or(crate::Error::ClockExhausted)?;
@@ -2854,12 +2864,20 @@ impl Index {
             .collect();
         let scoped_failures: Vec<&PathBuf> =
             failed_paths.iter().filter(|failed| failed.starts_with(&path)).collect();
-        let mut state = Vec::new();
-        for issue in issues {
+        let omitted_at_start = self.active_reconcile_omitted.remove(&started_at).unwrap_or(0);
+        if self.state.phase != LifecyclePhase::Failed {
+            self.drop_disproven_issues(&path, started_at);
+        }
+        if self.state.phase != LifecyclePhase::Failed && path.as_os_str().is_empty() {
+            self.state.issues.omitted = self.state.issues.omitted.saturating_sub(omitted_at_start);
+        }
+        for error in errors.errors.iter().chain(errors.terminal) {
+            let issue = Issue::from_error_under(&self.root_path, error);
             if issue.path.as_deref().is_none_or(|issue_path| issue_path.starts_with(&path)) {
-                self.retain_issue(issue.clone());
+                self.retain_issue(issue);
             }
         }
+        let mut state = Vec::new();
         if complete || !scoped_failures.is_empty() {
             // A sweep stat'd every entry beneath `path` except the precise failure paths,
             // which carry stronger `Partial` marks below. Record the successful interval
@@ -2875,17 +2893,11 @@ impl Index {
             state.push(StateTransition::Verified { path: path.clone() });
         }
         if complete {
-            // A failed root's issues explain the state it is in; a clean walk below one of
-            // their paths cannot un-fail the root, so it disproves none of them.
-            if self.state.phase != LifecyclePhase::Failed {
-                self.drop_disproven_issues(&path, started_at);
-            }
             if path.as_os_str().is_empty() {
                 if let Some(started) = self.active_root_reconciles.remove(&started_at) {
                     self.writing_pass_started_at_ns = started;
                 }
                 self.state.source = self.applying_source;
-                self.state.issues.omitted = 0;
             }
         } else {
             if scoped_failures.is_empty() {
@@ -2895,7 +2907,9 @@ impl Index {
                     self.mark_unfresh(failed, Freshness::Partial);
                 }
             }
-            self.state.coverage = Coverage::Partial(CoverageReason::Inaccessible);
+            if !errors.errors.is_empty() || errors.terminal.is_some() {
+                self.state.coverage = Coverage::Partial(CoverageReason::Inaccessible);
+            }
             if path.as_os_str().is_empty() {
                 if let Some(started) = self.active_root_reconciles.remove(&started_at) {
                     self.writing_pass_started_at_ns = started;
@@ -7592,7 +7606,14 @@ mod tests {
         );
 
         let finish = index
-            .finish_reconcile(Path::new("src"), started, true, &[], &[], &[])
+            .finish_reconcile(
+                Path::new("src"),
+                started,
+                true,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None },
+            )
             .expect("finish")
             .expect("finish commit");
         assert!(finish.changes.is_empty());
@@ -9062,7 +9083,14 @@ mod tests {
             },
         ]));
         index
-            .finish_reconcile(Path::new(""), 0, true, &[], &[], &[])
+            .finish_reconcile(
+                Path::new(""),
+                0,
+                true,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None },
+            )
             .expect("finish reconciliation");
 
         let kept = index.provenance(Path::new("a/kept.txt")).expect("present");
@@ -9098,7 +9126,14 @@ mod tests {
         );
         // A completed sweep then covers the whole tree.
         index
-            .finish_reconcile(Path::new(""), 0, true, &[], &[], &[])
+            .finish_reconcile(
+                Path::new(""),
+                0,
+                true,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None },
+            )
             .expect("finish reconciliation");
         let path = Path::new("a/file.txt");
         assert_eq!(
@@ -9131,7 +9166,14 @@ mod tests {
         let mut index = Index::new("/root");
         for which in 0..(MAX_VERIFIED_INTERVALS * 2) {
             index
-                .finish_reconcile(&PathBuf::from(format!("dir-{which}")), 0, true, &[], &[], &[])
+                .finish_reconcile(
+                    &PathBuf::from(format!("dir-{which}")),
+                    0,
+                    true,
+                    &[],
+                    &[],
+                    ReconcileErrors { errors: &[], terminal: None },
+                )
                 .expect("finish reconciliation");
         }
         assert!(
@@ -9177,5 +9219,78 @@ mod tests {
         assert_eq!(shuffled.state().issues.omitted, 2);
         assert_eq!(reverse.issue_epochs.len(), reverse.issues.len());
         assert_eq!(shuffled.issue_epochs.len(), shuffled.issues.len());
+    }
+
+    #[test]
+    fn repeated_partial_root_pass_replaces_bounded_issues_and_omitted_count() {
+        let root = Path::new("/root");
+        let mut index = Index::new(root);
+        let run = |index: &mut Index, range: std::ops::Range<usize>| {
+            let errors: Vec<_> = range
+                .clone()
+                .map(|number| {
+                    crate::Error::io(
+                        root.join(format!("file-{number:02}")),
+                        std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+                    )
+                })
+                .collect();
+            let failed: Vec<_> =
+                range.map(|number| PathBuf::from(format!("file-{number:02}"))).collect();
+            let (started, _) = index.begin_reconcile(Path::new("")).expect("begin");
+            index
+                .finish_reconcile(
+                    Path::new(""),
+                    started,
+                    false,
+                    &[],
+                    &failed,
+                    ReconcileErrors { errors: &errors, terminal: None },
+                )
+                .expect("finish");
+        };
+
+        run(&mut index, 0..66);
+        assert_eq!(index.state().issues.omitted, 2);
+        run(&mut index, 10..76);
+
+        assert_eq!(index.state().issues.omitted, 2, "a retry replaces the old omission count");
+        assert_eq!(index.issues().len(), crate::MAX_RETAINED_ISSUES);
+        assert_eq!(index.issues()[0].path.as_deref(), Some(Path::new("file-10")));
+        assert_eq!(index.issues()[63].path.as_deref(), Some(Path::new("file-73")));
+    }
+
+    #[test]
+    fn partial_pass_preserves_an_issue_published_after_it_began() {
+        let root = Path::new("/root");
+        let mut index = Index::new(root);
+        let (started, _) = index.begin_reconcile(Path::new("")).expect("begin");
+        index.mark_unfresh(Path::new("concurrent"), Freshness::Stale);
+        index.retain_issue(Issue::from_error_under(
+            root,
+            &crate::Error::io(
+                root.join("concurrent"),
+                std::io::Error::new(std::io::ErrorKind::PermissionDenied, "concurrent"),
+            ),
+        ));
+        let pass_error = crate::Error::io(
+            root.join("pass"),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "pass"),
+        );
+
+        index
+            .finish_reconcile(
+                Path::new(""),
+                started,
+                false,
+                &[],
+                &[PathBuf::from("pass")],
+                ReconcileErrors { errors: &[pass_error], terminal: None },
+            )
+            .expect("finish");
+
+        let paths: Vec<_> =
+            index.issues().iter().filter_map(|issue| issue.path.as_deref()).collect();
+        assert_eq!(paths, [Path::new("concurrent"), Path::new("pass")]);
     }
 }
