@@ -1238,20 +1238,32 @@ fn walk_hook_covers(path: &Path) -> bool {
 #[derive(Debug)]
 pub(crate) struct ScannerBatch {
     ops: Vec<ObservationOp>,
+    /// When set, the consumer must return `ops` through this sender instead of dropping
+    /// them. Workers allocate the `PathBuf`s; glibc's cross-thread free of those buffers
+    /// is H85. The public [`scan`] path leaves this unset.
+    recycle: Option<std::sync::mpsc::Sender<Vec<ObservationOp>>>,
 }
 
 impl ScannerBatch {
     pub(crate) const fn new(ops: Vec<ObservationOp>) -> Self {
-        Self { ops }
+        Self { ops, recycle: None }
+    }
+
+    fn with_recycle(self, recycle: std::sync::mpsc::Sender<Vec<ObservationOp>>) -> Self {
+        Self { recycle: Some(recycle), ..self }
     }
 
     #[cfg(test)]
     pub(crate) fn from_ops(ops: Vec<Op>) -> Self {
-        Self { ops: ops.into_iter().map(ObservationOp::unconditional).collect() }
+        Self { ops: ops.into_iter().map(ObservationOp::unconditional).collect(), recycle: None }
     }
 
     pub(crate) fn len(&self) -> usize {
         self.ops.len()
+    }
+
+    pub(crate) fn ops(&self) -> &[ObservationOp] {
+        &self.ops
     }
 
     pub(crate) fn into_ops(self) -> Vec<ObservationOp> {
@@ -1260,6 +1272,12 @@ impl ScannerBatch {
 
     fn into_observation(self) -> Observation {
         Observation::from_ops(self.ops)
+    }
+
+    fn recycle(self) {
+        if let Some(recycle) = self.recycle {
+            let _ = recycle.send(self.ops);
+        }
     }
 }
 
@@ -1299,8 +1317,53 @@ pub fn scan(
     sink: &mut dyn FnMut(Observation),
 ) -> Result<ScanReport> {
     let mut public_sink = |batch: ScannerBatch| sink(batch.into_observation());
-    scan_internal(root, config, &mut public_sink, false, WorkerPolicyExperiment::ShippedOneShot)
+    scan_internal(
+        root,
+        config,
+        &mut public_sink,
+        false,
+        WorkerPolicyExperiment::ShippedOneShot,
+        false,
+    )
+    .map(|(report, _diagnostics)| report)
+}
+
+/// Walk `root` for the transient summary tier, folding each op without retaining it.
+///
+/// The public [`scan`] path hands each batch to the caller as an [`Observation`], so
+/// worker-allocated `PathBuf`s are freed on the consumer thread — the glibc pattern H85
+/// names. This path returns drained batches to the producing worker so each arena is
+/// allocated and freed on one thread. Tallies must match [`scan`].
+pub(crate) fn scan_summary_fold(
+    root: &Path,
+    config: &ScanConfig,
+    fold: &mut dyn FnMut(&ObservationOp),
+) -> Result<ScanReport> {
+    let mut sink = |batch: ScannerBatch| {
+        for op in batch.ops() {
+            fold(op);
+        }
+        batch.recycle();
+    };
+    scan_internal(root, config, &mut sink, false, WorkerPolicyExperiment::ShippedOneShot, true)
         .map(|(report, _diagnostics)| report)
+}
+
+/// [`scan_summary_fold`] plus the diagnostic trace [`scan_with_diagnostics`] collects.
+pub(crate) fn scan_summary_fold_with_diagnostics(
+    root: &Path,
+    config: &ScanConfig,
+    fold: &mut dyn FnMut(&ObservationOp),
+) -> Result<(ScanReport, ScanDiagnostics)> {
+    let mut sink = |batch: ScannerBatch| {
+        for op in batch.ops() {
+            fold(op);
+        }
+        batch.recycle();
+    };
+    let (report, diagnostics) =
+        scan_internal(root, config, &mut sink, true, WorkerPolicyExperiment::ShippedOneShot, true)?;
+    Ok((report, diagnostics.expect("diagnostic scan creates a recorder")))
 }
 
 /// Walk `root`, emitting observations and a bounded run-scoped diagnostic trace.
@@ -1325,7 +1388,7 @@ pub fn scan_with_policy_diagnostics(
     policy: WorkerPolicyExperiment,
 ) -> Result<(ScanReport, ScanDiagnostics)> {
     let mut public_sink = |batch: ScannerBatch| sink(batch.into_observation());
-    let (report, diagnostics) = scan_internal(root, config, &mut public_sink, true, policy)?;
+    let (report, diagnostics) = scan_internal(root, config, &mut public_sink, true, policy, false)?;
     Ok((report, diagnostics.expect("diagnostic scan creates a recorder")))
 }
 
@@ -1335,6 +1398,7 @@ fn scan_internal(
     sink: &mut dyn FnMut(ScannerBatch),
     collect_diagnostics: bool,
     policy: WorkerPolicyExperiment,
+    recycle_batches: bool,
 ) -> Result<(ScanReport, Option<ScanDiagnostics>)> {
     config.validate()?;
     let root_meta = {
@@ -1356,8 +1420,16 @@ fn scan_internal(
         .then(|| ScanDiagnosticsRecorder::new(pool, available_parallelism, policy));
 
     if config.max_depth != Some(0) && pool.initial > 1 {
-        let report =
-            scan_concurrent(root, config, root_dev, sink, pool, diagnostics.as_ref(), policy);
+        let report = scan_concurrent(
+            root,
+            config,
+            root_dev,
+            sink,
+            pool,
+            diagnostics.as_ref(),
+            policy,
+            recycle_batches,
+        );
         return Ok((report, diagnostics.as_ref().map(|value| value.finish())));
     }
 
@@ -2158,6 +2230,7 @@ const DIR_CLAIM: usize = 4;
 /// filesystem work. The resulting index is byte-identical to the serial walker's,
 /// which the benchmark harness re-proves on every trial by comparing engine digests
 /// against an independent oracle.
+#[allow(clippy::too_many_arguments)]
 fn scan_concurrent(
     root: &Path,
     config: &ScanConfig,
@@ -2166,6 +2239,7 @@ fn scan_concurrent(
     pool: WorkerPool,
     diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
     policy: WorkerPolicyExperiment,
+    recycle_batches: bool,
 ) -> ScanReport {
     let mut consume = |message| match message {
         WalkMessage::Batch(batch) => {
@@ -2188,7 +2262,7 @@ fn scan_concurrent(
         pool,
         diagnostics,
         policy,
-        walk_worker,
+        if recycle_batches { walk_worker_recycling } else { walk_worker },
         &mut consume,
     )
 }
@@ -2474,11 +2548,59 @@ trait WalkEmission {
 
 struct StreamingEmission {
     batch: Vec<ObservationOp>,
+    batch_size: usize,
+    recycle_tx: Option<std::sync::mpsc::Sender<Vec<ObservationOp>>>,
+    recycle_rx: Option<std::sync::mpsc::Receiver<Vec<ObservationOp>>>,
 }
 
 impl StreamingEmission {
     fn new(batch_size: usize) -> Self {
-        Self { batch: Vec::with_capacity(batch_size) }
+        Self {
+            batch: Vec::with_capacity(batch_size),
+            batch_size,
+            recycle_tx: None,
+            recycle_rx: None,
+        }
+    }
+
+    /// H85: return drained `PathBuf` arenas to this worker so glibc frees them here.
+    fn recycling(batch_size: usize) -> Self {
+        let (recycle_tx, recycle_rx) = std::sync::mpsc::channel();
+        Self {
+            batch: Vec::with_capacity(batch_size),
+            batch_size,
+            recycle_tx: Some(recycle_tx),
+            recycle_rx: Some(recycle_rx),
+        }
+    }
+
+    fn wrap(&self, ops: Vec<ObservationOp>) -> ScannerBatch {
+        match &self.recycle_tx {
+            Some(recycle) => ScannerBatch::new(ops).with_recycle(recycle.clone()),
+            None => ScannerBatch::new(ops),
+        }
+    }
+
+    fn next_vec(&self) -> Vec<ObservationOp> {
+        let mut kept = None;
+        if let Some(recycle_rx) = &self.recycle_rx {
+            while let Ok(mut recycled) = recycle_rx.try_recv() {
+                recycled.clear();
+                kept = Some(recycled);
+            }
+        }
+        kept.unwrap_or_else(|| Vec::with_capacity(self.batch_size))
+    }
+
+    fn send_full(
+        &mut self,
+        sender: &std::sync::mpsc::Sender<WalkMessage>,
+        diagnostics: Option<&ScanDiagnosticsRecorder>,
+    ) -> bool {
+        let ops = std::mem::take(&mut self.batch);
+        let sent = send_scanner_batch(sender, self.wrap(ops), diagnostics);
+        self.batch = self.next_vec();
+        sent
     }
 }
 
@@ -2516,7 +2638,7 @@ impl WalkEmission for StreamingEmission {
             attrs,
             root_dev,
             config,
-            &mut self.batch,
+            self,
             discovered,
             report,
             sender,
@@ -2538,11 +2660,7 @@ impl WalkEmission for StreamingEmission {
             return true;
         }
         let send_started = std::time::Instant::now();
-        let sent = send_scanner_batch(
-            sender,
-            ScannerBatch::new(std::mem::take(&mut self.batch)),
-            diagnostics,
-        );
+        let sent = self.send_full(sender, diagnostics);
         *chunk_send_ns += elapsed_ns(send_started);
         sent
     }
@@ -2557,11 +2675,7 @@ impl WalkEmission for StreamingEmission {
             return;
         }
         let send_started = std::time::Instant::now();
-        let _ = send_scanner_batch(
-            sender,
-            ScannerBatch::new(std::mem::take(&mut self.batch)),
-            diagnostics,
-        );
+        let _ = self.send_full(sender, diagnostics);
         report.attribution.send_ns += elapsed_ns(send_started);
     }
 }
@@ -2681,6 +2795,26 @@ fn walk_worker(
         sender,
         diagnostics,
         StreamingEmission::new(config.batch_size),
+    )
+}
+
+/// Streaming walk that returns drained batches to this worker (H85).
+fn walk_worker_recycling(
+    root: &Path,
+    config: &ScanConfig,
+    root_dev: u64,
+    queue: &DirectoryQueue,
+    sender: &std::sync::mpsc::Sender<WalkMessage>,
+    diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
+) -> ScanReport {
+    walk_worker_with(
+        root,
+        config,
+        root_dev,
+        queue,
+        sender,
+        diagnostics,
+        StreamingEmission::recycling(config.batch_size),
     )
 }
 
@@ -2961,7 +3095,7 @@ fn record_walk_entry(
     attrs: Attrs,
     root_dev: u64,
     config: &ScanConfig,
-    batch: &mut Vec<ObservationOp>,
+    emission: &mut StreamingEmission,
     discovered: &mut Vec<(PathBuf, usize, RegionId)>,
     report: &mut ScanReport,
     sender: &std::sync::mpsc::Sender<WalkMessage>,
@@ -2978,14 +3112,10 @@ fn record_walk_entry(
     }
     if !prepared.retained {
         if let Some(control) = prepared.control {
-            batch.push(ObservationOp::unconditional(control));
-            if batch.len() >= config.batch_size {
+            emission.batch.push(ObservationOp::unconditional(control));
+            if emission.batch.len() >= config.batch_size {
                 let send_started = std::time::Instant::now();
-                let sent = send_scanner_batch(
-                    sender,
-                    ScannerBatch::new(std::mem::take(batch)),
-                    diagnostics,
-                );
+                let sent = emission.send_full(sender, diagnostics);
                 *chunk_send_ns += elapsed_ns(send_started);
                 return sent;
             }
@@ -2993,26 +3123,24 @@ fn record_walk_entry(
         return true;
     }
     report.observe(kind, attrs);
-    batch.push(ObservationOp::unconditional(Op::Upsert {
+    emission.batch.push(ObservationOp::unconditional(Op::Upsert {
         path: prepared.path.clone(),
         kind,
         attrs,
     }));
-    if batch.len() >= config.batch_size {
+    if emission.batch.len() >= config.batch_size {
         let send_started = std::time::Instant::now();
-        let sent =
-            send_scanner_batch(sender, ScannerBatch::new(std::mem::take(batch)), diagnostics);
+        let sent = emission.send_full(sender, diagnostics);
         *chunk_send_ns += elapsed_ns(send_started);
         if !sent {
             return false;
         }
     }
     if let Some(control) = prepared.control {
-        batch.push(ObservationOp::unconditional(control));
-        if batch.len() >= config.batch_size {
+        emission.batch.push(ObservationOp::unconditional(control));
+        if emission.batch.len() >= config.batch_size {
             let send_started = std::time::Instant::now();
-            let sent =
-                send_scanner_batch(sender, ScannerBatch::new(std::mem::take(batch)), diagnostics);
+            let sent = emission.send_full(sender, diagnostics);
             *chunk_send_ns += elapsed_ns(send_started);
             if !sent {
                 return false;
@@ -3790,6 +3918,7 @@ fn scan_into_index_via_scanner(root: &Path, config: &ScanConfig) -> Result<(Inde
         },
         false,
         WorkerPolicyExperiment::ShippedOneShot,
+        false,
     )?;
     if let Some(error) = apply_error {
         return Err(error);
