@@ -5,7 +5,7 @@ title: Directory filtering and list presentation formats for stale build invento
 kind: epic
 status: in_progress
 priority: 1
-version: 16
+version: 17
 spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
 delegate: claude-code@spud10
 labels: []
@@ -21,7 +21,7 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:36:54.755Z
-updated_at: 2026-09-20T05:17:16.047Z
+updated_at: 2026-09-20T05:32:36.416Z
 started_at: 2026-09-20T01:38:30.390Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-20-directory-query-formats.md`. Publish the plan separately on `codex/directory-query-plan`, stacked on the latest branch, PR #94 (`perf/campaign-linux-2026-09-19`) above #92. Implementation follows in a separate PR above the reviewed plan. The tracked spec owns the complete design and implementation breakdown.
@@ -233,4 +233,4 @@ See github.com/jlevy/practical-prose and review guidelines before editing.
 
 ## Notes
 
-Plan publication is fdu-79n0. Runtime implementation remains separate; preserve the original worktree edits. Default output remains unchanged. The tracked plan is the full handoff context, including all six implementation beads.
+The full design and all six implementation steps are tracked in docs/project/specs/active/plan-2026-09-20-directory-query-formats.md and published as plan-only PR https://github.com/jlevy/fdu/pull/96, stacked on #94 above #92/#91. Publication task is fdu-79n0. Preserve default output. Implementation remains separate in the original worktree and should form a subsequent layer above the reviewed plan; do not close implementation beads or issue #93 upon plan publication.
