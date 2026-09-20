@@ -160,6 +160,8 @@ pins.
 
 ## Performance Work
 
+To run one more iteration, start at
+[the runbook’s current standing](docs/project/guides/performance-loop-runbook.md#current-standing-2026-09-18).
 The rules that decide whether a speed change is kept are in
 [fdu-design-principles.md](docs/project/architecture/fdu-design-principles.md); the
 current strategy — what to work on next, with floor-anchored priorities and per-tier

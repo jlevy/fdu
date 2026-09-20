@@ -183,8 +183,9 @@ Phases 0 and A–C are parallel where their beads say so; D and E follow their g
   The nominations file holds absolute paths and is gitignored, so what is committed says
   what a claim rests on without saying where it lives.
   Each host nominates its own, because `root_id` hashes a path — this repository now
-  carries the Darwin/arm64 set: a 60k source checkout, the 175k rustup store and the
-  159k sealed system frameworks decide, and a 5.8k cargo registry cache screens.
+  carries the Darwin/arm64 set, re-observed 2026-09-18: a 146k live metabrowser checkout
+  (the 2026-08 corpus path is gone), the 77k rustup store (was 175k in exp-066), and the
+  159k sealed system frameworks decide, and a 22k cargo registry cache screens.
 - [~] `fdu-33ri` — `make perf-floor`: run the floor spikes and the tiers across the
   nominated subjects and emit the ×floor table, the campaign’s scoreboard.
   **The Linux half landed** (2026-08-28,
@@ -260,6 +261,19 @@ derives a macOS ordering from what is measurable here and states the case agains
 item; the beads carry it under the `macos-agenda` label, and
 [the runbook](../../guides/performance-loop-runbook.md) is how an unattended agent runs
 one round of it.
+
+The 0.1.0 engine shipped (request model, opened root, watch, `.gitignore` default-on,
+content sidecar). A 2026-09-18 revisit recorded exp-105 (uncontrolled rustup baseline),
+exp-106 (H107 rejected on metabrowser), exp-107 (H108 confirmed: second `fdu PATH` stays
+`cold scan`), then H112 timers kept, H115 accepted (−9.69% cache-hit wall), H120
+accepted (−10.13% cache-hit RSS), H117 confirmed as a probe, and H116/H118/H119 rejected
+or screened. The live next-up list, host-regime note, and subject sizes are in
+[the runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18).
+The remaining unaddressed queue after that overnight is
+[the remaining-headroom block](plan-2026-09-19-post-h115-remaining-headroom.md), not
+this file’s 2026-08-23 Tier 1–3 list.
+H86’s remaining gap is the Linux floor (H111 / `fdu-jekg`), not a rewrite, and not this
+Darwin host.
 
 - **Tier 1, unattended, in order:** `fdu-mx1w` (landed), `fdu-2um8` (skip the identical
   snapshot rewrite; landed and closed), `fdu-n75m` part 1 (flush the render before the
@@ -502,6 +516,11 @@ strategy and the record is visible in review.
 - [The structural review](../../research/research-2026-08-14-structural-performance-review.md)
   — S1–S7
 - [The performance loop](../../guides/performance-loop.md) — protocol and registry
+- [The performance-loop runbook](../../guides/performance-loop-runbook.md) — one
+  unattended round and the 2026-09-18 standing
+- [Post-H115 remaining headroom](plan-2026-09-19-post-h115-remaining-headroom.md) —
+  remaining queue after the H116–H120 overnight (H113, H122, H107, H123, H121, H124,
+  H111)
 - [The cache layers plan](../done/plan-2026-08-15-fdu-cache-layers-and-defaults.md) —
   the cost model this plan’s warm posture rests on
 - [The fsevents plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md) — the journal

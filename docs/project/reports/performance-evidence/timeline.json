@@ -730,6 +730,33 @@
    "subject": "a319238d9c29:97587:7ec24464a1b5",
    "tool": "dust",
    "wall_ns": 193939833.5
+  },
+  {
+   "entries": 77132,
+   "id": "exp-105",
+   "per_entry_ns": 2277.5590870196547,
+   "platform": "macOS",
+   "subject": "36ce9b22af9a:77132:b839b65efbc7",
+   "tool": "dust",
+   "wall_ns": 175672687.5
+  },
+  {
+   "entries": 145931,
+   "id": "exp-106",
+   "per_entry_ns": 2783.072280735416,
+   "platform": "macOS",
+   "subject": "a319238d9c29:145931:41a1e8457142",
+   "tool": "dust",
+   "wall_ns": 406136521
+  },
+  {
+   "entries": 158705,
+   "id": "exp-116",
+   "per_entry_ns": 16765.152720456193,
+   "platform": "macOS",
+   "subject": "b718281f3051:158705:0c863b0ab28d",
+   "tool": "dust",
+   "wall_ns": 2660713562.5
   }
  ],
  "experiments": [
@@ -30607,9 +30634,1938 @@
    "subject": "951be6806409:102318:1a63921c7b9d",
    "title": "Hash the content roll-up map by path bytes instead of components",
    "trials": 40
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe self-comparison",
+   "change_pct": 2.459,
+   "commit": "285a41d2",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "same probe at 285a41d2",
+   "date": "2026-09-19",
+   "decision": "baseline",
+   "entries": 77132,
+   "family": "macOS:36ce9b22af9a",
+   "hypotheses": [],
+   "id": "exp-105",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "cold-scan-index",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 132958937.5,
+        "control": 129733188
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 1.24,
+        "ci95_high_pct": 7.492,
+        "ci95_low_pct": -1.882,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 835470500,
+        "control": 828245000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.707,
+        "ci95_high_pct": 5.216,
+        "ci95_low_pct": -1.886,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 25927680,
+        "control": 25919488
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.569,
+        "ci95_high_pct": 2.801,
+        "ci95_low_pct": -3.438,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 625703500,
+        "control": 617567500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -1.184,
+        "ci95_high_pct": 6.669,
+        "ci95_low_pct": -3.145,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 210904000,
+        "control": 209075000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.961,
+        "ci95_high_pct": 1.711,
+        "ci95_low_pct": -0.164,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 302370896,
+        "control": 297064437.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.713,
+        "ci95_high_pct": 3.986,
+        "ci95_low_pct": -0.247,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 3920.1744541824405,
+      "control": 3851.377346626562
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 141959458.5,
+        "control": 143861333.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.642,
+        "ci95_high_pct": 18.851,
+        "ci95_low_pct": -5.731,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 671305500,
+        "control": 675889500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.346,
+        "ci95_high_pct": 3.511,
+        "ci95_low_pct": -2.464,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 34144256,
+        "control": 34619392
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -1.549,
+        "ci95_high_pct": 1.043,
+        "ci95_low_pct": -2.437,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 606574000,
+        "control": 614498500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.543,
+        "ci95_high_pct": 3.979,
+        "ci95_low_pct": -3.738,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 61954500,
+        "control": 61295500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 1.851,
+        "ci95_high_pct": 7.275,
+        "ci95_low_pct": -1.864,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 148675791.5,
+        "control": 149786729
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 2.459,
+        "ci95_high_pct": 18.059,
+        "ci95_low_pct": -5.589,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1927.5500635274593,
+      "control": 1941.953132292693
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "control",
+   "number": 105,
+   "path": "exp-105-post-0-1-0-uncontrolled-baseline-on-the-rustup-store.md",
+   "platform": "macOS",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "default-tree 149.8 ms and cold-scan-index 297.1 ms on 77132 entries; quiet cell could not hold",
+   "reference_tools": [
+    {
+     "argv": [
+      "{binary}",
+      "-d",
+      "1",
+      "--no-progress",
+      "{root}"
+     ],
+     "name": "dust",
+     "wall_ns_median": 175672687.5
+    }
+   ],
+   "subject": "36ce9b22af9a:77132:b839b65efbc7",
+   "title": "Post-0.1.0 uncontrolled baseline on the rustup store",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe shipped default read_controls on",
+   "change_pct": 1.639,
+   "commit": "285a41d2",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "same probe with --no-controls",
+   "date": "2026-09-19",
+   "decision": "rejected",
+   "entries": 145931,
+   "family": "macOS:a319238d9c29",
+   "hypotheses": [
+    "H107"
+   ],
+   "id": "exp-106",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 335339479,
+        "control": 332585708.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 1.614,
+        "ci95_high_pct": 4.471,
+        "ci95_low_pct": -3.494,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1946361000,
+        "control": 1923574500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 1.116,
+        "ci95_high_pct": 6.04,
+        "ci95_low_pct": -1.694,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 54992896,
+        "control": 59113472
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -6.854,
+        "ci95_high_pct": -5.869,
+        "ci95_low_pct": -7.385,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 1793111000,
+        "control": 1786426500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -0.168,
+        "ci95_high_pct": 5.157,
+        "ci95_low_pct": -3.979,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 156950000,
+        "control": 128272000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 22.334,
+        "ci95_high_pct": 28.519,
+        "ci95_low_pct": 13.087,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 341608854,
+        "control": 338603771
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 1.639,
+        "ci95_high_pct": 4.372,
+        "ci95_low_pct": -3.998,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 2340.8929836703646,
+      "control": 2320.3004913280934
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "control",
+   "number": 106,
+   "path": "exp-106-default-gitignore-observation-versus-no-controls-on-metabrow.md",
+   "platform": "macOS",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "wall +1.64% [-4.00%, +4.37%]; user CPU +22% and RSS -6.9% cancelled on the critical path",
+   "reference_tools": [
+    {
+     "argv": [
+      "{binary}",
+      "-d",
+      "1",
+      "--no-progress",
+      "{root}"
+     ],
+     "name": "dust",
+     "wall_ns_median": 406136521
+    }
+   ],
+   "subject": "a319238d9c29:145931:41a1e8457142",
+   "title": "Default gitignore observation versus no-controls on metabrowser",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "second fdu PATH sharing that cache",
+   "change_pct": -0.625,
+   "commit": "bd03cd6c",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "first isolated-cache fdu PATH after OS warmup",
+   "date": "2026-09-19",
+   "decision": "accepted",
+   "entries": 158705,
+   "family": "macOS:b718281f3051",
+   "hypotheses": [
+    "H108"
+   ],
+   "id": "exp-107",
+   "interleaved": false,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "cli-default-tree",
+     "metrics": {
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 93609984,
+        "control": 94117888
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.751,
+        "ci95_high_pct": 1.461,
+        "ci95_low_pct": -1.463,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 2060000000,
+        "control": 2100000000
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -0.625,
+        "ci95_high_pct": 4.045,
+        "ci95_low_pct": -4.968,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 12980.057339088245,
+      "control": 13232.097287420056
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 107,
+   "path": "exp-107-installed-cli-metadata-one-shot-stays-cold-scan-on-framework.md",
+   "platform": "macOS",
+   "primary_job": "cli-default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "H108 confirmed: all 12 second runs stayed cold scan; wall -0.63% [-4.97%, +4.05%], median inside 3%. No engine change.",
+   "reference_tools": [],
+   "subject": "b718281f3051:158705:0c863b0ab28d",
+   "title": "Installed CLI metadata one-shot stays cold scan on frameworks",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe self-comparison",
+   "change_pct": -0.294,
+   "commit": "a35a4cee",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "same probe at a35a4cee",
+   "date": "2026-09-19",
+   "decision": "baseline",
+   "entries": 145931,
+   "family": "macOS:a319238d9c29",
+   "hypotheses": [
+    "H109"
+   ],
+   "id": "exp-108",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-cache-hit",
+     "metrics": {
+      "blocked_ns": {
+       "absolute": {
+        "candidate": 16285124.5,
+        "control": 15086479.5
+       },
+       "metric": "blocked_ns",
+       "paired": {
+        "change_pct": 35.926,
+        "ci95_high_pct": 55.583,
+        "ci95_low_pct": -24.693,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "component_ns": {
+       "absolute": {
+        "candidate": 906409458.5,
+        "control": 916672521
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -0.864,
+        "ci95_high_pct": 0.136,
+        "ci95_low_pct": -1.942,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1201624500,
+        "control": 1205580000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.669,
+        "ci95_high_pct": 0.446,
+        "ci95_low_pct": -1.211,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 398073856,
+        "control": 396558336
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.259,
+        "ci95_high_pct": 2.157,
+        "ci95_low_pct": -1.145,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 101655000,
+        "control": 103702000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.248,
+        "ci95_high_pct": 14.454,
+        "ci95_low_pct": -12.565,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 1100834000,
+        "control": 1100596500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -0.239,
+        "ci95_high_pct": 0.191,
+        "ci95_low_pct": -0.774,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1219939812.5,
+        "control": 1218002208.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -0.294,
+        "ci95_high_pct": 1.054,
+        "ci95_low_pct": -1.091,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 8359.702958932647,
+      "control": 8346.425423659126
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "control",
+   "number": 108,
+   "path": "exp-108-deciding-scale-content-cache-hit-profile-on-metabrowser.md",
+   "platform": "macOS",
+   "primary_job": "content-cache-hit",
+   "primary_metric": "wall_ns",
+   "reason": "install_controls is 7.2 percent of the profile on 146k entries, down from 19 percent on 3k; Path rewrite is not justified",
+   "reference_tools": [],
+   "subject": "a319238d9c29:145931:aaf1e17d6383",
+   "title": "Deciding-scale content-cache-hit profile on metabrowser",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "off-by-default sidecar restore phase timers",
+   "change_pct": 0.309,
+   "commit": "0ec489e7af94f2a647d1ed94ac55f214fac5e477",
+   "complexity": {
+    "lines_changed": 89,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "off-by-default phase timers; no unsafe; kept after counters-off wall stayed non-inferior"
+   },
+   "control": "current best at 98da0c83",
+   "date": "2026-09-19",
+   "decision": "baseline",
+   "entries": 145931,
+   "family": "macOS:a319238d9c29",
+   "hypotheses": [
+    "H112"
+   ],
+   "id": "exp-109",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-cache-hit",
+     "metrics": {
+      "blocked_ns": {
+       "absolute": {
+        "candidate": 9787791.5,
+        "control": 11579042
+       },
+       "metric": "blocked_ns",
+       "paired": {
+        "change_pct": -3.358,
+        "ci95_high_pct": 66.915,
+        "ci95_low_pct": -30.283,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "component_ns": {
+       "absolute": {
+        "candidate": 903382667,
+        "control": 891200979.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.957,
+        "ci95_high_pct": 2.616,
+        "ci95_low_pct": -0.973,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1197105500,
+        "control": 1183323000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.182,
+        "ci95_high_pct": 1.536,
+        "ci95_low_pct": -0.76,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 405250048,
+        "control": 406421504
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.083,
+        "ci95_high_pct": 0.079,
+        "ci95_low_pct": -0.494,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 104014500,
+        "control": 95265000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.191,
+        "ci95_high_pct": 9.247,
+        "ci95_low_pct": -5.878,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 1094170500,
+        "control": 1088649500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.188,
+        "ci95_high_pct": 0.838,
+        "ci95_low_pct": -0.275,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1210132958.5,
+        "control": 1195452437.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.309,
+        "ci95_high_pct": 1.626,
+        "ci95_low_pct": -0.814,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 8292.500966210058,
+      "control": 8191.901909121434
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "control",
+   "number": 109,
+   "path": "exp-109-sidecar-restore-stage-split-on-metabrowser.md",
+   "platform": "macOS",
+   "primary_job": "content-cache-hit",
+   "primary_metric": "wall_ns",
+   "reason": "apply dominates restore (timers 63 percent, sample 54 percent of load_content); parse is about 10 percent; wall non-inferior so timers stay",
+   "reference_tools": [],
+   "subject": "a319238d9c29:145931:3fbfed48354e",
+   "title": "Sidecar restore stage split on metabrowser",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "file-count completeness instead of walking analysis_candidates",
+   "change_pct": -7.594,
+   "commit": null,
+   "complexity": {
+    "lines_changed": 20,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "file-count completeness shortcut measured and reverted; incomplete-sidecar fail-closed test kept"
+   },
+   "control": "current HEAD with H112 timers at 4998ee73",
+   "date": "2026-09-19",
+   "decision": "rejected",
+   "entries": 145931,
+   "family": "macOS:a319238d9c29",
+   "hypotheses": [
+    "H113"
+   ],
+   "id": "exp-110",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-cache-hit",
+     "metrics": {
+      "blocked_ns": {
+       "absolute": {
+        "candidate": 46140083,
+        "control": 23990750
+       },
+       "metric": "blocked_ns",
+       "paired": {
+        "change_pct": 77.812,
+        "ci95_high_pct": 285.774,
+        "ci95_low_pct": -3.598,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "component_ns": {
+       "absolute": {
+        "candidate": 836919854.5,
+        "control": 937580166.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -13.068,
+        "ci95_high_pct": -7.893,
+        "ci95_low_pct": -14.3,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1114001000,
+        "control": 1222107500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -9.858,
+        "ci95_high_pct": -6.754,
+        "ci95_low_pct": -11.251,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 394190848,
+        "control": 398090240
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -1.062,
+        "ci95_high_pct": -0.575,
+        "ci95_low_pct": -2.81,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 110005000,
+        "control": 113366000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -12.468,
+        "ci95_high_pct": -0.643,
+        "ci95_low_pct": -16.893,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 1002324000,
+        "control": 1108760000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -9.791,
+        "ci95_high_pct": -8.04,
+        "ci95_low_pct": -10.192,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1156766000,
+        "control": 1246300833.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -7.594,
+        "ci95_high_pct": 2.239,
+        "ci95_low_pct": -10.756,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 7926.801022400998,
+      "control": 8540.343268393966
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "control",
+   "number": 110,
+   "path": "exp-110-cache-only-completeness-by-file-count-on-metabrowser.md",
+   "platform": "macOS",
+   "primary_job": "content-cache-hit",
+   "primary_metric": "wall_ns",
+   "reason": "wall -7.59 percent but interval includes zero; shortcut reverted",
+   "reference_tools": [],
+   "subject": "a319238d9c29:145931:3fbfed48354e",
+   "title": "Cache-only completeness by file count on metabrowser",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "get_mut before entry for ContentRollUp type-id String",
+   "change_pct": -0.558,
+   "commit": null,
+   "complexity": {
+    "lines_changed": 16,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "get_mut before entry on by_type; no unsafe; reverted after reject"
+   },
+   "control": "current HEAD with H112 timers at c06d09e7",
+   "date": "2026-09-19",
+   "decision": "rejected",
+   "entries": 145931,
+   "family": "macOS:a319238d9c29",
+   "hypotheses": [
+    "H114"
+   ],
+   "id": "exp-111",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-cache-hit",
+     "metrics": {
+      "blocked_ns": {
+       "absolute": {
+        "candidate": 40177187.5,
+        "control": 59694271
+       },
+       "metric": "blocked_ns",
+       "paired": {
+        "change_pct": 15.901,
+        "ci95_high_pct": 97.778,
+        "ci95_low_pct": -77.829,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "component_ns": {
+       "absolute": {
+        "candidate": 952039854.5,
+        "control": 1003423375
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -1.342,
+        "ci95_high_pct": 4.309,
+        "ci95_low_pct": -16.896,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1243477000,
+        "control": 1264705000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.786,
+        "ci95_high_pct": 1.483,
+        "ci95_low_pct": -5.501,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 407683072,
+        "control": 405258240
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.642,
+        "ci95_high_pct": 0.795,
+        "ci95_low_pct": 0.295,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 136200000,
+        "control": 141292000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -1.816,
+        "ci95_high_pct": 12.599,
+        "ci95_low_pct": -14.232,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 1107636500,
+        "control": 1123413000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -0.963,
+        "ci95_high_pct": 0.2,
+        "ci95_low_pct": -4.509,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1290897000,
+        "control": 1328853271
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -0.558,
+        "ci95_high_pct": 4.79,
+        "ci95_low_pct": -17.916,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 8845.94088987261,
+      "control": 9106.03827151188
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "control",
+   "number": 111,
+   "path": "exp-111-type-id-get-mut-on-roll-up-add-on-metabrowser.md",
+   "platform": "macOS",
+   "primary_job": "content-cache-hit",
+   "primary_metric": "wall_ns",
+   "reason": "wall -0.56 percent but interval includes zero; type-id alloc trim reverted",
+   "reference_tools": [],
+   "subject": "a319238d9c29:145931:3fbfed48354e",
+   "title": "Type-id get-mut on roll-up add on metabrowser",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "one bottom-up ContentRollUp rebuild after restore inserts",
+   "change_pct": -9.688,
+   "commit": "7798fdc1",
+   "complexity": {
+    "lines_changed": 167,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "restore-only commit_without_rollup plus ContentRollUp::merge; incremental commit unchanged; no unsafe"
+   },
+   "control": "current HEAD with H112 timers at 2736ec16",
+   "date": "2026-09-19",
+   "decision": "accepted",
+   "entries": 145931,
+   "family": "macOS:a319238d9c29",
+   "hypotheses": [
+    "H115"
+   ],
+   "id": "exp-112",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-cache-hit",
+     "metrics": {
+      "blocked_ns": {
+       "absolute": {
+        "candidate": 23791729,
+        "control": 42399312.5
+       },
+       "metric": "blocked_ns",
+       "paired": {
+        "change_pct": -48.536,
+        "ci95_high_pct": -6.304,
+        "ci95_low_pct": -86.751,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "component_ns": {
+       "absolute": {
+        "candidate": 855608958,
+        "control": 959069354.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -10.535,
+        "ci95_high_pct": -8.804,
+        "ci95_low_pct": -30.228,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1145324000,
+        "control": 1243618500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -8.624,
+        "ci95_high_pct": -7.005,
+        "ci95_low_pct": -10.994,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 408756224,
+        "control": 406454272
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.539,
+        "ci95_high_pct": 0.819,
+        "ci95_low_pct": 0.168,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 123741500,
+        "control": 129681000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -2.231,
+        "ci95_high_pct": 0.127,
+        "ci95_low_pct": -22.524,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 1022610500,
+        "control": 1113937500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -8.227,
+        "ci95_high_pct": -7.732,
+        "ci95_low_pct": -11.105,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1174093646,
+        "control": 1287649395.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -9.688,
+        "ci95_high_pct": -7.135,
+        "ci95_low_pct": -26.019,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 8045.539645448876,
+      "control": 8823.686505951442
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 112,
+   "path": "exp-112-bottom-up-roll-up-after-sidecar-restore.md",
+   "platform": "macOS",
+   "primary_job": "content-cache-hit",
+   "primary_metric": "wall_ns",
+   "reason": "wall -9.69 percent [-26.02%, -7.13%]; user CPU confirms the apply cut; restore-only rebuild kept",
+   "reference_tools": [],
+   "subject": "a319238d9c29:145931:3fbfed48354e",
+   "title": "Bottom-up roll-up after sidecar restore",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "Index lookup plus restore-only classify skip",
+   "change_pct": 8.701,
+   "commit": "7f289d5f",
+   "complexity": {
+    "lines_changed": 50,
+    "new_dependencies": [],
+    "new_failure_modes": [
+     "wall interval includes zero under host contention"
+    ],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "HEAD at 7f289d5f with H115 in",
+   "date": "2026-09-19",
+   "decision": "rejected",
+   "entries": 145931,
+   "family": "macOS:a319238d9c29",
+   "hypotheses": [
+    "H116"
+   ],
+   "id": "exp-114",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-cache-hit",
+     "metrics": {
+      "blocked_ns": {
+       "absolute": {
+        "candidate": 541226416.5,
+        "control": 246666625.5
+       },
+       "metric": "blocked_ns",
+       "paired": {
+        "change_pct": 71.222,
+        "ci95_high_pct": 247.217,
+        "ci95_low_pct": -33.533,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "component_ns": {
+       "absolute": {
+        "candidate": 978591833.5,
+        "control": 1122875708
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -16.201,
+        "ci95_high_pct": 43.914,
+        "ci95_low_pct": -25.298,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1029316500,
+        "control": 1217711000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -15.053,
+        "ci95_high_pct": -13.297,
+        "ci95_low_pct": -17.038,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 351592448,
+        "control": 395657216
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -11.267,
+        "ci95_high_pct": -10.981,
+        "ci95_low_pct": -11.651,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 123803000,
+        "control": 144639500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -12.679,
+        "ci95_high_pct": -5.79,
+        "ci95_low_pct": -25.191,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 904259000,
+        "control": 1073448500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -15.646,
+        "ci95_high_pct": -14.321,
+        "ci95_low_pct": -16.116,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1573737416.5,
+        "control": 1475404333.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 8.701,
+        "ci95_high_pct": 63.899,
+        "ci95_low_pct": -19.333,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 10784.120005344992,
+      "control": 10110.28728303102
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "control",
+   "number": 114,
+   "path": "exp-114-restore-path-lookup-without-analysis-candidates-hashmap.md",
+   "platform": "macOS",
+   "primary_job": "content-cache-hit",
+   "primary_metric": "wall_ns",
+   "reason": "wall +8.70 percent [-19.33%, +63.90%]; user CPU moved; engine reverted",
+   "reference_tools": [],
+   "subject": "a319238d9c29:145931:3fbfed48354e",
+   "title": "Restore path lookup without analysis_candidates HashMap",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "analyze_index apply_restored_analysis plus one rebuild",
+   "change_pct": -2.604,
+   "commit": "55261e6c",
+   "complexity": {
+    "lines_changed": 15,
+    "new_dependencies": [],
+    "new_failure_modes": [
+     "file I/O hides per-file ancestor walk on first-pass analyze"
+    ],
+    "new_unsafe_blocks": 0,
+    "notes": "first-pass insert-then-rebuild measured and reverted; incremental apply_analysis kept"
+   },
+   "control": "HEAD at 55261e6c with H115 in, H116 reverted",
+   "date": "2026-09-19",
+   "decision": "rejected",
+   "entries": 145931,
+   "family": "macOS:a319238d9c29",
+   "hypotheses": [
+    "H118"
+   ],
+   "id": "exp-115",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-basic",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 9151214312.5,
+        "control": 9232523562.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -2.604,
+        "ci95_high_pct": 23.865,
+        "ci95_low_pct": -12.004,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 20309616000,
+        "control": 20755239000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -4.768,
+        "ci95_high_pct": -1.592,
+        "ci95_low_pct": -8.029,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 266518528,
+        "control": 265445376
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 1.387,
+        "ci95_high_pct": 7.95,
+        "ci95_low_pct": -0.7,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 14777074500,
+        "control": 14887299500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -5.024,
+        "ci95_high_pct": -0.644,
+        "ci95_low_pct": -9.767,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 5545743000,
+        "control": 5814434000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -4.53,
+        "ci95_high_pct": -3.305,
+        "ci95_low_pct": -5.205,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 10022077833,
+        "control": 10020589416.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -5.012,
+        "ci95_high_pct": 23.394,
+        "ci95_low_pct": -13.281,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 68676.82557510056,
+      "control": 68666.62612124908
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "control",
+   "number": 115,
+   "path": "exp-115-first-pass-analyze-insert-then-rebuild-on-metabrowser.md",
+   "platform": "macOS",
+   "primary_job": "content-basic",
+   "primary_metric": "component_ns",
+   "reason": "component -2.60 percent [-12.00%, +23.86%]; file I/O hid ancestor walk; engine reverted",
+   "reference_tools": [],
+   "subject": "a319238d9c29:145931:3fbfed48354e",
+   "title": "First-pass analyze insert-then-rebuild on metabrowser",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "opened-second-report second retained tree read",
+   "change_pct": -99.939,
+   "commit": "2c6535c8",
+   "complexity": {
+    "lines_changed": 120,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "probe mode opened-second-report plus harness job; no engine serving change; no CLI flag"
+   },
+   "control": "same probe default-tree one-shot",
+   "date": "2026-09-19",
+   "decision": "accepted",
+   "entries": 158705,
+   "family": "macOS:b718281f3051",
+   "hypotheses": [
+    "H117"
+   ],
+   "id": "exp-116",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 2350070417,
+        "control": 2604637833.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -2.317,
+        "ci95_high_pct": 2.886,
+        "ci95_low_pct": -4.218,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 17047917000,
+        "control": 21664774500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -3.808,
+        "ci95_high_pct": 1.26,
+        "ci95_low_pct": -13.113,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 89464832,
+        "control": 89284608
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.037,
+        "ci95_high_pct": 0.828,
+        "ci95_low_pct": -0.409,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 16688454000,
+        "control": 21290064500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -3.893,
+        "ci95_high_pct": 1.359,
+        "ci95_low_pct": -13.308,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 351048000,
+        "control": 362661500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -0.902,
+        "ci95_high_pct": 4.183,
+        "ci95_low_pct": -3.916,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 2361886187.5,
+        "control": 2612167500.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -2.158,
+        "ci95_high_pct": 2.753,
+        "ci95_low_pct": -3.88,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 14882.241816577927,
+      "control": 16459.264046501372
+     },
+     "start_state": "warm"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "opened-second-report",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 1626229.5,
+        "control": 1553354.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 3.87,
+        "ci95_high_pct": 7.116,
+        "ci95_low_pct": -4.525,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 4614147500,
+        "control": 4630055000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.35,
+        "ci95_high_pct": 1.119,
+        "ci95_low_pct": -1.039,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 205717504,
+        "control": 205783040
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.092,
+        "ci95_high_pct": 0.49,
+        "ci95_low_pct": -0.445,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 2282535000,
+        "control": 2296187000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.821,
+        "ci95_high_pct": 2.833,
+        "ci95_low_pct": -2.184,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 2334072000,
+        "control": 2336377000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -0.163,
+        "ci95_high_pct": 0.643,
+        "ci95_low_pct": -0.604,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 3995320270.5,
+        "control": 4003361167
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -0.08,
+        "ci95_high_pct": 1.4,
+        "ci95_low_pct": -2.91,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 25174.507863646388,
+      "control": 25225.173542106422
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 116,
+   "path": "exp-116-opened-root-second-report-versus-one-shot-on-frameworks.md",
+   "platform": "macOS",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "opened second report 1.6ms versus default-tree 2612ms (1630x); determination kept; not a snapshot load",
+   "reference_tools": [
+    {
+     "argv": [
+      "{binary}",
+      "-d",
+      "1",
+      "--no-progress",
+      "{root}"
+     ],
+     "name": "dust",
+     "wall_ns_median": 2660713562.5
+    }
+   ],
+   "subject": "b718281f3051:158705:0c863b0ab28d",
+   "title": "Opened-root second report versus one-shot on frameworks",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "stream sidecar records into apply without a decoded Vec",
+   "change_pct": -10.127,
+   "commit": "bbfd7d1c",
+   "complexity": {
+    "lines_changed": 80,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "parse-into-apply; fail-closed clear_content on a bad record; no unsafe"
+   },
+   "control": "HEAD at 984e4618 with H115 in",
+   "date": "2026-09-19",
+   "decision": "accepted",
+   "entries": 145931,
+   "family": "macOS:a319238d9c29",
+   "hypotheses": [
+    "H120"
+   ],
+   "id": "exp-117",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-cache-hit",
+     "metrics": {
+      "blocked_ns": {
+       "absolute": {
+        "candidate": 9355229,
+        "control": 10792292
+       },
+       "metric": "blocked_ns",
+       "paired": {
+        "change_pct": 2.007,
+        "ci95_high_pct": 54.975,
+        "ci95_low_pct": -27.631,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "component_ns": {
+       "absolute": {
+        "candidate": 812471083,
+        "control": 822507375
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -0.896,
+        "ci95_high_pct": 0.494,
+        "ci95_low_pct": -2.343,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1094277500,
+        "control": 1102302000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.656,
+        "ci95_high_pct": 0.425,
+        "ci95_low_pct": -1.271,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 355868672,
+        "control": 395886592
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -10.127,
+        "ci95_high_pct": -10.025,
+        "ci95_low_pct": -10.492,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 87856000,
+        "control": 94008500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -8.132,
+        "ci95_high_pct": -1.72,
+        "ci95_low_pct": -16.774,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 1007051500,
+        "control": 1008576500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.056,
+        "ci95_high_pct": 0.501,
+        "ci95_low_pct": -0.518,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1103236583,
+        "control": 1111019834
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -0.594,
+        "ci95_high_pct": 0.511,
+        "ci95_low_pct": -1.628,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 7559.987823012246,
+      "control": 7613.322967703915
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 117,
+   "path": "exp-117-stream-sidecar-parse-into-apply-on-metabrowser.md",
+   "platform": "macOS",
+   "primary_job": "content-cache-hit",
+   "primary_metric": "peak_rss_bytes",
+   "reason": "peak RSS -10.13 percent [-10.49%, -10.03%]; wall non-inferior; streaming restore kept",
+   "reference_tools": [],
+   "subject": "a319238d9c29:145931:3fbfed48354e",
+   "title": "Stream sidecar parse-into-apply on metabrowser",
+   "trials": 12
   }
  ],
- "prepared": "2026-09-14",
+ "prepared": "2026-09-19",
  "subjects": [
   {
    "apparent_bytes": 1082046346,
@@ -30716,6 +32672,30 @@
    "labels": [
     "metabrowser-current",
     "metabrowser-live"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
+  },
+  {
+   "apparent_bytes": 1724995969,
+   "directories": 11512,
+   "entries": 145931,
+   "experiments": [
+    "exp-109",
+    "exp-110",
+    "exp-111",
+    "exp-112",
+    "exp-114",
+    "exp-115",
+    "exp-117"
+   ],
+   "files": 133597,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "a319238d9c29:145931:3fbfed48354e",
+   "labels": [
+    "metabrowser-clone"
    ],
    "os_cache": "warm-steady",
    "platform": "macOS",
@@ -31072,6 +33052,25 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 5752378316,
+   "directories": 55256,
+   "entries": 158705,
+   "experiments": [
+    "exp-107",
+    "exp-116"
+   ],
+   "files": 96542,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "b718281f3051:158705:0c863b0ab28d",
+   "labels": [
+    "system-private-frameworks"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 2170167344,
    "directories": 14701,
    "entries": 120135,
@@ -31286,25 +33285,79 @@
    "os_cache": "warm-steady",
    "platform": "Linux",
    "synthetic": false
+  },
+  {
+   "apparent_bytes": 3099092158,
+   "directories": 3418,
+   "entries": 77132,
+   "experiments": [
+    "exp-105"
+   ],
+   "files": 73714,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "36ce9b22af9a:77132:b839b65efbc7",
+   "labels": [
+    "rustup-toolchains"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
+  },
+  {
+   "apparent_bytes": 1724995969,
+   "directories": 11512,
+   "entries": 145931,
+   "experiments": [
+    "exp-106"
+   ],
+   "files": 133597,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "a319238d9c29:145931:41a1e8457142",
+   "labels": [
+    "metabrowser-clone"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
+  },
+  {
+   "apparent_bytes": 1724995969,
+   "directories": 11512,
+   "entries": 145931,
+   "experiments": [
+    "exp-108"
+   ],
+   "files": 133597,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "a319238d9c29:145931:aaf1e17d6383",
+   "labels": [
+    "metabrowser-clone"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
   }
  ],
  "totals": {
-  "accepted_lines_changed": 15233,
+  "accepted_lines_changed": 15600,
   "decisions": {
-   "accepted": 51,
-   "baseline": 7,
+   "accepted": 55,
+   "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
-   "rejected": 40,
+   "rejected": 45,
    "superseded": 3
   },
-  "experiments": 105,
+  "experiments": 117,
   "first_date": "2026-08-10",
-  "hypotheses": 64,
-  "last_date": "2026-09-14",
+  "hypotheses": 75,
+  "last_date": "2026-09-19",
   "platforms": {
    "Linux": 11,
-   "macOS": 94
+   "macOS": 106
   }
  },
  "version": "fdu.performance.timeline/1"

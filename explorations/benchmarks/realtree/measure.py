@@ -406,6 +406,16 @@ PROBE_JOBS: Dict[str, Job] = {
         ),
         parallel_cpu=True,
     ),
+    "opened-second-report": Job(
+        id="opened-second-report",
+        argv=("{binary}", "opened-second-report", "--root", "{root}"),
+        start_state="cold",
+        description=(
+            "Open one root, wait until Ready, run the default tree report twice, and "
+            "time only the second retained read."
+        ),
+        parallel_cpu=True,
+    ),
     "delta-apply-large": Job(
         id="delta-apply-large",
         argv=(
