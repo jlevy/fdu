@@ -5,10 +5,14 @@ title: Document performance scope and remaining first-release prerequisites
 kind: task
 status: open
 priority: 2
-version: 1
+version: 3
 labels: []
 dependencies: []
 parent_id: is-01m2y58e5s7yzpstkcqmheymy5
 created_at: 2026-09-20T01:09:34.221Z
-updated_at: 2026-09-20T01:09:34.221Z
+updated_at: 2026-09-20T01:25:38.601Z
 ---
+
+## Notes
+
+Deferred from PR #92 review address: release-facing performance scope and first-release prerequisite docs belong on the release/conformance track, not this campaign layer. Applied only cheap #92-local docs (exp-137 footer + digest scope, Counts::dir_enumeration_calls rustdoc).
