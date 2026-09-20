@@ -1018,11 +1018,19 @@ pub(crate) fn report_in(
     // costs one pass rather than three.
     let walked =
         (!query.selection.is_unfiltered()).then(|| walk(index, &query.selection, identity));
+    // Unfiltered metric and file views used to call `every_entry` independently.
+    // Sharing one `FileRow` walk is the same model as `walked` above. Summary, Tree,
+    // and Extensions keep roll-ups when unfiltered and must not see a partial `Walked`.
+    let unfiltered_rows = (walked.is_none()
+        && query.views.iter().copied().any(needs_unfiltered_entry_rows))
+    .then(|| every_entry(index));
 
     let sections = query
         .views
         .iter()
-        .map(|view| build_section(*view, index, query, content, walked.as_ref()))
+        .map(|view| {
+            build_section(*view, index, query, content, walked.as_ref(), unfiltered_rows.as_deref())
+        })
         .collect();
 
     let ignore_rules = index.control_coverage();
@@ -1311,6 +1319,34 @@ fn merge_summary(into: &mut SummaryRow, from: &SummaryRow) {
     }
 }
 
+/// Views that reconstruct every path into a [`FileRow`] when the selection is unfiltered.
+fn needs_unfiltered_entry_rows(view: ViewSpec) -> bool {
+    matches!(
+        view,
+        ViewSpec::Types
+            | ViewSpec::Families
+            | ViewSpec::Languages
+            | ViewSpec::Documents
+            | ViewSpec::Files
+            | ViewSpec::Largest
+            | ViewSpec::Recent
+    )
+}
+
+/// The entry rows a view aggregates: the filtered walk, a shared unfiltered walk, or a
+/// fresh [`every_entry`] when this is the only consumer.
+fn entry_rows(
+    index: &Index,
+    walked: Option<&Walked>,
+    unfiltered_rows: Option<&[FileRow]>,
+) -> Vec<FileRow> {
+    match (walked, unfiltered_rows) {
+        (Some(walked), _) => walked.rows.clone(),
+        (None, Some(rows)) => rows.to_vec(),
+        (None, None) => every_entry(index),
+    }
+}
+
 /// Build one view's section, using the pre-computed tier when the selection allows.
 fn build_section(
     view: ViewSpec,
@@ -1318,6 +1354,7 @@ fn build_section(
     query: &Query,
     content: AnalysisSet,
     walked: Option<&Walked>,
+    unfiltered_rows: Option<&[FileRow]>,
 ) -> Section {
     match view {
         ViewSpec::Summary => Section::Summary(match walked {
@@ -1331,11 +1368,18 @@ fn build_section(
         ViewSpec::Types | ViewSpec::Families | ViewSpec::Languages | ViewSpec::Documents => {
             Section::Metrics {
                 view,
-                summary: Box::new(metric_summary(view, index, query, content, walked)),
+                summary: Box::new(metric_summary(
+                    view,
+                    index,
+                    query,
+                    content,
+                    walked,
+                    unfiltered_rows,
+                )),
             }
         }
         ViewSpec::Files | ViewSpec::Largest | ViewSpec::Recent => {
-            let (rows, total) = file_rows(view, index, query, walked);
+            let (rows, total) = file_rows(view, index, query, walked, unfiltered_rows);
             Section::Files { view, rows, total }
         }
         ViewSpec::Tree => Section::Tree(tree_node(index, query, walked)),
@@ -1431,9 +1475,10 @@ fn metric_summary(
     query: &Query,
     content: AnalysisSet,
     walked: Option<&Walked>,
+    unfiltered_rows: Option<&[FileRow]>,
 ) -> MetricSummary {
     let group = if view == ViewSpec::Families { MetricGroup::Family } else { MetricGroup::Type };
-    let files = walked.map_or_else(|| every_entry(index), |walked| walked.rows.clone());
+    let files = entry_rows(index, walked, unfiltered_rows);
     let mut grouped = BTreeMap::<String, MetricRow>::new();
     for file in files.into_iter().filter(|row| row.kind == EntryKind::File) {
         let cached = index.content().and_then(|content| content.file(&file.path));
@@ -1632,11 +1677,9 @@ fn file_rows(
     index: &Index,
     query: &Query,
     walked: Option<&Walked>,
+    unfiltered_rows: Option<&[FileRow]>,
 ) -> (Vec<FileRow>, usize) {
-    let mut rows = match walked {
-        Some(walked) => walked.rows.clone(),
-        None => every_entry(index),
-    };
+    let mut rows = entry_rows(index, walked, unfiltered_rows);
     if view.files_only() {
         rows.retain(|row| row.kind == EntryKind::File);
     }
@@ -2486,6 +2529,23 @@ mod tests {
         assert_eq!(together.sections.len(), 3, "one section per view, in request order");
         assert_eq!(together.sections[1].view(), ViewSpec::Tree);
         assert_eq!(together.sections[2].view(), ViewSpec::Summary);
+    }
+
+    #[test]
+    fn unfiltered_metric_views_together_match_each_view_alone() {
+        // Sharing one `every_entry` walk must not change what a view says when it is
+        // asked with others rather than alone.
+        let index = sample();
+        let views = [ViewSpec::Types, ViewSpec::Families, ViewSpec::Languages];
+        let together = run(&index, &query(&views, Selection::default()));
+        for (i, view) in views.iter().enumerate() {
+            let alone = run(&index, &query(&[*view], Selection::default()));
+            assert_eq!(
+                format!("{:?}", together.sections[i]),
+                format!("{:?}", alone.sections[0]),
+                "{view:?} changed when requested with the other metric views"
+            );
+        }
     }
 
     #[test]
