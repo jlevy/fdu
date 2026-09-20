@@ -5,7 +5,7 @@ title: Directory roll-up queries for stale environments and build outputs (#93)
 kind: epic
 status: in_progress
 priority: 1
-version: 7
+version: 8
 delegate: claude-code@spud10
 labels: []
 dependencies: []
@@ -18,7 +18,7 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:36:54.755Z
-updated_at: 2026-09-20T01:38:30.392Z
+updated_at: 2026-09-20T04:17:35.370Z
 started_at: 2026-09-20T01:38:30.390Z
 ---
 Implement https://github.com/jlevy/fdu/issues/93 on a new branch based on PR #92 (perf/campaign-next-2026-09-19), then open a PR against that branch.
@@ -36,3 +36,7 @@ Implementation: pure iterative index reader; linear traversal to compute recency
 Documentation inventory: README use cases; CLI short/long help examples; --docs usage guide; portable --skill; Rust/public API docs; Python README and stubs; machine-format schema guide; architecture view/selection semantics. Show .venv/venv, node_modules and Rust target (Cargo default build output) older than 7d/30d, age+size output, oldest-first sorting, JSON, ignored inventory and repeat queries over a retained index. Explicitly distinguish modification age from last use and byte totals from reclaimable unique space.
 
 Acceptance: deterministic engine tests for nested/empty/fresh descendants, bounds, future/pre-epoch timestamps, ignored/exclude roots, all sizes, sorting/truncation, mixed views and portable names; real one-shot/warm/cache-only and Python parity coverage; reviewed portable goldens; make docs-format and make check; PR against #92 branch, push and CI green. No dependency changes, deletion commands or performance claims.
+
+## Notes
+
+Resume: refreshed branch to PR #92 at 937f9445. Directories, like Files, is an unbounded inventory and is excluded from full; this corrects the initial plan to preserve the bounded full-report contract. Directory section carries reference_at for signed age_seconds; age is null when the request clock is outside i64 nanosecond range. No cache-format changes.
