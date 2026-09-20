@@ -3,9 +3,9 @@ type: is
 id: is-01m2y5ry3hmq2ms213rd1h59a3
 title: "PR #91 review R1: retain fractional restore timing"
 kind: bug
-status: in_progress
+status: closed
 priority: 2
-version: 4
+version: 5
 delegate: unknown@spud10
 labels: []
 dependencies: []
@@ -13,10 +13,10 @@ parent_id: is-01m2y58e5s7yzpstkcqmheymy5
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:09:31.888Z
-updated_at: 2026-09-20T01:17:05.344Z
+updated_at: 2026-09-20T01:50:13.837Z
 started_at: 2026-09-20T01:10:13.050Z
-closed_at: 2026-09-20T01:15:23.758Z
-close_reason: Accumulate parse/apply nanoseconds locally and convert once via micros_from_nanos/add_nanos; unit test keeps 1000x900ns as 900us.
+closed_at: 2026-09-20T01:50:13.836Z
+close_reason: Senior review fixes are reviewed, committed, and pushed on PR91 870bdcfb / PR92 937f9445. All required CI checks pass on both exact heads. Final finding dispositions are posted. Parent fdu-30ns retains local full checks blocked by host StorageFull.
 resolution: null
 duplicate_of: null
 ---
