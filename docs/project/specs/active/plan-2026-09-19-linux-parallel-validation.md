@@ -49,7 +49,7 @@ It does not raise the README 200K files/s or 4M cached lines/s.
 
 - **Branch:** `perf/campaign-linux-2026-09-19`
 - **Base:** `perf/campaign-next-2026-09-19` ([#92](https://github.com/jlevy/fdu/pull/92)
-  at `f8a2ed94`, R1–R3 review repair).
+  at `937f9445`, including `c441edf6` single-view Cow borrow).
   Rebase onto later #92 commits if Darwin adds more; do not mint H139+ there.
 - **Protocol:** [performance-loop.md](../../guides/performance-loop.md)
 - **Darwin standing:**
@@ -57,7 +57,7 @@ It does not raise the README 200K files/s or 4M cached lines/s.
 - **Registry:**
   [Current engine (0.1.0)](../../guides/performance-loop.md#current-engine-010)
 - **Beads:** epic `fdu-v62p`; H139 `fdu-bt6x`; H140 `fdu-6hjg`; H141 `fdu-rmo2`; H142
-  `fdu-2003`; H111 `fdu-jekg` (open, parent `fdu-xde5`)
+  `fdu-2003`; H111 `fdu-jekg` (closed, parent `fdu-xde5`); leftover H143 `fdu-kfl3`
 - **First experiment id:** exp-138 (exp-113 remains reserved unused)
 - **Quiet:** `PERF_HOST_REGIME=quiet` first.
   Do not lower the 25% busy bar.
