@@ -5,7 +5,7 @@ title: "Linux performance iteration after #94"
 kind: epic
 status: open
 priority: 1
-version: 11
+version: 13
 spec_path: docs/project/specs/active/plan-2026-09-20-linux-performance-iteration.md
 labels:
   - linux
@@ -19,11 +19,12 @@ child_order_hints:
   - is-01m2yq53kmpg4n2gpyd5ewby0m
   - is-01m2yrt6de9vp553ce85zz3zy8
   - is-01m2ys9y5ep69vq65z0xs0ax19
+  - is-01m2yssjtfcrct87cd9bc8czy8
 created_at: 2026-09-20T05:32:44.390Z
-updated_at: 2026-09-20T06:54:08.145Z
+updated_at: 2026-09-20T07:07:14.278Z
 ---
 Stacked on #94. Queue recorded: H144 same (exp-144), H145 same (exp-145), H84 silent (exp-146), H146 same (exp-147). No leftover named a skippable >=3% userspace cut. H147 not minted. Do not ship PORTABLE. fdu-tk1b stays open.
 
 ## Notes
 
-Queue recorded through exp-151. Leftovers H144-H146 same. H84 silent. H85 rejected at 20% (exp-150). H147 accepted 3% keep of recycle (exp-151). Engine patch 5c6e6394. Next free exp-152 / H148. fdu-tk1b stays open.
+Queue through exp-153. Leftovers H144-H146 same. H84 silent. H85 rejected 20% (exp-150). H147 recycle keep (exp-151). H72 rejected on v6.12 (exp-152) and accepted on /usr (exp-153). Engine f841662c. Next free exp-154 / H148. fdu-tk1b stays open.
