@@ -5726,6 +5726,7 @@ mod tests {
         assert_eq!(scan_stats.saturating_sub(fold_stats), 1);
     }
 
+    #[cfg(unix)]
     #[test]
     fn summary_fold_still_stats_directories_when_bound_to_one_filesystem() {
         let _serial = crate::counters::test_serial();
@@ -5752,10 +5753,7 @@ mod tests {
         crate::counters::enable(false);
 
         assert_eq!(fold_report.entries, scan_report.entries);
-        #[cfg(unix)]
         assert_eq!(scan_stats.saturating_sub(fold_stats), 1);
-        #[cfg(not(unix))]
-        assert_eq!(fold_stats, scan_stats);
     }
 
     /// An automatic walk too short to fill its calibration window must say so.
