@@ -175,11 +175,31 @@ impl Session {
         // The full reconciliation catches a mutation that completed before registration;
         // the capture drain applies every hint observed while that pass ran.
         let watcher = Watcher::new(&root, watch)?;
+        Self::finish_initial_handoff(index, request, &delivery, watcher, scan)
+    }
+
+    /// Finish the two-part initial handoff after observation has been bound.
+    ///
+    /// Kept separate so the scripted watcher exercises the same reconciliation, drain, and
+    /// acceptance boundary as an OS watcher. Once this returns, later partial observations are
+    /// valid live state; `accept_partial` governs only the coherent state handed to the caller.
+    fn finish_initial_handoff(
+        index: IndexHandle,
+        request: Request,
+        delivery: &Delivery,
+        watcher: Watcher,
+        scan: ScanConfig,
+    ) -> Result<Self> {
         let reconciliation = crate::scan::reconcile_handle(&index, &scan, &mut |_| {})?;
         if !reconciliation.scan.is_complete() && !delivery.accept_partial {
             return Err(Error::ObservationHandoffIncomplete);
         }
         drain_initial_capture(&watcher, &index, &scan)?;
+        if !delivery.accept_partial
+            && !index.read_with(|index| crate::query::TreeStatus::of(index, &request).complete)?
+        {
+            return Err(Error::ObservationHandoffIncomplete);
+        }
         Ok(Self { index, watcher, scan, request })
     }
 
@@ -630,6 +650,64 @@ mod tests {
         assert!(
             !accepted.report(std::time::SystemTime::now()).expect("partial report").status.complete
         );
+    }
+
+    #[test]
+    fn initial_handoff_rechecks_partial_acceptance_after_draining_capture() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let root = tempfile::tempdir().expect("root");
+        std::fs::write(root.path().join("kept.txt"), b"kept").expect("fixture");
+        let scan = ScanConfig::default();
+        let (index, report) = crate::scan::scan_into_index(root.path(), &scan).expect("scan");
+        assert!(report.is_complete());
+        let request = Request::new(
+            Basis {
+                root: root.path().to_path_buf(),
+                scope: scan.clone(),
+                content: crate::content::AnalysisSet::NONE,
+            },
+            Query::default(),
+            std::time::SystemTime::now(),
+        );
+        let delivery = Delivery {
+            cache: crate::CachePolicy::Off,
+            cache_path: None,
+            accept_partial: false,
+            watch: Some(WatchDelivery { interval: Duration::from_millis(50) }),
+            analysis_workers: 0,
+        };
+        let script = tempfile::NamedTempFile::new().expect("script");
+        let (watcher, sender) =
+            Watcher::scripted(root.path(), WatchConfig::default(), script.path()).expect("watcher");
+        sender.send("rescan\t.\n").expect("queue initial gap");
+
+        // The startup reconciliation succeeds. The scripted overflow then reaches the same
+        // tree during the handoff drain, where its reconciliation fails and must be refused.
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let hook_attempts = Arc::clone(&attempts);
+        let _fault = crate::scan::install_walk_hook(root.path(), move |_| {
+            (hook_attempts.fetch_add(1, Ordering::SeqCst) > 0).then(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "deterministic drain-only refusal",
+                )
+            })
+        });
+
+        let error = match Session::finish_initial_handoff(
+            IndexHandle::new(index),
+            request,
+            &delivery,
+            watcher,
+            scan,
+        ) {
+            Ok(_) => panic!("a partial state created while draining is refused"),
+            Err(error) => error,
+        };
+        assert!(matches!(error, Error::ObservationHandoffIncomplete));
+        assert!(attempts.load(Ordering::SeqCst) > 1, "the drain ran after startup reconciliation");
     }
 
     /// A record says what the index can be asked, and nothing more.
