@@ -88,11 +88,10 @@ Do not redo these as new leftover identities.
 Take these in order.
 Mint the reserved id when the cell starts, not before.
 
-1. **H144 — cache-hit leftover after the landed stack.** `content-cache-hit` leftover on
-   reconstructible `linux-v6.12`. Darwin H134 said the leftover is already-landed
-   restore work and already-rejected stages.
-   Linux may still name a userspace stage ≥3% those cells did not see.
-   Do not retry H125/H129/H131/H133. Bead: minted with the spec.
+1. **H144 — cache-hit leftover after the landed stack.** **Same leftover identity**
+   (exp-144, quiet). Apply ~80–84 ms; parse and candidates ~27 ms each.
+   No new userspace cut.
+   Do not retry H125/H129/H131/H133. Bead: `fdu-5wzu` (close).
 
 2. **H145 — opened-discovery leftover.** H127 analog.
    Darwin leftover was `read_dir`+`fstatat`, journal clones, and live roll-up merges; no
