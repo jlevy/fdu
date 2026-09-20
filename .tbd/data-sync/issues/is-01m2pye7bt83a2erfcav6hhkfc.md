@@ -5,7 +5,7 @@ title: "P1.4.6: Per-tier content provenance (TierProvenance.content)"
 kind: task
 status: in_progress
 priority: 0
-version: 2
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 delegate: codex@spud10
 labels:
@@ -15,7 +15,7 @@ parent_id: is-01m2pmra8yqrcxg27kc6ezg9vd
 hold: null
 hold_until: null
 created_at: 2026-09-17T05:46:39.865Z
-updated_at: 2026-09-20T04:40:17.369Z
+updated_at: 2026-09-20T06:38:37.810Z
 started_at: 2026-09-20T04:40:17.369Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 4: Provenance and Tree Status", commit 6. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
@@ -32,3 +32,9 @@ Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, s
 
 - `make check` passes; from P1.1.3 on it includes the path-independence subset, which reports no unregistered difference.
 - Every golden diff is read and attributed to this commit; none is regenerated blind.
+
+## Notes
+
+Confirmed integration defect at 9e96e850: analyze a file, mutate it, metadata-reconcile, then report. Content profile remains but invalidated record is absent; report still says complete=true and content freshness Fresh. ContentIndex::invalidate does not dirty content state and status only recognizes explicit failures. Public regression source: /private/tmp/fdu-state-review.0etO0q/crates/fdu-core/tests/review_state_proof.rs. Missing eligible records must prevent fresh/complete content claims until reanalysis; preserve per-unit nonoperational coverage distinctions.
+
+2026-09-20 implementation on codex/release-state-transitions: TreeStatus and ReportProvenance detect pending eligible content from current regular files versus retained coverage records. Mutation and addition now report incomplete/Partial until analysis; pure deletion stays complete; metadata-only status ignores the held content gap; pending work creates no fake I/O Issue. Existing nonoperational per-file coverage records remain unchanged.

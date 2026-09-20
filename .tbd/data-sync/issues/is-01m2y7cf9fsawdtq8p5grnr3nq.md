@@ -5,7 +5,7 @@ title: Verify unchanged defaults, directory formats, surface parity, and stacked
 kind: task
 status: in_progress
 priority: 1
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
 delegate: claude-code@spud10
 labels: []
@@ -14,7 +14,7 @@ parent_id: is-01m2y7b2f9f1cv1dssrtref7zd
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:37:40.650Z
-updated_at: 2026-09-20T06:16:21.023Z
+updated_at: 2026-09-20T06:47:55.537Z
 started_at: 2026-09-20T06:16:21.022Z
 ---
 Validate the epic end to end with portable product goldens, engine tests, and Python
@@ -42,3 +42,7 @@ Close finished beads and tbd sync after successful delivery.
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
 -->
+
+## Notes
+
+Running full make check in isolated directory-query-verify worktree because the main checkout supply-chain inventory scans unrelated nested agent hooks. This keeps the same tracked implementation and does not bypass the check. New stale-build golden and opened Python tests included. Linux-authoritative parity artifact may require CI regeneration and download after first implementation push.
