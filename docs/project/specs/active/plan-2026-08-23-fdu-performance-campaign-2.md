@@ -525,6 +525,8 @@ strategy and the record is visible in review.
 - [Linux parallel validation](plan-2026-09-19-linux-parallel-validation.md) — H139–H143
   recorded on [#94](https://github.com/jlevy/fdu/pull/94); H111 failed on that
   virtualized host; ready to merge onto #92
+- [Linux performance iteration](plan-2026-09-20-linux-performance-iteration.md) —
+  H144–H146 plus H84 screen, stacked on #94
 - [The cache layers plan](../done/plan-2026-08-15-fdu-cache-layers-and-defaults.md) —
   the cost model this plan’s warm posture rests on
 - [The fsevents plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md) — the journal

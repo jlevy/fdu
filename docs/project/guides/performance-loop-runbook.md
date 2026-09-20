@@ -495,9 +495,10 @@ as exp-141 (floor/RSS fail).
 H142 is recorded there as exp-143 (file I/O leftover).
 H143 is recorded there as exp-142 (walk floor + retained-index RSS). Do not mint those
 ids on this Darwin branch.
-Next free Darwin hypothesis id is **H144**. Do not mint another meaning for H91–H106.
-Next free Darwin experiment id after the Linux reservation is assigned on #94; do not
-take exp-138 here. exp-113 remains reserved unused (H113 superseded).
+Next free Darwin hypothesis id is **H147** (H144–H146 reserved on the Linux iteration
+stack). Do not mint another meaning for H91–H106. Next free Darwin experiment id after
+the Linux reservation is assigned on #94; do not take exp-138 here.
+exp-113 remains reserved unused (H113 superseded).
 
 This stacked session skipped H113 (quiet gates including 45.48%, 53.86%, 31.53%, 34.97%,
 27.23%, a 24.38% pre-check that did not hold, and 28.07%), accepted H125 (exp-124,
@@ -776,13 +777,22 @@ Two deciding characters, so the set cannot yet carry a ranking or transfer claim
 
 ### After #94 (Linux)
 
-This PR is recorded and ready to merge onto #92. The next Linux cell is not this branch.
+[#94](https://github.com/jlevy/fdu/pull/94) is recorded and ready to merge onto #92.
+Further Linux cells are on
+[Linux performance iteration](../specs/active/plan-2026-09-20-linux-performance-iteration.md)
+(`cursor/linux-perf-iterate-de1b`).
 
-1. A new named mechanism that can close the 1.4× index or 3× RSS gate, or a bare-metal
-   H111 remeasure. That is **H144** if minted.
+1. **H144** — Linux cache-hit leftover after the landed stack.
+2. **H145** — Linux opened-discovery leftover (H127 analog).
+3. **H84** — adaptive unlock / thread-policy screen (`fdu-tk1b`). Screening only on this
+   4-core VM. Do not ship a `PORTABLE` constant.
+4. **H146** — Linux first-run leftover after H140 (H136 analog).
+5. A named cut only if a leftover above names one.
+   That is **H147** if minted.
    Do not restart H86. Do not retry H71.
 
-Next free Linux experiment id is **exp-144**. Next free hypothesis id is **H144**.
+Next free Linux experiment id is **exp-144**. Next free unused hypothesis id after this
+reservation is **H147**.
 
 ## Before the First Round
 
