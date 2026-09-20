@@ -3995,7 +3995,7 @@ Full record:
 
 ### exp-117 — Stream sidecar parse-into-apply on metabrowser
 
-✅ accepted · 2026-09-19 · H120 · commit `984e4618`
+✅ accepted · 2026-09-19 · H120 · commit `bbfd7d1c`
 
 Control: HEAD at 984e4618 with H115 in
 
