@@ -380,14 +380,14 @@ impl PyIndex {
             let request = self.analysis_request();
             py.detach(|| fdu_core::content::analyze_index(&mut self.inner, request));
         }
-        let stats = report.apply;
+        let applied = report.apply;
         let status = self.tree_status();
         let out = PyDict::new(py);
-        out.set_item("inserted", stats.inserted)?;
-        out.set_item("updated", stats.updated)?;
-        out.set_item("removed", stats.removed)?;
-        out.set_item("unchanged", stats.unchanged)?;
-        out.set_item("stale", stats.stale)?;
+        out.set_item("inserted", applied.inserted)?;
+        out.set_item("updated", applied.updated)?;
+        out.set_item("removed", applied.removed)?;
+        out.set_item("unchanged", applied.unchanged)?;
+        out.set_item("stale", applied.stale)?;
         set_tree_status(py, &out, &status)?;
         out.set_item("ignore_rules", ignore_rules_value(py, &self.inner.control_coverage())?)?;
         out.set_item("clock", self.inner.clock().0)?;
