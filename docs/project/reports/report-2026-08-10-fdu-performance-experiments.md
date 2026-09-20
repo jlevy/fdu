@@ -68,6 +68,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
+| Linux 6.12.94+, ext4 | virtualized | warm-steady | 1 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
 | Linux 6.18.44-fc-v24, ext4 | virtualized | warm-steady | 1 |
 
@@ -215,6 +216,7 @@ dead end.
 | 135 | [Post-H128 first-run default-tree leftover](#exp135--posth128-firstrun-defaulttree-leftover) | H136 | `default-tree-first` | +0.2% | ✅ accepted |
 | 136 | [Post-H123 content-query leftover](#exp136--posth123-contentquery-leftover) | H137 | `content-query` | -3.3% | ✅ accepted |
 | 137 | [Share one every_entry across unfiltered metric views](#exp137--share-one-everyentry-across-unfiltered-metric-views) | H138 | `content-query` | -18.8% | ✅ accepted |
+| 138 | [Linux cache-hit stack same versus #91 control](#exp138--linux-cachehit-stack-same-versus-91-control) | H139 | `content-cache-hit` | -22.5% | ✅ accepted |
 
 ## The experiments
 
@@ -4654,6 +4656,34 @@ component -24.61%; report identity unchanged; engine kept.
 Full record:
 [`exp-137-share-one-every-entry-across-unfiltered-metric-views.md`](../experiments/exp-137-share-one-every-entry-across-unfiltered-metric-views.md)
 
+### exp-138 — Linux cache-hit stack same versus #91 control
+
+✅ accepted · 2026-09-20 · H139 · commit `a5c98d59`
+
+Control: e667b739 #91 probe with H115 and H120 only
+
+Candidate: HEAD probe with H125 H129 H131 H133 stacked
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 760.9 | 588.9 | -22.48% | [-23.46%, -21.39%] |
+| component (ms) | 669.1 | 503.2 | -25.05% | [-25.82%, -23.40%] |
+| cpu (ms) | 760.4 | 588.4 | -22.55% | [-23.47%, -21.42%] |
+| user (ms) | 704.0 | 551.4 | -22.07% | [-22.58%, -20.75%] |
+| system (ms) | 68.0 | 43.9 | -33.73% | [-47.02%, -9.25%] |
+| blocked (ms) | 0.6 | 0.5 | -4.44% (n.s.) | [-13.86%, +11.67%] |
+| peak rss (MiB) | 166.0 | 149.0 | -10.24% | [-10.32%, -10.22%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Accepted:** same on Linux: content-cache-hit wall -22.48% [-23.46%, -21.39%] quiet on
+reconstructible linux-v6.12; RSS -10.24%; digest identical; no engine patch.
+
+Full record:
+[`exp-138-linux-cache-hit-stack-same-versus-91-control.md`](../experiments/exp-138-linux-cache-hit-stack-same-versus-91-control.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4945,6 +4975,12 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 104 | Hash the content roll-up map by path bytes instead of components | `content-cache-hit` | 1,961.3 | 1,973.6 | +0.1% | ❌ rejected |
+
+### linux-v6.12 (92,474 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 138 | Linux cache-hit stack same versus #91 control | `content-cache-hit` | 760.9 | 588.9 | -22.5% | ✅ accepted |
 
 ### live-workspace-exp038 (1,008,723 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
