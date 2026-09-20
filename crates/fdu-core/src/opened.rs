@@ -1253,21 +1253,10 @@ fn discover_directory(
             continue;
         };
         crate::counters::bump(|c| c.dir_entries += 1);
-        let metadata = match crate::scan::listed_child_metadata(&item) {
-            Ok(Some(metadata)) => metadata,
-            Ok(None) => continue,
-            Err(source) => {
-                retain_local_issue(
-                    &mut issues,
-                    &mut omitted_issues,
-                    crate::Issue::from_io_under(root, &item.path(), &source),
-                );
-                continue;
-            }
-        };
         let name = item.file_name();
-        let (kind, attrs) = match crate::scan::observe(&item.path(), &metadata) {
-            Ok(observed) => observed,
+        let (kind, attrs) = match crate::scan::observe_dir_entry(&item) {
+            Ok(Some(observed)) => observed,
+            Ok(None) => continue,
             Err(source) => {
                 retain_local_issue(
                     &mut issues,

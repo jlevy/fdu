@@ -92,7 +92,7 @@ scope. An opened root always reads it.
 ### Platform-gated code
 
 `cfg(target_os = ...)` code is invisible to a single-platform lint run, and this
-repository keeps its one unsafe exception behind exactly such a gate.
+repository keeps its audited native API boundaries behind such gates.
 CI lints on ubuntu only, so before `make cross-lint` existed that module had never been
 linted anywhere, and the MSRV job had never checked the Windows-only paths — two of
 which used an API stable since 1.87 against a declared MSRV of 1.85, so a Windows user

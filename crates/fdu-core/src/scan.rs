@@ -1084,7 +1084,7 @@ pub(crate) fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<
     entry.metadata()
 }
 
-#[cfg(not(unix))]
+#[cfg(any(all(windows, test), not(any(unix, windows))))]
 pub(crate) fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<fs::Metadata> {
     crate::counters::bump(|c| c.stats += 1);
     // Windows serves DirEntry metadata from directory-enumeration data, which the
@@ -1204,6 +1204,7 @@ fn reconcile_listing(listing: fs::ReadDir, _dir: &Path) -> fs::ReadDir {
 /// Reported as an error, it would make a walk over a tree being cleaned partial, and in a
 /// reconciliation it would settle as a phantom entry with permanent partial freshness.
 /// Any other error means the entry is present but unreadable.
+#[cfg(not(windows))]
 pub(crate) fn listed_child_metadata(entry: &fs::DirEntry) -> std::io::Result<Option<fs::Metadata>> {
     #[cfg(test)]
     {
@@ -1217,7 +1218,7 @@ pub(crate) fn listed_child_metadata(entry: &fs::DirEntry) -> std::io::Result<Opt
     missing_as_none(metadata_for_fingerprint(entry))
 }
 
-fn missing_as_none(lookup: std::io::Result<fs::Metadata>) -> std::io::Result<Option<fs::Metadata>> {
+fn missing_as_none<T>(lookup: std::io::Result<T>) -> std::io::Result<Option<T>> {
     match lookup {
         Ok(metadata) => Ok(Some(metadata)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -1409,17 +1410,9 @@ fn scan_internal(
             crate::counters::bump(|c| c.dir_entries += 1);
             let name = item.file_name();
             let rel_path = rel_dir.join(&name);
-            let meta = match listed_child_metadata(&item) {
-                Ok(Some(meta)) => meta,
+            let (kind, attrs) = match observe_dir_entry(&item) {
+                Ok(Some(observed)) => observed,
                 Ok(None) => continue,
-                Err(e) => {
-                    report.errors.push(Error::io(item.path(), e));
-                    continue;
-                }
-            };
-
-            let (kind, attrs) = match observe(&item.path(), &meta) {
-                Ok(observed) => observed,
                 Err(error) => {
                     report.errors.push(Error::io(item.path(), error));
                     continue;
@@ -2791,17 +2784,9 @@ fn walk_worker_with<E: WalkEmission>(
                 };
                 crate::counters::bump(|c| c.dir_entries += 1);
                 let name = item.file_name();
-                let meta = match listed_child_metadata(&item) {
-                    Ok(Some(meta)) => meta,
+                let (kind, attrs) = match observe_dir_entry(&item) {
+                    Ok(Some(observed)) => observed,
                     Ok(None) => continue,
-                    Err(e) => {
-                        report.errors.push(Error::io(item.path(), e));
-                        continue;
-                    }
-                };
-
-                let (kind, attrs) = match observe(&item.path(), &meta) {
-                    Ok(observed) => observed,
                     Err(error) => {
                         report.errors.push(Error::io(item.path(), error));
                         continue;
@@ -3932,8 +3917,8 @@ pub fn revalidate(
             seen.insert(name.clone());
             let rel_path = rel_dir.join(&name);
             let baseline = index.relaxed_expectation(&rel_path);
-            let meta = match listed_child_metadata(&item) {
-                Ok(Some(meta)) => meta,
+            let (kind, attrs) = match observe_dir_entry(&item) {
+                Ok(Some(observed)) => observed,
                 Ok(None) => {
                     let entry_held = baseline.state != PathState::Absent;
                     for removal in
@@ -3956,14 +3941,6 @@ pub fn revalidate(
                 }
             };
             control_seen |= name == crate::control::CONTROL_FILE_NAME;
-
-            let (kind, attrs) = match observe(&item.path(), &meta) {
-                Ok(observed) => observed,
-                Err(error) => {
-                    report.errors.push(Error::io(item.path(), error));
-                    continue;
-                }
-            };
             let disposition =
                 crate::admission::decide(&name, kind, config.hidden(), config.exclude_special);
             let control = match read_control_op(config, &root, &rel_path, kind) {
@@ -4576,8 +4553,8 @@ fn reconcile_target_inner(
                     Some(baseline) => baseline,
                     None => target.expectation(&rel_dir.join(&name))?,
                 };
-                let meta = match listed_child_metadata(&item) {
-                    Ok(Some(meta)) => meta,
+                let (kind, attrs) = match observe_dir_entry(&item) {
+                    Ok(Some(observed)) => observed,
                     Ok(None) => {
                         let entry_held = baseline.state != PathState::Absent;
                         for removal in
@@ -4595,14 +4572,6 @@ fn reconcile_target_inner(
                     Err(error) => {
                         // Present but unreadable: its rules, if it is the control file,
                         // stay until a read says otherwise.
-                        control_seen |= name == crate::control::CONTROL_FILE_NAME;
-                        report.scan.errors.push(Error::io(item.path(), error));
-                        continue;
-                    }
-                };
-                let (kind, attrs) = match observe(&item.path(), &meta) {
-                    Ok(observed) => observed,
-                    Err(error) => {
                         control_seen |= name == crate::control::CONTROL_FILE_NAME;
                         report.scan.errors.push(Error::io(item.path(), error));
                         continue;
@@ -5009,21 +4978,13 @@ fn reconcile_wave_worker(
                         let baseline = known
                             .remove(&name)
                             .unwrap_or_else(|| index.expectation(&rel_dir.join(&name)));
-                        let meta = match listed_child_metadata(&item) {
-                            Ok(Some(meta)) => meta,
+                        let (kind, attrs) = match observe_dir_entry(&item) {
+                            Ok(Some(observed)) => observed,
                             Ok(None) => {
                                 // Removed once this directory's listing is done.
                                 vanished.push((name, baseline.state != PathState::Absent));
                                 continue;
                             }
-                            Err(error) => {
-                                control_seen |= name == crate::control::CONTROL_FILE_NAME;
-                                result.scan.errors.push(Error::io(item.path(), error));
-                                continue;
-                            }
-                        };
-                        let (kind, attrs) = match observe(&item.path(), &meta) {
-                            Ok(observed) => observed,
                             Err(error) => {
                                 control_seen |= name == crate::control::CONTROL_FILE_NAME;
                                 result.scan.errors.push(Error::io(item.path(), error));
@@ -5411,6 +5372,32 @@ pub fn observe(path: &Path, meta: &fs::Metadata) -> std::io::Result<(EntryKind, 
     #[cfg(not(windows))]
     {
         Ok((kind_from(meta), attrs_from(path, meta)?))
+    }
+}
+
+pub(crate) fn observe_dir_entry(
+    entry: &fs::DirEntry,
+) -> std::io::Result<Option<(EntryKind, Attrs)>> {
+    #[cfg(windows)]
+    {
+        crate::counters::bump(|c| c.stats += 1);
+        #[cfg(test)]
+        {
+            let path = entry.path();
+            if let Some(error) =
+                walk_hook(&path).and_then(|hook| hook(WalkHookPoint::ChildMetadata(&path)))
+            {
+                return missing_as_none(Err(error));
+            }
+        }
+        missing_as_none(windows_metadata::observe(&entry.path()))
+    }
+    #[cfg(not(windows))]
+    {
+        let Some(meta) = listed_child_metadata(entry)? else {
+            return Ok(None);
+        };
+        Ok(Some((kind_from(&meta), attrs_from(Path::new(""), &meta)?)))
     }
 }
 
