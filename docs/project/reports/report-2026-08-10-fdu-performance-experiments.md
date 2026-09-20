@@ -64,7 +64,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 68 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 69 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
@@ -214,6 +214,7 @@ dead end.
 | 134 | [Post-H124 first-pass content-basic leftover](#exp134--posth124-firstpass-contentbasic-leftover) | H135 | `content-basic` | -3.7% | ✅ accepted |
 | 135 | [Post-H128 first-run default-tree leftover](#exp135--posth128-firstrun-defaulttree-leftover) | H136 | `default-tree-first` | +0.2% | ✅ accepted |
 | 136 | [Post-H123 content-query leftover](#exp136--posth123-contentquery-leftover) | H137 | `content-query` | -3.3% | ✅ accepted |
+| 137 | [Share one every_entry across unfiltered metric views](#exp137--share-one-everyentry-across-unfiltered-metric-views) | H138 | `content-query` | -18.8% | ✅ accepted |
 
 ## The experiments
 
@@ -4624,6 +4625,35 @@ independently; no engine patch.
 Full record:
 [`exp-136-post-h123-content-query-leftover.md`](../experiments/exp-136-post-h123-content-query-leftover.md)
 
+### exp-137 — Share one every_entry across unfiltered metric views
+
+✅ accepted · 2026-09-19 · H138 · commit `a5c98d59`
+
+Control: HEAD release probe at c382568c
+
+Candidate: share one every_entry for unfiltered entry-row views
+
+**`content-query`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 38234.2 | 31475.2 | -18.76% | [-22.86%, -13.69%] |
+| component (ms) | 28291.1 | 20420.6 | -24.61% | [-29.82%, -20.56%] |
+| cpu (ms) | 44137.5 | 39095.0 | -10.79% | [-15.91%, -7.04%] |
+| user (ms) | 27929.1 | 23077.9 | -17.17% | [-19.10%, -16.58%] |
+| system (ms) | 14761.6 | 16227.9 | -2.00% (n.s.) | [-9.37%, +16.49%] |
+| peak rss (MiB) | 750.5 | 759.0 | +1.03% (regression) | [+0.42%, +1.61%] |
+
+Cost to carry: 68 lines; no new dependencies.
+
+share one every_entry walk; Summary/Tree/Extensions keep unfiltered roll-ups
+
+**Accepted:** content-query wall -18.76% [-22.86%, -13.69%] on frozen metabrowser-clone;
+component -24.61%; report identity unchanged; engine kept.
+
+Full record:
+[`exp-137-share-one-every-entry-across-unfiltered-metric-views.md`](../experiments/exp-137-share-one-every-entry-across-unfiltered-metric-views.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4653,6 +4683,7 @@ Baselines show one value because they measure a state rather than a change.
 | 134 | Post-H124 first-pass content-basic leftover | `content-basic` | 10,365.9 | 10,058.8 | -3.7% | ✅ accepted |
 | 135 | Post-H128 first-run default-tree leftover | `default-tree-first` | 481.0 | 453.6 | +0.2% | ✅ accepted |
 | 136 | Post-H123 content-query leftover | `content-query` | 40,340.5 | 38,623.5 | -3.3% | ✅ accepted |
+| 137 | Share one every_entry across unfiltered metric views | `content-query` | 38,234.2 | 31,475.2 | -18.8% | ✅ accepted |
 
 ### metabrowser-clone (59,654 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

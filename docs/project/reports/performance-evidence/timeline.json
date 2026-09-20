@@ -35581,6 +35581,143 @@
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Post-H123 content-query leftover",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "share one every_entry for unfiltered entry-row views",
+   "change_pct": -18.764,
+   "commit": "a5c98d59",
+   "complexity": {
+    "lines_changed": 68,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "share one every_entry walk; Summary/Tree/Extensions keep unfiltered roll-ups"
+   },
+   "control": "HEAD release probe at c382568c",
+   "date": "2026-09-19",
+   "decision": "accepted",
+   "entries": 146047,
+   "family": "macOS:3b5427f76be0",
+   "hypotheses": [
+    "H138"
+   ],
+   "id": "exp-137",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-query",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 20420605208.5,
+        "control": 28291062208
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -24.606,
+        "ci95_high_pct": -20.558,
+        "ci95_low_pct": -29.815,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 39095040000,
+        "control": 44137499500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -10.792,
+        "ci95_high_pct": -7.039,
+        "ci95_low_pct": -15.906,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 795860992,
+        "control": 786964480
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 1.031,
+        "ci95_high_pct": 1.608,
+        "ci95_low_pct": 0.418,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 16227943000,
+        "control": 14761619000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -1.997,
+        "ci95_high_pct": 16.492,
+        "ci95_low_pct": -9.37,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 23077906000,
+        "control": 27929140500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -17.173,
+        "ci95_high_pct": -16.576,
+        "ci95_low_pct": -19.103,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 31475241520.5,
+        "control": 38234226104
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -18.764,
+        "ci95_high_pct": -13.688,
+        "ci95_low_pct": -22.865,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 215514.46808561627,
+      "control": 261793.98484049656
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 137,
+   "path": "exp-137-share-one-every-entry-across-unfiltered-metric-views.md",
+   "platform": "macOS",
+   "primary_job": "content-query",
+   "primary_metric": "wall_ns",
+   "reason": "content-query wall -18.76% [-22.86%, -13.69%] on frozen metabrowser-clone; component -24.61%; report identity unchanged; engine kept",
+   "reference_tools": [],
+   "subject": "3b5427f76be0:146047:dc0df2630acc",
+   "title": "Share one every_entry across unfiltered metric views",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-19",
@@ -35605,7 +35742,8 @@
     "exp-133",
     "exp-134",
     "exp-135",
-    "exp-136"
+    "exp-136",
+    "exp-137"
    ],
    "files": 133708,
    "filesystem": "apfs",
@@ -36396,22 +36534,22 @@
   }
  ],
  "totals": {
-  "accepted_lines_changed": 15936,
+  "accepted_lines_changed": 16004,
   "decisions": {
-   "accepted": 73,
+   "accepted": 74,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
    "rejected": 46,
    "superseded": 3
   },
-  "experiments": 136,
+  "experiments": 137,
   "first_date": "2026-08-10",
-  "hypotheses": 92,
+  "hypotheses": 93,
   "last_date": "2026-09-19",
   "platforms": {
    "Linux": 11,
-   "macOS": 125
+   "macOS": 126
   }
  },
  "version": "fdu.performance.timeline/1"

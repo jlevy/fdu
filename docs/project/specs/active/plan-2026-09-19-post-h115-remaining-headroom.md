@@ -25,7 +25,8 @@ the walk; snapshot write ~45 ms is ≥3% and not skippable.
 H137 is confirmed (exp-136): content-query leftover is `every_entry` per unfiltered
 metric view (~278 ms / four-view report).
 Sharing one walk is the leftover cut, not compiled here.
-H113 is superseded by H125.
+H138 is accepted (exp-137): share one `every_entry` (−18.76% wall).
+Engine kept (`a5c98d59`). H113 is superseded by H125.
 [The runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
 keeps an abbreviated next-up in that order; this file is the source of truth for the
 full rows. The loop guide registry remains the full hypothesis text.
@@ -54,14 +55,14 @@ H113 is superseded. Do not retry the file-count shortcut.
 
 - Name only hypotheses that are plausible at the 3% wall bar (or a structural ceiling)
   on a named job and subject, and that can be wrong
-- Keep H121–H137 registered in
+- Keep H121–H138 registered in
   [the loop guide](../../guides/performance-loop.md#current-engine-010); keep H107 and
   H111 open with honest status.
   H124 is rejected (exp-121). H125 is accepted (exp-124). H126 is confirmed (exp-125).
   H129 is accepted (exp-128). H130 is confirmed (exp-129). H131 is accepted (exp-130).
   H132 is confirmed (exp-131). H133 is accepted (exp-132). H134 is confirmed (exp-133).
   H135 is confirmed (exp-134). H136 is confirmed (exp-135). H137 is confirmed (exp-136).
-  H113 is superseded.
+  H138 is accepted (exp-137). H113 is superseded.
 - Own next-up after the overnight: order, metric, subject, accept-rule sketch, why next,
   what refutes, bead
 - Keep one source of truth for that queue (this file)
@@ -162,6 +163,7 @@ Overnight registry rows (settled; full text in the loop guide):
 | H135 | After H124, leftover names whether first-pass apply/classify is a ≥3% userspace cut | `content-basic` | Confirmed (exp-134). Leftover still file I/O. No new cut. No engine patch. |
 | H136 | After H128, leftover names whether first-run snapshot write/render is a skippable ≥3% cut | `default-tree-first` | Confirmed (exp-135). Walk still the job. Write ~45 ms, not skippable. No engine patch. |
 | H137 | After H123, leftover names whether four-view content aggregation is a skippable ≥3% userspace cut | `content-query` | Confirmed (exp-136). ~278 ms / four-view report. `every_entry` once per unfiltered metric view. No engine patch. |
+| H138 | Unfiltered entry-row views share one `every_entry` walk | `content-query` | Accepted (exp-137). Wall −18.76%. Engine kept (`a5c98d59`). |
 | H113 | File-count completeness after H115 is a real quiet wall win | `content-cache-hit` | Superseded by H125. File-count not compiled. |
 
 Remaining registry rows (open; full text in the loop guide):
@@ -283,11 +285,15 @@ These were considered against the post-H115 path and not registered:
 Take these in order.
 Overnight H116–H120 is history, not a retry list.
 
-1. **H137** (`fdu-nc3b`). **Confirmed** (exp-136). Content-query leftover after H123 is
+1. **H138** (`fdu-sce1`). **Accepted** (exp-137). Share one `every_entry` walk across
+   unfiltered entry-row views.
+   Wall −18.76% [−22.86%, −13.69%] on frozen `metabrowser-clone`. Engine kept
+   (`a5c98d59`). Quiet this tick 93.2%; pair initial 69.09% final 70.06%. **H137**
+   (`fdu-nc3b`). **Confirmed** (exp-136). Content-query leftover after H123 is
    `every_entry` on each unfiltered Types / Families / Languages / Documents view, about
    278 ms per four-view report.
    Filtered views already share one walk.
-   No engine patch. Quiet this tick 76.8%; pair initial 64.19% final 54.35%. **H136**
+   No engine patch. Quiet that tick 76.8%; pair initial 64.19% final 54.35%. **H136**
    (`fdu-w9jb`). **Confirmed** (exp-135). First-run leftover after H128 is still the
    walk (83–88% of `default-tree-first` component).
    Isolated `snapshot-save` 45.3 ms (~11–16% of first-run).
@@ -393,8 +399,9 @@ skip), H134 confirmed (exp-133; snapshot `path_of` gone; no new cut), H135 confi
 (exp-134; first-pass leftover still file I/O; no new cut), H136 confirmed (exp-135;
 first-run walk still the job; snapshot write not skippable), H137 confirmed (exp-136;
 content-query leftover is `every_entry` per unfiltered metric view; no engine patch),
-H107 skipped (ignore does not skip descent), H122 confirmed (exp-118 + leftover
-exp-122), H123 confirmed, H121 confirmed (no apply cut), H124 rejected (exp-121).
+H138 accepted (exp-137; share one `every_entry`; wall −18.76%), H107 skipped (ignore
+does not skip descent), H122 confirmed (exp-118 + leftover exp-122), H123 confirmed,
+H121 confirmed (no apply cut), H124 rejected (exp-121).
 
 ## Testing Strategy
 
@@ -412,10 +419,10 @@ H135 is recorded (exp-134). First-pass leftover still file I/O; no new cut.
 H136 is recorded (exp-135). First-run leftover still the walk; snapshot write not
 skippable. H137 is recorded (exp-136). Content-query leftover is `every_entry` per
 unfiltered metric view; no engine patch.
-H124 is recorded (exp-121). H122 (exp-118 + leftover exp-122), H123, and H121 are
-recorded determinations.
-Exact oracles and content digest stay as for exp-108–136. H123 kept one-shot
-`cold scan`. Record every verdict, including skips at the quiet gate.
+H138 is recorded (exp-137). Shared `every_entry` walk kept (`a5c98d59`). H124 is
+recorded (exp-121). H122 (exp-118 + leftover exp-122), H123, and H121 are recorded
+determinations. Exact oracles and content digest stay as for exp-108–137. H123 kept
+one-shot `cold scan`. Record every verdict, including skips at the quiet gate.
 
 ## Rollout Plan
 
@@ -490,26 +497,31 @@ Engine changes land only as the experiment that tests the next row.
   (H137). **Closed:** exp-136. ~278 ms per four-view report.
   Unfiltered metric views each call `every_entry`. Sharing one walk is the leftover cut,
   not compiled here.
+- Whether sharing one `every_entry` walk across unfiltered entry-row views cuts
+  `content-query` wall at least 3% (H138). **Closed:** exp-137. Wall −18.76%
+  [−22.86%, −13.69%]. Engine kept (`a5c98d59`).
 
 ## References
 
 - [The loop guide registry](../../guides/performance-loop.md#current-engine-010) —
-  H107–H137
+  H107–H138
 - [The runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
 - [Campaign 2](plan-2026-08-23-fdu-performance-campaign-2.md) — floor-anchored strategy
 - [First Principles](../../architecture/fdu-design-principles.md#first-principles)
 - [Engine architecture](../../architecture/fdu-engine-architecture.md) — one-shot vs
   opened
 - [The instrumentation playbook](../../guides/performance-instrumentation-playbook.md)
-- exp-107 through exp-136; H115 engine at `7798fdc1`; H120 streaming restore; H125
+- exp-107 through exp-137; H115 engine at `7798fdc1`; H120 streaming restore; H125
   restore-count at `be8d4d69`; H129 restore-without-classify at `6887a864`; H131
-  parent-path join at `7840ce9b`; H133 unused snapshot path skip at `143a1c73`
+  parent-path join at `7840ce9b`; H133 unused snapshot path skip at `143a1c73`; H138
+  shared `every_entry` at `a5c98d59`
 - Beads: overnight epic `fdu-e9ow` (closed); remaining-queue epic `fdu-8ya1`; H121
   `fdu-vf4b`; H122 `fdu-ytg5`; H123 `fdu-rum0`; H124 `fdu-i39y`; H125 `fdu-wd4q`; H126
   `fdu-16jh`; H127 `fdu-v12n`; H128 `fdu-0wym`; H129 `fdu-qjjh`; H130 `fdu-ajbw`; H131
   `fdu-1dxc`; H132 `fdu-8z5i`; H133 `fdu-7m91`; H134 `fdu-03pr`; H135 `fdu-hh0t`; H136
-  `fdu-w9jb`; H137 `fdu-nc3b`; H113 quiet `fdu-rfr6` (superseded); H107 `fdu-jcfn`; H111
-  `fdu-jekg`; sidecar parent `fdu-78q6`; EntryId composite `fdu-jxhk` (do not restart)
+  `fdu-w9jb`; H137 `fdu-nc3b`; H138 `fdu-sce1`; H113 quiet `fdu-rfr6` (superseded); H107
+  `fdu-jcfn`; H111 `fdu-jekg`; sidecar parent `fdu-78q6`; EntryId composite `fdu-jxhk`
+  (do not restart)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

@@ -435,6 +435,11 @@ Component ~26.8–27.3 s for 100 four-view reports (~278 ms / report).
 `every_entry` runs once per unfiltered metric view.
 No engine patch.
 
+**exp-137 / H138** shares one `every_entry` walk across unfiltered entry-row views.
+Control leftover HEAD probe; candidate H138. Quiet this tick refused at 93.2%. Pair
+**uncontrolled**. Initial busy 69.09%; final 70.06%. Wall −18.76% [−22.86%, −13.69%].
+Component −24.61% [−29.82%, −20.56%]. Engine kept (`a5c98d59`).
+
 **exp-121 / H124** is the first-pass analyze I/O **profile** on the frozen
 `metabrowser-clone` (146,047 entries / 133,708 files; digest `dc0df263…`). Path-binary
 already skipped (8,022 files).
@@ -468,14 +473,14 @@ Do not type a path into a commit.
 unchanged from the nomination.
 `metabrowser-clone` was the H109 / H112 / H113 / H114 / H115 / H116 / H118 / H120 / H121
 / H124 / H125 / H126 / H127 / H128 / H129 / H130 / H131 / H132 / H133 / H134 / H135 /
-H136 / H137 subject (exp-108 through exp-112, exp-114, exp-115, exp-117, exp-120,
+H136 / H137 / H138 subject (exp-108 through exp-112, exp-114, exp-115, exp-117, exp-120,
 exp-121, exp-123, exp-124, exp-125, exp-126, exp-128, exp-129, exp-130, exp-131,
-exp-132, exp-133, exp-134, exp-135, exp-136); same shape as exp-106, engine digest
-unchanged (`3fbfed48…`). A 2026-09-19 re-observe drifted to 145,988 entries / 133,654
-files (digest `cc517e78…`); commit a fresh subjects document with the next metabrowser
-cell (`make perf-subjects`). The CLI QA medium tree was skipped: deciding-scale but
-mutating. `system-private-frameworks` was also the H122 subject (exp-118); digest
-unchanged.
+exp-132, exp-133, exp-134, exp-135, exp-136, exp-137); same shape as exp-106, engine
+digest unchanged (`3fbfed48…`). A 2026-09-19 re-observe drifted to 145,988 entries /
+133,654 files (digest `cc517e78…`); commit a fresh subjects document with the next
+metabrowser cell (`make perf-subjects`). The CLI QA medium tree was skipped:
+deciding-scale but mutating.
+`system-private-frameworks` was also the H122 subject (exp-118); digest unchanged.
 
 ### Next Up
 
@@ -484,9 +489,9 @@ Source of truth:
 [the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
 The registry row in [the loop guide](performance-loop.md#current-engine-010) is the full
 statement. Overnight H116–H120 is done; do not retry those.
-Next free hypothesis id is **H138**. Do not mint another meaning for H91–H106. Next free
+Next free hypothesis id is **H139**. Do not mint another meaning for H91–H106. Next free
 experiment id is **exp-113** (reserved unused; H113 superseded).
-After that, **exp-137**.
+After that, **exp-138**.
 
 This stacked session skipped H113 (quiet gates including 45.48%, 53.86%, 31.53%, 34.97%,
 27.23%, a 24.38% pre-check that did not hold, and 28.07%), accepted H125 (exp-124,
@@ -501,18 +506,23 @@ confirmed H134 (exp-133 leftover; snapshot `path_of` gone; no new cut), confirme
 (exp-134 leftover; first-pass `content-basic` still file I/O; no new cut), confirmed
 H136 (exp-135 leftover; first-run walk still the job; snapshot write ~45 ms and not
 skippable), confirmed H137 (exp-136 leftover; ~278 ms per four-view content report;
-`every_entry` once per unfiltered metric view; no engine patch), hunted H107 (no
-ignore-is-the-walk subject), recorded exp-122 (H122 leftover), and recorded exp-123
-(H113 leftover then 16% of `content_open`). Earlier the same day: H113 69.4%, H122
-(exp-118), H123, H121, H124. Do not start H107 without an ignore-is-the-walk subject.
+`every_entry` once per unfiltered metric view; no engine patch), accepted H138 (exp-137,
+share one `every_entry`; wall −18.76%), hunted H107 (no ignore-is-the-walk subject),
+recorded exp-122 (H122 leftover), and recorded exp-123 (H113 leftover then 16% of
+`content_open`). Earlier the same day: H113 69.4%, H122 (exp-118), H123, H121, H124. Do
+not start H107 without an ignore-is-the-walk subject.
 Do not retry metabrowser for H107 (exp-106). Do not start H111 (no Linux).
 Do not raise the README 200K files/s or 4M cached lines/s.
 
-1. **H137** (`fdu-nc3b`). **Confirmed** (exp-136). Content-query leftover after H123 is
+1. **H138** (`fdu-sce1`). **Accepted** (exp-137). Share one `every_entry` walk across
+   unfiltered entry-row views.
+   Wall −18.76% [−22.86%, −13.69%] on frozen `metabrowser-clone`. Engine kept
+   (`a5c98d59`). Quiet this tick 93.2%; pair initial 69.09% final 70.06%. **H137**
+   (`fdu-nc3b`). **Confirmed** (exp-136). Content-query leftover after H123 is
    `every_entry` on each unfiltered Types / Families / Languages / Documents view, about
    278 ms per four-view report.
    Filtered views already share one walk.
-   No engine patch. Quiet this tick 76.8%; pair initial 64.19% final 54.35%. **H136**
+   No engine patch. Quiet that tick 76.8%; pair initial 64.19% final 54.35%. **H136**
    (`fdu-w9jb`). **Confirmed** (exp-135). First-run leftover after H128 is still the
    walk (83–88% of `default-tree-first` component).
    Isolated `snapshot-save` 45.3 ms (~11–16% of first-run).
@@ -607,7 +617,7 @@ cache-hit leftover is already-landed restore work and already-rejected stages.
 H135 confirmed first-pass leftover is still file I/O (exp-134). H136 confirmed first-run
 leftover is still the walk (exp-135); snapshot write ~45 ms is not skippable.
 H137 confirmed content-query leftover is `every_entry` per unfiltered metric view
-(exp-136). Sharing one walk is the leftover cut, not compiled in that cell.
+(exp-136). H138 took the share-one-walk cut (exp-137, −18.76% wall).
 Do not invent a skip.
 Do not join a parent path on snapshot insert.
 Do not defer snapshot `merge_upward`. Do not retry H109.
@@ -669,7 +679,9 @@ Do not defer snapshot `merge_upward`. Do not retry H109.
   Do not retry H100. Do not mint H78/H92.
 - Do not compile a leftover H137 cut after exp-136 unless it is the named share-one-walk
   of unfiltered metric views.
-  Do not invent a cache-hit skip.
+  H138 took that cut (exp-137). Do not invent a cache-hit skip.
+- Do not retry H138 after exp-137. The shared `every_entry` walk is in the engine
+  (`a5c98d59`).
 - Do not register another restore alloc-trim, parse-speed cut, or H103-shaped
   instruction rewrite; those are on the remaining-headroom block’s rejected list.
 - A quiet cell may not hold on this desktop.
@@ -974,6 +986,7 @@ producing a number that means nothing.
 - Compile a leftover H135 cut after exp-134.
 - Compile a leftover H136 cut after exp-135.
 - Compile a leftover H137 cut after exp-136 other than the named share-one-walk.
+- Retry H138 after exp-137.
 - Retry H116 on an uncontrolled cell after exp-114.
 - Retry H118 on an uncontrolled cell after exp-115.
 - Retry H119 walk-overlap after the deciding-scale `content-basic` profile.
