@@ -67,7 +67,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Darwin 25.5.0, apfs | bare-metal | warm-steady | 69 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
-| Linux 6.12.94+, ext4 | virtualized | warm-steady | 4 |
+| Linux 6.12.94+, ext4 | virtualized | warm-steady | 6 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
 | Linux 6.18.44-fc-v24, ext4 | virtualized | warm-steady | 1 |
@@ -220,6 +220,8 @@ dead end.
 | 139 | [Linux walk leftover is still the getdents64 plus statx floor](#exp139--linux-walk-leftover-is-still-the-getdents64-plus-statx-floor) | H140 | `default-tree` | +0.6% | ✅ accepted |
 | 140 | [Linux content-query stack same versus #91 control](#exp140--linux-contentquery-stack-same-versus-91-control) | H141 | `content-query` | -17.6% | ✅ accepted |
 | 141 | [H111 Linux floor and RSS gates fail on current engine](#exp141--h111-linux-floor-and-rss-gates-fail-on-current-engine) | H111 | `default-tree` | +2.0% | ❌ rejected |
+| 142 | [Linux H111 leftover is still walk floor plus retained-index RSS](#exp142--linux-h111-leftover-is-still-walk-floor-plus-retainedindex-rss) | H143 | `cold-scan-index` | +0.1% | ✅ accepted |
+| 143 | [Linux first-pass content-basic leftover is still file I/O](#exp143--linux-firstpass-contentbasic-leftover-is-still-file-io) | H142 | `content-basic` | +0.4% | ✅ accepted |
 
 ## The experiments
 
@@ -4772,6 +4774,65 @@ arena_spike vs 3x; aggregate on nominated reals 1.59x and 1.86x vs 1.25x.
 Full record:
 [`exp-141-h111-linux-floor-and-rss-gates-fail-on-current-engine.md`](../experiments/exp-141-h111-linux-floor-and-rss-gates-fail-on-current-engine.md)
 
+### exp-142 — Linux H111 leftover is still walk floor plus retained-index RSS
+
+✅ accepted · 2026-09-20 · H143 · commit `937f9445`
+
+Control: HEAD release probe both arms
+
+Candidate: same probe leftover profile
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 857.6 | 856.7 | +0.13% (n.s.) | [-0.96%, +0.76%] |
+| component (ms) | 319.4 | 318.7 | -0.28% (n.s.) | [-0.89%, +0.51%] |
+| cpu (ms) | 1574.9 | 1576.6 | +0.17% (n.s.) | [-0.74%, +0.81%] |
+| user (ms) | 881.8 | 866.5 | -3.52% (n.s.) | [-5.67%, +0.37%] |
+| system (ms) | 696.1 | 721.0 | +2.45% (regression) | [+0.13%, +6.32%] |
+| peak rss (MiB) | 149.9 | 151.1 | +1.25% (n.s.) | [-0.18%, +2.19%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** walk 94.7-94.8% of 450k cold-scan-index component; leftover is
+getdents64+statx plus detached finish/retained-index RSS; no new cut; do not restart
+H86.
+
+Full record:
+[`exp-142-linux-h111-leftover-is-still-walk-floor-plus-rss.md`](../experiments/exp-142-linux-h111-leftover-is-still-walk-floor-plus-rss.md)
+
+### exp-143 — Linux first-pass content-basic leftover is still file I/O
+
+✅ accepted · 2026-09-20 · H142 · commit `937f9445`
+
+Control: HEAD release probe both arms
+
+Candidate: same probe leftover profile
+
+**`content-basic`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2165.7 | 2169.4 | +0.45% (n.s.) | [-0.17%, +0.57%] |
+| component (ms) | 1633.3 | 1632.5 | +0.09% (n.s.) | [-0.32%, +0.65%] |
+| cpu (ms) | 6803.7 | 6802.7 | +0.17% (n.s.) | [-0.12%, +0.44%] |
+| user (ms) | 5967.3 | 5974.9 | +0.69% (n.s.) | [-0.45%, +1.80%] |
+| system (ms) | 841.5 | 835.6 | -5.29% (n.s.) | [-10.16%, +2.03%] |
+| peak rss (MiB) | 138.2 | 138.0 | -0.03% (n.s.) | [-0.17%, +0.03%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** first-pass leftover is still file I/O (86634 opens, 184057 reads,
+~2.12/file); no skippable 3% userspace cut; do not retry H124.
+
+Full record:
+[`exp-143-linux-first-pass-content-basic-leftover-is-still-file-i-o.md`](../experiments/exp-143-linux-first-pass-content-basic-leftover-is-still-file-i-o.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4919,6 +4980,15 @@ Baselines show one value because they measure a state rather than a change.
 | 081 | Borrow impact paths until the bounded result escapes | `opened-discovery` | 286.8 | 282.2 | -1.1% | ❌ rejected |
 | 082 | Move scanner commits directly into the journal | `opened-discovery` | 284.5 | 281.2 | -0.0% | ❌ rejected |
 
+### linux-v6.12 (92,474 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 138 | Linux cache-hit stack same versus #91 control | `content-cache-hit` | 760.9 | 588.9 | -22.5% | ✅ accepted |
+| 139 | Linux walk leftover is still the getdents64 plus statx floor | `default-tree` | 433.6 | 439.4 | +0.6% | ✅ accepted |
+| 140 | Linux content-query stack same versus #91 control | `content-query` | 12,616.0 | 10,409.3 | -17.6% | ✅ accepted |
+| 143 | Linux first-pass content-basic leftover is still file I/O | `content-basic` | 2,165.7 | 2,169.4 | +0.4% | ✅ accepted |
+
 ### vm450k (450,463 entries) — Linux 6.18.5-fc-v20, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -4935,14 +5005,6 @@ Baselines show one value because they measure a state rather than a change.
 | 057 | Reject repeated adaptive worker windows on APFS | `adaptive-scan-index` | 1,871.8 | 2,963.2 | +58.5% | ❌ rejected |
 | 058 | Reject staged adaptive worker expansion on APFS | `adaptive-scan-index` | 1,871.8 | 2,987.5 | +60.7% | ❌ rejected |
 | 059 | Reject higher fixed worker counts on mixed-phase APFS | `adaptive-scan-index` | 1,878.3 | 2,532.1 | +35.6% | ❌ rejected |
-
-### linux-v6.12 (92,474 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 138 | Linux cache-hit stack same versus #91 control | `content-cache-hit` | 760.9 | 588.9 | -22.5% | ✅ accepted |
-| 139 | Linux walk leftover is still the getdents64 plus statx floor | `default-tree` | 433.6 | 439.4 | +0.6% | ✅ accepted |
-| 140 | Linux content-query stack same versus #91 control | `content-query` | 12,616.0 | 10,409.3 | -17.6% | ✅ accepted |
 
 ### live-workspace-20260812 (1,007,659 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
@@ -4989,6 +5051,13 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 045 | Pipeline macOS directory opens | `rich-summary-open-pipeline` | 3,468.3 | 3,325.4 | -4.5% | ↩︎ superseded |
 | 046 | Tune a shared macOS directory-opener pool | `rich-summary-shared-openers` | 3,337.9 | 3,220.9 | -4.0% | ⏳ in progress |
+
+### linux-450k (450,001 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 141 | H111 Linux floor and RSS gates fail on current engine | `default-tree` | 419.1 | 429.8 | +2.0% | ❌ rejected |
+| 142 | Linux H111 leftover is still walk floor plus retained-index RSS | `cold-scan-index` | 857.6 | 856.7 | +0.1% | ✅ accepted |
 
 ### metabrowser-113794 (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
@@ -5065,12 +5134,6 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 103 | H86 Linux evidence stage: relative gates pass, floor gates fail | `default-tree` | 1,189.7 | 821.7 | -31.7% | ❌ rejected |
-
-### linux-450k (450,001 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 141 | H111 Linux floor and RSS gates fail on current engine | `default-tree` | 419.1 | 429.8 | +2.0% | ❌ rejected |
 
 ### linux-kernel-7043 (102,318 entries) — Linux 6.18.44-fc-v24, ext4, virtualized, warm-steady
 

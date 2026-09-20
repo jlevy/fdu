@@ -492,9 +492,9 @@ statement. Overnight H116–H120 is done; do not retry those.
 H139 is recorded on stacked [#94](https://github.com/jlevy/fdu/pull/94) as exp-138. H140
 is recorded there as exp-139. H141 is recorded there as exp-140. H111 is recorded there
 as exp-141 (floor/RSS fail).
-H142 remains reserved there.
-H143 is the leftover after that fail.
-Do not mint those ids on this Darwin branch.
+H142 is recorded there as exp-143 (file I/O leftover).
+H143 is recorded there as exp-142 (walk floor + retained-index RSS). Do not mint those
+ids on this Darwin branch.
 Next free Darwin hypothesis id is **H144**. Do not mint another meaning for H91–H106.
 Next free Darwin experiment id after the Linux reservation is assigned on #94; do not
 take exp-138 here. exp-113 remains reserved unused (H113 superseded).
@@ -705,7 +705,7 @@ Do not defer snapshot `merge_upward`. Do not retry H109.
 | --- | --- |
 | This standing section | Pickup: standing best, next-up order |
 | [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Remaining Darwin queue: H107 (no subject) |
-| [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md) | Linux pickup done through H111 (exp-141 fail); H139–H141 same; H142 optional; H143 leftover |
+| [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md) | Linux pickup done: H139–H142 same; H111 fail; H143 leftover confirmed |
 | [The loop guide](performance-loop.md) | Protocol, accept rule, hypothesis registry |
 | [The campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) | Floor-anchored strategy; the 2026-08-23 Tier 1–3 list is history |
 | [The instrumentation playbook](performance-instrumentation-playbook.md) | Instrument before optimizing; `FDU_COUNTERS=1` |
@@ -754,7 +754,18 @@ Do not retry H138.
 host. 450k index 1.78× `parfloor` vs 1.4×; RSS 5.20× `arena_spike` vs 3×. Aggregate on
 nominated reals 1.59× / 1.86× vs 1.25×. p95/median passes.
 Quiet requested; table uncontrolled.
-Do not restart H86. Leftover named as H143.
+Do not restart H86.
+
+**H143 / exp-142** is the standing leftover after that fail: **same** identity.
+Quiet 12-pair `cold-scan-index` on reconstructible `linux-450k`. Walk 94.7–94.8% of
+component. Detached finish 4.3% is the H86 consume.
+Peak RSS ~150 MiB. No new cut.
+
+**H142 / exp-143** is the standing Linux first-pass leftover: **same** identity.
+Uncontrolled 12-pair `content-basic` on `linux-v6.12`. 86,634 opens, 184,057 reads
+(~2.12/file). Digest identical.
+Quiet start 0.036/core did not hold.
+Do not retry H124.
 
 This host’s nominated set is
 [nominated-subjects-linux-x86_64.json](../reports/nominated-subjects-linux-x86_64.json):
@@ -763,13 +774,11 @@ Two deciding characters, so the set cannot yet carry a ranking or transfer claim
 
 ### Next Up (Linux)
 
-1. **H143** (new). Leftover after the H111 fail: walk floor + retained-index RSS. Do not
-   restart H86. Do not retry H71.
-2. **H142** (`fdu-2003`) only if time remains.
-   Do not retry H124.
+1. A new named mechanism that can close the 1.4× index or 3× RSS gate, or a bare-metal
+   H111 remeasure. That is **H144** if minted.
+   Do not restart H86. Do not retry H71.
 
-Next free Linux experiment id is **exp-142**. Next free Linux hypothesis id after this
-mint is **H144**.
+Next free Linux experiment id is **exp-144**. Next free hypothesis id is **H144**.
 
 ## Before the First Round
 

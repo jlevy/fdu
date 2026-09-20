@@ -10,8 +10,9 @@ at `26480612` (H138 recorded).
 H139 is recorded (exp-138, same, quiet).
 H140 is recorded (exp-139, same leftover identity).
 H141 is recorded (exp-140, same, uncontrolled).
-H111 is recorded (exp-141, floor/RSS gates failed on this VM). H142 remains reserved
-here. H143 is the leftover after the H111 fail.
+H111 is recorded (exp-141, floor/RSS gates failed on this VM). H143 is recorded
+(exp-142, same leftover identity).
+H142 is recorded (exp-143, same leftover identity).
 Do not mint these on the Darwin branch.
 
 ## Overview
@@ -57,7 +58,7 @@ It does not raise the README 200K files/s or 4M cached lines/s.
 - **Registry:**
   [Current engine (0.1.0)](../../guides/performance-loop.md#current-engine-010)
 - **Beads:** epic `fdu-v62p`; H139 `fdu-bt6x`; H140 `fdu-6hjg`; H141 `fdu-rmo2`; H142
-  `fdu-2003`; H111 `fdu-jekg` (closed, parent `fdu-xde5`); leftover H143 `fdu-kfl3`
+  `fdu-2003` (closed); H111 `fdu-jekg` (closed); leftover H143 `fdu-kfl3` (closed)
 - **First experiment id:** exp-138 (exp-113 remains reserved unused)
 - **Quiet:** `PERF_HOST_REGIME=quiet` first.
   Do not lower the 25% busy bar.
@@ -142,13 +143,15 @@ Mint the reserved id when the cell starts, not before.
    Leftover is the Darwin composite; minted as H143. Do not restart H86. Bead:
    `fdu-jekg` (close).
 
-5. **H142 — first-pass analyze leftover (only if H139–H141 left time).** Not run this
-   session. `content-basic` leftover on Linux after H124’s reject.
-   Determination only. Do not retry type/size or read-ahead.
-   Bead: `fdu-2003`.
+5. **H142 — first-pass analyze leftover.** **Same leftover identity** (exp-143,
+   uncontrolled). 86,634 opens, 184,057 reads (~2.12/file) on `linux-v6.12`. Quiet start
+   did not hold. Do not retry type/size or read-ahead.
+   Bead: `fdu-2003` (close).
 
-6. **H143 — leftover after H111 fail.** Walk floor plus retained-index RSS. Do not
-   restart H86. Do not retry H71.
+6. **H143 — leftover after H111 fail.** **Same leftover identity** (exp-142, quiet).
+   Walk 94.7–94.8% of `linux-450k` `cold-scan-index` component.
+   Leftover is `getdents64`+`statx` plus retained-index RSS / detached finish.
+   No new cut. Do not restart H86. Do not retry H71. Bead: `fdu-kfl3` (close).
 
 ## Subjects
 
@@ -198,7 +201,9 @@ If #92 moves, rebase this branch onto it and keep H139–H142 meanings.
 - H140 closed: walk leftover is **same** identity (exp-139; getdents64+statx floor)
 - H141 closed: content-query stack is **same** on Linux (exp-140, uncontrolled, −17.60%)
 - H111 closed: floor/RSS gates **fail** on this virtualized host (exp-141)
-- H143 open: leftover after that fail (walk floor + retained-index RSS)
+- H143 closed: leftover identity **same** (exp-142, quiet; walk floor + retained-index
+  RSS). Bare-metal H111 remeasure remains possible and is not this cell.
+- H142 closed: first-pass leftover is **same** identity (exp-143; file I/O)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
