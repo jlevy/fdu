@@ -1597,22 +1597,25 @@ impl Default for Summary {
 
 fn attach_content_summary(summary: &mut Summary, index: &Index) {
     let Some(content) = index.content() else {
-        summary.content_digest = Some(hex(&Sha256::digest(b"fdu-content-summary-v1\0disabled")));
+        summary.content_digest = Some(hex(&Sha256::digest(b"fdu-content-summary-v2\0disabled")));
         return;
     };
     let Some(root) = content.rollup(Path::new("")) else {
-        summary.content_digest = Some(hex(&Sha256::digest(b"fdu-content-summary-v1\0empty")));
+        summary.content_digest = Some(hex(&Sha256::digest(b"fdu-content-summary-v2\0empty")));
         return;
     };
     summary.content_records = root.total.files;
-    summary.content_analyzed = root.total.analyzed_files;
-    summary.content_binary = root.coverage.get(&CoverageReason::Binary).copied().unwrap_or(0);
+    summary.content_analyzed = root.total.lines.analyzed_files;
+    summary.content_binary =
+        root.total.lines.coverage.get(&CoverageReason::Binary).copied().unwrap_or(0);
     summary.content_invalid_utf8 =
-        root.coverage.get(&CoverageReason::InvalidUtf8).copied().unwrap_or(0);
-    let metrics = root.total.metrics;
+        root.total.lines.coverage.get(&CoverageReason::InvalidUtf8).copied().unwrap_or(0);
+    let lines = root.total.lines.metrics;
+    let code = root.total.code.metrics;
+    let words = root.total.words.metrics;
     let record = format!(
         concat!(
-            "fdu-content-summary-v1\0records={}\0analyzed={}\0binary={}\0invalid_utf8={}\0",
+            "fdu-content-summary-v2\0records={}\0analyzed={}\0binary={}\0invalid_utf8={}\0",
             "physical={}\0blank={}\0nonblank={}\0code={}\0comment={}\0",
             "code_blank={}\0raw_words={}\0logical_words={}\0paragraphs={}\0visible_words={}\0",
             "visible_logical_words={}"
@@ -1621,17 +1624,17 @@ fn attach_content_summary(summary: &mut Summary, index: &Index) {
         summary.content_analyzed,
         summary.content_binary,
         summary.content_invalid_utf8,
-        metrics.physical_lines,
-        metrics.blank_lines,
-        metrics.nonblank_lines,
-        metrics.code_lines,
-        metrics.comment_lines,
-        metrics.code_blank_lines,
-        metrics.raw_words,
-        metrics.logical_word_stats.logical_words(),
-        metrics.paragraphs,
-        metrics.visible_words,
-        metrics.visible_logical_word_stats.logical_words(),
+        lines.physical_lines,
+        lines.blank_lines,
+        lines.nonblank_lines,
+        code.code_lines,
+        code.comment_lines,
+        code.code_blank_lines,
+        lines.raw_words,
+        words.logical_word_stats.logical_words(),
+        words.paragraphs,
+        words.visible_words,
+        words.visible_logical_word_stats.logical_words(),
     );
     summary.content_digest = Some(hex(&Sha256::digest(record.as_bytes())));
 }

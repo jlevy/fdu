@@ -15,8 +15,8 @@ mod query_values;
 pub use query_glob::Pattern;
 pub use query_report::{
     AxisNames, ContentReportMetadata, FileRow, IgnoredTally, MetricGroup, MetricRow, MetricShare,
-    MetricSummary, Provenance, Query, Report, ReportSource, Section, ShareMetric, SummaryRow,
-    TreeNode, TypeRow, ViewSpec, document_words, report,
+    MetricSummary, Pages, Provenance, Query, Report, ReportMetricValues, ReportSource, Section,
+    ShareMetric, SummaryRow, TreeNode, TypeRow, ViewSpec, document_words, pages, report,
 };
 pub(crate) use query_report::{
     display_notes, forget_ignore_classification, report_in, report_summary,

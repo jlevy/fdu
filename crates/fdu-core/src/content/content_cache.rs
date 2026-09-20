@@ -7,8 +7,7 @@ use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crate::classify::{
-    Classification, ClassificationFlags, ContentFamily, DetectionConfidence, DetectionSource,
-    FileTypeId,
+    ClassificationFlags, ContentFamily, DetectionConfidence, DetectionSource, FileTypeId,
 };
 use crate::stored_state::{
     AnalyzerProvenance, ContentTierIdentity, ENTRY_TIER_BYTES, EntryTierIdentity,
@@ -16,8 +15,9 @@ use crate::stored_state::{
 use crate::{Error, Fingerprint, Index, Result};
 
 use super::{
-    AnalysisApplyOutcome, AnalysisRequest, AnalysisSet, AnalyzerId, AnalyzerVersion,
-    ContentProvenance, CoverageReason, FileAnalysis, LogicalWordStats, MetricValues,
+    AnalysisApplyOutcome, AnalysisRequest, AnalysisSet, AnalyzerId, AnalyzerOutcome,
+    AnalyzerVersion, BasicMetrics, CodeMetrics, ContentDetection, CoverageReason, FileAnalysis,
+    LogicalWordStats, WordMetrics,
 };
 
 const MAGIC: &[u8; 8] = b"FDUCTNT\0";
@@ -25,11 +25,14 @@ const TRAILER: &[u8; 8] = b"FDUCTEND";
 /// On-disk format version. Bump on any layout change or any change to what a record means;
 /// a sidecar of another version is a clean miss.
 ///
+/// 6: records store detection separately from name classification and one outcome block
+/// per requested analyzer unit.
+///
 /// 5: the header records the engine fingerprint beside the version, at the offset a
 /// snapshot's prologue gives it, and the content tier identity after the path encoding:
 /// the entry tier the records were analyzed over, which holds their type rules, then the
 /// analyzer set, the options fingerprint, and the analyzers.
-const FORMAT_VERSION: u32 = 5;
+const FORMAT_VERSION: u32 = 6;
 const CHECKSUM_BYTES: usize = 4;
 const MAX_CACHE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_RECORDS: u64 = 5_000_000;
@@ -248,8 +251,9 @@ pub fn load_content_cache(
         let apply_started = timings.as_ref().map(|_| Instant::now());
         match candidates.remove(&relative_path) {
             Some(candidate) if candidate.attrs.fingerprint() == analysis.fingerprint => {
-                let coverage_exclusion =
-                    !matches!(analysis.coverage, CoverageReason::Analyzed | CoverageReason::Binary);
+                let coverage_exclusion = analysis_outcomes(&analysis).any(|outcome| {
+                    !matches!(outcome, CoverageReason::Analyzed | CoverageReason::Binary)
+                });
                 let bytes = analysis.bytes;
                 match index.apply_restored_analysis(candidate, analysis) {
                     AnalysisApplyOutcome::Applied => {
@@ -460,13 +464,14 @@ fn put_record(buffer: &mut Vec<u8>, path: &Path, record: &FileAnalysis) -> Resul
     crate::snapshot::put_os_str(buffer, path.as_os_str())?;
     put_fingerprint(buffer, record.fingerprint);
     buffer.extend_from_slice(&record.bytes.to_le_bytes());
-    put_bounded_bytes(buffer, record.classification.file_type.as_str().as_bytes(), MAX_TYPE_BYTES)?;
-    buffer.push(family_code(record.classification.family));
-    buffer.push(source_code(record.classification.source));
-    buffer.push(confidence_code(record.classification.confidence));
-    buffer.push(flags_code(record.classification.flags));
-    put_metrics(buffer, record.metrics);
-    buffer.push(coverage_code(record.coverage));
+    put_bounded_bytes(buffer, record.detection.file_type.as_str().as_bytes(), MAX_TYPE_BYTES)?;
+    buffer.push(family_code(record.detection.family));
+    buffer.push(source_code(record.detection.source));
+    buffer.push(confidence_code(record.detection.confidence));
+    buffer.push(flags_code(record.detection.flags));
+    put_outcome(buffer, record.lines, put_basic_metrics);
+    put_optional_outcome(buffer, record.code, put_code_metrics);
+    put_optional_outcome(buffer, record.words, put_word_metrics);
     put_bounded_bytes(buffer, record.error.as_deref().unwrap_or("").as_bytes(), MAX_ERROR_BYTES)
 }
 
@@ -499,7 +504,6 @@ struct RecordStream<'a> {
     reader: Reader<'a>,
     remaining: u64,
     profile: AnalysisSet,
-    provenance: ContentProvenance,
 }
 
 /// Parse a sidecar for `root` whose content tier identity equals `wanted`.
@@ -524,7 +528,7 @@ fn parse_header<'a>(
     if identity != *wanted {
         return None;
     }
-    let (profile, provenance) = (identity.analysis, identity.record_provenance());
+    let profile = identity.analysis;
     if reader.os_string()?.as_os_str() != root.as_os_str() {
         return None;
     }
@@ -532,7 +536,7 @@ fn parse_header<'a>(
     if count > MAX_RECORDS {
         return None;
     }
-    Some(RecordStream { reader, remaining: count, profile, provenance })
+    Some(RecordStream { reader, remaining: count, profile })
 }
 
 fn read_record(stream: &mut RecordStream<'_>) -> Option<(PathBuf, FileAnalysis)> {
@@ -546,27 +550,32 @@ fn read_record(stream: &mut RecordStream<'_>) -> Option<(PathBuf, FileAnalysis)>
     if file_type.is_empty() {
         return None;
     }
-    let classification = Classification {
+    let detection = ContentDetection {
         file_type: FileTypeId::from_cache(file_type),
         family: read_family(stream.reader.u8()?)?,
         source: read_source(stream.reader.u8()?)?,
         confidence: read_confidence(stream.reader.u8()?)?,
         flags: read_flags(stream.reader.u8()?)?,
     };
-    let metrics = read_metrics(&mut stream.reader)?;
-    let coverage = read_coverage(stream.reader.u8()?)?;
+    let lines = read_outcome(&mut stream.reader, read_basic_metrics)?;
+    let code = read_optional_outcome(&mut stream.reader, read_code_metrics)?;
+    let words = read_optional_outcome(&mut stream.reader, read_word_metrics)?;
+    if code.is_some() != stream.profile.includes_code()
+        || words.is_some() != stream.profile.includes_words()
+    {
+        return None;
+    }
     let error = String::from_utf8(stream.reader.bytes(MAX_ERROR_BYTES)?).ok()?;
     stream.remaining = stream.remaining.saturating_sub(1);
     Some((
         relative_path,
         FileAnalysis {
-            classification,
             fingerprint,
             bytes,
-            profile: stream.profile,
-            provenance: stream.provenance.clone(),
-            metrics,
-            coverage,
+            detection,
+            lines,
+            code,
+            words,
             error: (!error.is_empty()).then_some(error),
         },
     ))
@@ -620,15 +629,37 @@ fn read_fingerprint(reader: &mut Reader<'_>) -> Option<Fingerprint> {
     })
 }
 
-fn put_metrics(buffer: &mut Vec<u8>, value: MetricValues) {
+fn put_basic_metrics(buffer: &mut Vec<u8>, value: BasicMetrics) {
+    for metric in [value.physical_lines, value.blank_lines, value.nonblank_lines, value.raw_words] {
+        buffer.extend_from_slice(&metric.to_le_bytes());
+    }
+}
+
+fn read_basic_metrics(reader: &mut Reader<'_>) -> Option<BasicMetrics> {
+    Some(BasicMetrics {
+        physical_lines: reader.u64()?,
+        blank_lines: reader.u64()?,
+        nonblank_lines: reader.u64()?,
+        raw_words: reader.u64()?,
+    })
+}
+
+fn put_code_metrics(buffer: &mut Vec<u8>, value: CodeMetrics) {
+    for metric in [value.code_lines, value.comment_lines, value.code_blank_lines] {
+        buffer.extend_from_slice(&metric.to_le_bytes());
+    }
+}
+
+fn read_code_metrics(reader: &mut Reader<'_>) -> Option<CodeMetrics> {
+    Some(CodeMetrics {
+        code_lines: reader.u64()?,
+        comment_lines: reader.u64()?,
+        code_blank_lines: reader.u64()?,
+    })
+}
+
+fn put_word_metrics(buffer: &mut Vec<u8>, value: WordMetrics) {
     for metric in [
-        value.physical_lines,
-        value.blank_lines,
-        value.nonblank_lines,
-        value.raw_words,
-        value.code_lines,
-        value.comment_lines,
-        value.code_blank_lines,
         value.paragraphs,
         value.visible_words,
         value.logical_word_stats.wide_chars,
@@ -642,15 +673,8 @@ fn put_metrics(buffer: &mut Vec<u8>, value: MetricValues) {
     }
 }
 
-fn read_metrics(reader: &mut Reader<'_>) -> Option<MetricValues> {
-    Some(MetricValues {
-        physical_lines: reader.u64()?,
-        blank_lines: reader.u64()?,
-        nonblank_lines: reader.u64()?,
-        raw_words: reader.u64()?,
-        code_lines: reader.u64()?,
-        comment_lines: reader.u64()?,
-        code_blank_lines: reader.u64()?,
+fn read_word_metrics(reader: &mut Reader<'_>) -> Option<WordMetrics> {
+    Some(WordMetrics {
         paragraphs: reader.u64()?,
         visible_words: reader.u64()?,
         logical_word_stats: LogicalWordStats {
@@ -664,6 +688,54 @@ fn read_metrics(reader: &mut Reader<'_>) -> Option<MetricValues> {
             nonwide_chars: reader.u64()?,
         },
     })
+}
+
+fn put_outcome<T: Copy>(
+    buffer: &mut Vec<u8>,
+    outcome: AnalyzerOutcome<T>,
+    put_value: fn(&mut Vec<u8>, T),
+) {
+    buffer.push(coverage_code(outcome.coverage()));
+    if let Some(value) = outcome.value() {
+        put_value(buffer, value);
+    }
+}
+
+fn read_outcome<T>(
+    reader: &mut Reader<'_>,
+    read_value: fn(&mut Reader<'_>) -> Option<T>,
+) -> Option<AnalyzerOutcome<T>> {
+    let coverage = read_coverage(reader.u8()?)?;
+    let value = if coverage == CoverageReason::Analyzed { Some(read_value(reader)?) } else { None };
+    AnalyzerOutcome::from_parts(coverage, value)
+}
+
+fn put_optional_outcome<T: Copy>(
+    buffer: &mut Vec<u8>,
+    outcome: Option<AnalyzerOutcome<T>>,
+    put_value: fn(&mut Vec<u8>, T),
+) {
+    buffer.push(u8::from(outcome.is_some()));
+    if let Some(outcome) = outcome {
+        put_outcome(buffer, outcome, put_value);
+    }
+}
+
+fn read_optional_outcome<T>(
+    reader: &mut Reader<'_>,
+    read_value: fn(&mut Reader<'_>) -> Option<T>,
+) -> Option<Option<AnalyzerOutcome<T>>> {
+    match reader.u8()? {
+        0 => Some(None),
+        1 => Some(Some(read_outcome(reader, read_value)?)),
+        _ => None,
+    }
+}
+
+fn analysis_outcomes(analysis: &FileAnalysis) -> impl Iterator<Item = CoverageReason> + '_ {
+    std::iter::once(analysis.lines.coverage())
+        .chain(analysis.code.map(|outcome| outcome.coverage()))
+        .chain(analysis.words.map(|outcome| outcome.coverage()))
 }
 
 fn put_analyzers(buffer: &mut Vec<u8>, analyzers: &[(AnalyzerId, AnalyzerVersion)]) -> Result<()> {

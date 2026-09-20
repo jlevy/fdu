@@ -18,13 +18,13 @@ use std::path::Path;
 use anstyle::{AnsiColor, Style as AnsiStyle};
 
 use crate::classify::{DetectionConfidence, DetectionSource, human_language_name};
-use crate::content::{CoverageReason, MetricValues};
+use crate::content::CoverageReason;
 use crate::control::ControlCoverage;
 use crate::engine_contract::{EntryKind, Freshness};
 use crate::query::{
     FileRow, IgnoredEntries, IgnoredTally, MetricGroup, MetricRow, MetricSummary, Report,
-    ReportSource, Section, ShareMetric, SizeMetric, SummaryRow, TreeNode, TypeRow, ViewSpec,
-    document_words, format_rfc3339, format_rfc3339_nanos,
+    ReportMetricValues, ReportSource, Section, ShareMetric, SizeMetric, SummaryRow, TreeNode,
+    TypeRow, ViewSpec, document_words, format_rfc3339, format_rfc3339_nanos,
 };
 
 /// The all-caps label naming which view a block of text output belongs to.
@@ -261,26 +261,28 @@ fn render_text_metrics(
             format!("{:.1}%", ratio(row.share.numerator, row.share.denominator) * 100.0)
         };
         let mut suffix = format!("{} {}", row.files, plural(row.files, "file", "files"));
-        if row.metrics.physical_lines > 0 {
-            if row.metrics.code_lines > 0 || row.metrics.comment_lines > 0 {
+        if row.metrics.physical_lines.unwrap_or(0) > 0 {
+            if row.metrics.code_lines.unwrap_or(0) > 0 || row.metrics.comment_lines.unwrap_or(0) > 0
+            {
                 let _ = write!(
                     suffix,
                     ", {} lines ({} code, {} comment, {} blank)",
-                    row.metrics.physical_lines,
-                    row.metrics.code_lines,
-                    row.metrics.comment_lines,
-                    row.metrics.code_blank_lines
+                    row.metrics.physical_lines.unwrap_or(0),
+                    row.metrics.code_lines.unwrap_or(0),
+                    row.metrics.comment_lines.unwrap_or(0),
+                    row.metrics.code_blank_lines.unwrap_or(0)
                 );
             } else {
                 let _ = write!(
                     suffix,
                     ", {} lines ({} nonblank, {} blank)",
-                    row.metrics.physical_lines, row.metrics.nonblank_lines, row.metrics.blank_lines
+                    row.metrics.physical_lines.unwrap_or(0),
+                    row.metrics.nonblank_lines.unwrap_or(0),
+                    row.metrics.blank_lines.unwrap_or(0)
                 );
             }
         }
-        let words = document_words(row);
-        if words > 0 {
+        if let Some(words) = document_words(row).filter(|words| *words > 0) {
             let page_tenths = words.saturating_mul(10) / summary.words_per_page;
             let _ = write!(
                 suffix,
@@ -324,6 +326,7 @@ fn share_metric_note(metric: ShareMetric) -> Option<&'static str> {
     match metric {
         ShareMetric::CodeLines => Some("Percentage column: code lines"),
         ShareMetric::DocumentWords => Some("Percentage column: document words"),
+        ShareMetric::RawWords => Some("Percentage column: raw words"),
         ShareMetric::ApparentBytes | ShareMetric::AllocatedBytes => None,
     }
 }
@@ -765,10 +768,10 @@ fn metric_row_json(row: &MetricRow, words_per_page: u64) -> String {
         row.analyzed_files,
         row.share.numerator,
         row.share.denominator,
-        metric_values_json(row.metrics, document_words(row)),
+        metric_values_json(row.metrics, document_words(row).unwrap_or(0)),
         coverage_json(&row.coverage),
         detection_json(row),
-        document_words(row),
+        document_words(row).unwrap_or(0),
         words_per_page,
     )
 }
@@ -802,20 +805,20 @@ fn detection_json(row: &MetricRow) -> String {
     )
 }
 
-fn metric_values_json(metrics: MetricValues, document_words: u64) -> String {
+fn metric_values_json(metrics: ReportMetricValues, document_words: u64) -> String {
     format!(
         "{{\"physical_lines\": {}, \"blank_lines\": {}, \"nonblank_lines\": {}, \"code_lines\": {}, \"comment_lines\": {}, \"code_blank_lines\": {}, \"raw_words\": {}, \"logical_words\": {}, \"paragraphs\": {}, \"visible_words\": {}, \"visible_logical_words\": {}, \"document_words\": {}}}",
-        metrics.physical_lines,
-        metrics.blank_lines,
-        metrics.nonblank_lines,
-        metrics.code_lines,
-        metrics.comment_lines,
-        metrics.code_blank_lines,
-        metrics.raw_words,
-        metrics.logical_word_stats.logical_words(),
-        metrics.paragraphs,
-        metrics.visible_words,
-        metrics.visible_logical_word_stats.logical_words(),
+        metrics.physical_lines.unwrap_or(0),
+        metrics.blank_lines.unwrap_or(0),
+        metrics.nonblank_lines.unwrap_or(0),
+        metrics.code_lines.unwrap_or(0),
+        metrics.comment_lines.unwrap_or(0),
+        metrics.code_blank_lines.unwrap_or(0),
+        metrics.raw_words.unwrap_or(0),
+        metrics.logical_words.unwrap_or(0),
+        metrics.paragraphs.unwrap_or(0),
+        metrics.visible_words.unwrap_or(0),
+        metrics.visible_logical_words.unwrap_or(0),
         document_words,
     )
 }
@@ -1139,24 +1142,23 @@ fn yaml_metric_row(out: &mut String, row: &MetricRow, words_per_page: u64, pad: 
     let _ = writeln!(out, "{rest}analyzed_files: {}", row.analyzed_files);
     let _ = writeln!(out, "{rest}share_numerator: {}", row.share.numerator);
     let _ = writeln!(out, "{rest}share_denominator: {}", row.share.denominator);
-    let _ = writeln!(out, "{rest}physical_lines: {}", row.metrics.physical_lines);
-    let _ = writeln!(out, "{rest}blank_lines: {}", row.metrics.blank_lines);
-    let _ = writeln!(out, "{rest}nonblank_lines: {}", row.metrics.nonblank_lines);
-    let _ = writeln!(out, "{rest}code_lines: {}", row.metrics.code_lines);
-    let _ = writeln!(out, "{rest}comment_lines: {}", row.metrics.comment_lines);
-    let _ = writeln!(out, "{rest}code_blank_lines: {}", row.metrics.code_blank_lines);
-    let _ = writeln!(out, "{rest}raw_words: {}", row.metrics.raw_words);
-    let _ =
-        writeln!(out, "{rest}logical_words: {}", row.metrics.logical_word_stats.logical_words());
-    let _ = writeln!(out, "{rest}paragraphs: {}", row.metrics.paragraphs);
-    let _ = writeln!(out, "{rest}visible_words: {}", row.metrics.visible_words);
+    let _ = writeln!(out, "{rest}physical_lines: {}", row.metrics.physical_lines.unwrap_or(0));
+    let _ = writeln!(out, "{rest}blank_lines: {}", row.metrics.blank_lines.unwrap_or(0));
+    let _ = writeln!(out, "{rest}nonblank_lines: {}", row.metrics.nonblank_lines.unwrap_or(0));
+    let _ = writeln!(out, "{rest}code_lines: {}", row.metrics.code_lines.unwrap_or(0));
+    let _ = writeln!(out, "{rest}comment_lines: {}", row.metrics.comment_lines.unwrap_or(0));
+    let _ = writeln!(out, "{rest}code_blank_lines: {}", row.metrics.code_blank_lines.unwrap_or(0));
+    let _ = writeln!(out, "{rest}raw_words: {}", row.metrics.raw_words.unwrap_or(0));
+    let _ = writeln!(out, "{rest}logical_words: {}", row.metrics.logical_words.unwrap_or(0));
+    let _ = writeln!(out, "{rest}paragraphs: {}", row.metrics.paragraphs.unwrap_or(0));
+    let _ = writeln!(out, "{rest}visible_words: {}", row.metrics.visible_words.unwrap_or(0));
     let _ = writeln!(
         out,
         "{rest}visible_logical_words: {}",
-        row.metrics.visible_logical_word_stats.logical_words()
+        row.metrics.visible_logical_words.unwrap_or(0)
     );
-    let _ = writeln!(out, "{rest}document_words: {}", document_words(row));
-    let _ = writeln!(out, "{rest}page_words: {}", document_words(row));
+    let _ = writeln!(out, "{rest}document_words: {}", document_words(row).unwrap_or(0));
+    let _ = writeln!(out, "{rest}page_words: {}", document_words(row).unwrap_or(0));
     let _ = writeln!(out, "{rest}words_per_page: {words_per_page}");
     if row.coverage.is_empty() {
         let _ = writeln!(out, "{rest}coverage: {{}}");

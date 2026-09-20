@@ -21,9 +21,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use crate::classify::{ContentFamily, DetectionConfidence, DetectionSource};
-use crate::content::{
-    AnalysisSet, ContentProvenance, CoverageReason, LogicalWordStats, MetricValues,
-};
+use crate::content::{AnalysisSet, ContentProvenance, CoverageReason, LogicalWordStats, MetricDef};
 use crate::control::ControlCoverage;
 use crate::engine_contract::{EntryKind, Freshness, ScanScope};
 use crate::index::{EntryId, ExtTally, Index, RollUpScalars};
@@ -646,6 +644,8 @@ pub enum ShareMetric {
     CodeLines,
     /// Raw or reader-visible normalized document words, selected by analysis depth.
     DocumentWords,
+    /// Whitespace-delimited words from the shared lines unit.
+    RawWords,
 }
 
 impl ShareMetric {
@@ -656,13 +656,85 @@ impl ShareMetric {
             Self::AllocatedBytes => "allocated_bytes",
             Self::CodeLines => "code_lines",
             Self::DocumentWords => "document_words",
+            Self::RawWords => "raw_words",
         }
+    }
+}
+
+/// One stable group in a metric-summary section.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct ReportMetricValues {
+    /// Physical lines, present with the lines unit.
+    pub physical_lines: Option<u64>,
+    /// Blank lines, present with the lines unit.
+    pub blank_lines: Option<u64>,
+    /// Nonblank lines, present with the lines unit.
+    pub nonblank_lines: Option<u64>,
+    /// Raw words, present with the lines unit.
+    pub raw_words: Option<u64>,
+    /// Code lines, present with the code unit.
+    pub code_lines: Option<u64>,
+    /// Comment lines, present with the code unit.
+    pub comment_lines: Option<u64>,
+    /// Code-analyzer blank lines, present with the code unit.
+    pub code_blank_lines: Option<u64>,
+    /// Logical words, present with the words unit.
+    pub logical_words: Option<u64>,
+    /// Paragraphs, present with the words unit.
+    pub paragraphs: Option<u64>,
+    /// Reader-visible words, present with the words unit.
+    pub visible_words: Option<u64>,
+    /// Reader-visible logical words, present with the words unit.
+    pub visible_logical_words: Option<u64>,
+    /// Query-selected document words, present with the words unit.
+    pub document_words: Option<u64>,
+}
+
+impl ReportMetricValues {
+    fn for_analysis(analysis: AnalysisSet) -> Self {
+        let lines = analysis.is_enabled().then_some(0);
+        let code = analysis.includes_code().then_some(0);
+        let words = analysis.includes_words().then_some(0);
+        Self {
+            physical_lines: lines,
+            blank_lines: lines,
+            nonblank_lines: lines,
+            raw_words: lines,
+            code_lines: code,
+            comment_lines: code,
+            code_blank_lines: code,
+            logical_words: words,
+            paragraphs: words,
+            visible_words: words,
+            visible_logical_words: words,
+            document_words: words,
+        }
+    }
+
+    fn add_assign(&mut self, other: &Self) {
+        add_optional(&mut self.physical_lines, other.physical_lines);
+        add_optional(&mut self.blank_lines, other.blank_lines);
+        add_optional(&mut self.nonblank_lines, other.nonblank_lines);
+        add_optional(&mut self.raw_words, other.raw_words);
+        add_optional(&mut self.code_lines, other.code_lines);
+        add_optional(&mut self.comment_lines, other.comment_lines);
+        add_optional(&mut self.code_blank_lines, other.code_blank_lines);
+        add_optional(&mut self.paragraphs, other.paragraphs);
+        add_optional(&mut self.visible_words, other.visible_words);
+    }
+}
+
+fn add_optional(total: &mut Option<u64>, value: Option<u64>) {
+    if let (Some(total), Some(value)) = (total, value) {
+        *total = total.saturating_add(value);
     }
 }
 
 /// One stable group in a metric-summary section.
 #[derive(Clone, Debug)]
 pub struct MetricRow {
+    /// Analyzer units requested for this row.
+    pub analysis: AnalysisSet,
     /// Stable type or family label.
     pub id: String,
     /// Broad family for type-grouped rows.
@@ -676,7 +748,11 @@ pub struct MetricRow {
     /// Files whose requested metrics completed.
     pub analyzed_files: u64,
     /// Additive content metric slots.
-    pub metrics: MetricValues,
+    pub metrics: ReportMetricValues,
+    /// Additive sufficient statistics behind `logical_words`.
+    pub(crate) logical_word_stats: LogicalWordStats,
+    /// Additive sufficient statistics behind `visible_logical_words`.
+    pub(crate) visible_logical_word_stats: LogicalWordStats,
     /// Query-selected raw document words before normalization.
     pub document_raw_words: u64,
     /// Additive sufficient statistics for the query-selected document projection.
@@ -685,6 +761,12 @@ pub struct MetricRow {
     pub document_metric_files: u64,
     /// Explicit content-analysis outcomes.
     pub coverage: BTreeMap<CoverageReason, u64>,
+    /// Lines-unit outcomes.
+    pub lines_coverage: BTreeMap<CoverageReason, u64>,
+    /// Code-unit outcomes when requested.
+    pub code_coverage: Option<BTreeMap<CoverageReason, u64>>,
+    /// Words-unit outcomes when requested.
+    pub words_coverage: Option<BTreeMap<CoverageReason, u64>>,
     /// Files by the classification tier that established their type.
     pub detection_sources: BTreeMap<DetectionSource, u64>,
     /// Files by classification confidence.
@@ -697,6 +779,39 @@ pub struct MetricRow {
     pub documentation_files: u64,
     /// Exact share in the report's selected size metric.
     pub share: MetricShare,
+}
+
+impl MetricRow {
+    /// Return one registry metric when its owning analyzer unit was requested.
+    pub fn metric_value(&self, metric: &MetricDef) -> Option<u64> {
+        if !self.analysis.contains(metric.owner) {
+            return None;
+        }
+        match metric.name {
+            "physical_lines" => self.metrics.physical_lines,
+            "blank_lines" => self.metrics.blank_lines,
+            "nonblank_lines" => self.metrics.nonblank_lines,
+            "raw_words" => self.metrics.raw_words,
+            "code_lines" => self.metrics.code_lines,
+            "comment_lines" => self.metrics.comment_lines,
+            "code_blank_lines" => self.metrics.code_blank_lines,
+            "logical_words" => self.metrics.logical_words,
+            "paragraphs" => self.metrics.paragraphs,
+            "visible_words" => self.metrics.visible_words,
+            "visible_logical_words" => self.metrics.visible_logical_words,
+            "document_words" => self.metrics.document_words,
+            _ => None,
+        }
+    }
+
+    fn finish_derived_metrics(&mut self) {
+        if self.analysis.includes_words() {
+            self.metrics.logical_words = Some(self.logical_word_stats.logical_words());
+            self.metrics.visible_logical_words =
+                Some(self.visible_logical_word_stats.logical_words());
+            self.metrics.document_words = Some(self.document_word_stats.logical_words());
+        }
+    }
 }
 
 /// Totals and grouped rows for types, families, languages, or documents.
@@ -1484,8 +1599,7 @@ fn metric_summary(
     let mut grouped = BTreeMap::<String, MetricRow>::new();
     for file in files.iter().filter(|row| row.kind == EntryKind::File) {
         let cached = index.content().and_then(|content| content.file(&file.path));
-        let classification = cached
-            .map_or_else(|| index.classify(&file.path), |record| record.classification.clone());
+        let classification = index.classify(&file.path);
         let included = match view {
             ViewSpec::Languages => classification.family == ContentFamily::Code,
             ViewSpec::Documents => {
@@ -1507,17 +1621,23 @@ fn metric_summary(
             MetricGroup::Family => classification.family.as_str().to_string(),
         };
         let row = grouped.entry(id.clone()).or_insert_with(|| MetricRow {
+            analysis: content,
             id,
             family: classification.family,
             files: 0,
             bytes: 0,
             allocated: 0,
             analyzed_files: 0,
-            metrics: MetricValues::default(),
+            metrics: ReportMetricValues::for_analysis(content),
+            logical_word_stats: LogicalWordStats::default(),
+            visible_logical_word_stats: LogicalWordStats::default(),
             document_raw_words: 0,
             document_word_stats: LogicalWordStats::default(),
             document_metric_files: 0,
             coverage: BTreeMap::new(),
+            lines_coverage: BTreeMap::new(),
+            code_coverage: content.includes_code().then(BTreeMap::new),
+            words_coverage: content.includes_words().then(BTreeMap::new),
             detection_sources: BTreeMap::new(),
             detection_confidence: BTreeMap::new(),
             generated_files: 0,
@@ -1528,51 +1648,96 @@ fn metric_summary(
         row.files = row.files.saturating_add(1);
         row.bytes = row.bytes.saturating_add(file.bytes);
         row.allocated = row.allocated.saturating_add(file.allocated);
-        *row.detection_sources.entry(classification.source).or_default() += 1;
-        *row.detection_confidence.entry(classification.confidence).or_default() += 1;
-        row.generated_files =
-            row.generated_files.saturating_add(u64::from(classification.flags.generated));
-        row.vendored_files =
-            row.vendored_files.saturating_add(u64::from(classification.flags.vendored));
+        let detection = cached.map_or(
+            (classification.source, classification.confidence, classification.flags),
+            |record| (record.detection.source, record.detection.confidence, record.detection.flags),
+        );
+        *row.detection_sources.entry(detection.0).or_default() += 1;
+        *row.detection_confidence.entry(detection.1).or_default() += 1;
+        row.generated_files = row.generated_files.saturating_add(u64::from(detection.2.generated));
+        row.vendored_files = row.vendored_files.saturating_add(u64::from(detection.2.vendored));
         row.documentation_files =
-            row.documentation_files.saturating_add(u64::from(classification.flags.documentation));
+            row.documentation_files.saturating_add(u64::from(detection.2.documentation));
         if let Some(record) = cached {
-            *row.coverage.entry(record.coverage).or_default() += 1;
-            if record.coverage == CoverageReason::Analyzed {
+            *row.lines_coverage.entry(record.lines.coverage()).or_default() += 1;
+            if let (Some(coverage), Some(outcome)) = (&mut row.code_coverage, record.code) {
+                *coverage.entry(outcome.coverage()).or_default() += 1;
+            }
+            if let (Some(coverage), Some(outcome)) = (&mut row.words_coverage, record.words) {
+                *coverage.entry(outcome.coverage()).or_default() += 1;
+            }
+            let selected = match view {
+                ViewSpec::Languages if content.includes_code() => {
+                    record.code.map(|outcome| outcome.coverage())
+                }
+                ViewSpec::Documents if content.includes_words() => {
+                    record.words.map(|outcome| outcome.coverage())
+                }
+                _ => None,
+            }
+            .unwrap_or(record.lines.coverage());
+            *row.coverage.entry(selected).or_default() += 1;
+            if selected == CoverageReason::Analyzed {
                 row.analyzed_files = row.analyzed_files.saturating_add(1);
-                row.metrics.add_assign(&record.metrics);
-                if record.profile.includes_words() {
-                    row.document_metric_files = row.document_metric_files.saturating_add(1);
-                    if classification.file_type.as_str() == "markdown" {
-                        row.document_raw_words =
-                            row.document_raw_words.saturating_add(record.metrics.visible_words);
-                        row.document_word_stats
-                            .add_assign(record.metrics.visible_logical_word_stats);
-                    } else {
-                        row.document_raw_words =
-                            row.document_raw_words.saturating_add(record.metrics.raw_words);
-                        row.document_word_stats.add_assign(record.metrics.logical_word_stats);
-                    }
-                } else {
+            }
+            if let Some(lines) = record.lines.value() {
+                add_optional(&mut row.metrics.physical_lines, Some(lines.physical_lines));
+                add_optional(&mut row.metrics.blank_lines, Some(lines.blank_lines));
+                add_optional(&mut row.metrics.nonblank_lines, Some(lines.nonblank_lines));
+                add_optional(&mut row.metrics.raw_words, Some(lines.raw_words));
+                row.document_raw_words = row.document_raw_words.saturating_add(lines.raw_words);
+            }
+            if let Some(code_metrics) = record.code.and_then(crate::content::AnalyzerOutcome::value)
+            {
+                add_optional(&mut row.metrics.code_lines, Some(code_metrics.code_lines));
+                add_optional(&mut row.metrics.comment_lines, Some(code_metrics.comment_lines));
+                add_optional(
+                    &mut row.metrics.code_blank_lines,
+                    Some(code_metrics.code_blank_lines),
+                );
+            }
+            if let Some(words) = record.words.and_then(crate::content::AnalyzerOutcome::value) {
+                add_optional(&mut row.metrics.paragraphs, Some(words.paragraphs));
+                add_optional(&mut row.metrics.visible_words, Some(words.visible_words));
+                row.logical_word_stats.add_assign(words.logical_word_stats);
+                row.visible_logical_word_stats.add_assign(words.visible_logical_word_stats);
+                row.document_metric_files = row.document_metric_files.saturating_add(1);
+                if classification.file_type.as_str() == "markdown" {
+                    row.document_raw_words = row
+                        .document_raw_words
+                        .saturating_sub(record.lines.value().map_or(0, |lines| lines.raw_words));
                     row.document_raw_words =
-                        row.document_raw_words.saturating_add(record.metrics.raw_words);
+                        row.document_raw_words.saturating_add(words.visible_words);
+                    row.document_word_stats.add_assign(words.visible_logical_word_stats);
+                } else {
+                    row.document_word_stats.add_assign(words.logical_word_stats);
                 }
             }
         }
     }
 
+    for row in grouped.values_mut() {
+        row.finish_derived_metrics();
+    }
+
     let mut total = MetricRow {
+        analysis: content,
         id: "total".to_string(),
         family: ContentFamily::Unknown,
         files: 0,
         bytes: 0,
         allocated: 0,
         analyzed_files: 0,
-        metrics: MetricValues::default(),
+        metrics: ReportMetricValues::for_analysis(content),
+        logical_word_stats: LogicalWordStats::default(),
+        visible_logical_word_stats: LogicalWordStats::default(),
         document_raw_words: 0,
         document_word_stats: LogicalWordStats::default(),
         document_metric_files: 0,
         coverage: BTreeMap::new(),
+        lines_coverage: BTreeMap::new(),
+        code_coverage: content.includes_code().then(BTreeMap::new),
+        words_coverage: content.includes_words().then(BTreeMap::new),
         detection_sources: BTreeMap::new(),
         detection_confidence: BTreeMap::new(),
         generated_files: 0,
@@ -1586,12 +1751,21 @@ fn metric_summary(
         total.allocated = total.allocated.saturating_add(row.allocated);
         total.analyzed_files = total.analyzed_files.saturating_add(row.analyzed_files);
         total.metrics.add_assign(&row.metrics);
+        total.logical_word_stats.add_assign(row.logical_word_stats);
+        total.visible_logical_word_stats.add_assign(row.visible_logical_word_stats);
         total.document_raw_words = total.document_raw_words.saturating_add(row.document_raw_words);
         total.document_word_stats.add_assign(row.document_word_stats);
         total.document_metric_files =
             total.document_metric_files.saturating_add(row.document_metric_files);
         for (reason, count) in &row.coverage {
             *total.coverage.entry(*reason).or_default() += count;
+        }
+        merge_coverage(&mut total.lines_coverage, &row.lines_coverage);
+        if let (Some(total), Some(row)) = (&mut total.code_coverage, &row.code_coverage) {
+            merge_coverage(total, row);
+        }
+        if let (Some(total), Some(row)) = (&mut total.words_coverage, &row.words_coverage) {
+            merge_coverage(total, row);
         }
         for (source, count) in &row.detection_sources {
             *total.detection_sources.entry(*source).or_default() += count;
@@ -1604,6 +1778,7 @@ fn metric_summary(
         total.documentation_files =
             total.documentation_files.saturating_add(row.documentation_files);
     }
+    total.finish_derived_metrics();
     let byte_share_metric = match query.selection.size {
         SizeMetric::Apparent => ShareMetric::ApparentBytes,
         SizeMetric::Allocated => ShareMetric::AllocatedBytes,
@@ -1612,8 +1787,11 @@ fn metric_summary(
         // The requested analyzers, not the stored ones: a share is a fact about what the
         // request asked to measure, and `validate_read` proved the index holds exactly it.
         ViewSpec::Languages if content.includes_code() => ShareMetric::CodeLines,
-        ViewSpec::Documents => ShareMetric::DocumentWords,
-        ViewSpec::Languages | ViewSpec::Types | ViewSpec::Families => byte_share_metric,
+        ViewSpec::Documents if content.includes_words() => ShareMetric::DocumentWords,
+        ViewSpec::Languages | ViewSpec::Documents if content.is_enabled() => ShareMetric::RawWords,
+        ViewSpec::Languages | ViewSpec::Documents | ViewSpec::Types | ViewSpec::Families => {
+            byte_share_metric
+        }
         ViewSpec::Tree
         | ViewSpec::Extensions
         | ViewSpec::Files
@@ -1655,22 +1833,39 @@ fn metric_summary(
     }
 }
 
+fn merge_coverage(total: &mut BTreeMap<CoverageReason, u64>, row: &BTreeMap<CoverageReason, u64>) {
+    for (reason, count) in row {
+        *total.entry(*reason).or_default() += count;
+    }
+}
+
 fn share_value(row: &MetricRow, metric: ShareMetric) -> u64 {
     match metric {
         ShareMetric::ApparentBytes => row.bytes,
         ShareMetric::AllocatedBytes => row.allocated,
-        ShareMetric::CodeLines => row.metrics.code_lines,
-        ShareMetric::DocumentWords => document_words(row),
+        ShareMetric::CodeLines => row.metrics.code_lines.unwrap_or(0),
+        ShareMetric::DocumentWords => document_words(row).unwrap_or(0),
+        ShareMetric::RawWords => row.metrics.raw_words.unwrap_or(0),
     }
 }
 
 /// Derive the selected document volume only after every sufficient statistic is added.
-pub fn document_words(row: &MetricRow) -> u64 {
-    if row.document_metric_files > 0 {
-        row.document_word_stats.logical_words()
-    } else {
-        row.document_raw_words
-    }
+pub fn document_words(row: &MetricRow) -> Option<u64> {
+    row.metrics.document_words
+}
+
+/// Derived page inputs, absent unless the words unit was requested.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Pages {
+    /// Query-selected document words.
+    pub words: u64,
+    /// Words represented by one page.
+    pub words_per_page: u64,
+}
+
+/// Build page inputs only when document words were measured.
+pub fn pages(row: &MetricRow, words_per_page: u64) -> Option<Pages> {
+    document_words(row).map(|words| Pages { words, words_per_page: words_per_page.max(1) })
 }
 
 /// Rows for the files view.
@@ -2603,7 +2798,7 @@ mod tests {
             panic!("languages")
         };
         assert_eq!(languages.total.files, 1);
-        assert_eq!(languages.total.metrics.code_lines, 3);
+        assert_eq!(languages.total.metrics.code_lines, Some(3));
         let Section::Metrics { summary: documents, .. } = &together.sections[3] else {
             panic!("documents")
         };

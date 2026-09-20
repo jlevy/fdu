@@ -1165,8 +1165,15 @@ mod tests {
             .content()
             .and_then(|content| content.file(Path::new("main.rs")))
             .expect("custom analysis record");
-        assert_eq!(content.classification.file_type.as_str(), "notes");
-        assert_eq!(content.provenance.type_rules_fingerprint, mine.fingerprint());
+        assert_eq!(content.detection.file_type.as_str(), "notes");
+        assert_eq!(
+            index
+                .content()
+                .and_then(content::ContentIndex::provenance)
+                .expect("content provenance")
+                .type_rules_fingerprint,
+            mine.fingerprint()
+        );
 
         // And the snapshot the custom run wrote is reusable by a run under the same rules.
         let (_, report) = open(dir.path(), &custom_config).expect("second custom open");
@@ -1377,9 +1384,9 @@ mod tests {
         };
 
         let (first, first_report) = open(dir.path(), &auto).expect("cold analyzed open");
-        assert_eq!(first_report.analysis.expect("analysis").analyzed, 1);
+        assert_eq!(first_report.analysis.expect("analysis").lines.analyzed, 1);
         assert_eq!(
-            first.content_rollup(Path::new("")).expect("content").total.metrics.raw_words,
+            first.content_rollup(Path::new("")).expect("content").total.lines.metrics.raw_words,
             2
         );
         assert!(content::content_cache_path(&snapshot_path).exists());
@@ -1395,7 +1402,7 @@ mod tests {
         assert_eq!(cached_report.content_cache.hits, 1);
         assert_eq!(cached_report.content_cache.bytes, 8);
         assert_eq!(
-            cached.content_rollup(Path::new("")).expect("content").total.metrics.raw_words,
+            cached.content_rollup(Path::new("")).expect("content").total.lines.metrics.raw_words,
             2
         );
     }
@@ -1418,7 +1425,7 @@ mod tests {
 
         let (_, cold_report) = open(dir.path(), &auto).expect("cold analyzed open");
         assert!(cold_report.is_complete());
-        assert_eq!(cold_report.analysis.expect("analysis").invalid_utf8, 1);
+        assert_eq!(cold_report.analysis.expect("analysis").lines.invalid_utf8, 1);
         assert!(cold_report.error_messages().is_empty());
 
         let (_, warm_report) = open(dir.path(), &auto).expect("warm analyzed open");
@@ -1972,7 +1979,13 @@ mod save_tests {
         assert_eq!((loaded.usable, loaded.hits, loaded.stale), (true, 1, 1), "{loaded:?}");
         let content = fresh.content().expect("content");
         assert_eq!(
-            content.file(Path::new("locked/old.md")).expect("the seeded record").metrics.raw_words,
+            content
+                .file(Path::new("locked/old.md"))
+                .expect("the seeded record")
+                .lines
+                .value()
+                .expect("line metrics")
+                .raw_words,
             1
         );
     }

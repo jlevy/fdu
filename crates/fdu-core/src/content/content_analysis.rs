@@ -10,9 +10,10 @@ use crate::Index;
 use crate::classify::{ContentFamily, TypeRegistry, classify_with};
 
 use super::{
-    AnalysisApplyOutcome, AnalysisCandidate, AnalysisObservation, AnalysisRequest,
-    BasicAccumulator, CodeAccumulator, ContentProvenance, CoverageReason, FileAnalysis,
-    MetricValues, TextAdmission, content_markdown_metrics::analyze_markdown,
+    AnalysisApplyOutcome, AnalysisCandidate, AnalysisObservation, AnalysisRequest, AnalyzerOutcome,
+    BasicAccumulator, BasicMetrics, CodeAccumulator, CodeMetrics, ContentProvenance,
+    CoverageReason, FileAnalysis, TextAdmission, WordMetrics,
+    content_markdown_metrics::analyze_markdown,
 };
 
 const READ_CHUNK_BYTES: usize = 64 * 1024;
@@ -32,7 +33,18 @@ pub struct AnalysisReport {
     pub applied: u64,
     /// Results discarded because indexed metadata changed while workers ran.
     pub stale: u64,
-    /// Files for which metrics were produced.
+    /// Coverage of the shared lines unit.
+    pub lines: AnalyzerCoverage,
+    /// Coverage of the code unit when requested.
+    pub code: Option<AnalyzerCoverage>,
+    /// Coverage of the words unit when requested.
+    pub words: Option<AnalyzerCoverage>,
+}
+
+/// Operational and semantic outcomes for one requested analyzer unit.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct AnalyzerCoverage {
+    /// Files for which the unit produced metrics.
     pub analyzed: u64,
     /// Known or observed binary files.
     pub binary: u64,
@@ -42,7 +54,7 @@ pub struct AnalysisReport {
     pub changed_during_read: u64,
     /// File-open, metadata, or read failures.
     pub io_errors: u64,
-    /// Files for which no requested analyzer was available.
+    /// Files for which this analyzer was unavailable.
     pub unsupported: u64,
 }
 
@@ -51,8 +63,11 @@ impl AnalysisReport {
     ///
     /// Binary data, invalid UTF-8, and unsupported analyzers are coverage outcomes. They
     /// remain visible in roll-ups but do not mean the filesystem operation failed.
-    pub const fn is_complete(&self) -> bool {
-        self.stale == 0 && self.changed_during_read == 0 && self.io_errors == 0
+    pub fn is_complete(&self) -> bool {
+        self.stale == 0
+            && self.lines.is_complete()
+            && self.code.is_none_or(|coverage| coverage.is_complete())
+            && self.words.is_none_or(|coverage| coverage.is_complete())
     }
 
     /// Explain operational failures without presenting expected coverage as an error.
@@ -60,9 +75,35 @@ impl AnalysisReport {
         (!self.is_complete()).then(|| {
             format!(
                 "content analysis had operational failures (I/O errors: {}; changed during read: {}; stale results: {}). File and byte totals remain complete; content metrics omit affected files",
-                self.io_errors, self.changed_during_read, self.stale
+                self.io_errors(), self.changed_during_read(), self.stale
             )
         })
+    }
+
+    fn io_errors(&self) -> u64 {
+        self.lines.io_errors
+    }
+
+    fn changed_during_read(&self) -> u64 {
+        self.lines.changed_during_read
+    }
+}
+
+impl AnalyzerCoverage {
+    const fn is_complete(self) -> bool {
+        self.changed_during_read == 0 && self.io_errors == 0
+    }
+
+    fn count(&mut self, reason: CoverageReason) {
+        let counter = match reason {
+            CoverageReason::Analyzed => &mut self.analyzed,
+            CoverageReason::Binary => &mut self.binary,
+            CoverageReason::InvalidUtf8 => &mut self.invalid_utf8,
+            CoverageReason::IoError => &mut self.io_errors,
+            CoverageReason::ChangedDuringRead => &mut self.changed_during_read,
+            CoverageReason::Unsupported => &mut self.unsupported,
+        };
+        *counter = counter.saturating_add(1);
     }
 }
 
@@ -80,6 +121,8 @@ pub fn analyze_index(index: &mut Index, request: AnalysisRequest) -> AnalysisRep
     let candidates = index.pending_analysis_candidates(request);
     let mut report = AnalysisReport {
         candidates: u64::try_from(candidates.len()).unwrap_or(u64::MAX),
+        code: request.profile.includes_code().then(AnalyzerCoverage::default),
+        words: request.profile.includes_words().then(AnalyzerCoverage::default),
         ..AnalysisReport::default()
     };
     if candidates.is_empty() {
@@ -115,7 +158,7 @@ pub fn analyze_index(index: &mut Index, request: AnalysisRequest) -> AnalysisRep
         drop(sender);
         for (observation, bytes_read) in receiver {
             report.bytes_read = report.bytes_read.saturating_add(bytes_read);
-            count_coverage(&mut report, observation.analysis.coverage);
+            count_coverage(&mut report, &observation.analysis);
             match index.apply_analysis(observation) {
                 AnalysisApplyOutcome::Applied => report.applied = report.applied.saturating_add(1),
                 AnalysisApplyOutcome::Stale => report.stale = report.stale.saturating_add(1),
@@ -156,7 +199,8 @@ fn analyze_candidate(
     } else {
         analyze_open_file(types, &candidate, request)
     };
-    (AnalysisObservation { candidate, analysis }, bytes_read)
+    let provenance = ContentProvenance::for_request(request, types.fingerprint());
+    (AnalysisObservation { candidate, profile: request.profile, provenance, analysis }, bytes_read)
 }
 
 fn analyze_open_file(
@@ -226,6 +270,21 @@ fn analyze_open_file(
                         early_binary = Some(classification);
                         break;
                     }
+                    if prefix.len() == CLASSIFICATION_PREFIX_BYTES {
+                        if let Some(deferred) = deferred_code.take() {
+                            if classification.family == ContentFamily::Code {
+                                if let Some(mut code) =
+                                    CodeAccumulator::for_type(classification.file_type.as_str())
+                                {
+                                    code.push(&deferred);
+                                    code_accumulator = Some(code);
+                                }
+                            }
+                        }
+                        if classification.file_type.as_str() != "markdown" {
+                            markdown_source = None;
+                        }
+                    }
                 }
                 accumulator.push(&chunk[..count]);
                 if let Some(code) = &mut code_accumulator {
@@ -289,14 +348,9 @@ fn analyze_open_file(
             // this tree", which is the cheap proxy for context-window sizing that agent
             // consumers ask for.
             //
-            // Paragraphs stay a prose concept. A blank-line-separated block of code is
-            // not a paragraph, and counting it as one would make the prose rows lie
-            // rather than merely say less.
-            if !matches!(classification.family, ContentFamily::Prose | ContentFamily::Markup) {
-                metrics.paragraphs = 0;
-            }
-            if request.profile.includes_code() && classification.family == ContentFamily::Code {
-                if code_accumulator.is_none() {
+            let mut code_supported = !request.profile.includes_code();
+            if request.profile.includes_code() {
+                if code_accumulator.is_none() && classification.family == ContentFamily::Code {
                     if let Some(deferred) = deferred_code {
                         if let Some(mut code) =
                             CodeAccumulator::for_type(classification.file_type.as_str())
@@ -306,24 +360,14 @@ fn analyze_open_file(
                         }
                     }
                 }
-                let Some(code) = code_accumulator else {
-                    return (
-                        record(
-                            types,
-                            candidate,
-                            request,
-                            classification,
-                            CoverageReason::Unsupported,
-                            None,
-                        ),
-                        bytes_read,
-                    );
-                };
-                let code_metrics = code.finish();
-                debug_assert_eq!(metrics.physical_lines, code_metrics.physical_lines);
-                metrics.code_lines = code_metrics.code_lines;
-                metrics.comment_lines = code_metrics.comment_lines;
-                metrics.code_blank_lines = code_metrics.code_blank_lines;
+                code_supported = code_accumulator.is_some();
+                if let Some(code) = code_accumulator.take() {
+                    let code_metrics = code.finish();
+                    debug_assert_eq!(metrics.physical_lines, code_metrics.physical_lines);
+                    metrics.code_lines = code_metrics.code_lines;
+                    metrics.comment_lines = code_metrics.comment_lines;
+                    metrics.code_blank_lines = code_metrics.code_blank_lines;
+                }
             }
             if request.profile.includes_words() && classification.file_type.as_str() == "markdown" {
                 if let Some(source) = markdown_source {
@@ -335,7 +379,32 @@ fn analyze_open_file(
                     metrics.paragraphs = visible.paragraphs;
                 }
             }
-            analyzed_record(types, candidate, request, classification, metrics)
+            let lines = BasicMetrics {
+                physical_lines: metrics.physical_lines,
+                blank_lines: metrics.blank_lines,
+                nonblank_lines: metrics.nonblank_lines,
+                raw_words: metrics.raw_words,
+            };
+            let code = request.profile.includes_code().then(|| {
+                if !code_supported {
+                    AnalyzerOutcome::unavailable(CoverageReason::Unsupported)
+                } else {
+                    AnalyzerOutcome::analyzed(CodeMetrics {
+                        code_lines: metrics.code_lines,
+                        comment_lines: metrics.comment_lines,
+                        code_blank_lines: metrics.code_blank_lines,
+                    })
+                }
+            });
+            let words = request.profile.includes_words().then_some(AnalyzerOutcome::analyzed(
+                WordMetrics {
+                    paragraphs: metrics.paragraphs,
+                    visible_words: metrics.visible_words,
+                    logical_word_stats: metrics.logical_word_stats,
+                    visible_logical_word_stats: metrics.visible_logical_word_stats,
+                },
+            ));
+            analyzed_record(candidate, classification, lines, code, words)
         }
         TextAdmission::Binary => {
             record(types, candidate, request, classification, CoverageReason::Binary, None)
@@ -348,15 +417,20 @@ fn analyze_open_file(
 }
 
 fn analyzed_record(
-    types: &TypeRegistry,
     candidate: &AnalysisCandidate,
-    request: AnalysisRequest,
     classification: crate::classify::Classification,
-    metrics: MetricValues,
+    lines: BasicMetrics,
+    code: Option<AnalyzerOutcome<CodeMetrics>>,
+    words: Option<AnalyzerOutcome<WordMetrics>>,
 ) -> FileAnalysis {
     FileAnalysis {
-        metrics,
-        ..record(types, candidate, request, classification, CoverageReason::Analyzed, None)
+        fingerprint: candidate.attrs.fingerprint(),
+        bytes: candidate.attrs.size,
+        detection: classification.into(),
+        lines: AnalyzerOutcome::analyzed(lines),
+        code,
+        words,
+        error: None,
     }
 }
 
@@ -387,7 +461,7 @@ fn char_boundary_at_or_before(value: &str, limit: usize) -> usize {
 }
 
 fn record(
-    types: &TypeRegistry,
+    _types: &TypeRegistry,
     candidate: &AnalysisCandidate,
     request: AnalysisRequest,
     classification: crate::classify::Classification,
@@ -395,27 +469,24 @@ fn record(
     error: Option<String>,
 ) -> FileAnalysis {
     FileAnalysis {
-        classification,
         fingerprint: candidate.attrs.fingerprint(),
         bytes: candidate.attrs.size,
-        profile: request.profile,
-        provenance: ContentProvenance::for_request(request, types.fingerprint()),
-        metrics: MetricValues::default(),
-        coverage,
+        detection: classification.into(),
+        lines: AnalyzerOutcome::unavailable(coverage),
+        code: request.profile.includes_code().then_some(AnalyzerOutcome::unavailable(coverage)),
+        words: request.profile.includes_words().then_some(AnalyzerOutcome::unavailable(coverage)),
         error,
     }
 }
 
-fn count_coverage(report: &mut AnalysisReport, coverage: CoverageReason) {
-    let counter = match coverage {
-        CoverageReason::Analyzed => &mut report.analyzed,
-        CoverageReason::Binary => &mut report.binary,
-        CoverageReason::InvalidUtf8 => &mut report.invalid_utf8,
-        CoverageReason::IoError => &mut report.io_errors,
-        CoverageReason::ChangedDuringRead => &mut report.changed_during_read,
-        CoverageReason::Unsupported => &mut report.unsupported,
-    };
-    *counter = counter.saturating_add(1);
+fn count_coverage(report: &mut AnalysisReport, analysis: &FileAnalysis) {
+    report.lines.count(analysis.lines.coverage());
+    if let (Some(coverage), Some(outcome)) = (&mut report.code, analysis.code) {
+        coverage.count(outcome.coverage());
+    }
+    if let (Some(coverage), Some(outcome)) = (&mut report.words, analysis.words) {
+        coverage.count(outcome.coverage());
+    }
 }
 
 #[cfg(test)]
@@ -423,6 +494,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::fs;
 
+    use crate::content::AnalysisSet;
     use crate::scan::ScanConfig;
 
     use super::*;
@@ -432,15 +504,21 @@ mod tests {
 
     #[test]
     fn expected_coverage_gaps_are_not_operational_failures() {
-        let report =
-            AnalysisReport { invalid_utf8: 1, unsupported: 3, ..AnalysisReport::default() };
+        let report = AnalysisReport {
+            lines: AnalyzerCoverage { invalid_utf8: 1, ..AnalyzerCoverage::default() },
+            code: Some(AnalyzerCoverage { unsupported: 3, ..AnalyzerCoverage::default() }),
+            ..AnalysisReport::default()
+        };
 
         assert!(report.is_complete());
         assert_eq!(report.failure_message(), None);
 
         let failed = AnalysisReport {
-            io_errors: 1,
-            changed_during_read: 2,
+            lines: AnalyzerCoverage {
+                io_errors: 1,
+                changed_during_read: 2,
+                ..AnalyzerCoverage::default()
+            },
             stale: 3,
             ..AnalysisReport::default()
         };
@@ -453,11 +531,9 @@ mod tests {
         );
     }
 
-    /// Word volume is counted during the streaming read for every admitted text file, so
-    /// it is reported wherever it was measured. Paragraphs are not: a blank-line-separated
-    /// block of code is not a paragraph, and counting it as one would make prose rows lie.
+    /// Every words-unit metric is independent of whether code was also requested.
     #[test]
-    fn code_carries_word_volume_but_never_paragraphs() {
+    fn code_carries_word_volume_and_paragraphs() {
         let root = tempfile::tempdir().expect("tempdir");
         std::fs::write(root.path().join("main.rs"), b"fn main() {\n\n    let x = 1;\n}\n")
             .expect("write");
@@ -471,12 +547,104 @@ mod tests {
 
         let content = index.content().expect("content");
         let code = content.file(std::path::Path::new("main.rs")).expect("code record");
-        assert!(code.metrics.raw_words > 0, "code keeps the words already counted for it");
-        assert_eq!(code.metrics.paragraphs, 0, "code has no paragraphs");
+        assert!(code.lines.value().expect("line metrics").raw_words > 0);
+        assert_eq!(code.code.expect("code outcome").coverage(), CoverageReason::Analyzed);
+        assert!(code.words.and_then(AnalyzerOutcome::value).expect("word metrics").paragraphs > 0);
 
         let prose = content.file(std::path::Path::new("notes.md")).expect("prose record");
-        assert!(prose.metrics.raw_words > 0);
-        assert!(prose.metrics.paragraphs > 0, "prose still counts paragraphs");
+        assert!(prose.lines.value().expect("line metrics").raw_words > 0);
+        assert_eq!(prose.code.expect("code outcome").coverage(), CoverageReason::Unsupported);
+        assert!(prose.words.and_then(AnalyzerOutcome::value).expect("word metrics").paragraphs > 0);
+    }
+
+    #[test]
+    fn every_metric_is_independent_of_other_requested_units_and_grouping_is_name_only() {
+        let root = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(root.path().join("generated")).expect("generated directory");
+        for (path, bytes) in [
+            ("main.rs", b"// comment\nfn main() { println!(\"hello world\"); }\n".as_slice()),
+            ("tool.py", b"# comment\nprint('hello world')\n"),
+            ("Main.hs", b"-- comment\nmain = putStrLn \"hello world\"\n"),
+            ("guide.md", b"# Hello\n\nVisible [words](https://example.test).\n"),
+            ("notes.txt", b"first paragraph words\n\nsecond paragraph words\n"),
+            ("ambiguous.h", b"// generated fixture\nnamespace demo { int value; }\n"),
+            ("script", b"#!/usr/bin/env python3\nprint('from shebang')\n"),
+            ("document", b"%PDF-1.7\nfixture"),
+            ("nul.unknown", b"text before\0binary"),
+            ("invalid.unknown", &[b't', b'e', b'x', b't', 0xff]),
+            ("generated/output.rs", b"// Code generated; DO NOT EDIT.\nfn output() {}\n"),
+        ] {
+            fs::write(root.path().join(path), bytes).expect("write fixture");
+        }
+        let (baseline, scan) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        assert!(scan.is_complete());
+
+        let profiles = [
+            AnalysisSet::LINES_ONLY,
+            AnalysisSet::CODE_ONLY,
+            AnalysisSet::WORDS_ONLY,
+            AnalysisSet::ALL,
+        ];
+        let mut observed = Vec::new();
+        for profile in profiles {
+            let mut index = baseline.clone();
+            let analysis = analyze_index(&mut index, AnalysisRequest { profile, workers: 2 });
+            assert!(analysis.is_complete(), "{profile:?}: {analysis:?}");
+            let query = crate::query::Query {
+                views: vec![crate::query::ViewSpec::Types],
+                ..crate::query::Query::default()
+            };
+            let report = crate::query::report(
+                &index,
+                &crate::test_support::read_of(&index, query),
+                &crate::query::Provenance {
+                    scan_started_at: None,
+                    generated_at: std::time::UNIX_EPOCH,
+                    source: crate::query::ReportSource::ColdScan,
+                    complete: true,
+                    errors: Vec::new(),
+                },
+            )
+            .expect("report");
+            let crate::query::Section::Metrics { summary, .. } = &report.sections[0] else {
+                panic!("expected type metrics")
+            };
+            let mut groups: Vec<_> = summary.rows.iter().map(|row| row.id.clone()).collect();
+            groups.sort();
+            let values: Vec<_> = crate::content::METRICS
+                .iter()
+                .map(|metric| summary.total.metric_value(metric))
+                .collect();
+            observed.push((profile, groups, values));
+        }
+
+        for (_, groups, _) in &observed[1..] {
+            assert_eq!(groups, &observed[0].1, "requested analyzers must not change type groups");
+        }
+        for (metric_index, metric) in crate::content::METRICS.iter().enumerate() {
+            let expected = observed
+                .iter()
+                .find(|(profile, _, _)| profile.contains(metric.owner))
+                .and_then(|(_, _, values)| values[metric_index])
+                .expect("an owning profile exposes every registry metric");
+            for (profile, _, values) in &observed {
+                if profile.contains(metric.owner) {
+                    assert_eq!(
+                        values[metric_index],
+                        Some(expected),
+                        "{} changed under {profile:?}",
+                        metric.name
+                    );
+                } else {
+                    assert_eq!(
+                        values[metric_index], None,
+                        "{} leaked into an unrequested {profile:?} report",
+                        metric.name
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -494,14 +662,14 @@ mod tests {
         );
 
         assert_eq!(report.candidates, 2);
-        assert_eq!(report.analyzed, 1);
-        assert_eq!(report.binary, 1);
+        assert_eq!(report.lines.analyzed, 1);
+        assert_eq!(report.lines.binary, 1);
         assert_eq!(report.bytes_read, 15, "known binary files must not be opened");
         assert!(report.elapsed_ns > 0);
         let root_rollup = index.content_rollup(std::path::Path::new("")).expect("content root");
         assert_eq!(root_rollup.total.files, 2);
-        assert_eq!(root_rollup.total.metrics.physical_lines, 3);
-        assert_eq!(root_rollup.total.metrics.raw_words, 3);
+        assert_eq!(root_rollup.total.lines.metrics.physical_lines, 3);
+        assert_eq!(root_rollup.total.lines.metrics.raw_words, 3);
     }
 
     #[test]
@@ -524,7 +692,7 @@ mod tests {
         crate::counters::reset();
         crate::counters::enable(false);
 
-        assert_eq!(report.analyzed, 1);
+        assert_eq!(report.lines.analyzed, 1);
         assert!(counts.file_opens >= 1, "content worker file open was folded: {counts:?}");
         assert!(counts.file_reads >= 2, "data and EOF reads were folded: {counts:?}");
         assert!(counts.bytes_read >= 15, "content bytes were folded: {counts:?}");
@@ -545,15 +713,15 @@ mod tests {
             AnalysisRequest { profile: super::super::AnalysisSet::NONE.with_code(), workers: 1 },
         );
 
-        assert_eq!(report.analyzed, 1);
+        assert_eq!(report.lines.analyzed, 1);
         assert_eq!(report.bytes_read, LARGE_CODE_FILE_BYTES as u64);
         assert!(report.elapsed_ns > 0);
         assert!(report.is_complete());
         let metrics = &index.content_rollup(std::path::Path::new("")).expect("content root").total;
         assert_eq!(metrics.bytes, LARGE_CODE_FILE_BYTES as u64);
-        assert_eq!(metrics.metrics.physical_lines, 2);
-        assert_eq!(metrics.metrics.code_lines, 1);
-        assert_eq!(metrics.metrics.comment_lines, 1);
+        assert_eq!(metrics.lines.metrics.physical_lines, 2);
+        assert_eq!(metrics.code.metrics.code_lines, 1);
+        assert_eq!(metrics.code.metrics.comment_lines, 1);
     }
 
     #[test]
@@ -571,12 +739,10 @@ mod tests {
                 ..AnalysisRequest::default()
             },
         );
-        assert_eq!(report.binary, 1);
-        assert_eq!(report.invalid_utf8, 1);
-        assert_eq!(
-            index.content_rollup(std::path::Path::new("")).expect("root").total.metrics,
-            MetricValues::default()
-        );
+        assert_eq!(report.lines.binary, 1);
+        assert_eq!(report.lines.invalid_utf8, 1);
+        let metrics = &index.content_rollup(std::path::Path::new("")).expect("root").total.lines;
+        assert_eq!(metrics.metrics, BasicMetrics::default());
     }
 
     #[test]
@@ -605,28 +771,26 @@ mod tests {
                 ..AnalysisRequest::default()
             },
         );
-        assert_eq!(report.analyzed, 2);
-        assert_eq!(report.binary, 1);
+        assert_eq!(report.lines.analyzed, 2);
+        assert_eq!(report.lines.binary, 1);
 
         let content = index.content().expect("content");
         let header = content.file(std::path::Path::new("vendor/docs/generated.h")).expect("header");
-        assert_eq!(header.classification.file_type.as_str(), "cpp");
-        assert_eq!(
-            header.classification.source,
-            crate::classify::DetectionSource::AmbiguousContent
-        );
-        assert!(header.classification.flags.generated);
-        assert!(header.classification.flags.vendored);
-        assert!(header.classification.flags.documentation);
+        assert_eq!(header.detection.file_type.as_str(), "cpp");
+        assert_eq!(header.detection.source, crate::classify::DetectionSource::AmbiguousContent);
+        assert!(header.detection.flags.generated);
+        assert!(header.detection.flags.vendored);
+        assert!(header.detection.flags.documentation);
 
         let script = content.file(std::path::Path::new("script.inc")).expect("script");
-        assert_eq!(script.classification.file_type.as_str(), "rust");
-        assert_eq!(script.metrics.comment_lines, 1);
-        assert_eq!(script.metrics.code_lines, 2);
+        assert_eq!(script.detection.file_type.as_str(), "rust");
+        let script_code = script.code.and_then(AnalyzerOutcome::value).expect("code metrics");
+        assert_eq!(script_code.comment_lines, 1);
+        assert_eq!(script_code.code_lines, 2);
 
         let pdf = content.file(std::path::Path::new("download")).expect("pdf");
-        assert_eq!(pdf.classification.file_type.as_str(), "pdf");
-        assert_eq!(pdf.coverage, CoverageReason::Binary);
+        assert_eq!(pdf.detection.file_type.as_str(), "pdf");
+        assert_eq!(pdf.lines.coverage(), CoverageReason::Binary);
 
         let query = crate::query::Query {
             views: vec![crate::query::ViewSpec::Types],
@@ -674,20 +838,24 @@ mod tests {
             },
         );
 
-        assert_eq!(report.analyzed, 1);
-        assert_eq!(report.unsupported, 1);
+        assert_eq!(report.lines.analyzed, 2);
+        assert_eq!(report.code.expect("code coverage").unsupported, 1);
         let rust = index.content().expect("content").file(std::path::Path::new("main.rs"));
-        let metrics = rust.expect("rust record").metrics;
-        assert_eq!(metrics.physical_lines, 3);
+        let rust = rust.expect("rust record");
+        let lines = rust.lines.value().expect("line metrics");
+        let metrics = rust.code.and_then(AnalyzerOutcome::value).expect("code metrics");
+        assert_eq!(lines.physical_lines, 3);
         assert_eq!(metrics.code_lines, 1);
         assert_eq!(metrics.comment_lines, 1);
         assert_eq!(metrics.code_blank_lines, 1);
         assert_eq!(
-            metrics.physical_lines,
+            lines.physical_lines,
             metrics.code_lines + metrics.comment_lines + metrics.code_blank_lines
         );
         let haskell = index.content().expect("content").file(std::path::Path::new("Main.hs"));
-        assert_eq!(haskell.expect("haskell record").coverage, CoverageReason::Unsupported);
+        let haskell = haskell.expect("haskell record");
+        assert_eq!(haskell.lines.coverage(), CoverageReason::Analyzed);
+        assert_eq!(haskell.code.expect("code outcome").coverage(), CoverageReason::Unsupported);
 
         let query = crate::query::Query {
             views: vec![crate::query::ViewSpec::Languages],
@@ -759,11 +927,11 @@ mod tests {
             summary.rows.iter().map(|row| (row.id.as_str(), row)).collect::<BTreeMap<_, _>>();
         let markdown = rows["markdown"];
         assert!(markdown.metrics.raw_words > markdown.metrics.visible_words);
-        assert_eq!(markdown.metrics.visible_words, 4);
-        assert_eq!(markdown.metrics.paragraphs, 2);
+        assert_eq!(markdown.metrics.visible_words, Some(4));
+        assert_eq!(markdown.metrics.paragraphs, Some(2));
         let text = rows["text"];
-        assert!(text.metrics.logical_word_stats.logical_words() > text.metrics.raw_words);
-        assert_eq!(crate::query::document_words(&summary.total), 7);
+        assert!(text.metrics.logical_words > text.metrics.raw_words);
+        assert_eq!(crate::query::document_words(&summary.total), Some(7));
     }
 
     #[test]

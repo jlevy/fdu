@@ -3544,8 +3544,11 @@ impl Index {
         self.analysis_candidates(request.profile)
             .into_iter()
             .filter(|candidate| {
-                held.and_then(|content| content.file(&candidate.relative_path))
-                    .is_none_or(|record| record.fingerprint != candidate.attrs.fingerprint())
+                held.and_then(|content| content.file(&candidate.relative_path)).is_none_or(
+                    |record| {
+                        record.fingerprint != candidate.attrs.fingerprint() || !record.is_reusable()
+                    },
+                )
             })
             .collect()
     }
@@ -3612,9 +3615,15 @@ impl Index {
         {
             return AnalysisApplyOutcome::Stale;
         }
+        let wanted = self.content_identity(observation.profile);
         let Some(content) = self.content.as_mut() else {
             return AnalysisApplyOutcome::Stale;
         };
+        if content.identity() != Some(&wanted)
+            || observation.provenance != wanted.record_provenance()
+        {
+            return AnalysisApplyOutcome::Stale;
+        }
         if content.commit(candidate.relative_path.clone(), observation.analysis) {
             AnalysisApplyOutcome::Applied
         } else {
@@ -8188,8 +8197,8 @@ mod tests {
     #[test]
     fn content_results_commit_conditionally_and_metadata_changes_invalidate_them() {
         use crate::content::{
-            AnalysisApplyOutcome, AnalysisRequest, AnalysisSet, ContentProvenance, CoverageReason,
-            FileAnalysis, MetricValues,
+            AnalysisApplyOutcome, AnalysisRequest, AnalysisSet, AnalyzerOutcome, BasicMetrics,
+            ContentProvenance, FileAnalysis,
         };
 
         let mut index = Index::new("/root");
@@ -8201,24 +8210,28 @@ mod tests {
         let candidate =
             index.analysis_candidates(profile).into_iter().next().expect("file candidate");
         let analysis = FileAnalysis {
-            classification: candidate.classification.clone(),
             fingerprint: candidate.attrs.fingerprint(),
             bytes: candidate.attrs.size,
-            profile,
-            provenance: ContentProvenance::for_request(
-                AnalysisRequest { profile, ..AnalysisRequest::default() },
-                crate::classify::type_rule_fingerprint(),
-            ),
-            metrics: MetricValues {
+            detection: candidate.classification.clone().into(),
+            lines: AnalyzerOutcome::analyzed(BasicMetrics {
                 physical_lines: 2,
                 nonblank_lines: 2,
-                ..MetricValues::default()
-            },
-            coverage: CoverageReason::Analyzed,
+                ..BasicMetrics::default()
+            }),
+            code: None,
+            words: None,
             error: None,
         };
-        let observation =
-            AnalysisObservation { candidate: candidate.clone(), analysis: analysis.clone() };
+        let provenance = ContentProvenance::for_request(
+            AnalysisRequest { profile, ..AnalysisRequest::default() },
+            crate::classify::type_rule_fingerprint(),
+        );
+        let observation = AnalysisObservation {
+            candidate: candidate.clone(),
+            profile,
+            provenance: provenance.clone(),
+            analysis: analysis.clone(),
+        };
         assert_eq!(
             index.apply_analysis(observation.clone()),
             AnalysisApplyOutcome::Stale,
@@ -8230,7 +8243,13 @@ mod tests {
         assert_eq!(index.content_set(), profile);
         assert_eq!(index.apply_analysis(observation), AnalysisApplyOutcome::Applied);
         assert_eq!(
-            index.content_rollup(Path::new("")).expect("content root").total.metrics.physical_lines,
+            index
+                .content_rollup(Path::new(""))
+                .expect("content root")
+                .total
+                .lines
+                .metrics
+                .physical_lines,
             2
         );
 
@@ -8241,8 +8260,92 @@ mod tests {
         )]));
         assert!(index.content_rollup(Path::new("")).is_none());
         assert_eq!(
-            index.apply_analysis(AnalysisObservation { candidate, analysis }),
+            index.apply_analysis(AnalysisObservation { candidate, profile, provenance, analysis }),
             AnalysisApplyOutcome::Stale
+        );
+    }
+
+    #[test]
+    fn operational_content_failures_are_retained_but_retried_until_recovery() {
+        use crate::content::{
+            AnalysisApplyOutcome, AnalysisRequest, AnalysisSet, AnalyzerOutcome, BasicMetrics,
+            ContentProvenance, CoverageReason, FileAnalysis,
+        };
+
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("src", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("src/lib.rs", EntryKind::File, file_attrs(10, 1)),
+        ]));
+        let profile = AnalysisSet::LINES_ONLY;
+        let request = AnalysisRequest { profile, ..AnalysisRequest::default() };
+        index.prepare_content_analysis(request);
+        let candidate = index.pending_analysis_candidates(request).pop().expect("candidate");
+        let provenance =
+            ContentProvenance::for_request(request, crate::classify::type_rule_fingerprint());
+        let record = |reason, error: &str| FileAnalysis {
+            fingerprint: candidate.attrs.fingerprint(),
+            bytes: candidate.attrs.size,
+            detection: candidate.classification.clone().into(),
+            lines: AnalyzerOutcome::unavailable(reason),
+            code: None,
+            words: None,
+            error: Some(error.to_owned()),
+        };
+
+        for (reason, error) in [
+            (CoverageReason::IoError, "read failed"),
+            (CoverageReason::ChangedDuringRead, "changed during read"),
+        ] {
+            assert_eq!(
+                index.apply_analysis(AnalysisObservation {
+                    candidate: candidate.clone(),
+                    profile,
+                    provenance: provenance.clone(),
+                    analysis: record(reason, error),
+                }),
+                AnalysisApplyOutcome::Applied
+            );
+            let retained = index.content().expect("content").file(Path::new("src/lib.rs"));
+            assert_eq!(retained.and_then(FileAnalysis::operational_failure), Some(reason));
+            assert_eq!(
+                index.pending_analysis_candidates(request).len(),
+                1,
+                "an operational failure must remain pending"
+            );
+        }
+
+        let recovered = FileAnalysis {
+            fingerprint: candidate.attrs.fingerprint(),
+            bytes: candidate.attrs.size,
+            detection: candidate.classification.clone().into(),
+            lines: AnalyzerOutcome::analyzed(BasicMetrics {
+                physical_lines: 1,
+                nonblank_lines: 1,
+                raw_words: 1,
+                ..BasicMetrics::default()
+            }),
+            code: None,
+            words: None,
+            error: None,
+        };
+        assert_eq!(
+            index.apply_analysis(AnalysisObservation {
+                candidate,
+                profile,
+                provenance,
+                analysis: recovered,
+            }),
+            AnalysisApplyOutcome::Applied
+        );
+        assert!(index.pending_analysis_candidates(request).is_empty());
+        assert_eq!(
+            index
+                .content()
+                .expect("content")
+                .file(Path::new("src/lib.rs"))
+                .and_then(FileAnalysis::operational_failure),
+            None
         );
     }
 
