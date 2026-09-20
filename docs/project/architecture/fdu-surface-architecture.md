@@ -103,10 +103,12 @@ The request half is built that way now: both surfaces fill one surface-neutral
 `RequestSpec`, `Request::build` parses it, and each renders whatever refusal comes back
 through its own `AxisNames`, so a grammar, a default, and a rule that relates one axis
 to another are each stated once.
-The answer half is not: several writers serialize a `Report` independently.
-[Known Gaps](#known-gaps) lists where they still differ, and
-[the explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
-tracks the work.
+The answer uses one ordered value traversal for JSON, JSON Lines, and YAML, and the
+Python models decode that same report shape.
+Parser-backed conformance tests compare all machine formats, including adversarial
+strings and lossless raw paths.
+[The explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
+records the model and its acceptance checks.
 
 Differences land in `tests/parity/deviations-python.diff`, committed and reviewed like
 any golden. Each is matched against a named class in `scripts/parity-classes.mjs`, and
@@ -211,30 +213,6 @@ does not require every additive library capability to become a default flag befo
 client has proven it.
 
 ## Future Considerations
-
-### Known Gaps
-
-Each item is a way the surfaces fall short of
-[Model Every Key Concept Explicitly, in One Place](fdu-design-principles.md#model-every-key-concept-explicitly-in-one-place)
-or
-[Caching Improves Performance, Never Semantics](fdu-design-principles.md#caching-improves-performance-never-semantics);
-[the explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
-tracks them. Engine-side gaps are in
-[the engine architecture](fdu-engine-architecture.md#known-gaps).
-
-- **Writers disagree.** YAML flattens metric rows that JSON nests under `metrics`, and
-  omits `root_raw` and `path_raw`. The unused native dict follows YAML rather than JSON
-  and omits a tree node’s `kind`. JSON Lines’ `collapse` rewrites string content, so the
-  path `a [ b/f { g }.txt` is emitted as `a [b/f {g}.txt`. `--watch --format yaml` emits
-  JSON change records, and text output carries no source or freshness label.
-- **Defaults and validation are the request model’s.** One defaults table
-  (`Request::DEFAULTS`) decides the size metric, the page denominator, the analyzer set,
-  and the view a report displays, and `Request::build` parses every axis from the words
-  a caller wrote, so each surface supplies only its own names for them.
-  `Request::validate`, `validate_read`, and `validate_delivery` state every rule once —
-  a view its content cannot answer, a selection by ignored state a scope never observed,
-  a read another analyzer set holds, and the three a watch cannot carry — and each route
-  applies them before it reads any stored state.
 
 ### Open Questions
 

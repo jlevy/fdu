@@ -20,7 +20,7 @@ patterns:
 ---
 # The Watch Change Stream
 
-`--watch` streams one `fdu.stream/1` record per applied change.
+`--watch` streams one `fdu.stream/2` record per applied change.
 A watch process never exits, so it cannot be goldened directly; the `watch-capture`
 helper turns it into a command that does.
 It starts `fdu --watch`, applies a scripted sequence of filesystem changes, waits for
