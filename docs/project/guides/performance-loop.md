@@ -735,7 +735,8 @@ the floor-anchored strategy, not the live queue.
 Numbering is shared with the
 [performance-frontier research](../research/research-2026-08-10-performance-frontier.md),
 whose backlog owns H12–H46; new hypotheses from any source take the next free number
-(currently H139) so no id ever means two things.
+(H139–H142 reserved for [#94](https://github.com/jlevy/fdu/pull/94) Linux parallel
+validation; next free Darwin id is H143) so no id ever means two things.
 Each is stated so it can be wrong, with the metric that would show it.
 Status is updated as experiments resolve them; see the ledger for results.
 

@@ -489,9 +489,12 @@ Source of truth:
 [the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
 The registry row in [the loop guide](performance-loop.md#current-engine-010) is the full
 statement. Overnight H116–H120 is done; do not retry those.
-Next free hypothesis id is **H139**. Do not mint another meaning for H91–H106. Next free
-experiment id is **exp-113** (reserved unused; H113 superseded).
-After that, **exp-138**.
+H139–H142 and exp-138+ are reserved for stacked
+[#94](https://github.com/jlevy/fdu/pull/94) (Linux parallel validation).
+Do not mint them on this Darwin branch.
+Next free Darwin hypothesis id is **H143**. Do not mint another meaning for H91–H106.
+Next free Darwin experiment id after the Linux reservation is assigned on #94; do not
+take exp-138 here. exp-113 remains reserved unused (H113 superseded).
 
 This stacked session skipped H113 (quiet gates including 45.48%, 53.86%, 31.53%, 34.97%,
 27.23%, a 24.38% pre-check that did not hold, and 28.07%), accepted H125 (exp-124,
@@ -511,7 +514,9 @@ share one `every_entry`; wall −18.76%), hunted H107 (no ignore-is-the-walk sub
 recorded exp-122 (H122 leftover), and recorded exp-123 (H113 leftover then 16% of
 `content_open`). Earlier the same day: H113 69.4%, H122 (exp-118), H123, H121, H124. Do
 not start H107 without an ignore-is-the-walk subject.
-Do not retry metabrowser for H107 (exp-106). Do not start H111 (no Linux).
+Do not retry metabrowser for H107 (exp-106). Do not start H111 on Darwin (no Linux).
+H111 pickup is [#94](https://github.com/jlevy/fdu/pull/94). Do not pad cache-hit,
+first-pass I/O, or walk leftovers already recorded.
 Do not raise the README 200K files/s or 4M cached lines/s.
 
 1. **H138** (`fdu-sce1`). **Accepted** (exp-137). Share one `every_entry` walk across
