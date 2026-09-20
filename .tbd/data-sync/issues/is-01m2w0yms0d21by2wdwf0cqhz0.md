@@ -3,16 +3,20 @@ type: is
 id: is-01m2w0yms0d21by2wdwf0cqhz0
 title: "H111: H86 Linux floor stage"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 4
+version: 6
 spec_path: docs/project/specs/active/plan-2026-09-19-linux-parallel-validation.md
 labels:
   - campaign-2
-dependencies: []
+dependencies:
+  - type: blocks
+    target: is-01m2y762f58jb3kx6nhn0hr31g
 parent_id: is-01m01mqq3cqs8ae87qd2d3rydm
 created_at: 2026-09-19T05:06:47.199Z
-updated_at: 2026-09-20T01:26:35.305Z
+updated_at: 2026-09-20T01:34:11.281Z
+closed_at: 2026-09-20T01:34:11.281Z
+close_reason: "Failed on this virtualized host (exp-141): 450k index 1.78x parfloor vs 1.4x; RSS 5.20x arena_spike vs 3x; aggregate on nominated reals 1.59x and 1.86x vs 1.25x. Leftover minted as H143. Do not restart H86."
 ---
 H111: H86 remaining gap is the Linux floor and RSS claim, not a restart of the structural rewrite. Darwin has a landed composite (exp-091-102); the Linux floor stage failed (exp-103).
 
