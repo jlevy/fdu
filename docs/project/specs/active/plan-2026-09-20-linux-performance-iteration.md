@@ -100,14 +100,14 @@ Mint the reserved id when the cell starts, not before.
    `macos_bulk`. Do not apply H115 rebuild to progressive commits.
    Bead: `fdu-40pl` (close).
 
-3. **H84 — adaptive unlock / thread-policy screen (`fdu-tk1b`).** Existing id.
-   Predicted: the 30 µs APFS threshold never fires against the Linux warm floor (~1.5
-   µs), so automatic stays at `available.clamp(1, 6)`. On this 4-core host that start is
-   already 4. Confirm `adaptive_scale_ups` stays 0 and ns/entry stays far below 30 µs.
-   Then screen explicit `--threads` on `aggregate-summary` and `cold-scan-index`. A warm
-   pair that clears 3% is a sign, not a shipped constant.
-   Do not treat a 4-core VM sweep as H76 queue-depth evidence.
-   Do not change `PORTABLE` to `measured` from this host.
+3. **H84 — adaptive unlock / thread-policy screen (`fdu-tk1b`).** **Confirmed silent**
+   (exp-146, uncontrolled named jobs).
+   ~2 µs/entry vs 30 µs; expansions 0; start 4 / reserve 8. Named-job `--threads 8` is
+   not a 3% win (aggregate +1.75% regression; index +0.25%). `--no-controls` aggregate
+   is a warm sign (−5.42% quiet on `linux-v6.12`) and is not a shipped constant.
+   Do not change `PORTABLE` to `measured`. Do not lower the unlock threshold.
+   Bead: `fdu-4cni` (close).
+   `fdu-tk1b` stays open for bare metal.
 
 4. **H146 — first-run leftover after H140.** H136 analog.
    `default-tree-first` on `linux-v6.12`. Darwin leftover was still the walk; snapshot
@@ -163,7 +163,8 @@ If #94 moves, rebase this branch onto it and keep H144–H146 meanings.
 
 - Linux cache-hit leftover after H125–H133: no new ≥3% userspace cut (H144 / exp-144)
 - Linux opened-discovery leftover: same as Darwin H127; no new ≥3% cut (H145 / exp-145)
-- Whether H84’s unlock is silent here and whether a worker screen clears 3%
+- H84 unlock is silent; named-job `--threads 8` is not a 3% win.
+  `--no-controls` aggregate is a warm sign, not a shipped `PORTABLE` constant (exp-146)
 - Whether Linux first-run snapshot write is a skippable ≥3% cut
 
 ## References

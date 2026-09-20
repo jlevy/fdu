@@ -66,7 +66,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | bare-metal | warm-steady | 69 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Linux 6.12.94+, ext4 | virtualized | warm-steady | 8 |
+| Linux 6.12.94+, ext4 | virtualized | warm-steady | 9 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -224,6 +224,7 @@ dead end.
 | 143 | [Linux first-pass content-basic leftover is still file I/O](#exp143--linux-firstpass-contentbasic-leftover-is-still-file-io) | H142 | `content-basic` | +0.4% | ✅ accepted |
 | 144 | [Linux cache-hit leftover after landed stack is already-landed restore work](#exp144--linux-cachehit-leftover-after-landed-stack-is-alreadylanded-restore-work) | H144 | `content-cache-hit` | -0.1% | ✅ accepted |
 | 145 | [Linux opened-discovery leftover is still journal clones plus live roll-ups](#exp145--linux-openeddiscovery-leftover-is-still-journal-clones-plus-live-rollups) | H145 | `opened-discovery` | -0.2% | ✅ accepted |
+| 146 | [Linux adaptive unlock is silent; named-job --threads 8 is not a 3% win](#exp146--linux-adaptive-unlock-is-silent-namedjob-threads-8-is-not-a-3-win) | H84 | `aggregate-summary` | +1.8% | ✅ accepted |
 
 ## The experiments
 
@@ -4894,6 +4895,38 @@ roll-up merges, 2.75x first-pass; no smallest cut; do not port macos_bulk.
 Full record:
 [`exp-145-linux-opened-discovery-leftover-is-still-journal-clones-plus.md`](../experiments/exp-145-linux-opened-discovery-leftover-is-still-journal-clones-plus.md)
 
+### exp-146 — Linux adaptive unlock is silent; named-job --threads 8 is not a 3% win
+
+✅ accepted · 2026-09-20 · H84 · commit `0a979786`
+
+Control: HEAD automatic workers (available.clamp(1,6)=4)
+
+Candidate: same probe --threads 8
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 427.3 | 438.0 | +1.75% (regression) | [+0.13%, +4.15%] |
+| component (ms) | 425.7 | 436.2 | +1.69% (regression) | [+0.14%, +4.18%] |
+| cpu (ms) | 529.8 | 530.2 | -0.38% (n.s.) | [-0.93%, +0.96%] |
+| user (ms) | 440.2 | 434.2 | -1.00% (n.s.) | [-3.23%, +3.29%] |
+| system (ms) | 93.0 | 94.0 | +4.53% (n.s.) | [-13.07%, +18.17%] |
+| peak rss (MiB) | 35.4 | 35.9 | +1.42% (regression) | [+0.96%, +1.72%] |
+
+Other jobs, wall time: `cold-scan-index` +0.3% (n.s.).
+
+Cost to carry: 0 lines; no new dependencies.
+
+screen only; no engine change
+
+**Accepted:** unlock silent at ~2us/entry; named jobs --threads 8 no 3% win (aggregate
++1.75% regression, index +0.25%); --no-controls is a warm sign not a shipped PORTABLE
+constant.
+
+Full record:
+[`exp-146-linux-adaptive-unlock-is-silent-named-job-threads-8-not-a-win.md`](../experiments/exp-146-linux-adaptive-unlock-is-silent-named-job-threads-8-not-a-win.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4970,6 +5003,18 @@ Baselines show one value because they measure a state rather than a change.
 | 115 | First-pass analyze insert-then-rebuild on metabrowser | `content-basic` | 10,020.6 | 10,022.1 | -5.0% | ❌ rejected |
 | 117 | Stream sidecar parse-into-apply on metabrowser | `content-cache-hit` | 1,111.0 | 1,103.2 | -0.6% | ✅ accepted |
 
+### linux-v6.12 (92,474 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 138 | Linux cache-hit stack same versus #91 control | `content-cache-hit` | 760.9 | 588.9 | -22.5% | ✅ accepted |
+| 139 | Linux walk leftover is still the getdents64 plus statx floor | `default-tree` | 433.6 | 439.4 | +0.6% | ✅ accepted |
+| 140 | Linux content-query stack same versus #91 control | `content-query` | 12,616.0 | 10,409.3 | -17.6% | ✅ accepted |
+| 143 | Linux first-pass content-basic leftover is still file I/O | `content-basic` | 2,165.7 | 2,169.4 | +0.4% | ✅ accepted |
+| 144 | Linux cache-hit leftover after landed stack is already-landed restore work | `content-cache-hit` | 605.3 | 607.3 | -0.1% | ✅ accepted |
+| 145 | Linux opened-discovery leftover is still journal clones plus live roll-ups | `opened-discovery` | 1,497.0 | 1,508.0 | -0.2% | ✅ accepted |
+| 146 | Linux adaptive unlock is silent; named-job --threads 8 is not a 3% win | `aggregate-summary` | 427.3 | 438.0 | +1.8% | ✅ accepted |
+
 ### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -4981,17 +5026,6 @@ Baselines show one value because they measure a state rather than a change.
 | 087 | Fuse detached control-free scanner preparation and reduction | `default-tree` | 355.3 | 349.3 | -1.1% | ❌ rejected |
 | 088 | Coalesce causal scanner fragments in the one-shot builder | `default-tree` | 362.5 | 360.4 | +0.1% | ❌ rejected |
 | 089 | Suppress causal publication in a producer-only scan | `cold-scan-producer` | 770.3 | 771.9 | +0.4% | ❌ rejected |
-
-### linux-v6.12 (92,474 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 138 | Linux cache-hit stack same versus #91 control | `content-cache-hit` | 760.9 | 588.9 | -22.5% | ✅ accepted |
-| 139 | Linux walk leftover is still the getdents64 plus statx floor | `default-tree` | 433.6 | 439.4 | +0.6% | ✅ accepted |
-| 140 | Linux content-query stack same versus #91 control | `content-query` | 12,616.0 | 10,409.3 | -17.6% | ✅ accepted |
-| 143 | Linux first-pass content-basic leftover is still file I/O | `content-basic` | 2,165.7 | 2,169.4 | +0.4% | ✅ accepted |
-| 144 | Linux cache-hit leftover after landed stack is already-landed restore work | `content-cache-hit` | 605.3 | 607.3 | -0.1% | ✅ accepted |
-| 145 | Linux opened-discovery leftover is still journal clones plus live roll-ups | `opened-discovery` | 1,497.0 | 1,508.0 | -0.2% | ✅ accepted |
 
 ### metabrowser-20260812 (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

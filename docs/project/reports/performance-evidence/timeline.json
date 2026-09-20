@@ -36886,6 +36886,244 @@
    "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
    "title": "Linux opened-discovery leftover is still journal clones plus live roll-ups",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe --threads 8",
+   "change_pct": 1.754,
+   "commit": "0a979786",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "screen only; no engine change"
+   },
+   "control": "HEAD automatic workers (available.clamp(1,6)=4)",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H84"
+   ],
+   "id": "exp-146",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 436196430,
+        "control": 425668426
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 1.693,
+        "ci95_high_pct": 4.185,
+        "ci95_low_pct": 0.142,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 530239500,
+        "control": 529829000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.375,
+        "ci95_high_pct": 0.958,
+        "ci95_low_pct": -0.928,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 37613568,
+        "control": 37150720
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 1.418,
+        "ci95_high_pct": 1.717,
+        "ci95_low_pct": 0.956,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 94039000,
+        "control": 93043500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 4.532,
+        "ci95_high_pct": 18.17,
+        "ci95_low_pct": -13.069,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 434206500,
+        "control": 440200500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -1.002,
+        "ci95_high_pct": 3.289,
+        "ci95_low_pct": -3.228,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 437997480,
+        "control": 427289258
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 1.754,
+        "ci95_high_pct": 4.146,
+        "ci95_low_pct": 0.128,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 4736.439215347016,
+      "control": 4620.642104807838
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "cold-scan-index",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 428953514,
+        "control": 422604672.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.601,
+        "ci95_high_pct": 2.195,
+        "ci95_low_pct": -0.374,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 604581000,
+        "control": 606469000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.183,
+        "ci95_high_pct": 0.935,
+        "ci95_low_pct": -2.411,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 37511168,
+        "control": 36810752
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 1.796,
+        "ci95_high_pct": 2.358,
+        "ci95_low_pct": 1.063,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 98414000,
+        "control": 96331000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -3.247,
+        "ci95_high_pct": 13.128,
+        "ci95_low_pct": -9.326,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 508491000,
+        "control": 509833500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -0.469,
+        "ci95_high_pct": 2.25,
+        "ci95_low_pct": -4.296,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 504486420,
+        "control": 498430403
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.254,
+        "ci95_high_pct": 2.333,
+        "ci95_low_pct": -0.547,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 5455.440664402968,
+      "control": 5389.951802668858
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 146,
+   "path": "exp-146-linux-adaptive-unlock-is-silent-named-job-threads-8-not-a-win.md",
+   "platform": "Linux",
+   "primary_job": "aggregate-summary",
+   "primary_metric": "wall_ns",
+   "reason": "unlock silent at ~2us/entry; named jobs --threads 8 no 3% win (aggregate +1.75% regression, index +0.25%); --no-controls is a warm sign not a shipped PORTABLE constant",
+   "reference_tools": [],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux adaptive unlock is silent; named-job --threads 8 is not a 3% win",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-20",
@@ -37068,7 +37306,8 @@
     "exp-140",
     "exp-143",
     "exp-144",
-    "exp-145"
+    "exp-145",
+    "exp-146"
    ],
    "files": 86643,
    "filesystem": "ext4",
@@ -37746,19 +37985,19 @@
  "totals": {
   "accepted_lines_changed": 16004,
   "decisions": {
-   "accepted": 81,
+   "accepted": 82,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
    "rejected": 47,
    "superseded": 3
   },
-  "experiments": 145,
+  "experiments": 146,
   "first_date": "2026-08-10",
-  "hypotheses": 101,
+  "hypotheses": 102,
   "last_date": "2026-09-20",
   "platforms": {
-   "Linux": 19,
+   "Linux": 20,
    "macOS": 126
   }
  },
