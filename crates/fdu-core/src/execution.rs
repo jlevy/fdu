@@ -926,6 +926,8 @@ mod tests {
         fs::create_dir(root.path().join("src")).expect("directory");
         fs::write(root.path().join("src/lib.rs"), b"library").expect("file");
         fs::write(root.path().join("README.md"), b"read me").expect("file");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("README.md", root.path().join("readme-link")).expect("symlink");
 
         let query = summary_query();
         let off = blind(CachePolicy::Off, None);

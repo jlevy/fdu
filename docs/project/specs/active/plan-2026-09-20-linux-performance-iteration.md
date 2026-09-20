@@ -124,6 +124,13 @@ Mint the reserved id when the cell starts, not before.
    (`5c6e6394`). Do not retry H85’s 20% bar.
    Do not restart H86.
 
+6. **H72 — `d_type` skip on transient summary (`fdu-ueab`).** Previous measure was −1.4%
+   on a 6.4%-directory tree.
+   Nominated `/usr` is 22% directories plus symlinks.
+   Both arms `--no-controls`. Do not skip directory `statx` when `one_filesystem` is on.
+   Accept only if reconstructible `linux-v6.12` clears 3%. `/usr` screens transfer.
+   Do not compile a walk trim (H71). Experiment **exp-152**.
+
 ## Subjects
 
 - **linux-v6.12**: reconstructible deciding subject (92,474 entries).

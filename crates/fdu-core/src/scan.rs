@@ -1213,6 +1213,35 @@ pub(crate) fn listed_child_metadata(entry: &fs::DirEntry) -> std::io::Result<Opt
     missing_as_none(metadata_for_fingerprint(entry))
 }
 
+/// Kind and attributes for one listed child.
+///
+/// The transient summary fold counts directories and ignores symlink attributes, so a
+/// listing `file_type` (`d_type` on Linux) is enough for those kinds when the walk is
+/// not bound to one filesystem. Files and specials still need a metadata lookup for
+/// size, allocated bytes, and mtime. `one_filesystem` still stats directories because
+/// descent compares `attrs.dev` to the root device, and `dev == 0` would otherwise
+/// cross a mount.
+fn listed_child_kind_and_attrs(
+    entry: &fs::DirEntry,
+    skip_dir_symlink_stat: bool,
+    one_filesystem: bool,
+) -> std::io::Result<Option<(EntryKind, Attrs)>> {
+    if skip_dir_symlink_stat {
+        if let Ok(file_type) = entry.file_type() {
+            if file_type.is_dir() && !one_filesystem {
+                return Ok(Some((EntryKind::Dir, Attrs::default())));
+            }
+            if file_type.is_symlink() {
+                return Ok(Some((EntryKind::Symlink, Attrs::default())));
+            }
+        }
+    }
+    match listed_child_metadata(entry)? {
+        Some(meta) => Ok(Some((kind_from(&meta), attrs_from(&meta)))),
+        None => Ok(None),
+    }
+}
+
 fn missing_as_none(lookup: std::io::Result<fs::Metadata>) -> std::io::Result<Option<fs::Metadata>> {
     match lookup {
         Ok(metadata) => Ok(Some(metadata)),
@@ -1477,17 +1506,15 @@ fn scan_internal(
             crate::counters::bump(|c| c.dir_entries += 1);
             let name = item.file_name();
             let rel_path = rel_dir.join(&name);
-            let meta = match listed_child_metadata(&item) {
-                Ok(Some(meta)) => meta,
-                Ok(None) => continue,
-                Err(e) => {
-                    report.errors.push(Error::io(item.path(), e));
-                    continue;
-                }
-            };
-
-            let attrs = attrs_from(&meta);
-            let kind = kind_from(&meta);
+            let (kind, attrs) =
+                match listed_child_kind_and_attrs(&item, recycle_batches, config.one_filesystem) {
+                    Ok(Some(observed)) => observed,
+                    Ok(None) => continue,
+                    Err(e) => {
+                        report.errors.push(Error::io(item.path(), e));
+                        continue;
+                    }
+                };
             let disposition =
                 crate::admission::decide(&name, kind, config.hidden(), config.exclude_special);
             if disposition == crate::admission::Disposition::Reject {
@@ -2544,6 +2571,11 @@ trait WalkEmission {
         report: &mut ScanReport,
         diagnostics: Option<&ScanDiagnosticsRecorder>,
     );
+
+    /// Transient summary can take directory and symlink kind from the listing.
+    fn skip_dir_symlink_stat(&self) -> bool {
+        false
+    }
 }
 
 struct StreamingEmission {
@@ -2551,6 +2583,7 @@ struct StreamingEmission {
     batch_size: usize,
     recycle_tx: Option<std::sync::mpsc::Sender<Vec<ObservationOp>>>,
     recycle_rx: Option<std::sync::mpsc::Receiver<Vec<ObservationOp>>>,
+    skip_dir_symlink_stat: bool,
 }
 
 impl StreamingEmission {
@@ -2560,6 +2593,7 @@ impl StreamingEmission {
             batch_size,
             recycle_tx: None,
             recycle_rx: None,
+            skip_dir_symlink_stat: false,
         }
     }
 
@@ -2571,6 +2605,7 @@ impl StreamingEmission {
             batch_size,
             recycle_tx: Some(recycle_tx),
             recycle_rx: Some(recycle_rx),
+            skip_dir_symlink_stat: true,
         }
     }
 
@@ -2677,6 +2712,10 @@ impl WalkEmission for StreamingEmission {
         let send_started = std::time::Instant::now();
         let _ = self.send_full(sender, diagnostics);
         report.attribution.send_ns += elapsed_ns(send_started);
+    }
+
+    fn skip_dir_symlink_stat(&self) -> bool {
+        self.skip_dir_symlink_stat
     }
 }
 
@@ -2916,17 +2955,18 @@ fn walk_worker_with<E: WalkEmission>(
                 };
                 crate::counters::bump(|c| c.dir_entries += 1);
                 let name = item.file_name();
-                let meta = match listed_child_metadata(&item) {
-                    Ok(Some(meta)) => meta,
+                let (kind, attrs) = match listed_child_kind_and_attrs(
+                    &item,
+                    emission.skip_dir_symlink_stat(),
+                    config.one_filesystem,
+                ) {
+                    Ok(Some(observed)) => observed,
                     Ok(None) => continue,
                     Err(e) => {
                         report.errors.push(Error::io(item.path(), e));
                         continue;
                     }
                 };
-
-                let attrs = attrs_from(&meta);
-                let kind = kind_from(&meta);
                 if !emission.record_entry(
                     root,
                     &rel_dir,
@@ -5651,6 +5691,71 @@ mod tests {
             // that half; this covers the counters the library itself drives.
         }
         crate::counters::enable(false);
+    }
+
+    #[test]
+    fn summary_fold_skips_stat_on_directories_and_symlinks() {
+        let _serial = crate::counters::test_serial();
+        crate::counters::enable(true);
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::create_dir(dir.path().join("src")).expect("directory");
+        write_file(&dir.path().join("a.txt"), b"hi");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("a.txt", dir.path().join("link")).expect("symlink");
+        let config = ScanConfig { threads: Some(1), read_controls: false, ..ScanConfig::default() };
+
+        crate::counters::test_thread_reset();
+        let scan_report = scan(dir.path(), &config, &mut |_| {}).expect("scan");
+        let scan_stats = crate::counters::test_thread_snapshot().stats;
+
+        crate::counters::test_thread_reset();
+        let fold_report = scan_summary_fold(dir.path(), &config, &mut |_| {}).expect("fold");
+        let fold_stats = crate::counters::test_thread_snapshot().stats;
+        crate::counters::enable(false);
+
+        assert_eq!(fold_report.entries, scan_report.entries);
+        assert_eq!(fold_report.files_walked, scan_report.files_walked);
+        assert_eq!(fold_report.bytes_walked, scan_report.bytes_walked);
+        assert!(
+            fold_stats < scan_stats,
+            "fold {fold_stats} should skip directory/symlink stats versus scan {scan_stats}"
+        );
+        #[cfg(unix)]
+        assert_eq!(scan_stats.saturating_sub(fold_stats), 2);
+        #[cfg(not(unix))]
+        assert_eq!(scan_stats.saturating_sub(fold_stats), 1);
+    }
+
+    #[test]
+    fn summary_fold_still_stats_directories_when_bound_to_one_filesystem() {
+        let _serial = crate::counters::test_serial();
+        crate::counters::enable(true);
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::create_dir(dir.path().join("src")).expect("directory");
+        write_file(&dir.path().join("a.txt"), b"hi");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("a.txt", dir.path().join("link")).expect("symlink");
+        let config = ScanConfig {
+            threads: Some(1),
+            read_controls: false,
+            one_filesystem: true,
+            ..ScanConfig::default()
+        };
+
+        crate::counters::test_thread_reset();
+        let scan_report = scan(dir.path(), &config, &mut |_| {}).expect("scan");
+        let scan_stats = crate::counters::test_thread_snapshot().stats;
+
+        crate::counters::test_thread_reset();
+        let fold_report = scan_summary_fold(dir.path(), &config, &mut |_| {}).expect("fold");
+        let fold_stats = crate::counters::test_thread_snapshot().stats;
+        crate::counters::enable(false);
+
+        assert_eq!(fold_report.entries, scan_report.entries);
+        #[cfg(unix)]
+        assert_eq!(scan_stats.saturating_sub(fold_stats), 1);
+        #[cfg(not(unix))]
+        assert_eq!(fold_stats, scan_stats);
     }
 
     /// An automatic walk too short to fill its calibration window must say so.
