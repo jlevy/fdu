@@ -35718,9 +35718,161 @@
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Share one every_entry across unfiltered metric views",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "HEAD probe with H125 H129 H131 H133 stacked",
+   "change_pct": -22.483,
+   "commit": "a5c98d59",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "e667b739 #91 probe with H115 and H120 only",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H139"
+   ],
+   "id": "exp-138",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-cache-hit",
+     "metrics": {
+      "blocked_ns": {
+       "absolute": {
+        "candidate": 544167.5,
+        "control": 555680.5
+       },
+       "metric": "blocked_ns",
+       "paired": {
+        "change_pct": -4.436,
+        "ci95_high_pct": 11.671,
+        "ci95_low_pct": -13.855,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "component_ns": {
+       "absolute": {
+        "candidate": 503156482.5,
+        "control": 669114189.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -25.052,
+        "ci95_high_pct": -23.401,
+        "ci95_low_pct": -25.825,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 588397000,
+        "control": 760363000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -22.554,
+        "ci95_high_pct": -21.416,
+        "ci95_low_pct": -23.471,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 156200960,
+        "control": 174045184
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -10.244,
+        "ci95_high_pct": -10.223,
+        "ci95_low_pct": -10.318,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 43945000,
+        "control": 67969500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -33.734,
+        "ci95_high_pct": -9.25,
+        "ci95_low_pct": -47.024,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 551356500,
+        "control": 703974500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -22.074,
+        "ci95_high_pct": -20.754,
+        "ci95_low_pct": -22.58,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 588926986.5,
+        "control": 760890341.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -22.483,
+        "ci95_high_pct": -21.394,
+        "ci95_low_pct": -23.463,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 6368.568316499773,
+      "control": 8228.15430823799
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 138,
+   "path": "exp-138-linux-cache-hit-stack-same-versus-91-control.md",
+   "platform": "Linux",
+   "primary_job": "content-cache-hit",
+   "primary_metric": "wall_ns",
+   "reason": "same on Linux: content-cache-hit wall -22.48% [-23.46%, -21.39%] quiet on reconstructible linux-v6.12; RSS -10.24%; digest identical; no engine patch",
+   "reference_tools": [],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux cache-hit stack same versus #91 control",
+   "trials": 12
   }
  ],
- "prepared": "2026-09-19",
+ "prepared": "2026-09-20",
  "subjects": [
   {
    "apparent_bytes": 1726062376,
@@ -36531,24 +36683,42 @@
    "os_cache": "warm-steady",
    "platform": "macOS",
    "synthetic": false
+  },
+  {
+   "apparent_bytes": 1759293224,
+   "directories": 5769,
+   "entries": 92474,
+   "experiments": [
+    "exp-138"
+   ],
+   "files": 86643,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor",
+   "key": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "labels": [
+    "linux-v6.12"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
   }
  ],
  "totals": {
   "accepted_lines_changed": 16004,
   "decisions": {
-   "accepted": 74,
+   "accepted": 75,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
    "rejected": 46,
    "superseded": 3
   },
-  "experiments": 137,
+  "experiments": 138,
   "first_date": "2026-08-10",
-  "hypotheses": 93,
-  "last_date": "2026-09-19",
+  "hypotheses": 94,
+  "last_date": "2026-09-20",
   "platforms": {
-   "Linux": 11,
+   "Linux": 12,
    "macOS": 126
   }
  },

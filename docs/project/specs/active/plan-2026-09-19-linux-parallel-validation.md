@@ -7,7 +7,8 @@
 **Status:** Active. Pickup for a Linux host stacked on
 [#92](https://github.com/jlevy/fdu/pull/92). Darwin measurement on that branch stopped
 at `26480612` (H138 recorded).
-H139–H142 are reserved here.
+H139 is recorded (exp-138, same, quiet).
+H140–H142 remain reserved here.
 Do not mint them on the Darwin branch.
 
 ## Overview
@@ -111,17 +112,13 @@ read-ahead), H107 (no ignore-is-the-walk subject on the Darwin hunt; do not inve
 Take these in order.
 Mint the reserved id when the cell starts, not before.
 
-1. **H139 — cache-hit stack, same or different.** Pair #91-equivalent control
-   (`e667b739` / H115+H120 only) against this branch’s release probe on Linux
-   `content-cache-hit`. Prefer a reconstructible deciding-scale tree you can name in the
-   record (metabrowser clone if you have it; otherwise the largest real tree you can
-   freeze, or the 450k generated subject if no real tree reaches deciding scale).
-   Accept-rule sketch: report paired wall and RSS with the usual 3% /
-   interval-below-zero rule as *replication*, not as a new cut.
-   Same means the stacked #92 cache-hit commits still clear 3% on Linux.
-   Different means they do not, or only RSS / component moves.
-   Do not revert landed engine to “fix” a miss; record it.
-   Bead: `fdu-bt6x`.
+1. **H139 — cache-hit stack, same or different.** **Same** (exp-138, quiet).
+   `content-cache-hit` wall −22.48% [−23.46%, −21.39%] on reconstructible `linux-v6.12`
+   (92,474 entries). Peak RSS −10.24%. Digest identical.
+   A clean metabrowser clone on this host is 916 entries (Darwin’s 146k tree was
+   workspace state) and was not the subject.
+   Do not retry the cache-hit increments.
+   Bead: `fdu-bt6x` (close).
 
 2. **H140 — walk leftover.** `default-tree` / first-run profile on a Linux subject.
    Determination: is the walk still ≥90% of component, and is the leftover
@@ -193,7 +190,7 @@ If #92 moves, rebase this branch onto it and keep H139–H142 meanings.
 
 ## Open Questions
 
-- Whether the H125–H133 cache-hit stack still clears 3% wall on Linux (H139)
+- H139 closed: cache-hit stack is **same** on Linux (exp-138, quiet, −22.48%)
 - Whether Linux walk leftover is still the syscall floor (H140) or a new userspace stage
 - Whether H138’s shared `every_entry` walk still clears 3% on Linux (H141)
 - Whether H111’s floor/RSS gates pass on the current engine (H111 / `fdu-jekg`)
